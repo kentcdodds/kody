@@ -1,14 +1,11 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { matchesSearchQuery } from '#client/search-filter.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { ProviderMark } from '#client/provider-icons.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type AccountStatus,
@@ -22,9 +19,6 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	MetadataGrid,
-	TimestampValue,
-	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
 	RecordDot,
@@ -34,93 +28,34 @@ import {
 	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import {
+	type AccountMcpServersPayload,
+	type McpServerListItem,
+	type McpServerUsageDraft,
+	type MessageTone,
+	filterServers,
+	readOAuthResultFromHref,
+	readSearchFilter,
+	renderNamedServer,
+	stateColor,
+	stateLabel,
+} from '#client/routes/account-mcp-servers-shared.tsx'
+import { renderMcpServerDetail } from '#client/routes/account-mcp-servers-detail.tsx'
+import {
+	renderAddMcpServerForm,
+	renderOauthCallbackSection,
+} from '#client/routes/account-mcp-servers-forms.tsx'
+import {
 	clearOnboardingMcpOAuthReturnCookie,
 	closeOnboardingMcpOAuthPopupIfOpened,
 } from '#client/mcp-oauth-popup.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
-import {
-	cardTitleCss,
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(26))
-
-function hostFromUrl(url: string | null | undefined) {
-	if (!url) return null
-	try {
-		return new URL(url).hostname || null
-	} catch {
-		return null
-	}
-}
-
-function renderNamedServer(input: {
-	name: string
-	url: string
-	autoLogoPath?: string | null
-}) {
-	return (
-		<span
-			mix={css({
-				display: 'inline-flex',
-				alignItems: 'center',
-				gap: spacing.sm,
-				minWidth: 0,
-			})}
-		>
-			<ProviderMark
-				providerKey={input.name}
-				label={input.name}
-				autoLogoPath={input.autoLogoPath}
-				host={hostFromUrl(input.url)}
-				size="1.75rem"
-			/>
-			<span mix={clampedCellCss}>{input.name}</span>
-		</span>
-	)
-}
-
-type McpServerListItem = {
-	id: string
-	name: string
-	url: string
-	enabled: boolean
-	state: string
-	connected: boolean
-	toolCount: number
-	authUrl: string | null
-	error: string | null
-	tools: Array<string>
-	createdAt: string
-	updatedAt: string
-	autoLogoPath: string | null
-	usageMode: 'any' | 'packages'
-	allowedPackageIds: Array<string>
-}
-
-type AccountMcpServersPayload = {
-	ok: true
-	email: string
-	username: string
-	oauthClientOrigin: string
-	oauthCallbackUrl: string
-	oauthClientMetadataUrl: string | null
-	servers: Array<McpServerListItem>
-	savedPackages: Array<{ id: string; kodyId: string }>
-	selectedServerId?: string
-}
-
-type MessageTone = 'info' | 'error'
 
 const accountMcpServersApiPath = '/account/mcp-servers.json'
 const mcpServersRoute = createListDetailRoute('/account/mcp-servers')
@@ -132,165 +67,6 @@ const mcpServersRoute = createListDetailRoute('/account/mcp-servers')
  */
 function getDataLatchKey(_href: string) {
 	return '/account/mcp-servers'
-}
-
-function readSearchFilter(href: string) {
-	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
-}
-
-function filterServers(servers: Array<McpServerListItem>, search: string) {
-	return servers.filter((server) =>
-		matchesSearchQuery(search, [
-			server.name,
-			server.url,
-			server.state,
-			server.error,
-			server.usageMode,
-		]),
-	)
-}
-
-function McpServerUsageForm(
-	handle: Handle<{
-		server: McpServerListItem
-		savedPackages: ReadonlyArray<{ id: string; kodyId: string }>
-		draft: { usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
-		saving: boolean
-		onDraftChange: (draft: {
-			usageMode: 'any' | 'packages'
-			allowedPackageIds: Array<string>
-		}) => void
-		onSave: () => void
-	}>,
-) {
-	return () => {
-		const { server, savedPackages, draft, saving, onDraftChange, onSave } =
-			handle.props
-		return (
-			<section
-				data-testid="mcp-server-usage"
-				mix={css({ display: 'grid', gap: spacing.xs })}
-			>
-				<p
-					mix={css({
-						...fieldLabelCss,
-						margin: 0,
-					})}
-				>
-					Usage
-				</p>
-				<p mix={css({ ...descriptionCss, margin: 0 })}>
-					Limit this server so only listed packages can call{' '}
-					<code>kody.mcp[&quot;{server.name}&quot;]</code>. Execute and other
-					packages are denied.
-				</p>
-				<label
-					mix={css({
-						display: 'flex',
-						gap: spacing.xs,
-						alignItems: 'flex-start',
-						color: colors.text,
-						fontSize: typography.fontSize.sm,
-					})}
-				>
-					<input
-						type="radio"
-						name={`mcp-usage-mode-${server.id}`}
-						checked={draft.usageMode === 'any'}
-						disabled={saving}
-						mix={[
-							on('change', () =>
-								onDraftChange({
-									usageMode: 'any',
-									allowedPackageIds: [],
-								}),
-							),
-						]}
-					/>
-					<span>Any context (execute and every package)</span>
-				</label>
-				<label
-					mix={css({
-						display: 'flex',
-						gap: spacing.xs,
-						alignItems: 'flex-start',
-						color: colors.text,
-						fontSize: typography.fontSize.sm,
-					})}
-				>
-					<input
-						type="radio"
-						name={`mcp-usage-mode-${server.id}`}
-						checked={draft.usageMode === 'packages'}
-						disabled={saving}
-						mix={[
-							on('change', () =>
-								onDraftChange({
-									usageMode: 'packages',
-									allowedPackageIds: draft.allowedPackageIds,
-								}),
-							),
-						]}
-					/>
-					<span>Specific packages only</span>
-				</label>
-				{draft.usageMode === 'packages' ? (
-					savedPackages.length === 0 ? (
-						<p mix={css({ ...descriptionCss, margin: 0 })}>
-							Save a package first, then approve it here. Execute cannot use
-							this server while it is limited to specific packages.
-						</p>
-					) : (
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							{savedPackages.map((savedPackage) => {
-								const checked = draft.allowedPackageIds.includes(
-									savedPackage.id,
-								)
-								return (
-									<label
-										key={savedPackage.id}
-										mix={css({
-											display: 'flex',
-											gap: spacing.xs,
-											alignItems: 'center',
-											fontSize: typography.fontSize.sm,
-										})}
-									>
-										<input
-											type="checkbox"
-											checked={checked}
-											disabled={saving}
-											mix={[
-												on('change', () =>
-													onDraftChange({
-														usageMode: 'packages',
-														allowedPackageIds: checked
-															? draft.allowedPackageIds.filter(
-																	(id) => id !== savedPackage.id,
-																)
-															: [...draft.allowedPackageIds, savedPackage.id],
-													}),
-												),
-											]}
-										/>
-										<span>{savedPackage.kodyId}</span>
-									</label>
-								)
-							})}
-						</div>
-					)
-				) : null}
-				<button
-					type="button"
-					data-testid="save-mcp-server-usage"
-					disabled={saving}
-					mix={[css(getPillButtonCss({ size: 'sm' })), on('click', onSave)]}
-				>
-					{saving ? 'Saving…' : 'Save usage'}
-				</button>
-			</section>
-		)
-	}
 }
 
 export async function accountMcpServersRouteLoader(
@@ -312,89 +88,12 @@ export async function accountMcpServersRouteLoader(
 	return { accountMcpServers: payload }
 }
 
-function stateLabel(server: Pick<McpServerListItem, 'state' | 'enabled'>) {
-	if (!server.enabled) return 'Disabled'
-	switch (server.state) {
-		case 'ready':
-			return 'Connected'
-		case 'authenticating':
-			return 'Authorization required'
-		case 'connecting':
-			return 'Connecting'
-		case 'connected':
-		case 'discovering':
-			return 'Discovering tools'
-		case 'failed':
-			return 'Connection failed'
-		default:
-			return 'Disconnected'
-	}
-}
-
-function stateColor(server: Pick<McpServerListItem, 'state' | 'enabled'>) {
-	if (!server.enabled) return colors.textMuted
-	switch (server.state) {
-		case 'ready':
-			return colors.primary
-		case 'failed':
-			return colors.error
-		case 'authenticating':
-			return colors.textMuted
-		default:
-			return colors.textMuted
-	}
-}
-
-function readOAuthResultFromHref(href: string): {
-	message: string
-	tone: MessageTone
-} | null {
-	const url = new URL(href, 'http://localhost')
-	const auth = url.searchParams.get('auth')
-	if (auth === 'success') {
-		const server = url.searchParams.get('server')
-		return {
-			message: server
-				? `Authorized MCP server "${server}".`
-				: 'Authorized MCP server.',
-			tone: 'info',
-		}
-	}
-	if (auth === 'required') {
-		return {
-			message:
-				'Authorization needed. Open the new authorization link and approve access once more.',
-			tone: 'info',
-		}
-	}
-	if (auth === 'retry') {
-		return {
-			message:
-				'That authorization attempt can no longer be used. Choose the server and click Reconnect to try again.',
-			tone: 'info',
-		}
-	}
-	if (auth === 'error') {
-		const reason = url.searchParams.get('reason')
-		return {
-			message: reason
-				? `MCP server authorization failed: ${reason}`
-				: 'MCP server authorization failed.',
-			tone: 'error',
-		}
-	}
-	return null
-}
-
 export function AccountMcpServersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let servers: Array<McpServerListItem> = []
 	let savedPackages: Array<{ id: string; kodyId: string }> = []
-	let usageDrafts = new Map<
-		string,
-		{ usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
-	>()
+	let usageDrafts = new Map<string, McpServerUsageDraft>()
 	let usageSavingId: string | null = null
 	let oauthClientOrigin = ''
 	let oauthCallbackUrl = ''
@@ -621,6 +320,15 @@ export function AccountMcpServersRoute(handle: Handle) {
 		return true
 	}
 
+	function getUsageDraft(server: McpServerListItem): McpServerUsageDraft {
+		return (
+			usageDrafts.get(server.id) ?? {
+				usageMode: server.usageMode === 'packages' ? 'packages' : 'any',
+				allowedPackageIds: [...(server.allowedPackageIds ?? [])],
+			}
+		)
+	}
+
 	return () => {
 		const currentHref = getCurrentHref()
 		const appliedRouteData = applyRouteLoaderData(currentHref)
@@ -669,80 +377,13 @@ export function AccountMcpServersRoute(handle: Handle) {
 					}
 				/>
 
-				{oauthCallbackUrl ? (
-					<section
-						mix={css({
-							display: 'grid',
-							gap: spacing.sm,
-							padding: spacing.md,
-							borderRadius: radius.md,
-							border: `1px solid ${colors.border}`,
-							backgroundColor: colors.background,
-						})}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							<span mix={css(fieldLabelCss)}>OAuth redirect URI</span>
-							<p mix={css({ ...descriptionCss, margin: 0 })}>
-								If a remote MCP server&apos;s identity provider allowlists
-								client origins or redirect URIs (for example FusionAuth), add
-								{oauthClientOrigin ? ` ${oauthClientOrigin} and` : ''} this
-								exact callback before authorizing.
-								{oauthClientMetadataUrl
-									? " Servers that support Client ID Metadata Documents use the CIMD URL as Kody's client_id."
-									: ''}
-							</p>
-						</div>
-						<code
-							mix={css({
-								padding: spacing.sm,
-								borderRadius: radius.md,
-								border: `1px solid ${colors.border}`,
-								backgroundColor: colors.background,
-								color: colors.text,
-								fontFamily: 'monospace',
-								fontSize: typography.fontSize.sm,
-								overflowWrap: 'anywhere',
-							})}
-						>
-							{oauthCallbackUrl}
-						</code>
-						<div>
-							<CopyTextButton
-								value={oauthCallbackUrl}
-								idleLabel="Copy redirect URI"
-								variant="secondary"
-								size="sm"
-							/>
-						</div>
-						{oauthClientMetadataUrl ? (
-							<>
-								<span mix={css(fieldLabelCss)}>OAuth client metadata URL</span>
-								<code
-									mix={css({
-										padding: spacing.sm,
-										borderRadius: radius.md,
-										border: `1px solid ${colors.border}`,
-										backgroundColor: colors.background,
-										color: colors.text,
-										fontFamily: 'monospace',
-										fontSize: typography.fontSize.sm,
-										overflowWrap: 'anywhere',
-									})}
-								>
-									{oauthClientMetadataUrl}
-								</code>
-								<div>
-									<CopyTextButton
-										value={oauthClientMetadataUrl}
-										idleLabel="Copy CIMD URL"
-										variant="secondary"
-										size="sm"
-									/>
-								</div>
-							</>
-						) : null}
-					</section>
-				) : null}
+				{oauthCallbackUrl
+					? renderOauthCallbackSection({
+							oauthClientOrigin,
+							oauthCallbackUrl,
+							oauthClientMetadataUrl,
+						})
+					: null}
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -827,403 +468,109 @@ export function AccountMcpServersRoute(handle: Handle) {
 						}))}
 						record={
 							selection.isCreating ? (
-								<form
-									method="post"
-									noValidate
-									mix={[
-										on('submit', (event) => {
-											event.preventDefault()
-											if (event.currentTarget instanceof HTMLFormElement) {
-												void addServer(event.currentTarget)
-											}
-										}),
-										css(recordBodyCss),
-									]}
-								>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>Add MCP server</h2>
-										<p mix={css(descriptionCss)}>
-											Provide a short name and the server URL. Remote servers
-											must use https; Kody connects as an MCP client and
-											discovers the server&apos;s tools. For servers that use a
-											static bearer token instead of OAuth, paste it below.
-										</p>
-									</div>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Server name</span>
-										<input
-											data-field-ring
-											name="name"
-											type="text"
-											value={addName}
-											placeholder="linear"
-											disabled={isMutating}
-											required
-											autocomplete="off"
-											mix={[
-												on('input', (event) => {
-													addName = event.currentTarget.value
-													handle.update()
-												}),
-												css(accountInputCss),
-											]}
-										/>
-										<span mix={css(descriptionCss)}>
-											Lowercase letters, numbers, and dashes. Used as the
-											kody.mcp[&quot;name&quot;] namespace.
-										</span>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Server URL</span>
-										<input
-											data-field-ring
-											name="url"
-											type="url"
-											value={addUrl}
-											placeholder="https://mcp.example.com/mcp"
-											disabled={isMutating}
-											required
-											autocomplete="off"
-											mix={[
-												on('input', (event) => {
-													addUrl = event.currentTarget.value
-													handle.update()
-												}),
-												css(accountInputCss),
-											]}
-										/>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>
-											Bearer token{' '}
-											<span mix={css({ color: colors.textMuted })}>
-												(optional)
-											</span>
-										</span>
-										<input
-											data-field-ring
-											name="bearerToken"
-											type="password"
-											value={addBearerToken}
-											placeholder="Paste token (or Bearer …)"
-											disabled={isMutating}
-											autocomplete="off"
-											mix={[
-												on('input', (event) => {
-													addBearerToken = event.currentTarget.value
-													handle.update()
-												}),
-												css(accountInputCss),
-											]}
-										/>
-										<span mix={css(descriptionCss)}>
-											Sent as Authorization: Bearer &lt;token&gt; on every
-											request. You can paste a bare token, a scheme-prefixed
-											value (Bearer, token, etc.), or a full Authorization
-											header line. Leave blank for OAuth or unauthenticated
-											servers. The token is stored only in your private MCP
-											client hub and is never shown again.
-										</span>
-									</label>
-
-									<div>
-										<button
-											type="submit"
-											disabled={isMutating}
-											mix={css(primaryButtonCss)}
-										>
-											{actionState === 'busy' ? 'Adding...' : 'Add server'}
-										</button>
-									</div>
-								</form>
+								renderAddMcpServerForm({
+									addName,
+									addUrl,
+									addBearerToken,
+									isMutating,
+									isBusy: actionState === 'busy',
+									primaryButtonCss,
+									onSubmit: (form) => {
+										void addServer(form)
+									},
+									onNameInput: (value) => {
+										addName = value
+										handle.update()
+									},
+									onUrlInput: (value) => {
+										addUrl = value
+										handle.update()
+									},
+									onBearerTokenInput: (value) => {
+										addBearerToken = value
+										handle.update()
+									},
+								})
 							) : server ? (
-								<section mix={css(recordBodyCss)}>
-									<div
-										mix={css({
-											display: 'flex',
-											alignItems: 'flex-start',
-											gap: spacing.md,
-										})}
-									>
-										<ProviderMark
-											providerKey={server.name}
-											label={server.name}
-											autoLogoPath={server.autoLogoPath}
-											host={hostFromUrl(server.url)}
-										/>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<h2 mix={css(cardTitleCss)}>{server.name}</h2>
-											<p mix={css(descriptionCss)}>
-												Saved MCP server connection. Kody keeps OAuth tokens and
-												connection state isolated to your account.
-											</p>
-										</div>
-									</div>
-
-									<MetadataGrid
-										items={[
-											{
-												label: 'Status',
-												value: (
-													<span mix={css({ color: stateColor(server) })}>
-														{stateLabel(server)}
-													</span>
-												),
+								renderMcpServerDetail({
+									server,
+									savedPackages,
+									usageDraft: getUsageDraft(server),
+									usageSaving: usageSavingId === server.id,
+									isMutating,
+									deleteServerCheck,
+									primaryButtonCss,
+									secondaryButtonCss,
+									dangerButtonCss,
+									onUsageDraftChange: (draft) => {
+										usageDrafts.set(server.id, draft)
+										handle.update()
+									},
+									onUsageSave: () => {
+										const draft = getUsageDraft(server)
+										usageSavingId = server.id
+										void postAction({
+											body: {
+												action: 'set-usage',
+												id: server.id,
+												usageMode: draft.usageMode,
+												allowedPackageIds:
+													draft.usageMode === 'packages'
+														? draft.allowedPackageIds
+														: [],
 											},
-											{
-												label: 'Tools',
-												value: server.connected
-													? `${server.toolCount} discovered`
-													: '—',
+											successMessage: () => 'Updated MCP server usage.',
+											failureMessage: 'Unable to update MCP server usage.',
+										})
+									},
+									onReconnect: () => {
+										void postAction({
+											body: { action: 'reconnect', id: server.id },
+											successMessage: (payload) => {
+												const reconnected = payload.servers.find(
+													(item) => item.id === server.id,
+												)
+												return reconnected?.authUrl
+													? 'Authorization needed. Open the new authorization link and approve access once more.'
+													: 'Reconnected MCP server.'
 											},
-											{
-												label: 'Added',
-												value: <TimestampValue value={server.createdAt} />,
+											failureMessage: 'Unable to reconnect MCP server.',
+										})
+									},
+									onRefresh: () => {
+										void postAction({
+											body: { action: 'refresh', id: server.id },
+											successMessage: () => 'Refreshed server tools.',
+											failureMessage: 'Unable to refresh MCP server tools.',
+										})
+									},
+									onToggleEnabled: () => {
+										void postAction({
+											body: {
+												action: 'set-enabled',
+												id: server.id,
+												enabled: !server.enabled,
 											},
-											{
-												label: 'Updated',
-												value: <TimestampValue value={server.updatedAt} />,
+											successMessage: () =>
+												server.enabled
+													? 'Disabled MCP server.'
+													: 'Enabled MCP server.',
+											failureMessage: 'Unable to update MCP server.',
+										})
+									},
+									onDelete: () => {
+										void postAction({
+											body: { action: 'delete', id: server.id },
+											successMessage: () => 'Removed MCP server.',
+											failureMessage: 'Unable to remove MCP server.',
+											afterSuccess: () => {
+												navigate(
+													mcpServersRoute.buildListHref(getCurrentSearch()),
+												)
 											},
-										]}
-									/>
-
-									<div mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Server URL</span>
-										<code
-											mix={css({
-												padding: spacing.sm,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.border}`,
-												backgroundColor: colors.background,
-												color: colors.text,
-												fontFamily: 'monospace',
-												fontSize: typography.fontSize.sm,
-												overflowWrap: 'anywhere',
-											})}
-										>
-											{server.url}
-										</code>
-									</div>
-
-									{server.error ? (
-										<AccountManagementMessage tone="error">
-											{server.error}
-										</AccountManagementMessage>
-									) : null}
-
-									{server.state === 'authenticating' && !server.authUrl ? (
-										<AccountManagementMessage tone="info">
-											Authorization needed. Click Reconnect to create a new
-											authorization link. You may need to approve access once
-											more.
-										</AccountManagementMessage>
-									) : null}
-
-									{server.authUrl && server.state === 'authenticating' ? (
-										<div
-											mix={css({
-												display: 'grid',
-												gap: spacing.sm,
-												padding: spacing.md,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.primary}`,
-												backgroundColor: colors.primarySoftest,
-											})}
-										>
-											<span mix={css({ color: colors.text })}>
-												Authorization needed. Approve access before this
-												server&apos;s tools become available.
-											</span>
-											<div>
-												<a
-													href={server.authUrl}
-													rel="noopener noreferrer"
-													mix={css({
-														...primaryButtonCss,
-														display: 'inline-block',
-														textDecoration: 'none',
-													})}
-												>
-													Authorize {server.name}
-												</a>
-											</div>
-										</div>
-									) : null}
-
-									<McpServerUsageForm
-										server={server}
-										savedPackages={savedPackages}
-										draft={
-											usageDrafts.get(server.id) ?? {
-												usageMode:
-													server.usageMode === 'packages' ? 'packages' : 'any',
-												allowedPackageIds: [
-													...(server.allowedPackageIds ?? []),
-												],
-											}
-										}
-										saving={usageSavingId === server.id}
-										onDraftChange={(draft) => {
-											usageDrafts.set(server.id, draft)
-											handle.update()
-										}}
-										onSave={() => {
-											const draft = usageDrafts.get(server.id) ?? {
-												usageMode:
-													server.usageMode === 'packages' ? 'packages' : 'any',
-												allowedPackageIds: [
-													...(server.allowedPackageIds ?? []),
-												],
-											}
-											usageSavingId = server.id
-											void postAction({
-												body: {
-													action: 'set-usage',
-													id: server.id,
-													usageMode: draft.usageMode,
-													allowedPackageIds:
-														draft.usageMode === 'packages'
-															? draft.allowedPackageIds
-															: [],
-												},
-												successMessage: () => 'Updated MCP server usage.',
-												failureMessage: 'Unable to update MCP server usage.',
-											})
-										}}
-									/>
-
-									{server.connected && server.tools.length > 0 ? (
-										<div mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Discovered tools</span>
-											<ul
-												mix={css({
-													margin: 0,
-													paddingLeft: spacing.lg,
-													color: colors.text,
-													display: 'grid',
-													gap: spacing.xs,
-												})}
-											>
-												{server.tools.map((tool) => (
-													<li key={tool}>
-														<code
-															mix={css({
-																fontFamily: 'monospace',
-																fontSize: typography.fontSize.sm,
-															})}
-														>
-															{tool}
-														</code>
-													</li>
-												))}
-											</ul>
-										</div>
-									) : null}
-
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											flexWrap: 'wrap',
-										})}
-									>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () =>
-													postAction({
-														body: { action: 'reconnect', id: server.id },
-														successMessage: (payload) => {
-															const reconnected = payload.servers.find(
-																(item) => item.id === server.id,
-															)
-															return reconnected?.authUrl
-																? 'Authorization needed. Open the new authorization link and approve access once more.'
-																: 'Reconnected MCP server.'
-														},
-														failureMessage: 'Unable to reconnect MCP server.',
-													}),
-												),
-												css(primaryButtonCss),
-											]}
-										>
-											Reconnect
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () =>
-													postAction({
-														body: { action: 'refresh', id: server.id },
-														successMessage: () => 'Refreshed server tools.',
-														failureMessage:
-															'Unable to refresh MCP server tools.',
-													}),
-												),
-												css(secondaryButtonCss),
-											]}
-										>
-											Refresh tools
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () =>
-													postAction({
-														body: {
-															action: 'set-enabled',
-															id: server.id,
-															enabled: !server.enabled,
-														},
-														successMessage: () =>
-															server.enabled
-																? 'Disabled MCP server.'
-																: 'Enabled MCP server.',
-														failureMessage: 'Unable to update MCP server.',
-													}),
-												),
-												css(secondaryButtonCss),
-											]}
-										>
-											{server.enabled ? 'Disable' : 'Enable'}
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												...deleteServerCheck.getButtonMix({
-													on: {
-														click: () =>
-															void postAction({
-																body: { action: 'delete', id: server.id },
-																successMessage: () => 'Removed MCP server.',
-																failureMessage: 'Unable to remove MCP server.',
-																afterSuccess: () => {
-																	navigate(
-																		mcpServersRoute.buildListHref(
-																			getCurrentSearch(),
-																		),
-																	)
-																},
-															}),
-													},
-													resetAfterAction: false,
-												}),
-												css(dangerButtonCss),
-											]}
-										>
-											{deleteServerCheck.doubleCheck
-												? 'Confirm remove'
-												: 'Remove'}
-										</button>
-									</div>
-								</section>
+										})
+									},
+								})
 							) : showServerNotFound ? (
 								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
 									<h2
