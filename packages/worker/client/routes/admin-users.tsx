@@ -8,43 +8,23 @@ import {
 	type InfiniteListSnapshot,
 } from '#client/infinite-list.ts'
 import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
-import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
-import {
-	fieldCss,
-	fieldLabelCss,
-	getGhostButtonCss,
-	getPillButtonCss,
-	getSelectCss,
-} from '#universal/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
-	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
-	IdValue,
-	MetadataGrid,
-	TimestampValue,
-	noticeCardCss,
 } from './account-management-components.tsx'
 import {
 	RecordChips,
 	RecordTable,
 	RecordTableSearch,
 	RecordTableSelect,
-	recordBodyCss,
 	recordCellClamp,
 } from './record-table.tsx'
-import { ChartLegend } from '#client/charts/chart-legend.tsx'
-import { StackedBarChart } from '#client/charts/stacked-bar-chart.tsx'
-import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
-import {
-	formatMonthKeyLabel,
-	usageMetricSeries,
-} from '#client/charts/usage-metric-series.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
 	type AdminPlanName,
@@ -53,120 +33,29 @@ import {
 	type AdminUsersMutationData,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
-import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
+	type AdminUserFilterState,
+	adminUserUsageApiPath,
+	buildAdminUsersApiRequestUrl,
+	buildDetailHref,
+	getDataKey,
+	getListKey,
+	getSelection,
+	isAdminUsersPath,
+	parseSelectedStableUserId,
+	readFilterState,
+} from './admin-users-shared.ts'
+import {
+	type AdminUsersActionState,
+	renderAdminUserDetail,
+} from './admin-users-detail.tsx'
 
-const selectCss = getSelectCss()
+export { adminUsersRouteLoader } from './admin-users-shared.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
 type AccountStatus = 'loading' | 'ready' | 'error'
 type UsageStatus = 'loading' | 'ready' | 'error'
-
-const adminUsersApiPath = '/admin/users.json'
-const adminUserUsageApiPath = '/admin/users/usage.json'
-const {
-	isRoutePath: isAdminUsersListDetailPath,
-	getSelection,
-	buildDetailHref,
-} = createListDetailRoute('/admin/users')
-
-function formatUsageLimit(limit: number) {
-	return formatIntegerNumber(limit)
-}
-
-function formatUsagePercent(value: number | null) {
-	if (value === null) return '—'
-	return `${Math.round(value * 100)}%`
-}
-
-function isAdminUsersPath(href: string) {
-	const path = new URL(href, 'http://localhost').pathname
-	return path === '/admin' || isAdminUsersListDetailPath(href)
-}
-
-type AdminUserFilterState = {
-	search: string
-	role: string
-}
-
-/** Read the `q`/`role` filter params the server applies to the list. */
-function readFilterState(href: string): AdminUserFilterState {
-	const url = new URL(href, 'http://localhost')
-	return {
-		search: url.searchParams.get('q')?.trim() ?? '',
-		role: url.searchParams.get('role')?.trim() ?? '',
-	}
-}
-
-/**
- * The list window only depends on the filters, not on which user is
- * selected — selection-only navigations keep the loaded scroll window.
- */
-function getListKey(href: string) {
-	const filters = readFilterState(href)
-	return `q=${filters.search}&role=${filters.role}`
-}
-
-function getDataKey(href: string) {
-	const pathname = new URL(href, 'http://localhost').pathname
-	return `${pathname}?${getListKey(href)}`
-}
-
-function parseSelectedStableUserId(value: string | null): string | null {
-	if (!value || !/^[a-f0-9]{64}$/.test(value)) return null
-	return value
-}
-
-/**
- * Translate a detail pathname into the JSON API's `?selected=` param and
- * drop a stale `?page=` so initial loads always re-anchor at page one.
- */
-function buildAdminUsersApiRequestUrl(
-	href: string,
-	options?: { page?: number; includeSelected?: boolean },
-) {
-	const pageUrl = new URL(href, 'http://localhost')
-	const requestUrl = new URL(adminUsersApiPath, 'http://localhost')
-	requestUrl.search = pageUrl.search
-	requestUrl.searchParams.delete('page')
-	if (options?.page != null) {
-		requestUrl.searchParams.set('page', String(options.page))
-	}
-	const selectedId = getSelection(href).selectedId
-	if (selectedId && options?.includeSelected !== false) {
-		requestUrl.searchParams.set('selected', selectedId)
-	} else {
-		requestUrl.searchParams.delete('selected')
-	}
-	return `${requestUrl.pathname}${requestUrl.search}`
-}
-
-export async function adminUsersRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildAdminUsersApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	if (response.status === 403) {
-		throw new Error('You do not have permission to view admin users.')
-	}
-	const payload = await readJson<AdminUsersLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load admin users.')
-	}
-	return { adminUsers: payload }
-}
 
 export function AdminUsersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
@@ -186,13 +75,7 @@ export function AdminUsersRoute(handle: Handle) {
 	// (deep link / filtered out). Prefer the in-list row when present.
 	let selectedUserFallback: AdminUserListItem | null = null
 	let message: string | null = null
-	let actionState:
-		| 'idle'
-		| 'assigning'
-		| 'removing'
-		| 'saving-plan'
-		| 'moderating'
-		| 'verifying' = 'idle'
+	let actionState: AdminUsersActionState = 'idle'
 	let mintedVerifyUrl: string | null = null
 	let mintedVerifyUrlForStableUserId: string | null = null
 	const markVerifiedCheck = createDoubleCheck(handle)
@@ -684,7 +567,6 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
-	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function applyRouteLoaderData(href: string) {
@@ -753,10 +635,6 @@ export function AdminUsersRoute(handle: Handle) {
 			usageData.stableUserId === selectedUser.stableUserId
 				? usageData
 				: null
-		const usageMonthsAscending = selectedUsage
-			? [...selectedUsage.monthUsage].reverse()
-			: []
-
 		// Re-seed the plan draft whenever a different user becomes selected so
 		// the select always starts from that user's stored plan.
 		if (selectedUser && selectedUser.stableUserId !== planDraftStableUserId) {
@@ -867,566 +745,37 @@ export function AdminUsersRoute(handle: Handle) {
 						) : null
 					}
 					record={
-						selectedUser ? (
-							<div mix={css(recordBodyCss)}>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-										})}
-									>
-										{selectedUser.username}
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Account metadata only — no secrets, packages, or other user
-										content appears on this page.
-									</p>
-								</div>
-								<MetadataGrid
-									items={[
-										{ label: 'Email', value: selectedUser.email },
-										{
-											label: 'Email verified',
-											value: selectedUser.email_verified
-												? (selectedUser.email_verified_at ?? 'Verified')
-												: 'No',
-										},
-										{
-											label: 'Verification mail',
-											value: selectedUser.email_verification_delivery
-												? [
-														selectedUser.email_verification_delivery.status,
-														selectedUser.email_verification_delivery.class,
-														selectedUser.email_verification_delivery_detail,
-													]
-														.filter(Boolean)
-														.join(' · ')
-												: 'Not tracked',
-										},
-										{
-											label: 'First-touch UTMs',
-											value:
-												[
-													selectedUser.utm_source &&
-														`source=${selectedUser.utm_source}`,
-													selectedUser.utm_medium &&
-														`medium=${selectedUser.utm_medium}`,
-													selectedUser.utm_campaign &&
-														`campaign=${selectedUser.utm_campaign}`,
-													selectedUser.utm_content &&
-														`content=${selectedUser.utm_content}`,
-													selectedUser.utm_term &&
-														`term=${selectedUser.utm_term}`,
-												]
-													.filter(Boolean)
-													.join(' · ') || 'None',
-										},
-										{
-											label: 'Landing path',
-											value: selectedUser.first_touch_landing_path ?? 'None',
-										},
-										{
-											label: 'Referrer',
-											value: selectedUser.first_touch_referrer ?? 'None',
-										},
-										{
-											label: 'First MCP connected',
-											value: selectedUser.first_mcp_connected_at ?? 'Not yet',
-										},
-										{
-											label: 'MCP client',
-											value: selectedUser.mcp_client_name ?? 'Unknown',
-										},
-										{
-											label: 'First execute',
-											value: selectedUser.first_execute_at ?? 'Not yet',
-										},
-										{
-											label: 'First saved package',
-											value: selectedUser.first_saved_package_at ?? 'Not yet',
-										},
-										{
-											label: 'Last active',
-											value: selectedUser.last_active_at ?? 'Unknown',
-										},
-										{
-											label: 'Stable user id',
-											value: (
-												<IdValue
-													value={selectedUser.stableUserId}
-													label="stable user id"
-												/>
-											),
-										},
-										{
-											label: 'Roles',
-											value:
-												selectedUser.roles.length > 0
-													? selectedUser.roles.join(', ')
-													: 'None',
-										},
-										{
-											label: 'Admin grant',
-											value: selectedUser.plan ?? 'free',
-										},
-										{
-											label: 'Subscription plan',
-											value: selectedUser.stripePlan ?? 'None',
-										},
-										{
-											label: 'Effective plan',
-											value: selectedUser.effectivePlan ?? 'free',
-										},
-										{
-											label: 'Stripe customer',
-											value: selectedUser.stripeCustomerLinked
-												? 'Linked'
-												: 'Not linked',
-										},
-										{
-											label: 'Suspended',
-											value: (
-												<TimestampValue
-													value={selectedUser.suspended_at}
-													fallback="No"
-												/>
-											),
-										},
-										{
-											label: 'Outbound email',
-											value: selectedUser.email_outbound_paused_at ? (
-												<>
-													Paused{' '}
-													<TimestampValue
-														value={selectedUser.email_outbound_paused_at}
-													/>
-												</>
-											) : (
-												'Active'
-											),
-										},
-										{
-											label: 'Created',
-											value: <TimestampValue value={selectedUser.created_at} />,
-										},
-										{
-											label: 'Updated',
-											value: <TimestampValue value={selectedUser.updated_at} />,
-										},
-									]}
-								/>
-								<AccountManagementPanel title="Manage roles">
-									<div
-										mix={css({
-											display: 'grid',
-											gap: spacing.md,
-											gridTemplateColumns: 'minmax(0, 1fr) auto auto',
-											alignItems: 'end',
-											[mq.mobile]: { gridTemplateColumns: '1fr' },
-										})}
-									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Role</span>
-											<select
-												data-field-ring
-												value={selectedRoleToAssign}
-												disabled={isMutating}
-												aria-label="Role"
-												mix={[
-													on('change', (event) => {
-														selectedRoleToAssign = event.currentTarget
-															.value as RoleName
-														handle.update()
-													}),
-													css(selectCss),
-												]}
-											>
-												{availableRoles.map((role) => (
-													<option key={role} value={role}>
-														{role}
-													</option>
-												))}
-											</select>
-										</label>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () => void submitRoleAction('assign_role')),
-												css(primaryButtonCss),
-											]}
-										>
-											{actionState === 'assigning' ? 'Assigning…' : 'Assign'}
-										</button>
-										<button
-											type="button"
-											disabled={
-												isMutating ||
-												!selectedUser.roles.includes(selectedRoleToAssign)
-											}
-											mix={[
-												on('click', () => void submitRoleAction('remove_role')),
-												css(secondaryButtonCss),
-											]}
-										>
-											{actionState === 'removing' ? 'Removing…' : 'Remove'}
-										</button>
-									</div>
-								</AccountManagementPanel>
-								{!selectedUser.email_verified ? (
-									<AccountManagementPanel
-										title="Email verification"
-										description="Mark verified after the person proves they own the address (for example they mailed kody@ from it), or mint a one-time link to send over a path that is not kody.codes."
-									>
-										{selectedUser.email_verification_delivery ? (
-											<p
-												mix={css({
-													margin: 0,
-													color:
-														describeEmailVerificationDelivery(
-															selectedUser.email_verification_delivery,
-														).tone === 'error'
-															? colors.error
-															: colors.textMuted,
-												})}
-											>
-												{describeEmailVerificationDelivery(
-													selectedUser.email_verification_delivery,
-												).headline ??
-													selectedUser.email_verification_delivery.status}
-												{selectedUser.email_verification_delivery_detail
-													? ` — ${selectedUser.email_verification_delivery_detail}`
-													: ''}
-											</p>
-										) : null}
-										<div
-											mix={css({
-												display: 'flex',
-												gap: spacing.md,
-												flexWrap: 'wrap',
-											})}
-										>
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													...markVerifiedCheck.getButtonMix({
-														on: {
-															click: () =>
-																void submitVerificationAction(
-																	'mark_email_verified',
-																),
-														},
-													}),
-													css(primaryButtonCss),
-												]}
-											>
-												{actionState === 'verifying'
-													? 'Working…'
-													: markVerifiedCheck.doubleCheck
-														? 'Confirm mark verified'
-														: 'Mark email verified'}
-											</button>
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on(
-														'click',
-														() =>
-															void submitVerificationAction('mint_verify_url'),
-													),
-													css(secondaryButtonCss),
-												]}
-											>
-												{actionState === 'verifying'
-													? 'Working…'
-													: 'Mint verify link'}
-											</button>
-										</div>
-										{mintedVerifyUrl &&
-										mintedVerifyUrlForStableUserId ===
-											selectedUser.stableUserId ? (
-											<label mix={css(fieldCss)}>
-												<span mix={css(fieldLabelCss)}>
-													One-time verify URL
-												</span>
-												<input
-													data-field-ring
-													readOnly
-													value={mintedVerifyUrl}
-													aria-label="One-time verify URL"
-													mix={css({
-														width: '100%',
-														fontFamily: typography.fontFamilyMono,
-													})}
-												/>
-											</label>
-										) : null}
-									</AccountManagementPanel>
-								) : null}
-								<AccountManagementPanel
-									title="Manage plan"
-									description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
-								>
-									<div
-										mix={css({
-											display: 'grid',
-											gap: spacing.md,
-											gridTemplateColumns: 'minmax(0, 1fr) auto',
-											alignItems: 'end',
-											[mq.mobile]: { gridTemplateColumns: '1fr' },
-										})}
-									>
-										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Admin grant</span>
-											<select
-												data-field-ring
-												disabled={isMutating}
-												aria-label="Admin grant"
-												mix={[
-													on('change', (event) => {
-														selectedPlanChoice = event.currentTarget
-															.value as AdminPlanName
-														handle.update()
-													}),
-													css(selectCss),
-												]}
-											>
-												{availablePlans.map((plan) => (
-													<option
-														key={plan}
-														value={plan}
-														selected={plan === selectedPlanChoice}
-													>
-														{plan}
-													</option>
-												))}
-											</select>
-										</label>
-										<button
-											type="button"
-											disabled={
-												isMutating ||
-												selectedPlanChoice === (selectedUser.plan ?? 'free')
-											}
-											mix={[
-												on('click', () => void submitPlanAction()),
-												css(primaryButtonCss),
-											]}
-										>
-											{actionState === 'saving-plan' ? 'Saving…' : 'Save grant'}
-										</button>
-									</div>
-								</AccountManagementPanel>
-								<AccountManagementPanel
-									title="Moderation"
-									description="Suspension blocks the account at the session, MCP, and email chokepoints. The outbound-email pause is set automatically after spam complaints or repeated bounces."
-								>
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.md,
-											flexWrap: 'wrap',
-										})}
-									>
-										{selectedUser.suspended_at ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on(
-														'click',
-														() => void submitModerationAction('unsuspend_user'),
-													),
-													css(primaryButtonCss),
-												]}
-											>
-												{actionState === 'moderating'
-													? 'Working…'
-													: 'Clear suspension'}
-											</button>
-										) : (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on(
-														'click',
-														() => void submitModerationAction('suspend_user'),
-													),
-													css(secondaryButtonCss),
-												]}
-											>
-												{actionState === 'moderating'
-													? 'Working…'
-													: 'Suspend account'}
-											</button>
-										)}
-										{selectedUser.email_outbound_paused_at ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on(
-														'click',
-														() =>
-															void submitModerationAction(
-																'resume_email_outbound',
-															),
-													),
-													css(secondaryButtonCss),
-												]}
-											>
-												{actionState === 'moderating'
-													? 'Working…'
-													: 'Resume outbound email'}
-											</button>
-										) : null}
-									</div>
-								</AccountManagementPanel>
-								<AccountManagementPanel
-									title="Usage & quotas"
-									description="Metered usage rollups and entitlement consumption for this account. Warnings appear above 80% of a numeric limit."
-								>
-									{!selectedUsage && usageStatus === 'loading' ? (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											Loading usage…
-										</p>
-									) : null}
-									{usageStatus === 'error' &&
-									usageFailedForStableUserId === selectedUser.stableUserId &&
-									usageMessage ? (
-										<AccountManagementMessage tone="error">
-											{usageMessage}
-										</AccountManagementMessage>
-									) : null}
-									{selectedUsage ? (
-										<>
-											{selectedUsage.warnings.length > 0 ? (
-												<div mix={css(noticeCardCss)}>
-													<strong>Quota watch:</strong>{' '}
-													{selectedUsage.warnings
-														.map(
-															(item) =>
-																`${item.label} at ${formatUsagePercent(item.percentOfLimit)}`,
-														)
-														.join(', ')}
-												</div>
-											) : null}
-											<div mix={css({ display: 'grid', gap: spacing.md })}>
-												<h3
-													mix={css({
-														margin: 0,
-														fontSize: typography.fontSize.base,
-													})}
-												>
-													Monthly activity
-												</h3>
-												<StackedBarChart
-													id="admin-user-usage"
-													ariaLabel={`Metered events by month for ${selectedUsage.username}`}
-													series={usageMetricSeries.map((entry) => ({
-														label: entry.label,
-														color: entry.color,
-														values: usageMonthsAscending.map(
-															(month) =>
-																month.usage.find(
-																	(row) => row.metric === entry.metric,
-																)?.eventCount ?? 0,
-														),
-													}))}
-													xLabels={usageMonthsAscending.map((month) =>
-														formatMonthKeyLabel(month.month),
-													)}
-													viewBoxWidth={560}
-													height={200}
-												/>
-												<ChartLegend
-													items={usageMetricSeries.map((entry) => ({
-														label: entry.label,
-														color: entry.color,
-														value: formatIntegerNumber(
-															selectedUsage.currentMonthUsage.find(
-																(row) => row.metric === entry.metric,
-															)?.eventCount ?? 0,
-														),
-													}))}
-												/>
-												<p
-													mix={css({
-														margin: 0,
-														color: colors.textMuted,
-														fontSize: typography.fontSize.xs,
-													})}
-												>
-													Legend counts are for the current month (
-													{selectedUsage.currentMonth}).
-												</p>
-											</div>
-											<div mix={css({ display: 'grid', gap: spacing.md })}>
-												<h3
-													mix={css({
-														margin: 0,
-														fontSize: typography.fontSize.base,
-													})}
-												>
-													Entitlements
-												</h3>
-												<RecordTable
-													mode="none"
-													ariaLabel="Entitlement consumption"
-													// The list is short and already sits inside an
-													// expanded record; a nested scroller would be a
-													// second thing to fight on the way down the page.
-													scrollHeight="none"
-													columns={[
-														{
-															key: 'resource',
-															label: 'Resource',
-															primary: true,
-														},
-														{ key: 'current', label: 'In use', align: 'end' },
-														{ key: 'limit', label: 'Limit', align: 'end' },
-														{ key: 'used', label: 'Used', align: 'end' },
-													]}
-													rows={selectedUsage.entitlementConsumption.map(
-														(item) => ({
-															id: item.resource,
-															cells: {
-																resource: item.label,
-																current:
-																	item.current === null
-																		? 'Not measured'
-																		: formatIntegerNumber(item.current),
-																limit: formatUsageLimit(item.limit),
-																used: (
-																	<span
-																		mix={css(
-																			item.overEightyPercent
-																				? {
-																						color: chartColor.amber,
-																						fontWeight:
-																							typography.fontWeight.semibold,
-																					}
-																				: {},
-																		)}
-																	>
-																		{formatUsagePercent(item.percentOfLimit)}
-																	</span>
-																),
-															},
-														}),
-													)}
-												/>
-											</div>
-										</>
-									) : null}
-								</AccountManagementPanel>
-							</div>
-						) : null
+						selectedUser
+							? renderAdminUserDetail({
+									selectedUser,
+									availableRoles,
+									availablePlans,
+									actionState,
+									selectedRoleToAssign,
+									selectedPlanChoice,
+									mintedVerifyUrl,
+									mintedVerifyUrlForStableUserId,
+									markVerifiedCheck,
+									usageStatus,
+									usageMessage,
+									usageFailedForStableUserId,
+									selectedUsage,
+									onRoleToAssignChange: (role) => {
+										selectedRoleToAssign = role
+										handle.update()
+									},
+									onSubmitRoleAction: (action) => void submitRoleAction(action),
+									onSubmitVerificationAction: (action) =>
+										void submitVerificationAction(action),
+									onPlanChoiceChange: (plan) => {
+										selectedPlanChoice = plan
+										handle.update()
+									},
+									onSubmitPlanAction: () => void submitPlanAction(),
+									onSubmitModerationAction: (action) =>
+										void submitModerationAction(action),
+								})
+							: null
 					}
 				/>
 			</AccountManagementShell>
