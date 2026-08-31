@@ -11,7 +11,6 @@
 		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx"
 	],
 	"node-tests": [
-		"packages/worker/src/account/export.node.test.ts",
 		"packages/worker/src/app/account-deletion.node.test.ts",
 		"packages/worker/src/jobs/service.node.test.ts",
 		"packages/worker/src/mcp/run-kody-registry.node.test.ts",
