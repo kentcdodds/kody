@@ -297,7 +297,9 @@ highlight that connection. User-registered integrations also have
 `/account/integrations/apps`). Endpoints, secret names, host allowlists, flow /
 PKCE / exchange style, and credential rotation stay behind an advanced
 disclosure. Each connection also shows a usage grant: **any context** (execute
-and every package) or **specific packages** only. One-click approval lives at
+and every package) or **specific packages** only. Agents tighten that grant with
+`integration_lock` (switch to packages mode and add a saved package id;
+unlocking or removing a grant is website-only). One-click approval lives at
 `/account/integrations/approve?name=&package_id=`; approving a package while the
 connection is still `any` leaves it `any` so execute stays usable. The rotate
 form posts to `/account/integrations.json` with
@@ -317,17 +319,18 @@ connections instead.
 Domain: `integrations`
 (`packages/worker/src/mcp/capabilities/integrations/domain.ts`).
 
-| Capability                                             | Role                                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                                    |
-| `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names                       |
-| `integration_oauth_app_delete`                         | Delete a user-lane app and every connection on it                              |
-| `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                              |
-| `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret          |
-| `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values             |
-| `integration_refresh_access_token`                     | User-lane host refresh plus materialized access token for `refreshAccessToken` |
-| `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                                             |
-| `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain)                  |
+| Capability                                             | Role                                                                              |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                                       |
+| `integration_lock`                                     | Tighten-only usage lock: packages mode + add a package id; unlock is website-only |
+| `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names                          |
+| `integration_oauth_app_delete`                         | Delete a user-lane app and every connection on it                                 |
+| `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                                 |
+| `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret             |
+| `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values                |
+| `integration_refresh_access_token`                     | User-lane host refresh plus materialized access token for `refreshAccessToken`    |
+| `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                                                |
+| `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain)                     |
 
 OpenAPI provider bindings (`user_openapi_bindings` /
 `user_openapi_binding_operations`) are a separate primitive; see

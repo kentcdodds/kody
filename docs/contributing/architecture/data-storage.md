@@ -1252,10 +1252,11 @@ on write unless a migration backfills existing rows.
   `forker_user_id`; index in `0001-squashed-init.sql`). Self-authored packages
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secret_set` /
-  `secret_delete`) always require the grant. Official OAuth token rotation
-  persists host-side and does not use that write grant. Authorship and adoption
-  never imply a host allowlist. Package-scoped secrets are owned exclusively by
-  the package id in their bucket binding.
+  `secret_delete`) always require the grant. Agents add a package to that grant
+  with `secret_lock`; removing a grant is website-only. Official OAuth token
+  rotation persists host-side and does not use that write grant. Authorship and
+  adoption never imply a host allowlist. Package-scoped secrets are owned
+  exclusively by the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, `user_integrations.required_hosts_json`, and
   `user_integrations.allowed_packages_json` (`0001-squashed-init.sql` /
