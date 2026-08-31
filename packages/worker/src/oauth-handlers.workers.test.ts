@@ -8,6 +8,7 @@ import {
 } from '@cloudflare/workers-oauth-provider'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { env, exports } from 'cloudflare:workers'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	createAuthCookie,
 	readAuthSessionResult,
@@ -848,6 +849,182 @@ test('worker entrypoint completes Claude-shaped dynamic registration and token e
 	})
 })
 
+test('worker entrypoint advertises MCP resource metadata on both RFC 9728 paths', async () => {
+	const expected = {
+		resource: 'https://heykody.dev/mcp',
+		authorization_servers: ['https://heykody.dev'],
+		scopes_supported: oauthScopes,
+		bearer_methods_supported: ['header'],
+	}
+	for (const path of [
+		'/.well-known/oauth-protected-resource',
+		'/.well-known/oauth-protected-resource/mcp',
+	]) {
+		const response = await workerFetch(
+			new Request(`https://heykody.dev${path}`),
+		)
+		expect(response.status).toBe(200)
+		await expect(response.json()).resolves.toEqual(expected)
+	}
+
+	const discovery = await workerFetch(
+		new Request('https://heykody.dev/.well-known/oauth-authorization-server'),
+	)
+	expect(discovery.status).toBe(200)
+	const metadata = (await discovery.json()) as {
+		client_id_metadata_document_supported?: boolean
+		code_challenge_methods_supported?: Array<string>
+		token_endpoint_auth_methods_supported?: Array<string>
+	}
+	expect(metadata.client_id_metadata_document_supported).toBe(true)
+	expect(metadata.code_challenge_methods_supported).toEqual(['S256'])
+	expect(metadata.token_endpoint_auth_methods_supported).toContain('none')
+	expect(metadata.token_endpoint_auth_methods_supported).not.toContain(
+		'private_key_jwt',
+	)
+})
+
+test('worker entrypoint completes ChatGPT-shaped CIMD authorize and token exchange', async () => {
+	const email = `chatgpt-oauth-${crypto.randomUUID()}@example.com`
+	const password = 'password123'
+	await seedWorkerUser(email, password)
+
+	const chatgptClientMetadataUrl =
+		'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
+	const chatgptRedirectUri = 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83'
+	const chatgptClientDocument = {
+		client_id: chatgptClientMetadataUrl,
+		client_uri: 'https://chatgpt.com/',
+		redirect_uris: [chatgptRedirectUri],
+		token_endpoint_auth_method: 'private_key_jwt',
+		token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+		grant_types: ['authorization_code', 'refresh_token'],
+		response_types: ['code'],
+		client_name: 'ChatGPT',
+		logo_uri: 'https://persistent.oaistatic.com/sonic/misc/openai-logo.png',
+		token_endpoint_auth_signing_alg: 'RS256',
+		jwks_uri: 'https://chatgpt.com/oauth/jwks.json',
+	}
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = input instanceof Request ? input.url : String(input)
+		if (url.split('?')[0] === chatgptClientMetadataUrl) {
+			return new Response(JSON.stringify(chatgptClientDocument), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json; charset=utf-8' },
+			})
+		}
+		return originalFetch(input, init)
+	}) as typeof fetch
+
+	try {
+		const verifier = 'chatgpt-verifier-0123456789'
+		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
+		authorizeUrl.searchParams.set('response_type', 'code')
+		authorizeUrl.searchParams.set('client_id', chatgptClientMetadataUrl)
+		authorizeUrl.searchParams.set('redirect_uri', chatgptRedirectUri)
+		authorizeUrl.searchParams.set('scope', 'profile email')
+		authorizeUrl.searchParams.set(
+			'code_challenge',
+			await createS256CodeChallenge(verifier),
+		)
+		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
+		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
+		authorizeUrl.searchParams.set('state', 'chatgpt-demo-state')
+
+		const authorizeResponse = await workerFetch(new Request(authorizeUrl))
+		expect(authorizeResponse.status).toBe(200)
+		expect(await authorizeResponse.text()).toContain('ChatGPT')
+
+		const approvalResponse = await workerFetch(
+			new Request(authorizeUrl, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					decision: 'approve',
+					email,
+					password,
+				}),
+			}),
+		)
+		expect(approvalResponse.status).toBe(200)
+		const approvalPayload = (await approvalResponse.json()) as {
+			redirectTo: string
+		}
+		const callbackUrl = new URL(approvalPayload.redirectTo)
+		const code = callbackUrl.searchParams.get('code')
+		expect(code).toBeTruthy()
+		expect(callbackUrl.searchParams.get('iss')).toBe('https://heykody.dev')
+
+		const tokenResponse = await workerFetch(
+			new Request('https://heykody.dev/oauth/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: chatgptClientMetadataUrl,
+					code: code ?? '',
+					redirect_uri: chatgptRedirectUri,
+					code_verifier: verifier,
+					resource: 'https://heykody.dev/mcp',
+				}),
+			}),
+		)
+		expect(tokenResponse.status).toBe(200)
+		await expect(tokenResponse.json()).resolves.toMatchObject({
+			token_type: 'bearer',
+			resource: 'https://heykody.dev/mcp',
+			scope: 'profile email',
+		})
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client', async () => {
+	const chatgptClientMetadataUrl =
+		'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json'
+	const originalFetch = globalThis.fetch
+	consoleWarn.mockImplementation(() => {})
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = input instanceof Request ? input.url : String(input)
+		if (url.split('?')[0] === chatgptClientMetadataUrl) {
+			return new Response('upstream unavailable', { status: 503 })
+		}
+		return originalFetch(input, init)
+	}) as typeof fetch
+
+	try {
+		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
+		authorizeUrl.searchParams.set('response_type', 'code')
+		authorizeUrl.searchParams.set('client_id', chatgptClientMetadataUrl)
+		authorizeUrl.searchParams.set(
+			'redirect_uri',
+			'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
+		)
+		authorizeUrl.searchParams.set('code_challenge', 'x'.repeat(43))
+		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
+		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
+
+		const authorizeInfoUrl = new URL('https://heykody.dev/oauth/authorize-info')
+		authorizeInfoUrl.search = authorizeUrl.search
+		const response = await workerFetch(new Request(authorizeInfoUrl))
+		expect(response.status).toBe(400)
+		await expect(response.json()).resolves.toMatchObject({
+			ok: false,
+			error: 'Unknown OAuth client.',
+		})
+		expect(consoleWarn.mock.calls.flat().join(' ')).toContain(
+			'CIMD fetch failed',
+		)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
 test('worker entrypoint returns OAuth errors for provider-owned route exceptions', async () => {
 	const registerResponse = await workerFetch(
 		new Request('https://heykody.dev/oauth/register', {
@@ -858,14 +1035,15 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 	)
 	expect(registerResponse.status).toBe(400)
 	await expect(registerResponse.json()).resolves.toEqual({
-		error: 'invalid_request',
-		error_description: 'Invalid OAuth client registration.',
+		error: 'invalid_client_metadata',
+		error_description: 'Client metadata must be a JSON object',
 	})
 
 	const clientId = `malformed-token-client-${crypto.randomUUID()}`
 	const userId = `oauth-user-${crypto.randomUUID()}`
 	const grantId = `oauth-grant-${crypto.randomUUID()}`
 	const code = `${userId}:${grantId}:secret`
+	const verifier = 'verifier'
 	await env.OAUTH_KV.put(
 		`client:${clientId}`,
 		JSON.stringify({
@@ -885,14 +1063,14 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 			encryptedProps: '',
 			createdAt: Math.floor(Date.now() / 1000),
 			authCodeId: await createSha256Hex(code),
-			// 0.8+ treats a missing authCodeWrappedKey as an already-used code and
+			// 0.10+ treats a missing authCodeWrappedKey as an already-used code and
 			// returns invalid_grant before redirect_uri validation. Keep a dummy
 			// wrapped key so the malformed-client redirectUris TypeError still
 			// reaches the worker exception mapper under test.
 			authCodeWrappedKey: 'malformed-client-auth-code-wrapped-key',
 			resource: 'https://heykody.dev/mcp',
-			codeChallenge: 'verifier',
-			codeChallengeMethod: 'plain',
+			codeChallenge: await createS256CodeChallenge(verifier),
+			codeChallengeMethod: 'S256',
 		}),
 	)
 
@@ -908,7 +1086,7 @@ test('worker entrypoint returns OAuth errors for provider-owned route exceptions
 				client_id: clientId,
 				code,
 				redirect_uri: claudeAuthRequest.redirectUri,
-				code_verifier: 'verifier',
+				code_verifier: verifier,
 				resource: 'https://heykody.dev/mcp',
 			}),
 		}),

@@ -577,8 +577,8 @@ routed from `packages/worker/src/index.ts`.
 - Token endpoint: `/oauth/token` (via provider)
 - Client registration: `/oauth/register` (via provider), plus Client ID Metadata
   Documents (`clientIdMetadataDocumentEnabled` in
-  `packages/worker/src/index.ts`): a client may present an HTTPS URL as its
-  `client_id` with no registration step. Signed-in users can also mint a
+  `packages/worker/src/origin-handler.ts`): a client may present an HTTPS URL as
+  its `client_id` with no registration step. Signed-in users can also mint a
   confidential pre-registered client from `/account/mcp-oauth-clients` (Account
   → Advanced). `user_mcp_oauth_clients` stores the account-owned metadata. The
   provider stores the secret hash in `OAUTH_KV` via
@@ -586,12 +586,17 @@ routed from `packages/worker/src/index.ts`.
   `user_id`. The plaintext secret is shown once and never written to D1. MCP
   `2026-07-28` deprecates RFC 7591 dynamic registration in favor of CIMD, so
   both stay enabled: clients without a pre-registered credential that do not use
-  CIMD register via `/oauth/register`, and a failed CIMD metadata fetch returns
-  `invalid_client` (any DCR retry after that is the client's own recovery, not a
-  server-side fallback). CIMD metadata fetches rely on the
-  `global_fetch_strictly_public` compatibility flag in
+  CIMD register via `/oauth/register`. Failed CIMD fetches throw
+  `CimdFetchError`: authorize maps that to an unknown-client page, and the token
+  endpoint still returns generic `invalid_client`. Any DCR retry after that is
+  the client's own recovery, not a server-side fallback. CIMD metadata fetches
+  rely on the `global_fetch_strictly_public` compatibility flag in
   `packages/worker/wrangler.jsonc` for SSRF safety; the provider only advertises
-  `client_id_metadata_document_supported` when both are set.
+  `client_id_metadata_document_supported` when both are set. ChatGPT CIMD
+  documents prefer `private_key_jwt` while also offering `none`; the provider
+  negotiates the mutually supported public method `none` and requires PKCE.
+  `onError.internal` category `client-id-metadata-document` is reported to
+  Sentry. Authorization-server metadata advertises `S256` PKCE only.
 - Kody-as-client (user-added remote MCP servers) hosts its own CIMD at
   `/oauth/client-metadata.json`. The document is origin-exact: `client_id`
   matches the fetch URL, and `redirect_uris` lists

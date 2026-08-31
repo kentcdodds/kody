@@ -10,7 +10,7 @@
     "@cloudflare/codemode": "^0.5.1",
     "@cloudflare/shell": "^0.4.3",
     "@cloudflare/worker-bundler": "^0.2.2",
-    "@cloudflare/workers-oauth-provider": "^0.8.3",
+    "@cloudflare/workers-oauth-provider": "^0.10.3",
     "@epic-web/cachified": "^5.6.3",
     "@epic-web/invariant": "^1.0.0",
     "@epic-web/totp": "^4.0.1",
