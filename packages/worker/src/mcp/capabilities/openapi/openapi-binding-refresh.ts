@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { openApiSpecFetchGatewayFor } from '#mcp/capabilities/openapi-spec-fetch-gateway.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -76,6 +77,7 @@ export const openapiBindingRefreshCapability = defineDomainCapability(
 			}
 			const rawText = await fetchOpenApiSpecText({
 				specUrl: existing.specUrl,
+				gateway: openApiSpecFetchGatewayFor(ctx),
 			})
 			const parsed = parseOpenApiSpec(rawText)
 			const resolved = resolveOpenApiSelection({
