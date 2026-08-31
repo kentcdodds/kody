@@ -348,6 +348,7 @@ test('memories export downloads the signed-in user memories as JSON', async () =
 	}
 	expect(deletedPayload.includeDeleted).toBe(true)
 
+	mockModule.listMemoriesByUserIdPage.mockClear()
 	const firstPage = Array.from({ length: 200 }, (_, index) => ({
 		...mockModule.memoryDbRow,
 		id: `page-1-${String(index).padStart(3, '0')}`,
