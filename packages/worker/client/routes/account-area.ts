@@ -13,7 +13,8 @@ export {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
-export { AccountJobsRoute, accountJobsRouteLoader } from './account-jobs.tsx'
+export { AccountJobsRoute } from './account-jobs.tsx'
+export { accountJobsRouteLoader } from './account-jobs-shared.ts'
 export {
 	AccountWorkflowsRoute,
 	accountWorkflowsRouteLoader,
