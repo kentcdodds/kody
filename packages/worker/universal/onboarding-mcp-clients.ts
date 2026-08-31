@@ -51,10 +51,14 @@ export const mcpClientTabs = [
 ] as const satisfies ReadonlyArray<McpClientTab>
 
 /**
- * Desktop chooser: coding agents first. Devin stands in for Devin Desktop
+ * Desktop chooser: coding agents first, then the highest-traffic chat hosts
+ * that are not already represented. Devin stands in for Devin Desktop
  * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw is the
- * local-first personal-AI slot. Grok Bot fills the last featured seat
- * (Aider is not a Kody connect path yet).
+ * local-first personal-AI slot. ChatGPT.com, Claude Desktop, and Gemini
+ * fill the three leftover seats after OpenClaw so a 4-column grid is
+ * three full rows with Not listed. Grok.com, Grok CLI, and the Copilot
+ * app stay under Not listed (Copilot desktop/CLI is already featured;
+ * Aider is not a Kody connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -64,6 +68,9 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'devin',
 	'opencode',
 	'openclaw',
+	'chatgpt',
+	'claude-desktop',
+	'gemini',
 	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 

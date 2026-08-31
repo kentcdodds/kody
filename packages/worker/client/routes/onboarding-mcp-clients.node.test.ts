@@ -35,6 +35,24 @@ const mcpServerUrl = defaultKodyMcpUrl
 test('onboarding MCP client builders emit the structured configs each host expects', () => {
 	const tabIds = mcpClientTabs.map((tab) => tab.id)
 	expect(new Set(tabIds).size).toBe(tabIds.length)
+	expect([...onboardingDesktopFeaturedAgentIds]).toEqual([
+		'claude-code',
+		'cursor',
+		'codex',
+		'copilot',
+		'devin',
+		'opencode',
+		'openclaw',
+		'chatgpt',
+		'claude-desktop',
+		'gemini',
+		'grok-bot',
+	])
+	expect(onboardingMoreAgentIdsFor('desktop')).toEqual([
+		'grok',
+		'grok-cli',
+		'copilot-app',
+	])
 	expect(onboardingMoreAgentIdsFor('desktop')).not.toContain(
 		onboardingDesktopFeaturedAgentIds[0],
 	)

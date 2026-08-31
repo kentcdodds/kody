@@ -27,10 +27,25 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain(
 		'href="/onboarding?agent=openclaw&amp;surface=desktop"',
 	)
+	expect(picker).toContain(
+		'href="/onboarding?agent=chatgpt&amp;surface=desktop"',
+	)
+	expect(picker).toContain(
+		'href="/onboarding?agent=claude-desktop&amp;surface=desktop"',
+	)
+	expect(picker).toContain(
+		'href="/onboarding?agent=gemini&amp;surface=desktop"',
+	)
 	expect(picker).not.toContain('data-testid="onboarding-agent-instructions"')
 	expect(picker).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
 	expect(picker).not.toContain(
 		'href="/onboarding?agent=grok-cli&amp;surface=desktop"',
+	)
+	expect(picker).not.toContain(
+		'href="/onboarding?agent=grok&amp;surface=desktop"',
+	)
+	expect(picker).not.toContain(
+		'href="/onboarding?agent=copilot-app&amp;surface=desktop"',
 	)
 	expect(picker).toContain('/images/icons/cursor.svg')
 	expect(picker).toContain('/images/icons/grokbot.svg')
@@ -71,7 +86,11 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(other).toContain(defaultKodyMcpUrl)
 	expect(other).toContain('data-testid="onboarding-agent-grok-cli"')
-	expect(other).toContain('data-testid="onboarding-agent-chatgpt"')
+	expect(other).toContain('data-testid="onboarding-agent-grok"')
+	expect(other).toContain('data-testid="onboarding-agent-copilot-app"')
+	expect(other).not.toContain('data-testid="onboarding-agent-chatgpt"')
+	expect(other).not.toContain('data-testid="onboarding-agent-claude-desktop"')
+	expect(other).not.toContain('data-testid="onboarding-agent-gemini"')
 	expect(other).not.toContain('data-testid="onboarding-agent-grok-bot"')
 	expect(other).not.toContain(grokBotInstallUrl)
 	expect(other).not.toContain(buildCodexMcpAddCommand(defaultKodyMcpUrl))
