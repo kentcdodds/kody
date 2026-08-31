@@ -11,6 +11,8 @@ export {
 } from './admin-feature-flags.tsx'
 export { AdminPlatformIntegrationsRoute } from './admin-platform-integrations.tsx'
 export { adminPlatformIntegrationsRouteLoader } from './admin-platform-integrations-shared.ts'
+export { AdminProviderMarksRoute } from './admin-provider-marks.tsx'
+export { adminProviderMarksRouteLoader } from './admin-provider-marks-shared.ts'
 export { AdminCodemodsRoute } from './admin-codemods.tsx'
 export { adminCodemodsRouteLoader } from './admin-codemods-shared.ts'
 export {

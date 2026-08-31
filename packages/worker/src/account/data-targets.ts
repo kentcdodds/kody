@@ -114,6 +114,12 @@ export const accountOperatorOwnedD1Surfaces = [
 			'Operator-provisioned built-in OAuth app registrations (global config like feature flags; no user data). Per-user connections and token secrets remain user-scoped and covered by their own targets.',
 	},
 	{
+		table: 'platform_provider_marks',
+		surface: 'platform_provider_marks',
+		reason:
+			'Operator-owned provider brand marks (global catalog like platform OAuth app logos; no user data). Saved integrations fall back to these after an upload or auto-favicon miss.',
+	},
+	{
 		table: 'repo_session_storage_bucket_cursor',
 		surface: 'repo_session_storage_bucket_cursor',
 		reason:

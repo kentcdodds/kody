@@ -191,6 +191,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.adminPlatformIntegrationDetail)]: titleOnly(
 		'Admin platform integrations',
 	),
+	[routePattern(routes.adminProviderMarks)]: titleOnly('Admin provider marks'),
 	[routePattern(routes.adminCodemods)]: titleOnly('Admin codemods'),
 	[routePattern(routes.adminRoles)]: titleOnly('Admin roles'),
 	[routePattern(routes.adminCommunityReports)]: titleOnly('Community reports'),

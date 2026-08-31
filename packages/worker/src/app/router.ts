@@ -22,6 +22,10 @@ import {
 	createAdminPlatformIntegrationsHandler,
 } from '#app/handlers/admin-platform-integrations.ts'
 import {
+	createAdminProviderMarksApiHandler,
+	createAdminProviderMarksHandler,
+} from '#app/handlers/admin-provider-marks.ts'
+import {
 	createAdminCodemodsApiHandler,
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
@@ -155,6 +159,7 @@ import {
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
 import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
+import { createProviderMarkLogoHandler } from '#app/handlers/provider-mark-logo.ts'
 import { createMcpServerLogoHandler } from '#app/handlers/mcp-server-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
@@ -420,6 +425,9 @@ export function createAppRouter(env: Env) {
 				createAdminPlatformIntegrationsApiHandler(env),
 			adminPlatformIntegrationsApiPost:
 				createAdminPlatformIntegrationsApiHandler(env),
+			adminProviderMarks: createAdminProviderMarksHandler(env),
+			adminProviderMarksApi: createAdminProviderMarksApiHandler(env),
+			adminProviderMarksApiPost: createAdminProviderMarksApiHandler(env),
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
@@ -448,6 +456,7 @@ export function createAppRouter(env: Env) {
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),
+			providerMarkLogo: createProviderMarkLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),
 			communityReportApiPost: createCommunityReportApiPostHandler(env),
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),

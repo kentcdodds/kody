@@ -10,6 +10,7 @@ export type ConnectOauthChooserOption = {
 	providerKey: string
 	logoPath: string | null
 	autoLogoPath: string | null
+	catalogLogoPath: string | null
 	kind: ConnectOauthChooserKind
 }
 
@@ -39,6 +40,7 @@ export function buildConnectOauthChooserOptions(input: {
 		providerKey: string
 		logoPath: string | null
 		autoLogoPath: string | null
+		catalogLogoPath: string | null
 		platform: boolean
 		appSlug: string
 		canDrive: boolean
@@ -48,6 +50,7 @@ export function buildConnectOauthChooserOptions(input: {
 		label: string
 		provider: string
 		logoPath: string | null
+		catalogLogoPath: string | null
 	}>
 }): Array<ConnectOauthChooserOption> {
 	const takenNames = new Set(
@@ -77,6 +80,7 @@ export function buildConnectOauthChooserOptions(input: {
 				providerKey,
 				logoPath: connection.logoPath,
 				autoLogoPath: connection.autoLogoPath,
+				catalogLogoPath: connection.catalogLogoPath,
 				kind: 'connection' as const,
 			}
 		})
@@ -99,6 +103,7 @@ export function buildConnectOauthChooserOptions(input: {
 				providerKey,
 				logoPath: app.logoPath,
 				autoLogoPath: null,
+				catalogLogoPath: app.catalogLogoPath,
 				kind: 'platform' as const,
 			}
 		})

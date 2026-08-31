@@ -71,6 +71,8 @@ export type ConnectOauthConfig = {
 	logoPath?: string | null
 	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
+	/** Operator-curated provider mark (after upload and favicon). */
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
 	/**
@@ -115,6 +117,7 @@ export type StoredIntegrationConfig = Omit<
 	platformLogoPath?: string | null
 	logoPath?: string | null
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats). */
 	platformDescription?: string | null
 }
@@ -204,6 +207,7 @@ export function toStoredIntegrationConfig(
 			: null,
 		logoPath: integration.logoPath ?? null,
 		autoLogoPath: integration.autoLogoPath ?? null,
+		catalogLogoPath: integration.catalogLogoPath ?? null,
 		...(integration.platform === true
 			? {
 					platformAppSlug: integration.appSlug,
@@ -430,6 +434,7 @@ export function mergeConnectOauthConfig(input: {
 			: null,
 		logoPath: input.storedIntegration?.logoPath?.trim() || null,
 		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
+		catalogLogoPath: input.storedIntegration?.catalogLogoPath?.trim() || null,
 		platformDescription: platformAppSlug
 			? input.storedIntegration?.platformDescription?.trim() || null
 			: null,
@@ -542,6 +547,7 @@ export function parseSessionConnectOauthConfig(
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
 		logoPath: parsePlatformLogoPath(record.logoPath),
 		autoLogoPath: parsePlatformLogoPath(record.autoLogoPath),
+		catalogLogoPath: parsePlatformLogoPath(record.catalogLogoPath),
 		platformDescription:
 			typeof record.platformDescription === 'string' &&
 			record.platformDescription.trim()

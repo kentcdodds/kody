@@ -23,6 +23,10 @@ import {
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
 import { backfillMissingUserOauthAppFavicons } from '#worker/integrations/user-oauth-app-favicon.ts'
+import {
+	attachCatalogLogoPath,
+	listPlatformProviderMarks,
+} from '#worker/integrations/provider-marks.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { getOauthAppClientSecretCiphertext } from '#worker/integrations/repo.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -262,13 +266,16 @@ export async function loadAccountIntegrationsData(
 	} | null
 }> {
 	const userId = user.mcpUser.userId
-	const [joined, apps, savedPackages] = await Promise.all([
+	const [joined, apps, savedPackages, marks] = await Promise.all([
 		listJoinedIntegrations({ env, userId }),
 		listOauthApps({ env, userId }),
 		listSavedPackagesByUserId(env.APP_DB, { userId }),
+		listPlatformProviderMarks({ db: env.APP_DB }),
 	])
 	const integrations = joined
-		.map((entry) => toAccountIntegrationRecord(entry))
+		.map((entry) =>
+			attachCatalogLogoPath(toAccountIntegrationRecord(entry), marks),
+		)
 		.sort((left, right) => {
 			const appCompare = left.appSlug.localeCompare(right.appSlug)
 			if (appCompare !== 0) return appCompare
@@ -321,7 +328,9 @@ export async function loadAccountIntegrationsData(
 		email: user.email,
 		username: user.username,
 		integrations,
-		apps: buildOauthAppRecords(apps, joined),
+		apps: buildOauthAppRecords(apps, joined).map((app) =>
+			attachCatalogLogoPath(app, marks),
+		),
 		savedPackages: packageRecords,
 		approval,
 	}
@@ -335,16 +344,22 @@ export async function loadAccountOauthAppBySlug(
 	const userId = user.mcpUser.userId
 	const app = await getOauthApp({ env, userId, slug })
 	if (!app) return null
-	const joined = await listJoinedIntegrations({ env, userId })
+	const [joined, marks] = await Promise.all([
+		listJoinedIntegrations({ env, userId }),
+		listPlatformProviderMarks({ db: env.APP_DB }),
+	])
 	const connections = joined
 		.filter((entry) => entry.lane === 'user' && entry.app.slug === app.slug)
 		.map(({ connection }) => ({
 			name: connection.name,
 			accountLabel: connection.accountLabel,
 		}))
-	return toOauthAppPublic(
-		{ ...app, connectionCount: connections.length },
-		connections,
+	return attachCatalogLogoPath(
+		toOauthAppPublic(
+			{ ...app, connectionCount: connections.length },
+			connections,
+		),
+		marks,
 	)
 }
 
@@ -375,7 +390,7 @@ function recordCanDriveConnectFlow(record: AccountIntegrationRecord): boolean {
 	)
 }
 
-export async function loadAccountIntegrationByName(
+async function resolveAccountIntegrationByName(
 	env: Env,
 	user: AuthenticatedUser,
 	name: string,
@@ -467,6 +482,19 @@ export async function loadAccountIntegrationByName(
 	// 4. Platform (built-in) app: the user needs no OAuth app of their own, so
 	// the connect flow can skip client-credential setup entirely.
 	return platformFallback()
+}
+
+export async function loadAccountIntegrationByName(
+	env: Env,
+	user: AuthenticatedUser,
+	name: string,
+	options?: Parameters<typeof resolveAccountIntegrationByName>[3],
+): Promise<AccountIntegrationRecord | null> {
+	const [record, marks] = await Promise.all([
+		resolveAccountIntegrationByName(env, user, name, options),
+		listPlatformProviderMarks({ db: env.APP_DB }),
+	])
+	return record ? attachCatalogLogoPath(record, marks) : null
 }
 
 /**

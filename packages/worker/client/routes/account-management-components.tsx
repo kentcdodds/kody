@@ -297,6 +297,11 @@ const adminNavItems = [
 		paths: ['/admin/platform-integrations'],
 	},
 	{
+		href: '/admin/provider-marks',
+		label: 'Provider marks',
+		paths: ['/admin/provider-marks'],
+	},
+	{
 		href: '/admin/codemods',
 		label: 'Codemods',
 		paths: ['/admin/codemods'],

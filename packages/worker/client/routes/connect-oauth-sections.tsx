@@ -261,6 +261,7 @@ export function renderChooser(input: {
 										label={option.label}
 										logoPath={option.logoPath}
 										autoLogoPath={option.autoLogoPath}
+										catalogLogoPath={option.catalogLogoPath}
 										size={connectOauthChooserOptionMarkSize}
 									/>
 									<span mix={css({ display: 'grid', gap: spacing.xs })}>

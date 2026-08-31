@@ -406,6 +406,20 @@ export type AdminPlatformIntegrationsLoaderData = {
 	apps: Array<AdminPlatformIntegrationApp>
 }
 
+export type AdminProviderMark = {
+	slug: string
+	label: string
+	aliases: Array<string>
+	logoPath: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export type AdminProviderMarksLoaderData = {
+	ok: true
+	marks: Array<AdminProviderMark>
+}
+
 export type AdminCodemodListItem = {
 	id: string
 	description: string
@@ -995,6 +1009,8 @@ export type AccountIntegrationListItem = {
 	logoPath?: string | null
 	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
+	/** Operator-curated provider mark (after upload and favicon). */
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note for platform apps (limitations, caveats). */
 	platformDescription?: string | null
 	createdAt: string
@@ -1040,6 +1056,8 @@ export type AccountOauthAppListItem = {
 	logoPath?: string | null
 	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
+	/** Operator-curated provider mark (after upload and favicon). */
+	catalogLogoPath?: string | null
 	createdAt: string
 	updatedAt: string
 }
@@ -1125,6 +1143,7 @@ export type ConnectOauthLoaderData = {
 			providerKey: string
 			logoPath: string | null
 			autoLogoPath: string | null
+			catalogLogoPath: string | null
 			kind: 'connection' | 'platform'
 		}>
 	}
@@ -1713,6 +1732,7 @@ export type AppLoaderData = {
 	adminInvites?: AdminInvitesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
+	adminProviderMarks?: AdminProviderMarksLoaderData
 	adminCodemods?: AdminCodemodsLoaderData
 	adminInsights?: AdminInsightsLoaderData
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData

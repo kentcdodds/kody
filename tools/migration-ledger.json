@@ -131,6 +131,10 @@
 		{
 			"filename": "0032-drop-secret-allowed-capabilities.sql",
 			"sha256": "9f854123842e94b4b979c941765acbd155bf43c0be2b138877bf062fd552b31c"
+		},
+		{
+			"filename": "0033-platform-provider-marks.sql",
+			"sha256": "49c97eb2871fe00bc823ff09438ed4ce4115ea840c09abf571def8740451e448"
 		}
 	]
 }

@@ -12,6 +12,7 @@ export const routes = route({
 	securityTxt: '/.well-known/security.txt',
 	connectOauth: '/connect/oauth',
 	integrationLogo: '/integrations/logos/:integrationSlug',
+	providerMarkLogo: '/integrations/provider-marks/:slug',
 	accountIntegrations: '/account/integrations',
 	// More specific than `:integrationName` so a connection named `apps` still
 	// resolves at `/account/integrations/apps` while OAuth apps live under
@@ -117,6 +118,9 @@ export const routes = route({
 	adminPlatformIntegrationDetail: '/admin/platform-integrations/:slug',
 	adminPlatformIntegrationsApi: '/admin/platform-integrations.json',
 	adminPlatformIntegrationsApiPost: post('/admin/platform-integrations.json'),
+	adminProviderMarks: '/admin/provider-marks',
+	adminProviderMarksApi: '/admin/provider-marks.json',
+	adminProviderMarksApiPost: post('/admin/provider-marks.json'),
 	adminCodemods: '/admin/codemods',
 	adminCodemodsApi: '/admin/codemods.json',
 	adminCodemodsRunApi: post('/admin/codemods/run.json'),

@@ -125,6 +125,7 @@ export function renderNamedProvider(input: {
 	label: string
 	logoPath?: string | null
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 	host?: string | null
 	builtIn?: boolean
 }) {
@@ -142,6 +143,7 @@ export function renderNamedProvider(input: {
 				label={input.label}
 				logoPath={input.logoPath}
 				autoLogoPath={input.autoLogoPath}
+				catalogLogoPath={input.catalogLogoPath}
 				host={input.host}
 				size="1.75rem"
 			/>
@@ -313,6 +315,7 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 					label={oauthAppTitle(selectedApp)}
 					logoPath={selectedApp.platformLogoPath ?? selectedApp.logoPath}
 					autoLogoPath={selectedApp.autoLogoPath}
+					catalogLogoPath={selectedApp.catalogLogoPath}
 					host={hostFromUrl(selectedApp.authorizeUrl ?? selectedApp.tokenUrl)}
 				/>
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>

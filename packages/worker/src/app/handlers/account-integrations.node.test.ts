@@ -371,7 +371,18 @@ const { createAccountIntegrationsApiHandler } =
 
 function createEnv() {
 	return {
-		APP_DB: {} as D1Database,
+		APP_DB: {
+			prepare() {
+				return {
+					async all() {
+						return { results: [] }
+					},
+					async first() {
+						return null
+					},
+				}
+			},
+		} as unknown as D1Database,
 		SECRET_STORE_KEY: 'x'.repeat(32),
 	} as Env
 }
