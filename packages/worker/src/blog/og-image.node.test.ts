@@ -26,20 +26,23 @@ test('blog OG renderer produces PNG for catalog posts with and without JPEG artw
 		}),
 	)
 
-	const withArt = getBlogPost('kody-vs-executor')
-	expect(withArt).toBeDefined()
-	const artwork = readFileSync(
-		join(
-			dirname(fileURLToPath(import.meta.url)),
-			'../../public/images/kody-vs-executor-og.jpg',
-		),
-	)
-	assertPng(
-		await renderBlogPostOgImage({
-			title: withArt!.title,
-			description: withArt!.description,
-			date: withArt!.date,
-			imageDataUri: `data:image/jpeg;base64,${bytesToBase64(artwork)}`,
-		}),
-	)
+	for (const slug of ['kody-vs-executor', 'openclaw-2-needs-a-home'] as const) {
+		const withArt = getBlogPost(slug)
+		expect(withArt).toBeDefined()
+		expect(withArt!.ogImage).toBe(`/images/${slug}-og.jpg`)
+		const artwork = readFileSync(
+			join(
+				dirname(fileURLToPath(import.meta.url)),
+				`../../public/images/${slug}-og.jpg`,
+			),
+		)
+		assertPng(
+			await renderBlogPostOgImage({
+				title: withArt!.title,
+				description: withArt!.description,
+				date: withArt!.date,
+				imageDataUri: `data:image/jpeg;base64,${bytesToBase64(artwork)}`,
+			}),
+		)
+	}
 })

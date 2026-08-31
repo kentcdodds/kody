@@ -5,6 +5,7 @@ import selfServiceMeansOwnership from './posts/self-service-means-ownership.md'
 import theAssistantThatCantLeakYourKeychain from './posts/the-assistant-that-cant-leak-your-keychain.md'
 import theAutomationsYouNeverBuilt from './posts/the-automations-you-never-built.md'
 import kodyVsExecutor from './posts/kody-vs-executor.md'
+import openclaw2NeedsAHome from './posts/openclaw-2-needs-a-home.md'
 import yourAssistantsHome from './posts/your-assistants-home.md'
 import zeroInferenceCalls from './posts/zero-inference-calls.md'
 
@@ -37,6 +38,10 @@ const postSources: Array<{ slug: string; raw: string }> = [
 	},
 	{ slug: 'self-service-means-ownership', raw: selfServiceMeansOwnership },
 	{ slug: 'kody-vs-executor', raw: kodyVsExecutor },
+	{
+		slug: 'openclaw-2-needs-a-home',
+		raw: openclaw2NeedsAHome,
+	},
 ]
 
 function compareBlogPosts(a: BlogPost, b: BlogPost): number {

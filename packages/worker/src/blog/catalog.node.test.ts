@@ -169,6 +169,15 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(comparison?.title).toBe('Kody vs Executor?')
 	expect(comparison?.date).toBe('2026-08-20')
 	expect(comparison?.placeholder).toBe(false)
+	const openclaw = getBlogPost('openclaw-2-needs-a-home')
+	expect(openclaw?.title).toBe('OpenClaw 2 needs a home')
+	expect(openclaw?.date).toBe('2026-08-31')
+	expect(openclaw?.placeholder).toBe(true)
+	expect(openclaw?.image).toBe('/images/openclaw-2-needs-a-home.webp')
+	expect(openclaw?.ogImage).toBe('/images/openclaw-2-needs-a-home-og.jpg')
+	expect((openclaw?.body ?? '').replace(/\s+/g, ' ')).toContain(
+		'openclaw mcp add kody',
+	)
 	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
 	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
