@@ -19,10 +19,8 @@ export {
 	AccountWorkflowsRoute,
 	accountWorkflowsRouteLoader,
 } from './account-workflows.tsx'
-export {
-	AccountActivityRoute,
-	accountActivityRouteLoader,
-} from './account-activity.tsx'
+export { AccountActivityRoute } from './account-activity.tsx'
+export { accountActivityRouteLoader } from './account-activity-shared.ts'
 export {
 	AccountMcpServersRoute,
 	accountMcpServersRouteLoader,

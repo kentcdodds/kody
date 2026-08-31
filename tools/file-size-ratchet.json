@@ -1,7 +1,5 @@
 {
-	"client-routes": [
-		"packages/worker/client/routes/account-activity.tsx"
-	],
+	"client-routes": [],
 	"node-tests": [
 		"packages/worker/src/account/export.node.test.ts",
 		"packages/worker/src/app/account-deletion.node.test.ts",
