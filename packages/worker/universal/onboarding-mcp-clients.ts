@@ -55,10 +55,10 @@ export const mcpClientTabs = [
  * that are not already represented. Devin stands in for Devin Desktop
  * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw is the
  * local-first personal-AI slot. ChatGPT.com, Claude Desktop, and Gemini
- * fill the three leftover seats after OpenClaw so a 4-column grid is
- * three full rows with Not listed. Grok.com, Grok CLI, and the Copilot
- * app stay under Not listed (Copilot desktop/CLI is already featured;
- * Aider is not a Kody connect path yet).
+ * fill the three leftover seats after OpenClaw so the auto-fill desktop
+ * grid lands on complete rows with Not listed (12 cards). Grok.com,
+ * Grok CLI, and the Copilot app stay under Not listed (Copilot
+ * desktop/CLI is already featured; Aider is not a Kody connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
