@@ -3,7 +3,7 @@ id: package_lifecycle
 title: Durable package lifecycle guide
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
-  forking a close community package, deferred workflows, and creating a durable
+  forking a close public package, deferred workflows, and creating a durable
   repo-backed package; test package-owned job wrappers safely.
 category: platform
 ---
@@ -50,7 +50,7 @@ and `kody.dependencies` are the request, and agents cannot widen those. Outbound
 emissions (email, paid APIs, third-party writes) are not invertible; use a
 package `dryRun` and fresh user confirmation before a live mutation.
 
-### Fork a close community package before creating
+### Fork a close public package before creating
 
 Community listings are excluded from general `search`. When you need durable
 reusable behavior and nothing in the user's account fits, call
@@ -64,8 +64,8 @@ If a listing is close to the user's goal:
 3. Review the forked source, adapt it to the user's intent (including the README
    `## Intent` section), then publish.
 
-Do not reimplement from scratch when a community package is already close.
-Create a new package only when no suitable listing exists.
+Do not reimplement from scratch when a public package is already close. Create a
+new package only when no suitable listing exists.
 
 ### Create a repo-backed package
 

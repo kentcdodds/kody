@@ -216,7 +216,7 @@ export function createCommunityOgMarkup(
 
 	return createOgFrame({
 		theme: input.theme,
-		label: 'Community package',
+		label: 'Public package',
 		children: [
 			createPackageIdentityRow(input),
 			{

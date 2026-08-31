@@ -188,7 +188,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				return
 			}
 			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load community package.')
+				throw new Error('Unable to load public package.')
 			}
 			if (payload.listing) {
 				rememberListingId(ref.pathname, payload.listing.id)
@@ -454,7 +454,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				!payload.agentPrompt
 			) {
 				throw new Error(
-					payload?.error ?? 'Unable to install this community package.',
+					payload?.error ?? 'Unable to install this public package.',
 				)
 			}
 			installOutcome = {
@@ -475,7 +475,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage =
 				error instanceof Error
 					? error.message
-					: 'Unable to install this community package.'
+					: 'Unable to install this public package.'
 			handle.update()
 		}
 	}
@@ -592,7 +592,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		if (!ref) {
 			return renderMissingListing(
-				'Community package not found',
+				'Public package not found',
 				'This listing is unavailable.',
 			)
 		}
@@ -633,7 +633,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			? 'Unable to load fork and report details for this listing.'
 			: showShellReady
 				? ''
-				: 'Loading community package details…'
+				: 'Loading public package details…'
 
 		return (
 			<article

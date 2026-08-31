@@ -42,9 +42,9 @@ capabilities available to the signed-in user.
 
 **Packages** turn useful code into a named, versioned capability. Package source
 lives in a repository, but published package code runs server-side in Kody's
-runtime. A community package is not owned merely because it is visible: fork it
-to create a saved package in your account, review it, and publish that owned
-copy before adapting or invoking it as yours.
+runtime. A public package is not owned merely because it is visible: fork it to
+create a saved package in your account, review it, and publish that owned copy
+before adapting or invoking it as yours.
 
 Each package gets isolated durable **`packageStorage()`** for runtime state such
 as cursors, preferences, and checkpoints. Source and versioned configuration
@@ -103,7 +103,7 @@ the owner operates the process. See
 1. Search for the outcome and inspect the exact capability shape.
 2. Connect the needed secret, integration, or remote MCP server.
 3. Use `execute` for a one-off composition and authenticated smoke test.
-4. Fork a close community package or author an owned package when the behavior
+4. Fork a close public package or author an owned package when the behavior
    should be reusable, reviewed, or scheduled.
 5. Keep runtime state in `packageStorage()` and expose only the app, webhook,
    export, or job surfaces the package needs. When the provider token is coarser

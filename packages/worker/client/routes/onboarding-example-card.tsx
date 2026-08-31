@@ -102,7 +102,7 @@ export function OnboardingExampleCard(
 				!payload.targetName
 			) {
 				throw new Error(
-					payload?.error ?? 'Unable to install this community package.',
+					payload?.error ?? 'Unable to install this public package.',
 				)
 			}
 			statusMessage =
@@ -118,7 +118,7 @@ export function OnboardingExampleCard(
 			errorMessage =
 				error instanceof Error
 					? error.message
-					: 'Unable to install this community package.'
+					: 'Unable to install this public package.'
 			handle.update()
 		}
 	}

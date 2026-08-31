@@ -17,7 +17,7 @@ export const productionPackageSourceSafetyPolicy =
 	'Production package source safety policy: never replace source history, force publish, or package_save over an existing package unless Kody has created a restorable backup snapshot and the user explicitly approved destructive overwrite. If existing source cannot be cloned or verified, stop and report the source recovery problem.'
 
 export const defaultPackagePrivateGuidance =
-	'Default new saved packages to `"private": true` in package.json unless the user explicitly wants public community publishing. Like npm, `"private": true` blocks community listings on this deployment. When package.json omits `"private"` on create, Kody always saves the new package with `"private": true` — even when confirm_private_visibility_change is true. To create a package eligible for community publishing, set `"private": false` explicitly in package.json and pass confirm_private_visibility_change: true after explicit user approval.'
+	'Visibility is a repo setting (`package_update` / `repo_update`), not package.json `"private"`. Leftover `"private"` in manifests is ignored for catalog listing. New packages are created private; set `changes.visibility: "public"` after the user asks to list them on /community.'
 
 export const destructiveOverwriteConfirmationField =
 	'confirm_destructive_overwrite'
@@ -29,7 +29,7 @@ export const privateVisibilityChangeConfirmationField =
 	'confirm_private_visibility_change'
 
 export const privateVisibilityChangeConfirmationDescription =
-	'Set to true only when the user explicitly approved changing package.json `"private"` or creating a package without `"private": true`. This flag is a confirmation gate, not a visibility request: it never changes `"private"` by itself. A new package whose manifest omits `"private"` is always saved with `"private": true`; send `"private": false` explicitly (plus this confirmation) to create a community-publishable package. This gates community publishing the same way npm blocks public registry publish for private packages.'
+	'Set to true only when the user explicitly approved changing package.json `"private"`. This flag does not change repo visibility: catalog listing is `package_update` `changes.visibility`. Leftover `"private"` in manifests is ignored for the catalog.'
 
 export function buildSourceRecoveryProblemMessage(input: {
 	source: EntitySourceRow
@@ -337,7 +337,7 @@ function buildPrivateVisibilityChangeConfirmationMessage(input: {
 	if (input.isNewPackage) {
 		return [
 			`${input.operation} would create a package that is not private-only (${describePackagePrivateField(afterValue)}).`,
-			`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves making the package eligible for public community publishing.`,
+			`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves changing package.json "private". This does not list the package on /community — use package_update changes.visibility for that.`,
 		].join(' ')
 	}
 	return [

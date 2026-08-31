@@ -1,6 +1,6 @@
 /**
  * Safe markdown rendering for untrusted, third-party authored content
- * (community package READMEs).
+ * (public package READMEs).
  *
  * Safety model (do not regress):
  * - Markdown is parsed with `marked`'s lexer only; its HTML renderer is never

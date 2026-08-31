@@ -16,14 +16,14 @@ import {
 } from './shared.ts'
 
 const communitySearchNoMatchGuidance =
-	'No community packages met the relevance floor for this query. Rephrase with the provider, data source, or concrete workflow you need; if nothing close exists, create a new package instead of adapting an unrelated result.'
+	'No public packages met the relevance floor for this query. Rephrase with the provider, data source, or concrete workflow you need; if nothing close exists, create a new package instead of adapting an unrelated result.'
 
 export const communitySearchCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'community_search',
 		description:
-			'Search public community package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Pass category to browse one closed listing category. Use `community_get` for full detail before forking.',
+			'Search public package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Pass category to browse one closed listing category. Use `community_get` for full detail before forking.',
 		keywords: [
 			'community',
 			'search',

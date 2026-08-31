@@ -93,9 +93,9 @@ function communityListingHead({
 }: DocumentHeadContext): DocumentHeadDescriptor {
 	const shell = loaderData?.communityDetailShell
 	if (!shell?.ok) {
-		return titleOnly('Community packages')
+		return titleOnly('Public packages')
 	}
-	const title = `${shell.name} — Kody community package`
+	const title = `${shell.name} — Kody public package`
 	return {
 		title,
 		canonicalPath: pathname,
@@ -252,7 +252,7 @@ const routeDocumentHeads = {
 	},
 	[routePattern(routes.community)]: publicPageHead(
 		'community',
-		'Community packages',
+		'Public packages',
 	),
 	[routePattern(routes.communityDetail)]: communityListingHead,
 	[routePattern(routes.communityPackage)]: communityListingHead,

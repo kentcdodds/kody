@@ -72,7 +72,7 @@ export function CommunityDetailContent(
 				href={routes.community.href()}
 				mix={css(backLinkCss)}
 			>
-				← Community packages
+				← Public packages
 			</a>
 
 			<header data-rise style={{ '--rise': '1' }} mix={css(detailHeadCss)}>

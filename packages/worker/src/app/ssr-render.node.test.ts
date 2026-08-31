@@ -1606,7 +1606,7 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	)
 	expect(html).toContain('How do I get started?')
 	expect(html).toContain(
-		'Your assistant is yours unless you publish a community package.',
+		'Your assistant is yours unless you publish a public package.',
 	)
 	expect(html).toContain('secret_get')
 	expect(html).toContain('<details')

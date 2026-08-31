@@ -117,14 +117,14 @@ export function OnboardingMcpChooserCard(
 			const payload = await readJson<InstallApiPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error(
-					payload?.error ?? 'Unable to fork the matching community package.',
+					payload?.error ?? 'Unable to fork the matching public package.',
 				)
 			}
 		} catch (caught) {
 			error =
 				caught instanceof Error
 					? caught.message
-					: 'Unable to fork the matching community package.'
+					: 'Unable to fork the matching public package.'
 			handle.update()
 		}
 	}

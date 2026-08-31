@@ -280,16 +280,17 @@ irreversible-side-effect guard when a smoke test should stay safe.
 Only after README `## Intent`, per-export JSDoc, and these checks pass (or the
 user explicitly skips a surface) treat the package as ready to run.
 
-## Community icon
+## Package icon
 
-Public community packages should include one root `community-icon.svg`,
-`community-icon.png`, `community-icon.webp`, `community-icon.jpg`, or
-`community-icon.jpeg`. Prefer a square visual with a simple silhouette that
-remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody stores
-a 256-pixel WebP derivative of that source (or a generated package-name fallback
-when the repository has no icon).
+Public packages should include one root `icon.svg`, `icon.png`, `icon.webp`,
+`icon.jpg`, or `icon.jpeg`. `community-icon.*` is still accepted. Prefer a
+square visual with a simple silhouette that remains legible at 56 pixels. Keep
+it under 2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of
+that source (or a generated package-name fallback when the repository has no
+icon).
 
-Publishing the package refreshes the community listing icon automatically. The
-candidate paths win in the order listed above, so when replacing an icon with a
-different format (for example svg → png), delete the superseded file in the same
-commit or the earlier path in that list keeps winning.
+Publishing the package refreshes the catalog listing icon automatically. The
+candidate paths win in the order `icon.*` then `community-icon.*` (svg, png,
+webp, jpg, jpeg in each group), so when replacing an icon with a different
+format (for example svg → png), delete the superseded file in the same commit or
+the earlier path in that list keeps winning.

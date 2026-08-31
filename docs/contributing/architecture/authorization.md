@@ -332,7 +332,7 @@ payloads. Text a user explicitly approves as part of a feedback submission is
 visible only through the dedicated feedback exception.
 
 **Admins separately moderate deliberately shared community content.** Public
-community listing snapshots can be reviewed for trust, featuring, delisting, and
+community listing snapshots can be reviewed for featuring, delisting, and
 deletion, and attributed community reports can be reviewed and resolved. Those
 community surfaces expose content users chose to publish or report; they do not
 grant access to private package source or unrelated account content.

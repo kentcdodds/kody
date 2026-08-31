@@ -181,7 +181,7 @@ async function seedOwnerPackage(input: {
 	return { entitySource, files }
 }
 
-test('community package flow works end-to-end through capability handlers', async () => {
+test('public package flow works end-to-end through capability handlers', async () => {
 	silenceIncidentalRuntimeWarnings()
 	using _artifactsMock = createMswNodeServer(
 		createArtifactsMswHandlers({

@@ -5,8 +5,8 @@ The decision and the why live in
 [0018 — Inbound CLA](./decisions/0018-inbound-cla.md).
 
 This page is the platform-repo contribution path. Most reusable behavior belongs
-in a [community package](../use/community-packages.md) (MIT, your copyright).
-You do not sign a CLA to publish or fork a community listing.
+in a [public package](../use/community-packages.md). You do not sign a CLA to
+publish or fork a catalog listing.
 
 ## What needs a CLA
 
@@ -83,6 +83,6 @@ review cannot skip it.
 
 ## Out of scope
 
-- Publishing or forking community packages
+- Publishing or forking public packages
 - Issues, discussions, and security reports that do not include a patch
 - Private vulnerability reports ([Security policy](../../SECURITY.md))

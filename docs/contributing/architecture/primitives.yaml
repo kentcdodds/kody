@@ -269,7 +269,7 @@ primitives:
 
   - id: community-listings
     group: assistant
-    name: Community package listings
+    name: Public package listings
     summary: Public pinned package listings, forks, ratings, and moderation.
     code:
       - packages/worker/src/community/

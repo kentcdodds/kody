@@ -61,11 +61,11 @@ Use `package.json` as the source of truth.
 Important fields:
 
 - `name` — npm-valid package name
-- `private` — when `true`, blocks public community publishing (like npm); new
-  packages default to `"private": true` unless the user explicitly wants a
-  public community listing
+- `private` — leftover npm-style field; ignored for catalog listing. Visibility
+  is a repo setting (`package_update` `changes.visibility`), default private.
 - `exports` — authoritative import/export map
-- `kody.id` — user-scoped Kody package id
+- `kody.id` — optional; if present must match the package name leaf (the URL
+  slug). Prefer omitting it and letting the leaf be the slug.
 - `kody.description` — short public tagline for search, detail, community
   listings, and share cards (~80–120 characters ideal; max 200). Prefer outcome
   phrasing (“Send transactional email via Resend”) over feature lists; put API
@@ -94,11 +94,12 @@ Important fields:
 `package.json` is the manifest.
 
 For predictable package resolution, saved packages must use a scoped
-`package.json.name`, and the leaf segment must match `kody.id`. For example,
-`@scope/my-package` must use `"kody": { "id": "my-package" }`. The scope is the
-account username. Changing your username on `/account` rewrites every saved
-package to the new `@{username}/…` name (including same-account `kody:@` imports
-and `kody.dependencies`), publishes an automatic update commit per package, and
+`package.json.name`. The leaf segment is the URL slug. `kody.id` is optional; if
+present it must match that leaf. For example, `@scope/my-package` may omit
+`kody.id` or set `"kody": { "id": "my-package" }`. The scope is the account
+username. Changing your username on `/account` rewrites every saved package to
+the new `@{username}/…` name (including same-account `kody:@` imports and
+`kody.dependencies`), publishes an automatic update commit per package, and
 republishes any community listing that was already pinned to that package's
 latest commit. Third-party integrations and dynamic invocations that hard-code a
 previous `@{username}` scope need updates from their owners.
@@ -582,7 +583,7 @@ each package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
 self-authored packages. When `listing_ahead` is true, `/account/packages`, the
 listing page, package search, and `{kodyId}:package` entity detail surface a
 **Fork outdated** / absorb next step. Full workflow:
-[Community packages → Forking a listing](./community-packages.md#forking-a-listing).
+[Public packages → Forking a listing](./community-packages.md#forking-a-listing).
 
 ## Author a saved package via direct git push
 

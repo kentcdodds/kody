@@ -107,7 +107,7 @@ export function OnboardingStarterCard(
 				!payload.agentPrompt
 			) {
 				throw new Error(
-					payload?.error ?? 'Unable to install this community package.',
+					payload?.error ?? 'Unable to install this public package.',
 				)
 			}
 			agentPrompt = payload.agentPrompt
@@ -122,7 +122,7 @@ export function OnboardingStarterCard(
 			errorMessage =
 				error instanceof Error
 					? error.message
-					: 'Unable to install this community package.'
+					: 'Unable to install this public package.'
 			handle.update()
 		}
 	}

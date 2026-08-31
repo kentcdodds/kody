@@ -5,7 +5,7 @@ public profiles, browse a personal **timeline** of followees' public activity,
 and **star** community listings (bookmarking, distinct from 1–5 star ratings).
 
 Profiles and social graphs live in the MCP **`community`** domain alongside
-[community packages](./community-packages.md). Private package source stays
+[public packages](./community-packages.md). Private package source stays
 isolated; social surfaces only show content that is deliberately public.
 
 ## Public profiles
@@ -36,17 +36,13 @@ app does not navigate away. Avatars appear on the public profile and in timeline
 and profile activity rows. Private profiles still keep the avatar for the owner;
 other users do not see it.
 
-Package privacy follows `package.json#private` (projected onto
-`saved_packages.is_private`):
+Package privacy follows the repo visibility flag (`saved_packages.is_private`),
+not `package.json#private`:
 
-- Packages with `"private": true` (or missing `private` on create) do not appear
-  on the public profile.
-- Public packages that are **not** community-published expose name, kody id,
-  description, and tags only — never README or source, and they cannot be forked
-  from the profile.
-- Community-published packages on the profile carry a listing signifier and a
-  fork affordance (same inert-fork rules as
-  [community packages](./community-packages.md#forking-a-listing)).
+- Private packages do not appear on the public profile.
+- Public packages on the profile are catalog listings: they carry a listing
+  signifier and a fork affordance (same inert-fork rules as
+  [public packages](./community-packages.md#forking-a-listing)).
 
 ### Private mode
 
@@ -105,7 +101,7 @@ Use the MCP `community` domain:
 
 Listing search/get also expose `star_count`; `community_get` can include
 stargazers and owner profile linkage for public owners. Package listing
-workflows stay in [Community packages](./community-packages.md).
+workflows stay in [Public packages](./community-packages.md).
 
 ## Privacy
 

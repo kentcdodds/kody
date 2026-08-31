@@ -27,7 +27,7 @@ export function renderMissingListing(title: string, message: string) {
 	return (
 		<article mix={css(detailArticleCss)}>
 			<a href={routes.community.href()} mix={css(backLinkCss)}>
-				← Community packages
+				← Public packages
 			</a>
 			<header mix={css(missingHeadCss)}>
 				<h1>{title}</h1>

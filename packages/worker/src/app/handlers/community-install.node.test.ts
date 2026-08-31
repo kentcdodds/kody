@@ -185,7 +185,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(serverError.status).toBe(500)
 	expect(await serverError.json()).toEqual({
 		ok: false,
-		error: 'Unable to install this community package.',
+		error: 'Unable to install this public package.',
 	})
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()

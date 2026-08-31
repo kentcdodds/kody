@@ -172,14 +172,11 @@ export async function loadConnectOauthNextSteps(input: {
 					communityListingUsesProvider(listing, providerName),
 			})
 		} catch (error) {
-			console.error(
-				'Failed to load post-OAuth community package suggestions.',
-				{
-					integrationName: input.integrationName,
-					query,
-					error,
-				},
-			)
+			console.error('Failed to load post-OAuth public package suggestions.', {
+				integrationName: input.integrationName,
+				query,
+				error,
+			})
 			listings = []
 		}
 	}

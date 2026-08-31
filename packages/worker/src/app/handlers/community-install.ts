@@ -124,7 +124,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 				}
 				console.error('Community install failed:', error)
 				return jsonResponse(
-					{ ok: false, error: 'Unable to install this community package.' },
+					{ ok: false, error: 'Unable to install this public package.' },
 					500,
 				)
 			}

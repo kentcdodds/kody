@@ -115,7 +115,7 @@ export function CommunityRoute(handle: Handle) {
 							mix={css(searchPillCss)}
 						>
 							<label htmlFor="pkg-q" mix={css(visuallyHiddenCss)}>
-								Search community packages
+								Search public packages
 							</label>
 							<input
 								id="pkg-q"

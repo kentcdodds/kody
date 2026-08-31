@@ -179,7 +179,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: 'Community package moved.',
+						error: 'Public package moved.',
 						redirectTo: getCommunityPackageFilesHref({
 							listingId: target.listingId,
 							ownerUsername: target.username,
@@ -203,7 +203,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 				: null
 			if (!data) {
 				return jsonResponse(
-					{ ok: false, error: 'Community package files not found.' },
+					{ ok: false, error: 'Public package files not found.' },
 					404,
 				)
 			}
@@ -235,7 +235,7 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 			})
 			if (!data) {
 				return jsonResponse(
-					{ ok: false, error: 'Community package files not found.' },
+					{ ok: false, error: 'Public package files not found.' },
 					404,
 				)
 			}

@@ -1131,9 +1131,9 @@ export type PrepareCommunityForkInput = {
 	kodyId?: string
 	/**
 	 * When set, the fork is rejected unless the snapshot still pins this
-	 * commit. One-click install passes the commit the user saw (and, for
-	 * untrusted listings, acknowledged), so an owner republish between the
-	 * confirmation and the fork cannot swap in unreviewed content.
+	 * commit. One-click install passes the commit the user saw (and
+	 * acknowledged), so an owner republish between the confirmation and the
+	 * fork cannot swap in unreviewed content.
 	 */
 	expectedPinnedCommit?: string
 	/**

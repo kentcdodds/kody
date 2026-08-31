@@ -319,13 +319,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
-  intact, `is_private` (0/1) projecting `package.json#private` for
-  public-profile and timeline filters, and `locked_at` (nullable ISO timestamp)
-  that blocks agent and reconcile promotion of `published_commit` until the
-  owner approves a specific commit in the account UI
+  intact, `is_private` (0/1) for repo visibility (default private; not
+  `package.json#private`) used by public-profile and timeline filters, and
+  `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
+  of `published_commit` until the owner approves a specific commit in the
+  account UI
 - `community_listings`, `community_forks`, `community_ratings`,
-  `community_reports`, `community_bans`: public community package listings and
-  moderation (see [Community packages](../community-packages.md))
+  `community_reports`, `community_bans`: public package listings and moderation
+  (see [Public packages](../community-packages.md))
 - `user_follows`: follow edges between MCP stable user ids (`follower_user_id` /
   `followee_user_id`)
 - `community_stars`: listing stargazer bookmarks (`listing_id` + `user_id`),
@@ -1458,7 +1459,7 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
    (for example `@kody/github`) into the caller's scope before importing or
    invoking it (decision
    [0036 — Person accounts do not run official platform packages](../decisions/0036-platform-packages-fork-only.md)).
-   Person-account and community package scopes never grant cross-user imports.
+   Person-account and public package scopes never grant cross-user imports.
    Platform-account packages may still compose with each other.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.

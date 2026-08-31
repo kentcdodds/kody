@@ -109,7 +109,7 @@ export function codeUsesIntegrationAuthHelpers(code: string) {
 /**
  * One-line packages-first steer when ad hoc execute repeatedly raw-fetches a
  * product API host. Integrations are auth; packages are how agents should call
- * the product. Prefer a close community package when forking.
+ * the product. Prefer a close public package when forking.
  */
 export function formatRawFetchHostNudge(input: {
 	hostname: string

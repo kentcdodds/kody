@@ -36,8 +36,8 @@ export function renderCommunityEmptyState(
 			<div mix={css(emptyCss)} data-testid="community-listings-empty">
 				<h2 mix={css(emptyTitleCss)}>Nothing matched that search.</h2>
 				<p mix={css(emptyTextCss)}>
-					No published community package matches <strong>{query}</strong> yet.
-					You can ask your agent to create it.
+					No published public package matches <strong>{query}</strong> yet. You
+					can ask your agent to create it.
 				</p>
 				<details mix={css(createPackageCss)}>
 					<summary mix={css(getPillButtonCss())}>
@@ -96,7 +96,7 @@ export function renderCommunityEmptyState(
 				The shelf is <em>waiting</em>.
 			</h2>
 			<p mix={css(emptyTextCss)}>
-				Nobody has published a community package yet. Ask your agent to share
+				Nobody has published a public package yet. Ask your agent to share
 				something useful — forks keep their own history.
 			</p>
 			<p mix={css(emptyCtaCss)}>

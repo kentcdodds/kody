@@ -1,4 +1,4 @@
-# Community packages
+# Public packages
 
 Public repos and packages are the community catalog. Visibility lives on the
 **repo record in D1** (default private), not `package.json#private`. Making a

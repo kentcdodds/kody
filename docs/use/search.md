@@ -4,9 +4,9 @@ The **search** tool finds **built-in capabilities**, **saved packages**, **saved
 integrations**, and **user secret references** (metadata only, not secret
 values).
 
-**Community package listings** are not included. Use the `community` domain
+**Public package listings** are not included. Use the `community` domain
 (`community_search`, `community_get`) or the public `/community` pages. See
-[Community packages](./community-packages.md) and
+[Public packages](./community-packages.md) and
 [Community profiles](./community-profiles.md).
 
 **Hidden saved packages** are excluded from ranked **query** results by default.

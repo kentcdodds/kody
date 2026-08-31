@@ -1,9 +1,9 @@
-# Community packages
+# Public packages
 
 Community listings let users on the same deployment share **pinned snapshots**
 of published saved packages. Listings are public read; forks stay **inert**
 until the forker publishes through a repo session. See
-[Community packages (usage)](../use/community-packages.md) for agent-facing
+[Public packages (usage)](../use/community-packages.md) for agent-facing
 workflows.
 
 ## Architecture overview

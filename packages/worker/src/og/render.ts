@@ -133,7 +133,7 @@ function truncateOgLine(text: string, maxLength: number): string {
  * only reads as a card floating inside a card.
  *
  * `label` is the optional short line opposite the wordmark, for a section name
- * ("Blog", "Community package"). Omit it rather than restating the host: the
+ * ("Blog", "Public package"). Omit it rather than restating the host: the
  * wordmark already says whose page this is.
  */
 export function createOgFrame(input: {

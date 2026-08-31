@@ -364,7 +364,7 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		buildConnectOauthCreateHelpersPrompt('github'),
 	)
 	expect(consoleError).toHaveBeenCalledWith(
-		'Failed to load post-OAuth community package suggestions.',
+		'Failed to load post-OAuth public package suggestions.',
 		expect.objectContaining({
 			integrationName: 'github',
 			query: 'github',

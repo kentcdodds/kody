@@ -23,10 +23,10 @@ reference, then run work through **execute**.
   `job_run_now` can trigger an existing package job immediately for debugging or
   catch-up runs, and `job_update` adjusts metadata (enable, kill switch,
   schedule, `expires_at`) without rewriting package source.
-- **Prefer a close community package before creating one.** Community listings
-  are excluded from general `search`. Use `community_search` and fork or adapt
-  when a listing is close to the goal; create a new package only when nothing
-  suitable exists. See [Community packages](./community-packages.md).
+- **Prefer a close public package before creating one.** Community listings are
+  excluded from general `search`. Use `community_search` and fork or adapt when
+  a listing is close to the goal; create a new package only when nothing
+  suitable exists. See [Public packages](./community-packages.md).
 - **Bootstrap integration-backed work before building.** When a package, package
   app, or workflow depends on OAuth, a saved secret, or a third-party API, use
   `search` and the `coding_guide_get` `integration_bootstrap` guide first.
