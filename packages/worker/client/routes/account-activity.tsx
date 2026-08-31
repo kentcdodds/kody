@@ -3,7 +3,6 @@ import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
-import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -12,18 +11,29 @@ import {
 	type AccountStatus,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { renderActivityRunDetail } from '#client/routes/account-activity-detail.tsx'
 import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
+	activityErrorReviewPrompt,
+	activityRoute,
+	buildActivityApiRequestUrl,
+	buildActivitySearch,
+	formatDurationMs,
+	getDataLatchKey,
+	readStatusFilter,
+	readSurfaceFilter,
+	readTriageFilter,
+	runDisplayName,
+	statusColor,
+	statusLabel,
+	statusFilterOptions,
+	surfaceFilterOptions,
+	surfaceLabel,
+	triageFilterOptions,
+} from '#client/routes/account-activity-shared.ts'
 import {
-	accountManagementNarrowMq,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	IdValue,
-	MetadataGrid,
-	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
 import {
 	RecordTable,
@@ -47,231 +57,9 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
-import { plainHighlightedCode } from '#universal/highlighted-code.ts'
-import {
-	cardTitleCss,
-	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
-	getGhostButtonCss,
-} from '#universal/styles/style-primitives.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(30))
-
-const activityErrorReviewPrompt = [
-	'Look at my open Kody activity errors.',
-	'Start with run_summary, then run_list for open errors, and run_get on the ones that matter.',
-	'Explain each failure and recommend whether to ignore it, mark it resolved, or fix something.',
-].join(' ')
-
-const accountActivityApiPath = '/account/activity.json'
-const activityRoute = createListDetailRoute('/account/activity')
-
-const statusFilterOptions: Array<{
-	value: AccountActivityStatusFilter
-	label: string
-}> = [
-	{ value: 'error', label: 'Errors' },
-	{ value: 'all', label: 'All' },
-	{ value: 'running', label: 'Running' },
-]
-
-const triageFilterOptions: Array<{
-	value: AccountActivityTriageFilter
-	label: string
-}> = [
-	{ value: 'open', label: 'Open' },
-	{ value: 'ignored', label: 'Ignored' },
-	{ value: 'resolved', label: 'Resolved' },
-	{ value: 'all', label: 'All triage' },
-]
-
-const surfaceFilterOptions: Array<{
-	value: AccountActivitySurfaceFilter
-	label: string
-}> = [
-	{ value: 'all', label: 'All surfaces' },
-	{ value: 'execute', label: 'Execute' },
-	{ value: 'export', label: 'Export' },
-	{ value: 'subscription', label: 'Subscription' },
-	{ value: 'app_fetch', label: 'App fetch' },
-	{ value: 'app_realtime', label: 'App realtime' },
-	{ value: 'job', label: 'Job' },
-	{ value: 'workflow', label: 'Workflow' },
-	{ value: 'retriever', label: 'Retriever' },
-	{ value: 'webhook', label: 'Webhook' },
-]
-
-function surfaceLabel(surface: AccountActivityRunListItem['surface']) {
-	const match = surfaceFilterOptions.find((option) => option.value === surface)
-	return match?.label ?? surface
-}
-
-function statusLabel(status: AccountActivityRunListItem['status']) {
-	switch (status) {
-		case 'error':
-			return 'Error'
-		case 'success':
-			return 'Success'
-		case 'running':
-			return 'Running'
-		default: {
-			const exhaustive: never = status
-			return exhaustive
-		}
-	}
-}
-
-function statusColor(status: AccountActivityRunListItem['status']) {
-	switch (status) {
-		case 'error':
-			return colors.error
-		case 'success':
-			return colors.primary
-		case 'running':
-			return colors.textMuted
-		default: {
-			const exhaustive: never = status
-			return exhaustive
-		}
-	}
-}
-
-function logLevelColor(
-	level: AccountActivityRunDetail['logs'][number]['level'],
-) {
-	switch (level) {
-		case 'error':
-			return colors.error
-		case 'warn':
-			return colors.dangerHover
-		case 'debug':
-			return colors.textMuted
-		case 'info':
-		case 'log':
-			return colors.text
-		default: {
-			const exhaustive: never = level
-			return exhaustive
-		}
-	}
-}
-
-function formatDurationMs(durationMs: number | null) {
-	if (durationMs == null) return '—'
-	if (durationMs < 1000) return `${durationMs} ms`
-	return `${(durationMs / 1000).toFixed(1)} s`
-}
-
-function runDisplayName(run: AccountActivityRunListItem) {
-	return run.name?.trim() || surfaceLabel(run.surface)
-}
-
-function readStatusFilter(href: string): AccountActivityStatusFilter {
-	const value = new URL(href, 'http://localhost').searchParams
-		.get('status')
-		?.trim()
-	if (value === 'all' || value === 'running' || value === 'error') return value
-	return 'error'
-}
-
-function readSurfaceFilter(href: string): AccountActivitySurfaceFilter {
-	const value = new URL(href, 'http://localhost').searchParams
-		.get('surface')
-		?.trim()
-	const match = surfaceFilterOptions.find((option) => option.value === value)
-	return match?.value ?? 'all'
-}
-
-function readTriageFilter(href: string): AccountActivityTriageFilter {
-	const params = new URL(href, 'http://localhost').searchParams
-	const value =
-		params.get('error_triage')?.trim() ?? params.get('triage')?.trim()
-	const match = triageFilterOptions.find((option) => option.value === value)
-	return match?.value ?? 'open'
-}
-
-function triageLabel(
-	run: Pick<AccountActivityRunListItem, 'status' | 'errorTriage'>,
-) {
-	if (run.status !== 'error') return '—'
-	switch (run.errorTriage) {
-		case 'ignored':
-			return 'Ignored'
-		case 'resolved':
-			return 'Resolved'
-		case null:
-			return 'Open'
-		default: {
-			const exhaustive: never = run.errorTriage
-			return exhaustive
-		}
-	}
-}
-
-function buildActivitySearch(input: {
-	status: AccountActivityStatusFilter
-	surface: AccountActivitySurfaceFilter
-	triage: AccountActivityTriageFilter
-}) {
-	const params = new URLSearchParams()
-	if (input.status !== 'error') params.set('status', input.status)
-	if (input.surface !== 'all') params.set('surface', input.surface)
-	if (input.triage !== 'open') params.set('error_triage', input.triage)
-	const search = params.toString()
-	return search ? `?${search}` : ''
-}
-
-function getDataLatchKey(href: string) {
-	const selection = activityRoute.getSelection(href)
-	const status = readStatusFilter(href)
-	const surface = readSurfaceFilter(href)
-	const triage = readTriageFilter(href)
-	const filterKey = `${status}:${surface}:${triage}`
-	return selection.selectedId
-		? `/account/activity/${encodeURIComponent(selection.selectedId)}?${filterKey}`
-		: `/account/activity?${filterKey}`
-}
-
-function buildActivityApiRequestUrl(href: string, cursor?: string | null) {
-	const requestUrl = new URL(accountActivityApiPath, 'http://localhost')
-	const status = readStatusFilter(href)
-	const surface = readSurfaceFilter(href)
-	const triage = readTriageFilter(href)
-	if (status !== 'error') requestUrl.searchParams.set('status', status)
-	else requestUrl.searchParams.set('status', 'error')
-	if (surface !== 'all') requestUrl.searchParams.set('surface', surface)
-	if (triage !== 'open') requestUrl.searchParams.set('error_triage', triage)
-	const selectedRunId = activityRoute.getSelection(href).selectedId
-	if (selectedRunId) {
-		requestUrl.searchParams.set('selected', selectedRunId)
-	}
-	if (cursor) {
-		requestUrl.searchParams.set('cursor', cursor)
-	}
-	return `${requestUrl.pathname}${requestUrl.search}`
-}
-
-export async function accountActivityRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildActivityApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountActivityLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load activity.')
-	}
-	return { accountActivity: payload }
-}
 
 function tryConsumeAccountActivityLoaderData(handle: Handle, href: string) {
 	return tryConsumeRouteLoaderData(handle, 'accountActivity', href)
@@ -706,233 +494,7 @@ export function AccountActivityRoute(handle: Handle) {
 							}
 							record={
 								detail ? (
-									<section
-										mix={css({
-											...recordBodyCss,
-											overflowWrap: 'anywhere',
-											'& > *': { minWidth: 0 },
-										})}
-									>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<h2 mix={css(cardTitleCss)}>{runDisplayName(detail)}</h2>
-											<p mix={css(descriptionCss)}>
-												{surfaceLabel(detail.surface)} run with{' '}
-												{detail.logCount === 1
-													? '1 captured log line'
-													: `${detail.logCount} captured log lines`}
-												.
-											</p>
-										</div>
-
-										<MetadataGrid
-											items={[
-												{
-													label: 'Status',
-													value: (
-														<span
-															mix={css({ color: statusColor(detail.status) })}
-														>
-															{statusLabel(detail.status)}
-														</span>
-													),
-												},
-												{
-													label: 'Triage',
-													value: triageLabel(detail),
-												},
-												{
-													label: 'Triage note',
-													value: detail.triageNote ?? '—',
-												},
-												{
-													label: 'Triaged at',
-													value: <TimestampValue value={detail.triagedAt} />,
-												},
-												{
-													label: 'Triaged by',
-													value: detail.triagedBy ?? '—',
-												},
-												{
-													label: 'Surface',
-													value: surfaceLabel(detail.surface),
-												},
-												{
-													label: 'Started',
-													value: <TimestampValue value={detail.startedAt} />,
-												},
-												{
-													label: 'Finished',
-													value: <TimestampValue value={detail.finishedAt} />,
-												},
-												{
-													label: 'Duration',
-													value: formatDurationMs(detail.durationMs),
-												},
-												{
-													label: 'Package id',
-													value: detail.packageId ? (
-														<IdValue
-															value={detail.packageId}
-															label="package id"
-														/>
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Job id',
-													value: detail.jobId ? (
-														<IdValue value={detail.jobId} label="job id" />
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Workflow id',
-													value: detail.workflowId ? (
-														<IdValue
-															value={detail.workflowId}
-															label="workflow id"
-														/>
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Storage id',
-													value: detail.storageId ? (
-														<IdValue
-															value={detail.storageId}
-															label="storage id"
-														/>
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Source id',
-													value: detail.sourceId ? (
-														<IdValue
-															value={detail.sourceId}
-															label="source id"
-														/>
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Published commit',
-													value: detail.publishedCommit ? (
-														<IdValue
-															value={detail.publishedCommit}
-															label="published commit"
-														/>
-													) : (
-														'—'
-													),
-												},
-												{
-													label: 'Run id',
-													value: <IdValue value={detail.id} label="run id" />,
-												},
-											]}
-										/>
-
-										{detail.errorMessage ? (
-											<AccountManagementMessage tone="error">
-												{detail.errorName
-													? `${detail.errorName}: ${detail.errorMessage}`
-													: detail.errorMessage}
-											</AccountManagementMessage>
-										) : null}
-
-										<div mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Logs</span>
-											{detail.logs.length === 0 ? (
-												<p mix={css({ margin: 0, color: colors.textMuted })}>
-													No log lines were captured for this run.
-												</p>
-											) : (
-												<pre
-													mix={css({
-														margin: 0,
-														padding: spacing.md,
-														borderRadius: radius.md,
-														border: `1px solid ${colors.border}`,
-														backgroundColor: colors.background,
-														color: colors.text,
-														fontFamily:
-															'ui-monospace, SFMono-Regular, Menlo, monospace',
-														fontSize: typography.fontSize.sm,
-														overflowX: 'auto',
-														whiteSpace: 'pre-wrap',
-														overflowWrap: 'anywhere',
-														display: 'grid',
-														gap: spacing.xs,
-													})}
-												>
-													{detail.logs.map((entry) => (
-														<span
-															key={`${entry.sequence}-${entry.level}`}
-															mix={css({
-																display: 'grid',
-																gridTemplateColumns: '4.5rem minmax(0, 1fr)',
-																gap: spacing.sm,
-																color: logLevelColor(entry.level),
-																[accountManagementNarrowMq]: {
-																	gridTemplateColumns: 'minmax(0, 1fr)',
-																	gap: spacing.xs,
-																},
-															})}
-														>
-															<span
-																mix={css({
-																	color: colors.textMuted,
-																	textTransform: 'uppercase',
-																	fontSize: typography.fontSize.xs,
-																	lineHeight: '1.5rem',
-																})}
-															>
-																{entry.level}
-															</span>
-															<span>{entry.message}</span>
-														</span>
-													))}
-												</pre>
-											)}
-										</div>
-
-										{Object.keys(detail.metadata).length > 0 ? (
-											<div mix={css(fieldCss)}>
-												<span mix={css(fieldLabelCss)}>Metadata</span>
-												<div
-													mix={css({
-														minWidth: 0,
-														'& pre': {
-															margin: 0,
-															padding: spacing.sm,
-															borderRadius: radius.md,
-															border: `1px solid ${colors.border}`,
-															fontFamily:
-																'ui-monospace, SFMono-Regular, Menlo, monospace',
-															fontSize: typography.fontSize.sm,
-															overflowX: 'auto',
-															whiteSpace: 'pre-wrap',
-															overflowWrap: 'anywhere',
-														},
-													})}
-												>
-													{renderHighlightedCode(
-														detail.metadataHighlighted ??
-															plainHighlightedCode(
-																JSON.stringify(detail.metadata, null, 2),
-																'json',
-															),
-													)}
-												</div>
-											</div>
-										) : null}
-									</section>
+									renderActivityRunDetail(detail)
 								) : waitingForDetail ? (
 									<p
 										mix={css({
