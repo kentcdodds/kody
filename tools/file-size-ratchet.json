@@ -1,6 +1,4 @@
 {
 	"client-routes": [],
-	"node-tests": [
-		"packages/worker/src/account/export.node.test.ts"
-	]
+	"node-tests": []
 }
