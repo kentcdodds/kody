@@ -791,7 +791,13 @@ export type AdminSystemEmailLoaderData = {
 export type AdminPlatformFeedbackListItem = {
 	id: string
 	submitter_user_id: string
-	category: 'friction' | 'bug' | 'experience' | 'suggestion' | 'other'
+	category:
+		| 'friction'
+		| 'bug'
+		| 'experience'
+		| 'suggestion'
+		| 'cancellation'
+		| 'other'
 	summary_untrusted: string
 	status: 'open' | 'triaged' | 'resolved' | 'dismissed'
 	reviewed_by_user_id: string | null

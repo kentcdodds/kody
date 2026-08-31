@@ -58,6 +58,7 @@ const categoryOptions = [
 	{ value: 'bug', label: 'Bug' },
 	{ value: 'experience', label: 'Experience' },
 	{ value: 'suggestion', label: 'Suggestion' },
+	{ value: 'cancellation', label: 'Cancellation' },
 	{ value: 'other', label: 'Other' },
 ] as const
 

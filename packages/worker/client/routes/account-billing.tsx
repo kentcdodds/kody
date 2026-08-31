@@ -42,6 +42,8 @@ import {
 
 const billingApiPath = '/account/billing.json'
 const billingCheckoutApiPath = '/account/billing/checkout.json'
+const billingCancellationFeedbackApiPath =
+	'/account/billing/cancellation-feedback.json'
 const billingPath = '/account/billing'
 const billingPortalPath = '/account/billing/portal'
 
@@ -147,7 +149,7 @@ function describeSubscriptionStatus(status: string): {
 			return {
 				label: 'Past due',
 				detail:
-					'Payment is past due, so paid plan limits are not active. Update your payment method in Manage subscription to restore your paid plan.',
+					'Payment is past due. Your paid plan limits stay in place while Stripe retries the charge, but update your payment method in Manage subscription so the subscription does not end.',
 				tone: 'action',
 			}
 		case 'unpaid':
@@ -243,6 +245,10 @@ export function AccountBillingRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
 	let checkoutPending: CheckoutPending = null
+	let cancellationFeedbackText = ''
+	let cancellationFeedbackPending = false
+	let cancellationFeedbackSent = false
+	let cancellationFeedbackError: string | null = null
 	const selectedIntervalByPlan: Record<PaidTier, BillingInterval> = {
 		standard: 'month',
 		pro: 'month',
@@ -298,6 +304,41 @@ export function AccountBillingRoute(handle: Handle) {
 			checkoutPending = null
 			handle.update()
 		}
+	}
+
+	async function submitCancellationFeedback() {
+		const details = cancellationFeedbackText.trim()
+		if (!details || cancellationFeedbackPending) return
+		cancellationFeedbackPending = true
+		cancellationFeedbackError = null
+		handle.update()
+		try {
+			const response = await fetch(billingCancellationFeedbackApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ details }),
+			})
+			const payload = await readJson<{ ok?: boolean; error?: string }>(response)
+			if (response.ok && payload?.ok) {
+				cancellationFeedbackSent = true
+			} else {
+				cancellationFeedbackError =
+					typeof payload?.error === 'string' && payload.error.length > 0
+						? payload.error
+						: 'Unable to send feedback. Try again shortly.'
+			}
+		} catch (error) {
+			cancellationFeedbackError =
+				error instanceof Error
+					? error.message
+					: 'Unable to send feedback. Try again shortly.'
+		}
+		cancellationFeedbackPending = false
+		handle.update()
 	}
 
 	async function loadBilling(signal: AbortSignal) {
@@ -473,6 +514,69 @@ export function AccountBillingRoute(handle: Handle) {
 								</p>
 							) : null}
 						</AccountManagementPanel>
+
+						{billing.cancelAt ? (
+							<AccountManagementPanel
+								title="Before you go"
+								description="What led you to cancel? A sentence or two goes straight to the operator and shapes what gets fixed."
+							>
+								{cancellationFeedbackSent ? (
+									<p mix={css(descriptionCss)}>
+										Thank you — your feedback is on its way.
+									</p>
+								) : (
+									<div mix={css({ display: 'grid', gap: spacing.sm })}>
+										<label mix={css({ display: 'grid', gap: spacing.xs })}>
+											<span mix={css(visuallyHiddenCss)}>
+												Cancellation feedback
+											</span>
+											<textarea
+												rows={3}
+												maxLength={8000}
+												placeholder="Too expensive, missing a feature, not useful enough…"
+												value={cancellationFeedbackText}
+												mix={[
+													on('input', (event) => {
+														cancellationFeedbackText = (
+															event.currentTarget as HTMLTextAreaElement
+														).value
+													}),
+													css({
+														padding: spacing.sm,
+														borderRadius: radius.md,
+														border: `1px solid ${colors.border}`,
+														backgroundColor: colors.background,
+														color: colors.text,
+														fontFamily: 'inherit',
+														fontSize: typography.fontSize.sm,
+														resize: 'vertical' as const,
+													}),
+												]}
+											/>
+										</label>
+										{cancellationFeedbackError ? (
+											<AccountManagementMessage tone="error">
+												{cancellationFeedbackError}
+											</AccountManagementMessage>
+										) : null}
+										<div>
+											<button
+												type="button"
+												disabled={cancellationFeedbackPending}
+												mix={[
+													on('click', () => void submitCancellationFeedback()),
+													css(secondaryButtonCss),
+												]}
+											>
+												{cancellationFeedbackPending
+													? 'Sending…'
+													: 'Send feedback'}
+											</button>
+										</div>
+									</div>
+								)}
+							</AccountManagementPanel>
+						) : null}
 
 						{showManageCta ? (
 							<AccountManagementPanel

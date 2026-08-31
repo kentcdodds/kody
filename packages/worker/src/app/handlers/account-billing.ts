@@ -23,6 +23,9 @@ import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
 } from '#worker/billing/subscription-sync.ts'
+import { enqueuePlatformFeedbackDispatch } from '#worker/platform-feedback/dispatch-queue-producer.ts'
+import { isPlatformFeedbackDomainError } from '#worker/platform-feedback/errors.ts'
+import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
 
 function billingErrorRedirect(request: Request, errorCode: string) {
 	const url = new URL('/account/billing', request.url)
@@ -174,6 +177,82 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.accountBillingCheckoutPost>
+}
+
+export function createAccountBillingCancellationFeedbackApiHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+
+			if (request.method !== 'POST') {
+				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+
+			const body = (await request.json().catch(() => null)) as {
+				details?: unknown
+			} | null
+			const details =
+				typeof body?.details === 'string' ? body.details.trim() : ''
+			if (!details) {
+				return jsonResponse(
+					{ ok: false, error: 'Share a sentence or two before sending.' },
+					400,
+				)
+			}
+			if (details.length > 8000) {
+				return jsonResponse(
+					{ ok: false, error: 'Feedback is limited to 8000 characters.' },
+					400,
+				)
+			}
+
+			const submitterUsername = user.username.trim()
+			if (!submitterUsername) {
+				return jsonResponse(
+					{ ok: false, error: 'Unable to submit feedback for this account.' },
+					409,
+				)
+			}
+
+			try {
+				const feedback = await submitPlatformFeedback({
+					db: env.APP_DB,
+					submitterUserId: user.mcpUser.userId,
+					submitterUsername,
+					submitterEmail: user.email,
+					category: 'cancellation',
+					summary: 'Subscription cancellation feedback',
+					details,
+				})
+				try {
+					await enqueuePlatformFeedbackDispatch({
+						queue: env.PLATFORM_FEEDBACK_DISPATCH_QUEUE,
+						feedbackId: feedback.id,
+					})
+				} catch (error) {
+					console.error('platform-feedback-dispatch-enqueue-failed', error)
+				}
+				void logAuditEvent({
+					category: 'account',
+					action: 'billing_cancellation_feedback',
+					result: 'success',
+					email: user.email,
+					ip: getRequestIp(request) ?? undefined,
+					path: new URL(request.url).pathname,
+				})
+				return jsonResponse({ ok: true })
+			} catch (error) {
+				if (isPlatformFeedbackDomainError(error)) {
+					return jsonResponse({ ok: false, error: error.message }, 429)
+				}
+				throw error
+			}
+		},
+	} satisfies Action<typeof routes.accountBillingCancellationFeedbackPost>
 }
 
 export function createAccountBillingSuccessHandler(env: Env) {

@@ -211,7 +211,7 @@ export function buildPastDueEmail(input: {
 		preheader: 'Your paid plan is waiting on a successful payment.',
 		heading: 'Your subscription is past due',
 		body: [
-			'Your Kody subscription is past due. Update your payment method to keep Standard or Pro limits. If payment stays failed, the account returns to the free plan.',
+			'Your Kody subscription is past due. Your paid limits stay in place while Stripe retries the charge, so nothing stops today — but update your payment method soon. If payment stays failed, the subscription ends and the account returns to the free plan.',
 		],
 		action: { label: 'Fix billing', url: input.billingUrl },
 		illustration: {

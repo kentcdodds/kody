@@ -29,7 +29,7 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			category: z
 				.enum(platformFeedbackCategories)
 				.describe(
-					'Stable feedback category: "bug" for reproducible defects, "friction" for capability/guide/package text that caused a wrong turn, "experience" for a poor overall experience, "suggestion" for a problem-first improvement idea, "other" when nothing fits.',
+					'Stable feedback category: "bug" for reproducible defects, "friction" for capability/guide/package text that caused a wrong turn, "experience" for a poor overall experience, "suggestion" for a problem-first improvement idea, "cancellation" for why the user is ending a paid subscription, "other" when nothing fits.',
 				),
 			summary: z
 				.string()
