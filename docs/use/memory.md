@@ -93,6 +93,12 @@ Use these through **`execute`**:
 Memory records can also include optional **`source_uris`** — opaque canonical
 document URLs such as GitHub files, R2 object URLs, or Notion pages.
 
+## Account download
+
+The signed-in user can download their own memories as JSON from
+`/account/memories`. The file is memories only: no credentials or other account
+primitives. Deleted memories are included only when **Include deleted** is on.
+
 ## Categories
 
 Memory categories are freeform strings. Kody does not force a closed list.
