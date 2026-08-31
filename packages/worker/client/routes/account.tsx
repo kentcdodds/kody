@@ -1,40 +1,26 @@
 import { type Handle, css } from 'remix/ui'
-import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
-import { on } from '#client/event-mixin.ts'
 import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
 import { AccountAvatarEditor } from '#client/routes/account-avatar-editor.tsx'
-import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { ProviderIcon } from '#client/provider-icons.tsx'
-import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type OnboardingChecklistLoaderData,
-	type AccountConnectionListItem,
 	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
-import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
-import { routes } from '#universal/routes.ts'
-import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	colors,
 	radius,
-	shadows,
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
-	getDangerPillCss,
 	getGhostButtonCss,
-	getPillButtonCss,
-	hoverMq,
 	mutedLinkCss,
-	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'
@@ -50,14 +36,12 @@ import {
 	AccountManagementShell,
 	AccountPageHeader,
 	accountActionsCss,
-	accountDisclosureCss,
-	accountFieldCss,
-	accountFieldLabelCss,
-	accountFieldNoteCss,
-	accountInputCss,
-	accountTextareaCss,
-	verifiedPillCss,
 } from '#client/routes/account-management-components.tsx'
+import { renderAccountProfilePanel } from '#client/routes/account-profile-panel.tsx'
+import {
+	createAccountConnections,
+	readConnectionCallbackMessage,
+} from '#client/routes/account-connections-panel.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import { shouldShowOnboardingChecklist } from '#client/routes/onboarding-checklist.tsx'
 import {
@@ -76,30 +60,6 @@ import {
 const emailChangeApiPath = '/account/email-change.json'
 const connectionsApiPath = '/account/connections.json'
 const accountAvatarApiPath = '/account/profile/avatar.json'
-
-const providerLabels: Record<string, string> = {
-	github: 'GitHub',
-	google: 'Google',
-	x: 'X',
-	discord: 'Discord',
-}
-
-/** One-shot message from the OAuth callback redirect query params. */
-function readConnectionCallbackMessage(href: string) {
-	const searchParams = new URL(href, 'http://localhost').searchParams
-	const linkedProvider = searchParams.get('oauthLinked')
-	if (linkedProvider) {
-		return {
-			text: `${providerLabels[linkedProvider] ?? linkedProvider} connected.`,
-			tone: 'info' as const,
-		}
-	}
-	const errorMessage = getOauthLoginErrorMessage(searchParams.get('oauthError'))
-	if (errorMessage) {
-		return { text: errorMessage, tone: 'error' as const }
-	}
-	return null
-}
 
 function isAccountPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/account'
@@ -172,154 +132,11 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let emailChangeMessage: string | null = null
 	let emailChangeTone: 'error' | 'info' = 'info'
-	let connectionsBusy = false
-	let connections: Array<AccountConnectionListItem> = []
-	let canDisconnect = true
-	let hasUsablePassword = false
-	let availableProviders: Array<{ id: string; label: string }> = []
-	let canSyncDiscordRoles = false
-	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
+	const accountConnections = createAccountConnections(handle)
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
 	let onboardingChecklist: OnboardingChecklistLoaderData | null = null
 	const loadLatch = createRouteLoadLatch()
-
-	function applyConnectionsPayload(payload: AccountConnectionsLoaderData) {
-		connections = payload.connections
-		canDisconnect = payload.canDisconnect
-		hasUsablePassword = payload.hasUsablePassword
-		availableProviders = payload.availableProviders
-		canSyncDiscordRoles = payload.canSyncDiscordRoles
-	}
-
-	async function handleConnectProvider(providerId: string) {
-		connectionsBusy = true
-		connectionsMessage = null
-		handle.update()
-		try {
-			const errorMessage = await startSocialSignIn(providerId, null)
-			if (errorMessage) {
-				connectionsMessage = { text: errorMessage, tone: 'error' }
-				connectionsBusy = false
-			}
-			// On success the browser is navigating to the provider; keep the
-			// busy state until the page unloads.
-		} catch {
-			connectionsMessage = {
-				text: 'Network error. Please try again.',
-				tone: 'error',
-			}
-			connectionsBusy = false
-		}
-		handle.update()
-	}
-
-	function discordMemberRoleMessage(status: string) {
-		switch (status) {
-			case 'assigned':
-				return 'Kody Discord roles updated.'
-			case 'not-in-guild':
-				return 'Join the Kody Discord first, then sync your roles.'
-			case 'not-configured':
-			case 'skipped':
-				return 'Discord role sync is not configured.'
-			case 'forbidden':
-				return 'Kody could not update your Discord roles. Please try again later.'
-			default:
-				return 'Unable to sync Discord roles.'
-		}
-	}
-
-	async function handleSyncDiscordMemberRole() {
-		connectionsBusy = true
-		connectionsMessage = null
-		handle.update()
-		try {
-			const response = await fetch(connectionsApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({ intent: 'sync-discord-role' }),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountConnectionsLoaderData & {
-					error?: string
-					discordMemberRole?: { status: string }
-				}
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to sync the Discord role.')
-			}
-			applyConnectionsPayload(payload)
-			const status = payload.discordMemberRole?.status ?? 'error'
-			connectionsMessage = {
-				text: discordMemberRoleMessage(status),
-				tone:
-					status === 'assigned' || status === 'not-in-guild' ? 'info' : 'error',
-			}
-		} catch (error) {
-			connectionsMessage = {
-				text:
-					error instanceof Error
-						? error.message
-						: 'Unable to sync the Discord role.',
-				tone: 'error',
-			}
-		} finally {
-			connectionsBusy = false
-			handle.update()
-		}
-	}
-
-	async function handleDisconnectProvider(providerId: string) {
-		connectionsBusy = true
-		connectionsMessage = null
-		handle.update()
-		try {
-			const response = await fetch(connectionsApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({ intent: 'disconnect', provider: providerId }),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountConnectionsLoaderData & { error?: string }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to disconnect the account.')
-			}
-			applyConnectionsPayload(payload)
-			connectionsMessage = {
-				text: `${providerLabels[providerId] ?? providerId} disconnected.`,
-				tone: 'info',
-			}
-		} catch (error) {
-			connectionsMessage = {
-				text:
-					error instanceof Error
-						? error.message
-						: 'Unable to disconnect the account.',
-				tone: 'error',
-			}
-		} finally {
-			connectionsBusy = false
-			handle.update()
-		}
-	}
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		needsOnboarding = payload?.needsOnboarding === true
@@ -359,7 +176,7 @@ export function AccountRoute(handle: Handle) {
 				throw new Error('Unable to load connected accounts.')
 			}
 			applyOnboardingPayload(onboarding)
-			applyConnectionsPayload(connectionsPayload)
+			accountConnections.applyPayload(connectionsPayload)
 			email = payload.email
 			emailVerified = payload.emailVerified
 			emailVerificationDelivery = payload.emailVerificationDelivery ?? null
@@ -743,7 +560,7 @@ export function AccountRoute(handle: Handle) {
 		draftUsername = routeData.username
 		applyProfileFields(routeData)
 		draftEmail = routeData.email
-		applyConnectionsPayload(connectionsData)
+		accountConnections.applyPayload(connectionsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (onboardingData) {
 			applyOnboardingPayload(onboardingData)
@@ -775,8 +592,7 @@ export function AccountRoute(handle: Handle) {
 		// mismatched SSR and duplicated the connections list during hydration.
 		if (!consumedCallbackMessage) {
 			consumedCallbackMessage = true
-			connectionsMessage =
-				readConnectionCallbackMessage(currentHref) ?? connectionsMessage
+			accountConnections.setMessage(readConnectionCallbackMessage(currentHref))
 		}
 		const isSaving = saveStatus === 'saving'
 		const isSendingEmailChange = emailChangeStatus === 'sending'
@@ -829,298 +645,45 @@ export function AccountRoute(handle: Handle) {
 							shouldShowOnboardingChecklist(onboardingChecklist))
 							? renderOnboardingBanner({ checklist: onboardingChecklist })
 							: null}
-						<AccountManagementPanel
-							title="Profile"
-							description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."
-						>
-							<form
-								mix={[
-									css({ display: 'grid', gap: spacing.md, maxWidth: '34rem' }),
-									on('submit', handleProfileSubmit),
-								]}
-							>
-								<div mix={css(avatarSectionCss)} data-testid="account-avatar">
-									<label
-										mix={css({
-											...avatarEditCss,
-											cursor:
-												avatarStatus !== 'idle' || isSaving
-													? 'not-allowed'
-													: 'pointer',
-											opacity: avatarStatus !== 'idle' || isSaving ? 0.7 : 1,
-										})}
-									>
-										<UserAvatar
-											displayName={draftDisplayName || username}
-											avatarUrl={avatarUrl}
-											size={accountAvatarSize}
-											testId="account-avatar-image"
-										/>
-										<input
-											type="file"
-											name="avatar"
-											accept="image/*,.heic,.heif"
-											disabled={avatarStatus !== 'idle' || isSaving}
-											data-testid="account-avatar-file"
-											mix={[
-												css(visuallyHiddenCss),
-												on('change', (event) => {
-													void handleAvatarSelected(event)
-												}),
-											]}
-										/>
-										<span
-											data-avatar-edit-affordance
-											mix={css(avatarEditAffordanceCss)}
-										>
-											{avatarEditIcon()}
-										</span>
-										<span mix={css(visuallyHiddenCss)}>Change avatar</span>
-									</label>
-									{avatarUrl ? (
-										<button
-											type="button"
-											disabled={avatarStatus !== 'idle' || isSaving}
-											mix={[
-												css(compactGhostButtonCss),
-												on('click', () => {
-													void handleRemoveAvatar()
-												}),
-											]}
-										>
-											{avatarStatus === 'removing'
-												? 'Removing...'
-												: 'Remove avatar'}
-										</button>
-									) : null}
-								</div>
-								<label mix={css(accountFieldCss)}>
-									<span mix={css(accountFieldLabelCss)}>Username</span>
-									<input
-										type="text"
-										name="username"
-										data-field-ring
-										required
-										autoComplete="username"
-										pattern="[A-Za-z0-9][A-Za-z0-9-]{1,30}[A-Za-z0-9]"
-										title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
-										value={draftUsername}
-										mix={[
-											css(accountInputCss),
-											on('input', updateDraftUsername),
-										]}
-									/>
-								</label>
-								<label mix={css(accountFieldCss)}>
-									<span mix={css(accountFieldLabelCss)}>Display name</span>
-									<input
-										type="text"
-										name="displayName"
-										data-field-ring
-										maxLength={50}
-										autoComplete="nickname"
-										value={draftDisplayName}
-										mix={[
-											css(accountInputCss),
-											on('input', (event) => {
-												draftDisplayName = (
-													event.currentTarget as HTMLInputElement
-												).value
-												handle.update()
-											}),
-										]}
-									/>
-								</label>
-								<label mix={css(accountFieldCss)}>
-									<span mix={css(accountFieldLabelCss)}>Bio</span>
-									<textarea
-										name="bio"
-										data-field-ring
-										maxLength={500}
-										rows={3}
-										value={draftBio}
-										mix={[
-											css(accountTextareaCss),
-											on('input', (event) => {
-												draftBio = (event.currentTarget as HTMLTextAreaElement)
-													.value
-												handle.update()
-											}),
-										]}
-									/>
-								</label>
-								<fieldset mix={css({ margin: 0, padding: 0, border: 'none' })}>
-									<legend mix={css(accountFieldLabelCss)}>
-										Profile visibility
-									</legend>
-									<label
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											alignItems: 'center',
-											marginTop: spacing.sm,
-										})}
-									>
-										<input
-											type="radio"
-											name="profileVisibility"
-											checked={draftProfileVisibility === 'public'}
-											mix={[
-												on('change', () => {
-													draftProfileVisibility = 'public'
-													handle.update()
-												}),
-											]}
-										/>
-										<span>Public</span>
-									</label>
-									<label
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											alignItems: 'center',
-											marginTop: spacing.xs,
-										})}
-									>
-										<input
-											type="radio"
-											name="profileVisibility"
-											checked={draftProfileVisibility === 'private'}
-											mix={[
-												on('change', () => {
-													draftProfileVisibility = 'private'
-													handle.update()
-												}),
-											]}
-										/>
-										<span>Private</span>
-									</label>
-									<p mix={css(accountFieldNoteCss)}>
-										Private hides your profile, public package list, and
-										activity from others.
-									</p>
-								</fieldset>
-								<p mix={css(accountFieldNoteCss)}>
-									Email: {email}
-									{emailVerified ? (
-										<span mix={css(verifiedPillCss)}>verified</span>
-									) : (
-										' (unverified)'
-									)}
-								</p>
-								<p mix={css({ margin: 0 })}>
-									<a
-										href={routes.profile.href({ username })}
-										mix={css(mutedLinkCss)}
-									>
-										View public profile
-									</a>
-								</p>
-								{normalizedDraftUsername !== username ? (
-									<p mix={css({ color: colors.textMuted, margin: 0 })}>
-										Changing your username updates every saved package to the
-										new <code>@{normalizedDraftUsername}</code> scope with an
-										automatic commit. That can affect third-party integrations
-										and dynamic invocations that still reference{' '}
-										<code>@{username}</code>. Community listings already pinned
-										to the latest package commit are republished automatically.
-									</p>
-								) : null}
-								<div>
-									<button
-										type="submit"
-										disabled={isSaving || profileUnchanged}
-										mix={css(compactPillButtonCss)}
-									>
-										{isSaving ? 'Saving...' : 'Save profile'}
-									</button>
-								</div>
-							</form>
-							<details
-								mix={css({
-									...accountDisclosureCss,
-									marginTop: '0.6rem',
-								})}
-							>
-								<summary>Change email</summary>
-								<form
-									{...passwordManagerIgnoreProps}
-									mix={[
-										css({
-											display: 'grid',
-											gap: spacing.md,
-											maxWidth: '26rem',
-										}),
-										on('submit', handleEmailChangeSubmit),
-									]}
-								>
-									<p mix={css(accountFieldNoteCss)}>
-										Enter your current password. We will send a verification
-										link to the new address before changing your account email.
-									</p>
-									<label mix={css(accountFieldCss)}>
-										<span mix={css(accountFieldLabelCss)}>New email</span>
-										<input
-											type="email"
-											name="email"
-											data-field-ring
-											required
-											autoComplete="email"
-											value={draftEmail}
-											mix={[
-												css(accountInputCss),
-												on('input', updateDraftEmail),
-											]}
-										/>
-									</label>
-									<label mix={css(accountFieldCss)}>
-										<span mix={css(accountFieldLabelCss)}>
-											Current password
-										</span>
-										<input
-											type="password"
-											name="password"
-											data-field-ring
-											required
-											{...passwordManagerIgnoreProps}
-											value={emailChangePassword}
-											mix={[
-												css(accountInputCss),
-												on('input', updateEmailChangePassword),
-											]}
-										/>
-									</label>
-									<div>
-										<button
-											type="submit"
-											disabled={
-												isSendingEmailChange ||
-												normalizedDraftEmail === email.trim().toLowerCase()
-											}
-											mix={css(compactGhostButtonCss)}
-										>
-											{isSendingEmailChange
-												? 'Sending...'
-												: 'Send verification link'}
-										</button>
-									</div>
-									{emailChangeMessage ? (
-										<p
-											role="status"
-											mix={css({
-												color:
-													emailChangeTone === 'error'
-														? colors.error
-														: colors.text,
-												margin: 0,
-											})}
-										>
-											{emailChangeMessage}
-										</p>
-									) : null}
-								</form>
-							</details>
-						</AccountManagementPanel>
+						{renderAccountProfilePanel({
+							email,
+							emailVerified,
+							username,
+							draftUsername,
+							draftDisplayName,
+							draftBio,
+							draftProfileVisibility,
+							draftEmail,
+							emailChangePassword,
+							avatarUrl,
+							avatarStatus,
+							isSaving,
+							isSendingEmailChange,
+							profileUnchanged,
+							normalizedDraftUsername,
+							normalizedDraftEmail,
+							emailChangeMessage,
+							emailChangeTone,
+							onProfileSubmit: handleProfileSubmit,
+							onEmailChangeSubmit: handleEmailChangeSubmit,
+							onAvatarSelected: handleAvatarSelected,
+							onRemoveAvatar: () => void handleRemoveAvatar(),
+							onDraftUsernameInput: updateDraftUsername,
+							onDraftDisplayNameChange: (value) => {
+								draftDisplayName = value
+								handle.update()
+							},
+							onDraftBioChange: (value) => {
+								draftBio = value
+								handle.update()
+							},
+							onDraftProfileVisibilityChange: (value) => {
+								draftProfileVisibility = value
+								handle.update()
+							},
+							onDraftEmailInput: updateDraftEmail,
+							onEmailChangePasswordInput: updateEmailChangePassword,
+						})}
 						<AccountManagementPanel
 							title="Security"
 							description="Protect your account with two-factor authentication, or sign in without a password using passkeys."
@@ -1134,153 +697,7 @@ export function AccountRoute(handle: Handle) {
 								</a>
 							</div>
 						</AccountManagementPanel>
-						<AccountManagementPanel
-							title="Connected accounts"
-							description="Sign in with GitHub, Google, X, or Discord by connecting them to this account. Connections with the same verified email also link automatically at sign-in."
-							ariaLabel="Connected accounts"
-						>
-							{connectionsMessage ? (
-								<p
-									role="status"
-									mix={css({
-										color:
-											connectionsMessage.tone === 'error'
-												? colors.error
-												: colors.text,
-										margin: 0,
-									})}
-								>
-									{connectionsMessage.text}
-								</p>
-							) : null}
-							<div mix={css({ display: 'grid', gap: spacing.md })}>
-								{connections.length > 0 ? (
-									<ul
-										mix={css({
-											listStyle: 'none',
-											padding: 0,
-											margin: 0,
-											display: 'grid',
-											gap: spacing.md,
-										})}
-									>
-										{connections.map((connection) => (
-											<li
-												key={connection.provider}
-												mix={css({
-													display: 'flex',
-													justifyContent: 'space-between',
-													alignItems: 'center',
-													gap: spacing.md,
-													flexWrap: 'wrap',
-												})}
-											>
-												<span mix={css({ display: 'grid', gap: spacing.xs })}>
-													<span
-														mix={css({
-															display: 'inline-flex',
-															alignItems: 'center',
-															gap: spacing.sm,
-															fontWeight: typography.fontWeight.medium,
-															color: colors.text,
-														})}
-													>
-														<ProviderIcon providerId={connection.provider} />
-														{connection.label}
-													</span>
-													<span
-														mix={css({
-															color: colors.textMuted,
-															fontSize: typography.fontSize.sm,
-														})}
-													>
-														{connection.displayName
-															? `Connected as ${connection.displayName}`
-															: 'Connected'}
-													</span>
-													{connection.provider === 'discord' ? (
-														<a
-															href={kodyDiscordInviteUrl}
-															target="_blank"
-															rel="noreferrer"
-															mix={css(mutedLinkCss)}
-														>
-															Join the Kody Discord
-														</a>
-													) : null}
-												</span>
-												<span
-													mix={css({
-														display: 'flex',
-														gap: spacing.sm,
-														flexWrap: 'wrap',
-													})}
-												>
-													{connection.provider === 'discord' &&
-													canSyncDiscordRoles ? (
-														<button
-															type="button"
-															disabled={connectionsBusy}
-															mix={[
-																css(compactGhostButtonCss),
-																on('click', handleSyncDiscordMemberRole),
-															]}
-														>
-															Sync Discord roles
-														</button>
-													) : null}
-													<button
-														type="button"
-														disabled={connectionsBusy || !canDisconnect}
-														title={
-															canDisconnect
-																? undefined
-																: 'This connection is your only way to sign in. Set a password or register a passkey first.'
-														}
-														mix={[
-															css(dangerButtonCss),
-															on('click', () =>
-																handleDisconnectProvider(connection.provider),
-															),
-														]}
-													>
-														Disconnect
-													</button>
-												</span>
-											</li>
-										))}
-									</ul>
-								) : (
-									<p mix={css({ color: colors.textMuted, margin: 0 })}>
-										No accounts connected yet.
-									</p>
-								)}
-								{availableProviders.length > 0 ? (
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.md,
-											flexWrap: 'wrap',
-										})}
-									>
-										{availableProviders.map((provider) => (
-											<button
-												key={provider.id}
-												type="button"
-												disabled={connectionsBusy}
-												mix={[
-													css(compactGhostButtonCss),
-													on('click', () => handleConnectProvider(provider.id)),
-												]}
-											>
-												<ProviderIcon providerId={provider.id} />
-												Connect {provider.label}
-											</button>
-										))}
-									</div>
-								) : null}
-							</div>
-						</AccountManagementPanel>
+						{accountConnections.render()}
 						<AccountManagementPanel
 							title="Your data"
 							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
@@ -1312,7 +729,9 @@ export function AccountRoute(handle: Handle) {
 							title="Delete account"
 							description="Permanently delete this Kody account and every isolated store attached to it. This cannot be undone."
 						>
-							<AccountDeletePanel hasUsablePassword={hasUsablePassword} />
+							<AccountDeletePanel
+								hasUsablePassword={accountConnections.hasUsablePassword}
+							/>
 						</AccountManagementPanel>
 					</>
 				) : null}
@@ -1369,72 +788,4 @@ export function AccountRoute(handle: Handle) {
 	}
 }
 
-/* `.account-form .button` / `.account-actions .button` — the prototype's
- * compact pill sizing for in-section actions. */
-const compactPillButtonCss = getPillButtonCss({ size: 'sm' })
-
 const compactGhostButtonCss = getGhostButtonCss({ size: 'sm' })
-
-const dangerButtonCss = getDangerPillCss({ size: 'sm' })
-
-const accountAvatarSize = 128
-
-const avatarSectionCss = {
-	display: 'grid',
-	gap: spacing.sm,
-	justifyItems: 'start' as const,
-}
-
-const avatarEditCss = {
-	position: 'relative' as const,
-	display: 'inline-block',
-	width: `${accountAvatarSize}px`,
-	height: `${accountAvatarSize}px`,
-	borderRadius: radius.full,
-	[hoverMq]: {
-		'& [data-avatar-edit-affordance]': {
-			opacity: 0,
-		},
-		'&:hover [data-avatar-edit-affordance], &:focus-within [data-avatar-edit-affordance]':
-			{
-				opacity: 1,
-			},
-	},
-}
-
-const avatarEditAffordanceCss = {
-	position: 'absolute' as const,
-	right: '0.15rem',
-	bottom: '0.15rem',
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '2.25rem',
-	height: '2.25rem',
-	borderRadius: radius.full,
-	backgroundColor: colors.surface,
-	color: colors.text,
-	border: `1px solid ${colors.border}`,
-	boxShadow: shadows.md,
-	opacity: 1,
-	pointerEvents: 'none' as const,
-}
-
-function avatarEditIcon() {
-	return (
-		<svg
-			viewBox="0 0 24 24"
-			width="16"
-			height="16"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="M12 20h9" />
-			<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-		</svg>
-	)
-}

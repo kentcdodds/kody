@@ -10,6 +10,8 @@ import {
 	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
+	buildOpenClawMcpAddCommand,
+	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
@@ -129,6 +131,21 @@ test('onboarding MCP client builders emit the structured configs each host expec
 				type: 'remote',
 				url: mcpServerUrl,
 				enabled: true,
+			},
+		},
+	})
+	expect(buildOpenClawMcpAddCommand(mcpServerUrl)).toBe(
+		`openclaw mcp add kody --url ${mcpServerUrl} --transport streamable-http --auth oauth`,
+	)
+	expect(JSON.parse(buildOpenClawMcpJson(mcpServerUrl))).toEqual({
+		mcp: {
+			servers: {
+				kody: {
+					url: mcpServerUrl,
+					transport: 'streamable-http',
+					auth: 'oauth',
+					enabled: true,
+				},
 			},
 		},
 	})

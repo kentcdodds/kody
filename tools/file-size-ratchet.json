@@ -1,22 +1,5 @@
 {
-	"client-routes": [
-		"packages/worker/client/routes/account-activity.tsx",
-		"packages/worker/client/routes/account-email.tsx",
-		"packages/worker/client/routes/account-jobs.tsx",
-		"packages/worker/client/routes/account-mcp-servers.tsx",
-		"packages/worker/client/routes/account-secrets.tsx",
-		"packages/worker/client/routes/account.tsx",
-		"packages/worker/client/routes/admin-codemods.tsx",
-		"packages/worker/client/routes/admin-insights.tsx",
-		"packages/worker/client/routes/admin-platform-integrations.tsx",
-		"packages/worker/client/routes/admin-users.tsx",
-		"packages/worker/client/routes/community-detail.tsx",
-		"packages/worker/client/routes/home.tsx",
-		"packages/worker/client/routes/login.tsx",
-		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx",
-		"packages/worker/client/routes/onboarding.tsx",
-		"packages/worker/client/routes/record-table.tsx"
-	],
+	"client-routes": [],
 	"node-tests": [
 		"packages/worker/src/account/export.node.test.ts",
 		"packages/worker/src/app/account-deletion.node.test.ts",

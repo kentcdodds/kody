@@ -5,6 +5,7 @@ import { OnboardingMcpClientTabs } from './onboarding-mcp-client-tabs.tsx'
 import {
 	buildClaudeCodeAddCommand,
 	buildCodexMcpAddCommand,
+	buildOpenClawMcpAddCommand,
 	defaultKodyMcpUrl,
 	grokBotInstallUrl,
 	kodyCursorAddPluginCommand,
@@ -22,11 +23,17 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(picker).toContain('data-testid="onboarding-agent-other"')
 	expect(picker).toContain('data-testid="onboarding-agent-grok-bot"')
+	expect(picker).toContain('data-testid="onboarding-agent-openclaw"')
+	expect(picker).toContain(
+		'href="/onboarding?agent=openclaw&amp;surface=desktop"',
+	)
 	expect(picker).not.toContain('data-testid="onboarding-agent-instructions"')
 	expect(picker).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
 	expect(picker).not.toContain(
 		'href="/onboarding?agent=grok-cli&amp;surface=desktop"',
 	)
+	expect(picker).toContain('/images/icons/cursor.svg')
+	expect(picker).toContain('/images/icons/grokbot.svg')
 
 	const cursor = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -100,4 +107,27 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(mobile).toContain('data-surface="mobile"')
 	expect(mobile).toContain(grokBotInstallUrl)
 	expect(mobile).not.toContain('data-surface="desktop"')
+
+	const openclaw = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'openclaw',
+		}),
+	)
+	expect(openclaw).toContain('data-agent="openclaw"')
+	expect(openclaw).toContain(buildOpenClawMcpAddCommand(defaultKodyMcpUrl))
+	expect(openclaw).toContain('openclaw mcp login kody')
+	expect(openclaw).toContain('openclaw mcp doctor kody --probe')
+	expect(openclaw).not.toContain('on a computer')
+
+	const openclawMobile = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'openclaw',
+			surface: 'mobile',
+		}),
+	)
+	expect(openclawMobile).toContain('data-surface="mobile"')
+	expect(openclawMobile).toContain('openclaw mcp login kody')
+	expect(openclawMobile).toContain('on a computer')
 })

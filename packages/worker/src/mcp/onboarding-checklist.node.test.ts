@@ -103,7 +103,7 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 	expect(doneById['connect-integration']).toBe(true)
 	expect(progressed.complete).toBe(false)
 
-	// Dismissal writes the users column and round-trips without a leftover value.
+	// Dismissal writes users.onboarding_checklist_dismissed_at and round-trips.
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)

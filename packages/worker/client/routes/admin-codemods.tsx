@@ -1,13 +1,31 @@
-import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
-	descriptionCss,
+	type LiveRunItem,
+	type PageStatus,
+	type RunMode,
+	type RunPhase,
+	adminCodemodsApiPath,
+	adminCodemodsRunApiPath,
+	adminCodemodsRunStopApiPath,
+	formatSummaryCounts,
+	isAdminCodemodsPath,
+	maxRunSteps,
+	mergeSummaryCounts,
+	parseCommaSeparatedIds,
+	runModes,
+} from '#client/routes/admin-codemods-shared.ts'
+import {
+	renderCodemodItemsTable,
+	renderRegisteredCodemodsPanel,
+	renderRunHistoryPanel,
+} from '#client/routes/admin-codemods-sections.tsx'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
+import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerPillCss,
@@ -23,131 +41,14 @@ import {
 	accountInputCss,
 } from './account-management-components.tsx'
 import {
-	RecordTable,
-	recordBodyCss,
-	recordCellClamp,
-	recordStampCss,
-	type RecordTableColumn,
-} from './record-table.tsx'
-
-/**
- * The live run and the history drill-down list the same item shape, so they
- * share one column set.
- */
-const codemodItemColumns: Array<RecordTableColumn> = [
-	{ key: 'kodyId', label: 'kodyId', primary: true },
-	{ key: 'userId', label: 'userId', drop: 2 },
-	{ key: 'status', label: 'status' },
-	{ key: 'changedPaths', label: 'changedPaths', drop: 1 },
-	{ key: 'findings', label: 'findings', drop: 3 },
-	{ key: 'error', label: 'error' },
-]
-
-const clampedCellCss = css(recordCellClamp(24))
-import {
 	type AdminCodemodListItem,
 	type AdminCodemodRunItemListItem,
 	type AdminCodemodRunItemsLoaderData,
 	type AdminCodemodRunListItem,
 	type AdminCodemodsLoaderData,
 } from '#universal/loader-data.ts'
-import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
 
 const selectCss = getSelectCss()
-
-type PageStatus = 'loading' | 'ready' | 'error'
-type RunMode = 'scan' | 'dry-run' | 'apply' | 'revert'
-type RunPhase = 'idle' | 'running' | 'complete' | 'error'
-
-type LiveRunItem = {
-	itemId: string
-	userId: string
-	packageId: string
-	kodyId: string
-	status: string
-	changedPaths: Array<string>
-	findings: Array<{ path: string | null; message: string }>
-	error: string | null
-}
-
-const adminCodemodsApiPath = '/admin/codemods.json'
-const adminCodemodsRunApiPath = '/admin/codemods/run.json'
-const adminCodemodsRunStopApiPath = '/admin/codemods/run/stop.json'
-const maxRunSteps = 200
-
-const runModes = [
-	'scan',
-	'dry-run',
-	'apply',
-	'revert',
-] as const satisfies ReadonlyArray<RunMode>
-
-function isAdminCodemodsPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/codemods'
-}
-
-function parseCommaSeparatedIds(value: string): Array<string> {
-	return value
-		.split(',')
-		.map((part) => part.trim())
-		.filter((part) => part.length > 0)
-}
-
-function mergeSummaryCounts(
-	left: Record<string, number>,
-	right: Partial<Record<string, number>>,
-) {
-	const next = { ...left }
-	for (const [status, count] of Object.entries(right)) {
-		if (typeof count !== 'number') continue
-		next[status] = (next[status] ?? 0) + count
-	}
-	return next
-}
-
-function formatSummaryCounts(summary: Record<string, number>) {
-	const entries = Object.entries(summary).sort(([left], [right]) =>
-		left.localeCompare(right),
-	)
-	if (entries.length === 0) return 'No items yet'
-	return entries.map(([status, count]) => `${status}: ${count}`).join(' · ')
-}
-
-function formatFindings(
-	findings: Array<{ path: string | null; message: string }>,
-) {
-	if (findings.length === 0) return '—'
-	return findings
-		.map((finding) =>
-			finding.path ? `${finding.path}: ${finding.message}` : finding.message,
-		)
-		.join('; ')
-}
-
-export async function adminCodemodsRouteLoader(
-	_url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const response = await fetch(adminCodemodsApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	if (response.status === 403) {
-		throw new Error('You do not have permission to view package codemods.')
-	}
-	const payload = await readJson<AdminCodemodsLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load package codemods.')
-	}
-	return { adminCodemods: payload }
-}
 
 export function AdminCodemodsRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
@@ -592,41 +493,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 				<div mix={css({ display: 'grid', gap: spacing.lg })}>
-					<AccountManagementPanel
-						title="Registered codemods"
-						description="Transforms available to the package codemod engine."
-					>
-						{codemods.length === 0 ? (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								No package codemods are registered.
-							</p>
-						) : (
-							<ul
-								mix={css({
-									margin: 0,
-									paddingLeft: spacing.lg,
-									display: 'grid',
-									gap: spacing.sm,
-								})}
-							>
-								{codemods.map((codemod) => (
-									<li key={codemod.id}>
-										<code mix={css({ fontSize: typography.fontSize.sm })}>
-											{codemod.id}
-										</code>
-										<p
-											mix={css({
-												margin: `${spacing.xs} 0 0`,
-												color: colors.textMuted,
-											})}
-										>
-											{codemod.description}
-										</p>
-									</li>
-								))}
-							</ul>
-						)}
-					</AccountManagementPanel>
+					{renderRegisteredCodemodsPanel(codemods)}
 
 					<AccountManagementPanel
 						title="Run codemod"
@@ -868,231 +735,53 @@ export function AdminCodemodsRoute(handle: Handle) {
 							title="Live results"
 							description={formatSummaryCounts(liveSummary)}
 						>
-							<RecordTable
-								mode="none"
-								ariaLabel="Live codemod results"
-								scrollHeight="28rem"
-								emptyLabel={
-									isRunning ? 'Waiting for the first page…' : 'No items.'
-								}
-								columns={codemodItemColumns}
-								rows={liveItems.map((item) => ({
+							{renderCodemodItemsTable({
+								ariaLabel: 'Live codemod results',
+								emptyLabel: isRunning
+									? 'Waiting for the first page…'
+									: 'No items.',
+								items: liveItems.map((item) => ({
 									id: item.itemId,
-									cells: {
-										kodyId: item.kodyId,
-										userId: <span mix={clampedCellCss}>{item.userId}</span>,
-										status: item.status,
-										changedPaths: (
-											<span mix={clampedCellCss}>
-												{item.changedPaths.join(', ') || '—'}
-											</span>
-										),
-										findings: formatFindings(item.findings),
-										error: (
-											<span mix={clampedCellCss}>{item.error ?? '—'}</span>
-										),
-									},
-								}))}
-							/>
+									kodyId: item.kodyId,
+									userId: item.userId,
+									status: item.status,
+									changedPaths: item.changedPaths,
+									findings: item.findings,
+									error: item.error,
+								})),
+							})}
 						</AccountManagementPanel>
 					) : null}
 
-					<AccountManagementPanel
-						title="Run history"
-						description="Recent fleet and filtered package codemod runs."
-					>
-						{runs.length === 0 ? (
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								No runs recorded yet.
-							</p>
-						) : (
-							<RecordTable
-								mode="expand"
-								ariaLabel="Codemod run history"
-								selectedId={selectedHistoryRunId}
-								columns={[
-									{ key: 'run', label: 'Run', primary: true },
-									{ key: 'created', label: 'Created' },
-									{ key: 'codemod', label: 'Codemod', drop: 1 },
-									{ key: 'mode', label: 'Mode' },
-									{ key: 'status', label: 'Status' },
-									{ key: 'scope', label: 'Scope', drop: 2 },
-									{ key: 'initiatedBy', label: 'Initiated by', drop: 3 },
-									{ key: 'actions', label: 'Actions' },
-								]}
-								rows={runs.map((run) => {
-									const revertConfirmActive =
-										pendingConfirmKey ===
-										getConfirmKey('revert-history', run.id)
-									// Abandoned and failed apply runs can hold applied items
-									// too; only an actively-paging run is off limits for revert.
-									const canRevert =
-										run.mode === 'apply' && run.status !== 'running'
-									return {
-										id: run.id,
-										cells: {
-											run: (
-												<code
-													title={run.id}
-													mix={css({ fontSize: typography.fontSize.sm })}
-												>
-													{run.id.slice(0, 8)}
-												</code>
-											),
-											created: (
-												<span mix={css(recordStampCss)}>
-													{formatNullableTimestamp(run.createdAt)}
-												</span>
-											),
-											codemod: (
-												<code mix={css({ fontSize: typography.fontSize.sm })}>
-													{run.codemodId}
-												</code>
-											),
-											mode: run.mode,
-											status: run.status,
-											scope: (
-												<span mix={clampedCellCss}>
-													{run.scopeUserId ?? 'fleet'}
-												</span>
-											),
-											initiatedBy: (
-												<span mix={clampedCellCss}>
-													{run.initiatedByUserId}
-												</span>
-											),
-											actions: (
-												<span
-													mix={css({
-														display: 'flex',
-														gap: spacing.xs,
-														flexWrap: 'wrap',
-													})}
-												>
-													<button
-														type="button"
-														disabled={historyLoading}
-														mix={[
-															on('click', () => {
-																void loadHistoryRun(run.id)
-															}),
-															css(secondaryButtonCss),
-														]}
-													>
-														{selectedHistoryRunId === run.id && historyLoading
-															? 'Loading…'
-															: 'Details'}
-													</button>
-													{canRevert ? (
-														<button
-															type="button"
-															disabled={!canMutate}
-															mix={[
-																...getDestructiveButtonMix(
-																	'revert-history',
-																	run.id,
-																	() => {
-																		selectedCodemodId = run.codemodId
-																		selectedMode = 'revert'
-																		revertOfRunId = run.id
-																		void runPagedCodemod({
-																			mode: 'revert',
-																			codemodId: run.codemodId,
-																			revertOfRunId: run.id,
-																		})
-																	},
-																),
-																css(dangerButtonCss),
-															]}
-														>
-															{revertConfirmActive
-																? 'Confirm revert'
-																: 'Revert'}
-														</button>
-													) : null}
-												</span>
-											),
-										},
-									}
-								})}
-								record={
-									selectedHistoryRunId ? (
-										<div mix={css(recordBodyCss)}>
-											<p mix={css(descriptionCss)}>
-												Details for <code>{selectedHistoryRunId}</code>
-												{historyRun
-													? ` · ${historyRun.mode} · ${historyRun.status}`
-													: ''}
-											</p>
-											{historyLoading && historyItems.length === 0 ? (
-												<p
-													mix={css({
-														margin: 0,
-														color: colors.textMuted,
-													})}
-												>
-													Loading items…
-												</p>
-											) : null}
-											{historyItems.length > 0 ? (
-												<RecordTable
-													mode="none"
-													ariaLabel="Run items"
-													scrollHeight="28rem"
-													columns={codemodItemColumns}
-													rows={historyItems.map((item) => ({
-														id: item.id,
-														cells: {
-															kodyId: item.kodyId,
-															userId: (
-																<span mix={clampedCellCss}>{item.userId}</span>
-															),
-															status: item.status,
-															changedPaths: (
-																<span mix={clampedCellCss}>
-																	{item.changedPaths.join(', ') || '—'}
-																</span>
-															),
-															findings: formatFindings(item.findings),
-															error: (
-																<span mix={clampedCellCss}>
-																	{item.error ?? '—'}
-																</span>
-															),
-														},
-													}))}
-												/>
-											) : !historyLoading ? (
-												<p
-													mix={css({
-														margin: 0,
-														color: colors.textMuted,
-													})}
-												>
-													No items for this run.
-												</p>
-											) : null}
-											{historyNextAfterId ? (
-												<button
-													type="button"
-													disabled={historyLoading}
-													mix={[
-														on('click', () => {
-															if (!selectedHistoryRunId) return
-															void loadHistoryRun(selectedHistoryRunId, true)
-														}),
-														css(secondaryButtonCss),
-													]}
-												>
-													{historyLoading ? 'Loading…' : 'Load more'}
-												</button>
-											) : null}
-										</div>
-									) : null
-								}
-							/>
-						)}
-					</AccountManagementPanel>
+					{renderRunHistoryPanel({
+						runs,
+						selectedHistoryRunId,
+						historyRun,
+						historyItems,
+						historyLoading,
+						historyNextAfterId,
+						canMutate,
+						isRevertConfirmActive: (runId) =>
+							pendingConfirmKey === getConfirmKey('revert-history', runId),
+						getDestructiveButtonMix,
+						onShowDetails: (runId) => {
+							void loadHistoryRun(runId)
+						},
+						onLoadMore: () => {
+							if (!selectedHistoryRunId) return
+							void loadHistoryRun(selectedHistoryRunId, true)
+						},
+						onRevert: (run) => {
+							selectedCodemodId = run.codemodId
+							selectedMode = 'revert'
+							revertOfRunId = run.id
+							void runPagedCodemod({
+								mode: 'revert',
+								codemodId: run.codemodId,
+								revertOfRunId: run.id,
+							})
+						},
+					})}
 				</div>
 			</AccountManagementShell>
 		)
