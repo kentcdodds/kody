@@ -113,21 +113,28 @@ returned strings.
 
 If a request fails because a host is not approved for that secret, use the
 approval path the error provides (typically in the web app). Saving a secret
-does not by itself approve new hosts.
+does not by itself approve new hosts. Self-authored and adopted packages do not
+skip this gate: an empty host allowlist blocks secret-bearing fetch even when
+package read/use is automatic.
 
 ## Package approval
 
 User-scoped secrets are available automatically for **reading and using**
-(mounts, fetch placeholders, named capability lookups) to packages the user
-authored themselves and adopted community forks (`community_fork_adopt` after a
-real source review). Unadopted community-forked packages need explicit
-**package** approval (`allowed_packages`) before those read/use paths. Updating
-or deleting a user secret from package code (`secret_set`, `secret_delete`)
-always needs the grant, including for self-authored and adopted packages.
-Official OAuth token rotation (`createAuthenticatedFetch`, `refreshAccessToken`,
-OpenAPI integration 401 retry) persists host-side and does not need that write
-grant. Saving a secret, approving a host, or succeeding in an ad hoc execute
-smoke test does not grant package access. Host approvals are unchanged.
+(mounts, fetch placeholders, named capability lookups including `secret_list`)
+to packages the user authored themselves and adopted community forks
+(`community_fork_adopt` after a real source review). Unadopted community-forked
+packages need explicit **package** approval (`allowed_packages`) before those
+read/use paths. Updating or deleting a user secret from package code
+(`secret_set`, `secret_delete`) always needs the grant, including for
+self-authored and adopted packages. Official OAuth token rotation
+(`createAuthenticatedFetch`, `refreshAccessToken`, OpenAPI integration 401
+retry) persists host-side and does not need that write grant.
+
+**Host approval is separate and is never automatic**, including for
+self-authored and adopted packages. An empty host allowlist blocks
+`{{secret:name}}` fetch placeholders even when package read/use is automatic.
+Saving a secret or succeeding in an ad hoc execute smoke test does not approve a
+host or grant package write access.
 
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like

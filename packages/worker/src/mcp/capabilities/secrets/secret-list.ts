@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { packageHasImplicitUserSecretReadAccess } from '#mcp/secrets/package-access.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
@@ -12,7 +13,7 @@ export const secretListCapability = defineDomainCapability(
 	{
 		name: 'secret_list',
 		description:
-			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed kody. Use `kody.secret_list({ scope })` inside execute-time code when you want the same metadata from the sandbox. To use a listed secret in an outbound `fetch`, reference it by placeholder — e.g. `Authorization: "Bearer {{secret:name}}"` (optionally `{{secret:name|scope=user}}`) — and Kody resolves it for approved hosts; plaintext values are never returned. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
+			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, and allowed packages — never plaintext values. From a package runtime, self-authored and adopted packages see user secrets they can already read; unadopted community forks see only explicitly granted user secrets. Listing a secret does not approve a host: outbound `fetch` still resolves `{{secret:name}}` (optionally `{{secret:name|scope=user}}`) only for approved hosts. Use `kody.secret_list({ scope })` inside execute-time code for the same metadata. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,
@@ -43,13 +44,22 @@ export const secretListCapability = defineDomainCapability(
 					storageId: ctx.callerContext.storageContext?.storageId ?? null,
 				},
 			})
-			const accessibleSecrets = packageId
-				? secrets.filter(
-						(secret) =>
-							secret.scope !== 'user' ||
-							secret.allowedPackages.includes(packageId),
-					)
-				: secrets
+			const implicitReadAccess =
+				packageId == null
+					? true
+					: await packageHasImplicitUserSecretReadAccess({
+							env: ctx.env,
+							userId: user.userId,
+							packageId,
+						})
+			const accessibleSecrets =
+				packageId && !implicitReadAccess
+					? secrets.filter(
+							(secret) =>
+								secret.scope !== 'user' ||
+								secret.allowedPackages.includes(packageId),
+						)
+					: secrets
 			return {
 				secrets: accessibleSecrets.map((secret) =>
 					toSecretCapabilityOutput(secret),

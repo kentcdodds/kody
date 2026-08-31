@@ -230,8 +230,11 @@ export function renderSecretEditor(props: SecretEditorProps) {
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<span mix={css(fieldLabelCss)}>Allowed packages</span>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Only selected packages may access this user secret from package
-							runtimes.
+							Self-authored and adopted packages can already read and use this
+							secret. Add a package here to grant an unadopted community fork,
+							or to let any package update or delete this secret. Sending the
+							secret to a site still needs a host under Advanced details — that
+							is never automatic, including for packages you wrote.
 						</p>
 					</div>
 					{editorState.allowedPackages.length > 0 ? (
@@ -273,7 +276,8 @@ export function renderSecretEditor(props: SecretEditorProps) {
 						</div>
 					) : (
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							No packages currently have access.
+							No extra package grants. Self-authored and adopted packages can
+							still read and use this secret.
 						</p>
 					)}
 					{availableAllowedPackageOptions.length > 0 ? (

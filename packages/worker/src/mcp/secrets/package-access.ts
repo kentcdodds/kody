@@ -75,6 +75,42 @@ async function resolvePackageRecordForSecretAccess(input: {
 	})
 }
 
+/**
+ * Self-authored packages (no `community_forks` row) and adopted community
+ * forks may read/use user secrets without an explicit `allowed_packages`
+ * grant. Missing packages and unadopted forks do not. Host allowlists are
+ * a separate gate and are never implied by this check.
+ */
+export async function packageHasImplicitUserSecretReadAccess(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	packageId: string
+}): Promise<boolean> {
+	const savedPackage = await resolvePackageRecordForSecretAccess({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
+	if (!savedPackage) return false
+	return await savedPackageHasImplicitUserSecretReadAccess({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		savedPackage,
+	})
+}
+
+async function savedPackageHasImplicitUserSecretReadAccess(input: {
+	db: D1Database
+	userId: string
+	savedPackage: SavedPackageRecord
+}): Promise<boolean> {
+	const communityFork = await getCommunityForkByForkedPackageId(input.db, {
+		forkerUserId: input.userId,
+		forkedPackageId: input.savedPackage.id,
+	})
+	return !communityFork || Boolean(communityFork.adoptedAt)
+}
+
 export async function assertPackageCanAccessResolvedSecret(input: {
 	env: Pick<Env, 'APP_DB'>
 	baseUrl: string
@@ -108,19 +144,15 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		)
 	}
 	const intent = input.intent ?? 'use'
-	if (intent === 'use') {
-		const communityFork = await getCommunityForkByForkedPackageId(
-			input.env.APP_DB,
-			{
-				forkerUserId: input.userId,
-				forkedPackageId: savedPackage.id,
-			},
-		)
-		// Self-authored packages (no community fork row) and adopted
-		// community forks may read/use user secrets without an explicit
-		// allowed_packages grant. Unadopted community forks still require
-		// approval. Mutations never take this path.
-		if (!communityFork || communityFork.adoptedAt) return
+	if (
+		intent === 'use' &&
+		(await savedPackageHasImplicitUserSecretReadAccess({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			savedPackage,
+		}))
+	) {
+		return
 	}
 
 	const approvalUrl = buildSecretPackageApprovalUrl({
@@ -334,14 +366,15 @@ export async function findMissingPackageApprovals(input: {
 	if (!savedPackage) {
 		throw new Error(`Saved package "${input.packageId}" was not found.`)
 	}
-	const communityFork = await getCommunityForkByForkedPackageId(
-		input.env.APP_DB,
-		{
-			forkerUserId: input.userId,
-			forkedPackageId: savedPackage.id,
-		},
-	)
-	if (!communityFork || communityFork.adoptedAt) return []
+	if (
+		await savedPackageHasImplicitUserSecretReadAccess({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			savedPackage,
+		})
+	) {
+		return []
+	}
 
 	const storageContext = {
 		sessionId: input.storageContext?.sessionId ?? null,
