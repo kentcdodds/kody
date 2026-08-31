@@ -80,3 +80,75 @@ test('account handler redirects to login with a session-destroy cookie for stale
 	expect(setCookie).toContain('kody_session=')
 	expect(setCookie).toContain('Max-Age=0')
 })
+
+test('account handler redirects to login and clears the cookie for a deleting account', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const session: AuthSession = {
+		stableUserId: 'a'.repeat(64),
+		email: 'deleting@example.com',
+		rememberMe: false,
+	}
+	const cookie = await createAuthCookie(session, false)
+	const env = {
+		COOKIE_SECRET: testCookieSecret,
+		APP_DB: {
+			prepare(query: string) {
+				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				return {
+					bind() {
+						return {
+							async all() {
+								if (
+									normalizedQuery.startsWith('select') &&
+									normalizedQuery.includes('from "users"')
+								) {
+									return {
+										results: [
+											{
+												id: 7,
+												email: 'deleting@example.com',
+												username: 'deleting-user',
+												stable_user_id: 'a'.repeat(64),
+												deleting_at: '2026-08-31 15:00:00',
+											},
+										],
+										meta: { changes: 0 },
+									}
+								}
+								if (normalizedQuery.includes('from user_roles ur')) {
+									return { results: [], meta: { changes: 0 } }
+								}
+								return { results: [], meta: { changes: 0 } }
+							},
+							async first() {
+								return null
+							},
+							async run() {
+								return { meta: { changes: 0 } }
+							},
+						}
+					},
+				}
+			},
+			async exec() {
+				return
+			},
+		} as unknown as D1Database,
+	} as Env
+	const handler = createAccountHandler(env)
+	const response = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account', {
+				headers: { Cookie: cookie },
+			}),
+		),
+	)
+
+	expect(response.status).toBe(302)
+	expect(response.headers.get('Location')).toBe(
+		'https://example.com/login?redirectTo=%2Faccount',
+	)
+	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	expect(setCookie).toContain('kody_session=')
+	expect(setCookie).toContain('Max-Age=0')
+})

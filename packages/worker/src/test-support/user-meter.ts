@@ -307,6 +307,11 @@ export function createInMemoryUserMeterEnv() {
 					leaseCount,
 				}
 			},
+			async clearDeleting() {
+				if (deletion.deletingAt == null) return { cleared: false }
+				deletion.deletingAt = null
+				return { cleared: true }
+			},
 			async acquireWriteLease(input: {
 				token: string
 				holder: string

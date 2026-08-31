@@ -57,6 +57,7 @@ import {
 } from '#mcp/session-registry.ts'
 import {
 	AccountDeletionWritersActiveError,
+	abortAccountDeleting,
 	markAccountDeleting,
 } from '#worker/account/deletion-state.ts'
 import {
@@ -958,6 +959,11 @@ export async function deleteUserAccount(input: {
 		env: input.env,
 	})
 	if (activeWriteCount > 0) {
+		await abortAccountDeleting({
+			db: input.env.APP_DB,
+			dbUserId: input.dbUserId,
+			env: input.env,
+		})
 		throw new AccountDeletionWritersActiveError(activeWriteCount)
 	}
 	const warnings: Array<string> = []
@@ -978,12 +984,24 @@ export async function deleteUserAccount(input: {
 		warnings,
 	}
 
-	const inventory = await collectUserDeletionInventory({
-		env: input.env,
-		userId: input.mcpUserId,
-		dbUserId: input.dbUserId,
-		warnings,
-	})
+	let inventory: UserDeletionInventory
+	try {
+		inventory = await collectUserDeletionInventory({
+			env: input.env,
+			userId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+			warnings,
+		})
+	} catch (error) {
+		if (error instanceof AccountDeletionInventoryError) {
+			await abortAccountDeleting({
+				db: input.env.APP_DB,
+				dbUserId: input.dbUserId,
+				env: input.env,
+			})
+		}
+		throw error
+	}
 
 	result.deletedVectors = await deleteVectorsByIds({
 		env: input.env,

@@ -833,6 +833,17 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		created: false,
 		leaseCount: 0,
 	})
+	expect(await meterA.clearDeleting()).toEqual({ cleared: true })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+	expect(await meterA.clearDeleting()).toEqual({ cleared: false })
+	const rematch = await meterA.markDeleting({
+		deletingAt: '2026-08-01 10:00:00',
+	})
+	expect(rematch).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		created: true,
+		leaseCount: 0,
+	})
 
 	// acquireWriteLease is idempotent (same token).
 	await expect(

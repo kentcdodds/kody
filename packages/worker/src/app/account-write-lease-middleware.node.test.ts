@@ -82,3 +82,26 @@ test('authenticated delayed mutation holds web lease through handler completion'
 	await expect(responsePromise).resolves.toMatchObject({ status: 200 })
 	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
 })
+
+test('logout is not blocked while an account is deleting', async () => {
+	authMock.loadResolvedRequestAuth.mockResolvedValue({
+		sessionUserId: '1',
+		user: {
+			accountDeleting: true,
+			mcpUser: { userId: 'user-a' },
+		},
+	})
+	const next = vi.fn(async () => new Response(null, { status: 302 }))
+	const middleware = createAccountWriteLeaseMiddleware({} as Env)
+	const response = await middleware(
+		{
+			request: new Request('https://example.com/logout', { method: 'POST' }),
+			url: new URL('https://example.com/logout'),
+			params: {},
+			context: new Map(),
+		} as never,
+		next,
+	)
+	expect(next).toHaveBeenCalledOnce()
+	expect(response.status).toBe(302)
+})

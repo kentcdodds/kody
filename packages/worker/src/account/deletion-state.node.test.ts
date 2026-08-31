@@ -10,6 +10,7 @@ import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-option
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
+	abortAccountDeleting,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
 	repairAccountWriteLease,
@@ -1210,4 +1211,44 @@ test('purge resets lease state but preserves deletingAt tombstone', async () => 
 	await expect(held.operation).rejects.toBeInstanceOf(
 		AccountWriteLeaseLostError,
 	)
+})
+
+test('abortAccountDeleting clears the D1 gate and UserMeter tombstone', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
+
+	await abortAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:01:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: null })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'ok'
+			},
+		}),
+	).resolves.toBe('ok')
 })

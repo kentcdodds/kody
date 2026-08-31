@@ -30,7 +30,13 @@ export function createAccountWriteLeaseMiddleware(env: Env): Middleware {
 	return async ({ request, url }, next) => {
 		const mutating =
 			unsafeMethods.has(request.method) || mutatingGetPaths.has(url.pathname)
-		if (!mutating || url.pathname === '/account/delete') return await next()
+		if (
+			!mutating ||
+			url.pathname === '/account/delete' ||
+			url.pathname === '/logout'
+		) {
+			return await next()
+		}
 		const auth = await loadResolvedRequestAuth(request, env)
 		if (!auth.user) return await next()
 		if (auth.user.accountDeleting) return accountDeletingResponse(409)

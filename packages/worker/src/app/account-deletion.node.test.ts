@@ -4,9 +4,12 @@ import { expect, test, vi } from 'vitest'
 import * as stripeClient from '#worker/billing/stripe-client.ts'
 import {
 	AccountDeletionCleanupError,
+	AccountDeletionInventoryError,
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
+import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -1094,4 +1097,60 @@ test('account deletion cancels Stripe billing and remains non-blocking on Stripe
 		deleteCustomer.mockRestore()
 		consoleError.mockReset()
 	}
+})
+
+test('deleteUserAccount clears the deletion fence when writers are still active', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	const meter = userMeterRpc({ env, userId: 'user-aaa' })
+	await meter.acquireWriteLease({
+		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		holder: 'test:signup',
+		acquiredAt: '2026-08-31 15:00:00',
+	})
+
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			stable_user_id: 'user-aaa',
+			deleting_at: null,
+		}),
+	])
+	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('deleteUserAccount clears the deletion fence when inventory cannot be collected', async () => {
+	const { db, rows } = createTestDb(
+		{
+			users: [{ id: 1, email: 'a@example.com' }],
+		},
+		{ failSelectContaining: 'from mcp_memories' },
+	)
+	const env = createSuccessfulDeletionEnv(db)
+	const meter = userMeterRpc({ env, userId: 'user-aaa' })
+
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			stable_user_id: 'user-aaa',
+			deleting_at: null,
+		}),
+	])
+	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })

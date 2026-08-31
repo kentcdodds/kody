@@ -203,6 +203,49 @@ export async function markAccountDeleting(input: {
 	return marked.leaseCount
 }
 
+/**
+ * Undo {@link markAccountDeleting} when deletion aborts before cleanup.
+ * Clears D1 `users.deleting_at` first (permanent gate), then the UserMeter
+ * tombstone. A later write may still fail closed if the DO clear is delayed.
+ */
+export async function abortAccountDeleting(input: {
+	db: D1Database
+	dbUserId: number
+	now?: Date
+	env: UserMeterEnv
+}) {
+	const userRow = await input.db
+		.prepare(
+			`SELECT stable_user_id
+			FROM users
+			WHERE id = ?`,
+		)
+		.bind(input.dbUserId)
+		.first<{ stable_user_id: string }>()
+	const now = utcSqliteTimestamp(input.now ?? new Date())
+	const result = await input.db
+		.prepare(
+			`UPDATE users
+			SET deleting_at = NULL, updated_at = ?
+			WHERE id = ?`,
+		)
+		.bind(now, input.dbUserId)
+		.run()
+	if ((result.meta.changes ?? 0) !== 1) {
+		throw new Error('Account deletion fence could not be cleared.')
+	}
+	const stableUserId = userRow?.stable_user_id
+	if (!stableUserId) {
+		throw new Error('Account deletion fence could not be cleared.')
+	}
+	const env = requireUserMeterEnv(input.env)
+	await runUserMeterRpc({
+		env,
+		stableUserId,
+		operation: async (meter) => await meter.clearDeleting(),
+	})
+}
+
 export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: string,

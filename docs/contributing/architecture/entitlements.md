@@ -281,6 +281,11 @@ is the audit log for repairs. ALS nested-lease reuse propagates per
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
 lease count for drain waits.
 
+**`abortAccountDeleting`:** used when deletion fails before cleanup (active
+writes or incomplete inventory). Clears D1 `users.deleting_at` first, then
+`UserMeter.clearDeleting()` so the account is not left fenced. Cleanup failures
+still keep the tombstone so a retry can finish.
+
 **Admin list / repair:** `listActiveAccountWriteLeases(env, userId)` reads DO
 leases via `listWriteLeases` pages — no D1 union. Repair is DO-only and
 audit-first: prepare (stable `repairId`, lease stays held) → insert/verify D1
