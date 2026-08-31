@@ -117,4 +117,17 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(openclaw).toContain(buildOpenClawMcpAddCommand(defaultKodyMcpUrl))
 	expect(openclaw).toContain(openClawMcpLoginCommand)
 	expect(openclaw).toContain('Settings → MCP → Add server')
+	expect(openclaw).not.toContain('on a computer')
+
+	const openclawMobile = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'openclaw',
+			surface: 'mobile',
+		}),
+	)
+	expect(openclawMobile).toContain('data-surface="mobile"')
+	expect(openclawMobile).toContain('Save the server in the Control UI')
+	expect(openclawMobile).toContain(openClawMcpLoginCommand)
+	expect(openclawMobile).toContain('on a computer')
 })

@@ -1016,7 +1016,13 @@ function renderAgentAuthHint(
 				</>
 			)
 		case 'openclaw':
-			return (
+			return surface === 'mobile' ? (
+				<>
+					Save the server in the Control UI, then run{' '}
+					<code>{openClawMcpLoginCommand}</code> on a computer. Approve the Kody
+					OAuth window.
+				</>
+			) : (
 				<>
 					Run <code>{openClawMcpLoginCommand}</code> after the server is saved.
 					Approve the Kody OAuth window.
