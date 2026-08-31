@@ -3,10 +3,12 @@ import {
 	baseMcpServerInstructionFragmentsAfterPopular,
 	baseMcpServerInstructionFragmentsBeforePopular,
 } from '#mcp/instructions/base-server-fragments.ts'
+import { buildCompactMcpServerInstructions } from '#mcp/instructions/compact-mcp-server-instructions.ts'
 import {
 	formatActiveRetiringPrimitivesInstructions,
 	type RetiringPrimitiveNoticeId,
 } from '#mcp/instructions/retiring-primitives.ts'
+import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 
 const baseMcpServerInstructionsBeforePopular =
 	baseMcpServerInstructionFragmentsBeforePopular.join('\n\n')
@@ -137,6 +139,21 @@ export function buildBaseMcpServerInstructions(
 		.join('\n\n')
 }
 
+const userMcpServerInstructionOverlayHeader = `---
+User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`
+
+export function appendUserMcpServerInstructionOverlay(
+	base: string,
+	userOverlay: string | null | undefined,
+): string {
+	const trimmed = userOverlay?.trim()
+	if (!trimmed) return base
+	return `${base}
+
+${userMcpServerInstructionOverlayHeader}
+${trimmed}`
+}
+
 export function buildMcpServerInstructions(
 	input:
 		| string
@@ -147,21 +164,40 @@ export function buildMcpServerInstructions(
 				domains?: ReadonlyArray<CapabilityDomainMetadata>
 				popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
 				retiringNoticeIds?: ReadonlySet<RetiringPrimitiveNoticeId>
+				compact?: boolean
+				displayName?: string | null | undefined
 		  },
 ): string {
 	const normalizedInput =
 		typeof input === 'object' && input !== null ? input : { userOverlay: input }
-	const base = buildBaseMcpServerInstructions({
-		domains: normalizedInput.domains,
-		popularPackages: normalizedInput.popularPackages,
-		retiringNoticeIds: normalizedInput.retiringNoticeIds,
-	})
-	const userOverlay = normalizedInput.userOverlay
-	const trimmed = userOverlay?.trim()
-	if (!trimmed) return base
-	return `${base}
+	const base = normalizedInput.compact
+		? buildCompactMcpServerInstructions({
+				displayName: normalizedInput.displayName,
+			})
+		: buildBaseMcpServerInstructions({
+				domains: normalizedInput.domains,
+				popularPackages: normalizedInput.popularPackages,
+				retiringNoticeIds: normalizedInput.retiringNoticeIds,
+			})
+	return appendUserMcpServerInstructionOverlay(
+		base,
+		normalizedInput.userOverlay,
+	)
+}
 
----
-User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):
-${trimmed}`
+export function describeAssembledMcpServerInstructions(input: {
+	assembled: string
+	hasOverlay: boolean
+}): { assembled_chars: number; warning: string | null } {
+	const assembled_chars = input.assembled.length
+	if (
+		!input.hasOverlay ||
+		assembled_chars < mcpServerInstructionsClientHeadLimitChars
+	) {
+		return { assembled_chars, warning: null }
+	}
+	return {
+		assembled_chars,
+		warning: `Assembled MCP server instructions are ${String(assembled_chars)} characters. Some clients keep only the first ${String(mcpServerInstructionsClientHeadLimitChars)} characters, so this overlay may never reach the model. Prefer memories for durable facts; keep the overlay short.`,
+	}
 }

@@ -49,6 +49,19 @@ export const featureFlagDefinitions = [
 		// exercise the flag system itself (including the "no success metric"
 		// admin notice), not to move a product metric.
 	},
+	{
+		key: 'compact-mcp-server-instructions',
+		defaultEnabled: false,
+		description:
+			'Serves a short MCP server-instruction stub instead of the full always-on manual, so clients that keep only the first ~2048 characters still see how to use search/execute and the user overlay. Delete the flag and the compact branch when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'A stub that fits in a 2048-character head cut makes agents reach for Kody execute more often from vague prompts.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']

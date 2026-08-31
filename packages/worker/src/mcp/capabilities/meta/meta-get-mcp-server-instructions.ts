@@ -6,12 +6,15 @@ import {
 	type CapabilityContext,
 } from '#mcp/capabilities/types.ts'
 import { maxUserMcpServerInstructionsChars } from '#mcp/mcp-user-server-instruction-limits.ts'
+import { describeUserMcpServerInstructionOverlay } from '#mcp/mcp-server-instruction-overlay.ts'
 import { getMcpUserServerInstructions } from '#mcp/user-server-instructions-repo.ts'
 import { requireMcpUser } from './require-user.ts'
 
 const outputSchema = z.object({
 	instructions: z.string().nullable(),
 	max_length: z.number().int().positive(),
+	assembled_chars: z.number().int().nonnegative(),
+	warning: z.string().nullable(),
 })
 
 export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
@@ -19,7 +22,7 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 	{
 		name: 'meta_get_mcp_server_instructions',
 		description:
-			'Read the signed-in user’s custom MCP server instructions overlay (if any). Empty means none. Same character limit as set. Prefer memories for durable facts and preferences; the overlay is only for rare always-on session policy.',
+			'Read the signed-in user’s custom MCP server instructions overlay (if any). Empty means none. Same character limit as set. Prefer memories for durable facts and preferences; the overlay is only for rare always-on session policy. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [
 			'instructions',
 			'server',
@@ -40,9 +43,16 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user.userId,
 			)
+			const assembly = await describeUserMcpServerInstructionOverlay({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				overlay: instructions,
+			})
 			return {
 				instructions,
 				max_length: maxUserMcpServerInstructionsChars,
+				assembled_chars: assembly.assembled_chars,
+				warning: assembly.warning,
 			}
 		},
 	},

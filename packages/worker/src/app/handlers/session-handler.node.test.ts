@@ -168,6 +168,7 @@ test('session handler only renews remembered sessions after the renewal window',
 				permissions: [],
 				featureFlags: {
 					'demo-indicator': false,
+					'compact-mcp-server-instructions': false,
 				},
 			},
 		})

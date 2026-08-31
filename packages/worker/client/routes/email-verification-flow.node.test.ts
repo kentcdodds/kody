@@ -52,7 +52,10 @@ test('email verification redirect helpers preserve safe targets and reject open 
 		username: 'account-user',
 		roles: ['user'],
 		permissions: [],
-		featureFlags: { 'demo-indicator': false },
+		featureFlags: {
+			'demo-indicator': false,
+			'compact-mcp-server-instructions': false,
+		},
 	}
 	const verifiedUser: SessionInfo = {
 		...unverifiedUser,
