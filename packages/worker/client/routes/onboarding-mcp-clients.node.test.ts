@@ -14,8 +14,6 @@ import {
 	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
-	openClawMcpDoctorCommand,
-	openClawMcpLoginCommand,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	defaultKodyMcpUrl,
@@ -139,8 +137,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildOpenClawMcpAddCommand(mcpServerUrl)).toBe(
 		`openclaw mcp add kody --url ${mcpServerUrl} --transport streamable-http --auth oauth`,
 	)
-	expect(openClawMcpLoginCommand).toBe('openclaw mcp login kody')
-	expect(openClawMcpDoctorCommand).toBe('openclaw mcp doctor kody --probe')
 	expect(JSON.parse(buildOpenClawMcpJson(mcpServerUrl))).toEqual({
 		mcp: {
 			servers: {

@@ -34,12 +34,8 @@ platform onboarding dismissal. Do not add a thinner "account settings" primitive
 unless, after the soak, something still has no home.
 
 The [values retirement runbook](../architecture/values-retirement-runbook.md) is
-the executable plan: about thirty days of deprecation, then removal when the
-mechanical gates there hold — not on a calendar date alone. Agents for users who
-still have stored values learn about the retirement from a compact MCP
-server-instruction notice that points at
-`coding_guide_get({ guide: "values" })`. Users with no live value rows do not
-see that notice.
+the executable plan: removal when the mechanical gates there hold — not on a
+calendar date alone.
 
 ## Consequences
 

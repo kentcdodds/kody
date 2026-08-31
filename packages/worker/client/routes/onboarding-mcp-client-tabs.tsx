@@ -746,8 +746,8 @@ function renderPanelContent(
 						>
 							Copilot CLI MCP docs
 						</a>{' '}
-						for details. For the desktop GitHub Copilot app, choose it under{' '}
-						<strong>Not listed</strong>.
+						for details. The GitHub Copilot app has its own picker entry
+						(Copilot App).
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
@@ -1052,8 +1052,8 @@ function renderAgentAuthHint(
 
 /**
  * Step 1: pick one agent, then show only that host's install path and
- * authenticate hint. Featured hosts are the first chooser; the rest live
- * under Not listed.
+ * authenticate hint. Featured hosts are the first chooser; other named
+ * hosts are under More; **Not listed** is the generic MCP URL path.
  */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,

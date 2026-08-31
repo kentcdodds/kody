@@ -5,9 +5,6 @@ Production owns `JobManager`, `JOBS_DB`, and the five-minute cron on
 transfer or add `deleted_classes` for `JobManager`.
 
 This page records current ownership and the invariants later deploys must keep.
-The cutover that landed is in the
-[historical appendix](#historical-appendix-2026-jobs-cutover). Do not follow
-that appendix as a live playbook.
 
 Operational notes for the dedicated jobs worker (`packages/jobs-worker`, ADR
 [0016 — Mono-worker extraction](../decisions/0016-mono-worker-extraction.md)).
@@ -64,46 +61,3 @@ and queue consumption on `kody-scheduled-dispatch`), a due job running
 end-to-end (`JobManager` alarm → `HOST.runDueJobsForUser` → a run in the user's
 activity), and dashboards (`/account/jobs`) plus MCP `jobs_*` listing `JOBS_DB`
 rows.
-
-## Historical appendix: 2026 jobs cutover
-
-**Do not re-run these steps.** They describe the one-shot Durable Object
-transfer and bounded D1 copy that already landed. Re-exporting `jobs` /
-`archived_job_artifacts` from `APP_DB` fails: those tables are gone. Re-issuing
-`transferred_classes` or adding `deleted_classes` for `JobManager` destroys or
-orphans production scheduling state.
-
-Two coordinated moves landed:
-
-1. **Durable Object transfer** — `JobManager` moved from the deployed
-   `kody-production` script to the `kody-jobs` script via `transferred_classes`,
-   keeping every existing per-user DO's storage and alarm.
-2. **Bounded D1 data migration** — `jobs` and `archived_job_artifacts` rows
-   copied from `APP_DB` (`kody-db`) into `JOBS_DB` during a brief write pause
-   (job create/update/delete and finalization only). Dual-write was not used.
-   After the read/write flip, `APP_DB` held a cold copy until
-   `packages/worker/migrations/0010-drop-jobs-tables.sql` removed those tables.
-
-Coordinated order that landed:
-
-1. Provision `kody-jobs` D1 and the `kody-scheduled-dispatch` /
-   `kody-scheduled-dispatch-dlq` queues (`tools/ci/jobs-worker-resources.ts`).
-2. Apply the jobs D1 schema on `JOBS_DB`.
-3. Pause job mutation surfaces (or wait for a quiet window).
-4. Export the two tables from `APP_DB` and import into `JOBS_DB`; verify row
-   counts.
-5. Deploy `kody-jobs` (applied `v1` `transferred_classes`).
-6. Deploy origin without a `JobManager` export, jobs cron, or scheduled-queue
-   consumer — the read/write flip onto the `JOBS` binding.
-7. Unpause; confirm cron, a due job, and dashboard/MCP lists.
-8. After every remaining `APP_DB` reader of those tables was ported to the JOBS
-   service contract, apply 0010. That migration is in the schema. There is no
-   cold copy left on `APP_DB`.
-
-Recovery after the transfer applied: roll _forward_ on `kody-jobs`. A reverse
-`transferred_classes` migration (`from_script: "kody-jobs"`) was the escape
-hatch to hand the namespace back; do not use it under incident pressure. There
-is no `APP_DB` rollback copy.
-
-Leftovers that wait on a later drop follow
-[Cleanup after migrations](../cleanup-after-migrations.md).
