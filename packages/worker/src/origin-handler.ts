@@ -364,7 +364,7 @@ const appHandler = withCors({
 			}
 		}
 
-		return handleRequest(request, env)
+		return handleRequest(request, env, ctx)
 	},
 })
 
