@@ -181,6 +181,31 @@ test('reserved system locals store under the operator-owned system inbox', async
 			.map((inbox) => inbox.name)
 			.sort(),
 	).toEqual(['kody', 'support'])
+
+	const psl = buildInboundMessage({
+		to: `psl@${systemDomain}`,
+		subject: 'Public suffix list contact',
+	})
+	await handleInboundEmail(psl, createInboundEnv())
+	expect(psl.rejectedReason).toBeNull()
+	const pslMessages = await listSystemEmailMessages({
+		db: env.APP_DB,
+		limit: 10,
+	})
+	expect(pslMessages[0]).toMatchObject({
+		subject: 'Public suffix list contact',
+		toAddresses: [`psl@${systemDomain}`],
+	})
+	expect(
+		(
+			await listEmailInboxesForUser({
+				db: env.APP_DB,
+				userId: systemEmailOwnerId,
+			})
+		)
+			.map((inbox) => inbox.name)
+			.sort(),
+	).toEqual(['kody', 'psl', 'support'])
 }, 30_000)
 
 test('non-system reserved locals still reject while username addresses are unaffected', async () => {
