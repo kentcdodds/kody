@@ -103,11 +103,27 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 	expect(doneById['connect-integration']).toBe(true)
 	expect(progressed.complete).toBe(false)
 
-	// Dismissal writes the users column and round-trips without a leftover value.
+	// Dismissal writes users.onboarding_checklist_dismissed_at and round-trips.
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
 	expect(await readDismissedAt(env.APP_DB)).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+})
+
+test('checklist dismissal reads a seeded users.onboarding_checklist_dismissed_at column', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	const dismissedAt = '2026-08-01T12:00:00.000Z'
+	await env.APP_DB.prepare(
+		`UPDATE users
+		 SET onboarding_checklist_dismissed_at = ?
+		 WHERE stable_user_id = ?`,
+	)
+		.bind(dismissedAt, userId)
+		.run()
+
+	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
+	expect(await readDismissedAt(env.APP_DB)).toBe(dismissedAt)
 })
 
 test('checklist connect-integration completes from a saved MCP server without OAuth', async () => {

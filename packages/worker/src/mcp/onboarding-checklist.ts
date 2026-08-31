@@ -4,7 +4,6 @@ import {
 } from '#worker/entitlements/service.ts'
 import { listIntegrations } from '#worker/integrations/service.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
-import { getValue } from '#mcp/values/service.ts'
 import {
 	type OnboardingChecklistItem,
 	type OnboardingChecklistItemId,
@@ -13,8 +12,6 @@ import {
 /**
  * Derived onboarding progress. Every item is computed from data the platform
  * already stores. Dismissal lives on `users.onboarding_checklist_dismissed_at`.
- * Leftover `onboardingChecklistDismissed` values are copied on read until
- * migration 0015 deletes those rows.
  */
 
 export type { OnboardingChecklistItem, OnboardingChecklistItemId }
@@ -23,12 +20,6 @@ export type OnboardingChecklist = {
 	items: Array<OnboardingChecklistItem>
 	complete: boolean
 }
-
-export const onboardingChecklistDismissedValueName =
-	'onboardingChecklistDismissed'
-
-/** User-scope value lookups bind with no session or app. */
-const userScopedStorageContext = { sessionId: null, appId: null }
 
 export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> & EntitlementUsageEnv
 
@@ -80,22 +71,11 @@ export async function readOnboardingChecklistDismissed(input: {
 	userId: string
 }): Promise<boolean> {
 	try {
-		const column = await readDismissedAtColumn(input.env.APP_DB, input.userId)
-		if (column) return true
-
-		const leftover = await getValue({
-			env: input.env,
-			userId: input.userId,
-			storageContext: userScopedStorageContext,
-			scope: 'user',
-			name: onboardingChecklistDismissedValueName,
-		})
-		if (!leftover) return false
-
-		const dismissedAt =
-			leftover.value.trim() || leftover.updatedAt || new Date().toISOString()
-		await writeDismissedAtColumn(input.env.APP_DB, input.userId, dismissedAt)
-		return true
+		const dismissedAt = await readDismissedAtColumn(
+			input.env.APP_DB,
+			input.userId,
+		)
+		return Boolean(dismissedAt)
 	} catch {
 		return false
 	}
