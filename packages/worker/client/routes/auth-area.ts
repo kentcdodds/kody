@@ -1,4 +1,5 @@
-export { LoginRoute, authProvidersRouteLoader } from './login.tsx'
+export { LoginRoute } from './login.tsx'
+export { authProvidersRouteLoader } from './login-shared.ts'
 export {
 	PendingVerificationRoute,
 	pendingVerificationRouteLoader,
