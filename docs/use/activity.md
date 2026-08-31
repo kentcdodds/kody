@@ -6,16 +6,20 @@ keeps a short execution history so you (and your agent) can see what happened.
 ## Where to look
 
 Open **`/account/activity`** while signed in. The page defaults to **open
-failures first**, with:
+failures first**, and a **Recent runs** view lists the last 7 days of history
+(successes, running work, and errors) from the same records:
 
 - a short summary of recent totals, open errors, and ignored/resolved counts
-- filters by status, triage (open / ignored / resolved / all), and runtime
-  surface (jobs, webhooks, package apps, workflows, and others)
+- a view toggle between **Open errors** and **Recent runs**
+- filters by status (including success), triage (open / ignored / resolved /
+  all), and runtime surface (jobs, webhooks, package apps, workflows, and
+  others)
 - a detail view with captured log lines and any triage note
 - cursor pagination for older pages
 
-Ignored and resolved error runs stay in history but are hidden from the default
-view so soft-failures and already-fixed noise do not clutter Activity.
+Ignored and resolved error runs stay in history but are hidden from Open errors
+so soft-failures and already-fixed noise do not clutter triage. Recent runs
+shows them unless you change the triage filter.
 
 From **`/account/jobs`**, each job’s recent runs link into the same Activity
 detail view.
@@ -30,7 +34,8 @@ The MCP **`runs`** domain reads and triages the same data:
 - **`run_summary`** — “is anything broken?” open-error totals (plus ignored /
   resolved counts) and per-surface breakdown
 - **`run_list`** — filtered history (by surface, status, job, package, time, and
-  `error_triage`; defaults to **open**, hiding ignored/resolved)
+  `error_triage`; defaults to **open**, hiding ignored/resolved). Pass `status`
+  `success` (or omit `status` with `error_triage` `all`) to inspect what ran.
 - **`run_get`** — one run plus its log lines and triage fields
 - **`run_update`** — mark a retained **error** run as `ignored` or `resolved`
   (or `open` to clear triage), with an optional note — non-destructive soft

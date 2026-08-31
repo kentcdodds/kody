@@ -13,6 +13,7 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import { renderActivityRunDetail } from '#client/routes/account-activity-detail.tsx'
 import {
+	activityEmptyLabel,
 	activityErrorReviewPrompt,
 	activityRoute,
 	buildActivityApiRequestUrl,
@@ -22,6 +23,7 @@ import {
 	readStatusFilter,
 	readSurfaceFilter,
 	readTriageFilter,
+	readViewFilter,
 	runDisplayName,
 	statusColor,
 	statusLabel,
@@ -29,6 +31,7 @@ import {
 	surfaceFilterOptions,
 	surfaceLabel,
 	triageFilterOptions,
+	viewFilterOptions,
 } from '#client/routes/account-activity-shared.ts'
 import {
 	AccountManagementMessage,
@@ -43,13 +46,18 @@ import {
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import {
+	defaultAccountActivityStatusFilter,
+	defaultAccountActivityTriageFilter,
+	type AccountActivityStatusFilter,
+	type AccountActivitySurfaceFilter,
+	type AccountActivityTriageFilter,
+	type AccountActivityViewFilter,
+} from '#universal/account-activity-filters.ts'
+import {
 	type AccountActivityLoaderData,
 	type AccountActivityRunDetail,
 	type AccountActivityRunListItem,
-	type AccountActivityStatusFilter,
-	type AccountActivitySurfaceFilter,
 	type AccountActivitySummary,
-	type AccountActivityTriageFilter,
 } from '#universal/loader-data.ts'
 import {
 	colors,
@@ -182,16 +190,29 @@ export function AccountActivityRoute(handle: Handle) {
 	}
 
 	function updateFilters(input: {
+		view?: AccountActivityViewFilter
 		status?: AccountActivityStatusFilter
 		surface?: AccountActivitySurfaceFilter
 		triage?: AccountActivityTriageFilter
 	}) {
 		const href = getCurrentHref()
 		const selection = activityRoute.getSelection(href)
+		const currentView = readViewFilter(href)
+		const view = input.view ?? currentView
+		const viewChanged = input.view != null && input.view !== currentView
 		const search = buildActivitySearch({
-			status: input.status ?? readStatusFilter(href),
+			view,
+			status:
+				input.status ??
+				(viewChanged
+					? defaultAccountActivityStatusFilter(view)
+					: readStatusFilter(href)),
 			surface: input.surface ?? readSurfaceFilter(href),
-			triage: input.triage ?? readTriageFilter(href),
+			triage:
+				input.triage ??
+				(viewChanged
+					? defaultAccountActivityTriageFilter(view)
+					: readTriageFilter(href)),
 		})
 		if (selection.selectedId) {
 			navigate(activityRoute.buildDetailHref(selection.selectedId, search))
@@ -216,10 +237,12 @@ export function AccountActivityRoute(handle: Handle) {
 		}
 
 		const selection = activityRoute.getSelection(currentHref)
+		const viewFilter = readViewFilter(currentHref)
 		const statusFilter = readStatusFilter(currentHref)
 		const surfaceFilter = readSurfaceFilter(currentHref)
 		const triageFilter = readTriageFilter(currentHref)
 		const filterSearch = buildActivitySearch({
+			view: viewFilter,
 			status: statusFilter,
 			surface: surfaceFilter,
 			triage: triageFilter,
@@ -239,18 +262,20 @@ export function AccountActivityRoute(handle: Handle) {
 			!detail &&
 			!waitingForDetail &&
 			status === 'ready'
-		const emptyBecauseErrors =
-			statusFilter === 'error' &&
-			surfaceFilter === 'all' &&
-			triageFilter === 'open' &&
-			runs.length === 0
 		const readySummary = status === 'ready' ? summary : null
+		const emptyLabel = activityEmptyLabel({
+			view: viewFilter,
+			status: statusFilter,
+			surface: surfaceFilter,
+			triage: triageFilter,
+			summaryTotal: readySummary?.total ?? 0,
+		})
 
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Activity"
-					description="Failures and recent runs across jobs, packages, apps, and other surfaces — with the logs you need to diagnose them."
+					description="Open failures first, plus a Recent runs week of jobs, executes, package apps, webhooks, and workflows — with the logs you need to diagnose them."
 					currentHref={currentHref}
 				/>
 				<figure
@@ -352,9 +377,11 @@ export function AccountActivityRoute(handle: Handle) {
 							})}
 						>
 							Successful ad-hoc execute runs are not recorded (only failures
-							are). Run records are kept for about {retentionDays} days. The
-							default view shows open errors; ignored and resolved runs stay
-							hidden until you change the triage filter.
+							are). Run records are kept for about {retentionDays} days. Open
+							errors is the default view. Recent runs lists the last 7 days
+							across successes, running work, and errors. Ignored and resolved
+							errors stay hidden from Open errors until you change the triage
+							filter.
 						</p>
 
 						{showRunNotFound ? (
@@ -369,21 +396,39 @@ export function AccountActivityRoute(handle: Handle) {
 							ariaLabel="Activity runs"
 							selectedId={selection.selectedId}
 							onNavigate={() => setMessage(null)}
-							emptyLabel={
-								emptyBecauseErrors
-									? 'No failures in the last 7 days. That is good news — when something breaks, it will show up here with its logs.'
-									: 'No runs match the current filters.'
-							}
+							emptyLabel={emptyLabel}
 							toolbar={
 								<>
 									<RecordTableSelect
+										label="Activity view"
+										value={viewFilter}
+										onChange={(rawValue) => {
+											const value = rawValue as AccountActivityViewFilter
+											if (
+												!viewFilterOptions.some(
+													(option) => option.value === value,
+												)
+											) {
+												return
+											}
+											updateFilters({ view: value })
+										}}
+									>
+										{viewFilterOptions.map((option) => (
+											<option key={option.value} value={option.value}>
+												{option.label}
+											</option>
+										))}
+									</RecordTableSelect>
+									<RecordTableSelect
 										label="Status filter"
 										value={statusFilter}
-										onChange={(value) => {
+										onChange={(rawValue) => {
+											const value = rawValue as AccountActivityStatusFilter
 											if (
-												value !== 'error' &&
-												value !== 'all' &&
-												value !== 'running'
+												!statusFilterOptions.some(
+													(option) => option.value === value,
+												)
 											) {
 												return
 											}

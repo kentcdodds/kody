@@ -46,7 +46,7 @@ export type RunErrorTriage = (typeof runErrorTriageValues)[number]
 
 /**
  * List/summary filter over {@link RunErrorTriage}. `open` = not ignored or
- * resolved (default for user-facing Activity / `run_list`).
+ * resolved (default for `run_list` and Activity's Open errors view).
  */
 export const runErrorTriageFilterValues = [
 	'open',

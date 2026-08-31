@@ -73,6 +73,7 @@ test('activity helpers parse filters and prefer path selected run ids', () => {
 	expect(
 		readAccountActivityFilters('https://example.com/account/activity'),
 	).toEqual({
+		viewFilter: 'errors',
 		statusFilter: 'error',
 		surfaceFilter: 'all',
 		triageFilter: 'open',
@@ -83,12 +84,25 @@ test('activity helpers parse filters and prefer path selected run ids', () => {
 			'https://example.com/account/activity?status=all&surface=job&cursor=abc&error_triage=ignored',
 		),
 	).toEqual({
+		viewFilter: 'errors',
 		statusFilter: 'all',
 		surfaceFilter: 'job',
 		triageFilter: 'ignored',
 		cursor: 'abc',
 	})
+	expect(
+		readAccountActivityFilters(
+			'https://example.com/account/activity?view=recent',
+		),
+	).toEqual({
+		viewFilter: 'recent',
+		statusFilter: 'all',
+		surfaceFilter: 'all',
+		triageFilter: 'all',
+		cursor: null,
+	})
 	expect(statusFilterToRunStatus('error')).toBe('error')
+	expect(statusFilterToRunStatus('success')).toBe('success')
 	expect(statusFilterToRunStatus('all')).toBeNull()
 	expect(surfaceFilterToRunSurface('all')).toBeNull()
 	expect(surfaceFilterToRunSurface('webhook')).toBe('webhook')
@@ -180,6 +194,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 	})
 	expect(data).toMatchObject({
 		ok: true,
+		viewFilter: 'errors',
 		statusFilter: 'error',
 		surfaceFilter: 'job',
 		triageFilter: 'open',
@@ -234,6 +249,44 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 				errorTriage: 'open',
 			},
 			cursor: 'page-2',
+		}),
+	)
+
+	mockModule.listRunRecords.mockClear()
+	await loadAccountActivityData({
+		env: {} as Env,
+		request: new Request('https://example.com/account/activity?view=recent'),
+		user,
+		now: new Date('2026-07-26T12:00:00.000Z'),
+	})
+	expect(mockModule.listRunRecords).toHaveBeenCalledWith(
+		expect.objectContaining({
+			filter: {
+				status: null,
+				surface: null,
+				since: '2026-07-19T12:00:00.000Z',
+				errorTriage: 'all',
+			},
+		}),
+	)
+
+	mockModule.listRunRecords.mockClear()
+	await loadAccountActivityData({
+		env: {} as Env,
+		request: new Request(
+			'https://example.com/account/activity?view=recent&status=success',
+		),
+		user,
+		now: new Date('2026-07-26T12:00:00.000Z'),
+	})
+	expect(mockModule.listRunRecords).toHaveBeenCalledWith(
+		expect.objectContaining({
+			filter: {
+				status: 'success',
+				surface: null,
+				since: '2026-07-19T12:00:00.000Z',
+				errorTriage: 'all',
+			},
 		}),
 	)
 })
