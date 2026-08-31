@@ -1,9 +1,7 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -19,16 +17,25 @@ import {
 	type AccountJobsViewFilter,
 } from '#client/routes/account-jobs-filter.ts'
 import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
+	renderAccountJobDetail,
+	renderJobDetailPlaceholder,
+} from '#client/routes/account-jobs-detail.tsx'
+import {
+	type AccountJobsActionPayload,
+	accountJobsApiPath,
+	buildJobsApiRequestUrl,
+	emptyJobsMessage,
+	getDataLatchKey,
+	jobsRoute,
+	packageLabel,
+	statusColor,
+	statusLabel,
+	viewFilterOptions,
+} from '#client/routes/account-jobs-shared.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	IdValue,
-	MetadataGrid,
-	TimestampValue,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
@@ -36,7 +43,6 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	RecordTableSelect,
-	recordBodyCss,
 	recordCellClamp,
 } from '#client/routes/record-table.tsx'
 import {
@@ -44,164 +50,19 @@ import {
 	type AccountJobListItem,
 	type AccountJobsLoaderData,
 } from '#universal/loader-data.ts'
-import { routes } from '#universal/routes.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
-import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
-import { plainHighlightedCode } from '#universal/highlighted-code.ts'
+import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	cardTitleCss,
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
-	getDangerPillCss,
 	getGhostButtonCss,
-	getPillButtonCss,
-	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
 type MessageTone = 'info' | 'error'
-
-const accountJobsApiPath = '/account/jobs.json'
-const jobsRoute = createListDetailRoute('/account/jobs')
-
-const viewFilterOptions: Array<{
-	value: AccountJobsViewFilter
-	label: string
-}> = [
-	{ value: 'active', label: 'Active' },
-	{ value: 'history', label: 'History' },
-	{ value: 'all', label: 'All' },
-]
-
-/**
- * Latch key includes the selected job id because detail fields (recent runs,
- * params, errors) are loaded with `?selected=`. The client-side `q` / `view`
- * filters are omitted so search typing and filter toggles do not refetch.
- */
-function getDataLatchKey(href: string) {
-	const selectedId = jobsRoute.getSelection(href).selectedId
-	return selectedId
-		? `/account/jobs?selected=${encodeURIComponent(selectedId)}`
-		: '/account/jobs'
-}
-
-function emptyJobsMessage(input: {
-	totalCount: number
-	filteredCount: number
-	view: AccountJobsViewFilter
-	search: string
-}) {
-	if (input.totalCount === 0) return 'No scheduled jobs yet.'
-	if (input.filteredCount > 0) return null
-	if (input.search || input.view === 'all') {
-		return 'No jobs match the current filters.'
-	}
-	if (input.view === 'history') {
-		return 'No inactive or past jobs.'
-	}
-	return 'No active or upcoming jobs. Switch to History or All to see other jobs.'
-}
-
-function buildJobsApiRequestUrl(href: string) {
-	const requestUrl = new URL(accountJobsApiPath, 'http://localhost')
-	const selectedJobId = jobsRoute.getSelection(href).selectedId
-	if (selectedJobId) {
-		requestUrl.searchParams.set('selected', selectedJobId)
-	}
-	return `${requestUrl.pathname}${requestUrl.search}`
-}
-
-export async function accountJobsRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildJobsApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountJobsLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load scheduled jobs.')
-	}
-	return { accountJobs: payload }
-}
-
-function packageLabel(
-	job: Pick<AccountJobListItem, 'ownership' | 'packageName'>,
-) {
-	if (job.ownership === 'package') {
-		return job.packageName ?? 'Package'
-	}
-	return '—'
-}
-
-function packageValue(
-	job: Pick<AccountJobListItem, 'ownership' | 'packageId' | 'packageName'>,
-) {
-	if (job.ownership !== 'package') return '—'
-	if (job.packageId && job.packageName) {
-		return (
-			<a
-				href={routes.accountPackageDetail.href({
-					packageId: job.packageId,
-				})}
-				mix={css(primaryLinkCss)}
-			>
-				{job.packageName}
-			</a>
-		)
-	}
-	return job.packageName ?? 'Package'
-}
-
-function statusLabel(
-	job: Pick<
-		AccountJobListItem,
-		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus' | 'expired'
-	>,
-) {
-	if (job.killSwitchEnabled) return 'Kill switch on'
-	if (job.expired) return 'Expired'
-	if (!job.enabled) return 'Disabled'
-	if (job.dueNow) return 'Due now'
-	if (job.lastRunStatus === 'error') return 'Last run failed'
-	if (job.lastRunStatus === 'success') return 'Last run ok'
-	return 'Scheduled'
-}
-
-function statusColor(
-	job: Pick<
-		AccountJobListItem,
-		'enabled' | 'killSwitchEnabled' | 'dueNow' | 'lastRunStatus' | 'expired'
-	>,
-) {
-	if (job.killSwitchEnabled) return colors.error
-	if (job.expired) return colors.textMuted
-	if (!job.enabled) return colors.textMuted
-	if (job.dueNow) return colors.primary
-	if (job.lastRunStatus === 'error') return colors.error
-	if (job.lastRunStatus === 'success') return colors.primary
-	return colors.textMuted
-}
-
-function formatDurationMs(durationMs: number | null) {
-	if (durationMs == null) return '—'
-	if (durationMs < 1000) return `${durationMs} ms`
-	return `${(durationMs / 1000).toFixed(1)} s`
-}
 
 function tryConsumeAccountJobsLoaderData(handle: Handle, href: string) {
 	return tryConsumeRouteLoaderData(handle, 'accountJobs', href)
@@ -232,9 +93,7 @@ export function AccountJobsRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 	const deleteJobCheck = createDoubleCheck(handle)
 
-	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -319,17 +178,9 @@ export function AccountJobsRoute(handle: Handle) {
 
 	async function postAction(input: {
 		body: Record<string, unknown>
-		successMessage: (
-			payload: AccountJobsLoaderData & {
-				runNow?: { ok: boolean; error: string | null; deletedAfterRun: boolean }
-			},
-		) => string | null
+		successMessage: (payload: AccountJobsActionPayload) => string | null
 		failureMessage: string
-		afterSuccess?: (
-			payload: AccountJobsLoaderData & {
-				runNow?: { ok: boolean; error: string | null; deletedAfterRun: boolean }
-			},
-		) => void
+		afterSuccess?: (payload: AccountJobsActionPayload) => void
 	}) {
 		if (actionState !== 'idle') return
 		actionState = 'busy'
@@ -350,14 +201,9 @@ export function AccountJobsRoute(handle: Handle) {
 				return
 			}
 			const payload = await readJson<
-				AccountJobsLoaderData & {
+				AccountJobsActionPayload & {
 					error?: string
 					ok?: boolean
-					runNow?: {
-						ok: boolean
-						error: string | null
-						deletedAfterRun: boolean
-					}
 				}
 			>(response)
 			if (!response.ok || !payload?.ok) {
@@ -431,8 +277,6 @@ export function AccountJobsRoute(handle: Handle) {
 			!detail &&
 			!waitingForDetail &&
 			status === 'ready'
-		const isPackageOwned = detail?.ownership === 'package'
-		const isNotPackageOwned = detail != null && !isPackageOwned
 
 		return (
 			<AccountManagementShell>
@@ -679,464 +523,28 @@ export function AccountJobsRoute(handle: Handle) {
 							},
 						}))}
 						record={
-							detail ? (
-								<section mix={css(recordBodyCss)}>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>{detail.name}</h2>
-										<p mix={css(descriptionCss)}>
-											{isPackageOwned
-												? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here. Use the kill switch to stop it.'
-												: 'Scheduled job. You can enable or disable it, Preserve it from auto-cleanup, or delete it.'}
-										</p>
-									</div>
-
-									<MetadataGrid
-										items={[
-											{
-												label: 'Package',
-												value: packageValue(detail),
-											},
-											{
-												label: 'Preserve',
-												value: detail.preserved
-													? 'On (never auto-deleted)'
-													: 'Off',
-											},
-											{
-												label: 'Expires',
-												value: detail.expiresAt ? (
-													<>
-														{detail.expired ? 'Expired ' : ''}
-														<TimestampValue value={detail.expiresAt} />
-													</>
-												) : (
-													'Never'
-												),
-											},
-											{
-												label: 'Status',
-												value: (
-													<span mix={css({ color: statusColor(detail) })}>
-														{statusLabel(detail)}
-													</span>
-												),
-											},
-											{
-												label: 'Schedule',
-												value: detail.scheduleSummary,
-											},
-											{
-												label: 'Timezone',
-												value: detail.timezone,
-											},
-											{
-												label: 'Next run',
-												value: <TimestampValue value={detail.nextRunAt} />,
-											},
-											{
-												label: 'Last run',
-												value: <TimestampValue value={detail.lastRunAt} />,
-											},
-											{
-												label: 'Last duration',
-												value: formatDurationMs(detail.lastDurationMs),
-											},
-											{
-												label: 'Runs',
-												value: `${detail.runCount} total · ${detail.successCount} ok · ${detail.errorCount} error`,
-											},
-											{
-												label: 'Storage id',
-												value: (
-													<IdValue
-														value={detail.storageId}
-														label="storage id"
-													/>
-												),
-											},
-											{
-												label: 'Source id',
-												value: (
-													<IdValue value={detail.sourceId} label="source id" />
-												),
-											},
-											{
-												label: 'Published commit',
-												value: detail.publishedCommit ? (
-													<IdValue
-														value={detail.publishedCommit}
-														label="published commit"
-													/>
-												) : (
-													'—'
-												),
-											},
-											{
-												label: 'Updated',
-												value: <TimestampValue value={detail.updatedAt} />,
-											},
-										]}
-									/>
-
-									{detail.lastRunError ? (
-										<AccountManagementMessage tone="error">
-											{detail.lastRunError}
-										</AccountManagementMessage>
-									) : null}
-
-									{isPackageOwned ? (
-										<p mix={css(descriptionCss)}>
-											To change this job&apos;s schedule or name, update the
-											package job declaration and publish the package again.
-										</p>
-									) : null}
-
-									<div mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Recent runs</span>
-										{detail.recentRuns.length === 0 ? (
-											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												No runs recorded yet.
-											</p>
-										) : (
-											<div
-												mix={css({
-													overflowX: 'auto',
-													border: `1px solid ${colors.border}`,
-													borderRadius: radius.md,
-												})}
-											>
-												<table
-													mix={css({
-														width: '100%',
-														borderCollapse: 'collapse',
-														fontSize: typography.fontSize.sm,
-													})}
-												>
-													<thead>
-														<tr>
-															{[
-																'Started',
-																'Finished',
-																'Status',
-																'Duration',
-																'Error',
-																'',
-															].map((heading) => (
-																<th
-																	key={heading || 'logs'}
-																	mix={css({
-																		textAlign: 'left',
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																		color: colors.textMuted,
-																		fontWeight: typography.fontWeight.medium,
-																	})}
-																>
-																	{heading}
-																</th>
-															))}
-														</tr>
-													</thead>
-													<tbody>
-														{detail.recentRuns.map((run) => (
-															<tr key={run.id}>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																	})}
-																>
-																	{formatTimestamp(run.startedAt)}
-																</td>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																	})}
-																>
-																	{formatTimestamp(run.finishedAt)}
-																</td>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																		color:
-																			run.status === 'error'
-																				? colors.error
-																				: run.status === 'running'
-																					? colors.textMuted
-																					: colors.primary,
-																	})}
-																>
-																	{run.status}
-																</td>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																	})}
-																>
-																	{formatDurationMs(run.durationMs)}
-																</td>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																		color: colors.textMuted,
-																		maxWidth: '16rem',
-																		overflowWrap: 'anywhere',
-																	})}
-																>
-																	{run.error ?? '—'}
-																</td>
-																<td
-																	mix={css({
-																		padding: spacing.sm,
-																		borderBottom: `1px solid ${colors.border}`,
-																	})}
-																>
-																	<a
-																		href={routes.accountActivityDetail.href({
-																			runId: run.id,
-																		})}
-																		mix={css(primaryLinkCss)}
-																	>
-																		Logs
-																	</a>
-																</td>
-															</tr>
-														))}
-													</tbody>
-												</table>
-											</div>
-										)}
-									</div>
-
-									{detail.params ? (
-										<div mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Params</span>
-											<div
-												mix={css({
-													'& pre': {
-														margin: 0,
-														padding: spacing.sm,
-														borderRadius: radius.md,
-														border: `1px solid ${colors.border}`,
-														fontFamily: 'monospace',
-														fontSize: typography.fontSize.sm,
-														overflowX: 'auto',
-														whiteSpace: 'pre-wrap',
-													},
-												})}
-											>
-												{renderHighlightedCode(
-													detail.paramsHighlighted ??
-														plainHighlightedCode(
-															JSON.stringify(detail.params, null, 2),
-															'json',
-														),
-												)}
-											</div>
-										</div>
-									) : null}
-
-									<div
-										mix={css({
-											display: 'flex',
-											gap: spacing.sm,
-											flexWrap: 'wrap',
-										})}
-									>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () =>
-													postAction({
-														body: { action: 'run_now', id: detail.id },
-														successMessage: (payload) => {
-															if (payload.runNow?.deletedAfterRun) {
-																return payload.runNow.ok
-																	? 'Ran one-off job and deleted it.'
-																	: `Ran one-off job (failed) and deleted it${
-																			payload.runNow.error
-																				? `: ${payload.runNow.error}`
-																				: '.'
-																		}`
-															}
-															if (payload.runNow && !payload.runNow.ok) {
-																return `Run finished with an error${
-																	payload.runNow.error
-																		? `: ${payload.runNow.error}`
-																		: '.'
-																}`
-															}
-															if (
-																detail.schedule.type === 'once' &&
-																payload.runNow?.ok
-															) {
-																return detail.preserved
-																	? 'Job run finished. Preserved — will not be auto-deleted.'
-																	: `Job run finished. Kept for ${retention.successOnceDays} days · Preserve to keep forever.`
-															}
-															return 'Job run requested.'
-														},
-														failureMessage: 'Unable to run job now.',
-														afterSuccess: (payload) => {
-															if (payload.runNow?.deletedAfterRun) {
-																navigate(
-																	jobsRoute.buildListHref(getCurrentSearch()),
-																)
-															}
-														},
-													}),
-												),
-												css(primaryButtonCss),
-											]}
-										>
-											Run now
-										</button>
-										<button
-											type="button"
-											disabled={isMutating}
-											mix={[
-												on('click', () =>
-													postAction({
-														body: {
-															action: 'set_kill_switch',
-															id: detail.id,
-															killSwitchEnabled: !detail.killSwitchEnabled,
-														},
-														successMessage: () =>
-															detail.killSwitchEnabled
-																? 'Cleared kill switch.'
-																: 'Enabled kill switch.',
-														failureMessage: 'Unable to update kill switch.',
-													}),
-												),
-												css(secondaryButtonCss),
-											]}
-										>
-											{detail.killSwitchEnabled
-												? 'Clear kill switch'
-												: 'Enable kill switch'}
-										</button>
-										{isNotPackageOwned ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', () =>
-														postAction({
-															body: {
-																action: 'set_preserved',
-																id: detail.id,
-																preserved: !detail.preserved,
-															},
-															successMessage: () =>
-																detail.preserved
-																	? 'Cleared Preserve. This job can age out under retention.'
-																	: 'Preserved. This job will not be auto-deleted.',
-															failureMessage: 'Unable to update Preserve.',
-														}),
-													),
-													css(secondaryButtonCss),
-												]}
-											>
-												{detail.preserved ? 'Clear Preserve' : 'Preserve'}
-											</button>
-										) : null}
-										{isNotPackageOwned ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', () =>
-														postAction({
-															body: {
-																action: 'set_enabled',
-																id: detail.id,
-																enabled: !detail.enabled,
-															},
-															successMessage: () =>
-																detail.enabled
-																	? 'Disabled job.'
-																	: 'Enabled job.',
-															failureMessage: 'Unable to update job.',
-														}),
-													),
-													css(secondaryButtonCss),
-												]}
-											>
-												{detail.enabled ? 'Disable' : 'Enable'}
-											</button>
-										) : null}
-										{isNotPackageOwned ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													...deleteJobCheck.getButtonMix({
-														on: {
-															click: () =>
-																void postAction({
-																	body: { action: 'delete', id: detail.id },
-																	successMessage: () => 'Deleted job.',
-																	failureMessage: 'Unable to delete job.',
-																	afterSuccess: () => {
-																		navigate(
-																			jobsRoute.buildListHref(
-																				getCurrentSearch(),
-																			),
-																		)
-																	},
-																}),
-														},
-														resetAfterAction: false,
-													}),
-													css(dangerButtonCss),
-												]}
-											>
-												{deleteJobCheck.doubleCheck
-													? 'Confirm delete'
-													: 'Delete'}
-											</button>
-										) : null}
-									</div>
-								</section>
-							) : waitingForDetail ? (
-								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										{listMatch?.name ?? 'Loading job'}
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Loading job details...
-									</p>
-								</div>
-							) : showJobNotFound ? (
-								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										Job not found
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										This job does not exist for this account or is unavailable.
-									</p>
-								</div>
-							) : null
+							detail
+								? renderAccountJobDetail({
+										detail,
+										isMutating,
+										retention,
+										deleteJobCheck,
+										postAction,
+										navigateToList: () => {
+											navigate(jobsRoute.buildListHref(getCurrentSearch()))
+										},
+									})
+								: waitingForDetail
+									? renderJobDetailPlaceholder(
+											listMatch?.name ?? 'Loading job',
+											'Loading job details...',
+										)
+									: showJobNotFound
+										? renderJobDetailPlaceholder(
+												'Job not found',
+												'This job does not exist for this account or is unavailable.',
+											)
+										: null
 						}
 					/>
 				) : null}

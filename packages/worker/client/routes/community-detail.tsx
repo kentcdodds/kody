@@ -1,24 +1,14 @@
 import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
-import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
 } from '#client/client-router.tsx'
-import { prefetchFrame } from '#client/frame-prefetch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { on } from '#client/event-mixin.ts'
-import {
-	ActionButtonLoader,
-	installProgressWords,
-} from '#client/action-button-loader.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -33,27 +23,35 @@ import {
 	readFollowButtonFromEvent,
 	submitOptimisticFollow,
 } from '#client/community-social-toggle.ts'
-import { colors, transitions, typography } from '#universal/styles/tokens.ts'
-import {
-	getGhostButtonCss,
-	getPillButtonCss,
-	getSurfaceCardCss,
-	hoverMq,
-	mergeCss,
-	pageHeadCss,
-	proseCss,
-	visuallyHiddenCss,
-} from '#universal/styles/style-primitives.ts'
-import {
-	type PublicCommunityListing,
-	type ViewerListingInstall,
-} from '#universal/community-public-types.ts'
 import {
 	type AccountPackageDetail,
-	type AccountPackagesLoaderData,
 	type AppLoaderData,
 } from '#universal/loader-data.ts'
-import { AccountPackageOwnerDetails } from '#client/routes/account-package-owner-details.tsx'
+import {
+	type CommunityDetailApiPayload,
+	type CommunityInstallApiPayload,
+	type CommunityInstallOutcome,
+	type CommunityPackageMovedPayload,
+	type CommunityShellSnapshot,
+	buildCommunityDetailFrameSrc,
+	buildReportApiPath,
+	getListingPageRef,
+	postPackageLock,
+	rememberListingId,
+} from './community-detail-shared.ts'
+import {
+	detailArticleCss,
+	inlineLinkCss,
+	missingHeadCss,
+	renderAdminFeatureSection,
+	renderAdminTrustSection,
+	renderInstallStrip,
+	renderMissingListing,
+	renderOwnerPackageSection,
+	renderReadmeSection,
+	renderReportDisclosure,
+	renderShellStatus,
+} from './community-detail-sections.tsx'
 
 /**
  * Community detail, ported from the redesign prototype
@@ -66,212 +64,8 @@ import { AccountPackageOwnerDetails } from '#client/routes/account-package-owner
  * frame next to Trusted. The title star lives there too.
  */
 
-type CommunityDetailApiPayload = {
-	ok: true
-	listing: PublicCommunityListing | null
-	ownerProfilePublic: boolean
-	loggedIn: boolean
-	viewerIsAdmin: boolean
-	forkPrompt: string
-	starredByViewer: boolean
-	viewerInstall: ViewerListingInstall | null
-	readmeFences?: Array<HighlightedCode>
-	ownerPackage: AccountPackageDetail | null
-	username: string
-	invocationUrlOrigin: string
-}
-
-type CommunityPackageMovedPayload = {
-	ok: false
-	// The canonical pair the requested one was renamed to.
-	redirectTo?: string
-}
-
-type CommunityInstallApiPayload = {
-	ok: boolean
-	requiresAcknowledgement?: boolean
-	status?: 'installed' | 'adaptation_required'
-	packageId?: string
-	targetName?: string
-	agentPrompt?: string
-	failedChecks?: Array<{ kind: string; message: string }>
-	error?: string
-}
-
-type CommunityInstallOutcome = {
-	status: 'installed' | 'adaptation_required'
-	targetName: string
-	agentPrompt: string
-	packageId: string | null
-	failedChecks: Array<{ kind: string; message: string }>
-}
-
-export function getListingIdFromPathname(pathname: string) {
-	const prefix = `${routes.community.href()}/`
-	if (!pathname.startsWith(prefix)) return null
-	let listingId: string
-	try {
-		listingId = decodeURIComponent(
-			pathname.slice(prefix.length).replace(/\/$/, ''),
-		)
-	} catch {
-		// Malformed percent-encoding (`/community/%`) throws. The shell calls
-		// this to classify every pathname, so a throw here would take the whole
-		// page down instead of just missing a listing.
-		return null
-	}
-	return listingId || null
-}
-
-const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
-
-/**
- * The canonical package URL (`/@owner/kody-id`) carries no listing id, and
- * every listing-scoped API is keyed by it. The server resolves the pair once
- * per page load (route loader or SSR shell); remembering the answer here keeps
- * the action handlers able to read the id synchronously.
- *
- * Module scope is shared by every request in a worker isolate (the app shell
- * imports this module for SSR too), so the cache is bounded: it only ever needs
- * the page being rendered plus the handful a visitor navigated through, and an
- * entry evicted early costs a refetch, not correctness.
- */
-const listingIdsByPathname = new Map<string, string>()
-const maxRememberedListingPathnames = 10
-
-function rememberListingId(pathname: string, listingId: string) {
-	// Re-setting moves the entry to the end of the insertion order, so the
-	// oldest key is always the least recently resolved one.
-	listingIdsByPathname.delete(pathname)
-	listingIdsByPathname.set(pathname, listingId)
-	for (const key of listingIdsByPathname.keys()) {
-		if (listingIdsByPathname.size <= maxRememberedListingPathnames) break
-		listingIdsByPathname.delete(key)
-	}
-}
-
-type ListingPageRef = {
-	pathname: string
-	detailApiHref: string
-	listingId: string | null
-}
-
-function getListingPageRef(pathname: string): ListingPageRef | null {
-	const listingId = getListingIdFromPathname(pathname)
-	if (listingId) {
-		return {
-			pathname,
-			detailApiHref: routes.communityDetailApi.href({ listingId }),
-			listingId,
-		}
-	}
-
-	const params = communityPackageMatcher.match(
-		new URL(pathname, 'http://localhost'),
-	)?.params
-	if (!params) return null
-	return {
-		pathname,
-		detailApiHref: routes.communityPackageApi.href({
-			username: params.username,
-			kodyId: params.kodyId,
-		}),
-		listingId: listingIdsByPathname.get(pathname) ?? null,
-	}
-}
-
-/**
- * True for both public spellings of a listing page: the canonical
- * `/@owner/kody-id` and the listing-uuid URL that redirects to it.
- */
-export function isCommunityListingPathname(pathname: string) {
-	return getListingPageRef(pathname) !== null
-}
-
 function getCurrentListingId(handle: Handle) {
 	return getListingPageRef(readRouterPathname(handle))?.listingId ?? null
-}
-
-function buildCommunityDetailFrameSrc(href: string) {
-	const url = new URL(href, 'http://localhost')
-	if (!getListingPageRef(url.pathname)) return url.pathname
-	const followError = url.searchParams.get('followError')
-	if (!followError) return url.pathname
-	const frameUrl = new URL(url.pathname, 'http://localhost')
-	frameUrl.searchParams.set('followError', followError)
-	return `${frameUrl.pathname}${frameUrl.search}`
-}
-
-export async function communityDetailRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const ref = getListingPageRef(url.pathname)
-	if (!ref) {
-		throw new Error('Community listing not found.')
-	}
-
-	const frameSrc = buildCommunityDetailFrameSrc(`${url.pathname}${url.search}`)
-	const shellPromise = fetch(ref.detailApiHref, {
-		headers: { Accept: 'application/json' },
-		signal,
-	})
-	const framePrefetchPromise = prefetchFrame(
-		frameSrc,
-		COMMUNITY_DETAIL_TARGET,
-		signal,
-	)
-
-	const response = await shellPromise
-	const payload = await readJson<
-		CommunityDetailApiPayload | CommunityPackageMovedPayload
-	>(response)
-	if (response.status === 401) {
-		return {
-			communityDetailShell: { ok: false, unauthorized: true },
-		}
-	}
-	if (response.status === 404) {
-		const movedTo = payload && !payload.ok ? payload.redirectTo : null
-		// A renamed package is a real destination, not a dead link: leave the SPA
-		// so the visitor lands on (and can copy) the canonical URL.
-		if (movedTo) return routeLoaderRedirect(movedTo)
-		throw new Error('Community listing not found.')
-	}
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load community package.')
-	}
-
-	await framePrefetchPromise
-	const listingId = payload.listing?.id ?? null
-	if (listingId) rememberListingId(ref.pathname, listingId)
-
-	return {
-		communityDetailShell: {
-			ok: true,
-			listingId,
-			name: payload.listing?.name ?? payload.ownerPackage?.name ?? '',
-			description:
-				payload.listing?.description ?? payload.ownerPackage?.description ?? '',
-			forkPrompt: payload.forkPrompt,
-			loggedIn: payload.loggedIn,
-			viewerIsAdmin: payload.viewerIsAdmin,
-			trusted: payload.listing?.trusted ?? false,
-			featured: payload.listing?.featured ?? false,
-			readmeContent: payload.listing?.readmeContent ?? null,
-			readmeFences: payload.readmeFences,
-			starCount: payload.listing?.starCount ?? 0,
-			starredByViewer: payload.starredByViewer,
-			viewerInstall: payload.viewerInstall,
-			ownerPackage: payload.ownerPackage,
-			username: payload.username,
-			invocationUrlOrigin: payload.invocationUrlOrigin,
-		},
-	}
-}
-
-function buildReportApiPath(listingId: string) {
-	return routes.communityReportApiPost.href({ listingId })
 }
 
 export function CommunityDetailRoute(handle: Handle) {
@@ -331,6 +125,36 @@ export function CommunityDetailRoute(handle: Handle) {
 		return renderedReadme
 	}
 
+	function applyShellSnapshot(
+		snapshot: CommunityShellSnapshot,
+		pathname: string,
+	) {
+		loggedIn = snapshot.loggedIn
+		viewerIsAdmin = snapshot.viewerIsAdmin
+		trusted = snapshot.trusted
+		trustState = 'idle'
+		trustMessage = null
+		featured = snapshot.featured
+		featureState = 'idle'
+		featureMessage = null
+		installState = 'idle'
+		installMessage = null
+		installOutcome = null
+		readmeContent = snapshot.readmeContent
+		readmeFences = snapshot.readmeFences ?? []
+		starredByViewer = snapshot.starredByViewer
+		starMessage = null
+		reportState = 'idle'
+		reportMessage = null
+		ownerPackage = snapshot.ownerPackage
+		username = snapshot.username
+		invocationUrlOrigin = snapshot.invocationUrlOrigin
+		ownerDetailsMessage = null
+		shellUnauthorized = false
+		shellLoadedForPathname = pathname
+		shellStatus = 'ready'
+	}
+
 	async function loadDetailShell() {
 		const ref = getListingPageRef(readRouterPathname(handle))
 		if (!ref) return
@@ -376,30 +200,21 @@ export function CommunityDetailRoute(handle: Handle) {
 			if (payload.listing) {
 				rememberListingId(ref.pathname, payload.listing.id)
 			}
-			loggedIn = payload.loggedIn
-			viewerIsAdmin = payload.viewerIsAdmin
-			trusted = payload.listing?.trusted ?? false
-			trustState = 'idle'
-			trustMessage = null
-			featured = payload.listing?.featured ?? false
-			featureState = 'idle'
-			featureMessage = null
-			installState = 'idle'
-			installMessage = null
-			installOutcome = null
-			readmeContent = payload.listing?.readmeContent ?? null
-			readmeFences = payload.readmeFences ?? []
-			starredByViewer = payload.starredByViewer
-			starMessage = null
-			reportState = 'idle'
-			reportMessage = null
-			ownerPackage = payload.ownerPackage
-			username = payload.username
-			invocationUrlOrigin = payload.invocationUrlOrigin
-			ownerDetailsMessage = null
-			shellUnauthorized = false
-			shellLoadedForPathname = ref.pathname
-			shellStatus = 'ready'
+			applyShellSnapshot(
+				{
+					loggedIn: payload.loggedIn,
+					viewerIsAdmin: payload.viewerIsAdmin,
+					trusted: payload.listing?.trusted ?? false,
+					featured: payload.listing?.featured ?? false,
+					readmeContent: payload.listing?.readmeContent ?? null,
+					readmeFences: payload.readmeFences,
+					starredByViewer: payload.starredByViewer,
+					ownerPackage: payload.ownerPackage,
+					username: payload.username,
+					invocationUrlOrigin: payload.invocationUrlOrigin,
+				},
+				ref.pathname,
+			)
 			handle.update()
 		} catch {
 			if (requestId !== shellLoadRequestId) return
@@ -497,53 +312,26 @@ export function CommunityDetailRoute(handle: Handle) {
 		applyOwnerPackageLock(packageId, nextLockedAt)
 		handle.update()
 
-		try {
-			const response = await fetch('/account/packages.json', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action: nextLocked ? 'lock' : 'unlock',
-					packageId,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountPackagesLoaderData & { error?: string }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				applyOwnerPackageLock(packageId, previousLockedAt)
-				if (ownerPackage?.id === packageId) {
-					ownerDetailsMessage =
-						payload?.error ?? 'Could not update the publish lock.'
-				}
-				handle.update()
-				return
-			}
-			applyOwnerPackageLock(
-				packageId,
-				payload.selectedPackage?.lockedAt ?? nextLockedAt,
-			)
-			if (payload.selectedPackage?.id === packageId) {
-				ownerPackage = payload.selectedPackage
-			}
+		const result = await postPackageLock(packageId, nextLocked)
+		lockInFlight.delete(packageId)
+		if (result.status === 'unauthorized') {
+			window.location.assign('/login')
 			handle.update()
-		} catch {
+			return
+		}
+		if (result.status === 'error') {
 			applyOwnerPackageLock(packageId, previousLockedAt)
 			if (ownerPackage?.id === packageId) {
-				ownerDetailsMessage = 'Could not update the publish lock.'
+				ownerDetailsMessage = result.message
 			}
 			handle.update()
-		} finally {
-			lockInFlight.delete(packageId)
-			handle.update()
+			return
 		}
+		applyOwnerPackageLock(packageId, result.lockedAt ?? nextLockedAt)
+		if (result.selectedPackage?.id === packageId) {
+			ownerPackage = result.selectedPackage
+		}
+		handle.update()
 	}
 
 	async function submitReport() {
@@ -829,30 +617,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		if (routeData.listingId && listingId && routeData.listingId !== listingId) {
 			return false
 		}
-		loggedIn = routeData.loggedIn
-		viewerIsAdmin = routeData.viewerIsAdmin
-		trusted = routeData.trusted
-		trustState = 'idle'
-		trustMessage = null
-		featured = routeData.featured
-		featureState = 'idle'
-		featureMessage = null
-		installState = 'idle'
-		installMessage = null
-		installOutcome = null
-		readmeContent = routeData.readmeContent
-		readmeFences = routeData.readmeFences ?? []
-		starredByViewer = routeData.starredByViewer
-		starMessage = null
-		reportState = 'idle'
-		reportMessage = null
-		ownerPackage = routeData.ownerPackage
-		username = routeData.username
-		invocationUrlOrigin = routeData.invocationUrlOrigin
-		ownerDetailsMessage = null
-		shellUnauthorized = false
-		shellLoadedForPathname = pathname
-		shellStatus = 'ready'
+		applyShellSnapshot(routeData, pathname)
 		return true
 	}
 
@@ -879,30 +644,16 @@ export function CommunityDetailRoute(handle: Handle) {
 			(routeData && !routeData.ok) ||
 			(shellUnauthorized && shellLoadedForPathname === pathname)
 		) {
-			return (
-				<article mix={css(detailArticleCss)}>
-					<a href={routes.community.href()} mix={css(backLinkCss)}>
-						← Community packages
-					</a>
-					<header mix={css(missingHeadCss)}>
-						<h1>Unauthorized</h1>
-						<p>You are not allowed to view this page.</p>
-					</header>
-				</article>
+			return renderMissingListing(
+				'Unauthorized',
+				'You are not allowed to view this page.',
 			)
 		}
 
 		if (!ref) {
-			return (
-				<article mix={css(detailArticleCss)}>
-					<a href={routes.community.href()} mix={css(backLinkCss)}>
-						← Community packages
-					</a>
-					<header mix={css(missingHeadCss)}>
-						<h1>Community package not found</h1>
-						<p>This listing is unavailable.</p>
-					</header>
-				</article>
+			return renderMissingListing(
+				'Community package not found',
+				'This listing is unavailable.',
 			)
 		}
 
@@ -943,11 +694,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			: showShellReady
 				? ''
 				: 'Loading community package details…'
-		const installAnnouncement = installOutcome
-			? installOutcome.status === 'installed'
-				? `Installed as ${installOutcome.targetName}.`
-				: `Forked as ${installOutcome.targetName}; it needs adaptation before it can run.`
-			: ''
 
 		return (
 			<article
@@ -978,513 +724,77 @@ export function CommunityDetailRoute(handle: Handle) {
 					</header>
 				) : null}
 
-				{/*
-				 * A live region only announces text that changes while the region
-				 * is already in the accessibility tree, so the announcer stays
-				 * mounted for the life of the view and keeps one fixed role.
-				 * Swapping two `role="status"` paragraphs announced the failure
-				 * inconsistently, because the loading one unmounted as the error
-				 * one mounted. Same shape as `renderStatusMessage` in login.tsx.
-				 */}
-				<p role="status" mix={css(visuallyHiddenCss)}>
-					{shellStatusMessage}
-				</p>
-				{/*
-				 * The visible copy is hidden from assistive tech so the same
-				 * sentence is not announced twice, and stays out of the flow while
-				 * empty so it adds no gap.
-				 */}
-				<p
-					aria-hidden="true"
-					hidden={shellStatusMessage ? undefined : true}
-					mix={css(shellStatusCss)}
-				>
-					{shellStatusMessage}
-				</p>
+				{renderShellStatus(shellStatusMessage)}
 
 				{showShellReady && listingId ? (
 					<>
-						<div data-testid="community-install" mix={css(installStripCss)}>
-							<p role="status" mix={css(visuallyHiddenCss)}>
-								{installAnnouncement}
-							</p>
-							{installState === 'submitting' ? (
-								<p mix={css(installProgressCss)} role="status">
-									<ActionButtonLoader
-										label="Installing"
-										words={installProgressWords}
-									/>
-								</p>
-							) : null}
-							{installState === 'confirming' ? (
-								<div
-									mix={css(warningCardCss)}
-									data-testid="community-install-warning"
-									role="alert"
-								>
-									<p mix={css({ margin: 0 })}>
-										This package is not trusted: no admin has reviewed its code,
-										and it was written by another user. Installing publishes it
-										into your account and can activate its scheduled jobs
-										immediately. Only continue if you accept that risk.
-									</p>
-									<div mix={css(buttonRowCss)}>
-										<button
-											mix={[
-												on('click', () => void submitInstall()),
-												css(dangerPillButtonCss),
-											]}
-										>
-											Install anyway
-										</button>
-										<button
-											mix={[
-												on('click', () => {
-													installState = 'idle'
-													handle.update()
-												}),
-												css(smallGhostButtonCss),
-											]}
-										>
-											Cancel
-										</button>
-									</div>
-								</div>
-							) : null}
-							{installMessage ? (
-								<p mix={css(errorTextCss)} role="alert">
-									{installMessage}
-								</p>
-							) : null}
-							{starMessage ? (
-								<p mix={css(errorTextCss)} role="alert">
-									{starMessage}
-								</p>
-							) : null}
-						</div>
+						{renderInstallStrip({
+							installState,
+							installMessage,
+							installOutcome,
+							starMessage,
+							onConfirmInstall: () => void submitInstall(),
+							onCancelInstall: () => {
+								installState = 'idle'
+								handle.update()
+							},
+						})}
 
-						{readmeContent ? (
-							<section
-								aria-labelledby="readme-title"
-								mix={css(readmeSectionCss)}
-							>
-								<h2 id="readme-title">README</h2>
-								<div data-testid="community-readme" mix={css(readmeProseCss)}>
-									{renderReadme(readmeContent, readmeFences)}
-								</div>
-							</section>
-						) : null}
+						{readmeContent
+							? renderReadmeSection(renderReadme(readmeContent, readmeFences))
+							: null}
 
-						{viewerIsAdmin ? (
-							<section
-								aria-labelledby="admin-trust-title"
-								mix={css(detailSectionCss)}
-								data-testid="community-admin-trust"
-							>
-								<h2 id="admin-trust-title">Admin: trust</h2>
-								<p>
-									{trusted
-										? 'This listing is marked trusted at its current version. Revoking removes the badge immediately.'
-										: 'Marking this listing trusted applies to the exact current version only. A republish by the owner drops the mark until it is re-reviewed.'}
-								</p>
-								<div mix={css(sectionActionCss)}>
-									<button
-										disabled={trustState === 'submitting'}
-										mix={[
-											on('click', () => void submitTrust(!trusted)),
-											css(smallGhostButtonCss),
-										]}
-									>
-										{trustState === 'submitting'
-											? 'Saving…'
-											: trusted
-												? 'Revoke trust'
-												: 'Mark as trusted'}
-									</button>
-								</div>
-								{trustMessage ? (
-									<p mix={css(errorTextCss)} role="alert">
-										{trustMessage}
-									</p>
-								) : null}
-							</section>
-						) : null}
+						{viewerIsAdmin
+							? renderAdminTrustSection({
+									trusted,
+									trustState,
+									trustMessage,
+									onToggleTrust: () => void submitTrust(!trusted),
+								})
+							: null}
 
-						{viewerIsAdmin ? (
-							<section
-								aria-labelledby="admin-feature-title"
-								mix={css(detailSectionCss)}
-								data-testid="community-admin-feature"
-							>
-								<h2 id="admin-feature-title">Admin: onboarding</h2>
-								<p>
-									{featured
-										? 'This listing is featured as an onboarding starter package. Removing it hides it from onboarding immediately.'
-										: trusted
-											? 'Featuring offers this listing for one-click install during onboarding. A republish by the owner drops it from onboarding until the new version is re-trusted.'
-											: 'Only trusted listings can be featured in onboarding. Mark the listing trusted first.'}
-								</p>
-								<div mix={css(sectionActionCss)}>
-									<button
-										disabled={
-											featureState === 'submitting' || (!featured && !trusted)
-										}
-										mix={[
-											on('click', () => void submitFeature(!featured)),
-											css(smallGhostButtonCss),
-										]}
-									>
-										{featureState === 'submitting'
-											? 'Saving…'
-											: featured
-												? 'Remove from onboarding'
-												: 'Feature in onboarding'}
-									</button>
-								</div>
-								{featureMessage ? (
-									<p mix={css(errorTextCss)} role="alert">
-										{featureMessage}
-									</p>
-								) : null}
-							</section>
-						) : null}
+						{viewerIsAdmin
+							? renderAdminFeatureSection({
+									trusted,
+									featured,
+									featureState,
+									featureMessage,
+									onToggleFeature: () => void submitFeature(!featured),
+								})
+							: null}
 
-						<details id="report" mix={css(reportDisclosureCss)}>
-							<summary>Report this listing</summary>
-							{loggedIn ? (
-								<div mix={css(reportFormCss)}>
-									<label mix={css(reportFieldCss)}>
-										<span>Reason</span>
-										<textarea
-											value={reportReason}
-											rows={4}
-											maxLength={2000}
-											placeholder="Describe why this listing should be reviewed."
-											mix={[
-												css(reportTextareaCss),
-												on('input', (event) => {
-													reportReason = (event.target as HTMLTextAreaElement)
-														.value
-													handle.update()
-												}),
-											]}
-										/>
-									</label>
-									<button
-										disabled={
-											reportState === 'submitting' || !reportReason.trim()
-										}
-										mix={[
-											on('click', () => void submitReport()),
-											css(smallGhostButtonCss),
-										]}
-									>
-										{reportState === 'submitting'
-											? 'Submitting…'
-											: 'Submit report'}
-									</button>
-									{reportMessage ? (
-										<p
-											mix={css(
-												reportState === 'error' ? errorTextCss : mutedTextCss,
-											)}
-											role={reportState === 'error' ? 'alert' : 'status'}
-										>
-											{reportMessage}
-										</p>
-									) : null}
-								</div>
-							) : (
-								<p mix={css(reportLoginNoteCss)}>
-									<a href="/login" mix={css(inlineLinkCss)}>
-										Log in
-									</a>{' '}
-									to report this listing.
-								</p>
-							)}
-						</details>
+						{renderReportDisclosure({
+							loggedIn,
+							reportReason,
+							reportState,
+							reportMessage,
+							onReasonInput: (value) => {
+								reportReason = value
+								handle.update()
+							},
+							onSubmitReport: () => void submitReport(),
+						})}
 					</>
 				) : null}
 
-				{showShellReady && ownerPackage ? (
-					<section
-						aria-labelledby="package-owner-details-title"
-						mix={css(detailSectionCss)}
-					>
-						<h2 id="package-owner-details-title">Package details</h2>
-						{ownerDetailsMessage ? (
-							<p mix={css(errorTextCss)} role="alert">
-								{ownerDetailsMessage}
-							</p>
-						) : null}
-						<AccountPackageOwnerDetails
-							packageDetail={ownerPackage}
-							username={username}
-							invocationUrlOrigin={invocationUrlOrigin}
-							currentHref={currentHref}
-							lockInFlight={lockInFlight.has(ownerPackage.id)}
-							onToggleLock={() => void togglePackageLock()}
-							onPackagesPayload={(payload) => {
+				{showShellReady && ownerPackage
+					? renderOwnerPackageSection({
+							ownerPackage,
+							username,
+							invocationUrlOrigin,
+							currentHref,
+							lockInFlight: lockInFlight.has(ownerPackage.id),
+							ownerDetailsMessage,
+							onToggleLock: () => void togglePackageLock(),
+							onPackagesPayload: (payload) => {
 								if (payload.selectedPackage?.id === ownerPackage?.id) {
 									ownerPackage = payload.selectedPackage
 									handle.update()
 								}
-							}}
-						/>
-					</section>
-				) : null}
+							},
+						})
+					: null}
 			</article>
 		)
 	}
-}
-
-/* 46rem article measure mirroring the blog post; the route owns its gutters
-   (the app shell leaves redesigned marketing paths unpadded). The shirt-
-   pattern whisper anchors to the article in rem, not to the short icon-row
-   head in percentages, so it renders at the same scale and position as the
-   blog post head's fabric. */
-const detailArticleCss = {
-	position: 'relative' as const,
-	// This borrows `pageHeadCss`'s `zIndex: -1` pseudo without borrowing the
-	// rest of it, so it has to carry the `isolate` that scopes that negative
-	// z-index. Without it the glow escapes this stacking context and can fall
-	// behind an ancestor's background instead of backing the article.
-	isolation: 'isolate' as const,
-	maxWidth: '46rem',
-	marginInline: 'auto',
-	width: '100%',
-	boxSizing: 'border-box' as const,
-	padding:
-		'clamp(2.5rem, 6vw, 4rem) clamp(1.25rem, 4vw, 2.5rem) clamp(4rem, 8vw, 6.5rem)',
-	'&::before': {
-		...pageHeadCss['&::before'],
-		inset: 'auto',
-		top: '-3rem',
-		left: '-30%',
-		right: '-30%',
-		height: '44rem',
-		background: `radial-gradient(ellipse 46% 55% at 70% 22%, oklch(from ${colors.text} l c h / 0.05), transparent 72%)`,
-	},
-}
-
-const backLinkCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.4rem',
-	fontSize: '0.95rem',
-	fontWeight: 550,
-	color: colors.primaryText,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
-}
-
-const missingHeadCss = {
-	marginTop: '1.8rem',
-	'& h1': {
-		margin: 0,
-		fontSize: 'clamp(1.7rem, 4vw, 2.4rem)',
-		fontWeight: 760,
-		letterSpacing: '-0.024em',
-		lineHeight: 1.05,
-	},
-	'& p': {
-		margin: '0.9rem 0 0',
-		color: colors.textMuted,
-	},
-}
-
-const shellStatusCss = {
-	margin: 'clamp(1.8rem, 4vw, 2.5rem) 0 0',
-	color: colors.textMuted,
-	fontSize: '0.98rem',
-}
-
-/* Quiet sections in the `.pkg-fork` voice: display-face h2, muted lede. */
-const detailSectionCss = {
-	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
-	'& h2': {
-		margin: 0,
-		fontSize: 'clamp(1.4rem, 2.4vw, 1.65rem)',
-		fontWeight: 720,
-		letterSpacing: '-0.016em',
-	},
-	'& > p': {
-		margin: '0.6rem 0 0',
-		color: colors.textMuted,
-		fontSize: '0.98rem',
-		maxWidth: '56ch',
-		textWrap: 'balance' as const,
-	},
-	// Error lines must out-rank the muted `& > p` default above.
-	'& > p[role="alert"]': {
-		color: colors.error,
-	},
-}
-
-const sectionActionCss = {
-	marginTop: '1.1rem',
-}
-
-const installStripCss = {
-	display: 'grid',
-	gap: '0.75rem',
-}
-
-const installProgressCss = {
-	margin: '1.2rem 0 0',
-	color: colors.textMuted,
-	fontSize: '0.95rem',
-}
-
-/* The prototype's smaller `.account-form .button` sizing. */
-const smallGhostButtonCss = mergeCss(getGhostButtonCss(), {
-	fontSize: '0.95rem',
-	padding: '0.75rem 1.3rem',
-})
-
-/* The pill grammar in the danger voice for the untrusted-install confirm. */
-const dangerPillButtonCss = mergeCss(getPillButtonCss(), {
-	backgroundColor: colors.danger,
-	color: colors.onDanger,
-	[hoverMq]: {
-		'&:not(:disabled):hover': {
-			backgroundColor: colors.dangerHover,
-			color: colors.onDanger,
-			boxShadow: `0 6px 20px -8px oklch(from ${colors.danger} l c h / 0.6)`,
-		},
-	},
-})
-
-const warningCardCss = mergeCss(getSurfaceCardCss(), {
-	marginTop: '1.2rem',
-	borderColor: colors.danger,
-	padding: '1.1rem 1.3rem',
-	display: 'grid',
-	gap: '0.9rem',
-	'& p': {
-		fontSize: '0.95rem',
-	},
-})
-
-const buttonRowCss = {
-	display: 'flex',
-	gap: '0.5rem',
-	flexWrap: 'wrap' as const,
-}
-
-const inlineLinkCss = {
-	color: colors.primaryText,
-	textDecorationThickness: '1.5px',
-	textUnderlineOffset: '3px',
-}
-
-const errorTextCss = {
-	margin: '0.8rem 0 0',
-	color: colors.error,
-	fontSize: '0.95rem',
-}
-
-const mutedTextCss = {
-	margin: '0.8rem 0 0',
-	color: colors.textMuted,
-	fontSize: '0.95rem',
-}
-
-/* README as real prose (no scroll box), h3 subheads per DESIGN.md. */
-const readmeSectionCss = {
-	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
-	'& > h2': {
-		margin: 0,
-		fontSize: 'clamp(1.4rem, 2.4vw, 1.65rem)',
-		fontWeight: 720,
-		letterSpacing: '-0.016em',
-		paddingBottom: '0.9rem',
-		borderBottom: `1px solid ${colors.border}`,
-	},
-}
-
-const readmeProseCss = mergeCss(proseCss, {
-	marginTop: '1.4rem',
-	'& h3': {
-		margin: '1.8rem 0 0',
-		fontSize: '1.15rem',
-		fontWeight: 720,
-		letterSpacing: '-0.01em',
-	},
-})
-
-/* "Report this listing" tucked in a details disclosure. */
-const reportDisclosureCss = {
-	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
-	'& summary': {
-		cursor: 'pointer',
-		fontWeight: 600,
-		color: colors.textMuted,
-		width: 'fit-content',
-		transition: `color ${transitions.fast}`,
-	},
-	'& summary:hover': {
-		color: colors.text,
-	},
-	'&[open] summary': {
-		color: colors.text,
-	},
-	'& > :not(summary)': {
-		'@media (prefers-reduced-motion: no-preference)': {
-			transition: `opacity 200ms ${transitions.easeOut}, translate 200ms ${transitions.easeOut}`,
-		},
-		'@starting-style': {
-			opacity: 0,
-			translate: '0 4px',
-		},
-	},
-}
-
-const reportFormCss = {
-	marginTop: '1.3rem',
-	maxWidth: '34rem',
-	display: 'grid',
-	gap: '1rem',
-	justifyItems: 'start',
-}
-
-const reportFieldCss = {
-	width: '100%',
-	display: 'grid',
-	gap: '0.45rem',
-	'& > span': {
-		fontSize: '0.92rem',
-		fontWeight: 600,
-		color: colors.text,
-	},
-}
-
-const reportTextareaCss = {
-	font: `400 1rem/1.5 ${typography.fontFamilyBody}`,
-	color: colors.text,
-	backgroundColor: colors.surface,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: '12px',
-	padding: '0.85rem 1.05rem',
-	width: '100%',
-	minHeight: '6.5rem',
-	resize: 'vertical' as const,
-	boxSizing: 'border-box' as const,
-	'&::placeholder': {
-		color: colors.textMuted,
-		opacity: 1,
-	},
-	'&:focus': {
-		outline: 'none',
-		borderColor: colors.primary,
-		boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
-	},
-}
-
-const reportLoginNoteCss = {
-	margin: '1.3rem 0 0',
-	color: colors.textMuted,
-	fontSize: '0.98rem',
 }
