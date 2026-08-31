@@ -13,10 +13,8 @@ export {
 	AdminPlatformIntegrationsRoute,
 	adminPlatformIntegrationsRouteLoader,
 } from './admin-platform-integrations.tsx'
-export {
-	AdminCodemodsRoute,
-	adminCodemodsRouteLoader,
-} from './admin-codemods.tsx'
+export { AdminCodemodsRoute } from './admin-codemods.tsx'
+export { adminCodemodsRouteLoader } from './admin-codemods-shared.ts'
 export {
 	AdminPlatformFeedbackRoute,
 	adminPlatformFeedbackRouteLoader,
