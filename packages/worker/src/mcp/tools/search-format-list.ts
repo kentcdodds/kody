@@ -24,7 +24,7 @@ export function formatSearchMarkdown(input: {
 	)
 	if (hasDomainMatch) {
 		lines.push(
-			'Domain overview for a broad query. Drill in with `search({ query: "<task>", domain: "<name>" })`, or list every capability in one domain with `search({ domain: "<name>" })`.',
+			'Domain overview for a broad query. Search again with a more specific query, or list every capability in one domain with `search({ domain: "<name>" })`.',
 			'',
 		)
 	}

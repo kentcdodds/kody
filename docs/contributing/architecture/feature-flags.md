@@ -70,7 +70,9 @@ default-on flag can never bypass an operator kill switch when D1 is unavailable.
 
 The registry ships with one permanent flag, `demo-indicator`, which renders a
 small badge in the app chrome and exists so the system stays exercised
-end-to-end (`e2e/admin-feature-flags.spec.ts`).
+end-to-end (`e2e/admin-feature-flags.spec.ts`). Experiment flags such as
+`compact-mcp-server-instructions` live in the same registry and are removed in
+the same way: delete the definition and every gate site.
 
 ## Success metrics
 

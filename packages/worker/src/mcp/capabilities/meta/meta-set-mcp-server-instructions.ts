@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { maxUserMcpServerInstructionsChars } from '#mcp/mcp-user-server-instruction-limits.ts'
+import { describeUserMcpServerInstructionOverlay } from '#mcp/mcp-server-instruction-overlay.ts'
 import {
 	getMcpUserServerInstructions,
 	saveMcpUserServerInstructions,
@@ -14,6 +15,8 @@ const outputSchema = z.object({
 	max_length: z.number().int().positive(),
 	/** Effective stored text after trim (null if cleared). */
 	instructions: z.string().nullable(),
+	assembled_chars: z.number().int().nonnegative(),
+	warning: z.string().nullable(),
 })
 
 export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
@@ -21,7 +24,7 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 	{
 		name: 'meta_set_mcp_server_instructions',
 		description:
-			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Prefer memories for durable facts and preferences; use this overlay only for rare always-on session policy—not package inventory (popular packages are hinted automatically when available). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions.',
+			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Prefer memories for durable facts and preferences; use this overlay only for rare always-on session policy—not package inventory (popular packages are hinted automatically when available). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [
 			'instructions',
 			'server',
@@ -57,10 +60,17 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user.userId,
 			)
+			const assembly = await describeUserMcpServerInstructionOverlay({
+				env: ctx.env,
+				callerContext: ctx.callerContext,
+				overlay: stored,
+			})
 			return {
 				ok: true as const,
 				max_length: maxUserMcpServerInstructionsChars,
 				instructions: stored,
+				assembled_chars: assembly.assembled_chars,
+				warning: assembly.warning,
 			}
 		},
 	},

@@ -6,18 +6,14 @@ import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validatio
 import { McpAgent } from 'agents/mcp'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
-import { loadActiveRetiringNoticeIds } from './instructions/retiring-primitives.ts'
-import { buildMcpServerInstructions } from './server-instructions.ts'
+import { assembleMcpServerInstructionsForCaller } from './assemble-mcp-server-instructions.ts'
 import { registerTools } from './register-tools.ts'
 import {
 	asMcpToolServer,
 	type McpRegistrationAgent,
 } from './mcp-registration-agent.ts'
 import { createKodyMcpServer } from './sentry-mcp-server.ts'
-import { getMcpUserServerInstructions } from './user-server-instructions-repo.ts'
-import { getCapabilityRegistryForContext } from './capabilities/registry.ts'
 import { type RawFetchHostNudgeState } from '#mcp/raw-fetch-host-nudge.ts'
-import { listPopularAgentPackagesForUser } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
 	purgePersistedMcpAgentSession,
 	registerMcpAgentSession,
@@ -74,26 +70,10 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				}),
 			)
 		}
-		const [overlay, registry, popularPackages, retiringNoticeIds] =
-			await Promise.all([
-				userId !== null
-					? getMcpUserServerInstructions(this.env.APP_DB, userId)
-					: Promise.resolve(null),
-				getCapabilityRegistryForContext({
-					env: this.env,
-					callerContext: caller,
-				}),
-				userId !== null
-					? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
-					: Promise.resolve([]),
-				loadActiveRetiringNoticeIds(this.env.APP_DB, userId),
-			])
 		this.server = createKodyMcpServer({
-			instructions: buildMcpServerInstructions({
-				userOverlay: overlay,
-				domains: registry.capabilityDomains,
-				popularPackages,
-				retiringNoticeIds,
+			instructions: await assembleMcpServerInstructionsForCaller({
+				env: this.env,
+				callerContext: caller,
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})

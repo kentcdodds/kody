@@ -270,6 +270,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 	)
 	await expect(getFeatureFlagsForUser(db, 1)).resolves.toEqual({
 		'demo-indicator': false,
+		'compact-mcp-server-instructions': false,
 	})
 })
 
@@ -436,6 +437,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 	await expect(isFeatureEnabled(db, 'demo-indicator', 8)).resolves.toBe(false)
 	await expect(getFeatureFlagsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': true,
+		'compact-mcp-server-instructions': false,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -467,6 +469,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 
 	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': { enabled: false, source: 'default' },
+		'compact-mcp-server-instructions': { enabled: false, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -552,8 +555,21 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(3)
+	expect(listed).toHaveLength(4)
 
+	const compact = listed.find(
+		(flag) => flag.key === 'compact-mcp-server-instructions',
+	)
+	expect(compact).toMatchObject({
+		key: 'compact-mcp-server-instructions',
+		stale: false,
+		defaultEnabled: false,
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+		},
+	})
 	const demo = listed.find((flag) => flag.key === 'demo-indicator')
 	expect(demo).toMatchObject({
 		key: 'demo-indicator',
