@@ -293,7 +293,7 @@ export function HomeRoute(handle: Handle) {
 					<h2 id="villain-title" class="landing-pitch-title">
 						Leave <em>Ogygia</em>
 					</h2>
-					<div>
+					<div class="landing-pitch-copy">
 						<p class="landing-pitch-lead">
 							Calypso keeps a lovely guest. She does not send you home.
 						</p>

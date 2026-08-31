@@ -939,7 +939,7 @@ html.is-settled {
 	grid-row: 1;
 }
 
-.landing-villain > :not(.landing-pitch-title) {
+.landing-villain .landing-pitch-copy {
 	grid-column: 1;
 	grid-row: 1;
 }
@@ -2099,7 +2099,7 @@ html.is-settled {
 	}
 
 	.landing-villain .landing-pitch-title,
-	.landing-villain > :not(.landing-pitch-title) {
+	.landing-villain .landing-pitch-copy {
 		grid-column: auto;
 		grid-row: auto;
 	}
