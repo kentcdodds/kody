@@ -168,8 +168,17 @@ export async function markAccountDeleting(input: {
 }) {
 	// D1 deleting_at is set first: it is the permanent point gate and must be
 	// written before any UserMeter call so the gate is never missed even if
-	// the DO call subsequently fails.
+	// the DO call subsequently fails. If that DO call fails, roll back a
+	// tombstone we just created so the account is not left half-fenced.
 	const now = utcSqliteTimestamp(input.now ?? new Date())
+	const prior = await input.db
+		.prepare(
+			`SELECT stable_user_id, deleting_at
+			FROM users
+			WHERE id = ?`,
+		)
+		.bind(input.dbUserId)
+		.first<{ stable_user_id: string; deleting_at: string | null }>()
 	const result = await input.db
 		.prepare(
 			`UPDATE users
@@ -194,13 +203,27 @@ export async function markAccountDeleting(input: {
 	if (!stableUserId || !deletingAt) {
 		throw new Error('Account could not be marked for deletion.')
 	}
-	const env = requireUserMeterEnv(input.env)
-	const marked = await runUserMeterRpc({
-		env,
-		stableUserId,
-		operation: async (meter) => await meter.markDeleting({ deletingAt }),
-	})
-	return marked.leaseCount
+	try {
+		const env = requireUserMeterEnv(input.env)
+		const marked = await runUserMeterRpc({
+			env,
+			stableUserId,
+			operation: async (meter) => await meter.markDeleting({ deletingAt }),
+		})
+		return marked.leaseCount
+	} catch (error) {
+		if (prior?.deleting_at == null) {
+			await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ?`,
+				)
+				.bind(now, input.dbUserId)
+				.run()
+		}
+		throw error
+	}
 }
 
 /**

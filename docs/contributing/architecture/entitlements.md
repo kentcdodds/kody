@@ -279,7 +279,8 @@ is the audit log for repairs. ALS nested-lease reuse propagates per
 
 **`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
-lease count for drain waits.
+lease count for drain waits. If the DO call fails and D1 did not already have a
+tombstone, the D1 fence is rolled back.
 
 **`abortAccountDeleting`:** used when deletion fails before cleanup (active
 writes or incomplete inventory). Clears D1 `users.deleting_at` first, then

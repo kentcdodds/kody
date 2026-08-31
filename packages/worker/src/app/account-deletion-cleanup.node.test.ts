@@ -253,7 +253,7 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 	expect(missingMailboxRows.users).toEqual([
 		expect.objectContaining({
 			id: 1,
-			deleting_at: expect.any(String),
+			deleting_at: null,
 		}),
 	])
 
@@ -272,7 +272,7 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 	expect(missingMeterRows.users).toEqual([
 		expect.objectContaining({
 			id: 1,
-			deleting_at: expect.any(String),
+			deleting_at: null,
 		}),
 	])
 })
@@ -296,7 +296,7 @@ test('deleteUserAccount fails closed when REPO_SESSION_INDEX is missing', async 
 		expect.objectContaining({
 			id: 1,
 			email: 'a@example.com',
-			deleting_at: expect.any(String),
+			deleting_at: null,
 		}),
 	])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
@@ -333,7 +333,7 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 		expect.objectContaining({
 			id: 1,
 			email: 'a@example.com',
-			deleting_at: expect.any(String),
+			deleting_at: null,
 		}),
 	])
 	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
@@ -451,7 +451,7 @@ test('account deletion waits for an active writer and resumes on retry', async (
 	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
 	expect(rows.users?.[0]).toEqual(
 		expect.objectContaining({
-			deleting_at: expect.any(String),
+			deleting_at: null,
 		}),
 	)
 	// Release the meter lease to simulate the crashed writer being repaired.
