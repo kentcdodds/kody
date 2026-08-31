@@ -8,8 +8,9 @@ import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
-	honeypotFieldName,
+	emptyPublicFormProtection,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
@@ -32,7 +33,6 @@ import {
 	pageHeaderCss,
 	pageTitleCss,
 	stackedPageCss,
-	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
@@ -130,7 +130,7 @@ export function DiscordRoute(handle: Handle) {
 			)
 			const protection =
 				page?.signedIn || !connectForm
-					? { website: '', turnstileToken: '' }
+					? emptyPublicFormProtection()
 					: readPublicFormProtection(new FormData(connectForm))
 			const errorMessage = await startSocialSignIn(
 				'discord',
@@ -358,14 +358,7 @@ export function DiscordRoute(handle: Handle) {
 								}),
 							]}
 						>
-							<input
-								type="text"
-								name={honeypotFieldName}
-								tabIndex={-1}
-								autoComplete="off"
-								aria-hidden="true"
-								mix={css(visuallyHiddenCss)}
-							/>
+							{renderHoneypot()}
 							{turnstileSiteKey ? (
 								<div class={turnstileWidgetClassName}></div>
 							) : null}

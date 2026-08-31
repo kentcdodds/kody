@@ -2,8 +2,8 @@ import { type Handle, ref } from 'remix/ui'
 import { observeNearViewport } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
-	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
@@ -177,14 +177,7 @@ export function WaitlistForm(handle: Handle) {
 				) : (
 					<>
 						<div data-focus-container class="landing-waitlist-fields">
-							<input
-								type="text"
-								name={honeypotFieldName}
-								tabIndex={-1}
-								autoComplete="off"
-								aria-hidden="true"
-								class="visually-hidden landing-honeypot"
-							/>
+							{renderHoneypot({ class: 'visually-hidden landing-honeypot' })}
 							<label for={`${handle.id}-name`} class="visually-hidden">
 								First name
 							</label>

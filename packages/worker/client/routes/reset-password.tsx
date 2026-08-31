@@ -17,10 +17,11 @@ import {
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
-	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 
@@ -41,6 +42,7 @@ export function ResetPasswordRoute(handle: Handle) {
 	) {
 		status = nextStatus
 		message = nextMessage
+		if (nextStatus === 'error') resetTurnstileWidgets()
 		handle.update()
 	}
 
@@ -68,7 +70,10 @@ export function ResetPasswordRoute(handle: Handle) {
 		try {
 			const response = await fetch('/password-reset', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
 				body: JSON.stringify({ email, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
@@ -105,7 +110,10 @@ export function ResetPasswordRoute(handle: Handle) {
 		try {
 			const response = await fetch('/password-reset/confirm', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
 				body: JSON.stringify({ token, password, ...protection }),
 			})
 			const payload = await response.json().catch(() => null)
@@ -161,14 +169,7 @@ export function ResetPasswordRoute(handle: Handle) {
 						),
 					]}
 				>
-					<input
-						type="text"
-						name={honeypotFieldName}
-						tabIndex={-1}
-						autoComplete="off"
-						aria-hidden="true"
-						mix={css(honeypotCss)}
-					/>
+					{renderHoneypot()}
 					{mode === 'confirm' ? (
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>New password</span>
@@ -241,12 +242,7 @@ const pageCss = {
 	margin: '0 auto',
 }
 
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
-
-const honeypotCss = {
-	position: 'absolute' as const,
-	left: '-10000px',
-	width: '1px',
-	height: '1px',
-	overflow: 'hidden' as const,
-}
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
