@@ -14,6 +14,7 @@ function mark(
 	return {
 		label: overrides.slug,
 		aliases: [],
+		builtInAliases: [],
 		logoPath: null,
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-01-01T00:00:00.000Z',
@@ -31,7 +32,12 @@ test('provider mark catalog groups, filters, and splits aliases', () => {
 	])
 
 	const marks = [
-		mark({ slug: 'github', label: 'GitHub', aliases: ['github.com'] }),
+		mark({
+			slug: 'github',
+			label: 'GitHub',
+			aliases: ['github.com'],
+			builtInAliases: ['api.github.com'],
+		}),
 		mark({ slug: 'google', label: 'Google' }),
 		mark({ slug: '1password', label: '1Password' }),
 		mark({ slug: 'gitlab', label: 'GitLab' }),
@@ -45,5 +51,8 @@ test('provider mark catalog groups, filters, and splits aliases', () => {
 	expect(filterMarks(marks, 'github.com').map((item) => item.slug)).toEqual([
 		'github',
 	])
+	expect(filterMarks(marks, 'api.github.com').map((item) => item.slug)).toEqual(
+		['github'],
+	)
 	expect(filterMarks(marks, 'lab').map((item) => item.slug)).toEqual(['gitlab'])
 })

@@ -106,22 +106,37 @@ const genericHostLabels = new Set([
  * Host tokens stored on a mark, plus built-in keys/hosts for that slug so a
  * catalog row that omitted `github.com` still matches GitHub authorize URLs.
  */
+export function builtInProviderMarkAliases(slug: string): Array<string> {
+	const defaults =
+		defaultProviderMarkAliases[slug as keyof typeof defaultProviderMarkAliases]
+	return defaults ? normalizeProviderMarkAliases([...defaults]) : []
+}
+
 export function providerMarkAliasTokens(mark: {
 	slug: string
 	aliases: ReadonlyArray<string>
 }): Array<string> {
-	const defaults =
-		defaultProviderMarkAliases[
-			mark.slug as keyof typeof defaultProviderMarkAliases
-		]
-	return normalizeProviderMarkAliases([...mark.aliases, ...(defaults ?? [])])
+	return normalizeProviderMarkAliases([
+		...mark.aliases,
+		...builtInProviderMarkAliases(mark.slug),
+	])
+}
+
+export function stripBuiltInProviderMarkAliases(
+	slug: string,
+	aliases: ReadonlyArray<string>,
+): Array<string> {
+	const builtIns = new Set(builtInProviderMarkAliases(slug))
+	return normalizeProviderMarkAliases(
+		aliases.filter((alias) => !builtIns.has(alias)),
+	)
 }
 
 /**
  * `github.com` and `api.github.com` match token `github.com`. The slug
  * `github` also matches those hosts via an exact DNS label, so a mark does
  * not need every subdomain listed. Tokens shorter than 3 characters and
- * generic labels (`com`, `app`) never participate in label matching.
+ * generic labels (`com`, `app`) never match, including as a host suffix.
  */
 export function hostMatchesProviderMarkToken(
 	host: string,
@@ -130,15 +145,12 @@ export function hostMatchesProviderMarkToken(
 	const normalizedHost = host.trim().toLowerCase()
 	const normalizedToken = token.trim().toLowerCase()
 	if (!normalizedHost || !normalizedToken) return false
-	if (normalizedHost === normalizedToken) return true
-	if (normalizedHost.endsWith(`.${normalizedToken}`)) return true
-	if (
-		normalizedToken.includes('.') ||
-		normalizedToken.length < 3 ||
-		genericHostLabels.has(normalizedToken)
-	) {
+	if (normalizedToken.length < 3 || genericHostLabels.has(normalizedToken)) {
 		return false
 	}
+	if (normalizedHost === normalizedToken) return true
+	if (normalizedHost.endsWith(`.${normalizedToken}`)) return true
+	if (normalizedToken.includes('.')) return false
 	return normalizedHost.split('.').includes(normalizedToken)
 }
 
@@ -235,14 +247,15 @@ export function resolveProviderMark(input: {
 		if (family[0]) return family[0]
 	}
 	if (!input.host?.trim()) return null
-	return (
-		withLogo.find((mark) =>
+	const hostMatches = withLogo
+		.filter((mark) =>
 			providerMarkMatches({
 				mark,
 				host: input.host,
 			}),
-		) ?? null
-	)
+		)
+		.sort((left, right) => right.slug.length - left.slug.length)
+	return hostMatches[0] ?? null
 }
 
 export function resolveProviderMarkLogoPath(input: {
@@ -335,7 +348,10 @@ export async function upsertPlatformProviderMark(input: {
 	const aliasesJson = JSON.stringify(
 		input.aliases === undefined
 			? (existing?.aliases ?? [])
-			: normalizeProviderMarkAliases(input.aliases),
+			: stripBuiltInProviderMarkAliases(
+					slug,
+					normalizeProviderMarkAliases(input.aliases),
+				),
 	)
 	if (existing) {
 		await input.db

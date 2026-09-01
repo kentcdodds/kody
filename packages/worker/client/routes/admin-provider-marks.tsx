@@ -386,8 +386,9 @@ export function AdminProviderMarksRoute(handle: Handle) {
 							fontSize: typography.fontSize.sm,
 						})}
 					>
-						Also matches this slug as a host label, built-in keys for known
-						providers, and family keys like {editingMark?.slug ?? 'slug'}-*.
+						{editingMark?.builtInAliases.length
+							? `Built-in matches (not stored): ${editingMark.builtInAliases.join(', ')}.`
+							: `Also matches this slug as a host label and family keys like ${editingMark?.slug ?? 'slug'}-*.`}
 					</span>
 				</label>
 				<label mix={css(fieldCss)}>
@@ -574,7 +575,11 @@ export function AdminProviderMarksRoute(handle: Handle) {
 					{creating ? renderEditor(null) : null}
 				</details>
 				{status === 'ready' && filteredMarks.length === 0 ? (
-					<p mix={css({ color: colors.textMuted })}>No provider marks yet.</p>
+					<p mix={css({ color: colors.textMuted })}>
+						{searchActive
+							? 'No marks match this filter.'
+							: 'No provider marks yet.'}
+					</p>
 				) : (
 					<div
 						data-testid="provider-mark-groups"
@@ -599,6 +604,10 @@ export function AdminProviderMarksRoute(handle: Handle) {
 											if (
 												!(event.currentTarget instanceof HTMLDetailsElement)
 											) {
+												return
+											}
+											if (searchActive) {
+												handle.update()
 												return
 											}
 											if (event.currentTarget.open) {

@@ -111,6 +111,8 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 	)
 	expect(hostMatchesProviderMarkToken('github.com', 'git')).toBe(false)
 	expect(hostMatchesProviderMarkToken('example.com', 'x')).toBe(false)
+	expect(hostMatchesProviderMarkToken('login.example.app', 'app')).toBe(false)
+	expect(hostMatchesProviderMarkToken('example.ai', 'ai')).toBe(false)
 	expect(providerMarkAliasTokens({ slug: 'youtube', aliases: [] })).toEqual(
 		expect.arrayContaining([
 			'google-youtube-brand',
@@ -181,6 +183,31 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 		})?.slug,
 	).toBe('nodedotjs')
 	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'google',
+					label: 'Google',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					slug: 'google-calendar',
+					label: 'Google Calendar',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google-calendar/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			host: 'calendar.google.com',
+		})?.slug,
+	).toBe('google-calendar')
+	expect(
 		resolveProviderMarkLogoPath({
 			marks,
 			providerKey: 'x',
@@ -203,10 +230,10 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 		db: env.APP_DB,
 		slug: 'Google',
 		label: 'Google',
-		aliases: ['accounts.google.com', 'googleapis.com'],
+		aliases: ['accounts.google.com', 'googleapis.com', 'my-google-work'],
 	})
 	expect(created.slug).toBe('google')
-	expect(created.aliases).toEqual(['accounts.google.com', 'googleapis.com'])
+	expect(created.aliases).toEqual(['my-google-work'])
 	expect(created.logoKey).toBeNull()
 
 	const withLogo = await setPlatformProviderMarkLogo({
@@ -244,14 +271,14 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 	await upsertPlatformProviderMark({
 		db: env.APP_DB,
 		slug: 'google',
-		aliases: ['accounts.google.com'],
+		aliases: ['accounts.google.com', 'workspace-google'],
 	})
 	const updated = await getPlatformProviderMarkBySlug({
 		db: env.APP_DB,
 		slug: 'google',
 	})
 	expect(updated?.label).toBe('Google')
-	expect(updated?.aliases).toEqual(['accounts.google.com'])
+	expect(updated?.aliases).toEqual(['workspace-google'])
 	expect(updated?.logoKey).toBe(withLogo.logoKey)
 
 	expect(

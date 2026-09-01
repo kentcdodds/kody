@@ -1,8 +1,8 @@
 import { type AdminProviderMarksLoaderData } from '#universal/loader-data.ts'
 import {
 	buildProviderMarkLogoPath,
+	builtInProviderMarkAliases,
 	listPlatformProviderMarks,
-	providerMarkAliasTokens,
 } from '#worker/integrations/provider-marks.ts'
 
 export async function loadAdminProviderMarksData(
@@ -14,7 +14,8 @@ export async function loadAdminProviderMarksData(
 		marks: marks.map((mark) => ({
 			slug: mark.slug,
 			label: mark.label,
-			aliases: providerMarkAliasTokens(mark),
+			aliases: mark.aliases,
+			builtInAliases: builtInProviderMarkAliases(mark.slug),
 			logoPath: buildProviderMarkLogoPath(mark),
 			createdAt: mark.createdAt,
 			updatedAt: mark.updatedAt,

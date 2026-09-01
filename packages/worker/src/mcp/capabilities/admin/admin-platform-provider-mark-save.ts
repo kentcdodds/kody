@@ -7,7 +7,6 @@ import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import {
 	buildProviderMarkLogoPath,
 	PlatformProviderMarkValidationError,
-	providerMarkAliasTokens,
 	setPlatformProviderMarkLogo,
 	upsertPlatformProviderMark,
 	type PlatformProviderMark,
@@ -30,7 +29,7 @@ export function toPlatformProviderMarkPublic(mark: PlatformProviderMark) {
 	return {
 		slug: mark.slug,
 		label: mark.label,
-		aliases: providerMarkAliasTokens(mark),
+		aliases: mark.aliases,
 		logoPath: buildProviderMarkLogoPath(mark),
 		createdAt: mark.createdAt,
 		updatedAt: mark.updatedAt,

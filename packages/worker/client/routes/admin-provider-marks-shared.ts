@@ -24,7 +24,12 @@ export function splitAliasInput(raw: string): Array<string> {
 
 export function filterMarks(marks: Array<AdminProviderMark>, search: string) {
 	return marks.filter((mark) =>
-		matchesSearchQuery(search, [mark.slug, mark.label, ...mark.aliases]),
+		matchesSearchQuery(search, [
+			mark.slug,
+			mark.label,
+			...mark.aliases,
+			...mark.builtInAliases,
+		]),
 	)
 }
 
