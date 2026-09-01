@@ -1294,8 +1294,7 @@ export function createPackageStorageKodyTools(input: {
  * id against the run's provenance grants in `createPackageStorageKodyTools`.
  */
 export function createPackageStorageHelperPrelude() {
-	// The interface mirrors the ambient `storage` helper but always writable;
-	// `id` mirrors buildPackageStorageId above (covered by a unit test).
+	// Always writable; `id` mirrors buildPackageStorageId above (covered by a unit test).
 	return `
 const __kodyPackageStorage = (packageId) => ({
   id: 'package:' + encodeURIComponent(packageId),

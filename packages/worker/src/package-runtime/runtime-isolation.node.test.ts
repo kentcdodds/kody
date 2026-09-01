@@ -28,8 +28,7 @@ type RuntimeModule = {
 	kody: { tool_call: (args: unknown) => Promise<unknown> } | undefined
 	codemode?: unknown
 	capabilities?: unknown
-	storage: { get: (key: string) => Promise<unknown> } | undefined
-	email: unknown
+	email: { getMessage: (id: string) => Promise<unknown> } | null
 	packageContext: Record<string, unknown> | null
 	default: {
 		kody?: { tool_call: (args: unknown) => Promise<unknown> }
@@ -81,7 +80,7 @@ test('two concurrent runs observe their own runtime values', async () => {
 		type Observation = {
 			userId: string
 			toolValue: string
-			storageValue: string
+			emailValue: string
 			packageId: string
 		}
 
@@ -94,9 +93,9 @@ test('two concurrent runs observe their own runtime values', async () => {
 						return { ok: true, userId }
 					},
 				},
-				storage: {
-					async get(key: string) {
-						return { value: `${userId}:${key}` }
+				email: {
+					async getMessage(id: string) {
+						return { id: `${userId}:${id}` }
 					},
 				},
 				packageContext: { packageId: `pkg-${userId}` },
@@ -119,13 +118,13 @@ test('two concurrent runs observe their own runtime values', async () => {
 					ok: true
 					userId: string
 				}
-				const store = mod.storage
-				if (!store) throw new Error('storage missing')
-				const storageResult = (await store.get('answer')) as { value: string }
+				const email = mod.email
+				if (!email) throw new Error('email missing')
+				const emailResult = (await email.getMessage('m-1')) as { id: string }
 				observations.set(userId, {
 					userId,
 					toolValue: toolResult.userId,
-					storageValue: storageResult.value,
+					emailValue: emailResult.id,
 					packageId: String(mod.packageContext?.packageId ?? ''),
 				})
 			})
@@ -136,13 +135,13 @@ test('two concurrent runs observe their own runtime values', async () => {
 		expect(observations.get('user-aaa')).toEqual({
 			userId: 'user-aaa',
 			toolValue: 'user-aaa',
-			storageValue: 'user-aaa:answer',
+			emailValue: 'user-aaa:m-1',
 			packageId: 'pkg-user-aaa',
 		})
 		expect(observations.get('user-bbb')).toEqual({
 			userId: 'user-bbb',
 			toolValue: 'user-bbb',
-			storageValue: 'user-bbb:answer',
+			emailValue: 'user-bbb:m-1',
 			packageId: 'pkg-user-bbb',
 		})
 	})
@@ -157,9 +156,8 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 
 		let captured: RuntimeModule | null = null
 		await sharedStorage.run(
-			// Intentionally omit `email`, `storage`, `kody` from the runtime
-			// payload to mirror an execute call that did not bind any of those
-			// runtime helpers.
+			// Intentionally omit `email`, `kody` from the runtime payload to
+			// mirror an execute call that did not bind any of those helpers.
 			{ packageContext: { packageId: 'pkg-1' } },
 			async () => {
 				const url = await writeRuntimeFile()
@@ -174,12 +172,10 @@ test('optional runtime exports stay falsy when the wrapper omits them', async ()
 		expect(mod.kody).toBeUndefined()
 		expect(mod.codemode).toBeUndefined()
 		expect(mod.capabilities).toBeUndefined()
-		expect(mod.storage).toBeUndefined()
 		expect(Boolean(mod.email)).toBe(false)
 		expect(Boolean(mod.kody)).toBe(false)
 		expect(Boolean(mod.codemode)).toBe(false)
 		expect(Boolean(mod.capabilities)).toBe(false)
-		expect(Boolean(mod.storage)).toBe(false)
 		// Provided exports survive.
 		expect(mod.packageContext).toEqual({ packageId: 'pkg-1' })
 	})

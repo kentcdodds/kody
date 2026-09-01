@@ -950,11 +950,10 @@ export function collectAmbientStorageImportFiles(
 
 /**
  * Storage prescription lint rule (failing): saved-package source must use
- * `packageStorage()` instead of the ambient `storage` binding, which is
- * per-run and is unbound or caller-bound when package code is statically
- * imported into another context. This only runs where repo checks run — new
- * session check runs, session/external publishes, and community fork installs
- * — so already-published artifacts are never re-validated retroactively.
+ * `packageStorage()` instead of the removed ambient `storage` binding.
+ * This only runs where repo checks run — new session check runs,
+ * session/external publishes, and community fork installs — so
+ * already-published artifacts are never re-validated retroactively.
  * This permanent publish guard keeps package code portable across every
  * package surface and points authors at the canonical package bucket.
  */
