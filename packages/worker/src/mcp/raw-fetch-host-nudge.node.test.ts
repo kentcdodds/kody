@@ -164,11 +164,6 @@ test('raw-fetch host nudge counts hosts, tips at threshold once, excludes covere
 			`import { createAuthenticatedFetch } from 'kody:runtime'`,
 		),
 	).toBe(true)
-	expect(
-		codeUsesIntegrationAuthHelpers(
-			`import { refreshAccessToken } from 'kody:runtime'`,
-		),
-	).toBe(true)
 
 	const authHelperTip = applyRawFetchHostCounts({
 		state: null,

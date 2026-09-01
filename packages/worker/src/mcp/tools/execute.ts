@@ -46,12 +46,8 @@ import {
 	applyRawFetchHostCounts,
 	codeUsesIntegrationAuthHelpers,
 	createRawFetchHostSink,
-	listHostsApproachingRawFetchNudge,
-	readLiteralRequestHostname,
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
-import { listOpenApiBindings } from '#worker/openapi/binding-service.ts'
-import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
@@ -848,23 +844,10 @@ async function resolveRawFetchHostNudges(input: {
 			[key: string]: unknown
 		}) => void
 	}
-	const approaching = listHostsApproachingRawFetchNudge({
-		state: statefulAgent.state?.rawFetchHostNudges,
-		conversationId: input.conversationId,
-		hostCounts: input.hostCounts,
-	})
-	const coveredHosts =
-		approaching.length > 0
-			? await listOpenApiBindingHosts({
-					env: input.env,
-					callerContext: input.callerContext,
-				})
-			: new Set<string>()
 	const applied = applyRawFetchHostCounts({
 		state: statefulAgent.state?.rawFetchHostNudges,
 		conversationId: input.conversationId,
 		hostCounts: input.hostCounts,
-		coveredHosts,
 		usedIntegrationAuthHelpers: input.usedIntegrationAuthHelpers,
 	})
 	if (typeof statefulAgent.setState === 'function') {
@@ -874,30 +857,4 @@ async function resolveRawFetchHostNudges(input: {
 		})
 	}
 	return applied.nudges
-}
-
-async function listOpenApiBindingHosts(input: {
-	env: Env
-	callerContext: ReturnType<McpRegistrationAgent['getCallerContext']>
-}): Promise<Set<string>> {
-	const userId = input.callerContext.user?.userId
-	if (!userId) return new Set()
-	try {
-		const bindings = await listOpenApiBindings({
-			env: input.env,
-			userId,
-		})
-		const hosts = new Set<string>()
-		for (const binding of bindings) {
-			const hostname = normalizeHost(
-				readLiteralRequestHostname(binding.apiBaseUrl),
-			)
-			if (hostname) hosts.add(hostname)
-		}
-		return hosts
-	} catch {
-		// Binding lookup is best-effort on this hot path; skip exclusion rather
-		// than failing the execute response.
-		return new Set()
-	}
 }

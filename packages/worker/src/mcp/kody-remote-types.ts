@@ -18,20 +18,6 @@ export type KodyMcpServerMetadata = {
 	capabilities: Array<KodyRemoteCapabilityMetadata>
 }
 
-export type KodyOpenApiProviderMetadata = {
-	name: string
-	bindingName: string
-	status: {
-		state: string
-		connected: boolean
-		toolCount: number
-		message: string
-		unavailableMessage: string
-	}
-	capabilities: Array<KodyRemoteCapabilityMetadata>
-}
-
 export type KodyResolvedProvider = ResolvedProvider & {
 	kodyMcpServers?: Array<KodyMcpServerMetadata>
-	kodyOpenApiProviders?: Array<KodyOpenApiProviderMetadata>
 }

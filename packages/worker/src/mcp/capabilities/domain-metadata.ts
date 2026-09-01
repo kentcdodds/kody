@@ -10,7 +10,6 @@ export const capabilityDomainNames = {
 	jobs: 'jobs',
 	mcpServers: 'mcp_servers',
 	meta: 'meta',
-	openapi: 'openapi',
 	packages: 'packages',
 	repo: 'repo',
 	runs: 'runs',
@@ -23,5 +22,5 @@ export const capabilityDomainNames = {
 export type BuiltinCapabilityDomain =
 	(typeof capabilityDomainNames)[keyof typeof capabilityDomainNames]
 
-/** Built-in domain ids plus runtime MCP server / OpenAPI domains (e.g. `mcp:home`). */
+/** Built-in domain ids plus runtime MCP server domains (e.g. `mcp:home`). */
 export type CapabilityDomain = string

@@ -915,7 +915,6 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
 			mcpServers: kodyProvider.kodyMcpServers ?? [],
-			openApiProviders: kodyProvider.kodyOpenApiProviders ?? [],
 		})
 	}
 	return `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`

@@ -39,9 +39,7 @@ export async function resolveEntityDetail(input: {
 		return {
 			type: 'capability' as const,
 			id: ref.id,
-			title: spec.openApi
-				? `${spec.openApi.method.toUpperCase()} ${spec.openApi.path}`
-				: spec.name,
+			title: spec.name,
 			description: spec.description,
 			spec,
 			...(relatedOperationCount > 0 ? { relatedOperationCount } : {}),

@@ -311,7 +311,7 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 					return currentValue.apply(currentExport, args);
 				};
 			}
-			// Nested namespaces such as kody.mcp / kody.openapi must stay
+			// Nested namespaces such as kody.mcp must stay
 			// late-bound too. Returning the raw object lets a bundler
 			// destructure \`const { home } = kody.mcp\` against a get-only
 			// proxy and bind home to undefined.

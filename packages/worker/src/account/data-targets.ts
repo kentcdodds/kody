@@ -259,9 +259,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// on export; secret-name placeholders stay for soak compatibility.
 	{ kind: 'user_id', table: 'user_integrations' },
 	{ kind: 'user_id', table: 'user_oauth_apps' },
-	// OpenAPI binding operations before bindings (composite FK child).
-	{ kind: 'user_id', table: 'user_openapi_binding_operations' },
-	{ kind: 'user_id', table: 'user_openapi_bindings' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
 	// Job rows (`jobs`, `archived_job_artifacts`) live in the jobs worker's
 	// database (ADR 0016); account deletion reaches them through the JOBS

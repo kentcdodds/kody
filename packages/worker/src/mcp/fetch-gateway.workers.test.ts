@@ -90,7 +90,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	}).catch((error: unknown) => error)
 	expect(isEntitlementLimitError(denied)).toBe(true)
 
-	// Callers that carry no email (OpenAPI provider requests, package
+	// Callers that carry no email (MCP provider requests, package
 	// runtime) still bind to the caller's real plan: the gateway
 	// reverse-resolves the account from the stable userId instead of
 	// failing open to the `max` quota.

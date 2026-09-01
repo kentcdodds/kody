@@ -17,7 +17,6 @@ const mockModule = vi.hoisted(() => ({
 			coding_guide_get: true,
 		},
 	})),
-	listOpenApiBindings: vi.fn(async () => []),
 	getRunRecordByIdempotencyKey: vi.fn(async () => null),
 	claimRunRecord: vi.fn(async () => null),
 	finishRunRecord: vi.fn(async () => undefined),
@@ -36,11 +35,6 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
 		mockModule.createExecutePackageInvokeTools(...args),
-}))
-
-vi.mock('#worker/openapi/binding-service.ts', () => ({
-	listOpenApiBindings: (...args: Array<unknown>) =>
-		mockModule.listOpenApiBindings(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', async () => {
@@ -656,7 +650,7 @@ test('execute passes through downstream MCP image content with structured data a
 	)
 })
 
-test('execute tool nudges repeated raw-fetch hosts once per conversation and skips OpenAPI-covered hosts', async () => {
+test('execute tool nudges repeated raw-fetch hosts once per conversation', async () => {
 	const agentState: Record<string, unknown> = {}
 	const setState = vi.fn((next: Record<string, unknown>) => {
 		for (const key of Object.keys(agentState)) {
@@ -707,7 +701,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		}),
 	])
 	expect(setState).toHaveBeenCalled()
-	expect(mockModule.listOpenApiBindings).toHaveBeenCalled()
 
 	mockPerformanceSequence(5, 6)
 	const again = await handler({
@@ -715,33 +708,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		conversationId: 'conv-nudge',
 	})
 	expect(again.structuredContent.warnings).toBeUndefined()
-
-	mockModule.listOpenApiBindings.mockResolvedValueOnce([
-		{
-			name: 'kit',
-			apiBaseUrl: 'https://api.kit.com/v4',
-		},
-	])
-	mockModule.runModuleWithRegistry.mockImplementationOnce(
-		async (
-			_env,
-			_ctx,
-			_code,
-			_params,
-			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
-		) => {
-			options.rawFetchHostSink?.add('api.kit.com')
-			options.rawFetchHostSink?.add('api.kit.com')
-			options.rawFetchHostSink?.add('api.kit.com')
-			return { result: { ok: true }, logs: [] }
-		},
-	)
-	mockPerformanceSequence(7, 8)
-	const covered = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-covered',
-	})
-	expect(covered.structuredContent.warnings).toBeUndefined()
 
 	// Integration-auth helper source sharpens the packages-first warning text.
 	mockModule.runModuleWithRegistry.mockImplementationOnce(

@@ -393,18 +393,6 @@ primitives:
     docs:
       - docs/contributing/architecture/mcp-client-servers.md
 
-  - id: openapi-bindings
-    group: assistant
-    name: OpenAPI provider bindings
-    summary: Curated OpenAPI bindings with synthesized openapi domains.
-    code:
-      - packages/worker/src/openapi/
-      - packages/worker/src/mcp/capabilities/openapi/
-      - packages/worker/src/mcp/capabilities/openapi-provider/
-    docs:
-      - docs/contributing/architecture/openapi-bindings.md
-      - docs/guides/openapi-integrations.md
-
   - id: realtime-sessions
     group: assistant
     name: Realtime sessions

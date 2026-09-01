@@ -84,7 +84,6 @@ export function defineCapability<
 		...(definition.featureFlag ? { featureFlag: definition.featureFlag } : {}),
 		source,
 		...(definition.mcpServer ? { mcpServer: definition.mcpServer } : {}),
-		...(definition.openApi ? { openApi: definition.openApi } : {}),
 		get inputSchema() {
 			return derived().inputSchema
 		},

@@ -147,6 +147,10 @@
 		{
 			"filename": "0036-drop-community-social.sql",
 			"sha256": "e8933bf1fc751ae81334569ceb378bf581ca39f7c9153d5f08554739806952c6"
+		},
+		{
+			"filename": "0037-drop-openapi-bindings.sql",
+			"sha256": "ef8fdf2c2b94f0d281afaa43977787827ef5792ff0d33adaa273eedf6c41ba56"
 		}
 	]
 }

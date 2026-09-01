@@ -13,7 +13,6 @@ const providerOnlyQueryTokens = new Set([
 	'binding',
 	'integration',
 	'mcp',
-	'openapi',
 	'operation',
 	'operations',
 	'provider',
@@ -28,7 +27,7 @@ type SynthesizedProvider = {
 	key: string
 	title: string
 	domain: string
-	source: 'mcp-server' | 'openapi'
+	source: 'mcp-server'
 	identityFields: Array<string>
 	operationIdentityFields: Array<string>
 	specs: Array<CapabilitySpec>
@@ -36,18 +35,6 @@ type SynthesizedProvider = {
 }
 
 function getProviderIdentity(spec: CapabilitySpec): SynthesizedProvider | null {
-	if (spec.openApi) {
-		return {
-			key: `openapi:${spec.openApi.bindingName}`,
-			title: spec.openApi.bindingName,
-			domain: spec.domain,
-			source: 'openapi',
-			identityFields: [spec.openApi.bindingName, spec.openApi.kodyName],
-			operationIdentityFields: [spec.name, spec.openApi.operationSlug],
-			specs: [spec],
-			usage: `kody.openapi[${JSON.stringify(spec.openApi.kodyName)}].operation_slug(args)`,
-		}
-	}
 	if (spec.mcpServer) {
 		return {
 			key: `mcp-server:${spec.mcpServer.serverId}`,
@@ -156,7 +143,7 @@ function buildProviderCard(input: {
 		type: 'provider',
 		id: input.provider.key,
 		title: input.provider.title,
-		description: `${input.provider.source === 'openapi' ? 'OpenAPI' : 'MCP'} provider with ${String(capabilityCount)} ${capabilityCount === 1 ? 'operation' : 'operations'}.`,
+		description: `MCP provider with ${String(capabilityCount)} ${capabilityCount === 1 ? 'operation' : 'operations'}.`,
 		domain: input.provider.domain,
 		source: input.provider.source,
 		capabilityCount,
