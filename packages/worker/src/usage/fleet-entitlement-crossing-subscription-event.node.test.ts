@@ -121,7 +121,7 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 			packageId: 'package-1',
 		}),
 	).toBe(
-		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:repeated_entitlement:execute_calls_per_day:package-1',
+		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:repeated_entitlement:execute_calls_per_day:2026-08-24:package-1',
 	)
 	expect(
 		buildFleetEntitlementCrossingIdempotencyKey({

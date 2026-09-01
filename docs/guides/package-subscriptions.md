@@ -1123,7 +1123,8 @@ type FleetEntitlementCrossedEvent =
 operator dashboards. Timestamps are ISO-8601 UTC. The event omits emails, plan
 names, secrets, package source, and unrelated account content. Idempotency keys
 include the topic, user id, crossing kind, threshold or UTC month, resource, UTC
-day for `*_per_day` resources, and subscriber package id.
+day for `*_per_day` resources and `repeated_entitlement`, and subscriber package
+id.
 
 Use this topic for notifier packages that send an operator message (for example
 Discord) when an account first crosses a plan limit, repeats an execute cap, or

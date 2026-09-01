@@ -201,7 +201,7 @@ export function buildFleetEntitlementCrossingIdempotencyKey(input: {
 		case 'runtime_duration':
 			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.observed_at.slice(0, 7)}:${input.packageId}`
 		case 'repeated_entitlement':
-			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.resource}:${input.packageId}`
+			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.resource}:${isoTimestampDayKey(input.event.observed_at)}:${input.packageId}`
 		case 'dynamic_worker_cost':
 			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.observed_at.slice(0, 7)}:${input.packageId}`
 		default: {
