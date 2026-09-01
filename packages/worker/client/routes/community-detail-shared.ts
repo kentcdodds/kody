@@ -175,6 +175,10 @@ export function getPackageDetailApiRef(
 	return getListingPageRef(pathname) ?? getPackageSettingsPageRef(pathname)
 }
 
+export function packageMoveDestination(pathname: string, movedTo: string) {
+	return getPackageSettingsPageRef(pathname) ? `${movedTo}/settings` : movedTo
+}
+
 /**
  * True for the package home (`/@owner/kody-id`), its listing-uuid fallback,
  * and owner settings (`/@owner/kody-id/settings`).
@@ -222,11 +226,18 @@ export async function communityDetailRouteLoader(
 		const movedTo = payload && !payload.ok ? payload.redirectTo : null
 		// A renamed package is a real destination, not a dead link: leave the SPA
 		// so the visitor lands on (and can copy) the canonical URL.
-		if (movedTo) return routeLoaderRedirect(movedTo)
+		if (movedTo) {
+			return routeLoaderRedirect(packageMoveDestination(url.pathname, movedTo))
+		}
 		throw new Error('Community listing not found.')
 	}
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load public package.')
+	}
+	if (getPackageSettingsPageRef(url.pathname)) {
+		if (!payload.viewerIsOwner || !payload.ownerPackage) {
+			throw new Error('Community listing not found.')
+		}
 	}
 
 	await framePrefetchPromise

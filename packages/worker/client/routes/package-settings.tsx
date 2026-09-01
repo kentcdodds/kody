@@ -16,6 +16,7 @@ import {
 	type CommunityDetailApiPayload,
 	type CommunityPackageMovedPayload,
 	getPackageSettingsPageRef,
+	packageMoveDestination,
 	postPackageLock,
 	rememberListingId,
 } from './community-detail-shared.ts'
@@ -36,7 +37,7 @@ export function PackageSettingsRoute(handle: Handle) {
 	let ownerProfilePublic = true
 	let invocationUrlOrigin = ''
 	let ownerDetailsMessage: string | null = null
-	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
+	let shellStatus: 'loading' | 'ready' | 'error' | 'missing' = 'loading'
 	let shellLoadRequestId = 0
 	let shellLoadedForPathname: string | null = null
 	let shellRequestedForPathname: string | null = null
@@ -112,16 +113,24 @@ export function PackageSettingsRoute(handle: Handle) {
 			if (response.status === 404) {
 				const movedTo = payload && !payload.ok ? payload.redirectTo : null
 				if (movedTo) {
-					window.location.assign(`${movedTo}/settings`)
+					window.location.assign(packageMoveDestination(ref.pathname, movedTo))
 					return
 				}
 				shellLoadedForPathname = ref.pathname
-				shellStatus = 'error'
+				shellStatus = 'missing'
 				handle.update()
 				return
 			}
-			if (!response.ok || !payload?.ok || !payload.ownerPackage) {
-				throw new Error('Unable to load package settings.')
+			if (
+				!response.ok ||
+				!payload?.ok ||
+				!payload.ownerPackage ||
+				!payload.viewerIsOwner
+			) {
+				shellLoadedForPathname = ref.pathname
+				shellStatus = 'missing'
+				handle.update()
+				return
 			}
 			if (payload.listing) {
 				rememberListingId(ref.pathname, payload.listing.id)
@@ -156,7 +165,11 @@ export function PackageSettingsRoute(handle: Handle) {
 			shellStatus = 'ready'
 			return true
 		}
-		if (!routeData.ownerPackage) return false
+		if (!routeData.ownerPackage || !routeData.viewerIsOwner) {
+			shellLoadedForPathname = pathname
+			shellStatus = 'missing'
+			return true
+		}
 		ownerPackage = routeData.ownerPackage
 		username = routeData.username
 		kodyId = routeData.kodyId || routeData.ownerPackage.kodyId
@@ -222,6 +235,10 @@ export function PackageSettingsRoute(handle: Handle) {
 		const shellMatches = shellLoadedForPathname === pathname
 		const showReady = shellStatus === 'ready' && shellMatches
 		const showError = shellStatus === 'error' && shellMatches
+		const showMissing = shellStatus === 'missing' && shellMatches
+		if (showMissing) {
+			return renderMissingListing('Not Found', 'We could not find that page.')
+		}
 		const statusMessage = showError
 			? 'Unable to load package settings.'
 			: showReady
