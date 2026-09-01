@@ -77,6 +77,17 @@ and includes the model you pass. Never invent a dollar figure or a model id.
 When the work deployed user-visible pages, put clickable links to those pages in
 `extras` (see below) so Kent can open the live result from Discord.
 
+**title (required):** a human headline of the change itself so the Discord post
+is glanceable. Example: `OpenAPI spec fetches now count against daily quota`. Do
+**not** use `ship owner/repo#N` as the title — repo, PR, and agent already
+appear as links.
+
+**difficulty (required):** `'Easy' | 'Medium' | 'Hard'`. Always pass it.
+Distinct from Risk (merge authority). Easy = small/localized; Medium = several
+files or real behavior change; Hard = architecture, migrations, subtle
+correctness, or wide blast radius. The Discord export renders this on its own
+line.
+
 **agentId (required):**
 
 - In a Cursor Cloud Agent VM, read it from the metadata socket:
@@ -113,7 +124,8 @@ export default async function main() {
 	return sendShippedPr({
 		agentId: 'bc-…', // metadata socket or launch URL
 		model: 'grok-4.6', // metadata turn/model (deterministic)
-		title: 'ship owner/repo#123',
+		title: 'OpenAPI spec fetches now count against daily quota',
+		difficulty: 'Medium',
 		status: 'Shipped', // or Parked / Blocked
 		summary: 'One-screen what shipped and why it is done.',
 		prUrl: 'https://github.com/owner/repo/pull/123',
