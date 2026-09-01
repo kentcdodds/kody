@@ -337,8 +337,17 @@ Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 The engine entry point is `runPackageCodemodStep` in
 `packages/worker/src/package-codemods/engine.ts`. Long runs are **paged**: each
 call processes up to `limit` packages (or revert items) and returns `nextCursor`
-plus a per-step `summary` count by item status. Repeat with the same `runId` and
-`nextCursor` until `nextCursor` is null.
+plus a per-step `summary` count by item status. Continue with the same `runId`
+and `nextCursor` until `nextCursor` is null.
+
+The admin UI walks those pages as separate HTTP requests. MCP `execute` and
+inline workflow sandboxes do not: dry-run, apply, and revert are check-heavy
+enough that a second page in the same sandbox typically exceeds the workflow
+observer (~270s, under the Cloudflare Workflow step timeout). Those modes take
+one page per execute or workflow sandbox. When `nextCursor` is set, start a new
+`execute` or `workflows.create` with that `runId` and cursor. Capability results
+include a `nextStep` string that restates this. Scan pages are cheaper and can
+often continue in the same sandbox.
 
 ### Step limits
 

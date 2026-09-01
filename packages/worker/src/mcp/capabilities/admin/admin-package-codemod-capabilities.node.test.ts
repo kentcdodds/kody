@@ -129,12 +129,47 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 			},
 			createAdminCtx(),
 		),
-	).resolves.toMatchObject({ mode: 'apply' })
+	).resolves.toMatchObject({
+		mode: 'apply',
+		nextStep: 'This run has no further pages.',
+	})
 	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			mode: 'apply',
 			scope: { kind: 'fleet' },
 			filters: { packageIds: ['pkg-canary'] },
+			initiatedByUserId: 'admin-1',
+		}),
+	)
+	mockModule.runPackageCodemodStep.mockResolvedValue({
+		...emptyStepResult({
+			runId: 'fleet-apply-1',
+			codemodId: '0001-ambient-storage-to-package-storage',
+			mode: 'apply',
+		}),
+		nextCursor: 'cursor-2',
+	})
+	await expect(
+		adminPackageCodemodApplyCapability.handler(
+			{
+				codemodId: '0001-ambient-storage-to-package-storage',
+				runId: 'fleet-apply-1',
+				cursor: 'cursor-1',
+			},
+			createAdminCtx(),
+		),
+	).resolves.toMatchObject({
+		mode: 'apply',
+		nextCursor: 'cursor-2',
+		nextStep:
+			'This page is done. Continue in a new execute or workflows.create call with runId fleet-apply-1 and cursor cursor-2 (limit ≤5). Do not page again in the same sandbox.',
+	})
+	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			mode: 'apply',
+			scope: { kind: 'fleet' },
+			runId: 'fleet-apply-1',
+			cursor: 'cursor-1',
 			initiatedByUserId: 'admin-1',
 		}),
 	)

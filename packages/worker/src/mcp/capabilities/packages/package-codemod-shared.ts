@@ -65,6 +65,11 @@ export const packageCodemodStepResultSchema = z.object({
 		packageCodemodItemStatusSchema,
 		z.number().int().nonnegative(),
 	),
+	nextStep: z
+		.string()
+		.describe(
+			'What to do with nextCursor. Dry-run, apply, and revert continue in a new execute or workflow sandbox.',
+		),
 })
 
 export const packageCodemodStepInputSchema = z.object({
@@ -90,7 +95,7 @@ export const packageCodemodStepInputSchema = z.object({
 		.max(50)
 		.optional()
 		.describe(
-			'Max packages to process in this step. Scan: default 20, max 50. Dry-run, apply, and revert are check-heavy: default 5, max 10 (higher values are clamped).',
+			'Max packages to process in this step. Scan: default 20, max 50. Dry-run, apply, and revert are check-heavy: default 5, max 10 (higher values are clamped). One apply/dry-run/revert page per execute or workflow sandbox.',
 		),
 })
 
@@ -118,7 +123,7 @@ export const packageCodemodRevertInputSchema = z.object({
 		.max(10)
 		.optional()
 		.describe(
-			'Max items to revert in this step (default 5, max 10 — reverts republish packages and are check-heavy).',
+			'Max items to revert in this step (default 5, max 10). Reverts republish packages: one page per execute or workflow sandbox.',
 		),
 })
 
@@ -145,10 +150,33 @@ export const adminPackageCodemodRevertInputSchema =
 		filters: packageCodemodFiltersSchema.optional(),
 	})
 
-const pagingDescription =
-	'Paged: call again with runId and nextCursor until nextCursor is null.'
+export const packageCodemodPagingHint =
+	'Paged: each call is one page. Continue with the same runId and nextCursor until nextCursor is null.'
 
-export const packageCodemodPagingHint = pagingDescription
+export const packageCodemodHeavyPagingHint =
+	'Paged: one page per execute or workflow sandbox (default limit 5). When nextCursor is set, start a new execute or workflows.create with that runId and cursor — do not loop pages in the same sandbox.'
+
+export function createPackageCodemodNextStep(result: {
+	runId: string
+	nextCursor: string | null
+	mode: PackageCodemodRunMode
+}) {
+	if (result.nextCursor == null) {
+		return 'This run has no further pages.'
+	}
+	switch (result.mode) {
+		case 'scan':
+			return `Continue with runId ${result.runId} and cursor ${result.nextCursor}. Scan pages usually fit in one sandbox; spawn a new workflow if the call is approaching the sandbox budget.`
+		case 'dry-run':
+		case 'apply':
+		case 'revert':
+			return `This page is done. Continue in a new execute or workflows.create call with runId ${result.runId} and cursor ${result.nextCursor} (limit ≤5). Do not page again in the same sandbox.`
+		default: {
+			const exhaustive: never = result.mode
+			throw new Error(`Unknown package codemod mode: ${String(exhaustive)}`)
+		}
+	}
+}
 
 export async function runFleetPackageCodemodStep(
 	ctx: CapabilityContext,
@@ -177,7 +205,7 @@ export async function runFleetPackageCodemodStep(
 					...(packageIds != null ? { packageIds } : {}),
 				}
 			: undefined
-	return await runPackageCodemodStep({
+	const result = await runPackageCodemodStep({
 		env: ctx.env,
 		baseUrl: ctx.callerContext.baseUrl,
 		initiatedByUserId: user.userId,
@@ -190,4 +218,8 @@ export async function runFleetPackageCodemodStep(
 		limit: input.limit,
 		revertOfRunId: input.revertOfRunId,
 	})
+	return {
+		...result,
+		nextStep: createPackageCodemodNextStep(result),
+	}
 }

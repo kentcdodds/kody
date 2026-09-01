@@ -497,7 +497,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 
 					<AccountManagementPanel
 						title="Run codemod"
-						description="Each click walks the fleet in pages until nextCursor is null (stop anytime; hard ceiling 200 steps). Apply and revert require an explicit scope and confirmation."
+						description="Each click walks the fleet as one HTTP request per page until nextCursor is null (stop anytime; hard ceiling 200 steps). Apply and revert require an explicit scope and confirmation."
 					>
 						<form
 							mix={[

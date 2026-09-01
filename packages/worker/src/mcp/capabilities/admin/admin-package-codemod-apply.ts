@@ -2,7 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminPackageCodemodStepInputSchema,
-	packageCodemodPagingHint,
+	packageCodemodHeavyPagingHint,
 	packageCodemodStepResultSchema,
 	runFleetPackageCodemodStep,
 } from '#mcp/capabilities/packages/package-codemod-shared.ts'
@@ -17,7 +17,7 @@ export const adminPackageCodemodApplyCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		destructive: true,
 		name: 'adminPackageCodemodApply',
-		description: `Fleet-apply a registered package codemod: republishes transformed published trees after the same gates as dry-run. Prefer adminPackageCodemodDryRun first; canary with filters. Keep the returned runId to revert with adminPackageCodemodRevert. ${packageCodemodPagingHint}`,
+		description: `Fleet-apply a registered package codemod: republishes transformed published trees after the same gates as dry-run. Prefer adminPackageCodemodDryRun first; canary with filters. Keep the returned runId to revert with adminPackageCodemodRevert. ${packageCodemodHeavyPagingHint}`,
 		keywords: [
 			'admin',
 			'package',

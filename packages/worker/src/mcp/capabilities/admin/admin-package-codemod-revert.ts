@@ -3,7 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminPackageCodemodRevertInputSchema,
-	packageCodemodPagingHint,
+	packageCodemodHeavyPagingHint,
 	packageCodemodStepResultSchema,
 	runFleetPackageCodemodStep,
 } from '#mcp/capabilities/packages/package-codemod-shared.ts'
@@ -19,7 +19,7 @@ export const adminPackageCodemodRevertCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		destructive: true,
 		name: 'adminPackageCodemodRevert',
-		description: `Fleet-revert a prior adminPackageCodemodApply (or other apply) run by republishing stored pre-codemod snapshots. ${packageCodemodPagingHint}`,
+		description: `Fleet-revert a prior adminPackageCodemodApply (or other apply) run by republishing stored pre-codemod snapshots. ${packageCodemodHeavyPagingHint}`,
 		keywords: [
 			'admin',
 			'package',

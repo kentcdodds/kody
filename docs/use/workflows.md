@@ -13,7 +13,10 @@ re-executes instead of replaying a cached timeout. Outbound `fetch` in that
 sandbox is capped ~30s under the same budget (~4 minutes), so a single slow
 upstream can finish without the execute-oriented 60s fetch deadline. The initial
 `execute` call should submit one `workflows.create`; inspect that workflow later
-with `workflowRunList`, or cancel it with `workflowRunCancel`.
+with `workflowRunList`, or cancel it with `workflowRunCancel`. Check-heavy admin
+steps such as fleet apply, dry-run, and revert take one page per workflow
+sandbox; when `nextCursor` is set, create another workflow with that `runId` and
+cursor instead of looping in the same run.
 
 ```ts
 import { workflows } from 'kody:runtime'
