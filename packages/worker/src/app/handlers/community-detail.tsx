@@ -4,6 +4,7 @@ import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { loadPackagePage } from '#app/package-page.ts'
+import { loadOwnerPackageReadme } from '#app/package-files-data.ts'
 import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
@@ -111,6 +112,9 @@ async function renderCommunityListingPage(input: {
 				viewerInstall: detail.viewerInstall,
 				ownerPackage: detail.ownerPackage,
 				username: detail.username,
+				kodyId: detail.listing.kodyId,
+				viewerIsOwner: detail.viewerIsOwner,
+				isPrivate: false,
 				invocationUrlOrigin: detail.invocationUrlOrigin,
 			},
 		},
@@ -144,6 +148,38 @@ async function highlightReadmeFences(
 ): Promise<Array<HighlightedCode>> {
 	if (!readmeContent) return []
 	return highlightMarkdownFences(env, readmeContent, { serverTiming })
+}
+
+async function readmeForPackagePage(
+	input: {
+		env: Env
+		request: Request
+		listingReadme: string | null | undefined
+		ownerSourceId: string | null | undefined
+		viewerIsOwner: boolean
+	},
+	serverTiming?: Array<ServerTimingEntry>,
+) {
+	let readmeContent = input.listingReadme ?? null
+	if (!readmeContent && input.viewerIsOwner && input.ownerSourceId) {
+		const user = await readAuthenticatedAppUser(input.request, input.env)
+		if (user) {
+			readmeContent = await loadOwnerPackageReadme({
+				env: input.env,
+				request: input.request,
+				userId: user.mcpUser.userId,
+				sourceId: input.ownerSourceId,
+			})
+		}
+	}
+	return {
+		readmeContent,
+		readmeFences: await highlightReadmeFences(
+			input.env,
+			readmeContent,
+			serverTiming,
+		),
+	}
 }
 
 /**
@@ -212,9 +248,14 @@ export function createCommunityPackageHandler(env: Env) {
 
 			if (page.listing?.listing) {
 				const serverTiming: Array<ServerTimingEntry> = []
-				const readmeFences = await highlightReadmeFences(
-					env,
-					page.listing.listing.readmeContent,
+				const readme = await readmeForPackagePage(
+					{
+						env,
+						request,
+						listingReadme: page.listing.listing.readmeContent,
+						ownerSourceId: page.ownerPackage?.sourceId,
+						viewerIsOwner: page.viewerIsOwner,
+					},
 					serverTiming,
 				)
 				return renderAppPage({
@@ -232,11 +273,14 @@ export function createCommunityPackageHandler(env: Env) {
 							viewerIsAdmin: page.listing.viewerIsAdmin,
 							trusted: page.listing.listing.trusted,
 							featured: page.listing.listing.featured,
-							readmeContent: page.listing.listing.readmeContent,
-							readmeFences,
+							readmeContent: readme.readmeContent,
+							readmeFences: readme.readmeFences,
 							viewerInstall: page.listing.viewerInstall,
 							ownerPackage: page.ownerPackage,
 							username: page.username,
+							kodyId: page.kodyId,
+							viewerIsOwner: page.viewerIsOwner,
+							isPrivate: page.ownerPackage?.isPrivate ?? false,
 							invocationUrlOrigin: page.invocationUrlOrigin,
 						},
 					},
@@ -247,10 +291,22 @@ export function createCommunityPackageHandler(env: Env) {
 				return renderPackageNotFoundPage({ request, env })
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
+			const readme = await readmeForPackagePage(
+				{
+					env,
+					request,
+					listingReadme: null,
+					ownerSourceId: page.ownerPackage.sourceId,
+					viewerIsOwner: page.viewerIsOwner,
+				},
+				serverTiming,
+			)
 			return renderAppPage({
 				request,
 				env,
 				title: page.ownerPackage.name,
+				serverTiming,
 				loaderData: {
 					communityDetailShell: {
 						ok: true,
@@ -262,10 +318,14 @@ export function createCommunityPackageHandler(env: Env) {
 						viewerIsAdmin: false,
 						trusted: false,
 						featured: false,
-						readmeContent: null,
+						readmeContent: readme.readmeContent,
+						readmeFences: readme.readmeFences,
 						viewerInstall: null,
 						ownerPackage: page.ownerPackage,
 						username: page.username,
+						kodyId: page.kodyId,
+						viewerIsOwner: page.viewerIsOwner,
+						isPrivate: page.ownerPackage.isPrivate,
 						invocationUrlOrigin: page.invocationUrlOrigin,
 					},
 				},
@@ -293,6 +353,9 @@ export function createCommunityDetailApiHandler(env: Env) {
 				request,
 				{
 					...detail,
+					readmeContent: detail.listing.readmeContent,
+					kodyId: detail.listing.kodyId,
+					isPrivate: false,
 					readmeFences: await highlightReadmeFences(
 						env,
 						detail.listing.readmeContent,
@@ -339,13 +402,16 @@ export function createCommunityPackageApiHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const readmeFences = page.listing?.listing?.readmeContent
-				? await highlightReadmeFences(
-						env,
-						page.listing.listing.readmeContent,
-						serverTiming,
-					)
-				: []
+			const readme = await readmeForPackagePage(
+				{
+					env,
+					request,
+					listingReadme: page.listing?.listing?.readmeContent,
+					ownerSourceId: page.ownerPackage?.sourceId,
+					viewerIsOwner: page.viewerIsOwner,
+				},
+				serverTiming,
+			)
 			return jsonResponse(
 				request,
 				{
@@ -357,9 +423,12 @@ export function createCommunityPackageApiHandler(env: Env) {
 					viewerIsAdmin: page.listing?.viewerIsAdmin ?? false,
 					forkPrompt: page.listing?.forkPrompt ?? '',
 					viewerInstall: page.listing?.viewerInstall ?? null,
-					readmeFences,
+					readmeContent: readme.readmeContent,
+					readmeFences: readme.readmeFences,
 					ownerPackage: page.ownerPackage,
 					username: page.username,
+					kodyId: page.kodyId,
+					isPrivate: page.ownerPackage?.isPrivate ?? false,
 					invocationUrlOrigin: page.invocationUrlOrigin,
 				},
 				200,
@@ -367,6 +436,63 @@ export function createCommunityPackageApiHandler(env: Env) {
 			)
 		},
 	} satisfies Action<typeof routes.communityPackageApi>
+}
+
+export function createCommunityPackageSettingsHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: `${page.to}/settings`,
+					url: new URL(request.url),
+					cache: page.shared ? 'public' : 'private',
+				})
+			}
+			if (page.kind === 'not_found') {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			if (page.kind === 'unauthorized') {
+				return renderPackageUnauthorizedPage({ request, env })
+			}
+			if (!page.viewerIsOwner || !page.ownerPackage) {
+				return renderPackageNotFoundPage({ request, env })
+			}
+
+			return renderAppPage({
+				request,
+				env,
+				title: `${page.ownerPackage.name} settings`,
+				loaderData: {
+					communityDetailShell: {
+						ok: true,
+						listingId: page.listing?.listing?.id ?? null,
+						name: page.ownerPackage.name,
+						description: page.ownerPackage.description,
+						forkPrompt: '',
+						loggedIn: page.loggedIn,
+						viewerIsAdmin: false,
+						trusted: false,
+						featured: false,
+						readmeContent: null,
+						viewerInstall: null,
+						ownerPackage: page.ownerPackage,
+						username: page.username,
+						kodyId: page.kodyId,
+						viewerIsOwner: true,
+						isPrivate: page.ownerPackage.isPrivate,
+						invocationUrlOrigin: page.invocationUrlOrigin,
+					},
+				},
+			})
+		},
+	} satisfies Action<typeof routes.communityPackageSettings>
 }
 
 /**

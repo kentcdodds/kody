@@ -179,6 +179,10 @@ export type PackageFilesLoaderData = {
 	language: string | null
 	contentHighlighted?: HighlightedCode | null
 	contentFences?: Array<HighlightedCode>
+	username?: string
+	kodyId?: string
+	viewerIsOwner?: boolean
+	isPrivate?: boolean
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -197,6 +201,9 @@ export type CommunityDetailShellLoaderData = {
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
 	username: string
+	kodyId: string
+	viewerIsOwner: boolean
+	isPrivate: boolean
 	invocationUrlOrigin: string
 }
 

@@ -23,11 +23,15 @@ export type CommunityDetailApiPayload = {
 	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
+	viewerIsOwner: boolean
 	forkPrompt: string
 	viewerInstall: ViewerListingInstall | null
+	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
 	ownerPackage: AccountPackageDetail | null
 	username: string
+	kodyId: string
+	isPrivate: boolean
 	invocationUrlOrigin: string
 }
 
@@ -51,12 +55,15 @@ export type CommunityInstallApiPayload = {
 export type CommunityShellSnapshot = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
+	viewerIsOwner: boolean
 	trusted: boolean
 	featured: boolean
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode> | undefined
 	ownerPackage: AccountPackageDetail | null
 	username: string
+	kodyId: string
+	isPrivate: boolean
 	invocationUrlOrigin: string
 }
 
@@ -86,6 +93,9 @@ export function getListingIdFromPathname(pathname: string) {
 }
 
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
+const communityPackageSettingsMatcher = createMatcher(
+	routes.communityPackageSettings.pattern,
+)
 
 /**
  * The canonical package URL (`/@owner/kody-id`) carries no listing id, and
@@ -142,12 +152,35 @@ export function getListingPageRef(pathname: string): ListingPageRef | null {
 	}
 }
 
+export function getPackageSettingsPageRef(
+	pathname: string,
+): ListingPageRef | null {
+	const params = communityPackageSettingsMatcher.match(
+		new URL(pathname, 'http://localhost'),
+	)?.params
+	if (!params) return null
+	return {
+		pathname,
+		detailApiHref: routes.communityPackageApi.href({
+			username: params.username,
+			kodyId: params.kodyId,
+		}),
+		listingId: listingIdsByPathname.get(pathname) ?? null,
+	}
+}
+
+export function getPackageDetailApiRef(
+	pathname: string,
+): ListingPageRef | null {
+	return getListingPageRef(pathname) ?? getPackageSettingsPageRef(pathname)
+}
+
 /**
- * True for both public spellings of a listing page: the canonical
- * `/@owner/kody-id` and the listing-uuid URL that redirects to it.
+ * True for the package home (`/@owner/kody-id`), its listing-uuid fallback,
+ * and owner settings (`/@owner/kody-id/settings`).
  */
 export function isCommunityListingPathname(pathname: string) {
-	return getListingPageRef(pathname) !== null
+	return getPackageDetailApiRef(pathname) !== null
 }
 
 export function buildCommunityDetailFrameSrc(href: string) {
@@ -160,7 +193,7 @@ export async function communityDetailRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const ref = getListingPageRef(url.pathname)
+	const ref = getPackageDetailApiRef(url.pathname)
 	if (!ref) {
 		throw new Error('Community listing not found.')
 	}
@@ -210,13 +243,21 @@ export async function communityDetailRouteLoader(
 			forkPrompt: payload.forkPrompt,
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,
+			viewerIsOwner: payload.viewerIsOwner,
 			trusted: payload.listing?.trusted ?? false,
 			featured: payload.listing?.featured ?? false,
-			readmeContent: payload.listing?.readmeContent ?? null,
+			readmeContent:
+				payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 			readmeFences: payload.readmeFences,
 			viewerInstall: payload.viewerInstall,
 			ownerPackage: payload.ownerPackage,
 			username: payload.username,
+			kodyId:
+				payload.kodyId ||
+				payload.listing?.kodyId ||
+				payload.ownerPackage?.kodyId ||
+				'',
+			isPrivate: payload.isPrivate ?? payload.ownerPackage?.isPrivate ?? false,
 			invocationUrlOrigin: payload.invocationUrlOrigin,
 		},
 	}

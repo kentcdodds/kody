@@ -6,6 +6,8 @@ import {
 	findDirectoryReadmePath,
 	getAccountPackageFilesHref,
 	getCommunityPackageFilesHref,
+	getPackageSettingsHref,
+	getPackageTreeHref,
 	isReservedPackageFilesKodyId,
 	joinPackageFilesPath,
 	listPackageFilesChildren,
@@ -133,6 +135,18 @@ test('files hrefs use the default-branch fallback and avoid reserved kody ids', 
 	expect(getAccountPackageFilesHref({ packageId: 'pkg-1' })).toBe(
 		'/account/packages/pkg-1/files',
 	)
+	expect(
+		getPackageTreeHref({
+			username: 'kentcdodds',
+			kodyId: 'friction-log',
+		}),
+	).toBe('/@kentcdodds/friction-log/tree/main')
+	expect(
+		getPackageSettingsHref({
+			username: 'kentcdodds',
+			kodyId: 'friction-log',
+		}),
+	).toBe('/@kentcdodds/friction-log/settings')
 	expect(
 		joinPackageFilesPath('/@kentcdodds/devin/tree/main', 'src/index.ts'),
 	).toBe('/@kentcdodds/devin/tree/main/src/index.ts')

@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
 	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
 	resolveArtifactSourceHead: vi.fn<() => Promise<unknown>>(),
+	loadPackagePage: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('#worker/community/package-url.ts', () => ({
@@ -27,6 +28,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/artifacts.ts', () => ({
 	resolveArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
+}))
+
+vi.mock('#app/package-page.ts', () => ({
+	loadPackagePage: (...args: Array<unknown>) =>
+		mockModule.loadPackagePage(...args),
 }))
 
 const { resolveCommunityFilesRoute } =
@@ -116,4 +122,43 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/main',
 	})
+})
+
+test('unlisted owner tree uses the package page; strangers are unauthorized', async () => {
+	mockModule.resolveCommunityPackageUrl.mockResolvedValue(null)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		listing: null,
+		ownerPackage: { sourceId: 'src-1', isPrivate: true },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+
+	const owner = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/tree/main'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log/tree/main',
+		),
+	})
+	expect(owner).toEqual({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		selectedPath: '',
+		ref: 'main',
+	})
+
+	mockModule.loadPackagePage.mockResolvedValue({ kind: 'unauthorized' })
+	const stranger = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/tree/main'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log/tree/main',
+		),
+	})
+	expect(stranger).toEqual({ kind: 'unauthorized' })
 })

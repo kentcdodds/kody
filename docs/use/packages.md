@@ -22,8 +22,10 @@ Think in terms of:
 - package-owned webhooks
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
-hosting. `/account/packages/:packageId/files` browses the published text
-snapshot of a saved package.
+hosting. Browse files at `/@username/:name/tree/:ref` — the same URL whether the
+package is public or private. Visibility, not a separate account files path, is
+what keeps private source off the public web. Owner controls (tokens, lock,
+visibility, delete) live at `/@username/:name/settings`.
 
 ## Package state model
 

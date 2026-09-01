@@ -15,7 +15,7 @@ Owner sets visibility public (packageUpdate)
 D1 saved_packages.is_private = 0 + community_listings row
         │              KV source snapshot keyed by SHA
         ▼
-Public /community + /@username/:name + /tree/:ref
+Public /community + /@username/:name + /tree/:ref + /settings
         │
         ▼
 Visitor forks ──► communityFork ──► entity_sources (no saved_packages row)
