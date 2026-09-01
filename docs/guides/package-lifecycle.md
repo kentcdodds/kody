@@ -208,6 +208,27 @@ Keep the schedule disabled when representative testing is inconclusive,
 credentials or host approval are missing, the result is unexpected, or the live
 mutation has not been explicitly confirmed by the user.
 
+## Delete a package
+
+`package_delete` permanently removes a saved package the signed-in user owns. Do
+not call it because a package is unused, failing, or over quota unless the owner
+explicitly asked to delete that package.
+
+1. Load the package with `package_get` or `package_list`.
+2. Show the owner the package name and that delete removes jobs, storage,
+   secrets, tokens, the public listing if one exists, and Artifacts repos.
+   Existing forks keep their copies. This cannot be undone.
+3. Wait for the owner to type the package name.
+4. Call `package_delete` with `package_id` and `confirm_name` matching that name
+   exactly. The capability refuses and names the expected value when
+   `confirm_name` is missing or wrong.
+
+People can delete from the package page: `/account/packages` → open the package
+→ **Delete package**, then type the package name in the modal.
+
+Hiding (`package_update` `changes.hidden`) and making a package private are not
+deletion.
+
 ## Evolve the durable behavior
 
 For later changes, inspect the current repo, preserve the package's intent,

@@ -632,7 +632,9 @@ package URLs, and owner-matching hosted package URLs without mixing in semantic
 capability results. Hidden exact query matches require the opt-in; known-id
 entity lookup by UUID or `kody.id`, **`package_list`**, **`package_get`**, and
 context-scope package retrievers are unaffected. Hiding is not deletion,
-community delisting, or entitlement exclusion.
+community delisting, or entitlement exclusion. Deletion is `package_delete`
+(agents, `confirm_name` matching the package name) or **Delete package** on the
+package page (type the package name).
 
 `package_update` is reserved for mutable package settings (`hidden`, and
 `locked: true`; unlocking is website-only). Manifest-derived metadata and

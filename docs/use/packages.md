@@ -501,6 +501,8 @@ Use:
 - `package_save` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
+- `package_delete` to permanently remove a saved package the owner typed the
+  name of (`confirm_name` must match the package name)
 - `package_update` to change mutable package settings such as hidden search
   discovery state or to lock publishes (`changes.locked: true`). Unlocking is
   website-only.
@@ -537,6 +539,29 @@ Hiding is a discovery preference, not deletion. The package stays saved,
 executable, and editable. Hiding is separate from **visibility**
 (`package_update` `changes.visibility`, which lists or unlists the catalog) and
 from entitlement or access grants.
+
+## Delete a package
+
+Deleting a package removes it from the account. It is permanent.
+
+Use:
+
+- The **Delete package** control on the package page (`/@username/{kodyId}`, or
+  open a row from `/account/packages`). A modal asks you to type the package
+  name to confirm.
+- **`package_delete`** with a saved **`package_id`**. Show the owner the package
+  name and what will be destroyed, wait for them to type that name, then pass
+  **`confirm_name`** matching the package name exactly (`package.json` `name`,
+  for example `@you/my-package`). The capability refuses the delete and names
+  the expected value when `confirm_name` is missing or wrong.
+
+Delete removes the package from discovery, stops its jobs, clears package
+storage and package-scoped secrets, drops invocation tokens, and unlists a
+public catalog entry if one exists. Artifact repos are cleaned up best-effort.
+Existing forks keep their copies.
+
+Hiding and making a package private are not deletion. Use those when the package
+should stay saved.
 
 **`package_list`** and **`package_get`** return a **`hidden`** boolean on each
 package summary. Ranked **search** excludes hidden packages unless the caller

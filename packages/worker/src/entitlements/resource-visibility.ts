@@ -45,7 +45,8 @@ export const entitlementResourceVisibility: Record<
 		group: 'counts',
 		kind: 'counter',
 		whatCounts: 'Saved packages published to your account.',
-		howToReduce: 'Remove packages you no longer use.',
+		howToReduce:
+			'Delete unused packages from the package page or with package_delete.',
 	},
 	scheduled_jobs: {
 		group: 'counts',
