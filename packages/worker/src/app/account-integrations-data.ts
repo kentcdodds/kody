@@ -68,6 +68,10 @@ function toBringYourOwnReconnectRecord(
 	return {
 		...record,
 		platform: false,
+		// Do not keep the leftover platform slug: hasStoredConnectClientSecret
+		// treats a non-platform appSlug as a user-lane app and can pick up a
+		// sibling BYO client secret.
+		appSlug: '',
 		clientId: '',
 		clientSecretSecretName: null,
 		platformAllowedScopes: undefined,

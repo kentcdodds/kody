@@ -8,7 +8,9 @@ import {
 	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import { updateOauthAppClientSecretCiphertext } from '#worker/integrations/repo.ts'
 import {
+	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadAccountOauthAppBySlug,
@@ -194,6 +196,7 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 	)
 	expect(platformReconnect).toMatchObject({
 		name: 'github',
+		appSlug: '',
 		platform: false,
 		clientId: '',
 		authorization: {
@@ -213,6 +216,7 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 	)
 	expect(addAccountOnPlatform).toMatchObject({
 		name: 'github-2',
+		appSlug: '',
 		platform: false,
 		clientId: '',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
@@ -223,6 +227,43 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		accessTokenSecretName: 'github-2AccessToken',
 		refreshTokenSecretName: 'github-2RefreshToken',
 	})
+
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'github',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			flow: 'confidential',
+			clientId: 'user-github-client',
+			clientSecretSecretName: 'otherGithubClientSecret',
+			authorization: {
+				authorizeUrl: 'https://github.com/login/oauth/authorize',
+			},
+		},
+	})
+	await updateOauthAppClientSecretCiphertext({
+		db: env.APP_DB,
+		userId,
+		slug: 'github',
+		clientSecretEncrypted: 'ciphertext-from-other-byo-app',
+	})
+	expect(
+		await hasStoredConnectClientSecret(
+			env,
+			fakeUser(userId),
+			'github',
+			platformReconnect,
+		),
+	).toBe(false)
+	expect(
+		await hasStoredConnectClientSecret(
+			env,
+			fakeUser(userId),
+			'github-2',
+			addAccountOnPlatform,
+		),
+	).toBe(false)
 
 	await upsertIntegration({
 		env,
