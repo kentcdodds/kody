@@ -681,7 +681,8 @@ invariants:
       - docs/contributing/decisions/0023-progressive-search-disclosure.md
 
   - id: package-over-synthesized-provider
-    summary: Rank wrapping packages before matching synthesized MCP provider ops.
+    summary:
+      Rank wrapping packages before matching synthesized MCP provider ops.
     docs:
       - docs/use/search.md
       - docs/contributing/decisions/0024-packages-outrank-synthesized-providers.md
