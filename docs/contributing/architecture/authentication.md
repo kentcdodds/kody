@@ -207,8 +207,14 @@ update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
 account, and OAuth authorize UIs surface the bounce instead of staying silently
 pending, and `POST /account/resend-verification.json` refuses to retry into a
 known `sender_block`. The first terminal failure fans
-`user.email_verification.failed` to admin-owned packages. See
-[the subscription guide](../../guides/package-subscriptions.md#useremailverificationfailed-admins).
+`user.email_verification.failed` to admin-owned packages. When a send stays
+`accepted` for an hour with no lifecycle event, the hourly
+`email_verification_stall_alert` lane fans `user.email_verification.stalled`.
+`/admin/users` and `adminUserList` accept `verification=stalled` for the same
+derived set. See
+[the subscription guide](../../guides/package-subscriptions.md#useremailverificationfailed-admins)
+and
+[stalled verification](../../guides/package-subscriptions.md#useremailverificationstalled-admins).
 
 Operators can unblock a stranded signup without a raw D1 write:
 

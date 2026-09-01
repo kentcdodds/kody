@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { adminUserVerificationFilterValues } from '#universal/email-verification-delivery.ts'
 import { loadAdminUsersData } from '#worker/admin/users-data.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -30,6 +31,12 @@ const inputSchema = z.object({
 	role: roleNameSchema
 		.optional()
 		.describe('Only return users holding this role (for example "admin").'),
+	verification: z
+		.enum(adminUserVerificationFilterValues)
+		.optional()
+		.describe(
+			'Only return unverified person accounts whose latest signup/verify send is still accepted after 60 minutes with no Cloudflare lifecycle event.',
+		),
 })
 
 const outputSchema = z.object({
@@ -46,7 +53,16 @@ export const adminUserListCapability = defineDomainCapability(
 		name: 'adminUserList',
 		description:
 			'List account metadata for users, including roles. Admin-only; never returns user content.',
-		keywords: ['admin', 'users', 'accounts', 'roles', 'rbac'],
+		keywords: [
+			'admin',
+			'users',
+			'accounts',
+			'roles',
+			'rbac',
+			'verification',
+			'stalled',
+			'email verification',
+		],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
@@ -58,6 +74,9 @@ export const adminUserListCapability = defineDomainCapability(
 				}
 				if (args.query) url.searchParams.set('q', args.query)
 				if (args.role) url.searchParams.set('role', args.role)
+				if (args.verification) {
+					url.searchParams.set('verification', args.verification)
+				}
 				const data = await loadAdminUsersData(ctx.env, url.toString())
 				return {
 					total: data.total,

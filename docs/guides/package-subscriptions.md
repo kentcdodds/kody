@@ -15,8 +15,9 @@ summary:
   admin-only fleet.entitlement.crossed entitlement crossings, admin-only
   auth.denial.burst / email.delivery.burst operator bursts, admin-only
   user.created / user.deleted account lifecycle notifications, and admin-only
-  user.email_verification.failed / user.email_outbound.paused /
-  email.system-message.sent mail-operator notifications.
+  user.email_verification.failed / user.email_verification.stalled /
+  user.email_outbound.paused / email.system-message.sent mail-operator
+  notifications.
 category: platform
 ---
 
@@ -138,9 +139,9 @@ Failed and non-fast-forward results have no test hints.
   `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
   `auth.denial.burst`, `email.delivery.burst`, `status.incident.resolved`,
   `user.created`, `user.deleted`, `user.email_verification.failed`,
-  `user.email_outbound.paused`, `email.system-message.sent`) gate **production**
-  fan-out on admin role; synthetic dispatch still runs your handler directly for
-  smoke testing.
+  `user.email_verification.stalled`, `user.email_outbound.paused`,
+  `email.system-message.sent`) gate **production** fan-out on admin role;
+  synthetic dispatch still runs your handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -1230,9 +1231,61 @@ are ISO-8601 UTC. The event omits SMTP transcripts, verification tokens,
 passwords, roles, plan, secrets, and unrelated account content. Idempotency keys
 include the topic, user id, timestamp, and subscriber package id.
 
+Use this topic for notifier packages that email or page an operator when
+signup/verify mail bounces or otherwise fails at the provider. Silent drops that
+stay `accepted` use `user.email_verification.stalled`. `user.created` still
+fires for every new person account, including accounts that later verify
+themselves. Do not treat this topic as permission to mark the account verified
+or mint a link — call `adminUserVerify` from an admin session when ownership is
+proven.
+
+## `user.email_verification.stalled` (admins)
+
+The hourly `email_verification_stall_alert` lane lists unverified person
+accounts whose latest signup/verify send is still `accepted` after 60 minutes
+with no Cloudflare lifecycle event (`delivered`, `bounced`, `failed`,
+`rejected`, or `complained`). Each matching send fans
+`user.email_verification.stalled` to packages saved by users who hold the admin
+role at dispatch time. A later hourly scan of the same accepted timestamp does
+not emit again. A resend that stamps a new `accepted` time can emit again after
+another hour. A non-admin package may declare the topic, but it never receives
+the event. Role revocation stops delivery on the next scan.
+
+There is no Queue / DLQ for this topic. Dispatch is best-effort after the user
+row already carries `accepted`: a failed invoke is logged and does not fail the
+hourly cron.
+
+Handlers receive a metadata-only operator snapshot:
+
+```ts
+type UserEmailVerificationStalledEvent = {
+	event: 'user.email_verification.stalled'
+	user: {
+		id: string
+		username: string
+		email: string
+	}
+	status: 'accepted'
+	accepted_at: string
+	stall_after_minutes: number
+	admin_user_url: string
+	occurred_at: string
+}
+```
+
+`user.id` is the stable account user id. `accepted_at` is
+`users.email_verification_delivery_at` for that send. `stall_after_minutes` is
+the scan threshold (60). `occurred_at` is the scan time. `admin_user_url` is the
+operator page for that account. Timestamps are ISO-8601 UTC. The event omits
+SMTP transcripts, verification tokens, passwords, roles, plan, secrets, and
+unrelated account content. Idempotency keys include the topic, user id, accepted
+timestamp, and subscriber package id.
+
 Use this topic for notifier packages that email or page an operator when a
-signup is stranded. `user.created` still fires for every new person account,
-including accounts that later verify themselves. Do not treat this topic as
+signup is stranded without a bounce. SimpleLogin-style aliases can drop `kody@`
+mail without a terminal Cloudflare event. Terminal failures still use
+`user.email_verification.failed`. `/admin/users` and `adminUserList` accept
+`verification=stalled` for the same derived set. Do not treat this topic as
 permission to mark the account verified or mint a link — call `adminUserVerify`
 from an admin session when ownership is proven.
 

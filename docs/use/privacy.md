@@ -105,6 +105,11 @@ terminal delivery failure (stable user id, username, email, status, `class`
 (`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
 event omits SMTP transcripts, tokens, and unrelated account content.
 Admin-configured notification packages may also receive a metadata-only
+`user.email_verification.stalled` event when signup/verify mail stays `accepted`
+for an hour with no Cloudflare lifecycle event (stable user id, username, email,
+`accepted_at`, stall threshold, an admin user URL, and `occurred_at`). That
+event omits SMTP transcripts, tokens, and unrelated account content.
+Admin-configured notification packages may also receive a metadata-only
 `user.email_outbound.paused` event when outbound sending is paused after a spam
 complaint or repeated bounces (stable user id, username, email, reason, bounce
 threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).

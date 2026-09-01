@@ -66,6 +66,42 @@ export function parseEmailVerificationDelivery(input: {
 	}
 }
 
+/** Derived stall: unverified + latest send still `accepted` after this age. */
+export const emailVerificationStallAfterMinutes = 60
+
+export const adminUserVerificationFilterValues = ['stalled'] as const
+
+export type AdminUserVerificationFilter =
+	(typeof adminUserVerificationFilterValues)[number]
+
+export function isAdminUserVerificationFilter(
+	value: string,
+): value is AdminUserVerificationFilter {
+	return (adminUserVerificationFilterValues as ReadonlyArray<string>).includes(
+		value,
+	)
+}
+
+/**
+ * Client/server predicate for the admin `verification=stalled` filter.
+ * Stall is derived, never stored: late Cloudflare webhooks must not fight a
+ * persisted `stalled` status.
+ */
+export function isStalledEmailVerificationDelivery(
+	input: {
+		emailVerified: boolean
+		delivery: EmailVerificationDelivery | null
+	},
+	now: Date = new Date(),
+	stallAfterMinutes = emailVerificationStallAfterMinutes,
+) {
+	if (input.emailVerified) return false
+	if (input.delivery?.status !== 'accepted' || !input.delivery.at) return false
+	const acceptedAt = Date.parse(input.delivery.at)
+	if (!Number.isFinite(acceptedAt)) return false
+	return now.getTime() - acceptedAt >= stallAfterMinutes * 60_000
+}
+
 export function acceptedEmailVerificationDelivery(
 	at: string | Date = new Date(),
 ): EmailVerificationDelivery {

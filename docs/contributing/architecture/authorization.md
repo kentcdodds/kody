@@ -170,6 +170,11 @@ Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`,
 `packages/worker/src/app/handlers/admin-invites.ts`.
 
+The users list accepts `q` (username/email substring), `role`, and
+`verification=stalled` (unverified person accounts whose latest signup/verify
+send is still `accepted` after 60 minutes). Stall is derived from the user row;
+it is not a stored delivery status.
+
 `POST /admin/users.json` dispatches on an `action` field: `assign_role`,
 `remove_role`, and `update_plan` (set or clear — `plan: null` — a user's
 entitlement plan; see [Entitlements](./entitlements.md)). All three mutations
@@ -428,6 +433,16 @@ delivery status, `class` (`sender_block` / `other` / `null`), an
 `/admin/users/:stableUserId` URL, and `occurred_at`. It omits SMTP transcripts,
 tokens, and unrelated account content. Delivery is best-effort (no Queue) after
 the user row already carries the bounce.
+
+**Admins can subscribe to stalled verification sends.** The hourly
+`email_verification_stall_alert` lane fans `user.email_verification.stalled`
+only to packages whose owners hold the admin role at dispatch time when an
+unverified person account still has `accepted` after 60 minutes with no
+Cloudflare lifecycle event. The event contains the stable user id, username,
+email, `accepted_at`, stall threshold, an `/admin/users/:stableUserId` URL, and
+`occurred_at`. It omits SMTP transcripts, tokens, and unrelated account content.
+Delivery is best-effort (no Queue). Idempotency keys include the accepted
+timestamp so a later hourly scan of the same send does not emit again.
 
 **Admins can subscribe to outbound-mail abuse pauses.** After one spam complaint
 or five bounced sends in a UTC day, Kody pauses that account's outbound email

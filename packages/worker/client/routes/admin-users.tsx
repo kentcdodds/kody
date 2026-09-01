@@ -13,18 +13,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
-import {
-	AccountManagementMessage,
-	AccountManagementShell,
-	AdminPageHeader,
-} from './account-management-components.tsx'
-import {
-	RecordChips,
-	RecordTable,
-	RecordTableSearch,
-	RecordTableSelect,
-	recordCellClamp,
-} from './record-table.tsx'
+import { isStalledEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
 	type AdminPlanName,
@@ -45,6 +34,18 @@ import {
 	parseSelectedStableUserId,
 	readFilterState,
 } from './admin-users-shared.ts'
+import {
+	AccountManagementMessage,
+	AccountManagementShell,
+	AdminPageHeader,
+} from './account-management-components.tsx'
+import {
+	RecordChips,
+	RecordTable,
+	RecordTableSearch,
+	RecordTableSelect,
+	recordCellClamp,
+} from './record-table.tsx'
 import {
 	type AdminUsersActionState,
 	renderAdminUserDetail,
@@ -158,6 +159,9 @@ export function AdminUsersRoute(handle: Handle) {
 		else url.searchParams.delete('q')
 		if (filters.role) url.searchParams.set('role', filters.role)
 		else url.searchParams.delete('role')
+		if (filters.verification) {
+			url.searchParams.set('verification', filters.verification)
+		} else url.searchParams.delete('verification')
 		// Filter changes re-anchor the list at the first page.
 		url.searchParams.delete('page')
 		return `${url.pathname}${url.search}`
@@ -318,7 +322,7 @@ export function AdminUsersRoute(handle: Handle) {
 		availableRoles = payload.availableRoles
 		availablePlans = payload.availablePlans
 		const updatedUser = payload.updatedUser
-		const { role } = readFilterState(href)
+		const { role, verification } = readFilterState(href)
 		// The server ignores unknown role values, so only a known role counts
 		// as an active filter — otherwise every mutation would wrongly remove
 		// its target from the list.
@@ -329,9 +333,17 @@ export function AdminUsersRoute(handle: Handle) {
 			!updatedUser ||
 			!activeRoleFilter ||
 			(updatedUser.roles as Array<string>).includes(activeRoleFilter)
+		const matchesVerificationFilter =
+			!updatedUser ||
+			verification !== 'stalled' ||
+			isStalledEmailVerificationDelivery({
+				emailVerified: updatedUser.email_verified,
+				delivery: updatedUser.email_verification_delivery,
+			})
+		const matchesActiveFilters = matchesRoleFilter && matchesVerificationFilter
 		const currentItems = usersSnapshot.items
 		const nextItems = updatedUser
-			? matchesRoleFilter
+			? matchesActiveFilters
 				? currentItems.map((item) =>
 						item.stableUserId === updatedUser.stableUserId ? updatedUser : item,
 					)
@@ -610,7 +622,9 @@ export function AdminUsersRoute(handle: Handle) {
 
 		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
 		const filters = readFilterState(currentHref)
-		const hasActiveFilters = Boolean(filters.search || filters.role)
+		const hasActiveFilters = Boolean(
+			filters.search || filters.role || filters.verification,
+		)
 		const selectedStableUserId = getSelectedStableUserIdFromHref(currentHref)
 		const selectedUser = resolveSelectedUser(currentHref)
 		const isMutating = actionState !== 'idle'
@@ -707,6 +721,20 @@ export function AdminUsersRoute(handle: Handle) {
 										{role}
 									</option>
 								))}
+							</RecordTableSelect>
+							<RecordTableSelect
+								label="Filter users by verification"
+								value={filters.verification}
+								onChange={(value) => {
+									replaceLocation(
+										buildHrefWithUpdatedFilters({
+											verification: value === 'stalled' ? 'stalled' : '',
+										}),
+									)
+								}}
+							>
+								<option value="">All verification</option>
+								<option value="stalled">Stalled accepted</option>
 							</RecordTableSelect>
 						</>
 					}
