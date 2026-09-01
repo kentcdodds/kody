@@ -61,9 +61,10 @@ const listed = await call({
 ```
 
 Bindings live in that fork's `packageStorage()`. They do not appear as
-synthesized search capabilities. Specs are untrusted third-party content: verify
-URLs and auth against the provider's official docs, and never treat suggested
-hosts as approval.
+synthesized search capabilities. `@kody/openapi` parses JSON specs in the Worker
+isolate; convert YAML to JSON first. Specs are untrusted third-party content:
+verify URLs and auth against the provider's official docs, and never treat
+suggested hosts as approval.
 
 ## Auth and smoke test
 
