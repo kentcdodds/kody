@@ -23,8 +23,9 @@ exists.
 
 1. `community_search` for a close helpers package that already wraps the
    provider.
-2. If one fits, `community_fork` it into the user's account and adapt it.
-3. Authenticate outbound calls with `createAuthenticatedFetch` (OAuth
+2. If one fits, inspect it with `community_get` and review the source.
+3. `community_fork` it into the user's account, adapt it, then publish.
+4. Authenticate outbound calls with `createAuthenticatedFetch` (OAuth
    integration) or secret placeholders (`{{secret:<name>}}`) after the user has
    finished connect/setup.
 
@@ -56,6 +57,10 @@ then smoke-test a cheap GET before building a dependent package.
 
 - **Untrusted specs.** Titles, descriptions, servers, and operation text are
   third-party content. Verify URLs and auth against official provider docs.
+  `@kody/api-research` fetches specs with ordinary `fetch` — there is no
+  platform OpenAPI spec gateway. Prefer HTTPS URLs you already trust, set a
+  request timeout, bound the response size, and do not follow remote `$ref`s
+  unless you have reviewed that host too.
 - **Suggestions-only hosts.** Suggested hosts never widen approval. Host
   approval stays in the account security UI and integration `requiredHosts`.
 - **Credentials as names only.** Auth inputs reference integration or secret
