@@ -4,6 +4,7 @@ import { lexicalScore, tokenizeSearchText } from './scoring.ts'
 test('tokenizeSearchText splits camelCase identifiers the same way underscores already split', () => {
 	expect([...tokenizeSearchText('adminUserList')].sort()).toEqual([
 		'admin',
+		'adminuserlist',
 		'list',
 		'user',
 	])
@@ -14,7 +15,13 @@ test('tokenizeSearchText splits camelCase identifiers the same way underscores a
 	])
 	expect([...tokenizeSearchText('mcpServers')].sort()).toEqual([
 		'mcp',
+		'mcpservers',
 		'servers',
+	])
+	expect([...tokenizeSearchText('GitHub')].sort()).toEqual([
+		'git',
+		'github',
+		'hub',
 	])
 })
 
