@@ -1141,26 +1141,29 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 		{ length: 40 },
 		(_, index) => `field${String(index)}: string`,
 	).join('; ')
+	const widgetsServer = {
+		serverId: 'widgets',
+		serverName: 'widgets',
+		kodyName: 'widgets',
+	}
 	const registry = buildCapabilityRegistry([
 		{
-			name: 'openapi:widgets',
-			description: 'Widget OpenAPI ops',
+			name: 'mcp:widgets',
+			description: 'Widget MCP ops',
 			capabilities: [
 				{
-					name: 'openapi:widgets:createwidget',
-					domain: 'openapi:widgets',
+					name: 'mcp:widgets:createwidget',
+					domain: 'mcp:widgets',
 					description: 'Create a widget export job.',
 					keywords: ['widget', 'create', 'export'],
 					readOnly: false,
 					idempotent: false,
 					destructive: false,
-					source: 'openapi',
-					openApi: {
-						bindingName: 'widgets',
-						kodyName: 'widgets',
-						operationSlug: 'createwidget',
-						method: 'post',
-						path: '/widgets',
+					source: 'mcp-server' as const,
+					mcpServer: {
+						...widgetsServer,
+						mcpToolName: 'create_widget',
+						toolName: 'createwidget',
 					},
 					inputSchema: {
 						type: 'object',
@@ -1171,20 +1174,18 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 					handler: async () => null,
 				},
 				{
-					name: 'openapi:widgets:getwidget',
-					domain: 'openapi:widgets',
+					name: 'mcp:widgets:getwidget',
+					domain: 'mcp:widgets',
 					description: 'Get a widget export job.',
 					keywords: ['widget', 'get', 'export'],
 					readOnly: true,
 					idempotent: true,
 					destructive: false,
-					source: 'openapi',
-					openApi: {
-						bindingName: 'widgets',
-						kodyName: 'widgets',
-						operationSlug: 'getwidget',
-						method: 'get',
-						path: '/widgets/{id}',
+					source: 'mcp-server' as const,
+					mcpServer: {
+						...widgetsServer,
+						mcpToolName: 'get_widget',
+						toolName: 'getwidget',
 					},
 					inputSchema: {
 						type: 'object',
@@ -1195,40 +1196,36 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 					handler: async () => null,
 				},
 				{
-					name: 'openapi:widgets:listwidgets',
-					domain: 'openapi:widgets',
+					name: 'mcp:widgets:listwidgets',
+					domain: 'mcp:widgets',
 					description: 'List widget export jobs.',
 					keywords: ['widget', 'list', 'export'],
 					readOnly: true,
 					idempotent: true,
 					destructive: false,
-					source: 'openapi',
-					openApi: {
-						bindingName: 'widgets',
-						kodyName: 'widgets',
-						operationSlug: 'listwidgets',
-						method: 'get',
-						path: '/widgets',
+					source: 'mcp-server' as const,
+					mcpServer: {
+						...widgetsServer,
+						mcpToolName: 'list_widgets',
+						toolName: 'listwidgets',
 					},
 					inputSchema: { type: 'object', properties: {} },
 					inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
 					handler: async () => null,
 				},
 				{
-					name: 'openapi:widgets:deletewidget',
-					domain: 'openapi:widgets',
+					name: 'mcp:widgets:deletewidget',
+					domain: 'mcp:widgets',
 					description: 'Delete a widget export job.',
 					keywords: ['widget', 'delete', 'export'],
 					readOnly: false,
 					idempotent: true,
 					destructive: true,
-					source: 'openapi',
-					openApi: {
-						bindingName: 'widgets',
-						kodyName: 'widgets',
-						operationSlug: 'deletewidget',
-						method: 'delete',
-						path: '/widgets/{id}',
+					source: 'mcp-server' as const,
+					mcpServer: {
+						...widgetsServer,
+						mcpToolName: 'delete_widget',
+						toolName: 'deletewidget',
 					},
 					inputSchema: {
 						type: 'object',
@@ -1274,7 +1271,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 	const [topMatch] = capabilityMatches
 	expect(topMatch).toMatchObject({
 		type: 'capability',
-		name: 'openapi:widgets:createwidget',
+		name: 'mcp:widgets:createwidget',
 		inputTypeDefinitionTruncated: true,
 	})
 	expect(topMatch?.inputTypeDefinition).toContain('required fields: name')
@@ -1289,7 +1286,7 @@ test('searchUnified inlines call shapes for the top three capability matches onl
 	const [listTop] = nonTruncatedTop.matches
 	expect(listTop).toMatchObject({
 		type: 'capability',
-		name: 'openapi:widgets:listwidgets',
+		name: 'mcp:widgets:listwidgets',
 		inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
 	})
 	expect(listTop).not.toHaveProperty('inputTypeDefinitionTruncated')

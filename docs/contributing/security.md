@@ -497,10 +497,6 @@ change to these decisions here so future agents do not relitigate them.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).
-- **`refreshAccessToken` materializes plaintext OAuth tokens** inside user code
-  for integration calls. Prefer `createAuthenticatedFetch`, which enforces the
-  integration host allowlist. This is documented at the call site
-  (`packages/worker/src/mcp/execute-modules/kody-runtime-utils.ts`).
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.

@@ -183,7 +183,7 @@ export async function executeGatewayFetch(input: {
 		// expansion so over-limit requests never resolve secrets.
 		if (input.props.userId) {
 			// Plan lookup requires the account email. Callers that cannot
-			// carry one (OpenAPI provider requests, package runtime) get it
+			// carry one (MCP provider requests, package runtime) get it
 			// reverse-resolved from the stable userId so authenticated
 			// fetches count against the caller's real plan rather than
 			// failing open to `max` (whose limit is still finite for

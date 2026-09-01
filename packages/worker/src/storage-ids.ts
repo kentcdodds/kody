@@ -9,8 +9,8 @@ const savedPackageIdUuidPattern =
 /**
  * Durable storage id of a saved package's own bucket. Reached via
  * `packageStorage()` from every package surface (invocations, jobs,
- * and package apps). Saved-package runtimes do not bind ambient `storage` to
- * this bucket; bundler provenance grants access through `packageStorage()`.
+ * and package apps). Bundler provenance grants access through
+ * `packageStorage()`.
  */
 export function buildPackageStorageId(packageId: string) {
 	return `package:${encodeURIComponent(packageId)}`

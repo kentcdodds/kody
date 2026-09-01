@@ -48,8 +48,7 @@ OAuth lane is quicker to set up.
   [developer portal](https://discord.com/developers/applications).
 - OAuth access tokens expire after 7 days with rotating refresh tokens, so
   refresh must work from day one. Kody's `/connect/oauth` flow plus its token
-  refresh (`createAuthenticatedFetch` / `refreshAccessToken`) handle that
-  automatically.
+  refresh (`createAuthenticatedFetch`) handle that automatically.
 - Installing a bot into a server requires the **Manage Server** permission in
   that server.
 

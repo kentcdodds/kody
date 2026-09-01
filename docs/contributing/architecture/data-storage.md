@@ -382,16 +382,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   refresh token ciphertext. Soak dual-write keeps `*_secret_name` columns
   pointing at `secret_entries`. The non-secret `client_id` is stored inline on
   the owning app row.
-- `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI provider
-  binding rows keyed by `(user_id, name)`. Holds `spec_url`, `api_base_url`,
-  `auth_json`, `selection_json`, `include_destructive`, and optional description
-  / spec metadata. See [OpenAPI provider bindings](./openapi-bindings.md).
-- `user_openapi_binding_operations` (`0001-squashed-init.sql`): per-operation
-  child rows keyed by `(user_id, binding_name, slug)`, with composite FK
-  `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
-  (`ON DELETE CASCADE`). Holds `operation_json` for each curated operation
-  snapshot entry. Account deletion lists operations before bindings so cleanup
-  does not rely on CASCADE.
+- `user_openapi_bindings` / `user_openapi_binding_operations`
+  (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0037`
+  drops them. Do not add new readers or writers.
 
 App access pattern:
 
@@ -1273,12 +1266,9 @@ on write unless a migration backfills existing rows.
   `POST /__maintenance/backfill-integration-credentials` copies leftover
   secret-store values onto null ciphertext columns (see
   [Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
-- `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
-  `user_openapi_binding_operations.operation_json` (`0001-squashed-init.sql`,
-  `packages/worker/src/openapi/`) store the auth discriminant, selection object,
-  and per-operation snapshot object. Parsers in the OpenAPI binding service own
-  the shapes; credential values are never stored (only secret / integration name
-  references inside `auth_json`).
+- `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
+  (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
+  drops the tables. Do not add new parsers.
 
 ### Durable Object id contracts
 

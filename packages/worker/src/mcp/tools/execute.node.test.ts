@@ -17,7 +17,6 @@ const mockModule = vi.hoisted(() => ({
 			coding_guide_get: true,
 		},
 	})),
-	listOpenApiBindings: vi.fn(async () => []),
 	getRunRecordByIdempotencyKey: vi.fn(async () => null),
 	claimRunRecord: vi.fn(async () => null),
 	finishRunRecord: vi.fn(async () => undefined),
@@ -36,11 +35,6 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
 		mockModule.createExecutePackageInvokeTools(...args),
-}))
-
-vi.mock('#worker/openapi/binding-service.ts', () => ({
-	listOpenApiBindings: (...args: Array<unknown>) =>
-		mockModule.listOpenApiBindings(...args),
 }))
 
 vi.mock('#worker/run-records/service.ts', async () => {
@@ -136,15 +130,12 @@ async function getExecuteRegistration(
 		{ description: string },
 		(input: {
 			code: string
-			storageId?: string
-			writable?: boolean
 			responseLimit?: number
 			conversationId?: string
 		}) => Promise<{
 			content: Array<ContentBlock>
 			structuredContent: {
 				conversationId: string
-				storage?: { id: string }
 				returnedBytes: number
 				truncated?: boolean
 				note?: string
@@ -170,8 +161,6 @@ async function getExecuteHandler(
 	const [, , handler] = await getExecuteRegistration(callerContext, agentExtras)
 	return handler as (input: {
 		code: string
-		storageId?: string
-		writable?: boolean
 		responseLimit?: number
 		conversationId?: string
 		idempotencyKey?: string
@@ -179,7 +168,6 @@ async function getExecuteHandler(
 		content: Array<ContentBlock>
 		structuredContent: {
 			conversationId: string
-			storage?: { id: string }
 			runId?: string
 			replayed?: boolean
 			inProgress?: boolean
@@ -201,7 +189,7 @@ async function getExecuteHandler(
 	}>
 }
 
-test('execute tool serializes successes and errors, binds storage, passes package invoke tools, and truncates oversized returns', async () => {
+test('execute tool serializes successes and errors, passes package invoke tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{
@@ -302,52 +290,6 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 				{ name: 'bundle', durationMs: 34 },
 				{ name: 'run', durationMs: 56 },
 			],
-		},
-		returnedBytes: 11,
-		result: { ok: true },
-		logs: [],
-	})
-
-	mockPerformanceSequence(1, 8)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
-
-	const storageResponse = await handler({
-		code: 'async () => ({ ok: true })',
-		storageId: 'job:lights-off',
-		writable: true,
-		conversationId: 'conv-789',
-	})
-
-	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-				storageId: 'job:lights-off',
-			},
-		}),
-		'async () => ({ ok: true })',
-		undefined,
-		expect.objectContaining({
-			storageTools: {
-				userId: '',
-				storageId: 'job:lights-off',
-				writable: true,
-			},
-		}),
-	)
-	expect(storageResponse.structuredContent).toEqual({
-		conversationId: 'conv-789',
-		storage: { id: 'job:lights-off' },
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 7,
 		},
 		returnedBytes: 11,
 		result: { ok: true },
@@ -656,7 +598,7 @@ test('execute passes through downstream MCP image content with structured data a
 	)
 })
 
-test('execute tool nudges repeated raw-fetch hosts once per conversation and skips OpenAPI-covered hosts', async () => {
+test('execute tool nudges repeated raw-fetch hosts once per conversation', async () => {
 	const agentState: Record<string, unknown> = {}
 	const setState = vi.fn((next: Record<string, unknown>) => {
 		for (const key of Object.keys(agentState)) {
@@ -707,7 +649,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		}),
 	])
 	expect(setState).toHaveBeenCalled()
-	expect(mockModule.listOpenApiBindings).toHaveBeenCalled()
 
 	mockPerformanceSequence(5, 6)
 	const again = await handler({
@@ -715,33 +656,6 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation and ski
 		conversationId: 'conv-nudge',
 	})
 	expect(again.structuredContent.warnings).toBeUndefined()
-
-	mockModule.listOpenApiBindings.mockResolvedValueOnce([
-		{
-			name: 'kit',
-			apiBaseUrl: 'https://api.kit.com/v4',
-		},
-	])
-	mockModule.runModuleWithRegistry.mockImplementationOnce(
-		async (
-			_env,
-			_ctx,
-			_code,
-			_params,
-			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
-		) => {
-			options.rawFetchHostSink?.add('api.kit.com')
-			options.rawFetchHostSink?.add('api.kit.com')
-			options.rawFetchHostSink?.add('api.kit.com')
-			return { result: { ok: true }, logs: [] }
-		},
-	)
-	mockPerformanceSequence(7, 8)
-	const covered = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-covered',
-	})
-	expect(covered.structuredContent.warnings).toBeUndefined()
 
 	// Integration-auth helper source sharpens the packages-first warning text.
 	mockModule.runModuleWithRegistry.mockImplementationOnce(

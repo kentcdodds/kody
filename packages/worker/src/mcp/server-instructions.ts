@@ -43,15 +43,11 @@ function truncateInstructionDescription(description: string, maxChars: number) {
 function formatDomainInstructions(
 	domains: ReadonlyArray<CapabilityDomainMetadata>,
 ) {
-	const connectedBindingCount = domains.filter(
-		(domain) =>
-			domain.name.startsWith('mcp:') || domain.name.startsWith('openapi:'),
+	const connectedBindingCount = domains.filter((domain) =>
+		domain.name.startsWith('mcp:'),
 	).length
 	const builtinInstructions = domains
-		.filter(
-			(domain) =>
-				!domain.name.startsWith('mcp:') && !domain.name.startsWith('openapi:'),
-		)
+		.filter((domain) => !domain.name.startsWith('mcp:'))
 		.map((domain) => {
 			const description = truncateInstructionDescription(
 				domain.description,
@@ -64,7 +60,7 @@ function formatDomainInstructions(
 		.join('\n')
 	const connectedBindingsInstruction =
 		connectedBindingCount > 0
-			? `${connectedBindingCount} connected MCP/OpenAPI ${connectedBindingCount === 1 ? 'binding' : 'bindings'}; \`search({ domain })\` to list.`
+			? `${connectedBindingCount} connected MCP ${connectedBindingCount === 1 ? 'binding' : 'bindings'}; \`search({ domain })\` to list.`
 			: ''
 	return [builtinInstructions, connectedBindingsInstruction]
 		.filter(Boolean)

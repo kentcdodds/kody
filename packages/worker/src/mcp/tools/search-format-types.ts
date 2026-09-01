@@ -132,7 +132,7 @@ export type SlimSearchMatch =
 			title: string
 			description: string
 			domain: string
-			source: 'mcp-server' | 'openapi'
+			source: 'mcp-server'
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
@@ -152,7 +152,6 @@ export type SlimSearchMatch =
 			usage: string
 			source?: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
 			inputTypeDefinitionTruncated?: boolean
 	  }
@@ -249,7 +248,6 @@ export type SearchEntityDetailStructured =
 			destructive: boolean
 			source: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 			relatedOperations?: Array<RelatedCapabilityOperation>
@@ -380,7 +378,7 @@ export type SearchMatch =
 			title: string
 			description: string
 			domain: string
-			source: 'mcp-server' | 'openapi'
+			source: 'mcp-server'
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
@@ -398,7 +396,6 @@ export type SearchMatch =
 			domain: string
 			source?: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
 			inputTypeDefinitionTruncated?: boolean
 	  }

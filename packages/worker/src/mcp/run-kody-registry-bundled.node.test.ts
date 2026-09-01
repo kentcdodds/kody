@@ -597,7 +597,6 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 				additionalTools: {
 					integration_get: async () => ({}),
 					integration_token_refresh: async () => ({}),
-					integration_refresh_access_token: async () => ({}),
 					value_get: async () => ({}),
 				},
 			}),
@@ -606,8 +605,8 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 		const [withoutHelpers, withHelpers] = wrappedSources
 		expect(withoutHelpers).toBeTruthy()
 		expect(withHelpers).toBeTruthy()
-		expect(withoutHelpers).not.toContain('__kodyRefreshAccessToken')
-		expect(withHelpers).toContain('__kodyRefreshAccessToken')
+		expect(withoutHelpers).not.toContain('__kodyCreateAuthenticatedFetch')
+		expect(withHelpers).toContain('__kodyCreateAuthenticatedFetch')
 		expect(withHelpers!.length).toBeGreaterThan(withoutHelpers!.length)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
@@ -622,20 +621,19 @@ test('runBundledModuleWithRegistry rewrites guard-less unbound runtime helper er
 		user: { userId: 'user-123' },
 	})
 	// Mirrors a saved-package export imported statically into an ad hoc
-	// execute call: the bundled module imports `storage` through the rewritten
+	// execute call: the bundled module imports `email` through the rewritten
 	// virtual runtime path and calls it without a falsiness guard.
 	const bundle = {
 		mainModule: 'entry.js',
 		modules: {
-			'entry.js': `import { storage } from './.__kody_virtual__/runtime.js'
+			'entry.js': `import { email } from './.__kody_virtual__/runtime.js'
 
 export default async function main() {
-	const result = await storage.sql('select count(*) as count from items')
-	return result.rows
+	return await email.getMessage('m-1')
 }`,
 		},
 	}
-	const bareTypeError = "Cannot read properties of undefined (reading 'sql')"
+	const bareTypeError = "Cannot read properties of null (reading 'getMessage')"
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
@@ -663,36 +661,12 @@ export default async function main() {
 			mcpExecutor.getExecutionErrorDetails(unboundResult.error),
 		).toMatchObject({
 			kind: 'runtime_helper_unbound',
-			helperName: 'storage',
-			nextStep: expect.stringContaining('statically import'),
+			helperName: 'email',
+			nextStep: expect.stringContaining('email-triggered'),
 		})
 		expect(
 			mcpExecutor.getExecutionErrorDetails(unboundResult.error)?.nextStep,
 		).not.toContain('packages.invokeChecked')
-
-		// With storage bound, the same TypeError is an ordinary user-code bug
-		// and keeps its bare message.
-		const boundEnv = {
-			STORAGE_RUNNER: {
-				idFromName: () => 'storage-runner-id',
-				get: () => ({}),
-			},
-		} as unknown as Env
-		const boundResult = await runBundledModuleWithRegistry(
-			boundEnv,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				storageTools: {
-					userId: 'user-123',
-					storageId: 'storage-1',
-					writable: false,
-				},
-			},
-		)
-		expect(boundResult.error).toBe(bareTypeError)
 
 		// Guard-less access inside a dynamically hydrated package module
 		// (literal dynamic `import("kody:@...")` target) must be matched too:
@@ -709,8 +683,8 @@ export default async function main() {
 	const mod = await import('kody:@scope/notes/note-list')
 	return await mod.default({})
 }`,
-					'.__kody_dynamic__/scope/notes/note-list.js': `import { storage } from '../../.__kody_virtual__/runtime.js'
-export default async () => (await storage.sql('select 1')).rows`,
+					'.__kody_dynamic__/scope/notes/note-list.js': `import { email } from '../../.__kody_virtual__/runtime.js'
+export default async () => await email.getMessage('m-1')`,
 				},
 				dynamicDependencyPackageIds: [],
 			})
@@ -733,7 +707,7 @@ export default async () => (await storage.sql('select 1')).rows`,
 				},
 			)
 			expect(hydratedResult.error).toContain(
-				'The optional kody:runtime export "storage" is not bound in this execution context',
+				'The optional kody:runtime export "email" is not bound in this execution context',
 			)
 		} finally {
 			hydrateSpy.mockRestore()

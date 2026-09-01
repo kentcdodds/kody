@@ -1,6 +1,6 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 
-export type KodyCapabilityNamespace = 'mcp' | 'openapi'
+export type KodyCapabilityNamespace = 'mcp'
 
 export type KodyCapabilityNamespaceConfig = {
 	namespace: KodyCapabilityNamespace
@@ -17,13 +17,6 @@ export const kodyCapabilityNamespaceConfigs = {
 		flatNameLabel: 'MCP server tool',
 		entryNamePlaceholder: 'serverName',
 		toolNamePlaceholder: 'toolName',
-	},
-	openapi: {
-		namespace: 'openapi',
-		flatNamePrefix: 'openapi:',
-		flatNameLabel: 'OpenAPI operation',
-		entryNamePlaceholder: 'providerName',
-		toolNamePlaceholder: 'operationSlug',
 	},
 } satisfies Record<KodyCapabilityNamespace, KodyCapabilityNamespaceConfig>
 
@@ -54,20 +47,12 @@ export function buildKodyCapabilityAccessor(spec: {
 	name: string
 	source?: CapabilitySpec['source']
 	mcpServer?: CapabilitySpec['mcpServer']
-	openApi?: CapabilitySpec['openApi']
 }) {
 	if (spec.source === 'mcp-server' && spec.mcpServer) {
 		return buildNamespacedKodyAccessor({
 			namespace: 'mcp',
 			entryName: spec.mcpServer.kodyName,
 			toolName: spec.mcpServer.toolName,
-		})
-	}
-	if (spec.source === 'openapi' && spec.openApi) {
-		return buildNamespacedKodyAccessor({
-			namespace: 'openapi',
-			entryName: spec.openApi.kodyName,
-			toolName: spec.openApi.operationSlug,
 		})
 	}
 	const { name } = spec

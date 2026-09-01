@@ -479,11 +479,6 @@ async function executePublishedJobArtifact(input: {
 		},
 		input.job.params,
 		{
-			storageTools: {
-				userId: input.callerContext.user.userId,
-				storageId: input.job.storageId,
-				writable: true,
-			},
 			...(packageContext ? { packageContext } : {}),
 			runRecord,
 			runRecordHandle: input.runRecordHandle,

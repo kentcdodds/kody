@@ -305,7 +305,6 @@ function formatTypeLiteralUnion(values: Array<string>) {
 }
 
 function createExecuteTypecheckPrelude(input?: {
-	includeStorage?: boolean
 	emittedEventTopics?: Array<string>
 }) {
 	return `type KodyJsonValue =
@@ -403,7 +402,6 @@ declare const capabilities: Record<
   (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
 >;
 
-declare function refreshAccessToken(providerName: string): Promise<string>;
 declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
@@ -432,7 +430,6 @@ declare module "kody:runtime" {
     string,
     (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
   >;
-  export function refreshAccessToken(providerName: string): Promise<string>;
   export function createAuthenticatedFetch(
     providerName: string,
   ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
@@ -447,11 +444,6 @@ declare module "kody:runtime" {
     hostedUrl?: string;
   } | null;
   export const packages: KodyPackagesRuntime | null;
-  export const storage: ${
-		input?.includeStorage === true
-			? 'KodyStorageRuntime'
-			: 'KodyStorageRuntime | undefined'
-	};
   export function packageStorage(): KodyStorageRuntime;
   export const email: KodyEmailRuntime;
   export const workflows: KodyWorkflowsRuntime;
@@ -462,13 +454,6 @@ declare module "kody:runtime" {
         has(alias: string): Promise<boolean>;
       }
     | null;
-}
-${
-	input?.includeStorage === true
-		? `
-declare const storage: KodyStorageRuntime;
-`
-		: ''
 }
 `.trim()
 }
@@ -757,7 +742,6 @@ function getPackageTypecheckDiagnostics(input: {
 		input.fileSystem.write(
 			executeTypecheckPreludePath,
 			createExecuteTypecheckPrelude({
-				includeStorage: target.includeStorage,
 				emittedEventTopics: target.emittedEventTopics,
 			}),
 		)
@@ -966,11 +950,10 @@ export function collectAmbientStorageImportFiles(
 
 /**
  * Storage prescription lint rule (failing): saved-package source must use
- * `packageStorage()` instead of the ambient `storage` binding, which is
- * per-run and is unbound or caller-bound when package code is statically
- * imported into another context. This only runs where repo checks run — new
- * session check runs, session/external publishes, and community fork installs
- * — so already-published artifacts are never re-validated retroactively.
+ * `packageStorage()` instead of the removed ambient `storage` binding.
+ * This only runs where repo checks run — new session check runs,
+ * session/external publishes, and community fork installs — so
+ * already-published artifacts are never re-validated retroactively.
  * This permanent publish guard keeps package code portable across every
  * package surface and points authors at the canonical package bucket.
  */
@@ -1005,8 +988,7 @@ function buildLintCheck(sourceFiles: Record<string, string>): {
 			`Package code imports the ambient \`storage\` helper from 'kody:runtime': ${fileList}. ` +
 			"Use `packageStorage()` from 'kody:runtime' for package-owned data instead: it reaches the identical " +
 			"bucket in the package's own runtime and keeps working when the code is statically imported into " +
-			'another context. Ambient `storage` remains only for ad hoc execute code with a `storageId` bound on ' +
-			'the execute call.',
+			'another context. Ambient `storage` is not a kody:runtime export.',
 	}
 }
 

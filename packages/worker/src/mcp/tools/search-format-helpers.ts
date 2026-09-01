@@ -26,7 +26,6 @@ export function buildCapabilityUsage(spec: {
 	name: string
 	source?: CapabilitySpec['source']
 	mcpServer?: CapabilitySpec['mcpServer']
-	openApi?: CapabilitySpec['openApi']
 }) {
 	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
 }

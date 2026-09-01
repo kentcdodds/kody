@@ -43,9 +43,6 @@ function sameSynthesizedProvider(
 	>['capabilitySpecs'][string],
 ): boolean {
 	if (left.source !== right.source) return false
-	if (left.source === 'openapi' && left.openApi && right.openApi) {
-		return left.openApi.kodyName === right.openApi.kodyName
-	}
 	if (left.source === 'mcp-server' && left.mcpServer && right.mcpServer) {
 		return left.mcpServer.kodyName === right.mcpServer.kodyName
 	}
@@ -59,7 +56,7 @@ export function collectRelatedCapabilityOperations(input: {
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 }): Array<RelatedCapabilityOperation> {
 	const { spec, registry } = input
-	if (spec.source !== 'openapi' && spec.source !== 'mcp-server') {
+	if (spec.source !== 'mcp-server') {
 		return []
 	}
 	return Object.values(registry.capabilitySpecs)
@@ -73,9 +70,6 @@ export function collectRelatedCapabilityOperations(input: {
 			name: other.name,
 			entityRef: `${other.name}:capability`,
 			description: other.description,
-			...(other.openApi
-				? { method: other.openApi.method, path: other.openApi.path }
-				: {}),
 		}))
 }
 
@@ -85,7 +79,7 @@ export function countRelatedCapabilityOperations(input: {
 	>['capabilitySpecs'][string]
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 }): number {
-	if (input.spec.source !== 'openapi' && input.spec.source !== 'mcp-server') {
+	if (input.spec.source !== 'mcp-server') {
 		return 0
 	}
 	return Object.values(input.registry.capabilitySpecs).filter(

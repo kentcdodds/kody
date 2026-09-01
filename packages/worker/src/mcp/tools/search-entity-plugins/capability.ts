@@ -40,14 +40,6 @@ function getSynthesizedProviderIdentity(spec: CapabilitySpec):
 						],
 					}
 				: undefined
-		case 'openapi':
-			return spec.openApi
-				? {
-						key: `openapi:${spec.openApi.bindingName}`,
-						providerFields: [spec.openApi.bindingName, spec.openApi.kodyName],
-						operationFields: [spec.openApi.operationSlug],
-					}
-				: undefined
 		default: {
 			const exhaustiveSource: never = spec.source
 			return exhaustiveSource
@@ -61,14 +53,11 @@ export function toCapabilitySearchMatch(
 	return {
 		type: 'capability',
 		name: spec.name,
-		title: spec.openApi
-			? `${spec.openApi.method.toUpperCase()} ${spec.openApi.path}`
-			: spec.name,
+		title: spec.name,
 		description: spec.description,
 		domain: spec.domain,
 		source: spec.source,
 		...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
-		...(spec.openApi ? { openApi: spec.openApi } : {}),
 	}
 }
 
@@ -166,7 +155,6 @@ export const capabilitySearchEntityPlugin = {
 			usage: buildCapabilityUsage(match),
 			...(match.source ? { source: match.source } : {}),
 			...(match.mcpServer ? { mcpServer: match.mcpServer } : {}),
-			...(match.openApi ? { openApi: match.openApi } : {}),
 			...(match.inputTypeDefinition
 				? { inputTypeDefinition: match.inputTypeDefinition }
 				: {}),
@@ -242,7 +230,6 @@ export const capabilitySearchEntityPlugin = {
 				destructive: detail.spec.destructive,
 				source: detail.spec.source,
 				...(detail.spec.mcpServer ? { mcpServer: detail.spec.mcpServer } : {}),
-				...(detail.spec.openApi ? { openApi: detail.spec.openApi } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }

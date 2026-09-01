@@ -1,7 +1,6 @@
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	persistIntegrationTokens,
-	resolveIntegrationAccessToken,
 	resolveIntegrationRefreshToken,
 	resolveUserOauthAppClientSecret,
 } from './credentials.ts'
@@ -619,74 +618,4 @@ async function refreshIntegrationTokensOrThrow(input: {
 	await scheduleSubscriptionEmit(input.waitUntil, pending)
 
 	return { refreshedAt, refreshTokenRotated }
-}
-
-export function createPlatformRawTokenRefusedMessage(providerName: string) {
-	return `Integration "${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("${providerName}") — it refreshes host-side via integration_token_refresh automatically.`
-}
-
-export class IntegrationRawTokenRefusedError extends Error {
-	constructor(providerName: string) {
-		super(createPlatformRawTokenRefusedMessage(providerName))
-		this.name = 'IntegrationRawTokenRefusedError'
-	}
-}
-
-export type IntegrationRefreshAccessTokenResult =
-	IntegrationTokenRefreshResult & {
-		accessToken: string
-	}
-
-/**
- * User-lane `refreshAccessToken` host path: rotate tokens through
- * `refreshIntegrationTokens` (no package `allowed_packages` write grant), then
- * materialize the new access token for callers that cannot use an
- * Authorization header. Platform connections are refused — raw tokens never
- * leave the host for built-in apps.
- */
-export async function refreshAndMaterializeUserLaneAccessToken(input: {
-	env: Env
-	userId: string
-	userEmail?: string | undefined
-	name: string
-	baseUrl?: string
-	packageId?: string | null
-	packageKodyId?: string | null
-	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<IntegrationRefreshAccessTokenResult> {
-	const joined = await getJoinedIntegration({
-		env: input.env,
-		userId: input.userId,
-		name: input.name,
-	})
-	if (!joined) {
-		throw callerRefreshError(`Integration "${input.name}" was not found.`, {
-			reason: 'not_found',
-		})
-	}
-	if (joined.lane === 'platform') {
-		throw new IntegrationRawTokenRefusedError(joined.connection.name)
-	}
-
-	const result = await refreshIntegrationTokens(input)
-	const accessTokenSecretName = joined.connection.accessTokenSecretName.trim()
-	const accessToken = await resolveIntegrationAccessToken({
-		env: input.env,
-		userId: input.userId,
-		name: joined.connection.name,
-		secretName: accessTokenSecretName,
-	})
-	if (!accessToken) {
-		throw callerRefreshError(
-			`Access token secret "${accessTokenSecretName}" was not found after refreshing integration "${joined.connection.name}".`,
-			{
-				reason: 'missing_secret',
-				integration: snapshotJoinedIntegration(joined),
-			},
-		)
-	}
-	return {
-		...result,
-		accessToken,
-	}
 }

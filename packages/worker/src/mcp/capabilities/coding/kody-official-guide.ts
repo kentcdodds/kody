@@ -204,8 +204,6 @@ const allKeywords = [
 		'credentials',
 		'official guide',
 		'documentation',
-		'openapi',
-		'openapi binding',
 		'provider guide',
 		'setup guide',
 		'developer console',

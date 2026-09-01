@@ -35,7 +35,7 @@ export function buildCompactMcpServerInstructions(
 	input: { displayName?: string | null | undefined } = {},
 ): string {
 	const displayName = sanitizeMcpInstructionDisplayName(input.displayName)
-	return `Kody is ${displayName}'s isolated personal assistant via \`search\` and \`execute\`. Use Kody — not the host's overlapping tools — for ${displayName}'s email, memories, secrets, scheduled work, integrations, connected MCP/OpenAPI, and durable automations. Work done only in the host is invisible to ${displayName}'s other agents.
+	return `Kody is ${displayName}'s isolated personal assistant via \`search\` and \`execute\`. Use Kody — not the host's overlapping tools — for ${displayName}'s email, memories, secrets, scheduled work, integrations, connected MCP, and durable automations. Work done only in the host is invisible to ${displayName}'s other agents.
 
 For those jobs, start with \`search({ query })\` (for example "send an email", "remember this", "run this every weekday"). Empty or broad search lists what Kody can do. Open entity detail for the execute snippet, then \`execute\`.
 

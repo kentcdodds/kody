@@ -44,8 +44,6 @@ test('execute capability runs modules through the shared execute runtime', async
 	const result = await executeCapability.handler(
 		{
 			code: 'export default async function main() { return { marker: "execute-ok" } }',
-			storageId: 'package:agent-turns',
-			writable: true,
 			conversationId: 'conv-execute',
 		},
 		{
@@ -57,32 +55,20 @@ test('execute capability runs modules through the shared execute runtime', async
 	expect(result).toMatchObject({
 		ok: true,
 		conversationId: 'conv-execute',
-		storage: { id: 'package:agent-turns' },
 		result: { marker: 'execute-ok' },
 		logs: [{ level: 'info', message: 'ran' }],
 	})
+	expect(result).not.toHaveProperty('storage')
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-				storageId: 'package:agent-turns',
-			},
-		}),
+		callerContext,
 		expect.stringContaining('execute-ok'),
 		undefined,
 		expect.objectContaining({
-			storageTools: {
-				userId: 'user-1',
-				storageId: 'package:agent-turns',
-				writable: true,
-			},
 			runRecordHandle: null,
 			runRecord: expect.objectContaining({
 				surface: 'execute',
-				storageId: 'package:agent-turns',
+				storageId: null,
 			}),
 		}),
 	)

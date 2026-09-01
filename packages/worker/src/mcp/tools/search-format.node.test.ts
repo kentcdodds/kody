@@ -47,33 +47,11 @@ async function executeCapabilityExample(executeExample: string) {
 			},
 		},
 	)
-	const openapi = new Proxy(
-		{} as Record<string, Record<string, (args: unknown) => Promise<unknown>>>,
-		{
-			get(_target, entryName: string) {
-				return new Proxy(
-					{} as Record<string, (args: unknown) => Promise<unknown>>,
-					{
-						get(_entryTarget, capabilityName: string) {
-							return async (args: unknown) => {
-								calls.push({
-									name: `openapi:${entryName}:${capabilityName}`,
-									args,
-								})
-								return { ok: true }
-							}
-						},
-					},
-				)
-			},
-		},
-	)
 	const kody = new Proxy(
 		{} as Record<string, (args: unknown) => Promise<unknown>>,
 		{
 			get(_target, prop: string) {
 				if (prop === 'mcp') return namespaced
-				if (prop === 'openapi') return openapi
 				return async (args: unknown) => {
 					calls.push({ name: prop, args })
 					return { ok: true }
@@ -450,76 +428,6 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			args: { owner: 'o', repo: 'r', title: 't' },
 		},
 	])
-
-	const openApiDetail = formatEntityDetailMarkdown({
-		type: 'capability',
-		id: 'openapi:widgets:listwidgets',
-		title: 'openapi:widgets:listwidgets',
-		description: 'List widgets — GET /widgets',
-		spec: {
-			name: 'openapi:widgets:listwidgets',
-			domain: 'openapi:widgets',
-			description: 'List widgets — GET /widgets',
-			keywords: [],
-			readOnly: true,
-			idempotent: false,
-			destructive: false,
-			source: 'openapi',
-			openApi: {
-				bindingName: 'widgets',
-				kodyName: 'widgets',
-				operationSlug: 'listwidgets',
-				method: 'get',
-				path: '/widgets',
-			},
-			inputFields: ['query'],
-			requiredInputFields: [],
-			outputFields: [],
-			inputSchema: { type: 'object', properties: {} },
-			inputTypeDefinition:
-				'type OpenapiWidgetsListwidgetsInput = Record<string, never>',
-		},
-	})
-	expect(openApiDetail.markdown).toContain(
-		'kody.openapi["widgets"].listwidgets(input)',
-	)
-	expect(openApiDetail.structured).toMatchObject({
-		source: 'openapi',
-		openApi: {
-			kodyName: 'widgets',
-			operationSlug: 'listwidgets',
-		},
-		executeExample: expect.stringContaining(
-			'kody.openapi["widgets"].listwidgets(input)',
-		),
-	})
-	const [openApiMatch] = toSlimStructuredMatches({
-		baseUrl: 'http://localhost',
-		matches: [
-			{
-				type: 'capability',
-				name: 'openapi:widgets:listwidgets',
-				description: 'List widgets — GET /widgets',
-				domain: 'openapi:widgets',
-				source: 'openapi',
-				openApi: {
-					bindingName: 'widgets',
-					kodyName: 'widgets',
-					operationSlug: 'listwidgets',
-					method: 'get',
-					path: '/widgets',
-				},
-			},
-		],
-	})
-	expect(openApiMatch).toMatchObject({
-		type: 'capability',
-		usage: 'execute with kody.openapi["widgets"].listwidgets(args)',
-		openApi: {
-			kodyName: 'widgets',
-			operationSlug: 'listwidgets',
-		},
-	})
 })
 
 test('package entity detail is a slim index with explicit follow-up', () => {
@@ -1089,33 +997,33 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		matches: [
 			{
 				type: 'capability',
-				name: 'openapi:widgets:createwidget',
-				title: 'POST /widgets',
+				name: 'mcp:widgets:createwidget',
+				title: 'mcp:widgets:createwidget',
 				description: 'Create a widget.',
-				domain: 'openapi:widgets',
-				source: 'openapi',
-				openApi: {
-					bindingName: 'widgets',
+				domain: 'mcp:widgets',
+				source: 'mcp-server',
+				mcpServer: {
+					serverId: 'widgets',
+					serverName: 'widgets',
 					kodyName: 'widgets',
-					operationSlug: 'createwidget',
-					method: 'post',
-					path: '/widgets',
+					mcpToolName: 'create_widget',
+					toolName: 'createwidget',
 				},
 				inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
 			},
 			{
 				type: 'capability',
-				name: 'openapi:widgets:listwidgets',
-				title: 'GET /widgets',
+				name: 'mcp:widgets:listwidgets',
+				title: 'mcp:widgets:listwidgets',
 				description: 'List widgets.',
-				domain: 'openapi:widgets',
-				source: 'openapi',
-				openApi: {
-					bindingName: 'widgets',
+				domain: 'mcp:widgets',
+				source: 'mcp-server',
+				mcpServer: {
+					serverId: 'widgets',
+					serverName: 'widgets',
 					kodyName: 'widgets',
-					operationSlug: 'listwidgets',
-					method: 'get',
-					path: '/widgets',
+					mcpToolName: 'list_widgets',
+					toolName: 'listwidgets',
 				},
 				inputTypeDefinition: compact.definition,
 				inputTypeDefinitionTruncated: true,
@@ -1130,8 +1038,8 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		],
 		includePreamble: false,
 	})
-	expect(listMarkdown).toContain('POST /widgets')
-	expect(listMarkdown).toContain('kody.openapi["widgets"].createwidget(args)')
+	expect(listMarkdown).toContain('mcp:widgets:createwidget')
+	expect(listMarkdown).toContain('kody.mcp["widgets"].createwidget(args)')
 	expect(listMarkdown).toContain('type CreateWidgetInput = { name: string }')
 	expect(listMarkdown).toContain(compact.definition)
 	expect(listMarkdown).not.toMatch(
@@ -1144,25 +1052,25 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			matches: [
 				{
 					type: 'capability',
-					name: 'openapi:widgets:createwidget',
+					name: 'mcp:widgets:createwidget',
 					description: 'Create a widget.',
-					domain: 'openapi:widgets',
-					source: 'openapi',
-					openApi: {
-						bindingName: 'widgets',
+					domain: 'mcp:widgets',
+					source: 'mcp-server',
+					mcpServer: {
+						serverId: 'widgets',
+						serverName: 'widgets',
 						kodyName: 'widgets',
-						operationSlug: 'createwidget',
-						method: 'post',
-						path: '/widgets',
+						mcpToolName: 'create_widget',
+						toolName: 'createwidget',
 					},
 					inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
 				},
 				{
 					type: 'capability',
-					name: 'openapi:widgets:listwidgets',
+					name: 'mcp:widgets:listwidgets',
 					description: 'List widgets.',
-					domain: 'openapi:widgets',
-					source: 'openapi',
+					domain: 'mcp:widgets',
+					source: 'mcp-server',
 					inputTypeDefinition: compact.definition,
 					inputTypeDefinitionTruncated: true,
 				},
@@ -1188,26 +1096,26 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 	expect(slimWithoutShape).not.toHaveProperty('inputTypeDefinition')
 	expect(slimWithoutShape).not.toHaveProperty('inputTypeDefinitionTruncated')
 
-	const openApiDetail = formatEntityDetailMarkdown({
+	const mcpDetail = formatEntityDetailMarkdown({
 		type: 'capability',
-		id: 'openapi:widgets:createwidget',
-		title: 'openapi:widgets:createwidget',
+		id: 'mcp:widgets:createwidget',
+		title: 'mcp:widgets:createwidget',
 		description: 'Create a widget.',
 		spec: {
-			name: 'openapi:widgets:createwidget',
-			domain: 'openapi:widgets',
+			name: 'mcp:widgets:createwidget',
+			domain: 'mcp:widgets',
 			description: 'Create a widget.',
 			keywords: [],
 			readOnly: false,
 			idempotent: false,
 			destructive: false,
-			source: 'openapi',
-			openApi: {
-				bindingName: 'widgets',
+			source: 'mcp-server',
+			mcpServer: {
+				serverId: 'widgets',
+				serverName: 'widgets',
 				kodyName: 'widgets',
-				operationSlug: 'createwidget',
-				method: 'post',
-				path: '/widgets',
+				mcpToolName: 'create_widget',
+				toolName: 'createwidget',
 			},
 			inputFields: ['name'],
 			requiredInputFields: ['name'],
@@ -1221,17 +1129,15 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		},
 		relatedOperationCount: 2,
 	})
-	expect(openApiDetail.markdown).toContain(
+	expect(mcpDetail.markdown).toContain(
 		'Related operations from this provider: 2',
 	)
-	expect(openApiDetail.markdown).not.toContain(
-		'openapi:widgets:listwidgets:capability',
-	)
-	expect(openApiDetail.structured).toMatchObject({
+	expect(mcpDetail.markdown).not.toContain('mcp:widgets:listwidgets:capability')
+	expect(mcpDetail.structured).toMatchObject({
 		type: 'capability',
 		relatedOperationCount: 2,
 	})
-	expect(openApiDetail.structured).not.toHaveProperty('relatedOperations')
+	expect(mcpDetail.structured).not.toHaveProperty('relatedOperations')
 
 	const builtinDetail = formatEntityDetailMarkdown({
 		type: 'capability',

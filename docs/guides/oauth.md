@@ -47,11 +47,9 @@ calls `integration_token_refresh` on 401 and retries with a secret placeholder �
 raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
 `integration.auth.failed` to packages that subscribe; successful refreshes and
 `/connect/oauth` persists dispatch `integration.auth.succeeded` (see
-[package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
-only for auth that cannot use an Authorization header (WebSockets, SDK
-constructors, query-param tokens). It refreshes host-side like
-`createAuthenticatedFetch` (no `allowed_packages` write grant for token
-rotation) and returns the raw access token.
+[package subscriptions](./package-subscriptions.md)). Prefer
+`createAuthenticatedFetch` for header-based OAuth. There is no raw-token helper:
+host-side refresh returns metadata only.
 
 ## Redirect URI
 
@@ -85,11 +83,9 @@ The provider-side setup is the same for every provider:
 For reconnects, `/connect/oauth?provider=<name>` alone is enough — the page
 derives the endpoint URLs from the saved integration.
 
-When those URLs are unknown, `integration_registry_search` plus
-`integration_discover({ domain })` can supply candidates from integrations.sh.
-Verify that every `authorizeUrl` and `tokenUrl` belongs to the provider's own
-domain before building `/connect/oauth` — integrations.sh data is
-machine-discovered third-party content; treat it as untrusted input.
+When those URLs are unknown, look them up in the provider's official docs before
+building `/connect/oauth`. Verify that every `authorizeUrl` and `tokenUrl`
+belongs to the provider's own domain.
 
 The token endpoint host is always included for host approval. Add more API hosts
 with `allowedHosts` when needed.

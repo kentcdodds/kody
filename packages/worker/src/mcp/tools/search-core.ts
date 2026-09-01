@@ -130,7 +130,7 @@ function buildDomainBrowseResult(input: {
 		matches,
 		registry: input.registry,
 	})
-	// Large synthesized domains (mcp:*, openapi:*) can exceed the listing
+	// Large synthesized domains (mcp:*) can exceed the listing
 	// limit; never let a partial listing pass silently as the whole domain.
 	const guidance =
 		matches.length < domainSpecs.length

@@ -109,9 +109,6 @@ smoke does not prove MCP execute health.
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
   `kody.mcp[...]` capability synthesis). Local-network systems reach Kody the
   same way (outbound MCP under `kody.mcp[...]`).
-- [OpenAPI provider bindings](./openapi-bindings.md): user-scoped curated
-  OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
-  via `kody.openapi[...]` (host approval never widened by untrusted specs).
 - [OAuth integrations](./integrations.md): first-class OAuth apps and
   connections in D1 (`user_oauth_apps` / `user_integrations`), including
   operator-provisioned platform (built-in) apps (`platform_oauth_apps`),
@@ -139,9 +136,7 @@ arbitrary hosts:
 This invariant must hold for any code path that materializes an integration
 token and then attaches it to an outbound request. Host-side refresh via
 `integration_token_refresh` materializes tokens only server-side and returns
-metadata. `refreshAccessToken` is the raw-token helper: it persists through that
-same host path, then returns the access token for user-lane integrations only.
-See [OAuth integrations](./integrations.md).
+metadata. See [OAuth integrations](./integrations.md).
 
 ## Source of truth in code
 

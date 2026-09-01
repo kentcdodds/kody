@@ -1,7 +1,7 @@
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 
 /**
- * Result-only summary for a synthesized MCP/OpenAPI provider. Provider cards
+ * Result-only summary for a synthesized MCP provider. Provider cards
  * keep general discovery bounded while exact operations remain entity-backed.
  */
 export const providerSearchEntityPlugin = {

@@ -45,7 +45,7 @@ export function createRuntimeModuleSource() {
 	// instead late-bound: it re-reads the current AsyncLocalStorage store on
 	// each property access / call.
 	//
-	// Optional helpers (\`storage\`, \`email\`, ...) still preserve their
+	// Optional helpers (\`email\`, \`packageSecrets\`, ...) still preserve their
 	// absent value (\`undefined\` / \`null\`) so \`if (email) { ... }\`
 	// guards stay falsy when a wrapper intentionally omits that export.
 	// Helper *presence* is decided by the generated wrapper source, which is
@@ -311,7 +311,7 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 					return currentValue.apply(currentExport, args);
 				};
 			}
-			// Nested namespaces such as kody.mcp / kody.openapi must stay
+			// Nested namespaces such as kody.mcp must stay
 			// late-bound too. Returning the raw object lets a bundler
 			// destructure \`const { home } = kody.mcp\` against a get-only
 			// proxy and bind home to undefined.
@@ -476,7 +476,7 @@ export function packageStorage() {
 	if (typeof declaringPackageId !== 'string' || declaringPackageId === '') {
 		throw new Error(
 			'packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. ' +
-				'For ad hoc execute code, bind a storageId to the execute call and use the ambient storage helper, ' +
+				'Ad hoc execute has no scratch SQLite helper. Persist durable state from a saved package with packageStorage(), ' +
 				"statically import the owning package's export (kody:@scope/package/export) when the package name is known, " +
 				'or import(specifier) when the package name is data.',
 		);
@@ -493,8 +493,6 @@ export const kody =
 	__kodyInitialRuntime === undefined || __kodyInitialRuntime.kody != null
 		? __kodyCreateRuntimeObjectProxy('kody')
 		: undefined;
-export const storage = __kodyOptionalRuntimeObjectExport('storage', undefined);
-export const refreshAccessToken = __kodyOptionalRuntimeFunctionExport('refreshAccessToken');
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
@@ -507,9 +505,7 @@ export const events = __kodyOptionalRuntimeObjectExport('events', null);
 
 const __kodyRuntimeNamedExports = {
 	kody,
-	storage,
 	packageStorage,
-	refreshAccessToken,
 	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,

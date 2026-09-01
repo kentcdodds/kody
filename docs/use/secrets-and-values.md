@@ -129,8 +129,8 @@ read/use paths. Updating or deleting a user secret from package code
 self-authored and adopted packages. Agents can add a package to that grant with
 **`secret_lock`**. Removing a grant is website-only on
 `/account/secrets/user/:name`. `secret_set` cannot change `allowed_packages`.
-Official OAuth token rotation (`createAuthenticatedFetch`, `refreshAccessToken`,
-OpenAPI integration 401 retry) persists host-side and does not need that write
+Official OAuth token rotation (`createAuthenticatedFetch` 401 retry via
+`integration_token_refresh`) persists host-side and does not need that write
 grant.
 
 **Host approval is separate and is never automatic**, including for

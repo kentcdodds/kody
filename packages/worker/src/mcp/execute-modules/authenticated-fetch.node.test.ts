@@ -38,9 +38,6 @@ function createKody(integration = spotifyIntegration) {
 				refreshTokenRotated: false,
 			}
 		},
-		async integration_refresh_access_token() {
-			throw new Error('createAuthenticatedFetch must not materialize tokens')
-		},
 	} satisfies KodyNamespace
 
 	return kody

@@ -59,7 +59,7 @@ test('domain instructions list builtins and summarize connected bindings', () =>
 					'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, and much more detail that should not all appear in always-loaded instructions.',
 			},
 			{
-				name: 'openapi:canva',
+				name: 'mcp:canva',
 				description:
 					'Canva Connect API — designs, assets, folders, comments, and exports.',
 			},
@@ -76,9 +76,9 @@ test('domain instructions list builtins and summarize connected bindings', () =>
 	expect(line!.length).toBeLessThan(130)
 	expect(line).toContain('...')
 	expect(instructions).toContain(
-		'2 connected MCP/OpenAPI bindings; `search({ domain })` to list.',
+		'2 connected MCP bindings; `search({ domain })` to list.',
 	)
-	expect(instructions).not.toContain('`openapi:canva`')
+	expect(instructions).not.toContain('`mcp:canva`')
 	expect(instructions).not.toContain('Canva Connect API')
 	expect(instructions).not.toContain('`mcp:home`')
 	expect(instructions).not.toContain('Home MCP server')
