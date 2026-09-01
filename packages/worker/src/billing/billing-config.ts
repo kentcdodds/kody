@@ -17,7 +17,17 @@ type BillingEnv = {
 export type BillingInterval = 'month' | 'year'
 export type PurchasablePlan = 'standard' | 'pro'
 
-const activeSubscriptionStatuses = new Set(['active', 'trialing'])
+/**
+ * Statuses whose subscriptions keep paid entitlements. `past_due` is
+ * included so a failed charge does not drop the account to free while
+ * Stripe's dunning retries are still running; entitlements drop once
+ * Stripe moves the subscription to `unpaid` or `canceled`.
+ */
+const planRetainingSubscriptionStatuses = new Set([
+	'active',
+	'trialing',
+	'past_due',
+])
 
 /**
  * Retired production monthly prices that still have live subscribers.
@@ -245,7 +255,8 @@ function pickSubscriptionStatus(
 
 /**
  * Map Stripe subscriptions to the highest matching Kody plan among
- * active/trialing subscriptions, plus the soonest non-null cancel_at
+ * plan-retaining (active/trialing/past_due) subscriptions, plus the
+ * soonest non-null cancel_at
  * (Unix seconds → ISO string) for display, and a UX-oriented
  * subscriptionStatus (prefer active/trialing, else highest-signal status
  * such as past_due).
@@ -260,7 +271,7 @@ export function resolveSubscriptionPlan(
 	let soonestCancelAt: number | null = null
 
 	for (const subscription of subscriptions) {
-		if (!activeSubscriptionStatuses.has(subscription.status)) continue
+		if (!planRetainingSubscriptionStatuses.has(subscription.status)) continue
 		stripePlan = pickHigherPlan(
 			stripePlan,
 			planFromSubscription(subscription, standardPriceIds, proPriceIds),

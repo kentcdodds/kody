@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
 import {
+	createAccountBillingCancellationFeedbackApiHandler,
 	createAccountBillingCheckoutApiHandler,
 	createAccountBillingSuccessHandler,
 } from './account-billing.ts'
@@ -16,6 +17,10 @@ const mockModule = vi.hoisted(() => ({
 	renderAppPage: vi.fn(async ({ loaderData }: { loaderData?: unknown }) =>
 		Response.json({ ok: true, loaderData }),
 	),
+	submitPlatformFeedback:
+		vi.fn<(...args: Array<unknown>) => Promise<{ id: string }>>(),
+	enqueuePlatformFeedbackDispatch:
+		vi.fn<(...args: Array<unknown>) => Promise<void>>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -51,6 +56,16 @@ vi.mock('#worker/billing/subscription-sync.ts', () => ({
 		mockModule.linkStripeCustomerFromCheckoutSessionAttribution(...args),
 }))
 
+vi.mock('#worker/platform-feedback/service.ts', () => ({
+	submitPlatformFeedback: (...args: Array<unknown>) =>
+		mockModule.submitPlatformFeedback(...args),
+}))
+
+vi.mock('#worker/platform-feedback/dispatch-queue-producer.ts', () => ({
+	enqueuePlatformFeedbackDispatch: (...args: Array<unknown>) =>
+		mockModule.enqueuePlatformFeedbackDispatch(...args),
+}))
+
 vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof StripeClient>()
 	return {
@@ -62,6 +77,7 @@ vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
 
 const authenticatedUser = {
 	userId: 9,
+	username: 'ada',
 	email: 'ada@example.com',
 	mcpUser: { userId: 'stable-ada' },
 }
@@ -182,6 +198,62 @@ test('billing checkout selects monthly vs yearly Stripe price ids', async () => 
 	)
 	expect(yearlyMissing.status).toBe(409)
 	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(4)
+})
+
+async function postCancellationFeedback(env: Env, body: unknown) {
+	const handler = createAccountBillingCancellationFeedbackApiHandler(env)
+	return handler.handler({
+		request: new Request(
+			'https://example.com/account/billing/cancellation-feedback.json',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			},
+		),
+		params: {},
+		url: new URL(
+			'https://example.com/account/billing/cancellation-feedback.json',
+		),
+	} as never)
+}
+
+test('billing cancellation feedback records platform feedback', async () => {
+	mockModule.submitPlatformFeedback.mockResolvedValue({ id: 'fb_1' })
+	mockModule.enqueuePlatformFeedbackDispatch.mockResolvedValue(undefined)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	const unauthorized = await postCancellationFeedback(createEnv(), {
+		details: 'Too expensive.',
+	})
+	expect(unauthorized.status).toBe(401)
+	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(authenticatedUser)
+	const missingDetails = await postCancellationFeedback(createEnv(), {
+		details: '   ',
+	})
+	expect(missingDetails.status).toBe(400)
+	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
+
+	const env = createEnv()
+	const success = await postCancellationFeedback(env, {
+		details: 'Too expensive for my usage.',
+	})
+	expect(success.status).toBe(200)
+	expect(await success.json()).toEqual({ ok: true })
+	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith(
+		expect.objectContaining({
+			submitterUserId: 'stable-ada',
+			submitterUsername: 'ada',
+			submitterEmail: 'ada@example.com',
+			category: 'cancellation',
+			details: 'Too expensive for my usage.',
+		}),
+	)
+	expect(mockModule.enqueuePlatformFeedbackDispatch).toHaveBeenCalledWith(
+		expect.objectContaining({ feedbackId: 'fb_1' }),
+	)
 })
 
 test('billing success renders a thank-you page instead of redirecting', async () => {

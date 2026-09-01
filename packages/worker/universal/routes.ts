@@ -92,6 +92,9 @@ export const routes = route({
 	accountBilling: '/account/billing',
 	accountBillingApi: '/account/billing.json',
 	accountBillingCheckoutPost: post('/account/billing/checkout.json'),
+	accountBillingCancellationFeedbackPost: post(
+		'/account/billing/cancellation-feedback.json',
+	),
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
 	accountUsage: '/account/usage',
