@@ -171,6 +171,7 @@ primitives:
     code:
       - packages/worker/src/oauth-handlers.ts
       - packages/worker/src/mcp-auth.ts
+      - packages/worker/src/oidc/
     docs:
       - docs/contributing/architecture/authentication.md
 

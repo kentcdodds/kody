@@ -40,8 +40,16 @@ test('openid-configuration advertises authorization code OIDC only', () => {
 		`https://heykody.dev${oauthPaths.logout}`,
 	)
 	expect(document.response_types_supported).toEqual(['code'])
+	expect(document.response_modes_supported).toEqual(['query'])
 	expect(document.id_token_signing_alg_values_supported).toEqual(['RS256'])
 	expect(document.scopes_supported).toEqual(mcpOauthScopes)
+	expect(document.claims_supported).toContain('sub')
+	expect(document.claims_supported).toContain('email')
+	expect(document.token_endpoint_auth_methods_supported).toEqual([
+		'none',
+		'client_secret_basic',
+		'client_secret_post',
+	])
 	expect(document.grant_types_supported).toEqual([
 		'authorization_code',
 		'refresh_token',

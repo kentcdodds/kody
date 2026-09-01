@@ -1,4 +1,4 @@
-import  {
+import {
 	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
@@ -8,6 +8,13 @@ import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
 
 type OAuthEnv = Env & {
 	OAUTH_PROVIDER: OAuthHelpers
+}
+
+type LogoutParams = {
+	postLogoutRedirectUri: string | null
+	state: string | null
+	idTokenHint: string | null
+	clientId: string | null
 }
 
 function getOAuthHelpers(env: Env) {
@@ -34,19 +41,73 @@ function isAllowedPostLogoutRedirectUri(
 	return registeredUris.some((registeredUri) => registeredUri === redirectUri)
 }
 
+function readAudienceClientId(payload: Record<string, unknown>) {
+	const aud = payload.aud
+	if (typeof aud === 'string' && aud.trim()) return aud.trim()
+	if (
+		Array.isArray(aud) &&
+		aud.length > 0 &&
+		typeof aud[0] === 'string' &&
+		aud[0].trim()
+	) {
+		return aud[0].trim()
+	}
+	return null
+}
+
+async function readLogoutParams(request: Request): Promise<LogoutParams> {
+	if (request.method === 'POST') {
+		const contentType = request.headers.get('Content-Type') ?? ''
+		if (contentType.includes('application/x-www-form-urlencoded')) {
+			const formData = await request.formData().catch(() => null)
+			return {
+				postLogoutRedirectUri:
+					String(formData?.get('post_logout_redirect_uri') ?? '').trim() ||
+					null,
+				state: String(formData?.get('state') ?? '').trim() || null,
+				idTokenHint:
+					String(formData?.get('id_token_hint') ?? '').trim() || null,
+				clientId: String(formData?.get('client_id') ?? '').trim() || null,
+			}
+		}
+	}
+	const url = new URL(request.url)
+	return {
+		postLogoutRedirectUri:
+			url.searchParams.get('post_logout_redirect_uri')?.trim() || null,
+		state: url.searchParams.get('state')?.trim() || null,
+		idTokenHint: url.searchParams.get('id_token_hint')?.trim() || null,
+		clientId: url.searchParams.get('client_id')?.trim() || null,
+	}
+}
+
 export async function handleOidcLogoutRequest(request: Request, env: Env) {
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
+	if (
+		request.method !== 'GET' &&
+		request.method !== 'HEAD' &&
+		request.method !== 'POST'
+	) {
 		return new Response('Method not allowed', { status: 405 })
 	}
 
-	const url = new URL(request.url)
-	const postLogoutRedirectUri =
-		url.searchParams.get('post_logout_redirect_uri')?.trim() || null
-	const state = url.searchParams.get('state')?.trim() || null
-	const idTokenHint = url.searchParams.get('id_token_hint')?.trim() || null
-	const clientId = url.searchParams.get('client_id')?.trim() || null
+	const params = await readLogoutParams(request)
+	let clientId = params.clientId
 
-	if (postLogoutRedirectUri) {
+	if (params.idTokenHint) {
+		const issuer = getAppBaseUrl({
+			env,
+			requestUrl: request.url,
+		})
+		const payload = await verifyOidcJwtSignature(env, params.idTokenHint)
+		if (!payload || payload.iss !== issuer) {
+			return new Response('Invalid id_token_hint', { status: 400 })
+		}
+		if (!clientId) {
+			clientId = readAudienceClientId(payload)
+		}
+	}
+
+	if (params.postLogoutRedirectUri) {
 		let allowed = false
 		if (clientId) {
 			const helpers = getOAuthHelpers(env)
@@ -54,7 +115,7 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 				const client = await helpers.lookupClient(clientId)
 				if (client) {
 					allowed = isAllowedPostLogoutRedirectUri(
-						postLogoutRedirectUri,
+						params.postLogoutRedirectUri,
 						readRegisteredRedirectUris(client),
 					)
 				}
@@ -67,26 +128,15 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 		}
 	}
 
-	if (idTokenHint) {
-		const issuer = getAppBaseUrl({
-			env,
-			requestUrl: request.url,
-		})
-		const payload = await verifyOidcJwtSignature(env, idTokenHint)
-		if (!payload || payload.iss !== issuer) {
-			return new Response('Invalid id_token_hint', { status: 400 })
-		}
-	}
-
 	const clearSessionCookie = await destroyAuthCookie(isSecureRequest(request))
 	const headers = new Headers({
 		'Cache-Control': 'no-store',
 		'Set-Cookie': clearSessionCookie,
 	})
 
-	if (postLogoutRedirectUri) {
-		const redirectUrl = new URL(postLogoutRedirectUri)
-		if (state) redirectUrl.searchParams.set('state', state)
+	if (params.postLogoutRedirectUri) {
+		const redirectUrl = new URL(params.postLogoutRedirectUri)
+		if (params.state) redirectUrl.searchParams.set('state', params.state)
 		headers.set('Location', redirectUrl.toString())
 		return new Response(null, { status: 302, headers })
 	}

@@ -57,3 +57,34 @@ test('userinfo returns claims for verified bearer tokens and 401 without bearer'
 	)
 	expect(unauthorized.status).toBe(401)
 })
+
+test('userinfo requires openid scope', async () => {
+	const env = createOidcEnv({
+		OAUTH_PROVIDER: {
+			unwrapToken: async () => ({
+				scope: ['email', 'profile'],
+				grant: {
+					clientId: 'client-123',
+					scope: ['email', 'profile'],
+					props: {
+						userId: 'user-stable-id',
+						email: 'user@example.com',
+						username: 'test-user',
+						displayName: 'test-user',
+						authTime: 1_700_000_000,
+					},
+				},
+			}),
+		},
+	} as Partial<Env>)
+	const response = await handleOidcUserinfoRequest(
+		new Request('https://heykody.dev/oauth/userinfo', {
+			headers: { Authorization: 'Bearer demo-token' },
+		}),
+		env,
+	)
+	expect(response.status).toBe(403)
+	await expect(response.json()).resolves.toMatchObject({
+		error: 'insufficient_scope',
+	})
+})

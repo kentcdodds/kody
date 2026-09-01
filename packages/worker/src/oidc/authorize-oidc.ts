@@ -22,6 +22,7 @@ export type OidcAuthorizeGateResult =
 			treatAsSignedOut: boolean
 			clearSessionCookie?: string | null
 			forbidInlineLogin?: boolean
+			requireConsent?: boolean
 	  }
 	| {
 			ok: false
@@ -64,6 +65,11 @@ export function getUnsupportedOidcResponseTypeError(responseType: string) {
 	return null
 }
 
+function isJwtExpired(payload: Record<string, unknown>, nowSeconds: number) {
+	const exp = payload.exp
+	return typeof exp === 'number' && Number.isFinite(exp) && nowSeconds >= exp
+}
+
 async function readIdTokenHintSubject(input: {
 	env: Env
 	request: Request
@@ -75,6 +81,8 @@ async function readIdTokenHintSubject(input: {
 	})
 	const payload = await verifyOidcJwtSignature(input.env, input.idTokenHint)
 	if (!payload || payload.iss !== issuer) return null
+	const nowSeconds = Math.floor(Date.now() / 1000)
+	if (isJwtExpired(payload, nowSeconds)) return null
 	return typeof payload.sub === 'string' ? payload.sub : null
 }
 
@@ -95,9 +103,19 @@ export async function evaluateOidcAuthorizeGate(input: {
 		}
 	}
 
-	const prompts = input.params.prompt?.split(/\s+/) ?? []
+	const prompts = input.params.prompt?.split(/\s+/).filter(Boolean) ?? []
 	const wantsLogin = prompts.includes('login')
 	const wantsNone = prompts.includes('none')
+	const wantsConsent = prompts.includes('consent')
+
+	if (wantsNone && (wantsLogin || wantsConsent)) {
+		return {
+			ok: false,
+			error: 'prompt=none cannot be combined with login or consent.',
+			errorCode: 'invalid_request',
+			status: 400,
+		}
+	}
 
 	if (wantsLogin) {
 		const clearSessionCookie = await destroyAuthCookie(
@@ -107,18 +125,22 @@ export async function evaluateOidcAuthorizeGate(input: {
 			ok: true,
 			treatAsSignedOut: true,
 			clearSessionCookie,
+			requireConsent: wantsConsent,
 		}
 	}
 
 	let signedIn = Boolean(input.session.sessionEmail)
 
 	if (signedIn && input.params.maxAge !== undefined) {
-		const authTimeSeconds = input.session.sessionIssuedAt
-			? Math.floor(input.session.sessionIssuedAt / 1000)
-			: Math.floor(Date.now() / 1000)
-		const nowSeconds = Math.floor(Date.now() / 1000)
-		if (nowSeconds - authTimeSeconds > input.params.maxAge) {
+		// Fail closed: without a known auth_time, max_age cannot be evaluated.
+		if (input.session.sessionIssuedAt === undefined) {
 			signedIn = false
+		} else {
+			const authTimeSeconds = Math.floor(input.session.sessionIssuedAt / 1000)
+			const nowSeconds = Math.floor(Date.now() / 1000)
+			if (nowSeconds - authTimeSeconds > input.params.maxAge) {
+				signedIn = false
+			}
 		}
 	}
 
@@ -146,5 +168,6 @@ export async function evaluateOidcAuthorizeGate(input: {
 		ok: true,
 		treatAsSignedOut: !signedIn,
 		forbidInlineLogin: wantsNone,
+		requireConsent: wantsConsent,
 	}
 }

@@ -1,8 +1,13 @@
 import { expect, test } from 'vitest'
 import {
+	evaluateOidcAuthorizeGate,
 	getUnsupportedOidcResponseTypeError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
+import {
+	TEST_OIDC_SIGNING_KEY_ID,
+	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+} from '#worker/oidc/test-signing-key.ts'
 
 test('authorize-oidc rejects implicit and hybrid response types', () => {
 	expect(getUnsupportedOidcResponseTypeError('code')).toBeNull()
@@ -28,4 +33,77 @@ test('authorize-oidc parses nonce prompt max_age and id_token_hint', () => {
 		idTokenHint: 'eyJ.test',
 		responseType: 'code',
 	})
+})
+
+test('authorize-oidc rejects prompt=none combined with login or consent', async () => {
+	const env = {
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+	} as unknown as Env
+	const result = await evaluateOidcAuthorizeGate({
+		params: {
+			prompt: 'none consent',
+			responseType: 'code',
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request('https://heykody.dev/oauth/authorize'),
+		env,
+	})
+	expect(result.ok).toBe(false)
+	if (!result.ok) {
+		expect(result.errorCode).toBe('invalid_request')
+	}
+})
+
+test('authorize-oidc max_age fails closed without sessionIssuedAt', async () => {
+	const env = {
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+	} as unknown as Env
+	const result = await evaluateOidcAuthorizeGate({
+		params: {
+			maxAge: 60,
+			responseType: 'code',
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: undefined,
+		},
+		request: new Request('https://heykody.dev/oauth/authorize'),
+		env,
+	})
+	expect(result.ok).toBe(true)
+	if (result.ok) {
+		expect(result.treatAsSignedOut).toBe(true)
+	}
+})
+
+test('authorize-oidc prompt=consent sets requireConsent', async () => {
+	const env = {
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+	} as unknown as Env
+	const result = await evaluateOidcAuthorizeGate({
+		params: {
+			prompt: 'consent',
+			responseType: 'code',
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request('https://heykody.dev/oauth/authorize'),
+		env,
+	})
+	expect(result.ok).toBe(true)
+	if (result.ok) {
+		expect(result.requireConsent).toBe(true)
+		expect(result.treatAsSignedOut).toBe(false)
+	}
 })
