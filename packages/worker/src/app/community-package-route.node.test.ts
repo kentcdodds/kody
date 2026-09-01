@@ -207,4 +207,27 @@ test('unlisted leftover /files and rename hops stay owner-private', async () => 
 		to: '/@kentcdodds/friction-log/tree/main',
 		shared: false,
 	})
+
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log-two',
+		listing: { listing: { id: 'listing-1', kodyId: 'friction-log' } },
+		ownerPackage: { sourceId: 'src-1', isPrivate: false },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+	const unpublishedLeftover = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log-two/files'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log-two/files',
+		),
+	})
+	expect(unpublishedLeftover).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log-two/tree/main',
+		shared: false,
+	})
 })

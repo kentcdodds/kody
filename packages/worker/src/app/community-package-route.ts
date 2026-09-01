@@ -211,9 +211,10 @@ async function resolveOwnerPackageFilesTarget(input: {
 		ref,
 	})
 	if (canonicalPath !== input.pathname) {
-		// Leftover `/files` and default-ref aliases for a listed pair may be
-		// cached. Unlisted owner hops must not leak the current tree URL.
-		return filesPathRedirect(canonicalPath, Boolean(page.listing?.listing))
+		// This URL did not resolve as a public listing, so leftover `/files`
+		// and default-ref hops stay owner-private even when a listing exists
+		// under a different unpublished pair.
+		return filesPathRedirect(canonicalPath, false)
 	}
 	return {
 		kind: 'package',
