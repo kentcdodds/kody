@@ -158,8 +158,31 @@ export function getCachedMcpClientHubSnapshot(
 	})
 }
 
+function mcpClientHubServersCacheKey(userId: string) {
+	return `${mcpClientHubKey(userId)}:servers`
+}
+
+/**
+ * Server cards only. Does not drain or dispatch connection-subscription
+ * events, so search waiting can stay read-only.
+ */
+export function getCachedMcpClientHubServers(
+	input: Pick<McpClientHubClientInput, 'env' | 'userId'>,
+): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
+	const cacheKey = mcpClientHubServersCacheKey(input.userId)
+	return mcpClientHubSnapshotCache.getOrCreate({
+		cacheKey,
+		create: async () => {
+			const stub = getMcpClientHubStub(input)
+			return await stub.peekServers()
+		},
+	})
+}
+
 export function invalidateMcpClientHubSnapshotCache(input: { userId: string }) {
-	mcpClientHubSnapshotCache.delete(mcpClientHubKey(input.userId))
+	const key = mcpClientHubKey(input.userId)
+	mcpClientHubSnapshotCache.delete(key)
+	mcpClientHubSnapshotCache.delete(mcpClientHubServersCacheKey(input.userId))
 }
 
 export function clearMcpClientHubSnapshotCacheForTests() {

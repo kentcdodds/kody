@@ -16,6 +16,7 @@ import { exports as workerExports } from 'cloudflare:workers'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import {
 	outboundFetchTimeoutMsForExecutor,
+	retrieverOutboundFetchDeniedMessage,
 	type FetchGatewayProps,
 } from '#mcp/fetch-gateway.ts'
 import {
@@ -578,6 +579,8 @@ export function createKodyRemoteProxy(input: {
 	})
 }
 
+export { retrieverOutboundFetchDeniedMessage }
+
 export function createExecuteExecutor(input: {
 	env: Env
 	exports?: WorkerLoopbackExports
@@ -598,7 +601,13 @@ export function createExecuteExecutor(input: {
 	 * Defaults to true for ad-hoc executor callers.
 	 */
 	recordExecuteUsage?: boolean
+	/**
+	 * When false, sandbox `fetch` is rejected. Retriever runs use this to stay
+	 * closed-world. Defaults to true.
+	 */
+	allowOutboundFetch?: boolean
 }) {
+	const allowOutboundFetch = input.allowOutboundFetch !== false
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.KodyFetchGateway) {
 		throw new Error(
@@ -612,6 +621,7 @@ export function createExecuteExecutor(input: {
 	const gatewayProps = {
 		...input.gatewayProps,
 		outboundFetchTimeoutMs: outboundFetchTimeoutMsForExecutor(timeout),
+		allowOutboundFetch,
 	}
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,

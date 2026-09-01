@@ -173,19 +173,6 @@ async function invokeRetriever(input: {
 			limit,
 		},
 	}
-	// Avoid a top-level package-retrievers -> package-invocations cycle during
-	// capability registry initialization.
-	const { createPackageEventTools, createPackageRuntimeInvokeTools } =
-		await import('#worker/package-invocations/service.ts')
-	const packageRuntimeToolsInput = {
-		env: input.env,
-		baseUrl: input.baseUrl,
-		callerContext,
-		packageContext,
-		parentRunRecord: runRecord,
-		packageInvokeDepth: 0,
-		waitUntil: input.waitUntil,
-	}
 	const executionResult = await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,
@@ -202,18 +189,12 @@ async function invokeRetriever(input: {
 			conversationId: input.conversationId ?? null,
 		},
 		{
-			// No ambient `storage` binding: retriever code reaches the package
-			// bucket via `packageStorage()` (granted through packageContext
-			// below). The old read-only ambient binding constrained only the
-			// ambient helper — `packageStorage()` has been writable in retriever
-			// context since it shipped — so retrievers staying read-mostly is a
-			// convention, not a runtime constraint.
+			// Retrievers enrich search/context. The closed-world profile is a
+			// runtime constraint: read-only packageStorage, no capability map,
+			// no invoke/events/workflows, no outbound fetch.
 			packageContext,
 			runRecord,
-			packageInvokeTools: createPackageRuntimeInvokeTools(
-				packageRuntimeToolsInput,
-			),
-			packageEventTools: createPackageEventTools(packageRuntimeToolsInput),
+			closedWorldRetrieverRuntime: true,
 			executorTimeoutMs: clampTimeout(input.entry.timeoutMs, input.scope),
 			waitUntil: input.waitUntil,
 		},

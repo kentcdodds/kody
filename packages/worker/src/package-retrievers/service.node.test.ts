@@ -7,8 +7,6 @@ const mockFns = vi.hoisted(() => ({
 	listPackageRetrieversForScope: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 	runBundledModuleWithRegistry: vi.fn(),
-	createPackageEventTools: vi.fn(() => ({})),
-	createPackageRuntimeInvokeTools: vi.fn(() => ({})),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -30,11 +28,6 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runBundledModuleWithRegistry: mockFns.runBundledModuleWithRegistry,
-}))
-
-vi.mock('#worker/package-invocations/service.ts', () => ({
-	createPackageEventTools: mockFns.createPackageEventTools,
-	createPackageRuntimeInvokeTools: mockFns.createPackageRuntimeInvokeTools,
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
@@ -192,7 +185,10 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 		expect(call[4]).toEqual(
 			expect.objectContaining({
 				executorTimeoutMs: 2_500,
+				closedWorldRetrieverRuntime: true,
 			}),
 		)
+		expect(call[4]).not.toHaveProperty('packageInvokeTools')
+		expect(call[4]).not.toHaveProperty('packageEventTools')
 	}
 })

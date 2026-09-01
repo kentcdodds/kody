@@ -484,6 +484,25 @@ test('used and missing callback states recover without exposing an internal stat
 	expect(manager.rows[0]?.auth_url).toContain('state=fresh-2.server-1')
 })
 
+test('peekServers returns cards without observing or reconnecting', async () => {
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	const episodeBefore = values.get('mcp-connection-episode/server-1')
+	connection.connectionState = 'disconnected'
+	manager.connectCount = 0
+	manager.connectBehavior = 'ready'
+
+	const peeked = await hub.peekServers()
+	expect(peeked.servers[0]?.state).toBe('disconnected')
+	expect(manager.connectCount).toBe(0)
+	expect(values.get('mcp-connection-episode/server-1')).toEqual(episodeBefore)
+	expect(values.has('mcp-connection-events-pending')).toBe(false)
+	expect(await hub.takeConnectionEvents()).toEqual([])
+})
+
 test('snapshot retries a previously ready server before emitting disconnect', async () => {
 	const { state, values } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)

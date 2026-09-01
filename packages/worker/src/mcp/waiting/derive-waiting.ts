@@ -4,7 +4,7 @@ import {
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
-import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
+import { getCachedMcpClientHubServers } from '#worker/mcp-client/hub-client.ts'
 import { type McpClientHubSnapshot } from '#worker/mcp-client/types.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -165,9 +165,9 @@ async function collectMcpServerSignals(
 	const enabled = settings.filter((server) => server.enabled)
 	if (enabled.length === 0) return []
 
-	let snapshot: McpClientHubSnapshot
+	let snapshot: Pick<McpClientHubSnapshot, 'servers'>
 	try {
-		snapshot = await getCachedMcpClientHubSnapshot({
+		snapshot = await getCachedMcpClientHubServers({
 			env,
 			userId,
 		})

@@ -53,7 +53,9 @@ Pass optional **`domain`** with a capability domain id:
 
 - **With `query`** — ranks only that domain's capabilities. User-owned entities
   (packages, integrations, secrets, retriever results) are excluded because they
-  have no domain.
+  have no domain. Installed-package retrievers run in a read-only, closed-world
+  sandbox: they can read their package storage and return results, but they
+  cannot write, fetch, invoke, or call capabilities.
 - **Without `query`** — lists the domain's capabilities in curated registry
   order (with inlined call shapes for the top hits), which completes the two-hop
   browse flow: broad query → domain overview → domain listing.
