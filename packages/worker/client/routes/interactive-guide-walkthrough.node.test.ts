@@ -12,7 +12,10 @@ test('google oauth connect bubbles wrap the prefilled url instead of overflowing
 				line.role === 'agent' &&
 				line.text.includes('/connect/oauth?provider=google'),
 		)
-	if (connectLine?.role !== 'agent') return
+	expect(connectLine).toBeDefined()
+	if (connectLine?.role !== 'agent') {
+		throw new Error('expected google oauth connect agent line')
+	}
 
 	const bubble = await renderToString(renderInteractiveGuideLine(connectLine))
 	expect(bubble).toContain('/connect/oauth?provider=google')
