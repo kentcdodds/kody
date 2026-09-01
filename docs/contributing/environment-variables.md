@@ -251,10 +251,10 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
 - `STRIPE_STANDARD_YEARLY_PRICE_ID` — Stripe Price id for the
   $120/year
   `standard` plan ($10/month billed annually).
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $29/month `pro` plan.
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $49/month `pro` plan.
 - `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the
-  $288/year `pro` plan
-  ($24/month billed annually).
+  $480/year `pro` plan
+  ($40/month billed annually).
 
 Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes

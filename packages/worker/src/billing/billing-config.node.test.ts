@@ -279,3 +279,44 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	expect(getPriceIdForPlan(env, 'pro', 'year')).toBe('price_pro_yearly')
 	expect(getPriceIdForPlan({}, 'standard', 'year')).toBeNull()
 })
+
+test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids rotate', () => {
+	const env = {
+		STRIPE_PRO_PRICE_ID: 'price_pro_current',
+		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly_current',
+	}
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1U3sg6LAQpAnsYszlVpEIFGx'],
+				}),
+			],
+			env,
+		).stripePlan,
+	).toBe('pro')
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1U3sg7LAQpAnsYszpozAEFUi'],
+				}),
+			],
+			env,
+		).stripePlan,
+	).toBe('pro')
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1U1AISLAQpAnsYszIQvRJNhl'],
+				}),
+			],
+			env,
+		).stripePlan,
+	).toBe('pro')
+})

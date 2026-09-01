@@ -390,7 +390,7 @@ Guarantees and rules:
   (24h), when a non-admin account's unique Dynamic Worker cost for the month
   first reaches the plan-aware threshold (Free
   $2 / 1,000 unique days, Standard
-  $12, Pro $29), or when a non-admin account
+  $12, Pro $49), or when a non-admin account
   hits 100% of `execute_calls_per_day` on three of the last seven UTC days.
   Staying over the same threshold does not emit again. Admin-role dogfooding
   stays on `/admin/insights` rankings and can still appear as an entitlement

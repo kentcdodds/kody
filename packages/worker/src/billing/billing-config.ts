@@ -30,13 +30,19 @@ const planRetainingSubscriptionStatuses = new Set([
 ])
 
 /**
- * Retired production monthly prices that still have live subscribers.
- * Checkout uses the $12 / $29 monthly prices; these ids stay in Stripe and
+ * Retired production prices that still have live subscribers.
+ * Checkout uses the $12 / $49 monthly prices; these ids stay in Stripe and
  * must resolve to standard/pro so existing subscriptions do not drop to free.
  * Standard $5 (`price_1Tv3W2…`) has one customer through 2026-09-08.
+ * Pro $29 monthly (`price_1U3sg6…`) and $288 yearly (`price_1U3sg7…`) remain
+ * matched so existing subscriptions do not drop to free.
  */
 const retiredStandardPriceIds = ['price_1Tv3W2LAQpAnsYszSr4PGBkE'] as const
-const retiredProPriceIds = ['price_1U1AISLAQpAnsYszIQvRJNhl'] as const
+const retiredProPriceIds = [
+	'price_1U1AISLAQpAnsYszIQvRJNhl',
+	'price_1U3sg6LAQpAnsYszlVpEIFGx',
+	'price_1U3sg7LAQpAnsYszpozAEFUi',
+] as const
 
 /** Higher rank = more useful UX signal when no active/trialing sub exists. */
 const subscriptionStatusSignalRank: Record<string, number> = {
