@@ -1,6 +1,7 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { routes } from '#universal/routes.ts'
+import { defaultProviderMarkAliases } from './default-provider-mark-aliases.ts'
 import {
 	processPlatformOauthAppLogo,
 	servedLogoFromObject,
@@ -82,6 +83,92 @@ export function normalizeProviderMarkAliases(
 	).sort()
 }
 
+const genericHostLabels = new Set([
+	'com',
+	'org',
+	'net',
+	'io',
+	'dev',
+	'app',
+	'www',
+	'co',
+	'uk',
+	'us',
+	'so',
+	'ai',
+	'sh',
+	'tv',
+	'fm',
+	'gg',
+])
+
+/**
+ * Host tokens stored on a mark, plus built-in keys/hosts for that slug so a
+ * catalog row that omitted `github.com` still matches GitHub authorize URLs.
+ */
+export function builtInProviderMarkAliases(slug: string): Array<string> {
+	const defaults =
+		defaultProviderMarkAliases[slug as keyof typeof defaultProviderMarkAliases]
+	return defaults ? normalizeProviderMarkAliases([...defaults]) : []
+}
+
+export function providerMarkAliasTokens(mark: {
+	slug: string
+	aliases: ReadonlyArray<string>
+}): Array<string> {
+	return normalizeProviderMarkAliases([
+		...mark.aliases,
+		...builtInProviderMarkAliases(mark.slug),
+	])
+}
+
+export function stripBuiltInProviderMarkAliases(
+	slug: string,
+	aliases: ReadonlyArray<string>,
+): Array<string> {
+	const builtIns = new Set(builtInProviderMarkAliases(slug))
+	return normalizeProviderMarkAliases(
+		aliases.filter((alias) => !builtIns.has(alias)),
+	)
+}
+
+/**
+ * `github.com` and `api.github.com` match token `github.com`. The slug
+ * `github` also matches those hosts via an exact DNS label, so a mark does
+ * not need every subdomain listed. Tokens shorter than 3 characters and
+ * generic labels (`com`, `app`) never match, including as a host suffix.
+ */
+export function hostMatchesProviderMarkToken(
+	host: string,
+	token: string,
+): boolean {
+	const normalizedHost = host.trim().toLowerCase()
+	const normalizedToken = token.trim().toLowerCase()
+	if (!normalizedHost || !normalizedToken) return false
+	if (normalizedToken.length < 3 || genericHostLabels.has(normalizedToken)) {
+		return false
+	}
+	if (normalizedHost === normalizedToken) return true
+	if (normalizedHost.endsWith(`.${normalizedToken}`)) return true
+	if (normalizedToken.includes('.')) return false
+	return normalizedHost.split('.').includes(normalizedToken)
+}
+
+function hostMatchScore(
+	host: string,
+	mark: Pick<PlatformProviderMark, 'slug' | 'aliases'>,
+): number {
+	const tokens = [mark.slug, ...providerMarkAliasTokens(mark)]
+	let best = 0
+	for (const token of tokens) {
+		if (!hostMatchesProviderMarkToken(host, token)) continue
+		const kind = host === token ? 4 : host.endsWith(`.${token}`) ? 3 : 1
+		const scored = kind * 1000 + token.length
+		if (scored > best) best = scored
+	}
+	return best
+}
+
 export function hostFromProviderUrl(
 	raw: string | null | undefined,
 ): string | null {
@@ -129,9 +216,10 @@ export function providerMarkMatches(input: {
 }): boolean {
 	const key = input.providerKey?.trim().toLowerCase() ?? ''
 	const slug = input.mark.slug
+	const aliasTokens = providerMarkAliasTokens(input.mark)
 	if (key) {
 		if (key === slug) return true
-		if (input.mark.aliases.includes(key)) return true
+		if (aliasTokens.includes(key)) return true
 		if (slug === 'x') {
 			if (key.startsWith('x-')) return true
 		} else if (key.startsWith(`${slug}-`) || key.endsWith(`-${slug}`)) {
@@ -140,10 +228,8 @@ export function providerMarkMatches(input: {
 	}
 	const host = input.host?.trim().toLowerCase() ?? ''
 	if (!host) return false
-	for (const alias of input.mark.aliases) {
-		if (host === alias || host.endsWith(`.${alias}`)) return true
-	}
-	return false
+	if (hostMatchesProviderMarkToken(host, slug)) return true
+	return aliasTokens.some((alias) => hostMatchesProviderMarkToken(host, alias))
 }
 
 /**
@@ -161,7 +247,9 @@ export function resolveProviderMark(input: {
 	if (key) {
 		const exact = withLogo.find((mark) => mark.slug === key)
 		if (exact) return exact
-		const aliasExact = withLogo.find((mark) => mark.aliases.includes(key))
+		const aliasExact = withLogo.find((mark) =>
+			providerMarkAliasTokens(mark).includes(key),
+		)
 		if (aliasExact) return aliasExact
 		const family = withLogo
 			.filter((mark) =>
@@ -174,14 +262,12 @@ export function resolveProviderMark(input: {
 		if (family[0]) return family[0]
 	}
 	if (!input.host?.trim()) return null
-	return (
-		withLogo.find((mark) =>
-			providerMarkMatches({
-				mark,
-				host: input.host,
-			}),
-		) ?? null
-	)
+	const host = input.host.trim().toLowerCase()
+	const hostMatches = withLogo
+		.map((mark) => ({ mark, score: hostMatchScore(host, mark) }))
+		.filter((entry) => entry.score > 0)
+		.sort((left, right) => right.score - left.score)
+	return hostMatches[0]?.mark ?? null
 }
 
 export function resolveProviderMarkLogoPath(input: {
@@ -274,7 +360,10 @@ export async function upsertPlatformProviderMark(input: {
 	const aliasesJson = JSON.stringify(
 		input.aliases === undefined
 			? (existing?.aliases ?? [])
-			: normalizeProviderMarkAliases(input.aliases),
+			: stripBuiltInProviderMarkAliases(
+					slug,
+					normalizeProviderMarkAliases(input.aliases),
+				),
 	)
 	if (existing) {
 		await input.db

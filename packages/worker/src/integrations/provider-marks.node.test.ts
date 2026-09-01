@@ -10,8 +10,10 @@ import {
 	buildProviderMarkLogoPath,
 	deletePlatformProviderMark,
 	getPlatformProviderMarkBySlug,
+	hostMatchesProviderMarkToken,
 	listPlatformProviderMarks,
 	normalizeProviderMarkAliases,
+	providerMarkAliasTokens,
 	providerMarkMatches,
 	resolveProviderMark,
 	resolveProviderMarkLogoPath,
@@ -92,6 +94,32 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 		true,
 	)
 	expect(providerMarkMatches({ mark: x, providerKey: 'twitter' })).toBe(true)
+	expect(
+		providerMarkMatches({
+			mark: { slug: 'github', aliases: [] },
+			host: 'api.github.com',
+		}),
+	).toBe(true)
+	expect(
+		providerMarkMatches({
+			mark: { slug: 'github', aliases: [] },
+			providerKey: 'github-platform',
+		}),
+	).toBe(true)
+	expect(hostMatchesProviderMarkToken('accounts.google.com', 'google')).toBe(
+		true,
+	)
+	expect(hostMatchesProviderMarkToken('github.com', 'git')).toBe(false)
+	expect(hostMatchesProviderMarkToken('example.com', 'x')).toBe(false)
+	expect(hostMatchesProviderMarkToken('login.example.app', 'app')).toBe(false)
+	expect(hostMatchesProviderMarkToken('example.ai', 'ai')).toBe(false)
+	expect(providerMarkAliasTokens({ slug: 'youtube', aliases: [] })).toEqual(
+		expect.arrayContaining([
+			'google-youtube-brand',
+			'google-youtube-plus',
+			'www.youtube.com',
+		]),
+	)
 
 	const marks = [
 		{
@@ -120,6 +148,100 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 		})?.slug,
 	).toBe('google')
 	expect(
+		resolveProviderMark({
+			marks: [
+				...marks,
+				{
+					slug: 'youtube',
+					label: 'YouTube',
+					aliases: [],
+					logoKey: 'platform-provider-marks/youtube/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			providerKey: 'google-youtube-brand',
+			host: 'www.youtube.com',
+		})?.slug,
+	).toBe('youtube')
+	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'nodedotjs',
+					label: 'Node.js',
+					aliases: [],
+					logoKey: 'platform-provider-marks/nodedotjs/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			providerKey: 'nodejs',
+			host: 'nodejs.org',
+		})?.slug,
+	).toBe('nodedotjs')
+	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'google',
+					label: 'Google',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					slug: 'google-calendar',
+					label: 'Google Calendar',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google-calendar/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					slug: 'gmail',
+					label: 'Gmail',
+					aliases: [],
+					logoKey: 'platform-provider-marks/gmail/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			host: 'calendar.google.com',
+		})?.slug,
+	).toBe('google-calendar')
+	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'google',
+					label: 'Google',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					slug: 'gmail',
+					label: 'Gmail',
+					aliases: [],
+					logoKey: 'platform-provider-marks/gmail/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			host: 'mail.google.com',
+		})?.slug,
+	).toBe('gmail')
+	expect(
 		resolveProviderMarkLogoPath({
 			marks,
 			providerKey: 'x',
@@ -142,10 +264,10 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 		db: env.APP_DB,
 		slug: 'Google',
 		label: 'Google',
-		aliases: ['accounts.google.com', 'googleapis.com'],
+		aliases: ['accounts.google.com', 'googleapis.com', 'my-google-work'],
 	})
 	expect(created.slug).toBe('google')
-	expect(created.aliases).toEqual(['accounts.google.com', 'googleapis.com'])
+	expect(created.aliases).toEqual(['my-google-work'])
 	expect(created.logoKey).toBeNull()
 
 	const withLogo = await setPlatformProviderMarkLogo({
@@ -183,14 +305,14 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 	await upsertPlatformProviderMark({
 		db: env.APP_DB,
 		slug: 'google',
-		aliases: ['accounts.google.com'],
+		aliases: ['accounts.google.com', 'workspace-google'],
 	})
 	const updated = await getPlatformProviderMarkBySlug({
 		db: env.APP_DB,
 		slug: 'google',
 	})
 	expect(updated?.label).toBe('Google')
-	expect(updated?.aliases).toEqual(['accounts.google.com'])
+	expect(updated?.aliases).toEqual(['workspace-google'])
 	expect(updated?.logoKey).toBe(withLogo.logoKey)
 
 	expect(

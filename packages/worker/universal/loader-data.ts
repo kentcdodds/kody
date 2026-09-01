@@ -387,6 +387,7 @@ export type AdminProviderMark = {
 	slug: string
 	label: string
 	aliases: Array<string>
+	builtInAliases: Array<string>
 	logoPath: string | null
 	createdAt: string
 	updatedAt: string
