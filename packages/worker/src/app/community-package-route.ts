@@ -99,9 +99,16 @@ export type CommunityFilesRouteTarget =
 			selectedPath: string
 			ref: string
 	  }
-	| { kind: 'redirect'; to: string }
+	| { kind: 'redirect'; to: string; shared: boolean }
 	| { kind: 'unauthorized' }
 	| { kind: 'invalid-path' }
+
+function filesPathRedirect(
+	to: string,
+	shared: boolean,
+): CommunityFilesRouteTarget {
+	return { kind: 'redirect', to, shared }
+}
 
 function selectedPathFromParams(relativePath: string | undefined) {
 	return normalizePackageFilesPath(relativePath ?? '')
@@ -174,13 +181,13 @@ async function resolveOwnerPackageFilesTarget(input: {
 		const ref = isPublicTreeDefaultRefAlias(requestedRef)
 			? fallbackDefaultBranchName
 			: requestedRef
-		return {
-			kind: 'redirect',
-			to: treeHrefFromPackageHome(page.to, {
+		return filesPathRedirect(
+			treeHrefFromPackageHome(page.to, {
 				ref,
 				relativePath: input.selectedPath,
 			}),
-		}
+			page.shared,
+		)
 	}
 	const listingSourceId = page.listing?.listing
 		? (
@@ -204,7 +211,9 @@ async function resolveOwnerPackageFilesTarget(input: {
 		ref,
 	})
 	if (canonicalPath !== input.pathname) {
-		return { kind: 'redirect', to: canonicalPath }
+		// Leftover `/files` and default-ref aliases for a listed pair may be
+		// cached. Unlisted owner hops must not leak the current tree URL.
+		return filesPathRedirect(canonicalPath, Boolean(page.listing?.listing))
 	}
 	return {
 		kind: 'package',
@@ -268,16 +277,16 @@ export async function resolveCommunityFilesRoute(input: {
 				listingId: target.listingId,
 				ref: input.url.searchParams.get('ref') ?? '',
 			})
-			return {
-				kind: 'redirect',
-				to: getCommunityPackageFilesHref({
+			return filesPathRedirect(
+				getCommunityPackageFilesHref({
 					listingId: target.listingId,
 					ownerUsername: target.username,
 					kodyId: target.kodyId,
 					relativePath: selectedPath,
 					ref,
 				}),
-			}
+				true,
+			)
 		}
 		if (!input.request) return null
 		return resolveOwnerPackageFilesTarget({
@@ -316,10 +325,7 @@ export async function resolveCommunityFilesRoute(input: {
 			ref,
 		})
 		if (target.kind === 'redirect' || canonicalPath !== input.url.pathname) {
-			return {
-				kind: 'redirect',
-				to: canonicalPath,
-			}
+			return filesPathRedirect(canonicalPath, true)
 		}
 		return {
 			kind: 'listing',

@@ -93,8 +93,22 @@ async function toLoaderData(input: {
 	}
 }
 
+async function readOptionalViewerUserId(input: { env: Env; request: Request }) {
+	try {
+		const user = await readAuthenticatedAppUser(input.request, input.env)
+		return user?.mcpUser.userId ?? null
+	} catch (error) {
+		console.error(
+			'Failed to resolve authenticated viewer for package files:',
+			error,
+		)
+		return null
+	}
+}
+
 export async function loadCommunityPackageFilesData(input: {
 	env: Env
+	request: Request
 	listingId: string
 	selectedPath: string
 	ref?: string
@@ -153,6 +167,10 @@ export async function loadCommunityPackageFilesData(input: {
 	})
 	if (!view) return null
 
+	const viewerUserId = await readOptionalViewerUserId({
+		env: input.env,
+		request: input.request,
+	})
 	return toLoaderData({
 		env: input.env,
 		title: listing.name,
@@ -167,6 +185,7 @@ export async function loadCommunityPackageFilesData(input: {
 		serverTiming: input.serverTiming,
 		username: ownerUsername ?? undefined,
 		kodyId: listing.kodyId,
+		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
 	})
 }
@@ -373,6 +392,7 @@ export async function loadAccessiblePackageFilesData(input: {
 	if (page.listing?.listing) {
 		const data = await loadCommunityPackageFilesData({
 			env: input.env,
+			request: input.request,
 			listingId: page.listing.listing.id,
 			selectedPath: input.selectedPath,
 			ref: input.ref,

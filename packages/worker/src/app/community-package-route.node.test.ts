@@ -68,6 +68,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(leftover).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+		shared: true,
 	})
 
 	const head = await resolveCommunityFilesRoute({
@@ -77,6 +78,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(head).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release',
+		shared: true,
 	})
 
 	const headFile = await resolveCommunityFilesRoute({
@@ -86,6 +88,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(headFile).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+		shared: true,
 	})
 
 	mockModule.resolveArtifactSourceHead.mockClear()
@@ -121,6 +124,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(fallback).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/main',
+		shared: true,
 	})
 })
 
@@ -161,4 +165,46 @@ test('unlisted owner tree uses the package page; strangers are unauthorized', as
 		),
 	})
 	expect(stranger).toEqual({ kind: 'unauthorized' })
+})
+
+test('unlisted leftover /files and rename hops stay owner-private', async () => {
+	mockModule.resolveCommunityPackageUrl.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue(null)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		listing: null,
+		ownerPackage: { sourceId: 'src-1', isPrivate: true },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+
+	const leftover = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/files'),
+		request: new Request('https://example.com/@kentcdodds/friction-log/files'),
+	})
+	expect(leftover).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log/tree/main',
+		shared: false,
+	})
+
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log',
+		shared: false,
+	})
+	const renamed = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/old-log/tree/main'),
+		request: new Request('https://example.com/@kentcdodds/old-log/tree/main'),
+	})
+	expect(renamed).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log/tree/main',
+		shared: false,
+	})
 })

@@ -88,6 +88,7 @@ async function renderListingFilesPage(input: {
 	const data = input.listingId
 		? await loadCommunityPackageFilesData({
 				env: input.env,
+				request: input.request,
 				listingId: input.listingId,
 				selectedPath: input.selectedPath,
 				ref: input.ref,
@@ -161,7 +162,11 @@ async function renderResolvedFilesPage(input: {
 		return renderFilesUnauthorized({ request: input.request, env: input.env })
 	}
 	if (target.kind === 'redirect') {
-		return redirectToCanonicalPath({ path: target.to, url: input.url })
+		return redirectToCanonicalPath({
+			path: target.to,
+			url: input.url,
+			cache: target.shared ? 'public' : 'private',
+		})
 	}
 	if (target.kind === 'package') {
 		return renderPackageFilesPage({
@@ -218,7 +223,11 @@ export function createCommunityDetailFilesHandler(env: Env) {
 				return renderFilesUnauthorized({ request, env })
 			}
 			if (target.kind === 'redirect') {
-				return redirectToCanonicalPath({ path: target.to, url })
+				return redirectToCanonicalPath({
+					path: target.to,
+					url,
+					cache: target.shared ? 'public' : 'private',
+				})
 			}
 			if (target.kind === 'package') {
 				return renderPackageFilesPage({
@@ -341,6 +350,7 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadCommunityPackageFilesData({
 				env,
+				request,
 				listingId: params.listingId,
 				selectedPath,
 				ref: treeRef,

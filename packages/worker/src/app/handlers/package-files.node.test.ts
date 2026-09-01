@@ -8,6 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	loadAccessiblePackageFilesData: vi.fn<() => Promise<unknown>>(),
 	loadPackagePage: vi.fn<() => Promise<unknown>>(),
 	getSavedPackageById: vi.fn<() => Promise<unknown>>(),
+	resolveCommunityFilesRoute: vi.fn<() => Promise<unknown>>(),
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(
 		async () => new Response('ok'),
 	),
@@ -26,6 +27,22 @@ vi.mock('#app/page-auth.ts', () => ({
 vi.mock('#app/package-page.ts', () => ({
 	loadPackagePage: (...args: Array<unknown>) =>
 		mockModule.loadPackagePage(...args),
+}))
+
+vi.mock('#app/community-package-route.ts', () => ({
+	resolveCommunityFilesRoute: (...args: Array<unknown>) =>
+		mockModule.resolveCommunityFilesRoute(...args),
+	resolveCanonicalFilesPath: async () => null,
+	treeHrefFromPackageHome: (
+		packageHref: string,
+		input: { ref?: string; relativePath?: string },
+	) => {
+		const ref = input.ref?.trim() || 'main'
+		const relativePath = input.relativePath?.trim()
+		return relativePath
+			? `${packageHref}/tree/${ref}/${relativePath}`
+			: `${packageHref}/tree/${ref}`
+	},
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -57,6 +74,7 @@ const {
 	createAccountPackageFilesApiHandler,
 	createAccountPackageFilesHandler,
 	createCommunityPackageFilesApiHandler,
+	createCommunityPackageFilesHandler,
 } = await import('./package-files.ts')
 
 const filesPayload = {
@@ -182,4 +200,36 @@ test('account files HTML and JSON redirect to the package tree', async () => {
 	expect(html.headers.get('location')).toBe(
 		'https://example.com/@owner/demo/tree/main',
 	)
+})
+
+test('unlisted leftover tree redirects stay private; listed leftovers stay public', async () => {
+	const handler = createCommunityPackageFilesHandler({} as Env)
+
+	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
+		kind: 'redirect',
+		to: '/@owner/friction-log/tree/main',
+		shared: false,
+	})
+	const privateHop = await handler.handler({
+		request: new Request('https://example.com/@owner/friction-log/files'),
+	} as never)
+	expect(privateHop.status).toBe(302)
+	expect(privateHop.headers.get('location')).toBe(
+		'https://example.com/@owner/friction-log/tree/main',
+	)
+	expect(privateHop.headers.get('cache-control')).toBe('private, no-store')
+
+	mockModule.resolveCommunityFilesRoute.mockResolvedValue({
+		kind: 'redirect',
+		to: '/@owner/sentry/tree/main',
+		shared: true,
+	})
+	const publicHop = await handler.handler({
+		request: new Request('https://example.com/@owner/sentry/files'),
+	} as never)
+	expect(publicHop.status).toBe(301)
+	expect(publicHop.headers.get('location')).toBe(
+		'https://example.com/@owner/sentry/tree/main',
+	)
+	expect(publicHop.headers.get('cache-control')).toBe('public, max-age=3600')
 })
