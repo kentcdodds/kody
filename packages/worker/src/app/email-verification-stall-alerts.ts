@@ -12,12 +12,26 @@ import { buildUserEmailVerificationStalledEvent } from '#worker/identity/email-v
 export { shouldRunEmailVerificationStallAlertCron }
 export { emailVerificationStallAfterMinutes, emailVerificationStallScanLimit }
 
+export const emailVerificationStallScanCursorKvKey =
+	'ops-alert:email-verification-stall:scan-cursor'
+
 /**
  * Hourly scan for signup/verify mail that Cloudflare accepted and then
  * never confirmed. Provider accept is not delivery; SimpleLogin-style
  * silent drops never emit `user.email_verification.failed`. This lane
  * fans `user.email_verification.stalled` once per accepted send.
+ *
+ * The scan walks the derived stalled set in pages of
+ * `emailVerificationStallScanLimit`. A KV watermark (accepted_at +
+ * stable_user_id) advances each hour so later sends are not starved
+ * behind the oldest unresolved rows. Idempotency still keys one ping
+ * per accepted send.
  */
+
+type StallScanCursor = {
+	acceptedAt: string
+	stableUserId: string
+}
 
 type EmailVerificationStallAlertEnv = {
 	APP_DB: D1Database
@@ -49,16 +63,17 @@ export async function checkEmailVerificationStallsAndNotify(input: {
 		input.stallAfterMinutes ?? emailVerificationStallAfterMinutes
 	const scanLimit = input.scanLimit ?? emailVerificationStallScanLimit
 	const cutoff = emailVerificationStallCutoffIso(now, stallAfterMinutes)
-	const rows = await input.env.APP_DB.prepare(
-		`SELECT username, email, stable_user_id, email_verification_delivery_at
-		FROM users
-		WHERE ${emailVerificationStallSqlConditions().join('\n			AND ')}
-		ORDER BY email_verification_delivery_at ASC
-		LIMIT ?`,
+	const cursor = await readStallScanCursor(input.env.BUNDLE_ARTIFACTS_KV)
+	const stalled = await listStalledVerificationPage({
+		db: input.env.APP_DB,
+		cutoff,
+		scanLimit,
+		cursor,
+	})
+	await writeStallScanCursor(
+		input.env.BUNDLE_ARTIFACTS_KV,
+		stalled.at(-1) ?? null,
 	)
-		.bind(cutoff, scanLimit)
-		.all<StalledVerificationRow>()
-	const stalled = rows.results ?? []
 	let notified = 0
 	let failed = 0
 	const observedAt = now.toISOString()
@@ -98,4 +113,96 @@ export async function checkEmailVerificationStallsAndNotify(input: {
 		}
 	}
 	return { scanned: stalled.length, notified, failed }
+}
+
+async function listStalledVerificationPage(input: {
+	db: D1Database
+	cutoff: string
+	scanLimit: number
+	cursor: StallScanCursor | null
+}) {
+	const afterCursor = await queryStalledVerificationRows({
+		...input,
+		cursor: input.cursor,
+	})
+	if (afterCursor.length > 0 || !input.cursor) return afterCursor
+	return await queryStalledVerificationRows({
+		...input,
+		cursor: null,
+	})
+}
+
+async function queryStalledVerificationRows(input: {
+	db: D1Database
+	cutoff: string
+	scanLimit: number
+	cursor: StallScanCursor | null
+}) {
+	const stallClause = emailVerificationStallSqlConditions().join('\n			AND ')
+	if (!input.cursor) {
+		const rows = await input.db
+			.prepare(
+				`SELECT username, email, stable_user_id, email_verification_delivery_at
+				FROM users
+				WHERE ${stallClause}
+				ORDER BY email_verification_delivery_at ASC, COALESCE(stable_user_id, '') ASC
+				LIMIT ?`,
+			)
+			.bind(input.cutoff, input.scanLimit)
+			.all<StalledVerificationRow>()
+		return rows.results ?? []
+	}
+	const rows = await input.db
+		.prepare(
+			`SELECT username, email, stable_user_id, email_verification_delivery_at
+			FROM users
+			WHERE ${stallClause}
+				AND (
+					email_verification_delivery_at > ?
+					OR (
+						email_verification_delivery_at = ?
+						AND COALESCE(stable_user_id, '') > ?
+					)
+				)
+			ORDER BY email_verification_delivery_at ASC, COALESCE(stable_user_id, '') ASC
+			LIMIT ?`,
+		)
+		.bind(
+			input.cutoff,
+			input.cursor.acceptedAt,
+			input.cursor.acceptedAt,
+			input.cursor.stableUserId,
+			input.scanLimit,
+		)
+		.all<StalledVerificationRow>()
+	return rows.results ?? []
+}
+
+async function readStallScanCursor(kv?: KVNamespace) {
+	if (!kv) return null
+	const raw = await kv.get(emailVerificationStallScanCursorKvKey)
+	if (!raw) return null
+	try {
+		const parsed = JSON.parse(raw) as Partial<StallScanCursor>
+		const acceptedAt = parsed.acceptedAt?.trim() ?? ''
+		const stableUserId = parsed.stableUserId?.trim() ?? ''
+		if (!acceptedAt) return null
+		return { acceptedAt, stableUserId }
+	} catch {
+		return null
+	}
+}
+
+async function writeStallScanCursor(
+	kv: KVNamespace | undefined,
+	row: StalledVerificationRow | null,
+) {
+	if (!kv || !row) return
+	await kv.put(
+		emailVerificationStallScanCursorKvKey,
+		JSON.stringify({
+			acceptedAt: row.email_verification_delivery_at,
+			stableUserId: row.stable_user_id?.trim() ?? '',
+		} satisfies StallScanCursor),
+	)
 }

@@ -153,3 +153,68 @@ test('hourly stall scan fans accepted sends older than the threshold and skips f
 		}),
 	})
 })
+
+function createMemoryKv() {
+	const store = new Map<string, string>()
+	return {
+		async get(key: string) {
+			return store.get(key) ?? null
+		},
+		async put(key: string, value: string) {
+			store.set(key, value)
+		},
+	} as unknown as KVNamespace
+}
+
+test('hourly stall scan advances a watermark so later accepted sends are not starved', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureUsersTestSchema({
+		db,
+		columns: ['email_verified_at', 'account_type'],
+	})
+	await seedUser({
+		db,
+		username: 'older',
+		email: 'older@example.com',
+		stableUserId: 'a'.repeat(64),
+		deliveryStatus: 'accepted',
+		deliveryAt: '2026-09-01T07:00:00.000Z',
+	})
+	await seedUser({
+		db,
+		username: 'newer',
+		email: 'newer@example.com',
+		stableUserId: 'n'.repeat(64),
+		deliveryStatus: 'accepted',
+		deliveryAt: '2026-09-01T08:00:00.000Z',
+	})
+	const env = {
+		APP_DB: db,
+		APP_BASE_URL: 'https://kody.codes',
+		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
+	}
+	const first = await checkEmailVerificationStallsAndNotify({
+		env,
+		now: new Date('2026-09-01T10:00:00.000Z'),
+		scanLimit: 1,
+	})
+	expect(first).toEqual({ scanned: 1, notified: 1, failed: 0 })
+	expect(
+		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent.mock.calls.at(
+			-1,
+		)?.[0].event.user.username,
+	).toBe('older')
+
+	const second = await checkEmailVerificationStallsAndNotify({
+		env,
+		now: new Date('2026-09-01T11:00:00.000Z'),
+		scanLimit: 1,
+	})
+	expect(second).toEqual({ scanned: 1, notified: 1, failed: 0 })
+	expect(
+		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent.mock.calls.at(
+			-1,
+		)?.[0].event.user.username,
+	).toBe('newer')
+})

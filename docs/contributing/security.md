@@ -370,8 +370,10 @@ A third hourly lane (`email_verification_stall_alert`, implemented by
 `packages/worker/src/app/email-verification-stall-alerts.ts`) fans
 `user.email_verification.stalled` when an unverified person account's latest
 signup/verify send is still `accepted` after 60 minutes with no Cloudflare
-lifecycle event. Terminal bounces still use `user.email_verification.failed`;
-this lane covers silent drops that never produce a bounce.
+lifecycle event. The scan pages 50 rows at a time and advances a
+`BUNDLE_ARTIFACTS_KV` watermark so later sends are not starved. Terminal bounces
+still use `user.email_verification.failed`; this lane covers silent drops that
+never produce a bounce.
 
 **Deliberately not recorded:** rejections that happen before a grant resolves —
 a missing, empty, or unparseable bearer token. Those are reachable by any

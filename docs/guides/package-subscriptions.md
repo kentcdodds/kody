@@ -1246,10 +1246,12 @@ accounts whose latest signup/verify send is still `accepted` after 60 minutes
 with no Cloudflare lifecycle event (`delivered`, `bounced`, `failed`,
 `rejected`, or `complained`). Each matching send fans
 `user.email_verification.stalled` to packages saved by users who hold the admin
-role at dispatch time. A later hourly scan of the same accepted timestamp does
-not emit again. A resend that stamps a new `accepted` time can emit again after
-another hour. A non-admin package may declare the topic, but it never receives
-the event. Role revocation stops delivery on the next scan.
+role at dispatch time. The scan walks that derived set in pages of 50 using a KV
+watermark so later sends are not starved behind the oldest unresolved rows. A
+later hourly scan of the same accepted timestamp does not emit again. A resend
+that stamps a new `accepted` time can emit again after another hour. A non-admin
+package may declare the topic, but it never receives the event. Role revocation
+stops delivery on the next scan.
 
 There is no Queue / DLQ for this topic. Dispatch is best-effort after the user
 row already carries `accepted`: a failed invoke is logged and does not fail the
