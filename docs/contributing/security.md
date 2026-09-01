@@ -169,19 +169,18 @@ in the Worker `fetch` handler:
   methods redirect (`302`) to the owner's package-app subdomain with a handoff
   token; other methods get a `307` to that subdomain. Unauthenticated visitors
   are sent to `/login` on the app origin first.
-- **Package-app apex** (`kody.run`, and dual-served `kodyapps.dev`): serves no
-  package code. `/` redirects to the app origin. Legacy path-based URLs
-  (`/@{username}/packages/*`) redirect (`302`/`307`) to the owning user's
-  subdomain. Everything else — including `/account/*`, `/login`, `/mcp`, and the
+- **Package-app apex** (`kody.run`): serves no package code. `/` redirects to
+  the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
+  (`302`/`307`) to the owning user's subdomain. Everything else — including
+  `/account/*`, `/login`, `/mcp`, and the
   `/@{username}/api/package-invocations/*` and `/webhooks/*` machine APIs — is
   `404`. Those APIs stay on the app origin on purpose: they are authenticated by
   their own bearer tokens or URL secrets, they are never called by package
   browser code, and hosting them on the package-app domain would only widen its
   surface. Retired `/@{username}/connectors/*` paths also 404.
-- **Per-user package-app subdomain** (`{username}.kody.run`, and dual-served
-  `{username}.kodyapps.dev`): serves only `/packages/{kodyId}/*` for that
-  hostname's username label. `/` redirects to the app origin; every other path
-  is `404`.
+- **Per-user package-app subdomain** (`{username}.kody.run`): serves only
+  `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
+  the app origin; every other path is `404`.
 
 **Handoff session and fixation defense.** The app origin mints a short-lived
 single-use handoff token; the owner's subdomain exchanges it for a host-scoped

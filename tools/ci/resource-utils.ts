@@ -1490,7 +1490,7 @@ function addPackageAppCustomDomainRoute(input: {
 		const zoneName = readPackageAppZoneName(hostname)
 		if (!zoneName) {
 			return fail(
-				`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_LEGACY_HOSTS" host "${hostname}" without a registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+				`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_LEGACY_HOSTS" host "${hostname}" without a registrable zone name. Use a hostname on a public suffix (for example apps.example.dev).`,
 			)
 		}
 	}

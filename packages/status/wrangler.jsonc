@@ -19,13 +19,6 @@
 			"pattern": "status.kody.codes",
 			"custom_domain": true,
 		},
-		{
-			// Dual-served host: `/health` is sticky here so deploy
-			// healthchecks can probe when status.kody.codes is 1016.
-			// Other GET/HEAD from this host 308 to status.kody.codes.
-			"pattern": "status.heykody.dev",
-			"custom_domain": true,
-		},
 	],
 	"services": [
 		{

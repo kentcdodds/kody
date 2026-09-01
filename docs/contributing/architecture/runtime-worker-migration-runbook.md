@@ -16,7 +16,6 @@ How the package runtime lane lives on the `kody-runtime` Worker
 | Concern                                                             | Owner                                                                       |
 | ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Package-app origin (`PACKAGE_APP_BASE_URL`, `kody.run`) zone routes | `kody-runtime`                                                              |
-| Dual-served legacy package-app zone (`kodyapps.dev`)                | `kody-runtime` (same zone-route shape as `kody.run`)                        |
 | Inline package-app serving (`/apps/...` on the app origin)          | `kody-runtime` (forwarded by main via the `RUNTIME_WORKER` service binding) |
 | Package invocation API                                              | `kody-runtime` (forwarded by main)                                          |
 | `DynamicCallableWorkflow` (Cloudflare Workflow)                     | `kody-runtime` (main binds it cross-script)                                 |
@@ -24,10 +23,9 @@ How the package runtime lane lives on the `kody-runtime` Worker
 | Remaining platform Durable Objects (`UserMeter`, `MCP`, …)          | `kody-platform` (runtime binds them cross-script)                           |
 | `APP_DB` / `AUDIT_DB` / KV / R2 / queues / Vectorize / AI           | Shared resources; each worker binds directly (no RPC proxying)              |
 
-Production serves `kody.run` (and dual-served `kodyapps.dev`) via **zone
-routes** on the runtime Worker (apex + `*.kody.run/*` / `*.kodyapps.dev/*`),
-never a Workers custom domain in those zones. Leave those routes on
-`kody-runtime`. Do not detach them from the main worker "so the first runtime
+Production serves `kody.run` via **zone routes** on the runtime Worker (apex +
+`*.kody.run/*`), never a Workers custom domain in that zone. Leave those routes
+on `kody-runtime`. Do not detach them from the main worker "so the first runtime
 deploy can publish" — that first publish already happened.
 
 ## Invariants
