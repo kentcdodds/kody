@@ -1,0 +1,29 @@
+# Secrets
+
+User, session, and package secret rows. Host approval and package grants.
+
+## How to get there
+
+`/account/secrets` → new `/account/secrets/new` → detail under
+`/account/secrets/{user|session|package}/…`. Approve lane:
+`/account/secrets/approve`.
+
+## Drive it
+
+```bash
+node tools/control-kody.ts preview -- \
+  --request 'GET /account/secrets.json' \
+  --check /account/secrets
+```
+
+GET the page body after a claimed fix. `#1918` shipped with “try
+https://kody.codes/account/secrets” and no body — that is not proof.
+
+## APIs
+
+- `GET|POST /account/secrets.json`
+
+## Gotchas
+
+- Never paste secret values into chat, PRs, or execute params.
+- Preview seed starts with zero secrets.
