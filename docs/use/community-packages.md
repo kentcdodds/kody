@@ -47,7 +47,7 @@ example `/@kentcdodds/devin`. `/community/:listingId` redirects to that
 canonical URL. Browse files at `/@username/:name/tree/:ref/...` where `:ref` is
 the repo's **default branch name** (usually `main`, whatever git reports — not
 hardcoded `master`), a SHA, or another branch. `HEAD` and leftover `/files` URLs
-301 to `/tree/{defaultBranch}`.
+301 to `/tree/{defaultBranch}` (`main` when lookup misses).
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial onboarding placement only — not a safety badge. There
