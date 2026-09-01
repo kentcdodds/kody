@@ -35,6 +35,7 @@ const mockModule = vi.hoisted(() => ({
 		warnings: [],
 	})),
 	searchCommunityListings: vi.fn(async () => []),
+	deriveWaitingItemsForStableUser: vi.fn(async () => []),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
@@ -108,6 +109,11 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 vi.mock('#worker/community/service.ts', () => ({
 	searchCommunityListings: (...args: Array<unknown>) =>
 		mockModule.searchCommunityListings(...args),
+}))
+
+vi.mock('#mcp/waiting/derive-waiting.ts', () => ({
+	deriveWaitingItemsForStableUser: (...args: Array<unknown>) =>
+		mockModule.deriveWaitingItemsForStableUser(...args),
 }))
 
 const {
@@ -362,6 +368,72 @@ test('search tool returns compact query markdown while preserving structured aux
 		'Registry unavailable',
 	)
 })
+
+test('ranked search prepends ## Waiting for block items and skips domain browse', async () => {
+	vi.clearAllMocks()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.deriveWaitingItemsForStableUser.mockResolvedValue([
+		{
+			id: 'integration-auth:google',
+			kind: 'integration-auth',
+			title: 'Google · kent@gmail.com stopped working',
+			why: 'The provider rejected the saved sign-in.',
+			who: 'you',
+			doLabel: 'Reconnect',
+			href: '/connect/oauth?provider=google',
+			severity: 'block',
+		},
+		{
+			id: 'onboarding:connect-agent',
+			kind: 'onboarding',
+			title: 'Connect an agent',
+			why: 'Setup is still unfinished.',
+			who: 'you',
+			doLabel: 'Continue setup',
+			href: '/onboarding',
+			severity: 'setup',
+		},
+	])
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+
+	mockPerformanceNow.mockReturnValueOnce(100).mockReturnValueOnce(112)
+	const ranked = await handler({
+		query: 'google mail',
+		conversationId: 'conv-waiting-ranked',
+	})
+	const rankedText = ranked.content.map((item) => item.text).join('\n')
+	expect(rankedText).toContain('## Waiting')
+	expect(rankedText).toContain('stopped working')
+	expect(rankedText).toContain('Reconnect')
+	expect(rankedText).not.toContain('Connect an agent')
+	const rankedResult = ranked.structuredContent.result as {
+		waiting?: { count: number; items: Array<{ id: string }> }
+	}
+	expect(rankedResult.waiting).toMatchObject({
+		count: 1,
+		items: [{ id: 'integration-auth:google' }],
+	})
+	expect(mockModule.deriveWaitingItemsForStableUser).toHaveBeenCalled()
+
+	mockModule.deriveWaitingItemsForStableUser.mockClear()
+	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
+	const domainBrowse = await handler({
+		domain: 'account',
+		conversationId: 'conv-waiting-domain',
+	})
+	const domainText = domainBrowse.content.map((item) => item.text).join('\n')
+	expect(domainText).not.toContain('## Waiting')
+	expect(mockModule.deriveWaitingItemsForStableUser).not.toHaveBeenCalled()
+	mockModule.deriveWaitingItemsForStableUser.mockResolvedValue([])
+})
+
 test('search tool excludes hidden packages by default and includes them with includeHiddenPackages', async () => {
 	vi.clearAllMocks()
 	consoleWarn.mockImplementation(() => {})

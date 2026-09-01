@@ -1524,6 +1524,21 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		},
 	})
 
+	const integrationRefreshError = new Error(
+		'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com. (integrationTokenRefresh caller state)',
+	)
+	expect(getExecutionErrorDetails(integrationRefreshError)).toMatchObject({
+		kind: 'integration_auth_failed',
+		integrationName: 'google',
+		reconnectHref: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+		suggestedAction: {
+			type: 'reconnect_integration',
+		},
+	})
+	expect(getExecutionErrorDetails(integrationRefreshError)?.nextStep).toContain(
+		'/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+	)
+
 	const scopeUnavailableError = new Error(
 		createSecretScopeUnavailableMessage([
 			{

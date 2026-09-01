@@ -63,6 +63,18 @@ export type SearchResultStructuredContent = {
 		trimmedMatchCount?: number
 		responseTrimmed?: boolean
 	}
+	waiting?: {
+		count: number
+		items: Array<{
+			id: string
+			kind: string
+			title: string
+			why: string
+			doLabel: string
+			href: string
+			severity: string
+		}>
+	}
 	phaseTimings?: {
 		queryUnderstandingMs: number
 		candidateGenerationMs: number
@@ -484,6 +496,7 @@ export type SearchMatch =
 			accessTokenSecretName: string
 			refreshTokenSecretName: string | null
 			authorization?: IntegrationConfig['authorization'] | null
+			lastAuthFailure?: IntegrationConfig['lastAuthFailure']
 	  }
 	| {
 			type: 'secret'

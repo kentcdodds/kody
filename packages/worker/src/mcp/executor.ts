@@ -43,6 +43,7 @@ import {
 	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
+import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/token-refresh.ts'
 import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
@@ -1214,6 +1215,16 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'integration_auth_failed'
+			message: string
+			nextStep: string
+			integrationName: string | null
+			reconnectHref: string | null
+			suggestedAction: {
+				type: 'reconnect_integration'
+			}
+	  }
+	| {
 			kind: 'auth_required'
 			message: string
 			nextStep: string
@@ -1295,6 +1306,16 @@ export type ExecutionErrorDetails =
 				type: 'fix_code'
 			}
 	  }
+
+function parseIntegrationTokenRefreshCallerMessage(message: string) {
+	const nameMatch = /[Ii]ntegration "([^"]+)"/.exec(message)
+	const reconnectMatch = /Reconnect at (\S+)/.exec(message)
+	const rawHref = reconnectMatch?.[1]?.replace(/[.)]+$/, '') ?? null
+	return {
+		integrationName: nameMatch?.[1] ?? null,
+		reconnectHref: rawHref,
+	}
+}
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -1452,6 +1473,24 @@ export function getExecutionErrorDetails(
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'scope',
+			},
+		}
+	}
+
+	if (isIntegrationTokenRefreshCallerMessage(message)) {
+		const parsed = parseIntegrationTokenRefreshCallerMessage(message)
+		const reconnectHref = parsed.reconnectHref
+		const name = parsed.integrationName
+		return {
+			kind: 'integration_auth_failed',
+			message,
+			nextStep: reconnectHref
+				? `Send the user to ${reconnectHref} so they can reconnect ${name ?? 'this integration'}, then retry.`
+				: 'Ask the user to reconnect this integration from /account/waiting or /account/integrations, then retry.',
+			integrationName: name,
+			reconnectHref,
+			suggestedAction: {
+				type: 'reconnect_integration',
 			},
 		}
 	}
