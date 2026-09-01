@@ -115,6 +115,23 @@ test('community files API resolves the package page and rejects traversal', asyn
 	} as never)
 	expect(success.status).toBe(200)
 	expect(await success.json()).toEqual(filesPayload)
+	// Anonymous trees are shared; a session cookie makes the same URL private.
+	expect(success.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(success.headers.get('Vary')).toBe('Cookie')
+	const signedIn = await handler.handler({
+		request: new Request(
+			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
+			{ headers: { Cookie: 'kody_session=abc' } },
+		),
+		params: { username: 'owner', kodyId: 'demo' },
+		url: new URL(
+			'https://example.com/profiles/owner/packages/demo/files.json?path=src/index.ts',
+		),
+	} as never)
+	expect(signedIn.status).toBe(200)
+	expect(signedIn.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.loadAccessiblePackageFilesData).toHaveBeenCalledWith({
 		env: {},
 		request: expect.any(Request),

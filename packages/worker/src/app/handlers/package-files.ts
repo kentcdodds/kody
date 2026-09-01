@@ -18,6 +18,7 @@ import {
 	readPackageFilesSelectedPath,
 } from '#app/package-files-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
@@ -25,6 +26,10 @@ import {
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
 import { type routes } from '#universal/routes.ts'
+import {
+	collectServerTiming,
+	recordServerTiming,
+} from '#worker/request-context.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 function redirectToCanonicalPath(input: {
@@ -150,11 +155,16 @@ async function renderResolvedFilesPage(input: {
 	env: Env
 	url: URL
 }) {
-	const target = await resolveCommunityFilesRoute({
-		env: input.env,
-		url: input.url,
-		request: input.request,
-	})
+	const target = await recordServerTiming(
+		'files-route',
+		() =>
+			resolveCommunityFilesRoute({
+				env: input.env,
+				url: input.url,
+				request: input.request,
+			}),
+		input.request,
+	)
 	if (target?.kind === 'invalid-path' || !target) {
 		return renderFilesNotFound({ request: input.request, env: input.env })
 	}
@@ -211,11 +221,11 @@ export function createCommunityDetailFilesHandler(env: Env) {
 		middleware: [],
 		async handler({ request }) {
 			const url = new URL(request.url)
-			const target = await resolveCommunityFilesRoute({
-				env,
-				url,
+			const target = await recordServerTiming(
+				'files-route',
+				() => resolveCommunityFilesRoute({ env, url, request }),
 				request,
-			})
+			)
 			if (target?.kind === 'invalid-path' || !target) {
 				return renderFilesNotFound({ request, env })
 			}
@@ -330,7 +340,15 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			return jsonResponse(data, { serverTiming })
+			// The file tree is viewer-independent; a session cookie alone makes
+			// the response private so an owner's tree never lands in a shared cache.
+			return jsonResponse(data, {
+				headers: anonymousPersonalizedJsonCacheHeaders({
+					personalized: false,
+					request,
+				}),
+				serverTiming: collectServerTiming(request, serverTiming),
+			})
 		},
 	} satisfies Action<typeof routes.communityPackageFilesApi>
 }
@@ -362,7 +380,15 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			return jsonResponse(data, { serverTiming })
+			// The file tree is viewer-independent; a session cookie alone makes
+			// the response private so an owner's tree never lands in a shared cache.
+			return jsonResponse(data, {
+				headers: anonymousPersonalizedJsonCacheHeaders({
+					personalized: false,
+					request,
+				}),
+				serverTiming: collectServerTiming(request, serverTiming),
+			})
 		},
 	} satisfies Action<typeof routes.communityDetailFilesApi>
 }

@@ -5,6 +5,9 @@
  * anonymous markup.
  */
 
+import { createMatcher } from 'remix/route-pattern/match'
+import { routes } from '#universal/routes.ts'
+
 export const sessionCookieName = 'kody_session'
 
 export const anonymousHtmlCacheControl =
@@ -20,11 +23,28 @@ const cacheableAnonymousExactPaths = new Set([
 	'/guides',
 ])
 
+// Public package surfaces: home, tree, and the listing-uuid shapes they
+// replaced. Anonymous markup for these is viewer-independent, and anonymous
+// traffic is most of what they see.
+const cacheableAnonymousRouteMatchers = [
+	routes.communityPackage,
+	routes.communityPackageTree,
+	routes.communityDetail,
+	routes.communityDetailFiles,
+].map((route) => createMatcher(route.pattern))
+
+const matcherOrigin = 'https://kody.local'
+
 export function isCacheableAnonymousPath(pathname: string) {
 	if (cacheableAnonymousExactPaths.has(pathname)) return true
-	if (!pathname.startsWith('/guides/')) return false
-	const rest = pathname.slice('/guides/'.length)
-	return rest.length > 0 && !rest.includes('/')
+	if (pathname.startsWith('/guides/')) {
+		const rest = pathname.slice('/guides/'.length)
+		return rest.length > 0 && !rest.includes('/')
+	}
+	const url = new URL(pathname, matcherOrigin)
+	return cacheableAnonymousRouteMatchers.some(
+		(matcher) => matcher.match(url) !== null,
+	)
 }
 
 export function requestHasSessionCookie(request: Request): boolean {
@@ -37,8 +57,13 @@ export function resolveAppPageCacheControl(input: {
 	session: unknown | null
 	request: Request
 	responseSetsCookie: boolean
+	/** Only successful documents are shared; a 404 or 401 must not outlive its cause. */
+	status?: number
 }): { cacheControl: string; vary?: string } {
 	if (input.session !== null) {
+		return { cacheControl: 'no-store' }
+	}
+	if ((input.status ?? 200) !== 200) {
 		return { cacheControl: 'no-store' }
 	}
 	if (input.responseSetsCookie) {

@@ -187,6 +187,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			session,
 			request,
 			responseSetsCookie,
+			status: status ?? 200,
 		})
 		const headers = new Headers({
 			'Cache-Control': pageCache.cacheControl,
