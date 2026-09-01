@@ -265,6 +265,20 @@ price ids remain in Stripe and match so existing subscribers keep their plan.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 
+## MCP OIDC ID token signing
+
+Required Worker configuration for MCP OAuth OpenID Connect ID tokens (RS256):
+
+- `OIDC_SIGNING_KEY_ID` — JWT header `kid` (non-empty string). Production should
+  use a deployment-specific value (for example `kody-oidc-2026-09`).
+- `OIDC_SIGNING_PRIVATE_KEY_PEM` — PKCS#8 RSA private key PEM. Generate with
+  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out oidc.pem`.
+  Local dev and tests use the committed example key in
+  `packages/worker/.env.example`. **Production must use a dedicated key** synced
+  as a Worker secret (not a Wrangler `var`).
+
+Public JWKS is derived from the private key at `/.well-known/jwks.json`.
+
 ## Saved-secret encryption (`SECRET_STORE_KEY`)
 
 Required Worker secret used to derive the AES-GCM key for encrypting saved

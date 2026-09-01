@@ -369,6 +369,13 @@ automatically:
 
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `SECRET_STORE_KEY` (required; generate with `openssl rand -base64 48`)
+- `OIDC_SIGNING_KEY_ID` (non-empty JWT `kid` for MCP OIDC ID tokens; production
+  should use a deployment-specific value such as `kody-oidc-2026-09`)
+- `OIDC_SIGNING_PRIVATE_KEY_PEM` (PKCS#8 RSA private key PEM for RS256 ID
+  tokens; generate with
+  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out oidc.pem`.
+  Local dev and tests use the committed example key in `.env.example`;
+  production must set a dedicated secret via `sync-worker-secrets`)
 - `APP_BASE_URL` (optional; used as the fallback public origin when no request
   URL is available — e.g. workflows and email. Example `https://kody.codes`.
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth

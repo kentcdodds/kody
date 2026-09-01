@@ -9,6 +9,10 @@ export const oauthPaths = {
 	token: '/oauth/token',
 	register: '/oauth/register',
 	callback: '/oauth/callback',
+	userinfo: '/oauth/userinfo',
+	logout: '/oauth/logout',
 	apiPrefix: '/api/',
 	discovery: '/.well-known/oauth-authorization-server',
+	openidConfiguration: '/.well-known/openid-configuration',
+	jwks: '/.well-known/jwks.json',
 } as const

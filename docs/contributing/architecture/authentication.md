@@ -639,14 +639,20 @@ routed from `packages/worker/src/index.ts`.
   matches the fetch URL, and `redirect_uris` lists the fixed loopback
   `http://127.0.0.1:43742/callback` so the CLI can use SEP-991 instead of
   deprecated DCR.
-- Supported scopes: `profile`, `email`
-- Kody's MCP authorization server is **OAuth 2.1 + CIMD + RFC 9728**, not an
-  OpenID Connect OpenID Provider. It does not advertise
-  `/.well-known/openid-configuration`, does not issue ID tokens, does not offer
-  the `openid` scope, and does not expose a standards-shaped `/userinfo`
-  endpoint. Grant props (including verified email) ride on the access-token
-  props used by `/mcp` and the OAuth-protected `/api/me` JSON helper. OpenAI's
-  optional enterprise domain-restriction warning follows from that gap.
+- Supported scopes: `openid`, `profile`, `email` (additive; `openid` enables ID
+  tokens and the UserInfo endpoint)
+- Kody's MCP authorization server is an **OAuth 2.1 + OpenID Connect
+  Authorization Code** provider with CIMD and RFC 9728 resource metadata. Issuer
+  is the app origin (`getAppBaseUrl`). `sub` is the account `stable_user_id`. ID
+  tokens are RS256 JWTs signed with `OIDC_SIGNING_PRIVATE_KEY_PEM` (`kid` =
+  `OIDC_SIGNING_KEY_ID`). Discovery: `/.well-known/openid-configuration`; JWKS:
+  `/.well-known/jwks.json`; UserInfo: `/oauth/userinfo` (Bearer access token;
+  fail-closed when email is unverified). RP-Initiated Logout: `/oauth/logout`.
+  Token responses from `/oauth/token` gain an `id_token` when the granted scope
+  includes `openid` (authorization_code and refresh_token grants; refresh omits
+  `nonce`). Implicit and Hybrid response types are not advertised or accepted.
+  Kody is not OpenID Certified. `/api/me` remains the OAuth-protected JSON
+  helper for grant props; it is not the OIDC UserInfo endpoint.
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login returns to the original OAuth request. Password signup lands

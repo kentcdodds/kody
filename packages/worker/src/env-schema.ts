@@ -323,6 +323,16 @@ export const EnvSchema = object({
 	STRIPE_STANDARD_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
+	// OIDC ID token signing (RS256). Production must use a dedicated RSA key pair;
+	// local dev and tests use the committed example/test key in `.env.example`.
+	OIDC_SIGNING_PRIVATE_KEY_PEM: string().refine(
+		(value) => value.includes('BEGIN PRIVATE KEY'),
+		'OIDC_SIGNING_PRIVATE_KEY_PEM must be a PKCS#8 PEM private key.',
+	),
+	OIDC_SIGNING_KEY_ID: string().refine(
+		(value) => value.trim().length > 0,
+		'OIDC_SIGNING_KEY_ID must be a non-empty key identifier (JWT kid).',
+	),
 	// Disaster-recovery exporter → DR-account R2 bucket (S3 API). Disabled
 	// unless DR_EXPORT_ENABLED is the literal string "true" and credentials
 	// are present. Secrets are set out-of-band via the Cloudflare API.

@@ -1,0 +1,188 @@
+import { signJwt } from '#worker/mcp/capabilities/secrets/jwt-signing.ts'
+
+type RsaPublicJwk = {
+	kty: 'RSA'
+	n: string
+	e: string
+}
+
+let cachedPrivateKey: CryptoKey | null = null
+let cachedPrivateKeyPem: string | null = null
+let cachedPublicJwk: (RsaPublicJwk & { kid: string }) | null = null
+let cachedPublicJwkKid: string | null = null
+
+function pemToArrayBuffer(pem: string) {
+	const base64 = pem
+		.replace(/-----BEGIN PRIVATE KEY-----/g, '')
+		.replace(/-----END PRIVATE KEY-----/g, '')
+		.replace(/\s/g, '')
+	if (!base64) {
+		throw new Error('OIDC signing private key PEM is empty.')
+	}
+	const binary = atob(base64)
+	const bytes = new Uint8Array(binary.length)
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index)
+	}
+	return bytes.buffer
+}
+
+async function importOidcSigningPrivateKey(privateKeyPem: string) {
+	if (cachedPrivateKey && cachedPrivateKeyPem === privateKeyPem) {
+		return cachedPrivateKey
+	}
+	try {
+		const key = await crypto.subtle.importKey(
+			'pkcs8',
+			pemToArrayBuffer(privateKeyPem),
+			{ name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+			true,
+			['sign'],
+		)
+		cachedPrivateKey = key
+		cachedPrivateKeyPem = privateKeyPem
+		cachedPublicJwk = null
+		cachedPublicJwkKid = null
+		return key
+	} catch {
+		throw new Error(
+			'OIDC_SIGNING_PRIVATE_KEY_PEM must contain a valid PKCS#8 RSA private key.',
+		)
+	}
+}
+
+export function getOidcSigningKeyId(env: Env) {
+	const kid = env.OIDC_SIGNING_KEY_ID?.trim()
+	if (!kid) {
+		throw new Error('Missing OIDC_SIGNING_KEY_ID for OIDC ID token signing.')
+	}
+	return kid
+}
+
+export function getOidcSigningPrivateKeyPem(env: Env) {
+	const pem = env.OIDC_SIGNING_PRIVATE_KEY_PEM?.trim()
+	if (!pem) {
+		throw new Error(
+			'Missing OIDC_SIGNING_PRIVATE_KEY_PEM for OIDC ID token signing.',
+		)
+	}
+	return pem
+}
+
+export async function getOidcSigningPublicJwk(env: Env) {
+	const kid = getOidcSigningKeyId(env)
+	if (cachedPublicJwk && cachedPublicJwkKid === kid) {
+		return cachedPublicJwk
+	}
+	const privateKeyPem = getOidcSigningPrivateKeyPem(env)
+	const privateKey = await importOidcSigningPrivateKey(privateKeyPem)
+	const exported = (await crypto.subtle.exportKey(
+		'jwk',
+		privateKey,
+	)) as JsonWebKey
+	if (exported.kty !== 'RSA' || !exported.n || !exported.e) {
+		throw new Error('OIDC signing key must be an RSA key.')
+	}
+	cachedPublicJwk = {
+		kty: 'RSA',
+		n: exported.n,
+		e: exported.e,
+		kid,
+	}
+	cachedPublicJwkKid = kid
+	return cachedPublicJwk
+}
+
+export async function getOidcJwksDocument(env: Env) {
+	const publicJwk = await getOidcSigningPublicJwk(env)
+	return {
+		keys: [
+			{
+				...publicJwk,
+				alg: 'RS256',
+				use: 'sig',
+			},
+		],
+	}
+}
+
+export async function signOidcJwt(
+	env: Env,
+	claims: Record<string, unknown>,
+	header: Record<string, unknown> = {},
+) {
+	const privateKeyPem = getOidcSigningPrivateKeyPem(env)
+	const kid = getOidcSigningKeyId(env)
+	return signJwt({
+		algorithm: 'RS256',
+		privateKeyPem,
+		header: { kid, ...header },
+		claims,
+	})
+}
+
+export async function verifyOidcJwtSignature(
+	env: Env,
+	jwt: string,
+): Promise<Record<string, unknown> | null> {
+	const segments = jwt.split('.')
+	if (segments.length !== 3) return null
+	const [encodedHeader, encodedPayload, encodedSignature] = segments
+	if (!encodedHeader || !encodedPayload || !encodedSignature) return null
+
+	let header: Record<string, unknown>
+	let payload: Record<string, unknown>
+	try {
+		header = JSON.parse(
+			new TextDecoder().decode(base64UrlToBytes(encodedHeader)),
+		) as Record<string, unknown>
+		payload = JSON.parse(
+			new TextDecoder().decode(base64UrlToBytes(encodedPayload)),
+		) as Record<string, unknown>
+	} catch {
+		return null
+	}
+	if (header.alg !== 'RS256') return null
+
+	const publicJwk = await getOidcSigningPublicJwk(env)
+	const key = await crypto.subtle.importKey(
+		'jwk',
+		{
+			kty: 'RSA',
+			n: publicJwk.n,
+			e: publicJwk.e,
+			alg: 'RS256',
+		},
+		{ name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+		false,
+		['verify'],
+	)
+	const signingInput = `${encodedHeader}.${encodedPayload}`
+	const signature = base64UrlToBytes(encodedSignature)
+	const valid = await crypto.subtle.verify(
+		{ name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+		key,
+		signature,
+		new TextEncoder().encode(signingInput),
+	)
+	return valid ? payload : null
+}
+
+function base64UrlToBytes(value: string) {
+	const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+	const padding = (4 - (padded.length % 4)) % 4
+	const base64 = padded + '='.repeat(padding)
+	const binary = atob(base64)
+	const bytes = new Uint8Array(binary.length)
+	for (let index = 0; index < binary.length; index += 1) {
+		bytes[index] = binary.charCodeAt(index)
+	}
+	return bytes
+}
+
+export function resetOidcSigningKeyCacheForTests() {
+	cachedPrivateKey = null
+	cachedPrivateKeyPem = null
+	cachedPublicJwk = null
+	cachedPublicJwkKid = null
+}

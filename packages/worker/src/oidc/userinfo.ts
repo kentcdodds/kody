@@ -1,0 +1,88 @@
+import  { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
+import { jsonResponse } from '#worker/json-response.ts'
+import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
+import  { type OidcGrantProps } from '#worker/oidc/id-token.ts'
+
+type OAuthEnv = Env & {
+	OAUTH_PROVIDER: OAuthHelpers
+}
+
+function getOAuthHelpers(env: Env) {
+	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
+	if (!helpers) {
+		throw new Error('OAuth provider helpers are not available.')
+	}
+	return helpers
+}
+
+function readBearerToken(request: Request) {
+	const authorization = request.headers.get('Authorization')?.trim()
+	if (!authorization?.toLowerCase().startsWith('bearer ')) return null
+	const token = authorization.slice('bearer '.length).trim()
+	return token || null
+}
+
+export async function handleOidcUserinfoRequest(request: Request, env: Env) {
+	if (request.method !== 'GET' && request.method !== 'HEAD') {
+		return new Response('Method not allowed', { status: 405 })
+	}
+
+	const token = readBearerToken(request)
+	if (!token) {
+		return jsonResponse(
+			{
+				error: 'invalid_token',
+				error_description: 'Missing or invalid bearer token.',
+			},
+			{ status: 401 },
+		)
+	}
+
+	const helpers = getOAuthHelpers(env)
+	const tokenSummary = await helpers.unwrapToken<OidcGrantProps>(token)
+	if (!tokenSummary) {
+		return jsonResponse(
+			{
+				error: 'invalid_token',
+				error_description: 'Access token is invalid or expired.',
+			},
+			{ status: 401 },
+		)
+	}
+
+	const props = tokenSummary.grant.props
+	const emailVerified = await isAccountEmailVerified({
+		db: env.APP_DB,
+		email: props.email,
+		stableUserId: props.userId,
+	})
+	if (!emailVerified) {
+		return jsonResponse(
+			{
+				error: 'invalid_token',
+				error_description: 'Account email is not verified.',
+			},
+			{ status: 401 },
+		)
+	}
+
+	const claims: Record<string, unknown> = {
+		sub: props.userId,
+	}
+	if (tokenSummary.scope.includes('email')) {
+		claims.email = props.email
+		claims.email_verified = true
+	}
+	if (tokenSummary.scope.includes('profile')) {
+		claims.preferred_username = props.username
+	}
+
+	const headers = {
+		'Cache-Control': 'no-store',
+		'Content-Type': 'application/json; charset=utf-8',
+	}
+	if (request.method === 'HEAD') {
+		return new Response(null, { status: 200, headers })
+	}
+	return jsonResponse(claims, { headers })
+}

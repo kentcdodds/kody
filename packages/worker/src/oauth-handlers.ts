@@ -12,6 +12,7 @@ import {
 	createAuthCookie,
 	isSecureRequest,
 	readAuthSessionResult,
+	readParsedAuthSession,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
@@ -35,10 +36,15 @@ import {
 	markUserMcpOauthClientRevokedByClientId,
 	userOwnsMcpOauthClient,
 } from '#app/account-mcp-oauth-clients.ts'
+import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+import {
+	evaluateOidcAuthorizeGate,
+	parseOidcAuthorizeParams,
+} from '#worker/oidc/authorize-oidc.ts'
 
 export { oauthPaths }
 
-export const oauthScopes: Array<string> = ['profile', 'email']
+export const oauthScopes = mcpOauthScopes
 const invalidOAuthClientRegistrationMessage =
 	'Invalid OAuth client registration.'
 export const oauthEmailVerificationRequiredMessage =
@@ -49,6 +55,8 @@ type OAuthProps = {
 	email: string
 	username: string
 	displayName: string
+	authTime: number
+	nonce?: string
 }
 
 type OAuthEnv = Env & {
@@ -621,6 +629,39 @@ async function resolveSessionEmail(request: Request, env: Env) {
 	}
 }
 
+async function resolveAuthorizeSession(request: Request, env: Env) {
+	try {
+		const appEnv = getEnv(env)
+		setAuthSessionSecret(appEnv.COOKIE_SECRET)
+		const parsed = await readParsedAuthSession(request)
+		if (!parsed) {
+			return {
+				session: null,
+				email: null,
+				stableUserId: null,
+				issuedAt: undefined,
+				setCookie: null,
+			}
+		}
+		const email = parsed.session.email.trim().toLowerCase()
+		return {
+			session: parsed.session,
+			email,
+			stableUserId: parsed.session.stableUserId,
+			issuedAt: parsed.issuedAt,
+			setCookie: parsed.setCookie,
+		}
+	} catch {
+		return {
+			session: null,
+			email: null,
+			stableUserId: null,
+			issuedAt: undefined,
+			setCookie: null,
+		}
+	}
+}
+
 export type OAuthAuthorizeDataResult = {
 	data: OAuthAuthorizeLoaderData
 	setCookie: string | null
@@ -630,6 +671,7 @@ export async function loadOAuthAuthorizeData(
 	request: Request,
 	env: Env,
 ): Promise<OAuthAuthorizeDataResult> {
+	const oidcParams = parseOidcAuthorizeParams(request)
 	const helpers = getOAuthHelpers(env)
 	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
@@ -650,6 +692,27 @@ export async function loadOAuthAuthorizeData(
 		}
 	}
 
+	const oidcGate = await evaluateOidcAuthorizeGate({
+		params: oidcParams,
+		session: await resolveAuthorizeSession(request, env).then((session) => ({
+			sessionEmail: session.email,
+			sessionStableUserId: session.stableUserId,
+			sessionIssuedAt: session.issuedAt,
+		})),
+		request,
+		env,
+	})
+	if (!oidcGate.ok) {
+		return {
+			data: {
+				ok: false,
+				error: oidcGate.error,
+				allowClientReset: false,
+			},
+			setCookie: null,
+		}
+	}
+
 	const { authRequest, client } = resolution
 	const clearResetVerificationCookie =
 		requestHasOAuthClientResetVerificationCookie(request)
@@ -666,14 +729,16 @@ export async function loadOAuthAuthorizeData(
 			setCookie: clearResetVerificationCookie,
 		}
 	}
-
-	const { email: sessionEmail, setCookie: sessionSetCookie } =
-		await resolveSessionEmail(request, env)
+	const authorizeSession = await resolveAuthorizeSession(request, env)
+	const sessionSetCookie =
+		oidcGate.clearSessionCookie ?? authorizeSession.setCookie
+	const sessionEmail = oidcGate.treatAsSignedOut ? null : authorizeSession.email
 	let emailVerified: boolean | null = null
 	if (sessionEmail) {
 		emailVerified = await isAccountEmailVerified({
 			db: env.APP_DB,
 			email: sessionEmail,
+			stableUserId: authorizeSession.stableUserId ?? undefined,
 		})
 	}
 
@@ -768,6 +833,26 @@ export async function handleAuthorizeRequest(
 
 	const requestIp = getRequestIp(request) ?? undefined
 	const helpers = getOAuthHelpers(env)
+	const oidcParams = parseOidcAuthorizeParams(request)
+	const oidcGate = await evaluateOidcAuthorizeGate({
+		params: oidcParams,
+		session: await resolveAuthorizeSession(request, env).then((session) => ({
+			sessionEmail: session.email,
+			sessionStableUserId: session.stableUserId,
+			sessionIssuedAt: session.issuedAt,
+		})),
+		request,
+		env,
+	})
+	if (!oidcGate.ok) {
+		return respondAuthorizeError(
+			request,
+			oidcGate.error,
+			oidcGate.status ?? 400,
+			oidcGate.errorCode,
+		)
+	}
+
 	const formData = await request.formData().catch(() => null)
 	if (!formData) {
 		return respondAuthorizeError(request, 'Invalid form data')
@@ -820,14 +905,21 @@ export async function handleAuthorizeRequest(
 	const email = String(formData.get('email') ?? '').trim()
 	const password = String(formData.get('password') ?? '')
 	const normalizedEmail = email.toLowerCase()
-	const {
-		session,
-		email: sessionEmail,
-		setCookie: sessionSetCookie,
-	} = await resolveSessionEmail(request, env)
-	let setCookie = sessionSetCookie
+	const authorizeSession = await resolveAuthorizeSession(request, env)
+	let setCookie = oidcGate.clearSessionCookie ?? authorizeSession.setCookie
+	const sessionEmail = oidcGate.treatAsSignedOut ? null : authorizeSession.email
+	const session = oidcGate.treatAsSignedOut ? null : authorizeSession.session
 	const hasFormCredentials = Boolean(email && password)
 	const hasSession = Boolean(sessionEmail)
+
+	if (oidcGate.forbidInlineLogin && hasFormCredentials) {
+		return respondAuthorizeError(
+			request,
+			'Interactive login is not allowed for this authorization request.',
+			400,
+			'interaction_required',
+		)
+	}
 
 	if (!hasFormCredentials && !hasSession) {
 		void logAuditEvent({
@@ -988,6 +1080,7 @@ export async function handleAuthorizeRequest(
 	if (Array.isArray(resolvedScopes)) {
 		const userId = approvedUserId
 		const displayName = approvedUsername
+		const authTime = Math.floor(Date.now() / 1000)
 		const { redirectTo } = await helpers.completeAuthorization({
 			request: authRequest,
 			userId,
@@ -1001,6 +1094,8 @@ export async function handleAuthorizeRequest(
 				email: approvedEmail,
 				username: approvedUsername,
 				displayName,
+				authTime,
+				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
 			},
 		})
 		void logAuditEvent({
