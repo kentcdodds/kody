@@ -1,7 +1,8 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { runWithDeferredWork } from '#app/deferred-work.ts'
+import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { getEnv } from '#app/env.ts'
 import { createAppRouter } from '#app/router.ts'
+import { runWithRequestContext } from '#worker/request-context.ts'
 
 type AppRouterBundle = {
 	appEnv: Env
@@ -34,7 +35,7 @@ export async function handleRequest(
 		setAuthSessionSecret(appEnv.COOKIE_SECRET)
 		return await runWithDeferredWork(
 			ctx ? (promise) => ctx.waitUntil(promise) : undefined,
-			() => router.fetch(request),
+			() => runWithRequestContext(request, () => router.fetch(request)),
 		)
 	} catch (error) {
 		console.error('Remix server handler failed:', error)

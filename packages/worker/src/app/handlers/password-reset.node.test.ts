@@ -57,7 +57,7 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 
 const { createPasswordResetRequestHandler, createPasswordResetConfirmHandler } =
 	await import('./password-reset.ts')
-const { runWithDeferredWork } = await import('#app/deferred-work.ts')
+const { runWithDeferredWork } = await import('#worker/deferred-work.ts')
 
 // The request handler defers token creation and the email send past the
 // response so latency cannot reveal whether the address is registered; tests

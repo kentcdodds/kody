@@ -3,6 +3,10 @@ import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
+	memoizePerRequest,
+	recordServerTiming,
+} from '#worker/request-context.ts'
+import {
 	getCommunityPackageHref,
 	resolvePackagePageUrl,
 } from '#worker/community/package-url.ts'
@@ -34,20 +38,57 @@ function sameKodyId(left: string, right: string) {
 	return left.trim().toLowerCase() === right.trim().toLowerCase()
 }
 
-export async function loadPackagePage(input: {
+/**
+ * One SSR request resolves the same package several times: the page handler,
+ * the `community-detail` frame rendered while the response streams, and the
+ * files loader that gates on the same access decision. Memoize per request so
+ * the URL resolution, auth, and detail loads run once.
+ */
+export function loadPackagePage(input: {
 	env: Env
 	request: Request
 	username: string
 	kodyId: string
 }): Promise<PackagePageAccess> {
-	const target = await resolvePackagePageUrl({
-		db: input.env.APP_DB,
-		username: input.username,
-		kodyId: input.kodyId,
+	return memoizePerRequest({
+		request: input.request,
+		key: `package-page:${input.username}:${input.kodyId}`,
+		load: () =>
+			recordServerTiming(
+				'package-page',
+				() => loadPackagePageUncached(input),
+				input.request,
+			),
 	})
+}
+
+async function loadPackagePageUncached(input: {
+	env: Env
+	request: Request
+	username: string
+	kodyId: string
+}): Promise<PackagePageAccess> {
+	// The URL lookup only needs the pair; the viewer lookup only needs the
+	// cookie. Neither waits on the other.
+	const [target, user] = await Promise.all([
+		recordServerTiming(
+			'resolve-url',
+			() =>
+				resolvePackagePageUrl({
+					db: input.env.APP_DB,
+					username: input.username,
+					kodyId: input.kodyId,
+				}),
+			input.request,
+		),
+		recordServerTiming(
+			'auth',
+			() => readAuthenticatedAppUser(input.request, input.env),
+			input.request,
+		),
+	])
 	if (!target) return { kind: 'not_found' }
 
-	const user = await readAuthenticatedAppUser(input.request, input.env)
 	const viewerUserId = user?.mcpUser.userId ?? null
 
 	if (target.kind === 'redirect') {

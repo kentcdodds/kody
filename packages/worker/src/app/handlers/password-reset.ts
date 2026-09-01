@@ -6,7 +6,7 @@ import {
 	getRequestIp,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
-import { deferWork } from '#app/deferred-work.ts'
+import { deferWork } from '#worker/deferred-work.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {

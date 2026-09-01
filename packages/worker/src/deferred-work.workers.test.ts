@@ -1,6 +1,6 @@
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import { deferWork, runWithDeferredWork } from '#app/deferred-work.ts'
+import { deferWork, runWithDeferredWork } from '#worker/deferred-work.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 test('deferred work resolves after the response and is kept alive by waitUntil', async () => {
