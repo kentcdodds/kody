@@ -1008,6 +1008,7 @@ test('DynamicCallableWorkflowBase records workflow_run usage on terminal transit
 	}
 
 	recordUsageSpy.mockClear()
+	runRecordMocks.resetProjections()
 	const failedBinding = createStatefulWorkflowBinding()
 	const failedDb = createWorkflowRunsDatabase()
 	const failedEnv = {
@@ -1142,6 +1143,7 @@ test('workflow_run usage is recorded once across replays and never on failed ter
 		// write fails must not be recorded as usage (and is not recorded at all
 		// until the terminal transition succeeds on a later replay).
 		recordUsageSpy.mockClear()
+		runRecordMocks.resetProjections()
 		const statusFailureDb = createWorkflowRunsDatabase()
 		const statusFailureEnv = {
 			APP_DB: statusFailureDb,
