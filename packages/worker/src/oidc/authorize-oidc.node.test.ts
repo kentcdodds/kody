@@ -54,6 +54,17 @@ test('authorize-oidc rejects malformed max_age', () => {
 	}
 })
 
+test('authorize-oidc rejects empty max_age', () => {
+	const request = new Request(
+		'https://heykody.dev/oauth/authorize?response_type=code&max_age=',
+	)
+	const parsed = parseOidcAuthorizeParams(request)
+	expect(isOidcAuthorizeParamsParseError(parsed)).toBe(true)
+	if (isOidcAuthorizeParamsParseError(parsed)) {
+		expect(parsed.errorCode).toBe('invalid_request')
+	}
+})
+
 test('authorize-oidc rejects prompt=none combined with login or consent', async () => {
 	const result = await evaluateOidcAuthorizeGate({
 		params: {

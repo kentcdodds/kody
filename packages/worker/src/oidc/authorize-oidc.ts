@@ -34,9 +34,9 @@ export function parseOidcAuthorizeParams(
 	request: Request,
 ): OidcAuthorizeParams | { error: string; errorCode: string } {
 	const url = new URL(request.url)
-	const maxAgeRaw = url.searchParams.get('max_age')?.trim()
 	let maxAge: number | undefined
-	if (maxAgeRaw) {
+	if (url.searchParams.has('max_age')) {
+		const maxAgeRaw = url.searchParams.get('max_age')?.trim() ?? ''
 		if (!/^\d+$/.test(maxAgeRaw)) {
 			return {
 				error: 'max_age must be a non-negative integer.',

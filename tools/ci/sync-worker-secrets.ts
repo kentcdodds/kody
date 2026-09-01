@@ -185,12 +185,37 @@ function stripQuotesPreservingKind(value: string): {
  */
 export function unescapeDotenvValue(value: string, quote: '"' | "'" | null) {
 	if (quote === '"') {
-		return value
-			.replace(/\\n/g, '\n')
-			.replace(/\\r/g, '\r')
-			.replace(/\\t/g, '\t')
-			.replace(/\\"/g, '"')
-			.replace(/\\\\/g, '\\')
+		let result = ''
+		for (let index = 0; index < value.length; index += 1) {
+			const char = value[index]
+			if (char !== '\\' || index + 1 >= value.length) {
+				result += char
+				continue
+			}
+			const next = value[index + 1]
+			index += 1
+			switch (next) {
+				case 'n':
+					result += '\n'
+					break
+				case 'r':
+					result += '\r'
+					break
+				case 't':
+					result += '\t'
+					break
+				case '"':
+					result += '"'
+					break
+				case '\\':
+					result += '\\'
+					break
+				default:
+					result += `\\${next}`
+					break
+			}
+		}
+		return result
 	}
 	if (quote === "'") {
 		return value.replace(/\\'/g, "'")

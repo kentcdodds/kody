@@ -46,18 +46,16 @@ function isAllowedPostLogoutRedirectUri(
 	return registeredUris.some((registeredUri) => registeredUri === redirectUri)
 }
 
-function readAudienceClientId(payload: Record<string, unknown>) {
+function readAudienceClientIds(payload: Record<string, unknown>) {
 	const aud = payload.aud
-	if (typeof aud === 'string' && aud.trim()) return aud.trim()
-	if (
-		Array.isArray(aud) &&
-		aud.length > 0 &&
-		typeof aud[0] === 'string' &&
-		aud[0].trim()
-	) {
-		return aud[0].trim()
+	if (typeof aud === 'string' && aud.trim()) return [aud.trim()]
+	if (Array.isArray(aud)) {
+		return aud
+			.filter((value): value is string => typeof value === 'string')
+			.map((value) => value.trim())
+			.filter((value) => value.length > 0)
 	}
-	return null
+	return []
 }
 
 async function readLogoutParams(request: Request): Promise<LogoutParams> {
@@ -107,16 +105,16 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 		if (!payload || payload.iss !== issuer) {
 			return new Response('Invalid id_token_hint', { status: 400 })
 		}
-		const audienceClientId = readAudienceClientId(payload)
-		if (!audienceClientId) {
+		const audienceClientIds = readAudienceClientIds(payload)
+		if (audienceClientIds.length === 0) {
 			return new Response('Invalid id_token_hint', { status: 400 })
 		}
-		if (clientId && clientId !== audienceClientId) {
+		if (clientId && !audienceClientIds.includes(clientId)) {
 			return new Response('Invalid client_id for id_token_hint', {
 				status: 400,
 			})
 		}
-		clientId = audienceClientId
+		clientId = clientId ?? audienceClientIds[0] ?? null
 	}
 
 	if (params.postLogoutRedirectUri) {

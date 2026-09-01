@@ -42,6 +42,13 @@ test('toDotenv round-trips multiline PEM values', () => {
 	expect(parseDotenv(encoded).get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(pem)
 })
 
+test('toDotenv round-trips literal backslash-n sequences', () => {
+	const value = '\\n'
+	const encoded = toDotenv(new Map([['LITERAL_ESCAPE', value]]))
+	expect(encoded).toBe('LITERAL_ESCAPE="\\\\n"\n')
+	expect(parseDotenv(encoded).get('LITERAL_ESCAPE')).toBe(value)
+})
+
 test('buildSpawnEnv preserves optional vars only when they have values', () => {
 	const options = {
 		...baseOptions,
