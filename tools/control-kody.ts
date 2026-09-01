@@ -1,9 +1,8 @@
-import { execFile, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import {
 	createDefaultEnsureDevDeps,
 	ensureDev,
@@ -15,7 +14,7 @@ import {
 	isWorkerHealthOk,
 	workerPortRange,
 } from './dev-server.ts'
-import { isExecutedDirectly, resolveNpmCommand } from './node-runtime.ts'
+import { isExecutedDirectly } from './node-runtime.ts'
 import {
 	checkFeatureCatalog,
 	featureCatalog,
@@ -26,15 +25,12 @@ import {
 import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
-	parseArgs as parsePreviewArgs,
 	parseSessionRequest,
 	previewSeedEmail,
 	previewSeedPassword,
 	runPreviewManualTest,
 	type SessionRequestSpec,
 } from './preview-manual-test.ts'
-
-const execFileAsync = promisify(execFile)
 
 export const localSeedEmail = 'jane@example.com'
 export const localSeedPassword = 'ilikecode'
@@ -305,10 +301,22 @@ export function playwrightBrowsersInstalled(homeDir: string) {
 	if (!existsSync(root)) return false
 	try {
 		const entries = readdirSync(root, { withFileTypes: true })
-		return entries.some((entry) => {
-			if (!entry.isDirectory()) return false
-			return existsSync(path.join(root, entry.name, 'INSTALLATION_COMPLETE'))
-		})
+		const installed = new Set(
+			entries
+				.filter(
+					(entry) =>
+						entry.isDirectory() &&
+						existsSync(path.join(root, entry.name, 'INSTALLATION_COMPLETE')),
+				)
+				.map((entry) => entry.name),
+		)
+		const hasChromium = [...installed].some((name) =>
+			name.startsWith('chromium-'),
+		)
+		const hasHeadlessShell = [...installed].some((name) =>
+			name.startsWith('chromium_headless_shell-'),
+		)
+		return hasChromium && hasHeadlessShell
 	} catch {
 		return false
 	}
@@ -514,7 +522,8 @@ export async function writeCookieFile(
 	cookieHeader: string,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
-	await writeFile(cookieFile, `${cookieHeader}\n`)
+	await writeFile(cookieFile, `${cookieHeader}\n`, { mode: 0o600 })
+	await chmod(cookieFile, 0o600)
 }
 
 export function formatFeatureMap(features: ReadonlyArray<Feature>) {
@@ -638,10 +647,13 @@ async function runCommand(options: ControlKodyOptions) {
 					email: options.email ?? defaults.email,
 					password: options.password ?? defaults.password,
 				})
-				cookieHeader = session.cookieHeader
-				if (cookieHeader) {
-					await writeCookieFile(options.cookieFile, cookieHeader)
+				if (!session.ok || !session.cookieHeader) {
+					if (options.json) printJson(session)
+					else console.error(session.detail)
+					return 1
 				}
+				cookieHeader = session.cookieHeader
+				await writeCookieFile(options.cookieFile, cookieHeader)
 			}
 			const result = await requestAsSession({
 				origin,
@@ -657,18 +669,8 @@ async function runCommand(options: ControlKodyOptions) {
 			return result.ok ? 0 : 1
 		}
 		case 'preview': {
-			const previewOptions = parsePreviewArgs(options.previewArgv)
-			if (previewOptions.help) {
-				await execFileAsync(resolveNpmCommand(), [
-					'run',
-					'preview:manual-test',
-					'--',
-					'--help',
-				])
-				return 0
-			}
-			const result = await runPreviewManualTest(previewOptions)
-			return result.ok ? 0 : 1
+			const result = await runPreviewManualTest(options.previewArgv)
+			return result.exitCode
 		}
 		case 'health': {
 			const origin = await resolveOrigin(options)
@@ -724,7 +726,7 @@ async function runCommand(options: ControlKodyOptions) {
 	}
 }
 
-export { usageLines }
+export { usageLines, runCommand }
 
 if (isExecutedDirectly(import.meta.url)) {
 	void runCommand(parseControlArgs(process.argv.slice(2)))

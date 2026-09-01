@@ -81,7 +81,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'account',
 		title: 'Account hub',
 		file: 'account.md',
-		paths: ['/account'],
+		paths: ['/account', '/account/delete'],
 		apis: [
 			'/account/profile.json',
 			'/account/profile/avatar.json',
@@ -211,6 +211,10 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		apis: [
 			'/community.json',
 			'/community/:listingId.json',
+			'/community/:listingId/report.json',
+			'/community/:listingId/trust.json',
+			'/community/:listingId/feature.json',
+			'/community/:listingId/install.json',
 			'/profiles/:username.json',
 			'/profiles/:username/packages/:kodyId.json',
 		],
@@ -281,9 +285,22 @@ export function featureCoversPath(feature: Feature, routePath: string) {
 	return feature.paths.some((owned) => pathCoveredBy(owned, routePath))
 }
 
+/** Hub paths that must not swallow sibling Feature Map entries. */
+export const exactOnlyOwnedPaths = ['/', '/account'] as const
+
+export function isExactOnlyOwnedPath(owned: string) {
+	return (exactOnlyOwnedPaths as ReadonlyArray<string>).includes(owned)
+}
+
+export function prefixMatches(prefix: string, routePath: string) {
+	if (routePath === prefix) return true
+	if (prefix === '/') return routePath === '/'
+	return routePath.startsWith(`${prefix}/`)
+}
+
 export function pathCoveredBy(owned: string, routePath: string) {
 	if (routePath === owned) return true
-	if (owned === '/') return routePath === '/'
+	if (isExactOnlyOwnedPath(owned)) return false
 	return routePath.startsWith(`${owned}/`)
 }
 
@@ -329,9 +346,7 @@ export function checkFeatureCatalog(input: {
 			})
 		}
 		for (const owned of feature.paths) {
-			const present = routePaths.some(
-				(routePath) => routePath === owned || pathCoveredBy(owned, routePath),
-			)
+			const present = routePaths.includes(owned)
 			if (!present) {
 				issues.push({
 					kind: 'stale-path',
@@ -346,7 +361,7 @@ export function checkFeatureCatalog(input: {
 	for (const routePath of routePaths) {
 		if (!isHtmlUserPath(routePath)) continue
 		if (
-			!requiredHtmlPrefixes.some((prefix) => pathCoveredBy(prefix, routePath))
+			!requiredHtmlPrefixes.some((prefix) => prefixMatches(prefix, routePath))
 		) {
 			continue
 		}

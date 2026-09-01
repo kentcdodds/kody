@@ -5,6 +5,7 @@ Create an account, then confirm email.
 ## How to get there
 
 `/signup` → verification email → `/verify-email` or `/pending-verification`.
+Email-change confirm is `/verify-email-change` (token from the change email).
 
 ## Drive it
 

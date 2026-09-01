@@ -10,9 +10,10 @@ Signed-in visit to `/onboarding`. Also linked from account.
 
 ```bash
 node tools/control-kody.ts preview -- \
-  --request 'POST /onboarding/checklist-dismiss.json {}' \
   --request 'GET /onboarding.json' \
-  --check /onboarding
+  --check /onboarding \
+  --request 'POST /onboarding/checklist-dismiss.json {}' \
+  --request 'GET /onboarding.json'
 ```
 
 ## APIs

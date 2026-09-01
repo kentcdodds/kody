@@ -5,7 +5,7 @@ surfaces.
 
 ## How to get there
 
-`/account` after login.
+`/account` after login. Account deletion is `/account/delete`.
 
 ## Drive it
 

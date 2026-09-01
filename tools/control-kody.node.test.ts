@@ -20,6 +20,7 @@ import {
 	readHealth,
 	repoRootFromHere,
 	requestAsSession,
+	runCommand,
 	runDoctor,
 	runMapCheck,
 } from './control-kody.ts'
@@ -219,6 +220,56 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			expect(stale.ok).toBe(false)
 		},
 	)
+})
+
+test('control-kody request stops when auto-login fails', async () => {
+	await withAuthServer(
+		(_request, response) => {
+			response.statusCode = 401
+			response.setHeader('Content-Type', 'application/json')
+			response.end(JSON.stringify({ ok: false }))
+		},
+		async (origin) => {
+			const code = await runCommand(
+				parseControlArgs([
+					'request',
+					'GET',
+					'/account/waiting.json',
+					'--origin',
+					origin,
+					'--json',
+					'--cookie-file',
+					path.join(tmpdir(), 'control-kody-missing-cookie'),
+				]),
+			)
+			expect(code).toBe(1)
+		},
+	)
+})
+
+test('control-kody map --check reports a new /account page as unmapped', async () => {
+	const dir = await mkdtemp(path.join(tmpdir(), 'control-kody-unmapped-'))
+	try {
+		const files = featureCatalog.map((feature) => feature.file)
+		for (const name of files) {
+			await writeFile(path.join(dir, name), `# ${name}\n`)
+		}
+		const report = runMapCheck({
+			routeSource: `${readFileSync(defaultRoutesPath(repoRootFromHere()), 'utf8')}
+export const extra = '/account/new-surface'`,
+			featuresDir: dir,
+		})
+		expect(report.ok).toBe(false)
+		expect(
+			report.issues.some(
+				(issue) =>
+					issue.kind === 'unmapped-route' &&
+					issue.path === '/account/new-surface',
+			),
+		).toBe(true)
+	} finally {
+		await rm(dir, { recursive: true, force: true })
+	}
 })
 
 test('control-kody map --check reports a stale Feature Map path', async () => {
