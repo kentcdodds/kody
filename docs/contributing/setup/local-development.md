@@ -38,12 +38,14 @@ Prerequisites, install, and `npm run dev` notes. See the
   both secrets (see
   [`docs/contributing/secret-rotation.md`](../secret-rotation.md)).
 - `npm run dev:ensure` reuses a healthy origin `/health` on 3742–3751 (prints
-  `App running at http://localhost:<port>` and exits 0), replaces a stale
-  kody/workerd leftover that is listening but not serving, then starts
-  `npm run dev` and waits until `/health` is ok. Agents should call this instead
-  of reconstructing a startup playbook from terminal files.
-- `npm run dev` starts mock API servers automatically plus origin, platform,
-  runtime, and jobs in one Miniflare; it sets `CLOUDFLARE_API_BASE_URL`,
+  `App running at http://localhost:<port>` and exits 0), waits for a stale
+  kody/workerd leftover that is listening but not serving before replacing it,
+  then starts `npm run dev` and waits until `/health` is ok. Agents should call
+  this instead of reconstructing a startup playbook from terminal files.
+- `npm run dev` writes the first client bundle into `packages/worker/public/`
+  before Wrangler starts so that write does not reload the worker after Ready.
+  It then starts mock API servers automatically plus origin, platform, runtime,
+  and jobs in one Miniflare; it sets `CLOUDFLARE_API_BASE_URL`,
   `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare
   API mock Worker for the internal Cloudflare API client, local email sending,
   and Artifacts REST repo create/get/list/token/fork calls. Those REST calls do

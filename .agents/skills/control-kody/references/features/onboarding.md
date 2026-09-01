@@ -23,5 +23,8 @@ node tools/control-kody.ts preview -- \
 
 ## Gotchas
 
-- Local wrangler reload loops have blocked real `/onboarding` screenshots. Use
-  `control-kody doctor` and `dev:ensure` before a UI pass.
+- `/onboarding` screenshots come from the real origin after
+  `control-kody doctor` and `dev:ensure`. `npm run dev` writes the client bundle
+  before wrangler watches `public/`, and `dev:ensure` waits for a starting
+  leftover instead of killing it mid-reload. Do not dump one onboarding
+  component to static HTML.

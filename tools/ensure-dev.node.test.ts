@@ -6,6 +6,7 @@ import {
 	envWithPreferredNode26,
 	isKodyDevProcess,
 	isKodyDevSupervisor,
+	isWranglerStillStarting,
 	parseLsofListenPids,
 	parseSsListenPids,
 	replaceStaleKodyListeners,
@@ -331,4 +332,103 @@ test('ensureDev stops the child and surfaces output when /health never becomes r
 		}),
 	).rejects.toThrow(/Reloading local server/)
 	expect(stopped).toEqual(['stop'])
+})
+
+test('ensureDev waits for an existing kody listener instead of killing it mid-reload', async () => {
+	const logs: Array<string> = []
+	const killed: Array<string> = []
+	const started: Array<string> = []
+	let healthy = false
+	const result = await ensureDev({
+		ports: [3742],
+		probeHealth: async () => healthy,
+		listListenerPids: () => [700],
+		readProcess: () => ({
+			pid: 700,
+			ppid: 1,
+			comm: 'workerd',
+			cmdline: 'workerd --port 3742',
+		}),
+		protectedPids: new Set([1]),
+		killProcess: (pid) => {
+			killed.push(String(pid))
+		},
+		startDev: () => {
+			started.push('start')
+			return { unref() {}, async stop() {} }
+		},
+		sleep: async () => {
+			healthy = true
+		},
+		now: (() => {
+			let t = 0
+			return () => {
+				t += 1
+				return t
+			}
+		})(),
+		readyTimeoutMs: 10,
+		readyPollMs: 1,
+		log: (line) => {
+			logs.push(line)
+		},
+	})
+	expect(result).toEqual({
+		status: 'reused',
+		origin: 'http://localhost:3742',
+	})
+	expect(started).toEqual([])
+	expect(killed).toEqual([])
+	expect(logs[0]).toBe(
+		'Existing kody listener is not healthy yet; waiting before replacing it.',
+	)
+	expect(logs.at(-1)).toBe('App running at http://localhost:3742')
+})
+
+test('ensureDev leaves a still-starting wrangler running when /health misses the budget', async () => {
+	const stopped: Array<string> = []
+	const unrefed: Array<string> = []
+	await expect(
+		ensureDev({
+			ports: [3742],
+			probeHealth: async () => false,
+			listListenerPids: () => [],
+			readProcess: () => null,
+			protectedPids: new Set([1]),
+			killProcess: () => {},
+			startDev: () => ({
+				unref() {
+					unrefed.push('unref')
+				},
+				async stop() {
+					stopped.push('stop')
+				},
+				hasExited: () => false,
+				lastOutput: () =>
+					'Local server updated and ready\nReloading local server...',
+			}),
+			sleep: async () => {},
+			now: (() => {
+				let t = 0
+				return () => {
+					t += 1
+					return t
+				}
+			})(),
+			readyTimeoutMs: 2,
+			readyPollMs: 1,
+			log: () => {},
+		}),
+	).rejects.toThrow(/still starting/)
+	expect(stopped).toEqual([])
+	expect(unrefed).toEqual(['unref'])
+	expect(
+		isWranglerStillStarting(
+			'Local server updated and ready\nReloading local server...',
+		),
+	).toBe(true)
+	expect(isWranglerStillStarting('Ready on http://localhost:3742')).toBe(true)
+	expect(
+		isWranglerStillStarting('Cannot apply deleted_classes migration'),
+	).toBe(false)
 })

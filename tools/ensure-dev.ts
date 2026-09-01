@@ -17,7 +17,7 @@ import {
 } from './dev-server.ts'
 import { isExecutedDirectly, resolveNpmCommand } from './node-runtime.ts'
 
-export const defaultReadyTimeoutMs = 120_000
+export const defaultReadyTimeoutMs = 180_000
 export const defaultReadyPollMs = 500
 export const defaultStaleKillWaitMs = 2_000
 
@@ -86,6 +86,32 @@ export function isKodyDevSupervisor(identity: {
 
 export function isKodyDevProcess(identity: { comm: string; cmdline: string }) {
 	return isWorkerdProcess(identity) || isKodyDevSupervisor(identity)
+}
+
+export function hasKodyDevListeners(input: {
+	ports: ReadonlyArray<number>
+	listListenerPids: (port: number) => Array<number>
+	readProcess: (pid: number) => ProcessIdentity | null
+	protectedPids: ReadonlySet<number>
+}) {
+	for (const port of input.ports) {
+		for (const pid of input.listListenerPids(port)) {
+			if (input.protectedPids.has(pid)) continue
+			const identity = input.readProcess(pid)
+			if (identity && isKodyDevProcess(identity)) return true
+		}
+	}
+	return false
+}
+
+export function isWranglerStillStarting(output: string) {
+	const text = output.toLowerCase()
+	if (!text.trim()) return false
+	return (
+		text.includes('reloading local server') ||
+		text.includes('local server updated') ||
+		text.includes('ready on http')
+	)
 }
 
 export function collectAncestorPids(
@@ -313,6 +339,24 @@ export async function ensureDev(deps: EnsureDevDeps): Promise<EnsureDevResult> {
 		return { status: 'reused', origin: existing }
 	}
 
+	if (hasKodyDevListeners(deps)) {
+		deps.log(
+			'Existing kody listener is not healthy yet; waiting before replacing it.',
+		)
+		const starting = await waitForHealthyOrigin({
+			ports: deps.ports,
+			probeHealth: deps.probeHealth,
+			timeoutMs: deps.readyTimeoutMs,
+			pollMs: deps.readyPollMs,
+			now: deps.now,
+			sleep: deps.sleep,
+		})
+		if (starting) {
+			deps.log(formatAppRunning(starting))
+			return { status: 'reused', origin: starting }
+		}
+	}
+
 	const replacedPids = await replaceStaleKodyListeners(deps)
 	const started = deps.startDev()
 	const origin = await waitForHealthyOrigin({
@@ -325,7 +369,19 @@ export async function ensureDev(deps: EnsureDevDeps): Promise<EnsureDevResult> {
 		isCancelled: started.hasExited,
 	})
 	if (!origin) {
-		const output = started.lastOutput?.()?.trim()
+		const output = started.lastOutput?.()?.trim() ?? ''
+		const stillStarting = Boolean(
+			started.hasExited &&
+			!started.hasExited() &&
+			isWranglerStillStarting(output),
+		)
+		if (stillStarting) {
+			started.unref()
+			throw new Error(
+				`Local app did not become ready on ${deps.ports[0]}-${deps.ports.at(-1)} within ${deps.readyTimeoutMs}ms; wrangler is still starting. Retry \`npm run dev:ensure\` without killing the process.` +
+					(output ? `\n${output}` : ''),
+			)
+		}
 		await started.stop()
 		throw new Error(
 			`Local app did not become ready on ${deps.ports[0]}-${deps.ports.at(-1)} within ${deps.readyTimeoutMs}ms.` +
