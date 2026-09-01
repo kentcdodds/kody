@@ -523,8 +523,10 @@ automatic context retrieval without promoting those records to durable memory.
 - Package metadata is the source of truth; runtime discovery uses derived KV
   manifest and scope indexes that are rebuilt on package refresh
 - Retriever exports reach the package storage bucket through `packageStorage()`
-  (writable, like every packageStorage surface); keeping retrievers read-mostly
-  is a convention
+  in a closed-world, read-only sandbox: they can read granted buckets and return
+  results, but cannot write storage, call `kody.*` capabilities, invoke
+  packages, dispatch events, create workflows, or `fetch` the public internet.
+  Live integration reads and writes belong in `execute` or a package export.
 - Host budgets default to 3s for `search` and 1s for `context` (clamped to 5s /
   3s). Optional enrichment: a timed-out or failing retriever is skipped with a
   warning and must not fail the surrounding MCP `search` / `execute` call

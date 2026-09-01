@@ -16,9 +16,9 @@ import {
 	fitIconRaster,
 	iconFitCustomMetadata,
 	iconFitMaxDimension,
-	iconFitVersion,
 	publicFittedIconCacheControl,
 } from './icon-fit.ts'
+import { buildCommunityIconFallbackSvg } from './community-icon-fallback.ts'
 import {
 	getCommunityListingById,
 	getCommunityListingByOwnerAndPackage,
@@ -26,8 +26,9 @@ import {
 import { readCommunitySnapshot } from './snapshot.ts'
 import { type CommunityListingRecord } from './types.ts'
 
-export const communityIconVersion = iconFitVersion
-const communityIconAssetVersions = [1, communityIconVersion] as const
+export const communityIconVersion = 3 as const
+const communityIconAssetVersions = [1, 2, communityIconVersion] as const
+export { buildCommunityIconFallbackSvg } from './community-icon-fallback.ts'
 const communityIconOutputSize = iconFitMaxDimension
 const maxCommunityIconSourceBytes = 2 * 1024 * 1024
 const maxCommunityIconDimension = 4096
@@ -659,31 +660,6 @@ function readUint32BigEndian(bytes: Uint8Array, offset: number) {
 			(bytes[offset + 3] ?? 0)) >>>
 		0
 	)
-}
-
-export function buildCommunityIconFallbackSvg(name: string) {
-	const words = name
-		.replace(/^@[^/]+\//, '')
-		.split(/[^a-z0-9]+/i)
-		.filter(Boolean)
-	const initials =
-		(words.length > 1
-			? `${words[0]?.[0]}${words[1]?.[0]}`
-			: words[0]?.slice(0, 2)
-		)
-			?.toUpperCase()
-			.replace(/[^A-Z0-9]/g, '') || 'K'
-	const colors = [
-		'#2563eb',
-		'#7c3aed',
-		'#db2777',
-		'#0891b2',
-		'#059669',
-	] as const
-	let hash = 0
-	for (const character of name) hash = (hash * 31 + character.charCodeAt(0)) | 0
-	const background = colors[Math.abs(hash) % colors.length]
-	return `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="${background}"/><text x="128" y="136" fill="white" font-family="sans-serif" font-size="92" font-weight="700" text-anchor="middle" dominant-baseline="middle">${initials}</text></svg>`
 }
 
 export async function renderCommunityIconFallbackPng(name: string) {

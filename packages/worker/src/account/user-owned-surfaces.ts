@@ -204,9 +204,9 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 		{
 			id: 'community_icon_derived_cache',
 			binding: 'BUNDLE_ARTIFACTS_KV',
-			prefixTemplate: 'derived-cache:v1:community-icon:v2:{listingId}:',
+			prefixTemplate: 'derived-cache:v1:community-icon:v3:{listingId}:',
 			notes:
-				'Derived cache key from derivedCacheKeyPrefix + buildCommunityIconCacheKey. Account deletion also prefixes historical community-icon:v1 keys.',
+				'Derived cache key from derivedCacheKeyPrefix + buildCommunityIconCacheKey. Account deletion also prefixes historical community-icon:v1 and community-icon:v2 keys.',
 		},
 		{
 			id: 'usage_rollup_derived_cache',
@@ -275,10 +275,10 @@ export const accountUserOwnedR2Surfaces: ReadonlyArray<UserOwnedR2Surface> = [
 		id: 'community_icon',
 		binding: 'COMMUNITY_ASSETS',
 		sourceTable: 'community_listings',
-		keyTemplate: 'community-icon:v2/{listingId}/{commit}/asset',
+		keyTemplate: 'community-icon:v3/{listingId}/{commit}/asset',
 		export: 'chunked_bytes',
 		notes:
-			'Current fitted WebP derivative. Account deletion also removes historical community-icon:v1 prefixes.',
+			'Current fitted WebP derivative. Account deletion also removes historical community-icon:v1 and community-icon:v2 prefixes.',
 	},
 	{
 		id: 'user_avatar',

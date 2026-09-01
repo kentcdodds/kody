@@ -804,11 +804,36 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 				name: string
 				outputSchema?: Record<string, unknown>
 				icons?: Array<{ src: string }>
+				annotations?: {
+					readOnlyHint?: boolean
+					destructiveHint?: boolean
+					idempotentHint?: boolean
+					openWorldHint?: boolean
+				}
 			}>
 		}
 	}
 	const toolNames = modernBody.result.tools.map((tool) => tool.name).sort()
 	expect(toolNames).toEqual(['execute', 'search'])
+	expect(modernBody.result.tools).toHaveLength(2)
+	const searchListed = modernBody.result.tools.find(
+		(tool) => tool.name === 'search',
+	)
+	const executeListed = modernBody.result.tools.find(
+		(tool) => tool.name === 'execute',
+	)
+	expect(searchListed?.annotations).toEqual({
+		readOnlyHint: true,
+		destructiveHint: false,
+		idempotentHint: true,
+		openWorldHint: false,
+	})
+	expect(executeListed?.annotations).toEqual({
+		readOnlyHint: false,
+		destructiveHint: true,
+		idempotentHint: false,
+		openWorldHint: true,
+	})
 	for (const tool of modernBody.result.tools) {
 		expect(tool.outputSchema).toMatchObject({ type: 'object' })
 		expect(tool.icons?.[0]?.src).toBe(`${origin}/android-chrome-192x192.png`)

@@ -639,6 +639,14 @@ routed from `packages/worker/src/index.ts`.
   `http://127.0.0.1:43742/callback` so the CLI can use SEP-991 instead of
   deprecated DCR.
 - Supported scopes: `profile`, `email`
+- Kody's MCP authorization server is **OAuth 2.1 + CIMD + RFC 9728**, not an
+  OpenID Connect OpenID Provider. It does not advertise
+  `/.well-known/openid-configuration`, does not issue ID tokens, does not offer
+  the `openid` scope, and does not expose a standards-shaped `/userinfo`
+  endpoint. Grant props (including verified email) ride on the access-token
+  props used by `/mcp` and the OAuth-protected `/api/me` JSON helper. OpenAI's
+  optional enterprise domain-restriction warning follows from that gap; see
+  [OpenAI Apps submission](../openai-apps-submission.md#openid-connect-gap).
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login returns to the original OAuth request. Password signup lands

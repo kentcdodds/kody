@@ -336,6 +336,97 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	}
 })
 
+test('closed-world retriever runtime skips capabilities, hub snapshots, workflows, invoke, and outbound fetch', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: { userId: 'user-123' },
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({} as never)
+	const listMcpServerRefsSpy = vi
+		.spyOn(
+			await import('#worker/mcp-client/settings-service.ts'),
+			'listVisibleEnabledMcpServerRefsCached',
+		)
+		.mockResolvedValue([])
+	const getHubSnapshotSpy = vi
+		.spyOn(
+			await import('#worker/mcp-client/hub-client.ts'),
+			'getCachedMcpClientHubSnapshot',
+		)
+		.mockResolvedValue({ servers: [] })
+	let executorInput: { allowOutboundFetch?: boolean } | null = null
+	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
+		null
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockImplementation((input) => {
+			executorInput = input
+			return {
+				async execute(_source, providers) {
+					providerFns = (
+						providers[0] as {
+							fns: Record<string, (args: unknown) => Promise<unknown>>
+						}
+					).fns
+					return {
+						result: 'ok',
+						logs: [],
+					}
+				},
+			} as never
+		})
+
+	try {
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				closedWorldRetrieverRuntime: true,
+				packageContext: {
+					packageId: 'pkg-1',
+					kodyId: 'notes',
+					sourceId: 'source-1',
+				},
+				packageInvokeTools: {
+					invoke: async () => {
+						throw new Error('invoke should not be bound')
+					},
+				},
+			},
+		)
+		expect(result.result).toBe('ok')
+		expect(getRegistrySpy).not.toHaveBeenCalled()
+		expect(listMcpServerRefsSpy).not.toHaveBeenCalled()
+		expect(getHubSnapshotSpy).not.toHaveBeenCalled()
+		expect(executorInput?.allowOutboundFetch).toBe(false)
+		expect(providerFns?.packageWorkflowCreate).toBeUndefined()
+		expect(providerFns?.emailSend).toBeUndefined()
+		await expect(providerFns?.packageStorageSet?.({})).rejects.toThrow(
+			'packageStorage() is read-only during retriever runs',
+		)
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+		listMcpServerRefsSpy.mockRestore()
+		getHubSnapshotSpy.mockRestore()
+	}
+})
+
 test('runBundledModuleWithRegistry uses a prebuilt capability registry without reloading', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env

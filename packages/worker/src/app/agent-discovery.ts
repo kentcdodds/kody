@@ -7,9 +7,17 @@ export const mcpServerCardPath = '/.well-known/mcp/server-card.json'
 export const apiCatalogPath = '/.well-known/api-catalog'
 export const agentSkillsIndexPath = '/.well-known/agent-skills/index.json'
 export const securityTxtPath = '/.well-known/security.txt'
+export const openaiAppsChallengePath = '/.well-known/openai-apps-challenge'
 export const authMdPath = '/auth.md'
 export const robotsTxtPath = '/robots.txt'
 export const sitemapPath = '/sitemap.xml'
+
+/**
+ * Public OpenAI Apps domain-verification token for `openaiAppsChallengePath`.
+ * Not a secret: the portal fetches it unauthenticated as `text/plain`.
+ */
+export const openaiAppsChallengeToken =
+	'cgisbN1peOFC_FcpE83Zn5gihUckKsjEVj-tItKRkxU'
 
 /** Matches the MCP server `version` advertised on both protocol lanes. */
 export const kodyMcpServerCardVersion = '1.0.0'

@@ -32,6 +32,12 @@ export type PackageStorageToolOptions = {
 	 * `collectPackageStorageGrantIds`.
 	 */
 	grantedPackageIds: ReadonlySet<string>
+	/**
+	 * Defaults to writable. Retriever runs set this to false so the sandbox
+	 * can read granted buckets but cannot set, delete, clear, or run mutating
+	 * SQL.
+	 */
+	writable?: boolean
 }
 
 export type PackageSecretToolOptions = {
@@ -451,7 +457,10 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		],
 		unboundNames: [],
 		isBound: (context) => Boolean(context.packageStorageTools),
-		createPrelude: () => createPackageStorageHelperPrelude(),
+		createPrelude: (context) =>
+			createPackageStorageHelperPrelude({
+				writable: context.packageStorageTools?.writable !== false,
+			}),
 		createKodyTools: (context) => {
 			const packageStorageTools = context.packageStorageTools
 			const packageStorageUserId = context.callerContext.user?.userId ?? ''
@@ -461,6 +470,7 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				userId: packageStorageUserId,
 				email: context.callerContext.user?.email,
 				grantedPackageIds: packageStorageTools.grantedPackageIds,
+				writable: packageStorageTools.writable,
 			})
 		},
 	},

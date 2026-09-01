@@ -234,8 +234,8 @@ Every saved package owns one durable storage bucket per user
 `packageStorage()` from `kody:runtime`. One rule per context:
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
-  — always, including package apps, exports, subscriptions, retrievers, jobs,
-  and workflows.
+  — from package apps, exports, subscriptions, jobs, and workflows. Retrievers
+  can only read granted buckets.
 - **Writing ad hoc `execute` code?** Persist durable state from a saved package
   with `packageStorage()`, or statically import the owning package's export. Ad
   hoc execute has no scratch SQLite helper.
@@ -244,8 +244,8 @@ Every saved package owns one durable storage bucket per user
   `packageStorage()` does the reading and writing.
 
 `packageStorage()` returns `get`/`set`/`list`/`sql`/`delete`/`clear`/`id`,
-writable, always bound to the declaring package's own bucket no matter where the
-code runs:
+writable except in retriever runs, always bound to the declaring package's own
+bucket no matter where the code runs:
 
 - In the package's own export/invocation runtime it is the only way to reach the
   package bucket.

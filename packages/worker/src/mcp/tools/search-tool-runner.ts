@@ -428,7 +428,6 @@ export async function runSearchTool(input: {
 				env: agent.getEnv(),
 				userId,
 				baseUrl,
-				waitUntil: agent.waitUntil?.bind(agent),
 			})
 			if (notice) {
 				structuredWarnings.push(notice)

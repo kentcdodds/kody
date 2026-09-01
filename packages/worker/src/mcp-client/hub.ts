@@ -579,22 +579,46 @@ class McpClientHubBase extends DurableObject<Env> {
 		return this.buildConnectResult(serverId)
 	}
 
-	async getSnapshot(): Promise<McpClientHubSnapshot> {
+	private async restoreAndWaitForServers() {
 		await this.ensureRestored()
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
+	}
+
+	private listServerCards(): Array<McpServerSnapshot> {
+		return this.manager
+			.listServers()
+			.map((row) => this.buildServerSnapshot(row))
+	}
+
+	private async collectServerSnapshots(): Promise<Array<McpServerSnapshot>> {
+		await this.restoreAndWaitForServers()
 		for (const row of this.manager.listServers()) {
 			await this.observeServer({
 				serverId: row.id,
 				serverName: row.name,
 			})
 		}
+		return this.listServerCards()
+	}
+
+	async getSnapshot(): Promise<McpClientHubSnapshot> {
 		return {
-			servers: this.manager
-				.listServers()
-				.map((row) => this.buildServerSnapshot(row)),
+			servers: await this.collectServerSnapshots(),
 			connectionEvents: await this.takeConnectionEvents(),
+		}
+	}
+
+	/**
+	 * Current server cards without observing, reconnecting, or draining
+	 * pending connection events. Search waiting uses this so a cache miss
+	 * cannot write episode state or later dispatch package subscriptions.
+	 */
+	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
+		await this.restoreAndWaitForServers()
+		return {
+			servers: this.listServerCards(),
 		}
 	}
 

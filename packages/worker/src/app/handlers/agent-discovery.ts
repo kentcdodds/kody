@@ -11,6 +11,7 @@ import {
 	buildSitemapXml,
 	discoveryDocumentHeaders,
 	getAgentSkill,
+	openaiAppsChallengeToken,
 } from '#app/agent-discovery.ts'
 import { markdownResponse } from '#app/markdown-negotiation.ts'
 import { type routes } from '#universal/routes.ts'
@@ -131,4 +132,16 @@ export function createSecurityTxtHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.securityTxt>
+}
+
+export function createOpenaiAppsChallengeHandler(_env: Env) {
+	return {
+		middleware: [],
+		async handler() {
+			return new Response(openaiAppsChallengeToken, {
+				status: 200,
+				headers: discoveryDocumentHeaders('text/plain; charset=utf-8'),
+			})
+		},
+	} satisfies Action<typeof routes.openaiAppsChallenge>
 }

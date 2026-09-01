@@ -43,9 +43,8 @@ export function TermsRoute(_handle: Handle) {
 					data from Account settings.
 				</p>
 				<p mix={css(descriptionCss)}>
-					<strong>Age requirement needing confirmation:</strong> you must be at
-					least [13/16 — Kent to confirm] and legally able to agree to these
-					terms. If local law requires parental consent, you must have it.
+					You must be at least 13 and legally able to agree to these terms. If
+					local law requires parental consent, you must have it.
 				</p>
 			</section>
 
@@ -179,11 +178,10 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Governing law</h2>
 				<p mix={css(descriptionCss)}>
-					<strong>Kent must confirm before launch:</strong> these terms are
-					governed by the laws of [STATE/COUNTRY], without regard to
-					conflict-of-law rules, and disputes must be brought in the courts
-					located in [COUNTY, STATE/COUNTRY], unless applicable law requires
-					otherwise.
+					These terms are governed by the laws of the State of Utah, without
+					regard to conflict-of-law rules, and disputes must be brought in the
+					state or federal courts located in Utah, unless applicable law
+					requires otherwise.
 				</p>
 			</section>
 

@@ -54,7 +54,7 @@ export function WaitlistForm(handle: Handle) {
 		const formData = new FormData(form)
 		const firstName = String(formData.get('firstName') ?? '').trim()
 		const email = String(formData.get('email') ?? '').trim()
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 
 		if (!firstName) {
 			setState('error', 'What should we call you?')

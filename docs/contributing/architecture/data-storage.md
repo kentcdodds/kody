@@ -488,11 +488,11 @@ Source files remain in the listing's pinned Artifacts commit; R2 stores only the
 256-pixel WebP ingest (Cloudflare Images, `fit: scale-down`) or a generated
 fallback.
 
-- Keys use `community-icon:v2/{listingId}/{commit}/asset`, where the commit is
+- Keys use `community-icon:v3/{listingId}/{commit}/asset`, where the commit is
   the listing's icon commit (the owner package's current published commit) or
   its pinned snapshot commit. Derived bytes are a 256-pixel WebP from the
   Cloudflare Images ingest fit. Account deletion also prefix-deletes leftover
-  `community-icon:v1/` objects.
+  `community-icon:v1/` and `community-icon:v2/` objects.
 - Descriptor keys include the same listing id and commit, so package publish and
   listing re-publish cannot serve an older icon.
 - Unpublish, admin hard delete, and re-publish prune all descriptor and object
@@ -1328,10 +1328,10 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.
-- `derived-cache:v1:community-icon:v2:{listingId}:...` — derived community
+- `derived-cache:v1:community-icon:v3:{listingId}:...` — derived community
   listing icon cache; registered as a user-owned KV surface and deleted for a
   user's listings during account deletion (including leftover
-  `community-icon:v1` prefixes).
+  `community-icon:v1` and `community-icon:v2` prefixes).
 - `derived-cache:v1:artifact-head:v1:{namespace}:{repoId}` — default-branch HEAD
   (`{ branch, commit }`) of an Artifacts repo, read by package home, tree, and
   file pages instead of a live binding + REST + git `info/refs` chain
@@ -1360,11 +1360,11 @@ or a deliberate retention note.
 
 App-owned R2 keys are:
 
-- `community-icon:v2/{listingId}/{commit}/asset` — processed public community
+- `community-icon:v3/{listingId}/{commit}/asset` — processed public community
   icon bytes (256px WebP) at the listing's pinned or icon commit. The listing id
   is the public ownership boundary. Account deletion paginates and strictly
   deletes every key under each D1-owned listing prefix, including historical
-  `community-icon:v1/` revisions.
+  `community-icon:v1/` and `community-icon:v2/` revisions.
 
 - `user-avatars/{stableUserId}/{contentHash}.{extension}` — profile avatars.
   Account deletion paginates and strictly deletes the complete stable-user

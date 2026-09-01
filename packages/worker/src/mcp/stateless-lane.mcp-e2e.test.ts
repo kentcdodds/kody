@@ -26,8 +26,22 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 	const tools = await modern.client.listTools()
 	const toolNames = tools.tools.map((tool) => tool.name).sort()
 	expect(toolNames).toEqual(['execute', 'search'])
-	const searchTool = tools.tools.find((tool) => tool.name === 'search')
-	expect(searchTool?.outputSchema).toMatchObject({ type: 'object' })
+	expect(tools.tools).toHaveLength(2)
+	const searchListed = tools.tools.find((tool) => tool.name === 'search')
+	const executeListed = tools.tools.find((tool) => tool.name === 'execute')
+	expect(searchListed?.annotations).toEqual({
+		readOnlyHint: true,
+		destructiveHint: false,
+		idempotentHint: true,
+		openWorldHint: false,
+	})
+	expect(executeListed?.annotations).toEqual({
+		readOnlyHint: false,
+		destructiveHint: true,
+		idempotentHint: false,
+		openWorldHint: true,
+	})
+	expect(searchListed?.outputSchema).toMatchObject({ type: 'object' })
 
 	const searchResult = await modern.client.callTool({
 		name: 'search',
