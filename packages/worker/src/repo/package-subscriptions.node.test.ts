@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 		skipped: false,
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
+	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -42,6 +43,10 @@ vi.mock('./artifacts-push-subscriptions.ts', () => ({
 
 vi.mock('./artifacts.ts', () => ({
 	getArtifactsNamespace: mocks.getArtifactsNamespace,
+}))
+
+vi.mock('./artifact-head-cache.ts', () => ({
+	applyArtifactSourcePushToHeadCache: mocks.applyArtifactSourcePushToHeadCache,
 }))
 
 const { dispatchRepoSubscriptionEvents, processCloudflareArtifactsRepoEvent } =
@@ -206,6 +211,8 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 		},
 	})
 	expect(sessionBranch.outcome).toBe('ignored')
+	// Ignored events never touch the cached HEAD.
+	expect(mocks.applyArtifactSourcePushToHeadCache).not.toHaveBeenCalled()
 
 	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(null)
 	const unmatched = await processCloudflareArtifactsRepoEvent({
@@ -213,6 +220,12 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 		body: pushedEvent,
 	})
 	expect(unmatched.outcome).toBe('unmatched')
+	expect(mocks.applyArtifactSourcePushToHeadCache).toHaveBeenCalledWith({
+		env,
+		repoId: 'repo-user-repo-1',
+		ref: 'refs/heads/main',
+		after: 'def789ghi012def789ghi012def789ghi012def7',
+	})
 
 	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
 	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])

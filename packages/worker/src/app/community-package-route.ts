@@ -13,7 +13,7 @@ import {
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
-import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -118,12 +118,18 @@ function requestedTreeRef(ref: string | undefined) {
 	return ref?.trim() ?? ''
 }
 
-async function resolveSourceDefaultTreeRef(env: Env, sourceId: string | null) {
+async function resolveSourceDefaultTreeRef(
+	env: Env,
+	sourceId: string | null,
+	request?: Request,
+) {
 	if (!sourceId) return fallbackDefaultBranchName
 	try {
 		const source = await getEntitySourceById(env.APP_DB, sourceId)
 		if (!source?.repo_id) return fallbackDefaultBranchName
-		const head = await resolveArtifactSourceHead(env, source.repo_id)
+		const head = await resolveCachedArtifactSourceHead(env, source.repo_id, {
+			request,
+		})
 		const branch = head.branch?.trim()
 		return branch || fallbackDefaultBranchName
 	} catch {
@@ -131,13 +137,17 @@ async function resolveSourceDefaultTreeRef(env: Env, sourceId: string | null) {
 	}
 }
 
-async function resolveListingDefaultTreeRef(env: Env, listingId: string) {
+async function resolveListingDefaultTreeRef(
+	env: Env,
+	listingId: string,
+	request?: Request,
+) {
 	try {
 		const listing = await getCommunityListingById(env.APP_DB, {
 			listingId,
 			includeDelisted: false,
 		})
-		return resolveSourceDefaultTreeRef(env, listing?.sourceId ?? null)
+		return resolveSourceDefaultTreeRef(env, listing?.sourceId ?? null, request)
 	} catch {
 		return fallbackDefaultBranchName
 	}
@@ -201,6 +211,7 @@ async function resolveOwnerPackageFilesTarget(input: {
 		? await resolveSourceDefaultTreeRef(
 				input.env,
 				page.ownerPackage?.sourceId ?? listingSourceId ?? null,
+				input.request,
 			)
 		: requestedRef
 	const canonicalPath = getPackageTreeHref({
@@ -227,13 +238,14 @@ async function resolveOwnerPackageFilesTarget(input: {
 
 async function canonicalPublicTreeRef(input: {
 	env: Env
+	request?: Request
 	listingId: string
 	ref: string | undefined
 }) {
 	if (!isPublicTreeDefaultRefAlias(input.ref)) {
 		return requestedTreeRef(input.ref)
 	}
-	return resolveListingDefaultTreeRef(input.env, input.listingId)
+	return resolveListingDefaultTreeRef(input.env, input.listingId, input.request)
 }
 
 export async function resolveCommunityFilesRoute(input: {
@@ -247,6 +259,7 @@ export async function resolveCommunityFilesRoute(input: {
 		if (selectedPath == null) return { kind: 'invalid-path' }
 		const ref = await canonicalPublicTreeRef({
 			env: input.env,
+			request: input.request,
 			listingId: detailMatch.params.listingId,
 			ref: input.url.searchParams.get('ref') ?? '',
 		})
@@ -275,6 +288,7 @@ export async function resolveCommunityFilesRoute(input: {
 		if (target) {
 			const ref = await canonicalPublicTreeRef({
 				env: input.env,
+				request: input.request,
 				listingId: target.listingId,
 				ref: input.url.searchParams.get('ref') ?? '',
 			})
@@ -315,6 +329,7 @@ export async function resolveCommunityFilesRoute(input: {
 	if (target) {
 		const ref = await canonicalPublicTreeRef({
 			env: input.env,
+			request: input.request,
 			listingId: target.listingId,
 			ref: treeMatch.params.ref,
 		})

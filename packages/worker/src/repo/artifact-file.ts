@@ -4,9 +4,9 @@ import {
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
 	isLoopbackArtifactsRemote,
-	readMockArtifactSnapshot,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
+import { readArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
 import {
 	isIsomorphicGitPackfileCorruptionError,
 	runArtifactsGitWithRetry,
@@ -50,7 +50,7 @@ export async function readFirstArtifactFileAtCommit(input: {
 	}
 
 	if (isLoopbackArtifactsRemote(info.remote)) {
-		const snapshot = await readMockArtifactSnapshot({
+		const snapshot = await readArtifactSourceSnapshot({
 			env: input.env,
 			repoId: input.repoId,
 			commit: input.commit,

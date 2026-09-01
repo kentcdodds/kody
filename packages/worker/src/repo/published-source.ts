@@ -1,5 +1,5 @@
 import { getEntitySourceById } from './entity-sources.ts'
-import { readMockArtifactSnapshot } from './artifacts.ts'
+import { readArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
 import {
 	loadPublishedSourceManifestSnapshot,
 	loadPublishedSourceSnapshot,
@@ -38,7 +38,7 @@ async function loadSourceSnapshotFromArtifacts(input: {
 	source: NonNullable<PublishedEntitySource['source']>
 }) {
 	const publishedCommit = assertPublishedCommit(input.source)
-	const snapshot = await readMockArtifactSnapshot({
+	const snapshot = await readArtifactSourceSnapshot({
 		env: input.env,
 		repoId: input.source.repo_id,
 		commit: publishedCommit,
@@ -66,7 +66,7 @@ async function loadManifestSnapshotFromArtifacts(input: {
 	source: NonNullable<PublishedEntitySource['source']>
 }) {
 	const publishedCommit = assertPublishedCommit(input.source)
-	const snapshot = await readMockArtifactSnapshot({
+	const snapshot = await readArtifactSourceSnapshot({
 		env: input.env,
 		repoId: input.source.repo_id,
 		commit: publishedCommit,

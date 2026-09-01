@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
 	fetch: vi.fn(),
 	init: vi.fn(),
 	readBlob: vi.fn(),
-	readMockArtifactSnapshot: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
 }))
 
@@ -25,8 +24,6 @@ vi.mock('./artifacts.ts', () => {
 		buildAuthenticatedArtifactsRemote: ({ remote }: { remote: string }) =>
 			remote,
 		isLoopbackArtifactsRemote: () => false,
-		readMockArtifactSnapshot: (...args: Array<unknown>) =>
-			mocks.readMockArtifactSnapshot(...args),
 		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 			mocks.resolveExistingArtifactSourceRepo(...args),
 	}

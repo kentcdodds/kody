@@ -294,6 +294,10 @@ export const EnvSchema = object({
 	CLOUDFLARE_ACCOUNT_ID: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
+	// `true` when CLOUDFLARE_API_BASE_URL points at a local Cloudflare API
+	// stand-in that serves whole repo trees by commit. The dev CLI sets it; the
+	// real API has no such endpoint, so production leaves it unset.
+	CLOUDFLARE_API_SOURCE_SNAPSHOTS: optionalNonEmptyStringSchema,
 	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
 	// Worker-to-Worker Artifacts binding. Present in production/preview when
 	// wrangler `artifacts` is configured; local/tests fall back to REST.

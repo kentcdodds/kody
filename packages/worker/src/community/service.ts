@@ -33,10 +33,8 @@ import {
 	deleteEntitySource,
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
-import {
-	readMockArtifactSnapshot,
-	resolveArtifactSourceHead,
-} from '#worker/repo/artifacts.ts'
+import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
+import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -1220,13 +1218,13 @@ export async function prepareCommunityFork(
 		}
 		if (files === snapshot?.files || files == null) {
 			try {
-				const mock = await readMockArtifactSnapshot({
+				const treeSnapshot = await readArtifactSourceSnapshot({
 					env: input.env,
 					repoId: source.repo_id,
 					commit: originCommit,
 				})
-				if (mock?.files) {
-					files = mock.files
+				if (treeSnapshot?.files) {
+					files = treeSnapshot.files
 					filesCommit = originCommit
 				}
 			} catch {

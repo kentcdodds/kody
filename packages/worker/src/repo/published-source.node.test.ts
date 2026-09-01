@@ -2,7 +2,7 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
-	readMockArtifactSnapshot: vi.fn(),
+	readArtifactSourceSnapshot: vi.fn(),
 	loadPublishedSourceManifestSnapshot: vi.fn(),
 	persistPublishedSourceManifestSnapshot: vi.fn(),
 	loadPublishedSourceSnapshot: vi.fn(),
@@ -14,9 +14,9 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('./artifacts.ts', () => ({
-	readMockArtifactSnapshot: (...args: Array<unknown>) =>
-		mockModule.readMockArtifactSnapshot(...args),
+vi.mock('./artifact-source-snapshot.ts', () => ({
+	readArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mockModule.readArtifactSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
@@ -51,7 +51,7 @@ function createSourceRow() {
 
 test('loadPublishedEntityManifest reads only manifest content from stored snapshots', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
+	mockModule.readArtifactSourceSnapshot.mockReset()
 	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
 	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
 	mockModule.loadPublishedSourceSnapshot.mockReset()
@@ -91,7 +91,7 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(
 		1,
 	)
-	expect(mockModule.readMockArtifactSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.readArtifactSourceSnapshot).not.toHaveBeenCalled()
 	expect(
 		mockModule.persistPublishedSourceManifestSnapshot,
 	).not.toHaveBeenCalled()
@@ -111,7 +111,7 @@ test('loadPublishedEntityManifest reads only manifest content from stored snapsh
 
 test('loadPublishedEntitySource persists fetched snapshots for later reuse', async () => {
 	mockModule.getEntitySourceById.mockReset()
-	mockModule.readMockArtifactSnapshot.mockReset()
+	mockModule.readArtifactSourceSnapshot.mockReset()
 	mockModule.loadPublishedSourceManifestSnapshot.mockReset()
 	mockModule.persistPublishedSourceManifestSnapshot.mockReset()
 	mockModule.loadPublishedSourceSnapshot.mockReset()
@@ -119,7 +119,7 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 
 	mockModule.getEntitySourceById.mockResolvedValue(createSourceRow())
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
-	mockModule.readMockArtifactSnapshot.mockResolvedValue({
+	mockModule.readArtifactSourceSnapshot.mockResolvedValue({
 		published_commit: 'commit-1',
 		files: {
 			'package.json': JSON.stringify({
@@ -146,7 +146,7 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 		sourceId: 'source-1',
 	})
 
-	expect(mockModule.readMockArtifactSnapshot).toHaveBeenCalledTimes(1)
+	expect(mockModule.readArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
 	expect(mockModule.persistPublishedSourceSnapshot).toHaveBeenCalledWith({
 		env: {
 			APP_DB: {},

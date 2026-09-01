@@ -17,6 +17,7 @@ import {
 	type PackageInvocationTokenRecord,
 } from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
+import { recordServerTiming } from '#worker/request-context.ts'
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
@@ -237,17 +238,41 @@ export async function loadAccountPackageDetail(input: {
 				})
 			: null
 	if (!record) return null
-	return toDetail({
-		env: input.env,
-		requestUrl: input.requestUrl,
-		userId: input.userId,
-		record,
-		hasCommunityListing: await hasActiveCommunityListing({
+	return recordServerTiming('owner-package', () =>
+		toDetailWithListingState({
+			env: input.env,
+			requestUrl: input.requestUrl,
+			userId: input.userId,
+			record,
+		}),
+	)
+}
+
+/**
+ * The listing lookup and the detail reads (tokens, manifest, source row) are
+ * independent D1/KV round trips; run them together.
+ */
+async function toDetailWithListingState(input: {
+	env: Env
+	requestUrl: string
+	userId: string
+	record: SavedPackageWithCommunityProvenanceRecord
+}): Promise<AccountPackageDetail> {
+	const [hasCommunityListing, detail] = await Promise.all([
+		hasActiveCommunityListing({
 			db: input.env.APP_DB,
 			userId: input.userId,
-			packageId: record.id,
+			packageId: input.record.id,
 		}),
-	})
+		toDetail({
+			env: input.env,
+			requestUrl: input.requestUrl,
+			userId: input.userId,
+			record: input.record,
+			hasCommunityListing: false,
+		}),
+	])
+	return { ...detail, hasCommunityListing }
 }
 
 export async function loadAccountPackagesData(input: {
@@ -308,16 +333,11 @@ export async function loadAccountPackagesData(input: {
 			return toListItem(item, provenance ? toListingAhead(provenance) : null)
 		}),
 		selectedPackage: selectedRecord
-			? await toDetail({
+			? await toDetailWithListingState({
 					env: input.env,
 					requestUrl: input.request.url,
 					userId,
 					record: selectedRecord,
-					hasCommunityListing: await hasActiveCommunityListing({
-						db: input.env.APP_DB,
-						userId,
-						packageId: selectedRecord.id,
-					}),
 				})
 			: null,
 		page,
