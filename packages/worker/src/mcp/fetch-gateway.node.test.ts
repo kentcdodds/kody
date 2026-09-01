@@ -1105,20 +1105,29 @@ test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchT
 })
 
 test('executeGatewayFetch rejects when allowOutboundFetch is false', async () => {
+	const usageModule = await import('#worker/usage/record-usage.ts')
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
 	const globalFetch = vi.fn(async () => new Response('ok'))
-	await expect(
-		executeGatewayFetch({
-			env,
-			props: {
-				baseUrl: 'https://kody.example',
-				userId: 'user-123',
-				email: 'user@example.com',
-				storageContext: null,
-				allowOutboundFetch: false,
-			},
-			request: new Request('https://example.com'),
-			globalFetch: globalFetch as unknown as typeof fetch,
-		}),
-	).rejects.toThrow('Outbound fetch is not available in retriever runs.')
-	expect(globalFetch).not.toHaveBeenCalled()
+	try {
+		await expect(
+			executeGatewayFetch({
+				env,
+				props: {
+					baseUrl: 'https://kody.example',
+					userId: 'user-123',
+					email: 'user@example.com',
+					storageContext: null,
+					allowOutboundFetch: false,
+				},
+				request: new Request('https://example.com'),
+				globalFetch: globalFetch as unknown as typeof fetch,
+			}),
+		).rejects.toThrow('Outbound fetch is not available in retriever runs.')
+		expect(globalFetch).not.toHaveBeenCalled()
+		expect(recordUsageSpy).not.toHaveBeenCalled()
+	} finally {
+		recordUsageSpy.mockRestore()
+	}
 })

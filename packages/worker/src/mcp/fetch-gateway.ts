@@ -235,7 +235,7 @@ export async function executeGatewayFetch(input: {
 		outcome = 'error'
 		throw error
 	} finally {
-		if (input.props.userId) {
+		if (input.props.allowOutboundFetch !== false && input.props.userId) {
 			const usageEvent = {
 				userId: input.props.userId,
 				eventType: 'outbound_fetch' as const,
