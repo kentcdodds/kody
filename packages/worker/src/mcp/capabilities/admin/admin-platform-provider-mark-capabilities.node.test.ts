@@ -95,10 +95,10 @@ test('save/list/delete provider marks store a fitted logo and write audit rows',
 		.prepare('SELECT action, result FROM audit_events ORDER BY id ASC')
 		.all() as Array<{ action: string; result: string }>
 	expect(auditActions).toEqual([
-		{ action: 'admin_platform_provider_mark_save', result: 'success' },
-		{ action: 'admin_platform_provider_mark_list', result: 'success' },
-		{ action: 'admin_platform_provider_mark_delete', result: 'success' },
-		{ action: 'admin_platform_provider_mark_list', result: 'success' },
+		{ action: 'adminPlatformProviderMarkSave', result: 'success' },
+		{ action: 'adminPlatformProviderMarkList', result: 'success' },
+		{ action: 'adminPlatformProviderMarkDelete', result: 'success' },
+		{ action: 'adminPlatformProviderMarkList', result: 'success' },
 	])
 })
 

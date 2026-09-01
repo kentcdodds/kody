@@ -13,9 +13,9 @@ import {
 function executeUsageSnippet(usage: string) {
 	const calls: Array<{ toolName: string; args: unknown }> = []
 	const kody = {
-		integration_get(args: unknown) {
+		integrationGet(args: unknown) {
 			calls.push({
-				toolName: 'integration_get',
+				toolName: 'integrationGet',
 				args: JSON.parse(JSON.stringify(args)),
 			})
 		},
@@ -149,7 +149,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	const quotedIntegrationMatch = structuredMatches[1]
 	expect(executeUsageSnippet(quotedIntegrationMatch?.usage ?? '')).toEqual([
 		{
-			toolName: 'integration_get',
+			toolName: 'integrationGet',
 			args: {
 				name: 'conn"name',
 			},
@@ -532,12 +532,12 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 	expect(observedPackageDetail.markdown).toContain('## Follow up')
 	expect(observedPackageDetail.markdown).toContain(
-		'If you plan to invoke an export, call package_get({ package_id: "package-123" }) first',
+		'If you plan to invoke an export, call packageGet({ package_id: "package-123" }) first',
 	)
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 	})
-	expect(observedPackageDetail.markdown).not.toContain('repo_publish_session')
+	expect(observedPackageDetail.markdown).not.toContain('repoPublishSession')
 })
 
 test('package search surfaces listing ahead only when the fork is behind', () => {
@@ -561,7 +561,7 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(currentMatch).not.toHaveProperty('listingAhead')
 	expect(
 		currentMatch && 'nextStep' in currentMatch ? currentMatch.nextStep : '',
-	).not.toContain('repo_publish_session')
+	).not.toContain('repoPublishSession')
 
 	const [aheadMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
@@ -587,7 +587,7 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	})
 	expect(
 		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
-	).toContain('repo_publish_session')
+	).toContain('repoPublishSession')
 	expect(
 		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
 	).toContain('absorbed_upstream_commit')
@@ -630,7 +630,7 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 		},
 	})
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
-	expect(aheadDetail.markdown).toContain('repo_publish_session')
+	expect(aheadDetail.markdown).toContain('repoPublishSession')
 	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
 })
 
@@ -901,17 +901,13 @@ test('domain overview matches format as compact structured summaries', () => {
 			title: 'email',
 			description: 'Email primitives for the per-user inbox.',
 			capabilityCount: 9,
-			sampleCapabilities: [
-				'email_send',
-				'email_message_list',
-				'email_message_get',
-			],
+			sampleCapabilities: ['emailSend', 'emailMessageList', 'emailMessageGet'],
 		},
 	]
 	const markdown = formatSearchMarkdown({ matches: domainMatches })
 	expect(markdown).toContain('Search again with a more specific query')
 	expect(markdown).toContain('**domain** `email` (9 capabilities)')
-	expect(markdown).toContain('`email_send`')
+	expect(markdown).toContain('`emailSend`')
 	expect(markdown).not.toContain('entity-backed')
 
 	const [slim] = toSlimStructuredMatches({
@@ -923,11 +919,7 @@ test('domain overview matches format as compact structured summaries', () => {
 		id: 'email',
 		name: 'email',
 		capabilityCount: 9,
-		sampleCapabilities: [
-			'email_send',
-			'email_message_list',
-			'email_message_get',
-		],
+		sampleCapabilities: ['emailSend', 'emailMessageList', 'emailMessageGet'],
 	})
 	expect(typeof slim?.usage).toBe('string')
 	expect(slim?.usage).toContain('domain: "email"')
@@ -938,7 +930,7 @@ test('capability list items include the domain id for follow-up scoping', () => 
 		matches: [
 			{
 				type: 'capability',
-				name: 'email_send',
+				name: 'emailSend',
 				description: 'Send a message.',
 				domain: 'email',
 			},
@@ -946,7 +938,7 @@ test('capability list items include the domain id for follow-up scoping', () => 
 		includePreamble: false,
 	})
 	expect(markdown).toContain(
-		'1. **capability** `email_send` (`email`) — Send a message\\. Entity: `email_send:capability`',
+		'1. **capability** `emailSend` (`email`) — Send a message\\. Entity: `emailSend:capability`',
 	)
 
 	const [slim] = toSlimStructuredMatches({
@@ -954,7 +946,7 @@ test('capability list items include the domain id for follow-up scoping', () => 
 		matches: [
 			{
 				type: 'capability',
-				name: 'email_send',
+				name: 'emailSend',
 				description: 'Send a message.',
 				domain: 'email',
 			},
@@ -962,7 +954,7 @@ test('capability list items include the domain id for follow-up scoping', () => 
 	})
 	expect(slim).toMatchObject({
 		type: 'capability',
-		id: 'email_send',
+		id: 'emailSend',
 		domain: 'email',
 	})
 })
@@ -1139,11 +1131,11 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 
 	const builtinDetail = formatEntityDetailMarkdown({
 		type: 'capability',
-		id: 'coding_guide_get',
-		title: 'coding_guide_get',
+		id: 'codingGuideGet',
+		title: 'codingGuideGet',
 		description: 'Load an official guide.',
 		spec: {
-			name: 'coding_guide_get',
+			name: 'codingGuideGet',
 			domain: 'coding',
 			description: 'Load an official guide.',
 			keywords: [],

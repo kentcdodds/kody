@@ -46,7 +46,7 @@ const jwtSignInputSchema = z.object({
 export const jwtSignCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
-		name: 'secret_jwt_sign',
+		name: 'secretJwtSign',
 		description:
 			'Sign a JWT with a private key stored in a saved secret without revealing the private key. This generic primitive only signs caller-provided header and claims; package or execute code should perform any OAuth token exchange separately.',
 		keywords: [

@@ -82,14 +82,14 @@ Open these before proposing a new primitive, surface, or storage home.
   input resolution or `allowed_capabilities`
 - [0043 — Repo visibility is the share switch; no community-package kind](./0043-repo-visibility-no-community-kind.md)
   — no `package.json#private` SoT, no second publish semantics
-  (`community_publish` stays a visibility alias), no license bureau, no trusted
+  (`communityPublish` stays a visibility alias), no license bureau, no trusted
   listings
 - [0044 — Retired brand domains stay retired](./0044-retired-brand-domains-stay-retired.md)
   — do not re-attach `heykody.app`, `heykody.dev`, or `kodyapps.dev` as app,
   package-app, status, or email hosts
 - [0045 — Official guides load through search, not execute](./0045-guides-load-through-search.md)
-  — `{id}:guide` entity detail is the read path; do not execute
-  `coding_guide_get` just to load a guide
+  — `{id}:guide` entity detail is the read path; do not execute `codingGuideGet`
+  just to load a guide
 
 ## Historical / UI / implementation
 

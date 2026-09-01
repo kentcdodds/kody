@@ -95,7 +95,7 @@ function createJoinedIntegration(input: {
 
 function buildRoleGatedSearchRegistry() {
 	const publicCapability = defineDomainCapability('meta', {
-		name: 'public_docs_search',
+		name: 'publicDocsSearch',
 		description: 'Search public docs',
 		keywords: ['public', 'docs', 'search'],
 		readOnly: true,
@@ -107,7 +107,7 @@ function buildRoleGatedSearchRegistry() {
 		handler: async () => null,
 	})
 	const adminCapability = defineDomainCapability('admin', {
-		name: 'admin_user_list',
+		name: 'adminUserList',
 		description: 'List admin user account metadata and roles',
 		keywords: ['admin', 'users', 'roles', 'accounts'],
 		readOnly: true,
@@ -610,14 +610,12 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 
 	expect(
 		regularResult.matches.some(
-			(match) =>
-				match.type === 'capability' && match.name === 'admin_user_list',
+			(match) => match.type === 'capability' && match.name === 'adminUserList',
 		),
 	).toBe(false)
 	expect(
 		adminResult.matches.some(
-			(match) =>
-				match.type === 'capability' && match.name === 'admin_user_list',
+			(match) => match.type === 'capability' && match.name === 'adminUserList',
 		),
 	).toBe(true)
 })
@@ -1605,7 +1603,7 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 
 function buildDomainScopedRegistry() {
 	const emailSend = defineDomainCapability('email', {
-		name: 'email_send',
+		name: 'emailSend',
 		description: 'Send an email message from the per-user inbox',
 		keywords: ['email', 'send', 'mail'],
 		readOnly: false,
@@ -1618,7 +1616,7 @@ function buildDomainScopedRegistry() {
 		handler: async () => null,
 	})
 	const emailList = defineDomainCapability('email', {
-		name: 'email_message_list',
+		name: 'emailMessageList',
 		description: 'List stored email messages',
 		keywords: ['email', 'list', 'mail'],
 		readOnly: true,
@@ -1627,7 +1625,7 @@ function buildDomainScopedRegistry() {
 		handler: async () => null,
 	})
 	const jobUpdate = defineDomainCapability('jobs', {
-		name: 'job_update',
+		name: 'jobUpdate',
 		description:
 			'Update metadata on a durable job that can send email reminders',
 		keywords: ['email', 'schedule', 'job', 'update'],
@@ -1683,8 +1681,8 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	const names = scoped.matches.flatMap((match) =>
 		match.type === 'capability' ? [match.name] : [],
 	)
-	expect(names).toContain('email_send')
-	expect(names).not.toContain('job_update')
+	expect(names).toContain('emailSend')
+	expect(names).not.toContain('jobUpdate')
 
 	const unknownDomain = await searchUnified({
 		env: {} as Env,
@@ -1713,7 +1711,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 		browse.matches.map((match) =>
 			match.type === 'capability' ? match.name : match.type,
 		),
-	).toEqual(['email_send', 'email_message_list'])
+	).toEqual(['emailSend', 'emailMessageList'])
 	expect(browse.matches[0]).toMatchObject({
 		type: 'capability',
 		domain: 'email',
@@ -1746,7 +1744,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 			type: 'domain',
 			name: 'email',
 			capabilityCount: 2,
-			sampleCapabilities: ['email_send', 'email_message_list'],
+			sampleCapabilities: ['emailSend', 'emailMessageList'],
 		}),
 	])
 	expect(overview.guidance).toBeDefined()
@@ -1765,7 +1763,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	)
 	expect(
 		taskQuery.matches.some(
-			(match) => match.type === 'capability' && match.name === 'email_send',
+			(match) => match.type === 'capability' && match.name === 'emailSend',
 		),
 	).toBe(true)
 })

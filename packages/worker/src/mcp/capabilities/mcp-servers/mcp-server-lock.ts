@@ -19,7 +19,7 @@ const outputSchema = z.object({
 export const mcpServerLockCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_lock',
+		name: 'mcpServerLock',
 		description:
 			'Lock a saved MCP server to a package so only that package (and any previously granted packages) can call kody.mcp["server-name"]. Execute and other packages are denied. Agents can lock; unlocking or removing a grant is website-only at /account/mcp-servers/:serverId.',
 		keywords: [

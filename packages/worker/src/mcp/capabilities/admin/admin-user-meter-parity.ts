@@ -76,7 +76,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_user_meter_parity',
+		name: 'adminUserMeterParity',
 		description:
 			'Read-only production verification report for one user: UserMeter daily counter reads (meter-only; there is no D1 entitlement_daily_counters table), physical D1 payload recompute versus authoritative UserMeter storage bytes, and deletion-fence verification. Deletion reports `deletingAtParity` (D1 permanent tombstone versus meter fence) and `activeLeaseCount` (active authoritative UserMeter write leases). Never bootstraps or writes parity state; returns counts and parity only (no lease tokens/holders or email content). Admin-only.',
 		keywords: [
@@ -94,7 +94,7 @@ export const adminUserMeterParityCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_user_meter_parity',
+				'adminUserMeterParity',
 				async () => ({
 					report: await loadAdminUserMeterParityReport({
 						db: ctx.env.APP_DB,

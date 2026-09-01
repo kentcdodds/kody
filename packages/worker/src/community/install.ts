@@ -79,7 +79,7 @@ function createSnapshotFilesWorkspace(files: Record<string, string>) {
  * declared jobs). When checks fail — most commonly
  * because of cross-scope `kody:@` imports that cannot resolve in the
  * installer's account — the fork is kept as an inert source so an agent can
- * resume it through `repo_open_session`, and no package is published.
+ * resume it through `repoOpenSession`, and no package is published.
  *
  * Callers are responsible for the install confirm gate: public listings
  * must only reach this after the user explicitly acknowledged the risk.

@@ -31,7 +31,7 @@ export class PlatformOauthAppValidationError extends Error {
  * can reference it, so sandboxed code has no resolution path to the shared
  * credential. `getPlatformOauthAppClientSecret` is the only decrypt accessor;
  * its remaining caller is host-side token refresh
- * (`integration_token_refresh`). Never expose the decrypted value in capability
+ * (`integrationTokenRefresh`). Never expose the decrypted value in capability
  * outputs, loader payloads, or logs.
  */
 export type PlatformOauthApp = {
@@ -476,7 +476,7 @@ export async function countConnectionsForPlatformApp(input: {
 /**
  * Decrypts the shared client secret for host-side token exchange. This is the
  * only decrypt path; keep its callers limited to the connect-flow exchange and
- * the `integration_token_refresh` capability, and never place the returned
+ * the `integrationTokenRefresh` capability, and never place the returned
  * value in a response, capability output, or log.
  */
 export async function getPlatformOauthAppClientSecret(input: {

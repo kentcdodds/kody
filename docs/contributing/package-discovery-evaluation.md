@@ -82,13 +82,12 @@ metadata.
   source before authoring is `inspect-authoring-guidance`.
 - Initializing, editing, creating, or publishing reusable saved source is
   `author-package`. The scorer derives the phase from actual `execute` code:
-  - `package_get_git_remote` and `repo_open_session` initialize an authoring
-    lane;
-  - `repo_edit_files` is a mutation-counted edit step;
-  - `repo_run_checks` is a check-only step and does not satisfy the required
+  - `packageGetGitRemote` and `repoOpenSession` initialize an authoring lane;
+  - `repoEditFiles` is a mutation-counted edit step;
+  - `repoRunChecks` is a check-only step and does not satisfy the required
     authoring mutation;
-  - `package_save`, `package_publish_external_push`, and `repo_publish_session`
-    create or publish source.
+  - `packageSave`, `packagePublishExternalPush`, and `repoPublishSession` create
+    or publish source.
 - Any other Kody `execute` call is `other-execute`, which no case allows.
 
 If one `execute` call performs multiple lifecycle actions, emit one event per

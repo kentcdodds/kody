@@ -51,7 +51,7 @@ export const adminUserVerifyCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_user_verify',
+		name: 'adminUserVerify',
 		description:
 			'Mark one account email verified, or mint a one-time verify URL to send over a path that is not kody.codes. Admin-only; audited; never touches user content.',
 		keywords: [
@@ -69,7 +69,7 @@ export const adminUserVerifyCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_user_verify',
+				'adminUserVerify',
 				async () => {
 					const target = {
 						stableUserId: args.stableUserId,

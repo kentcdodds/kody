@@ -89,7 +89,7 @@ export function buildChangeIntegrationScopesPrompt(input: {
 		return [
 			`The "${name}" connection is a built-in (platform) integration that is being retired.`,
 			`It currently requests these scopes: ${currentList}.`,
-			`Do not call integration_save to change authorization.scopes on a built-in — that capability refuses platform connections.`,
+			`Do not call integrationSave to change authorization.scopes on a built-in — that capability refuses platform connections.`,
 			`To change access or reconnect, set up a bring-your-own OAuth app at ${reconnectHref} (or a complete /connect/oauth URL after opening oauth:guide and the matching provider_<slug>:guide).`,
 			`Reconnecting replaces this built-in connection with the user's own app. Existing tokens stay valid until then.`,
 		].join(' ')
@@ -99,8 +99,8 @@ export function buildChangeIntegrationScopesPrompt(input: {
 		`authorization.scopes is reconnect metadata — the list the next /connect/oauth visit will request — not the current access token.`,
 		`It currently requests: ${currentList}.`,
 		`Open search({ entity: "oauth:guide" }) and, if a provider guide exists, search({ entity: "provider_<slug>:guide" }).`,
-		`Call integration_get / integration_list first. Scopes are per connection; sibling accounts that share an OAuth app keep their own scope lists.`,
-		`Use integration_save to widen authorization.scopes on this connection only.`,
+		`Call integrationGet / integrationList first. Scopes are per connection; sibling accounts that share an OAuth app keep their own scope lists.`,
+		`Use integrationSave to widen authorization.scopes on this connection only.`,
 		`Then tell me in plain language that the saved integration now requests those scopes but existing tokens do not, and ask whether I want to reconnect this account (and any other accounts I name) at ${reconnectHref}.`,
 	].join(' ')
 }

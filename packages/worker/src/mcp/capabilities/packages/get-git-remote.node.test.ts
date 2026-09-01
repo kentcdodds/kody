@@ -275,13 +275,13 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 			{ package_id: 'package-1', ttl_seconds: 59 },
 			createContext(),
 		),
-	).rejects.toThrow('Invalid input for capability "package_get_git_remote"')
+	).rejects.toThrow('Invalid input for capability "packageGetGitRemote"')
 	await expect(
 		getGitRemoteCapability.handler(
 			{ package_id: 'package-1', ttl_seconds: 86_401 },
 			createContext(),
 		),
-	).rejects.toThrow('Invalid input for capability "package_get_git_remote"')
+	).rejects.toThrow('Invalid input for capability "packageGetGitRemote"')
 })
 
 test('get_git_remote write scope blocks when no restorable backup snapshot exists', async () => {

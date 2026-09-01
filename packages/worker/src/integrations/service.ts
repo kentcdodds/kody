@@ -129,7 +129,7 @@ export function toPlatformIntegrationConfig(
 ): IntegrationConfig {
 	// The shared client secret never has a user-facing secret name; the
 	// `platform` marker routes sandbox token refresh through the host-side
-	// `integration_token_refresh` capability instead.
+	// `integrationTokenRefresh` capability instead.
 	return {
 		...normalizeIntegrationConfig({
 			name: connection.name,

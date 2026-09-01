@@ -42,7 +42,7 @@ and publish paths are covered in
   CI, because its correctness is pinned to a platform version and it runs
   fleet-wide over other users' source. A user transforming **their own**
   packages with **their own** transform needs no primitive — every required
-  power (repo sessions, `repo_run_checks` against a staged tree, gated publish,
+  power (repo sessions, `repoRunChecks` against a staged tree, gated publish,
   git history) already exists as user capabilities. That userland pattern is
   packaged as the
   [`@kentcdodds/codemod-runner`](https://kody.codes/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
@@ -440,10 +440,10 @@ fleet transforms; see
 
 Admin-gated operator fleet runs:
 
-- `admin_package_codemod_scan`
-- `admin_package_codemod_dry_run`
-- `admin_package_codemod_apply`
-- `admin_package_codemod_revert`
+- `adminPackageCodemodScan`
+- `adminPackageCodemodDryRun`
+- `adminPackageCodemodApply`
+- `adminPackageCodemodRevert`
 
 Admin capabilities require `requiredRole: 'admin'` and follow the RBAC boundary
 in [Authorization](./architecture/authorization.md).

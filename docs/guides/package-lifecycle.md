@@ -53,13 +53,13 @@ package `dryRun` and fresh user confirmation before a live mutation.
 ### Fork a close public package before creating
 
 Community listings are excluded from general `search`. When you need durable
-reusable behavior and nothing in the user's account fits, call
-`community_search` for a close public package.
+reusable behavior and nothing in the user's account fits, call `communitySearch`
+for a close public package.
 
 If a listing is close to the user's goal:
 
-1. Inspect it with `community_get`.
-2. Fork with `community_fork` (or point the user at one-click install on
+1. Inspect it with `communityGet`.
+2. Fork with `communityFork` (or point the user at one-click install on
    `/onboarding` or the listing detail page).
 3. Review the forked source, adapt it to the user's intent (including the README
    `## Intent` section), then publish.
@@ -86,7 +86,7 @@ package runtime. See [Workflows](../use/workflows.md).
 Use `guide: "package_authoring"` for package shape, README `## Intent`,
 per-export JSDoc (search Purpose), visibility guidance, and the secret-using
 package approval checklist (`pending_secret_package_approvals` is non-null only
-for unadopted community-forked packages; prefer `community_fork_adopt` after
+for unadopted community-forked packages; prefer `communityForkAdopt` after
 review, or bulk approval URLs when present).
 
 When the OAuth token is coarser than the intended export — Gmail can send
@@ -108,7 +108,7 @@ Move the behavior into a package when one or more of these become true:
 - you are calling a third-party **product** API with raw integration auth
   helpers (`createAuthenticatedFetch` or equivalent) beyond a cheap smoke test —
   **integrations = auth; packages = how agents should call the product**. Search
-  for an existing wrapper package first, then `community_search`, then fork or
+  for an existing wrapper package first, then `communitySearch`, then fork or
   create a thin helpers package
 
 Do not create a package merely to wrap one clear call to an existing capability
@@ -121,14 +121,14 @@ a new package.
 
 When a normal filesystem and git client are available:
 
-1. Call `package_get_git_remote`. For a new package, pass `create: true` and a
-   new `kody_id`; for an existing package, omit `create`.
+1. Call `packageGetGitRemote`. For a new package, pass `create: true` and a new
+   `kody_id`; for an existing package, omit `create`.
 2. Run the returned setup commands and clone into a temporary directory. Those
    commands set local git `user.email` and `user.name` from `git_author` (the
    signed-in Kody account). Do not invent a git identity.
 3. Edit and test through the normal local development loop.
 4. Commit and push the package repository.
-5. Publish the pushed head with `package_publish_external_push`.
+5. Publish the pushed head with `packagePublishExternalPush`.
 
 This lane supports binary assets, multi-file changes, local tests, and normal
 git review.
@@ -137,11 +137,11 @@ git review.
 
 Without local filesystem or git access:
 
-1. Create the complete UTF-8 text package with `package_save`, or inspect an
-   existing package with `package_get`.
-2. Use `repo_open_session`, `repo_edit_files`, `repo_commit`, and
-   `repo_run_checks` for repo-backed edits and validation.
-3. Publish with `repo_publish_session`.
+1. Create the complete UTF-8 text package with `packageSave`, or inspect an
+   existing package with `packageGet`.
+2. Use `repoOpenSession`, `repoEditFiles`, `repoCommit`, and `repoRunChecks` for
+   repo-backed edits and validation.
+3. Publish with `repoPublishSession`.
 
 If the work needs binary assets, broad refactors, or a substantial local
 build/test loop, explain that it fits a coding-capable agent and confirm before
@@ -178,7 +178,7 @@ After package checks and publishing succeed:
 
    Republishing a package whose job still says `"enabled": false` does not
    disable a job that is already running. Manifest `enabled` is the create-time
-   default and can turn a job on; use `job_update` (or a package pause/resume
+   default and can turn a job on; use `jobUpdate` (or a package pause/resume
    export) to turn one off. This keeps fleet-wide package publishes from
    silently stopping a sweeper that an operator already enabled.
 
@@ -210,23 +210,23 @@ mutation has not been explicitly confirmed by the user.
 
 ## Delete a package
 
-`package_delete` permanently removes a saved package the signed-in user owns. Do
+`packageDelete` permanently removes a saved package the signed-in user owns. Do
 not call it because a package is unused, failing, or over quota unless the owner
 explicitly asked to delete that package.
 
-1. Load the package with `package_get` or `package_list`.
+1. Load the package with `packageGet` or `packageList`.
 2. Show the owner the package name and that delete removes jobs, storage,
    secrets, tokens, the public listing if one exists, and Artifacts repos.
    Existing forks keep their copies. This cannot be undone.
 3. Wait for the owner to type the package name.
-4. Call `package_delete` with `package_id` and `confirm_name` matching that name
+4. Call `packageDelete` with `package_id` and `confirm_name` matching that name
    exactly. The capability refuses and names the expected value when
    `confirm_name` is missing or wrong.
 
 People can delete from the package page: `/account/packages` → open the package
 → **Delete package**, then type the package name in the modal.
 
-Hiding (`package_update` `changes.hidden`) and making a package private are not
+Hiding (`packageUpdate` `changes.hidden`) and making a package private are not
 deletion.
 
 ## Evolve the durable behavior

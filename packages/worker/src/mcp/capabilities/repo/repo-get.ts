@@ -29,7 +29,7 @@ const repoIdentitySchema = z
 export const repoGetCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_get',
+		name: 'repoGet',
 		description:
 			'Load one plain repo for the signed-in user, including live default-branch HEAD and progressive-disclosure hints when the tree is package-shaped.',
 		keywords: ['repo', 'get', 'plain', 'head', 'package-shaped'],

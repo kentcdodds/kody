@@ -57,14 +57,14 @@ Declaring a webhook does **not** open ingress by itself.
 Use the MCP `webhooks` domain:
 
 1. Save/publish the package with `kody.webhooks`.
-2. Store the HMAC secret with `secret_set` under the name used in
+2. Store the HMAC secret with `secretSet` under the name used in
    `verification.secretName` (for example `sentryWebhookSecret`).
-3. Call `webhook_url_mint` with the package id/kody id and `webhookName`.
+3. Call `webhookUrlMint` with the package id/kody id and `webhookName`.
 4. Store the returned `url` immediately and paste it into the provider.
 
-Other capabilities: `webhook_list` (declarations joined with minted/enabled
-state), `webhook_url_rotate`, `webhook_enable`, `webhook_disable`, and
-`webhook_delivery_list` (metadata only; bodies are never stored). The same
+Other capabilities: `webhookList` (declarations joined with minted/enabled
+state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
+`webhookDeliveryList` (metadata only; bodies are never stored). The same
 delivery history also appears under [Activity](./activity.md)
 (`/account/activity` and the `runs` capabilities).
 
@@ -146,9 +146,9 @@ export async function handleSentryWebhook(input) {
 ## Lifecycle
 
 Republishing a package that removes or renames a webhook deactivates that
-ingress (unknown name → 404). Disable with `webhook_disable` without deleting
-the mint; re-enable with `webhook_enable`. Rotate the URL secret with
-`webhook_url_rotate` when a credential may have leaked.
+ingress (unknown name → 404). Disable with `webhookDisable` without deleting the
+mint; re-enable with `webhookEnable`. Rotate the URL secret with
+`webhookUrlRotate` when a credential may have leaked.
 
 ## Related
 

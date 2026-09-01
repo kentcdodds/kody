@@ -23,7 +23,7 @@ const outputSchema = z.object({
 export const mcpServerReconnectCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_reconnect',
+		name: 'mcpServerReconnect',
 		description:
 			'Retry connecting to a saved MCP server that is failed or disconnected. Returns the resulting connection state; an authUrl means the user must re-authorize via OAuth.',
 		keywords: ['mcp', 'server', 'reconnect', 'retry', 'connection', 'client'],

@@ -7,7 +7,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 export const communityReportCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_report',
+		name: 'communityReport',
 		description:
 			'Report a community listing to deployment admins. Reports include the reporter identity and are not anonymous.',
 		keywords: ['community', 'report', 'abuse', 'moderation', 'listing'],

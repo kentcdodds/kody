@@ -58,7 +58,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 				result?: { matches?: Array<{ id?: string }> }
 			}
 		)?.result?.matches ?? []
-	expect(regularMatches.some((match) => match.id === 'admin_user_list')).toBe(
+	expect(regularMatches.some((match) => match.id === 'adminUserList')).toBe(
 		false,
 	)
 
@@ -92,7 +92,5 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 				result?: { matches?: Array<{ id?: string }> }
 			}
 		)?.result?.matches ?? []
-	expect(adminMatches.some((match) => match.id === 'admin_user_list')).toBe(
-		true,
-	)
+	expect(adminMatches.some((match) => match.id === 'adminUserList')).toBe(true)
 })

@@ -7,7 +7,7 @@
 
 `x-kody-secret` let capability arguments accept `{{secret:name}}` placeholders.
 `secret_entries.allowed_capabilities` was the default-deny allowlist for that
-path (and for `secret_jwt_sign` looking up a key by name). The original consumer
+path (and for `secretJwtSign` looking up a key by name). The original consumer
 was remote-connector credential handoff. Those connectors no longer synthesize
 capabilities; home automation uses ordinary MCP servers.
 
@@ -26,7 +26,7 @@ boundary.
 
 ## Consequences
 
-`secret_jwt_sign` signs with any secret the caller can resolve. `secret_set`
+`secretJwtSign` signs with any secret the caller can resolve. `secretSet`
 persists the raw `value` string; it does not expand `{{secret:…}}`. Host and
 package grants stay. The fetch header `x-kody-secret-resolution: off` stays —
 that is a different mechanism.

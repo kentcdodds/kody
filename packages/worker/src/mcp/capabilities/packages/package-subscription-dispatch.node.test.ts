@@ -127,7 +127,7 @@ function mockDeclaredSubscription(topic = inboundEmailReceiptTopic) {
 	})
 }
 
-test('package_subscription_dispatch sends synthetic params envelopes to one package', async () => {
+test('packageSubscriptionDispatch sends synthetic params envelopes to one package', async () => {
 	mockDeclaredSubscription('repo.pushed')
 	const ctx = createCtx()
 
@@ -180,7 +180,7 @@ test('package_subscription_dispatch sends synthetic params envelopes to one pack
 	expect(second.idempotency_key).not.toBe(result.idempotency_key)
 })
 
-test('package_subscription_dispatch bounds oversized handler results', async () => {
+test('packageSubscriptionDispatch bounds oversized handler results', async () => {
 	mockDeclaredSubscription('repo.pushed')
 	mocks.invokePackageSubscription.mockResolvedValue({
 		status: 200,
@@ -203,7 +203,7 @@ test('package_subscription_dispatch bounds oversized handler results', async () 
 	})
 })
 
-test('package_subscription_dispatch replays stored inbound email envelopes', async () => {
+test('packageSubscriptionDispatch replays stored inbound email envelopes', async () => {
 	mockDeclaredSubscription()
 	mocks.getInternalEmailMessageById.mockResolvedValue({
 		id: 'message-1',
@@ -268,7 +268,7 @@ test('package_subscription_dispatch replays stored inbound email envelopes', asy
 	)
 })
 
-test('package_subscription_dispatch rejects replay when the stored message topic differs', async () => {
+test('packageSubscriptionDispatch rejects replay when the stored message topic differs', async () => {
 	mockDeclaredSubscription()
 	mocks.getInternalEmailMessageById.mockResolvedValue({
 		id: 'message-quarantined',
@@ -304,7 +304,7 @@ test('package_subscription_dispatch rejects replay when the stored message topic
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
-test('package_subscription_dispatch rejects runtime callers and undeclared topics', async () => {
+test('packageSubscriptionDispatch rejects runtime callers and undeclared topics', async () => {
 	mockDeclaredSubscription('repo.pushed')
 
 	await expect(
@@ -323,7 +323,7 @@ test('package_subscription_dispatch rejects runtime callers and undeclared topic
 			}) as never,
 		),
 	).rejects.toThrow(
-		'package_subscription_dispatch is unavailable from package runtime contexts.',
+		'packageSubscriptionDispatch is unavailable from package runtime contexts.',
 	)
 	await expect(
 		packageSubscriptionDispatchCapability.handler(
@@ -335,7 +335,7 @@ test('package_subscription_dispatch rejects runtime callers and undeclared topic
 			createCtx({ executionOrigin: 'background' }) as never,
 		),
 	).rejects.toThrow(
-		'package_subscription_dispatch is unavailable from package runtime contexts.',
+		'packageSubscriptionDispatch is unavailable from package runtime contexts.',
 	)
 
 	mockDeclaredSubscription()
@@ -348,10 +348,10 @@ test('package_subscription_dispatch rejects runtime callers and undeclared topic
 			},
 			createCtx() as never,
 		),
-	).rejects.toThrow(/package_subscription_dispatch/)
+	).rejects.toThrow(/packageSubscriptionDispatch/)
 })
 
-test('package_subscription_dispatch resolves delegated package scope like package_get', async () => {
+test('packageSubscriptionDispatch resolves delegated package scope like packageGet', async () => {
 	mockDeclaredSubscription('repo.pushed')
 	const ctx = createCtx()
 	mocks.resolvePackageOwnerContext.mockResolvedValue({

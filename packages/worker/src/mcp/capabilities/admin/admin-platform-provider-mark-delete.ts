@@ -26,7 +26,7 @@ export const adminPlatformProviderMarkDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_platform_provider_mark_delete',
+		name: 'adminPlatformProviderMarkDelete',
 		description:
 			'Delete an operator-owned provider brand mark and its stored logo. Admin-only.',
 		keywords: [
@@ -44,7 +44,7 @@ export const adminPlatformProviderMarkDeleteCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_provider_mark_delete',
+				'adminPlatformProviderMarkDelete',
 				async () => {
 					const existing = await getPlatformProviderMarkBySlug({
 						db: ctx.env.APP_DB,

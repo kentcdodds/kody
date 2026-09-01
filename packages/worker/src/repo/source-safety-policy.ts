@@ -14,10 +14,10 @@ import {
 import { type EntitySourceRow } from './types.ts'
 
 export const productionPackageSourceSafetyPolicy =
-	'Production package source safety policy: never replace source history, force publish, or package_save over an existing package unless Kody has created a restorable backup snapshot and the user explicitly approved destructive overwrite. If existing source cannot be cloned or verified, stop and report the source recovery problem.'
+	'Production package source safety policy: never replace source history, force publish, or packageSave over an existing package unless Kody has created a restorable backup snapshot and the user explicitly approved destructive overwrite. If existing source cannot be cloned or verified, stop and report the source recovery problem.'
 
 export const defaultPackagePrivateGuidance =
-	'Visibility is a repo setting (`package_update` / `repo_update`), not package.json `"private"`. Leftover `"private"` in manifests is ignored for catalog listing. New packages are created private; set `changes.visibility: "public"` after the user asks to list them on /community.'
+	'Visibility is a repo setting (`packageUpdate` / `repoUpdate`), not package.json `"private"`. Leftover `"private"` in manifests is ignored for catalog listing. New packages are created private; set `changes.visibility: "public"` after the user asks to list them on /community.'
 
 export const destructiveOverwriteConfirmationField =
 	'confirm_destructive_overwrite'
@@ -29,7 +29,7 @@ export const privateVisibilityChangeConfirmationField =
 	'confirm_private_visibility_change'
 
 export const privateVisibilityChangeConfirmationDescription =
-	'Set to true only when the user explicitly approved changing package.json `"private"`. This flag does not change repo visibility: catalog listing is `package_update` `changes.visibility`. Leftover `"private"` in manifests is ignored for the catalog.'
+	'Set to true only when the user explicitly approved changing package.json `"private"`. This flag does not change repo visibility: catalog listing is `packageUpdate` `changes.visibility`. Leftover `"private"` in manifests is ignored for the catalog.'
 
 export function buildSourceRecoveryProblemMessage(input: {
 	source: EntitySourceRow
@@ -47,7 +47,7 @@ export function buildSourceRecoveryProblemMessage(input: {
 /**
  * True when a source-recovery message is specifically "Artifacts HEAD does not
  * match published_commit". That state is expected after a git-lane push before
- * `package_publish_external_push` (or the reconcile cron) lands — a caller
+ * `packagePublishExternalPush` (or the reconcile cron) lands — a caller
  * precondition, not a platform defect.
  */
 export function isPublishedCommitHeadMismatchMessage(message: string) {
@@ -62,7 +62,7 @@ export function buildPublishedCommitHeadMismatchCallerMessage(
 ) {
 	return [
 		recoveryMessage,
-		'Publish the current Artifacts HEAD with package_publish_external_push (or wait for the reconcile job), then retry.',
+		'Publish the current Artifacts HEAD with packagePublishExternalPush (or wait for the reconcile job), then retry.',
 		'Repo sessions open from the published commit and refuse to start while unpublished remote commits are present.',
 	].join(' ')
 }
@@ -337,7 +337,7 @@ function buildPrivateVisibilityChangeConfirmationMessage(input: {
 	if (input.isNewPackage) {
 		return [
 			`${input.operation} would create a package that is not private-only (${describePackagePrivateField(afterValue)}).`,
-			`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves changing package.json "private". This does not list the package on /community — use package_update changes.visibility for that.`,
+			`Set ${privateVisibilityChangeConfirmationField}: true only after the user explicitly approves changing package.json "private". This does not list the package on /community — use packageUpdate changes.visibility for that.`,
 		].join(' ')
 	}
 	return [

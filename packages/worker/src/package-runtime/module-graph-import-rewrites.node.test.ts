@@ -437,17 +437,17 @@ test.each([
 		source: `import { kody } from 'kody:runtime'
 
 export default async function launchAgent() {
-	return await kody.secret_list({ scope: 'user' })
+	return await kody.secretList({ scope: 'user' })
 }
 `,
 		kody: {
-			async secret_list(input: unknown) {
-				return { ok: true, tool: 'secret_list', input }
+			async secretList(input: unknown) {
+				return { ok: true, tool: 'secretList', input }
 			},
 		},
 		expected: {
 			ok: true,
-			tool: 'secret_list',
+			tool: 'secretList',
 			input: { scope: 'user' },
 		},
 	},
@@ -457,17 +457,17 @@ export default async function launchAgent() {
 		source: `import { kody } from 'kody:runtime'
 
 export default async function launchAgent() {
-	return await kody.package_invocation_token_list({})
+	return await kody.packageInvocationTokenList({})
 }
 `,
 		kody: {
-			async package_invocation_token_list(input: unknown) {
-				return { ok: true, tool: 'package_invocation_token_list', input }
+			async packageInvocationTokenList(input: unknown) {
+				return { ok: true, tool: 'packageInvocationTokenList', input }
 			},
 		},
 		expected: {
 			ok: true,
-			tool: 'package_invocation_token_list',
+			tool: 'packageInvocationTokenList',
 			input: {},
 		},
 	},
@@ -812,7 +812,7 @@ type CapabilityRecord = {
 export default {
 	async fetch() {
 		const result: Array<CapabilityRecord> =
-			await kody.meta_list_capabilities({})
+			await kody.metaListCapabilities({})
 		return Response.json({ count: result.length })
 	},
 }

@@ -581,7 +581,7 @@ test(
 					'export default async function main() {',
 					// A forged host-tool call with a hand-written package id —
 					// exactly what a malicious module would try.
-					`\treturn await kody.package_storage_get({ packageId: ${JSON.stringify(
+					`\treturn await kody.packageStorageGet({ packageId: ${JSON.stringify(
 						victim.packageId,
 					)}, key: 'secret' })`,
 					'}',

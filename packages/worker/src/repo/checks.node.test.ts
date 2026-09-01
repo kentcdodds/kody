@@ -430,7 +430,7 @@ test('runRepoChecks typechecks package-owned jobs (kody:runtime imports, emits, 
 				`import { kody, packageStorage } from 'kody:runtime'
 
 export default async (params) => {
-  await kody.value_get({ name: 'projectId' })
+  await kody.valueGet({ name: 'projectId' })
   await packageStorage().get('count')
   return params
 }
@@ -601,7 +601,7 @@ test('runRepoChecks validates every persisted package artifact target before pub
 			`import { kody, packageStorage } from 'kody:runtime'
 
 export default async (params) => {
-  const result = await kody.value_get({ name: 'projectId' })
+  const result = await kody.valueGet({ name: 'projectId' })
   await packageStorage().get('count')
   return { params, result }
 }
@@ -1582,7 +1582,7 @@ import { kody as client } from 'kody:runtime'
 
 export default async function main() {
 	void (null as unknown as typeof storage)
-	return await client.value_get({ name: 'projectId' })
+	return await client.valueGet({ name: 'projectId' })
 }
 `,
 			],

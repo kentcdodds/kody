@@ -27,7 +27,7 @@ Official platform packages are **execute-only**.
   `packages.invoke` a platform scope. Publish checks fail. Package, job, and app
   runtimes fail closed. Already-published person-package artifacts that recorded
   `platformOwned` dependencies fail at run time. No compatibility lane.
-- To use official helpers in a durable package, `community_fork` into the
+- To use official helpers in a durable package, `communityFork` into the
   caller's scope and depend on that copy. Fork rewrite maps same-package
   `@kody/name` self-imports onto the new owner; remaining `@kody/other`
   references stay foreign and must be forked too.

@@ -184,12 +184,12 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 		expect.objectContaining({
 			hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
 			test_hints: {
-				app: 'package_app_fetch({ kody_id: "demo-package" })',
+				app: 'packageAppFetch({ kody_id: "demo-package" })',
 				subscriptions: [
 					{
 						topic: 'email.message.received',
 						snippet:
-							'package_subscription_dispatch({ kody_id: "demo-package", topic: "email.message.received", params: {} })',
+							'packageSubscriptionDispatch({ kody_id: "demo-package", topic: "email.message.received", params: {} })',
 					},
 				],
 			},
@@ -563,7 +563,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		handle: {
 			status: 'dispatched',
 			workflow_id: 'dynwf-publish-1',
-			workflow_name: 'package_publish_external_push',
+			workflow_name: 'packagePublishExternalPush',
 			idempotency_key: ['user-1', ...expectedParts].join(':'),
 			run_status: 'queued',
 			message: 'dispatched',
@@ -577,7 +577,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 	expect(dispatched).toEqual({
 		status: 'dispatched',
 		workflow_id: 'dynwf-publish-1',
-		workflow_name: 'package_publish_external_push',
+		workflow_name: 'packagePublishExternalPush',
 		idempotency_key: ['user-1', ...expectedParts].join(':'),
 		run_status: 'queued',
 		message: 'dispatched',

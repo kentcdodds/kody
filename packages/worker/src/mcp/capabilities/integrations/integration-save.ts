@@ -26,9 +26,9 @@ const outputSchema = z.object({
 export const integrationSaveCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_save',
+		name: 'integrationSave',
 		description:
-			'Create or update an OAuth integration connection for the signed-in user. Names are normalized to a canonical lowercase-kebab provider key. Partial updates merge into the existing connection; matching client credentials reuse a shared OAuth app across connections. Do not persist access or refresh tokens here or with secret_set — `/connect/oauth` and `integration_token_refresh` write those on the connection. authorization.scopes is reconnect metadata: the list the next /connect/oauth visit requests, not the current access token. After widening scopes, tell the user the token is unchanged until they reconnect, then ask whether to reconnect each affected account at /connect/oauth?provider=<connection-name>. Scopes are per connection; sibling accounts that share an OAuth app keep their own lists. This capability cannot change usageMode or add requiredHosts / retarget tokenUrl to an unapproved host. Platform (built-in) connections cannot be updated here — reconnect at /connect/oauth?provider=<name> to change scopes, or integration_delete first to replace with a bring-your-own app.',
+			'Create or update an OAuth integration connection for the signed-in user. Names are normalized to a canonical lowercase-kebab provider key. Partial updates merge into the existing connection; matching client credentials reuse a shared OAuth app across connections. Do not persist access or refresh tokens here or with secretSet — `/connect/oauth` and `integrationTokenRefresh` write those on the connection. authorization.scopes is reconnect metadata: the list the next /connect/oauth visit requests, not the current access token. After widening scopes, tell the user the token is unchanged until they reconnect, then ask whether to reconnect each affected account at /connect/oauth?provider=<connection-name>. Scopes are per connection; sibling accounts that share an OAuth app keep their own lists. This capability cannot change usageMode or add requiredHosts / retarget tokenUrl to an unapproved host. Platform (built-in) connections cannot be updated here — reconnect at /connect/oauth?provider=<name> to change scopes, or integrationDelete first to replace with a bring-your-own app.',
 		keywords: [
 			'integration',
 			'oauth',
@@ -56,7 +56,7 @@ export const integrationSaveCapability = defineDomainCapability(
 			// refresh; keep platform connections managed by the connect flow.
 			if (existing?.platform === true) {
 				throw new McpCallerError(
-					`Integration "${args.name}" is a platform (built-in) connection managed at /connect/oauth?provider=${encodeURIComponent(existing.name)}. Reconnect there to change scopes, or integration_delete it first to replace it with your own OAuth app.`,
+					`Integration "${args.name}" is a platform (built-in) connection managed at /connect/oauth?provider=${encodeURIComponent(existing.name)}. Reconnect there to change scopes, or integrationDelete it first to replace it with your own OAuth app.`,
 				)
 			}
 			const config = existing
@@ -138,14 +138,14 @@ function assertIntegrationSaveKeepsApprovedHosts(input: {
 	)
 	if (addedHosts.length > 0) {
 		throw new McpCallerError(
-			`Cannot add required hosts (${addedHosts.join(', ')}) on "${input.name}" via integration_save. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} so the user can approve new destinations.`,
+			`Cannot add required hosts (${addedHosts.join(', ')}) on "${input.name}" via integrationSave. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} so the user can approve new destinations.`,
 		)
 	}
 	if (input.next.tokenUrl === input.current.tokenUrl) return
 	const tokenHost = safeParseHost(input.next.tokenUrl)
 	if (tokenHost && !approved.has(tokenHost)) {
 		throw new McpCallerError(
-			`Cannot point tokenUrl at host "${tokenHost}" on "${input.name}" via integration_save. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} to approve that token endpoint.`,
+			`Cannot point tokenUrl at host "${tokenHost}" on "${input.name}" via integrationSave. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} to approve that token endpoint.`,
 		)
 	}
 }

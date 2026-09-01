@@ -18,7 +18,7 @@ those from a DO-owning script resets live MCP sessions, mailboxes, repo
 sessions, and other platform objects for a content edit.
 
 Official guide markdown (`docs/guides/`) is also statically imported into the
-MCP Durable Object (`coding_guide_get`). Those edits must upload `kody-platform`
+MCP Durable Object (`codingGuideGet`). Those edits must upload `kody-platform`
 as well as origin so web `/guides` and MCP stay on the same bundle; they still
 skip `kody-runtime` and `kody-jobs`.
 

@@ -21,9 +21,9 @@ const communitySearchNoMatchGuidance =
 export const communitySearchCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_search',
+		name: 'communitySearch',
 		description:
-			'Search public package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Pass category to browse one closed listing category. Use `community_get` for full detail before forking.',
+			'Search public package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Pass category to browse one closed listing category. Use `communityGet` for full detail before forking.',
 		keywords: [
 			'community',
 			'search',

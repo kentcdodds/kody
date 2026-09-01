@@ -121,7 +121,7 @@ export const executeCapability = defineDomainCapability(
 					if (existing.status === 'running') {
 						return {
 							// Match the public execute tool: in-progress is not a
-							// failure — callers should poll run_get / retry the key.
+							// failure — callers should poll runGet / retry the key.
 							ok: true,
 							conversationId,
 							runId: existing.id,

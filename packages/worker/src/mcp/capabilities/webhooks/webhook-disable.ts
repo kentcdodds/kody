@@ -8,7 +8,7 @@ import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
 export const webhookDisableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_disable',
+		name: 'webhookDisable',
 		description:
 			'Disable a minted package webhook. Ingress returns 404 while disabled (indistinguishable from unknown/unminted).',
 		keywords: ['webhook', 'disable', 'deactivate'],

@@ -140,7 +140,7 @@ export const integrationSearchEntityPlugin = {
 			requiredHosts: match.requiredHosts,
 			clientId: match.clientId,
 			authorization: match.authorization ?? null,
-			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secret_set or secret_set_many.`,
+			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secretSet or secretSetMany.`,
 		}
 	},
 	formatEntityDetail(detail) {
@@ -165,12 +165,12 @@ export const integrationSearchEntityPlugin = {
 			'## Read this integration',
 			'',
 			`- \`${buildIntegrationUsage(detail.config.name)}\``,
-			'- `kody.integration_list({})`',
+			'- `kody.integrationList({})`',
 			'',
 			'## Credentials',
 			'',
 			`- Client ID: \`${detail.config.clientId}\``,
-			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integration_token_refresh\`. Do not read or write them with \`secret_set\`, \`secret_set_many\`, or \`secret_list\`.`,
+			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integrationTokenRefresh\`. Do not read or write them with \`secretSet\`, \`secretSetMany\`, or \`secretList\`.`,
 		]
 		if (authorization) {
 			lines.push(

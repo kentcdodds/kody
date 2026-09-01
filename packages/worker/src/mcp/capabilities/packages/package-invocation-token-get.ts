@@ -12,7 +12,7 @@ import {
 export const packageInvocationTokenGetCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_invocation_token_get',
+		name: 'packageInvocationTokenGet',
 		description:
 			'Get metadata for one package invocation token record owned by the signed-in user, including the owning package, export scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
 		keywords: [

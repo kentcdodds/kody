@@ -87,7 +87,7 @@ Reuse the same idempotency key only when retrying the same scheduling request. A
 later attempt after `complete` or `cancelled` needs a new key, or
 `workflows.create` returns the old run. Schedule the same against your own agent
 id so the program survives session end. Cancel superseded workflows with
-`workflow_run_cancel`.
+`workflowRunCancel`.
 
 ## Loop
 

@@ -16,7 +16,7 @@ Alternatives considered:
 - Warm in `globalSetup` — runs in Node; cannot touch workerd bindings.
 - Warm in workers-unit `setupFiles` via `runInDurableObject` or stub RPCs —
   moves cost out of test bodies, but breaks webhook routing, scheduled-lane,
-  subscription-dispatch, and `package_save` workers suites (measured: 9 failures
+  subscription-dispatch, and `packageSave` workers suites (measured: 9 failures
   that pass when the warmup is removed).
 - `--maxWorkers=1 --no-isolate` to pay once for the whole run — much faster wall
   clock, but shared D1/KV/DO storage breaks suites that assume per-file

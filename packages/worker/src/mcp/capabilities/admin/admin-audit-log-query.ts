@@ -16,7 +16,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.optional()
-		.describe('Exact audit action to match, such as admin_user_list.'),
+		.describe('Exact audit action to match, such as adminUserList.'),
 	category: z
 		.enum(auditEventCategories)
 		.optional()
@@ -83,7 +83,7 @@ export const adminAuditLogQueryCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_audit_log_query',
+		name: 'adminAuditLogQuery',
 		description:
 			'Query sanitized account-administration audit metadata by action, actor, result, category, or time range. Admin-only; never returns user content.',
 		keywords: ['admin', 'audit', 'log', 'events', 'account metadata'],
@@ -92,7 +92,7 @@ export const adminAuditLogQueryCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_audit_log_query',
+				'adminAuditLogQuery',
 				async () => queryAuditLog(ctx.env.AUDIT_DB, args),
 			)
 		},

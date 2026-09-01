@@ -40,7 +40,7 @@ Package delete removes that package's tokens. The same raw bearer may exist on
 two packages only if two rows share the hash. `last_used_at` is a `waitUntil`
 write and does not gate authentication. Identity for audit comes from the
 resolved user, not columns on the token row. MCP lists tokens for one package;
-`package_get` includes the same metadata.
+`packageGet` includes the same metadata.
 
 The 0017 migration maps single-package grants, expands concrete multi-package
 grants into one row per owned package (same hash, new ids), and drops `*` and

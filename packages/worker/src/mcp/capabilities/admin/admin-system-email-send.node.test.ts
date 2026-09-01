@@ -57,7 +57,7 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_system_email_send is admin-gated, validates input, and audits a redacted send', async () => {
+test('adminSystemEmailSend is admin-gated, validates input, and audits a redacted send', async () => {
 	expect(adminSystemEmailSendCapability.requiredRole).toBe('admin')
 	expect(adminSystemEmailSendCapability.readOnly).toBe(false)
 	const ctx = createAdminCtx()
@@ -79,7 +79,7 @@ test('admin_system_email_send is admin-gated, validates input, and audits a reda
 			},
 			ctx,
 		),
-	).rejects.toThrow('Invalid input for capability "admin_system_email_send"')
+	).rejects.toThrow('Invalid input for capability "adminSystemEmailSend"')
 	expect(mockModule.sendSystemEmail).not.toHaveBeenCalled()
 
 	mockModule.sendSystemEmail.mockResolvedValue({
@@ -117,7 +117,7 @@ test('admin_system_email_send is admin-gated, validates input, and audits a reda
 	const auditCall = mockModule.logAuditEvent.mock.calls.at(-1)?.[0] as
 		| { action: string; result: string; reason: string }
 		| undefined
-	expect(auditCall?.action).toBe('admin_system_email_send')
+	expect(auditCall?.action).toBe('adminSystemEmailSend')
 	expect(auditCall?.result).toBe('success')
 	expect(auditCall?.reason).toContain('from=support@heykody.dev')
 	// Recipients are redacted in audit rows, never stored in the clear.

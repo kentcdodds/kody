@@ -212,7 +212,7 @@ export async function publishFromExternalRef(input: {
 				env: input.env,
 				userId: input.userId,
 				source,
-				operation: 'package_publish_external_push force publish',
+				operation: 'packagePublishExternalPush force publish',
 				confirmed: input.destructiveOverwriteConfirmed,
 			})
 		}

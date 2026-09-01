@@ -34,17 +34,17 @@ review open errors and recommend whether to ignore, resolve, or fix them.
 
 The MCP **`runs`** domain reads and triages the same data:
 
-- **`run_summary`** — “is anything broken?” open-error totals (plus ignored /
+- **`runSummary`** — “is anything broken?” open-error totals (plus ignored /
   resolved counts) and per-surface breakdown
-- **`run_list`** — filtered history (by surface, status, job, package, time, and
+- **`runList`** — filtered history (by surface, status, job, package, time, and
   `error_triage`; defaults to **open**, hiding ignored/resolved). Pass `status`
   `success` (or omit `status` with `error_triage` `all`) to inspect what ran.
-- **`run_get`** — one run plus its log lines and triage fields
-- **`run_update`** — mark a retained **error** run as `ignored` or `resolved`
-  (or `open` to clear triage), with an optional note — non-destructive soft
-  triage; error details stay intact
-- **`run_update_bulk`** — preview (`dry_run`) and soft-triage up to 100 errors
-  at a time by explicit run ids or exact job/package/surface/name/error filters;
+- **`runGet`** — one run plus its log lines and triage fields
+- **`runUpdate`** — mark a retained **error** run as `ignored` or `resolved` (or
+  `open` to clear triage), with an optional note — non-destructive soft triage;
+  error details stay intact
+- **`runUpdateBulk`** — preview (`dry_run`) and soft-triage up to 100 errors at
+  a time by explicit run ids or exact job/package/surface/name/error filters;
   repeat while `has_more` is true
 
 When a scheduled job later succeeds, Kody automatically marks earlier **open**
@@ -72,7 +72,7 @@ Ad-hoc MCP **`execute`** calls that succeed **without** an `idempotencyKey` are
 response, and success volume is tracked separately for usage. **Failed**
 `execute` calls do appear, and execute calls that pass an `idempotencyKey` are
 recorded eagerly (including successes) so a client-side timeout can recover via
-`run_get` or a keyed retry. Every other surface (jobs, webhooks, package apps,
+`runGet` or a keyed retry. Every other surface (jobs, webhooks, package apps,
 workflows, exports, and so on) records both success and error.
 
 If a successful one-off `execute` without a key is missing from Activity, that

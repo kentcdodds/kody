@@ -94,7 +94,7 @@ export class IntegrationTokenRefreshCallerError extends Error {
  * over-matching unrelated "Integration …" strings elsewhere.
  */
 export const integrationTokenRefreshCallerMarker =
-	'(integration_token_refresh caller state)'
+	'(integrationTokenRefresh caller state)'
 
 export function isIntegrationTokenRefreshCallerMessage(message: string) {
 	return message.includes(integrationTokenRefreshCallerMarker)
@@ -302,7 +302,7 @@ function scheduleSubscriptionEmit(
  *
  * This is the only refresh path for platform-app connections, whose shared
  * client secret has no user-facing secret name by design. User-lane
- * connections may also refresh here (`integration_token_refresh`).
+ * connections may also refresh here (`integrationTokenRefresh`).
  *
  * Reconnectable caller-errors emit `integration.auth.failed` once per attempt.
  * Successful refreshes emit `integration.auth.succeeded`. The platform does
@@ -390,7 +390,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 	const refreshTokenSecretName = connection.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
 		throw fail(
-			`Integration "${connection.name}" does not define a refresh token secret name. This connection cannot refresh; reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integration_token_refresh for this integration.`,
+			`Integration "${connection.name}" does not define a refresh token secret name. This connection cannot refresh; reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integrationTokenRefresh for this integration.`,
 			{ reason: 'missing_refresh_token' },
 		)
 	}
@@ -402,7 +402,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 		)
 	}
 
-	// User-lane destinations are user-configurable (integration_save can point
+	// User-lane destinations are user-configurable (integrationSave can point
 	// tokenUrl anywhere), so materializing user secrets here must honor the
 	// same per-secret host allowlist the fetch gateway enforces for
 	// placeholder resolution. Platform-lane destinations are operator-pinned
@@ -525,7 +525,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 		style,
 	})
 
-	// Bound the provider round trip: every integration_token_refresh caller
+	// Bound the provider round trip: every integrationTokenRefresh caller
 	// (including createAuthenticatedFetch's automatic 401 retry) inherits this
 	// latency, so a stalled token endpoint must not hold the invocation open.
 	const response = await fetch(app.tokenUrl, {

@@ -166,7 +166,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		exception: {
 			values: [
 				{
-					value: `repo_open_session could not recover: ${cloudflareOpaqueInternalErrorMessage}`,
+					value: `repoOpenSession could not recover: ${cloudflareOpaqueInternalErrorMessage}`,
 				},
 			],
 		},
@@ -315,7 +315,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 				values: [
 					{
 						value:
-							'Token refresh was rejected for integration "google" with HTTP 400. (integration_token_refresh caller state)',
+							'Token refresh was rejected for integration "google" with HTTP 400. (integrationTokenRefresh caller state)',
 					},
 				],
 			},
@@ -539,7 +539,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		exception: {
 			values: [
 				{
-					value: `package_publish_external_push could not recover after 3 transient Durable Object reset attempts: ${durableObjectIsolateMemoryResetMessage}`,
+					value: `packagePublishExternalPush could not recover after 3 transient Durable Object reset attempts: ${durableObjectIsolateMemoryResetMessage}`,
 				},
 			],
 		},

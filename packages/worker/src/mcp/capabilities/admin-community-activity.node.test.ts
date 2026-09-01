@@ -102,6 +102,6 @@ test('admin community activity list enforces admin role, filters, paginates, and
 	expect(result.activity[0]).not.toHaveProperty('package_source')
 	expect(auditEventSummaries()).toEqual([
 		'mcp_capability_denied:failure',
-		'admin_community_activity_list:success',
+		'adminCommunityActivityList:success',
 	])
 })

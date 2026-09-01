@@ -56,7 +56,7 @@ export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
 export const scheduledJobSummarySchema = scheduledJobScheduleSchema
 
 export const jobInspectionInputSchema = z.object({
-	id: z.string().min(1).describe('Job id from job_list or job_get output.'),
+	id: z.string().min(1).describe('Job id from jobList or jobGet output.'),
 })
 
 export const jobGetInputSchema = z
@@ -65,7 +65,7 @@ export const jobGetInputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Job id from job_list or job_get output.'),
+			.describe('Job id from jobList or jobGet output.'),
 		job_id: z
 			.string()
 			.min(1)
@@ -99,7 +99,7 @@ const jobRunHistoryEntrySchema = z.object({
 	id: z
 		.string()
 		.optional()
-		.describe('Run record id for drill-down with run_get when available.'),
+		.describe('Run record id for drill-down with runGet when available.'),
 	started_at: z.string(),
 	finished_at: z.string(),
 	status: z.enum(['success', 'error']),
@@ -111,7 +111,7 @@ const runHistoryEntrySchema = z.object({
 	id: z
 		.string()
 		.optional()
-		.describe('Run record id for drill-down with run_get when available.'),
+		.describe('Run record id for drill-down with runGet when available.'),
 	started_at: z.string(),
 	finished_at: z.string(),
 	status: z.enum(['success', 'error']),
@@ -256,7 +256,7 @@ export const jobUpdateInputSchema = z
 		id: z
 			.string()
 			.min(1)
-			.describe('Existing job id from job_list or job_get output.'),
+			.describe('Existing job id from jobList or jobGet output.'),
 		name: z
 			.string()
 			.min(1)
@@ -290,7 +290,7 @@ export const jobUpdateInputSchema = z
 			.boolean()
 			.optional()
 			.describe(
-				'Force the job off regardless of schedule. This remains visible in job_list and job_get for debugging.',
+				'Force the job off regardless of schedule. This remains visible in jobList and jobGet for debugging.',
 			),
 		preserved: z
 			.boolean()
@@ -310,7 +310,7 @@ export const jobUpdateInputSchema = z
 			.unknown()
 			.optional()
 			.describe(
-				'Rejected. Job source cannot be changed via job_update. Edit a package job in the package repo and publish.',
+				'Rejected. Job source cannot be changed via jobUpdate. Edit a package job in the package repo and publish.',
 			),
 	})
 	.superRefine((input, ctx) => {
@@ -318,7 +318,7 @@ export const jobUpdateInputSchema = z
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['code'],
-				message: 'Job code cannot be changed via job_update.',
+				message: 'Job code cannot be changed via jobUpdate.',
 			})
 			return
 		}

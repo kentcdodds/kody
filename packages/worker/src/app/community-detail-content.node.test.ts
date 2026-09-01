@@ -40,7 +40,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-trusted="false"')
 
 	const agentPrompt =
-		'Call package_get for @me/github-triage and adapt it to my needs.'
+		'Call packageGet for @me/github-triage and adapt it to my needs.'
 	const installedHtml = await renderCommunityDetailContentHtml({
 		listing: {
 			...sampleListing,
@@ -101,7 +101,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(ownInstalledHtml).not.toContain('data-copy-prompt')
 
 	const aheadPrompt =
-		'Compare the current listing snapshot, keep local customizations, then publish with repo_publish_session and absorbed_upstream_commit.'
+		'Compare the current listing snapshot, keep local customizations, then publish with repoPublishSession and absorbed_upstream_commit.'
 	const aheadHtml = await renderCommunityDetailContentHtml({
 		listing: {
 			...sampleListing,

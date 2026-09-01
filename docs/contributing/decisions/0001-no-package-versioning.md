@@ -6,8 +6,8 @@
 ## Context
 
 Every saved package is a real git repo on Cloudflare Artifacts with full commit
-history, publish notes (readable via `repo_show_publish_note`), and a clonable
-remote (`package_get_git_remote`). Runtime surfaces — `packages.invoke`,
+history, publish notes (readable via `repoShowPublishNote`), and a clonable
+remote (`packageGetGitRemote`). Runtime surfaces — `packages.invoke`,
 package-owned jobs, apps, services, and webhooks — always resolve the package's
 current `entity_sources.published_commit`, and published bundles for non-current
 commits are pruned after 30 days. Static cross-package imports

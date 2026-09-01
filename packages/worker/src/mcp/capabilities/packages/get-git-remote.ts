@@ -73,9 +73,9 @@ const outputSchema = z.toJSONSchema(
 export const getGitRemoteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_get_git_remote',
+		name: 'packageGetGitRemote',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with package_publish_external_push. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of package_save file blobs. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
+			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
 			'package',
 			'create',
@@ -136,7 +136,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,
 				source,
-				operation: 'package_get_git_remote',
+				operation: 'packageGetGitRemote',
 				accessToken: {
 					scope: args.scope,
 					ttlSeconds: args.ttl_seconds,
@@ -149,7 +149,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 						env: ctx.env,
 						userId: owner.ownerUserId,
 						source,
-						operation: 'package_get_git_remote write access',
+						operation: 'packageGetGitRemote write access',
 					}),
 					headPromise,
 				])
@@ -164,12 +164,12 @@ export const getGitRemoteCapability = defineDomainCapability(
 				sourceHead = await headPromise
 			}
 			if (!sourceHead) {
-				throw new Error('package_get_git_remote requires a package source.')
+				throw new Error('packageGetGitRemote requires a package source.')
 			}
 			const token = sourceHead.accessToken
 			if (!token) {
 				throw new Error(
-					'package_get_git_remote failed to mint an artifact access token.',
+					'packageGetGitRemote failed to mint an artifact access token.',
 				)
 			}
 			if (args.scope === 'write') {

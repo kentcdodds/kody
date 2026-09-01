@@ -18,8 +18,8 @@ export const adminPackageCodemodRevertCapability = defineDomainCapability(
 	{
 		...adminMutationCapabilityAccess,
 		destructive: true,
-		name: 'admin_package_codemod_revert',
-		description: `Fleet-revert a prior admin_package_codemod_apply (or other apply) run by republishing stored pre-codemod snapshots. ${packageCodemodPagingHint}`,
+		name: 'adminPackageCodemodRevert',
+		description: `Fleet-revert a prior adminPackageCodemodApply (or other apply) run by republishing stored pre-codemod snapshots. ${packageCodemodPagingHint}`,
 		keywords: [
 			'admin',
 			'package',
@@ -36,7 +36,7 @@ export const adminPackageCodemodRevertCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return await auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_codemod_revert',
+				'adminPackageCodemodRevert',
 				async () => {
 					const priorRun = await getPackageCodemodRunById(
 						ctx.env.APP_DB,

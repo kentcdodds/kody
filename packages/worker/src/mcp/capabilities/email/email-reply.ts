@@ -17,7 +17,7 @@ import {
 export const emailReplyCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_reply',
+		name: 'emailReply',
 		description:
 			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers and optionally attaching files (base64 content). The recipient always comes from the stored message.',
 		keywords: ['email', 'reply', 'thread', 'message', 'attachment'],

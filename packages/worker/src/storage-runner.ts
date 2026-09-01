@@ -1080,14 +1080,14 @@ export function createStorageKodyTools(input: {
 		})
 	}
 	return {
-		storage_get: async (args: unknown) => {
+		storageGet: async (args: unknown) => {
 			const key =
 				typeof args === 'object' && args !== null && 'key' in args
 					? String((args as { key: unknown }).key ?? '')
 					: ''
 			return await runner.getValue({ key })
 		},
-		storage_list: async (args: unknown) => {
+		storageList: async (args: unknown) => {
 			const payload =
 				typeof args === 'object' && args !== null
 					? (args as {
@@ -1106,7 +1106,7 @@ export function createStorageKodyTools(input: {
 						: undefined,
 			})
 		},
-		storage_sql: async (args: unknown) => {
+		storageSql: async (args: unknown) => {
 			const payload =
 				typeof args === 'object' && args !== null
 					? (args as {
@@ -1141,7 +1141,7 @@ export function createStorageKodyTools(input: {
 		},
 		...(input.writable
 			? {
-					storage_set: async (args: unknown) => {
+					storageSet: async (args: unknown) => {
 						const payload =
 							typeof args === 'object' && args !== null
 								? (args as { key?: unknown; value?: unknown })
@@ -1168,14 +1168,14 @@ export function createStorageKodyTools(input: {
 							value: payload.value,
 						})
 					},
-					storage_delete: async (args: unknown) => {
+					storageDelete: async (args: unknown) => {
 						const key =
 							typeof args === 'object' && args !== null && 'key' in args
 								? String((args as { key: unknown }).key ?? '')
 								: ''
 						return await runner.deleteValue({ key })
 					},
-					storage_clear: async () => {
+					storageClear: async () => {
 						return await runner.clearStorage()
 					},
 				}
@@ -1221,12 +1221,12 @@ export function createPackageStorageKodyTools(input: {
 	const entitlementCache = createStorageBytesEntitlementRunCache()
 	const createWritableStorageTools = (packageId: string) => {
 		const {
-			storage_get,
-			storage_list,
-			storage_sql,
-			storage_set,
-			storage_delete,
-			storage_clear,
+			storageGet,
+			storageList,
+			storageSql,
+			storageSet,
+			storageDelete,
+			storageClear,
 		} = createStorageKodyTools({
 			env: input.env,
 			userId: input.userId,
@@ -1235,17 +1235,17 @@ export function createPackageStorageKodyTools(input: {
 			writable: true,
 			entitlementCache,
 		})
-		if (!storage_set || !storage_delete || !storage_clear) {
+		if (!storageSet || !storageDelete || !storageClear) {
 			// createStorageKodyTools only omits these when writable is false.
 			throw new Error('Writable package storage tools are missing writes.')
 		}
 		return {
-			storage_get,
-			storage_list,
-			storage_sql,
-			storage_set,
-			storage_delete,
-			storage_clear,
+			storageGet,
+			storageList,
+			storageSql,
+			storageSet,
+			storageDelete,
+			storageClear,
 		}
 	}
 	const toolsByPackageId = new Map<
@@ -1271,18 +1271,18 @@ export function createPackageStorageKodyTools(input: {
 		return tools
 	}
 	return {
-		package_storage_get: async (args: unknown) =>
-			await resolveTools(args).storage_get(args),
-		package_storage_list: async (args: unknown) =>
-			await resolveTools(args).storage_list(args),
-		package_storage_sql: async (args: unknown) =>
-			await resolveTools(args).storage_sql(args),
-		package_storage_set: async (args: unknown) =>
-			await resolveTools(args).storage_set(args),
-		package_storage_delete: async (args: unknown) =>
-			await resolveTools(args).storage_delete(args),
-		package_storage_clear: async (args: unknown) =>
-			await resolveTools(args).storage_clear(),
+		packageStorageGet: async (args: unknown) =>
+			await resolveTools(args).storageGet(args),
+		packageStorageList: async (args: unknown) =>
+			await resolveTools(args).storageList(args),
+		packageStorageSql: async (args: unknown) =>
+			await resolveTools(args).storageSql(args),
+		packageStorageSet: async (args: unknown) =>
+			await resolveTools(args).storageSet(args),
+		packageStorageDelete: async (args: unknown) =>
+			await resolveTools(args).storageDelete(args),
+		packageStorageClear: async (args: unknown) =>
+			await resolveTools(args).storageClear(),
 	}
 }
 
@@ -1298,18 +1298,18 @@ export function createPackageStorageHelperPrelude() {
 	return `
 const __kodyPackageStorage = (packageId) => ({
   id: 'package:' + encodeURIComponent(packageId),
-  get: async (key) => (await kody.package_storage_get({ packageId, key })).value,
-  list: async (options = {}) => await kody.package_storage_list({ ...options, packageId }),
+  get: async (key) => (await kody.packageStorageGet({ packageId, key })).value,
+  list: async (options = {}) => await kody.packageStorageList({ ...options, packageId }),
   sql: async (query, params = []) =>
-    await kody.package_storage_sql({
+    await kody.packageStorageSql({
       packageId,
       query,
       params,
       writable: true,
     }),
-  set: async (key, value) => await kody.package_storage_set({ packageId, key, value }),
-  delete: async (key) => await kody.package_storage_delete({ packageId, key }),
-  clear: async () => await kody.package_storage_clear({ packageId }),
+  set: async (key, value) => await kody.packageStorageSet({ packageId, key, value }),
+  delete: async (key) => await kody.packageStorageDelete({ packageId, key }),
+  clear: async () => await kody.packageStorageClear({ packageId }),
 });
 	`.trim()
 }
@@ -1321,19 +1321,19 @@ export function createStorageHelperPrelude(input: {
 	return `
 const storage = {
   id: ${JSON.stringify(input.storageId)},
-  get: async (key) => (await kody.storage_get({ key })).value,
-  list: async (options = {}) => await kody.storage_list(options),
+  get: async (key) => (await kody.storageGet({ key })).value,
+  list: async (options = {}) => await kody.storageList(options),
   sql: async (query, params = []) =>
-    await kody.storage_sql({
+    await kody.storageSql({
       query,
       params,
       writable: ${input.writable ? 'true' : 'false'},
     }),
   ${
 		input.writable
-			? `set: async (key, value) => await kody.storage_set({ key, value }),
-  delete: async (key) => await kody.storage_delete({ key }),
-  clear: async () => await kody.storage_clear({}),`
+			? `set: async (key, value) => await kody.storageSet({ key, value }),
+  delete: async (key) => await kody.storageDelete({ key }),
+  clear: async () => await kody.storageClear({}),`
 			: ''
 	}
 };

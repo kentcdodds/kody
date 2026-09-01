@@ -114,12 +114,10 @@ export const repoSessionIdFieldSchema = z
 		(value) => !repoSessionIdPlaceholderValues.has(value.trim().toLowerCase()),
 		{
 			message:
-				'session_id must be a real id from repo_open_session or repo_list_sessions, not a placeholder like "none".',
+				'session_id must be a real id from repoOpenSession or repoListSessions, not a placeholder like "none".',
 		},
 	)
-	.describe(
-		'Active repo session id from repo_open_session or repo_list_sessions.',
-	)
+	.describe('Active repo session id from repoOpenSession or repoListSessions.')
 
 export const repoSessionIdSchema = z.object({
 	session_id: repoSessionIdFieldSchema,
@@ -131,7 +129,7 @@ export const repoPublishSessionInputSchema = repoSessionIdSchema.extend({
 		.optional()
 		.default(false)
 		.describe(
-			'Unused. Visibility is a repo setting via package_update, not package.json#private.',
+			'Unused. Visibility is a repo setting via packageUpdate, not package.json#private.',
 		),
 	absorbed_upstream_commit: z
 		.string()
@@ -624,7 +622,7 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		session_id: z.string(),
 		published_commit: z.null(),
 		message: z.string(),
-		repair_hint: z.literal('repo_rebase_session'),
+		repair_hint: z.literal('repoRebaseSession'),
 		session_base_commit: z.string(),
 		current_published_commit: z.string().nullable(),
 	}),

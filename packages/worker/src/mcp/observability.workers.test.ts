@@ -170,7 +170,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 		logMcpEvent({
 			category: 'mcp',
 			tool: 'capability',
-			capabilityName: 'value_get',
+			capabilityName: 'valueGet',
 			outcome: 'success',
 			durationMs: 5,
 			baseUrl: 'https://example.com',
@@ -184,7 +184,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 	expect(parsed.userId).toBe('user-1')
 })
 
-test('package_save logs parse failures, rejects invalid manifests, and logs successful saves', async () => {
+test('packageSave logs parse failures, rejects invalid manifests, and logs successful saves', async () => {
 	// The worker bundler emits an incidental experimental warning during the
 	// successful save's artifact rebuild.
 	silenceIncidentalRuntimeWarnings()
@@ -196,7 +196,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 		}
 	}) as typeof console.info
 	try {
-		const handler = getStaticRegistry().capabilityMap['package_save'].handler
+		const handler = getStaticRegistry().capabilityMap['packageSave'].handler
 		await expect(
 			handler(
 				{},
@@ -207,7 +207,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 					}),
 				},
 			),
-		).rejects.toThrow('Invalid input for capability "package_save"')
+		).rejects.toThrow('Invalid input for capability "packageSave"')
 	} finally {
 		console.info = originalInfo
 	}
@@ -216,14 +216,14 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 	const parseFailureEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(parseFailureEvent).toMatchObject({
 		tool: 'capability',
-		capabilityName: 'package_save',
+		capabilityName: 'packageSave',
 		capabilitySource: 'builtin',
 		outcome: 'failure',
 		failurePhase: 'parse_input',
 	})
 
 	resetRepoPersistenceMocks()
-	const handler = getStaticRegistry().capabilityMap['package_save'].handler
+	const handler = getStaticRegistry().capabilityMap['packageSave'].handler
 	const signedInContext = {
 		env: createTestEnv({
 			APP_DB: {

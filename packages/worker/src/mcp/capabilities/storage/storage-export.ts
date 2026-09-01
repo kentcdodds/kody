@@ -13,7 +13,7 @@ import { storageRunnerRpc } from '#worker/storage-runner.ts'
 export const storageExportCapability = defineDomainCapability(
 	capabilityDomainNames.storage,
 	{
-		name: 'storage_export',
+		name: 'storageExport',
 		description:
 			'Export one durable storage bucket as JSON for inspection, debugging, or comparisons.',
 		keywords: ['storage', 'export', 'sqlite', 'durable object'],
@@ -29,7 +29,7 @@ export const storageExportCapability = defineDomainCapability(
 			const user = requireStorageUser(ctx)
 			const storageId = authorizeCapabilityStorageId({
 				callerContext: ctx.callerContext,
-				capabilityName: 'storage_export',
+				capabilityName: 'storageExport',
 				storageId: args.storage_id,
 			})
 			const result = await storageRunnerRpc({

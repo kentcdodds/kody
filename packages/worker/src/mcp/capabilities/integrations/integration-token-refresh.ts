@@ -25,7 +25,7 @@ const outputSchema = z.object({
 export const integrationTokenRefreshCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_token_refresh',
+		name: 'integrationTokenRefresh',
 		description:
 			'Refresh the OAuth access token for a saved integration host-side and persist the new tokens on the connection. Returns metadata only — token values never appear in the output. createAuthenticatedFetch refreshes through this path for every integration; it is the only refresh path for platform (built-in) integrations, whose shared client secret stays server-side.',
 		keywords: [

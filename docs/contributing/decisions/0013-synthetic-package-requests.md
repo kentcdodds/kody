@@ -38,12 +38,12 @@ strips caller-supplied `Kody-Synthetic` from requests; real event dispatch
 strips caller-supplied `synthetic` and `replay_of` from handler envelopes.
 Synthetic MCP calls set the markers; callers cannot forge them.
 
-- **`package_app_fetch`** — invoke a published package app's fetch handler with
+- **`packageAppFetch`** — invoke a published package app's fetch handler with
   method, path, headers, and body. The platform sets request header
   `Kody-Synthetic: true` before the handler runs. Returns exactly
   `{ status, headers, body, truncated }`; binary response bodies are base64.
   Rejects websocket upgrade requests.
-- **`package_subscription_dispatch`** — invoke one declared subscription handler
+- **`packageSubscriptionDispatch`** — invoke one declared subscription handler
   on one saved package. Accepts exactly one of `params` or `email_message_id`
   (not both). The platform sets top-level envelope fields `synthetic: true` and,
   for stored-mail replay, `replay_of`. Replay rebuilds the stored inbound email
@@ -55,9 +55,9 @@ Run records for both surfaces include the same synthetic markers the handler
 payload carries. Handlers treat synthetic invocations identically to production
 unless a deliberately visible irreversible-side-effect guard says otherwise.
 
-Successful `package_publish_external_push` responses include `test_hints` when
-the package declares an app and/or subscriptions: copy-pasteable capability
-calls agents can run before treating the publish complete.
+Successful `packagePublishExternalPush` responses include `test_hints` when the
+package declares an app and/or subscriptions: copy-pasteable capability calls
+agents can run before treating the publish complete.
 
 ## Consequences
 

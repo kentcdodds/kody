@@ -11,7 +11,7 @@ export const adminAccountWriteLeaseRepairCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_account_write_lease_repair',
+		name: 'adminAccountWriteLeaseRepair',
 		description:
 			'Manually release one inspected crashed-writer lease with an audit reason. Admin-only and destructive.',
 		keywords: ['admin', 'account', 'deletion', 'lease', 'repair'],
@@ -31,7 +31,7 @@ export const adminAccountWriteLeaseRepairCapability = defineDomainCapability(
 			if (!repairedByUserId) throw new Error('Admin user context is required.')
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_account_write_lease_repair',
+				'adminAccountWriteLeaseRepair',
 				async () => {
 					const result = await repairAccountWriteLease({
 						db: ctx.env.APP_DB,

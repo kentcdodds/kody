@@ -123,7 +123,7 @@ test('package app fetch handler can use packageStorage against a real local work
 			arguments: {
 				code: `import { kody } from 'kody:runtime'
 export default async function main(input) {
-	return await kody.package_save({ files: input.files })
+	return await kody.packageSave({ files: input.files })
 }
 `,
 				params: { files },
@@ -181,7 +181,7 @@ export default async function main(input) {
 			arguments: {
 				code: `import { kody } from 'kody:runtime'
 export default async function main(input) {
-	return await kody.storage_query({
+	return await kody.storageQuery({
 		storage_id: input.storageId,
 		query: input.query,
 	})
@@ -209,7 +209,7 @@ export default async function main(input) {
 				arguments: {
 					code: `import { kody } from 'kody:runtime'
 export default async function main(input) {
-	return await kody.package_delete({
+	return await kody.packageDelete({
 		package_id: input.packageId,
 		confirm_name: input.confirmName,
 	})

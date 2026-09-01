@@ -1,6 +1,6 @@
 # Synthetic event dispatch
 
-`package_subscription_dispatch` invokes a **single** subscription handler on a
+`packageSubscriptionDispatch` invokes a **single** subscription handler on a
 saved package over MCP. It is a **platform-marked real-surface** `subscription`
 run through the normal package execution path (`packageStorage()`, secrets,
 `kody:runtime`). **Side effects are real.**
@@ -18,20 +18,20 @@ deliberately visible irreversible-side-effect guard says otherwise.
 
 ## When to use it
 
-- After `package_publish_external_push` when the package declares subscriptions
-  and `test_hints` includes topic snippets
+- After `packagePublishExternalPush` when the package declares subscriptions and
+  `test_hints` includes topic snippets
 - To debug handler logic with a minimal fixture payload
 - To replay a stored inbound message with `email_message_id`
 - Together with [Package app fetch](./package-app-fetch.md) as part of
   post-publish verification
 
-Use `package_subscriptions_list` first to confirm the topic and handler path.
-Use real platform events for end-to-end delivery, admin-role gates, filters, and
+Use `packageSubscriptionsList` first to confirm the topic and handler path. Use
+real platform events for end-to-end delivery, admin-role gates, filters, and
 multi-package fan-out.
 
 ## Call shape
 
-Search the `packages` domain, then call `package_subscription_dispatch`:
+Search the `packages` domain, then call `packageSubscriptionDispatch`:
 
 ```json
 {

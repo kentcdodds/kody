@@ -9,7 +9,7 @@ when a token already exists inside trusted code.
 Use **search** first to discover saved secret references or integrations before
 switching to **execute**.
 
-During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
+During **execute**, **`await kody.secretList({})`** (or a narrowed **`scope`**
 such as **`package`**) returns **metadata only**: names, descriptions, allowed
 hosts, **`expires_at`**, and remaining **`ttl_ms`** — not plaintext values.
 Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch placeholders and
@@ -19,11 +19,11 @@ Package-scoped secrets belong to one saved package and are available only while
 that package runs. Access rules for user-scoped secrets from package code are
 covered in [Package approval](#package-approval).
 
-**`kody.secret_set(...)`** persists a value that is already available inside
+**`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
 secret values. Do not use it for OAuth access or refresh tokens —
 `/connect/oauth` and **`createAuthenticatedFetch`** /
-**`integration_token_refresh`** persist those on the connection. Optional
+**`integrationTokenRefresh`** persist those on the connection. Optional
 **`expires_at`** is a UTC ISO timestamp (or `YYYY-MM-DD` at midnight UTC). Omit
 it to leave an existing expiry unchanged; pass `null` to clear. Updates that
 only change description or expiry may omit **`value`**. Package runtimes cannot
@@ -76,7 +76,7 @@ secret-aware **`fetch`** paths.
 
 ## Signing JWTs with saved private keys
 
-Use **`kody.secret_jwt_sign(...)`** when a workflow needs a JWT signed by a
+Use **`kody.secretJwtSign(...)`** when a workflow needs a JWT signed by a
 private key stored in a saved secret. The primitive returns
 **`{ jwt, algorithm }`**: use **`result.jwt`** as the compact JWT and
 **`result.algorithm`** for the signing algorithm. It never returns private key
@@ -120,17 +120,17 @@ package read/use is automatic.
 ## Package approval
 
 User-scoped secrets are available automatically for **reading and using**
-(mounts, fetch placeholders, named capability lookups including `secret_list`)
-to packages the user authored themselves and adopted community forks
-(`community_fork_adopt` after a real source review). Unadopted community-forked
+(mounts, fetch placeholders, named capability lookups including `secretList`) to
+packages the user authored themselves and adopted community forks
+(`communityForkAdopt` after a real source review). Unadopted community-forked
 packages need explicit **package** approval (`allowed_packages`) before those
 read/use paths. Updating or deleting a user secret from package code
-(`secret_set`, `secret_delete`) always needs the grant, including for
+(`secretSet`, `secretDelete`) always needs the grant, including for
 self-authored and adopted packages. Agents can add a package to that grant with
-**`secret_lock`**. Removing a grant is website-only on
-`/account/secrets/user/:name`. `secret_set` cannot change `allowed_packages`.
+**`secretLock`**. Removing a grant is website-only on
+`/account/secrets/user/:name`. `secretSet` cannot change `allowed_packages`.
 Official OAuth token rotation (`createAuthenticatedFetch` 401 retry via
-`integration_token_refresh`) persists host-side and does not need that write
+`integrationTokenRefresh`) persists host-side and does not need that write
 grant.
 
 **Host approval is separate and is never automatic**, including for
@@ -144,7 +144,7 @@ approval URL shaped like
 `/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
 every pending secret and approves them in one click. Single-secret links still
 work for one-off grants. For community forks, reviewing the source and calling
-`community_fork_adopt` is an alternative to sending those approval links.
+`communityForkAdopt` is an alternative to sending those approval links.
 
 ## Package config vs package storage
 

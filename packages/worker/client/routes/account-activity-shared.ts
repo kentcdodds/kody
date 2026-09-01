@@ -32,7 +32,7 @@ export {
 
 export const activityErrorReviewPrompt = [
 	'Look at my open Kody activity errors.',
-	'Start with run_summary, then run_list for open errors, and run_get on the ones that matter.',
+	'Start with runSummary, then runList for open errors, and runGet on the ones that matter.',
 	'Explain each failure and recommend whether to ignore it, mark it resolved, or fix something.',
 ].join(' ')
 

@@ -24,7 +24,7 @@ authenticate, call the process, store results, notify. See
 
 Load this guide when:
 
-- `repo_run_checks` or publish artifact rebuild reports that bundle validation
+- `repoRunChecks` or publish artifact rebuild reports that bundle validation
   exceeded the isolated runner's memory or CPU limits
 - a Worker-compatible library is too large to bundle (PDF.js / `unpdf`, native
   addons, browsers, multi-minute CPU, large WASM)

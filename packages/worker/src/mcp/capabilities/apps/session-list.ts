@@ -21,7 +21,7 @@ const outputSchema = z.object({
 export const sessionListCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
 	{
-		name: 'session_list',
+		name: 'sessionList',
 		description:
 			'List active websocket sessions for a package app, optionally filtered by facet or subscribed topic.',
 		keywords: ['app', 'websocket', 'session', 'list', 'facet', 'topic'],

@@ -82,7 +82,7 @@ const sampleNote = {
 	checks: null,
 }
 
-test('repo_show_publish_note reads notes by source or package identity and rejects cross-user access', async () => {
+test('repoShowPublishNote reads notes by source or package identity and rejects cross-user access', async () => {
 	resetMocks()
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(sampleSource)
 	mockModule.readPublishGitNoteFromArtifactsRepo.mockResolvedValue({

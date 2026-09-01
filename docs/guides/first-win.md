@@ -54,13 +54,13 @@ from; everything after this happens in their agent, not on the web page.
 ## Before you start
 
 The account needs a verified email address and an authorized MCP host. If
-`email_send` reports that the account email is unverified, stop and tell the
+`emailSend` reports that the account email is unverified, stop and tell the
 person to finish verification first — the rest of this loop cannot work without
 it.
 
 ## Step 1 — Send the welcome email
 
-Call `email_send` on your own account address with a subject the person can find
+Call `emailSend` on your own account address with a subject the person can find
 by searching their inbox:
 
 ```text
@@ -71,7 +71,7 @@ Keep the body short and personal, and ask three questions in it: their name,
 what they do for work, and what they do for fun. Close by inviting a reply to
 that same message.
 
-`email_send` only ever mails the account's own address, and the from address is
+`emailSend` only ever mails the account's own address, and the from address is
 the account's platform inbox (`{username}@<platform domain>`). Note both the
 subject you used and the from address the response reports — the next step needs
 them.
@@ -93,7 +93,7 @@ them, in one short message:
 
 ## Step 3 — Wait for them, not for the mail
 
-**Do not poll.** Do not loop on `email_message_search`, do not schedule a job to
+**Do not poll.** Do not loop on `emailMessageSearch`, do not schedule a job to
 watch for the reply, and do not tell the person to hold on while you check.
 Nothing in Kody answers by itself, so there is nothing to watch.
 
@@ -105,9 +105,9 @@ go.
 
 When they say they replied, find it once:
 
-- `email_message_search` with a query from the subject (or `email_message_list`
+- `emailMessageSearch` with a query from the subject (or `emailMessageList`
   filtered to inbound mail), then
-- `email_message_get` for the full body of the match.
+- `emailMessageGet` for the full body of the match.
 
 If nothing is stored yet, say so plainly and ask them to say "replied" again in
 a moment rather than checking on a timer yourself. Mail is stored on delivery,
@@ -119,8 +119,8 @@ Turn the reply into durable memories — not values, not a package. Memories are
 the right home for "who this person is" facts, and they surface to every agent
 connected to the same account.
 
-Call `meta_memory_verify` first to see what already exists, then
-`meta_memory_upsert` for each fact worth keeping: their name, their work, what
+Call `metaMemoryVerify` first to see what already exists, then
+`metaMemoryUpsert` for each fact worth keeping: their name, their work, what
 they do for fun, and anything else the reply volunteered (timezone, tools they
 live in, what they want automated).
 

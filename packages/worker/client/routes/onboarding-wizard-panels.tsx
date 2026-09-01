@@ -451,7 +451,7 @@ export function renderPersistPanel(
 				<p>
 					Paste the prompt into your connected agent. It runs one{' '}
 					<em>execute</em> call, shows the result, then persists that working
-					code with <em>package_save</em>. That owned package is the point of
+					code with <em>packageSave</em>. That owned package is the point of
 					Kody.
 				</p>
 			</aside>

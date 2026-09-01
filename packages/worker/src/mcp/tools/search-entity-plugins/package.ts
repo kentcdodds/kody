@@ -437,7 +437,7 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package from @${match.platformScope}. community_fork it into your scope before importing it.`
+			? ` This is a platform (built-in) package from @${match.platformScope}. communityFork it into your scope before importing it.`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
@@ -515,8 +515,8 @@ export const packageSearchEntityPlugin = {
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
 		const followUp = listingAhead
-			? `${listingAheadSearchNotice} If you plan to invoke an export, call package_get({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
-			: `If you plan to invoke an export, call package_get({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
+			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
+			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',

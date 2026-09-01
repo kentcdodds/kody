@@ -46,7 +46,7 @@ export type RunErrorTriage = (typeof runErrorTriageValues)[number]
 
 /**
  * List/summary filter over {@link RunErrorTriage}. `open` = not ignored or
- * resolved (default for `run_list` and Activity's Open errors view).
+ * resolved (default for `runList` and Activity's Open errors view).
  */
 export const runErrorTriageFilterValues = [
 	'open',
@@ -57,7 +57,7 @@ export const runErrorTriageFilterValues = [
 
 export type RunErrorTriageFilter = (typeof runErrorTriageFilterValues)[number]
 
-/** Max length for optional triage notes set via `run_update`. */
+/** Max length for optional triage notes set via `runUpdate`. */
 export const runErrorTriageMaxNoteLength = 2000
 
 /**
@@ -121,7 +121,7 @@ export type RunLogLevel = (typeof runLogLevelValues)[number]
  *   key-less `execute` come from Analytics Engine via usage metering, not from
  *   run records. When the caller supplies an `idempotencyKey`, execute upgrades
  *   to `eager` so a client-side transport timeout can still recover the outcome
- *   via `run_get` / keyed replay.
+ *   via `runGet` / keyed replay.
  */
 export type RunPersistence = 'eager' | 'on-failure'
 
@@ -269,7 +269,7 @@ export type RunRecordFilter = {
 	since?: string | null
 	/**
 	 * Soft error-triage filter. Omit / `null` means no triage filter (all runs).
-	 * User-facing `run_list` and Activity pass `open` by default.
+	 * User-facing `runList` and Activity pass `open` by default.
 	 */
 	errorTriage?: RunErrorTriageFilter | null
 }

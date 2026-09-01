@@ -14,7 +14,7 @@ import { type RepoPublishWorkspace } from './external-publish.ts'
 import { type PublishGitNoteFileSystem } from './publish-git-notes.ts'
 
 /**
- * Clone / checkout for `package_publish_external_push` must not use the
+ * Clone / checkout for `packagePublishExternalPush` must not use the
  * RepoSession Durable Object SQL workspace. isomorphic-git writes the whole
  * packfile as one blob. Interactive RepoSession workspaces spill those
  * objects to `REPO_SESSION_BLOBS`. External publish stays on an ephemeral
@@ -245,7 +245,7 @@ export function buildWorkspaceSqliteTooBigCallerMessage(operation: string) {
 		`(string or blob too big: SQLITE_TOOBIG). Session workspaces spill ` +
 		`objects above the inline threshold to REPO_SESSION_BLOBS; this error ` +
 		`means the write stayed inline. Shrink the object or retry. ` +
-		`package_publish_external_push uses an in-memory clone and is not limited ` +
+		`packagePublishExternalPush uses an in-memory clone and is not limited ` +
 		`by this row ceiling.`
 	)
 }

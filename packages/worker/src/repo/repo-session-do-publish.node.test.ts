@@ -1134,7 +1134,7 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		publishedCommit: null,
 		sessionBaseCommit: 'commit-base',
 		currentPublishedCommit: 'commit-published-new',
-		repairHint: 'repo_rebase_session',
+		repairHint: 'repoRebaseSession',
 		message:
 			'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
 	})

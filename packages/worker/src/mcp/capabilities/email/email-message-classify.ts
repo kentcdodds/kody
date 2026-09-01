@@ -9,7 +9,7 @@ import { requireVerifiedEmailAccountUser } from './require-verified-user.ts'
 export const emailMessageClassifyCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_message_classify',
+		name: 'emailMessageClassify',
 		description:
 			'Reclassify a stored inbound email message as accepted or quarantined. Receive-time classification decides package subscription dispatch once; reclassifying to accepted does not retroactively fire email.message.received.',
 		keywords: [

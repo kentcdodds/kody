@@ -40,7 +40,7 @@ const outputSchema = z.object({
 export const repoTreeCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_tree',
+		name: 'repoTree',
 		description:
 			'Summarize a repo session subtree so the model can understand file layout before reading or editing specific files.',
 		keywords: ['repo', 'tree', 'workspace', 'files', 'directories', 'summary'],

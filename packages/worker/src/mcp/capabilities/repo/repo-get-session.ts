@@ -7,7 +7,7 @@ import { repoSessionIdSchema, repoSessionInfoSchema } from './repo-shared.ts'
 export const repoGetSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_get_session',
+		name: 'repoGetSession',
 		description:
 			'Inspect one repo editing session by id so the model can resume work without reopening it.',
 		keywords: ['repo', 'session', 'inspect', 'resume'],

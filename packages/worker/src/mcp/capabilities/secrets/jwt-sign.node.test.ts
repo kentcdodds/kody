@@ -31,7 +31,7 @@ function decodeJwtPart(value: string) {
 	) as Record<string, unknown>
 }
 
-test('secret_jwt_sign resolves keys and never leaks key material', async () => {
+test('secretJwtSign resolves keys and never leaks key material', async () => {
 	const { privateKey, publicKey } = createKeyPair()
 	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const callerContext = createMcpCallerContext({

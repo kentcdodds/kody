@@ -15,9 +15,9 @@ import {
 export const communityPublishCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_publish',
+		name: 'communityPublish',
 		description:
-			'Make a saved package public: default-branch HEAD becomes world-readable and forkable, and the package appears on /community. Prefer package_update with changes.visibility: "public". No license, logo, or Intent gates. Runtime still uses published_commit. Listings owned by anyone are third-party code — review before forking.',
+			'Make a saved package public: default-branch HEAD becomes world-readable and forkable, and the package appears on /community. Prefer packageUpdate with changes.visibility: "public". No license, logo, or Intent gates. Runtime still uses published_commit. Listings owned by anyone are third-party code — review before forking.',
 		keywords: [
 			'community',
 			'publish',

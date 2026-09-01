@@ -26,7 +26,7 @@ const outputSchema = z.object({
 export const mcpServerListCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_list',
+		name: 'mcpServerList',
 		description:
 			"List the signed-in user's saved MCP servers with live connection status, pending OAuth authUrls, discovered tool names, and package usage (any context vs locked to listed packages).",
 		keywords: [

@@ -25,7 +25,7 @@ export const publishedPackageArtifactRebuildConcurrency = 2
  * `internal error; reference = …` blips during staging or target rebuilds
  * are transient. Rebuilds are idempotent (already-built targets are skipped),
  * so a short bounded retry recovers without re-running publish. Matches
- * package_publish_external_push delays.
+ * packagePublishExternalPush delays.
  */
 export const publishedPackageArtifactRebuildRetryDelaysMs = [100, 500] as const
 

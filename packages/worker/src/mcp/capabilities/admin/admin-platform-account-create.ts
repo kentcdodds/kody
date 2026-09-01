@@ -31,7 +31,7 @@ export const adminPlatformAccountCreateCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_platform_account_create',
+		name: 'adminPlatformAccountCreate',
 		description:
 			'Create a platform account that holds official/platform-owned packages. Platform accounts can only claim reserved usernames and never log in. Admin-only; does not expose user content.',
 		keywords: [
@@ -48,7 +48,7 @@ export const adminPlatformAccountCreateCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_account_create',
+				'adminPlatformAccountCreate',
 				async () => {
 					const created = await createPlatformAccount({
 						db: ctx.env.APP_DB,

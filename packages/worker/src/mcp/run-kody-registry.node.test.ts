@@ -53,7 +53,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 	// 'mcp-server-refs-load-failed' before degrading to "no MCP servers".
 	silenceIncidentalRuntimeWarnings()
 	const adminOnlyCapability = defineDomainCapability('admin', {
-		name: 'admin_user_list',
+		name: 'adminUserList',
 		description: 'List admin user account metadata',
 		readOnly: true,
 		idempotent: true,
@@ -85,8 +85,8 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 		{ capabilityRegistry: registry },
 	)
 
-	await expect(tools.admin_user_list({})).rejects.toThrow(
-		'MCP user lacks required role "admin" for capability "admin_user_list".',
+	await expect(tools.adminUserList({})).rejects.toThrow(
+		'MCP user lacks required role "admin" for capability "adminUserList".',
 	)
 })
 
@@ -244,7 +244,7 @@ export default async function run() {
 			},
 		)
 		await expect(
-			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+			providerFns?.packageWorkflowCreate({ workflowName: 'custom' }),
 		).resolves.toEqual({ ok: true, id: 'custom-workflow' })
 		expect(customWorkflowTools.create).toHaveBeenCalledWith({
 			workflowName: 'custom',
@@ -313,7 +313,7 @@ test('runModuleWithRegistry queues inline workflows.create calls without runAt o
 					fns: Record<string, (args: unknown) => Promise<unknown>>
 				}
 				return {
-					result: await provider.fns.package_workflow_create({
+					result: await provider.fns.packageWorkflowCreate({
 						code: 'export default async function main() { return { ok: true } }',
 					}),
 					logs: [],
@@ -343,7 +343,7 @@ export default async function main() {
 			status: 'queued',
 		})
 		expect(wrappedSource).toContain('const workflows = {')
-		expect(wrappedSource).toContain('kody.package_workflow_create')
+		expect(wrappedSource).toContain('kody.packageWorkflowCreate')
 		expect(created).toHaveLength(1)
 		expect(created[0]?.params).toEqual(
 			expect.objectContaining({
@@ -489,7 +489,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	try {
 		const kody = await buildKodyFns(env, callerContext)
 		await expect(
-			kody.job_update({
+			kody.jobUpdate({
 				id: job.id,
 				enabled: false,
 			}),
@@ -514,7 +514,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 			enabled: 0,
 		})
 
-		await expect(kody.job_delete({ id: job.id })).resolves.toEqual({
+		await expect(kody.jobDelete({ id: job.id })).resolves.toEqual({
 			job_id: job.id,
 			deleted: true,
 		})
@@ -540,7 +540,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	}
 })
 
-test('buildKodyFns tracks secret_set values for execute redaction', async () => {
+test('buildKodyFns tracks secretSet values for execute redaction', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const trackedSecretValues: Array<string> = []
 	const getRegistrySpy = vi
@@ -554,7 +554,7 @@ test('buildKodyFns tracks secret_set values for execute redaction', async () => 
 			capabilityHandlers: {},
 			capabilityList: [
 				{
-					name: 'secret_set',
+					name: 'secretSet',
 					domain: 'secrets',
 					description: 'Store a secret.',
 					keywords: [],
@@ -583,8 +583,8 @@ test('buildKodyFns tracks secret_set values for execute redaction', async () => 
 				},
 			],
 			capabilityMap: {
-				secret_set: {
-					name: 'secret_set',
+				secretSet: {
+					name: 'secretSet',
 					domain: 'secrets',
 					description: 'Store a secret.',
 					keywords: [],
@@ -614,7 +614,7 @@ test('buildKodyFns tracks secret_set values for execute redaction', async () => 
 			},
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {
-				secret_set: {
+				secretSet: {
 					description: 'Store a secret.',
 					inputSchema: {
 						type: 'object',
@@ -647,7 +647,7 @@ test('buildKodyFns tracks secret_set values for execute redaction', async () => 
 				},
 			},
 		)
-		const result = await trackedKody.secret_set({
+		const result = await trackedKody.secretSet({
 			name: 'spotifyAccessToken',
 			value: 'fresh-access-token',
 		})
@@ -685,7 +685,7 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 			capabilityHandlers: {},
 			capabilityList: [
 				{
-					name: 'package_storage_get',
+					name: 'packageStorageGet',
 					domain: 'storage',
 					description:
 						'Capability that collides with a package storage helper.',
@@ -707,8 +707,8 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 				},
 			],
 			capabilityMap: {
-				package_storage_get: {
-					name: 'package_storage_get',
+				packageStorageGet: {
+					name: 'packageStorageGet',
 					domain: 'storage',
 					description:
 						'Capability that collides with a package storage helper.',
@@ -731,7 +731,7 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 			},
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {
-				package_storage_get: {
+				packageStorageGet: {
 					description:
 						'Capability that collides with a package storage helper.',
 					inputSchema: {
@@ -754,7 +754,7 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 				},
 			}),
 		).rejects.toThrow(
-			'Kody helper "package_storage_get" collides with a capability.',
+			'Kody helper "packageStorageGet" collides with a capability.',
 		)
 	} finally {
 		getRegistrySpy.mockRestore()
@@ -779,7 +779,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 			capabilityHandlers: {},
 			capabilityList: [
 				{
-					name: 'secret_set',
+					name: 'secretSet',
 					domain: 'secrets',
 					description: 'Store a secret.',
 					keywords: [],
@@ -808,8 +808,8 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				},
 			],
 			capabilityMap: {
-				secret_set: {
-					name: 'secret_set',
+				secretSet: {
+					name: 'secretSet',
 					domain: 'secrets',
 					description: 'Store a secret.',
 					keywords: [],
@@ -839,7 +839,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 			},
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {
-				secret_set: {
+				secretSet: {
 					description: 'Store a secret.',
 					inputSchema: {
 						type: 'object',
@@ -865,7 +865,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				const provider = providers[0] as {
 					fns: Record<string, (args: unknown) => Promise<unknown>>
 				}
-				await provider.fns.secret_set({
+				await provider.fns.secretSet({
 					name: 'spotifyAccessToken',
 					value: 'fresh-access-token',
 				})
@@ -896,7 +896,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 	const code = `import { kody } from 'kody:runtime'
 
 export default async function run() {
-	await kody.secret_set({
+	await kody.secretSet({
 		name: 'spotifyAccessToken',
 		value: 'fresh-access-token',
 	})
@@ -1014,17 +1014,17 @@ export default async function run() {
 		expect(result.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
-			providerFns?.package_secret_has({ alias: 'token' }),
+			providerFns?.packageSecretHas({ alias: 'token' }),
 		).resolves.toEqual({
 			has: true,
 		})
 		await expect(
-			providerFns?.package_secret_has({ alias: 'missing-token' }),
+			providerFns?.packageSecretHas({ alias: 'missing-token' }),
 		).resolves.toEqual({
 			has: false,
 		})
 		await expect(
-			providerFns?.package_secret_get({ alias: 'token' }),
+			providerFns?.packageSecretGet({ alias: 'token' }),
 		).resolves.toEqual({
 			value: 'bot-token',
 		})

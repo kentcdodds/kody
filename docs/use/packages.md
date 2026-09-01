@@ -3,7 +3,7 @@
 Repos are Kody's durable home for versioned source; a **package** is a repo with
 runtime surfaces activated (see [Repos](./repos.md)). Activation is explicit: a
 root `package.json` alone does not make a plain repo a package —
-`repo_promote_to_package` (or creating through the package lanes) does.
+`repoPromoteToPackage` (or creating through the package lanes) does.
 
 A saved package is a repo-backed module rooted at `package.json`. Standard
 package fields describe the package surface, and `package.json#kody` holds the
@@ -62,7 +62,7 @@ Important fields:
 
 - `name` — npm-valid package name
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
-  is a repo setting (`package_update` `changes.visibility`), default private.
+  is a repo setting (`packageUpdate` `changes.visibility`), default private.
 - `exports` — authoritative import/export map
 - `kody.id` — optional; if present must match the package name leaf (the URL
   slug). Prefer omitting it and letting the leaf be the slug.
@@ -149,7 +149,7 @@ exhaustive.
   person-owned package. Official `@kody` packages may still compose with each
   other. Publish checks reject `kody:@kody/…` static imports and
   `kody.dependencies` entries in person-owned package source. Execute fails the
-  same way. Fork the official package into your scope (`community_fork`) and
+  same way. Fork the official package into your scope (`communityFork`) and
   import that copy. Dynamic `import("kody:@kody/…")` is unsupported. Platform
   packages appear in `search` results (marked with their platform scope) so
   agents can discover them and fork.
@@ -187,7 +187,7 @@ exhaustive.
   authoring guide for the done criteria (`@param`, `@returns`, and an `@example`
   that imports `kody:@scope/id/export` and calls it). When helpful, point the
   export at a `types` file and put the JSDoc there. Package search detail and
-  `package_get` surface package descriptions, export descriptions, function
+  `packageGet` surface package descriptions, export descriptions, function
   signatures, JSDoc, and type definitions.
 
 ### Package reuse
@@ -210,7 +210,7 @@ const account = await profile({})
 ```
 
 Declare every static `kody:@` import in `package.json#kody.dependencies`.
-Person-owned packages must not import a platform scope; `community_fork` first.
+Person-owned packages must not import a platform scope; `communityFork` first.
 `packageStorage()` on a static import reaches the declaring package's bucket for
 **caller-owned** packages.
 
@@ -223,7 +223,7 @@ prefilled `/@{username}/{kodyId}?newToken=1` URL without raw token material.
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
 user's packages. A platform specifier such as `kody:@kody/google` is not
-runnable in a person account — `community_fork` it first.
+runnable in a person account — `communityFork` it first.
 
 ## Package storage
 
@@ -376,10 +376,10 @@ and `kody:runtime` helpers. Published bundle artifacts are rebuilt for
 subscription handlers during package checks and publish, just like exports,
 jobs, and apps.
 
-Use the built-in `package_subscriptions_list` capability to discover the
-signed-in user's saved package subscriptions, optionally filtered by exact
-topic. This is the generic discovery step before building fan-out, debugging why
-an event did or did not dispatch, or checking which packages subscribe to
+Use the built-in `packageSubscriptionsList` capability to discover the signed-in
+user's saved package subscriptions, optionally filtered by exact topic. This is
+the generic discovery step before building fan-out, debugging why an event did
+or did not dispatch, or checking which packages subscribe to
 `email.message.received`, `run.error.recorded`, `integration.auth.failed`,
 `integration.auth.succeeded`, `mcp.server.disconnected`,
 `mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`,
@@ -392,23 +392,22 @@ For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
 payloads are metadata-first: handlers receive the stored message id, recipient
 and sender metadata, timestamps, processing status, and attachment metadata.
-Fetch parsed bodies or attachment bytes only when needed with
-`email_message_get`, `email_attachment_get`, or the `email` helper from
-`kody:runtime`. Operator system-inbox mail dispatches the separate
-`email.system-message.received` topic to packages saved by admin users when the
-message is accepted (quarantined system mail is stored but not dispatched); its
-payload adds an `admin_url` link to the message in the admin interface.
-Successful operator sends from reserved system senders dispatch
-`email.system-message.sent` with the sent correspondence (recipients, subject,
-and bodies) so an admin archive package can record mail that did not go through
-a utility wrapper. See [Email primitives](./email-primitives.md) for the full
-payload shapes.
+Fetch parsed bodies or attachment bytes only when needed with `emailMessageGet`,
+`emailAttachmentGet`, or the `email` helper from `kody:runtime`. Operator
+system-inbox mail dispatches the separate `email.system-message.received` topic
+to packages saved by admin users when the message is accepted (quarantined
+system mail is stored but not dispatched); its payload adds an `admin_url` link
+to the message in the admin interface. Successful operator sends from reserved
+system senders dispatch `email.system-message.sent` with the sent correspondence
+(recipients, subject, and bodies) so an admin archive package can record mail
+that did not go through a utility wrapper. See
+[Email primitives](./email-primitives.md) for the full payload shapes.
 
 When a run in your Activity finishes with an error, Kody dispatches
 `run.error.recorded` to your packages that declare that topic. The payload is
 metadata-first (run id, surface, identifiers, truncated error fields, and an
-`activity_url` deep link). Fetch logs and full detail with `run_get` when
-needed. See [Activity](./activity.md) and the
+`activity_url` deep link). Fetch logs and full detail with `runGet` when needed.
+See [Activity](./activity.md) and the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 When host-side OAuth token refresh fails with reconnectable caller state, Kody
@@ -439,7 +438,7 @@ and the distinction between live HEAD and package publish.
 
 Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
 to a package export. Declaring a webhook does not open ingress — mint a URL with
-`webhook_url_mint` first. Full contract, signature examples, and payload shape:
+`webhookUrlMint` first. Full contract, signature examples, and payload shape:
 [Inbound webhooks](./webhooks.md).
 
 ## Package-owned jobs
@@ -461,14 +460,14 @@ Jobs are part of the package definition. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime — see
 [Workflows](./workflows.md).
 
-`job_update` adjusts metadata on an existing job: schedule, timezone, enabled
+`jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
 clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `job_delete` is rejected for
-package-owned jobs for the same reason. `job_run_now` triggers an existing
-package job immediately for debugging. When `expires_at` is reached the platform
-stops scheduling and auto-disables the job; that is separate from `preserved`,
-which only skips retention deletion.
+repo — change the job entry there and publish. `jobDelete` is rejected for
+package-owned jobs for the same reason. `jobRunNow` triggers an existing package
+job immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job; that is separate from `preserved`, which
+only skips retention deletion.
 
 ## Save and edit packages
 
@@ -480,21 +479,21 @@ is guidance, not a new Kody primitive or manifest field.
 
 Use:
 
-- `package_get_git_remote` and `package_publish_external_push` when you have a
-  normal git client: mint a remote (pass `create: true` with a new `kody_id` to
+- `packageGetGitRemote` and `packagePublishExternalPush` when you have a normal
+  git client: mint a remote (pass `create: true` with a new `kody_id` to
   register a stub package first), clone, edit, push, and then ask Kody to
   reconcile the pushed Artifacts HEAD
-- `package_save` to create or replace a saved package from a complete UTF-8 text
+- `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
-- `package_get` and `package_list` to inspect saved packages
-- `package_delete` to permanently remove a saved package the owner typed the
-  name of (`confirm_name` must match the package name)
-- `package_update` to change mutable package settings such as hidden search
+- `packageGet` and `packageList` to inspect saved packages
+- `packageDelete` to permanently remove a saved package the owner typed the name
+  of (`confirm_name` must match the package name)
+- `packageUpdate` to change mutable package settings such as hidden search
   discovery state or to lock publishes (`changes.locked: true`). Unlocking is
   website-only.
-- `repo_edit_files`, `repo_apply_patch`, `repo_commit`, `repo_run_checks`, and
-  `repo_publish_session` to edit, validate, and publish repo-backed package
-  source through the file-level session API
+- `repoEditFiles`, `repoApplyPatch`, `repoCommit`, `repoRunChecks`, and
+  `repoPublishSession` to edit, validate, and publish repo-backed package source
+  through the file-level session API
 
 ### Platform maintenance migrations (codemods)
 
@@ -512,18 +511,18 @@ and does not expose to deployment admins is covered in
 
 ## Hidden packages
 
-Use **`package_update`** with a saved **`package_id`** and
+Use **`packageUpdate`** with a saved **`package_id`** and
 **`changes: { hidden: true }`** to hide a package from ordinary ranked search.
 Set **`hidden: false`** inside `changes` to show it again. The result includes
 the persisted package summary so callers can verify the new state.
 
-`package_update` only accepts mutable settings. Canonical metadata including
+`packageUpdate` only accepts mutable settings. Canonical metadata including
 name, description, tags, `kody.id`, app presence, and source projection remains
 derived from `package.json` and changes through save or publish.
 
 Hiding is a discovery preference, not deletion. The package stays saved,
 executable, and editable. Hiding is separate from **visibility**
-(`package_update` `changes.visibility`, which lists or unlists the catalog) and
+(`packageUpdate` `changes.visibility`, which lists or unlists the catalog) and
 from entitlement or access grants.
 
 ## Delete a package
@@ -535,7 +534,7 @@ Use:
 - The **Delete package** control on the package page (`/@username/{kodyId}`, or
   open a row from `/account/packages`). A modal asks you to type the package
   name to confirm.
-- **`package_delete`** with a saved **`package_id`**. Show the owner the package
+- **`packageDelete`** with a saved **`package_id`**. Show the owner the package
   name and what will be destroyed, wait for them to type that name, then pass
   **`confirm_name`** matching the package name exactly (`package.json` `name`,
   for example `@you/my-package`). The capability refuses the delete and names
@@ -549,7 +548,7 @@ Existing forks keep their copies.
 Hiding and making a package private are not deletion. Use those when the package
 should stay saved.
 
-**`package_list`** and **`package_get`** return a **`hidden`** boolean on each
+**`packageList`** and **`packageGet`** return a **`hidden`** boolean on each
 package summary. Ranked **search** excludes hidden packages unless the caller
 passes **`includeHiddenPackages: true`**. Known-id **`entity`** lookups still
 resolve hidden packages.
@@ -557,12 +556,12 @@ resolve hidden packages.
 ## Publish lock
 
 A package with a **`locked_at`** timestamp on `/account/packages` (and on
-`package_list` / `package_get`) keeps serving its current published tree. Agents
+`packageList` / `packageGet`) keeps serving its current published tree. Agents
 and the five-minute reconcile job cannot advance `published_commit`. Use
-**`package_update`** with **`changes: { locked: true }`** to lock a package.
+**`packageUpdate`** with **`changes: { locked: true }`** to lock a package.
 Agents cannot unlock. If an agent needs the package unlocked, it should send the
 owner to `/@{username}/{kodyId}` so they can click the lock icon.
-`package_update` rejects **`changes.locked: false`** and returns that URL.
+`packageUpdate` rejects **`changes.locked: false`** and returns that URL.
 
 When an agent pushes or saves a locked package, the commit still lands on
 Artifacts HEAD. Publish tools then return **`locked`** with an
@@ -587,8 +586,8 @@ package instead:
 
 ## Community fork provenance
 
-**`package_list`** and **`package_get`** return community-fork provenance on
-each package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
+**`packageList`** and **`packageGet`** return community-fork provenance on each
+package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
 `listing_name`, `origin_commit`, `listing_pinned_commit`,
 `listing_published_at`, `listing_ahead`). Those fields are `null` for
 self-authored packages. When `listing_ahead` is true, `/account/packages`, the
@@ -600,9 +599,9 @@ listing page, package search, and `{kodyId}:package` entity detail surface a
 
 Saved package source is backed by a Cloudflare Artifacts git repository. You can
 create and edit it with a normal git client without round-tripping each file
-change through `package_save` or the file-level repo session capabilities
-(`repo_edit_files`, etc.). This lane supports binary assets, which
-`package_save` and repo sessions do not.
+change through `packageSave` or the file-level repo session capabilities
+(`repoEditFiles`, etc.). This lane supports binary assets, which `packageSave`
+and repo sessions do not.
 
 Individual files may be at most 10 MiB (10,485,760 bytes), measured as the
 file's stored byte length — UTF-8 bytes for text files, raw bytes for binary
@@ -625,8 +624,8 @@ publish checks run.
    }
    ```
 
-   Call `package_get_git_remote` with either `package_id` or `kody_id`. The
-   result includes the plain remote URL, an authenticated one-line clone URL, an
+   Call `packageGetGitRemote` with either `package_id` or `kody_id`. The result
+   includes the plain remote URL, an authenticated one-line clone URL, an
    `Authorization: Bearer ...` extra header, `git_author` (the signed-in Kody
    account email and display name), and setup commands that use
    `git -c http.extraHeader=...` so the token does not need to be saved in shell
@@ -652,7 +651,7 @@ publish checks run.
 
 2. Clone and edit:
 
-   Run every `setup_commands` entry from the `package_get_git_remote` result, in
+   Run every `setup_commands` entry from the `packageGetGitRemote` result, in
    order, before creating commits. That sequence clones the repo, `cd`s into it,
    and sets local `user.email` / `user.name` from `git_author`. Then edit,
    commit, and push:
@@ -663,7 +662,7 @@ publish checks run.
    git -c http.extraHeader='Authorization: Bearer art_v1_...' push origin HEAD:<defaultBranch>
    ```
 
-   Use the default branch returned by `package_get_git_remote` for
+   Use the default branch returned by `packageGetGitRemote` for
    `<defaultBranch>`.
 
 3. Publish the pushed Artifacts HEAD:
@@ -674,7 +673,7 @@ publish checks run.
    }
    ```
 
-   Call `package_publish_external_push`. Kody checks the pushed tree server-side
+   Call `packagePublishExternalPush`. Kody checks the pushed tree server-side
    before recording the new published version, writing the published source
    snapshot, rebuilding package bundle artifacts, and refreshing search
    projections. If the pushed HEAD is already current, the tool returns

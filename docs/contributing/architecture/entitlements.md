@@ -175,7 +175,7 @@ only the DO RPC and never touches D1 daily counter state.
 
 **Daily counter authority:** consume, refund, inbound charge/read, point-read
 surfaces, retention, and account export/deletion use `UserMeter`; D1 has no
-daily entitlement counter table or day index. `admin_user_meter_parity` reports
+daily entitlement counter table or day index. `adminUserMeterParity` reports
 meter-only daily counts (no D1 comparison fields exist). Analytics Engine
 remains the production reporting path for email send/receive aggregates.
 
@@ -184,7 +184,7 @@ the same cold zero-init path):
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
-- `usage_get` MCP capability
+- `usageGet` MCP capability
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts` (via
   `readAdminEntitlementConsumption` in
@@ -301,7 +301,7 @@ writes or incomplete inventory) **and this invocation created the fence**.
 Automatic abort passes `expectedDeletingAt` so D1 and
 `UserMeter.clearDeleting()` only drop a matching tombstone. Cleanup failures and
 retries against an already-fenced account keep the tombstone so a retry can
-finish. Operators restore a leftover fence with `admin_account_deletion_abort`
+finish. Operators restore a leftover fence with `adminAccountDeletionAbort`
 (stable user id + audit reason), which resolves `users.id` internally.
 
 **Admin list / repair:** `listActiveAccountWriteLeases(env, userId)` reads DO
@@ -333,10 +333,10 @@ above.
 parity reports meter-only daily counts; Analytics Engine remains the reporting
 store.
 
-### Admin UserMeter parity gates (`admin_user_meter_parity`)
+### Admin UserMeter parity gates (`adminUserMeterParity`)
 
 Production verification uses the admin-only read-only capability
-`admin_user_meter_parity` (input: `stable_user_id`). It compares physical D1
+`adminUserMeterParity` (input: `stable_user_id`). It compares physical D1
 payload bytes and the permanent D1 deletion tombstone with direct UserMeter
 RPCs. It never writes parity state. The daily section is meter-only. Opening a
 cold UserMeter stub may still run Durable Object constructor schema maintenance
@@ -356,9 +356,9 @@ Treat unexplained storage or deletion mismatches as failures. Expected cold
 accounts may report `needsBootstrap` until live traffic seeds the DO; that is a
 bootstrap gap, not a silent pass.
 
-### Storage reconciliation (`admin_user_meter_storage_reconcile`)
+### Storage reconciliation (`adminUserMeterStorageReconcile`)
 
-The admin-only maintenance capability `admin_user_meter_storage_reconcile` is a
+The admin-only maintenance capability `adminUserMeterStorageReconcile` is a
 **corrective physical-storage reconciliation** tool under UserMeter authority.
 Each invocation:
 
@@ -439,7 +439,7 @@ admin-only surfaces, both backed by `updateAdminUserPlan` in
   `{ action: 'update_plan', userId, plan }` to `POST /admin/users.json` (guarded
   by `update:user:any`). `plan: null` maps to `free` (writers never persist
   NULL); unknown plan strings are rejected with `400` rather than coerced.
-- **MCP** — the `admin_user_update` capability (`requiredRole: 'admin'`) updates
+- **MCP** — the `adminUserUpdate` capability (`requiredRole: 'admin'`) updates
   one user by `id` or `email` and accepts `plan: PlanName | null` (null maps to
   `free`).
 
@@ -651,10 +651,10 @@ Rules:
      byte metadata or are derived from D1 and are documented in
      `data-storage.md`.
 
-**Account usage reporting:** `usage_get` and the account usage UI report the
-same two storage components: authoritative D1 payload bytes from UserMeter plus
-the latest non-null estimates in `user_storage_buckets`. A newly inventoried
-bucket with no estimate contributes zero until the estimate-backfill lane or a
+**Account usage reporting:** `usageGet` and the account usage UI report the same
+two storage components: authoritative D1 payload bytes from UserMeter plus the
+latest non-null estimates in `user_storage_buckets`. A newly inventoried bucket
+with no estimate contributes zero until the estimate-backfill lane or a
 write-target probe records its first measurement. Enforcement remains more
 conservative: it live-probes the bucket being written and every unmeasured
 bucket, then adds those results to the D1 payload counter. Reporting can
@@ -724,8 +724,8 @@ workflows via RunLog, and similar).
 | Resource                   | Enforcement point                                                                                                                                                                                                                                                                                                                  |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free also asserts `minJobIntervalMs` (15 minutes) on create or schedule change; existing faster jobs are grandfathered. |
-| `saved_packages`           | new-package branch of `package_save` and projection insert                                                                                                                                                                                                                                                                         |
-| `repo_sessions`            | `repo_open_session` before creating a new session                                                                                                                                                                                                                                                                                  |
+| `saved_packages`           | new-package branch of `packageSave` and projection insert                                                                                                                                                                                                                                                                          |
+| `repo_sessions`            | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                    |
 | `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                |
 | `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                  |
 | `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                                                                                                                  |

@@ -29,7 +29,7 @@ Exact capabilities depend on the User Token Scopes granted at connect time.
 ## Create a user-token Slack app
 
 1. Confirm there is no existing **user-token** Slack connection:
-   `integration_list`. A connection named `slack` that only has a bot grant does
+   `integrationList`. A connection named `slack` that only has a bot grant does
    not count — leave it and use a distinct name such as `slack-user`.
 2. Create a Slack app at <https://api.slack.com/apps> with **User Token
    Scopes**. User-token Slack uses `oauth/v2_user` + `oauth.v2.user.access`, not
@@ -110,7 +110,7 @@ store Slack OAuth tokens as named secrets.
 ## Do not
 
 - Do not send the user to `/account/secrets/new` for Slack OAuth tokens.
-- Do not `secret_set` Slack access or refresh tokens.
+- Do not `secretSet` Slack access or refresh tokens.
 - Do not paste tokens or the Slack client secret in chat.
 - Do not treat a bot-token Slack connection as a working `@kody/slack` setup.
 - Do not invent `xoxp-` / `xoxb-` token collection outside `/connect/oauth`.

@@ -40,7 +40,7 @@ export function expandBraceGlobs(
 	if (open === -1) return [pattern]
 	if (nestingDepth >= maxBraceNestingDepth) {
 		throw new Error(
-			`repo_search glob brace nesting exceeds ${maxBraceNestingDepth} levels.`,
+			`repoSearch glob brace nesting exceeds ${maxBraceNestingDepth} levels.`,
 		)
 	}
 
@@ -84,7 +84,7 @@ export function expandBraceGlobs(
 			expanded.push(candidate)
 			if (expanded.length > maxExpandedGlobPatterns) {
 				throw new Error(
-					`repo_search glob expands to more than ${maxExpandedGlobPatterns} patterns.`,
+					`repoSearch glob expands to more than ${maxExpandedGlobPatterns} patterns.`,
 				)
 			}
 		}
@@ -120,12 +120,12 @@ async function globWorkspaceFiles(input: {
 function assertSafeRepoSearchRegex(pattern: string) {
 	if (pattern.length > maxRepoSearchRegexLength) {
 		throw new Error(
-			`repo_search regex patterns must be ${maxRepoSearchRegexLength} characters or fewer.`,
+			`repoSearch regex patterns must be ${maxRepoSearchRegexLength} characters or fewer.`,
 		)
 	}
 	if (obviousNestedQuantifierPattern.test(pattern)) {
 		throw new Error(
-			'repo_search rejected an unsafe regex pattern with nested quantifiers.',
+			'repoSearch rejected an unsafe regex pattern with nested quantifiers.',
 		)
 	}
 }
@@ -136,7 +136,7 @@ function normalizeSearchQuery(input: {
 }) {
 	const pattern = input.pattern.trim()
 	if (!pattern) {
-		throw new Error('repo_search requires a non-empty pattern.')
+		throw new Error('repoSearch requires a non-empty pattern.')
 	}
 	return {
 		query: pattern,

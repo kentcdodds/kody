@@ -21,7 +21,7 @@ const repoUpdateChangesSchema = z
 export const repoUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_update',
+		name: 'repoUpdate',
 		description:
 			'Update mutable settings for a plain repo. Visibility is a repo setting, not package.json#private. Making a repo public makes default-branch HEAD world-readable and forkable. Making it private 404s public URLs (forks keep their copies) — pass confirm_name matching the repo slug after the owner typed that name.',
 		keywords: ['repo', 'update', 'visibility', 'public', 'private'],

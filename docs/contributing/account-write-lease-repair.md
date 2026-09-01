@@ -12,7 +12,7 @@ log for all repairs in `packages/worker/migrations/0001-squashed-init.sql`.
 First inspect active leases:
 
 ```javascript
-await kody.admin_account_write_lease_list({
+await kody.adminAccountWriteLeaseList({
 	stable_user_id: 'user-id-from-admin-account-lookup',
 })
 ```
@@ -21,7 +21,7 @@ Review the returned token, holder, and `acquired_at` timestamp against runtime
 logs before repair. Then release exactly that inspected lease:
 
 ```javascript
-await kody.admin_account_write_lease_repair({
+await kody.adminAccountWriteLeaseRepair({
 	stable_user_id: 'user-id-from-admin-account-lookup',
 	token: '00000000-0000-4000-8000-000000000000',
 	expected_acquired_at: '2026-07-23 05:00:00',
@@ -37,11 +37,11 @@ already gone. Wrong user, stale timestamp, or short reason requests fail closed.
 Retry account deletion only after inspection shows no active leases.
 
 A failed delete that marked `users.deleting_at` before cleanup can leave the
-account fenced with no active leases. Confirm with `admin_user_meter_parity`
+account fenced with no active leases. Confirm with `adminUserMeterParity`
 (`deletion.d1DeletingAt` / `deletion.meterDeletingAt`), then clear both sides:
 
 ```javascript
-await kody.admin_account_deletion_abort({
+await kody.adminAccountDeletionAbort({
 	stable_user_id: 'user-id-from-admin-account-lookup',
 	reason:
 		'Leftover fence after a pre-cleanup delete failure; no writers remain.',

@@ -69,7 +69,7 @@ export const integrationConfigSchema = z.object({
 	 * True when the connection uses a platform (built-in) OAuth app. Platform
 	 * connections never expose a client secret name: the shared secret lives
 	 * encrypted outside the user secret store and token exchange runs
-	 * host-side (`integration_token_refresh`).
+	 * host-side (`integrationTokenRefresh`).
 	 */
 	platform: z.boolean().optional(),
 	/**

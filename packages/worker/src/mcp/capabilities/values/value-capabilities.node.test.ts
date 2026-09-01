@@ -69,12 +69,12 @@ test('values domain is unadvertised while read and delete stay on the map', () =
 	expect(
 		registry.capabilityDomains.some((domain) => domain.name === 'values'),
 	).toBe(false)
-	expect(registry.capabilitySpecs.value_get).toBeUndefined()
-	expect(registry.capabilitySpecs.value_list).toBeUndefined()
-	expect(registry.capabilitySpecs.value_delete).toBeUndefined()
-	expect(registry.capabilityMap.value_get).toBeTruthy()
-	expect(registry.capabilityMap.value_list).toBeTruthy()
-	expect(registry.capabilityMap.value_delete).toBeTruthy()
+	expect(registry.capabilitySpecs.valueGet).toBeUndefined()
+	expect(registry.capabilitySpecs.valueList).toBeUndefined()
+	expect(registry.capabilitySpecs.valueDelete).toBeUndefined()
+	expect(registry.capabilityMap.valueGet).toBeTruthy()
+	expect(registry.capabilityMap.valueList).toBeTruthy()
+	expect(registry.capabilityMap.valueDelete).toBeTruthy()
 	expect(createRemovedValueWriteError().message).toBe(removedValueWriteMessage)
 	expect(removedValueWriteMessage).toMatch(/memories/)
 	expect(removedValueWriteMessage).toMatch(/packageStorage/)

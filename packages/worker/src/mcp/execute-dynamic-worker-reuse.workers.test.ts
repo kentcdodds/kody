@@ -7,7 +7,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 
 /**
  * Regression coverage for the production "RPC stub used after being
- * disposed" failures (community_publish / community_search / repo publish
+ * disposed" failures (communityPublish / communitySearch / repo publish
  * capabilities intermittently failing on repeated calls).
  *
  * Execute uses stable dynamic-worker ids when `APP_COMMIT_SHA` is set, so two

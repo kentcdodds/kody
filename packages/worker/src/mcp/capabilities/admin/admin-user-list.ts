@@ -43,33 +43,29 @@ export const adminUserListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_user_list',
+		name: 'adminUserList',
 		description:
 			'List account metadata for users, including roles. Admin-only; never returns user content.',
 		keywords: ['admin', 'users', 'accounts', 'roles', 'rbac'],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			return auditAdminCapabilityInvocation(
-				ctx,
-				'admin_user_list',
-				async () => {
-					const url = new URL('https://kody.local/admin/users.json')
-					if (args.page) url.searchParams.set('page', String(args.page))
-					if (args.pageSize) {
-						url.searchParams.set('pageSize', String(args.pageSize))
-					}
-					if (args.query) url.searchParams.set('q', args.query)
-					if (args.role) url.searchParams.set('role', args.role)
-					const data = await loadAdminUsersData(ctx.env, url.toString())
-					return {
-						total: data.total,
-						page: data.page,
-						pageSize: data.pageSize,
-						users: data.users,
-					}
-				},
-			)
+			return auditAdminCapabilityInvocation(ctx, 'adminUserList', async () => {
+				const url = new URL('https://kody.local/admin/users.json')
+				if (args.page) url.searchParams.set('page', String(args.page))
+				if (args.pageSize) {
+					url.searchParams.set('pageSize', String(args.pageSize))
+				}
+				if (args.query) url.searchParams.set('q', args.query)
+				if (args.role) url.searchParams.set('role', args.role)
+				const data = await loadAdminUsersData(ctx.env, url.toString())
+				return {
+					total: data.total,
+					page: data.page,
+					pageSize: data.pageSize,
+					users: data.users,
+				}
+			})
 		},
 	},
 )

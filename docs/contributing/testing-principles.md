@@ -104,7 +104,7 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   - **Prefer `*.node.test.ts`** unless the assertion needs real Cloudflare
     bindings or Workers-only APIs (`@cloudflare/worker-bundler`, DO RPC, etc.).
   - **Do not** warm Durable Objects from `globalSetup` (Node-only) or from
-    workers-unit `setupFiles` (breaks webhook / scheduled / `package_save`
+    workers-unit `setupFiles` (breaks webhook / scheduled / `packageSave`
     suites).
   - **Do not** use `--no-isolate` / shared storage to chase suite wall clock.
     Per-file isolation stays; disabling it breaks suites that assume a clean
@@ -173,8 +173,8 @@ expect(capabilityMap.old_write).toBeUndefined()
 expect(html).not.toContain('old-aria-label')
 
 // Good — state flip: present on one path, absent on the other
-expect(adminMap.admin_user_list).toBeTruthy()
-expect(userMap.admin_user_list).toBeUndefined()
+expect(adminMap.adminUserList).toBeTruthy()
+expect(userMap.adminUserList).toBeUndefined()
 ```
 
 ### `Symbol.dispose` with `using`

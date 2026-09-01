@@ -13,9 +13,9 @@ import {
 export const communityUnpublishCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_unpublish',
+		name: 'communityUnpublish',
 		description:
-			'Make a public package private: unlist it from /community and 404 public URLs (existing forks keep their copies). Prefer package_update with changes.visibility: "private" and confirm_name matching the package slug. Delisted listings cannot be unpublished by the owner.',
+			'Make a public package private: unlist it from /community and 404 public URLs (existing forks keep their copies). Prefer packageUpdate with changes.visibility: "private" and confirm_name matching the package slug. Delisted listings cannot be unpublished by the owner.',
 		keywords: ['community', 'unpublish', 'delist', 'remove', 'listing'],
 		readOnly: false,
 		idempotent: false,

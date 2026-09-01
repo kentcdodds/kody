@@ -1,7 +1,7 @@
 export const packageAppSyntheticHeaderName = 'Kody-Synthetic'
 export const packageAppSyntheticHeaderValue = 'true'
 
-export const packageAppFetchCapabilityName = 'package_app_fetch'
+export const packageAppFetchCapabilityName = 'packageAppFetch'
 
 /**
  * Platform-only dispatch marker for trusted in-process synthetic app fetches.

@@ -297,7 +297,7 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			if (typeof value === 'function') {
 				// Late-bind method calls to the runtime of the *calling* run: a
 				// function captured at property-access time (for example a
-				// top-level \`const search = kody.community_search\`) would
+				// top-level \`const search = kody.communitySearch\`) would
 				// otherwise keep pointing at the run that evaluated this module,
 				// whose RPC dispatcher stubs are disposed once that run returns.
 				return function (...args) {

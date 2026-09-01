@@ -17,9 +17,9 @@ const outputSchema = z.object({
 export const integrationLockCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_lock',
+		name: 'integrationLock',
 		description:
-			'Lock an OAuth integration connection to a package so only that package (and any previously granted packages) can call createAuthenticatedFetch / token refresh. Execute and other packages are denied. Agents can lock; unlocking or removing a grant is website-only at /account/integrations/:name. This capability cannot loosen usage. integration_save still cannot change usageMode.',
+			'Lock an OAuth integration connection to a package so only that package (and any previously granted packages) can call createAuthenticatedFetch / token refresh. Execute and other packages are denied. Agents can lock; unlocking or removing a grant is website-only at /account/integrations/:name. This capability cannot loosen usage. integrationSave still cannot change usageMode.',
 		keywords: [
 			'integration',
 			'oauth',

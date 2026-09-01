@@ -86,7 +86,7 @@ function serializeTags(tags: Array<string>) {
 }
 
 /**
- * Inventory prefix matching is UUID-gated on purpose. `package_save` accepts
+ * Inventory prefix matching is UUID-gated on purpose. `packageSave` accepts
  * arbitrary non-empty package ids, so a raw prefix like `{packageId}:` can
  * collide with reserved storage namespaces (`job:`, `exec:`, …) or carry LIKE
  * metacharacters (`%`, `_`; `encodeURIComponent` can also introduce `%`). A

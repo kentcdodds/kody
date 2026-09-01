@@ -69,10 +69,10 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	const byName = new Map(
 		adminDomain.capabilities.map((capability) => [capability.name, capability]),
 	)
-	expect(byName.get('admin_package_codemod_scan')?.requiredRole).toBe('admin')
-	expect(byName.get('admin_package_codemod_scan')?.readOnly).toBe(true)
-	expect(byName.get('admin_package_codemod_apply')?.destructive).toBe(true)
-	expect(byName.get('admin_package_codemod_revert')?.destructive).toBe(true)
+	expect(byName.get('adminPackageCodemodScan')?.requiredRole).toBe('admin')
+	expect(byName.get('adminPackageCodemodScan')?.readOnly).toBe(true)
+	expect(byName.get('adminPackageCodemodApply')?.destructive).toBe(true)
+	expect(byName.get('adminPackageCodemodRevert')?.destructive).toBe(true)
 	expect(adminPackageCodemodApplyCapability.destructive).toBe(true)
 
 	mockModule.runPackageCodemodStep.mockResolvedValue(
@@ -109,7 +109,7 @@ test('admin package codemod capabilities are fleet-scoped, audited, and role-gat
 	})
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_package_codemod_scan',
+			action: 'adminPackageCodemodScan',
 			result: 'success',
 		}),
 	)

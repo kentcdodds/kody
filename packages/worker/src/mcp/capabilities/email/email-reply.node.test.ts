@@ -59,7 +59,7 @@ const inboundMessage = {
 	inboxId: 'inbox-1',
 }
 
-test('email_reply gates unverified accounts, surfaces failed delivery, and forwards attachments', async () => {
+test('emailReply gates unverified accounts, surfaces failed delivery, and forwards attachments', async () => {
 	await expect(
 		emailReplyCapability.handler(
 			{

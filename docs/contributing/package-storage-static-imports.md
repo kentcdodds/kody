@@ -39,7 +39,7 @@ When the bundler would resolve `kody:@kody/…` live, it records
 `platformOwned: true` on that `BundleArtifactDependency`
 (`module-graph-workspace.ts`). The grant collector **drops** that id. Under
 0036, person accounts do not live-resolve `@kody/*` at all — they
-`community_fork` first — so the person-account bucket is the **fork's** UUID.
+`communityFork` first — so the person-account bucket is the **fork's** UUID.
 Caller-owned static imports already receive `packageStorage()` grants.
 
 `packageContext` on a static import from execute stays `null`. Code that needs

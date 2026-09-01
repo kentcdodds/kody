@@ -12,7 +12,7 @@ the connection (`access_token_encrypted` / `refresh_token_encrypted`). User-lane
 client secrets live encrypted on the app (`client_secret_encrypted`). During
 soak those values are dual-written to `secret_entries` under the `*_secret_name`
 columns so placeholder resolution and reconnect still work; those names stay
-hidden from `/account/secrets`, `secret_list`, and search.
+hidden from `/account/secrets`, `secretList`, and search.
 
 Data access lives under `packages/worker/src/integrations/`. MCP capabilities
 live under `packages/worker/src/mcp/capabilities/integrations/`. The hosted
@@ -75,10 +75,10 @@ shared user-lane client secret. Deleting the app removes the client secret.
 `packages/worker/migrations/0004-platform-oauth-apps.sql`) holds
 operator-provisioned OAuth app registrations some existing connections still
 refresh against. New connects and reconnects are bring-your-own only; unused
-built-ins are hidden from `/connect/oauth` and `integration_platform_app_list`.
-The table is global (no `user_id`) — operator config like feature flags, not
-user data — so it is not a per-user-isolation exception. Rows are keyed by
-`slug` and carry `provider`, `label`, the inline non-secret `client_id`,
+built-ins are hidden from `/connect/oauth` and `integrationPlatformAppList`. The
+table is global (no `user_id`) — operator config like feature flags, not user
+data — so it is not a per-user-isolation exception. Rows are keyed by `slug` and
+carry `provider`, `label`, the inline non-secret `client_id`,
 `client_secret_encrypted`, endpoints (`token_url`, `authorize_url`,
 `api_base_url`), flow options (`flow`, `use_pkce`, `token_exchange_style`,
 `scope_separator`, `extra_authorize_params_json`), the scope menu,
@@ -97,7 +97,7 @@ so sandboxed code has no resolution path to the shared credential.
 **Invariant:** `getPlatformOauthAppClientSecret`
 (`packages/worker/src/integrations/platform-apps.ts`) is the only decrypt
 accessor, and its remaining caller is host-side token refresh
-(`integration_token_refresh`). `/connect/oauth` does not decrypt or exchange
+(`integrationTokenRefresh`). `/connect/oauth` does not decrypt or exchange
 through the shared secret. The decrypted value must never appear in capability
 outputs, loader payloads, or logs. Public projections (`platform-app-shared.ts`)
 expose at most a `hasClientSecret` boolean.
@@ -112,7 +112,7 @@ during onboarding. Saves fold default scopes into the allowed set.
 ### Host-side token refresh
 
 Both lanes refresh host-side by default through `createAuthenticatedFetch`.
-`integration_token_refresh` (implemented by `refreshIntegrationTokens` in
+`integrationTokenRefresh` (implemented by `refreshIntegrationTokens` in
 `packages/worker/src/integrations/token-refresh.ts`) resolves the refresh token
 and client secret server-side, POSTs to the provider token URL, persists rotated
 tokens on the connection (and dual-writes the secret-store names during soak),
@@ -121,7 +121,7 @@ values. Platform connections require this path — the shared client secret has 
 user-facing secret name by design. User-lane connections may also refresh
 through it. Ciphertext-backed refresh enforces the connection's `requiredHosts`
 against the token host. The secret-store fallback (soak / pre-migration rows)
-still enforces that secret's `allowed_hosts`. `integration_save` cannot add new
+still enforces that secret's `allowed_hosts`. `integrationSave` cannot add new
 hosts or retarget `tokenUrl` to an unapproved host; reconnect at
 `/connect/oauth` to approve a new destination. Platform-lane destinations are
 operator-pinned rows, so no user-secret allowlist applies.
@@ -143,9 +143,9 @@ can preselect it. A successful Google refresh that still has no `account_label`
 persists `userinfo.email` onto the connection. See
 [Package subscriptions](../../guides/package-subscriptions.md).
 
-On 401, `createAuthenticatedFetch` calls `integration_token_refresh` then
-retries with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens
-never enter the sandbox heap. Package code that triggers refresh through
+On 401, `createAuthenticatedFetch` calls `integrationTokenRefresh` then retries
+with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens never
+enter the sandbox heap. Package code that triggers refresh through
 `createAuthenticatedFetch` does not need a secret-write (`allowed_packages`)
 grant — the system persists rotated tokens host-side and the package never sees
 or writes token values. Host-side refresh returns metadata only; there is no
@@ -158,7 +158,7 @@ capability use it within the import boundaries.
 
 ### Provider logos
 
-Operators may attach a logo per platform app (`admin_platform_oauth_app_save`
+Operators may attach a logo per platform app (`adminPlatformOauthAppSave`
 `logoBase64`; `null` clears). Uploads accept SVG, PNG, JPEG, or WebP. The shared
 community-icon pipeline sanitizes SVG, then Cloudflare Images fits every
 accepted source to a 256-pixel WebP (`fit: scale-down`, quality 90), so a newly
@@ -175,7 +175,7 @@ an operator-curated provider mark, then the letter.
 
 User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 (`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).
-`integration_save.logoBase64` is omit / value / `null` like the platform field.
+`integrationSave.logoBase64` is omit / value / `null` like the platform field.
 When no explicit upload is stored, connect and account-page loads fetch the
 registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
 over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
@@ -187,19 +187,18 @@ after a platform miss.
 
 Operator-curated provider marks live in `platform_provider_marks` (slug, label,
 aliases, logo). Operators add them on `/admin/provider-marks` or through
-`admin_platform_provider_mark_save` / `_list` / `_delete` so a Google (or any
-other) brand mark is data, not a deploy. Matching prefers an exact slug, then a
-stored or built-in alias (`google-youtube-brand` → `youtube`, `nodejs` →
-`nodedotjs`), then the longest family key (`github-kent` → `github`,
-`x-kodykoala` → `x`), then an authorize-host token. The slug itself is a host
-label (`api.github.com` matches `github`) unless the token is shorter than three
-characters or a generic TLD (`com`, `app`). Host fallback prefers an exact or
-suffix alias over a slug label so `mail.google.com` uses `gmail` rather than
-`google`. Built-in keys and hosts live in `default-provider-mark-aliases.ts` so
-a catalog row that omitted `github.com` still resolves. Saves strip those
-built-ins from stored aliases; the admin editor lists them as read-only. Assets
-use the same SVG/PNG/JPEG/WebP ingest pipeline under
-`platform-provider-marks/{slug}/` and serve at the public
+`adminPlatformProviderMarkSave` / `_list` / `_delete` so a Google (or any other)
+brand mark is data, not a deploy. Matching prefers an exact slug, then a stored
+or built-in alias (`google-youtube-brand` → `youtube`, `nodejs` → `nodedotjs`),
+then the longest family key (`github-kent` → `github`, `x-kodykoala` → `x`),
+then an authorize-host token. The slug itself is a host label (`api.github.com`
+matches `github`) unless the token is shorter than three characters or a generic
+TLD (`com`, `app`). Host fallback prefers an exact or suffix alias over a slug
+label so `mail.google.com` uses `gmail` rather than `google`. Built-in keys and
+hosts live in `default-provider-mark-aliases.ts` so a catalog row that omitted
+`github.com` still resolves. Saves strip those built-ins from stored aliases;
+the admin editor lists them as read-only. Assets use the same SVG/PNG/JPEG/WebP
+ingest pipeline under `platform-provider-marks/{slug}/` and serve at the public
 `/integrations/provider-marks/:slug` route. Login and onboarding use the inline
 `ProviderIcon` set. The admin catalog page groups marks by first letter and
 opens the editor inside the selected group so a multi-thousand-mark catalog does
@@ -210,14 +209,14 @@ not render every tile at once.
 Operators manage platform apps through role-gated capabilities in the `admin`
 domain, all audited via `auditAdminCapabilityInvocation`:
 
-| Capability                            | Role                                                                                                                                                                     |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `admin_platform_oauth_app_save`       | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
-| `admin_platform_oauth_app_list`       | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
-| `admin_platform_oauth_app_delete`     | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
-| `admin_platform_provider_mark_save`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration fallback after upload/favicon                                              |
-| `admin_platform_provider_mark_list`   | Lists marks with serving paths; no user data                                                                                                                             |
-| `admin_platform_provider_mark_delete` | Deletes the mark row and its R2 asset                                                                                                                                    |
+| Capability                        | Role                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `adminPlatformOauthAppSave`       | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
+| `adminPlatformOauthAppList`       | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
+| `adminPlatformOauthAppDelete`     | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
+| `adminPlatformProviderMarkSave`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration fallback after upload/favicon                                              |
+| `adminPlatformProviderMarkList`   | Lists marks with serving paths; no user data                                                                                                                             |
+| `adminPlatformProviderMarkDelete` | Deletes the mark row and its R2 asset                                                                                                                                    |
 
 Confidential apps require a stored client secret only while `enabled`. An agent
 can therefore stage a complete provider config through `save` with
@@ -312,7 +311,7 @@ integrations also have `/account/integrations/apps/:appSlug` (a connection named
 allowlists, flow / PKCE / exchange style, and credential rotation stay behind an
 advanced disclosure. Each connection also shows a usage grant: **any context**
 (execute and every package) or **specific packages** only. Agents tighten that
-grant with `integration_lock` (switch to packages mode and add a saved package
+grant with `integrationLock` (switch to packages mode and add a saved package
 id; unlocking or removing a grant is website-only). One-click approval lives at
 `/account/integrations/approve?name=&package_id=`; approving a package while the
 connection is still `any` leaves it `any` so execute stays usable. The rotate
@@ -333,15 +332,15 @@ connections instead.
 Domain: `integrations`
 (`packages/worker/src/mcp/capabilities/integrations/domain.ts`).
 
-| Capability                                        | Role                                                                              |
-| ------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `integration_save` / `_get` / `_list` / `_delete` | Connection CRUD with flat `clientId` output                                       |
-| `integration_lock`                                | Tighten-only usage lock: packages mode + add a package id; unlock is website-only |
-| `integration_oauth_app_list`                      | Apps with connection counts and sibling connection names                          |
-| `integration_oauth_app_delete`                    | Delete a user-lane app and every connection on it                                 |
-| `integration_oauth_app_rotate_credentials`        | Rotate shared app `clientId` / client-secret name                                 |
-| `integration_platform_app_list`                   | Always empty while platform apps are retired; operators use admin list            |
-| `integration_token_refresh`                       | Host-side OAuth refresh; returns metadata only, never token values                |
+| Capability                                       | Role                                                                              |
+| ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `integrationSave` / `_get` / `_list` / `_delete` | Connection CRUD with flat `clientId` output                                       |
+| `integrationLock`                                | Tighten-only usage lock: packages mode + add a package id; unlock is website-only |
+| `integrationOauthAppList`                        | Apps with connection counts and sibling connection names                          |
+| `integrationOauthAppDelete`                      | Delete a user-lane app and every connection on it                                 |
+| `integrationOauthAppRotateCredentials`           | Rotate shared app `clientId` / client-secret name                                 |
+| `integrationPlatformAppList`                     | Always empty while platform apps are retired; operators use admin list            |
+| `integrationTokenRefresh`                        | Host-side OAuth refresh; returns metadata only, never token values                |
 
 ## Account deletion order
 

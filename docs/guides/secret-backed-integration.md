@@ -37,7 +37,7 @@ smoke-test path is unclear.
 
 1. Identify the provider's auth contract.
    - When the contract is unfamiliar, read the provider's official docs and
-     prefer `community_search` for a close helpers package before collecting
+     prefer `communitySearch` for a close helpers package before collecting
      secrets. Verify every URL against the provider's own domain (see
      `integration_bootstrap` for the full trust caveat).
    - Confirm which fields are secrets and which are readable config.
@@ -47,7 +47,7 @@ smoke-test path is unclear.
      `packageStorage()`, or a repo — not as secrets.
 2. Check whether the needed secrets already exist.
    - Use `search` first for saved secret references.
-   - Use `kody.secret_list({})` inside `execute` only when you need the current
+   - Use `kody.secretList({})` inside `execute` only when you need the current
      runtime metadata.
 3. If any secret is missing, stop and send the user to `/account/secrets/new`.
    - Ask for each missing secret by name.
@@ -69,16 +69,15 @@ smoke-test path is unclear.
      browser-side forms, or hosted callbacks.
 8. After the package is saved or published, finish package secret approval when
    needed.
-   - Self-authored packages and adopted forks (`community_fork_adopt`) get
+   - Self-authored packages and adopted forks (`communityForkAdopt`) get
      automatic read/use access to user secrets (mutations still need an
      `allowed_packages` grant); unadopted community forks still need explicit
      package approval for read/use, or adoption after review.
    - An ad hoc `execute` smoke test does **not** grant package secret access for
      community forks.
-   - Read `pending_secret_package_approvals` from `package_save` or
-     `package_publish_external_push` (null for self-authored / adopted
-     packages).
-   - When present, either review the source and call `community_fork_adopt`, or
+   - Read `pending_secret_package_approvals` from `packageSave` or
+     `packagePublishExternalPush` (null for self-authored / adopted packages).
+   - When present, either review the source and call `communityForkAdopt`, or
      send `bulk_approval_url` / each `approval_url`.
    - Wait for the user to approve or for adoption (when required), then verify
      from `execute` with a static `kody:@scope/package/export` import before
@@ -122,8 +121,8 @@ const response = await fetch('https://api.example.com/v1/me', {
 
 Rules:
 
-- `kody.secret_list({})` returns metadata only (names, allowed hosts) — use it
-  to find the right secret name, then reference that name in a placeholder.
+- `kody.secretList({})` returns metadata only (names, allowed hosts) — use it to
+  find the right secret name, then reference that name in a placeholder.
 - Placeholders only resolve in secret-aware `fetch` paths; they are not general
   string interpolation.
 - Never echo a resolvable literal placeholder into chat, logs, issue bodies, or
@@ -198,7 +197,7 @@ Avoid these mistakes:
 - treating an ad hoc `execute` smoke test as package secret approval for a
   community-forked package
 - marking an unadopted community-forked secret-using package complete without
-  adopting after review (`community_fork_adopt`) or sending package approval
-  links (prefer the bulk approval URL when multiple secrets need access)
+  adopting after review (`communityForkAdopt`) or sending package approval links
+  (prefer the bulk approval URL when multiple secrets need access)
 - inventing a provider-specific flow when one or two secrets plus a smoke test
   would do

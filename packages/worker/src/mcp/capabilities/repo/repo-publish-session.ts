@@ -22,9 +22,9 @@ import { CommunityActionError } from '#worker/community/errors.ts'
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_publish_session',
+		name: 'repoPublishSession',
 		description:
-			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Visibility is a repo setting (`package_update` / `repo_update`), not package.json#private. When publishing a community fork after absorbing origin updates, pass absorbed_upstream_commit.',
+			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Visibility is a repo setting (`packageUpdate` / `repoUpdate`), not package.json#private. When publishing a community fork after absorbing origin updates, pass absorbed_upstream_commit.',
 		keywords: ['repo', 'publish', 'session', 'checks', 'artifact'],
 		readOnly: false,
 		idempotent: false,
@@ -187,7 +187,7 @@ async function absorbForkUpstreamAfterPublish(input: {
 		userId: input.userId,
 	})
 	if (!source) {
-		return 'Published, but absorb could not find the package source for this session. Retry repo_publish_session with absorbed_upstream_commit.'
+		return 'Published, but absorb could not find the package source for this session. Retry repoPublishSession with absorbed_upstream_commit.'
 	}
 	try {
 		await absorbCommunityForkUpstream({
@@ -204,6 +204,6 @@ async function absorbForkUpstreamAfterPublish(input: {
 		) {
 			return null
 		}
-		return `Published, but the behind-upstream banner did not clear: ${getErrorMessage(error)}. Retry repo_publish_session with absorbed_upstream_commit.`
+		return `Published, but the behind-upstream banner did not clear: ${getErrorMessage(error)}. Retry repoPublishSession with absorbed_upstream_commit.`
 	}
 }

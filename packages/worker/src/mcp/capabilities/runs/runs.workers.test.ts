@@ -104,7 +104,7 @@ test(
 )
 
 test(
-	'run_update_bulk previews and exactly scopes bounded non-destructive triage',
+	'runUpdateBulk previews and exactly scopes bounded non-destructive triage',
 	async () => {
 		const ownerId = uniqueUserId('bulk-triage')
 		const ownerContext = buildCallerContext({
@@ -346,7 +346,7 @@ test(
 		})
 		await Promise.all(pending)
 
-		// run_list: smoke surface filter; other tenant sees empty list.
+		// runList: smoke surface filter; other tenant sees empty list.
 		const jobRuns = await runListCapability.handler(
 			{ surface: 'job' },
 			{ env, callerContext: ownerContext },
@@ -358,7 +358,7 @@ test(
 		)
 		expect(otherList.runs).toEqual([])
 
-		// run_get: owner reads own run with logs; other tenant and missing run are rejected.
+		// runGet: owner reads own run with logs; other tenant and missing run are rejected.
 		const detail = await runGetCapability.handler(
 			{ run_id: handle.id },
 			{ env, callerContext: ownerContext },
@@ -391,7 +391,7 @@ test(
 			),
 		).rejects.toThrow(/was not found/)
 
-		// run_summary: owner sees totals including the in-flight workflow run;
+		// runSummary: owner sees totals including the in-flight workflow run;
 		// other tenant sees zeros.
 		const summary = await runSummaryCapability.handler(
 			{},
@@ -418,7 +418,7 @@ test(
 )
 
 test(
-	'run_update triage: set/list/filter/summary/reopen and preserve error details',
+	'runUpdate triage: set/list/filter/summary/reopen and preserve error details',
 	async () => {
 		const ownerId = uniqueUserId('triage')
 		const ownerContext = buildCallerContext({

@@ -6,7 +6,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 export const workflowCancelCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
-		name: 'workflow_run_cancel',
+		name: 'workflowRunCancel',
 		description:
 			'Cancel a Cloudflare Workflow run created through kody:runtime workflows.create by id. Terminates the underlying workflow instance and marks the run cancelled; cancelling an already-finished run is a safe no-op.',
 		keywords: [
@@ -27,7 +27,7 @@ export const workflowCancelCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.describe(
-					'Workflow run id from workflow_run_list or workflows.create output (dynwf-… inline runs or pkgwf-… package runs).',
+					'Workflow run id from workflowRunList or workflows.create output (dynwf-… inline runs or pkgwf-… package runs).',
 				),
 		}),
 		outputSchema: z.object({

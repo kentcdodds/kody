@@ -61,7 +61,7 @@ export function isPackageOwnedJobId(jobId: string) {
 }
 
 export const packageOwnedJobDeleteErrorMessage =
-	'Package-owned jobs cannot be deleted via job_delete. Remove the job from the package and publish.'
+	'Package-owned jobs cannot be deleted via jobDelete. Remove the job from the package and publish.'
 
 export function resolveJobRetentionPreferences(input: {
 	successOnceDays?: number | null

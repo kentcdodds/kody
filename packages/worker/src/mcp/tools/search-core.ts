@@ -134,7 +134,7 @@ function buildDomainBrowseResult(input: {
 	// limit; never let a partial listing pass silently as the whole domain.
 	const guidance =
 		matches.length < domainSpecs.length
-			? `Domain listing truncated: showing the first ${String(matches.length)} of ${String(domainSpecs.length)} capabilities in ${JSON.stringify(input.domain)}. Raise "limit" or call meta_list_capabilities({ domain: ${JSON.stringify(input.domain)} }) from execute for the complete list.`
+			? `Domain listing truncated: showing the first ${String(matches.length)} of ${String(domainSpecs.length)} capabilities in ${JSON.stringify(input.domain)}. Raise "limit" or call metaListCapabilities({ domain: ${JSON.stringify(input.domain)} }) from execute for the complete list.`
 			: buildRecommendedNextStep({
 					query: '',
 					intent,

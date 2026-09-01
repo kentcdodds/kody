@@ -28,7 +28,7 @@ export type EntitlementResourceVisibility = {
 }
 
 /**
- * Plain-language copy for account usage UI and the `usage_get` capability.
+ * Plain-language copy for account usage UI and the `usageGet` capability.
  * Keep factual and terse; update when enforcement semantics change.
  */
 export const entitlementResourceVisibility: Record<
@@ -46,7 +46,7 @@ export const entitlementResourceVisibility: Record<
 		kind: 'counter',
 		whatCounts: 'Saved packages published to your account.',
 		howToReduce:
-			'Delete unused packages from the package page or with package_delete.',
+			'Delete unused packages from the package page or with packageDelete.',
 	},
 	scheduled_jobs: {
 		group: 'counts',
@@ -59,7 +59,7 @@ export const entitlementResourceVisibility: Record<
 		kind: 'counter',
 		whatCounts: 'Active editing sessions opened by agents against your repos.',
 		howToReduce:
-			'Discard finished sessions with repo_discard_session. Unused (never-checkpointed) sessions are swept after 30 minutes idle; checkpointed sessions are swept after 7 days idle.',
+			'Discard finished sessions with repoDiscardSession. Unused (never-checkpointed) sessions are swept after 30 minutes idle; checkpointed sessions are swept after 7 days idle.',
 	},
 	email_sends_per_day: {
 		group: 'daily',

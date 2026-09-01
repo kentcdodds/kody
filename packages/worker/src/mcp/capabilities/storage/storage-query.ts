@@ -32,7 +32,7 @@ const outputSchema = z.object({
 export const storageQueryCapability = defineDomainCapability(
 	capabilityDomainNames.storage,
 	{
-		name: 'storage_query',
+		name: 'storageQuery',
 		description:
 			'Run SQL against one durable storage bucket. Defaults to read-only and only allows SELECT, EXPLAIN, and schema PRAGMA queries unless writable is explicitly true.',
 		keywords: ['storage', 'sql', 'sqlite', 'query', 'inspect', 'database'],
@@ -57,7 +57,7 @@ export const storageQueryCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const storageId = authorizeCapabilityStorageId({
 				callerContext: ctx.callerContext,
-				capabilityName: 'storage_query',
+				capabilityName: 'storageQuery',
 				storageId: args.storage_id,
 			})
 			const writable = args.writable ?? false

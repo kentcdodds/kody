@@ -1780,7 +1780,7 @@ test('snapshotRunRecordResult keeps small values and marks oversized ones', () =
 	})
 })
 
-test('webhook/export finish retains metadata.result for run_get', async () => {
+test('webhook/export finish retains metadata.result for runGet', async () => {
 	const userId = uniqueUserId('result-snapshot')
 	const handle = await recordRunRecord({
 		env,

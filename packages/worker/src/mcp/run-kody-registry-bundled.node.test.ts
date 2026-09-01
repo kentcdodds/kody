@@ -178,7 +178,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		expect(emailResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
-			providerFns?.email_message_get({
+			providerFns?.emailMessageGet({
 				message_id: 'message-1',
 			}),
 		).resolves.toEqual({
@@ -186,7 +186,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			subject: 'Hello',
 		})
 		await expect(
-			providerFns?.email_attachment_get({
+			providerFns?.emailAttachmentGet({
 				attachment_id: 'attachment-1',
 			}),
 		).resolves.toEqual({
@@ -225,7 +225,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		expect(workflowResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
 		await expect(
-			providerFns?.package_workflow_create({ workflowName: 'custom' }),
+			providerFns?.packageWorkflowCreate({ workflowName: 'custom' }),
 		).resolves.toEqual({
 			ok: true,
 			input: { workflowName: 'custom' },
@@ -312,7 +312,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 			},
 		)
 		await expect(
-			providerFns?.package_workflow_create({
+			providerFns?.packageWorkflowCreate({
 				runAt: '2026-05-03T12:00:00.000Z',
 				idempotencyKey: 'execute-smoke',
 				code: 'export default async function main(p){ return { ok: true, p }; }',
@@ -600,9 +600,9 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
 				skipCapabilityRegistry: true,
 				additionalTools: {
-					integration_get: async () => ({}),
-					integration_token_refresh: async () => ({}),
-					value_get: async () => ({}),
+					integrationGet: async () => ({}),
+					integrationTokenRefresh: async () => ({}),
+					valueGet: async () => ({}),
 				},
 			}),
 		).resolves.toMatchObject({ result: 'ok' })

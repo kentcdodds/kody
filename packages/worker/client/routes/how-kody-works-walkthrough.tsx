@@ -72,7 +72,7 @@ export function HowKodyWorksWalkthrough(
 					</h2>
 					<p mix={css(interactiveGuideMutedLeadCss)}>
 						Same implementation for “ask again” and the morning job. The job
-						calls <code>email_send</code> only when the list is not empty.
+						calls <code>emailSend</code> only when the list is not empty.
 					</p>
 					<div mix={css(interactiveGuideToolsCss)}>
 						{(

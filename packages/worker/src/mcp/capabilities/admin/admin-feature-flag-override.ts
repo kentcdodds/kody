@@ -81,7 +81,7 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_feature_flag_override',
+		name: 'adminFeatureFlagOverride',
 		description:
 			'Set or clear a per-user feature flag override by stable user id or username. Admin-only; never returns user content.',
 		keywords: [
@@ -97,7 +97,7 @@ export const adminFeatureFlagOverrideCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_feature_flag_override',
+				'adminFeatureFlagOverride',
 				async () => {
 					const key = assertFeatureFlagKey(args.key)
 					const target = await resolveTargetUser(ctx.env.APP_DB, {

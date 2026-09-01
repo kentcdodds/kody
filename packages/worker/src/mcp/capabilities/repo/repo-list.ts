@@ -7,7 +7,7 @@ import { listUserRepos } from '#worker/repo/user-repos.ts'
 export const repoListCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_list',
+		name: 'repoList',
 		description:
 			'List plain repos owned by the signed-in user from D1 discovery metadata (no live Artifacts reads).',
 		keywords: ['repo', 'list', 'plain', 'discovery'],

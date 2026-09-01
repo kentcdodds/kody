@@ -27,13 +27,13 @@ import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
  * Generates the guide metadata/full-catalog modules that
- * `#worker/guide-catalog-modules.ts` exposes to the `coding_guide_get`
+ * `#worker/guide-catalog-modules.ts` exposes to the `codingGuideGet`
  * capability, from the canonical markdown in `docs/guides/`.
  *
  * Why: `#worker/guides/catalog.ts` statically imports every guide's raw
  * markdown and parses its frontmatter at module scope so the web `/guides`
  * pages always have the full catalog ready. Merely *registering* the MCP
- * `coding_guide_get` capability must not pay that same cost on every
+ * `codingGuideGet` capability must not pay that same cost on every
  * platform/runtime Worker isolate cold start — the capability module only
  * needs a handful of small fields (id, summary, provider, …) to build its
  * description/keywords/input schema, and needs full guide bodies only while
@@ -220,7 +220,7 @@ async function readGuideSources(
  * Parses every guide, rewrites relative links, and sorts into authored
  * order, mirroring `buildCatalog()` in `#worker/guides/catalog.ts` exactly
  * (both use `sortGuidesByAuthoredOrder` from the shared `guide-order.ts`),
- * so `coding_guide_get`'s schema description never drifts from the web
+ * so `codingGuideGet`'s schema description never drifts from the web
  * catalog's order.
  */
 function buildFullCatalog(

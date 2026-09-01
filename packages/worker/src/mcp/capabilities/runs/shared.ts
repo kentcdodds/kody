@@ -22,7 +22,7 @@ export const runErrorTriageSchema = z.enum(runErrorTriageValues)
 
 export const runErrorTriageFilterSchema = z.enum(runErrorTriageFilterValues)
 
-/** Wire values for `run_update`: set triage or reopen (`open`). */
+/** Wire values for `runUpdate`: set triage or reopen (`open`). */
 export const runErrorTriageUpdateSchema = z.enum([
 	'ignored',
 	'resolved',

@@ -55,7 +55,7 @@ export const adminSystemEmailListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_system_email_list',
+		name: 'adminSystemEmailList',
 		description:
 			'List operator-owned system inbox messages for reserved platform addresses. Admin-only; never returns user-owned email.',
 		keywords: [
@@ -71,7 +71,7 @@ export const adminSystemEmailListCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_system_email_list',
+				'adminSystemEmailList',
 				async () => {
 					const url = new URL('https://kody.local/admin/system-email.json')
 					if (args.page) url.searchParams.set('page', String(args.page))

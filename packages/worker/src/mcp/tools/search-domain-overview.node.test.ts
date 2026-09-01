@@ -25,16 +25,16 @@ const registry = buildCapabilityRegistry([
 		name: 'email',
 		description: 'Email primitives for the per-user inbox.',
 		capabilities: [
-			capability('email_send', 'email', 'Send a message.'),
-			capability('email_message_list', 'email', 'List stored messages.'),
-			capability('email_message_get', 'email', 'Get one stored message.'),
-			capability('email_reply', 'email', 'Reply to a stored message.'),
+			capability('emailSend', 'email', 'Send a message.'),
+			capability('emailMessageList', 'email', 'List stored messages.'),
+			capability('emailMessageGet', 'email', 'Get one stored message.'),
+			capability('emailReply', 'email', 'Reply to a stored message.'),
 		],
 	},
 	{
 		name: 'jobs',
 		description: 'Schedule durable work.',
-		capabilities: [capability('job_list', 'jobs', 'List scheduled jobs.')],
+		capabilities: [capability('jobList', 'jobs', 'List scheduled jobs.')],
 	},
 ])
 
@@ -71,11 +71,7 @@ test('domain overviews cover named, plural, exploratory, and non-collapse cases'
 			title: 'email',
 			description: 'Email primitives for the per-user inbox.',
 			capabilityCount: 4,
-			sampleCapabilities: [
-				'email_send',
-				'email_message_list',
-				'email_message_get',
-			],
+			sampleCapabilities: ['emailSend', 'emailMessageList', 'emailMessageGet'],
 		},
 	])
 	expect(overviewFor('email')).toEqual([

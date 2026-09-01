@@ -14,7 +14,7 @@ import { reportCapabilityProgress } from '#mcp/progress.ts'
 export const communityForkCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_fork',
+		name: 'communityFork',
 		description:
 			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass `kody_id` when you already have a package with the same id.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],

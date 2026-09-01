@@ -33,7 +33,7 @@ export const adminPlatformOauthAppListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_platform_oauth_app_list',
+		name: 'adminPlatformOauthAppList',
 		description:
 			'List platform (built-in) OAuth apps with per-app user connection counts. Secret values are never included. Admin-only.',
 		keywords: [
@@ -50,7 +50,7 @@ export const adminPlatformOauthAppListCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_oauth_app_list',
+				'adminPlatformOauthAppList',
 				async () => {
 					const apps = await listPlatformOauthApps({
 						db: ctx.env.APP_DB,

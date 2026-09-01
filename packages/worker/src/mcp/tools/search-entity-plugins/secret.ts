@@ -66,7 +66,7 @@ export const secretSearchEntityPlugin = {
 			`- Placeholder: \`${buildSecretUsage(detail.row.name)}\``,
 			'- Use placeholders only in execute-time fetch URL, header, or body fields.',
 			'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
-			'- List secret metadata with `kody.secret_list(...)` inside `execute` when needed.',
+			'- List secret metadata with `kody.secretList(...)` inside `execute` when needed.',
 		]
 		return {
 			markdown: lines.join('\n'),

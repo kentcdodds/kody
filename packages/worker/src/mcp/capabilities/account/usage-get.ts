@@ -23,7 +23,7 @@ const usageResourceSchema = z.object({
 export const usageGetCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
-		name: 'usage_get',
+		name: 'usageGet',
 		description:
 			'Read the signed-in user’s entitlement usage against plan limits: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
 		keywords: ['account', 'usage', 'quota', 'limits', 'entitlements', 'plan'],

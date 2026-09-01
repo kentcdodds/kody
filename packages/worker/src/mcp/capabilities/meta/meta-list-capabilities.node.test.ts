@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 
-test('meta_list_capabilities indexes domains and lists one requested domain', async () => {
+test('metaListCapabilities indexes domains and lists one requested domain', async () => {
 	const allResult = await metaListCapabilitiesCapability.handler(
 		{
 			detail: true,
@@ -48,7 +48,7 @@ test('meta_list_capabilities indexes domains and lists one requested domain', as
 	).toBe(true)
 	expect(
 		metaOnly.capabilities?.some(
-			(capability) => capability.name === 'meta_list_capabilities',
+			(capability) => capability.name === 'metaListCapabilities',
 		),
 	).toBe(true)
 
@@ -84,7 +84,7 @@ test('meta_list_capabilities indexes domains and lists one requested domain', as
 		},
 	)
 	const listSessionsCapability = repoOnly.capabilities?.find(
-		(capability) => capability.name === 'repo_list_sessions',
+		(capability) => capability.name === 'repoListSessions',
 	)
 	expect(listSessionsCapability).toMatchObject({
 		domain: 'repo',

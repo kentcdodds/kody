@@ -62,8 +62,8 @@ export function compactCapabilityInputTypeDefinition(
 
 export function buildPackageMaintainSnippets(kodyId: string) {
 	return {
-		gitLane: `package_get_git_remote({ kody_id: ${JSON.stringify(kodyId)} })`,
-		publish: `package_publish_external_push({ kody_id: ${JSON.stringify(kodyId)} })`,
+		gitLane: `packageGetGitRemote({ kody_id: ${JSON.stringify(kodyId)} })`,
+		publish: `packagePublishExternalPush({ kody_id: ${JSON.stringify(kodyId)} })`,
 	}
 }
 
@@ -109,7 +109,7 @@ export function formatInlineTypeDefinition(typeDefinition: string) {
 }
 
 export function buildIntegrationUsage(name: string) {
-	return `kody.integration_get({ name: ${JSON.stringify(name)} })`
+	return `kody.integrationGet({ name: ${JSON.stringify(name)} })`
 }
 
 export function buildSecretUsage(name: string) {

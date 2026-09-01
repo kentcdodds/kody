@@ -26,7 +26,7 @@ function createContext() {
 	}
 }
 
-test('repo_tree maps missing-path ENOENT to McpCallerError and summarizes existing trees', async () => {
+test('repoTree maps missing-path ENOENT to McpCallerError and summarizes existing trees', async () => {
 	const missing = vi
 		.fn()
 		.mockRejectedValue(

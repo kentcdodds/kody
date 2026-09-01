@@ -12,7 +12,7 @@ export const adminAccountDeletionAbortCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_account_deletion_abort',
+		name: 'adminAccountDeletionAbort',
 		description:
 			'Clear a leftover account-deletion fence (D1 users.deleting_at and the UserMeter tombstone) when cleanup never started or an operator needs to restore the account. Admin-only and destructive.',
 		keywords: ['admin', 'account', 'deletion', 'fence', 'abort', 'repair'],
@@ -32,7 +32,7 @@ export const adminAccountDeletionAbortCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_account_deletion_abort',
+				'adminAccountDeletionAbort',
 				async () => {
 					await abortAccountDeletingByStableUserId({
 						db: ctx.env.APP_DB,

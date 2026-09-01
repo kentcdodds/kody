@@ -101,7 +101,7 @@ export const executeToolOutputSchema = {
 	runId: z
 		.string()
 		.optional()
-		.describe('Run record id for keyed or persisted runs; poll via run_get.'),
+		.describe('Run record id for keyed or persisted runs; poll via runGet.'),
 	inProgress: z
 		.boolean()
 		.optional()
@@ -189,7 +189,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.max(runRecordMaxIdempotencyKeyLength)
 					.optional()
 					.describe(
-						`Optional idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). Reusing a key returns the retained or in-progress run without re-executing; use its runId with run_get after a transport timeout. Omit for ordinary calls.`,
+						`Optional idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). Reusing a key returns the retained or in-progress run without re-executing; use its runId with runGet after a transport timeout. Omit for ordinary calls.`,
 					),
 			},
 			annotations: executeTool.annotations,
@@ -691,7 +691,7 @@ function buildKeyedExecuteLookupResponse(input: {
 			content: prependToolMetadataContent(input.conversationId, [
 				{
 					type: 'text',
-					text: `Execute still in progress (runId: ${input.run.id}). Poll run_get with that id, or retry with the same idempotencyKey.`,
+					text: `Execute still in progress (runId: ${input.run.id}). Poll runGet with that id, or retry with the same idempotencyKey.`,
 				},
 			]),
 			structuredContent: {

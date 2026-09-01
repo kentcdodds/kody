@@ -27,11 +27,11 @@ const spotifyIntegration = {
 
 function createKody(integration = spotifyIntegration) {
 	const kody = {
-		async integration_get(args: CapabilityArgs) {
+		async integrationGet(args: CapabilityArgs) {
 			expect(args.name).toBe('spotify')
 			return { integration }
 		},
-		async integration_token_refresh() {
+		async integrationTokenRefresh() {
 			return {
 				ok: true,
 				refreshedAt: new Date().toISOString(),

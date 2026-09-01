@@ -18,9 +18,9 @@ const inputSchema = z.object({
 export const runSummaryCapability = defineDomainCapability(
 	capabilityDomainNames.runs,
 	{
-		name: 'run_summary',
+		name: 'runSummary',
 		description:
-			'Summarize recent run totals, open error count (excluding ignored/resolved), ignored/resolved counts, still-running count, and per-surface breakdown to answer "is anything broken?" before drilling into run_list or run_get. Use run_update to mark handled error noise. Successful ad-hoc execute runs are not recorded (only execute failures count); other surfaces include both. Records are retained about 30 days, capped per user, and pruned failure-last.',
+			'Summarize recent run totals, open error count (excluding ignored/resolved), ignored/resolved counts, still-running count, and per-surface breakdown to answer "is anything broken?" before drilling into runList or runGet. Use runUpdate to mark handled error noise. Successful ad-hoc execute runs are not recorded (only execute failures count); other surfaces include both. Records are retained about 30 days, capped per user, and pruned failure-last.',
 		keywords: [
 			'summary',
 			'health',

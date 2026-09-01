@@ -1,6 +1,10 @@
 import { type DomainSpec } from './types.ts'
+import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
 
 export function defineDomain(spec: DomainSpec): DomainSpec {
+	if (!spec.name.includes(':')) {
+		assertKodyRuntimeIdentifier('domain', spec.name)
+	}
 	const seenNames = new Set<string>()
 	for (const capability of spec.capabilities) {
 		if (seenNames.has(capability.name)) {

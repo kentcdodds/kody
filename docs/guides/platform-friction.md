@@ -78,9 +78,9 @@ Before any memory mutation:
 
 1. Explain the proposed memory in plain language.
 2. Ask for user approval.
-3. Run `meta_memory_verify`.
-4. Only then run `meta_memory_upsert` or `meta_memory_delete` if the
-   verification result supports the change.
+3. Run `metaMemoryVerify`.
+4. Only then run `metaMemoryUpsert` or `metaMemoryDelete` if the verification
+   result supports the change.
 
 Memory approval does not count as approval to submit platform feedback, and
 feedback approval does not count as approval to change memory.
@@ -94,7 +94,7 @@ ask a direct question. Do not call a submission capability until the user
 explicitly approves that exact submission; silence, an ambiguous response, or
 approval of some other action is not consent.
 
-After explicit approval, call `meta_platform_feedback_submit` with
+After explicit approval, call `metaPlatformFeedbackSubmit` with
 `user_confirmed: true`. Include only the approved Kody issue and the minimum
 useful reproduction context. Omit secrets, credentials, tokens, and unrelated
 private content. Never set `user_confirmed: true` based only on your own
@@ -155,7 +155,7 @@ the most useful reports.
 Write a summary that names the affected area and the specific symptom or need so
 an admin can triage from the list view alone (list results intentionally show
 only the summary). Good:
-`package_save rejects README-only updates with a misleading validation error`.
+`packageSave rejects README-only updates with a misleading validation error`.
 Vague: `packages are broken`.
 
 In details, capture the firsthand context you uniquely have while it is still in

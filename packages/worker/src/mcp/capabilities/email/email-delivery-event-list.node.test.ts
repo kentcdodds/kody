@@ -36,7 +36,7 @@ function createContext() {
 	}
 }
 
-test('email_delivery_event_list returns parsed events scoped to the signed-in user', async () => {
+test('emailDeliveryEventList returns parsed events scoped to the signed-in user', async () => {
 	mocks.listOwnerEmailDeliveryEvents.mockResolvedValueOnce([
 		{
 			id: 'event-1',

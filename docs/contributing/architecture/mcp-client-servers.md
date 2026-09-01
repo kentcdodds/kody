@@ -69,9 +69,9 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    `client_id`. Otherwise it falls back to Dynamic Client Registration. The
    connection parks in state `authenticating` with an `authUrl`.
 3. The user opens `authUrl` in the browser (surfaced in the account UI and by
-   the `mcp_server_add` / `mcp_server_list` capabilities). The authorize link
-   uses `rel="noopener noreferrer"` so browser Referer does not send Kody's
-   origin to providers that enforce authorized-origin allowlists on Referer.
+   the `mcpServerAdd` / `mcpServerList` capabilities). The authorize link uses
+   `rel="noopener noreferrer"` so browser Referer does not send Kody's origin to
+   providers that enforce authorized-origin allowlists on Referer.
 4. The provider redirects back to the callback route. The worker authenticates
    the browser session cookie, forwards the full callback URL to that user's hub
    DO, and the SDK exchanges the code (matching the `state` parameter to the
@@ -130,12 +130,12 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   reconnect, refresh tools, enable/disable, set package usage, remove; shows
   live state, discovered tools, and the auto-fetched server favicon next to the
   name).
-- **Capabilities**: the `mcp_servers` domain (`mcp_server_add`,
-  `mcp_server_list`, `mcp_server_reconnect`, `mcp_server_refresh`,
-  `mcp_server_remove`, `mcp_server_set_enabled`, `mcp_server_lock`).
-  `mcp_server_add` accepts optional `bearerToken`. `mcp_server_lock` grants a
-  package; unlock is website-only. Integration connections and user secrets use
-  the same tighten-only shape (`integration_lock`, `secret_lock`).
+- **Capabilities**: the `mcpServers` domain (`mcpServerAdd`, `mcpServerList`,
+  `mcpServerReconnect`, `mcpServerRefresh`, `mcpServerRemove`,
+  `mcpServerSetEnabled`, `mcpServerLock`). `mcpServerAdd` accepts optional
+  `bearerToken`. `mcpServerLock` grants a package; unlock is website-only.
+  Integration connections and user secrets use the same tighten-only shape
+  (`integrationLock`, `secretLock`).
 
 ## Isolation and lifecycle
 
@@ -147,7 +147,7 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   After a server has been `ready`, a later `disconnected` / `failed` state gets
   two lightweight reconnects (`connectToServer` + discover, no OAuth restart)
   before `mcp.server.disconnected` fans out to the owning user's packages.
-  Recovery emits `mcp.server.reconnected`. `mcp_server_reconnect` remains the
+  Recovery emits `mcp.server.reconnected`. `mcpServerReconnect` remains the
   explicit authorization restart. See
   [Package subscriptions](../../guides/package-subscriptions.md).
 

@@ -904,7 +904,7 @@ function resolvePackageJobEnabled(input: {
 	// Manifest `enabled` is the create-time default and can still turn a job
 	// on. Republishing with `enabled: false` must not stop a job that is
 	// already running — fleet-wide package publishes (codemods) otherwise
-	// silently disable production sweepers that were enabled via job_update
+	// silently disable production sweepers that were enabled via jobUpdate
 	// or a package resume export.
 	return input.existingEnabled || manifestEnabled
 }
@@ -961,7 +961,7 @@ function assertJobUpdateRejectsCode(body: JobUpdateInput) {
 	if (body.code === undefined) {
 		return
 	}
-	throw new McpCallerError('Job code cannot be changed via job_update.')
+	throw new McpCallerError('Job code cannot be changed via jobUpdate.')
 }
 
 function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
@@ -978,7 +978,7 @@ function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
 		return
 	}
 	throw new McpCallerError(
-		'Package-owned jobs cannot change name or published source via job_update. Change the job entry in the package repo and publish the package.',
+		'Package-owned jobs cannot change name or published source via jobUpdate. Change the job entry in the package repo and publish the package.',
 	)
 }
 
@@ -1188,7 +1188,7 @@ export async function deleteJob(input: {
 					event: 'job_storage_clear_failed',
 					userId: input.userId,
 					jobId: input.jobId,
-					reason: 'job_delete',
+					reason: 'jobDelete',
 					...schedulerErrorFields(error),
 				})
 			}
@@ -1206,7 +1206,7 @@ export async function deleteJob(input: {
 						event: 'job_storage_bucket_unregister_failed',
 						userId: input.userId,
 						jobId: input.jobId,
-						reason: 'job_delete',
+						reason: 'jobDelete',
 						...schedulerErrorFields(error),
 					})
 				}

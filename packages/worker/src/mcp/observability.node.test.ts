@@ -115,7 +115,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'repo_open_session',
+			capabilityName: 'repoOpenSession',
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage: 'Opening the session failed.',
@@ -126,7 +126,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'value_get',
+			capabilityName: 'valueGet',
 			failurePhase: 'parse_input',
 			errorName: 'ZodError',
 			errorMessage: 'name: Required',
@@ -153,7 +153,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'secret_set',
+			capabilityName: 'secretSet',
 			domain: 'secrets',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -167,7 +167,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'community_rate',
+			capabilityName: 'communityRate',
 			domain: 'community',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -181,7 +181,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		// Missing package scope grant (KODY-CLOUDFLARE-5N).
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'package_list',
+			capabilityName: 'packageList',
 			domain: 'packages',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -203,7 +203,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'storage_query',
+			capabilityName: 'storageQuery',
 			domain: 'storage',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -213,7 +213,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'job_update',
+			capabilityName: 'jobUpdate',
 			domain: 'jobs',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -246,7 +246,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		// form — Durable Object RPC loses subclass identity.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'storage_query',
+			capabilityName: 'storageQuery',
 			domain: 'storage',
 			capabilitySource: 'builtin',
 			conversationId: 'conv-storage-1',
@@ -263,7 +263,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		// Published repo session (KODY-CLOUDFLARE-4A). Plain Error from DO RPC.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'repo_status',
+			capabilityName: 'repoStatus',
 			domain: 'repo',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -278,7 +278,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		// Missing / placeholder repo session id (KODY-CLOUDFLARE-5V).
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'repo_read_file',
+			capabilityName: 'repoReadFile',
 			domain: 'repo',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -287,25 +287,25 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			cause: new Error('Repo session "none" was not found.'),
 		})
 
-		// Invalid repo_search regex (KODY-CLOUDFLARE-49). Plain Error from DO RPC.
+		// Invalid repoSearch regex (KODY-CLOUDFLARE-49). Plain Error from DO RPC.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'repo_search',
+			capabilityName: 'repoSearch',
 			domain: 'repo',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+				'repoSearch received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
 			cause: new Error(
-				'repo_search received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
+				'repoSearch received an invalid regex: Invalid regular expression: /(?s).|^$/gi: Invalid group. mode=regex uses JavaScript RegExp syntax (no inline flags like (?s) or (?i); for dotall matching use [\\s\\S] instead of `.` with (?s)).',
 			),
 		})
 
 		// Non-fast-forward publish push (KODY-CLOUDFLARE-5M). Plain Error from DO.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'repo_publish_session',
+			capabilityName: 'repoPublishSession',
 			domain: 'repo',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
@@ -317,19 +317,19 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
-		// package_save destructive overwrite confirmation (issue 7661329778).
+		// packageSave destructive overwrite confirmation (issue 7661329778).
 		// Plain Error from shared source-safety-policy helpers.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'package_save',
+			capabilityName: 'packageSave',
 			domain: 'packages',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+				'packageSave would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
 			cause: new Error(
-				'package_save would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
+				'packageSave would overwrite existing package source "aa2d1349-5ac2-4b32-8c53-df1ce0a60b37". Set confirm_destructive_overwrite: true only after the user explicitly approves destructive overwrite; Kody will also verify a restorable backup snapshot first.',
 			),
 		})
 
@@ -351,15 +351,15 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		// OAuth token refresh caller state (KODY-CLOUDFLARE-4J): marker match.
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'integration_token_refresh',
+			capabilityName: 'integrationTokenRefresh',
 			domain: 'integrations',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage:
-				'Token refresh was rejected. (integration_token_refresh caller state)',
+				'Token refresh was rejected. (integrationTokenRefresh caller state)',
 			cause: new Error(
-				'Token refresh was rejected. (integration_token_refresh caller state)',
+				'Token refresh was rejected. (integrationTokenRefresh caller state)',
 			),
 		})
 	})
@@ -376,7 +376,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	captureMcpEvents(() => {
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'value_get',
+			capabilityName: 'valueGet',
 			capabilitySource: 'builtin',
 			sandboxError: false,
 			failurePhase: 'handler',
@@ -387,7 +387,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'package_get',
+			capabilityName: 'packageGet',
 			failurePhase: 'handler',
 			errorName: 'Error',
 			errorMessage: 'D1 write failed.',
