@@ -52,11 +52,9 @@ import {
 import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
 import {
 	buildPackageStorageId,
-	storageRunnerRpc,
-} from '#worker/storage-runner.ts'
-
-const savedPackageIdUuidPattern =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+	isPackageOwnedStorageId,
+} from '#worker/storage-ids.ts'
+import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -100,20 +98,9 @@ export function filterPackageOwnedStorageIdsFromInventory(input: {
 	packageId: string
 	storageIds: ReadonlyArray<string>
 }): Array<string> {
-	const packageStorageId = buildPackageStorageId(input.packageId)
 	const matched = new Set<string>()
 	for (const storageId of input.storageIds) {
-		if (storageId === input.packageId || storageId === packageStorageId) {
-			matched.add(storageId)
-		}
-	}
-	if (!savedPackageIdUuidPattern.test(input.packageId)) {
-		return [...matched]
-	}
-	const facetPrefix = `${input.packageId}:`
-	const jobPrefix = `job:package-job:${input.packageId}:`
-	for (const storageId of input.storageIds) {
-		if (storageId.startsWith(facetPrefix) || storageId.startsWith(jobPrefix)) {
+		if (isPackageOwnedStorageId({ packageId: input.packageId, storageId })) {
 			matched.add(storageId)
 		}
 	}

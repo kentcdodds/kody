@@ -261,6 +261,13 @@ For dedicated inspection, use:
 - **`storage_query`** — run SQL against one storage bucket (read-only by
   default, opt into writes explicitly)
 
+Both are scoped to the caller. Code running as a saved package (invocations,
+jobs, package apps, retrievers) may name only buckets that package owns — its
+own bucket, its app facet buckets, and its package job buckets — the same way
+`execute`'s **`storageId`** is restricted there. Another package's bucket is
+reachable only through `packageStorage()`, which is gated by bundler-recorded
+provenance grants.
+
 ## Long-term memory
 
 Kody can surface a small number of relevant long-term memories when you pass a
