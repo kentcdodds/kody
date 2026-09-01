@@ -162,8 +162,8 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   apex hostnames alongside `PACKAGE_APP_BASE_URL`. Generated runtime zone routes
   replace the Worker's whole route set, so every dual-served package-app host
   must be listed here — otherwise the next deploy detaches omitted origins and
-  deletes their DNS records. May also be set as a GitHub Actions repository
-  variable (non-empty overlay wins). Production leaves this unset.
+  deletes their DNS records. This variable may also be set as a GitHub Actions
+  repository variable (non-empty overlay wins). Production leaves this unset.
 - `PACKAGE_APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-
   preserving `308` redirects from dual-served package-app **user subdomains**
   (`{username}.<legacy-apex>` → `{username}.kody.run`) for browser GET/HEAD
