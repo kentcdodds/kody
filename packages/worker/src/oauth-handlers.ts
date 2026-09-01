@@ -577,6 +577,20 @@ function createAccessDeniedRedirectUrl(request: AuthRequest) {
 	return redirectUrl.toString()
 }
 
+function createOidcClientErrorRedirectUrl(
+	authRequest: AuthRequest,
+	errorCode: string,
+	description: string,
+) {
+	if (!authRequest.redirectUri) return null
+	const redirectUrl = new URL(authRequest.redirectUri)
+	redirectUrl.searchParams.set('error', errorCode)
+	redirectUrl.searchParams.set('error_description', description)
+	if (authRequest.state)
+		redirectUrl.searchParams.set('state', authRequest.state)
+	return redirectUrl.toString()
+}
+
 function createAuthorizeErrorRedirect(
 	request: Request,
 	error: string,
@@ -730,9 +744,9 @@ export async function loadOAuthAuthorizeData(
 		}
 	}
 	const authorizeSession = await resolveAuthorizeSession(request, env)
-	const sessionSetCookie =
-		oidcGate.clearSessionCookie ?? authorizeSession.setCookie
-	const sessionEmail = oidcGate.treatAsSignedOut ? null : authorizeSession.email
+	const sessionSetCookie = authorizeSession.setCookie
+	const requireCredentials = oidcGate.treatAsSignedOut
+	const sessionEmail = requireCredentials ? null : authorizeSession.email
 	let emailVerified: boolean | null = null
 	if (sessionEmail) {
 		emailVerified = await isAccountEmailVerified({
@@ -751,6 +765,7 @@ export async function loadOAuthAuthorizeData(
 			},
 			scopes: resolvedScopes,
 			emailVerified,
+			requireCredentials,
 		},
 		setCookie: clearResetVerificationCookie ?? sessionSetCookie,
 	}
@@ -777,6 +792,7 @@ export async function handleAuthorizeInfo(
 			client: data.client,
 			scopes: data.scopes,
 			emailVerified: data.emailVerified,
+			requireCredentials: data.requireCredentials,
 		},
 		{
 			headers: createSetCookieHeaders([setCookie]),
@@ -815,11 +831,175 @@ export function handleAuthorizeRouteException(
 	return standaloneAuthorizeErrorHtmlResponse(message, 500)
 }
 
+async function tryHandleSilentOidcAuthorize(
+	request: Request,
+	env: Env,
+): Promise<Response | null> {
+	const oidcParams = parseOidcAuthorizeParams(request)
+	const prompts = oidcParams.prompt?.split(/\s+/).filter(Boolean) ?? []
+	if (!prompts.includes('none')) return null
+
+	const helpers = getOAuthHelpers(env)
+	const resolution = await resolveAuthRequest(helpers, request, env)
+	if ('error' in resolution) {
+		return respondAuthorizeError(
+			request,
+			resolution.error ?? 'Unable to process OAuth request.',
+		)
+	}
+
+	const { authRequest } = resolution
+	const authorizeSession = await resolveAuthorizeSession(request, env)
+	const oidcGate = await evaluateOidcAuthorizeGate({
+		params: oidcParams,
+		session: {
+			sessionEmail: authorizeSession.email,
+			sessionStableUserId: authorizeSession.stableUserId,
+			sessionIssuedAt: authorizeSession.issuedAt,
+		},
+		request,
+		env,
+	})
+	if (!oidcGate.ok) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			oidcGate.errorCode,
+			oidcGate.error,
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(
+			request,
+			oidcGate.error,
+			oidcGate.status ?? 400,
+			oidcGate.errorCode,
+		)
+	}
+	if (!oidcGate.silentAuthorize) return null
+
+	const pkceError = getPkceValidationError({
+		codeChallenge: authRequest.codeChallenge,
+		codeChallengeMethod: authRequest.codeChallengeMethod,
+	})
+	if (pkceError) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'invalid_request',
+			pkceError,
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(request, pkceError)
+	}
+
+	if (!authorizeSession.email || !authorizeSession.stableUserId) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'login_required',
+			'Login required.',
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(
+			request,
+			'Login required.',
+			401,
+			'login_required',
+		)
+	}
+
+	const db = createDb(env.APP_DB)
+	const userRecord = await db.findOne(usersTable, {
+		where: { stable_user_id: authorizeSession.stableUserId },
+	})
+	if (!userRecord) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'login_required',
+			'Signed-in user not found.',
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(request, 'Signed-in user not found.', 401)
+	}
+	const username = getValidOAuthUsername(userRecord.username)
+	if (!username) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'interaction_required',
+			'Username is required.',
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(request, 'Username is required.', 401)
+	}
+
+	const approvedEmail = userRecord.email.trim().toLowerCase()
+	const approvedUserId = resolveUserStableId(userRecord)
+	const emailVerified = await isAccountEmailVerified({
+		db: env.APP_DB,
+		email: approvedEmail,
+		stableUserId: approvedUserId,
+	})
+	if (!emailVerified) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'interaction_required',
+			oauthEmailVerificationRequiredMessage,
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(
+			request,
+			oauthEmailVerificationRequiredMessage,
+			403,
+			'email_verification_required',
+		)
+	}
+
+	const resolvedScopes = resolveScopes(authRequest.scope)
+	if (!Array.isArray(resolvedScopes)) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'invalid_scope',
+			resolvedScopes.error,
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(request, resolvedScopes.error)
+	}
+
+	const authTime = authorizeSession.issuedAt
+		? Math.floor(authorizeSession.issuedAt / 1000)
+		: Math.floor(Date.now() / 1000)
+	const { redirectTo } = await helpers.completeAuthorization({
+		request: authRequest,
+		userId: approvedUserId,
+		metadata: {
+			email: approvedEmail,
+			clientId: authRequest.clientId,
+		},
+		scope: resolvedScopes,
+		props: {
+			userId: approvedUserId,
+			email: approvedEmail,
+			username,
+			displayName: username,
+			authTime,
+			...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+		},
+	})
+	void logAuditEvent({
+		category: 'oauth',
+		action: 'authorize',
+		result: 'success',
+		email: approvedEmail,
+		ip: getRequestIp(request) ?? undefined,
+		clientId: authRequest.clientId,
+	})
+	return Response.redirect(redirectTo, 302)
+}
+
 export async function handleAuthorizeRequest(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
 	if (request.method === 'GET') {
+		const silentOrError = await tryHandleSilentOidcAuthorize(request, env)
+		if (silentOrError) return silentOrError
 		const { data, setCookie } = await loadOAuthAuthorizeData(request, env)
 		return renderSpaShell(request, env, {
 			loaderData: { oauthAuthorize: data },
@@ -906,7 +1086,7 @@ export async function handleAuthorizeRequest(
 	const password = String(formData.get('password') ?? '')
 	const normalizedEmail = email.toLowerCase()
 	const authorizeSession = await resolveAuthorizeSession(request, env)
-	let setCookie = oidcGate.clearSessionCookie ?? authorizeSession.setCookie
+	let setCookie = authorizeSession.setCookie
 	const sessionEmail = oidcGate.treatAsSignedOut ? null : authorizeSession.email
 	const session = oidcGate.treatAsSignedOut ? null : authorizeSession.session
 	const hasFormCredentials = Boolean(email && password)
@@ -1080,7 +1260,11 @@ export async function handleAuthorizeRequest(
 	if (Array.isArray(resolvedScopes)) {
 		const userId = approvedUserId
 		const displayName = approvedUsername
-		const authTime = Math.floor(Date.now() / 1000)
+		const authTime = hasFormCredentials
+			? Math.floor(Date.now() / 1000)
+			: authorizeSession.issuedAt
+				? Math.floor(authorizeSession.issuedAt / 1000)
+				: Math.floor(Date.now() / 1000)
 		const { redirectTo } = await helpers.completeAuthorization({
 			request: authRequest,
 			userId,

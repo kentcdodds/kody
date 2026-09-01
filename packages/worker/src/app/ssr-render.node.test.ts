@@ -879,6 +879,8 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 				ok: true,
 				client: { id: 'client-1', name: 'Cursor' },
 				scopes: ['profile', 'email'],
+				emailVerified: null,
+				requireCredentials: false,
 			},
 		},
 	})
@@ -908,6 +910,7 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 				client: { id: 'client-1', name: 'Cursor' },
 				scopes: ['profile', 'email'],
 				emailVerified: false,
+				requireCredentials: false,
 			},
 		},
 	})

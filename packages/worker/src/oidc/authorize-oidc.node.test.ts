@@ -9,6 +9,13 @@ import {
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 } from '#worker/oidc/test-signing-key.ts'
 
+function createOidcEnv() {
+	return {
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+	} as unknown as Env
+}
+
 test('authorize-oidc rejects implicit and hybrid response types', () => {
 	expect(getUnsupportedOidcResponseTypeError('code')).toBeNull()
 	expect(getUnsupportedOidcResponseTypeError('id_token')).toMatch(
@@ -36,10 +43,6 @@ test('authorize-oidc parses nonce prompt max_age and id_token_hint', () => {
 })
 
 test('authorize-oidc rejects prompt=none combined with login or consent', async () => {
-	const env = {
-		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
-		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
-	} as unknown as Env
 	const result = await evaluateOidcAuthorizeGate({
 		params: {
 			prompt: 'none consent',
@@ -51,7 +54,7 @@ test('authorize-oidc rejects prompt=none combined with login or consent', async 
 			sessionIssuedAt: Date.now(),
 		},
 		request: new Request('https://heykody.dev/oauth/authorize'),
-		env,
+		env: createOidcEnv(),
 	})
 	expect(result.ok).toBe(false)
 	if (!result.ok) {
@@ -60,10 +63,6 @@ test('authorize-oidc rejects prompt=none combined with login or consent', async 
 })
 
 test('authorize-oidc max_age fails closed without sessionIssuedAt', async () => {
-	const env = {
-		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
-		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
-	} as unknown as Env
 	const result = await evaluateOidcAuthorizeGate({
 		params: {
 			maxAge: 60,
@@ -75,7 +74,7 @@ test('authorize-oidc max_age fails closed without sessionIssuedAt', async () => 
 			sessionIssuedAt: undefined,
 		},
 		request: new Request('https://heykody.dev/oauth/authorize'),
-		env,
+		env: createOidcEnv(),
 	})
 	expect(result.ok).toBe(true)
 	if (result.ok) {
@@ -83,11 +82,28 @@ test('authorize-oidc max_age fails closed without sessionIssuedAt', async () => 
 	}
 })
 
+test('authorize-oidc prompt=login requires credentials without clearing cookie intent', async () => {
+	const result = await evaluateOidcAuthorizeGate({
+		params: {
+			prompt: 'login',
+			responseType: 'code',
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request('https://heykody.dev/oauth/authorize'),
+		env: createOidcEnv(),
+	})
+	expect(result.ok).toBe(true)
+	if (result.ok) {
+		expect(result.treatAsSignedOut).toBe(true)
+		expect(result.silentAuthorize).toBeUndefined()
+	}
+})
+
 test('authorize-oidc prompt=consent sets requireConsent', async () => {
-	const env = {
-		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
-		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
-	} as unknown as Env
 	const result = await evaluateOidcAuthorizeGate({
 		params: {
 			prompt: 'consent',
@@ -99,11 +115,32 @@ test('authorize-oidc prompt=consent sets requireConsent', async () => {
 			sessionIssuedAt: Date.now(),
 		},
 		request: new Request('https://heykody.dev/oauth/authorize'),
-		env,
+		env: createOidcEnv(),
 	})
 	expect(result.ok).toBe(true)
 	if (result.ok) {
 		expect(result.requireConsent).toBe(true)
 		expect(result.treatAsSignedOut).toBe(false)
+	}
+})
+
+test('authorize-oidc prompt=none with session enables silent authorize', async () => {
+	const result = await evaluateOidcAuthorizeGate({
+		params: {
+			prompt: 'none',
+			responseType: 'code',
+		},
+		session: {
+			sessionEmail: 'user@example.com',
+			sessionStableUserId: 'user-1',
+			sessionIssuedAt: Date.now(),
+		},
+		request: new Request('https://heykody.dev/oauth/authorize'),
+		env: createOidcEnv(),
+	})
+	expect(result.ok).toBe(true)
+	if (result.ok) {
+		expect(result.silentAuthorize).toBe(true)
+		expect(result.forbidInlineLogin).toBe(true)
 	}
 })

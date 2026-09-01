@@ -58,6 +58,24 @@ test('userinfo returns claims for verified bearer tokens and 401 without bearer'
 	expect(unauthorized.status).toBe(401)
 })
 
+test('userinfo accepts POST with form access_token', async () => {
+	const env = createOidcEnv()
+	const response = await handleOidcUserinfoRequest(
+		new Request('https://heykody.dev/oauth/userinfo', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: 'access_token=demo-token',
+		}),
+		env,
+	)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		sub: 'user-stable-id',
+	})
+})
+
 test('userinfo requires openid scope', async () => {
 	const env = createOidcEnv({
 		OAUTH_PROVIDER: {

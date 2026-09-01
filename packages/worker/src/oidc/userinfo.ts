@@ -34,12 +34,29 @@ function readBearerToken(request: Request) {
 	return token || null
 }
 
+async function readAccessToken(request: Request) {
+	const bearer = readBearerToken(request)
+	if (bearer) return bearer
+	if (request.method !== 'POST') return null
+	const contentType = request.headers.get('Content-Type') ?? ''
+	if (!contentType.includes('application/x-www-form-urlencoded')) return null
+	const formData = await request.formData().catch(() => null)
+	const accessToken = formData?.get('access_token')
+	return typeof accessToken === 'string' && accessToken.trim()
+		? accessToken.trim()
+		: null
+}
+
 export async function handleOidcUserinfoRequest(request: Request, env: Env) {
-	if (request.method !== 'GET' && request.method !== 'HEAD') {
+	if (
+		request.method !== 'GET' &&
+		request.method !== 'HEAD' &&
+		request.method !== 'POST'
+	) {
 		return new Response('Method not allowed', { status: 405 })
 	}
 
-	const token = readBearerToken(request)
+	const token = await readAccessToken(request)
 	if (!token) {
 		return jsonResponse(
 			{

@@ -1,4 +1,3 @@
-import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
 
@@ -20,9 +19,9 @@ export type OidcAuthorizeGateResult =
 	| {
 			ok: true
 			treatAsSignedOut: boolean
-			clearSessionCookie?: string | null
 			forbidInlineLogin?: boolean
 			requireConsent?: boolean
+			silentAuthorize?: boolean
 	  }
 	| {
 			ok: false
@@ -117,14 +116,14 @@ export async function evaluateOidcAuthorizeGate(input: {
 		}
 	}
 
+	// prompt=login forces re-authentication for this authorize request without
+	// destroying the browser session cookie (so a top-nav login round-trip that
+	// returns here keeps working). The authorize UI/POST treat the user as
+	// signed out until they submit credentials on this form.
 	if (wantsLogin) {
-		const clearSessionCookie = await destroyAuthCookie(
-			isSecureRequest(input.request),
-		)
 		return {
 			ok: true,
 			treatAsSignedOut: true,
-			clearSessionCookie,
 			requireConsent: wantsConsent,
 		}
 	}
@@ -161,6 +160,15 @@ export async function evaluateOidcAuthorizeGate(input: {
 			error: 'Login required.',
 			errorCode: 'login_required',
 			status: 401,
+		}
+	}
+
+	if (wantsNone && signedIn) {
+		return {
+			ok: true,
+			treatAsSignedOut: false,
+			forbidInlineLogin: true,
+			silentAuthorize: true,
 		}
 	}
 

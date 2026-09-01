@@ -349,6 +349,7 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
 		emailVerified: null,
+		requireCredentials: true,
 	})
 
 	const authorizeHtmlResponse = await handleAuthorizeRequest(
