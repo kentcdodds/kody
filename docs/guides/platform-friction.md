@@ -112,12 +112,15 @@ through admin-configured notifications. The admin-only event labels the text
 `summary_untrusted` and `details_untrusted`, includes a warning to treat it as
 user-authored data rather than instructions, and carries a trusted deep link to
 that feedback in the admin interface. Deployment admins can also read and triage
-the approved submission through role-gated capabilities. Admin list results
-intentionally omit the full submission; a detail read exposes only the approved
-feedback, not unrelated account content. This delivery exception is limited to
-feedback the user explicitly approved; it does not expose other account content.
-Each account can create at most 10 feedback submissions in a rolling 24-hour
-period and have at most 100 active submissions (open or triaged).
+the approved submission through role-gated capabilities. When they resolve or
+dismiss it, Kody emails the submitter from the platform sender with the
+decision, thanks, and an invitation to send more feedback through their agent.
+Admin list results intentionally omit the full submission; a detail read exposes
+only the approved feedback, not unrelated account content. This delivery
+exception is limited to feedback the user explicitly approved; it does not
+expose other account content. Each account can create at most 10 feedback
+submissions in a rolling 24-hour period and have at most 100 active submissions
+(open or triaged).
 
 Before asking for approval, also disclose that Kody cannot recall notification
 copies already delivered outside Kody. Admin notification copies may remain

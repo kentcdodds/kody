@@ -19,6 +19,14 @@ export const platformFeedbackStatuses = [
 
 export type PlatformFeedbackStatus = (typeof platformFeedbackStatuses)[number]
 
+export const platformFeedbackOutcomeStatuses = [
+	'resolved',
+	'dismissed',
+] as const
+
+export type PlatformFeedbackOutcomeStatus =
+	(typeof platformFeedbackOutcomeStatuses)[number]
+
 export const platformFeedbackActions = ['triage', 'resolve', 'dismiss'] as const
 
 export type PlatformFeedbackAction = (typeof platformFeedbackActions)[number]
@@ -53,6 +61,12 @@ export type PlatformFeedbackRecord = {
 	adminNote: string | null
 	createdAt: string
 	updatedAt: string
+}
+
+export type PlatformFeedbackAdminUpdate = {
+	feedback: PlatformFeedbackRecord
+	previousStatus: PlatformFeedbackStatus
+	didChangeStatus: boolean
 }
 
 /** Internal full-record shape used for optimistic admin updates. */
