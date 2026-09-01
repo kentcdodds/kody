@@ -436,6 +436,7 @@ export function AccountManagementInlineLinkNav(
 
 const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
+	{ href: '/account/waiting', label: 'Waiting' },
 	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/usage', label: 'Usage' },
 	{ href: '/account/activity', label: 'Activity' },

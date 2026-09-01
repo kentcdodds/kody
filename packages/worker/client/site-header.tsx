@@ -1,8 +1,10 @@
 import { type Handle, css } from 'remix/ui'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
 	colors,
+	radius,
 	shadows,
 	spacing,
 	transitions,
@@ -17,6 +19,7 @@ import {
 export type SiteHeaderProps = {
 	loggedIn: boolean
 	displayName: string
+	avatarUrl: string | null
 	showAdminLink: boolean
 	showDemoIndicator: boolean
 	loginHref: string
@@ -126,8 +129,22 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 				<div mix={css(navActionsCss)}>
 					{handle.props.loggedIn ? (
 						<>
-							<a href="/account" mix={css(navUserCss)}>
-								{handle.props.displayName}
+							<a
+								href="/account/waiting"
+								aria-label={`Waiting — ${handle.props.displayName}`}
+								aria-current={ariaCurrent(
+									handle.props.currentPathname,
+									'/account/waiting',
+								)}
+								data-testid="site-header-waiting"
+								mix={css(navUserAvatarCss)}
+							>
+								<UserAvatar
+									displayName={handle.props.displayName}
+									avatarUrl={handle.props.avatarUrl}
+									size={32}
+									variant="well"
+								/>
 							</a>
 							{handle.props.showDemoIndicator ? (
 								<span data-testid="demo-indicator" mix={css(demoIndicatorCss)}>
@@ -205,13 +222,21 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						{handle.props.loggedIn ? (
 							<>
 								<a
-									href="/account"
+									href="/account/waiting"
+									aria-label={`Waiting — ${handle.props.displayName}`}
 									aria-current={ariaCurrent(
 										handle.props.currentPathname,
-										'/account',
+										'/account/waiting',
 									)}
+									data-testid="site-header-waiting-menu"
+									mix={css(menuWaitingAvatarCss)}
 								>
-									{handle.props.displayName}
+									<UserAvatar
+										displayName={handle.props.displayName}
+										avatarUrl={handle.props.avatarUrl}
+										size={32}
+										variant="well"
+									/>
 								</a>
 								<form
 									method="post"
@@ -467,10 +492,22 @@ const navLoginCss = {
 	'&:hover': { color: colors.primaryText },
 }
 
-const navUserCss = {
-	...navLoginCss,
+const navUserAvatarCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	lineHeight: 0,
+	padding: '0.15rem',
+	borderRadius: radius.full,
+	textDecoration: 'none',
 	color: colors.textMuted,
 	'&:hover': { color: colors.text },
+}
+
+const menuWaitingAvatarCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	width: 'fit-content',
 }
 
 /**

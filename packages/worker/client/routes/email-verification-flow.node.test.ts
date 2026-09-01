@@ -50,6 +50,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 		emailVerified: false,
 		emailVerificationDelivery: null,
 		username: 'account-user',
+		avatarUrl: null,
 		roles: ['user'],
 		permissions: [],
 		featureFlags: {

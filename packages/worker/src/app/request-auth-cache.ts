@@ -32,6 +32,7 @@ type ResolvedAuthUser = {
 	emailVerified: boolean
 	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
+	avatarKey: string | null
 	displayName: string
 	accountDeleting: boolean
 	accountSuspended: boolean
@@ -128,6 +129,7 @@ async function resolveRequestAuth(
 				at: userRecord.email_verification_delivery_at,
 			}),
 			username: userRecord.username,
+			avatarKey: userRecord.avatar_key ?? null,
 			displayName,
 			accountDeleting: Boolean(userRecord.deleting_at),
 			accountSuspended: Boolean(userRecord.suspended_at),

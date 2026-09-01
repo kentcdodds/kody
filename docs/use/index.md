@@ -63,6 +63,8 @@ Read in order for a full tour, or jump to a topic.
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked
   real-surface subscription handler smoke tests
+- [Waiting](./waiting.md) — current-state items only you can clear
+  (`/account/waiting` and `waiting_summary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
 - [Plans and pricing](https://kody.codes/pricing) — every plan is the whole

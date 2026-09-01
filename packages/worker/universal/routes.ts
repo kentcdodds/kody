@@ -65,6 +65,8 @@ export const routes = route({
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
+	accountWaiting: '/account/waiting',
+	accountWaitingApi: '/account/waiting.json',
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
 	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the

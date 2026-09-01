@@ -3,6 +3,9 @@
 When a job fails, a package app crashes, or a webhook delivery rejects, Kody
 keeps a short execution history so you (and your agent) can see what happened.
 
+[Waiting](./waiting.md) is the current-state queue of gates only you can clear.
+Activity is history; it does not replace Waiting.
+
 ## Where to look
 
 Open **`/account/activity`** while signed in. The page defaults to **open
