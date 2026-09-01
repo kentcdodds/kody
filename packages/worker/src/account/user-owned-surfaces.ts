@@ -34,6 +34,7 @@ export type UserOwnedKvKeyScheme = {
 		| 'community_snapshot'
 		| 'community_icon_derived_cache'
 		| 'usage_rollup_derived_cache'
+		| 'artifact_head_derived_cache'
 		| 'package_retriever_manifest'
 		| 'package_retriever_index_entry'
 		| 'package_retriever_index_prefix'
@@ -215,6 +216,15 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 				'Expires through the KV expirationTtl written by the cachified adapter; the configured retention is five minutes.',
 			notes:
 				'Short-lived derived admin read model. Immediate account-deletion cleanup is optional because KV enforces the TTL.',
+		},
+		{
+			id: 'artifact_head_derived_cache',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:artifact-head:v1:{namespace}:{repoId}',
+			retention:
+				'Expires through the KV expirationTtl written by the cachified adapter; retention is at most 65 minutes (5 minute TTL plus 1 hour stale-while-revalidate).',
+			notes:
+				'Default-branch HEAD of an Artifacts repo for package pages (buildArtifactSourceHeadCacheKey). Holds a branch name and commit hash only. Immediate account-deletion cleanup is optional because KV enforces the TTL and the repo id stops resolving once entity_sources is gone.',
 		},
 		{
 			id: 'package_retriever_manifest',

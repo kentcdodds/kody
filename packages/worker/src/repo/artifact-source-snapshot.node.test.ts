@@ -37,13 +37,34 @@ test('reads return null and make no request unless the API opts in', async () =>
 		}),
 	).resolves.toBeNull()
 	expect(mocks.rawRequest).not.toHaveBeenCalled()
+})
+
+test("writes are the caller's decision and go to the snapshot endpoint", async () => {
+	mocks.rawRequest.mockReset()
+	mocks.rawRequest.mockResolvedValue({
+		status: 200,
+		cfRay: null,
+		body: {
+			success: true,
+			result: { published_commit: 'commit-9', files: { 'a.ts': 'a' } },
+			errors: [],
+			messages: [],
+		},
+	})
 	await expect(
 		writeArtifactSourceSnapshot({
 			env: baseEnv,
 			repoId: 'repo-1',
-			files: {},
+			files: { 'a.ts': 'a' },
 		}),
-	).rejects.toThrow(/CLOUDFLARE_API_SOURCE_SNAPSHOTS/)
+	).resolves.toEqual({ published_commit: 'commit-9', files: { 'a.ts': 'a' } })
+	expect(mocks.rawRequest).toHaveBeenCalledWith(
+		expect.objectContaining({
+			method: 'POST',
+			path: '/client/v4/accounts/acct/artifacts/namespaces/default/repos/repo-1/mock-source-snapshot',
+			body: { files: { 'a.ts': 'a' } },
+		}),
+	)
 })
 
 test('an opted-in API is asked for the tree at the commit', async () => {

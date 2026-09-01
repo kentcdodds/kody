@@ -48,16 +48,16 @@ export async function readArtifactSourceSnapshot(input: {
 	return envelope.result
 }
 
+/**
+ * Callers reach this only for repos whose remote is a loopback stand-in (see
+ * `syncArtifactSourceSnapshot`), so the write is not gated on the flag: the
+ * flag says whether reads may ask the API, not whether the API exists.
+ */
 export async function writeArtifactSourceSnapshot(input: {
 	env: Env
 	repoId: string
 	files: Record<string, string>
 }) {
-	if (!hasArtifactSourceSnapshotApi(input.env)) {
-		throw new Error(
-			'Source snapshot writes need CLOUDFLARE_API_SOURCE_SNAPSHOTS=true and an API that serves them.',
-		)
-	}
 	const client = createCloudflareRestClient(input.env)
 	return await requestArtifactsApi<ArtifactSourceSnapshot>(client, {
 		method: 'POST',
