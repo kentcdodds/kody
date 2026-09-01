@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	getTurnstileSiteKey,
+	honeypotFieldName,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
@@ -33,11 +34,22 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 	const honeypot = await verifyPublicFormProtection({
 		env: {},
 		request,
-		body: { website: 'https://spam.example' },
+		body: { [honeypotFieldName]: 'https://spam.example' },
 	})
 	expect(honeypot.ok).toBe(false)
 	if (honeypot.ok) throw new Error('Expected honeypot rejection.')
 	expect(honeypot.response.status).toBe(400)
+	expect(await honeypot.response.json()).toEqual({
+		error: 'Unable to submit this form.',
+	})
+
+	await expect(
+		verifyPublicFormProtection({
+			env: {},
+			request,
+			body: { website: 'https://kody.codes' },
+		}),
+	).resolves.toEqual({ ok: true })
 
 	const fetchSpy = vi.fn(async (_url: string, init: RequestInit) => {
 		expect(init.method).toBe('POST')
@@ -66,6 +78,9 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 		expect(missing.ok).toBe(false)
 		if (missing.ok) throw new Error('Expected missing-token rejection.')
 		expect(missing.response.status).toBe(400)
+		expect(await missing.response.json()).toEqual({
+			error: 'Please complete the human verification challenge.',
+		})
 		expect(fetchSpy).not.toHaveBeenCalled()
 
 		await expect(

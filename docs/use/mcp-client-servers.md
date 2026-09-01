@@ -22,6 +22,10 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 4. Confirm with `mcp_server_list` (or refresh the account page). Connected tools
    show up in `search` under a `mcp:<name>` domain.
 
+If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
+lists it and links to `/account/mcp-servers/:id`. `waiting_summary` returns the
+same items.
+
 ## Lock a server to a package
 
 By default every enabled server is callable from execute and every package. Set

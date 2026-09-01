@@ -7,6 +7,8 @@ import {
 	releasePackageKodyIdRedirect,
 	retirePackageKodyId,
 } from '#worker/community/package-url.ts'
+import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
 import {
@@ -52,11 +54,9 @@ import {
 import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
 import {
 	buildPackageStorageId,
-	storageRunnerRpc,
-} from '#worker/storage-runner.ts'
-
-const savedPackageIdUuidPattern =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+	isPackageOwnedStorageId,
+} from '#worker/storage-ids.ts'
+import { storageRunnerRpc } from '#worker/storage-runner.ts'
 
 function logPackageRetrieverProjectionError(input: {
 	action: 'refresh' | 'delete'
@@ -100,20 +100,9 @@ export function filterPackageOwnedStorageIdsFromInventory(input: {
 	packageId: string
 	storageIds: ReadonlyArray<string>
 }): Array<string> {
-	const packageStorageId = buildPackageStorageId(input.packageId)
 	const matched = new Set<string>()
 	for (const storageId of input.storageIds) {
-		if (storageId === input.packageId || storageId === packageStorageId) {
-			matched.add(storageId)
-		}
-	}
-	if (!savedPackageIdUuidPattern.test(input.packageId)) {
-		return [...matched]
-	}
-	const facetPrefix = `${input.packageId}:`
-	const jobPrefix = `job:package-job:${input.packageId}:`
-	for (const storageId of input.storageIds) {
-		if (storageId.startsWith(facetPrefix) || storageId.startsWith(jobPrefix)) {
+		if (isPackageOwnedStorageId({ packageId: input.packageId, storageId })) {
 			matched.add(storageId)
 		}
 	}
@@ -491,6 +480,7 @@ export async function deleteSavedPackageProjection(input: {
 	env: Env
 	userId: string
 	packageId: string
+	actorUserId?: string
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -507,6 +497,21 @@ export async function deleteSavedPackageProjection(input: {
 			])
 			let packageJobsRemoved = false
 			if (savedPackage) {
+				const listing = await getCommunityListingByOwnerAndPackage(
+					input.env.APP_DB,
+					{
+						ownerUserId: input.userId,
+						packageId: input.packageId,
+					},
+				)
+				if (listing?.status === 'active') {
+					await unpublishCommunityListing({
+						env: input.env,
+						userId: input.userId,
+						actorUserId: input.actorUserId ?? input.userId,
+						listingId: listing.id,
+					})
+				}
 				await cleanupArtifactReposForPackage({
 					env: input.env,
 					userId: input.userId,

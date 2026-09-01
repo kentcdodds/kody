@@ -28,6 +28,7 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -877,7 +878,7 @@ test('JSON start consumes the request body for signed-out and signed-in requests
 			Accept: 'application/json',
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify({ website: '', turnstileToken: '' }),
+		body: JSON.stringify(emptyPublicFormProtection()),
 	})
 
 	expect(signedOutRequest.bodyUsed).toBe(false)
@@ -916,7 +917,7 @@ test('JSON start consumes the request body for signed-out and signed-in requests
 			'Content-Type': 'application/json',
 			Cookie: sessionCookiePair,
 		},
-		body: JSON.stringify({ website: '', turnstileToken: '' }),
+		body: JSON.stringify(emptyPublicFormProtection()),
 	})
 	expect(signedInRequest.bodyUsed).toBe(false)
 	const signedInResponse = await runHandler(

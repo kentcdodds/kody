@@ -3,6 +3,10 @@ import {
 	appendAttributionQueryParams,
 	type FirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
+import {
+	emptyPublicFormProtection,
+	type PublicFormProtectionFields,
+} from '#universal/public-form-protection.ts'
 
 export type AuthProviderInfo = { id: string; label: string }
 export type PublicAuthConfig = {
@@ -85,10 +89,7 @@ export async function startSocialSignIn(
 	providerId: string,
 	redirectTo: string | null,
 	inviteCode: string | null = null,
-	protection: { website: string; turnstileToken: string } = {
-		website: '',
-		turnstileToken: '',
-	},
+	protection: PublicFormProtectionFields = emptyPublicFormProtection(),
 	attribution: FirstTouchAttribution | null = null,
 ): Promise<string | null> {
 	const response = await fetch(

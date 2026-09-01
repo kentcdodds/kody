@@ -66,6 +66,8 @@ export const routes = route({
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
+	accountWaiting: '/account/waiting',
+	accountWaitingApi: '/account/waiting.json',
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
 	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
@@ -101,6 +103,7 @@ export const routes = route({
 	accountUsage: '/account/usage',
 	accountUsageApi: '/account/usage.json',
 	accountEmailChange: post('/account/email-change.json'),
+	accountPassword: post('/account/password.json'),
 	accountResendVerification: post('/account/resend-verification.json'),
 	accountExport: '/account/export.json',
 	admin: '/admin',

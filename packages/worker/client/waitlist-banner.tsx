@@ -9,8 +9,8 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
-	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
@@ -122,14 +122,7 @@ export function WaitlistBanner(handle: Handle) {
 								Join the waitlist for an invite.
 							</p>
 							<form mix={[css(formCss), on('submit', handleSubmit)]}>
-								<input
-									type="text"
-									name={honeypotFieldName}
-									tabIndex={-1}
-									autoComplete="off"
-									aria-hidden="true"
-									mix={css(honeypotCss)}
-								/>
+								{renderHoneypot()}
 								{/*
 								 * One connected pill, same grammar as the hero waitlist and
 								 * the community search. `data-focus-container` opts into the
@@ -378,9 +371,4 @@ const visuallyHiddenCss = {
 	clip: 'rect(0, 0, 0, 0)',
 	whiteSpace: 'nowrap' as const,
 	border: 0,
-}
-
-const honeypotCss = {
-	...visuallyHiddenCss,
-	left: '-10000px',
 }

@@ -12,6 +12,7 @@ import {
 } from '#worker/storage-runner.ts'
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
+import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -54,13 +55,18 @@ export const storageQueryCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const storageId = authorizeCapabilityStorageId({
+				callerContext: ctx.callerContext,
+				capabilityName: 'storage_query',
+				storageId: args.storage_id,
+			})
 			const writable = args.writable ?? false
 			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({
 					env: ctx.env,
 					userId: user.userId,
 					email: user.email,
-					storageId: args.storage_id,
+					storageId,
 					requested: estimateEntitlementStorageSqlWriteBytes({
 						query: args.query,
 						params: args.params,
@@ -71,7 +77,7 @@ export const storageQueryCapability = defineDomainCapability(
 				const result = await storageRunnerRpc({
 					env: ctx.env,
 					userId: user.userId,
-					storageId: args.storage_id,
+					storageId,
 				}).sqlQuery({
 					query: args.query,
 					params: args.params,
@@ -79,7 +85,7 @@ export const storageQueryCapability = defineDomainCapability(
 				})
 				return {
 					ok: true as const,
-					storage_id: args.storage_id,
+					storage_id: storageId,
 					query: args.query,
 					columns: result.columns,
 					rows: result.rows,

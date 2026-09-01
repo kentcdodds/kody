@@ -401,18 +401,9 @@ export function mergeConnectOauthConfig(input: {
 		input.queryConfig.usePkce ??
 		input.storedIntegration?.usePkce ??
 		defaultConnectOauthUsePkce({ flow, tokenUrl })
-	const platformAllowedScopes = input.storedIntegration?.platformAppSlug
-		? (input.storedIntegration.platformAllowedScopes ?? [])
-		: null
-	// Platform apps clamp requested scopes to the operator-verified menu, so
-	// query-supplied scopes can never widen the authorize request. The server
-	// re-validates before persisting anything.
-	const scopes =
-		platformAllowedScopes === null
-			? resolveConnectOauthScopes(input)
-			: resolveConnectOauthScopes(input).filter((scope) =>
-					platformAllowedScopes.includes(scope),
-				)
+	// Platform connect is retired: never clamp to an operator-verified menu
+	// or skip client-credential setup. Existing platform tokens still refresh.
+	const scopes = resolveConnectOauthScopes(input)
 	const extraAuthorizeParams = {
 		...resolveConnectOauthExtraAuthorizeParams(input),
 	}
@@ -426,19 +417,14 @@ export function mergeConnectOauthConfig(input: {
 		...(input.storedIntegration?.requiredHosts ?? []),
 	])
 	if (allowedHosts.length === 0) return null
-	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
 	return {
-		platformAppSlug,
-		platformLogoPath: platformAppSlug
-			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
-			: null,
+		platformAppSlug: null,
+		platformLogoPath: null,
 		logoPath: input.storedIntegration?.logoPath?.trim() || null,
 		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
 		catalogLogoPath: input.storedIntegration?.catalogLogoPath?.trim() || null,
-		platformDescription: platformAppSlug
-			? input.storedIntegration?.platformDescription?.trim() || null
-			: null,
-		platformAllowedScopes: platformAllowedScopes ?? [],
+		platformDescription: null,
+		platformAllowedScopes: [],
 		provider,
 		providerKey,
 		authorizeHost,
@@ -462,11 +448,11 @@ export function mergeConnectOauthConfig(input: {
 		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
-		clientId: input.storedIntegration?.clientId?.trim() || '',
-		// Platform apps keep the shared client secret server-side: there is
-		// never a user secret name for it, whatever the flow.
+		clientId: input.storedIntegration?.platformAppSlug
+			? ''
+			: input.storedIntegration?.clientId?.trim() || '',
 		clientSecretSecretName:
-			flow === 'confidential' && !platformAppSlug
+			flow === 'confidential'
 				? (input.storedIntegration?.clientSecretSecretName ??
 					`${providerKey}ClientSecret`)
 				: null,

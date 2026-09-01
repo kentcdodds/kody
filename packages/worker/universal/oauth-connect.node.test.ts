@@ -5,7 +5,7 @@ import {
 	isConnectOauthCallbackUrl,
 } from './oauth-connect.ts'
 
-test('connect chooser lists reconnectable connections and unused built-ins', () => {
+test('connect chooser lists reconnectable connections and hides unused built-ins', () => {
 	expect(
 		isConnectOauthCallbackUrl(
 			new URL('https://example.com/connect/oauth?code=abc&state=1'),
@@ -31,10 +31,9 @@ test('connect chooser lists reconnectable connections and unused built-ins', () 
 	expect(
 		buildConnectOauthHref({
 			name: 'google',
-			platform: true,
 			appSlug: 'google',
 		}),
-	).toBe('/connect/oauth?provider=google&platform=google')
+	).toBe('/connect/oauth?provider=google&app=google')
 
 	const options = buildConnectOauthChooserOptions({
 		connections: [
@@ -72,43 +71,21 @@ test('connect chooser lists reconnectable connections and unused built-ins', () 
 				canDrive: true,
 			},
 		],
-		platformApps: [
-			{
-				slug: 'github',
-				label: 'GitHub',
-				provider: 'github',
-				logoPath: '/integrations/logos/github',
-				catalogLogoPath: null,
-			},
-			{
-				slug: 'google',
-				label: 'Google',
-				provider: 'google',
-				logoPath: null,
-				catalogLogoPath: '/integrations/provider-marks/google',
-			},
-			{
-				slug: 'spotify',
-				label: 'Spotify',
-				provider: 'spotify',
-				logoPath: null,
-				catalogLogoPath: null,
-			},
-		],
 	})
 
 	expect(options.map((option) => option.id)).toEqual([
 		'connection:google-work',
 		'connection:github',
-		'platform:google',
-		'platform:spotify',
 	])
 	expect(options[0]).toMatchObject({
 		href: '/connect/oauth?provider=google-work&app=google',
 		kind: 'connection',
+		detail: 'Reconnect your OAuth app',
+		catalogLogoPath: '/integrations/provider-marks/google',
 	})
-	expect(options[2]).toMatchObject({
-		href: '/connect/oauth?provider=google&platform=google',
-		kind: 'platform',
+	expect(options[1]).toMatchObject({
+		href: '/connect/oauth?provider=github',
+		kind: 'connection',
+		detail: 'Set up your own OAuth app to reconnect',
 	})
 })

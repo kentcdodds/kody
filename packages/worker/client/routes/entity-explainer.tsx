@@ -124,6 +124,15 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		},
 	},
 	{
+		id: 'waiting',
+		question: 'What is waiting?',
+		match: accountSection(routes.accountWaiting.href()),
+		paragraphs: [
+			'Waiting is the current-state queue of things only you can clear: verify email, reconnect an MCP server, promote a locked-package publish, confirm a pending email change, or finish setup.',
+			'Items disappear when the gate clears. Activity is run history. Email is your mailbox. Vendor outages and operator work do not show up here.',
+		],
+	},
+	{
 		id: 'activity',
 		question: 'What is activity?',
 		match: accountSection(routes.accountActivity.href()),

@@ -1,15 +1,8 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import {
-	emptyCapabilityInputSchema,
-	type CapabilityContext,
-} from '#mcp/capabilities/types.ts'
-import { listAvailablePlatformApps } from '#worker/integrations/service.ts'
-import {
-	platformOauthAppPublicSchema,
-	toPlatformOauthAppPublic,
-} from './platform-app-shared.ts'
+import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
+import { platformOauthAppPublicSchema } from './platform-app-shared.ts'
 
 const outputSchema = z.object({
 	apps: z.array(platformOauthAppPublicSchema),
@@ -20,7 +13,7 @@ export const integrationPlatformAppListCapability = defineDomainCapability(
 	{
 		name: 'integration_platform_app_list',
 		description:
-			'List operator-provisioned platform OAuth apps on this deployment. OAuth connections use a bring-your-own provider app at /connect/oauth; this list is inspection only and is not a connect path.',
+			'Platform (built-in) OAuth apps are being retired. This list is always empty. Connect with a bring-your-own provider app at /connect/oauth. Operators inspect remaining apps with admin_platform_oauth_app_list.',
 		keywords: [
 			'integration',
 			'oauth',
@@ -35,11 +28,8 @@ export const integrationPlatformAppListCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
-		async handler(_args, ctx: CapabilityContext) {
-			const apps = await listAvailablePlatformApps({ env: ctx.env })
-			return {
-				apps: apps.map(toPlatformOauthAppPublic),
-			}
+		async handler() {
+			return { apps: [] }
 		},
 	},
 )

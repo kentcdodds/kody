@@ -10,6 +10,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -124,10 +125,14 @@ export const executeCapability = defineDomainCapability(
 			},
 			ctx: CapabilityContext,
 		) {
-			const resolvedStorageId =
-				args.storageId?.trim() ||
-				ctx.callerContext.storageContext?.storageId ||
-				null
+			const requestedStorageId = args.storageId?.trim()
+			const resolvedStorageId = requestedStorageId
+				? authorizeCapabilityStorageId({
+						callerContext: ctx.callerContext,
+						capabilityName: 'execute',
+						storageId: requestedStorageId,
+					})
+				: ctx.callerContext.storageContext?.storageId || null
 			const callerContext = {
 				...ctx.callerContext,
 				storageContext: {

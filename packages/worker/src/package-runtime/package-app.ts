@@ -33,9 +33,9 @@ import {
 } from './published-bundle-artifacts.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
-	buildPackageStorageId,
 	createPackageStorageAccessDeniedMessage,
 	createStorageBytesEntitlementRunCache,
 	isReadOnlyStorageSqlQuery,

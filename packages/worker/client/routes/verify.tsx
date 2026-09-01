@@ -16,10 +16,11 @@ import {
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
-	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 
@@ -82,6 +83,7 @@ export function VerifyRoute(handle: Handle) {
 					typeof payload?.error === 'string'
 						? payload.error
 						: 'Unable to verify the code.'
+				resetTurnstileWidgets()
 				handle.update()
 				return
 			}
@@ -90,6 +92,7 @@ export function VerifyRoute(handle: Handle) {
 		} catch {
 			status = 'idle'
 			message = 'Network error. Please try again.'
+			resetTurnstileWidgets()
 			handle.update()
 		}
 	}
@@ -113,14 +116,7 @@ export function VerifyRoute(handle: Handle) {
 					</p>
 				</header>
 				<form mix={[css(cardCss), on('submit', handleSubmit)]}>
-					<input
-						type="text"
-						name={honeypotFieldName}
-						tabIndex={-1}
-						autoComplete="off"
-						aria-hidden="true"
-						mix={css(honeypotCss)}
-					/>
+					{renderHoneypot()}
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Verification code</span>
 						<input
@@ -173,12 +169,7 @@ const pageCss = {
 	margin: '0 auto',
 }
 
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
-
-const honeypotCss = {
-	position: 'absolute' as const,
-	left: '-10000px',
-	width: '1px',
-	height: '1px',
-	overflow: 'hidden' as const,
-}
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})

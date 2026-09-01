@@ -9,10 +9,7 @@ import {
 	hostFromProviderUrl,
 } from '#worker/integrations/provider-marks.ts'
 import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
-import {
-	listAvailablePlatformApps,
-	listJoinedIntegrations,
-} from '#worker/integrations/service.ts'
+import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 
 export type { ConnectOauthChooserOption }
 
@@ -20,9 +17,8 @@ export async function loadConnectOauthChooser(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }): Promise<{ options: Array<ConnectOauthChooserOption> }> {
-	const [joined, platformApps, marks] = await Promise.all([
+	const [joined, marks] = await Promise.all([
 		listJoinedIntegrations({ env: input.env, userId: input.userId }),
-		listAvailablePlatformApps({ env: input.env }),
 		listPlatformProviderMarks({ db: input.env.APP_DB }),
 	])
 	return {
@@ -52,17 +48,6 @@ export async function loadConnectOauthChooser(input: {
 				canDrive: Boolean(
 					entry.app.authorizeUrl?.trim() && entry.app.tokenUrl.trim(),
 				),
-			})),
-			platformApps: platformApps.map((app) => ({
-				slug: app.slug,
-				label: app.label?.trim() || app.slug,
-				provider: app.provider,
-				logoPath: buildPlatformOauthAppLogoPath(app),
-				catalogLogoPath: resolveProviderMarkLogoPath({
-					marks,
-					providerKey: app.provider,
-					host: hostFromProviderUrl(app.authorizeUrl),
-				}),
 			})),
 		}),
 	}

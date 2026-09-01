@@ -20,6 +20,7 @@ export type SessionInfo = {
 	emailVerified: boolean
 	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
+	avatarUrl: string | null
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
 	featureFlags: Record<FeatureFlagKey, boolean>
@@ -62,6 +63,12 @@ export async function fetchSessionInfo(
 			typeof payload?.session?.username === 'string'
 				? payload.session.username.trim()
 				: ''
+		const avatarUrl =
+			response.ok &&
+			payload?.ok &&
+			typeof payload?.session?.avatarUrl === 'string'
+				? payload.session.avatarUrl.trim() || null
+				: null
 		const roles = readRoleNames(payload?.session?.roles)
 		const permissions = readPermissionStrings(payload?.session?.permissions)
 		const featureFlags = readFeatureFlags(payload?.session?.featureFlags)
@@ -82,6 +89,7 @@ export async function fetchSessionInfo(
 					emailVerified,
 					emailVerificationDelivery,
 					username,
+					avatarUrl,
 					roles,
 					permissions,
 					featureFlags,

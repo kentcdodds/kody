@@ -39,6 +39,8 @@ const mockModule = vi.hoisted(() => ({
 	deleteAllAppScopedValues: vi.fn(),
 	clearStorage: vi.fn(async () => ({ ok: true as const })),
 	storageRunnerRpc: vi.fn(),
+	getCommunityListingByOwnerAndPackage: vi.fn(),
+	unpublishCommunityListing: vi.fn(),
 }))
 
 vi.mock('./manifest.ts', () => ({
@@ -151,6 +153,16 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.deleteEntitySource(...args),
 }))
 
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingByOwnerAndPackage(...args),
+}))
+
+vi.mock('#worker/community/service.ts', () => ({
+	unpublishCommunityListing: (...args: Array<unknown>) =>
+		mockModule.unpublishCommunityListing(...args),
+}))
+
 const {
 	deleteSavedPackageProjection,
 	filterPackageOwnedStorageIdsFromInventory,
@@ -219,6 +231,10 @@ function setupDefaultMocks() {
 	mockModule.clearStorage.mockResolvedValue({ ok: true as const })
 	mockModule.listJobRowsByUserId.mockResolvedValue([])
 	mockModule.loadPackageSourceFromFiles.mockReset()
+	mockModule.getCommunityListingByOwnerAndPackage.mockReset()
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.unpublishCommunityListing.mockReset()
+	mockModule.unpublishCommunityListing.mockResolvedValue(undefined)
 }
 
 test('refreshSavedPackageProjection defers search-index upsert and retriever cache via waitUntil', async () => {
@@ -638,6 +654,58 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
 	).toBeGreaterThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+	expect(mockModule.unpublishCommunityListing).not.toHaveBeenCalled()
+})
+
+test('deleteSavedPackageProjection unpublishes an active listing before removing the package', async () => {
+	setupDefaultMocks()
+	const env = createEnv()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'shade-automation',
+		sourceId: 'source-1',
+	})
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
+		id: 'listing-1',
+		status: 'active',
+	})
+
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		actorUserId: 'actor-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.getCommunityListingByOwnerAndPackage).toHaveBeenCalledWith(
+		env.APP_DB,
+		{
+			ownerUserId: 'user-1',
+			packageId: 'package-1',
+		},
+	)
+	expect(mockModule.unpublishCommunityListing).toHaveBeenCalledWith({
+		env,
+		userId: 'user-1',
+		actorUserId: 'actor-1',
+		listingId: 'listing-1',
+	})
+	expect(
+		mockModule.unpublishCommunityListing.mock.invocationCallOrder[0],
+	).toBeLessThan(mockModule.deleteSavedPackage.mock.invocationCallOrder[0])
+
+	mockModule.unpublishCommunityListing.mockClear()
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue({
+		id: 'listing-2',
+		status: 'delisted',
+	})
+	await deleteSavedPackageProjection({
+		env,
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+	expect(mockModule.unpublishCommunityListing).not.toHaveBeenCalled()
+	expect(mockModule.deleteSavedPackage).toHaveBeenCalled()
 })
 
 test('deleteSavedPackageProjection continues best-effort cleanup when dependent steps fail', async () => {

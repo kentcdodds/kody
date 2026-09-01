@@ -42,6 +42,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountUsageRouteLoader,
 	),
+	[routePattern(routes.accountWaiting)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountWaitingRouteLoader,
+	),
 	[routePattern(routes.accountIntegrations)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountIntegrationsRouteLoader,
@@ -337,6 +341,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountUsage)]: (
 		<LazyAccountRoute render={(m) => <m.AccountUsageRoute />} />
+	),
+	[routePattern(routes.accountWaiting)]: (
+		<LazyAccountRoute render={(m) => <m.AccountWaitingRoute />} />
 	),
 	[routePattern(routes.accountIntegrations)]: (
 		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />

@@ -27,6 +27,7 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { type WaitingItem } from '#universal/waiting.ts'
 import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
@@ -1088,9 +1089,8 @@ export type AccountIntegrationDetailLoaderData = {
 	ok: true
 	integration: AccountIntegrationListItem | null
 	/**
-	 * True when an enabled built-in app exists for the requested name and the
-	 * returned record is not already using it (the bring-your-own record won
-	 * the lookup). The connect page offers the built-in as an alternative.
+	 * Always false. Platform connect is retired; the field stays so older
+	 * clients keep a stable loader shape.
 	 */
 	builtInAvailable?: boolean
 	/** See {@link ConnectOauthExistingConnection}. */
@@ -1114,7 +1114,7 @@ export type ConnectOauthExistingConnection = {
 }
 
 /**
- * /connect/oauth prefill for `?provider=` visits: the stored or built-in
+ * /connect/oauth prefill for `?provider=` visits: the stored bring-your-own
  * record the page merges into its config. `provider` is the normalized key
  * the record was resolved for; null on callback visits, which restore config
  * from sessionStorage instead.
@@ -1136,9 +1136,8 @@ export type ConnectOauthLoaderData = {
 	 */
 	redirectUri?: string
 	/**
-	 * Signed-in bare `/connect/oauth` visits: built-ins and saved connections
-	 * that can start from `?provider=` alone. Omitted on provider/callback
-	 * visits.
+	 * Signed-in bare `/connect/oauth` visits: saved connections that can
+	 * start from `?provider=` alone. Omitted on provider/callback visits.
 	 */
 	chooser?: {
 		options: Array<{
@@ -1150,7 +1149,7 @@ export type ConnectOauthLoaderData = {
 			logoPath: string | null
 			autoLogoPath: string | null
 			catalogLogoPath: string | null
-			kind: 'connection' | 'platform'
+			kind: 'connection'
 		}>
 	}
 }
@@ -1768,6 +1767,7 @@ export type AppLoaderData = {
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
+	accountWaiting?: AccountWaitingLoaderData
 	discord?: DiscordPageLoaderData
 	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
@@ -1822,4 +1822,9 @@ export type AccountUsageLoaderData = {
 	today: string
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
+}
+
+export type AccountWaitingLoaderData = {
+	ok: true
+	items: Array<WaitingItem>
 }

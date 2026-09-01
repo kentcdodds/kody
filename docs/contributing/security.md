@@ -34,7 +34,7 @@ package-app surfaces:
    production.
 4. **Credential endpoints are rate limited.** Any new endpoint that accepts a
    password, token, or reset code must join the shared auth rate-limit bucket in
-   `packages/worker/src/index.ts` (`rateLimitedAuthPaths`).
+   `packages/worker/src/origin-handler.ts` (`rateLimitedAuthPaths`).
 5. **New passwords go through the shared policy.** Use `getPasswordPolicyError`
    from `@kody-internal/shared/password-policy.ts` wherever a password is set.
 6. **OAuth PKCE stays S256-only.** Keep the `getPkceValidationError` check in
@@ -275,7 +275,7 @@ fails closed: env validation (`packages/worker/src/app/env.ts`) rejects a
 production runtime without the binding, so the D1 fallback can never silently
 become the production limiter. The shared bucket means brute-force attempts
 cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
-`packages/worker/src/index.ts`):
+`packages/worker/src/origin-handler.ts`):
 
 - `POST /auth` (password login/signup)
 - `POST /auth/github`, `POST /auth/google`, `POST /auth/x`, `POST /auth/discord`
@@ -283,6 +283,7 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /oauth/authorize` (inline OAuth login)
 - `POST /password-reset` (reset request)
 - `POST /password-reset/confirm` (reset confirmation)
+- `POST /account/password.json` (signed-in password change or first-time set)
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
 
@@ -306,10 +307,10 @@ before the 10 MB cap can apply.
 
 ## Password policy
 
-Signup and password-reset confirmation enforce a minimum password length via
-`@kody-internal/shared/password-policy.ts`. The server is the trust boundary;
-the browser hint is advisory. Login does not re-check length, so existing
-accounts are never locked out.
+Signup, password-reset confirmation, and signed-in password change enforce a
+minimum password length via `@kody-internal/shared/password-policy.ts`. The
+server is the trust boundary; the browser hint is advisory. Login does not
+re-check length, so existing accounts are never locked out.
 
 ## OAuth / MCP hardening
 
@@ -479,16 +480,17 @@ blast radius:
 These were reviewed and intentionally left as-is for this project. Document any
 change to these decisions here so future agents do not relitigate them.
 
-- **Stateless sessions revoke after password reset.** `kody_session` is a signed
-  cookie with no server store, so there is no global "log out everywhere"
-  button. Password reset confirmation revokes every MCP OAuth grant for the
-  user, stamps `users.password_changed_at`, then revokes again. Browser and
+- **Stateless sessions revoke after a password change.** `kody_session` is a
+  signed cookie with no server store, so there is no separate "log out
+  everywhere" button. Password reset confirmation and signed-in password change
+  (`POST /account/password.json`) both revoke every MCP OAuth grant for the
+  user, stamp `users.password_changed_at`, then revoke again. Browser and
   package-app sessions carry `issuedAt`; `resolveRequestAuth` rejects cookies
   issued at or before that timestamp (missing `issuedAt` fails closed once a
   password change exists). `/mcp` applies the same timestamp to the access token
   `createdAt` (Unix seconds) so already-issued bearers fail closed as
-  `invalid_token`. A future hardening could add an explicit "sign out other
-  sessions" control without waiting for a reset.
+  `invalid_token`. A signed-in password change re-issues the current browser
+  cookie so that tab stays signed in; every other session still dies.
 - **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
   mismatched DCR client for **their** grants only. `deleteClient` runs only when
   `user_mcp_oauth_clients` shows they own that registration. Shared host clients

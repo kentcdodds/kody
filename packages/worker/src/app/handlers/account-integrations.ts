@@ -4,7 +4,6 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
-	hasAlternativeBuiltInApp,
 	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
 	readConnectOauthLookupOptions,
@@ -140,26 +139,24 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 				const name = searchParams.get('name')?.trim()
 				const approvalPackageId = searchParams.get('package_id')?.trim()
 				if (name && !approvalPackageId) {
-					// `platform=1` forces the built-in of the same name;
-					// `platform=<slug>` connects that built-in under a
-					// different connection name (rename-instead-of-replace).
 					// `app=<slug>` reuses a saved bring-your-own app under `name`.
+					// `platform=` is ignored: built-in connect is retired.
 					const integration = await loadAccountIntegrationByName(
 						env,
 						user,
 						name,
 						readConnectOauthLookupOptions(searchParams),
 					)
-					const [builtInAvailable, existingConnection, hasStoredClientSecret] =
-						await Promise.all([
-							hasAlternativeBuiltInApp(env, name, integration),
+					const [existingConnection, hasStoredClientSecret] = await Promise.all(
+						[
 							loadExistingConnectionSummary(env, user, name),
 							hasStoredConnectClientSecret(env, user, name, integration),
-						])
+						],
+					)
 					return jsonResponse({
 						ok: true,
 						integration,
-						builtInAvailable,
+						builtInAvailable: false,
 						existingConnection,
 						hasStoredClientSecret,
 					})
