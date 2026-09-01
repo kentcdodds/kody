@@ -12,7 +12,6 @@ import { emailSendCapability } from './email-send.ts'
 import { emailSenderRuleDeleteCapability } from './email-sender-rule-delete.ts'
 import { emailSenderRuleListCapability } from './email-sender-rule-list.ts'
 import { emailSenderRuleSetCapability } from './email-sender-rule-set.ts'
-import { emailUsageGetCapability } from './email-usage-get.ts'
 
 export const emailDomain = defineDomain({
 	name: capabilityDomainNames.email,
@@ -31,6 +30,5 @@ export const emailDomain = defineDomain({
 		emailSenderRuleDeleteCapability,
 		emailSendCapability,
 		emailReplyCapability,
-		emailUsageGetCapability,
 	],
 })
