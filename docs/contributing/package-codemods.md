@@ -345,9 +345,10 @@ inline workflow sandboxes do not: dry-run, apply, and revert are check-heavy
 enough that a second page in the same sandbox typically exceeds the workflow
 observer (~270s, under the Cloudflare Workflow step timeout). Those modes take
 one page per execute or workflow sandbox. When `nextCursor` is set, start a new
-`execute` or `workflows.create` with that `runId` and cursor. Capability results
-include a `nextStep` string that restates this. Scan pages are cheaper and can
-often continue in the same sandbox.
+`execute` or `workflows.create` with that `runId` and cursor. Omitted filters
+inherit from the stored run. Capability results include a `nextStep` string that
+restates this. Scan pages are cheaper and can often continue in the same
+sandbox.
 
 ### Step limits
 

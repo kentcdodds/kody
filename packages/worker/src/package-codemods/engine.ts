@@ -344,13 +344,17 @@ async function ensureRun(input: {
 				`Package codemod run "${input.runId}" revertOfRunId does not match the requested value.`,
 			)
 		}
-		const existingFiltersJson = normalizeFiltersJson(
-			parseStoredFiltersJson(existing.filtersJson),
-		)
-		if (existingFiltersJson !== filtersJson) {
-			throw new Error(
-				`Package codemod run "${input.runId}" filters do not match the requested filters.`,
+		// Continuation steps may omit filters; the stored run is the source of
+		// truth. Only an explicit mismatched value is rejected.
+		if (input.filters !== undefined) {
+			const existingFiltersJson = normalizeFiltersJson(
+				parseStoredFiltersJson(existing.filtersJson),
 			)
+			if (existingFiltersJson !== filtersJson) {
+				throw new Error(
+					`Package codemod run "${input.runId}" filters do not match the requested filters.`,
+				)
+			}
 		}
 		if (existing.status !== 'completed') {
 			// Heartbeat: every continuation step re-asserts `running` and bumps

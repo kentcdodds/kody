@@ -985,6 +985,18 @@ test('package codemod engine rejects resume steps with mismatched filters', asyn
 		limit: 10,
 	})
 	expect(resumed.runId).toBe(first.runId)
+
+	const resumedWithoutFilters = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-2',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'user', userId: 'user-1' },
+		runId: first.runId,
+		limit: 10,
+	})
+	expect(resumedWithoutFilters.runId).toBe(first.runId)
 })
 
 test('package codemod revert page ceiling and user-scoped SQL filter for sparse ownership', async () => {
