@@ -211,16 +211,17 @@ export const maxPlanEmailLimits = {
 } as const satisfies Partial<Record<EntitlementResource, number>>
 
 /**
- * Initial limit numbers are conservative placeholders chosen before usage
- * metering exists. They are expected to be tuned once metering data is
- * available. Billing (packages/worker/src/billing/) maps Stripe
- * subscriptions onto these plan names but the limit numbers stay
- * independent of pricing.
+ * Limit numbers are denial-of-wallet caps, tuned from production metering
+ * (August 2026). The expensive surface is MCP `execute`: each unique
+ * Dynamic Worker id is $0.002/UTC day after the account-wide included
+ * allotment. Billing (`packages/worker/src/billing/`) maps Stripe
+ * subscriptions onto these plan names; the limit numbers stay independent
+ * of list prices.
  *
- * Ordinary `max` ceilings are explicit product choices based on the new
- * `pro` plan. Most retain the previous ceilings even where that is 25× or
- * 50× pro rather than a uniform multiplier. Email resources intentionally
- * use {@link maxPlanEmailLimits} abuse caps instead.
+ * Ordinary `max` ceilings are explicit product choices based on the `pro`
+ * plan. Most retain high operator ceilings even where that is 25× or 50×
+ * pro rather than a uniform multiplier. Email resources intentionally use
+ * {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
 	// Free stays roomy for setup (secrets, a handful of jobs) and tighter on
@@ -235,21 +236,27 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Sessions are cheap (catalog row + dormant DO workspace + Artifacts
 		// branch). Unused (never-checkpointed) leftovers sweep after 30
 		// minutes idle; checkpointed sessions use the 7-day window so
-		// unpublished work is not lost mid-conversation. Sized for a few
-		// agent conversations, not dozens.
-		maxRepoSessions: 15,
+		// unpublished work is not lost mid-conversation. Sized for a couple
+		// of concurrent agent conversations, not a leftover pile.
+		maxRepoSessions: 5,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.
 		maxEmailSendsPerDay: 10,
-		// Inbound volume is attacker-controlled. Unchanged.
-		maxEmailReceivesPerDay: 50,
-		maxStoredEmailMessages: 500,
+		// Inbound volume is attacker-controlled. Free inbound is unused in
+		// production; keep a small mailbox so a leaked address cannot fill
+		// storage.
+		maxEmailReceivesPerDay: 10,
+		maxStoredEmailMessages: 100,
 		maxEmailMessageBytes: 256 * 1024,
 		maxSecrets: 25,
 		maxStorageBytes: 16 * 1024 * 1024,
-		// Concurrent active runs (not lifetime or daily).
-		maxConcurrentWorkflows: 2,
-		maxExecuteCallsPerDay: 250,
+		// Concurrent active runs (not lifetime or daily). One at a time on
+		// free; a second deferred workflow is the upgrade nudge.
+		maxConcurrentWorkflows: 1,
+		// Unique execute is the Dynamic Worker bill. 100/day covers a real
+		// agent morning (~70 observed) without pricing a free account at
+		// Standard's unique-execute ceiling.
+		maxExecuteCallsPerDay: 100,
 		maxOutboundFetchesPerDay: 500,
 		maxJobRunsPerDay: 500,
 		minJobIntervalMs: 15 * 60 * 1000,
@@ -266,7 +273,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
-		maxExecuteCallsPerDay: 5_000,
+		// Above the heaviest Standard payer (~200/day avg). Unique-execute
+		// ceiling is still above list price if someone maxes new modules.
+		maxExecuteCallsPerDay: 500,
 		maxOutboundFetchesPerDay: 20_000,
 		maxJobRunsPerDay: 10_000,
 		minJobIntervalMs: 0,
@@ -283,7 +292,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
-		maxExecuteCallsPerDay: 10_000,
+		// Above the heaviest Pro payer (~670/day avg).
+		maxExecuteCallsPerDay: 2_000,
 		maxOutboundFetchesPerDay: 40_000,
 		maxJobRunsPerDay: 20_000,
 		minJobIntervalMs: 0,
@@ -308,7 +318,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 100 * 1024 * 1024 * 1024,
 		// 50× pro (100) → 5_000.
 		maxConcurrentWorkflows: 5_000,
-		// 50× pro (10_000) → 500_000.
+		// Retained operator ceiling (not 50× the current pro 2_000).
 		maxExecuteCallsPerDay: 500_000,
 		// 50× pro (40_000) → 2_000_000.
 		maxOutboundFetchesPerDay: 2_000_000,

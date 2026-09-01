@@ -4,7 +4,7 @@ Per-user plans with per-plan resource limits. This is Kody's denial-of-wallet
 protection for open signup: it bounds how many billable resources a single
 account can consume. Stripe subscription billing lives in a separate module
 (`packages/worker/src/billing/`); see [Billing](#billing) below. Limit numbers
-in `planLimits` remain independently configured placeholders.
+in `planLimits` stay independently configured from Stripe list prices.
 
 Module: `packages/worker/src/entitlements/` plus the client-safe plan registry
 at `packages/worker/universal/plans.ts`.
