@@ -18,9 +18,15 @@ import {
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
 import {
+	isAdminUserVerificationFilter,
 	parseEmailVerificationDelivery,
+	type AdminUserVerificationFilter,
 	type EmailVerificationDelivery,
 } from '#universal/email-verification-delivery.ts'
+import {
+	emailVerificationStallCutoffIso,
+	emailVerificationStallSqlConditions,
+} from '#worker/identity/email-verification-stall.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
@@ -103,6 +109,7 @@ const maxPageSize = 100
 type AdminUserListFilters = {
 	query: string
 	role: RoleName | null
+	verification: AdminUserVerificationFilter | null
 }
 
 /**
@@ -147,12 +154,16 @@ function parseSelectedStableUserId(
 	return isStableUserId(stableUserId) ? stableUserId : null
 }
 
-/** Read the `q` and `role` filter query params shared by the page and API. */
+/** Read the `q`, `role`, and `verification` filter query params. */
 function readAdminUserListFilters(url: URL): AdminUserListFilters {
 	const rawRole = url.searchParams.get('role')?.trim() ?? ''
+	const rawVerification = url.searchParams.get('verification')?.trim() ?? ''
 	return {
 		query: url.searchParams.get('q')?.trim() ?? '',
 		role: isRoleName(rawRole) ? rawRole : null,
+		verification: isAdminUserVerificationFilter(rawVerification)
+			? rawVerification
+			: null,
 	}
 }
 
@@ -164,7 +175,10 @@ function escapeLikePattern(value: string) {
  * Build the WHERE clause shared by the page query and its COUNT so the
  * reported total always matches the filtered result set.
  */
-function buildAdminUserListWhereClause(filters: AdminUserListFilters) {
+function buildAdminUserListWhereClause(
+	filters: AdminUserListFilters,
+	now: Date,
+) {
 	const conditions: Array<string> = []
 	const params: Array<string> = []
 	if (filters.query) {
@@ -177,6 +191,18 @@ function buildAdminUserListWhereClause(filters: AdminUserListFilters) {
 			`id IN (SELECT ur.user_id FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE r.name = ?)`,
 		)
 		params.push(filters.role)
+	}
+	if (filters.verification) {
+		switch (filters.verification) {
+			case 'stalled':
+				conditions.push(...emailVerificationStallSqlConditions())
+				params.push(emailVerificationStallCutoffIso(now))
+				break
+			default: {
+				const exhaustive: never = filters.verification
+				void exhaustive
+			}
+		}
 	}
 	return {
 		whereClause:
@@ -196,7 +222,10 @@ export async function loadAdminUsersData(
 		maxPageSize,
 	})
 	const filters = readAdminUserListFilters(url)
-	const { whereClause, params } = buildAdminUserListWhereClause(filters)
+	const { whereClause, params } = buildAdminUserListWhereClause(
+		filters,
+		new Date(),
+	)
 	const selectedStableUserId = readAdminUsersSelectedStableUserId(
 		requestUrl,
 		pathStableUserId,

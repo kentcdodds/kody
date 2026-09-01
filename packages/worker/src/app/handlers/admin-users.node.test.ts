@@ -40,6 +40,8 @@ type UserRow = {
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
 	email_verification_delivery_class?: string | null
+	account_type?: 'person' | 'platform' | null
+	deleting_at?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -97,6 +99,8 @@ function createAdminTestEnv(input: {
 					user.email_verification_delivery_detail ?? null,
 				email_verification_delivery_class:
 					user.email_verification_delivery_class ?? null,
+				account_type: user.account_type ?? 'person',
+				deleting_at: user.deleting_at ?? null,
 			},
 		]),
 	)
@@ -107,9 +111,9 @@ function createAdminTestEnv(input: {
 		APP_DB: {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				// Mirrors buildAdminUserListWhereClause: an optional
-				// username/email LIKE pair followed by an optional role
-				// membership param, shared by the page query and its COUNT.
+				// Mirrors buildAdminUserListWhereClause: optional username/email
+				// LIKE, optional role membership, optional stalled-verification
+				// cutoff, shared by the page query and its COUNT.
 				function applyListFilters(params: Array<unknown>) {
 					let rows = Array.from(users.values()).sort((a, b) => a.id - b.id)
 					let paramIndex = 0
@@ -134,6 +138,23 @@ function createAdminTestEnv(input: {
 								(role) =>
 									role.user_id === row.id && role.role_name === roleName,
 							),
+						)
+					}
+					if (
+						normalizedQuery.includes(
+							"email_verification_delivery_status = 'accepted'",
+						)
+					) {
+						const cutoff = String(params[paramIndex])
+						paramIndex += 1
+						rows = rows.filter(
+							(row) =>
+								!row.email_verified_at &&
+								!row.deleting_at &&
+								(row.account_type ?? 'person') === 'person' &&
+								row.email_verification_delivery_status === 'accepted' &&
+								row.email_verification_delivery_at != null &&
+								row.email_verification_delivery_at <= cutoff,
 						)
 					}
 					return { rows, paramIndex }
@@ -607,6 +628,91 @@ test('admin users list applies q and role filters to the slice and total', async
 			(user: { stableUserId: string }) => user.stableUserId,
 		),
 	).toEqual([stableUserId(3)])
+})
+
+test('admin users list applies verification=stalled to the slice and total', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 1,
+				username: 'stalled-raul',
+				email: 'a.kodycodes@raulg.dev',
+				email_verified_at: null,
+				email_verification_delivery_status: 'accepted',
+				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
+				created_at: '2020-01-01 00:00:00',
+				updated_at: '2020-01-01 00:00:00',
+			},
+			{
+				id: 2,
+				username: 'fresh-accepted',
+				email: 'fresh@example.com',
+				email_verified_at: null,
+				email_verification_delivery_status: 'accepted',
+				email_verification_delivery_at: new Date().toISOString(),
+				created_at: '2026-09-01 00:00:00',
+				updated_at: '2026-09-01 00:00:00',
+			},
+			{
+				id: 3,
+				username: 'bounced',
+				email: 'bounced@example.com',
+				email_verified_at: null,
+				email_verification_delivery_status: 'bounced',
+				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
+				created_at: '2020-01-01 00:00:00',
+				updated_at: '2020-01-01 00:00:00',
+			},
+			{
+				id: 4,
+				username: 'already-verified',
+				email: 'verified@example.com',
+				email_verified_at: '2026-01-01T00:00:00.000Z',
+				email_verification_delivery_status: 'accepted',
+				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
+				created_at: '2020-01-01 00:00:00',
+				updated_at: '2026-01-01 00:00:00',
+			},
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'user' },
+			{ user_id: 2, role_name: 'user' },
+			{ user_id: 3, role_name: 'user' },
+			{ user_id: 4, role_name: 'user' },
+		],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/admin/users.json?verification=stalled',
+			{ headers: { Accept: 'application/json' } },
+		),
+		params: {},
+		url: new URL('https://example.com/admin/users.json?verification=stalled'),
+	} as never)
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload.total).toBe(1)
+	expect(
+		payload.users.map((user: { username: string }) => user.username),
+	).toEqual(['stalled-raul'])
+
+	const unknown = await handler.handler({
+		request: new Request(
+			'https://example.com/admin/users.json?verification=not-a-filter',
+			{ headers: { Accept: 'application/json' } },
+		),
+		params: {},
+		url: new URL(
+			'https://example.com/admin/users.json?verification=not-a-filter',
+		),
+	} as never)
+	expect(unknown.status).toBe(200)
+	const unknownPayload = await unknown.json()
+	expect(unknownPayload.total).toBe(4)
 })
 
 test('assign role action updates user roles and logs audit event', async () => {

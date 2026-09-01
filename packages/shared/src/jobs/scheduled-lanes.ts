@@ -20,6 +20,7 @@ export const scheduledLaneNames = [
 	'usage_aggregation',
 	'auth_denial_alert',
 	'email_delivery_alert',
+	'email_verification_stall_alert',
 	'usage_entitlement_alert',
 	'kit_subscriber_sync',
 	'dr_export',
@@ -111,6 +112,10 @@ export function shouldRunEmailDeliveryAlertCron(now: Date) {
 	return now.getUTCMinutes() === 0
 }
 
+export function shouldRunEmailVerificationStallAlertCron(now: Date) {
+	return now.getUTCMinutes() === 0
+}
+
 export function shouldRunUsageEntitlementAlertCron(now: Date) {
 	return now.getUTCMinutes() === 0
 }
@@ -189,6 +194,9 @@ export function getScheduledLaneCadence(
 	}
 	if (shouldRunEmailDeliveryAlertCron(scheduledAt)) {
 		lanes.push('email_delivery_alert')
+	}
+	if (shouldRunEmailVerificationStallAlertCron(scheduledAt)) {
+		lanes.push('email_verification_stall_alert')
 	}
 	if (shouldRunUsageEntitlementAlertCron(scheduledAt)) {
 		lanes.push('usage_entitlement_alert')

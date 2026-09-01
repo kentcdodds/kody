@@ -151,37 +151,43 @@ export function PrivacyRoute(_handle: Handle) {
 					an admin user URL, and <code>occurred_at</code>). That event omits
 					SMTP transcripts, tokens, and unrelated account content.
 					Admin-configured notification packages may also receive a
-					metadata-only <code>user.email_outbound.paused</code> event when
-					outbound sending is paused after a spam complaint or repeated bounces
-					(stable user id, username, email, reason, bounce threshold when the
-					reason is <code>bounced</code>, an admin user URL, and{' '}
-					<code>occurred_at</code>). That event omits SMTP transcripts, message
-					bodies, and unrelated account content. Admin-configured notification
-					packages may also receive metadata-only <code>auth.denial.burst</code>{' '}
-					or <code>email.delivery.burst</code> events when hourly MCP auth
-					denials or shared-domain bounce/complaint counts cross their
-					thresholds (count, threshold, window, insights URL, and{' '}
-					<code>observed_at</code>). Those events omit user identities, tokens,
-					recipients, and message content. Admin-configured notification
-					packages may also receive a metadata-only{' '}
-					<code>fleet.package_error_rate.elevated</code> event when anonymous
-					package-runtime error rates rise (window bounds, per-metric counts and
-					rates, public status URL, and insights URL). That event omits user
-					ids, package ids, error strings, logs, and unrelated account content.
-					Admin-configured notification packages may also receive a
-					metadata-only <code>fleet.entitlement.crossed</code> event when a
-					swept account first crosses 80% or 100% of a plan-limit resource, when
-					a non-admin account first exceeds the monthly runtime-duration
-					threshold, when a non-admin account first reaches a plan-aware unique
-					Dynamic Worker cost threshold, or when a non-admin account first hits
-					the execute cap on three of the last seven UTC days. Entitlement
-					events include stable user id, username, resource counts, and admin
-					dashboard URLs; runtime-duration events include stable user id,
-					username, <code>total_duration_ms</code>, <code>threshold_ms</code>,
-					and admin dashboard URLs; unique-worker-cost and repeated-execute
-					events include the counts that tripped the threshold and admin
-					dashboard URLs. These event kinds omit emails, plans, secrets, package
-					source, and unrelated account content.
+					metadata-only <code>user.email_verification.stalled</code> event when
+					signup/verify mail stays <code>accepted</code> for an hour with no
+					Cloudflare lifecycle event (stable user id, username, email,{' '}
+					<code>accepted_at</code>, stall threshold, an admin user URL, and{' '}
+					<code>occurred_at</code>). That event omits SMTP transcripts, tokens,
+					and unrelated account content. Admin-configured notification packages
+					may also receive a metadata-only{' '}
+					<code>user.email_outbound.paused</code> event when outbound sending is
+					paused after a spam complaint or repeated bounces (stable user id,
+					username, email, reason, bounce threshold when the reason is{' '}
+					<code>bounced</code>, an admin user URL, and <code>occurred_at</code>
+					). That event omits SMTP transcripts, message bodies, and unrelated
+					account content. Admin-configured notification packages may also
+					receive metadata-only <code>auth.denial.burst</code> or{' '}
+					<code>email.delivery.burst</code> events when hourly MCP auth denials
+					or shared-domain bounce/complaint counts cross their thresholds
+					(count, threshold, window, insights URL, and <code>observed_at</code>
+					). Those events omit user identities, tokens, recipients, and message
+					content. Admin-configured notification packages may also receive a
+					metadata-only <code>fleet.package_error_rate.elevated</code> event
+					when anonymous package-runtime error rates rise (window bounds,
+					per-metric counts and rates, public status URL, and insights URL).
+					That event omits user ids, package ids, error strings, logs, and
+					unrelated account content. Admin-configured notification packages may
+					also receive a metadata-only <code>fleet.entitlement.crossed</code>{' '}
+					event when a swept account first crosses 80% or 100% of a plan-limit
+					resource, when a non-admin account first exceeds the monthly
+					runtime-duration threshold, when a non-admin account first reaches a
+					plan-aware unique Dynamic Worker cost threshold, or when a non-admin
+					account first hits the execute cap on three of the last seven UTC
+					days. Entitlement events include stable user id, username, resource
+					counts, and admin dashboard URLs; runtime-duration events include
+					stable user id, username, <code>total_duration_ms</code>,{' '}
+					<code>threshold_ms</code>, and admin dashboard URLs;
+					unique-worker-cost and repeated-execute events include the counts that
+					tripped the threshold and admin dashboard URLs. These event kinds omit
+					emails, plans, secrets, package source, and unrelated account content.
 				</p>
 			</section>
 

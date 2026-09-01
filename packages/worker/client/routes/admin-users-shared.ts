@@ -3,6 +3,10 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import { type AdminUsersLoaderData } from '#universal/loader-data.ts'
 import {
+	isAdminUserVerificationFilter,
+	type AdminUserVerificationFilter,
+} from '#universal/email-verification-delivery.ts'
+import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
@@ -35,14 +39,19 @@ export function isAdminUsersPath(href: string) {
 export type AdminUserFilterState = {
 	search: string
 	role: string
+	verification: AdminUserVerificationFilter | ''
 }
 
-/** Read the `q`/`role` filter params the server applies to the list. */
+/** Read the `q`/`role`/`verification` filter params the server applies. */
 export function readFilterState(href: string): AdminUserFilterState {
 	const url = new URL(href, 'http://localhost')
+	const rawVerification = url.searchParams.get('verification')?.trim() ?? ''
 	return {
 		search: url.searchParams.get('q')?.trim() ?? '',
 		role: url.searchParams.get('role')?.trim() ?? '',
+		verification: isAdminUserVerificationFilter(rawVerification)
+			? rawVerification
+			: '',
 	}
 }
 
@@ -52,7 +61,7 @@ export function readFilterState(href: string): AdminUserFilterState {
  */
 export function getListKey(href: string) {
 	const filters = readFilterState(href)
-	return `q=${filters.search}&role=${filters.role}`
+	return `q=${filters.search}&role=${filters.role}&verification=${filters.verification}`
 }
 
 export function getDataKey(href: string) {

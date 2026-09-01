@@ -435,6 +435,16 @@ omits SMTP transcripts, tokens, and unrelated account content. There is no Queue
 for this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#useremailverificationfailed-admins).
 
+Stalled verification sends are a separate admin-only, best-effort path. The
+hourly `email_verification_stall_alert` lane fans
+`user.email_verification.stalled` only to packages whose owners hold the admin
+role at dispatch time when an unverified person account still has `accepted`
+after 60 minutes with no Cloudflare lifecycle event. The payload is stable user
+id, username, email, `accepted_at`, stall threshold, an admin user URL, and
+`occurred_at`. It omits SMTP transcripts, tokens, and unrelated account content.
+There is no Queue for this topic. See
+[Package subscriptions](../guides/package-subscriptions.md#useremailverificationstalled-admins).
+
 Outbound-mail abuse pauses are a separate admin-only, best-effort path. After
 the pause write commits, Kody fans `user.email_outbound.paused` only to packages
 whose owners hold the admin role at dispatch time. The payload is stable user

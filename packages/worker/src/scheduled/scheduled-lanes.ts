@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { checkAuthDenialBurstAndNotify } from '#app/auth-denial-alerts.ts'
 import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
+import { checkEmailVerificationStallsAndNotify } from '#app/email-verification-stall-alerts.ts'
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
 import { reconcileKitSubscribers } from '#worker/kit/subscriber-sync.ts'
@@ -136,6 +137,11 @@ export async function runScheduledLane(input: {
 			})
 		case 'email_delivery_alert':
 			return checkEmailDeliveryBurstAndNotify({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+		case 'email_verification_stall_alert':
+			return checkEmailVerificationStallsAndNotify({
 				env: input.env,
 				now: input.scheduledAt,
 			})

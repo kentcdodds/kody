@@ -222,9 +222,9 @@ surface) for run records; the run record includes `synthetic: true` (and
   `status.incident.opened`, `fleet.package_error_rate.elevated`,
   `fleet.entitlement.crossed`, `auth.denial.burst`, `email.delivery.burst`,
   `user.created`, `user.deleted`, `user.email_verification.failed`,
-  `user.email_outbound.paused`, or `email.system-message.sent`) apply to
-  **production** fan-out only; synthetic dispatch runs your handler directly for
-  smoke testing.
+  `user.email_verification.stalled`, `user.email_outbound.paused`, or
+  `email.system-message.sent`) apply to **production** fan-out only; synthetic
+  dispatch runs your handler directly for smoke testing.
 - Side effects (`packageStorage()`, outbound APIs, downstream invokes) are real.
   Use a deliberately visible irreversible-side-effect guard when smoke tests
   should stay safe.

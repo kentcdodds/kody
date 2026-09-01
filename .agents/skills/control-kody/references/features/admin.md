@@ -16,7 +16,9 @@ node tools/control-kody.ts request GET /admin 403
 ```
 
 403 on the seed account is success. Local `kody@example.com` is admin; do not
-use it unless the change is an admin surface.
+use it unless the change is an admin surface. The users list accepts
+`verification=stalled` for unverified person accounts whose latest signup/verify
+send is still `accepted` after 60 minutes.
 
 ## APIs
 

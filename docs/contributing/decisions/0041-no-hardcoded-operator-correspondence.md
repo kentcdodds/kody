@@ -6,11 +6,11 @@
 ## Context
 
 Kody already fans admin-only package subscription topics for operator facts
-(`user.created`, `fleet.entitlement.crossed`, `user.email_verification.failed`).
-Several hourly and delivery-queue pings still emailed every admin account
-through the transactional Cloudflare sender (`kody@<apex>`) in parallel. Dual
-paths meant two inboxes for the same fact, and a new ops ping tempted a new
-hardcoded mail plus a one-topic package.
+(`user.created`, `fleet.entitlement.crossed`, `user.email_verification.failed`,
+`user.email_verification.stalled`). Several hourly and delivery-queue pings
+still emailed every admin account through the transactional Cloudflare sender
+(`kody@<apex>`) in parallel. Dual paths meant two inboxes for the same fact, and
+a new ops ping tempted a new hardcoded mail plus a one-topic package.
 
 [0036](./0036-platform-packages-fork-only.md) already refuses official `@kody/*`
 packages that person accounts would run. Admin notify is Kent's saved package,

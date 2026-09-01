@@ -387,8 +387,8 @@ or did not dispatch, or checking which packages subscribe to
 `mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`,
 `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
 `auth.denial.burst`, `email.delivery.burst`, `user.created`, `user.deleted`,
-`user.email_verification.failed`, `user.email_outbound.paused`, and
-`email.system-message.sent`.
+`user.email_verification.failed`, `user.email_verification.stalled`,
+`user.email_outbound.paused`, and `email.system-message.sent`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
