@@ -8,7 +8,8 @@
 export const CAPABILITY_SEARCH_RRF_K = 60
 
 export function tokenizeSearchText(value: string): Set<string> {
-	return new Set(value.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+	const splitCamel = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+	return new Set(splitCamel.toLowerCase().match(/[a-z0-9]+/g) ?? [])
 }
 
 export function lexicalScore(query: string, doc: string): number {

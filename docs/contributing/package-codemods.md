@@ -319,7 +319,8 @@ This one-shot cleanup recases leftover snake_case builtin `kody` members to
 camelCase JavaScript identifiers:
 
 - Rewrites `kody.package_get(...)` and `kody["package_get"](...)` to
-  `kody.packageGet(...)` in JavaScript and TypeScript modules.
+  `kody.packageGet(...)` in JavaScript and TypeScript modules, including
+  leftover ambient `kody` calls that never imported `kody:runtime`.
 - Rewrites `package_get:capability` entity refs in those modules and in Markdown
   / MDX.
 - Leaves `kody.mcp["server"].tool_name(...)` unchanged. MCP-synthesized tools
@@ -327,7 +328,7 @@ camelCase JavaScript identifiers:
 - Emits `needsManual` for computed `kody[id]` where the property is data, and
   for files that mention a snake_case member but cannot be parsed.
 
-Builtin capability and domain ids are now camelCase identifiers (`emailSend`,
+Builtin capability and domain ids are camelCase identifiers (`emailSend`,
 `mcpServers`). Input field names, usage-metric event types, Codex TOML
 `[mcp_servers.kody]`, and SQL `cf_agents_mcp_servers` stay snake_case.
 

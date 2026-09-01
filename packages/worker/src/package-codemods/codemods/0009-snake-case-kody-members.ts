@@ -95,8 +95,24 @@ function walkAst(
 	}
 }
 
+function sourceHasGlobalPattern(pattern: RegExp, source: string) {
+	pattern.lastIndex = 0
+	return pattern.test(source)
+}
+
+function sourceHasSnakeCaseKodyMember(source: string) {
+	return /kody\.[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+/.test(source)
+}
+
+function sourceHasEntityRef(source: string) {
+	return sourceHasGlobalPattern(entityRefPattern, source)
+}
+
 function collectKodyAliases(body: Array<AstNode>) {
-	const aliases = new Set<string>()
+	// Leftover ambient `kody.foo_bar` calls (the style the deleted typecheck
+	// stubs allowed) still need recasing even when the file never imported
+	// `kody` from `kody:runtime`.
+	const aliases = new Set<string>(['kody'])
 	for (const node of body) {
 		if (node.type !== 'ImportDeclaration') continue
 		if (getNodeName(node.source) !== 'kody:runtime') continue
@@ -150,7 +166,7 @@ function collectModuleRewriteSites(
 	if (!parsed) {
 		return {
 			sites: [],
-			needsManual: /kody\.[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+/.test(source),
+			needsManual: sourceHasSnakeCaseKodyMember(source),
 			hasSnakeMember: false,
 		}
 	}
@@ -160,13 +176,13 @@ function collectModuleRewriteSites(
 	walkAst(parsed, null, (node) => {
 		if (node.type === 'StringLiteral' || node.type === 'Literal') {
 			const value = getNodeName(node)
-			entityRefPattern.lastIndex = 0
 			if (
 				value &&
 				typeof node.start === 'number' &&
 				typeof node.end === 'number' &&
-				entityRefPattern.test(value)
+				sourceHasEntityRef(value)
 			) {
+				entityRefPattern.lastIndex = 0
 				const recased = value.replace(
 					entityRefPattern,
 					(_match, name: string) =>
@@ -256,13 +272,10 @@ function rewriteMarkdown(source: string) {
 }
 
 function hasMarkdownSnakeCase(source: string) {
-	markdownMemberPattern.lastIndex = 0
-	markdownComputedPattern.lastIndex = 0
-	entityRefPattern.lastIndex = 0
 	return (
-		markdownMemberPattern.test(source) ||
-		markdownComputedPattern.test(source) ||
-		entityRefPattern.test(source)
+		sourceHasGlobalPattern(markdownMemberPattern, source) ||
+		sourceHasGlobalPattern(markdownComputedPattern, source) ||
+		sourceHasEntityRef(source)
 	)
 }
 
@@ -279,22 +292,24 @@ function detectSnakeCaseKodyMembers(
 		if (!scannableModuleFilePattern.test(path)) continue
 		const parsed = parseProgram(source)
 		if (!parsed) {
-			if (
-				/kody\.[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+/.test(source) ||
-				entityRefPattern.test(source)
-			) {
+			if (sourceHasSnakeCaseKodyMember(source) || sourceHasEntityRef(source)) {
 				findings.push({ path, message: parseFailureMessage })
 			}
 			continue
 		}
 		const aliases = collectKodyAliases(getProgramBody(parsed))
-		if (aliases.size === 0 && !entityRefPattern.test(source)) continue
+		if (
+			aliases.size === 0 &&
+			!sourceHasEntityRef(source) &&
+			!sourceHasSnakeCaseKodyMember(source)
+		) {
+			continue
+		}
 		const { needsManual, hasSnakeMember } = collectModuleRewriteSites(
 			source,
 			aliases,
 		)
-		entityRefPattern.lastIndex = 0
-		const hasEntityRef = entityRefPattern.test(source)
+		const hasEntityRef = sourceHasEntityRef(source)
 		if (hasSnakeMember || hasEntityRef) {
 			findings.push({ path, message: rewriteMessage })
 		} else if (needsManual) {
@@ -325,10 +340,7 @@ function transformSnakeCaseKodyMembers(
 		if (!scannableModuleFilePattern.test(path)) continue
 		const parsed = parseProgram(source)
 		if (!parsed) {
-			if (
-				/kody\.[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+/.test(source) ||
-				entityRefPattern.test(source)
-			) {
+			if (sourceHasSnakeCaseKodyMember(source) || sourceHasEntityRef(source)) {
 				needsManual.push({ path, message: parseFailureMessage })
 			}
 			continue
