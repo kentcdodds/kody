@@ -6,11 +6,6 @@ import { getPackageCapability } from './get-package.ts'
 import { listPackagesCapability } from './list-packages.ts'
 import { listPackageSubscriptionsCapability } from './list-package-subscriptions.ts'
 import { packageAppFetchCapability } from './package-app-fetch.ts'
-import { packageCodemodApplyCapability } from './package-codemod-apply.ts'
-import { packageCodemodDryRunCapability } from './package-codemod-dry-run.ts'
-import { packageCodemodListCapability } from './package-codemod-list.ts'
-import { packageCodemodRevertCapability } from './package-codemod-revert.ts'
-import { packageCodemodScanCapability } from './package-codemod-scan.ts'
 import { packageInvocationTokenGetCapability } from './package-invocation-token-get.ts'
 import { packageInvocationTokenListCapability } from './package-invocation-token-list.ts'
 import { packageSubscriptionDispatchCapability } from './package-subscription-dispatch.ts'
@@ -31,9 +26,6 @@ export const packagesDomain = defineDomain({
 		'app',
 		'subscriptions',
 		'event handlers',
-		'codemod',
-		'package codemod',
-		'migration',
 		'test',
 		'smoke',
 		'simulate',
@@ -53,10 +45,5 @@ export const packagesDomain = defineDomain({
 		packageInvocationTokenGetCapability,
 		publishExternalPushCapability,
 		deletePackageCapability,
-		packageCodemodListCapability,
-		packageCodemodScanCapability,
-		packageCodemodDryRunCapability,
-		packageCodemodApplyCapability,
-		packageCodemodRevertCapability,
 	],
 })
