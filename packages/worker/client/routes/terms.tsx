@@ -58,12 +58,20 @@ export function TermsRoute(_handle: Handle) {
 						Attack, scrape, or disrupt third-party systems without permission
 					</li>
 					<li>Probe or abuse other users&apos; accounts or data</li>
-					<li>Circumvent plan limits, suspensions, or security controls</li>
+					<li>
+						Circumvent plan limits, suspensions, or security controls —
+						including by creating extra accounts, cycling identity, or farming
+						Free compute
+					</li>
 					<li>Host or distribute malware, or violate applicable law</li>
 				</ul>
 				<p mix={css(descriptionCss)}>
 					Outbound email, compute, and storage are shared platform resources.
-					Heavy or abusive use may be rate-limited, paused, or suspended.
+					Heavy or abusive use may be rate-limited, paused, or suspended. Using
+					the full published cap on a busy day is ordinary use, not a violation.
+					Free is not a guaranteed compute allotment: we may revoke or restrict
+					Free access when we reasonably believe the plan is being gamed or is
+					harming the service for other users.
 				</p>
 			</section>
 
@@ -106,7 +114,8 @@ export function TermsRoute(_handle: Handle) {
 					<a href="/pricing" mix={css(mutedLinkCss)}>
 						Pricing
 					</a>{' '}
-					page.
+					page. Published limits can change; we will give reasonable notice of
+					material reductions when practical.
 				</p>
 				<p mix={css(descriptionCss)}>
 					There are no automatic refunds. If something went wrong, email{' '}
@@ -133,9 +142,11 @@ export function TermsRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>Suspension and termination</h2>
 				<p mix={css(descriptionCss)}>
 					Operators may suspend or terminate accounts that violate these terms,
-					threaten platform reputation (including email sending), or put other
-					users at risk. When practical, we will explain the reason. You may
-					delete your account at any time.
+					evade limits or a prior suspension, threaten platform reputation
+					(including email sending), or put other users at risk. We may act
+					without prior notice when we reasonably believe terms are being
+					evaded. Free access is revocable. When practical, we will explain the
+					reason. You may delete your account at any time.
 				</p>
 			</section>
 

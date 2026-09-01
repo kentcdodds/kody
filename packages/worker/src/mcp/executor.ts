@@ -24,6 +24,8 @@ import {
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
@@ -147,8 +149,14 @@ type DynamicWorkerExecutorInput = {
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	appCommitSha?: string | null
-	usageEnv: UsageEnv
+	usageEnv: UsageEnv & UserMeterEnv
 	rawFetchHostSink?: RawFetchHostSink
+	/**
+	 * When false, skip the `execute` usage event. Job, package-export, and
+	 * other nested surfaces record their own metrics; only MCP execute-tool
+	 * runs (and ad-hoc executor callers) should emit `execute`.
+	 */
+	recordExecuteUsage?: boolean
 }
 
 type DynamicWorkerExecutorOptions = {
@@ -582,6 +590,12 @@ export function createExecuteExecutor(input: {
 	 * so saved-package outbound requests are not counted.
 	 */
 	rawFetchHostSink?: RawFetchHostSink
+	/**
+	 * When false, skip the `execute` usage event. Nested surfaces (jobs,
+	 * package exports, workflows) already record their own metrics.
+	 * Defaults to true for ad-hoc executor callers.
+	 */
+	recordExecuteUsage?: boolean
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.KodyFetchGateway) {
@@ -609,6 +623,7 @@ export function createExecuteExecutor(input: {
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
+		recordExecuteUsage: input.recordExecuteUsage,
 	})
 }
 
@@ -652,6 +667,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				gatewayProps: input.gatewayProps,
 				timeoutMs: input.timeout,
 				workerOptions,
+			})
+			await recordUniqueDynamicWorkerDay({
+				env: input.usageEnv,
+				userId: input.gatewayProps.userId,
+				workerId,
 			})
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
@@ -747,7 +767,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				throw error
 			} finally {
 				executionState.active = false
-				if (input.gatewayProps.userId) {
+				if (input.recordExecuteUsage !== false && input.gatewayProps.userId) {
 					await recordUsage(input.usageEnv, {
 						userId: input.gatewayProps.userId,
 						eventType: 'execute',

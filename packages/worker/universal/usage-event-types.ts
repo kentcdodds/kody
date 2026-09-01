@@ -17,6 +17,7 @@ export const usageEventTypes = [
 	'outbound_fetch',
 	'email_send',
 	'email_received',
+	'dynamic_worker_day',
 ] as const
 
 export type UsageEventType = (typeof usageEventTypes)[number]

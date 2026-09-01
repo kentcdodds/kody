@@ -29,6 +29,7 @@ export function createInMemoryUserMeterEnv() {
 	const metersByUser = new Map<string, Map<string, MeterRow>>()
 	const storageByUser = new Map<string, StorageRow>()
 	const deletionByUser = new Map<string, DeletionState>()
+	const dynamicWorkerDaysByUser = new Map<string, Set<string>>()
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -50,6 +51,11 @@ export function createInMemoryUserMeterEnv() {
 		if (!existingRows) metersByUser.set(userId, rows)
 
 		const deletion = deletionStateFor(userId)
+		const existingDynamicWorkerDays = dynamicWorkerDaysByUser.get(userId)
+		const dynamicWorkerDays = existingDynamicWorkerDays ?? new Set<string>()
+		if (!existingDynamicWorkerDays) {
+			dynamicWorkerDaysByUser.set(userId, dynamicWorkerDays)
+		}
 
 		function readRow(resource: string, day: string) {
 			return rows.get(counterKey(resource, day)) ?? null
@@ -194,6 +200,16 @@ export function createInMemoryUserMeterEnv() {
 				const existing = readRow(input.resource, input.day)
 				if (!existing) return { outcome: 'needs_bootstrap' as const }
 				return ready(existing)
+			},
+			async claimDynamicWorkerDay(input: {
+				workerId: string
+				day: string
+				createdAt: string
+			}) {
+				const key = `${input.day}\0${input.workerId}`
+				if (dynamicWorkerDays.has(key)) return { created: false }
+				dynamicWorkerDays.add(key)
+				return { created: true }
 			},
 			async refund(input: {
 				resource: string

@@ -403,11 +403,13 @@ repeat pages.
 `usage_entitlement_alert` lane sweeps the top ~15 active accounts and fans
 `fleet.entitlement.crossed` only to packages whose owners hold the admin role at
 dispatch time. One event fires per 80% or 100% crossing of a plan-limit
-resource, or per first over-threshold runtime-duration month. The event contains
-the stable user id, username, resource label and counts (or runtime duration),
-and admin insights/users URLs. It omits emails, plans, secrets, package source,
-and unrelated account content. Delivery is best-effort (no Queue). Staying over
-the same threshold does not emit again.
+resource, per first over-threshold runtime-duration month, per first
+over-threshold unique Dynamic Worker cost month, or per first three-of-seven
+execute-cap train. The event contains the stable user id, username, resource
+label and counts (or runtime duration, unique-worker days, or days at the
+execute cap), and admin insights/users URLs. It omits emails, plans, secrets,
+package source, and unrelated account content. Delivery is best-effort (no
+Queue). Staying over the same threshold does not emit again.
 
 **Admins can subscribe to person-account create and delete.** Password signup,
 social-login signup, and admin-created person accounts fan `user.created`.

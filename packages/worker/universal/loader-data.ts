@@ -455,6 +455,7 @@ export type AdminUsageMetric =
 	| 'outbound_fetch'
 	| 'email_send'
 	| 'email_received'
+	| 'dynamic_worker_day'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'
@@ -511,6 +512,7 @@ export type AdminUserUsageLoaderData = {
 	monthUsage: Array<AdminUsageMonthRollup>
 	entitlementConsumption: Array<AdminUsageEntitlementConsumption>
 	warnings: Array<AdminUsageEntitlementConsumption>
+	dynamicWorkerCost: AdminDynamicWorkerCost
 }
 
 export type AdminInsightsTotals = {
@@ -649,6 +651,24 @@ export type AdminInsightsEventCountConsumer = {
 	eventCount: number
 }
 
+export type AdminDynamicWorkerCost = {
+	uniqueWorkerDays: number
+	estimatedGrossUsd: number
+	usdPerUniqueDay: number
+	includedPerAccountMonth: number
+}
+
+export type AdminInsightsDynamicWorkerCostConsumer = {
+	stableUserId: string
+	username: string
+	uniqueWorkerDays: number
+	estimatedGrossUsd: number
+}
+
+export type AdminInsightsDynamicWorkerCost = AdminDynamicWorkerCost & {
+	topConsumers: Array<AdminInsightsDynamicWorkerCostConsumer>
+}
+
 export type AdminInsightsMetricDurationConsumers = {
 	metric: AdminUsageMetric
 	consumers: Array<AdminInsightsDurationConsumer>
@@ -727,6 +747,7 @@ export type AdminInsightsLoaderData = {
 	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
 	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
 	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
+	dynamicWorkerCost: AdminInsightsDynamicWorkerCost
 	packageErrorRate: AdminInsightsPackageErrorRate
 }
 

@@ -459,6 +459,11 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 			},
 		)
 		expect(successResult.result).toBe('ok')
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				recordExecuteUsage: false,
+			}),
+		)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(
 			env,

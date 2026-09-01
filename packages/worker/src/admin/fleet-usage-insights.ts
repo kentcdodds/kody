@@ -1,5 +1,10 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
+	estimateDynamicWorkerUsd,
+	fleetDynamicWorkerCostAlertUsd,
+	toAdminDynamicWorkerCost,
+} from '#universal/dynamic-worker-cost.ts'
+import {
 	parseStoredPlanName,
 	resolveEffectivePlan,
 	type PlanName,
@@ -8,6 +13,7 @@ import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
 	type AdminInsightsDurationConsumer,
+	type AdminInsightsDynamicWorkerCost,
 	type AdminInsightsEntitlementPressureUser,
 	type AdminInsightsEventCountConsumer,
 	type AdminInsightsMetricDurationConsumers,
@@ -80,10 +86,19 @@ export type FleetEntitlementPressureIssue =
 			username: string
 			totalDurationMs: number
 	  }
+	| {
+			kind: 'dynamic_worker_cost'
+			stableUserId: string
+			username: string
+			uniqueWorkerDays: number
+			estimatedGrossUsd: number
+			thresholdUsd: number
+	  }
 
 export type FleetEntitlementCrossingSnapshot = {
 	stableUserId: string
 	username: string
+	plan: PlanName
 	isAdmin: boolean
 	entitlements: Array<{
 		resource: AdminUsageEntitlementResource
@@ -94,6 +109,7 @@ export type FleetEntitlementCrossingSnapshot = {
 		overEightyPercent: boolean
 	}>
 	runtimeDurationMs: number
+	uniqueWorkerDays: number
 }
 
 export async function loadFleetUsageInsights(input: {
@@ -105,6 +121,7 @@ export async function loadFleetUsageInsights(input: {
 	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
 	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
 	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
+	dynamicWorkerCost: AdminInsightsDynamicWorkerCost
 }> {
 	const currentMonth = utcMonthKey(input.now)
 	const [
@@ -112,17 +129,20 @@ export async function loadFleetUsageInsights(input: {
 		topEventCountConsumers,
 		topDurationConsumersByMetric,
 		entitlementPressure,
+		dynamicWorkerCost,
 	] = await Promise.all([
 		queryTopRuntimeDurationConsumers(input.db, currentMonth),
 		queryTopEventCountConsumers(input.db, currentMonth),
 		queryTopDurationConsumersByMetric(input.db, currentMonth),
 		buildEntitlementPressurePanel(input),
+		queryDynamicWorkerCost(input.db, currentMonth),
 	])
 	return {
 		topRuntimeDurationConsumers,
 		topEventCountConsumers,
 		topDurationConsumersByMetric,
 		entitlementPressure,
+		dynamicWorkerCost,
 	}
 }
 
@@ -138,15 +158,18 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 	)
 	if (activeUsers.length === 0) return []
 
-	const [durationByUser, adminUserIds] = await Promise.all([
-		queryCombinedRuntimeDurationByUserIds(
-			input.db,
-			currentMonth,
-			activeUsers.map((user) => user.stable_user_id),
-			adminFleetRuntimeDurationAlertMetrics,
-		),
-		listAdminStableUserIds(input.db),
-	])
+	const userIds = activeUsers.map((user) => user.stable_user_id)
+	const [durationByUser, uniqueWorkerDaysByUser, adminUserIds] =
+		await Promise.all([
+			queryCombinedRuntimeDurationByUserIds(
+				input.db,
+				currentMonth,
+				userIds,
+				adminFleetRuntimeDurationAlertMetrics,
+			),
+			queryUniqueWorkerDaysByUserIds(input.db, currentMonth, userIds),
+			listAdminStableUserIds(input.db),
+		])
 	const snapshots: Array<FleetEntitlementCrossingSnapshot> = []
 
 	await mapWithConcurrency(
@@ -166,6 +189,7 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 			snapshots.push({
 				stableUserId: user.stable_user_id,
 				username: user.username,
+				plan,
 				isAdmin: adminUserIds.has(user.stable_user_id),
 				entitlements: consumption.map((item) => ({
 					resource: item.resource,
@@ -176,6 +200,7 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 					overEightyPercent: item.overEightyPercent,
 				})),
 				runtimeDurationMs: durationByUser.get(user.stable_user_id) ?? 0,
+				uniqueWorkerDays: uniqueWorkerDaysByUser.get(user.stable_user_id) ?? 0,
 			})
 		},
 	)
@@ -218,6 +243,21 @@ export async function detectFleetUsagePressure(input: {
 				totalDurationMs: snapshot.runtimeDurationMs,
 			})
 		}
+		const thresholdUsd = fleetDynamicWorkerCostAlertUsd(snapshot.plan)
+		if (thresholdUsd == null) continue
+		const estimatedGrossUsd = estimateDynamicWorkerUsd(
+			snapshot.uniqueWorkerDays,
+		)
+		if (estimatedGrossUsd >= thresholdUsd) {
+			issues.push({
+				kind: 'dynamic_worker_cost',
+				stableUserId: snapshot.stableUserId,
+				username: snapshot.username,
+				uniqueWorkerDays: snapshot.uniqueWorkerDays,
+				estimatedGrossUsd,
+				thresholdUsd,
+			})
+		}
 	}
 	return issues
 }
@@ -231,19 +271,15 @@ async function queryTopRuntimeDurationConsumers(
 		.join(', ')
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, ranked.total_duration_ms
-			 FROM (
-				SELECT user_id, SUM(total_duration_ms) AS total_duration_ms
-				FROM usage_rollups
-				WHERE month = ?
-					AND metric IN (${metricPlaceholders})
-				GROUP BY user_id
-				ORDER BY total_duration_ms DESC
-				LIMIT ?
-			 ) AS ranked
-			 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-			 WHERE u.deleting_at IS NULL
-			 ORDER BY ranked.total_duration_ms DESC`,
+			`SELECT u.stable_user_id, u.username, SUM(r.total_duration_ms) AS total_duration_ms
+			 FROM usage_rollups r
+			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 WHERE r.month = ?
+				AND r.metric IN (${metricPlaceholders})
+				AND u.deleting_at IS NULL
+			 GROUP BY u.stable_user_id, u.username
+			 ORDER BY total_duration_ms DESC
+			 LIMIT ?`,
 		)
 		.bind(
 			currentMonth,
@@ -268,18 +304,14 @@ async function queryTopEventCountConsumers(
 ): Promise<Array<AdminInsightsEventCountConsumer>> {
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, ranked.event_count
-			 FROM (
-				SELECT user_id, SUM(event_count) AS event_count
-				FROM usage_rollups
-				WHERE month = ?
-				GROUP BY user_id
-				ORDER BY event_count DESC
-				LIMIT ?
-			 ) AS ranked
-			 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-			 WHERE u.deleting_at IS NULL
-			 ORDER BY ranked.event_count DESC`,
+			`SELECT u.stable_user_id, u.username, SUM(r.event_count) AS event_count
+			 FROM usage_rollups r
+			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 WHERE r.month = ?
+				AND u.deleting_at IS NULL
+			 GROUP BY u.stable_user_id, u.username
+			 ORDER BY event_count DESC
+			 LIMIT ?`,
 		)
 		.bind(currentMonth, adminFleetTopConsumersLimit)
 		.all<{ stable_user_id: string; username: string; event_count: number }>()
@@ -288,6 +320,53 @@ async function queryTopEventCountConsumers(
 		username: row.username,
 		eventCount: Number(row.event_count),
 	}))
+}
+
+async function queryDynamicWorkerCost(
+	db: D1Database,
+	currentMonth: string,
+): Promise<AdminInsightsDynamicWorkerCost> {
+	const [totalRow, consumerRows] = await Promise.all([
+		db
+			.prepare(
+				`SELECT COALESCE(SUM(event_count), 0) AS unique_worker_days
+				 FROM usage_rollups
+				 WHERE month = ?
+					AND metric = 'dynamic_worker_day'`,
+			)
+			.bind(currentMonth)
+			.first<{ unique_worker_days: number }>(),
+		db
+			.prepare(
+				`SELECT u.stable_user_id, u.username, r.event_count
+				 FROM usage_rollups r
+				 INNER JOIN users u ON u.stable_user_id = r.user_id
+				 WHERE r.month = ?
+					AND r.metric = 'dynamic_worker_day'
+					AND u.deleting_at IS NULL
+				 ORDER BY r.event_count DESC
+				 LIMIT ?`,
+			)
+			.bind(currentMonth, adminFleetTopConsumersLimit)
+			.all<{
+				stable_user_id: string
+				username: string
+				event_count: number
+			}>(),
+	])
+	const uniqueWorkerDays = Number(totalRow?.unique_worker_days ?? 0)
+	return {
+		...toAdminDynamicWorkerCost(uniqueWorkerDays),
+		topConsumers: (consumerRows.results ?? []).map((row) => {
+			const days = Number(row.event_count)
+			return {
+				stableUserId: row.stable_user_id,
+				username: row.username,
+				uniqueWorkerDays: days,
+				estimatedGrossUsd: estimateDynamicWorkerUsd(days),
+			}
+		}),
+	}
 }
 
 async function queryTopDurationConsumersByMetric(
@@ -299,21 +378,21 @@ async function queryTopDurationConsumersByMetric(
 		.join(', ')
 	const rows = await db
 		.prepare(
-			`SELECT ranked.user_id, ranked.metric, ranked.total_duration_ms, u.username
+			`SELECT ranked.user_id, ranked.metric, ranked.total_duration_ms, ranked.username
 			 FROM (
-				SELECT user_id, metric, total_duration_ms,
+				SELECT r.user_id, r.metric, r.total_duration_ms, u.username,
 					ROW_NUMBER() OVER (
-						PARTITION BY metric
-						ORDER BY total_duration_ms DESC
+						PARTITION BY r.metric
+						ORDER BY r.total_duration_ms DESC
 					) AS rank_in_metric
-				FROM usage_rollups
-				WHERE month = ?
-					AND metric IN (${metricPlaceholders})
-					AND total_duration_ms > 0
+				FROM usage_rollups r
+				INNER JOIN users u ON u.stable_user_id = r.user_id
+				WHERE r.month = ?
+					AND r.metric IN (${metricPlaceholders})
+					AND r.total_duration_ms > 0
+					AND u.deleting_at IS NULL
 			 ) AS ranked
-			 INNER JOIN users u ON u.stable_user_id = ranked.user_id
 			 WHERE ranked.rank_in_metric <= ?
-				AND u.deleting_at IS NULL
 			 ORDER BY ranked.metric ASC, ranked.total_duration_ms DESC`,
 		)
 		.bind(
@@ -404,18 +483,14 @@ async function listActiveUsersForEntitlementSweep(
 ): Promise<Array<ActiveUserRow>> {
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, ranked.event_count
-			 FROM (
-				SELECT user_id, SUM(event_count) AS event_count
-				FROM usage_rollups
-				WHERE month = ?
-				GROUP BY user_id
-				ORDER BY event_count DESC
-				LIMIT ?
-			 ) AS ranked
-			 INNER JOIN users u ON u.stable_user_id = ranked.user_id
-			 WHERE u.deleting_at IS NULL
-			 ORDER BY ranked.event_count DESC`,
+			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, SUM(r.event_count) AS event_count
+			 FROM usage_rollups r
+			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 WHERE r.month = ?
+				AND u.deleting_at IS NULL
+			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan
+			 ORDER BY event_count DESC
+			 LIMIT ?`,
 		)
 		.bind(currentMonth, adminFleetEntitlementSweepUserLimit)
 		.all<ActiveUserRow>()
@@ -434,6 +509,30 @@ async function listAdminStableUserIds(db: D1Database) {
 		)
 		.all<{ stable_user_id: string }>()
 	return new Set((rows.results ?? []).map((row) => row.stable_user_id))
+}
+
+async function queryUniqueWorkerDaysByUserIds(
+	db: D1Database,
+	currentMonth: string,
+	userIds: ReadonlyArray<string>,
+): Promise<Map<string, number>> {
+	if (userIds.length === 0) return new Map()
+	const userPlaceholders = userIds.map(() => '?').join(', ')
+	const rows = await db
+		.prepare(
+			`SELECT user_id, event_count
+			 FROM usage_rollups
+			 WHERE month = ?
+				AND metric = 'dynamic_worker_day'
+				AND user_id IN (${userPlaceholders})`,
+		)
+		.bind(currentMonth, ...userIds)
+		.all<{ user_id: string; event_count: number }>()
+	const byUser = new Map<string, number>()
+	for (const row of rows.results ?? []) {
+		byUser.set(row.user_id, Number(row.event_count))
+	}
+	return byUser
 }
 
 async function queryCombinedRuntimeDurationByUserIds(

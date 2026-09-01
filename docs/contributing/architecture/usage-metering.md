@@ -16,16 +16,16 @@ required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
 table is keyed by `user_id`. Admin and account reads stay scoped to one user.
 
 The homepage code-runs ticker is a documented exception: an anonymous delayed
-lifetime total of fleet `execute` events (no user ids) is replayed across the
-current UTC day. Daily counts live in platform-owned `fleet_execute_days`. The
-official `{ start, end, updateAt }` triple — cumulative through the day before
-yesterday, cumulative through yesterday, and the next UTC midnight — is cached
-at `public-code-runs:v2` on `BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache
-from D1 when the key is missing or `updateAt` has passed; it does not latch a
-high-water mark. A D1 read failure is not an empty series: GET serves the last
-cached triple when one exists, and hourly refresh does not delete the key. The
-public payload never includes per-user rows. See
-[Authorization](./authorization.md).
+lifetime total of fleet MCP execute-tool `execute` events (no user ids) is
+replayed across the current UTC day. Daily counts live in platform-owned
+`fleet_execute_days`. The official `{ start, end, updateAt }` triple —
+cumulative through the day before yesterday, cumulative through yesterday, and
+the next UTC midnight — is cached at `public-code-runs:v2` on
+`BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache from D1 when the key is
+missing or `updateAt` has passed; it does not latch a high-water mark. A D1 read
+failure is not an empty series: GET serves the last cached triple when one
+exists, and hourly refresh does not delete the key. The public payload never
+includes per-user rows. See [Authorization](./authorization.md).
 
 ## The event schema
 
@@ -58,7 +58,7 @@ events for the admin on/off cohort readout.
 
 | `eventType`           | Metered unit                                                                      | Recorded at                                                                                                                                                                 | `entityId`                     |
 | --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `execute`             | one dynamic-worker sandbox evaluation                                             | `packages/worker/src/mcp/executor.ts` (`execute`)                                                                                                                           | none                           |
+| `execute`             | one MCP execute-tool sandbox evaluation                                           | `packages/worker/src/mcp/executor.ts` (`execute`), only when the run surface is execute                                                                                     | none                           |
 | `package_export`      | one saved-package bundled-code run                                                | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)                                                                                        | package id                     |
 | `package_static_call` | one call of a statically imported package export (function-valued, incl. default) | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`) | callee package id              |
 | `job_run`             | one job execution                                                                 | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                    | job id                         |
@@ -67,6 +67,7 @@ events for the admin on/off cohort readout.
 | `outbound_fetch`      | one outbound fetch through the gateway                                            | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                       | request host                   |
 | `email_send`          | one outbound email send attempt                                                   | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                               | email message id               |
 | `email_received`      | one inbound receive attempt for a routed inbox                                    | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                       | email message id (when stored) |
+| `dynamic_worker_day`  | first use of one Dynamic Worker id on a UTC day                                   | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId`, every surface; uniqueness via `UserMeter.claimDynamicWorkerDay`                                  | worker id                      |
 
 `email_received` covers receive attempts once an inbound message is routed to a
 known, enabled inbox: stored messages record `success`; unverified-account
@@ -137,16 +138,26 @@ package code is reused, so calls through them are metered per call:
 
 ### Nesting: metrics are independent, do not sum across types
 
-Execution surfaces nest. A job run funnels through the bundled-module runner and
-the sandbox executor, so a single package job produces one `job_run`, one
-`package_export`, and one `execute` event, each measuring its own layer.
-Likewise, a bundled run that calls statically imported package exports produces
-one `package_static_call` event per call **inside** the run's own
-`execute`/`package_export` span. This is intentional: each metric answers its
-own question (`execute` is total sandbox pressure; `job_run` is job activity;
-`package_static_call` is per-callee reuse). Never add durations across different
+Execution surfaces nest. A package job funnels through the bundled-module runner
+and the sandbox executor, so it produces one `job_run` and one `package_export`.
+It does **not** also emit `execute` — that metric is MCP `execute` tool work
+only, matching `execute_calls_per_day` and `first_execute_at`. A bundled
+execute-tool run that calls statically imported package exports still produces
+one `package_static_call` per call **inside** that run's `execute` span. Each
+metric answers its own question (`execute` is ad-hoc execute-tool volume;
+`job_run` is job activity; `package_export` is saved-package entrypoints;
+`package_static_call` is per-callee reuse). `dynamic_worker_day` is the
+Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
+every sandbox surface that creates a worker. It is not an entitlement and does
+not replace `execute` / `job_run`. Never add durations across different
 `eventType` values — that double counts nested layers. Within one `eventType`,
 each chokepoint records exactly one event per metered unit, so sums are safe.
+
+Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
+Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique
+worker-days per month are account-wide, so per-user dollars are not a net bill
+share. Worker ids stay inside UserMeter and Analytics Engine `entityId`; account
+export does not list them.
 
 ## Sinks
 
@@ -374,14 +385,21 @@ Guarantees and rules:
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages
   once when a swept account first crosses 80% or 100% of a plan-limit resource,
-  or when a non-admin account's combined execute, job_run, and workflow_run
+  when a non-admin account's combined execute, job_run, and workflow_run
   duration for the month first exceeds `fleetRuntimeDurationAlertThresholdMs`
-  (24h). Staying over the same threshold does not emit again. Admin-role
-  dogfooding stays on `/admin/insights` rankings and can still appear as an
-  entitlement crossing, but does not page the runtime-duration signal. KV prefix
-  `fleet-entitlement-crossing:v1` claims each crossing. Admin links in the
-  payload are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL`
-  cannot produce `https://host//admin/…`. See
+  (24h), when a non-admin account's unique Dynamic Worker cost for the month
+  first reaches the plan-aware threshold (Free
+  $2 / 1,000 unique days, Standard
+  $12, Pro $29), or when a non-admin account
+  hits 100% of `execute_calls_per_day` on three of the last seven UTC days.
+  Staying over the same threshold does not emit again. Admin-role dogfooding
+  stays on `/admin/insights` rankings and can still appear as an entitlement
+  crossing, but does not page the runtime-duration, unique-worker-cost, or
+  repeated- execute signals. KV prefix `fleet-entitlement-crossing:v1` claims
+  each crossing. Execute-cap trains also write `fleet-entitlement-hit:v1` day
+  keys so a later drop below 100% the same day does not erase the count. Admin
+  links in the payload are built with `joinAppUrl` so a trailing slash on
+  `APP_BASE_URL` cannot produce `https://host//admin/…`. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 - **Fleet package error rate** (same `usage_aggregation` hour): a second
   Analytics Engine SQL, not grouped by user, totals `package_export`,

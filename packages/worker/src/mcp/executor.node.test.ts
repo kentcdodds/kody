@@ -31,6 +31,7 @@ import {
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 
@@ -1169,6 +1170,64 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	expect(validationResult.error).toContain('reserved')
 	expect(dataPoints).toHaveLength(3)
 	expect(rollupWrites).toHaveLength(0)
+
+	// Nested surfaces (jobs, package exports) opt out so they do not inflate
+	// the execute-tool metric or stamp first_execute_at.
+	const skippedLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(skippedLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-1'),
+		recordExecuteUsage: false,
+	}).execute('async () => "ok"', providers)
+	expect(dataPoints).toHaveLength(3)
+	expect(activationStampWrites).toHaveLength(1)
+})
+
+test('createExecuteExecutor records one unique Dynamic Worker day per worker id', async () => {
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const meter = createInMemoryUserMeterEnv()
+	const usageBindings = {
+		...meter.env,
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) dataPoints.push(point)
+			},
+		},
+	}
+	const exports = createExecutorTestExports()
+	const providers = [{ name: 'kody', fns: {} }]
+	const firstLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(firstLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-dw'),
+		recordExecuteUsage: false,
+	}).execute('async () => "ok"', providers)
+
+	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
+		'dynamic_worker_day',
+	])
+	expect(dataPoints[0]?.indexes).toEqual(['usage-user-dw'])
+
+	const secondLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(secondLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-dw'),
+		recordExecuteUsage: false,
+	}).execute('async () => "ok"', providers)
+
+	expect(dataPoints).toHaveLength(1)
 })
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {

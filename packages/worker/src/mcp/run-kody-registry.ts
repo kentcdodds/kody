@@ -63,6 +63,7 @@ import {
 	type RunRecordContext,
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
+import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
@@ -798,6 +799,10 @@ export async function runBundledModuleWithRegistry(
 			rawFetchHostSink: options?.packageContext
 				? undefined
 				: options?.rawFetchHostSink,
+			recordExecuteUsage: shouldRecordExecuteUsageForRun({
+				surface: options?.runRecord?.surface,
+				hasPackageContext: Boolean(options?.packageContext),
+			}),
 		})
 		const workflowTools =
 			options?.workflowTools ??
