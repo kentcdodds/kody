@@ -338,13 +338,14 @@ export default async function main() {
 		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
 		conversation_id: '${notifyConversationId}',
 	})
-	await kody.repo_write_file({
-		session_id: session.id,
-		files: [{ path: 'src/daily-digest.ts', content: dailyDigest }],
-	})
 	await kody.repo_edit_files({
 		session_id: session.id,
 		edits: [
+			{
+				kind: 'write',
+				path: 'src/daily-digest.ts',
+				content: dailyDigest,
+			},
 			{
 				kind: 'replace',
 				path: 'package.json',

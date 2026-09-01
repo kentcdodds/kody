@@ -68,10 +68,7 @@ export const packageCodemodStepResultSchema = z.object({
 })
 
 export const packageCodemodStepInputSchema = z.object({
-	codemodId: z
-		.string()
-		.min(1)
-		.describe('Registered package codemod id from package_codemod_list.'),
+	codemodId: z.string().min(1).describe('Registered package codemod id.'),
 	packageIds: z
 		.array(z.string().min(1))
 		.optional()
@@ -148,45 +145,10 @@ export const adminPackageCodemodRevertInputSchema =
 		filters: packageCodemodFiltersSchema.optional(),
 	})
 
-export const packageCodemodListOutputSchema = z.object({
-	codemods: z.array(
-		z.object({
-			id: z.string(),
-			description: z.string(),
-		}),
-	),
-})
-
 const pagingDescription =
 	'Paged: call again with runId and nextCursor until nextCursor is null.'
 
 export const packageCodemodPagingHint = pagingDescription
-
-export async function runCallerPackageCodemodStep(
-	ctx: CapabilityContext,
-	input: {
-		codemodId: string
-		mode: Exclude<PackageCodemodRunMode, 'revert'>
-		packageIds?: Array<string>
-		runId?: string
-		cursor?: string
-		limit?: number
-	},
-) {
-	const user = requireMcpUser(ctx.callerContext)
-	return await runPackageCodemodStep({
-		env: ctx.env,
-		baseUrl: ctx.callerContext.baseUrl,
-		initiatedByUserId: user.userId,
-		codemodId: input.codemodId,
-		mode: input.mode,
-		scope: { kind: 'user', userId: user.userId },
-		filters: input.packageIds ? { packageIds: input.packageIds } : undefined,
-		runId: input.runId,
-		cursor: input.cursor,
-		limit: input.limit,
-	})
-}
 
 export async function runFleetPackageCodemodStep(
 	ctx: CapabilityContext,

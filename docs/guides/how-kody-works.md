@@ -33,7 +33,7 @@ Agent notes — for AI agents explaining or recreating this loop:
   a new `kody_id`, clone via `setup_commands`, write the export, push, and
   `package_publish_external_push`. Tool-only agents (no local git) create
   with `package_save` and update through a repo session (`repo_open_session`,
-  `repo_write_file` / `repo_edit_files`, `repo_commit`, `repo_run_checks`,
+  `repo_edit_files`, `repo_commit`, `repo_run_checks`,
   `repo_publish_session`) so they patch only the files that changed.
 - Fetch https://api.github.com/users/<login>/events/public with
   `Authorization: Bearer {{secret:githubAccessToken}}`. Treat a published
