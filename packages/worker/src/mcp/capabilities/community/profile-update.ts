@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import { getUserSocialRowByStableId } from '#worker/community/social-repo.ts'
+import { getUserSocialRowByStableId } from '#worker/community/profile-repo.ts'
 import {
 	getCommunityProfileByStableId,
 	updateCommunityProfile,
-} from '#worker/community/social-service.ts'
+} from '#worker/community/profile-service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'

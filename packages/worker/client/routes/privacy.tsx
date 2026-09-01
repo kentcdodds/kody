@@ -48,20 +48,18 @@ export function PrivacyRoute(_handle: Handle) {
 					used for return metrics, secrets, memories, packages and their source,
 					jobs, email inboxes and messages, durable storage, MCP server
 					configuration, OAuth grants, package invocation tokens, short-lived
-					execution history, community social graph edges (follows, listing
-					stars, and stored activity events), and any platform feedback you
-					approve for submission. All of this remains scoped to your account
-					except for content you deliberately make public (community listings
-					and a public profile), the narrow admin review of approved platform
-					feedback, and the community activity metadata described below.
+					execution history, stored community activity events, and any platform
+					feedback you approve for submission. All of this remains scoped to
+					your account except for content you deliberately make public
+					(community listings and a public profile), the narrow admin review of
+					approved platform feedback, and the community activity metadata
+					described below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
-					public package metadata, follow counts, and public activity are
-					visible on <code>/@username</code> and related social surfaces. When
-					visibility is <strong>private</strong>, the public profile is not
-					found, others cannot follow you, and you are omitted from stargazer
-					lists and other users&apos; timelines.
+					public package metadata, and public activity are visible on{' '}
+					<code>/@username</code>. When visibility is <strong>private</strong>,
+					the public profile is not found.
 				</p>
 			</section>
 
@@ -172,14 +170,18 @@ export function PrivacyRoute(_handle: Handle) {
 					ids, package ids, error strings, logs, and unrelated account content.
 					Admin-configured notification packages may also receive a
 					metadata-only <code>fleet.entitlement.crossed</code> event when a
-					swept account first crosses 80% or 100% of a plan-limit resource, or
-					when a non-admin account first exceeds the monthly runtime-duration
-					threshold. Entitlement events include stable user id, username,
-					resource counts, and admin dashboard URLs; runtime-duration events
-					include stable user id, username, <code>total_duration_ms</code>,{' '}
-					<code>threshold_ms</code>, and admin dashboard URLs. Both event kinds
-					omit emails, plans, secrets, package source, and unrelated account
-					content.
+					swept account first crosses 80% or 100% of a plan-limit resource, when
+					a non-admin account first exceeds the monthly runtime-duration
+					threshold, when a non-admin account first reaches a plan-aware unique
+					Dynamic Worker cost threshold, or when a non-admin account first hits
+					the execute cap on three of the last seven UTC days. Entitlement
+					events include stable user id, username, resource counts, and admin
+					dashboard URLs; runtime-duration events include stable user id,
+					username, <code>total_duration_ms</code>, <code>threshold_ms</code>,
+					and admin dashboard URLs; unique-worker-cost and repeated-execute
+					events include the counts that tripped the threshold and admin
+					dashboard URLs. These event kinds omit emails, plans, secrets, package
+					source, and unrelated account content.
 				</p>
 			</section>
 

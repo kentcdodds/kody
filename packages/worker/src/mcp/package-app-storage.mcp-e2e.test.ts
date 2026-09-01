@@ -209,10 +209,13 @@ export default async function main(input) {
 				arguments: {
 					code: `import { kody } from 'kody:runtime'
 export default async function main(input) {
-	return await kody.package_delete({ package_id: input.packageId })
+	return await kody.package_delete({
+		package_id: input.packageId,
+		confirm_name: input.confirmName,
+	})
 }
 `,
-					params: { packageId },
+					params: { packageId, confirmName: `@${username}/${kodyId}` },
 				},
 			})
 		}

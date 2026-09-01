@@ -15,27 +15,25 @@ first MCP connection, first execute, first saved package), MCP client name when
 known, last-active day stamps used for return metrics, secrets, memories,
 packages and their source, jobs, email inboxes and messages, durable storage,
 MCP server configuration, OAuth grants, package invocation tokens, short-lived
-execution history (see [Activity](./activity.md)), community social graph edges
-(follows, listing stars, and stored activity events), and any platform feedback
-you approve for submission. All of this remains scoped to your account except
-for content you deliberately make public (community listings and a public
-profile), the narrow admin review of approved platform feedback, and the
-community activity metadata described below.
+execution history (see [Activity](./activity.md)), stored community activity
+events, and any platform feedback you approve for submission. All of this
+remains scoped to your account except for content you deliberately make public
+(community listings and a public profile), the narrow admin review of approved
+platform feedback, and the community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
-metadata, follow counts, and public activity are visible on `/@username` and
-related social surfaces. When visibility is **private**, the public profile is
-not found, others cannot follow you, and you are omitted from stargazer lists
-and other users' timelines. See [Community profiles](./community-profiles.md).
+metadata, and public activity are visible on `/@username`. When visibility is
+**private**, the public profile is not found. See
+[Public packages](./community-packages.md#public-profiles).
 
-Account export includes your profile columns and social rows where you are a
-participant (follows as follower or followee, stars you placed, and activity you
-authored). The browser download is a bounded metadata manifest; use its
+Account export includes your profile columns and activity you authored. The
+browser download is a bounded metadata manifest; use its
 `account_export_section` instructions to retrieve every D1, Durable Object, and
 R2 page for a complete portable export. Account settings can delete the account
 after you type `GOODBYE KODY` in a confirmation modal (and re-enter your
-password when the account has one). Account deletion removes those same
-user-owned rows and objects.
+password when the account has one), and can change a password or set one on an
+account that currently signs in only with a connected provider or passkey.
+Account deletion removes those same user-owned rows and objects.
 
 ## Connected accounts
 
@@ -127,11 +125,15 @@ rates rise (window bounds, per-metric counts and rates, public status URL, and
 insights URL). That event omits user ids, package ids, error strings, logs, and
 unrelated account content. Admin-configured notification packages may also
 receive a metadata-only `fleet.entitlement.crossed` event when a swept account
-first crosses 80% or 100% of a plan-limit resource, or when a non-admin account
-first exceeds the monthly runtime-duration threshold. Entitlement events include
-stable user id, username, resource counts, and admin dashboard URLs;
-runtime-duration events include stable user id, username, `total_duration_ms`,
-`threshold_ms`, and admin dashboard URLs. Both event kinds omit emails, plans,
+first crosses 80% or 100% of a plan-limit resource, when a non-admin account
+first exceeds the monthly runtime-duration threshold, when a non-admin account
+first reaches a plan-aware unique Dynamic Worker cost threshold, or when a
+non-admin account first hits the execute cap on three of the last seven UTC
+days. Entitlement events include stable user id, username, resource counts, and
+admin dashboard URLs; runtime-duration events include stable user id, username,
+`total_duration_ms`, `threshold_ms`, and admin dashboard URLs;
+unique-worker-cost and repeated-execute events include the counts that tripped
+the threshold and admin dashboard URLs. These event kinds omit emails, plans,
 secrets, package source, and unrelated account content.
 
 ## Platform feedback
@@ -157,7 +159,11 @@ Each account can create at most 10 feedback submissions in a rolling 24-hour
 period and have at most 100 active submissions (open or triaged). Open and
 triaged feedback remains until it is resolved, dismissed, or your account is
 deleted. Resolved and dismissed feedback is removed 365 days after its last
-update. Account deletion removes any remaining submissions.
+update. Account deletion removes any remaining submissions. When an admin
+resolves or dismisses your feedback, Kody may email you from the platform sender
+with the decision, thanks, and a way to send more feedback through your agent.
+That mail is skipped if your account has no email, outbound email is paused, or
+the account is suspended. Internal admin notes are not included.
 
 When a notification is still queued, Kody rechecks that the feedback exists
 immediately before delivery and cancels it after account deletion when possible.
@@ -172,10 +178,10 @@ reviewer identity, notes, and timestamps are not included. If an admin who
 reviewed your feedback deletes their account, Kody clears that reviewer's
 attribution while retaining your submission for the lifecycle described above.
 
-Community stars, stored activity events, ratings, forks, and reports appear only
-in the participating user's account export. Owning the related listing does not
-expose another user's event timestamps or types, identity, rating or adoption
-notes, report reasons, or moderation details.
+Community ratings, stored activity events, forks, and reports appear only in the
+participating user's account export. Owning the related listing does not expose
+another user's event timestamps or types, identity, rating or adoption notes,
+report reasons, or moderation details.
 
 ## What an admin can never see
 

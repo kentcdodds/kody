@@ -1,5 +1,10 @@
 import { generateTOTP } from '@epic-web/totp'
-import { type Page, expect, test } from './playwright-utils.ts'
+import {
+	type Page,
+	expect,
+	test,
+	waitForClientHydration,
+} from './playwright-utils.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
 // WebAuthn relying party ids must be domains, not IP addresses, so passkey
@@ -17,10 +22,14 @@ async function gotoLocalhost(
 	pathname: string,
 ) {
 	// Prefer domcontentloaded: under CI load the full `load` event can stall on
-	// late assets while the app shell is already interactive.
+	// late assets while the app shell is already interactive. Hydration still
+	// has to finish before JS-only `type="button"` clicks (register, enable 2FA,
+	// passkey sign-in, delete) or they are silent no-ops — same race #1628
+	// fixed in the two-factor spec.
 	await page.goto(localhostUrl(baseURL, pathname), {
 		waitUntil: 'domcontentloaded',
 	})
+	await waitForClientHydration(page)
 }
 
 async function addVirtualAuthenticator(page: Page) {

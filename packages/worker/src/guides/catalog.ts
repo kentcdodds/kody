@@ -41,7 +41,7 @@ import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 
 /**
  * Static guide sources. The canonical markdown lives in `docs/guides/` (also
- * readable on GitHub); this catalog bundles it so the MCP `coding_guide_get`
+ * readable on GitHub); this catalog bundles it so MCP `{id}:guide` search
  * capability, the `/guides` web pages, and the raw `text/markdown` responses
  * all serve exactly the same deployed content. When adding a guide, drop a
  * `.md` file with the frontmatter contract (see `parse-frontmatter.ts`) under

@@ -71,6 +71,8 @@ export type ConnectOauthConfig = {
 	logoPath?: string | null
 	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
+	/** Operator-curated provider mark (after upload and favicon). */
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
 	/**
@@ -115,6 +117,7 @@ export type StoredIntegrationConfig = Omit<
 	platformLogoPath?: string | null
 	logoPath?: string | null
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats). */
 	platformDescription?: string | null
 }
@@ -204,6 +207,7 @@ export function toStoredIntegrationConfig(
 			: null,
 		logoPath: integration.logoPath ?? null,
 		autoLogoPath: integration.autoLogoPath ?? null,
+		catalogLogoPath: integration.catalogLogoPath ?? null,
 		...(integration.platform === true
 			? {
 					platformAppSlug: integration.appSlug,
@@ -397,18 +401,9 @@ export function mergeConnectOauthConfig(input: {
 		input.queryConfig.usePkce ??
 		input.storedIntegration?.usePkce ??
 		defaultConnectOauthUsePkce({ flow, tokenUrl })
-	const platformAllowedScopes = input.storedIntegration?.platformAppSlug
-		? (input.storedIntegration.platformAllowedScopes ?? [])
-		: null
-	// Platform apps clamp requested scopes to the operator-verified menu, so
-	// query-supplied scopes can never widen the authorize request. The server
-	// re-validates before persisting anything.
-	const scopes =
-		platformAllowedScopes === null
-			? resolveConnectOauthScopes(input)
-			: resolveConnectOauthScopes(input).filter((scope) =>
-					platformAllowedScopes.includes(scope),
-				)
+	// Platform connect is retired: never clamp to an operator-verified menu
+	// or skip client-credential setup. Existing platform tokens still refresh.
+	const scopes = resolveConnectOauthScopes(input)
 	const extraAuthorizeParams = {
 		...resolveConnectOauthExtraAuthorizeParams(input),
 	}
@@ -422,18 +417,14 @@ export function mergeConnectOauthConfig(input: {
 		...(input.storedIntegration?.requiredHosts ?? []),
 	])
 	if (allowedHosts.length === 0) return null
-	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
 	return {
-		platformAppSlug,
-		platformLogoPath: platformAppSlug
-			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
-			: null,
+		platformAppSlug: null,
+		platformLogoPath: null,
 		logoPath: input.storedIntegration?.logoPath?.trim() || null,
 		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
-		platformDescription: platformAppSlug
-			? input.storedIntegration?.platformDescription?.trim() || null
-			: null,
-		platformAllowedScopes: platformAllowedScopes ?? [],
+		catalogLogoPath: input.storedIntegration?.catalogLogoPath?.trim() || null,
+		platformDescription: null,
+		platformAllowedScopes: [],
 		provider,
 		providerKey,
 		authorizeHost,
@@ -457,11 +448,11 @@ export function mergeConnectOauthConfig(input: {
 		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
-		clientId: input.storedIntegration?.clientId?.trim() || '',
-		// Platform apps keep the shared client secret server-side: there is
-		// never a user secret name for it, whatever the flow.
+		clientId: input.storedIntegration?.platformAppSlug
+			? ''
+			: input.storedIntegration?.clientId?.trim() || '',
 		clientSecretSecretName:
-			flow === 'confidential' && !platformAppSlug
+			flow === 'confidential'
 				? (input.storedIntegration?.clientSecretSecretName ??
 					`${providerKey}ClientSecret`)
 				: null,
@@ -542,6 +533,7 @@ export function parseSessionConnectOauthConfig(
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
 		logoPath: parsePlatformLogoPath(record.logoPath),
 		autoLogoPath: parsePlatformLogoPath(record.autoLogoPath),
+		catalogLogoPath: parseCatalogLogoPath(record.catalogLogoPath),
 		platformDescription:
 			typeof record.platformDescription === 'string' &&
 			record.platformDescription.trim()
@@ -556,6 +548,14 @@ export function parseSessionConnectOauthConfig(
 	}
 }
 
+const sameOriginLogoSlug = '[A-Za-z0-9._~%-]+'
+const sameOriginLogoCacheTag = '(?:\\?v=[0-9a-f]{1,64})?'
+
+function parseSameOriginLogoPath(raw: unknown, pattern: RegExp): string | null {
+	if (typeof raw !== 'string') return null
+	return pattern.test(raw) ? raw : null
+}
+
 /**
  * Logo paths render as <img src>; only same-origin serving paths from the
  * integration-logo route are accepted — one clean slug segment plus an
@@ -563,12 +563,26 @@ export function parseSessionConnectOauthConfig(
  * other same-origin paths via `..` or extra segments.
  */
 export function parsePlatformLogoPath(raw: unknown): string | null {
-	if (typeof raw !== 'string') return null
-	return /^\/integrations\/logos\/[A-Za-z0-9._~%-]+(?:\?v=[0-9a-f]{1,64})?$/.test(
+	return parseSameOriginLogoPath(
 		raw,
+		new RegExp(
+			`^/integrations/logos/${sameOriginLogoSlug}${sameOriginLogoCacheTag}$`,
+		),
 	)
-		? raw
-		: null
+}
+
+/**
+ * Operator catalog marks live on `/integrations/provider-marks/:slug`, not
+ * the per-app logo route. Session restore must keep those paths or the
+ * connect callback falls back to the letter after the provider redirect.
+ */
+export function parseCatalogLogoPath(raw: unknown): string | null {
+	return parseSameOriginLogoPath(
+		raw,
+		new RegExp(
+			`^/integrations/provider-marks/${sameOriginLogoSlug}${sameOriginLogoCacheTag}$`,
+		),
+	)
 }
 
 export function summarizeStoredSetupState(input: {

@@ -537,10 +537,10 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 				inputSchema: { type: 'object', properties: {} },
 				inputTypeDefinition: 'type SearchDocsInput = Record<string, never>',
 			},
-			'openapi:widgets:createwidget': {
-				name: 'openapi:widgets:createwidget',
+			'mcp:widgets:createwidget': {
+				name: 'mcp:widgets:createwidget',
 				description: 'Create a widget.',
-				domain: 'openapi:widgets',
+				domain: 'mcp:widgets',
 				keywords: [],
 				inputFields: ['name'],
 				requiredInputFields: ['name'],
@@ -548,13 +548,13 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 				readOnly: false,
 				idempotent: false,
 				destructive: false,
-				source: 'openapi',
-				openApi: {
-					bindingName: 'widgets',
+				source: 'mcp-server',
+				mcpServer: {
+					serverId: 'widgets',
+					serverName: 'widgets',
 					kodyName: 'widgets',
-					operationSlug: 'createwidget',
-					method: 'post',
-					path: '/widgets',
+					mcpToolName: 'create_widget',
+					toolName: 'createwidget',
 				},
 				inputSchema: {
 					type: 'object',
@@ -563,10 +563,10 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 				},
 				inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
 			},
-			'openapi:widgets:getwidget': {
-				name: 'openapi:widgets:getwidget',
+			'mcp:widgets:getwidget': {
+				name: 'mcp:widgets:getwidget',
 				description: 'Get a widget.',
-				domain: 'openapi:widgets',
+				domain: 'mcp:widgets',
 				keywords: [],
 				inputFields: ['id'],
 				requiredInputFields: ['id'],
@@ -574,13 +574,13 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 				readOnly: true,
 				idempotent: true,
 				destructive: false,
-				source: 'openapi',
-				openApi: {
-					bindingName: 'widgets',
+				source: 'mcp-server',
+				mcpServer: {
+					serverId: 'widgets',
+					serverName: 'widgets',
 					kodyName: 'widgets',
-					operationSlug: 'getwidget',
-					method: 'get',
-					path: '/widgets/{id}',
+					mcpToolName: 'get_widget',
+					toolName: 'getwidget',
 				},
 				inputSchema: {
 					type: 'object',
@@ -614,8 +614,8 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 	mockPerformanceNow.mockReturnValueOnce(200).mockReturnValueOnce(210)
 	const batchSuccess = await handler({
 		entity: [
-			'openapi:widgets:createwidget:capability',
-			'openapi:widgets:getwidget:capability',
+			'mcp:widgets:createwidget:capability',
+			'mcp:widgets:getwidget:capability',
 		],
 		conversationId: 'conv-batch-success',
 	})
@@ -624,22 +624,19 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		expect.objectContaining({
 			kind: 'entity',
 			type: 'capability',
-			id: 'openapi:widgets:createwidget',
+			id: 'mcp:widgets:createwidget',
 			relatedOperationCount: 1,
 		}),
 		expect.objectContaining({
 			kind: 'entity',
 			type: 'capability',
-			id: 'openapi:widgets:getwidget',
+			id: 'mcp:widgets:getwidget',
 			relatedOperationCount: 1,
 		}),
 	])
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
 	const partialFailure = await handler({
-		entity: [
-			'openapi:widgets:createwidget:capability',
-			'missing_thing:capability',
-		],
+		entity: ['mcp:widgets:createwidget:capability', 'missing_thing:capability'],
 		conversationId: 'conv-batch-partial',
 	})
 	expect(partialFailure.isError).toBeUndefined()
@@ -647,7 +644,7 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 		expect.objectContaining({
 			kind: 'entity',
 			type: 'capability',
-			id: 'openapi:widgets:createwidget',
+			id: 'mcp:widgets:createwidget',
 		}),
 		expect.objectContaining({
 			entityRef: 'missing_thing:capability',
@@ -855,7 +852,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 		{
 			id: 'listing-cursor',
@@ -885,7 +881,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 	])
 
@@ -995,7 +990,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 	])
 
@@ -1380,15 +1374,10 @@ test('empty discovery returns a counted domain index without memory enrichment',
 
 test('provider-name search ranks a wrapping package and provider card without an operation flood', async () => {
 	vi.clearAllMocks()
-	const openApiSpec = (
-		name: string,
-		operationSlug: string,
-		method: string,
-		path: string,
-	) => ({
+	const mcpSpec = (name: string, toolName: string, description: string) => ({
 		name,
-		description: `${method.toUpperCase()} ${path}`,
-		domain: 'openapi:github',
+		description,
+		domain: 'mcp:github',
 		keywords: ['github'],
 		inputFields: [],
 		requiredInputFields: [],
@@ -1396,13 +1385,13 @@ test('provider-name search ranks a wrapping package and provider card without an
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		source: 'openapi' as const,
-		openApi: {
-			bindingName: 'github',
+		source: 'mcp-server' as const,
+		mcpServer: {
+			serverId: 'github',
+			serverName: 'github',
 			kodyName: 'github',
-			operationSlug,
-			method,
-			path,
+			mcpToolName: toolName,
+			toolName,
 		},
 		inputSchema: { type: 'object' as const, properties: {} },
 		inputTypeDefinition: 'type Input = {}',
@@ -1410,22 +1399,20 @@ test('provider-name search ranks a wrapping package and provider card without an
 	mockModule.getCapabilityRegistryForContext.mockResolvedValue({
 		capabilityDomains: [
 			{
-				name: 'openapi:github',
-				description: 'GitHub OpenAPI operations.',
+				name: 'mcp:github',
+				description: 'GitHub MCP operations.',
 			},
 		],
 		capabilitySpecs: {
-			'openapi:github:listrepositories': openApiSpec(
-				'openapi:github:listrepositories',
+			'mcp:github:listrepositories': mcpSpec(
+				'mcp:github:listrepositories',
 				'listrepositories',
-				'get',
-				'/user/repos',
+				'GET /user/repos',
 			),
-			'openapi:github:createrepository': openApiSpec(
-				'openapi:github:createrepository',
+			'mcp:github:createrepository': mcpSpec(
+				'mcp:github:createrepository',
 				'createrepository',
-				'post',
-				'/user/repos',
+				'POST /user/repos',
 			),
 		},
 	})
@@ -1481,11 +1468,15 @@ test('provider-name search ranks a wrapping package and provider card without an
 			wrappingPackage?: { kodyId: string } | null
 		}>
 	}
-	expect(result.matches.map((match) => match.type)).toEqual([
-		'package',
-		'provider',
-	])
-	expect(result.matches[1]).toMatchObject({
+	expect(result.matches.some((match) => match.type === 'guide')).toBe(true)
+	expect(
+		result.matches
+			.filter((match) => match.type !== 'guide')
+			.map((match) => match.type),
+	).toEqual(['package', 'provider'])
+	expect(
+		result.matches.find((match) => match.type === 'provider'),
+	).toMatchObject({
 		type: 'provider',
 		wrappingPackage: { kodyId: 'github' },
 	})

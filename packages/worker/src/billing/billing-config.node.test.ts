@@ -213,9 +213,25 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 			env,
 		),
 	).toEqual({
-		stripePlan: null,
+		stripePlan: 'pro',
 		cancelAt: null,
 		subscriptionStatus: 'past_due',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'unpaid',
+					priceIds: ['price_pro'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: null,
+		cancelAt: null,
+		subscriptionStatus: 'unpaid',
 	})
 
 	expect(

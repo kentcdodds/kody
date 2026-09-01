@@ -478,22 +478,24 @@ export function ProviderIcon(
 
 /**
  * Display priority for a provider mark: explicit upload, auto-fetched
- * favicon, then the letter fallback. Saved integrations do not use the
- * official catalog SVGs — those stay on login and onboarding.
+ * favicon, operator-curated catalog mark, then the letter fallback.
+ * Login and onboarding still use the official inline ProviderIcon set.
  */
 export function resolveProviderMarkSource(input: {
 	logoPath?: string | null
 	autoLogoPath?: string | null
-}): 'upload' | 'favicon' | 'letter' {
+	catalogLogoPath?: string | null
+}): 'upload' | 'favicon' | 'catalog' | 'letter' {
 	if (input.logoPath?.trim()) return 'upload'
 	if (input.autoLogoPath?.trim()) return 'favicon'
+	if (input.catalogLogoPath?.trim()) return 'catalog'
 	return 'letter'
 }
 
 /**
  * Provider identity for connect / integration headers: uploaded logo,
- * auto-favicon, or a letter fallback. Always sits on the white logo well
- * so dark marks stay readable in dark mode.
+ * auto-favicon, operator catalog mark, or a letter fallback. Always sits
+ * on the white logo well so dark marks stay readable in dark mode.
  */
 export function ProviderMark(
 	handle: Handle<{
@@ -501,19 +503,26 @@ export function ProviderMark(
 		label: string
 		logoPath?: string | null
 		autoLogoPath?: string | null
+		catalogLogoPath?: string | null
 		host?: string | null
 		size?: string
 	}>,
 ) {
 	return () => {
-		const { label, logoPath, autoLogoPath } = handle.props
+		const { label, logoPath, autoLogoPath, catalogLogoPath } = handle.props
 		const wellSize = handle.props.size ?? '3rem'
 		const source = resolveProviderMarkSource({
 			logoPath,
 			autoLogoPath,
+			catalogLogoPath,
 		})
 		const letter = label.trim().charAt(0).toUpperCase() || '?'
-		const imagePath = source === 'upload' ? logoPath : autoLogoPath
+		const imagePath =
+			source === 'upload'
+				? logoPath
+				: source === 'favicon'
+					? autoLogoPath
+					: catalogLogoPath
 		return (
 			<span
 				aria-hidden="true"
@@ -529,7 +538,9 @@ export function ProviderMark(
 					lineHeight: 1,
 				})}
 			>
-				{source === 'upload' || source === 'favicon' ? (
+				{source === 'letter' ? (
+					letter
+				) : (
 					<img
 						src={imagePath ?? ''}
 						alt=""
@@ -542,8 +553,6 @@ export function ProviderMark(
 							objectFit: 'contain' as const,
 						})}
 					/>
-				) : (
-					letter
 				)}
 			</span>
 		)

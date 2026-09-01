@@ -16,12 +16,7 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
-import { on } from '#client/event-mixin.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	readFollowButtonFromEvent,
-	submitOptimisticFollow,
-} from '#client/community-social-toggle.ts'
 import { readProfileSearchQueryFromHref } from '#client/routes/profile-search.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -105,7 +100,6 @@ export async function profileRouteLoader(
 			bio: payload.profile.bio,
 			isSelf: payload.isSelf,
 			loggedIn: payload.loggedIn,
-			isFollowing: payload.isFollowing,
 			visibility: payload.profile.visibility,
 		},
 	}
@@ -117,25 +111,6 @@ export function ProfileRoute(handle: Handle) {
 	let shellLoadedForUsername: string | null = null
 	let shellRequestedForUsername: string | null = null
 	let shellLoadRequestId = 0
-	let followRequestId = 0
-
-	async function submitFollow(button: HTMLButtonElement) {
-		const requestId = ++followRequestId
-		const outcome = await submitOptimisticFollow(
-			button,
-			() => requestId !== followRequestId,
-		)
-		if (outcome === 'unauthorized') {
-			window.location.assign('/login')
-		}
-	}
-
-	function handleFollowActivate(event: Event) {
-		const button = readFollowButtonFromEvent(event)
-		if (!button) return
-		event.preventDefault()
-		void submitFollow(button)
-	}
 
 	async function loadShell() {
 		const username = getCurrentUsername(handle)
@@ -176,7 +151,6 @@ export function ProfileRoute(handle: Handle) {
 				bio: payload.profile.bio,
 				isSelf: payload.isSelf,
 				loggedIn: payload.loggedIn,
-				isFollowing: payload.isFollowing,
 				visibility: payload.profile.visibility,
 			}
 			shellLoadedForUsername = username
@@ -258,13 +232,7 @@ export function ProfileRoute(handle: Handle) {
 		}
 
 		return (
-			<section
-				mix={[
-					css(pageCss),
-					on('click', handleFollowActivate),
-					on('submit', handleFollowActivate),
-				]}
-			>
+			<section mix={css(pageCss)}>
 				{readyShell?.isSelf ? (
 					<div mix={css(actionsCss)} data-testid="profile-actions">
 						<a href={routes.account.href()} mix={css(mutedLinkCss)}>

@@ -369,11 +369,6 @@ test('executeJobOnce background execution workflow', async () => {
 				expect.any(Object),
 				expect.any(Object),
 				expect.objectContaining({
-					storageTools: {
-						userId: callerContext.user.userId,
-						storageId: `job:${jobView.id}`,
-						writable: true,
-					},
 					packageInvokeTools: expect.objectContaining({
 						invoke: expect.any(Function),
 					}),

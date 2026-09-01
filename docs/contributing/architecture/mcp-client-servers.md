@@ -134,7 +134,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   `mcp_server_list`, `mcp_server_reconnect`, `mcp_server_refresh`,
   `mcp_server_remove`, `mcp_server_set_enabled`, `mcp_server_lock`).
   `mcp_server_add` accepts optional `bearerToken`. `mcp_server_lock` grants a
-  package; unlock is website-only.
+  package; unlock is website-only. Integration connections and user secrets use
+  the same tighten-only shape (`integration_lock`, `secret_lock`).
 
 ## Isolation and lifecycle
 
@@ -152,6 +153,4 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 
 ## Related docs
 
-- [OpenAPI provider bindings](./openapi-bindings.md) — curated HTTP provider
-  counterpart with the same naming pattern (`kody.openapi[...]`).
 - [Data storage](./data-storage.md) — D1 vs Durable Object storage split.

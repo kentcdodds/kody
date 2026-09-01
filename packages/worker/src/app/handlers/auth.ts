@@ -54,7 +54,6 @@ import {
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
-import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 
 const authModes = ['login', 'signup'] as const
@@ -449,10 +448,6 @@ export function createAuthHandler(env: Env) {
 					env,
 					email: normalizedEmail,
 					stableUserId: record.stableUserId,
-				})
-				await followDefaultWelcomeAccounts({
-					db: env.APP_DB,
-					followerUserId: record.stableUserId,
 				})
 				scheduleUserCreatedEvent({
 					env,

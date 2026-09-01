@@ -20,7 +20,6 @@ import {
 	type StoredIntegrationConfig,
 	isSafeExternalUrl,
 } from './connect-oauth-config.ts'
-import { renderBuiltInAlternative } from './connect-oauth-sections.tsx'
 import {
 	connectOauthAdvancedDetailsCss,
 	connectOauthRedirectUriCardCss,
@@ -241,7 +240,6 @@ export function renderExistingIntegrationConfig(
 
 export function renderAdvancedDetails(input: {
 	config: ConnectOauthConfig
-	builtInAvailable: boolean
 	existingIntegrationConfig: StoredIntegrationConfig | null
 }) {
 	return (
@@ -251,10 +249,6 @@ export function renderAdvancedDetails(input: {
 		>
 			<summary>Advanced details</summary>
 			<div mix={css({ display: 'grid', gap: spacing.md })}>
-				{renderBuiltInAlternative({
-					builtInAvailable: input.builtInAvailable,
-					config: input.config,
-				})}
 				{renderProviderDetails(input.config)}
 				{renderAllowedHosts(input.config)}
 				{renderExistingIntegrationConfig(input.existingIntegrationConfig)}

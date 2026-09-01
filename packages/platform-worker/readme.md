@@ -21,6 +21,6 @@ outbound fetch from the platform-owned `MCP` Durable Object.
 - Build check: `npm run platform:build` (part of `npm run validate`).
 - Deploys/previews: see `.github/workflows/deploy.yml` and `preview.yml`.
 - Official guide markdown deploys upload this script with origin so MCP
-  `coding_guide_get` matches web `/guides`.
+  `search({ entity: "{id}:guide" })` matches web `/guides`.
 - Production Durable Object ownership: see the
   [migration runbook](../../docs/contributing/architecture/platform-worker-migration-runbook.md).

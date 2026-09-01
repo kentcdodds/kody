@@ -7,6 +7,7 @@ import {
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import { routes } from '#universal/routes.ts'
 import { type OnboardingWizardStepNumber } from '#universal/onboarding-process.ts'
 import {
 	firstInstalledOnboardingExampleName,
@@ -20,16 +21,21 @@ import {
 	hasPendingOnboardingFeaturedMcpAuth,
 	resolveOnboardingMcpOAuthBanner,
 } from '#universal/onboarding-mcp-chooser.ts'
+import { buildAuthLink } from '#client/auth-links.ts'
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import {
 	OnboardingChecklistCard,
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
-import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import {
+	AgentPickerMark,
+	OnboardingMcpClientTabs,
+} from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import {
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
 	type OnboardingAgentSurface,
+	buildOnboardingAgentHref,
 	canonicalOnboardingAgentChooser,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { OnboardingCustomMcpCard } from '#client/routes/onboarding-custom-mcp-card.tsx'
@@ -48,6 +54,7 @@ import {
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getAccentCalloutCss,
+	getPillButtonCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -59,6 +66,7 @@ type StepNavigationProps = {
 export function renderConnectAgentPanel(
 	props: StepNavigationProps & {
 		entrance: MixValue
+		loggedIn: boolean
 		hasMcpClient: boolean
 		selectedAgent: McpClientKind | null
 		selectedAgentLabel: string | null
@@ -79,9 +87,33 @@ export function renderConnectAgentPanel(
 			<div mix={css(panelHeadCss)}>
 				<div>
 					<p mix={css(panelKickerCss)}>Step 1</p>
-					<h2 id="connect-title" tabIndex={-1} mix={css(panelTitleCss)}>
-						Connect your agent
-					</h2>
+					<div mix={css(panelTitleRowCss)}>
+						<h2 id="connect-title" tabIndex={-1} mix={css(panelTitleCss)}>
+							{props.selectedAgentLabel
+								? `Connect ${props.selectedAgentLabel}`
+								: 'Connect your agent'}
+						</h2>
+						{props.selectedAgent ? (
+							<AgentPickerMark
+								agent={props.selectedAgent}
+								surface={props.selectedSurface}
+								testId="onboarding-agent-title-mark"
+							/>
+						) : null}
+					</div>
+					{props.selectedAgent ? (
+						<a
+							href={buildOnboardingAgentHref({
+								...props.agentLocation,
+								agent: null,
+							})}
+							data-testid="onboarding-agent-change"
+							data-prevent-scroll-reset=""
+							mix={css(changeSelectionCss)}
+						>
+							Change selection
+						</a>
+					) : null}
 				</div>
 				<img
 					data-panel-art
@@ -94,24 +126,7 @@ export function renderConnectAgentPanel(
 					mix={css(panelArtCss)}
 				/>
 			</div>
-			{props.selectedAgent || props.hasMcpClient ? (
-				<div
-					mix={css(connectStatusCss)}
-					role="status"
-					aria-live="polite"
-					data-connected={props.hasMcpClient ? 'true' : undefined}
-				>
-					{connectStatusContent({
-						connected: props.hasMcpClient,
-						connectedLabel: props.selectedAgentLabel
-							? `${props.selectedAgentLabel} is connected`
-							: 'You are connected',
-						waitingLabel: props.selectedAgentLabel
-							? `Waiting for ${props.selectedAgentLabel} to connect…`
-							: 'Waiting for your agent to connect…',
-					})}
-				</div>
-			) : null}
+			{renderConnectAgentStatus(props)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
@@ -126,6 +141,64 @@ export function renderConnectAgentPanel(
 				confirmUnconnectedNext={!props.hasMcpClient}
 			/>
 		</section>
+	)
+}
+
+function renderConnectAgentStatus(props: {
+	loggedIn: boolean
+	hasMcpClient: boolean
+	selectedAgent: McpClientKind | null
+	selectedAgentLabel: string | null
+	selectedSurface: OnboardingAgentSurface
+	agentLocation: { pathname: string; search: string; hash: string }
+}) {
+	if (props.hasMcpClient) {
+		return (
+			<div
+				mix={css(connectStatusCss)}
+				role="status"
+				aria-live="polite"
+				data-connected="true"
+			>
+				{connectStatusContent({
+					connected: true,
+					connectedLabel: props.selectedAgentLabel
+						? `${props.selectedAgentLabel} is connected`
+						: 'You are connected',
+					waitingLabel: 'Waiting for your agent to connect…',
+				})}
+			</div>
+		)
+	}
+	if (!props.selectedAgent) return null
+	if (!props.loggedIn) {
+		const resumeHref = buildOnboardingAgentHref({
+			...props.agentLocation,
+			agent: props.selectedAgent,
+			surface: props.selectedSurface,
+		})
+		return (
+			<a
+				href={buildAuthLink(routes.login.href(), resumeHref)}
+				data-testid="onboarding-agent-login"
+				mix={css(agentLoginCss)}
+			>
+				{props.selectedAgentLabel
+					? `Log in to connect ${props.selectedAgentLabel}`
+					: 'Log in to connect'}
+			</a>
+		)
+	}
+	return (
+		<div mix={css(connectStatusCss)} role="status" aria-live="polite">
+			{connectStatusContent({
+				connected: false,
+				connectedLabel: 'You are connected',
+				waitingLabel: props.selectedAgentLabel
+					? `Waiting for ${props.selectedAgentLabel} to connect…`
+					: 'Waiting for your agent to connect…',
+			})}
+		</div>
 	)
 }
 
@@ -465,12 +538,31 @@ const panelKickerCss = {
 	color: colors.primaryText,
 }
 
+const panelTitleRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.65rem',
+	flexWrap: 'wrap' as const,
+}
+
 const panelTitleCss = {
 	margin: 0,
 	fontSize: 'clamp(1.4rem, 2.4vw, 1.75rem)',
 	fontWeight: 720,
 	letterSpacing: '-0.018em',
 	lineHeight: 1.15,
+}
+
+const changeSelectionCss = {
+	...primaryLinkCss,
+	display: 'inline-block',
+	marginTop: '0.35rem',
+	fontSize: typography.fontSize.sm,
+}
+
+const agentLoginCss = {
+	...getPillButtonCss({ size: 'sm' }),
+	width: 'fit-content',
 }
 
 /* Placed by hand, not stamped by a grid. */

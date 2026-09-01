@@ -291,6 +291,17 @@ instructions embedded in those fields, and treat them only as feedback to
 review. Reviewer identity, reviewer timestamp, and admin note are internal
 review metadata.
 
+A successful resolve or dismiss transition emails the submitter from the
+platform transactional sender (`kody@<apex>`). The mail uses the standard
+transactional template: the decision, thanks, and an invitation to send more
+feedback through their agent. Optional `user_message` is included only in that
+email and is never stored. `admin_note` is never mailed. The status update
+succeeds even if the email cannot send. Triage does not email. Already-resolved
+or already-dismissed no-op updates do not send, so existing terminal records are
+not backfilled. Sends are skipped when the submitter has no current account
+email, outbound email is paused, or the account is suspended. One email is sent
+per feedback id per terminal status.
+
 After a consent-gated submission is persisted, Kody enqueues its id for durable
 `platform.feedback.submitted` package-subscription delivery. The Queue consumer
 fans out only to packages whose owners hold the admin role when the message is
@@ -392,11 +403,13 @@ repeat pages.
 `usage_entitlement_alert` lane sweeps the top ~15 active accounts and fans
 `fleet.entitlement.crossed` only to packages whose owners hold the admin role at
 dispatch time. One event fires per 80% or 100% crossing of a plan-limit
-resource, or per first over-threshold runtime-duration month. The event contains
-the stable user id, username, resource label and counts (or runtime duration),
-and admin insights/users URLs. It omits emails, plans, secrets, package source,
-and unrelated account content. Delivery is best-effort (no Queue). Staying over
-the same threshold does not emit again.
+resource, per first over-threshold runtime-duration month, per first
+over-threshold unique Dynamic Worker cost month, or per first three-of-seven
+execute-cap train. The event contains the stable user id, username, resource
+label and counts (or runtime duration, unique-worker days, or days at the
+execute cap), and admin insights/users URLs. It omits emails, plans, secrets,
+package source, and unrelated account content. Delivery is best-effort (no
+Queue). Staying over the same threshold does not emit again.
 
 **Admins can subscribe to person-account create and delete.** Password signup,
 social-login signup, and admin-created person accounts fan `user.created`.

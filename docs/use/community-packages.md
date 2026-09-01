@@ -4,7 +4,7 @@ Public **packages** are the community catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on
-promote; they do not yet appear on `/community`. Package **runtime** still uses
+promote; they do not yet appear on `/community`. Package **runtime** uses
 `published_commit`; pushing to a public default branch is world-readable at HEAD
 even before the next package publish.
 
@@ -12,9 +12,10 @@ One-click install forks the listing into your account and publishes it when
 checks pass. If checks fail, the fork stays inert until you adapt and publish.
 `community_fork` always leaves an inert source.
 
-Public pages work without a Kody account: `/community` (searchable index) and
-`/@username/:name` (detail). Forking, rating, and reporting require a signed-in
-MCP user. Anonymous git remotes are not offered.
+Public pages work without a Kody account: `/community` (searchable index),
+`/@username` (public catalog), and `/@username/:name` (detail). Forking, rating,
+and reporting require a signed-in MCP user. Anonymous git remotes are not
+offered.
 
 Community discovery uses the MCP **`community`** domain. Catalog listings do
 **not** appear in the general MCP **`search`** tool.
@@ -22,8 +23,8 @@ Community discovery uses the MCP **`community`** domain. Catalog listings do
 ## Making a package public
 
 Ask your agent to set visibility with `package_update`
-(`changes.visibility: "public"`). `community_publish` still exists as an alias
-for the same action.
+(`changes.visibility: "public"`). `community_publish` is an alias for the same
+action.
 
 There are **no** MIT, logo, README Intent, or `package.json#private` gates.
 Tags, description, category, and an icon are optional (ranking can prefer
@@ -32,22 +33,26 @@ filled-in cards).
 - New packages are always created **private**.
 - Making a package **private** unlists it: public URLs 404; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
+- Deleting a package (`package_delete` or **Delete package** on the package
+  page) also unlists it. Type the package name to confirm. Existing forks keep
+  their copies.
 - Hidden and locked stay separate from visibility.
 
 ### Icon
 
 Prefer a root `icon.svg`, `icon.png`, `icon.webp`, `icon.jpg`, or `icon.jpeg`.
-`community-icon.*` is still accepted. The first existing file in that combined
+`community-icon.*` is also accepted. The first existing file in that combined
 order wins.
 
 ## Browsing listings
 
-Anyone can browse `/community` and open a package at `/@username/:name` — for
-example `/@kentcdodds/devin`. `/community/:listingId` redirects to that
-canonical URL. Browse files at `/@username/:name/tree/:ref/...` where `:ref` is
-the repo's **default branch name** (usually `main`, whatever git reports — not
-hardcoded `master`), a SHA, or another branch. `HEAD` and leftover `/files` URLs
-301 to `/tree/{defaultBranch}` (`main` when lookup misses).
+Anyone can browse `/community`, a public catalog at `/@username`, and a package
+at `/@username/:name` — for example `/@kentcdodds/devin`.
+`/community/:listingId` redirects to that canonical URL. Browse files at
+`/@username/:name/tree/:ref/...` where `:ref` is the repo's **default branch
+name** (usually `main`, whatever git reports — not hardcoded `master`), a SHA,
+or another branch. `HEAD` and leftover `/files` URLs 301 to
+`/tree/{defaultBranch}` (`main` when lookup misses).
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial onboarding placement only — not a safety badge. There
@@ -134,14 +139,53 @@ Admins can mark listings as **featured**. Featured listings appear on
 review. Admins toggle featuring from the listing detail page or with
 `community_set_featured`.
 
-## Stars (stargazers)
+## Public profiles
 
-Anyone signed in can **star** a listing as a public bookmark (`community_star` /
-`community_unstar`). The listing page puts that control next to the package
-name. Star counts appear on search cards and in the detail meta row. Stargazer
-lists from `community_get` include only users with public profiles. Stars are
-separate from the 1–5 **ratings** below — see
-[Community profiles](./community-profiles.md#stars-vs-ratings).
+Each account has profile fields:
+
+- **Display name** — shown on the profile and activity items (falls back to
+  username when unset)
+- **Bio** — short public text
+- **Avatar** — optional profile image (PNG, JPEG, or WebP)
+- **Profile visibility** — `public` by default, or `private`
+
+Public profiles are at `/@username`. A public profile shows display name, bio,
+avatar, join date, the user's **public packages** (metadata only), and recent
+public activity (publishes, republishes, and public forks).
+
+### Avatars
+
+Upload or remove an avatar from **Account → Profile** in the web UI (MCP does
+not accept avatar uploads). Click the avatar, or drop a photo anywhere on the
+account page, to open a crop and zoom editor (drag, pinch, scroll, or the
+slider) so you can frame a square that matches the circular avatar. The browser
+converts HEIC, AVIF, and other photos to PNG, JPEG, or WebP and resizes large
+images before upload. Stored avatars are PNG, JPEG, or WebP, up to 1 MB, with
+each side between 64px and 4096px and an aspect ratio of at most 3:1. Dropping a
+photo on the account page opens that editor; dropping a file elsewhere in the
+app does not navigate away. Avatars appear on the public profile and in profile
+activity rows. Private profiles keep the avatar for the owner; other users do
+not see it.
+
+Package privacy follows the repo visibility flag (`saved_packages.is_private`),
+not `package.json#private`:
+
+- Private packages do not appear on the public profile.
+- Public packages on the profile are catalog listings: they carry a listing
+  signifier and a fork affordance (same inert-fork rules as
+  [forking a listing](#forking-a-listing)).
+
+### Private mode
+
+When visibility is `private`:
+
+- `/@username` returns not found (404)
+- `community_profile_get` for another user’s private profile returns
+  `user_found: false` with empty fields (it does not leak existence via
+  HTTP 404)
+
+The account owner can read and update their own profile (including while
+private) through `community_profile_get` / `community_profile_update`.
 
 ## Ratings
 
@@ -177,29 +221,29 @@ Use the MCP `community` domain:
   `package_update` with `changes.visibility: "public"`)
 - `community_unpublish` — make a package private / unlist it (prefer
   `package_update` with `changes.visibility: "private"` and `confirm_name`)
+- `package_delete` — permanently delete a saved package (type the package name;
+  `confirm_name` must match)
 - `community_search` — search active listings (`sort: "newest"` for last
   published first; optional `category` to browse one listing category)
-- `community_get` — fetch one listing's metadata and aggregates (including star
-  count, stargazers, and owner profile linkage when the owner is public)
+- `community_get` — fetch one listing's metadata and aggregates (including owner
+  profile linkage when the owner is public)
 - `community_fork` — copy HEAD into your account (inert until published)
 - `community_fork_adopt` — mark a reviewed fork as adopted, granting it
   self-authored-like secret read/use access (see
   [Secrets and host approval](./secrets-and-values.md))
 - `community_rate` — rate a listing after forking
-- `community_star` / `community_unstar` — bookmark a listing (see
-  [Community profiles](./community-profiles.md))
 - `community_report` — report a listing (requires login)
 - `community_set_featured` — admin-only: feature or unfeature a listing as an
   onboarding starter package
-
-Profiles, follows, and timelines use additional `community_*` capabilities
-documented in [Community profiles](./community-profiles.md).
+- `community_profile_get` — read a profile by username (own private profile
+  included when signed in as that user)
+- `community_profile_update` — update display name, bio, and visibility
 
 ## Privacy and isolation
 
 Forks are copies. Cross-user package imports never resolve. The deliberate
-cross-user data flows are the public listing snapshot, aggregate ratings, star
-counts/stargazers, and [public profile](./community-profiles.md) surfaces.
+cross-user data flows are the public listing snapshot, aggregate ratings, and
+[public profile](#public-profiles) surfaces.
 
 Stable owner **user ids** are not required for browsing: package name scope and
 public profiles reveal the owner's **username** (as package URLs do). Search

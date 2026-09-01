@@ -4,14 +4,12 @@ import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { on } from '#client/event-mixin.ts'
-import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
 	descriptionCss,
 	getAccentCalloutCss,
-	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	inputCss,
 	insetCardCss,
@@ -37,12 +35,6 @@ export function wouldReplaceDifferentApp(input: {
 	existingConnection: ConnectOauthExistingConnection | null
 }) {
 	if (!input.config || !input.existingConnection) return false
-	if (input.config.platformAppSlug) {
-		return (
-			input.existingConnection.lane !== 'platform' ||
-			input.existingConnection.appSlug !== input.config.platformAppSlug
-		)
-	}
 	return input.existingConnection.lane === 'platform'
 }
 
@@ -50,10 +42,8 @@ export function renderReplaceConfirmation(input: {
 	config: ConnectOauthConfig
 	existingConnection: ConnectOauthExistingConnection | null
 	replaceConfirmed: boolean
-	renameInput: string
 	submitting: boolean
 	onConfirm: () => void
-	onRenameInput: (value: string) => void
 }) {
 	if (
 		!wouldReplaceDifferentApp({
@@ -68,7 +58,6 @@ export function renderReplaceConfirmation(input: {
 		input.existingConnection?.lane === 'platform'
 			? `the built-in ${input.existingConnection.appSlug} integration`
 			: 'your own OAuth app'
-	const renameSuggestion = `${input.config.providerKey}-2`
 	return (
 		<div mix={css(insetCardCss)}>
 			<p mix={css({ margin: 0, color: colors.text, fontWeight: 600 })}>
@@ -100,84 +89,8 @@ export function renderReplaceConfirmation(input: {
 				>
 					Replace {input.config.providerKey}
 				</button>
-				{input.config.platformAppSlug ? (
-					<>
-						<span mix={css(descriptionCss)}>or connect as</span>
-						<input
-							type="text"
-							placeholder={renameSuggestion}
-							value={input.renameInput}
-							{...passwordManagerIgnoreProps}
-							mix={[
-								on('input', (event) => {
-									input.onRenameInput(event.currentTarget.value)
-								}),
-								css({ ...inputCss, maxWidth: '12rem' }),
-							]}
-							data-testid="connect-rename-input"
-						/>
-						<button
-							type="button"
-							disabled={input.submitting}
-							mix={[
-								on('click', () => {
-									const name = input.renameInput.trim() || renameSuggestion
-									// Full document load: the renamed connect
-									// resolves the built-in on a fresh page.
-									window.location.assign(
-										`/connect/oauth?provider=${encodeURIComponent(name)}&platform=${encodeURIComponent(input.config.platformAppSlug!)}`,
-									)
-								}),
-								css(getPrimaryButtonCss()),
-							]}
-							data-testid="connect-rename-submit"
-						>
-							Connect
-						</button>
-					</>
-				) : null}
 			</div>
 		</div>
-	)
-}
-
-/**
- * Shown when the current (or prospective) connection runs on the user's
- * own OAuth app while an enabled built-in exists for the same name. A
- * complete bring-your-own record wins the lookup by design, so without
- * this the built-in lane is invisible from the connect page.
- */
-export function renderBuiltInAlternative(input: {
-	builtInAvailable: boolean
-	config: ConnectOauthConfig | null
-}) {
-	if (
-		!input.builtInAvailable ||
-		!input.config ||
-		input.config.platformAppSlug
-	) {
-		return null
-	}
-	return (
-		<p mix={css(descriptionCss)}>
-			This uses your own OAuth app for {input.config.provider}. Prefer the
-			hosted one?{' '}
-			<a
-				href={`/connect/oauth?provider=${encodeURIComponent(input.config.providerKey)}&platform=1`}
-				mix={[
-					css(primaryLinkCss),
-					// Full document load on purpose: switching lanes
-					// re-resolves config from a fresh page.
-					on('click', (event) => {
-						event.preventDefault()
-						window.location.assign(event.currentTarget.href)
-					}),
-				]}
-			>
-				Use the built-in {input.config.provider} integration instead
-			</a>{' '}
-			— connecting it replaces this connection&apos;s tokens and scopes.
-		</p>
 	)
 }
 
@@ -261,6 +174,7 @@ export function renderChooser(input: {
 										label={option.label}
 										logoPath={option.logoPath}
 										autoLogoPath={option.autoLogoPath}
+										catalogLogoPath={option.catalogLogoPath}
 										size={connectOauthChooserOptionMarkSize}
 									/>
 									<span mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -388,10 +302,6 @@ export function connectOauthHeaderDescription(input: {
 		return input.statusMessage
 	}
 	if (input.currentStep === 'success') return "You're connected."
-	if (input.config.platformDescription) return input.config.platformDescription
-	if (input.config.platformAppSlug) {
-		return `Continue to ${input.config.provider} to approve access.`
-	}
 	if (input.currentStep === 'setup') {
 		return `Create an OAuth app on ${input.config.provider}, register the redirect URL, and paste the credentials below.`
 	}

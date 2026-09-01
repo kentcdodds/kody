@@ -24,6 +24,8 @@ import {
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
@@ -147,8 +149,14 @@ type DynamicWorkerExecutorInput = {
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	appCommitSha?: string | null
-	usageEnv: UsageEnv
+	usageEnv: UsageEnv & UserMeterEnv
 	rawFetchHostSink?: RawFetchHostSink
+	/**
+	 * When false, skip the `execute` usage event. Job, package-export, and
+	 * other nested surfaces record their own metrics; only MCP execute-tool
+	 * runs (and ad-hoc executor callers) should emit `execute`.
+	 */
+	recordExecuteUsage?: boolean
 }
 
 type DynamicWorkerExecutorOptions = {
@@ -582,6 +590,12 @@ export function createExecuteExecutor(input: {
 	 * so saved-package outbound requests are not counted.
 	 */
 	rawFetchHostSink?: RawFetchHostSink
+	/**
+	 * When false, skip the `execute` usage event. Nested surfaces (jobs,
+	 * package exports, workflows) already record their own metrics.
+	 * Defaults to true for ad-hoc executor callers.
+	 */
+	recordExecuteUsage?: boolean
 }) {
 	const loopbackExports = input.exports ?? workerExports
 	if (!loopbackExports?.KodyFetchGateway) {
@@ -609,6 +623,7 @@ export function createExecuteExecutor(input: {
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
+		recordExecuteUsage: input.recordExecuteUsage,
 	})
 }
 
@@ -652,6 +667,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				gatewayProps: input.gatewayProps,
 				timeoutMs: input.timeout,
 				workerOptions,
+			})
+			await recordUniqueDynamicWorkerDay({
+				env: input.usageEnv,
+				userId: input.gatewayProps.userId,
+				workerId,
 			})
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
@@ -747,7 +767,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				throw error
 			} finally {
 				executionState.active = false
-				if (input.gatewayProps.userId) {
+				if (input.recordExecuteUsage !== false && input.gatewayProps.userId) {
 					await recordUsage(input.usageEnv, {
 						userId: input.gatewayProps.userId,
 						eventType: 'execute',
@@ -915,7 +935,6 @@ function createProviderProxySource(provider: ResolvedProvider) {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
 			mcpServers: kodyProvider.kodyMcpServers ?? [],
-			openApiProviders: kodyProvider.kodyOpenApiProviders ?? [],
 		})
 	}
 	return `    const ${provider.name} = new Proxy({}, {\n      get: (_, toolName) => async (...args) => {\n        const resJson = await __dispatchers.${provider.name}.call(String(toolName), JSON.stringify(args));\n        const data = JSON.parse(resJson);\n        if (data.error) throw new Error(data.error);\n        return data.result;\n      }\n    });`
@@ -1511,9 +1530,7 @@ export function getExecutionErrorDetails(
  */
 const kodyRuntimeExportNames = new Set([
 	'kody',
-	'storage',
 	'packageStorage',
-	'refreshAccessToken',
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',
@@ -1528,13 +1545,11 @@ const kodyRuntimeExportNames = new Set([
 /**
  * Remedies for guard-less access to an optional `kody:runtime` export that
  * the execution context intentionally left unbound (`undefined` / `null` so
- * `if (storage) { ... }` guards stay falsy). The message itself is produced
+ * `if (email) { ... }` guards stay falsy). The message itself is produced
  * by `createUnboundRuntimeHelperMessage` in
  * `#worker/package-runtime/unbound-runtime-helpers.ts`.
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
-	storage:
-		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, statically import that package's export (`import fn from \"kody:@scope/package/export\"`) so its stamped `packageStorage()` does the reading and writing. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
 		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts. Prefer a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Guard with `if (packages) { ... }` when this helper is optional.',
 	events:

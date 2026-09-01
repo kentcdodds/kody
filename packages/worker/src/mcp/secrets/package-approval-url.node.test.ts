@@ -3,8 +3,24 @@ import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
+	buildSecretUsageUrl,
 	normalizeBulkPackageSecretApprovalNames,
 } from './package-approval-url.ts'
+
+test('buildSecretUsageUrl keeps Remix %2E encoding for dotted secret names', () => {
+	expect(
+		buildSecretUsageUrl({
+			baseUrl: 'https://kody.codes',
+			name: 'openai-api-key',
+		}),
+	).toBe('https://kody.codes/account/secrets/user/openai-api-key')
+	expect(
+		buildSecretUsageUrl({
+			baseUrl: 'https://kody.codes',
+			name: 'google.api.key',
+		}),
+	).toBe('https://kody.codes/account/secrets/user/google%2Eapi%2Ekey')
+})
 
 test('buildSecretPackageApprovalUrl keeps the single-secret detail path', () => {
 	expect(

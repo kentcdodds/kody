@@ -39,9 +39,8 @@ local filesystem and git access:
   publish — see [locked-gmail-drafts.md](./locked-gmail-drafts.md).
 - **Tool-only lane.** Without local filesystem/git access, create with
   `package_save` (complete UTF-8 text file set; no binary files) and edit
-  through repo sessions (`repo_open_session`, `repo_edit_files`,
-  `repo_write_file`, `repo_commit`, then `repo_run_checks` before
-  `repo_publish_session`).
+  through repo sessions (`repo_open_session`, `repo_edit_files`, `repo_commit`,
+  then `repo_run_checks` before `repo_publish_session`).
 
 If a request needs binary assets, many-file changes, or local build/test loops
 and you are tool-only, tell the user the task fits a coding-capable agent better
@@ -218,15 +217,15 @@ works in ad hoc `execute`.
 
 Do not vendor the library, switch to a dynamic import, or skip checks. Keep the
 Kody package as a thin orchestrator and run the heavy work in a process the
-owner operates. Load `coding_guide_get({ guide: "heavy_work_offload" })`.
+owner operates. Open `search({ entity: "heavy_work_offload:guide" })`.
 
 ## Secret-using packages
 
 When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 `kody.secretMounts`):
 
-1. Ensure each secret exists (see `guide: "connect_secret"` /
-   `guide: "secret_backed_integration"`).
+1. Ensure each secret exists (open `search({ entity: "connect_secret:guide" })`
+   / `search({ entity: "secret_backed_integration:guide" })`).
 2. Self-authored packages and community forks adopted with
    `community_fork_adopt` after a real source review get automatic read/use
    access to user secrets (host approval still applies; `secret_set` /
@@ -283,11 +282,10 @@ user explicitly skips a surface) treat the package as ready to run.
 ## Package icon
 
 Public packages should include one root `icon.svg`, `icon.png`, `icon.webp`,
-`icon.jpg`, or `icon.jpeg`. `community-icon.*` is still accepted. Prefer a
-square visual with a simple silhouette that remains legible at 56 pixels. Keep
-it under 2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of
-that source (or a generated package-name fallback when the repository has no
-icon).
+`icon.jpg`, or `icon.jpeg`. `community-icon.*` is also accepted. Prefer a square
+visual with a simple silhouette that remains legible at 56 pixels. Keep it under
+2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of that source
+(or a generated package-name fallback when the repository has no icon).
 
 Publishing the package refreshes the catalog listing icon automatically. The
 candidate paths win in the order `icon.*` then `community-icon.*` (svg, png,

@@ -138,7 +138,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				(connection) => connection.name !== name,
 			)
 			if (connections.length === app.connections.length) return [app]
-			if (connections.length === 0 && !isBuiltInApp(app)) return []
+			if (connections.length === 0) return []
 			return [
 				{
 					...app,
@@ -520,6 +520,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										label: oauthAppTitle(app),
 										logoPath: app.platformLogoPath ?? app.logoPath,
 										autoLogoPath: app.autoLogoPath,
+										catalogLogoPath: app.catalogLogoPath,
 										host: hostFromUrl(app.authorizeUrl ?? app.tokenUrl),
 										builtIn: isBuiltInApp(app),
 									}),

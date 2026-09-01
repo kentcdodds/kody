@@ -52,7 +52,7 @@ export function rankTrustedFirstCommunityListings<
 }
 
 export function buildConnectOauthCreateHelpersPrompt(integrationName: string) {
-	return `Create a thin helpers package for the "${integrationName}" OAuth integration. The saved integration is auth credentials only — not an agent-callable API. The helpers package should be the durable agent-facing surface (exports that call the provider with refreshAccessToken / createAuthenticatedFetch from kody:runtime). Load coding_guide_get({ guide: "package_authoring" }) and coding_guide_get({ guide: "integration_bootstrap" }), keep a README ## Intent section, and smoke-test with execute before saving.`
+	return `Create a thin helpers package for the "${integrationName}" OAuth integration. The saved integration is auth credentials only — not an agent-callable API. The helpers package should be the durable agent-facing surface (exports that call the provider with createAuthenticatedFetch from kody:runtime). Open search({ entity: ["package_authoring:guide", "integration_bootstrap:guide"] }), keep a README ## Intent section, and smoke-test with execute before saving.`
 }
 
 export function buildConnectOauthNextStepsGuidance(input: {

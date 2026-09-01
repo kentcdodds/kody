@@ -1,7 +1,10 @@
 import { getRequestIp } from '#worker/audit-log.ts'
+import {
+	honeypotFieldName,
+	turnstileResponseFieldName,
+} from '#universal/public-form-protection.ts'
 
-export const honeypotFieldName = 'website'
-export const turnstileResponseFieldName = 'turnstileToken'
+export { honeypotFieldName, turnstileResponseFieldName }
 
 type PublicFormBody = Record<string, unknown>
 

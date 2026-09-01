@@ -13,16 +13,16 @@ Production is four product scripts plus independent ops workers. Origin owns
 **zero** Durable Object classes
 ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 
-| Script                       | Public surface                                                                                  | Owns                                                                                                                                               | Binds                                                                        |
-| ---------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `kody-production` (origin)   | `kody.codes` (legacy hosts dual-served; cleanup #1300/#1428)                                    | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
-| `kody-platform`              | `/__platform/health` only                                                                       | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
-| `kody-runtime`               | `{user}.kody.run` (legacy `kodyapps.dev` dual-served; cleanup #1300/#1428); `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
-| `kody-jobs`                  | no public hostname                                                                              | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                                   |
-| `kody-highlight`             | no public hostname                                                                              | Shiki tokenizer (`POST /highlight`)                                                                                                                | —                                                                            |
-| `kody-status`                | `status.kody.codes`                                                                             | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                                 |
-| `kody-nx-cache`              | `nx-cache.kody.codes`                                                                           | R2 `kody-nx-cache`                                                                                                                                 | —                                                                            |
-| `kody-production-d1-backups` | operator-only                                                                                   | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                                 |
+| Script                       | Public surface                         | Owns                                                                                                                                               | Binds                                                                        |
+| ---------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
+| `kody-platform`              | `/__platform/health` only              | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
+| `kody-runtime`               | `{user}.kody.run`; `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
+| `kody-jobs`                  | no public hostname                     | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                                   |
+| `kody-highlight`             | no public hostname                     | Shiki tokenizer (`POST /highlight`)                                                                                                                | —                                                                            |
+| `kody-status`                | `status.kody.codes`                    | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                                 |
+| `kody-nx-cache`              | `nx-cache.kody.codes`                  | R2 `kody-nx-cache`                                                                                                                                 | —                                                                            |
+| `kody-production-d1-backups` | operator-only                          | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                                 |
 
 Local `npm run dev` attaches origin, platform, runtime, jobs, and highlight in
 one Miniflare. Playwright `CLOUDFLARE_ENV=test` is the exception: Durable Object
@@ -30,7 +30,8 @@ classes run on the single `kody-test` script with no `script_name`.
 
 Remix/blog/UI-only deploys upload origin and skip platform, runtime, and jobs.
 Official guide markdown (`docs/guides/`, `packages/worker/src/guides/`) uploads
-origin and platform because MCP `coding_guide_get` bundles those files.
+origin and platform because MCP `search({ entity: "{id}:guide" })` and
+`coding_guide_get` bundle those files.
 
 MCP `execute` resolves `KodyFetchGateway` from `ctx.exports` on the script that
 owns the `MCP` Durable Object (`kody-platform`). Origin
@@ -109,9 +110,6 @@ smoke does not prove MCP execute health.
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
   `kody.mcp[...]` capability synthesis). Local-network systems reach Kody the
   same way (outbound MCP under `kody.mcp[...]`).
-- [OpenAPI provider bindings](./openapi-bindings.md): user-scoped curated
-  OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
-  via `kody.openapi[...]` (host approval never widened by untrusted specs).
 - [OAuth integrations](./integrations.md): first-class OAuth apps and
   connections in D1 (`user_oauth_apps` / `user_integrations`), including
   operator-provisioned platform (built-in) apps (`platform_oauth_apps`),
@@ -139,9 +137,7 @@ arbitrary hosts:
 This invariant must hold for any code path that materializes an integration
 token and then attaches it to an outbound request. Host-side refresh via
 `integration_token_refresh` materializes tokens only server-side and returns
-metadata. `refreshAccessToken` is the raw-token helper: it persists through that
-same host path, then returns the access token for user-lane integrations only.
-See [OAuth integrations](./integrations.md).
+metadata. See [OAuth integrations](./integrations.md).
 
 ## Source of truth in code
 

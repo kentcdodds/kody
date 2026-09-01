@@ -1,9 +1,7 @@
 import { z } from 'zod'
 import { communityListingCategories } from '#universal/community-categories.ts'
-import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
-import { getUserSocialRowByUsername } from '#worker/community/social-repo.ts'
-import { listCommunityStargazersForListing } from '#worker/community/social-service.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -18,30 +16,18 @@ import {
 	communityListingAggregatesSchema,
 	communityListingStatusSchema,
 	communityPublicUrlSchema,
-	communityStargazerSchema,
 	communityTrustedFieldSchema,
 	resolveCommunityOwnerUsername,
 	toCommunityListingAggregatesOutput,
 } from './shared.ts'
-
-const recentStargazerLimit = 10
 
 export const communityGetCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'community_get',
 		description:
-			'Load full detail for one public community listing, including untrusted README content, aggregate ratings, and recent stargazers.',
-		keywords: [
-			'community',
-			'get',
-			'listing',
-			'detail',
-			'readme',
-			'package',
-			'stargazers',
-			'stars',
-		],
+			'Load full detail for one public community listing, including untrusted README content and aggregate ratings.',
+		keywords: ['community', 'get', 'listing', 'detail', 'readme', 'package'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -67,10 +53,6 @@ export const communityGetCapability = defineDomainCapability(
 			readme_untrusted: z.string().nullable(),
 			content_warning: z.string(),
 			fork_instructions: z.string(),
-			stargazers: z.object({
-				total_stars: z.number().int().nonnegative(),
-				recent_stargazers: z.array(communityStargazerSchema),
-			}),
 		}),
 		async handler(args, ctx) {
 			requireMcpUser(ctx.callerContext)
@@ -91,12 +73,6 @@ export const communityGetCapability = defineDomainCapability(
 				ownerUsername,
 			)
 			const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
-			const { totalStars, stargazers } =
-				await listCommunityStargazersForListing({
-					env: ctx.env,
-					listingId: listing.id,
-					limit: recentStargazerLimit,
-				})
 			return {
 				listing_id: listing.id,
 				name: listing.name,
@@ -124,21 +100,6 @@ export const communityGetCapability = defineDomainCapability(
 				readme_untrusted: listing.readmeContent,
 				content_warning: communityContentWarning,
 				fork_instructions: communityGetForkInstructions,
-				stargazers: {
-					total_stars: totalStars,
-					recent_stargazers: stargazers.map((stargazer) => {
-						const avatarPath = buildUserAvatarUrl({
-							username: stargazer.username,
-							avatarKey: stargazer.avatarKey,
-						})
-						return {
-							username: stargazer.username,
-							display_name: stargazer.displayName,
-							avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
-							starred_at: stargazer.starredAt,
-						}
-					}),
-				},
 			}
 		},
 	},

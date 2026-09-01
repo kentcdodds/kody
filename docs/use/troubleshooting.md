@@ -86,7 +86,7 @@ signed in, user-scoped package results are empty.
 ## Fetch or secret errors
 
 - **Host not approved:** complete the approval flow in the app for that secret
-  and host.
+  and host. Self-authored and adopted packages still need this host grant.
 - **Package not approved for secret:** self-authored and adopted packages can
   read and use user secrets; unadopted community forks need an
   `allowed_packages` grant (or adoption after review). See
@@ -103,9 +103,11 @@ normal outbound MCP server (`kody.mcp["home"]`). See
 [Connect remote MCP servers](./mcp-client-servers.md) and
 [Lock an MCP server to a package](../guides/locked-mcp-server.md).
 
-After a password reset, reconnect the MCP host: Kody revokes OAuth grants and
-rejects access tokens issued at or before the reset, so a refresh alone is not
-enough.
+After a password reset or an in-account password change, reconnect the MCP host:
+Kody revokes OAuth grants and rejects access tokens issued at or before the
+change, so a refresh alone is not enough. Signed-in users can also change or set
+a password from [Account](https://kody.codes/account) without waiting for a
+reset email.
 
 ## Job, webhook, or package app failed
 

@@ -4,7 +4,7 @@ Per-user plans with per-plan resource limits. This is Kody's denial-of-wallet
 protection for open signup: it bounds how many billable resources a single
 account can consume. Stripe subscription billing lives in a separate module
 (`packages/worker/src/billing/`); see [Billing](#billing) below. Limit numbers
-in `planLimits` remain independently configured placeholders.
+in `planLimits` stay independently configured from Stripe list prices.
 
 Module: `packages/worker/src/entitlements/` plus the client-safe plan registry
 at `packages/worker/universal/plans.ts`.
@@ -112,7 +112,10 @@ enforcement loop for the compute surfaces `usage-metering.md` already observes:
   provider requests, package runtime), the gateway reverse-resolves the account
   via `findUserAccountByStableUserId` so the caller's real plan binds. Genuinely
   accountless synthetic contexts resolve to `free` so missing identity plumbing
-  cannot grant elevated quotas.
+  cannot grant elevated quotas. Server-side fetches of a user-supplied URL go
+  through the same gateway rather than global `fetch` — including OpenAPI spec
+  documents (`packages/worker/src/openapi/fetch-spec.ts`), where each redirect
+  hop is its own gateway fetch.
 - **Job runs** are consumed at the top of `executeJobOnce`
   (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
   before sandbox work, so over-limit ticks fail cheaply. This is separate from
@@ -135,7 +138,10 @@ Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
 **authoritative in the per-user `UserMeter` Durable Object** (`USER_METER`
 binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
 `user-meter-client.ts`; storage layout and naming are documented in
-[Data storage](./data-storage.md).
+[Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
+Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
+double-counting; that table is cost attribution, not a plan cap. See
+[Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
@@ -178,7 +184,7 @@ the same cold zero-init path):
 
 - Account usage UI — `packages/worker/src/app/account-usage-data.ts`
 - Account email usage panel — `packages/worker/src/app/account-email-data.ts`
-- `email_usage_get` MCP capability
+- `usage_get` MCP capability
 - Admin per-user usage drill-down —
   `packages/worker/src/admin/user-usage-data.ts` (via
   `readAdminEntitlementConsumption` in
@@ -188,12 +194,16 @@ the same cold zero-init path):
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
   ~15 active users by current-month event count. The lane emits one
   `fleet.entitlement.crossed` event per 80% or 100% crossing (and per first
-  over-threshold runtime-duration month) to admin-owned packages. Staying over
-  the same threshold does not emit again; dropping below and climbing back is a
-  new instance. KV prefix `fleet-entitlement-crossing:v1` stores
+  over-threshold runtime-duration month, unique Dynamic Worker cost month, or
+  three-of-seven execute-cap train) to admin-owned packages. Staying over the
+  same threshold does not emit again; dropping below and climbing back is a new
+  instance. KV prefix `fleet-entitlement-crossing:v1` stores
   `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock limits,
-  appends the UTC day for `*_per_day` counters, and uses
-  `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal.
+  appends the UTC day for `*_per_day` counters, uses
+  `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal,
+  `{prefix}:{userId}:dynamic_worker_cost:{month}` for the unique-worker cost
+  signal, and `{prefix}:{userId}:repeated_entitlement:{resource}` for the
+  execute-cap train. Hit days live under `fleet-entitlement-hit:v1`.
 - User entitlement warning emails (same hourly lane) — emails verified person
   accounts when usage crosses 80% or 100% of their effective plan (transactional
   template). Throttle is one mail per crossing of a given percentage on a

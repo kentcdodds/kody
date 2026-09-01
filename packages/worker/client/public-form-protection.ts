@@ -1,5 +1,17 @@
-export const honeypotFieldName = 'website'
-export const turnstileResponseFieldName = 'turnstileToken'
+import {
+	emptyPublicFormProtection,
+	honeypotFieldName,
+	turnstileResponseFieldName,
+	type PublicFormProtectionFields,
+} from '#universal/public-form-protection.ts'
+
+export {
+	emptyPublicFormProtection,
+	honeypotFieldName,
+	turnstileResponseFieldName,
+	type PublicFormProtectionFields,
+}
+
 export const turnstileWidgetClassName = 'kody-turnstile'
 
 type TurnstileApi = {
@@ -7,7 +19,8 @@ type TurnstileApi = {
 		container: HTMLElement,
 		options: { sitekey: string; 'response-field-name': string },
 	): string
-	reset?(container: HTMLElement): void
+	reset?(container: HTMLElement | string): void
+	remove?(container: HTMLElement | string): void
 }
 
 let turnstileScriptPromise: Promise<TurnstileApi> | null = null
@@ -49,17 +62,52 @@ function loadTurnstileScript() {
 	return turnstileScriptPromise
 }
 
+/**
+ * Remix re-renders can wipe Turnstile's injected children from a declarative
+ * empty host while leaving our `data-turnstile-rendered` marker. Without this
+ * check we skip re-render and later `reset()` throws "Nothing to reset found…".
+ * A live widget always leaves at least one child (iframe / response input).
+ */
+function isTurnstileWidgetAlive(container: HTMLElement) {
+	return container.childElementCount > 0
+}
+
+function clearTurnstileRenderedMarker(container: HTMLElement) {
+	delete container.dataset.turnstileRendered
+}
+
+function abandonOrphanedTurnstileWidget(
+	api: TurnstileApi,
+	container: HTMLElement,
+) {
+	clearTurnstileRenderedMarker(container)
+	try {
+		api.remove?.(container)
+	} catch {
+		// Widget is already gone from Turnstile's registry; ignore.
+	}
+}
+
 export async function renderTurnstileWidgets(siteKey: string | null) {
 	if (!siteKey || typeof document === 'undefined') return
 	const api = await loadTurnstileScript()
 	for (const container of document.querySelectorAll<HTMLElement>(
-		`.${turnstileWidgetClassName}:not([data-turnstile-rendered])`,
+		`.${turnstileWidgetClassName}`,
 	)) {
-		container.dataset.turnstileRendered = 'true'
-		api.render(container, {
-			sitekey: siteKey,
-			'response-field-name': turnstileResponseFieldName,
-		})
+		if (container.dataset.turnstileRendered === 'true') {
+			if (isTurnstileWidgetAlive(container)) continue
+			abandonOrphanedTurnstileWidget(api, container)
+		}
+		try {
+			api.render(container, {
+				sitekey: siteKey,
+				'response-field-name': turnstileResponseFieldName,
+			})
+			container.dataset.turnstileRendered = 'true'
+		} catch (error) {
+			clearTurnstileRenderedMarker(container)
+			throw error
+		}
 	}
 }
 
@@ -68,6 +116,10 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
  * consumes one on every verify, so a form that stays mounted after a failed
  * submit would resubmit a spent token and be rejected for the wrong reason.
  * Call this on any path that leaves the form up for another try.
+ *
+ * Never throws: a dead/orphaned widget (DOM wiped by a re-render) must not
+ * surface as an unhandled rejection from submit handlers. Clear the marker so
+ * the next `renderTurnstileWidgets` call can remount.
  */
 export function resetTurnstileWidgets() {
 	if (typeof document === 'undefined') return
@@ -76,13 +128,25 @@ export function resetTurnstileWidgets() {
 	for (const container of document.querySelectorAll<HTMLElement>(
 		`.${turnstileWidgetClassName}[data-turnstile-rendered]`,
 	)) {
-		api.reset(container)
+		if (!isTurnstileWidgetAlive(container)) {
+			abandonOrphanedTurnstileWidget(api, container)
+			continue
+		}
+		try {
+			api.reset(container)
+		} catch {
+			abandonOrphanedTurnstileWidget(api, container)
+		}
 	}
 }
 
-export function readPublicFormProtection(formData: FormData) {
+export function readPublicFormProtection(
+	formData: FormData,
+): PublicFormProtectionFields {
 	return {
-		website: String(formData.get(honeypotFieldName) ?? ''),
-		turnstileToken: String(formData.get(turnstileResponseFieldName) ?? ''),
+		[honeypotFieldName]: String(formData.get(honeypotFieldName) ?? ''),
+		[turnstileResponseFieldName]: String(
+			formData.get(turnstileResponseFieldName) ?? '',
+		),
 	}
 }

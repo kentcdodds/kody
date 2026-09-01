@@ -87,26 +87,34 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
 ## Quick commands
 
-| Task               | Command                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| Install deps       | `npm install`                                                   |
-| Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                  |
-| Migrate local D1   | `npm run migrate:local`                                         |
-| Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below) |
-| Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)   |
-| Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)   |
+| Task               | Command                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Install deps       | `npm install`                                                                                                                    |
+| Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                                                                                   |
+| Migrate local D1   | `npm run migrate:local`                                                                                                          |
+| Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below)                                                                  |
+| Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)                                                                    |
+| Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)                                                                    |
+| App verification   | `npm run control-kody -- doctor` then `login` / `request` / `map` / `preview` / `health` (see [control-kody](./control-kody.md)) |
 
 ## Dev server
 
 - `npm run dev:ensure` is the agent entry point. It probes origin `/health` on
   3742–3751, prints `App running at http://localhost:<port>` and exits 0 when a
-  server is already up, replaces a stale kody/workerd leftover that accepts TCP
-  but does not serve `/health`, then starts `npm run dev` and waits until
-  `/health` is actually ok before printing the resolved URL.
-- `npm run dev` starts the client esbuild watcher, optional Cloudflare API mock
-  worker, and Wrangler with origin plus generated platform, runtime, and jobs
-  siblings in one Miniflare (local D1/KV/DO persistence). Non-TTY sessions print
-  `App running at` only after `/health` responds.
+  server is already up, waits for a kody/workerd leftover that accepts TCP but
+  does not serve `/health` before replacing it, then starts `npm run dev` and
+  waits until `/health` is actually ok before printing the resolved URL. If the
+  latest wrangler line is Reloading and `/health` still misses the budget, the
+  process is left running so a retry can reuse it. UI verification opens that
+  real origin (for example `/onboarding`); do not substitute a `renderToString`
+  dump of one component.
+- `npm run dev` starts the client esbuild watcher and waits up to 30s for the
+  first `public/client-entry.js` write before launching Wrangler, so that first
+  bundle does not hit wrangler's assets watcher. If the wait expires, Wrangler
+  still starts and may reload when the bundle lands. Then the optional
+  Cloudflare API mock worker and Wrangler run origin plus generated platform,
+  runtime, and jobs siblings in one Miniflare (local D1/KV/DO persistence).
+  Non-TTY sessions print `App running at` only after `/health` responds.
 - Default worker port is **3742** (`cli.ts`); the CLI picks a free port when
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived interactive `npm run dev` in tmux so the session survives tool

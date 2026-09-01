@@ -10,6 +10,7 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
+import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import {
 	createCommunityDetailHandler,
@@ -36,7 +37,7 @@ import {
 } from '#universal/code-runs.ts'
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
-import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
+import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -87,12 +88,10 @@ vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof CommunitySocialRepo>()
+vi.mock('#worker/community/profile-repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityProfileRepo>()
 	return {
 		...actual,
-		getCommunityStar: vi.fn().mockResolvedValue(false),
-		getUserFollow: vi.fn().mockResolvedValue(false),
 		getUserSocialRowByUsername: (...args: Array<unknown>) =>
 			communityMockModule.getUserSocialRowByUsername(...args),
 	}
@@ -126,7 +125,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 type TestUser = {
@@ -355,6 +353,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountResponse.status).toBe(200)
 	const accountHtml = await readResponseText(accountResponse)
 	expect(accountHtml).toContain('aria-label="Account sections"')
+	expect(accountHtml).toContain('data-testid="site-header-waiting"')
+	expect(accountHtml).toContain('href="/account/waiting"')
+	expect(accountHtml).toContain('Waiting — account-user')
 	const accountProps = readAppRootProps(accountHtml)
 	expect(accountProps.loaderData?.accountProfile).toEqual({
 		ok: true,
@@ -421,6 +422,20 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(readAppRootProps(passkeysHtml).loaderData?.accountPasskeys).toEqual({
 		ok: true,
 		passkeys: [],
+	})
+
+	const waitingResponse = await runHtmlHandler(
+		createAccountWaitingHandler(env),
+		new Request('https://example.com/account/waiting', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(waitingResponse.status).toBe(200)
+	const waitingHtml = await readResponseText(waitingResponse)
+	expect(waitingHtml).toContain('>Waiting<')
+	expect(readAppRootProps(waitingHtml).loaderData?.accountWaiting).toEqual({
+		ok: true,
+		items: expect.any(Array),
 	})
 
 	const mcpOauthClientsResponse = await runHtmlHandler(
@@ -953,59 +968,9 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(html).toContain('data-testid="connect-oauth-scopes"')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
 
-	// A built-in connect that would replace a user-lane connection under the
-	// same name server-renders the replace confirmation and withholds the
-	// Continue button (and the scope picker) until the user confirms.
+	// Reconnecting a platform connection is bring-your-own setup: the page
+	// asks for the user's client credentials instead of one-click authorize.
 	const replaceResponse = await renderAppPage({
-		request: new Request(
-			'https://example.com/connect/oauth?provider=google&platform=1',
-		),
-		env,
-		loaderData: {
-			connectOauth: {
-				ok: true,
-				provider: 'google',
-				integration: {
-					name: 'google',
-					appSlug: 'google',
-					provider: 'google',
-					appLabel: 'Google',
-					accountLabel: null,
-					tokenUrl: 'https://oauth2.googleapis.com/token',
-					apiBaseUrl: 'https://www.googleapis.com',
-					flow: 'pkce',
-					usePkce: true,
-					clientId: 'platform-google-client',
-					clientSecretSecretName: null,
-					accessTokenSecretName: 'googleAccessToken',
-					refreshTokenSecretName: 'googleRefreshToken',
-					requiredHosts: ['oauth2.googleapis.com'],
-					authorization: {
-						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-						scopes: ['openid'],
-						scopeSeparator: null,
-						extraAuthorizeParams: {},
-					},
-					platform: true,
-					platformAllowedScopes: ['openid'],
-					platformDescription: 'Send-only Gmail access.',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-				builtInAvailable: false,
-				existingConnection: { lane: 'user', appSlug: 'google' },
-				hasStoredClientSecret: false,
-				redirectUri: 'https://example.com/connect/oauth',
-			},
-		},
-	})
-	expect(replaceResponse.status).toBe(200)
-	const replaceHtml = await readResponseText(replaceResponse)
-	expect(replaceHtml).toContain('data-testid="connect-replace-confirm"')
-	expect(replaceHtml).toContain('data-testid="provider-mark"')
-	expect(replaceHtml).not.toContain('data-testid="connect-oauth-scopes"')
-
-	const platformConnectResponse = await renderAppPage({
 		request: new Request('https://example.com/connect/oauth?provider=google'),
 		env,
 		loaderData: {
@@ -1021,35 +986,33 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 					tokenUrl: 'https://oauth2.googleapis.com/token',
 					apiBaseUrl: 'https://www.googleapis.com',
 					flow: 'confidential',
-					usePkce: false,
-					clientId: 'platform-google-client',
+					usePkce: true,
+					clientId: '',
 					clientSecretSecretName: null,
 					accessTokenSecretName: 'googleAccessToken',
 					refreshTokenSecretName: 'googleRefreshToken',
 					requiredHosts: ['oauth2.googleapis.com'],
 					authorization: {
 						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-						scopes: ['openid', 'email'],
+						scopes: ['openid'],
 						scopeSeparator: null,
 						extraAuthorizeParams: {},
 					},
-					platform: true,
-					platformAllowedScopes: ['openid', 'email', 'profile'],
 					createdAt: '2026-01-01T00:00:00.000Z',
 					updatedAt: '2026-01-01T00:00:00.000Z',
 				},
 				builtInAvailable: false,
+				existingConnection: { lane: 'platform', appSlug: 'google' },
 				hasStoredClientSecret: false,
 				redirectUri: 'https://example.com/connect/oauth',
 			},
 		},
 	})
-	expect(platformConnectResponse.status).toBe(200)
-	const platformConnectHtml = await readResponseText(platformConnectResponse)
-	expect(platformConnectHtml).toContain('data-testid="connect-oauth-scopes"')
-	expect(platformConnectHtml).not.toContain(
-		'data-testid="connect-replace-confirm"',
-	)
+	expect(replaceResponse.status).toBe(200)
+	const replaceHtml = await readResponseText(replaceResponse)
+	expect(replaceHtml).toContain('Paste the client ID')
+	expect(replaceHtml).toContain('https://example.com/connect/oauth')
+	expect(replaceHtml).not.toContain('data-testid="connect-replace-confirm"')
 
 	// First-time bring-your-own setup: credentials form and redirect URL are
 	// visible; endpoints and allowed hosts stay behind the disclosure.
@@ -1113,14 +1076,15 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 				chooser: {
 					options: [
 						{
-							id: 'platform:google',
-							href: '/connect/oauth?provider=google&platform=google',
+							id: 'connection:google',
+							href: '/connect/oauth?provider=google&app=google',
 							label: 'Google',
-							detail: "Connect with Kody's built-in app",
+							detail: 'Reconnect your OAuth app',
 							providerKey: 'google',
 							logoPath: null,
 							autoLogoPath: null,
-							kind: 'platform',
+							catalogLogoPath: null,
+							kind: 'connection',
 						},
 					],
 				},
@@ -1135,9 +1099,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(chooserHtml).not.toContain(
 		'data-testid="connect-oauth-chooser-filter"',
 	)
-	expect(chooserHtml).toContain(
-		'/connect/oauth?provider=google&platform=google',
-	)
+	expect(chooserHtml).toContain('/connect/oauth?provider=google&app=google')
 
 	const longChooserOptions = [
 		'google',
@@ -1148,14 +1110,15 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		'spotify',
 		'linear',
 	].map((slug) => ({
-		id: `platform:${slug}`,
-		href: `/connect/oauth?provider=${slug}&platform=${slug}`,
+		id: `connection:${slug}`,
+		href: `/connect/oauth?provider=${slug}&app=${slug}`,
 		label: slug,
-		detail: "Connect with Kody's built-in app",
+		detail: 'Reconnect your OAuth app',
 		providerKey: slug,
 		logoPath: null,
 		autoLogoPath: null,
-		kind: 'platform' as const,
+		catalogLogoPath: null,
+		kind: 'connection' as const,
 	}))
 	const sixChooserResponse = await renderAppPage({
 		request: new Request('https://example.com/connect/oauth'),
@@ -1196,9 +1159,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		'data-testid="connect-oauth-chooser-filter"',
 	)
 	expect(longChooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
-	expect(longChooserHtml).toContain(
-		'/connect/oauth?provider=linear&platform=linear',
-	)
+	expect(longChooserHtml).toContain('/connect/oauth?provider=linear&app=linear')
 
 	const callbackResponse = await renderAppPage({
 		request: new Request(
@@ -1416,9 +1377,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(addAccountHtml).not.toContain('data-testid="add-account-open"')
 	expect(builtInHtml).toContain('Needs setup')
 	expect(builtInHtml).toContain('>Connect<')
-	expect(builtInHtml).toContain(
-		'/connect/oauth?provider=google-work&amp;platform=google',
-	)
+	expect(builtInHtml).toContain('/connect/oauth?provider=google-work')
 	expect(builtInHtml).not.toContain('Rotate credentials')
 
 	const missingConnectionResponse = await renderAppPage({
@@ -1593,22 +1552,6 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	const html = await readResponseText(response)
 	expect(html).toContain('<title>FAQ</title>')
 	expect(html).toContain('data-faq="replace-agents"')
-	expect(html).toContain('Does Kody replace Claude, Cursor, ChatGPT, or Codex?')
-	expect(html).toContain('Does Kody call a model / make inference calls?')
-	expect(html).toContain('What is a package vs a prompt vs a memory?')
-	expect(html).toContain('Can my team share one Kody account?')
-	expect(html).toContain('How do secrets work? Can my agent read the key?')
-	expect(html).toContain('What happens if I switch agents?')
-	expect(html).toContain('What does the free plan include?')
-	expect(html).toContain('Can I export or self-host?')
-	expect(html).toContain(
-		'How is this different from a Claude Project, a local folder of skills, or n8n?',
-	)
-	expect(html).toContain('How do I get started?')
-	expect(html).toContain(
-		'Your assistant is yours unless you publish a public package.',
-	)
-	expect(html).toContain('secret_get')
 	expect(html).toContain('<details')
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
@@ -1705,10 +1648,8 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-detail-frame"')
 	expect(html).toContain('data-testid="community-listing-icon-detail"')
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
-	expect(html).not.toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
-	expect(html).toContain('data-testid="community-detail-star"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
@@ -1736,21 +1677,19 @@ test('listing-uuid URLs redirect to the canonical pair when possible and keep se
 		'/@kentcdodds/github-triage',
 	)
 
-	// The follow control redirects back with `followError`, so the query has to
-	// survive the hop or the message vanishes.
+	// Query strings ride the hop so a shared or bookmarked listing-uuid URL
+	// does not drop its extra params on the way to the canonical pair.
 	const redirect = await createCommunityDetailHandler(env).handler({
 		request: new Request(
-			'https://example.com/community/listing-detail-1?followError=nope',
+			'https://example.com/community/listing-detail-1?source=share',
 		),
-		url: new URL(
-			'https://example.com/community/listing-detail-1?followError=nope',
-		),
+		url: new URL('https://example.com/community/listing-detail-1?source=share'),
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
 	expect(redirect.status).toBe(301)
 	expect(redirect.headers.get('location')).toBe(
-		'https://example.com/@kentcdodds/github-triage?followError=nope',
+		'https://example.com/@kentcdodds/github-triage?source=share',
 	)
 	// The same URL serves frame HTML, which must not get this redirect back.
 	expect(redirect.headers.get('vary')).toBe('x-remix-target')

@@ -56,8 +56,8 @@ Authoring flow:
    **`getStaticRegistry()`** on first use per isolate, providing access to
    builtin capabilities, handlers, tool descriptors, and domain metadata. At
    request time, **`getCapabilityRegistryForContext()`** merges MCP client
-   servers and OpenAPI bindings, then applies caller
-   role/permission/feature-flag filtering for search and execute.
+   servers, then applies caller role/permission/feature-flag filtering for
+   search and execute.
 
 To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
@@ -69,12 +69,6 @@ synthesizes `mcp:<server>` domains from the user's enabled MCP servers (see
 driven by the `mcp_server_settings` D1 table and per-user hub snapshots. Home
 automation and similar outbound tools are ordinary MCP servers
 (`kody.mcp["home"]`), not a separate product surface.
-
-**OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
-domains from the user's curated OpenAPI provider bindings (see
-[`architecture/openapi-bindings.md`](./architecture/openapi-bindings.md)),
-stored in user-scoped D1 tables and invoked as
-`kody.openapi["<name>"].<operation_slug>(input)`.
 
 `defineCapability()` in
 `packages/worker/src/mcp/capabilities/define-capability.ts` normalizes Zod →
@@ -310,7 +304,7 @@ domain when you introduce a new system boundary or ownership area (e.g.
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
    extends the `BuiltinCapabilityDomain` union; `CapabilityDomain` itself is a
-   plain `string` so runtime MCP/OpenAPI domains stay valid).
+   plain `string` so runtime MCP domains stay valid).
 2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
    files, and direct imports from those files in `domain.ts`.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
@@ -467,10 +461,10 @@ Use filename suffixes to choose the Vitest project:
 
 ## Compatibility and versioning policy
 
-Capability names, input field names, output field names, domain ids, and
-MCP/OpenAPI synthesized names are compatibility contracts once real users can
-reference them. Treat every change as if it might affect saved user code. This
-policy is for the post-cleanup, pre-open-signup line in the sand; do not add
+Capability names, input field names, output field names, domain ids, and MCP
+synthesized names are compatibility contracts once real users can reference
+them. Treat every change as if it might affect saved user code. This policy is
+for the post-cleanup, pre-open-signup line in the sand; do not add
 alias/deprecation machinery for the current Kent-only cleanup.
 
 - Inputs are additive-only. Add optional fields first; never make an existing

@@ -130,7 +130,7 @@ function buildDomainBrowseResult(input: {
 		matches,
 		registry: input.registry,
 	})
-	// Large synthesized domains (mcp:*, openapi:*) can exceed the listing
+	// Large synthesized domains (mcp:*) can exceed the listing
 	// limit; never let a partial listing pass silently as the whole domain.
 	const guidance =
 		matches.length < domainSpecs.length
@@ -191,6 +191,7 @@ export async function searchUnified(input: {
 		: input.registry
 	// Domain scoping is a capability-graph drill-down; user-owned entities
 	// (packages, values, integrations, secrets, retrievers) have no domain.
+	// Official guides belong to the coding domain and stay in that scope.
 	const optionalRows = domainFilter
 		? {
 				packageRows: [],
@@ -240,6 +241,7 @@ export async function searchUnified(input: {
 	const entityDescriptors = buildSearchableEntityDescriptors({
 		registry,
 		optionalRows,
+		...(domainFilter ? { domain: domainFilter } : {}),
 	})
 	const queryUnderstandingStart = performance.now()
 	const intent = understandSearchQuery({
@@ -305,6 +307,7 @@ export async function searchUnified(input: {
 							retrieverResults,
 							queryEmbedding,
 							sharedQueryVector,
+							...(domainFilter ? { domain: domainFilter } : {}),
 						})
 					: []
 			return {

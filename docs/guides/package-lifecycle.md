@@ -106,10 +106,10 @@ Move the behavior into a package when one or more of these become true:
 - inputs, output, error handling, or integration behavior will evolve
 - a one-off script has already been copied, repaired, or rerun
 - you are calling a third-party **product** API with raw integration auth
-  helpers (`createAuthenticatedFetch`, `refreshAccessToken`, or equivalent)
-  beyond a cheap smoke test — **integrations = auth; packages = how agents
-  should call the product**. Search for an existing wrapper package first, then
-  `community_search`, then fork or create a thin helpers package
+  helpers (`createAuthenticatedFetch` or equivalent) beyond a cheap smoke test —
+  **integrations = auth; packages = how agents should call the product**. Search
+  for an existing wrapper package first, then `community_search`, then fork or
+  create a thin helpers package
 
 Do not create a package merely to wrap one clear call to an existing capability
 or package export. One-shot reminders and deferred work belong in workflows, not
@@ -139,8 +139,8 @@ Without local filesystem or git access:
 
 1. Create the complete UTF-8 text package with `package_save`, or inspect an
    existing package with `package_get`.
-2. Use `repo_open_session`, `repo_edit_files` (or `repo_write_file`),
-   `repo_commit`, and `repo_run_checks` for repo-backed edits and validation.
+2. Use `repo_open_session`, `repo_edit_files`, `repo_commit`, and
+   `repo_run_checks` for repo-backed edits and validation.
 3. Publish with `repo_publish_session`.
 
 If the work needs binary assets, broad refactors, or a substantial local
@@ -207,6 +207,27 @@ Require fresh confirmation if the target or scope changes.
 Keep the schedule disabled when representative testing is inconclusive,
 credentials or host approval are missing, the result is unexpected, or the live
 mutation has not been explicitly confirmed by the user.
+
+## Delete a package
+
+`package_delete` permanently removes a saved package the signed-in user owns. Do
+not call it because a package is unused, failing, or over quota unless the owner
+explicitly asked to delete that package.
+
+1. Load the package with `package_get` or `package_list`.
+2. Show the owner the package name and that delete removes jobs, storage,
+   secrets, tokens, the public listing if one exists, and Artifacts repos.
+   Existing forks keep their copies. This cannot be undone.
+3. Wait for the owner to type the package name.
+4. Call `package_delete` with `package_id` and `confirm_name` matching that name
+   exactly. The capability refuses and names the expected value when
+   `confirm_name` is missing or wrong.
+
+People can delete from the package page: `/account/packages` → open the package
+→ **Delete package**, then type the package name in the modal.
+
+Hiding (`package_update` `changes.hidden`) and making a package private are not
+deletion.
 
 ## Evolve the durable behavior
 

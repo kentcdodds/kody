@@ -80,6 +80,7 @@ export const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	outbound_fetch: 'Fetches',
 	email_send: 'Email sends',
 	email_received: 'Email receives',
+	dynamic_worker_day: 'Unique worker-days',
 }
 
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */

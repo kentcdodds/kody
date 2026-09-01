@@ -1,8 +1,9 @@
 # First steps
 
 Kody exposes **search** and **execute** as the main tools. The agent should
-**search first** to find the right capability, package, integration, or secret
-reference, then run work through **execute**.
+**search first** to find the right capability, official guide, package,
+integration, or secret reference, then run work through **execute**. Official
+guides load with `search({ entity: "{id}:guide" })` — not execute.
 
 ## Habits that help
 
@@ -29,17 +30,17 @@ reference, then run work through **execute**.
   suitable exists. See [Public packages](./community-packages.md).
 - **Bootstrap integration-backed work before building.** When a package, package
   app, or workflow depends on OAuth, a saved secret, or a third-party API, use
-  `search` and the `coding_guide_get` `integration_bootstrap` guide first.
-  Confirm the integration or secret exists, run a cheap authenticated smoke test
-  in `execute`, then prefer a community fork before building the downstream
+  `search({ entity: "integration_bootstrap:guide" })` first. Confirm the
+  integration or secret exists, run a cheap authenticated smoke test in
+  `execute`, then prefer a community fork before building the downstream
   artifact.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
   `/account/secrets/new`, or the flows described in
   [Secrets and host approval](./secrets-and-values.md). Per-provider connect
-  guides are available: load `coding_guide_get({ guide: "provider_<name>" })`
-  (for example `provider_github`) or browse
+  guides are available: `search({ entity: "provider_<name>:guide" })` (for
+  example `provider_github`) or browse
   [https://kody.codes/guides](https://kody.codes/guides) (each page also serves
   raw markdown at `/guides/<slug>.md`).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor

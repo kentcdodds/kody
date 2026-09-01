@@ -34,7 +34,7 @@ package-app surfaces:
    production.
 4. **Credential endpoints are rate limited.** Any new endpoint that accepts a
    password, token, or reset code must join the shared auth rate-limit bucket in
-   `packages/worker/src/index.ts` (`rateLimitedAuthPaths`).
+   `packages/worker/src/origin-handler.ts` (`rateLimitedAuthPaths`).
 5. **New passwords go through the shared policy.** Use `getPasswordPolicyError`
    from `@kody-internal/shared/password-policy.ts` wherever a password is set.
 6. **OAuth PKCE stays S256-only.** Keep the `getPkceValidationError` check in
@@ -169,19 +169,18 @@ in the Worker `fetch` handler:
   methods redirect (`302`) to the owner's package-app subdomain with a handoff
   token; other methods get a `307` to that subdomain. Unauthenticated visitors
   are sent to `/login` on the app origin first.
-- **Package-app apex** (`kody.run`, and dual-served `kodyapps.dev`): serves no
-  package code. `/` redirects to the app origin. Legacy path-based URLs
-  (`/@{username}/packages/*`) redirect (`302`/`307`) to the owning user's
-  subdomain. Everything else — including `/account/*`, `/login`, `/mcp`, and the
+- **Package-app apex** (`kody.run`): serves no package code. `/` redirects to
+  the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
+  (`302`/`307`) to the owning user's subdomain. Everything else — including
+  `/account/*`, `/login`, `/mcp`, and the
   `/@{username}/api/package-invocations/*` and `/webhooks/*` machine APIs — is
   `404`. Those APIs stay on the app origin on purpose: they are authenticated by
   their own bearer tokens or URL secrets, they are never called by package
   browser code, and hosting them on the package-app domain would only widen its
   surface. Retired `/@{username}/connectors/*` paths also 404.
-- **Per-user package-app subdomain** (`{username}.kody.run`, and dual-served
-  `{username}.kodyapps.dev`): serves only `/packages/{kodyId}/*` for that
-  hostname's username label. `/` redirects to the app origin; every other path
-  is `404`.
+- **Per-user package-app subdomain** (`{username}.kody.run`): serves only
+  `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
+  the app origin; every other path is `404`.
 
 **Handoff session and fixation defense.** The app origin mints a short-lived
 single-use handoff token; the owner's subdomain exchanges it for a host-scoped
@@ -275,7 +274,7 @@ fails closed: env validation (`packages/worker/src/app/env.ts`) rejects a
 production runtime without the binding, so the D1 fallback can never silently
 become the production limiter. The shared bucket means brute-force attempts
 cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
-`packages/worker/src/index.ts`):
+`packages/worker/src/origin-handler.ts`):
 
 - `POST /auth` (password login/signup)
 - `POST /auth/github`, `POST /auth/google`, `POST /auth/x`, `POST /auth/discord`
@@ -283,6 +282,7 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /oauth/authorize` (inline OAuth login)
 - `POST /password-reset` (reset request)
 - `POST /password-reset/confirm` (reset confirmation)
+- `POST /account/password.json` (signed-in password change or first-time set)
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
 
@@ -306,10 +306,10 @@ before the 10 MB cap can apply.
 
 ## Password policy
 
-Signup and password-reset confirmation enforce a minimum password length via
-`@kody-internal/shared/password-policy.ts`. The server is the trust boundary;
-the browser hint is advisory. Login does not re-check length, so existing
-accounts are never locked out.
+Signup, password-reset confirmation, and signed-in password change enforce a
+minimum password length via `@kody-internal/shared/password-policy.ts`. The
+server is the trust boundary; the browser hint is advisory. Login does not
+re-check length, so existing accounts are never locked out.
 
 ## OAuth / MCP hardening
 
@@ -479,16 +479,17 @@ blast radius:
 These were reviewed and intentionally left as-is for this project. Document any
 change to these decisions here so future agents do not relitigate them.
 
-- **Stateless sessions revoke after password reset.** `kody_session` is a signed
-  cookie with no server store, so there is no global "log out everywhere"
-  button. Password reset confirmation revokes every MCP OAuth grant for the
-  user, stamps `users.password_changed_at`, then revokes again. Browser and
+- **Stateless sessions revoke after a password change.** `kody_session` is a
+  signed cookie with no server store, so there is no separate "log out
+  everywhere" button. Password reset confirmation and signed-in password change
+  (`POST /account/password.json`) both revoke every MCP OAuth grant for the
+  user, stamp `users.password_changed_at`, then revoke again. Browser and
   package-app sessions carry `issuedAt`; `resolveRequestAuth` rejects cookies
   issued at or before that timestamp (missing `issuedAt` fails closed once a
   password change exists). `/mcp` applies the same timestamp to the access token
   `createdAt` (Unix seconds) so already-issued bearers fail closed as
-  `invalid_token`. A future hardening could add an explicit "sign out other
-  sessions" control without waiting for a reset.
+  `invalid_token`. A signed-in password change re-issues the current browser
+  cookie so that tab stays signed in; every other session still dies.
 - **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
   mismatched DCR client for **their** grants only. `deleteClient` runs only when
   `user_mcp_oauth_clients` shows they own that registration. Shared host clients
@@ -496,10 +497,6 @@ change to these decisions here so future agents do not relitigate them.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).
-- **`refreshAccessToken` materializes plaintext OAuth tokens** inside user code
-  for integration calls. Prefer `createAuthenticatedFetch`, which enforces the
-  integration host allowlist. This is documented at the call site
-  (`packages/worker/src/mcp/execute-modules/kody-runtime-utils.ts`).
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.

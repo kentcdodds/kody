@@ -89,11 +89,9 @@ import {
 	deleteCommunityBan,
 } from './repo.ts'
 import {
-	countCommunityStarsByListingIds,
 	deleteCommunityActivityEventsByListingId,
-	deleteCommunityStarsByListingId,
 	insertCommunityActivityEvent,
-} from './social-repo.ts'
+} from './profile-repo.ts'
 import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
@@ -339,10 +337,9 @@ async function attachListingAggregates(
 	db: D1Database,
 	listing: CommunityListingRecord,
 ): Promise<CommunityListingWithAggregates> {
-	const [ratingAggregate, forkCounts, starCounts] = await Promise.all([
+	const [ratingAggregate, forkCounts] = await Promise.all([
 		getCommunityRatingAggregatesByListingId(db, listing.id),
 		countCommunityForksByListingIds(db, [listing.id]),
-		countCommunityStarsByListingIds(db, [listing.id]),
 	])
 	return {
 		...listing,
@@ -350,7 +347,6 @@ async function attachListingAggregates(
 		ratingCount: ratingAggregate.ratingCount,
 		averageAdaptationEffort: ratingAggregate.averageAdaptationEffort,
 		forkCount: forkCounts[listing.id] ?? 0,
-		starCount: starCounts[listing.id] ?? 0,
 	}
 }
 
@@ -360,10 +356,9 @@ export async function attachListingAggregatesBatch(
 ): Promise<Array<CommunityListingWithAggregates>> {
 	if (listings.length === 0) return []
 	const listingIds = listings.map((listing) => listing.id)
-	const [ratingAggregates, forkCounts, starCounts] = await Promise.all([
+	const [ratingAggregates, forkCounts] = await Promise.all([
 		getCommunityRatingAggregatesByListingIds(db, listingIds),
 		countCommunityForksByListingIds(db, listingIds),
-		countCommunityStarsByListingIds(db, listingIds),
 	])
 	return listings.map((listing) => {
 		const ratingAggregate = ratingAggregates[listing.id] ?? {
@@ -378,7 +373,6 @@ export async function attachListingAggregatesBatch(
 			ratingCount: ratingAggregate.ratingCount,
 			averageAdaptationEffort: ratingAggregate.averageAdaptationEffort,
 			forkCount: forkCounts[listing.id] ?? 0,
-			starCount: starCounts[listing.id] ?? 0,
 		}
 	})
 }
@@ -764,7 +758,6 @@ export async function unpublishCommunityListing(input: {
 		input.env.APP_DB,
 		input.listingId,
 	)
-	await deleteCommunityStarsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
 	await updateSavedPackage(input.env.APP_DB, {
 		userId: input.userId,
@@ -1805,10 +1798,6 @@ export async function resolveCommunityReport(input: {
 					report.listingId,
 				)
 				await deleteCommunityActivityEventsByListingId(
-					input.env.APP_DB,
-					report.listingId,
-				)
-				await deleteCommunityStarsByListingId(
 					input.env.APP_DB,
 					report.listingId,
 				)

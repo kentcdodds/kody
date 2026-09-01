@@ -1,4 +1,5 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { buildIntegrationAccountUrl } from './account-identity.ts'
 import { getJoinedIntegrationByName } from './repo.ts'
 import { normalizeIntegrationUsageMode } from './usage-mode.ts'
 
@@ -22,6 +23,16 @@ export function buildIntegrationPackageApprovalUrl(input: {
 		url.searchParams.set('package', input.kodyId)
 	}
 	return url.toString()
+}
+
+export function buildIntegrationUsageUrl(input: {
+	baseUrl: string
+	name: string
+}) {
+	return buildIntegrationAccountUrl({
+		baseUrl: input.baseUrl,
+		integrationName: input.name,
+	})
 }
 
 export function createIntegrationPackageAccessDeniedMessage(input: {

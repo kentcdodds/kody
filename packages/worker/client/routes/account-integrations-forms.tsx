@@ -40,7 +40,6 @@ const addAccountLinkCss = {
 export function AddAccountForm(
 	handle: Handle<{
 		slug: string
-		platform: boolean
 		existingNames: ReadonlyArray<string>
 		open: boolean
 		openHref: string
@@ -53,7 +52,6 @@ export function AddAccountForm(
 	function connectHref(connectionName: string) {
 		return buildConnectOauthHref({
 			name: connectionName,
-			platform: handle.props.platform,
 			appSlug: handle.props.slug,
 		})
 	}

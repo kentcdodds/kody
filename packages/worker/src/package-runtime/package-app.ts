@@ -17,10 +17,7 @@ import {
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
 import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
-import {
-	createAuthenticatedFetch,
-	refreshAccessToken,
-} from '#mcp/execute-modules/kody-runtime-utils.ts'
+import { createAuthenticatedFetch } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import {
 	buildKodyAppBundle,
 	createPublishedPackageAppBundleCacheKey,
@@ -33,9 +30,9 @@ import {
 } from './published-bundle-artifacts.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
-	buildPackageStorageId,
 	createPackageStorageAccessDeniedMessage,
 	createStorageBytesEntitlementRunCache,
 	isReadOnlyStorageSqlQuery,
@@ -560,8 +557,6 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 					packageId: storagePackageId,
 				}),
 		}),
-		refreshAccessToken: async (providerName) =>
-			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
 		packageSecrets,
@@ -1234,14 +1229,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await this.getStorageRunner(
 			buildPackageStorageId(packageId),
 		).clearStorage()
-	}
-
-	async refreshAccessToken(providerName: string) {
-		const kody = await buildKodyFns(
-			this.env,
-			await this.createCallerContext(this.ctx.props.packageId),
-		)
-		return await refreshAccessToken(kody, providerName)
 	}
 
 	async authenticatedFetch(input: {

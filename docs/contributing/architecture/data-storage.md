@@ -320,20 +320,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, `is_private` (0/1) for repo visibility (default private; not
-  `package.json#private`) used by public-profile and timeline filters, and
+  `package.json#private`) used by public-profile catalog filters, and
   `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
   of `published_commit` until the owner approves a specific commit in the
   account UI
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
   (see [Public packages](../community-packages.md))
-- `user_follows`: follow edges between MCP stable user ids (`follower_user_id` /
-  `followee_user_id`)
-- `community_stars`: listing stargazer bookmarks (`listing_id` + `user_id`),
-  distinct from 1–5 `community_ratings`
 - `community_activity_events`: stored `listing_published` / `listing_updated`
-  timeline events (`actor_user_id` + `listing_id`); fork and star timeline items
-  are derived at read time from `community_forks` / `community_stars`
+  profile activity events (`actor_user_id` + `listing_id`); public forks are
+  derived at read time from `community_forks`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
   package runtimes may use their own package secrets. User secrets are
@@ -347,20 +343,21 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   read path. Updating or deleting a user secret from package code (`secret_set`
   / `secret_delete`) always requires that grant, regardless of fork or adoption
   state. Official OAuth token rotation persists host-side and does not use that
-  write grant.
+  write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
+  gate and are never implied by authorship or adoption.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
   `(user_id, slug)`. Holds shared client id, client-secret ciphertext (soak
   dual-write also keeps `client_secret_secret_name`), provider endpoints, and
   flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
-  built-in OAuth apps users connect to without registering their own provider
-  app. Global operator config with **no `user_id`** (like feature flags, not
-  user data). Keyed by `slug`; holds the inline non-secret `client_id`, provider
-  endpoints, flow options, the allowed/default scope menu,
-  `required_hosts_json`, and `enabled`. `client_secret_encrypted` is the one
-  credential ciphertext stored outside `secret_entries` (AES-GCM with a
-  dedicated purpose, so no `{{secret:…}}` placeholder can name it);
-  `getPlatformOauthAppClientSecret` in
+  built-in OAuth apps that remaining connections still refresh against. New
+  connects and reconnects are bring-your-own only. Global operator config with
+  **no `user_id`** (like feature flags, not user data). Keyed by `slug`; holds
+  the inline non-secret `client_id`, provider endpoints, flow options, the
+  allowed/default scope menu, `required_hosts_json`, and `enabled`.
+  `client_secret_encrypted` is the one credential ciphertext stored outside
+  `secret_entries` (AES-GCM with a dedicated purpose, so no `{{secret:…}}`
+  placeholder can name it); `getPlatformOauthAppClientSecret` in
   `packages/worker/src/integrations/platform-apps.ts` is its only decrypt
   accessor. `logo_key` / `logo_content_type`
   (`0005-platform-oauth-app-logos.sql`) point at an operator-owned provider logo
@@ -368,6 +365,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
+- `platform_provider_marks` (`0035-platform-provider-marks.sql`): operator-owned
+  brand marks for saved integrations, keyed by `slug`, with no `user_id`.
+  `aliases_json` holds extra provider keys and authorize hosts. `logo_key` /
+  `logo_content_type` point at a fitted WebP in `COMMUNITY_ASSETS` under
+  `platform-provider-marks/{slug}/`. Display falls back to these after an
+  explicit upload and auto-favicon miss. See
+  [OAuth integrations](./integrations.md#provider-logos).
 - `user_integrations` (squashed baseline, rebuilt by
   `0004-platform-oauth-apps.sql`): per-user OAuth connections keyed by
   `(user_id, name)`. Exactly one of nullable `app_slug` (composite FK
@@ -378,16 +382,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   refresh token ciphertext. Soak dual-write keeps `*_secret_name` columns
   pointing at `secret_entries`. The non-secret `client_id` is stored inline on
   the owning app row.
-- `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI provider
-  binding rows keyed by `(user_id, name)`. Holds `spec_url`, `api_base_url`,
-  `auth_json`, `selection_json`, `include_destructive`, and optional description
-  / spec metadata. See [OpenAPI provider bindings](./openapi-bindings.md).
-- `user_openapi_binding_operations` (`0001-squashed-init.sql`): per-operation
-  child rows keyed by `(user_id, binding_name, slug)`, with composite FK
-  `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
-  (`ON DELETE CASCADE`). Holds `operation_json` for each curated operation
-  snapshot entry. Account deletion lists operations before bindings so cleanup
-  does not rely on CASCADE.
+- `user_openapi_bindings` / `user_openapi_binding_operations`
+  (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0037`
+  drops them. Do not add new readers or writers.
 
 App access pattern:
 
@@ -620,7 +617,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**10**):
+**11**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -649,13 +646,17 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   user row. After that row is deleted, origin clears the tombstone so the
   email-derived `stable_user_id` can be reused by a later signup. Account export
   emits a sanitized `deletionState` without raw token/holder.
+- `dynamic_worker_days` — first-seen Dynamic Worker ids per UTC day
+  (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used only to emit
+  one `dynamic_worker_day` usage event per unique Cloudflare bill unit. Not an
+  entitlement counter and not included in `exportCounters`.
 
 Retention is self-enforced inside the DO: every read/write path
-opportunistically deletes counter and claim rows older than seven UTC days
-(`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
-the window covers timezone edge cases, recent account exports, and inbound
-retries. Storage-byte state is not time-pruned. Write-lease rows clear on
-release/repair/purge.
+opportunistically deletes counter, inbound-claim, and unique-worker-day rows
+older than seven UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
+only needs the current day; the window covers timezone edge cases, recent
+account exports, and inbound retries. Storage-byte state is not time-pruned.
+Write-lease rows clear on release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
@@ -1080,10 +1081,10 @@ Operational notes:
   above the inline threshold to `REPO_SESSION_BLOBS` so clone and checkout can
   honor the 10 MiB per-file policy without hitting the Durable Object SQLite 2
   MiB row limit.
-- `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
-  a first-class MCP capability for whole-file overwrites. Prefer it over
-  `repo_apply_patch` when the agent is replacing an entire file (for example, a
-  single-file job source) instead of patching a hunk with surrounding context.
+- `repo_edit_files` `write` edits use the same Durable Object `applyEdits` write
+  path for whole-file overwrites. Prefer a `write` edit over `repo_apply_patch`
+  when the agent is replacing an entire file (for example, a single-file job
+  source) instead of patching a hunk with surrounding context.
 
 ### Direct Artifacts git publishes
 
@@ -1251,9 +1252,11 @@ on write unless a migration backfills existing rows.
   `forker_user_id`; index in `0001-squashed-init.sql`). Self-authored packages
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secret_set` /
-  `secret_delete`) always require the grant. Official OAuth token rotation
-  persists host-side and does not use that write grant. Package-scoped secrets
-  are owned exclusively by the package id in their bucket binding.
+  `secret_delete`) always require the grant. Agents add a package to that grant
+  with `secret_lock`; removing a grant is website-only. Official OAuth token
+  rotation persists host-side and does not use that write grant. Authorship and
+  adoption never imply a host allowlist. Package-scoped secrets are owned
+  exclusively by the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, `user_integrations.required_hosts_json`, and
   `user_integrations.allowed_packages_json` (`0001-squashed-init.sql` /
@@ -1267,12 +1270,9 @@ on write unless a migration backfills existing rows.
   `POST /__maintenance/backfill-integration-credentials` copies leftover
   secret-store values onto null ciphertext columns (see
   [Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
-- `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
-  `user_openapi_binding_operations.operation_json` (`0001-squashed-init.sql`,
-  `packages/worker/src/openapi/`) store the auth discriminant, selection object,
-  and per-operation snapshot object. Parsers in the OpenAPI binding service own
-  the shapes; credential values are never stored (only secret / integration name
-  references inside `auth_json`).
+- `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
+  (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
+  drops the tables. Do not add new parsers.
 
 ### Durable Object id contracts
 

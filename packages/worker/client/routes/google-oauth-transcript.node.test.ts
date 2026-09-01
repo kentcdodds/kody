@@ -59,13 +59,16 @@ test('google oauth transcript covers discover, console, and connect', () => {
 		.find((act) => act.id === 'discover')
 		?.lines.flatMap((line) => (line.role === 'tools' ? line.tools : []))
 	expect(
-		discoverTools?.some((tool) =>
-			tool.inputs.some(
-				(input) =>
-					input.name === 'code' &&
-					input.value.includes('integration_bootstrap') &&
-					input.value.includes('provider_google'),
-			),
+		discoverTools?.some(
+			(tool) =>
+				tool.name === 'search' &&
+				tool.inputs.some(
+					(input) =>
+						input.name === 'entity' &&
+						input.value.includes('provider_google:guide') &&
+						input.value.includes('oauth:guide') &&
+						input.value.includes('integration_bootstrap:guide'),
+				),
 		),
 	).toBe(true)
 

@@ -15,7 +15,8 @@ optional first-win email guide share one contract:
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP still registers
-`onboarding_first_win` and `coding_guide_get` still serves the guide.
+`onboarding_first_win` and `search({ entity: "first_win:guide" })` still serves
+the guide.
 
 ## Alignment check
 

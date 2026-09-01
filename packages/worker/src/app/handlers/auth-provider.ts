@@ -72,7 +72,6 @@ import {
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
-import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
@@ -739,10 +738,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				env,
 				email,
 				stableUserId,
-			})
-			await followDefaultWelcomeAccounts({
-				db: env.APP_DB,
-				followerUserId: stableUserId,
 			})
 			scheduleUserCreatedEvent({
 				env,

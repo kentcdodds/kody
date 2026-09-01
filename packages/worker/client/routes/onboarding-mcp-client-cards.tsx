@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
+	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
@@ -101,17 +102,41 @@ export function AppIconCard(handle: Handle<AppIconCardProps>) {
 	)
 }
 
-type ClientNoteProps = {
+type ClientWarningProps = {
 	children: string
 }
 
-/* Host-fit aside: a footnote, not a warning — the filled green well stays
-   reserved for the one-time-authorization callout. */
-export function ClientNote(handle: Handle<ClientNoteProps>) {
+/** Quiet warning below help — not the green authenticate well. */
+export function ClientWarning(handle: Handle<ClientWarningProps>) {
 	return () => (
-		<p mix={css(clientNoteCss)} role="note">
+		<p
+			mix={css(clientWarningCss)}
+			role="note"
+			data-testid="onboarding-agent-warning"
+		>
 			{handle.props.children}
 		</p>
+	)
+}
+
+export function PrimaryActionLink(
+	handle: Handle<{
+		href: string
+		label: string
+		external?: boolean
+	}>,
+) {
+	return () => (
+		<div mix={css(deepLinkCss)}>
+			<a
+				href={handle.props.href}
+				target={handle.props.external ? '_blank' : undefined}
+				rel={handle.props.external ? 'noreferrer noopener' : undefined}
+				mix={css(deepLinkButtonCss)}
+			>
+				{handle.props.label}
+			</a>
+		</div>
 	)
 }
 
@@ -137,8 +162,8 @@ export function PluginPrimaryInstall(
 	handle: Handle<{
 		href: string
 		label: 'Add to Cursor' | 'Add to Grok Bot'
-		alternativeValue: string
-		alternativeCopyLabel: string
+		alternativeValue?: string
+		alternativeCopyLabel?: string
 	}>,
 ) {
 	return () => (
@@ -146,18 +171,20 @@ export function PluginPrimaryInstall(
 			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
 				{handle.props.label}
 			</a>
-			<p
-				data-testid="onboarding-mcp-plugin-alternative"
-				mix={css(pluginAlternativeCss)}
-			>
-				Or do this: <code>{handle.props.alternativeValue}</code>
-				<CopyTextButton
-					value={handle.props.alternativeValue}
-					idleLabel="Copy"
-					variant="chip"
-					ariaLabel={handle.props.alternativeCopyLabel}
-				/>
-			</p>
+			{handle.props.alternativeValue ? (
+				<p
+					data-testid="onboarding-mcp-plugin-alternative"
+					mix={css(pluginAlternativeCss)}
+				>
+					Or do this: <code>{handle.props.alternativeValue}</code>
+					<CopyTextButton
+						value={handle.props.alternativeValue}
+						idleLabel="Copy"
+						variant="chip"
+						ariaLabel={handle.props.alternativeCopyLabel}
+					/>
+				</p>
+			) : null}
 			<small mix={css(deepLinkNoteCss)}>
 				Your client will still ask you to authorize access afterwards.
 			</small>
@@ -278,11 +305,12 @@ const snippetPreCss = {
 	},
 }
 
-const clientNoteCss = {
-	margin: '0.3rem 0 0',
-	padding: '0.15rem 0 0.15rem 1rem',
-	borderLeft: `3px solid oklch(from ${colors.primary} l c h / 0.55)`,
+const clientWarningCss = {
+	...getAccentCalloutCss({ accentColor: colors.danger }),
+	margin: 0,
+	padding: '0.55rem 0.85rem',
+	backgroundColor: `oklch(from ${colors.danger} l c h / 0.08)`,
 	color: colors.textMuted,
-	fontSize: '0.95rem',
-	maxWidth: '62ch',
+	fontSize: typography.fontSize.sm,
+	maxWidth: '72ch',
 }

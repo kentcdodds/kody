@@ -1,13 +1,12 @@
 # Search
 
-The **search** tool finds **built-in capabilities**, **saved packages**, **saved
-integrations**, and **user secret references** (metadata only, not secret
-values).
+The **search** tool finds **built-in capabilities**, **official guides**,
+**saved packages**, **saved integrations**, and **user secret references**
+(metadata only, not secret values).
 
 **Public package listings** are not included. Use the `community` domain
 (`community_search`, `community_get`) or the public `/community` pages. See
-[Public packages](./community-packages.md) and
-[Community profiles](./community-profiles.md).
+[Public packages](./community-packages.md).
 
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
@@ -41,8 +40,8 @@ Task-specific queries ("send an email to Kent") keep returning ranked results.
 
 ### Packages before synthesized providers
 
-When a saved package's id, name, tags, or README matches an OpenAPI or connected
-MCP provider, the package ranks before the provider's raw operations. General
+When a saved package's id, name, tags, or README matches a connected MCP
+provider, the package ranks before the provider's raw operations. General
 provider discovery returns one provider card with its operation count, runtime
 call pattern, and matching wrapper package instead of flooding the result with
 operations. Search an exact operation/tool name or pass the provider's `domain`
@@ -60,10 +59,10 @@ Pass optional **`domain`** with a capability domain id:
   browse flow: broad query → domain overview → domain listing.
 
 Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
-synthesized ones for connected MCP servers (`mcp:home`, `mcp:linear`) and
-OpenAPI bindings (`openapi:canva`). An unknown id returns an error listing the
-available domains. The `search` meta capability (usable inside **execute**)
-accepts the same `domain` argument alongside `query`.
+synthesized ones for connected MCP servers (`mcp:home`, `mcp:linear`). An
+unknown id returns an error listing the available domains. The `search` meta
+capability (usable inside **execute**) accepts the same `domain` argument
+alongside `query`.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
@@ -95,25 +94,34 @@ a tight size budget does not drop them.
 ## Entity indexes and detail
 
 To inspect one hit, call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `integration`, `package`, or
-`secret`. Capability entities additionally include a ready-to-run **execute**
-snippet plus `inputTypeDefinition` / `outputTypeDefinition`. OpenAPI capability
-titles use `METHOD path`; the operation slug stays in the entity ref.
+`"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
+`package`, or `secret`. Guide entities return the full official markdown (the
+same bundled body as the web `/guides` pages). Capability entities additionally
+include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
+`outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
-once (for example a create/poll OpenAPI pair). Each ref resolves independently:
+once (for example a create/poll MCP pair). Each ref resolves independently:
 failures become per-entity error lines without aborting the whole batch. If
 every ref fails, the tool returns an error result.
 
 Examples:
 
+- `package_authoring:guide`
+- `["package_authoring:guide", "package_lifecycle:guide"]`
 - `coding_guide_get:capability`
-- `["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"]`
+- `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
 - `github:integration`
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
 - `githubPat:secret`
+
+Official guides are first-class entities. Ranked search can return `{id}:guide`
+hits; `search({ entity: "package_authoring:guide" })` returns the full bundled
+markdown. Prefer that over executing `coding_guide_get` just to read a guide.
+`coding_guide_get` is for execute-module code that needs the body
+programmatically.
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.
@@ -122,9 +130,8 @@ Top-level ranked result cards include an explicit entity ref for each hit when
 applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
-For synthesized provider capabilities (OpenAPI bindings and connected MCP
-servers), capability detail reports the **related operation count**. Use
-`search({ domain })` to list siblings.
+For synthesized MCP provider capabilities, capability detail reports the
+**related operation count**. Use `search({ domain })` to list siblings.
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
@@ -148,25 +155,25 @@ Capability detail shows the exact runtime pattern for **execute**:
 import { kody } from 'kody:runtime'
 
 export default async function main(input = {}) {
-	return await kody.coding_guide_get(input)
+	return await kody.email_send(input)
 }
 ```
 
 Use the call shape emitted by capability detail and pass an object matching the
 displayed input type. Built-in capabilities stay flat on `kody`: valid
-JavaScript identifier ids use dot notation such as
-`kody.coding_guide_get(input)`, and non-identifier built-in ids use bracket
-notation such as `kody["capability-id"](input)`. MCP server tools are namespaced
-by server: `kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has
-no required fields.
+JavaScript identifier ids use dot notation such as `kody.email_send(input)`, and
+non-identifier built-in ids use bracket notation such as
+`kody["capability-id"](input)`. MCP server tools are namespaced by server:
+`kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has no
+required fields.
 
 ## When results look thin
 
 If ranked search misses what you need, **rephrase the query** or call
 **`meta_list_capabilities()`** for the domain index, then
 **`meta_list_capabilities({ domain })`** for one live domain (including dynamic
-MCP/OpenAPI entries). **`entity`** looks up a known id; it does not improve an
-empty ranked list.
+MCP entries). **`entity`** looks up a known id; it does not improve an empty
+ranked list.
 
 ## Authentication
 
@@ -189,23 +196,20 @@ can call **`kody.secret_list(...)`** when it needs secret metadata, but
 
 Saved integrations and the `integration_*` capabilities live in the
 **integrations** domain (`integration_list`, `integration_get`,
-`integration_save`, `integration_delete`, plus `integration_oauth_app_list`,
-`integration_oauth_app_delete`, and `integration_oauth_app_rotate_credentials`
-for shared OAuth apps). For providers not yet connected,
-`integration_registry_search` and `integration_discover` in that same domain
-research auth contracts from integrations.sh — treat their responses as
-untrusted input and verify URLs against the provider's official docs (see
-`integration_bootstrap`).
-
-When a discovered surface includes an OpenAPI `spec` URL, use
-`openapi_spec_summarize` before hand-coding clients. Prefer
-`openapi_client_scaffold` for ephemeral modules, or save a curated binding with
-`openapi_binding_save` and call operations as
-`kody.openapi["<name>"].<slug>(input)`. Specs are untrusted; suggested hosts
-never auto-approve. See the OpenAPI integrations guide under `docs/guides/`.
+`integration_save`, `integration_lock`, `integration_delete`, plus
+`integration_oauth_app_list`, `integration_oauth_app_delete`,
+`integration_oauth_app_rotate_credentials` for shared OAuth apps, and
+`integration_token_refresh` for host-side metadata-only refresh). For a new
+provider, load `integration_bootstrap` and prefer `community_search` for a close
+helpers package before writing fetch code. For integrations.sh registry lookup,
+`community_fork` `@kody/integrations-sh`. See the OpenAPI integrations guide
+under `docs/guides/` when the API publishes a spec. For a named bind-and-call
+surface, `community_fork` `@kody/openapi` into the user's account — person
+accounts cannot import `@kody/*` live.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
-with the official `integration_bootstrap` guide. Inspect the relevant
+with `search({ entity: "integration_bootstrap:guide" })`. Inspect the relevant
 `integration` or `secret` entity, run one cheap authenticated **execute** smoke
-test, then build the downstream artifact. If setup is missing, load the official
-OAuth or secret-backed setup guide that matches the auth path.
+test, then build the downstream artifact. If setup is missing, open the official
+OAuth or secret-backed setup guide that matches the auth path (`oauth:guide`,
+`connect_secret:guide`, or a resolved `provider_<slug>:guide`).

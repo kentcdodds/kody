@@ -22,6 +22,10 @@ import {
 	createAdminPlatformIntegrationsHandler,
 } from '#app/handlers/admin-platform-integrations.ts'
 import {
+	createAdminProviderMarksApiHandler,
+	createAdminProviderMarksHandler,
+} from '#app/handlers/admin-provider-marks.ts'
+import {
 	createAdminCodemodsApiHandler,
 	createAdminCodemodsHandler,
 	createAdminCodemodsRunApiHandler,
@@ -50,6 +54,7 @@ import {
 	createAccountEmailHandler,
 } from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
+import { createAccountPasswordHandler } from '#app/handlers/account-password.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
 import {
 	createAccountIntegrationsApiHandler,
@@ -106,15 +111,12 @@ import { createAccountConnectionsApiHandler } from '#app/handlers/account-connec
 import { createAccountAvatarApiPostHandler } from '#app/handlers/account-avatar.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
-	createAccountStarsApiHandler,
-	createAccountStarsHandler,
-} from '#app/handlers/account-stars.ts'
-import {
 	createAccountTwoFactorApiHandler,
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
 import {
 	createAccountBillingApiHandler,
+	createAccountBillingCancellationFeedbackApiHandler,
 	createAccountBillingCheckoutApiHandler,
 	createAccountBillingHandler,
 	createAccountBillingPortalHandler,
@@ -124,6 +126,10 @@ import {
 	createAccountUsageApiHandler,
 	createAccountUsageHandler,
 } from '#app/handlers/account-usage.ts'
+import {
+	createAccountWaitingApiHandler,
+	createAccountWaitingHandler,
+} from '#app/handlers/account-waiting.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -156,26 +162,18 @@ import {
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
 import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
+import { createProviderMarkLogoHandler } from '#app/handlers/provider-mark-logo.ts'
 import { createMcpServerLogoHandler } from '#app/handlers/mcp-server-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
 import {
-	createCommunityStarApiPostHandler,
-	createCommunityStargazersApiHandler,
-} from '#app/handlers/community-star.ts'
-import {
 	createProfileApiHandler,
-	createProfileFollowApiPostHandler,
 	createProfileHandler,
 	createProfileOgImageHandler,
 } from '#app/handlers/profile.tsx'
 import { createProfileAvatarHandler } from '#app/handlers/profile-avatar.ts'
 import { createWebhookIngressHandler } from '#app/handlers/webhook-ingress.ts'
 import { createStripeWebhookHandler } from '#app/handlers/stripe-webhook.ts'
-import {
-	createTimelineApiHandler,
-	createTimelineHandler,
-} from '#app/handlers/timeline.tsx'
 import {
 	createBlogApiHandler,
 	createBlogHandler,
@@ -356,19 +354,22 @@ export function createAppRouter(env: Env) {
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
 			accountAvatarApiPost: createAccountAvatarApiPostHandler(env),
-			accountStars: createAccountStarsHandler(env),
-			accountStarsApi: createAccountStarsApiHandler(env),
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
 			accountBilling: createAccountBillingHandler(env),
 			accountBillingApi: createAccountBillingApiHandler(env),
 			accountBillingCheckoutPost: createAccountBillingCheckoutApiHandler(env),
+			accountBillingCancellationFeedbackPost:
+				createAccountBillingCancellationFeedbackApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
+			accountWaiting: createAccountWaitingHandler(env),
+			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
+			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountSecrets: createAccountSecretsHandler(env),
 			accountSecretNew: createAccountSecretsHandler(env),
@@ -421,6 +422,9 @@ export function createAppRouter(env: Env) {
 				createAdminPlatformIntegrationsApiHandler(env),
 			adminPlatformIntegrationsApiPost:
 				createAdminPlatformIntegrationsApiHandler(env),
+			adminProviderMarks: createAdminProviderMarksHandler(env),
+			adminProviderMarksApi: createAdminProviderMarksApiHandler(env),
+			adminProviderMarksApiPost: createAdminProviderMarksApiHandler(env),
 			adminCodemods: createAdminCodemodsHandler(env),
 			adminCodemodsApi: createAdminCodemodsApiHandler(env),
 			adminCodemodsRunApi: createAdminCodemodsRunApiHandler(env),
@@ -450,22 +454,18 @@ export function createAppRouter(env: Env) {
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),
+			providerMarkLogo: createProviderMarkLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),
 			communityReportApiPost: createCommunityReportApiPostHandler(env),
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
-			communityStarApiPost: createCommunityStarApiPostHandler(env),
-			communityStargazersApi: createCommunityStargazersApiHandler(env),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
 			profileAvatar: createProfileAvatarHandler(env),
 			profileOgImage: createProfileOgImageHandler(env),
-			profileFollowApiPost: createProfileFollowApiPostHandler(env),
 			webhookIngress: createWebhookIngressHandler(env),
 			stripeWebhook: createStripeWebhookHandler(env),
-			timeline: createTimelineHandler(env),
-			timelineApi: createTimelineApiHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),

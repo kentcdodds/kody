@@ -80,59 +80,7 @@ export const secretHeaders = {
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
 	'integration_token_refresh',
-	'integration_refresh_access_token',
 ] as const
-
-/**
- * @internal
- * Refreshes and returns the raw OAuth access token for the named integration.
- *
- * **Legacy raw-token path**: kept only for auth patterns that cannot use an
- * `Authorization` header (WebSockets, SDK constructors, query-param tokens).
- * `createAuthenticatedFetch` refreshes host-side via
- * `integration_token_refresh` and never materializes tokens in the sandbox —
- * prefer it everywhere a fetch wrapper works.
- *
- * Token rotation persists host-side (`integration_refresh_access_token` →
- * `integration_token_refresh`) and does not need an `allowed_packages` write
- * grant. The helper still returns a raw access token for user-lane
- * integrations and throws for platform ones.
- *
- * **Security boundary**: The returned value is a materialized credential. Once
- * in caller hands, the fetch gateway's host-allowlist check is bypassed because
- * the gateway can only inspect secret *placeholders*. Callers that forward this
- * token in outbound requests MUST enforce the integration's host allowlist
- * themselves (see `assertIntegrationHostAllowed`).
- */
-export async function refreshAccessToken(
-	kody: KodyNamespace,
-	providerName: string,
-): Promise<string> {
-	const integration = await readIntegrationConfig(kody, providerName)
-	if (integration.platform === true) {
-		throw new Error(
-			`Integration "${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("${providerName}") — it refreshes host-side via integration_token_refresh automatically.`,
-		)
-	}
-	const refresh = kody.integration_refresh_access_token
-	if (typeof refresh !== 'function') {
-		throw new Error(
-			'kody.integration_refresh_access_token is not available in this sandbox.',
-		)
-	}
-	const result = (await refresh({ name: providerName })) as {
-		accessToken?: unknown
-	} | null
-	if (
-		typeof result?.accessToken !== 'string' ||
-		result.accessToken.length === 0
-	) {
-		throw new Error(
-			`Host-side token refresh for integration "${providerName}" did not return an access token.`,
-		)
-	}
-	return result.accessToken
-}
 
 async function refreshIntegrationTokensHostSide(
 	kody: KodyNamespace,
@@ -571,27 +519,6 @@ const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
     );
   }
 };
-const __kodyRefreshAccessToken = async (providerName) => {
-  const integration = await __kodyReadIntegrationConfig(providerName);
-  if (integration.platform === true) {
-    throw new Error(
-      \`Integration "\${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("\${providerName}") — it refreshes host-side via integration_token_refresh automatically.\`,
-    );
-  }
-  const refresh = kody.integration_refresh_access_token;
-  if (typeof refresh !== 'function') {
-    throw new Error(
-      'kody.integration_refresh_access_token is not available in this sandbox.',
-    );
-  }
-  const result = await refresh({ name: providerName });
-  if (typeof result?.accessToken !== 'string' || result.accessToken.length === 0) {
-    throw new Error(
-      \`Host-side token refresh for integration "\${providerName}" did not return an access token.\`,
-    );
-  }
-  return result.accessToken;
-};
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
   // Both lanes refresh host-side and retry with a placeholder header the
@@ -663,8 +590,6 @@ const __kodyOauthClientCredentials = async (input) => {
   }
   return payload;
 };
-const refreshAccessToken = async (providerName) =>
-  __kodyRefreshAccessToken(providerName);
 const createAuthenticatedFetch = async (providerName) =>
   __kodyCreateAuthenticatedFetch(providerName);
 const oauthClientCredentials = async (input) =>

@@ -45,7 +45,6 @@ Merge drift from the published default branch is handled separately by
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `repo_edit_files`      | Batch write, replace, writeJson, delete, or move edits (10 MiB per-file limit on content-changing results) |
 | `repo_apply_patch`     | Apply a unified-diff patch (all-or-nothing)                                                                |
-| `repo_write_file`      | Convenience wrapper for whole-file overwrites                                                              |
 | `repo_status`          | Git status for the session workspace                                                                       |
 | `repo_diff`            | Git diff for uncommitted changes                                                                           |
 | `repo_log`             | Commit history (`depth` optional)                                                                          |
@@ -65,8 +64,8 @@ include:
 - normal context (` `), removal (`-`), and addition (`+`) lines inside each hunk
 
 Multiple file patches can be stacked back-to-back in one patch string. If you
-have the full new file body, prefer `repo_write_file` or a `write` edit in
-`repo_edit_files` instead of hand-crafting hunks.
+have the full new file body, prefer a `write` edit in `repo_edit_files` instead
+of hand-crafting hunks.
 
 ## Opening by package identity
 
@@ -125,10 +124,10 @@ accumulate against the `repo_sessions` entitlement. Unused (never-checkpointed)
 sessions are swept after 30 minutes idle; checkpointed sessions are swept after
 7 days idle.
 
-### `repo_write_file` vs patches
+### `write` edits vs patches
 
-`repo_write_file` overwrites one or more files with full new content and returns
-a per-file diff plus a `changed` flag. Reach for it when:
+A `repo_edit_files` `write` edit overwrites one file with full new content and
+returns a per-file diff plus a `changed` flag. Reach for it when:
 
 - replacing the entire body of a package export module, job module, or app
   server
@@ -141,8 +140,9 @@ It only mutates the live session overlay. Pair it with `repo_commit`,
 ```json
 {
 	"session_id": "session-1",
-	"files": [
+	"edits": [
 		{
+			"kind": "write",
 			"path": "src/index.ts",
 			"content": "export default async function main() { return { ok: true } }\n"
 		}

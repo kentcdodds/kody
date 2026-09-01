@@ -19,6 +19,7 @@ const usageMetricSchema = z.enum([
 	'outbound_fetch',
 	'email_send',
 	'email_received',
+	'dynamic_worker_day',
 ])
 
 const entitlementResourceSchema = z.enum([
@@ -90,6 +91,12 @@ const outputSchema = z.object({
 			),
 			entitlementConsumption: z.array(entitlementConsumptionSchema),
 			warnings: z.array(entitlementConsumptionSchema),
+			dynamicWorkerCost: z.object({
+				uniqueWorkerDays: z.number().int().nonnegative(),
+				estimatedGrossUsd: z.number().nonnegative(),
+				usdPerUniqueDay: z.number().nonnegative(),
+				includedPerAccountMonth: z.number().int().nonnegative(),
+			}),
 		})
 		.nullable(),
 })
@@ -100,8 +107,16 @@ export const adminUserUsageCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'admin_user_usage',
 		description:
-			'Read usage rollups, entitlement counters, and plan-limit consumption for one user account by stable user id, email, or username. Admin-only; never returns user content.',
-		keywords: ['admin', 'usage', 'quotas', 'entitlements', 'plans', 'metering'],
+			'Read usage rollups, entitlement counters, plan-limit consumption, and estimated Cloudflare Dynamic Worker cost for one user account by stable user id, email, or username. Admin-only; never returns user content.',
+		keywords: [
+			'admin',
+			'usage',
+			'quotas',
+			'entitlements',
+			'plans',
+			'metering',
+			'cost',
+		],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {

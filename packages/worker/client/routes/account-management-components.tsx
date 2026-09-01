@@ -297,6 +297,11 @@ const adminNavItems = [
 		paths: ['/admin/platform-integrations'],
 	},
 	{
+		href: '/admin/provider-marks',
+		label: 'Provider marks',
+		paths: ['/admin/provider-marks'],
+	},
+	{
 		href: '/admin/codemods',
 		label: 'Codemods',
 		paths: ['/admin/codemods'],
@@ -436,13 +441,13 @@ export function AccountManagementInlineLinkNav(
 
 const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
+	{ href: '/account/waiting', label: 'Waiting' },
 	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/usage', label: 'Usage' },
 	{ href: '/account/activity', label: 'Activity' },
 	{ href: '/account/packages', label: 'Packages' },
 	{ href: '/account/jobs', label: 'Jobs' },
 	{ href: '/account/workflows', label: 'Workflows' },
-	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },
 	{ href: '/account/mcp-servers', label: 'MCP servers' },

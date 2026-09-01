@@ -15,16 +15,12 @@ import {
 	passwordResetTokenExpiryMs,
 } from '#worker/identity/password-reset-tokens.ts'
 import { type routes } from '#universal/routes.ts'
-import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { applyPasswordChange } from '#app/apply-password-change.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { buildPasswordResetEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import {
-	type OAuthGrantHelpers,
-	revokeAllOAuthGrantsForUser,
-} from '#worker/oauth-grants.ts'
+import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
 const resetRequestSchema = object({
@@ -283,72 +279,30 @@ export function createPasswordResetConfirmHandler(env: Env) {
 
 			const helpers = (env as Env & { OAUTH_PROVIDER?: OAuthGrantHelpers })
 				.OAUTH_PROVIDER
-			if (!helpers) {
+			const result = await applyPasswordChange({
+				db,
+				helpers,
+				userId: resetRecord.user_id,
+				stableUserId: resolveUserStableId(userRecord),
+				password,
+			})
+			if (!result.ok) {
 				void logAuditEvent({
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
 					ip: requestIp,
 					path: url.pathname,
-					reason: 'oauth_provider_unavailable',
+					reason:
+						result.reason === 'oauth_grant_revoke_failed'
+							? result.detail
+							: result.reason,
 				})
 				return Response.json(
 					{ error: 'Unable to finish password reset right now.' },
 					{ status: 500 },
 				)
 			}
-
-			const stableUserId = resolveUserStableId(userRecord)
-			const oauthHelpers = helpers
-			async function revokeGrantsOrFail() {
-				try {
-					await revokeAllOAuthGrantsForUser({
-						helpers: oauthHelpers,
-						userId: stableUserId,
-					})
-					return null
-				} catch (error) {
-					void logAuditEvent({
-						category: 'auth',
-						action: 'password_reset_confirm',
-						result: 'failure',
-						ip: requestIp,
-						path: url.pathname,
-						reason:
-							error instanceof Error
-								? error.message
-								: 'oauth_grant_revoke_failed',
-					})
-					return Response.json(
-						{ error: 'Unable to finish password reset right now.' },
-						{ status: 500 },
-					)
-				}
-			}
-
-			// Revoke before stamping so a failed listing/revoke cannot leave
-			// refresh tokens alive after the user thinks lockout succeeded.
-			// Stamp, then revoke again so a grant created in that window is
-			// still collected. Reset tokens stay until the second pass
-			// succeeds so retry remains safe.
-			const beforeStampFailure = await revokeGrantsOrFail()
-			if (beforeStampFailure) return beforeStampFailure
-
-			const passwordHash = await createPasswordHash(password)
-			// Millisecond ISO so same-second re-login after reset is not
-			// invalidated by second-truncated CURRENT_TIMESTAMP-style values.
-			await db.update(usersTable, resetRecord.user_id, {
-				password_hash: passwordHash,
-				password_changed_at: new Date().toISOString(),
-				updated_at: utcSqliteTimestamp(),
-			})
-
-			const afterStampFailure = await revokeGrantsOrFail()
-			if (afterStampFailure) return afterStampFailure
-
-			await db.deleteMany(passwordResetsTable, {
-				where: { user_id: resetRecord.user_id },
-			})
 
 			void logAuditEvent({
 				category: 'auth',

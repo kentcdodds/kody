@@ -1,3 +1,4 @@
+import type * as PlatformFeedbackOutcomeEmail from '#worker/platform-feedback/outcome-email.ts'
 import type * as PlatformFeedbackService from '#worker/platform-feedback/service.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -10,7 +11,10 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { adminPlatformFeedbackGetCapability } from './admin/admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin/admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin/admin-platform-feedback-update.ts'
@@ -21,6 +25,7 @@ const mockModule = vi.hoisted(() => ({
 	getPlatformFeedbackForAdmin: vi.fn(),
 	listPlatformFeedbackForAdmin: vi.fn(),
 	queueSend: vi.fn(),
+	sendPlatformFeedbackOutcomeEmail: vi.fn(),
 	submitPlatformFeedback: vi.fn(),
 	updatePlatformFeedbackForAdmin: vi.fn(),
 }))
@@ -37,6 +42,18 @@ vi.mock('#worker/platform-feedback/package-subscriptions.ts', () => {
 			synchronousFanOutModule.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
 	}
 })
+
+vi.mock(
+	'#worker/platform-feedback/outcome-email.ts',
+	async (importOriginal) => {
+		const actual = await importOriginal<typeof PlatformFeedbackOutcomeEmail>()
+		return {
+			...actual,
+			sendPlatformFeedbackOutcomeEmail: (...args: Array<unknown>) =>
+				mockModule.sendPlatformFeedbackOutcomeEmail(...args),
+		}
+	},
+)
 
 vi.mock('#worker/platform-feedback/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof PlatformFeedbackService>()
@@ -268,7 +285,11 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		adminNote: 'Needs setup review.',
 		updatedAt: '2026-07-19T01:00:00.000Z',
 	}
-	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValue(triagedFeedback)
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValue({
+		feedback: triagedFeedback,
+		previousStatus: 'open',
+		didChangeStatus: true,
+	})
 	const adminContext = createCapabilityContext({
 		userId: 'admin-1',
 		roles: ['admin'],
@@ -345,6 +366,7 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		admin_note: 'Needs setup review.',
 	})
 	expect(updated.content_warning).toBe(platformFeedbackContentWarning)
+	expect(mockModule.sendPlatformFeedbackOutcomeEmail).not.toHaveBeenCalled()
 	mockModule.updatePlatformFeedbackForAdmin.mockRejectedValueOnce(
 		new PlatformFeedbackInvalidTransitionError({
 			feedbackId: 'feedback-1',
@@ -390,4 +412,101 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		'admin_platform_feedback_update:failure',
 		'admin_platform_feedback_update:failure',
 	])
+})
+
+test('admin platform feedback resolve and dismiss email the submitter without failing the update', async () => {
+	const resolvedFeedback = {
+		...openFeedback,
+		status: 'resolved' as const,
+		reviewedByUserId: 'admin-1',
+		reviewedAt: '2026-07-19T01:00:00.000Z',
+		updatedAt: '2026-07-19T01:00:00.000Z',
+	}
+	const dismissedFeedback = {
+		...openFeedback,
+		id: 'feedback-2',
+		status: 'dismissed' as const,
+		reviewedByUserId: 'admin-1',
+		reviewedAt: '2026-07-19T01:00:00.000Z',
+		updatedAt: '2026-07-19T01:00:00.000Z',
+	}
+	const adminContext = createCapabilityContext({
+		userId: 'admin-1',
+		roles: ['admin'],
+	})
+
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValueOnce({
+		feedback: resolvedFeedback,
+		previousStatus: 'open',
+		didChangeStatus: true,
+	})
+	const resolved = await adminPlatformFeedbackUpdateCapability.handler(
+		{
+			id: 'feedback-1',
+			action: 'resolve',
+			user_message: 'We shipped a clearer setup path.',
+		},
+		adminContext,
+	)
+	expect(resolved.feedback.status).toBe('resolved')
+	expect(mockModule.sendPlatformFeedbackOutcomeEmail).toHaveBeenCalledWith({
+		env: adminContext.env,
+		feedback: resolvedFeedback,
+		status: 'resolved',
+		userMessage: 'We shipped a clearer setup path.',
+	})
+
+	mockModule.sendPlatformFeedbackOutcomeEmail.mockClear()
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValueOnce({
+		feedback: resolvedFeedback,
+		previousStatus: 'resolved',
+		didChangeStatus: false,
+	})
+	await adminPlatformFeedbackUpdateCapability.handler(
+		{ id: 'feedback-1', action: 'resolve' },
+		adminContext,
+	)
+	expect(mockModule.sendPlatformFeedbackOutcomeEmail).not.toHaveBeenCalled()
+
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValueOnce({
+		feedback: dismissedFeedback,
+		previousStatus: 'triaged',
+		didChangeStatus: true,
+	})
+	const dismissed = await adminPlatformFeedbackUpdateCapability.handler(
+		{ id: 'feedback-2', action: 'dismiss' },
+		adminContext,
+	)
+	expect(dismissed.feedback.status).toBe('dismissed')
+	expect(mockModule.sendPlatformFeedbackOutcomeEmail).toHaveBeenCalledWith({
+		env: adminContext.env,
+		feedback: dismissedFeedback,
+		status: 'dismissed',
+		userMessage: undefined,
+	})
+
+	mockModule.sendPlatformFeedbackOutcomeEmail.mockReset()
+	mockModule.sendPlatformFeedbackOutcomeEmail.mockRejectedValueOnce(
+		new Error('smtp down'),
+	)
+	consoleWarn.mockImplementation(() => {})
+	mockModule.updatePlatformFeedbackForAdmin.mockResolvedValueOnce({
+		feedback: { ...dismissedFeedback, id: 'feedback-3' },
+		previousStatus: 'open',
+		didChangeStatus: true,
+	})
+	const stillUpdated = await adminPlatformFeedbackUpdateCapability.handler(
+		{ id: 'feedback-3', action: 'dismiss' },
+		adminContext,
+	)
+	expect(stillUpdated.feedback.id).toBe('feedback-3')
+	expect(stillUpdated.feedback.status).toBe('dismissed')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'platform-feedback-outcome-email-failed',
+		{
+			feedbackId: 'feedback-3',
+			status: 'dismissed',
+			error: expect.any(Error),
+		},
+	)
 })

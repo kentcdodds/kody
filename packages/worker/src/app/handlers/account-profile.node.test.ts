@@ -28,7 +28,7 @@ const mockModule = vi.hoisted(() => ({
 	updateCommunityProfile: vi.fn(),
 }))
 
-vi.mock('#worker/community/social-service.ts', () => ({
+vi.mock('#worker/community/profile-service.ts', () => ({
 	updateCommunityProfile: (...args: Array<unknown>) =>
 		mockModule.updateCommunityProfile(...args),
 }))

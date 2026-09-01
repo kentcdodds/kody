@@ -15,8 +15,6 @@ export const communityProfileOutputSchema = z.object({
 	avatar_url: z.string().nullable(),
 	visibility: communityProfileVisibilitySchema,
 	joined_at: z.string(),
-	follower_count: z.number().int().nonnegative(),
-	following_count: z.number().int().nonnegative(),
 	public_package_count: z.number().int().nonnegative(),
 	listing_count: z.number().int().nonnegative(),
 })
@@ -75,8 +73,6 @@ export function toCommunityProfileOutput(
 		avatar_url: avatarPath ? `${baseUrl}${avatarPath}` : null,
 		visibility: profile.visibility,
 		joined_at: profile.joinedAt,
-		follower_count: profile.followerCount,
-		following_count: profile.followingCount,
 		public_package_count: profile.publicPackageCount,
 		listing_count: profile.listingCount,
 	}

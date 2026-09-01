@@ -281,18 +281,6 @@ primitives:
       - docs/use/community-packages.md
       - docs/contributing/community-packages.md
 
-  - id: community-social
-    group: assistant
-    name: Community profiles and social graph
-    summary:
-      Public profiles, follows, timelines, and listing stargazer bookmarks.
-    code:
-      - packages/worker/src/community/social-repo.ts
-      - packages/worker/src/community/social-service.ts
-    docs:
-      - docs/use/community-profiles.md
-      - docs/contributing/community-packages.md
-
   - id: package-apps
     group: assistant
     name: Package apps
@@ -404,18 +392,6 @@ primitives:
       - packages/worker/src/app/handlers/account-mcp-servers.ts
     docs:
       - docs/contributing/architecture/mcp-client-servers.md
-
-  - id: openapi-bindings
-    group: assistant
-    name: OpenAPI provider bindings
-    summary: Curated OpenAPI bindings with synthesized openapi domains.
-    code:
-      - packages/worker/src/openapi/
-      - packages/worker/src/mcp/capabilities/openapi/
-      - packages/worker/src/mcp/capabilities/openapi-provider/
-    docs:
-      - docs/contributing/architecture/openapi-bindings.md
-      - docs/guides/openapi-integrations.md
 
   - id: realtime-sessions
     group: assistant
@@ -705,7 +681,8 @@ invariants:
       - docs/contributing/decisions/0023-progressive-search-disclosure.md
 
   - id: package-over-synthesized-provider
-    summary: Rank wrapping packages before matching synthesized provider ops.
+    summary:
+      Rank wrapping packages before matching synthesized MCP provider ops.
     docs:
       - docs/use/search.md
       - docs/contributing/decisions/0024-packages-outrank-synthesized-providers.md
@@ -724,9 +701,8 @@ invariants:
 
   - id: community-social-privacy
     summary:
-      Private profiles and private packages stay off public social surfaces.
+      Private profiles and private packages stay off public catalog surfaces.
     docs:
-      - docs/use/community-profiles.md
       - docs/contributing/community-packages.md
 
   - id: no-secrets-in-chat

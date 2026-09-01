@@ -11,16 +11,16 @@ test('domain ids preserve safe names and stably disambiguate lossy names', () =>
 	).toEqual({ domainId: 'mcp:linear', kodyName: 'linear' })
 
 	const first = synthesizeDomainId({
-		namespace: 'openapi',
+		namespace: 'mcp',
 		value: 'Provider Name',
 		fallback: 'provider',
 	})
 	const second = synthesizeDomainId({
-		namespace: 'openapi',
+		namespace: 'mcp',
 		value: 'Provider Name',
 		fallback: 'provider',
 	})
 	expect(first).toEqual(second)
-	expect(first.domainId).toBe(`openapi:${first.kodyName}`)
+	expect(first.domainId).toBe(`mcp:${first.kodyName}`)
 	expect(first.kodyName).toMatch(/^Provider_Name_[0-9a-f]{8}$/)
 })

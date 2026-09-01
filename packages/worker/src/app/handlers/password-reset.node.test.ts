@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
+import { honeypotFieldName } from '#universal/public-form-protection.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createRecord: vi.fn(async () => undefined),
@@ -117,6 +118,48 @@ function createResetRequest() {
 }
 
 const hexTokenPattern = /[0-9a-f]{64}/i
+
+test('password reset request ignores leftover website autofill and rejects the honeypot', async () => {
+	vi.clearAllMocks()
+	const handler = createPasswordResetRequestHandler(
+		createEnv({
+			APP_BASE_URL: 'https://kody.codes',
+			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
+		}),
+	)
+
+	const autofilledWebsite = await requestResetAndFlush(handler, {
+		request: new Request('https://kody.codes/password-reset', {
+			method: 'POST',
+			body: JSON.stringify({
+				email: 'user@example.com',
+				website: 'https://kody.codes',
+			}),
+		}),
+		url: new URL('https://kody.codes/password-reset'),
+	})
+	expect(autofilledWebsite.response.status).toBe(200)
+	expect(await autofilledWebsite.response.json()).toEqual({
+		ok: true,
+		message: 'If the account exists, a reset email has been sent.',
+	})
+	await autofilledWebsite.flush()
+
+	const filledHoneypot = await requestResetAndFlush(handler, {
+		request: new Request('https://kody.codes/password-reset', {
+			method: 'POST',
+			body: JSON.stringify({
+				email: 'user@example.com',
+				[honeypotFieldName]: 'https://spam.example',
+			}),
+		}),
+		url: new URL('https://kody.codes/password-reset'),
+	})
+	expect(filledHoneypot.response.status).toBe(400)
+	expect(await filledHoneypot.response.json()).toEqual({
+		error: 'Unable to submit this form.',
+	})
+})
 
 test('password reset keeps local action links on the request origin', async () => {
 	vi.clearAllMocks()

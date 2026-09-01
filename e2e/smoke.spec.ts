@@ -33,12 +33,11 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
-	// Scoped to the header, and exact so the lowercase test username ("kody")
-	// does not also match the "Kody" brand links in the header and footer.
+	// Header avatar is labeled Waiting plus the username so it does not
+	// collide with the "Kody" brand link.
 	await expect(
 		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
-			name: primaryTestUser.username,
-			exact: true,
+			name: `Waiting — ${primaryTestUser.username}`,
 		}),
 	).toBeVisible()
 	await expect(
@@ -68,10 +67,10 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('heading', { name: 'Welcome back' }),
 	).toBeVisible()
 	await expect(page.getByRole('button', { name: 'Log out' })).not.toBeVisible()
-	// Exact, so this asserts the username link is gone rather than tripping on
-	// the "Kody" brand link that a case-insensitive match would also find.
 	await expect(
-		page.getByRole('link', { name: primaryTestUser.username, exact: true }),
+		page.getByRole('link', {
+			name: `Waiting — ${primaryTestUser.username}`,
+		}),
 	).not.toBeVisible()
 
 	await page.goto('/privacy')

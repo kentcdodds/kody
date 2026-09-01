@@ -9,20 +9,20 @@ import {
 
 export const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Packages, Integrations, and Secrets',
+	title: 'Search Capabilities, Guides, Packages, Integrations, and Secrets',
 	description: `
-Find built-in capabilities, saved packages, integrations, and secret references (metadata only) before \`execute\`.
+Find built-in capabilities, official guides, saved packages, integrations, and secret references (metadata only) before \`execute\`.
 
 **query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Capability detail includes an execute snippet.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown. Capability detail includes an execute snippet.
 
 Example arguments:
 - \`{ "query": "send a message" }\`
 - \`{}\`
 - \`{ "query": "send a message", "domain": "email" }\`
 - \`{ "domain": "jobs" }\`
-- \`{ "entity": "coding_guide_get:capability" }\`
+- \`{ "entity": "package_authoring:guide" }\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),
@@ -49,7 +49,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{id}:{type}" (capability, package, secret, or integration), or an array of 1–10 refs to batch related detail lookups.',
+			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, package, or secret), or an array of 1–10 refs to batch related detail lookups.',
 		),
 	domain: z
 		.string()

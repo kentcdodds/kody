@@ -125,6 +125,7 @@ export function renderNamedProvider(input: {
 	label: string
 	logoPath?: string | null
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 	host?: string | null
 	builtIn?: boolean
 }) {
@@ -142,6 +143,7 @@ export function renderNamedProvider(input: {
 				label={input.label}
 				logoPath={input.logoPath}
 				autoLogoPath={input.autoLogoPath}
+				catalogLogoPath={input.catalogLogoPath}
 				host={input.host}
 				size="1.75rem"
 			/>
@@ -313,6 +315,7 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 					label={oauthAppTitle(selectedApp)}
 					logoPath={selectedApp.platformLogoPath ?? selectedApp.logoPath}
 					autoLogoPath={selectedApp.autoLogoPath}
+					catalogLogoPath={selectedApp.catalogLogoPath}
 					host={hostFromUrl(selectedApp.authorizeUrl ?? selectedApp.tokenUrl)}
 				/>
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -381,7 +384,6 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						<a
 							href={buildConnectOauthHref({
 								name: selectedApp.slug,
-								platform: isBuiltInApp(selectedApp),
 								appSlug: selectedApp.slug,
 							})}
 							mix={css({
@@ -411,8 +413,9 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 								: 'Needs setup'
 							const connectHref = buildConnectOauthHref({
 								name: connectionRef.name,
-								platform: connection?.platform ?? isBuiltInApp(selectedApp),
-								appSlug: connection?.appSlug ?? selectedApp.slug,
+								appSlug: connection?.platform
+									? undefined
+									: (connection?.appSlug ?? selectedApp.slug),
 							})
 							const disconnectCheck = getDisconnectCheck(connectionRef.name)
 							const confirmingDisconnect = disconnectCheck.doubleCheck
@@ -542,7 +545,6 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						})}
 						<AddAccountForm
 							slug={selectedApp.slug}
-							platform={isBuiltInApp(selectedApp)}
 							existingNames={[
 								...integrations.map((entry) => entry.name),
 								...apps.map((app) => app.slug),

@@ -7,7 +7,6 @@ import {
 
 const allOptionalHelperNames = new Set([
 	'storage',
-	'refreshAccessToken',
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',
@@ -88,7 +87,7 @@ export default async () => await runtime.storage.sql('select 1')`,
 	// Real bundles inline the virtual runtime module into the entry module,
 	// so helpers are top-level declarations rather than import bindings.
 	const inlinedSource = `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);
-var refreshAccessToken = __kodyOptionalRuntimeFunctionExport("refreshAccessToken");
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
 async function main() {
 	const result = await storage.sql("select 1");
 	return result.rows;
@@ -107,13 +106,13 @@ async function main() {
 
 	expect(
 		findUnboundRuntimeHelperAccess({
-			errorMessage: 'refreshAccessToken is not a function',
+			errorMessage: 'createAuthenticatedFetch is not a function',
 			modules: { 'bundle.js': inlinedSource },
 			unboundHelperNames: allOptionalHelperNames,
 		}),
 	).toEqual({
-		helperName: 'refreshAccessToken',
-		reference: 'refreshAccessToken',
+		helperName: 'createAuthenticatedFetch',
+		reference: 'createAuthenticatedFetch',
 	})
 
 	// A declaration initialized by an unrelated factory is not a helper.
@@ -130,16 +129,16 @@ async function main() { return (await storage.sql("select 1")).rows }`,
 
 	expect(
 		findUnboundRuntimeHelperAccess({
-			errorMessage: 'TypeError: refreshAccessToken is not a function',
+			errorMessage: 'TypeError: createAuthenticatedFetch is not a function',
 			modules: {
-				'entry.js': `import { refreshAccessToken } from 'kody:runtime'
-export default async () => await refreshAccessToken('google-personal')`,
+				'entry.js': `import { createAuthenticatedFetch } from 'kody:runtime'
+export default async () => await createAuthenticatedFetch('google-personal')`,
 			},
 			unboundHelperNames: allOptionalHelperNames,
 		}),
 	).toEqual({
-		helperName: 'refreshAccessToken',
-		reference: 'refreshAccessToken',
+		helperName: 'createAuthenticatedFetch',
+		reference: 'createAuthenticatedFetch',
 	})
 
 	expect(

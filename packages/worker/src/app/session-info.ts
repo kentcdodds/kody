@@ -1,4 +1,5 @@
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import { buildUserAvatarUrl } from '#app/community-public.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
 import {
 	loadRequestFeatureFlags,
@@ -12,6 +13,7 @@ export type SessionInfo = {
 	emailVerified: boolean
 	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
+	avatarUrl: string | null
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
 	featureFlags: EvaluatedFeatureFlags
@@ -54,6 +56,10 @@ export async function loadSessionInfo(
 			emailVerified: resolved.user.emailVerified,
 			emailVerificationDelivery: resolved.user.emailVerificationDelivery,
 			username: resolved.user.username,
+			avatarUrl: buildUserAvatarUrl({
+				username: resolved.user.username,
+				avatarKey: resolved.user.avatarKey,
+			}),
 			roles: resolved.user.roles,
 			permissions: resolved.user.permissions,
 			featureFlags,

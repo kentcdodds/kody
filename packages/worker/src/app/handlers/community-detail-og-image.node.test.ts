@@ -66,7 +66,6 @@ const listing = {
 	ratingCount: 12,
 	averageAdaptationEffort: null,
 	forkCount: 37,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const tinyPng = Uint8Array.from([
@@ -108,7 +107,7 @@ test('community detail OG image embeds PNG icons and converts WebP for satori', 
 	expect(mocks.renderCommunityOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: listing.name,
-			starCount: listing.starCount,
+			forkCount: listing.forkCount,
 			iconDataUri: expect.stringMatching(/^data:image\/png;base64,/),
 		}),
 	)

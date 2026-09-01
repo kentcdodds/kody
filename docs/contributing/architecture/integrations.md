@@ -5,14 +5,14 @@ Saved third-party OAuth config is a first-class primitive: an **OAuth app**
 **connections** (connected accounts that share that app). An app lives in one of
 two lanes: **user lane** — a per-user `user_oauth_apps` row the user registered
 with the provider — or **platform lane** — an operator-provisioned built-in
-`platform_oauth_apps` row every user can connect to (see
-[Platform (built-in) OAuth apps](#platform-built-in-oauth-apps)). Per-user
-access and refresh tokens live encrypted on the connection
-(`access_token_encrypted` / `refresh_token_encrypted`). User-lane client secrets
-live encrypted on the app (`client_secret_encrypted`). During soak those values
-are dual-written to `secret_entries` under the `*_secret_name` columns so
-placeholder resolution and reconnect still work; those names stay hidden from
-`/account/secrets`, `secret_list`, and search.
+`platform_oauth_apps` row some users still have tokens against (see
+[Platform (built-in) OAuth apps](#platform-built-in-oauth-apps)). New connects
+are bring-your-own only. Per-user access and refresh tokens live encrypted on
+the connection (`access_token_encrypted` / `refresh_token_encrypted`). User-lane
+client secrets live encrypted on the app (`client_secret_encrypted`). During
+soak those values are dual-written to `secret_entries` under the `*_secret_name`
+columns so placeholder resolution and reconnect still work; those names stay
+hidden from `/account/secrets`, `secret_list`, and search.
 
 Data access lives under `packages/worker/src/integrations/`. MCP capabilities
 live under `packages/worker/src/mcp/capabilities/integrations/`. The hosted
@@ -73,11 +73,13 @@ shared user-lane client secret. Deleting the app removes the client secret.
 
 `platform_oauth_apps` (migration
 `packages/worker/migrations/0004-platform-oauth-apps.sql`) holds
-operator-provisioned OAuth app registrations users connect to without creating
-their own provider app. The table is global (no `user_id`) — operator config
-like feature flags, not user data — so it is not a per-user-isolation exception.
-Rows are keyed by `slug` and carry `provider`, `label`, the inline non-secret
-`client_id`, `client_secret_encrypted`, endpoints (`token_url`, `authorize_url`,
+operator-provisioned OAuth app registrations some existing connections still
+refresh against. New connects and reconnects are bring-your-own only; unused
+built-ins are hidden from `/connect/oauth` and `integration_platform_app_list`.
+The table is global (no `user_id`) — operator config like feature flags, not
+user data — so it is not a per-user-isolation exception. Rows are keyed by
+`slug` and carry `provider`, `label`, the inline non-secret `client_id`,
+`client_secret_encrypted`, endpoints (`token_url`, `authorize_url`,
 `api_base_url`), flow options (`flow`, `use_pkce`, `token_exchange_style`,
 `scope_separator`, `extra_authorize_params_json`), the scope menu,
 `required_hosts_json`, and `enabled`.
@@ -94,12 +96,11 @@ so sandboxed code has no resolution path to the shared credential.
 
 **Invariant:** `getPlatformOauthAppClientSecret`
 (`packages/worker/src/integrations/platform-apps.ts`) is the only decrypt
-accessor, and its callers are host-side token-exchange paths only — the
-`/connect/oauth` handler actions in
-`packages/worker/src/app/handlers/account-secrets.ts` and the
-`integration_token_refresh` capability. The decrypted value must never appear in
-capability outputs, loader payloads, or logs. Public projections
-(`platform-app-shared.ts`) expose at most a `hasClientSecret` boolean.
+accessor, and its remaining caller is host-side token refresh
+(`integration_token_refresh`). `/connect/oauth` does not decrypt or exchange
+through the shared secret. The decrypted value must never appear in capability
+outputs, loader payloads, or logs. Public projections (`platform-app-shared.ts`)
+expose at most a `hasClientSecret` boolean.
 
 ### Scope menu
 
@@ -147,16 +148,10 @@ retries with a `{{secret:…}}` placeholder `Authorization` header, so raw token
 never enter the sandbox heap. Package code that triggers refresh through
 `createAuthenticatedFetch` does not need a secret-write (`allowed_packages`)
 grant — the system persists rotated tokens host-side and the package never sees
-or writes token values. `refreshAccessToken` is the raw-token helper for auth
-patterns that cannot use an Authorization header (WebSockets, SDK constructors,
-query-param tokens). It also refreshes host-side
-(`integration_refresh_access_token` → `refreshIntegrationTokens`) so token
-rotation does not need an `allowed_packages` write grant, then materializes the
-new access token for user-lane integrations and throws for platform ones
-(`integration_get` carries `platform: true`). The integration usage grant
-(`any`, or `packages` that includes that package) decides whether a package —
-including an unadopted community fork — can refresh or materialize tokens.
-Token-exchange request building is shared:
+or writes token values. Host-side refresh returns metadata only; there is no
+raw-token helper. The integration usage grant (`any`, or `packages` that
+includes that package) decides whether a package — including an unadopted
+community fork — can refresh tokens. Token-exchange request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.
@@ -175,8 +170,8 @@ renders. Assets live in the `COMMUNITY_ASSETS` R2 bucket under content-hashed
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
 Serving is the public `/integrations/logos/:integrationSlug` route with
 immutable caching; projections expose the relative `logoPath`. The connect page
-and account integration views render it, falling back to the auto-favicon and
-then the letter.
+and account integration views render it, falling back to the auto-favicon, then
+an operator-curated provider mark, then the letter.
 
 User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 (`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).
@@ -186,19 +181,43 @@ registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
 over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
 accept `/favicon.ico` only when it embeds a PNG, and store a raster under
 `user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
-auto-favicon, then the letter fallback. The same `/integrations/logos/:slug`
-route serves user assets only to the signed-in owner after a platform miss.
+auto-favicon, operator-curated provider mark, then the letter fallback. The same
+`/integrations/logos/:slug` route serves user assets only to the signed-in owner
+after a platform miss.
+
+Operator-curated provider marks live in `platform_provider_marks` (slug, label,
+aliases, logo). Operators add them on `/admin/provider-marks` or through
+`admin_platform_provider_mark_save` / `_list` / `_delete` so a Google (or any
+other) brand mark is data, not a deploy. Matching prefers an exact slug, then a
+stored or built-in alias (`google-youtube-brand` → `youtube`, `nodejs` →
+`nodedotjs`), then the longest family key (`github-kent` → `github`,
+`x-kodykoala` → `x`), then an authorize-host token. The slug itself is a host
+label (`api.github.com` matches `github`) unless the token is shorter than three
+characters or a generic TLD (`com`, `app`). Host fallback prefers an exact or
+suffix alias over a slug label so `mail.google.com` uses `gmail` rather than
+`google`. Built-in keys and hosts live in `default-provider-mark-aliases.ts` so
+a catalog row that omitted `github.com` still resolves. Saves strip those
+built-ins from stored aliases; the admin editor lists them as read-only. Assets
+use the same SVG/PNG/JPEG/WebP ingest pipeline under
+`platform-provider-marks/{slug}/` and serve at the public
+`/integrations/provider-marks/:slug` route. Login and onboarding use the inline
+`ProviderIcon` set. The admin catalog page groups marks by first letter and
+opens the editor inside the selected group so a multi-thousand-mark catalog does
+not render every tile at once.
 
 ### Admin provisioning
 
 Operators manage platform apps through role-gated capabilities in the `admin`
 domain, all audited via `auditAdminCapabilityInvocation`:
 
-| Capability                        | Role                                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `admin_platform_oauth_app_save`   | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
-| `admin_platform_oauth_app_list`   | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
-| `admin_platform_oauth_app_delete` | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
+| Capability                            | Role                                                                                                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `admin_platform_oauth_app_save`       | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
+| `admin_platform_oauth_app_list`       | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
+| `admin_platform_oauth_app_delete`     | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
+| `admin_platform_provider_mark_save`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration fallback after upload/favicon                                              |
+| `admin_platform_provider_mark_list`   | Lists marks with serving paths; no user data                                                                                                                             |
+| `admin_platform_provider_mark_delete` | Deletes the mark row and its R2 asset                                                                                                                                    |
 
 Confidential apps require a stored client secret only while `enabled`. An agent
 can therefore stage a complete provider config through `save` with
@@ -250,26 +269,20 @@ note on the architecture index.
 `/connect/oauth` runs authorize → callback → token exchange in the browser
 session, writes access/refresh tokens on the connection (and dual-writes the
 soak secret-store names), and upserts the app + connection via the integrations
-service. A signed-in visit with no `provider` renders a chooser of enabled
-built-ins and saved connections that can start from a name alone. Reconnect with
-`?provider=<integration-name>` reuses saved authorize metadata (scopes,
-`scopeSeparator`, `extraAuthorizeParams`) and the current app client
-credentials.
+service. A signed-in visit with no `provider` renders a chooser of saved
+connections that can start from a name alone. Unused platform (built-in) apps do
+not appear. Existing platform connections stay listed so their tokens can keep
+refreshing, but reconnect is always bring-your-own: `?provider=<name>` prefills
+endpoints and scopes and asks for the user's own client credentials. `platform=`
+query flags and `platformAppSlug` on `oauth_exchange` / `connect_oauth` are
+rejected. Reconnect with `?provider=<integration-name>` reuses saved authorize
+metadata (scopes, `scopeSeparator`, `extraAuthorizeParams`) from a user-lane
+app.
 
-When the user has no matching user-lane app, `?provider=<slug>` prefills from an
-enabled platform app (`loadAccountIntegrationByName` in
-`packages/worker/src/app/account-integrations-data.ts`). The client then skips
-the client-credentials setup step entirely — no client ID/secret inputs and no
-redirect-URI card. The hosted page leads with the provider mark, credentials or
-a connect button, a terms note, and a **Change scopes** disclosure (defaults
-checked; the operator-verified `allowed_scopes` menu is the rest of the list).
-Endpoints, host allowlists, stored config, and the built-in-alternative pitch
-stay behind an advanced disclosure. A `?provider=` visit that cannot resolve
-authorize and token URLs offers a copy-prompt for an agent. The `oauth_exchange`
-/ `connect_oauth` JSON actions accept `platformAppSlug`; for the platform lane
-every exchange input (token URL, flow, exchange style, client id, client secret)
-comes from the operator-provisioned row, never the request body, so a caller
-cannot point the decrypted shared secret at an arbitrary token URL.
+The hosted page leads with the provider mark, credentials or a connect button, a
+terms note, and a **Change scopes** disclosure. Endpoints, host allowlists, and
+stored config stay behind an advanced disclosure. A `?provider=` visit that
+cannot resolve authorize and token URLs offers a copy-prompt for an agent.
 
 `createAuthenticatedFetch(providerName)` (execute runtime helper) loads the
 named connection joined to its app, refreshes the access token when needed, and
@@ -290,14 +303,17 @@ Google, GitHub). Selecting a row shows that integration and the connections
 (signed-in accounts) on it. Each connection shows how many scopes it requests
 versus the built-in menu when one exists, and a copy-prompt asks an agent to
 widen the integration's reconnect scopes (then ask the user to reconnect).
-Built-in integrations show a small “Provided by Kody” indicator. Deep links to a
-connection (`/account/integrations/:name`) open the parent integration and
-highlight that connection. User-registered integrations also have
-`/account/integrations/apps/:appSlug` (a connection named `apps` resolves at
-`/account/integrations/apps`). Endpoints, secret names, host allowlists, flow /
-PKCE / exchange style, and credential rotation stay behind an advanced
-disclosure. Each connection also shows a usage grant: **any context** (execute
-and every package) or **specific packages** only. One-click approval lives at
+Existing built-in connections show a small “Provided by Kody” indicator.
+Reconnect and add-account links go to bring-your-own `/connect/oauth` (no
+`platform=`). Deep links to a connection (`/account/integrations/:name`) open
+the parent integration and highlight that connection. User-registered
+integrations also have `/account/integrations/apps/:appSlug` (a connection named
+`apps` resolves at `/account/integrations/apps`). Endpoints, secret names, host
+allowlists, flow / PKCE / exchange style, and credential rotation stay behind an
+advanced disclosure. Each connection also shows a usage grant: **any context**
+(execute and every package) or **specific packages** only. Agents tighten that
+grant with `integration_lock` (switch to packages mode and add a saved package
+id; unlocking or removing a grant is website-only). One-click approval lives at
 `/account/integrations/approve?name=&package_id=`; approving a package while the
 connection is still `any` leaves it `any` so execute stays usable. The rotate
 form posts to `/account/integrations.json` with
@@ -317,21 +333,15 @@ connections instead.
 Domain: `integrations`
 (`packages/worker/src/mcp/capabilities/integrations/domain.ts`).
 
-| Capability                                             | Role                                                                           |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                                    |
-| `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names                       |
-| `integration_oauth_app_delete`                         | Delete a user-lane app and every connection on it                              |
-| `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                              |
-| `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret          |
-| `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values             |
-| `integration_refresh_access_token`                     | User-lane host refresh plus materialized access token for `refreshAccessToken` |
-| `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                                             |
-| `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain)                  |
-
-OpenAPI provider bindings (`user_openapi_bindings` /
-`user_openapi_binding_operations`) are a separate primitive; see
-[OpenAPI provider bindings](./openapi-bindings.md).
+| Capability                                        | Role                                                                              |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `integration_save` / `_get` / `_list` / `_delete` | Connection CRUD with flat `clientId` output                                       |
+| `integration_lock`                                | Tighten-only usage lock: packages mode + add a package id; unlock is website-only |
+| `integration_oauth_app_list`                      | Apps with connection counts and sibling connection names                          |
+| `integration_oauth_app_delete`                    | Delete a user-lane app and every connection on it                                 |
+| `integration_oauth_app_rotate_credentials`        | Rotate shared app `clientId` / client-secret name                                 |
+| `integration_platform_app_list`                   | Always empty while platform apps are retired; operators use admin list            |
+| `integration_token_refresh`                       | Host-side OAuth refresh; returns metadata only, never token values                |
 
 ## Account deletion order
 
@@ -339,9 +349,7 @@ Deletion targets in `account-data-targets.ts` list `user_integrations` before
 `user_oauth_apps` so the `ON DELETE RESTRICT` FK cannot block cleanup when
 cascades are disabled. `platform_oauth_apps` is global operator config and is
 not a deletion target; removing a user's connections is what releases their
-`ON DELETE RESTRICT` references to it. OpenAPI binding cleanup (child operations
-before parent bindings) is documented in
-[OpenAPI provider bindings](./openapi-bindings.md#account-deletion-order).
+`ON DELETE RESTRICT` references to it.
 
 ## Related docs
 

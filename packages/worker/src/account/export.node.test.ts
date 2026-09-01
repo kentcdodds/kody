@@ -210,18 +210,6 @@ test('account export includes profile fields and social graph edges for either s
 				'Other listing', '[]', 'MIT', 'commit-b', 'active', '2026-07-05'
 			);
 
-		INSERT INTO user_follows (follower_user_id, followee_user_id, created_at)
-		VALUES
-			('user-aaa', 'user-bbb', '2026-07-05'),
-			('user-bbb', 'user-aaa', '2026-07-05'),
-			('user-bbb', 'user-ccc', '2026-07-05');
-
-		INSERT INTO community_stars (listing_id, user_id, created_at)
-		VALUES
-			('listing-a', 'user-bbb', '2026-07-05'),
-			('listing-b', 'user-aaa', '2026-07-05'),
-			('listing-b', 'user-bbb', '2026-07-05');
-
 		INSERT INTO community_activity_events (
 			id, actor_user_id, event_type, listing_id, created_at
 		) VALUES
@@ -255,34 +243,6 @@ test('account export includes profile fields and social graph edges for either s
 	])
 	expect(accountExport.d1.users.rows[0]).not.toHaveProperty('password_hash')
 
-	expect(accountExport.d1.user_follows.rows).toEqual([
-		expect.objectContaining({
-			follower_user_id: '[redacted]',
-			followee_user_id: 'user-aaa',
-		}),
-		expect.objectContaining({
-			follower_user_id: 'user-aaa',
-			followee_user_id: '[redacted]',
-		}),
-	])
-	expect(
-		accountExport.d1.user_follows.rows.some(
-			(row) =>
-				row.follower_user_id === 'user-bbb' ||
-				row.followee_user_id === 'user-bbb' ||
-				row.followee_user_id === 'user-ccc',
-		),
-	).toBe(false)
-
-	expect(accountExport.d1.community_stars.rows).toEqual([
-		expect.objectContaining({ listing_id: 'listing-b', user_id: 'user-aaa' }),
-	])
-	expect(
-		accountExport.d1.community_stars.rows.some(
-			(row) => row.user_id === 'user-bbb',
-		),
-	).toBe(false)
-
 	expect(accountExport.d1.community_activity_events.rows).toEqual([
 		expect.objectContaining({
 			id: 'evt-a',
@@ -296,8 +256,6 @@ test('account export includes profile fields and social graph edges for either s
 		),
 	).toBe(false)
 
-	expect(accountExport.manifest.sections['d1.user_follows']?.count).toBe(2)
-	expect(accountExport.manifest.sections['d1.community_stars']?.count).toBe(1)
 	expect(
 		accountExport.manifest.sections['d1.community_activity_events']?.count,
 	).toBe(1)

@@ -7,14 +7,19 @@ import {
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
 
-export type SearchEntityType =
-	| 'capability'
-	| 'package'
-	| 'secret'
-	| 'integration'
+export const searchEntityRefTypes = [
+	'capability',
+	'guide',
+	'integration',
+	'package',
+	'secret',
+] as const
+
+export type SearchEntityType = (typeof searchEntityRefTypes)[number]
 
 type SearchMatchType =
 	| 'capability'
+	| 'guide'
 	| 'package'
 	| 'integration'
 	| 'secret'
@@ -132,7 +137,7 @@ export type SlimSearchMatch =
 			title: string
 			description: string
 			domain: string
-			source: 'mcp-server' | 'openapi'
+			source: 'mcp-server'
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
@@ -152,9 +157,19 @@ export type SlimSearchMatch =
 			usage: string
 			source?: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
 			inputTypeDefinitionTruncated?: boolean
+	  }
+	| {
+			type: 'guide'
+			id: string
+			entityRef: string
+			title: string
+			description: string
+			usage: string
+			category: 'platform' | 'provider'
+			slug: string
+			provider: string | null
 	  }
 	| {
 			type: 'package'
@@ -249,11 +264,24 @@ export type SearchEntityDetailStructured =
 			destructive: boolean
 			source: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 			relatedOperations?: Array<RelatedCapabilityOperation>
 			relatedOperationCount?: number
+	  }
+	| {
+			kind: 'entity'
+			type: 'guide'
+			id: string
+			entityRef: string
+			title: string
+			description: string
+			usage: string
+			category: 'platform' | 'provider'
+			slug: string
+			body: string
+			provider: string | null
+			lastVerified: string | null
 	  }
 	| {
 			kind: 'entity'
@@ -335,6 +363,17 @@ export type SearchEntityDetail =
 			relatedOperationCount?: number
 	  }
 	| {
+			type: 'guide'
+			id: string
+			title: string
+			description: string
+			body: string
+			slug: string
+			category: 'platform' | 'provider'
+			provider: string | null
+			lastVerified: string | null
+	  }
+	| {
 			type: 'package'
 			id: string
 			title: string
@@ -380,7 +419,7 @@ export type SearchMatch =
 			title: string
 			description: string
 			domain: string
-			source: 'mcp-server' | 'openapi'
+			source: 'mcp-server'
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
@@ -398,9 +437,17 @@ export type SearchMatch =
 			domain: string
 			source?: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
-			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
 			inputTypeDefinitionTruncated?: boolean
+	  }
+	| {
+			type: 'guide'
+			id: string
+			title: string
+			description: string
+			category: 'platform' | 'provider'
+			slug: string
+			provider: string | null
 	  }
 	| {
 			type: 'package'

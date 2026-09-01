@@ -22,11 +22,8 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			listing: detail.listing,
 			ownerProfilePublic: detail.ownerProfilePublic,
 			loggedIn: detail.loggedIn,
-			starredByViewer: detail.starredByViewer,
-			viewerFollowsOwner: detail.viewerFollowsOwner,
 			viewerIsOwner: detail.viewerIsOwner,
 			returnTo: url.pathname,
-			followError: url.searchParams.get('followError'),
 		})
 	},
 })

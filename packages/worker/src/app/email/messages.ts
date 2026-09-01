@@ -1,4 +1,5 @@
 import { renderTransactionalEmail } from '#app/email/template.ts'
+import { type PlatformFeedbackOutcomeStatus } from '#worker/platform-feedback/types.ts'
 
 /**
  * Copy for every transactional email, kept free of runtime dependencies so the
@@ -211,7 +212,7 @@ export function buildPastDueEmail(input: {
 		preheader: 'Your paid plan is waiting on a successful payment.',
 		heading: 'Your subscription is past due',
 		body: [
-			'Your Kody subscription is past due. Update your payment method to keep Standard or Pro limits. If payment stays failed, the account returns to the free plan.',
+			'Your Kody subscription is past due. Your paid limits stay in place while Stripe retries the charge, so nothing stops today — but update your payment method soon. If payment stays failed, the subscription ends and the account returns to the free plan.',
 		],
 		action: { label: 'Fix billing', url: input.billingUrl },
 		illustration: {
@@ -256,6 +257,60 @@ export function buildUserErrorRateEmail(input: {
 		footnote:
 			"You're receiving this because your Kody account crossed an error-rate threshold.",
 	})
+}
+
+export function buildPlatformFeedbackOutcomeEmail(input: {
+	appBaseUrl: string
+	status: PlatformFeedbackOutcomeStatus
+	summary: string
+	userMessage?: string
+}) {
+	const copy = platformFeedbackOutcomeCopy(input.status)
+	const userMessage = input.userMessage?.trim()
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: copy.subject,
+		preheader: copy.preheader,
+		heading: 'Thanks for your feedback',
+		body: [
+			copy.decision(input.summary.trim()),
+			...(userMessage ? [userMessage] : []),
+			'Thanks for taking the time to tell us. Notes like yours help us make Kody better.',
+			'If you have more to share, tell your agent you want to send more Kody feedback.',
+		],
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote: "You're receiving this because you sent Kody platform feedback.",
+	})
+}
+
+function platformFeedbackOutcomeCopy(status: PlatformFeedbackOutcomeStatus) {
+	switch (status) {
+		case 'resolved':
+			return {
+				subject: 'We resolved your Kody feedback',
+				preheader: 'Thanks for telling us — here is what happened.',
+				decision: (summary: string) =>
+					`We resolved your feedback about "${summary}".`,
+			}
+		case 'dismissed':
+			return {
+				subject: 'An update on your Kody feedback',
+				preheader: 'Thanks for telling us — here is what happened.',
+				decision: (summary: string) =>
+					`We reviewed your feedback about "${summary}" and closed it without a product change this time.`,
+			}
+		default: {
+			const exhaustive: never = status
+			throw new Error(
+				`Unknown platform feedback outcome status: ${String(exhaustive)}`,
+			)
+		}
+	}
 }
 
 export function buildPasswordResetEmail(input: {

@@ -12,6 +12,7 @@ export const routes = route({
 	securityTxt: '/.well-known/security.txt',
 	connectOauth: '/connect/oauth',
 	integrationLogo: '/integrations/logos/:integrationSlug',
+	providerMarkLogo: '/integrations/provider-marks/:slug',
 	accountIntegrations: '/account/integrations',
 	// More specific than `:integrationName` so a connection named `apps` still
 	// resolves at `/account/integrations/apps` while OAuth apps live under
@@ -65,6 +66,8 @@ export const routes = route({
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
+	accountWaiting: '/account/waiting',
+	accountWaitingApi: '/account/waiting.json',
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
 	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
@@ -92,11 +95,15 @@ export const routes = route({
 	accountBilling: '/account/billing',
 	accountBillingApi: '/account/billing.json',
 	accountBillingCheckoutPost: post('/account/billing/checkout.json'),
+	accountBillingCancellationFeedbackPost: post(
+		'/account/billing/cancellation-feedback.json',
+	),
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
 	accountUsage: '/account/usage',
 	accountUsageApi: '/account/usage.json',
 	accountEmailChange: post('/account/email-change.json'),
+	accountPassword: post('/account/password.json'),
 	accountResendVerification: post('/account/resend-verification.json'),
 	accountExport: '/account/export.json',
 	admin: '/admin',
@@ -117,6 +124,9 @@ export const routes = route({
 	adminPlatformIntegrationDetail: '/admin/platform-integrations/:slug',
 	adminPlatformIntegrationsApi: '/admin/platform-integrations.json',
 	adminPlatformIntegrationsApiPost: post('/admin/platform-integrations.json'),
+	adminProviderMarks: '/admin/provider-marks',
+	adminProviderMarksApi: '/admin/provider-marks.json',
+	adminProviderMarksApiPost: post('/admin/provider-marks.json'),
 	adminCodemods: '/admin/codemods',
 	adminCodemodsApi: '/admin/codemods.json',
 	adminCodemodsRunApi: post('/admin/codemods/run.json'),
@@ -162,8 +172,6 @@ export const routes = route({
 	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	communityFeatureApiPost: post('/community/:listingId/feature.json'),
 	communityInstallApiPost: post('/community/:listingId/install.json'),
-	communityStarApiPost: post('/community/:listingId/star.json'),
-	communityStargazersApi: '/community/:listingId/stargazers.json',
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
 	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
@@ -181,13 +189,10 @@ export const routes = route({
 	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.
 	profileAvatar: '/profiles/:username/avatar/:hash.:ext',
 	profileOgImage: '/profiles/:username/og.png',
-	profileFollowApiPost: post('/profiles/:username/follow.json'),
 	webhookIngress: post(
 		'/@:username/webhooks/:packageKodyId/:webhookName/:urlSecret',
 	),
 	stripeWebhook: post('/webhooks/stripe'),
-	timeline: '/timeline',
-	timelineApi: '/timeline.json',
 	health: '/health',
 	healthComponents: '/health/components',
 	codeRunsApi: '/code-runs.json',
@@ -212,8 +217,6 @@ export const routes = route({
 	signup: '/signup',
 	waitingList: post('/waiting-list'),
 	account: '/account',
-	accountStars: '/account/stars',
-	accountStarsApi: '/account/stars.json',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

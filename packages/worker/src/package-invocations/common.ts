@@ -11,7 +11,7 @@ import {
 import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
 import { type listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { buildPackageStorageId } from '#worker/storage-runner.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type PackageInvocationStoredResponse } from './repo.ts'
 

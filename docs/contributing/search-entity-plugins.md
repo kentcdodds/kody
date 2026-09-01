@@ -39,8 +39,8 @@ To add a search entity:
 9. For entity-backed types, update the public allowed-type lists so agents and
    docs stay in sync:
    - `search-tool-definition.ts` (tool description and `entity` input schema
-     copy that enumerates `capability` | `package` | `secret` | `value` |
-     `integration`)
+     copy that enumerates `capability` | `guide` | `integration` | `package` |
+     `secret`)
    - `docs/use/search.md` (user-facing `{id}:{type}` type list)
 10. Add or update `search-entity-registry.node.test.ts` to prove the registry
     order and whether the type is entity-backed.
@@ -48,8 +48,8 @@ To add a search entity:
 Current candidate flatten order is:
 
 1. `capability`
-2. `package`
-3. `value`
+2. `guide`
+3. `package`
 4. `integration`
 5. `secret`
 6. `retriever_result`

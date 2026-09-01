@@ -1,11 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { getExecutionErrorDetails } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import {
-	buildPackageStorageId,
 	createPackageStorageAccessDeniedMessage,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
@@ -237,12 +236,11 @@ test(
 					kody: { id: 'notes', description: 'Note storage' },
 				}),
 				'src/note-list.ts': [
-					"import { packageStorage, storage } from 'kody:runtime'",
+					"import { packageStorage } from 'kody:runtime'",
 					'export default async function noteList() {',
 					'\tconst bucket = packageStorage()',
 					"\tconst result = await bucket.sql('select name from notes order by name asc')",
 					'\treturn {',
-					'\t\tambientStorageType: typeof storage,',
 					'\t\tbucketId: bucket.id,',
 					'\t\tnames: result.rows.map((row) => row.name),',
 					'\t}',
@@ -253,8 +251,7 @@ test(
 				{ artifactName: './note-list', entryPoint: 'src/note-list.ts' },
 			],
 		})
-		// Seed the package's own bucket for `packageStorage()` (package
-		// invocations leave ambient storage unbound).
+		// Seed the package's own bucket for `packageStorage()`.
 		const runner = packageBucketRunner(userId, packageId)
 		await runner.sqlQuery({
 			query: 'create table if not exists notes (name text primary key)',
@@ -292,9 +289,6 @@ test(
 		)
 		expect(result.error).toBeUndefined()
 		expect(result.result).toEqual({
-			// Ad hoc execute without a bound storageId: ambient storage stays
-			// undefined even though packageStorage() works.
-			ambientStorageType: 'undefined',
 			bucketId: buildPackageStorageId(packageId),
 			names: ['debugging', 'writing'],
 		})
@@ -432,13 +426,12 @@ test(
 				},
 			}),
 			'src/run.ts': [
-				"import { packageStorage, storage } from 'kody:runtime'",
+				"import { packageStorage } from 'kody:runtime'",
 				"import innerWhoami from 'kody:@kentcdodds/inner/whoami'",
 				'export default async function run() {',
 				'\treturn {',
 				'\t\tinner: await innerWhoami(),',
 				'\t\touterBucketId: packageStorage().id,',
-				'\t\tambientStorageType: typeof storage,',
 				'\t}',
 				'}',
 			].join('\n'),
@@ -453,8 +446,8 @@ test(
 			entryPoint: 'src/run.ts',
 			rootPackageId: outerPackageId,
 		})
-		// Package invocation runs bind no ambient storage (no storageTools):
-		// the package bucket is reachable only through packageStorage().
+		// Package invocation runs reach the package bucket only through
+		// packageStorage().
 		const result = await runBundledModuleWithRegistry(
 			env,
 			createCallerContext(userId),
@@ -476,15 +469,12 @@ test(
 				owner: 'inner-bucket',
 			},
 			outerBucketId: buildPackageStorageId(outerPackageId),
-			// Ambient storage is absent in package-invocation runs; guarded
-			// access observes undefined.
-			ambientStorageType: 'undefined',
 		})
 	},
 )
 
 test(
-	'a package invocation run that dereferences ambient storage gets the packageStorage() unbound hint',
+	'importing ambient storage from kody:runtime fails because the export is gone',
 	{ timeout: 90_000 },
 	async () => {
 		silenceIncidentalRuntimeWarnings()
@@ -492,54 +482,28 @@ test(
 		const userId = `user-${crypto.randomUUID()}`
 		const unique = crypto.randomUUID()
 		const packageId = `pkg-${unique}`
-		// Legacy package code (published before the #820 check) that uses the
-		// ambient storage helper guard-lessly: with the invocation-context
-		// binding removed, the bare TypeError is rewritten to the structured
-		// runtime_helper_unbound hint whose remedy leads with packageStorage().
-		const bundle = await buildKodyModuleBundle({
-			env,
-			baseUrl: 'https://kody.dev',
-			userId,
-			sourceFiles: {
-				'package.json': JSON.stringify({
-					name: '@kentcdodds/legacy',
-					exports: { './main': './src/main.ts' },
-					kody: { id: 'legacy', description: 'Legacy ambient storage' },
-				}),
-				'src/main.ts': [
-					"import { storage } from 'kody:runtime'",
-					'export default async function main() {',
-					"\treturn await storage.get('key')",
-					'}',
-				].join('\n'),
-			},
-			entryPoint: 'src/main.ts',
-			rootPackageId: packageId,
-		})
-		const result = await runBundledModuleWithRegistry(
-			env,
-			createCallerContext(userId),
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				packageContext: {
-					packageId,
-					kodyId: 'legacy',
-					sourceId: `source-${unique}`,
+		await expect(
+			buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@kentcdodds/legacy',
+						exports: { './main': './src/main.ts' },
+						kody: { id: 'legacy', description: 'Legacy ambient storage' },
+					}),
+					'src/main.ts': [
+						"import { storage } from 'kody:runtime'",
+						'export default async function main() {',
+						"\treturn await storage.get('key')",
+						'}',
+					].join('\n'),
 				},
-			},
-		)
-		expect(result.error).toBeDefined()
-		const details = getExecutionErrorDetails(result.error)
-		expect(details).toMatchObject({
-			kind: 'runtime_helper_unbound',
-			helperName: 'storage',
-		})
-		expect(details?.nextStep).toContain('packageStorage()')
-		expect(details?.nextStep?.indexOf('packageStorage()')).toBeLessThan(
-			details?.nextStep?.indexOf('storageId') ?? -1,
-		)
+				entryPoint: 'src/main.ts',
+				rootPackageId: packageId,
+			}),
+		).rejects.toThrow(/storage/)
 	},
 )
 

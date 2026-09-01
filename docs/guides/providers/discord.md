@@ -48,8 +48,7 @@ OAuth lane is quicker to set up.
   [developer portal](https://discord.com/developers/applications).
 - OAuth access tokens expire after 7 days with rotating refresh tokens, so
   refresh must work from day one. Kody's `/connect/oauth` flow plus its token
-  refresh (`createAuthenticatedFetch` / `refreshAccessToken`) handle that
-  automatically.
+  refresh (`createAuthenticatedFetch`) handle that automatically.
 - Installing a bot into a server requires the **Manage Server** permission in
   that server.
 
@@ -187,7 +186,7 @@ repeating raw API calls:
    from `execute`.
 2. When no listing fits, create a thin helpers package that owns your Discord
    surface (post message, read channel, member checks) following
-   `coding_guide_get({ guide: "package_authoring" })`, and give it a smoke-test
+   `search({ entity: "package_authoring:guide" })`, and give it a smoke-test
    export that calls `users/@me` with your credentials.
 
 Either way, end by invoking the package's smoke test and confirming it returns

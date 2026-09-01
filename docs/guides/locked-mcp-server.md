@@ -37,7 +37,8 @@ published surface can call it.
 This is the MCP counterpart to
 [Gmail drafts without send](./locked-gmail-drafts.md). OAuth tokens stay as wide
 as the provider issued them; a publish lock holds a package tree. An MCP server
-lock holds **who may call the connector**.
+lock holds **who may call the connector**. Integration connections use the same
+tighten-only grant via `integration_lock`.
 
 ## What the lock does
 
@@ -86,8 +87,8 @@ If a package needs the lock off, send the owner to
 
 Load `locked_mcp_server` when someone wants a connected MCP server that execute
 must not call, when a home or third-party MCP is coarser than the intended
-package, or when they ask how MCP usage compares to publish lock or integration
-package grants. For connecting the server, load the
+package, or when they ask how MCP usage compares to publish lock or
+`integration_lock`. For connecting the server, load the
 [usage page](../use/mcp-client-servers.md) and `local_mcp_tunnels` for home LAN
 servers. For holding a published tree still, load `locked_gmail_drafts` and
 [Packages → Publish lock](../use/packages.md#publish-lock).

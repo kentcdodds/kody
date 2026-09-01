@@ -27,7 +27,6 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 		displayName: 'Jane Doe',
 		username: 'jane',
 		bio: 'Builds weather bots and keeps public packages tidy for everyone.',
-		followerCount: 12,
 		publicPackageCount: 3,
 		listingCount: 1,
 		avatarDataUri: await sampleAvatarDataUri('jane'),
@@ -38,7 +37,6 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 		displayName: 'Kody',
 		username: 'kody',
 		bio: null,
-		followerCount: 1,
 		publicPackageCount: 1,
 		listingCount: 0,
 		avatarDataUri: null,
@@ -70,7 +68,6 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 		const sharedCard = {
 			username: 'kentcdodds',
 			bio: 'Husband, 6x Dad, Latter-day Saint, Dev, Educator.',
-			followerCount: 28,
 			publicPackageCount: 31,
 			listingCount: 26,
 			avatarDataUri,

@@ -124,21 +124,21 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		},
 	},
 	{
+		id: 'waiting',
+		question: 'What is waiting?',
+		match: accountSection(routes.accountWaiting.href()),
+		paragraphs: [
+			'Waiting is the current-state queue of things only you can clear: verify email, reconnect an MCP server, promote a locked-package publish, confirm a pending email change, or finish setup.',
+			'Items disappear when the gate clears. Activity is run history. Email is your mailbox. Vendor outages and operator work do not show up here.',
+		],
+	},
+	{
 		id: 'activity',
 		question: 'What is activity?',
 		match: accountSection(routes.accountActivity.href()),
 		paragraphs: [
 			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes. Open errors shows failures with logs and triage (open, ignored, or resolved). Recent runs lists the last week of successes and errors from the same records.',
 			'Use Open errors to decide whether to ignore, resolve, or fix a failure. Switch to Recent runs to see what ran. Your agent can review the same data through the runs capabilities. A later successful run for the same job automatically resolves earlier open errors.',
-		],
-	},
-	{
-		id: 'stars',
-		question: 'What is a star?',
-		match: accountSection(routes.accountStars.href()),
-		paragraphs: [
-			'A star is your bookmark for a public package listing. It is separate from the 1–5 rating you can leave on a listing.',
-			'Star packages you want to find again, fork later, or keep an eye on. Stars are public on listings; this page is your personal list.',
 		],
 	},
 	{
@@ -166,15 +166,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			href: routes.guideDetail.href({ slug: 'what-is-kody' }),
 			label: 'What is Kody?',
 		},
-	},
-	{
-		id: 'timeline',
-		question: 'What is the timeline?',
-		match: (pathname) => pathname === routes.timeline.href(),
-		paragraphs: [
-			'The timeline is a feed of public community activity from accounts you follow: publishes, republishes, forks, and stars. Private package edits never appear.',
-			'Follow public profiles to see what they ship. Your own public activity shows up on your profile; this page is the follow-graph view of the same events.',
-		],
 	},
 ]
 

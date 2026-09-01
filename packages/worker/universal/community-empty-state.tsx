@@ -17,7 +17,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 function buildCreatePackagePrompt(query: string) {
-	return `I searched Kody Community for "${query}" and found no published package. Create this package for me. First load coding_guide_get({ guide: "package_authoring" }) and coding_guide_get({ guide: "package_lifecycle" }). Then choose a suitable lower-kebab-case kody_id and call package_get_git_remote({ kody_id, create: true }) to create its repository. Build, test, and publish a useful package that matches my search.`
+	return `I searched Kody Community for "${query}" and found no published package. Create this package for me. First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }). Then choose a suitable lower-kebab-case kody_id and call package_get_git_remote({ kody_id, create: true }) to create its repository. Build, test, and publish a useful package that matches my search.`
 }
 
 /**

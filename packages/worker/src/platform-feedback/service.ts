@@ -16,6 +16,7 @@ import {
 } from './repo.ts'
 import {
 	type PlatformFeedbackAction,
+	type PlatformFeedbackAdminUpdate,
 	type PlatformFeedbackCategory,
 	type PlatformFeedbackRecord,
 	type PlatformFeedbackRecordWithRevision,
@@ -297,7 +298,7 @@ export async function updatePlatformFeedbackForAdmin(input: {
 	reviewerUserId: string
 	action: PlatformFeedbackAction
 	adminNote?: string
-}): Promise<PlatformFeedbackRecord> {
+}): Promise<PlatformFeedbackAdminUpdate> {
 	const reviewerUserId = normalizeRequiredText(input.reviewerUserId, {
 		field: 'reviewerUserId',
 		maxLength: 1_000,
@@ -319,7 +320,11 @@ export async function updatePlatformFeedbackForAdmin(input: {
 		const adminNoteChanged =
 			adminNote !== undefined && adminNote !== existing.adminNote
 		if (nextStatus === null && !adminNoteChanged) {
-			return toPlatformFeedbackRecord(existing)
+			return {
+				feedback: toPlatformFeedbackRecord(existing),
+				previousStatus: existing.status,
+				didChangeStatus: false,
+			}
 		}
 		const reviewedAt = new Date().toISOString()
 		const updated = await updatePlatformFeedbackStatusForAdmin(input.db, {
@@ -339,7 +344,11 @@ export async function updatePlatformFeedbackForAdmin(input: {
 		if (!feedback) {
 			throw new PlatformFeedbackNotFoundError(input.feedbackId)
 		}
-		return toPlatformFeedbackRecord(feedback)
+		return {
+			feedback: toPlatformFeedbackRecord(feedback),
+			previousStatus: existing.status,
+			didChangeStatus: nextStatus !== null,
+		}
 	}
 	throw new PlatformFeedbackConcurrentUpdateError(input.feedbackId)
 }

@@ -17,7 +17,8 @@ Read in order for a full tour, or jump to a topic.
 ## Guides
 
 - [Official guides](https://kody.codes/guides) — Work with Kody (fundamentals
-  and recipes); MCP `coding_guide_get`, web index, and raw `.md` per page
+  and recipes); MCP `search({ entity: "{id}:guide" })`, web index, and raw `.md`
+  per page
 - [Connection guides](https://kody.codes/guides/connect) — verified walkthroughs
   for connecting Discord, GitHub, Google, and other providers to Kody
 - [What is Kody?](../guides/what-is-kody.md) — capability tour and discovery
@@ -49,9 +50,7 @@ Read in order for a full tour, or jump to a topic.
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
   the owner operates a container or machine and the package calls it
 - [Public packages](./community-packages.md) — share, browse, and fork published
-  packages on the same deployment
-- [Community profiles](./community-profiles.md) — public profiles, follows,
-  timelines, and listing stars
+  packages on the same deployment; public catalogs live at `/@username`
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets and host approval](./secrets-and-values.md)
@@ -63,6 +62,8 @@ Read in order for a full tour, or jump to a topic.
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked
   real-surface subscription handler smoke tests
+- [Waiting](./waiting.md) — current-state items only you can clear
+  (`/account/waiting` and `waiting_summary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
 - [Plans and pricing](https://kody.codes/pricing) — every plan is the whole

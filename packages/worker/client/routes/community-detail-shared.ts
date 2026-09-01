@@ -24,7 +24,6 @@ export type CommunityDetailApiPayload = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
-	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
 	readmeFences?: Array<HighlightedCode>
 	ownerPackage: AccountPackageDetail | null
@@ -56,7 +55,6 @@ export type CommunityShellSnapshot = {
 	featured: boolean
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode> | undefined
-	starredByViewer: boolean
 	ownerPackage: AccountPackageDetail | null
 	username: string
 	invocationUrlOrigin: string
@@ -155,11 +153,7 @@ export function isCommunityListingPathname(pathname: string) {
 export function buildCommunityDetailFrameSrc(href: string) {
 	const url = new URL(href, 'http://localhost')
 	if (!getListingPageRef(url.pathname)) return url.pathname
-	const followError = url.searchParams.get('followError')
-	if (!followError) return url.pathname
-	const frameUrl = new URL(url.pathname, 'http://localhost')
-	frameUrl.searchParams.set('followError', followError)
-	return `${frameUrl.pathname}${frameUrl.search}`
+	return url.pathname
 }
 
 export async function communityDetailRouteLoader(
@@ -220,8 +214,6 @@ export async function communityDetailRouteLoader(
 			featured: payload.listing?.featured ?? false,
 			readmeContent: payload.listing?.readmeContent ?? null,
 			readmeFences: payload.readmeFences,
-			starCount: payload.listing?.starCount ?? 0,
-			starredByViewer: payload.starredByViewer,
 			viewerInstall: payload.viewerInstall,
 			ownerPackage: payload.ownerPackage,
 			username: payload.username,

@@ -61,7 +61,7 @@ Important behavior:
   publish that will only fail later at runtime.
 - An isolate memory or CPU reset during bundle validation is the same class of
   failure: the npm graph does not fit a Worker isolate. The check message points
-  at `coding_guide_get({ guide: "heavy_work_offload" })`.
+  at `search({ entity: "heavy_work_offload:guide" })`.
 - Runtime execution does not invent a new dependency policy or ask callers to
   choose one. Dependency handling is part of the saved-package pipeline itself.
 
@@ -167,12 +167,8 @@ A saved package is a repo with the package extension activated. Four concepts:
   package before importing it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
-  code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through a static import or `import(specifier)`. Package-invocation runs
-  (exports, subscription handlers, retrievers) bind no ambient `storage`, so
-  guard-less ambient access in those contexts fails with the structured
-  `runtime_helper_unbound` hint pointing at `packageStorage()`. Job runtimes
-  bind job-scoped scratch buckets. Repo checks fail (the `lint` result) when
+  has no scratch SQLite helper; another package's data goes through a static
+  import or `import(specifier)`. Repo checks fail (the `lint` result) when
   package sources import ambient `storage` from `kody:runtime` with a value
   named import; type-only imports and `.d.ts` files are exempt. The rule runs on
   new session check runs, publishes, and community fork installs —
@@ -312,8 +308,7 @@ emit (recursion guard). See
 
 For reconnectable OAuth refresh failures, `integration.auth.failed` dispatches
 best-effort from host-side `refreshIntegrationTokens`
-(`createAuthenticatedFetch` 401 retry, `refreshAccessToken` /
-`integration_refresh_access_token`, and explicit `integration_token_refresh`).
+(`createAuthenticatedFetch` 401 retry and explicit `integration_token_refresh`).
 Successful refreshes and successful `/connect/oauth` token persists dispatch
 `integration.auth.succeeded`. Both payloads are metadata-first (connection name,
 account label, scopes, timestamps, and for failed: reason, optional provider
@@ -423,10 +418,11 @@ this topic. See
 Fleet entitlement crossings are a separate admin-only, best-effort path. The
 hourly `usage_entitlement_alert` lane fans `fleet.entitlement.crossed` only to
 packages whose owners hold the admin role at dispatch time, once per 80% or 100%
-crossing (and per first over-threshold runtime-duration month). The payload is
-stable user id, username, resource counts or runtime duration, and admin URLs.
-It omits emails, plans, secrets, and package source. There is no Queue for this
-topic. See
+crossing (and per first over-threshold runtime-duration month, unique Dynamic
+Worker cost month, or three-of-seven execute-cap train). The payload is stable
+user id, username, resource counts, runtime duration, unique-worker days, or
+days at the execute cap, and admin URLs. It omits emails, plans, secrets, and
+package source. There is no Queue for this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 
 Verification-mail terminal failures are a separate admin-only, best-effort path.
@@ -562,9 +558,10 @@ Package source is edited and published through repo-backed flows.
   status, diff, log, commit, restore), not arbitrary shell or git-command
   strings; keep agent-facing guidance aligned with the deployed capability
   schema
-- prefer `repo_write_file` for whole-file replacements (single-file job sources,
-  freshly generated package modules, one-line config edits) — it avoids the
-  unified-diff context drift that makes `git apply` heredocs brittle
+- prefer a `repo_edit_files` `write` edit for whole-file replacements
+  (single-file job sources, freshly generated package modules, one-line config
+  edits) — it avoids the unified-diff context drift that makes `git apply`
+  heredocs brittle
 - use `package_get_git_remote` and `package_publish_external_push` when a human
   or autonomous agent should drive a normal git client directly against the
   package's Cloudflare Artifacts repo
@@ -632,7 +629,9 @@ package URLs, and owner-matching hosted package URLs without mixing in semantic
 capability results. Hidden exact query matches require the opt-in; known-id
 entity lookup by UUID or `kody.id`, **`package_list`**, **`package_get`**, and
 context-scope package retrievers are unaffected. Hiding is not deletion,
-community delisting, or entitlement exclusion.
+community delisting, or entitlement exclusion. Deletion is `package_delete`
+(agents, `confirm_name` matching the package name) or **Delete package** on the
+package page (type the package name).
 
 `package_update` is reserved for mutable package settings (`hidden`, and
 `locked: true`; unlocking is website-only). Manifest-derived metadata and

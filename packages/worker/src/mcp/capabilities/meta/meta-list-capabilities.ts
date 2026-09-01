@@ -12,7 +12,7 @@ const capabilitySummarySchema = z.object({
 	readOnly: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
-	source: z.enum(['builtin', 'mcp-server', 'openapi']),
+	source: z.enum(['builtin', 'mcp-server']),
 	mcpServer: z
 		.object({
 			serverId: z.string(),
@@ -20,15 +20,6 @@ const capabilitySummarySchema = z.object({
 			kodyName: z.string(),
 			mcpToolName: z.string(),
 			toolName: z.string(),
-		})
-		.optional(),
-	openApi: z
-		.object({
-			bindingName: z.string(),
-			kodyName: z.string(),
-			operationSlug: z.string(),
-			method: z.string(),
-			path: z.string(),
 		})
 		.optional(),
 	requiredInputFields: z.array(z.string()),
@@ -86,7 +77,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 	{
 		name: 'meta_list_capabilities',
 		description:
-			'Browse the current runtime capability registry, including dynamic capabilities from connected MCP servers and OpenAPI bindings. Without a domain, returns a compact domain index. Pass a domain for exact capability names and optional TypeScript call shapes.',
+			'Browse the current runtime capability registry, including dynamic capabilities from connected MCP servers. Without a domain, returns a compact domain index. Pass a domain for exact capability names and optional TypeScript call shapes.',
 		keywords: [
 			'capabilities',
 			'list',
@@ -158,7 +149,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								destructive: spec.destructive,
 								source: spec.source,
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
-								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,
 								inputTypeDefinition: spec.inputTypeDefinition,
 								...(spec.outputTypeDefinition
@@ -177,7 +167,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								destructive: spec.destructive,
 								source: spec.source,
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
-								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,
 							},
 				)

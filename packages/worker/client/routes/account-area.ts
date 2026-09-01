@@ -10,6 +10,10 @@ export {
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
 export {
+	AccountWaitingRoute,
+	accountWaitingRouteLoader,
+} from './account-waiting.tsx'
+export {
 	AccountIntegrationsRoute,
 	accountIntegrationsRouteLoader,
 } from './account-integrations.tsx'
@@ -37,7 +41,6 @@ export {
 	AccountPackageApprovePublishRoute,
 	accountPackageApprovePublishRouteLoader,
 } from './account-package-approve-publish.tsx'
-export { AccountStarsRoute, accountStarsRouteLoader } from './account-stars.tsx'
 export {
 	AccountPasskeysRoute,
 	accountPasskeysRouteLoader,

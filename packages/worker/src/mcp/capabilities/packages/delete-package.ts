@@ -10,13 +10,33 @@ import {
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
 
+function createPackageDeleteConfirmNameError(packageName: string) {
+	return [
+		`This permanently deletes "${packageName}".`,
+		'It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos.',
+		'Existing forks keep their copies.',
+		'This cannot be undone.',
+		'Hiding or making the package private is not deletion.',
+		`Do not call this unless the owner explicitly asked to delete this package and typed its name.`,
+		`Then pass confirm_name: "${packageName}" (the package name).`,
+	].join(' ')
+}
+
 export const deletePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_delete',
 		description:
-			'Delete a saved package projection for the signed-in user. This removes the saved package from discovery and attempts to clean up associated Artifacts repos (best-effort).',
-		keywords: ['package', 'delete', 'remove'],
+			'Permanently delete a saved package the signed-in user owns. This cannot be undone. It removes the package from the account and from /community if it was public, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, and best-effort deletes Artifacts repos. Existing forks keep their copies. Hiding (`package_update` hidden) or making a package private is not deletion. Do not call this because a package is unused, failing, or over quota unless the owner explicitly asked to delete that specific package. Load it with package_get or package_list, show the owner the package name and what will be destroyed, wait for them to type that name, then pass package_id and confirm_name matching the package name exactly.',
+		keywords: [
+			'package',
+			'delete',
+			'remove',
+			'destroy',
+			'uninstall',
+			'quota',
+			'limit',
+		],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,
@@ -27,6 +47,13 @@ export const deletePackageCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(packageScopeInputDescription),
+			confirm_name: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Required. Must equal the package name (`package.json` name, for example @you/my-package). Ask the owner to type that name first. The capability refuses the delete and names the expected value when this is missing or wrong.',
+				),
 		}),
 		outputSchema: z.object({
 			ok: z.literal(true),
@@ -46,9 +73,15 @@ export const deletePackageCapability = defineDomainCapability(
 			if (!existing) {
 				throw new McpCallerError('Saved package not found for this user.')
 			}
+			if (args.confirm_name?.trim() !== existing.name) {
+				throw new McpCallerError(
+					createPackageDeleteConfirmNameError(existing.name),
+				)
+			}
 			await deleteSavedPackageProjection({
 				env: ctx.env,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
 				packageId: args.package_id,
 			})
 			return {

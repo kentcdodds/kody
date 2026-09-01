@@ -4,7 +4,6 @@ import {
 	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
 	type PublicCommunityProfile,
-	type PublicCommunityStargazer,
 	type PublicProfilePackageItem,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
@@ -17,7 +16,6 @@ import {
 	type CommunityActivityItem,
 	type CommunityListingWithAggregates,
 	type CommunityProfileRecord,
-	type CommunityStargazer,
 	type PublicProfilePackage,
 } from '#worker/community/types.ts'
 
@@ -50,8 +48,6 @@ export function toPublicCommunityProfile(
 		}),
 		visibility: profile.visibility,
 		joinedAt: profile.joinedAt,
-		followerCount: profile.followerCount,
-		followingCount: profile.followingCount,
 		publicPackageCount: profile.publicPackageCount,
 		listingCount: profile.listingCount,
 	}
@@ -94,20 +90,6 @@ export function toPublicCommunityActivityItem(
 	}
 }
 
-export function toPublicCommunityStargazer(
-	stargazer: CommunityStargazer,
-): PublicCommunityStargazer {
-	return {
-		username: stargazer.username,
-		displayName: stargazer.displayName,
-		avatarUrl: buildUserAvatarUrl({
-			username: stargazer.username,
-			avatarKey: stargazer.avatarKey,
-		}),
-		starredAt: stargazer.starredAt,
-	}
-}
-
 export function truncateCommunityText(text: string, maxLength: number) {
 	const trimmed = text.trim()
 	if (trimmed.length <= maxLength) return trimmed
@@ -146,7 +128,6 @@ export function toPublicCommunityListing(
 		ratingCount: listing.ratingCount,
 		averageAdaptationEffort: listing.averageAdaptationEffort,
 		forkCount: listing.forkCount,
-		starCount: listing.starCount,
 	}
 }
 

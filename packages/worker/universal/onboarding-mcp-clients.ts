@@ -378,6 +378,17 @@ export const copilotAppCustomizeGuideUrl =
 export const chatGptDeveloperModeGuideUrl =
 	'https://developers.openai.com/api/docs/guides/developer-mode'
 
+/** Cursor docs for Marketplace plugins and custom MCP servers. */
+export const cursorMcpGuideUrl = 'https://cursor.com/docs/mcp'
+
+/** Claude Desktop / Claude.ai custom remote connector help. */
+export const claudeCustomConnectorsGuideUrl =
+	'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp'
+
+/** Long-form host notes when a vendor page is not a better first click. */
+export const kodyConnectYourAgentUrl =
+	'https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md'
+
 /** Grok.com UI for adding a custom remote MCP connector. */
 export const grokConnectorsUrl = 'https://grok.com/connectors'
 
@@ -405,6 +416,55 @@ export const grokBotInstallUrl = `grokbot://app/v1/plugin/add?id=${kodyMarketpla
 export const grokBotConnectPluginsUrl =
 	'https://cursor.com/help/grok-bot/connect-plugins'
 
+/** Vendor or Kody help for the selected onboarding host. */
+export function onboardingAgentHelp(id: McpClientKind): {
+	href: string
+	label: string
+} {
+	switch (id) {
+		case 'cursor':
+			return { href: cursorMcpGuideUrl, label: 'Cursor MCP help' }
+		case 'chatgpt':
+			return {
+				href: chatGptDeveloperModeGuideUrl,
+				label: 'ChatGPT developer mode help',
+			}
+		case 'codex':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		case 'claude-desktop':
+			return {
+				href: claudeCustomConnectorsGuideUrl,
+				label: 'Claude connectors help',
+			}
+		case 'grok':
+			return { href: grokCustomMcpGuideUrl, label: 'Grok connector help' }
+		case 'grok-cli':
+			return { href: grokCliMcpGuideUrl, label: 'Grok CLI MCP help' }
+		case 'grok-bot':
+			return { href: grokBotConnectPluginsUrl, label: 'Grok Bot plugin help' }
+		case 'claude-code':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		case 'opencode':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		case 'copilot':
+			return { href: copilotCliMcpGuideUrl, label: 'Copilot CLI MCP help' }
+		case 'copilot-app':
+			return { href: copilotAppCustomizeGuideUrl, label: 'Copilot app help' }
+		case 'devin':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		case 'gemini':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		case 'openclaw':
+			return { href: openClawMcpGuideUrl, label: 'OpenClaw MCP help' }
+		case 'other':
+			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }
+		default: {
+			const exhaustive: never = id
+			return exhaustive
+		}
+	}
+}
+
 /**
  * Dedicated ChatGPT / Codex connector icon. ChatGPT wants 256×256 and
  * rejects uploads over 10 KB; `/apple-touch-icon.png` is larger, so
@@ -420,15 +480,9 @@ export function buildKodyAppIconUrl(mcpServerUrl: string) {
 	return new URL(kodyAppIconPath, mcpServerUrl).href
 }
 
-export const nonCodingAgentNote =
-	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Grok CLI, Copilot, OpenCode, or OpenClaw is usually smoother — those hosts can edit files and iterate on code more easily.'
-
 /** Claude Desktop often does not bind MCP tools until the next turn. */
 export const claudeDesktopToolHint =
 	'After connecting, start a new chat and ask Claude to list Kody tools before the first task. Claude Desktop often does not bind MCP tools until that next turn.'
-
-export const codingAgentPackageHint =
-	'Coding agents are the best fit when you want to create or edit Kody packages. Once a package exists, non-coding agents can use it just fine.'
 
 /** Production MCP URL. `@kodycodes/cli install` uses this when `--mcp-url` is omitted. */
 export const defaultKodyMcpUrl = 'https://kody.codes/mcp'

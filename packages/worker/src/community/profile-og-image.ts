@@ -26,7 +26,6 @@ export type ProfileOgImageInput = {
 	displayName: string
 	username: string
 	bio: string | null
-	followerCount: number
 	publicPackageCount: number
 	listingCount: number
 	/** User avatar as a data URI (PNG or JPEG) for satori, or null for placeholder. */
@@ -39,7 +38,6 @@ function pluralize(count: number, singular: string, plural: string) {
 
 function formatProfileStats(input: ProfileOgImageInput): string {
 	return [
-		pluralize(input.followerCount, 'follower', 'followers'),
 		pluralize(input.publicPackageCount, 'public package', 'public packages'),
 		pluralize(input.listingCount, 'community listing', 'community listings'),
 	].join(' · ')

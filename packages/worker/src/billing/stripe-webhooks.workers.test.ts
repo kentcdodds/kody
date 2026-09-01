@@ -254,9 +254,10 @@ test('stripe webhook verifies signature, links checkout, refreshes subscription,
 		now,
 	})
 	expect(updated).toEqual({ status: 200, body: { ok: true } })
+	// past_due keeps paid entitlements through Stripe's dunning window.
 	expect(await readUserBilling(user.id)).toMatchObject({
 		stripe_customer_id: 'cus_webhook',
-		stripe_plan: null,
+		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
 

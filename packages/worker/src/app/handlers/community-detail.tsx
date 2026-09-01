@@ -36,8 +36,8 @@ const reportReasonSchema = z
 	.max(2000, 'Report reason must be at most 2000 characters.')
 
 /**
- * A moved package keeps whatever the link carried: `followError` and friends
- * ride in the query string, and a redirect that drops them gets cached.
+ * A moved package keeps whatever the link carried: query params ride along,
+ * and a redirect that drops them gets cached.
  *
  * `301` states which URL is canonical, but the destination is not permanent --
  * a username can be released and reclaimed by someone else -- so it is cached
@@ -108,8 +108,6 @@ async function renderCommunityListingPage(input: {
 				featured: detail.listing.featured,
 				readmeContent: detail.listing.readmeContent,
 				readmeFences,
-				starCount: detail.listing.starCount,
-				starredByViewer: detail.starredByViewer,
 				viewerInstall: detail.viewerInstall,
 				ownerPackage: detail.ownerPackage,
 				username: detail.username,
@@ -236,8 +234,6 @@ export function createCommunityPackageHandler(env: Env) {
 							featured: page.listing.listing.featured,
 							readmeContent: page.listing.listing.readmeContent,
 							readmeFences,
-							starCount: page.listing.listing.starCount,
-							starredByViewer: page.listing.starredByViewer,
 							viewerInstall: page.listing.viewerInstall,
 							ownerPackage: page.ownerPackage,
 							username: page.username,
@@ -267,8 +263,6 @@ export function createCommunityPackageHandler(env: Env) {
 						trusted: false,
 						featured: false,
 						readmeContent: null,
-						starCount: 0,
-						starredByViewer: false,
 						viewerInstall: null,
 						ownerPackage: page.ownerPackage,
 						username: page.username,
@@ -358,12 +352,10 @@ export function createCommunityPackageApiHandler(env: Env) {
 					ok: true,
 					listing: page.listing?.listing ?? null,
 					ownerProfilePublic: page.listing?.ownerProfilePublic ?? false,
-					viewerFollowsOwner: page.listing?.viewerFollowsOwner ?? false,
 					viewerIsOwner: page.viewerIsOwner,
 					loggedIn: page.loggedIn,
 					viewerIsAdmin: page.listing?.viewerIsAdmin ?? false,
 					forkPrompt: page.listing?.forkPrompt ?? '',
-					starredByViewer: page.listing?.starredByViewer ?? false,
 					viewerInstall: page.listing?.viewerInstall ?? null,
 					readmeFences,
 					ownerPackage: page.ownerPackage,
@@ -447,7 +439,6 @@ export function createCommunityDetailOgImageHandler(env: Env) {
 				averageStars: publicListing.averageStars,
 				ratingCount: publicListing.ratingCount,
 				forkCount: publicListing.forkCount,
-				starCount: publicListing.starCount,
 				iconDataUri,
 				theme,
 				assets: env.ASSETS,

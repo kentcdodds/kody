@@ -39,6 +39,13 @@ const fleetUsageMocks = vi.hoisted(() => ({
 		topEventCountConsumers: [],
 		topDurationConsumersByMetric: [],
 		entitlementPressure: [],
+		dynamicWorkerCost: {
+			uniqueWorkerDays: 0,
+			estimatedGrossUsd: 0,
+			usdPerUniqueDay: 0.002,
+			includedPerAccountMonth: 1000,
+			topConsumers: [],
+		},
 	})),
 	loadFleetPackageErrorRateSnapshot: vi.fn(async () => null),
 }))
@@ -512,6 +519,13 @@ test('loadAdminInsightsData assembles the dashboard payload from D1 plus RunLog 
 		usersAttempted: 2,
 		usersLoaded: 2,
 		complete: true,
+	})
+	expect(data.dynamicWorkerCost).toEqual({
+		uniqueWorkerDays: 0,
+		estimatedGrossUsd: 0,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 1000,
+		topConsumers: [],
 	})
 	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
 	expect(runLogMocks.maxInFlight).toBeLessThanOrEqual(

@@ -38,25 +38,29 @@ Prerequisites, install, and `npm run dev` notes. See the
   both secrets (see
   [`docs/contributing/secret-rotation.md`](../secret-rotation.md)).
 - `npm run dev:ensure` reuses a healthy origin `/health` on 3742–3751 (prints
-  `App running at http://localhost:<port>` and exits 0), replaces a stale
-  kody/workerd leftover that is listening but not serving, then starts
-  `npm run dev` and waits until `/health` is ok. Agents should call this instead
-  of reconstructing a startup playbook from terminal files.
-- `npm run dev` starts mock API servers automatically plus origin, platform,
-  runtime, and jobs in one Miniflare; it sets `CLOUDFLARE_API_BASE_URL`,
-  `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare
-  API mock Worker for the internal Cloudflare API client, local email sending,
-  and Artifacts REST repo create/get/list/token/fork calls. Those REST calls do
-  not hit the live Cloudflare Artifacts control plane during normal local
-  development. The mock covers only the REST control plane; repo-session git
-  clone/pull/push flows need a real Git-capable Artifacts remote and are not
-  fully simulated by the local mock. Password reset and email-verification
-  messages send through the same Cloudflare Email API helper. Both send from
-  `kody@<SYSTEM_EMAIL_DOMAIN>` (falling back to the `APP_BASE_URL` hostname) and
-  put that same sending domain on action and asset links, so a legacy
-  `APP_BASE_URL` cannot pin `heykody.dev` into the message. Local `npm run dev`
-  keeps those action and asset links on the request origin so they stay
-  clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
+  `App running at http://localhost:<port>` and exits 0), waits for a stale
+  kody/workerd leftover that is listening but not serving before replacing it,
+  then starts `npm run dev` and waits until `/health` is ok. Agents should call
+  this instead of reconstructing a startup playbook from terminal files.
+- `npm run dev` waits up to 30s for the first client bundle in
+  `packages/worker/public/` before Wrangler starts so that write does not reload
+  the worker after Ready. If the wait expires, Wrangler still starts and may
+  reload when the bundle lands. It then starts mock API servers automatically
+  plus origin, platform, runtime, and jobs in one Miniflare; it sets
+  `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`
+  to the local Cloudflare API mock Worker for the internal Cloudflare API
+  client, local email sending, and Artifacts REST repo
+  create/get/list/token/fork calls. Those REST calls do not hit the live
+  Cloudflare Artifacts control plane during normal local development. The mock
+  covers only the REST control plane; repo-session git clone/pull/push flows
+  need a real Git-capable Artifacts remote and are not fully simulated by the
+  local mock. Password reset and email-verification messages send through the
+  same Cloudflare Email API helper. Both send from `kody@<SYSTEM_EMAIL_DOMAIN>`
+  (falling back to the `APP_BASE_URL` hostname) and put that same sending domain
+  on action and asset links when `SYSTEM_EMAIL_DOMAIN` is set, so a stale
+  `APP_BASE_URL` cannot pin a retired hostname into the message. Local
+  `npm run dev` keeps those action and asset links on the request origin so they
+  stay clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
   entirely. The main worker streams logs live; the client bundle and background
   mock workers buffer logs and only print them if that child process exits with
   an error.

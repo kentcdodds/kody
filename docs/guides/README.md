@@ -3,11 +3,12 @@
 Official markdown guides for agent and contributor workflows. Each guide carries
 YAML frontmatter (`id`, `title`, `summary`, `category`, and for provider guides
 `provider` and `lastVerified`). Sources live under `docs/guides/` and are
-bundled into origin and `kody-platform` at build time so web `/guides` and MCP
-`coding_guide_get` serve the same deployed content. Official guide deploys
-upload those two scripts and skip runtime and jobs:
+bundled into origin and `kody-platform` at build time so web `/guides` and
+`search({ entity: "{id}:guide" })` serve the same deployed content. Official
+guide deploys upload those two scripts and skip runtime and jobs:
 
-- **`coding_guide_get`** over MCP — pass the stable `id` from frontmatter
+- **`search({ entity: "{id}:guide" })`** over MCP — pass the stable frontmatter
+  `id` (for example `package_authoring:guide`)
 - **`/guides`** on the web — Work with Kody index (Start here + more guides)
 - **`/guides/connect`** — connection (provider) walkthrough index
 - **Raw markdown** — `/guides/<slug>.md`, `/guides.md`, `/guides/connect.md`, or
@@ -33,7 +34,7 @@ catalog guide with that slug.
 | [integration-bootstrap.md](./integration-bootstrap.md)                                   | **Start here** for third-party integrations; after the smoke test, prefer a close community fork before building                                                                                                                                                                                                                                                                                   |
 | [locked-gmail-drafts.md](./locked-gmail-drafts.md)                                       | Gmail has send-only and no drafts-only scope; publish a drafts-only package and lock it so the token cannot grow into send                                                                                                                                                                                                                                                                         |
 | [locked-mcp-server.md](./locked-mcp-server.md)                                           | Connected MCP servers expose every tool to execute; lock a server to a thin package so only that surface can call it                                                                                                                                                                                                                                                                               |
-| [openapi-integrations.md](./openapi-integrations.md)                                     | OpenAPI discover → summarize → scaffold or curated `openapi:<name>` binding (`openapi_integrations`)                                                                                                                                                                                                                                                                                               |
+| [openapi-integrations.md](./openapi-integrations.md)                                     | Prefer a community helpers package, or fork `@kody/integrations-sh` then `@kody/openapi` to research and bind selected operations (`openapi_integrations`)                                                                                                                                                                                                                                         |
 | [secret-backed-integration.md](./secret-backed-integration.md)                           | Default recipe for non-OAuth integrations that use one or more saved secrets                                                                                                                                                                                                                                                                                                                       |
 | [integration-backed-app-happy-path.md](./integration-backed-app-happy-path.md)           | Default package app pattern after integration smoke test passes                                                                                                                                                                                                                                                                                                                                    |
 | [package-subscriptions.md](./package-subscriptions.md)                                   | Package subscription manifest shape, discovery, and email / repo lifecycle / run.error.recorded / integration.auth.failed / integration.auth.succeeded / admin topic payload guidance (including fleet.package_error_rate.elevated, fleet.entitlement.crossed, auth.denial.burst, email.delivery.burst, user.email_verification.failed, user.email_outbound.paused, and email.system-message.sent) |

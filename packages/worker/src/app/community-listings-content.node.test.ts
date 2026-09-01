@@ -21,7 +21,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies PublicCommunityListing
 
 test('community listings render sort controls, categories, empty states, and fork-outdated', async () => {

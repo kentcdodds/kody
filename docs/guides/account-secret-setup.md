@@ -13,10 +13,10 @@ Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
 a secret value such as an API key or personal access token. The agent must never
 see the secret value.
 
-If the secret will power a downstream package or package app, load
-`coding_guide_get` with `guide: "integration_bootstrap"` before building that
-package. For the common non-OAuth path after bootstrap, load `coding_guide_get`
-with `guide: "secret_backed_integration"`. This guide covers the
+If the secret will power a downstream package or package app, open
+`search({ entity: "integration_bootstrap:guide" })` before building that
+package. For the common non-OAuth path after bootstrap, open
+`search({ entity: "secret_backed_integration:guide" })`. This guide covers the
 secret-collection step only.
 
 ## When to use `/account/secrets/new`
@@ -62,10 +62,11 @@ so the user can paste immediately.
 
 Self-authored packages and adopted community forks (`community_fork_adopt`) can
 read and use the user's secrets without an `allowed_packages` grant; updating or
-deleting a user secret from package code still requires that grant. When an
-**unadopted community-forked** package needs access to one or more **existing**
-user secrets, either adopt it after reviewing the source or send the user an
-approval link — do not ask them to recreate the secrets.
+deleting a user secret from package code still requires that grant. Agents can
+add a package to that grant with `secret_lock`; removing a grant is
+website-only. When an **unadopted community-forked** package needs access to one
+or more **existing** user secrets, either adopt it after reviewing the source or
+send the user an approval link — do not ask them to recreate the secrets.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`

@@ -116,7 +116,6 @@ function createCapabilitySpecs(capabilities: Array<Capability>) {
 						: {}),
 					source: capability.source ?? 'builtin',
 					...(capability.mcpServer ? { mcpServer: capability.mcpServer } : {}),
-					...(capability.openApi ? { openApi: capability.openApi } : {}),
 					inputFields: getSchemaPropertyNames(capability.inputSchema),
 					requiredInputFields: getSchemaRequiredFields(capability.inputSchema),
 					outputFields: capability.outputSchema

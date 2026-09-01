@@ -33,6 +33,10 @@ import {
 } from '#universal/loader-data.ts'
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
+import {
+	dynamicWorkerCostFootnote,
+	formatDynamicWorkerUsd,
+} from '#universal/dynamic-worker-cost.ts'
 
 const selectCss = getSelectCss()
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
@@ -497,6 +501,41 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 									.join(', ')}
 							</div>
 						) : null}
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<h3
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.base,
+								})}
+							>
+								Cloudflare Dynamic Worker cost
+							</h3>
+							<p
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.sm,
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
+								{formatDynamicWorkerUsd(
+									selectedUsage.dynamicWorkerCost.estimatedGrossUsd,
+								)}{' '}
+								gross this month (
+								{formatIntegerNumber(
+									selectedUsage.dynamicWorkerCost.uniqueWorkerDays,
+								)}{' '}
+								unique worker-days)
+							</p>
+							<p
+								mix={css({
+									margin: 0,
+									color: colors.textMuted,
+									fontSize: typography.fontSize.xs,
+								})}
+							>
+								{dynamicWorkerCostFootnote}
+							</p>
+						</div>
 						<div mix={css({ display: 'grid', gap: spacing.md })}>
 							<h3
 								mix={css({

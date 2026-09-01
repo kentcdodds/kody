@@ -259,8 +259,9 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 	})
 	expect(platformGoogle).toMatchObject({
 		scopes: ['openid', 'email'],
-		platformAppSlug: 'google',
-		platformAllowedScopes: ['openid', 'email', 'profile'],
+		platformAppSlug: null,
+		platformAllowedScopes: [],
+		clientId: '',
 	})
 
 	const spotifyConfig = mergeConnectOauthConfig({
@@ -758,6 +759,33 @@ test('session config parsing is strict: usePkce and clientId are required and st
 	expect(
 		parseSessionConnectOauthConfig(JSON.stringify(sessionConfig)),
 	).toMatchObject({ provider: 'spotify', flow: 'pkce', usePkce: true })
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
+				catalogLogoPath:
+					'/integrations/provider-marks/google?v=abcdef0123456789',
+			}),
+		),
+	).toMatchObject({
+		catalogLogoPath: '/integrations/provider-marks/google?v=abcdef0123456789',
+	})
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
+				catalogLogoPath: '/integrations/logos/google',
+			}),
+		),
+	).toMatchObject({ catalogLogoPath: null })
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
+				catalogLogoPath: '/account/integrations',
+			}),
+		),
+	).toMatchObject({ catalogLogoPath: null })
 	expect(
 		parseSessionConnectOauthConfig(
 			JSON.stringify({

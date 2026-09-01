@@ -187,7 +187,6 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/faq' ||
 			currentPathname === '/blog' ||
 			currentPathname === '/community' ||
-			currentPathname === '/timeline' ||
 			currentPathname === '/onboarding' ||
 			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null
@@ -261,6 +260,7 @@ export function App(handle: Handle<AppProps>) {
 							<SiteHeader
 								loggedIn={isLoggedIn}
 								displayName={sessionDisplayName}
+								avatarUrl={session?.avatarUrl ?? null}
 								showAdminLink={showAdminLink}
 								showDemoIndicator={isLoggedIn && showDemoIndicator}
 								loginHref={loginHref}

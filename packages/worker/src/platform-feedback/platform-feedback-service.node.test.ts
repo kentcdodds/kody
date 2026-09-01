@@ -143,9 +143,13 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		adminNote: 'Needs setup-flow review.',
 	})
 	expect(triaged).toMatchObject({
-		status: 'triaged',
-		reviewedByUserId: 'admin-a',
-		adminNote: 'Needs setup-flow review.',
+		previousStatus: 'open',
+		didChangeStatus: true,
+		feedback: {
+			status: 'triaged',
+			reviewedByUserId: 'admin-a',
+			adminNote: 'Needs setup-flow review.',
+		},
 	})
 	const correctedTriage = await updatePlatformFeedbackForAdmin({
 		db,
@@ -155,9 +159,13 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		adminNote: 'Corrected setup-flow note.',
 	})
 	expect(correctedTriage).toMatchObject({
-		status: 'triaged',
-		reviewedByUserId: 'admin-b',
-		adminNote: 'Corrected setup-flow note.',
+		previousStatus: 'triaged',
+		didChangeStatus: false,
+		feedback: {
+			status: 'triaged',
+			reviewedByUserId: 'admin-b',
+			adminNote: 'Corrected setup-flow note.',
+		},
 	})
 	expect(
 		await updatePlatformFeedbackForAdmin({
@@ -176,9 +184,12 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		adminNote: '   ',
 	})
 	expect(clearedTriage).toMatchObject({
-		status: 'triaged',
-		reviewedByUserId: 'admin-c',
-		adminNote: null,
+		didChangeStatus: false,
+		feedback: {
+			status: 'triaged',
+			reviewedByUserId: 'admin-c',
+			adminNote: null,
+		},
 	})
 	const restoredTriage = await updatePlatformFeedbackForAdmin({
 		db,
@@ -187,7 +198,9 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		action: 'triage',
 		adminNote: 'Preserve this note when resolving.',
 	})
-	expect(restoredTriage.adminNote).toBe('Preserve this note when resolving.')
+	expect(restoredTriage.feedback.adminNote).toBe(
+		'Preserve this note when resolving.',
+	)
 
 	const resolved = await updatePlatformFeedbackForAdmin({
 		db,
@@ -196,18 +209,25 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		action: 'resolve',
 	})
 	expect(resolved).toMatchObject({
-		status: 'resolved',
-		reviewedByUserId: 'admin-e',
-		adminNote: 'Preserve this note when resolving.',
+		previousStatus: 'triaged',
+		didChangeStatus: true,
+		feedback: {
+			status: 'resolved',
+			reviewedByUserId: 'admin-e',
+			adminNote: 'Preserve this note when resolving.',
+		},
 	})
-	expect(
-		await updatePlatformFeedbackForAdmin({
-			db,
-			feedbackId: first.id,
-			reviewerUserId: 'admin-c',
-			action: 'resolve',
-		}),
-	).toEqual(resolved)
+	const resolvedAgain = await updatePlatformFeedbackForAdmin({
+		db,
+		feedbackId: first.id,
+		reviewerUserId: 'admin-c',
+		action: 'resolve',
+	})
+	expect(resolvedAgain.feedback).toEqual(resolved.feedback)
+	expect(resolvedAgain).toMatchObject({
+		previousStatus: 'resolved',
+		didChangeStatus: false,
+	})
 	await expect(
 		updatePlatformFeedbackForAdmin({
 			db,
@@ -448,4 +468,23 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			)
 			.get(),
 	).toEqual({ total: 100 })
+})
+
+test('platform feedback accepts the cancellation category', async () => {
+	const { db, sqlite } = createPlatformFeedbackDb()
+	const submitted = await submitPlatformFeedback({
+		db,
+		submitterUserId: 'user-c',
+		submitterUsername: 'user-c-name',
+		submitterEmail: 'user-c@example.com',
+		category: 'cancellation',
+		summary: 'Subscription cancellation feedback',
+		details: 'Too expensive for my current usage.',
+	})
+	expect(submitted.category).toBe('cancellation')
+	expect(
+		sqlite
+			.prepare(`SELECT category FROM platform_feedback WHERE id = ?`)
+			.get(submitted.id),
+	).toEqual({ category: 'cancellation' })
 })

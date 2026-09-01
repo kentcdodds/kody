@@ -216,9 +216,9 @@ Person-owned packages must not import a platform scope; `community_fork` first.
 
 There is no author-facing `packages.invoke`. External trusted clients that must
 call a named export over HTTP use package invocation tokens. Before sending a
-user to create one, load `coding_guide_get` with
-`guide: "package_invocation_token_setup"` and construct a prefilled
-`/@{username}/{kodyId}?newToken=1` URL without raw token material.
+user to create one, open
+`search({ entity: "package_invocation_token_setup:guide" })` and construct a
+prefilled `/@{username}/{kodyId}?newToken=1` URL without raw token material.
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
@@ -234,29 +234,27 @@ Every saved package owns one durable storage bucket per user
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — always, including package apps, exports, subscriptions, retrievers, jobs,
   and workflows.
-- **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
-  `storageId` on the execute call and use ambient `storage`.
+- **Writing ad hoc `execute` code?** Persist durable state from a saved package
+  with `packageStorage()`, or statically import the owning package's export. Ad
+  hoc execute has no scratch SQLite helper.
 - **Touching another package's data?** Statically import that package's export
   (`import fn from 'kody:@scope/package/export'`) so its stamped
   `packageStorage()` does the reading and writing.
 
-`packageStorage()` returns the same storage interface as ambient `storage`
-(`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
-declaring package's own bucket no matter where the code runs:
+`packageStorage()` returns `get`/`set`/`list`/`sql`/`delete`/`clear`/`id`,
+writable, always bound to the declaring package's own bucket no matter where the
+code runs:
 
 - In the package's own export/invocation runtime it is the only way to reach the
-  package bucket — those runs bind no ambient `storage`.
-- In package apps and jobs it reaches the same shared package bucket. Jobs may
-  also bind separate run-scoped scratch buckets on ambient `storage`; use
-  `packageStorage()` for shared durable data.
+  package bucket.
+- In package apps and jobs it reaches the same shared package bucket. Keep
+  run-scoped state in that bucket under run-scoped keys.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
   the bucket of the package it came from, under the calling user's account.
-  Ambient `storage` cannot do this; the binding is per-run, so statically
-  imported code sees the caller's bucket or `undefined`. Note that grants are
-  per-bundle, not per-module: statically importing a package grants the whole
-  bundle read/write access to that package's bucket, so treat static imports of
-  unadopted community forks as a trust decision (adopt after review).
+  Grants are per-bundle, not per-module: statically importing a package grants
+  the whole bundle read/write access to that package's bucket, so treat static
+  imports of unadopted community forks as a trust decision (adopt after review).
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -276,28 +274,16 @@ Hand-written code cannot claim another package's id to read its bucket. Two
 consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
-  an actionable error there. Bind a `storageId` and use ambient `storage`, or
-  statically import the owning package's export.
+  an actionable error there. Statically import the owning package's export.
 - Provenance grants cover directly imported packages. For data owned by a
   package that is not the running package and not statically imported by the
   bundle, import that package's export and let its stamp do the reading.
 
-### Ambient `storage` in package code
-
-Saved-package runtimes, including apps, exports, subscription handlers, and
-retrievers, do not bind ambient `storage`. In those contexts ambient `storage`
-is `undefined`; guard-less access fails with a structured
-`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
-one way package code reaches its bucket (same interface, same bucket).
+### Ambient `storage` is not a `kody:runtime` export
 
 Repo checks fail when package source imports ambient `storage` from
-`kody:runtime` (type-only imports and `.d.ts` files are exempt).
-
-Ambient `storage` is available for ad hoc `execute` code with a `storageId`
-bound on the call, and for package job and service runtimes that bind
-job-/service-scoped scratch buckets distinct from the package bucket. Because
-repo checks reject ambient `storage` imports in package source, job and service
-code keeps run-scoped state in the package bucket under run-scoped keys.
+`kody:runtime` (type-only imports and `.d.ts` files are exempt). Use
+`packageStorage()` instead. Ad hoc execute has no scratch SQLite helper.
 
 ## Package apps
 
@@ -334,9 +320,9 @@ Use the package app model when the package needs:
 
 When a package app depends on OAuth, saved secrets, or a third-party API, run
 the integration bootstrap first: use `search` for the saved integration or
-secret reference, load `coding_guide_get` with `guide: "integration_bootstrap"`,
-and complete a minimal authenticated `execute` smoke test before treating the
-app as ready.
+secret reference, open `search({ entity: "integration_bootstrap:guide" })`, and
+complete a minimal authenticated `execute` smoke test before treating the app as
+ready.
 
 Treat package apps like Worker-style modules:
 
@@ -501,6 +487,8 @@ Use:
 - `package_save` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
+- `package_delete` to permanently remove a saved package the owner typed the
+  name of (`confirm_name` must match the package name)
 - `package_update` to change mutable package settings such as hidden search
   discovery state or to lock publishes (`changes.locked: true`). Unlocking is
   website-only.
@@ -537,6 +525,29 @@ Hiding is a discovery preference, not deletion. The package stays saved,
 executable, and editable. Hiding is separate from **visibility**
 (`package_update` `changes.visibility`, which lists or unlists the catalog) and
 from entitlement or access grants.
+
+## Delete a package
+
+Deleting a package removes it from the account. It is permanent.
+
+Use:
+
+- The **Delete package** control on the package page (`/@username/{kodyId}`, or
+  open a row from `/account/packages`). A modal asks you to type the package
+  name to confirm.
+- **`package_delete`** with a saved **`package_id`**. Show the owner the package
+  name and what will be destroyed, wait for them to type that name, then pass
+  **`confirm_name`** matching the package name exactly (`package.json` `name`,
+  for example `@you/my-package`). The capability refuses the delete and names
+  the expected value when `confirm_name` is missing or wrong.
+
+Delete removes the package from discovery, stops its jobs, clears package
+storage and package-scoped secrets, drops invocation tokens, and unlists a
+public catalog entry if one exists. Artifact repos are cleaned up best-effort.
+Existing forks keep their copies.
+
+Hiding and making a package private are not deletion. Use those when the package
+should stay saved.
 
 **`package_list`** and **`package_get`** return a **`hidden`** boolean on each
 package summary. Ranked **search** excludes hidden packages unless the caller

@@ -103,7 +103,7 @@ export function wrapOutboundFetcherRecordingHosts(
  * not as a hard gate (smoke tests still use these helpers).
  */
 export function codeUsesIntegrationAuthHelpers(code: string) {
-	return /\b(?:createAuthenticatedFetch|refreshAccessToken)\b/.test(code)
+	return /\bcreateAuthenticatedFetch\b/.test(code)
 }
 
 /**
@@ -120,12 +120,10 @@ export function formatRawFetchHostNudge(input: {
 		'Integrations = auth; packages = how agents should call the product.'
 	const packagesFirst =
 		'Prefer a package: search for an existing wrapper, then community_search, then fork or create a thin helpers package.'
-	const openapiAside =
-		'Use openapi_binding_save only when an OpenAPI binding fits.'
 	if (input.usedIntegrationAuthHelpers) {
-		return `Raw integration auth hit ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst} ${openapiAside}`
+		return `Raw integration auth hit ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst}`
 	}
-	return `Raw-fetched ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst} ${openapiAside}`
+	return `Raw-fetched ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst}`
 }
 
 /**
@@ -159,10 +157,10 @@ export function applyRawFetchHostCounts(input: {
 	state: RawFetchHostNudgeState | null | undefined
 	conversationId: string
 	hostCounts: ReadonlyMap<string, number> | Record<string, number>
-	/** Hosts that already have a saved OpenAPI binding — never nudge these. */
+	/** Hosts that already have a saved provider wrapper — never nudge these. */
 	coveredHosts?: ReadonlySet<string> | Iterable<string>
 	/**
-	 * When the execute module used createAuthenticatedFetch / refreshAccessToken,
+	 * When the execute module used createAuthenticatedFetch,
 	 * sharpen the nudge toward packages (integrations are auth only).
 	 */
 	usedIntegrationAuthHelpers?: boolean

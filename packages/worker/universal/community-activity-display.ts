@@ -11,8 +11,6 @@ export function communityActivityVerb(
 			return 'Updated'
 		case 'listing_forked':
 			return 'Forked'
-		case 'listing_starred':
-			return 'Starred'
 		default: {
 			const _exhaustive: never = type
 			return _exhaustive

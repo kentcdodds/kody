@@ -57,7 +57,6 @@ export type PublicCommunityListing = {
 	ratingCount: number
 	averageAdaptationEffort: number | null
 	forkCount: number
-	starCount: number
 	/**
 	 * Set only for signed-in viewers after a per-request overlay. Public
 	 * listing cache rows omit this field.
@@ -74,8 +73,6 @@ export type PublicCommunityProfile = {
 	avatarUrl: string | null
 	visibility: ProfileVisibility
 	joinedAt: string
-	followerCount: number
-	followingCount: number
 	publicPackageCount: number
 	listingCount: number
 }
@@ -100,7 +97,6 @@ export type CommunityActivityEventType =
 	| 'listing_published'
 	| 'listing_updated'
 	| 'listing_forked'
-	| 'listing_starred'
 
 export type PublicCommunityActivityItem = {
 	type: CommunityActivityEventType
@@ -111,13 +107,6 @@ export type PublicCommunityActivityItem = {
 	listingName: string
 	listingKodyId: string
 	createdAt: string
-}
-
-export type PublicCommunityStargazer = {
-	username: string
-	displayName: string
-	avatarUrl: string | null
-	starredAt: string
 }
 
 /**

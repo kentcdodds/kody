@@ -1,10 +1,8 @@
 import { css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
-import {
-	honeypotFieldName,
-	turnstileWidgetClassName,
-} from '#client/public-form-protection.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
+import { turnstileWidgetClassName } from '#client/public-form-protection.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	authFieldCss,
@@ -93,19 +91,6 @@ function renderStatusMessage(status: AuthStatus, message: string | null) {
 				{message ?? ''}
 			</p>
 		</>
-	)
-}
-
-export function renderHoneypot() {
-	return (
-		<input
-			type="text"
-			name={honeypotFieldName}
-			tabIndex={-1}
-			autoComplete="off"
-			aria-hidden="true"
-			mix={css(honeypotCss)}
-		/>
 	)
 }
 
@@ -556,11 +541,3 @@ const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 })
 
 export const ghostButtonCss = getGhostButtonCss()
-
-const honeypotCss = {
-	position: 'absolute' as const,
-	left: '-10000px',
-	width: '1px',
-	height: '1px',
-	overflow: 'hidden' as const,
-}

@@ -40,14 +40,15 @@ The cookie payload stores:
 - `issuedAt` (epoch ms when the cookie was issued or last renewed)
 - `rememberMe` when the login used remember-me
 
-Password reset confirmation revokes every MCP OAuth grant for that user, writes
-`users.password_changed_at`, then revokes again so a grant created in that
-window cannot survive. Session resolution rejects cookies whose `issuedAt` is
-missing or at/before that timestamp, so a reset invalidates every existing
-browser and package-app session. `/mcp` rejects access tokens whose `createdAt`
-is at or before that timestamp (`invalid_token`), so already-issued bearers die
-immediately; hosts that refresh then hit the revoked grant and must start a new
-OAuth flow.
+Password reset confirmation and signed-in password change revoke every MCP OAuth
+grant for that user, write `users.password_changed_at`, then revoke again so a
+grant created in that window cannot survive. Session resolution rejects cookies
+whose `issuedAt` is missing or at/before that timestamp, so a reset invalidates
+every existing browser and package-app session. A signed-in change re-issues the
+current `kody_session` cookie with a later `issuedAt` so that browser stays
+signed in. `/mcp` rejects access tokens whose `createdAt` is at or before that
+timestamp (`invalid_token`), so already-issued bearers die immediately; hosts
+that refresh then hit the revoked grant and must start a new OAuth flow.
 
 `users.id` never crosses the cookie boundary. Session resolution looks up the
 stable id and only then uses the numeric primary key for internal D1 joins.
@@ -412,6 +413,25 @@ Password reset handlers are in
 - when required Cloudflare Email API credentials are unset, the helper logs a
   redacted diagnostic without the email body or token URL to prevent token
   leakage in logs
+- public reset forms include a honeypot whose field name is not an HTML
+  autocomplete token (`kody_hp` in
+  `packages/worker/universal/public-form-protection.ts`), so password managers
+  do not treat it as a login website field
+
+## Password change
+
+Signed-in password change is `POST /account/password.json`
+(`packages/worker/src/app/handlers/account-password.ts`), exposed on `/account`.
+
+- Requires the current password when the account has a usable password hash
+- Accounts that only sign in with a connected provider or passkey can set a
+  first password without a current password
+- New passwords go through `getPasswordPolicyError`
+- Shares `applyPasswordChange` with reset confirmation: revoke MCP grants, stamp
+  `users.password_changed_at`, revoke again, delete outstanding reset tokens
+- Re-issues the current session cookie with `issuedAt` strictly after
+  `password_changed_at` so this browser stays signed in
+- Joins the shared auth rate-limit bucket and a per-user password-change budget
 
 ## Package app origin handoff
 
@@ -457,14 +477,13 @@ exchange is served by that same script's zone routes. Production CI therefore
 syncs `COOKIE_SECRET` onto the unsuffixed `kody-runtime` script (`--env ""` plus
 `--name`); `wrangler secret bulk --env production --name kody-runtime` still
 writes `kody-runtime-production`, which the runtime deploy does not serve. If a
-leftover main-worker route still receives `{username}.kody.run` or
-`{username}.kodyapps.dev`, the main Worker must forward it too
-(`isRuntimeWorkerOwnedRequest` matches every package-app host, not only the
-apex). A `COOKIE_SECRET` mismatch, or a missing secret swallowed as "invalid
-token", leaves the visitor on the 403 page with `__kody_handoff` still in the
-URL and no `Set-Cookie`. Missing `COOKIE_SECRET` on consume fails closed with
-500; signature / expiry / path / replay rejects log a reason without the token
-and set `X-Kody-Handoff: rejected`.
+leftover main-worker route still receives `{username}.kody.run`, the main Worker
+must forward it too (`isRuntimeWorkerOwnedRequest` matches every package-app
+host, not only the apex). A `COOKIE_SECRET` mismatch, or a missing secret
+swallowed as "invalid token", leaves the visitor on the 403 page with
+`__kody_handoff` still in the URL and no `Set-Cookie`. Missing `COOKIE_SECRET`
+on consume fails closed with 500; signature / expiry / path / replay rejects log
+a reason without the token and set `X-Kody-Handoff: rejected`.
 
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on

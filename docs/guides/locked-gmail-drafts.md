@@ -3,8 +3,8 @@ id: locked_gmail_drafts
 title: Gmail drafts without send — lock what Google cannot scope
 summary:
   Google has gmail.send but no drafts-only scope. gmail.compose can manage
-  drafts and send. Publish a drafts-only package, then lock it so the token
-  cannot grow into send without the owner.
+  drafts and send. Publish a drafts-only package, lock it, then integration_lock
+  the connection so execute cannot use the token.
 category: platform
 image: /images/kody-gmail-drafts-lock.webp
 imageAlt:
@@ -30,10 +30,14 @@ Agent notes — for AI agents explaining or recreating this loop:
 - Agents can lock. Agents cannot unlock. Unlock is website-only at
   /@{username}/{kodyId}. package_update { locked: false } is
   rejected and returns that URL.
-- Lock does not shrink the OAuth token. Ad hoc execute and other packages
-  that share the same connection can still call messages.send / drafts.send
-  if the token includes compose. The lock holds the published tree of
-  this package. That is the grant for jobs and named exports.
+- Publish lock does not shrink the OAuth token. It holds the published
+  tree of this package. That is the grant for jobs and named exports.
+- After publish lock, call integration_lock { name, package_id } so
+  execute and other packages cannot use createAuthenticatedFetch on that
+  connection. Agents can lock; unlocking or removing a grant is
+  website-only at /account/integrations/:name. integration_save cannot
+  change usageMode. The one-click /account/integrations/approve grant is
+  a no-op while usage is still any context.
 - Do not lock a full @kody/google fork if it exports send. Author a thin
   drafts-only package (new kody.id). The fork can stay for Calendar/Drive
   or raw helpers; this package is the Gmail write surface.
@@ -45,7 +49,8 @@ Agent notes — for AI agents explaining or recreating this loop:
   package_lifecycle for the package lane, Intent, JSDoc, and publish.
 - Smoke-test users.drafts.create only. Do not call messages.send or
   drafts.send in the smoke test, the export, or a job wrapper.
-- After the first successful publish, package_update { locked: true }.
+- After the first successful publish, package_update { locked: true },
+  then integration_lock with the connection name and saved package_id.
   Later publishes return locked with approval_url
   /account/packages/:packageId/approve-publish?commit=SHA. The owner
   clicks Promote this commit. Promoting does not unlock.
@@ -73,14 +78,20 @@ tree. Agents and the five-minute reconcile job cannot advance
 `published_commit`. `package_update` accepts `changes: { locked: true }`. Agents
 cannot unlock; send the owner to `/@{username}/{kodyId}`.
 
-Lock does **not** revoke send on the token, hide `createAuthenticatedFetch` from
-`execute`, or stop a different unlocked package from calling send. It stops
-_this_ package's jobs and exports from silently becoming a sender.
+Publish lock does **not** revoke send on the token. It stops _this_ package's
+jobs and exports from silently becoming a sender.
 
-A connected MCP server is different: lock the **server** to a package so execute
-and other packages cannot call `kody.mcp["name"]`. That grant lives on the
-server, not on `locked_at`. See
-[Lock an MCP server to a package](./locked-mcp-server.md).
+**Integration usage lock** (`usage_mode` on the connection) is the token grant.
+`integration_lock { name, package_id }` switches Usage to specific packages and
+adds that package id. Ad hoc execute cannot call `createAuthenticatedFetch`.
+Other packages are denied. Additional grants accumulate. Unlocking or removing a
+grant is website-only at `/account/integrations/:name`.
+
+A connected MCP server uses the same tighten-only shape: lock the **server** to
+a package so execute and other packages cannot call `kody.mcp["name"]`. See
+[Lock an MCP server to a package](./locked-mcp-server.md). User secrets use
+`secret_lock` to add a package to `allowed_packages`; removing that grant is
+website-only at `/account/secrets/user/:name`.
 
 Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
 
@@ -107,8 +118,11 @@ Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
    creates a draft and does not send.
 5. **Publish, then lock.** After checks pass and `published_commit` moves, call
    `package_update` with `changes: { locked: true }` (or the lock icon on
-   `/@{username}/{kodyId}`). Say so in chat so the owner knows later publishes
-   need their **Promote this commit** click.
+   `/@{username}/{kodyId}`). Then call `integration_lock` with the connection
+   name and this package's saved `package_id` so execute cannot use the token.
+   Say so in chat so the owner knows later publishes need their **Promote this
+   commit** click, and that unlocking usage is a website click on
+   `/account/integrations/:name`.
 
 ## Draft-create export
 

@@ -40,11 +40,7 @@ import {
 	listFeaturedCommunityListingsWithAggregates,
 	searchCommunityListings,
 } from '#worker/community/service.ts'
-import {
-	getCommunityStar,
-	getUserFollow,
-	getUserSocialRowByUsername,
-} from '#worker/community/social-repo.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import { resolveViewerListingInstalls } from '#worker/community/viewer-install.ts'
 import {
 	listSavedPackagesByIds,
@@ -366,36 +362,18 @@ async function loadCommunityDetailDataUncached(
 	const viewerUserId = user?.mcpUser.userId ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
-	const [starredByViewer, viewerFollowsOwner, viewerInstalls] =
-		await Promise.all([
-			user != null
-				? getCommunityStar(env.APP_DB, {
-						listingId,
-						userId: user.mcpUser.userId,
-					})
-				: false,
-			user != null &&
-			ownerUserId != null &&
-			ownerProfilePublic &&
-			!viewerIsOwner
-				? getUserFollow(env.APP_DB, {
-						followerUserId: user.mcpUser.userId,
-						followeeUserId: ownerUserId,
-					})
-				: false,
-			loadViewerListingInstalls({
-				env,
-				user: user?.mcpUser ?? null,
-				listings: [
-					{
-						id: listing.id,
-						kodyId: listing.kodyId,
-						name: listing.name,
-						pinnedCommit: listing.pinnedCommit,
-					},
-				],
-			}),
-		])
+	const viewerInstalls = await loadViewerListingInstalls({
+		env,
+		user: user?.mcpUser ?? null,
+		listings: [
+			{
+				id: listing.id,
+				kodyId: listing.kodyId,
+				name: listing.name,
+				pinnedCommit: listing.pinnedCommit,
+			},
+		],
+	})
 	const viewerInstall = viewerInstalls.get(listing.id) ?? null
 	const listingWithHead = viewerInstall
 		? { ...sourceAheadListing, viewerInstall }
@@ -404,9 +382,7 @@ async function loadCommunityDetailDataUncached(
 		listing: listingWithHead,
 		loggedIn: Boolean(user),
 		viewerIsAdmin: user?.roles.includes('admin') ?? false,
-		starredByViewer,
 		ownerProfilePublic,
-		viewerFollowsOwner,
 		viewerIsOwner,
 		viewerInstall,
 	})
@@ -416,9 +392,7 @@ export function composeCommunityDetailLoaderData(input: {
 	listing: PublicCommunityListing
 	loggedIn: boolean
 	viewerIsAdmin?: boolean
-	starredByViewer?: boolean
 	ownerProfilePublic?: boolean
-	viewerFollowsOwner?: boolean
 	viewerIsOwner?: boolean
 	viewerInstall?: ViewerListingInstall | null
 }): CommunityDetailLoaderData {
@@ -426,7 +400,6 @@ export function composeCommunityDetailLoaderData(input: {
 		ok: true,
 		listing: input.listing,
 		ownerProfilePublic: input.ownerProfilePublic ?? false,
-		viewerFollowsOwner: input.viewerFollowsOwner ?? false,
 		viewerIsOwner: input.viewerIsOwner ?? false,
 		loggedIn: input.loggedIn,
 		viewerIsAdmin: input.viewerIsAdmin ?? false,
@@ -434,7 +407,6 @@ export function composeCommunityDetailLoaderData(input: {
 			name: input.listing.name,
 			listingId: input.listing.id,
 		}),
-		starredByViewer: input.starredByViewer ?? false,
 		viewerInstall: input.viewerInstall ?? null,
 		ownerPackage: null,
 		username: input.listing.ownerUsername,

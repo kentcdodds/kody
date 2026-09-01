@@ -24,6 +24,7 @@ import { fathomEventNames, trackFathomEvent } from '#client/fathom-events.ts'
 import { serializeFirstTouchAttributionForTransport } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
 import {
+	emptyPublicFormProtection,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
@@ -325,7 +326,7 @@ export function LoginRoute(handle: Handle) {
 			)
 			const protection = authForm
 				? readPublicFormProtection(new FormData(authForm))
-				: { website: '', turnstileToken: '' }
+				: emptyPublicFormProtection()
 			const errorMessage = await startSocialSignIn(
 				providerId,
 				getCurrentRedirectTo(handle),
@@ -381,7 +382,7 @@ export function LoginRoute(handle: Handle) {
 			)
 			const protection = authForm
 				? readPublicFormProtection(new FormData(authForm))
-				: { website: '', turnstileToken: '' }
+				: emptyPublicFormProtection()
 
 			const verificationResponse = await fetch('/webauthn/authentication', {
 				method: 'POST',
