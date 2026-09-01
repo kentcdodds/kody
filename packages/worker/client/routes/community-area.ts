@@ -1,4 +1,5 @@
 export { CommunityDetailRoute } from './community-detail.tsx'
 export { communityDetailRouteLoader } from './community-detail-shared.ts'
+export { PackageSettingsRoute } from './package-settings.tsx'
 export { CommunityRoute, communityRouteLoader } from './community.tsx'
 export { ProfileRoute, profileRouteLoader } from './profile.tsx'

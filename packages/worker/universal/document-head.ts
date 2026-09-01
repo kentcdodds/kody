@@ -93,9 +93,17 @@ function communityListingHead({
 }: DocumentHeadContext): DocumentHeadDescriptor {
 	const shell = loaderData?.communityDetailShell
 	if (!shell?.ok) {
-		return titleOnly('Public packages')
+		return titleOnly('Package')
 	}
-	const title = `${shell.name} — Kody public package`
+	const title = shell.listingId
+		? `${shell.name} — Kody public package`
+		: shell.name
+	if (!shell.listingId) {
+		return {
+			title,
+			canonicalPath: pathname,
+		}
+	}
 	return {
 		title,
 		canonicalPath: pathname,
@@ -257,6 +265,17 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.communityDetail)]: communityListingHead,
 	[routePattern(routes.communityPackage)]: communityListingHead,
+	[routePattern(routes.communityPackageSettings)]: ({
+		loaderData,
+		pathname,
+	}) => {
+		const shell = loaderData?.communityDetailShell
+		if (!shell?.ok) return titleOnly('Package settings')
+		return {
+			title: `${shell.name} settings`,
+			canonicalPath: pathname,
+		}
+	},
 	[routePattern(routes.communityDetailFiles)]: ({ loaderData, pathname }) => {
 		const files = loaderData?.packageFiles
 		if (!files?.ok) return titleOnly('Package files')

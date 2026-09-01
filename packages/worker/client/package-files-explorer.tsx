@@ -13,6 +13,7 @@ import {
 	listPackageFilesChildren,
 	packageFileLanguageLabel,
 } from '#universal/package-files.ts'
+import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import {
 	colors,
@@ -101,6 +102,8 @@ export function PackageFilesExplorer(
 			contentNode = renderContent(data)
 		}
 
+		const showRepoChrome = Boolean(data.username && data.kodyId)
+
 		return (
 			<article
 				mix={css(articleCss)}
@@ -109,12 +112,24 @@ export function PackageFilesExplorer(
 				// assistive tech is told the region is mid-update.
 				aria-busy={handle.props.busy ? 'true' : undefined}
 			>
-				<a href={data.backHref} mix={css(backLinkCss)}>
-					{arrowLeftIcon()} {data.backLabel}
-				</a>
-				<header mix={css(headCss)}>
-					<h1 mix={css(titleCss)}>{data.title}</h1>
-				</header>
+				{showRepoChrome && data.username && data.kodyId ? (
+					renderPackageRepoChrome({
+						username: data.username,
+						kodyId: data.kodyId,
+						isPrivate: data.isPrivate ?? false,
+						viewerIsOwner: data.viewerIsOwner ?? false,
+						active: 'code',
+					})
+				) : (
+					<>
+						<a href={data.backHref} mix={css(backLinkCss)}>
+							{arrowLeftIcon()} {data.backLabel}
+						</a>
+						<header mix={css(headCss)}>
+							<h1 mix={css(titleCss)}>{data.title}</h1>
+						</header>
+					</>
+				)}
 				<div mix={css(layoutCss)}>
 					<nav aria-label="Files" mix={css(treeCss)}>
 						<div mix={css(treeHeadCss)}>

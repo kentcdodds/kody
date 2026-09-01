@@ -1,4 +1,5 @@
 import { createMatcher } from 'remix/route-pattern/match'
+import { loadPackagePage } from '#app/package-page.ts'
 import {
 	getCommunityPackageHref,
 	resolveCommunityPackageUrl,
@@ -6,6 +7,7 @@ import {
 import {
 	fallbackDefaultBranchName,
 	getCommunityPackageFilesHref,
+	getPackageTreeHref,
 	isPublicTreeDefaultRefAlias,
 	isReservedPackageFilesKodyId,
 	normalizePackageFilesPath,
@@ -90,8 +92,23 @@ export type CommunityFilesRouteTarget =
 			selectedPath: string
 			ref: string
 	  }
-	| { kind: 'redirect'; to: string }
+	| {
+			kind: 'package'
+			username: string
+			kodyId: string
+			selectedPath: string
+			ref: string
+	  }
+	| { kind: 'redirect'; to: string; shared: boolean }
+	| { kind: 'unauthorized' }
 	| { kind: 'invalid-path' }
+
+function filesPathRedirect(
+	to: string,
+	shared: boolean,
+): CommunityFilesRouteTarget {
+	return { kind: 'redirect', to, shared }
+}
 
 function selectedPathFromParams(relativePath: string | undefined) {
 	return normalizePackageFilesPath(relativePath ?? '')
@@ -101,20 +118,110 @@ function requestedTreeRef(ref: string | undefined) {
 	return ref?.trim() ?? ''
 }
 
-async function resolveListingDefaultTreeRef(env: Env, listingId: string) {
+async function resolveSourceDefaultTreeRef(env: Env, sourceId: string | null) {
+	if (!sourceId) return fallbackDefaultBranchName
 	try {
-		const listing = await getCommunityListingById(env.APP_DB, {
-			listingId,
-			includeDelisted: false,
-		})
-		if (!listing) return fallbackDefaultBranchName
-		const source = await getEntitySourceById(env.APP_DB, listing.sourceId)
+		const source = await getEntitySourceById(env.APP_DB, sourceId)
 		if (!source?.repo_id) return fallbackDefaultBranchName
 		const head = await resolveArtifactSourceHead(env, source.repo_id)
 		const branch = head.branch?.trim()
 		return branch || fallbackDefaultBranchName
 	} catch {
 		return fallbackDefaultBranchName
+	}
+}
+
+async function resolveListingDefaultTreeRef(env: Env, listingId: string) {
+	try {
+		const listing = await getCommunityListingById(env.APP_DB, {
+			listingId,
+			includeDelisted: false,
+		})
+		return resolveSourceDefaultTreeRef(env, listing?.sourceId ?? null)
+	} catch {
+		return fallbackDefaultBranchName
+	}
+}
+
+export function treeHrefFromPackageHome(
+	packageHref: string,
+	input: { ref?: string; relativePath?: string },
+) {
+	const match = communityPackageMatcher.match(
+		new URL(packageHref, 'http://localhost'),
+	)
+	if (!match) return packageHref
+	return getPackageTreeHref({
+		username: match.params.username,
+		kodyId: match.params.kodyId,
+		ref: input.ref,
+		relativePath: input.relativePath,
+	})
+}
+
+async function resolveOwnerPackageFilesTarget(input: {
+	env: Env
+	request: Request
+	username: string
+	kodyId: string
+	selectedPath: string
+	ref: string | undefined
+	pathname: string
+}): Promise<CommunityFilesRouteTarget | null> {
+	const page = await loadPackagePage({
+		env: input.env,
+		request: input.request,
+		username: input.username,
+		kodyId: input.kodyId,
+	})
+	if (page.kind === 'not_found') return null
+	if (page.kind === 'unauthorized') return { kind: 'unauthorized' }
+	const requestedRef = requestedTreeRef(input.ref)
+	if (page.kind === 'redirect') {
+		const ref = isPublicTreeDefaultRefAlias(requestedRef)
+			? fallbackDefaultBranchName
+			: requestedRef
+		return filesPathRedirect(
+			treeHrefFromPackageHome(page.to, {
+				ref,
+				relativePath: input.selectedPath,
+			}),
+			page.shared,
+		)
+	}
+	const listingSourceId = page.listing?.listing
+		? (
+				await getCommunityListingById(input.env.APP_DB, {
+					listingId: page.listing.listing.id,
+					includeDelisted: false,
+				})
+			)?.sourceId
+		: null
+	const ref = isPublicTreeDefaultRefAlias(requestedRef)
+		? await resolveSourceDefaultTreeRef(
+				input.env,
+				page.ownerPackage?.sourceId ?? listingSourceId ?? null,
+			)
+		: requestedRef
+	const canonicalPath = getPackageTreeHref({
+		username: page.username,
+		kodyId: page.kodyId,
+		listingId: page.listing?.listing?.id ?? null,
+		relativePath: input.selectedPath,
+		ref,
+	})
+	if (canonicalPath !== input.pathname) {
+		// This URL did not resolve as a public listing, so leftover `/files`
+		// and default-ref hops stay owner-private even when a listing exists
+		// under a different unpublished pair.
+		return filesPathRedirect(canonicalPath, false)
+	}
+	return {
+		kind: 'package',
+		username: page.username,
+		kodyId: page.kodyId,
+		selectedPath: input.selectedPath,
+		ref,
 	}
 }
 
@@ -132,6 +239,7 @@ async function canonicalPublicTreeRef(input: {
 export async function resolveCommunityFilesRoute(input: {
 	env: Env
 	url: URL
+	request?: Request
 }): Promise<CommunityFilesRouteTarget | null> {
 	const detailMatch = communityDetailFilesMatcher.match(input.url)
 	if (detailMatch) {
@@ -164,22 +272,33 @@ export async function resolveCommunityFilesRoute(input: {
 			username: leftoverFilesMatch.params.username,
 			kodyId: leftoverFilesMatch.params.kodyId,
 		})
-		if (!target) return null
-		const ref = await canonicalPublicTreeRef({
-			env: input.env,
-			listingId: target.listingId,
-			ref: input.url.searchParams.get('ref') ?? '',
-		})
-		return {
-			kind: 'redirect',
-			to: getCommunityPackageFilesHref({
+		if (target) {
+			const ref = await canonicalPublicTreeRef({
+				env: input.env,
 				listingId: target.listingId,
-				ownerUsername: target.username,
-				kodyId: target.kodyId,
-				relativePath: selectedPath,
-				ref,
-			}),
+				ref: input.url.searchParams.get('ref') ?? '',
+			})
+			return filesPathRedirect(
+				getCommunityPackageFilesHref({
+					listingId: target.listingId,
+					ownerUsername: target.username,
+					kodyId: target.kodyId,
+					relativePath: selectedPath,
+					ref,
+				}),
+				true,
+			)
 		}
+		if (!input.request) return null
+		return resolveOwnerPackageFilesTarget({
+			env: input.env,
+			request: input.request,
+			username: leftoverFilesMatch.params.username,
+			kodyId: leftoverFilesMatch.params.kodyId,
+			selectedPath,
+			ref: input.url.searchParams.get('ref') ?? '',
+			pathname: input.url.pathname,
+		})
 	}
 
 	const treeMatch = communityPackageTreeMatcher.match(input.url)
@@ -193,31 +312,40 @@ export async function resolveCommunityFilesRoute(input: {
 		username: treeMatch.params.username,
 		kodyId: treeMatch.params.kodyId,
 	})
-	if (!target) return null
-	const ref = await canonicalPublicTreeRef({
-		env: input.env,
-		listingId: target.listingId,
-		ref: treeMatch.params.ref,
-	})
-	const canonicalPath = getCommunityPackageFilesHref({
-		listingId: target.listingId,
-		ownerUsername: target.username,
-		kodyId: target.kodyId,
-		relativePath: selectedPath,
-		ref,
-	})
-	if (target.kind === 'redirect' || canonicalPath !== input.url.pathname) {
+	if (target) {
+		const ref = await canonicalPublicTreeRef({
+			env: input.env,
+			listingId: target.listingId,
+			ref: treeMatch.params.ref,
+		})
+		const canonicalPath = getCommunityPackageFilesHref({
+			listingId: target.listingId,
+			ownerUsername: target.username,
+			kodyId: target.kodyId,
+			relativePath: selectedPath,
+			ref,
+		})
+		if (target.kind === 'redirect' || canonicalPath !== input.url.pathname) {
+			return filesPathRedirect(canonicalPath, true)
+		}
 		return {
-			kind: 'redirect',
-			to: canonicalPath,
+			kind: 'listing',
+			listingId: target.listingId,
+			selectedPath,
+			ref,
 		}
 	}
-	return {
-		kind: 'listing',
-		listingId: target.listingId,
+
+	if (!input.request) return null
+	return resolveOwnerPackageFilesTarget({
+		env: input.env,
+		request: input.request,
+		username: treeMatch.params.username,
+		kodyId: treeMatch.params.kodyId,
 		selectedPath,
-		ref,
-	}
+		ref: treeMatch.params.ref,
+		pathname: input.url.pathname,
+	})
 }
 
 export async function resolveCanonicalFilesPath(input: {

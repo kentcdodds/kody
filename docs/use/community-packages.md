@@ -31,6 +31,9 @@ Tags, description, category, and an icon are optional (ranking can prefer
 filled-in cards).
 
 - New packages are always created **private**.
+- Making a package **public** lists it on `/community`. Type the package slug to
+  confirm (`confirm_name` for agents). Anyone can then read and fork the default
+  branch.
 - Making a package **private** unlists it: public URLs 404; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
 - Deleting a package (`packageDelete` or **Delete package** on the package page)
@@ -52,7 +55,9 @@ at `/@username/:name` — for example `/@kentcdodds/devin`.
 `/@username/:name/tree/:ref/...` where `:ref` is the repo's **default branch
 name** (usually `main`, whatever git reports — not hardcoded `master`), a SHA,
 or another branch. `HEAD` and leftover `/files` URLs 301 to
-`/tree/{defaultBranch}` (`main` when lookup misses).
+`/tree/{defaultBranch}` (`main` when lookup misses). Private packages use the
+same tree URL; unauthenticated visitors get 404. Owner settings are
+`/@username/:name/settings`. The package home renders the README.
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial onboarding placement only — not a safety badge. There

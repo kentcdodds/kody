@@ -123,8 +123,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('data-testid="community-detail-frame"')
 	expect(publicHtml).toContain('data-testid="community-listing-icon-detail"')
 	expect(publicHtml).toContain('/community/listing-1/icon/abc1234567890')
-	expect(publicHtml).toContain('data-testid="community-detail-owner-line"')
-	expect(publicHtml).toContain('>by</')
+	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
 	expect(publicHtml).toContain('href="/@kentcdodds"')
 	expect(publicHtml).toContain('>@kentcdodds</a>')
 	expect(publicHtml).not.toContain(
@@ -147,10 +146,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 		url: new URL('https://example.com/community/listing-1'),
 	} as never)
 	const privateHtml = await privateResponse.text()
-	expect(privateHtml).toContain('>by</')
 	expect(privateHtml).toContain('@kentcdodds')
 	expect(privateHtml).toContain('data-testid="community-detail-owner-private"')
-	expect(privateHtml).toContain('title="This profile is private"')
 	expect(privateHtml).not.toContain('href="/@kentcdodds"')
 
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
@@ -178,19 +175,14 @@ test('community detail handler returns bare detail frame HTML for target header'
 		url: new URL('https://example.com/community/listing-1'),
 	} as never)
 	const signedInHtml = await signedInResponse.text()
-	expect(signedInHtml).toMatch(
-		/<div[^>]*data-testid="community-detail-owner-line"/,
-	)
-	expect(signedInHtml).not.toMatch(
-		/<p[^>]*data-testid="community-detail-owner-line"/,
-	)
+	expect(signedInHtml).toContain('data-testid="package-repo-chrome"')
 	expect(signedInHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)
 	expect(signedInHtml).toContain('Installed')
 	expect(
 		signedInHtml.indexOf('data-testid="community-detail-viewer-install-badge"'),
-	).toBeGreaterThan(signedInHtml.indexOf('</h1>'))
+	).toBeGreaterThan(signedInHtml.indexOf('data-testid="package-repo-nav"'))
 })
 
 test('community detail browse-files uses the looked-up default branch', async () => {

@@ -24,6 +24,11 @@ const sampleListing = {
 } satisfies PublicCommunityListing
 
 const detailBase = {
+	listing: sampleListing,
+	username: 'kentcdodds',
+	kodyId: 'github-triage',
+	description: sampleListing.description,
+	isPrivate: false,
 	ownerProfilePublic: true,
 	viewerIsOwner: false,
 	returnTo: '/@kentcdodds/github-triage',
@@ -31,7 +36,6 @@ const detailBase = {
 
 test('community detail head covers install, installed, and listing-ahead badges', async () => {
 	const installHtml = await renderCommunityDetailContentHtml({
-		listing: sampleListing,
 		...detailBase,
 		loggedIn: true,
 	})
@@ -42,6 +46,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	const agentPrompt =
 		'Call packageGet for @me/github-triage and adapt it to my needs.'
 	const installedHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
 		listing: {
 			...sampleListing,
 			viewerInstall: {
@@ -53,7 +58,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				listingAheadPrompt: null,
 			},
 		},
-		...detailBase,
 		loggedIn: true,
 	})
 	expect(installedHtml).toContain(
@@ -65,11 +69,11 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
 
 	const sourceAheadHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
 		listing: {
 			...sampleListing,
 			sourceAhead: true,
 		},
-		...detailBase,
 		loggedIn: true,
 	})
 	expect(sourceAheadHtml).toContain(
@@ -77,6 +81,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	)
 
 	const ownInstalledHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
 		listing: {
 			...sampleListing,
 			viewerInstall: {
@@ -88,7 +93,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				listingAheadPrompt: null,
 			},
 		},
-		...detailBase,
 		viewerIsOwner: true,
 		loggedIn: true,
 	})
@@ -103,6 +107,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	const aheadPrompt =
 		'Compare the current listing snapshot, keep local customizations, then publish with repoPublishSession and absorbed_upstream_commit.'
 	const aheadHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
 		listing: {
 			...sampleListing,
 			viewerInstall: {
@@ -114,7 +119,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				listingAheadPrompt: aheadPrompt,
 			},
 		},
-		...detailBase,
 		returnTo: '/community',
 		loggedIn: true,
 	})
@@ -127,4 +131,44 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'data-testid="community-detail-viewer-install-badge"',
 	)
 	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
+})
+
+test('package chrome is shared for public listings and private owner packages', async () => {
+	const publicHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		loggedIn: false,
+	})
+	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
+	expect(publicHtml).toContain('data-testid="package-repo-nav-code"')
+	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
+	expect(publicHtml).toContain('data-visibility="public"')
+	expect(publicHtml).toContain('data-testid="community-browse-files"')
+	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
+	expect(publicHtml).toContain('data-testid="community-detail-forks"')
+	expect(publicHtml).toContain('← Public packages')
+
+	const ownerHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		viewerIsOwner: true,
+		loggedIn: true,
+	})
+	expect(ownerHtml).toContain('data-testid="package-repo-nav-settings"')
+	expect(ownerHtml).toContain('href="/@kentcdodds/github-triage/settings"')
+	expect(ownerHtml).toContain('← Packages')
+
+	const privateHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: null,
+		isPrivate: true,
+		viewerIsOwner: true,
+		loggedIn: true,
+		description: 'Local notes.',
+	})
+	expect(privateHtml).toContain('data-testid="package-repo-chrome"')
+	expect(privateHtml).toContain('data-visibility="private"')
+	expect(privateHtml).toContain('data-testid="package-repo-nav-settings"')
+	expect(privateHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
+	expect(privateHtml).not.toContain('data-testid="community-detail-forks"')
+	expect(privateHtml).not.toContain('data-testid="community-listing-category"')
+	expect(privateHtml).toContain('Local notes.')
 })
