@@ -36,8 +36,8 @@ const reportReasonSchema = z
 	.max(2000, 'Report reason must be at most 2000 characters.')
 
 /**
- * A moved package keeps whatever the link carried: `followError` and friends
- * ride in the query string, and a redirect that drops them gets cached.
+ * A moved package keeps whatever the link carried: query params ride along,
+ * and a redirect that drops them gets cached.
  *
  * `301` states which URL is canonical, but the destination is not permanent --
  * a username can be released and reclaimed by someone else -- so it is cached

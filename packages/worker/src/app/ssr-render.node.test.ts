@@ -1667,7 +1667,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).not.toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
-	expect(html).toContain('data-testid="community-detail-star"')
+	expect(html).not.toContain('data-testid="community-detail-star"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
@@ -1695,21 +1695,19 @@ test('listing-uuid URLs redirect to the canonical pair when possible and keep se
 		'/@kentcdodds/github-triage',
 	)
 
-	// The follow control redirects back with `followError`, so the query has to
-	// survive the hop or the message vanishes.
+	// Query strings ride the hop so a shared or bookmarked listing-uuid URL
+	// does not drop its extra params on the way to the canonical pair.
 	const redirect = await createCommunityDetailHandler(env).handler({
 		request: new Request(
-			'https://example.com/community/listing-detail-1?followError=nope',
+			'https://example.com/community/listing-detail-1?source=share',
 		),
-		url: new URL(
-			'https://example.com/community/listing-detail-1?followError=nope',
-		),
+		url: new URL('https://example.com/community/listing-detail-1?source=share'),
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
 	expect(redirect.status).toBe(301)
 	expect(redirect.headers.get('location')).toBe(
-		'https://example.com/@kentcdodds/github-triage?followError=nope',
+		'https://example.com/@kentcdodds/github-triage?source=share',
 	)
 	// The same URL serves frame HTML, which must not get this redirect back.
 	expect(redirect.headers.get('vary')).toBe('x-remix-target')
