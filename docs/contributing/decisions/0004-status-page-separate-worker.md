@@ -43,6 +43,9 @@ duplicates a small amount of email-sending code rather than importing from
 `packages/worker` (import boundaries keep it dependency-free). Incident records
 are probe-derived only; manually posted incident narratives are a possible later
 addition, not built now. `status.kody.codes` is the attached canonical hostname.
-`status.heykody.dev` is a legacy worker custom domain: GET/HEAD other than
-`/health` 308 to `status.kody.codes`. `/health` stays reachable on the legacy
-host as a fallback when the canonical hostname returns Cloudflare 1016.
+
+## Later update (2026-09-01)
+
+`status.heykody.dev` is no longer a worker custom domain or deploy healthcheck
+fallback. The status worker attaches only `status.kody.codes`. See
+[0044](./0044-retired-brand-domains-stay-retired.md).

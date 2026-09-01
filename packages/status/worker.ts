@@ -1,5 +1,4 @@
 import { faviconIcoRedirectLocation } from './favicon.ts'
-import { getLegacyStatusRedirectResponse } from './legacy-redirect.ts'
 import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
 import { StatusStore, type StatusWorkerEnv } from './status-store.ts'
 import { type ComponentStatus } from './status-types.ts'
@@ -22,8 +21,6 @@ export default {
 				{ headers: { 'Cache-Control': 'no-store' } },
 			)
 		}
-		const legacyRedirect = getLegacyStatusRedirectResponse(request)
-		if (legacyRedirect) return legacyRedirect
 		if (url.pathname === '/favicon.ico') {
 			let status: ComponentStatus = 'unknown'
 			try {

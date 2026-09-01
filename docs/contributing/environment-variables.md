@@ -109,12 +109,12 @@ Wrangler `vars` (public and non-secret; see
   deploy). Unset for local dev and set to the ephemeral worker URL for previews.
   The deploy derives a Workers `custom_domain` route from it, and
   `getCanonicalAppBaseUrl` uses it for canonical/OG URLs in SSR HTML.
-- `APP_LEGACY_HOSTS` — optional comma-separated additional app hostnames (for
-  example `heykody.dev`) that remain attached and dual-served alongside
-  `APP_BASE_URL`. The generated deploy `routes` list **replaces** the Worker's
-  entire custom-domain set, so every dual-served host must be listed here —
-  otherwise the next deploy detaches omitted origins and deletes their DNS
-  records. Set as a GitHub Actions repository variable.
+- `APP_LEGACY_HOSTS` — optional comma-separated additional app hostnames that
+  remain attached and dual-served alongside `APP_BASE_URL`. The generated deploy
+  `routes` list **replaces** the Worker's entire custom-domain set, so every
+  dual-served host must be listed here — otherwise the next deploy detaches
+  omitted origins and deletes their DNS records. Set as a GitHub Actions
+  repository variable. Production leaves this unset.
 - `APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-preserving
   `308` redirects from legacy hosts to the canonical origin for browser GET/HEAD
   navigation only. Protocol surfaces are never redirected: `/mcp` (clients POST
@@ -159,21 +159,20 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
 
 - `PACKAGE_APP_LEGACY_HOSTS` — optional comma-separated dual-served package-app
-  apex hostnames (production commits `kodyapps.dev`) alongside
-  `PACKAGE_APP_BASE_URL`. Generated runtime zone routes replace the Worker's
-  whole route set, so every dual-served package-app host must be listed here —
-  otherwise the next deploy detaches omitted origins and deletes their DNS
-  records. May also be set as a GitHub Actions repository variable (non-empty
-  overlay wins).
+  apex hostnames alongside `PACKAGE_APP_BASE_URL`. Generated runtime zone routes
+  replace the Worker's whole route set, so every dual-served package-app host
+  must be listed here — otherwise the next deploy detaches omitted origins and
+  deletes their DNS records. May also be set as a GitHub Actions repository
+  variable (non-empty overlay wins). Production leaves this unset.
 - `PACKAGE_APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-
   preserving `308` redirects from dual-served package-app **user subdomains**
-  (`{username}.kodyapps.dev` → `{username}.kody.run`) for browser GET/HEAD only.
-  Leave unset to dual-serve: package-app session cookies use the `__Host-`
+  (`{username}.<legacy-apex>` → `{username}.kody.run`) for browser GET/HEAD
+  only. Leave unset to dual-serve: package-app session cookies use the `__Host-`
   prefix, so they are host-only and cannot follow a redirect. Apex `/` on a
   dual-served package-app host redirects to the app origin (`kody.codes`); it is
   never sent to the canonical package-app apex. Dual-serve is the default; set
   this GitHub Actions repository variable to `true` only when enabling those
-  GET/HEAD redirects.
+  GET/HEAD redirects. Production leaves this unset.
 
 ## MCP `execute` and outbound HTTP
 
@@ -380,8 +379,7 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   alongside the canonical domains (see
   `packages/worker/src/email/platform-address.ts`). Delivery resolves to the
   same inboxes; outbound always sends from the canonical domains. Production
-  commits `inbox.heykody.app,inbox.heykody.dev` / `heykody.app,heykody.dev`.
-  Empty the lists when retiring the old domains' email DNS.
+  leaves these unset.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls and
   for choosing the env-scoped `ARTIFACTS` binding. Defaults to `default` when
   unset (local dev and tests). Wrangler sets `production` and `preview` per

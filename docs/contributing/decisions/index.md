@@ -84,6 +84,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — no `package.json#private` SoT, no second publish semantics
   (`community_publish` stays a visibility alias), no license bureau, no trusted
   listings
+- [0044 — Retired brand domains stay retired](./0044-retired-brand-domains-stay-retired.md)
+  — do not re-attach `heykody.app`, `heykody.dev`, or `kodyapps.dev` as app,
+  package-app, status, or email hosts
 
 ## Historical / UI / implementation
 

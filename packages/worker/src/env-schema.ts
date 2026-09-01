@@ -208,10 +208,10 @@ export const EnvSchema = object({
 	),
 	RUNTIME_WORKER: optionalFetcherSchema,
 	APP_BASE_URL: optionalUrlStringSchema,
-	// Comma-separated legacy app hostnames (for example `heykody.dev`) the
-	// Worker keeps serving alongside the canonical `APP_BASE_URL` host during
-	// a domain migration. The deploy attaches these as custom domains so
-	// flipping APP_BASE_URL never detaches the old origin or deletes its DNS.
+	// Comma-separated legacy app hostnames the Worker keeps serving alongside
+	// the canonical `APP_BASE_URL` host during a domain migration. The deploy
+	// attaches these as custom domains so flipping APP_BASE_URL never detaches
+	// the old origin or deletes its DNS.
 	APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
 	// Exact string 'true' enables 308 redirects from legacy hosts to the
 	// canonical origin for safe browser GET/HEAD requests. Protocol surfaces
@@ -231,10 +231,10 @@ export const EnvSchema = object({
 	// where the same-origin path-based behavior remains available.
 	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
-	// Comma-separated dual-served package-app apex hostnames (for example
-	// `kodyapps.dev`) the runtime Worker serves alongside the canonical
-	// `PACKAGE_APP_BASE_URL` host. Generated zone routes replace the whole
-	// set, so omitting a listed host would detach it and delete its DNS.
+	// Comma-separated dual-served package-app apex hostnames the runtime
+	// Worker serves alongside the canonical `PACKAGE_APP_BASE_URL` host.
+	// Generated zone routes replace the whole set, so omitting a listed host
+	// would detach it and delete its DNS.
 	PACKAGE_APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
 	// Exact string 'true' enables 308 redirects from dual-served package-app
 	// *user subdomains* to the matching canonical subdomain for safe
@@ -247,14 +247,13 @@ export const EnvSchema = object({
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.
 	SYSTEM_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
-	// Comma-separated dual-served user email domains (for example
-	// inbox.heykody.dev); inbound mail on those addresses resolves to the
-	// same user inboxes. Outbound always sends from the canonical
-	// USER_EMAIL_DOMAIN.
+	// Comma-separated dual-served user email domains; inbound mail on those
+	// addresses resolves to the same user inboxes. Outbound always sends from
+	// the canonical USER_EMAIL_DOMAIN.
 	LEGACY_USER_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
-	// Comma-separated dual-served system email domains (for example
-	// heykody.dev); operator inboxes (kody@, support@, ...) accept mail on
-	// those hosts alongside the canonical SYSTEM_EMAIL_DOMAIN.
+	// Comma-separated dual-served system email domains; operator inboxes
+	// (kody@, support@, ...) accept mail on those hosts alongside the
+	// canonical SYSTEM_EMAIL_DOMAIN.
 	LEGACY_SYSTEM_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	// Opaque deploy metadata (JSON or base64url JSON) for GET /health. Set

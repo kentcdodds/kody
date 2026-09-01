@@ -6,14 +6,13 @@ This document explains how an incoming request moves through the system.
 
 Production has two public HTTP entrypoints:
 
-- **App origin** (`kody.codes` and legacy hosts) —
-  `packages/worker/src/index.ts`. Remix, MCP HTTP (`/mcp`), OAuth, inbound
-  email, and queue consumers. Runtime-owned paths (`/@{username}/packages/…`,
-  package-invocation API, inline `/apps`) forward over the `RUNTIME_WORKER`
-  service binding to `kody-runtime`.
-- **Package-app origin** (`kody.run`; legacy `kodyapps.dev` dual-served; cleanup
-  issues 1300 and 1428) — `packages/worker/src/runtime-worker.ts`. Zone routes
-  on that script; the origin handler does not see this host in production.
+- **App origin** (`kody.codes`) — `packages/worker/src/index.ts`. Remix, MCP
+  HTTP (`/mcp`), OAuth, inbound email, and queue consumers. Runtime-owned paths
+  (`/@{username}/packages/…`, package-invocation API, inline `/apps`) forward
+  over the `RUNTIME_WORKER` service binding to `kody-runtime`.
+- **Package-app origin** (`kody.run`) — `packages/worker/src/runtime-worker.ts`.
+  Zone routes on that script; the origin handler does not see this host in
+  production.
 
 The routing order below is the **app-origin** handler.
 

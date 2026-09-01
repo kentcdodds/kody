@@ -84,7 +84,12 @@ package-app apex:
 The 2026-08-11 decision above used `kodyapps.dev` as the package-app apex. That
 hostname is not rewritten here. The canonical package-app apex is `kody.run`
 (`PACKAGE_APP_BASE_URL`). Production public URL shape is
-`https://{username}.kody.run/packages/{kodyId}/{path}`. `kodyapps.dev` is
-dual-served as a legacy package-app zone (apex + `*.kodyapps.dev`) pending
-[#1428](https://github.com/kentcdodds/kody/issues/1428). See
+`https://{username}.kody.run/packages/{kodyId}/{path}`. See
 [`setup-manifest.md`](../setup-manifest.md) and [`security.md`](../security.md).
+
+## Later update (2026-09-01)
+
+`kodyapps.dev` is no longer a dual-served package-app zone. Production publishes
+only the `kody.run` apex and wildcard zone routes. See
+[0044](./0044-retired-brand-domains-stay-retired.md) and
+[#1428](https://github.com/kentcdodds/kody/issues/1428).

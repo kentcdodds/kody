@@ -27,8 +27,8 @@ function tryOrigin(value: string | URL | null | undefined) {
  * password-reset mail.
  *
  * From always follows the sending domain (`SYSTEM_EMAIL_DOMAIN`, else the
- * `APP_BASE_URL` hostname). Link hosts follow that same domain so a legacy
- * `APP_BASE_URL` or dual-served host cannot pin `heykody.dev` into the
+ * `APP_BASE_URL` hostname). Link hosts follow that same domain so a stale
+ * `APP_BASE_URL` or dual-served host cannot pin a retired hostname into the
  * message. Local `npm run dev` keeps clickable links on the request origin
  * so signup still works against localhost.
  */
