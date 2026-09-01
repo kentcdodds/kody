@@ -30,8 +30,8 @@ export class PlatformOauthAppValidationError extends Error {
  * deliberately outside the user secret store: no `{{secret:...}}` placeholder
  * can reference it, so sandboxed code has no resolution path to the shared
  * credential. `getPlatformOauthAppClientSecret` is the only decrypt accessor;
- * its callers are host-side token-exchange paths (connect flow and
- * `integration_token_refresh`). Never expose the decrypted value in capability
+ * its remaining caller is host-side token refresh
+ * (`integration_token_refresh`). Never expose the decrypted value in capability
  * outputs, loader payloads, or logs.
  */
 export type PlatformOauthApp = {

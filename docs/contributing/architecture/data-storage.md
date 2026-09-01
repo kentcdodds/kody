@@ -354,14 +354,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   dual-write also keeps `client_secret_secret_name`), provider endpoints, and
   flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
-  built-in OAuth apps users connect to without registering their own provider
-  app. Global operator config with **no `user_id`** (like feature flags, not
-  user data). Keyed by `slug`; holds the inline non-secret `client_id`, provider
-  endpoints, flow options, the allowed/default scope menu,
-  `required_hosts_json`, and `enabled`. `client_secret_encrypted` is the one
-  credential ciphertext stored outside `secret_entries` (AES-GCM with a
-  dedicated purpose, so no `{{secret:…}}` placeholder can name it);
-  `getPlatformOauthAppClientSecret` in
+  built-in OAuth apps that remaining connections still refresh against. New
+  connects and reconnects are bring-your-own only. Global operator config with
+  **no `user_id`** (like feature flags, not user data). Keyed by `slug`; holds
+  the inline non-secret `client_id`, provider endpoints, flow options, the
+  allowed/default scope menu, `required_hosts_json`, and `enabled`.
+  `client_secret_encrypted` is the one credential ciphertext stored outside
+  `secret_entries` (AES-GCM with a dedicated purpose, so no `{{secret:…}}`
+  placeholder can name it); `getPlatformOauthAppClientSecret` in
   `packages/worker/src/integrations/platform-apps.ts` is its only decrypt
   accessor. `logo_key` / `logo_content_type`
   (`0005-platform-oauth-app-logos.sql`) point at an operator-owned provider logo

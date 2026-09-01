@@ -17,7 +17,7 @@ function createEnv() {
 	return { APP_DB: createD1FromSqlite(sqlite) } as Env
 }
 
-test('connect chooser includes unused built-ins and saved BYO connections', async () => {
+test('connect chooser includes saved connections and hides unused built-ins', async () => {
 	const env = createEnv()
 	const platformEnv = {
 		...env,
@@ -86,18 +86,19 @@ test('connect chooser includes unused built-ins and saved BYO connections', asyn
 	expect(chooser.options.map((option) => option.id)).toEqual([
 		'connection:github',
 		'connection:spotify-home',
-		'platform:google',
 	])
 	expect(
 		chooser.options.find((option) => option.id === 'connection:spotify-home'),
 	).toMatchObject({
 		href: '/connect/oauth?provider=spotify-home&app=spotify-home',
 		kind: 'connection',
+		detail: 'Reconnect your OAuth app',
 	})
 	expect(
-		chooser.options.find((option) => option.id === 'platform:google'),
+		chooser.options.find((option) => option.id === 'connection:github'),
 	).toMatchObject({
-		href: '/connect/oauth?provider=google&platform=google',
-		kind: 'platform',
+		href: '/connect/oauth?provider=github',
+		kind: 'connection',
+		detail: 'Set up your own OAuth app to reconnect',
 	})
 })

@@ -1,7 +1,6 @@
 import { type Action } from 'remix/router'
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import {
-	hasAlternativeBuiltInApp,
 	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
 	loadExistingConnectionSummary,
@@ -17,7 +16,7 @@ import { type routes } from '#universal/routes.ts'
 
 /**
  * Every working visit to /connect/oauth carries at least one of these:
- * `provider` (agent-built setup URLs and built-in connects), `code` (the
+ * `provider` (agent-built setup URLs), `code` (the
  * provider's success redirect — config is restored from sessionStorage, so
  * the query has no provider), or `error` (the provider's denial redirect).
  * A visit with none of them is the signed-in provider chooser.
@@ -70,26 +69,23 @@ async function loadConnectOauthLoaderData(
 	if (!user) {
 		return { ok: true, provider: null, integration: null, redirectUri }
 	}
-	// `platform=1` forces the built-in of the same name; `platform=<slug>`
-	// connects that built-in under a different connection name.
 	// `app=<slug>` reuses a saved bring-your-own app under `provider`.
+	// `platform=` is ignored: built-in connect is retired.
 	const integration = await loadAccountIntegrationByName(
 		env,
 		user,
 		providerKey,
 		readConnectOauthLookupOptions(requestUrl.searchParams),
 	)
-	const [builtInAvailable, existingConnection, hasStoredClientSecret] =
-		await Promise.all([
-			hasAlternativeBuiltInApp(env, providerKey, integration),
-			loadExistingConnectionSummary(env, user, providerKey),
-			hasStoredConnectClientSecret(env, user, providerKey, integration),
-		])
+	const [existingConnection, hasStoredClientSecret] = await Promise.all([
+		loadExistingConnectionSummary(env, user, providerKey),
+		hasStoredConnectClientSecret(env, user, providerKey, integration),
+	])
 	return {
 		ok: true,
 		provider: providerKey,
 		integration,
-		builtInAvailable,
+		builtInAvailable: false,
 		existingConnection,
 		hasStoredClientSecret,
 		redirectUri,

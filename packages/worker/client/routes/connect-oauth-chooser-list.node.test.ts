@@ -5,12 +5,12 @@ test('connect chooser filter matches label, detail, and provider key', () => {
 	const options = [
 		{
 			label: 'Google',
-			detail: "Connect with Kody's built-in app",
+			detail: 'Set up your own OAuth app to reconnect',
 			providerKey: 'google',
 		},
 		{
 			label: 'GitHub work',
-			detail: 'Reconnect this built-in account',
+			detail: 'Reconnect your OAuth app',
 			providerKey: 'github',
 		},
 		{
@@ -21,9 +21,8 @@ test('connect chooser filter matches label, detail, and provider key', () => {
 	]
 
 	expect(filterConnectOauthChooserOptions(options, '')).toEqual(options)
-	expect(filterConnectOauthChooserOptions(options, '  built-in  ')).toEqual([
+	expect(filterConnectOauthChooserOptions(options, '  set up  ')).toEqual([
 		options[0],
-		options[1],
 	])
 	expect(filterConnectOauthChooserOptions(options, 'GITHUB')).toEqual([
 		options[1],

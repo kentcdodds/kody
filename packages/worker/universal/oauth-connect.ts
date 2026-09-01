@@ -1,6 +1,6 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 
-export type ConnectOauthChooserKind = 'connection' | 'platform'
+export type ConnectOauthChooserKind = 'connection'
 
 export type ConnectOauthChooserOption = {
 	id: string
@@ -19,14 +19,11 @@ export function isConnectOauthCallbackUrl(url: URL): boolean {
 
 export function buildConnectOauthHref(input: {
 	name: string
-	platform?: boolean
 	appSlug?: string
 }): string {
 	const params = new URLSearchParams({ provider: input.name })
 	const appSlug = input.appSlug?.trim()
-	if (input.platform) {
-		params.set('platform', appSlug || '1')
-	} else if (appSlug) {
+	if (appSlug) {
 		params.set('app', appSlug)
 	}
 	return `/connect/oauth?${params.toString()}`
@@ -43,22 +40,8 @@ export function buildConnectOauthChooserOptions(input: {
 		appSlug: string
 		canDrive: boolean
 	}>
-	platformApps: ReadonlyArray<{
-		slug: string
-		label: string
-		provider: string
-		logoPath: string | null
-	}>
 }): Array<ConnectOauthChooserOption> {
-	const takenNames = new Set(
-		input.connections.map((connection) => connection.name),
-	)
-	const connectedPlatformSlugs = new Set(
-		input.connections
-			.filter((connection) => connection.platform)
-			.map((connection) => connection.appSlug),
-	)
-	const connectionOptions = input.connections
+	return input.connections
 		.filter((connection) => connection.canDrive)
 		.map((connection) => {
 			const providerKey =
@@ -67,12 +50,14 @@ export function buildConnectOauthChooserOptions(input: {
 				id: `connection:${connection.name}`,
 				href: buildConnectOauthHref({
 					name: connection.name,
-					platform: connection.platform,
-					appSlug: connection.appSlug,
+					// Existing platform connections stay listed so the owner
+					// can migrate, but the href is a bring-your-own reconnect
+					// (no `app=` that would look like a built-in slug).
+					appSlug: connection.platform ? undefined : connection.appSlug,
 				}),
 				label: connection.label,
 				detail: connection.platform
-					? 'Reconnect this built-in account'
+					? 'Set up your own OAuth app to reconnect'
 					: 'Reconnect your OAuth app',
 				providerKey,
 				logoPath: connection.logoPath,
@@ -80,27 +65,4 @@ export function buildConnectOauthChooserOptions(input: {
 				kind: 'connection' as const,
 			}
 		})
-	const platformOptions = input.platformApps
-		.filter(
-			(app) =>
-				!takenNames.has(app.slug) && !connectedPlatformSlugs.has(app.slug),
-		)
-		.map((app) => {
-			const providerKey = normalizeProviderKey(app.provider) || app.slug
-			return {
-				id: `platform:${app.slug}`,
-				href: buildConnectOauthHref({
-					name: app.slug,
-					platform: true,
-					appSlug: app.slug,
-				}),
-				label: app.label,
-				detail: "Connect with Kody's built-in app",
-				providerKey,
-				logoPath: app.logoPath,
-				autoLogoPath: null,
-				kind: 'platform' as const,
-			}
-		})
-	return [...connectionOptions, ...platformOptions]
 }
