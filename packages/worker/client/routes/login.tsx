@@ -177,7 +177,7 @@ export function LoginRoute(handle: Handle) {
 		const formData = new FormData(form)
 		const firstName = String(formData.get('firstName') ?? '').trim()
 		const email = String(formData.get('email') ?? '').trim()
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 
 		if (!firstName || !email) {
 			setState('error', 'First name and email are required.')
@@ -218,8 +218,9 @@ export function LoginRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
 
-		const formData = new FormData(event.currentTarget)
+		const formData = new FormData(form)
 		const email = String(formData.get('email') ?? '').trim()
 		const password = String(formData.get('password') ?? '')
 		const mode = getCurrentAuthMode(handle)
@@ -228,7 +229,7 @@ export function LoginRoute(handle: Handle) {
 		const inviteCode =
 			mode === 'signup' ? String(formData.get('inviteCode') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 
 		if (!email || !password) {
 			setState('error', 'Email and password are required.')
@@ -325,7 +326,7 @@ export function LoginRoute(handle: Handle) {
 				'form[data-public-auth-form]',
 			)
 			const protection = authForm
-				? readPublicFormProtection(new FormData(authForm))
+				? readPublicFormProtection(new FormData(authForm), authForm)
 				: emptyPublicFormProtection()
 			const errorMessage = await startSocialSignIn(
 				providerId,
@@ -381,7 +382,7 @@ export function LoginRoute(handle: Handle) {
 				'form[data-public-auth-form]',
 			)
 			const protection = authForm
-				? readPublicFormProtection(new FormData(authForm))
+				? readPublicFormProtection(new FormData(authForm), authForm)
 				: emptyPublicFormProtection()
 
 			const verificationResponse = await fetch('/webauthn/authentication', {

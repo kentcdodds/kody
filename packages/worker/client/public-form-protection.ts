@@ -30,6 +30,7 @@ type TurnstileApi = {
 	): string
 	reset?(container: HTMLElement | string): void
 	remove?(container: HTMLElement | string): void
+	getResponse?(widgetId: string): string | undefined
 }
 
 let turnstileScriptPromise: Promise<TurnstileApi> | null = null
@@ -91,29 +92,82 @@ function loadTurnstileScript() {
 }
 
 /**
- * Remix re-renders can wipe Turnstile's injected children from a declarative
- * empty host while leaving our `data-turnstile-rendered` marker. Without this
- * check we skip re-render and later `reset()` throws "Nothing to reset found…".
- * A live widget always leaves at least one child (iframe / response input).
+ * Remix re-renders wipe children of a declarative empty host. The widget
+ * lives in a shadow mount Remix does not touch, so a light-DOM wipe is not
+ * enough to remount. Fake test hosts without `attachShadow` fall back to
+ * the container itself.
  */
-function isTurnstileWidgetAlive(container: HTMLElement) {
-	return container.childElementCount > 0
+function ensureTurnstileMount(container: HTMLElement) {
+	if (!container.shadowRoot && typeof container.attachShadow === 'function') {
+		try {
+			container.attachShadow({ mode: 'open' })
+		} catch {
+			// Already attached, or this host cannot take a shadow root.
+		}
+	}
+	const root = container.shadowRoot
+	if (!root) {
+		return container
+	}
+	const existing = root.querySelector<HTMLElement>('[data-turnstile-mount]')
+	if (existing) {
+		return existing
+	}
+	if (typeof document === 'undefined') {
+		return container
+	}
+	if (!root.querySelector('style[data-turnstile-host]')) {
+		const style = document.createElement('style')
+		style.dataset.turnstileHost = ''
+		style.textContent =
+			':host{display:block;min-height:65px;width:min(300px,100%)}[data-turnstile-mount]{min-height:65px}'
+		root.append(style)
+	}
+	const mount = document.createElement('div')
+	mount.dataset.turnstileMount = ''
+	root.append(mount)
+	return mount
+}
+
+function isTurnstileWidgetAlive(mount: HTMLElement) {
+	return mount.childElementCount > 0
 }
 
 function clearTurnstileRenderedMarker(container: HTMLElement) {
 	delete container.dataset.turnstileRendered
+	delete container.dataset.turnstileWidgetId
 }
 
 function abandonOrphanedTurnstileWidget(
 	api: TurnstileApi,
 	container: HTMLElement,
+	mount = ensureTurnstileMount(container),
 ) {
 	clearTurnstileRenderedMarker(container)
 	try {
-		api.remove?.(container)
+		api.remove?.(mount)
 	} catch {
 		// Widget is already gone from Turnstile's registry; ignore.
 	}
+}
+
+function readTurnstileResponseFromWidgets(scope?: ParentNode | null) {
+	const api = getTurnstileApi()
+	if (!api?.getResponse || typeof document === 'undefined') {
+		return ''
+	}
+	const root = scope ?? document
+	for (const container of root.querySelectorAll<HTMLElement>(
+		`.${turnstileWidgetClassName}`,
+	)) {
+		const widgetId = container.dataset.turnstileWidgetId
+		if (!widgetId) continue
+		const response = api.getResponse(widgetId)
+		if (typeof response === 'string' && response.length > 0) {
+			return response
+		}
+	}
+	return ''
 }
 
 /**
@@ -139,17 +193,21 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
 	for (const container of document.querySelectorAll<HTMLElement>(
 		`.${turnstileWidgetClassName}`,
 	)) {
+		const mount = ensureTurnstileMount(container)
 		if (container.dataset.turnstileRendered === 'true') {
-			if (isTurnstileWidgetAlive(container)) continue
-			abandonOrphanedTurnstileWidget(api, container)
+			if (isTurnstileWidgetAlive(mount)) continue
+			abandonOrphanedTurnstileWidget(api, container, mount)
 		}
 		try {
-			api.render(container, {
+			const widgetId = api.render(mount, {
 				sitekey: siteKey,
 				'response-field-name': turnstileResponseFieldName,
 				'error-callback': handleTurnstileWidgetError,
 			})
 			container.dataset.turnstileRendered = 'true'
+			if (widgetId) {
+				container.dataset.turnstileWidgetId = widgetId
+			}
 		} catch (error) {
 			clearTurnstileRenderedMarker(container)
 			throw error
@@ -174,25 +232,27 @@ export function resetTurnstileWidgets() {
 	for (const container of document.querySelectorAll<HTMLElement>(
 		`.${turnstileWidgetClassName}[data-turnstile-rendered]`,
 	)) {
-		if (!isTurnstileWidgetAlive(container)) {
-			abandonOrphanedTurnstileWidget(api, container)
+		const mount = ensureTurnstileMount(container)
+		if (!isTurnstileWidgetAlive(mount)) {
+			abandonOrphanedTurnstileWidget(api, container, mount)
 			continue
 		}
 		try {
-			api.reset(container)
+			api.reset(mount)
 		} catch {
-			abandonOrphanedTurnstileWidget(api, container)
+			abandonOrphanedTurnstileWidget(api, container, mount)
 		}
 	}
 }
 
 export function readPublicFormProtection(
 	formData: FormData,
+	scope?: ParentNode | null,
 ): PublicFormProtectionFields {
+	const fromField = String(formData.get(turnstileResponseFieldName) ?? '')
 	return {
 		[honeypotFieldName]: String(formData.get(honeypotFieldName) ?? ''),
-		[turnstileResponseFieldName]: String(
-			formData.get(turnstileResponseFieldName) ?? '',
-		),
+		[turnstileResponseFieldName]:
+			fromField || readTurnstileResponseFromWidgets(scope),
 	}
 }

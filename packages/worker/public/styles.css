@@ -1986,6 +1986,17 @@ html.is-settled {
 	font-size: 1rem;
 }
 
+/*
+ * Cloudflare's managed Turnstile widget is 300×65. Reserve that box on
+ * every `.kody-turnstile` host so the first iframe paint and later Remix
+ * re-renders cannot collapse the form.
+ */
+.kody-turnstile {
+	display: block;
+	min-height: 65px;
+	width: min(300px, 100%);
+}
+
 .landing-waitlist {
 	position: relative;
 	display: grid;
