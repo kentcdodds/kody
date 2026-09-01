@@ -251,6 +251,9 @@ jobs:
                 ;;
               CLOUDFLARE)
                 secret_env_key="CLOUDFLARE_API_TOKEN"
+                # The Cloudflare stand-in serves whole repo trees by commit;
+                # the real API does not, so only mock-backed runtimes opt in.
+                echo "CLOUDFLARE_API_SOURCE_SNAPSHOTS=true" >> "$OVERRIDES_FILE"
                 ;;
               *)
                 secret_env_key="${service_key}_API_KEY"
