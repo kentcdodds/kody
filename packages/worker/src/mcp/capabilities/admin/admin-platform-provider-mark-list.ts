@@ -23,7 +23,7 @@ export const adminPlatformProviderMarkListCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminPlatformProviderMarkList',
 		description:
-			'List operator-owned provider brand marks used as the saved-integration fallback after an upload or auto-favicon. Admin-only.',
+			'List operator-owned provider brand marks used as the saved-integration and MCP-server fallback after an upload or auto-favicon. Admin-only.',
 		keywords: [
 			'admin',
 			'platform',

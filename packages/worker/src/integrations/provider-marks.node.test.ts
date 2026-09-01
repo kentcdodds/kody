@@ -15,6 +15,7 @@ import {
 	normalizeProviderMarkAliases,
 	providerMarkAliasTokens,
 	providerMarkMatches,
+	attachCatalogLogoPath,
 	resolveProviderMark,
 	resolveProviderMarkLogoPath,
 	setPlatformProviderMarkLogo,
@@ -256,6 +257,35 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 			logoKey: 'platform-provider-marks/google/abcdef0123456789.webp',
 		}),
 	).toBe('/integrations/provider-marks/google?v=abcdef0123456789')
+})
+
+test('catalog attachment resolves MCP servers by name and host', () => {
+	const linear = {
+		slug: 'linear',
+		label: 'Linear',
+		aliases: [],
+		logoKey: 'platform-provider-marks/linear/abcdef0123456789.webp',
+		logoContentType: 'image/webp',
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
+	expect(
+		attachCatalogLogoPath(
+			{ name: 'linear', url: 'https://mcp.linear.app/mcp' },
+			[linear],
+		).catalogLogoPath,
+	).toBe('/integrations/provider-marks/linear?v=abcdef0123456789')
+	expect(
+		attachCatalogLogoPath({ name: 'work', url: 'https://mcp.linear.app/mcp' }, [
+			linear,
+		]).catalogLogoPath,
+	).toBe('/integrations/provider-marks/linear?v=abcdef0123456789')
+	expect(
+		attachCatalogLogoPath(
+			{ name: 'notes', url: 'https://mcp.example.com/mcp' },
+			[linear],
+		).catalogLogoPath,
+	).toBeNull()
 })
 
 test('upsert, logo write, and delete persist operator provider marks', async () => {

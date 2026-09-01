@@ -181,7 +181,9 @@ registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
 over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
 accept `/favicon.ico` only when it embeds a PNG, and store a raster under
 `user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
-auto-favicon, operator-curated provider mark, then the letter fallback. The same
+auto-favicon, operator-curated provider mark, then the letter fallback.
+User-added MCP servers on `/account/mcp-servers` use the same catalog fallback
+after the server favicon (matched by server name or `url` host). The same
 `/integrations/logos/:slug` route serves user assets only to the signed-in owner
 after a platform miss.
 
@@ -214,7 +216,7 @@ domain, all audited via `auditAdminCapabilityInvocation`:
 | `adminPlatformOauthAppSave`       | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
 | `adminPlatformOauthAppList`       | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
 | `adminPlatformOauthAppDelete`     | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
-| `adminPlatformProviderMarkSave`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration fallback after upload/favicon                                              |
+| `adminPlatformProviderMarkSave`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration and MCP-server fallback after upload/favicon                               |
 | `adminPlatformProviderMarkList`   | Lists marks with serving paths; no user data                                                                                                                             |
 | `adminPlatformProviderMarkDelete` | Deletes the mark row and its R2 asset                                                                                                                                    |
 

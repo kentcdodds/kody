@@ -179,6 +179,17 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	],
 }))
 
+vi.mock('#worker/integrations/provider-marks.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/integrations/provider-marks.ts')
+		>()
+	return {
+		...actual,
+		listPlatformProviderMarks: async () => [],
+	}
+})
+
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 	getCachedMcpClientHubSnapshot: (...args: Array<unknown>) =>
 		mockModule.getCachedMcpClientHubSnapshot(...args),
@@ -233,6 +244,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),
 				autoLogoPath: null,
+				catalogLogoPath: null,
 				usageMode: 'any',
 				allowedPackageIds: [],
 			},

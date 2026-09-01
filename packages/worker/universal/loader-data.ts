@@ -1167,6 +1167,8 @@ export type AccountMcpServerListItem = {
 	updatedAt: string
 	/** Auto-fetched registrable-domain favicon for the server URL. */
 	autoLogoPath: string | null
+	/** Operator-curated catalog mark after upload/favicon miss. */
+	catalogLogoPath: string | null
 	usageMode: 'any' | 'packages'
 	allowedPackageIds: Array<string>
 }

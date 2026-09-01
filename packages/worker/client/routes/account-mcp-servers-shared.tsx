@@ -19,6 +19,7 @@ export function renderNamedServer(input: {
 	name: string
 	url: string
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 }) {
 	return (
 		<span
@@ -33,6 +34,7 @@ export function renderNamedServer(input: {
 				providerKey={input.name}
 				label={input.name}
 				autoLogoPath={input.autoLogoPath}
+				catalogLogoPath={input.catalogLogoPath}
 				host={hostFromUrl(input.url)}
 				size="1.75rem"
 			/>
@@ -55,6 +57,7 @@ export type McpServerListItem = {
 	createdAt: string
 	updatedAt: string
 	autoLogoPath: string | null
+	catalogLogoPath: string | null
 	usageMode: 'any' | 'packages'
 	allowedPackageIds: Array<string>
 }

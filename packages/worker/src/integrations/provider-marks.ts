@@ -287,9 +287,13 @@ export function attachCatalogLogoPath<
 		authorization?: { authorizeUrl?: string | null } | null
 		authorizeUrl?: string | null
 		tokenUrl?: string
+		url?: string | null
 		catalogLogoPath?: string | null
 	},
->(record: T, marks: ReadonlyArray<PlatformProviderMark>): T {
+>(
+	record: T,
+	marks: ReadonlyArray<PlatformProviderMark>,
+): T & { catalogLogoPath: string | null } {
 	return {
 		...record,
 		catalogLogoPath: resolveProviderMarkLogoPath({
@@ -298,7 +302,8 @@ export function attachCatalogLogoPath<
 			host: hostFromProviderUrl(
 				record.authorization?.authorizeUrl ??
 					record.authorizeUrl ??
-					record.tokenUrl,
+					record.tokenUrl ??
+					record.url,
 			),
 		}),
 	}

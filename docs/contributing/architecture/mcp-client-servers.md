@@ -28,6 +28,9 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   registrable-domain favicon of `url` with the same HTTPS pipeline as user-lane
   OAuth apps and store a raster under `user-mcp-server-logos/{userId}/{id}/`.
   The signed-in owner loads it from `/account/mcp-servers/logos/:serverId`.
+  Display order matches OAuth integrations: auto-favicon, then the
+  operator-curated provider mark (matched by server name or `url` host), then
+  the letter fallback.
 - **Hub client with snapshot cache**
   (`packages/worker/src/mcp-client/hub-client.ts`) — worker-side facade over the
   DO stub. Snapshots are cached per user for 30 seconds and invalidated on every
@@ -128,8 +131,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 
 - **UI**: `/account/mcp-servers` (add with optional bearer token, authorize,
   reconnect, refresh tools, enable/disable, set package usage, remove; shows
-  live state, discovered tools, and the auto-fetched server favicon next to the
-  name).
+  live state, discovered tools, and the server mark next to the name — favicon
+  first, then the operator catalog, then a letter).
 - **Capabilities**: the `mcpServers` domain (`mcpServerAdd`, `mcpServerList`,
   `mcpServerReconnect`, `mcpServerRefresh`, `mcpServerRemove`,
   `mcpServerSetEnabled`, `mcpServerLock`). `mcpServerAdd` accepts optional

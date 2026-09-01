@@ -220,6 +220,7 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 					providerKey={server.name}
 					label={server.name}
 					autoLogoPath={server.autoLogoPath}
+					catalogLogoPath={server.catalogLogoPath}
 					host={hostFromUrl(server.url)}
 				/>
 				<div mix={css({ display: 'grid', gap: spacing.xs })}>
