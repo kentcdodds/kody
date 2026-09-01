@@ -194,12 +194,20 @@ after a platform miss.
 Operator-curated provider marks live in `platform_provider_marks` (slug, label,
 aliases, logo). Operators add them on `/admin/provider-marks` or through
 `admin_platform_provider_mark_save` / `_list` / `_delete` so a Google (or any
-other) brand mark is data, not a deploy. Matching uses the mark slug as a
-provider-family key (`google-youtube` → `google`), plus optional aliases for
-extra keys and authorize hosts. Assets use the same SVG/PNG/JPEG/WebP ingest
-pipeline under `platform-provider-marks/{slug}/` and serve at the public
+other) brand mark is data, not a deploy. Matching prefers an exact slug, then a
+stored or built-in alias (`google-youtube-brand` → `youtube`, `nodejs` →
+`nodedotjs`), then the longest family key (`github-kent` → `github`,
+`x-kodykoala` → `x`), then an authorize-host token. The slug itself is a host
+label (`api.github.com` matches `github`) unless the token is shorter than three
+characters or a generic TLD (`com`, `app`). Built-in keys and hosts live in
+`default-provider-mark-aliases.ts` so a catalog row that omitted `github.com`
+still resolves. Admin list/save projections show those effective aliases. Assets
+use the same SVG/PNG/JPEG/WebP ingest pipeline under
+`platform-provider-marks/{slug}/` and serve at the public
 `/integrations/provider-marks/:slug` route. Login and onboarding use the inline
-`ProviderIcon` set.
+`ProviderIcon` set. The admin catalog page groups marks by first letter and
+opens the editor inside the selected group so a multi-thousand-mark catalog does
+not render every tile at once.
 
 ### Admin provisioning
 
