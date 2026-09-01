@@ -77,6 +77,29 @@ function toBringYourOwnReconnectRecord(
 }
 
 /**
+ * Add-account on a leftover platform integration (`app=<platform-slug>`).
+ * Reuse endpoints and scopes from a sibling platform connection the user
+ * already has, but keep the new name and empty client credentials so the
+ * setup form is bring-your-own.
+ */
+function toBringYourOwnSetupFromPlatformConnection(
+	entry: Extract<JoinedIntegration, { lane: 'platform' }>,
+	requestedName: string,
+): AccountIntegrationRecord {
+	const providerKey = canonicalIntegrationName(requestedName) || requestedName
+	const record = toBringYourOwnReconnectRecord(
+		toAccountIntegrationRecord(entry),
+	)
+	return {
+		...record,
+		name: providerKey,
+		accountLabel: null,
+		accessTokenSecretName: `${providerKey}AccessToken`,
+		refreshTokenSecretName: `${providerKey}RefreshToken`,
+	}
+}
+
+/**
  * Convert a setup prefill (exact app, sole family member, or field-wise family
  * merge) into the connect-flow payload. `requestedName` is the connection name
  * being set up — it may differ from `prefill.slug` when the app was reused
@@ -369,6 +392,17 @@ export async function loadAccountIntegrationByName(
 		})
 		if (app) {
 			return toAppOnlyIntegrationRecord(oauthAppToSetupPrefill(app), name)
+		}
+		const siblings = await listJoinedIntegrations({
+			env,
+			userId: user.mcpUser.userId,
+		})
+		const platformSibling = siblings.find(
+			(entry): entry is Extract<JoinedIntegration, { lane: 'platform' }> =>
+				entry.lane === 'platform' && entry.app.slug === options.appSlug,
+		)
+		if (platformSibling) {
+			return toBringYourOwnSetupFromPlatformConnection(platformSibling, name)
 		}
 	}
 

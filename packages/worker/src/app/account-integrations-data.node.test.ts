@@ -173,6 +173,11 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 	expect(
 		await loadAccountIntegrationByName(env, fakeUser(userId), 'github'),
 	).toBeNull()
+	expect(
+		await loadAccountIntegrationByName(env, fakeUser(userId), 'github-2', {
+			appSlug: 'github',
+		}),
+	).toBeNull()
 
 	await upsertPlatformIntegration({
 		env,
@@ -199,6 +204,25 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 	expect(
 		await loadExistingConnectionSummary(env, fakeUser(userId), 'github'),
 	).toEqual({ lane: 'platform', appSlug: 'github' })
+
+	const addAccountOnPlatform = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-2',
+		{ appSlug: 'github' },
+	)
+	expect(addAccountOnPlatform).toMatchObject({
+		name: 'github-2',
+		platform: false,
+		clientId: '',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['read:user'],
+		},
+		accessTokenSecretName: 'github-2AccessToken',
+		refreshTokenSecretName: 'github-2RefreshToken',
+	})
 
 	await upsertIntegration({
 		env,
