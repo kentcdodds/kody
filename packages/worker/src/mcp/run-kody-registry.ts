@@ -242,11 +242,16 @@ async function buildKodyToolContext(
 						callerContext,
 					})
 				).capabilityMap
-	const mcpServers = await buildKodyMcpServerMetadata({
-		env,
-		callerContext,
-		capabilityMap,
-	})
+	// Closed-world / registry-skipped runs have no kody.mcp capabilities.
+	// Assembling server metadata still lists enabled servers and, on a hub
+	// cache miss, drains connection events into package subscriptions.
+	const mcpServers = options?.skipCapabilityRegistry
+		? []
+		: await buildKodyMcpServerMetadata({
+				env,
+				callerContext,
+				capabilityMap,
+			})
 	const additionalTools = options?.additionalTools ?? {}
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
 	const capabilityKodyTools = Object.fromEntries(

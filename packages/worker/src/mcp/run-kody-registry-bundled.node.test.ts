@@ -336,7 +336,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	}
 })
 
-test('closed-world retriever runtime skips capabilities, workflows, invoke, and outbound fetch', async () => {
+test('closed-world retriever runtime skips capabilities, hub snapshots, workflows, invoke, and outbound fetch', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -355,6 +355,18 @@ test('closed-world retriever runtime skips capabilities, workflows, invoke, and 
 			'getCapabilityRegistryForContext',
 		)
 		.mockResolvedValue({} as never)
+	const listMcpServerRefsSpy = vi
+		.spyOn(
+			await import('#worker/mcp-client/settings-service.ts'),
+			'listVisibleEnabledMcpServerRefsCached',
+		)
+		.mockResolvedValue([])
+	const getHubSnapshotSpy = vi
+		.spyOn(
+			await import('#worker/mcp-client/hub-client.ts'),
+			'getCachedMcpClientHubSnapshot',
+		)
+		.mockResolvedValue({ servers: [] })
 	let executorInput: { allowOutboundFetch?: boolean } | null = null
 	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
 		null
@@ -399,6 +411,8 @@ test('closed-world retriever runtime skips capabilities, workflows, invoke, and 
 		)
 		expect(result.result).toBe('ok')
 		expect(getRegistrySpy).not.toHaveBeenCalled()
+		expect(listMcpServerRefsSpy).not.toHaveBeenCalled()
+		expect(getHubSnapshotSpy).not.toHaveBeenCalled()
 		expect(executorInput?.allowOutboundFetch).toBe(false)
 		expect(providerFns?.packageWorkflowCreate).toBeUndefined()
 		expect(providerFns?.emailSend).toBeUndefined()
@@ -408,6 +422,8 @@ test('closed-world retriever runtime skips capabilities, workflows, invoke, and 
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
+		listMcpServerRefsSpy.mockRestore()
+		getHubSnapshotSpy.mockRestore()
 	}
 })
 
