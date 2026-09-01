@@ -999,6 +999,72 @@ test('package codemod engine rejects resume steps with mismatched filters', asyn
 	expect(resumedWithoutFilters.runId).toBe(first.runId)
 })
 
+test('omitted continuation filters keep a canary fleet apply on the stored package set', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	const pkgCanary = savedPackage({
+		id: 'pkg-canary',
+		userId: 'user-1',
+		kodyId: 'canary',
+		sourceId: 'source-canary',
+	})
+	const pkgOutside = savedPackage({
+		id: 'pkg-outside',
+		userId: 'user-1',
+		kodyId: 'outside',
+		sourceId: 'source-outside',
+	})
+	const fleet = [pkgCanary, pkgOutside]
+	mocks.listSavedPackagesPage.mockImplementation(
+		async (
+			_db: D1Database,
+			input: { afterId: string | null; limit: number },
+		) => {
+			if (input.afterId == null) return fleet
+			return fleet.filter(
+				(savedPackage) => savedPackage.id.localeCompare(input.afterId!) > 0,
+			)
+		},
+	)
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: cleanFiles(),
+			publishedCommit: 'commit-canary',
+			repoId: 'repo-canary',
+			sourceId: 'source-canary',
+			userId: 'user-1',
+		}),
+	)
+
+	const first = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'fleet' },
+		filters: { packageIds: ['pkg-canary'] },
+		limit: 1,
+	})
+	expect(first.items.map((item) => item.packageId)).toEqual(['pkg-canary'])
+	expect(first.nextCursor).toBe('pkg-canary')
+
+	const continued = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'admin-1',
+		codemodId,
+		mode: 'scan',
+		scope: { kind: 'fleet' },
+		runId: first.runId,
+		cursor: first.nextCursor,
+		limit: 1,
+	})
+	expect(continued.runId).toBe(first.runId)
+	expect(continued.items).toEqual([])
+	expect(continued.nextCursor).toBeNull()
+})
+
 test('package codemod revert page ceiling and user-scoped SQL filter for sparse ownership', async () => {
 	resetMocks()
 	const { env } = createEnv()

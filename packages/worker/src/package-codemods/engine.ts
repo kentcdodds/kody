@@ -1216,7 +1216,7 @@ export async function runPackageCodemodStep(input: {
 		const { packages, nextCursor } = await listCandidatePackages({
 			env: input.env,
 			scope: input.scope,
-			filters: input.filters,
+			filters: input.filters ?? parseStoredFiltersJson(run.filtersJson),
 			cursor: input.cursor ?? null,
 			limit,
 		})
