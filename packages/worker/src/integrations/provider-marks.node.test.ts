@@ -203,10 +203,44 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 					createdAt: '2026-01-01T00:00:00.000Z',
 					updatedAt: '2026-01-01T00:00:00.000Z',
 				},
+				{
+					slug: 'gmail',
+					label: 'Gmail',
+					aliases: [],
+					logoKey: 'platform-provider-marks/gmail/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
 			],
 			host: 'calendar.google.com',
 		})?.slug,
 	).toBe('google-calendar')
+	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'google',
+					label: 'Google',
+					aliases: [],
+					logoKey: 'platform-provider-marks/google/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				{
+					slug: 'gmail',
+					label: 'Gmail',
+					aliases: [],
+					logoKey: 'platform-provider-marks/gmail/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			host: 'mail.google.com',
+		})?.slug,
+	).toBe('gmail')
 	expect(
 		resolveProviderMarkLogoPath({
 			marks,

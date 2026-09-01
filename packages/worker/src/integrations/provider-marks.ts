@@ -154,6 +154,21 @@ export function hostMatchesProviderMarkToken(
 	return normalizedHost.split('.').includes(normalizedToken)
 }
 
+function hostMatchScore(
+	host: string,
+	mark: Pick<PlatformProviderMark, 'slug' | 'aliases'>,
+): number {
+	const tokens = [mark.slug, ...providerMarkAliasTokens(mark)]
+	let best = 0
+	for (const token of tokens) {
+		if (!hostMatchesProviderMarkToken(host, token)) continue
+		const kind = host === token ? 4 : host.endsWith(`.${token}`) ? 3 : 1
+		const scored = kind * 1000 + token.length
+		if (scored > best) best = scored
+	}
+	return best
+}
+
 export function hostFromProviderUrl(
 	raw: string | null | undefined,
 ): string | null {
@@ -247,15 +262,12 @@ export function resolveProviderMark(input: {
 		if (family[0]) return family[0]
 	}
 	if (!input.host?.trim()) return null
+	const host = input.host.trim().toLowerCase()
 	const hostMatches = withLogo
-		.filter((mark) =>
-			providerMarkMatches({
-				mark,
-				host: input.host,
-			}),
-		)
-		.sort((left, right) => right.slug.length - left.slug.length)
-	return hostMatches[0] ?? null
+		.map((mark) => ({ mark, score: hostMatchScore(host, mark) }))
+		.filter((entry) => entry.score > 0)
+		.sort((left, right) => right.score - left.score)
+	return hostMatches[0]?.mark ?? null
 }
 
 export function resolveProviderMarkLogoPath(input: {
