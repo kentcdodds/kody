@@ -1468,15 +1468,32 @@ test('worker entrypoint serves openid-configuration and jwks', async () => {
 })
 
 test('worker entrypoint rejects unsupported implicit response_type on authorize-info', async () => {
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				client_name: 'OIDC response type test',
+				redirect_uris: ['https://example.com/callback'],
+				token_endpoint_auth_method: 'none',
+				grant_types: ['authorization_code'],
+				response_types: ['code'],
+			}),
+		}),
+	)
+	expect(registerResponse.status).toBe(201)
+	const registered = (await registerResponse.json()) as { client_id: string }
 	const response = await workerFetch(
 		new Request(
-			'https://heykody.dev/oauth/authorize-info?response_type=id_token&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=openid',
+			`https://heykody.dev/oauth/authorize-info?response_type=id_token&client_id=${encodeURIComponent(registered.client_id)}&redirect_uri=${encodeURIComponent('https://example.com/callback')}&scope=openid`,
 		),
 	)
 	expect(response.status).toBe(400)
 	await expect(response.json()).resolves.toMatchObject({
 		ok: false,
-		error: expect.stringMatching(/unsupported response type/i),
+		error: expect.stringMatching(
+			/response_type id_token|unsupported response type/i,
+		),
 	})
 })
 

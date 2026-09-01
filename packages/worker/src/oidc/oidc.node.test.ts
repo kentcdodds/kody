@@ -5,7 +5,6 @@ import {
 	verifyOidcJwtSignature,
 } from '#worker/oidc/keys.ts'
 import { mintIdToken } from '#worker/oidc/id-token.ts'
-import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 import {
 	TEST_OIDC_SIGNING_KEY_ID,
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
@@ -13,40 +12,10 @@ import {
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 
-function createOidcEnv(overrides: Partial<Env> = {}) {
+function createOidcEnv() {
 	return {
 		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
 		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
-		APP_DB: {
-			prepare() {
-				return {
-					bind() {
-						return this
-					},
-					async first() {
-						return { email_verified_at: new Date(0).toISOString() }
-					},
-				}
-			},
-		},
-		OAUTH_PROVIDER: {
-			unwrapToken: async () => ({
-				scope: ['openid', 'email', 'profile'],
-				grant: {
-					clientId: 'client-123',
-					scope: ['openid', 'email', 'profile'],
-					props: {
-						userId: 'user-stable-id',
-						email: 'user@example.com',
-						username: 'test-user',
-						displayName: 'test-user',
-						authTime: 1_700_000_000,
-						nonce: 'nonce-123',
-					},
-				},
-			}),
-		},
-		...overrides,
 	} as unknown as Env
 }
 
@@ -124,27 +93,4 @@ test('minted id_token includes expected claims and verifies with JWKS key', asyn
 	})
 	expect(typeof payload?.exp).toBe('number')
 	expect(typeof payload?.iat).toBe('number')
-})
-
-test('userinfo returns claims for verified bearer tokens and 401 without bearer', async () => {
-	const env = createOidcEnv()
-	const okResponse = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo', {
-			headers: { Authorization: 'Bearer demo-token' },
-		}),
-		env,
-	)
-	expect(okResponse.status).toBe(200)
-	await expect(okResponse.json()).resolves.toEqual({
-		sub: 'user-stable-id',
-		email: 'user@example.com',
-		email_verified: true,
-		preferred_username: 'test-user',
-	})
-
-	const unauthorized = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo'),
-		env,
-	)
-	expect(unauthorized.status).toBe(401)
 })

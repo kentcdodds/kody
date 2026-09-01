@@ -1,4 +1,4 @@
-import  { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
+import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { mintIdToken, type OidcGrantProps } from '#worker/oidc/id-token.ts'
 
 type OAuthEnv = Env & {
@@ -38,6 +38,7 @@ export async function enrichOAuthTokenResponse(
 	request: Request,
 	response: Response,
 	env: Env,
+	options: { grantType?: string | null } = {},
 ) {
 	if (response.status < 200 || response.status >= 300) return response
 	const contentType = response.headers.get('Content-Type') ?? ''
@@ -57,7 +58,7 @@ export async function enrichOAuthTokenResponse(
 	)
 	if (!tokenSummary) return response
 
-	const grantType = await readTokenGrantType(request)
+	const grantType = options.grantType ?? (await readTokenGrantType(request))
 	const includeNonce = grantType !== 'refresh_token'
 	const idToken = await mintIdToken({
 		env,

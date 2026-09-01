@@ -638,10 +638,21 @@ const workerHandler = {
 				return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
 			}
 		}
+		let tokenGrantType: string | null = null
+		if (url.pathname === oauthPaths.token && request.method === 'POST') {
+			const formData = await request
+				.clone()
+				.formData()
+				.catch(() => null)
+			const grantType = formData?.get('grant_type')
+			tokenGrantType = typeof grantType === 'string' ? grantType : null
+		}
 		try {
 			const response = await oauthProvider.fetch(request, env, ctx)
 			if (url.pathname === oauthPaths.token) {
-				return enrichOAuthTokenResponse(request, response, env)
+				return enrichOAuthTokenResponse(request, response, env, {
+					grantType: tokenGrantType,
+				})
 			}
 			return response
 		} catch (error) {

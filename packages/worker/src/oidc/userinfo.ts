@@ -1,13 +1,25 @@
-import  { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { jsonResponse } from '#worker/json-response.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import  { type OidcGrantProps } from '#worker/oidc/id-token.ts'
 
-type OAuthEnv = Env & {
-	OAUTH_PROVIDER: OAuthHelpers
+type OidcUserinfoOAuthHelpers = {
+	unwrapToken: <T = OidcGrantProps>(
+		token: string,
+	) => Promise<{
+		scope: Array<string>
+		grant: {
+			clientId: string
+			scope: Array<string>
+			props: T
+		}
+	} | null>
 }
 
-function getOAuthHelpers(env: Env) {
+type OAuthEnv = Env & {
+	OAUTH_PROVIDER: OidcUserinfoOAuthHelpers
+}
+
+function getOAuthHelpers(env: Env): OidcUserinfoOAuthHelpers {
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
 		throw new Error('OAuth provider helpers are not available.')
