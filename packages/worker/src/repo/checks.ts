@@ -397,34 +397,6 @@ type KodyEventsRuntime = {
   }): Promise<unknown>;
 } | null;
 
-declare const capabilities: Record<
-  string,
-  (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
->;
-
-declare function createAuthenticatedFetch(
-  providerName: string,
-): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
-declare const secretHeaders: KodySecretHeadersRuntime;
-declare function oauthClientCredentials(
-  input: KodyOauthClientCredentialsInput,
-): Promise<Record<string, unknown>>;
-declare const packageContext: {
-  packageId: string;
-  kodyId: string;
-  appBasePath?: string;
-  hostedUrl?: string;
-} | null;
-declare const packages: KodyPackagesRuntime | null;
-declare const email: KodyEmailRuntime;
-declare const workflows: KodyWorkflowsRuntime;
-declare const events: KodyEventsRuntime;
-declare const packageSecrets:
-  | {
-      get(alias: string): Promise<string>;
-      has(alias: string): Promise<boolean>;
-    }
-  | null;
 declare module "kody:runtime" {
   export const kody: Record<
     string,
@@ -465,7 +437,6 @@ export type PackageBundleTarget = {
 
 export type PackageCallableTypecheckTarget = {
 	path: string
-	includeStorage: boolean
 	emittedEventTopics: Array<string>
 }
 
@@ -526,25 +497,19 @@ function collectPackageBundleTargets(manifest: AuthoredPackageJson) {
 function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
 	const targets = new Map<string, PackageCallableTypecheckTarget>()
 	const emittedEventTopics = Object.keys(manifest.kody.emits ?? {})
-	const remember = (path: string, includeStorage: boolean) => {
+	const remember = (path: string) => {
 		const normalizedPath = normalizePackageWorkspacePath(path)
-		const existing = targets.get(normalizedPath)
-		if (existing) {
-			// Preserve the widest runtime global surface when one file is reused.
-			existing.includeStorage = existing.includeStorage || includeStorage
-			return
-		}
+		if (targets.has(normalizedPath)) return
 		targets.set(normalizedPath, {
 			path: normalizedPath,
-			includeStorage,
 			emittedEventTopics,
 		})
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
-		remember(job.entry, true)
+		remember(job.entry)
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
-		remember(subscription.handler, true)
+		remember(subscription.handler)
 	}
 	for (const retriever of listPackageRetrievers(manifest)) {
 		remember(
@@ -552,7 +517,6 @@ function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
 				manifest,
 				exportName: retriever.exportName,
 			}),
-			true,
 		)
 	}
 	return Array.from(targets.values())
@@ -794,7 +758,6 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 	sourceFiles: Record<string, string>
 	entryPoints: Array<{
 		path: string
-		includeStorage?: boolean
 	}>
 	emittedEventTopics?: Array<string>
 }): Promise<{
@@ -855,7 +818,6 @@ export async function typecheckPackageEntrypointsFromSourceFiles(input: {
 		const diagnostics = getPackageTypecheckDiagnostics({
 			targets: input.entryPoints.map((entryPoint) => ({
 				path: entryPoint.path,
-				includeStorage: entryPoint.includeStorage === true,
 				emittedEventTopics: input.emittedEventTopics ?? [],
 			})),
 			languageService,

@@ -546,16 +546,12 @@ test('runIsolatedCheckPhase loads staged files from KV and dispatches the phase'
 		phase: 'typecheck',
 		stagingKey: 'repo-checks-staging:v1:user-1:abc',
 		userId: 'user-1',
-		typecheckTargets: [
-			{ path: 'src/index.ts', includeStorage: false, emittedEventTopics: [] },
-		],
+		typecheckTargets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
 	})
 	expect(typecheckOutcome.ok).toBe(true)
 	expect(mockModule.runPackageTypecheckLanguageService).toHaveBeenCalledWith({
 		sourceFiles: staged.sourceFiles,
-		targets: [
-			{ path: 'src/index.ts', includeStorage: false, emittedEventTopics: [] },
-		],
+		targets: [{ path: 'src/index.ts', emittedEventTopics: [] }],
 	})
 
 	// Expired staging fails closed with an actionable message.

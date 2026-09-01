@@ -404,7 +404,7 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 	)
 })
 
-test('runRepoChecks typechecks package-owned jobs (runtime globals, emits, and ESM entrypoints)', async () => {
+test('runRepoChecks typechecks package-owned jobs (kody:runtime imports, emits, and ESM entrypoints)', async () => {
 	const runtimeGlobals = await runPackageJobTypecheckChecks(
 		new Map<string, string>([
 			[
@@ -412,7 +412,7 @@ test('runRepoChecks typechecks package-owned jobs (runtime globals, emits, and E
 				createPackageManifest({
 					packageName: '@kody/runtime-globals-job',
 					kodyId: 'runtime-globals-job',
-					description: 'Uses execute globals',
+					description: 'Uses kody:runtime imports',
 					jobs: {
 						runtime: {
 							entry: 'src/job.ts',
@@ -427,9 +427,11 @@ test('runRepoChecks typechecks package-owned jobs (runtime globals, emits, and E
 			['src/index.ts', 'export const ready = true\n'],
 			[
 				'src/job.ts',
-				`export default async (params) => {
+				`import { kody, packageStorage } from 'kody:runtime'
+
+export default async (params) => {
   await kody.value_get({ name: 'projectId' })
-  await storage.get('count')
+  await packageStorage().get('count')
   return params
 }
 `,
@@ -445,6 +447,18 @@ test('runRepoChecks typechecks package-owned jobs (runtime globals, emits, and E
 	)
 	expect(runtimeGlobals.getSemanticDiagnostics).toHaveBeenCalledWith(
 		'.__kody_repo_module_check__.ts',
+	)
+	const preludeWrite =
+		runtimeGlobals.typeScriptFileSystem.write.mock.calls.find(
+			(call) => call[0] === '.__kody_repo_runtime__.d.ts',
+		)
+	expect(preludeWrite?.[1]).toContain('declare module "kody:runtime"')
+	expect(preludeWrite?.[1]).toContain('export function packageStorage()')
+	expect(preludeWrite?.[1]).not.toMatch(
+		/declare const (capabilities|secretHeaders|packageContext|packages|email|workflows|events|packageSecrets)/,
+	)
+	expect(preludeWrite?.[1]).not.toMatch(
+		/declare function (createAuthenticatedFetch|oauthClientCredentials)/,
 	)
 
 	const emitsConstrained = await runPackageJobTypecheckChecks(
@@ -584,9 +598,11 @@ test('runRepoChecks validates every persisted package artifact target before pub
 		],
 		[
 			'src/job.ts',
-			`export default async (params) => {
+			`import { kody, packageStorage } from 'kody:runtime'
+
+export default async (params) => {
   const result = await kody.value_get({ name: 'projectId' })
-  await storage.get('count')
+  await packageStorage().get('count')
   return { params, result }
 }
 `,

@@ -305,7 +305,6 @@ async function ensurePublishedBundleArtifactForJob(input: {
 			entryPoints: [
 				{
 					path: resolved.entryPoint,
-					includeStorage: true,
 				},
 			],
 			emittedEventTopics: resolved.emittedEventTopics,

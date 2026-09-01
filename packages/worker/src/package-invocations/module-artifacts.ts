@@ -203,7 +203,7 @@ async function ensureModuleArtifactUncached(input: {
 	})
 	const typecheckResult = await typecheckPackageEntrypointsFromSourceFiles({
 		sourceFiles: packageSource.files,
-		entryPoints: [{ path: freshResolution.entryPoint, includeStorage: true }],
+		entryPoints: [{ path: freshResolution.entryPoint }],
 		emittedEventTopics: Object.keys(packageSource.manifest.kody.emits ?? {}),
 	})
 	if (!typecheckResult.ok) {
