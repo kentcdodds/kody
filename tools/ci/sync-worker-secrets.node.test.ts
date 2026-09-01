@@ -6,6 +6,7 @@ import {
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
 	collectSpawnedProcessOutput,
+	parseDotenv,
 	retrySecretBulkUpload,
 } from './sync-worker-secrets'
 
@@ -21,6 +22,15 @@ const baseOptions = {
 	includeEmpty: false,
 	emptyAsSpace: false,
 }
+
+test('parseDotenv unescapes double-quoted PEM newlines', () => {
+	const secrets = parseDotenv(
+		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
+	)
+	expect(secrets.get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(
+		'-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
+	)
+})
 
 test('buildSpawnEnv preserves optional vars only when they have values', () => {
 	const options = {

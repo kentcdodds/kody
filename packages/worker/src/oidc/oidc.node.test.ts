@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { buildOpenIdConfiguration } from '#worker/oidc/discovery.ts'
 import {
 	getOidcJwksDocument,
+	resetOidcSigningKeyCacheForTests,
 	verifyOidcJwtSignature,
 } from '#worker/oidc/keys.ts'
 import { mintIdToken } from '#worker/oidc/id-token.ts'
@@ -68,6 +69,20 @@ test('jwks document exposes RS256 public key with configured kid', async () => {
 	})
 	expect(jwks.keys[0]?.n).toBeTruthy()
 	expect(jwks.keys[0]?.e).toBeTruthy()
+})
+
+test('jwks accepts PEM secrets stored with literal \\n escapes', async () => {
+	resetOidcSigningKeyCacheForTests()
+	const env = {
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM.replace(
+			/\n/g,
+			'\\n',
+		),
+	} as unknown as Env
+	const jwks = await getOidcJwksDocument(env)
+	expect(jwks.keys[0]?.kid).toBe(TEST_OIDC_SIGNING_KEY_ID)
+	resetOidcSigningKeyCacheForTests()
 })
 
 test('minted id_token includes expected claims and verifies with JWKS key', async () => {

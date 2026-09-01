@@ -164,18 +164,41 @@ function parseArgs(argv: Array<string>): CliOptions {
 	return options
 }
 
-function stripQuotes(value: string) {
+function stripQuotesPreservingKind(value: string): {
+	value: string
+	quote: '"' | "'" | null
+} {
 	const trimmed = value.trim()
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	) {
-		return trimmed.slice(1, -1)
+	if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+		return { value: trimmed.slice(1, -1), quote: '"' }
 	}
-	return trimmed
+	if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+		return { value: trimmed.slice(1, -1), quote: "'" }
+	}
+	return { value: trimmed, quote: null }
 }
 
-function parseDotenv(content: string) {
+/**
+ * Dotenv double-quoted values use backslash escapes (`\n`, `\r`, `\\`, `\"`).
+ * Single-quoted values are literal except for `\'`. Unquoted values are
+ * unchanged after trim/quote strip.
+ */
+export function unescapeDotenvValue(value: string, quote: '"' | "'" | null) {
+	if (quote === '"') {
+		return value
+			.replace(/\\n/g, '\n')
+			.replace(/\\r/g, '\r')
+			.replace(/\\t/g, '\t')
+			.replace(/\\"/g, '"')
+			.replace(/\\\\/g, '\\')
+	}
+	if (quote === "'") {
+		return value.replace(/\\'/g, "'")
+	}
+	return value
+}
+
+export function parseDotenv(content: string) {
 	const result = new Map<string, string>()
 	for (const rawLine of content.split(/\r?\n/)) {
 		const line = rawLine.trim()
@@ -185,9 +208,11 @@ function parseDotenv(content: string) {
 		const equalsIndex = withoutExport.indexOf('=')
 		if (equalsIndex <= 0) continue
 		const key = withoutExport.slice(0, equalsIndex).trim()
-		const value = stripQuotes(withoutExport.slice(equalsIndex + 1))
+		const { value, quote } = stripQuotesPreservingKind(
+			withoutExport.slice(equalsIndex + 1),
+		)
 		if (!key) continue
-		result.set(key, value)
+		result.set(key, unescapeDotenvValue(value, quote))
 	}
 	return result
 }

@@ -60,10 +60,17 @@ export function getOidcSigningKeyId(env: Env) {
 }
 
 export function getOidcSigningPrivateKeyPem(env: Env) {
-	const pem = env.OIDC_SIGNING_PRIVATE_KEY_PEM?.trim()
-	if (!pem) {
+	const raw = env.OIDC_SIGNING_PRIVATE_KEY_PEM?.trim()
+	if (!raw) {
 		throw new Error(
 			'Missing OIDC_SIGNING_PRIVATE_KEY_PEM for OIDC ID token signing.',
+		)
+	}
+	// Preview/dotenv may store PKCS#8 PEMs with literal `\n` escapes.
+	const pem = raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw
+	if (!pem.includes('BEGIN PRIVATE KEY')) {
+		throw new Error(
+			'OIDC_SIGNING_PRIVATE_KEY_PEM must contain a valid PKCS#8 PEM private key.',
 		)
 	}
 	return pem

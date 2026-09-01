@@ -2,7 +2,12 @@ import {
 	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
-import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import {
+	destroyAuthCookie,
+	isSecureRequest,
+	setAuthSessionSecret,
+} from '#app/auth-session.ts'
+import { getEnv } from '#app/env.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
 
@@ -128,6 +133,8 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 		}
 	}
 
+	const appEnv = getEnv(env)
+	setAuthSessionSecret(appEnv.COOKIE_SECRET)
 	const clearSessionCookie = await destroyAuthCookie(isSecureRequest(request))
 	const headers = new Headers({
 		'Cache-Control': 'no-store',
