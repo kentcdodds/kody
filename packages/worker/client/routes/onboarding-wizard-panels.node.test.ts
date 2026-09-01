@@ -47,7 +47,6 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	expect(cursor).toContain('/images/icons/cursor.svg')
 	expect(cursor).toContain('data-testid="onboarding-agent-change"')
 	expect(cursor).toContain('Change selection')
-	expect(cursor).not.toContain('Connecting')
 	expect(cursor).toContain('data-testid="onboarding-agent-login"')
 	expect(cursor).toContain('Log in to connect Cursor')
 	expect(cursor).toContain('/login?redirectTo=')

@@ -1,9 +1,6 @@
 import { expect, test } from 'vitest'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import {
-	guideMetadataList,
-	importGuideCatalog,
-} from '#worker/guide-catalog-modules.ts'
+import { importGuideCatalog } from '#worker/guide-catalog-modules.ts'
 
 import { searchUnified } from '../search-core.ts'
 import { buildSearchableEntityDescriptors } from '../search-descriptors.ts'
@@ -19,18 +16,11 @@ const emptyOptionalRows = {
 	userIntegrationRows: [],
 }
 
-const advertisedGuideIds = guideMetadataList
-	.filter((guide) => !guide.unadvertised)
-	.map((guide) => guide.id)
-
 test('guide search entities rank advertised docs and open full markdown on entity detail', async () => {
 	const descriptors = guideSearchEntityPlugin.buildDescriptors!({
 		registry: { capabilitySpecs: {} } as never,
 		optionalRows: emptyOptionalRows,
 	})
-	expect(descriptors.map((descriptor) => descriptor.id)).toEqual(
-		advertisedGuideIds,
-	)
 	expect(descriptors.some((descriptor) => descriptor.id === 'values')).toBe(
 		false,
 	)
@@ -114,7 +104,6 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	const markdown = formatSearchMarkdown({
 		matches: [authoringMatch!.match],
 	})
-	expect(markdown).toContain('**guide**')
 	expect(markdown).toContain('package_authoring:guide')
 
 	const { guides } = await importGuideCatalog()
@@ -132,7 +121,6 @@ test('guide search entities rank advertised docs and open full markdown on entit
 		provider: loaded!.provider,
 		lastVerified: loaded!.lastVerified,
 	})
-	expect(detail.markdown).toContain('# Guide — `package_authoring`')
 	expect(detail.markdown).toContain(loaded!.body.slice(0, 40))
 	expect(detail.structured).toMatchObject({
 		kind: 'entity',

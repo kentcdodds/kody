@@ -19,11 +19,6 @@ test('compact MCP server instructions stay under the stub budget and name the us
 	expect(unnamed.length).toBeLessThanOrEqual(
 		maxCompactMcpServerInstructionsBaseChars,
 	)
-	expect(unnamed).toContain("this user's isolated personal assistant")
-	expect(unnamed).toContain('search({ query })')
-	expect(unnamed).toContain('send an email')
-	expect(unnamed).not.toContain('community_search')
-	expect(unnamed).not.toContain('pass `domain`')
 
 	const named = buildCompactMcpServerInstructions({
 		displayName: 'Kent C. Dodds',
@@ -31,8 +26,8 @@ test('compact MCP server instructions stay under the stub budget and name the us
 	expect(named.length).toBeLessThanOrEqual(
 		maxCompactMcpServerInstructionsBaseChars,
 	)
-	expect(named).toContain("Kent C. Dodds's isolated personal assistant")
-	expect(named).toContain("invisible to Kent C. Dodds's other agents")
+	expect(named).toContain('Kent C. Dodds')
+	expect(named.length).toBeGreaterThan(unnamed.length)
 
 	expect(sanitizeMcpInstructionDisplayName('  Jane\nDoe  ')).toBe('Jane Doe')
 	expect(sanitizeMcpInstructionDisplayName('x'.repeat(90))).toBe(

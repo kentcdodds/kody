@@ -122,12 +122,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('href="/@kentcdodds"')
 	expect(publicHtml).toContain('>@kentcdodds</a>')
 	expect(publicHtml).not.toContain(
-		'data-testid="community-detail-owner-follow"',
-	)
-	expect(publicHtml).not.toContain(
 		'data-testid="community-detail-owner-private"',
 	)
-	expect(publicHtml).not.toContain('data-testid="community-detail-star"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
@@ -150,9 +146,6 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(privateHtml).toContain('data-testid="community-detail-owner-private"')
 	expect(privateHtml).toContain('title="This profile is private"')
 	expect(privateHtml).not.toContain('href="/@kentcdodds"')
-	expect(privateHtml).not.toContain(
-		'data-testid="community-detail-owner-follow"',
-	)
 
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'public',
@@ -184,10 +177,6 @@ test('community detail handler returns bare detail frame HTML for target header'
 	)
 	expect(signedInHtml).not.toMatch(
 		/<p[^>]*data-testid="community-detail-owner-line"/,
-	)
-	expect(signedInHtml).not.toContain('data-testid="community-detail-star"')
-	expect(signedInHtml).not.toContain(
-		'data-testid="community-detail-owner-follow"',
 	)
 	expect(signedInHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',

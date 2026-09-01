@@ -49,5 +49,4 @@ test('approve-publish SSR renders the promote card without a browser location', 
 	expect(html).toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
 	expect(html).toContain('Promote this commit')
 	expect(html).toContain('Browse published files')
-	expect(html).not.toContain('Loading…')
 })

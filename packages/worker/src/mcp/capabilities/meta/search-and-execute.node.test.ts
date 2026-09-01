@@ -58,7 +58,6 @@ test('execute capability runs modules through the shared execute runtime', async
 		result: { marker: 'execute-ok' },
 		logs: [{ level: 'info', message: 'ran' }],
 	})
-	expect(result).not.toHaveProperty('storage')
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		callerContext,

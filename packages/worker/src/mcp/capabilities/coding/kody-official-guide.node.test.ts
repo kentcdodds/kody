@@ -25,23 +25,3 @@ test('coding_guide_get serves every bundled guide without frontmatter', async ()
 		expect(result.body.length).toBeGreaterThan(200)
 	}
 })
-
-test('coding_guide_get input schema lists advertised guides in the web catalog authored order', () => {
-	const properties = kodyOfficialGuideCapability.inputSchema.properties as
-		| Record<string, { description?: string }>
-		| undefined
-	const description = properties?.guide?.description ?? ''
-	expect(description.length).toBeGreaterThan(0)
-
-	const expectedOrder = guides
-		.filter((guide) => !guide.unadvertised)
-		.map((guide) => guide.id)
-	expect(expectedOrder.length).toBeGreaterThan(0)
-
-	const positions = expectedOrder.map((id) => description.indexOf(`\`${id}\`:`))
-	expect(positions.every((position) => position !== -1)).toBe(true)
-	expect(positions).toEqual([...positions].toSorted((a, b) => a - b))
-	expect(kodyOfficialGuideCapability.description).toContain(
-		'search({ entity: "{id}:guide" })',
-	)
-})

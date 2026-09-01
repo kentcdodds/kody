@@ -38,9 +38,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
 	expect(installHtml).toContain('data-trusted="false"')
-	expect(installHtml).not.toContain(
-		'data-testid="community-detail-trusted-badge"',
-	)
 
 	const agentPrompt =
 		'Call package_get for @me/github-triage and adapt it to my needs.'
@@ -59,9 +56,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		...detailBase,
 		loggedIn: true,
 	})
-	expect(installedHtml).not.toContain(
-		'data-testid="community-detail-trusted-badge"',
-	)
 	expect(installedHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)

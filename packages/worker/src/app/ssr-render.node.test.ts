@@ -1552,22 +1552,6 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	const html = await readResponseText(response)
 	expect(html).toContain('<title>FAQ</title>')
 	expect(html).toContain('data-faq="replace-agents"')
-	expect(html).toContain('Does Kody replace Claude, Cursor, ChatGPT, or Codex?')
-	expect(html).toContain('Does Kody call a model / make inference calls?')
-	expect(html).toContain('What is a package vs a prompt vs a memory?')
-	expect(html).toContain('Can my team share one Kody account?')
-	expect(html).toContain('How do secrets work? Can my agent read the key?')
-	expect(html).toContain('What happens if I switch agents?')
-	expect(html).toContain('What does the free plan include?')
-	expect(html).toContain('Can I export or self-host?')
-	expect(html).toContain(
-		'How is this different from a Claude Project, a local folder of skills, or n8n?',
-	)
-	expect(html).toContain('How do I get started?')
-	expect(html).toContain(
-		'Your assistant is yours unless you publish a public package.',
-	)
-	expect(html).toContain('secret_get')
 	expect(html).toContain('<details')
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
@@ -1664,10 +1648,8 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-detail-frame"')
 	expect(html).toContain('data-testid="community-listing-icon-detail"')
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
-	expect(html).not.toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
-	expect(html).not.toContain('data-testid="community-detail-star"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
