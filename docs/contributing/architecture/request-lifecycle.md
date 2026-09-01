@@ -104,8 +104,8 @@ Requests are handled in this order:
 7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
    - Matching files under `packages/worker/public/` are asset-first at the edge
-     (they do not enter this Worker list). That includes OpenAI Apps domain
-     verification at `/.well-known/openai-apps-challenge`.
+     (they do not enter this Worker list) unless listed in
+     `assets.run_worker_first`
 8. Hosted package apps served inline on the app origin
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when
    `PACKAGE_APP_BASE_URL` is unset.
@@ -115,10 +115,12 @@ Requests are handled in this order:
      `/robots.txt`, `/sitemap.xml`, `/auth.md`,
      `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
      `/.well-known/agent-skills/index.json`, skill markdown under
-     `/.well-known/agent-skills/:skillId/SKILL.md`, and
-     `/.well-known/security.txt`. The homepage adds RFC 8288 `Link` headers to
-     those documents and serves markdown when `Accept` prefers `text/markdown`.
-     DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a Worker route.
+     `/.well-known/agent-skills/:skillId/SKILL.md`, `/.well-known/security.txt`,
+     and OpenAI Apps domain verification at `/.well-known/openai-apps-challenge`
+     (unauthenticated `text/plain` token). The homepage adds RFC 8288 `Link`
+     headers to those documents and serves markdown when `Accept` prefers
+     `text/markdown`. DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS,
+     not a Worker route.
 
 ## Workflow runtime
 

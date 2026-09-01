@@ -10,6 +10,7 @@ export const routes = route({
 	agentSkillsIndex: '/.well-known/agent-skills/index.json',
 	agentSkillMarkdown: '/.well-known/agent-skills/:skillId/SKILL.md',
 	securityTxt: '/.well-known/security.txt',
+	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	providerMarkLogo: '/integrations/provider-marks/:slug',
