@@ -4,13 +4,17 @@ import {
 	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
 } from '#mcp/capabilities/mcp-servers/shared.ts'
+import {
+	attachCatalogLogoPath,
+	listPlatformProviderMarks,
+} from '#worker/integrations/provider-marks.ts'
 import { backfillMissingMcpServerFavicons } from '#worker/mcp-client/mcp-server-favicon.ts'
 import { buildMcpServerAutoLogoPath } from '#worker/mcp-client/mcp-server-logo.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	listMcpServerSettings,
 	resolveMcpServerOAuthClientUrls,
 } from '#worker/mcp-client/settings-service.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -27,9 +31,10 @@ export async function loadAccountMcpServersData(input: {
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
-	const [settings, savedPackages] = await Promise.all([
+	const [settings, savedPackages, marks] = await Promise.all([
 		listMcpServerSettings({ env: input.env, userId }),
 		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
+		listPlatformProviderMarks({ db: input.env.APP_DB }),
 	])
 	await backfillMissingMcpServerFavicons({
 		db: input.env.APP_DB,
@@ -49,18 +54,24 @@ export async function loadAccountMcpServersData(input: {
 		oauthClientOrigin: oauth.clientOrigin,
 		oauthCallbackUrl: oauth.callbackUrl,
 		oauthClientMetadataUrl: oauth.clientMetadataUrl,
-		servers: settings.map((setting) => ({
-			...buildMcpServerStatusView({
-				setting,
-				snapshot:
-					snapshot?.servers.find((server) => server.serverId === setting.id) ??
-					null,
-				oauthCallbackUrl: oauth.callbackUrl,
-				oauthClientOrigin: oauth.clientOrigin,
-				oauthClientMetadataUrl: oauth.clientMetadataUrl,
-			}),
-			autoLogoPath: buildMcpServerAutoLogoPath(setting),
-		})),
+		servers: settings.map((setting) =>
+			attachCatalogLogoPath(
+				{
+					...buildMcpServerStatusView({
+						setting,
+						snapshot:
+							snapshot?.servers.find(
+								(server) => server.serverId === setting.id,
+							) ?? null,
+						oauthCallbackUrl: oauth.callbackUrl,
+						oauthClientOrigin: oauth.clientOrigin,
+						oauthClientMetadataUrl: oauth.clientMetadataUrl,
+					}),
+					autoLogoPath: buildMcpServerAutoLogoPath(setting),
+				},
+				marks,
+			),
+		),
 		savedPackages: savedPackages.map((entry) => ({
 			id: entry.id,
 			kodyId: entry.kodyId,

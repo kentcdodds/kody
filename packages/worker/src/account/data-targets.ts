@@ -117,7 +117,7 @@ export const accountOperatorOwnedD1Surfaces = [
 		table: 'platform_provider_marks',
 		surface: 'platform_provider_marks',
 		reason:
-			'Operator-owned provider brand marks (global catalog like platform OAuth app logos; no user data). Saved integrations fall back to these after an upload or auto-favicon miss.',
+			'Operator-owned provider brand marks (global catalog like platform OAuth app logos; no user data). Saved integrations and MCP servers use these after an explicit upload and before auto-favicon.',
 	},
 	{
 		table: 'repo_session_storage_bucket_cursor',

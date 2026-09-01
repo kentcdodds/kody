@@ -1018,11 +1018,11 @@ export type AccountIntegrationListItem = {
 	platformAllowedScopes?: Array<string>
 	/** Relative serving path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
-	/** Explicit user-uploaded OAuth app logo (beats the auto-favicon). */
+	/** Explicit user-uploaded OAuth app logo (beats catalog and favicon). */
 	logoPath?: string | null
-	/** Auto-fetched favicon (loses to an explicit upload). */
+	/** Auto-fetched favicon (loses to an explicit upload or catalog mark). */
 	autoLogoPath?: string | null
-	/** Operator-curated provider mark (after upload and favicon). */
+	/** Operator-curated provider mark (after upload, before favicon). */
 	catalogLogoPath?: string | null
 	/** Operator-authored provider note for platform apps (limitations, caveats). */
 	platformDescription?: string | null
@@ -1067,11 +1067,11 @@ export type AccountOauthAppListItem = {
 	platform?: boolean
 	/** Relative serving path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
-	/** Explicit user-uploaded OAuth app logo (beats the auto-favicon). */
+	/** Explicit user-uploaded OAuth app logo (beats catalog and favicon). */
 	logoPath?: string | null
-	/** Auto-fetched favicon (loses to an explicit upload). */
+	/** Auto-fetched favicon (loses to an explicit upload or catalog mark). */
 	autoLogoPath?: string | null
-	/** Operator-curated provider mark (after upload and favicon). */
+	/** Operator-curated provider mark (after upload, before favicon). */
 	catalogLogoPath?: string | null
 	createdAt: string
 	updatedAt: string
@@ -1177,6 +1177,8 @@ export type AccountMcpServerListItem = {
 	updatedAt: string
 	/** Auto-fetched registrable-domain favicon for the server URL. */
 	autoLogoPath: string | null
+	/** Operator-curated catalog mark (before favicon). */
+	catalogLogoPath: string | null
 	usageMode: 'any' | 'packages'
 	allowedPackageIds: Array<string>
 }

@@ -173,8 +173,8 @@ renders. Assets live in the `COMMUNITY_ASSETS` R2 bucket under content-hashed
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
 Serving is the public `/integrations/logos/:integrationSlug` route with
 immutable caching; projections expose the relative `logoPath`. The connect page
-and account integration views render it, falling back to the auto-favicon, then
-an operator-curated provider mark, then the letter.
+and account integration views render it, falling back to the operator-curated
+provider mark, then the auto-favicon, then the letter.
 
 User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 (`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).
@@ -184,9 +184,10 @@ registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
 over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
 accept `/favicon.ico` only when it embeds a PNG, and store a raster under
 `user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
-auto-favicon, operator-curated provider mark, then the letter fallback. The same
-`/integrations/logos/:slug` route serves user assets only to the signed-in owner
-after a platform miss.
+operator-curated provider mark, auto-favicon, then the letter fallback.
+User-added MCP servers on `/account/mcp-servers` use the same order (matched by
+server name or `url` host). The same `/integrations/logos/:slug` route serves
+user assets only to the signed-in owner after a platform miss.
 
 Operator-curated provider marks live in `platform_provider_marks` (slug, label,
 aliases, logo). Operators add them on `/admin/provider-marks` or through
@@ -217,7 +218,7 @@ domain, all audited via `auditAdminCapabilityInvocation`:
 | `adminPlatformOauthAppSave`       | Create/update; plaintext `clientSecret` stored encrypted, never returned; optional `newSlug` renames in place (secret, logo, and user connections carry over atomically) |
 | `adminPlatformOauthAppList`       | Includes `hasClientSecret` and per-app user connection counts                                                                                                            |
 | `adminPlatformOauthAppDelete`     | Fails while user connections reference the app — disable (`enabled = 0`) instead                                                                                         |
-| `adminPlatformProviderMarkSave`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used as the saved-integration fallback after upload/favicon                                              |
+| `adminPlatformProviderMarkSave`   | Create/update a brand mark (slug, label, aliases, `logoBase64`) used after an explicit upload and before auto-favicon on integrations and MCP servers                    |
 | `adminPlatformProviderMarkList`   | Lists marks with serving paths; no user data                                                                                                                             |
 | `adminPlatformProviderMarkDelete` | Deletes the mark row and its R2 asset                                                                                                                                    |
 

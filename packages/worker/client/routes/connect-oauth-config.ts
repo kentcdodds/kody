@@ -67,11 +67,11 @@ export type ConnectOauthConfig = {
 	platformAppSlug: string | null
 	/** Relative path of the operator-uploaded provider logo, when present. */
 	platformLogoPath: string | null
-	/** Explicit user-uploaded OAuth app logo (beats the auto-favicon). */
+	/** Explicit user-uploaded OAuth app logo (beats catalog and favicon). */
 	logoPath?: string | null
-	/** Auto-fetched favicon (loses to an explicit upload). */
+	/** Auto-fetched favicon (loses to an explicit upload or catalog mark). */
 	autoLogoPath?: string | null
-	/** Operator-curated provider mark (after upload and favicon). */
+	/** Operator-curated provider mark (after upload, before favicon). */
 	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
