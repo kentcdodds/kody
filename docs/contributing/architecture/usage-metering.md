@@ -16,16 +16,16 @@ required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
 table is keyed by `user_id`. Admin and account reads stay scoped to one user.
 
 The homepage code-runs ticker is a documented exception: an anonymous delayed
-lifetime total of fleet `execute` events (no user ids) is replayed across the
-current UTC day. Daily counts live in platform-owned `fleet_execute_days`. The
-official `{ start, end, updateAt }` triple — cumulative through the day before
-yesterday, cumulative through yesterday, and the next UTC midnight — is cached
-at `public-code-runs:v2` on `BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache
-from D1 when the key is missing or `updateAt` has passed; it does not latch a
-high-water mark. A D1 read failure is not an empty series: GET serves the last
-cached triple when one exists, and hourly refresh does not delete the key. The
-public payload never includes per-user rows. See
-[Authorization](./authorization.md).
+lifetime total of fleet MCP execute-tool `execute` events (no user ids) is
+replayed across the current UTC day. Daily counts live in platform-owned
+`fleet_execute_days`. The official `{ start, end, updateAt }` triple —
+cumulative through the day before yesterday, cumulative through yesterday, and
+the next UTC midnight — is cached at `public-code-runs:v2` on
+`BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache from D1 when the key is
+missing or `updateAt` has passed; it does not latch a high-water mark. A D1 read
+failure is not an empty series: GET serves the last cached triple when one
+exists, and hourly refresh does not delete the key. The public payload never
+includes per-user rows. See [Authorization](./authorization.md).
 
 ## The event schema
 
@@ -58,7 +58,7 @@ events for the admin on/off cohort readout.
 
 | `eventType`           | Metered unit                                                                      | Recorded at                                                                                                                                                                 | `entityId`                     |
 | --------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `execute`             | one dynamic-worker sandbox evaluation                                             | `packages/worker/src/mcp/executor.ts` (`execute`)                                                                                                                           | none                           |
+| `execute`             | one MCP execute-tool sandbox evaluation                                           | `packages/worker/src/mcp/executor.ts` (`execute`), only when the run surface is execute                                                                                     | none                           |
 | `package_export`      | one saved-package bundled-code run                                                | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)                                                                                        | package id                     |
 | `package_static_call` | one call of a statically imported package export (function-valued, incl. default) | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`) | callee package id              |
 | `job_run`             | one job execution                                                                 | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                    | job id                         |
@@ -137,13 +137,14 @@ package code is reused, so calls through them are metered per call:
 
 ### Nesting: metrics are independent, do not sum across types
 
-Execution surfaces nest. A job run funnels through the bundled-module runner and
-the sandbox executor, so a single package job produces one `job_run`, one
-`package_export`, and one `execute` event, each measuring its own layer.
-Likewise, a bundled run that calls statically imported package exports produces
-one `package_static_call` event per call **inside** the run's own
-`execute`/`package_export` span. This is intentional: each metric answers its
-own question (`execute` is total sandbox pressure; `job_run` is job activity;
+Execution surfaces nest. A package job funnels through the bundled-module runner
+and the sandbox executor, so it produces one `job_run` and one `package_export`.
+It does **not** also emit `execute` — that metric is MCP `execute` tool work
+only, matching `execute_calls_per_day` and `first_execute_at`. A bundled
+execute-tool run that calls statically imported package exports still produces
+one `package_static_call` per call **inside** that run's `execute` span. Each
+metric answers its own question (`execute` is ad-hoc execute-tool volume;
+`job_run` is job activity; `package_export` is saved-package entrypoints;
 `package_static_call` is per-callee reuse). Never add durations across different
 `eventType` values — that double counts nested layers. Within one `eventType`,
 each chokepoint records exactly one event per metered unit, so sums are safe.

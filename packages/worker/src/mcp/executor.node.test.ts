@@ -1245,6 +1245,21 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	expect(validationResult.error).toContain('reserved')
 	expect(dataPoints).toHaveLength(3)
 	expect(rollupWrites).toHaveLength(0)
+
+	// Nested surfaces (jobs, package exports) opt out so they do not inflate
+	// the execute-tool metric or stamp first_execute_at.
+	const skippedLoader = createFakeWorkerLoader()
+	await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(skippedLoader.loader),
+			...usageBindings,
+		} as Env,
+		exports,
+		gatewayProps: createGatewayProps('usage-user-1'),
+		recordExecuteUsage: false,
+	}).execute('async () => "ok"', providers)
+	expect(dataPoints).toHaveLength(3)
+	expect(activationStampWrites).toHaveLength(1)
 })
 
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
