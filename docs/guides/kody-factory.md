@@ -34,9 +34,10 @@ refers to them by placeholder or an approved package mount; Kody does not return
 the saved secret value to the assistant.
 
 **Integrations** are saved connections to external services. OAuth-backed
-integrations keep their token bundles server-side, while remote MCP servers and
-curated OpenAPI bindings expose their tools through Kody. Search shows the
-capabilities available to the signed-in user.
+integrations keep their token bundles server-side. Remote MCP servers expose
+their tools through Kody. Search shows the capabilities available to the
+signed-in user. For an OpenAPI document, fork `@kody/openapi` and bind selected
+operations, or prefer a close community helpers package.
 
 ### Packages and `packageStorage()`
 

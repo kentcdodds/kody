@@ -192,7 +192,9 @@ Saved integrations and the `integration_*` capabilities live in the
 `integration_token_refresh` for host-side metadata-only refresh). For a new
 provider, load `integration_bootstrap` and prefer `community_search` for a close
 helpers package before writing fetch code. See the OpenAPI integrations guide
-under `docs/guides/` when the API publishes a spec.
+under `docs/guides/` when the API publishes a spec. For a named bind-and-call
+surface, `community_fork` `@kody/openapi` into the user's account — person
+accounts cannot import `@kody/*` live.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
 with the official `integration_bootstrap` guide. Inspect the relevant
