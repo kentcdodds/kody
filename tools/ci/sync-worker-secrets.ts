@@ -357,20 +357,41 @@ function runWranglerSecretBulkOnce(
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: spawnEnv,
 	})
+	return collectSpawnedProcessOutput(proc)
+}
+
+/**
+ * Wait for `close` (not `exit`) so the last stdout/stderr chunks are in
+ * `output` before retry classification. `exit` can fire while those pipes
+ * still have unread data.
+ */
+export type SpawnedProcessOutputSource = {
+	stdout: NodeJS.ReadableStream | null
+	stderr: NodeJS.ReadableStream | null
+	once(event: 'error', listener: (error: Error) => void): void
+	once(event: 'close', listener: (code: number | null) => void): void
+}
+
+export function collectSpawnedProcessOutput(
+	proc: SpawnedProcessOutputSource,
+): Promise<SecretBulkAttemptResult> {
 	const chunks: Array<string> = []
-	proc.stdout.on('data', (chunk: Buffer | string) => {
-		const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-		chunks.push(text)
-		process.stdout.write(chunk)
-	})
-	proc.stderr.on('data', (chunk: Buffer | string) => {
-		const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
-		chunks.push(text)
-		process.stderr.write(chunk)
-	})
+	function forward(
+		stream: NodeJS.ReadableStream | null,
+		dest: NodeJS.WriteStream,
+	) {
+		if (!stream) return
+		stream.on('data', (chunk: Buffer | string) => {
+			const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+			chunks.push(text)
+			dest.write(chunk)
+		})
+	}
+	forward(proc.stdout, process.stdout)
+	forward(proc.stderr, process.stderr)
 	return new Promise((resolve, reject) => {
 		proc.once('error', reject)
-		proc.once('exit', (code: number | null) => {
+		proc.once('close', (code: number | null) => {
 			resolve({
 				exitCode: code ?? 1,
 				output: chunks.join(''),

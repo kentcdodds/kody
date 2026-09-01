@@ -1,8 +1,11 @@
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
+	collectSpawnedProcessOutput,
 	retrySecretBulkUpload,
 } from './sync-worker-secrets'
 
@@ -188,4 +191,23 @@ test('secret bulk retries a Cloudflare 503 then fails fast on real errors', asyn
 	)
 	expect(authFailure.exitCode).toBe(1)
 	expect(authCalls).toBe(1)
+})
+
+test('secret bulk output includes stderr that arrives after exit', async () => {
+	const stdout = new PassThrough()
+	const stderr = new PassThrough()
+	const proc = Object.assign(new EventEmitter(), { stdout, stderr })
+	const resultPromise = collectSpawnedProcessOutput(proc)
+
+	proc.emit('exit', 1)
+	stderr.write(
+		'PATCH /accounts/acct/workers/scripts/kody-runtime/secrets-bulk -> 503 Service Unavailable\n',
+	)
+	stdout.end()
+	stderr.end()
+	proc.emit('close', 1)
+
+	const result = await resultPromise
+	expect(result.exitCode).toBe(1)
+	expect(result.output).toContain('secrets-bulk -> 503 Service Unavailable')
 })
