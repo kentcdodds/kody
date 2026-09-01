@@ -23,6 +23,10 @@ import {
 	oauthScopes,
 } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	TEST_OIDC_SIGNING_KEY_ID,
+	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
+} from '#worker/oidc/test-signing-key.ts'
 
 const baseAuthRequest: AuthRequest = {
 	responseType: 'code',
@@ -205,6 +209,8 @@ function createEnv(
 		},
 		COOKIE_SECRET: cookieSecretValue,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
+		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
 		STORAGE_RUNNER: mockJobDoNamespace('storage-runner-test-id'),
 		PACKAGE_REALTIME_SESSION: mockJobDoNamespace(
@@ -343,6 +349,7 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		client: { id: baseClient.clientId, name: baseClient.clientName },
 		scopes: baseAuthRequest.scope,
 		emailVerified: null,
+		requireCredentials: true,
 	})
 
 	const authorizeHtmlResponse = await handleAuthorizeRequest(
@@ -1437,4 +1444,187 @@ test('reset client rejects requests without a stale or mismatched client registr
 			'Stored client cleanup is only available for stale or mismatched client registrations.',
 		code: 'invalid_request',
 	})
+})
+
+test('worker entrypoint serves openid-configuration and jwks', async () => {
+	const discovery = await workerFetch(
+		new Request('https://heykody.dev/.well-known/openid-configuration'),
+	)
+	expect(discovery.status).toBe(200)
+	const metadata = (await discovery.json()) as {
+		issuer: string
+		response_types_supported: Array<string>
+		scopes_supported: Array<string>
+	}
+	expect(metadata.issuer).toBe('https://heykody.dev')
+	expect(metadata.response_types_supported).toEqual(['code'])
+	expect(metadata.scopes_supported).toContain('openid')
+
+	const jwks = await workerFetch(
+		new Request('https://heykody.dev/.well-known/jwks.json'),
+	)
+	expect(jwks.status).toBe(200)
+	const jwksBody = (await jwks.json()) as { keys: Array<{ kid: string }> }
+	expect(jwksBody.keys[0]?.kid).toBeTruthy()
+})
+
+test('worker entrypoint rejects unsupported implicit response_type on authorize-info', async () => {
+	const registerResponse = await workerFetch(
+		new Request('https://heykody.dev/oauth/register', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				client_name: 'OIDC response type test',
+				redirect_uris: ['https://example.com/callback'],
+				token_endpoint_auth_method: 'none',
+				grant_types: ['authorization_code'],
+				response_types: ['code'],
+			}),
+		}),
+	)
+	expect(registerResponse.status).toBe(201)
+	const registered = (await registerResponse.json()) as { client_id: string }
+	const response = await workerFetch(
+		new Request(
+			`https://heykody.dev/oauth/authorize-info?response_type=id_token&client_id=${encodeURIComponent(registered.client_id)}&redirect_uri=${encodeURIComponent('https://example.com/callback')}&scope=openid`,
+		),
+	)
+	expect(response.status).toBe(400)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringMatching(
+			/response_type id_token|unsupported response type/i,
+		),
+	})
+})
+
+test('worker entrypoint userinfo returns 401 without bearer token', async () => {
+	const response = await workerFetch(
+		new Request('https://heykody.dev/oauth/userinfo'),
+	)
+	expect(response.status).toBe(401)
+})
+
+test('worker entrypoint returns id_token when openid scope is granted', async () => {
+	const email = `oidc-oauth-${crypto.randomUUID()}@example.com`
+	const password = 'password123'
+	await seedWorkerUser(email, password)
+
+	const clientId = `https://oidc-client.example/${crypto.randomUUID()}.json`
+	const redirectUri = 'https://oidc-client.example/callback'
+	const clientDocument = {
+		client_id: clientId,
+		redirect_uris: [redirectUri],
+		token_endpoint_auth_method: 'none',
+		grant_types: ['authorization_code', 'refresh_token'],
+		response_types: ['code'],
+		client_name: 'OIDC test client',
+	}
+	const originalFetch = globalThis.fetch
+	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		const url = input instanceof Request ? input.url : String(input)
+		if (url.split('?')[0] === clientId) {
+			return new Response(JSON.stringify(clientDocument), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json; charset=utf-8' },
+			})
+		}
+		return originalFetch(input, init)
+	}) as typeof fetch
+
+	try {
+		const verifier = 'oidc-verifier-012345678901234567890'
+		const authorizeUrl = new URL('https://heykody.dev/oauth/authorize')
+		authorizeUrl.searchParams.set('response_type', 'code')
+		authorizeUrl.searchParams.set('client_id', clientId)
+		authorizeUrl.searchParams.set('redirect_uri', redirectUri)
+		authorizeUrl.searchParams.set('scope', 'openid profile email')
+		authorizeUrl.searchParams.set('nonce', 'oidc-test-nonce')
+		authorizeUrl.searchParams.set(
+			'code_challenge',
+			await createS256CodeChallenge(verifier),
+		)
+		authorizeUrl.searchParams.set('code_challenge_method', 'S256')
+		authorizeUrl.searchParams.set('resource', 'https://heykody.dev/mcp')
+		authorizeUrl.searchParams.set('state', 'oidc-demo-state')
+
+		const approvalResponse = await workerFetch(
+			new Request(authorizeUrl, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					decision: 'approve',
+					email,
+					password,
+				}),
+			}),
+		)
+		expect(approvalResponse.status).toBe(200)
+		const approvalPayload = (await approvalResponse.json()) as {
+			redirectTo: string
+		}
+		const code = new URL(approvalPayload.redirectTo).searchParams.get('code')
+		expect(code).toBeTruthy()
+
+		const tokenResponse = await workerFetch(
+			new Request('https://heykody.dev/oauth/token', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({
+					grant_type: 'authorization_code',
+					client_id: clientId,
+					code: code ?? '',
+					redirect_uri: redirectUri,
+					code_verifier: verifier,
+					resource: 'https://heykody.dev/mcp',
+				}),
+			}),
+		)
+		expect(tokenResponse.status).toBe(200)
+		const tokenPayload = (await tokenResponse.json()) as {
+			id_token?: string
+			scope?: string
+		}
+		expect(tokenPayload.scope).toContain('openid')
+		expect(typeof tokenPayload.id_token).toBe('string')
+		expect(tokenPayload.id_token?.split('.')).toHaveLength(3)
+	} finally {
+		globalThis.fetch = originalFetch
+	}
+})
+
+test('malformed max_age does not redirect authorize GET to itself', async () => {
+	const authorizeUrl =
+		'https://example.com/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=openid&state=demo&max_age=not-a-number'
+
+	const interactive = await handleAuthorizeRequest(
+		new Request(authorizeUrl),
+		createEnv(createHelpers()),
+	)
+	expect(interactive.status).toBe(200)
+	expect(interactive.headers.get('Location')).toBeNull()
+	expect(interactive.headers.get('Content-Type')).toContain('text/html')
+	const interactiveHtml = await interactive.text()
+	expect(interactiveHtml).toContain('"oauthAuthorize"')
+	expect(interactiveHtml).toMatch(/max_age must be a non-negative integer/i)
+
+	const silent = await handleAuthorizeRequest(
+		new Request(`${authorizeUrl}&prompt=none`),
+		createEnv(createHelpers()),
+	)
+	expect(silent.status).toBe(302)
+	const silentLocation = silent.headers.get('Location')
+	expect(silentLocation).toBeTruthy()
+	const silentRedirect = new URL(silentLocation ?? '')
+	expect(silentRedirect.origin + silentRedirect.pathname).toBe(
+		'https://example.com/callback',
+	)
+	expect(silentRedirect.searchParams.get('error')).toBe('invalid_request')
+	expect(silentRedirect.searchParams.get('error_description')).toMatch(
+		/max_age must be a non-negative integer/i,
+	)
+	expect(silentRedirect.searchParams.get('state')).toBe('demo')
 })

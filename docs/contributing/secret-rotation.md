@@ -5,10 +5,11 @@ saved-secret confidentiality.
 
 ## Key inventory
 
-| Secret             | Purpose                                           | Impact of rotation                                                                          |
-| ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `COOKIE_SECRET`    | Signs auth session cookies (Remix `createCookie`) | Invalidates all active browser sessions; users must re-authenticate.                        |
-| `SECRET_STORE_KEY` | Derives the AES-GCM KEK for saved secrets in D1   | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs. |
+| Secret                                                 | Purpose                                            | Impact of rotation                                                                                                                                                                                               |
+| ------------------------------------------------------ | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COOKIE_SECRET`                                        | Signs auth session cookies (Remix `createCookie`)  | Invalidates all active browser sessions; users must re-authenticate.                                                                                                                                             |
+| `SECRET_STORE_KEY`                                     | Derives the AES-GCM KEK for saved secrets in D1    | Bricks all saved secrets encrypted under the old key unless a re-encryption migration runs.                                                                                                                      |
+| `OIDC_SIGNING_PRIVATE_KEY_PEM` / `OIDC_SIGNING_KEY_ID` | RS256 ID token signing for the MCP OpenID Provider | Existing ID tokens verify only against the published JWKS. Rotate by minting a new RSA key + `kid`, deploying both secrets together, then discarding the old private key once outstanding ID tokens expire (1h). |
 
 ## Separate cookie and secret-store keys
 

@@ -164,18 +164,66 @@ function parseArgs(argv: Array<string>): CliOptions {
 	return options
 }
 
-function stripQuotes(value: string) {
+function stripQuotesPreservingKind(value: string): {
+	value: string
+	quote: '"' | "'" | null
+} {
 	const trimmed = value.trim()
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	) {
-		return trimmed.slice(1, -1)
+	if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
+		return { value: trimmed.slice(1, -1), quote: '"' }
 	}
-	return trimmed
+	if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
+		return { value: trimmed.slice(1, -1), quote: "'" }
+	}
+	return { value: trimmed, quote: null }
 }
 
-function parseDotenv(content: string) {
+/**
+ * Dotenv double-quoted values use backslash escapes (`\n`, `\r`, `\\`, `\"`).
+ * Single-quoted values are literal except for `\'`. Unquoted values are
+ * unchanged after trim/quote strip.
+ */
+export function unescapeDotenvValue(value: string, quote: '"' | "'" | null) {
+	if (quote === '"') {
+		let result = ''
+		for (let index = 0; index < value.length; index += 1) {
+			const char = value[index]
+			if (char !== '\\' || index + 1 >= value.length) {
+				result += char
+				continue
+			}
+			const next = value[index + 1]
+			index += 1
+			switch (next) {
+				case 'n':
+					result += '\n'
+					break
+				case 'r':
+					result += '\r'
+					break
+				case 't':
+					result += '\t'
+					break
+				case '"':
+					result += '"'
+					break
+				case '\\':
+					result += '\\'
+					break
+				default:
+					result += `\\${next}`
+					break
+			}
+		}
+		return result
+	}
+	if (quote === "'") {
+		return value.replace(/\\'/g, "'")
+	}
+	return value
+}
+
+export function parseDotenv(content: string) {
 	const result = new Map<string, string>()
 	for (const rawLine of content.split(/\r?\n/)) {
 		const line = rawLine.trim()
@@ -185,9 +233,11 @@ function parseDotenv(content: string) {
 		const equalsIndex = withoutExport.indexOf('=')
 		if (equalsIndex <= 0) continue
 		const key = withoutExport.slice(0, equalsIndex).trim()
-		const value = stripQuotes(withoutExport.slice(equalsIndex + 1))
+		const { value, quote } = stripQuotesPreservingKind(
+			withoutExport.slice(equalsIndex + 1),
+		)
 		if (!key) continue
-		result.set(key, value)
+		result.set(key, unescapeDotenvValue(value, quote))
 	}
 	return result
 }
@@ -281,10 +331,22 @@ export function buildSpawnEnv(
 	return spawnEnv
 }
 
-function toDotenv(secrets: ReadonlyMap<string, string>) {
+function escapeDotenvValue(value: string) {
+	if (!/[\n\r\t"\\]/.test(value) && value === value.trim()) {
+		return value
+	}
+	return `"${value
+		.replace(/\\/g, '\\\\')
+		.replace(/\n/g, '\\n')
+		.replace(/\r/g, '\\r')
+		.replace(/\t/g, '\\t')
+		.replace(/"/g, '\\"')}"`
+}
+
+export function toDotenv(secrets: ReadonlyMap<string, string>) {
 	const lines = Array.from(secrets.entries())
 		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, value]) => `${key}=${value}`)
+		.map(([key, value]) => `${key}=${escapeDotenvValue(value)}`)
 	return `${lines.join('\n')}\n`
 }
 

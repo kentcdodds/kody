@@ -53,6 +53,7 @@ type OAuthAuthorizeInfo = {
 	client: { id: string; name: string }
 	scopes: Array<string>
 	emailVerified: boolean | null
+	requireCredentials: boolean
 }
 
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -100,6 +101,7 @@ export async function oauthAuthorizeRouteLoader(
 				typeof payload.emailVerified === 'boolean'
 					? payload.emailVerified
 					: null,
+			requireCredentials: payload.requireCredentials === true,
 		},
 	}
 }
@@ -169,6 +171,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					typeof payload.emailVerified === 'boolean'
 						? payload.emailVerified
 						: null,
+				requireCredentials: payload.requireCredentials === true,
 			}
 			status = 'ready'
 			allowClientReset = false
@@ -207,6 +210,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					typeof routeData.emailVerified === 'boolean'
 						? routeData.emailVerified
 						: null,
+				requireCredentials: routeData.requireCredentials === true,
 			}
 			status = 'ready'
 			allowClientReset = false
@@ -371,7 +375,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const hasSession = Boolean(readEffectiveSession().session?.email)
+		const requireCredentials = info?.requireCredentials === true
+		const hasSession =
+			Boolean(readEffectiveSession().session?.email) && !requireCredentials
 		await submitDecision(
 			'approve',
 			hasSession ? undefined : event.currentTarget,
@@ -424,7 +430,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const isSessionReady = sessionStatus === 'ready'
 		const isSessionLoading =
 			sessionStatus === 'loading' || sessionStatus === 'idle'
-		const isLoggedIn = isSessionReady && Boolean(sessionEmail)
+		const requireCredentials = info?.requireCredentials === true
+		const isLoggedIn =
+			isSessionReady && Boolean(sessionEmail) && !requireCredentials
 		const emailVerified = resolveAuthorizeEmailVerified({
 			isSessionReady,
 			sessionEmailVerified: session?.emailVerified,

@@ -6,7 +6,9 @@ import {
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
 	collectSpawnedProcessOutput,
+	parseDotenv,
 	retrySecretBulkUpload,
+	toDotenv,
 } from './sync-worker-secrets'
 
 const baseOptions = {
@@ -21,6 +23,31 @@ const baseOptions = {
 	includeEmpty: false,
 	emptyAsSpace: false,
 }
+
+test('parseDotenv unescapes double-quoted PEM newlines', () => {
+	const secrets = parseDotenv(
+		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
+	)
+	expect(secrets.get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(
+		'-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
+	)
+})
+
+test('toDotenv round-trips multiline PEM values', () => {
+	const pem = '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----'
+	const encoded = toDotenv(new Map([['OIDC_SIGNING_PRIVATE_KEY_PEM', pem]]))
+	expect(encoded).toBe(
+		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
+	)
+	expect(parseDotenv(encoded).get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(pem)
+})
+
+test('toDotenv round-trips literal backslash-n sequences', () => {
+	const value = '\\n'
+	const encoded = toDotenv(new Map([['LITERAL_ESCAPE', value]]))
+	expect(encoded).toBe('LITERAL_ESCAPE="\\\\n"\n')
+	expect(parseDotenv(encoded).get('LITERAL_ESCAPE')).toBe(value)
+})
 
 test('buildSpawnEnv preserves optional vars only when they have values', () => {
 	const options = {

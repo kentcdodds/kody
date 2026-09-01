@@ -39,6 +39,7 @@ import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
+import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -213,6 +214,7 @@ function createTestEnv(db: D1Database) {
 	return {
 		COOKIE_SECRET: testCookieSecret,
 		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
+		...testOidcSigningEnv,
 		APP_DB: db,
 		BUNDLE_ARTIFACTS_KV: {},
 		JOB_MANAGER: {},
@@ -877,6 +879,8 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 				ok: true,
 				client: { id: 'client-1', name: 'Cursor' },
 				scopes: ['profile', 'email'],
+				emailVerified: null,
+				requireCredentials: false,
 			},
 		},
 	})
@@ -906,6 +910,7 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 				client: { id: 'client-1', name: 'Cursor' },
 				scopes: ['profile', 'email'],
 				emailVerified: false,
+				requireCredentials: false,
 			},
 		},
 	})

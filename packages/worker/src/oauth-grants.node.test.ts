@@ -39,13 +39,13 @@ test('revokeAllOAuthGrantsForUser pages grants and revokes every id', async () =
 		pages: [
 			{
 				items: [
-					{ id: 'grant-1', clientId: 'client-a' },
-					{ id: 'grant-2', clientId: 'client-a' },
+					{ id: 'grant-1', clientId: 'client-a', scope: ['profile'] },
+					{ id: 'grant-2', clientId: 'client-a', scope: ['profile'] },
 				],
 				cursor: 'page-2',
 			},
 			{
-				items: [{ id: 'grant-3', clientId: 'client-b' }],
+				items: [{ id: 'grant-3', clientId: 'client-b', scope: ['profile'] }],
 			},
 		],
 	})
@@ -66,10 +66,20 @@ test('revokeAllOAuthGrantsForUser revokes a grant created during the first pass'
 		async listUserGrants() {
 			listCalls += 1
 			if (listCalls === 1) {
-				return { items: [{ id: 'grant-a', clientId: 'client-a' }] }
+				return {
+					items: [{ id: 'grant-a', clientId: 'client-a', scope: ['profile'] }],
+				}
 			}
 			if (listCalls === 2) {
-				return { items: [{ id: 'grant-interleaved', clientId: 'client-b' }] }
+				return {
+					items: [
+						{
+							id: 'grant-interleaved',
+							clientId: 'client-b',
+							scope: ['profile'],
+						},
+					],
+				}
 			}
 			return { items: [] }
 		},
@@ -89,7 +99,11 @@ test('revokeAllOAuthGrantsForUser fails closed when grants remain after max pass
 		revokeAllOAuthGrantsForUser({
 			helpers: {
 				async listUserGrants() {
-					return { items: [{ id: 'grant-stuck', clientId: 'client-a' }] }
+					return {
+						items: [
+							{ id: 'grant-stuck', clientId: 'client-a', scope: ['profile'] },
+						],
+					}
 				},
 				async revokeGrant() {
 					return
@@ -123,8 +137,8 @@ test('revokeAllOAuthGrantsBestEffort records listing and revoke failures', async
 			async listUserGrants() {
 				return {
 					items: [
-						{ id: 'ok', clientId: 'client-a' },
-						{ id: 'bad', clientId: 'client-a' },
+						{ id: 'ok', clientId: 'client-a', scope: ['profile'] },
+						{ id: 'bad', clientId: 'client-a', scope: ['profile'] },
 					],
 				}
 			},

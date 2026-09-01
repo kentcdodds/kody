@@ -1709,6 +1709,8 @@ export type OAuthAuthorizeLoaderData =
 			client: { id: string; name: string }
 			scopes: Array<string>
 			emailVerified: boolean | null
+			/** When true, authorize UI must collect credentials (prompt=login / max_age). */
+			requireCredentials: boolean
 	  }
 	| {
 			ok: false

@@ -59,6 +59,11 @@ import {
 	isNamespacedAppEndpointPath,
 	isNamespacedPackageInvocationEndpointPath,
 } from '#worker/user-namespace-routes.ts'
+import { handleOpenIdConfigurationRequest } from '#worker/oidc/discovery.ts'
+import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
+import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
+import { handleOidcLogoutRequest } from '#worker/oidc/logout.ts'
+import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
 
 // Immutable caching is only safe when asset URLs are versioned by a real
 // commit sha. In local dev the build id falls back to a constant ('dev'), so
@@ -555,6 +560,46 @@ const workerHandler = {
 			return addOAuthDiscoveryCorsHeaders(clientIdMetadataResponse, request)
 		}
 
+		if (url.pathname === oauthPaths.openidConfiguration) {
+			if (request.method === 'OPTIONS') {
+				return addOAuthDiscoveryCorsHeaders(
+					new Response(null, {
+						status: 204,
+						headers: { 'Content-Length': '0' },
+					}),
+					request,
+				)
+			}
+			return addOAuthDiscoveryCorsHeaders(
+				handleOpenIdConfigurationRequest(request, env),
+				request,
+			)
+		}
+
+		if (url.pathname === oauthPaths.jwks) {
+			if (request.method === 'OPTIONS') {
+				return addOAuthDiscoveryCorsHeaders(
+					new Response(null, {
+						status: 204,
+						headers: { 'Content-Length': '0' },
+					}),
+					request,
+				)
+			}
+			return addOAuthDiscoveryCorsHeaders(
+				await handleOidcJwksRequest(request, env),
+				request,
+			)
+		}
+
+		if (url.pathname === oauthPaths.userinfo) {
+			return handleOidcUserinfoRequest(request, env)
+		}
+
+		if (url.pathname === oauthPaths.logout) {
+			return handleOidcLogoutRequest(request, env)
+		}
+
 		// Serve both RFC 9728 PRM paths before OAuthProvider: the root document
 		// and the path-aware `.../mcp` document. 0.10+ would otherwise publish
 		// origin-only resource metadata on the path-aware URL and disagree with
@@ -593,8 +638,23 @@ const workerHandler = {
 				return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
 			}
 		}
+		let tokenGrantType: string | null = null
+		if (url.pathname === oauthPaths.token && request.method === 'POST') {
+			const formData = await request
+				.clone()
+				.formData()
+				.catch(() => null)
+			const grantType = formData?.get('grant_type')
+			tokenGrantType = typeof grantType === 'string' ? grantType : null
+		}
 		try {
-			return await oauthProvider.fetch(request, env, ctx)
+			const response = await oauthProvider.fetch(request, env, ctx)
+			if (url.pathname === oauthPaths.token) {
+				return enrichOAuthTokenResponse(request, response, env, {
+					grantType: tokenGrantType,
+				})
+			}
+			return response
 		} catch (error) {
 			if (!isOAuthProviderOwnedPath(url.pathname)) throw error
 			Sentry.captureException(error)

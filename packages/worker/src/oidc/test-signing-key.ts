@@ -1,0 +1,34 @@
+/**
+ * Fixed non-production RSA PKCS#8 key for local dev, vitest, and worker tests.
+ * Do not use in production — generate a dedicated key pair per environment.
+ */
+export const TEST_OIDC_SIGNING_KEY_ID = 'kody-oidc-local-test'
+
+export const TEST_OIDC_SIGNING_PRIVATE_KEY_PEM = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCt9gzee+ryWGuY
+JW49/6Cyj+pup3CLQ2/+wL1KJ5vfd8YieWUnvaHEZ6JfvDFca38Vh7kfwxh3P0+u
+QuvXEwsUCXnvMPGxbcVwBA6ZlYxtnoXwudQCS2sadsvvN9k4QQn5mOgQ39HDbQpS
+E0IRdDQwNr4od6kSwwjO+zXi/47NYHiZCkxIpZ7wZgvUHUVTO6KZPSRAmGLNz3fo
+FUOepKmrMtuQCTt97EGcoVUM70NzuogjJr/ShUiCz3M9fS3rf1qRmNzTsUAdCQQA
+bThFmrRxOP+EorrT9Qj2qbcYkaYFKzZy1rtBFPwn/aYG69eVbpadUnRa8Hqi9LRK
+wQZGR+FnAgMBAAECggEADMjSBfZqEX4JXONrUv0arI9tCs1ytO6zfVpheYtS+5JM
+Kl5s3lsjrKZycBde3Uw9HlzyGvEgjCryn9DlOid5H0jZqt1toGd7z2aiQraTMmnT
+AsT1XWcjgOINd2V4U5exXvmAxzSxBWwEX9HF1OM1rqa8mjFpEyroK9CZvjafzQdU
+dVeHWaWWwMEj0sD7rVeWBbiAg2nrtz4FVBmI+g2K75IOwc8/bcnur2QyF0hxLZPp
+nnnI0lNYXeU7wgMIJ5ql6BM1xBojtjyhryglwLlsTwkgS0kNQ3rh3yD9X8Yp3xaJ
+Dr5Jd9739wMFM1yj4Bkdr5a/62p4L4Tec8GWmLwZ+QKBgQDozb+q3X9ILLmAZ8CI
+X2rPNCrwhJQqAhddEkPN7rcIjPN3tXlQzPgVZh+0o0mo6Al9NpsR4RtohVR9zXH+
+qlpv5+Edcub+LxMclNHxA0hoXorgS613tDDuxZQSb8c6+Yz1lFxe1/ukiP9n4QNw
+afYBsWJ6NVDiLOL5mq5j6bHSOwKBgQC/S183h43b0nlK62gtq+d3kQSeOJUyesy3
+IewMspNyrLJS3qeXpby1oVlh3LqlMVztYtLn2wuUxEGgKwcMLOvbXqkIZJq2tAYa
+GoXGLR87zTjisgVfqAqLy7HZarcpDVU2034Wj09jq4Uq+aPpjIusyPmx2c6spFy2
+ENNqzNeuxQKBgCpBBdPGZg68h2LF8g0OfH1lM5H6DkZdoM30vbfH5xK3Oo10s7M1
+sKV5prGLnZf5nZdLbPPezrG22XIH8vPNCaMcDCDjNQfXlXlvjXdYKDFBT6WMNszu
+OJ9t3wVFonySxMHiDq3sN7FSaED7dztVECCYiI4z1R1oFj5Fk/dweCT3AoGBAIYN
+ZY5eWdTf68vKp9jJjI1HfLr73+HeGDOFfAtx4M4No3FbQoqMxG9rwF1J9ynoK7zW
+8gE0iSsZVPvO60Nm/2ldLosJJTo/cb89Mt2rpSWdLO3/3rAn7CwG9HztwajtBPhE
+wSlCCFpKSinRg0IZEZBlzkUJ40EsdSPJKr6/Ca4ZAoGAE3VXj6bVKPDTbzCt7Bbk
+tJ1f6LGDbEmqlINSP8Gfc8xTYh3xanamhUObUEt5QsW1X0LS6yDH3muc4/NC23ZN
+m+R0RuVx1WwZH1khUSMuby9Ydm/xyV3oTcRIYOo8/QbJa1QZQcqro/yLwDFexXJO
+V+9i7aqe5cG1n80/uE2Mz6E=
+-----END PRIVATE KEY-----`
