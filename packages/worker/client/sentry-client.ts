@@ -1,6 +1,7 @@
 import {
 	isBrowserAbortError,
 	isBrowserInjectedGlobalNoiseError,
+	isCloudflareTurnstileClientError,
 	isFirefoxDomPermissionDeniedError,
 	isMetaMaskWalletNoAccountError,
 	isResolveFrameFetchNetworkError,
@@ -55,7 +56,8 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isBrowserInjectedGlobalNoiseError(error) ||
 		isMetaMaskWalletNoAccountError(error) ||
 		isSyntaxHighlightCoreDynamicImportFailureError(error) ||
-		isResolveFrameFetchNetworkError(error)
+		isResolveFrameFetchNetworkError(error) ||
+		isCloudflareTurnstileClientError(error)
 	)
 }
 
