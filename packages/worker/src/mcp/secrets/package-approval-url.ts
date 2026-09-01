@@ -1,5 +1,6 @@
 import {
 	buildAccountSecretPath,
+	buildAccountSecretUrl,
 	joinOriginAndEncodedPath,
 } from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -39,6 +40,14 @@ export function buildSecretPackageApprovalUrl(input: {
 		search.set('package', input.kodyId)
 	}
 	return `${joinOriginAndEncodedPath(input.baseUrl, secretPath)}?${search}`
+}
+
+export function buildSecretUsageUrl(input: { baseUrl: string; name: string }) {
+	return buildAccountSecretUrl({
+		baseUrl: input.baseUrl,
+		name: input.name,
+		scope: 'user',
+	})
 }
 
 export function normalizeBulkPackageSecretApprovalNames(names: Array<string>) {

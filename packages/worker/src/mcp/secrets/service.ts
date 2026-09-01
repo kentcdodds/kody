@@ -47,6 +47,7 @@ import {
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
 import { listReferencedIntegrationSecretNames } from '#worker/integrations/owned-secret-names.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 
 type SecretOwnerContext = {
 	userId: string
@@ -1077,6 +1078,71 @@ export async function setSecretAllowedPackages(input: {
 			existingEntry.expires_at,
 			bucket.expires_at,
 		),
+	})
+}
+
+/**
+ * Tighten-only package grant on a user secret. Adds `packageId` to
+ * `allowed_packages`. Additional grants accumulate. Removing a grant is
+ * website-only. User-scope only — package secrets do not have this grant.
+ */
+export async function lockSecretToPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	packageId: string
+}): Promise<SecretMetadata> {
+	const packageId = input.packageId.trim()
+	if (!packageId) {
+		throw new Error('Package id is required.')
+	}
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		throw new Error('Saved package not found for this user.')
+	}
+	const bucket = await getExistingBucketForScope({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		scope: 'user',
+		storageContext: null,
+	})
+	if (!bucket) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const existingEntry = await getSecretEntry({
+		db: input.env.APP_DB,
+		bucketId: bucket.id,
+		name: input.name.trim(),
+	})
+	if (!existingEntry) {
+		throw new Error('Secret not found for this scope.')
+	}
+	const currentPackages = parseAllowedPackages(existingEntry.allowed_packages)
+	if (currentPackages.includes(packageId)) {
+		return toSecretMetadata({
+			name: input.name.trim(),
+			scope: 'user',
+			description: existingEntry.description,
+			packageId: null,
+			allowedHosts: parseAllowedHosts(existingEntry.allowed_hosts),
+			allowedPackages: currentPackages,
+			createdAt: existingEntry.created_at,
+			updatedAt: existingEntry.updated_at,
+			expiresAt: earliestSecretExpiresAt(
+				existingEntry.expires_at,
+				bucket.expires_at,
+			),
+		})
+	}
+	return setSecretAllowedPackages({
+		env: input.env,
+		userId: input.userId,
+		name: input.name,
+		scope: 'user',
+		allowedPackages: [...currentPackages, packageId],
 	})
 }
 

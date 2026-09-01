@@ -25,6 +25,7 @@ import {
 	deleteIntegration,
 	deleteOauthAppWithConnections,
 	grantIntegrationPackage,
+	lockIntegrationToPackage,
 	setIntegrationUsage,
 	upsertIntegration,
 } from './service.ts'
@@ -397,4 +398,58 @@ test('disconnecting the last user-lane connection deletes the leftover client se
 			includeIntegrationOwned: true,
 		}),
 	).toEqual([])
+})
+
+test('lockIntegrationToPackage switches any-context usage to packages and rejects unknown packages', async () => {
+	const { sqlite, env } = createHarness()
+	const userId = 'user-lock-usage'
+	seedPackage(sqlite, { id: 'pkg-drafts', userId, kodyId: 'gmail-drafts' })
+	await upsertIntegration({ env, userId, config: googleConfig })
+
+	const grantedWhileAny = await grantIntegrationPackage({
+		env,
+		userId,
+		name: 'google',
+		packageId: 'pkg-drafts',
+	})
+	expect(grantedWhileAny).toMatchObject({
+		usageMode: 'any',
+		allowedPackageIds: [],
+	})
+
+	const locked = await lockIntegrationToPackage({
+		env,
+		userId,
+		name: 'google',
+		packageId: 'pkg-drafts',
+	})
+	expect(locked).toMatchObject({
+		usageMode: 'packages',
+		allowedPackageIds: ['pkg-drafts'],
+	})
+	await expect(
+		assertCanUseIntegration({
+			env,
+			baseUrl: 'https://kody.codes',
+			userId,
+			name: 'google',
+		}),
+	).rejects.toBeInstanceOf(IntegrationPackageAccessDeniedError)
+	await assertCanUseIntegration({
+		env,
+		baseUrl: 'https://kody.codes',
+		userId,
+		name: 'google',
+		packageId: 'pkg-drafts',
+		packageKodyId: 'gmail-drafts',
+	})
+
+	await expect(
+		lockIntegrationToPackage({
+			env,
+			userId,
+			name: 'google',
+			packageId: 'missing-package',
+		}),
+	).rejects.toThrow('Saved package not found for this user.')
 })

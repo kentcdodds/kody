@@ -34,7 +34,7 @@ function buildCapabilityDescription(): string {
 		'Use `guide: "heavy_work_offload"` when package checks or publish rebuilds exceed isolate memory or CPU — usually a large npm graph — so the package stays a thin orchestrator and the owner operates the heavy process.',
 		'Use `guide: "how_kody_works"` to explain the factory loop: ask once, save an export, invoke from any agent, then a quiet daily email.',
 		'Use `guide: "package_lifecycle"` to choose reuse vs temporary execute vs community fork vs deferred workflows vs a new durable package, and before enabling package-owned schedules.',
-		'Use `guide: "locked_gmail_drafts"` when an OAuth token is coarser than the intended published surface — Gmail has send-only and no drafts-only scope — and the owner should lock a drafts-only package so it cannot grow into send.',
+		'Use `guide: "locked_gmail_drafts"` when an OAuth token is coarser than the intended published surface — Gmail has send-only and no drafts-only scope — and the owner should lock a drafts-only package, then integration_lock the connection so execute cannot use the token.',
 		'Use `guide: "locked_mcp_server"` when a connected MCP server should be callable only from a named package — not from ad hoc execute or other packages.',
 		'Integration bootstrap covers checking saved `integration` / `secret` entities, running a cheap authenticated smoke test, then preferring a close community fork before building.',
 		'Use `guide: "platform_friction"` for meaningful Kody friction, bugs, poor experiences, or suggestions; it distinguishes inline fixes, approved memory changes, and consent-gated attributed feedback.',
