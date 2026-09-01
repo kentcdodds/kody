@@ -90,6 +90,10 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 			: ''
 		return `${mainLine}\n   ${formatMarkdownInlineCode(`${accessor}(args)`)} — ${formatMarkdownInlineCode(match.inputTypeDefinition)}${truncatedNote}`
 	}
+	if (match.type === 'guide') {
+		const entityRef = buildEntityRef(match.id, 'guide')
+		return `${String(index + 1)}. **guide** ${escapeMarkdownText(match.title)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+	}
 	if (match.type === 'package') {
 		const entityRef = buildEntityRef(match.kodyId, 'package')
 		const [actionMatch] = match.actionMatches ?? []

@@ -1,8 +1,8 @@
 # Search
 
-The **search** tool finds **built-in capabilities**, **saved packages**, **saved
-integrations**, and **user secret references** (metadata only, not secret
-values).
+The **search** tool finds **built-in capabilities**, **official guides**,
+**saved packages**, **saved integrations**, and **user secret references**
+(metadata only, not secret values).
 
 **Public package listings** are not included. Use the `community` domain
 (`community_search`, `community_get`) or the public `/community` pages. See
@@ -94,9 +94,11 @@ a tight size budget does not drop them.
 ## Entity indexes and detail
 
 To inspect one hit, call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `integration`, `package`, or
-`secret`. Capability entities additionally include a ready-to-run **execute**
-snippet plus `inputTypeDefinition` / `outputTypeDefinition`.
+`"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
+`package`, or `secret`. Guide entities return the full official markdown (the
+same bundled body as the web `/guides` pages). Capability entities additionally
+include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
+`outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll MCP pair). Each ref resolves independently:
@@ -105,6 +107,8 @@ every ref fails, the tool returns an error result.
 
 Examples:
 
+- `package_authoring:guide`
+- `["package_authoring:guide", "package_lifecycle:guide"]`
 - `coding_guide_get:capability`
 - `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
 - `github:integration`
@@ -112,6 +116,12 @@ Examples:
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
 - `githubPat:secret`
+
+Official guides are first-class entities. Ranked search can return `{id}:guide`
+hits; `search({ entity: "package_authoring:guide" })` returns the full bundled
+markdown. Prefer that over executing `coding_guide_get` just to read a guide.
+`coding_guide_get` stays available for execute-module code that needs the body
+programmatically.
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.
@@ -145,17 +155,17 @@ Capability detail shows the exact runtime pattern for **execute**:
 import { kody } from 'kody:runtime'
 
 export default async function main(input = {}) {
-	return await kody.coding_guide_get(input)
+	return await kody.email_send(input)
 }
 ```
 
 Use the call shape emitted by capability detail and pass an object matching the
 displayed input type. Built-in capabilities stay flat on `kody`: valid
-JavaScript identifier ids use dot notation such as
-`kody.coding_guide_get(input)`, and non-identifier built-in ids use bracket
-notation such as `kody["capability-id"](input)`. MCP server tools are namespaced
-by server: `kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has
-no required fields.
+JavaScript identifier ids use dot notation such as `kody.email_send(input)`, and
+non-identifier built-in ids use bracket notation such as
+`kody["capability-id"](input)`. MCP server tools are namespaced by server:
+`kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has no
+required fields.
 
 ## When results look thin
 
@@ -195,7 +205,8 @@ helpers package before writing fetch code. See the OpenAPI integrations guide
 under `docs/guides/` when the API publishes a spec.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
-with the official `integration_bootstrap` guide. Inspect the relevant
+with `search({ entity: "integration_bootstrap:guide" })`. Inspect the relevant
 `integration` or `secret` entity, run one cheap authenticated **execute** smoke
-test, then build the downstream artifact. If setup is missing, load the official
-OAuth or secret-backed setup guide that matches the auth path.
+test, then build the downstream artifact. If setup is missing, open the official
+OAuth or secret-backed setup guide that matches the auth path (`oauth:guide`,
+`connect_secret:guide`, or a resolved `provider_<slug>:guide`).

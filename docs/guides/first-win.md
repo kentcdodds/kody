@@ -133,16 +133,17 @@ The email loop is done. Offer one concrete next step and let them choose:
 
 - **Try it, then persist.** If they have not finished onboarding Step 3, send
   them to `/onboarding#first-build` on the same origin this guide came from, or
-  load `coding_guide_get` with `guide: "quick_example"`: one ad hoc execute,
-  then persist a package they own.
-- **Ask what they want automated** and use `coding_guide_get` with
-  `guide: "package_lifecycle"` to pick between a one-off `execute`, a community
-  fork, and a new package.
-- **Bring their own OAuth app** to connect a service — load `coding_guide_get`
-  with `guide: "oauth"`, or the matching `provider_*` guide.
-- **Bring their own API key or PAT** to connect a service — load
-  `coding_guide_get` with `guide: "connect_secret"`, or the matching
-  `provider_*` guide.
+  open `search({ entity: "quick_example:guide" })`: one ad hoc execute, then
+  persist a package they own.
+- **Ask what they want automated** and open
+  `search({ entity: "package_lifecycle:guide" })` to pick between a one-off
+  `execute`, a community fork, and a new package.
+- **Bring their own OAuth app** to connect a service — open
+  `search({ entity: "oauth:guide" })`, or a resolved
+  `search({ entity: "provider_<slug>:guide" })`.
+- **Bring their own API key or PAT** to connect a service — open
+  `search({ entity: "connect_secret:guide" })`, or a resolved
+  `search({ entity: "provider_<slug>:guide" })`.
 
 ## Troubleshooting
 

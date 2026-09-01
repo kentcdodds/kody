@@ -22,6 +22,6 @@ test('retiring-primitives registry is empty and omits the instruction section', 
 	])
 	expect(formatted.startsWith('Retiring primitives')).toBe(true)
 	expect(formatted).toContain('Example:')
-	expect(formatted).toContain('coding_guide_get')
-	expect(formatted).toContain('"example"')
+	expect(formatted).toContain('example:guide')
+	expect(formatted).toContain('"example:guide"')
 })

@@ -208,26 +208,6 @@ export default async function main() {
 	return await dailyDigest()
 }`
 
-const loadGuidesCode = `import { kody } from 'kody:runtime'
-
-export default async function main() {
-	const authoring = await kody.coding_guide_get({
-		guide: 'package_authoring',
-	})
-	const lifecycle = await kody.coding_guide_get({
-		guide: 'package_lifecycle',
-	})
-	return { authoring, lifecycle }
-}`
-
-const loadLifecycleCode = `import { kody } from 'kody:runtime'
-
-export default async function main() {
-	return await kody.coding_guide_get({
-		guide: 'package_lifecycle',
-	})
-}`
-
 function asEmbeddedTemplateLiteral(value: string) {
 	return `\`${value.replaceAll('\\', '\\\\').replaceAll('`', '\\`').replaceAll('${', '\\${')}\``
 }
@@ -451,31 +431,44 @@ const codingGuideSearchMarkdown = `# Search results
 
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
-1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
-   \`kody.coding_guide_get(args)\` — \`type CodingGuideGetInput = { guide: "what_is_kody" | "quick_example" | "first_win" | "package_authoring" | "package_lifecycle" | ... }\`; use entity detail for the full definition`
+1. **guide** Package authoring guide — START HERE when creating or materially changing a Kody package. Entity: \`package_authoring:guide\`
+2. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\``
 
-const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
+const packageAuthoringGuideMarkdown = `# Guide — \`package_authoring\`
 
-Load an official Kody guide (markdown, bundled from the kody repository).
-Use \`guide: "package_authoring"\` for package creation or material package updates.
-Use \`guide: "package_lifecycle"\` to choose reuse vs a new durable package, and before enabling package-owned schedules.
+START HERE when creating or materially changing a Kody package.
 
 ## Summary
 
-- Entity: \`coding_guide_get:capability\`
-- Domain: \`coding\`
-- Required input fields: \`guide\`
+- Entity: \`package_authoring:guide\`
+- Category: \`platform\`
+- Web: \`/guides/package-authoring\`
 
-## Execute from \`execute\`
+# Package authoring guide
 
-\`\`\`ts
-import { kody } from 'kody:runtime'
+Use this guide when creating a new Kody package or materially changing an existing one.
 
-export default async function main(input = {}) {
-	return await kody.coding_guide_get(input)
-}
-\`\`\`
-`
+## Choose an authoring lane
+
+…`
+
+const packageLifecycleGuideMarkdown = `# Guide — \`package_lifecycle\`
+
+Choose between invoking existing behavior, temporary execute exploration, and creating a durable repo-backed package.
+
+## Summary
+
+- Entity: \`package_lifecycle:guide\`
+- Category: \`platform\`
+- Web: \`/guides/package-lifecycle\`
+
+# Durable package lifecycle
+
+Use this guide to decide whether to reuse existing behavior, explore with \`execute\`, or create durable repo-backed package code. Use it before scheduling new package behavior.
+
+## Choose the smallest durable surface
+
+…`
 
 const packageSearchMarkdown = `# Search results
 
@@ -487,7 +480,7 @@ const notifySearchMarkdown = `# Search results
 
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
-1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Use \`guide: "package_lifecycle"\` before enabling a package-owned schedule. Entity: \`coding_guide_get:capability\`
+1. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\`
 2. **capability** \`webhook_url_mint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhook_url_mint:capability\`
 3. **capability** \`job_list\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`job_list:capability\``
 
@@ -593,7 +586,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find the official package authoring guides',
-						note: '`domain: "coding"` ranks official guides. That is how the agent finds `coding_guide_get` instead of inventing a package shape.',
+						note: '`domain: "coding"` ranks official guides as `{id}:guide` entities. That is how the agent finds `package_authoring` and `package_lifecycle` instead of inventing a package shape.',
 						inputs: [
 							{
 								name: 'query',
@@ -617,50 +610,24 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					},
 					{
 						name: 'search',
-						summary: 'Open coding_guide_get for the guide ids',
-						note: 'Entity detail is the full card. It names `package_authoring` and `package_lifecycle` — the two guides this package needs.',
+						summary: 'Open the package authoring and lifecycle guides',
+						note: 'Guide entity detail is the full markdown. The real return is a couple hundred lines each. This walkthrough shows the opening only.',
 						inputs: [
 							{
 								name: 'entity',
 								kind: 'query',
 								lang: 'json',
-								value: jsonInput('coding_guide_get:capability'),
+								value: jsonInput([
+									'package_authoring:guide',
+									'package_lifecycle:guide',
+								]),
 							},
 							conversationIdInput(askConversationId),
 						],
 						resultLang: 'md',
 						result: searchTextReturn({
 							conversationId: askConversationId,
-							body: codingGuideDetailMarkdown,
-						}),
-					},
-					{
-						name: 'execute',
-						summary: 'Load the package authoring and lifecycle guides',
-						note: 'Guides are bundled markdown from the Kody repo. The real `coding_guide_get` return is the full guide (a couple hundred lines each). This walkthrough shows the opening only.',
-						inputs: [
-							{
-								name: 'code',
-								kind: 'code',
-								lang: 'ts',
-								value: loadGuidesCode,
-							},
-							conversationIdInput(askConversationId),
-							memoryContextInput(askMemoryContext),
-						],
-						resultLang: 'md',
-						result: executeTextReturn({
-							conversationId: askConversationId,
-							value: {
-								authoring: {
-									title: 'Package authoring guide',
-									body: '# Package authoring guide\n\nUse this guide when creating a new Kody package or materially changing an existing one.\n\n## Choose an authoring lane\n\n…',
-								},
-								lifecycle: {
-									title: 'Durable package lifecycle guide',
-									body: '# Durable package lifecycle\n\nUse this guide to decide whether to reuse existing behavior, explore with `execute`, or create durable repo-backed package code. Use it before scheduling new package behavior.\n\n## Choose the smallest durable surface\n\n…',
-								},
-							},
+							body: `${packageAuthoringGuideMarkdown}\n\n---\n\n${packageLifecycleGuideMarkdown}`,
 						}),
 					},
 				],
@@ -864,26 +831,22 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 						}),
 					},
 					{
-						name: 'execute',
-						summary: 'Load the package lifecycle guide',
-						note: 'The real `coding_guide_get` return is the full guide. This walkthrough shows the opening only. It is how the agent learns to add a package-owned job, test the wrapper, then enable it.',
+						name: 'search',
+						summary: 'Open the package lifecycle guide',
+						note: 'The real `package_lifecycle:guide` return is the full guide. This walkthrough shows the opening only. It is how the agent learns to add a package-owned job, test the wrapper, then enable it.',
 						inputs: [
 							{
-								name: 'code',
-								kind: 'code',
-								lang: 'ts',
-								value: loadLifecycleCode,
+								name: 'entity',
+								kind: 'query',
+								lang: 'json',
+								value: jsonInput('package_lifecycle:guide'),
 							},
 							conversationIdInput(notifyConversationId),
-							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
-						result: executeTextReturn({
+						result: searchTextReturn({
 							conversationId: notifyConversationId,
-							value: {
-								title: 'Durable package lifecycle guide',
-								body: '# Durable package lifecycle\n\nUse this guide to decide whether to reuse existing behavior, explore with `execute`, or create durable repo-backed package code. Use it before scheduling new package behavior.\n\n## Choose the smallest durable surface\n\n…',
-							},
+							body: packageLifecycleGuideMarkdown,
 						}),
 					},
 				],

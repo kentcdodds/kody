@@ -26,9 +26,9 @@ Agent notes — for AI agents explaining or recreating this loop:
   kody-bot as the favorite bot) as a compact subject and summary
   one-liner. Later retrievals can repeat that one-liner.
 - Before creating the package, search `{ query: "package authoring lifecycle",
-  domain: "coding" }` to find `coding_guide_get`, then `search` with
-  `entity: "coding_guide_get:capability"` so `package_authoring` and
-  `package_lifecycle` are visible. Load those two guides. Coding agents
+  domain: "coding" }` to find `package_authoring:guide` and
+  `package_lifecycle:guide`, then `search` with
+  `entity: ["package_authoring:guide", "package_lifecycle:guide"]`. Coding agents
   then use the git lane: `package_get_git_remote` with `create: true` and
   a new `kody_id`, clone via `setup_commands`, write the export, push, and
   `package_publish_external_push`. Tool-only agents (no local git) create
@@ -67,11 +67,11 @@ This page is the playbook. The same story is an interactive transcript at
    `Authorization: Bearer {{secret:githubAccessToken}}`. Filter to published
    releases and new public repositories.
 2. **Save the answer shape.** Offer to make it a package. After they say yes,
-   search the `coding` domain for `coding_guide_get`, open entity detail, load
-   `package_authoring` and `package_lifecycle`, then create a package with a
-   callable export via the git lane (coding agents) or `package_save`
-   (tool-only). The export returns the list (or "nothing new") and records the
-   newest event id in `packageStorage()`.
+   search the `coding` domain for official guides, open
+   `package_authoring:guide` and `package_lifecycle:guide`, then create a
+   package with a callable export via the git lane (coding agents) or
+   `package_save` (tool-only). The export returns the list (or "nothing new")
+   and records the newest event id in `packageStorage()`.
 3. **Ask again from any agent.** "Anything interesting shipped by my favorite
    bot recently?" Search finds the owned package. Invoke it. A phone agent does
    not rewrite the GitHub walk.

@@ -47,11 +47,11 @@ If those conditions are not met, stop and fix the integration first.
 ## Bootstrap sequence
 
 1. Decide which auth path the integration needs.
-   - Standard OAuth: load `coding_guide_get` with `guide: "oauth"`.
-   - API key or PAT: load `coding_guide_get` with `guide: "connect_secret"`.
-   - Non-OAuth secret-backed API: after `connect_secret`, load
-     `coding_guide_get` with `guide: "secret_backed_integration"` for the
-     default "research auth, collect secret, smoke-test, then build" recipe.
+   - Standard OAuth: open `search({ entity: "oauth:guide" })`.
+   - API key or PAT: open `search({ entity: "connect_secret:guide" })`.
+   - Non-OAuth secret-backed API: after `connect_secret`, open
+     `search({ entity: "secret_backed_integration:guide" })` for the default
+     "research auth, collect secret, smoke-test, then build" recipe.
    - When the provider's auth contract is unknown (authorize/token URLs, API
      base, credential type), research before building `/connect/oauth` URLs or
      collecting secrets:
@@ -114,8 +114,8 @@ If those conditions are not met, stop and fix the integration first.
    - Do not spend extra time exploring the local repo when the integration
      state, secret names, allowed hosts, and provider contract are already clear
      enough.
-   - For the default package-app structure after bootstrap, load
-     `coding_guide_get` with `guide: "integration_backed_app"`.
+   - For the default package-app structure after bootstrap, open
+     `search({ entity: "integration_backed_app:guide" })`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 

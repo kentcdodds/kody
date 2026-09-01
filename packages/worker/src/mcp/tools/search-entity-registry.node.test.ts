@@ -100,6 +100,7 @@ function createJoinedIntegration(input: {
 test('descriptor seam follows registry order and preserves integration affinity', () => {
 	expect(searchEntityPlugins.map((plugin) => plugin.type)).toEqual([
 		'capability',
+		'guide',
 		'package',
 		'integration',
 		'secret',
@@ -141,18 +142,29 @@ test('descriptor seam follows registry order and preserves integration affinity'
 		},
 	})
 
-	expect(descriptors.map((descriptor) => descriptor.type)).toEqual([
+	const types = [...new Set(descriptors.map((descriptor) => descriptor.type))]
+	expect(types).toEqual([
 		'capability',
+		'guide',
 		'package',
 		'integration',
 		'secret',
 	])
-	expect(descriptors.map((descriptor) => descriptor.id)).toEqual([
-		'weather_search',
-		'weather',
-		'github',
-		'weather_api_key',
-	])
+	expect(descriptors[0]).toMatchObject({
+		type: 'capability',
+		id: 'weather_search',
+	})
+	expect(
+		descriptors.some(
+			(descriptor) =>
+				descriptor.type === 'guide' && descriptor.id === 'package_authoring',
+		),
+	).toBe(true)
+	expect(
+		descriptors
+			.filter((descriptor) => descriptor.type !== 'guide')
+			.map((descriptor) => descriptor.id),
+	).toEqual(['weather_search', 'weather', 'github', 'weather_api_key'])
 
 	const userIntegrationRows = [
 		createJoinedIntegration({
@@ -168,6 +180,7 @@ test('descriptor seam follows registry order and preserves integration affinity'
 			userValueRows: [],
 			userIntegrationRows,
 		},
+		domain: 'email',
 	})
 
 	expect(affinityDescriptors.map((descriptor) => descriptor.type)).toEqual([

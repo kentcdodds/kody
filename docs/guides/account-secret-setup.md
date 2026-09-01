@@ -13,10 +13,10 @@ Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
 a secret value such as an API key or personal access token. The agent must never
 see the secret value.
 
-If the secret will power a downstream package or package app, load
-`coding_guide_get` with `guide: "integration_bootstrap"` before building that
-package. For the common non-OAuth path after bootstrap, load `coding_guide_get`
-with `guide: "secret_backed_integration"`. This guide covers the
+If the secret will power a downstream package or package app, open
+`search({ entity: "integration_bootstrap:guide" })` before building that
+package. For the common non-OAuth path after bootstrap, open
+`search({ entity: "secret_backed_integration:guide" })`. This guide covers the
 secret-collection step only.
 
 ## When to use `/account/secrets/new`

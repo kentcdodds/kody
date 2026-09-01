@@ -72,6 +72,9 @@ export function buildRecommendedNextStep(
 	if (topMatch?.type === 'integration') {
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
+	if (topMatch?.type === 'guide') {
+		return `Open the official guide with \`search({ entity: "${topMatch.id}:guide" })\` to read the full markdown.`
+	}
 	if (topMatch?.type === 'capability') {
 		const accessor = buildKodyCapabilityAccessor(topMatch)
 		if (
@@ -91,6 +94,7 @@ export function buildSearchableEntityDescriptors(input: {
 		OptionalSearchRowsResult,
 		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
+	domain?: string
 }): Array<SearchableEntityDescriptor> {
 	const descriptors: Array<SearchableEntityDescriptor> = []
 	for (const plugin of searchEntityPlugins) {

@@ -83,6 +83,10 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		id: 'github',
 		type: 'integration',
 	})
+	expect(parseEntityRef('package_authoring:guide')).toEqual({
+		id: 'package_authoring',
+		type: 'guide',
+	})
 
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',

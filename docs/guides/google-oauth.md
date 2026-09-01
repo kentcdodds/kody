@@ -16,8 +16,9 @@ Agent notes — for AI agents explaining or recreating this loop:
 
 - The web page at /guides/google-oauth is an interactive transcript of the
   same story. This markdown is the playbook.
-- Do not invent Google console UI, URLs, or scopes. Load provider_google,
-  oauth, and integration_bootstrap via coding_guide_get and follow those.
+- Do not invent Google console UI, URLs, or scopes. Open
+  `provider_google:guide`, `oauth:guide`, and `integration_bootstrap:guide`
+  with `search({ entity })` and follow those.
 - Inbox reading (gmail.readonly) needs a Google Cloud OAuth client the
   user owns. Do not start already knowing the 7-day Testing-status trap —
   discover that from the guides.
@@ -33,11 +34,11 @@ Agent notes — for AI agents explaining or recreating this loop:
 - After authorize, smoke-test with createAuthenticatedFetch('google')
   against the Gmail profile URL from provider_google. Do not create a
   package in this story; the payoff is a working integration.
-- Tool names exposed to the agent are only search or execute. Nested
-  calls (coding_guide_get, createAuthenticatedFetch) live inside execute
-  code. Every tool needs a note. Search markdown starts with
-  "# Search results"; entity detail with "# Capability —"; execute text
-  with "conversationId: ".
+- Tool names exposed to the agent are only search or execute. Official
+  guides load through `search({ entity: "{id}:guide" })`. Nested calls
+  such as `createAuthenticatedFetch` live inside execute code. Every tool
+  needs a note. Search markdown starts with "# Search results"; guide
+  entity detail with "# Guide —"; execute text with "conversationId: ".
 - search and execute can take a short memoryContext (task plus a couple
   of entities). This story needs no memory writes and may have zero
   memories.
@@ -54,9 +55,8 @@ This page is the playbook. The same story is an interactive transcript at
 
 1. **Ask for inbox access.** The user wants Kody to read Gmail for invoices (for
    example from Acme) and does not know the steps.
-2. **Look up the guides.** Search for Google / Gmail / OAuth, open
-   `coding_guide_get` entity detail, then load `integration_bootstrap`, `oauth`,
-   and `provider_google`.
+2. **Look up the guides.** Search for Google / Gmail / OAuth, then open
+   `provider_google:guide`, `oauth:guide`, and `integration_bootstrap:guide`.
 3. **Walk the console.** Create the OAuth client in Google Cloud and Google Auth
    Platform one step at a time: project, enable Gmail API, branding and External
    audience, Web client with redirect `https://kody.codes/connect/oauth`, Data

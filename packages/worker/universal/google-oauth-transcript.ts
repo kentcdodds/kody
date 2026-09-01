@@ -23,17 +23,6 @@ const askMemoryContext = {
 	entities: ['Google', 'Gmail', 'Acme invoices'],
 }
 
-const loadGuidesCode = `import { kody } from 'kody:runtime'
-
-export default async function main() {
-	const bootstrap = await kody.coding_guide_get({
-		guide: 'integration_bootstrap',
-	})
-	const oauth = await kody.coding_guide_get({ guide: 'oauth' })
-	const google = await kody.coding_guide_get({ guide: 'provider_google' })
-	return { bootstrap, oauth, google }
-}`
-
 const gmailProfileSmokeCode = `import { createAuthenticatedFetch } from 'kody:runtime'
 
 export default async function main() {
@@ -88,34 +77,67 @@ const codingGuideSearchMarkdown = `# Search results
 
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
-1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
-   \`kody.coding_guide_get(args)\` — \`type CodingGuideGetInput = { guide: "integration_bootstrap" | "oauth" | "provider_google" | ... }\`; use entity detail for the full definition
-2. **guide** Connect Google (Gmail, Calendar, Drive) — Bring-your-own OAuth client, Google Auth Platform console steps, and the Testing-status refresh-token trap. Entity: \`provider_google:guide\`
-3. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
+1. **guide** Connect Google (Gmail, Calendar, Drive) — Bring-your-own OAuth client, Google Auth Platform console steps, and the Testing-status refresh-token trap. Entity: \`provider_google:guide\`
+2. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\`
+3. **guide** Integration bootstrap guide — Inspect integration/secret state, then run an authenticated smoke test. Entity: \`integration_bootstrap:guide\``
 
-const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
+const googleOauthGuideMarkdown = `# Guide — \`provider_google\`
 
-Load an official Kody guide (markdown, bundled from the kody repository).
-Use \`guide: "integration_bootstrap"\` before building anything that depends on third-party auth.
-Use \`guide: "oauth"\` for the hosted \`/connect/oauth\` path and redirect URI.
-Use \`guide: "provider_google"\` for Google console steps and the Testing-status refresh-token trap.
+Verified walkthrough for connecting Google to Kody.
 
 ## Summary
 
-- Entity: \`coding_guide_get:capability\`
-- Domain: \`coding\`
-- Required input fields: \`guide\`
+- Entity: \`provider_google:guide\`
+- Category: \`provider\`
+- Web: \`/guides/google\`
 
-## Execute from \`execute\`
+# Connect Google (Gmail, Calendar, Drive)
 
-\`\`\`ts
-import { kody } from 'kody:runtime'
+Connect Google by creating your own OAuth client in Google Cloud. Register Kody's redirect URI, then finish on \`/connect/oauth\`.
 
-export default async function main(input = {}) {
-	return await kody.coding_guide_get(input)
-}
-\`\`\`
-`
+## Create the OAuth client
+
+…`
+
+const oauthGuideMarkdown = `# Guide — \`oauth\`
+
+START HERE for third-party OAuth: hosted \`/connect/oauth\`.
+
+## Summary
+
+- Entity: \`oauth:guide\`
+- Category: \`platform\`
+- Web: \`/guides/oauth\`
+
+# OAuth guide
+
+Send the signed-in user to \`https://kody.codes/connect/oauth\` with query parameters that describe the provider.
+
+## Redirect URI
+
+The redirect URI is \`https://kody.codes/connect/oauth\`.
+
+…`
+
+const bootstrapGuideMarkdown = `# Guide — \`integration_bootstrap\`
+
+START HERE when a third-party integration must work before saving a dependent package.
+
+## Summary
+
+- Entity: \`integration_bootstrap:guide\`
+- Category: \`platform\`
+- Web: \`/guides/integration-bootstrap\`
+
+# Integration bootstrap guide
+
+Read this guide first when a user wants a package, package app, or workflow that depends on a third-party integration.
+
+## Core rule
+
+Do not save or present an auth-dependent package as complete until a minimal authenticated smoke test succeeds.
+
+…`
 
 export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 	{
@@ -138,7 +160,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find official guides for Google Gmail OAuth',
-						note: 'Search ranks `coding_guide_get` and the Google / OAuth guides. No matching memory is required for this story. The `conversationId` is minted here so later calls in this chat stay cheap.',
+						note: 'Search ranks the Google, OAuth, and bootstrap guides as `{id}:guide` entities. No matching memory is required for this story. The `conversationId` is minted here so later calls in this chat stay cheap.',
 						inputs: [
 							{
 								name: 'query',
@@ -156,54 +178,25 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 					},
 					{
 						name: 'search',
-						summary: 'Open coding_guide_get for the guide ids',
-						note: 'Entity detail is the full card. It names `integration_bootstrap`, `oauth`, and `provider_google` — the three guides this connect needs.',
+						summary: 'Open the Google, OAuth, and bootstrap guides',
+						note: 'Guide entity detail is the full markdown. The real return is a couple hundred lines each. This walkthrough shows the opening only.',
 						inputs: [
 							{
 								name: 'entity',
 								kind: 'query',
 								lang: 'json',
-								value: jsonInput('coding_guide_get:capability'),
+								value: jsonInput([
+									'provider_google:guide',
+									'oauth:guide',
+									'integration_bootstrap:guide',
+								]),
 							},
 							conversationIdInput(conversationId),
 						],
 						resultLang: 'md',
 						result: searchTextReturn({
 							conversationId,
-							body: codingGuideDetailMarkdown,
-						}),
-					},
-					{
-						name: 'execute',
-						summary: 'Load bootstrap, OAuth, and Google provider guides',
-						note: 'Guides are bundled markdown from the Kody repo. The real `coding_guide_get` return is the full guide (a couple hundred lines each). This walkthrough shows the opening only.',
-						inputs: [
-							{
-								name: 'code',
-								kind: 'code',
-								lang: 'ts',
-								value: loadGuidesCode,
-							},
-							conversationIdInput(conversationId),
-							memoryContextInput(askMemoryContext),
-						],
-						resultLang: 'md',
-						result: executeTextReturn({
-							conversationId,
-							value: {
-								bootstrap: {
-									title: 'Integration bootstrap guide',
-									body: '# Integration bootstrap guide\n\nRead this guide first when a user wants a package, package app, or workflow that depends on a third-party integration.\n\n## Core rule\n\nDo not save or present an auth-dependent package as complete until a minimal authenticated smoke test succeeds.\n\n…',
-								},
-								oauth: {
-									title: 'OAuth guide (standard path)',
-									body: '# OAuth guide\n\nSend the signed-in user to `https://kody.codes/connect/oauth` with query parameters that describe the provider.\n\n## Redirect URI\n\nThe redirect URI is `https://kody.codes/connect/oauth`.\n\n…',
-								},
-								google: {
-									title: 'Connect Google (Gmail, Calendar, Drive)',
-									body: "# Connect Google (Gmail, Calendar, Drive)\n\nConnect Google by creating your own OAuth client in Google Cloud. Register Kody's redirect URI, then finish on `/connect/oauth`.\n\n## Create the OAuth client\n\n…",
-								},
-							},
+							body: `${googleOauthGuideMarkdown}\n\n---\n\n${oauthGuideMarkdown}\n\n---\n\n${bootstrapGuideMarkdown}`,
 						}),
 					},
 				],

@@ -7,7 +7,8 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  *
  * `guideMetadataList` is small (frontmatter only, no bodies) and safe to
  * statically import: it costs no per-guide parsing at runtime and adds
- * negligible size to whichever Worker registers `coding_guide_get`.
+ * negligible size to whichever Worker ranks `{id}:guide` search entities
+ * or registers `coding_guide_get`.
  *
  * `importGuideCatalog()` returns the full parsed catalog (bodies included).
  * An ordinary dynamic `import()` of an in-repo module — e.g. one that walked
@@ -19,9 +20,9 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  * `find_additional_modules` rule in `wrangler.jsonc`, so Wrangler uploads it
  * as a separate external module: it is excluded from the main script
  * entirely and only fetched, parsed, and evaluated when a request actually
- * calls the `coding_guide_get` handler. Merely registering the capability
- * does not add guide-catalog parse/link cost to the main module's cold
- * start.
+ * opens a `{id}:guide` entity or calls the `coding_guide_get` handler.
+ * Merely ranking guide metadata does not add catalog parse/link cost to
+ * the main module's cold start.
  */
 
 export const guideMetadataList: ReadonlyArray<GuideMetadata> = guideMetadata

@@ -78,8 +78,8 @@ metadata.
 - Ephemeral task code that does not persist source or a schedule is
   `execute-one-off`. Deferred one-shot work via `workflows.create({ runAt })`
   from `execute` is also `execute-one-off`.
-- Reading `coding_guide_get` or existing source before authoring is
-  `inspect-authoring-guidance`.
+- Reading official guides (`search({ entity: "{id}:guide" })`) or existing
+  source before authoring is `inspect-authoring-guidance`.
 - Initializing, editing, creating, or publishing reusable saved source is
   `author-package`. The scorer derives the phase from actual `execute` code:
   - `package_get_git_remote` and `repo_open_session` initialize an authoring

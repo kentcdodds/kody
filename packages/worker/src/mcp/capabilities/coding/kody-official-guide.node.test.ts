@@ -41,4 +41,7 @@ test('coding_guide_get input schema lists advertised guides in the web catalog a
 	const positions = expectedOrder.map((id) => description.indexOf(`\`${id}\`:`))
 	expect(positions.every((position) => position !== -1)).toBe(true)
 	expect(positions).toEqual([...positions].toSorted((a, b) => a - b))
+	expect(kodyOfficialGuideCapability.description).toContain(
+		'search({ entity: "{id}:guide" })',
+	)
 })

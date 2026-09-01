@@ -121,8 +121,8 @@ The account UI also includes a browser-side **Generate** control for create and
 rotate flows. Generated values are filled into the write-only password field and
 can be copied by the user before saving; Kody still persists only the hash.
 
-Agents should load `coding_guide_get` with
-`guide: "package_invocation_token_setup"` before sending a user to this page.
+Agents should open `search({ entity: "package_invocation_token_setup:guide" })`
+before sending a user to this page.
 
 ## Request body
 

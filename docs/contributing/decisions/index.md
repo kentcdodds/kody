@@ -87,6 +87,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0044 — Retired brand domains stay retired](./0044-retired-brand-domains-stay-retired.md)
   — do not re-attach `heykody.app`, `heykody.dev`, or `kodyapps.dev` as app,
   package-app, status, or email hosts
+- [0045 — Official guides load through search, not execute](./0045-guides-load-through-search.md)
+  — `{id}:guide` entity detail is the read path; do not execute
+  `coding_guide_get` just to load a guide
 
 ## Historical / UI / implementation
 
