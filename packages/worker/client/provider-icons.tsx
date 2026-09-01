@@ -477,8 +477,8 @@ export function ProviderIcon(
 }
 
 /**
- * Display priority for a provider mark: explicit upload, auto-fetched
- * favicon, operator-curated catalog mark, then the letter fallback.
+ * Display priority for a provider mark: explicit upload, operator-curated
+ * catalog mark, auto-fetched favicon, then the letter fallback.
  * Login and onboarding still use the official inline ProviderIcon set.
  */
 export function resolveProviderMarkSource(input: {
@@ -487,14 +487,14 @@ export function resolveProviderMarkSource(input: {
 	catalogLogoPath?: string | null
 }): 'upload' | 'favicon' | 'catalog' | 'letter' {
 	if (input.logoPath?.trim()) return 'upload'
-	if (input.autoLogoPath?.trim()) return 'favicon'
 	if (input.catalogLogoPath?.trim()) return 'catalog'
+	if (input.autoLogoPath?.trim()) return 'favicon'
 	return 'letter'
 }
 
 /**
  * Provider identity for connect / integration headers: uploaded logo,
- * auto-favicon, operator catalog mark, or a letter fallback. Always sits
+ * operator catalog mark, auto-favicon, or a letter fallback. Always sits
  * on the white logo well so dark marks stay readable in dark mode.
  */
 export function ProviderMark(

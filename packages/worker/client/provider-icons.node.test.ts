@@ -24,18 +24,20 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 	).toBeNull()
 })
 
-test('resolveProviderMarkSource prefers upload, then favicon, then letter', () => {
+test('resolveProviderMarkSource prefers upload, then catalog, then favicon', () => {
 	expect(
 		resolveProviderMarkSource({
 			logoPath: '/integrations/logos/dropbox?v=1',
 			autoLogoPath: '/integrations/logos/dropbox?v=2',
+			catalogLogoPath: '/integrations/provider-marks/dropbox?v=3',
 		}),
 	).toBe('upload')
 	expect(
 		resolveProviderMarkSource({
 			autoLogoPath: '/integrations/logos/dropbox?v=2',
+			catalogLogoPath: '/integrations/provider-marks/dropbox?v=3',
 		}),
-	).toBe('favicon')
+	).toBe('catalog')
 	expect(
 		resolveProviderMarkSource({
 			autoLogoPath: '/integrations/logos/obscure-crm?v=2',
