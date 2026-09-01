@@ -3,6 +3,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
+	retrySecretBulkUpload,
 } from './sync-worker-secrets'
 
 const baseOptions = {
@@ -112,4 +113,79 @@ test('secret bulk rejects --env with --name so it cannot target name-env', () =>
 	} finally {
 		exitSpy.mockRestore()
 	}
+})
+
+test('secret bulk retries a Cloudflare 503 then fails fast on real errors', async () => {
+	const secretBulk503Log = [
+		'🚨 Secrets failed to upload',
+		'',
+		'Received a malformed response from the API',
+		'',
+		'  upstream connect error or disconnect/reset before headers. reset reason: connection termination',
+		'  PATCH /accounts/acct/workers/scripts/kody-runtime/secrets-bulk -> 503 Service Unavailable',
+	].join('\n')
+	const authErrorLog = 'Authentication error [code: 9109]'
+	const delays: Array<number> = []
+	const retries: Array<number> = []
+	let flakeCalls = 0
+	const recovered = await retrySecretBulkUpload(
+		async () => {
+			flakeCalls += 1
+			if (flakeCalls === 1) {
+				return { exitCode: 1, output: secretBulk503Log }
+			}
+			return { exitCode: 0, output: 'Uploaded' }
+		},
+		{
+			attempts: 3,
+			baseDelayMs: 25,
+			sleep: async (ms) => {
+				delays.push(ms)
+			},
+			onRetry: ({ attempt }) => {
+				retries.push(attempt)
+			},
+		},
+	)
+	expect(recovered.exitCode).toBe(0)
+	expect(recovered.output).toBe('Uploaded')
+	expect(flakeCalls).toBe(2)
+	expect(delays).toEqual([25])
+	expect(retries).toEqual([1])
+
+	let exhaustedCalls = 0
+	const exhausted = await retrySecretBulkUpload(
+		async () => {
+			exhaustedCalls += 1
+			return { exitCode: 1, output: secretBulk503Log }
+		},
+		{
+			attempts: 3,
+			baseDelayMs: 10,
+			sleep: async () => {},
+			onRetry: () => {},
+		},
+	)
+	expect(exhausted.exitCode).toBe(1)
+	expect(exhaustedCalls).toBe(3)
+
+	let authCalls = 0
+	const authFailure = await retrySecretBulkUpload(
+		async () => {
+			authCalls += 1
+			return { exitCode: 1, output: authErrorLog }
+		},
+		{
+			attempts: 3,
+			baseDelayMs: 10,
+			sleep: async () => {
+				throw new Error('should not sleep for non-retryable errors')
+			},
+			onRetry: () => {
+				throw new Error('should not retry non-retryable errors')
+			},
+		},
+	)
+	expect(authFailure.exitCode).toBe(1)
+	expect(authCalls).toBe(1)
 })

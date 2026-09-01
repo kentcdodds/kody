@@ -4,7 +4,65 @@ import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isExecutedDirectly, resolveLocalBinary } from '../node-runtime.ts'
+import { isRetryableDeployFailure } from './is-retryable-deploy-failure.ts'
 import { fail } from './resource-utils.ts'
+
+export type SecretBulkAttemptResult = {
+	exitCode: number
+	output: string
+}
+
+export type RetrySecretBulkUploadOptions = {
+	attempts?: number
+	baseDelayMs?: number
+	sleep?: (ms: number) => Promise<void>
+	isRetryable?: (output: string) => boolean
+	onRetry?: (input: {
+		attempt: number
+		attempts: number
+		delayMs: number
+	}) => void
+}
+
+function sleep(ms: number) {
+	return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Bounded retry for wrangler secret bulk. Matches production deploy's
+ * 3-attempt, 10s-then-double budget so an edge 503 does not fail the job.
+ */
+export async function retrySecretBulkUpload(
+	runAttempt: () => Promise<SecretBulkAttemptResult>,
+	options: RetrySecretBulkUploadOptions = {},
+): Promise<SecretBulkAttemptResult> {
+	const attempts = options.attempts ?? 3
+	const baseDelayMs = options.baseDelayMs ?? 10_000
+	const wait = options.sleep ?? sleep
+	const isRetryable = options.isRetryable ?? isRetryableDeployFailure
+	const onRetry =
+		options.onRetry ??
+		((input) => {
+			console.log(
+				`Retryable Cloudflare secret sync failure detected; retrying in ${input.delayMs / 1000}s.`,
+			)
+		})
+
+	let lastResult: SecretBulkAttemptResult = { exitCode: 1, output: '' }
+	for (let attempt = 1; attempt <= attempts; attempt += 1) {
+		lastResult = await runAttempt()
+		if (lastResult.exitCode === 0) {
+			return lastResult
+		}
+		if (attempt === attempts || !isRetryable(lastResult.output)) {
+			return lastResult
+		}
+		const delayMs = baseDelayMs * 2 ** (attempt - 1)
+		onRetry({ attempt, attempts, delayMs })
+		await wait(delayMs)
+	}
+	return lastResult
+}
 
 export type CliOptions = {
 	env?: string
@@ -279,20 +337,46 @@ async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 			fail('Could not resolve wrangler command for secret sync.')
 		}
 
-		const proc = spawn(command, commandArgs, {
-			stdio: 'inherit',
-			env: spawnEnv,
-		})
-		const exitCode = await new Promise<number | null>((resolve, reject) => {
-			proc.once('error', reject)
-			proc.once('exit', (code: number | null) => resolve(code))
-		})
-		if (exitCode !== 0) {
-			process.exit(exitCode ?? 1)
+		const result = await retrySecretBulkUpload(() =>
+			runWranglerSecretBulkOnce(command, commandArgs, spawnEnv),
+		)
+		if (result.exitCode !== 0) {
+			process.exit(result.exitCode)
 		}
 	} finally {
 		await unlink(secretsFilePath).catch(() => {})
 	}
+}
+
+function runWranglerSecretBulkOnce(
+	command: string,
+	commandArgs: Array<string>,
+	spawnEnv: Record<string, string>,
+): Promise<SecretBulkAttemptResult> {
+	const proc = spawn(command, commandArgs, {
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: spawnEnv,
+	})
+	const chunks: Array<string> = []
+	proc.stdout.on('data', (chunk: Buffer | string) => {
+		const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+		chunks.push(text)
+		process.stdout.write(chunk)
+	})
+	proc.stderr.on('data', (chunk: Buffer | string) => {
+		const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+		chunks.push(text)
+		process.stderr.write(chunk)
+	})
+	return new Promise((resolve, reject) => {
+		proc.once('error', reject)
+		proc.once('exit', (code: number | null) => {
+			resolve({
+				exitCode: code ?? 1,
+				output: chunks.join(''),
+			})
+		})
+	})
 }
 
 async function main() {
