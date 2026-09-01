@@ -130,15 +130,12 @@ async function getExecuteRegistration(
 		{ description: string },
 		(input: {
 			code: string
-			storageId?: string
-			writable?: boolean
 			responseLimit?: number
 			conversationId?: string
 		}) => Promise<{
 			content: Array<ContentBlock>
 			structuredContent: {
 				conversationId: string
-				storage?: { id: string }
 				returnedBytes: number
 				truncated?: boolean
 				note?: string
@@ -164,8 +161,6 @@ async function getExecuteHandler(
 	const [, , handler] = await getExecuteRegistration(callerContext, agentExtras)
 	return handler as (input: {
 		code: string
-		storageId?: string
-		writable?: boolean
 		responseLimit?: number
 		conversationId?: string
 		idempotencyKey?: string
@@ -173,7 +168,6 @@ async function getExecuteHandler(
 		content: Array<ContentBlock>
 		structuredContent: {
 			conversationId: string
-			storage?: { id: string }
 			runId?: string
 			replayed?: boolean
 			inProgress?: boolean
@@ -195,7 +189,7 @@ async function getExecuteHandler(
 	}>
 }
 
-test('execute tool serializes successes and errors, binds storage, passes package invoke tools, and truncates oversized returns', async () => {
+test('execute tool serializes successes and errors, passes package invoke tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{
@@ -296,52 +290,6 @@ test('execute tool serializes successes and errors, binds storage, passes packag
 				{ name: 'bundle', durationMs: 34 },
 				{ name: 'run', durationMs: 56 },
 			],
-		},
-		returnedBytes: 11,
-		result: { ok: true },
-		logs: [],
-	})
-
-	mockPerformanceSequence(1, 8)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
-
-	const storageResponse = await handler({
-		code: 'async () => ({ ok: true })',
-		storageId: 'job:lights-off',
-		writable: true,
-		conversationId: 'conv-789',
-	})
-
-	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-				storageId: 'job:lights-off',
-			},
-		}),
-		'async () => ({ ok: true })',
-		undefined,
-		expect.objectContaining({
-			storageTools: {
-				userId: '',
-				storageId: 'job:lights-off',
-				writable: true,
-			},
-		}),
-	)
-	expect(storageResponse.structuredContent).toEqual({
-		conversationId: 'conv-789',
-		storage: { id: 'job:lights-off' },
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 7,
 		},
 		returnedBytes: 11,
 		result: { ok: true },

@@ -98,10 +98,6 @@ export const executeToolOutputSchema = {
 		.describe(
 			'Server-side timing: startedAt, endedAt, durationMs, optional serverTiming phases.',
 		),
-	storage: z
-		.unknown()
-		.optional()
-		.describe('Bound durable storage descriptor ({ id }) when active.'),
 	runId: z
 		.string()
 		.optional()
@@ -177,19 +173,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.describe(
 						'Optional JSON params passed as the first argument to the module default export at execution time.',
 					),
-				storageId: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(
-						'Optional durable storage id to bind to this execute call. Returned again in the structured response when active.',
-					),
-				writable: z
-					.boolean()
-					.optional()
-					.describe(
-						'Optional write access toggle for bound storage. Defaults to false for ad hoc execute calls.',
-					),
 				responseLimit: z
 					.number()
 					.int()
@@ -215,8 +198,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			{
 				code,
 				params,
-				storageId,
-				writable,
 				responseLimit,
 				conversationId,
 				memoryContext,
@@ -224,8 +205,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			}: {
 				code: string
 				params?: Record<string, unknown>
-				storageId?: string
-				writable?: boolean
 				responseLimit?: number
 				conversationId?: string
 				memoryContext?: z.infer<typeof memoryContextInputField>
@@ -240,20 +219,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			// serializing the execute response they observe.
 			const waitUntil = agent.waitUntil?.bind(agent)
 			const reportProgress = createProgressReporter(toolExtra)
-			const baseCallerContext = agent.getCallerContext()
-			const resolvedStorageId = storageId?.trim() || null
-			const callerContext = {
-				...baseCallerContext,
-				storageContext: {
-					sessionId: baseCallerContext.storageContext?.sessionId ?? null,
-					appId: baseCallerContext.storageContext?.appId ?? null,
-					packageId: baseCallerContext.storageContext?.packageId ?? null,
-					storageId:
-						resolvedStorageId ??
-						baseCallerContext.storageContext?.storageId ??
-						null,
-				},
-			}
+			const callerContext = agent.getCallerContext()
 			const resolvedConversationId = resolveConversationId(conversationId)
 			const {
 				baseUrl,
@@ -333,7 +299,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							run: existing,
 							conversationId: resolvedConversationId,
 							timing,
-							activeStorageId,
 						})
 					}
 				}
@@ -375,7 +340,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							run: claim.run,
 							conversationId: resolvedConversationId,
 							timing,
-							activeStorageId,
 						})
 					}
 					claimedRunHandle = claim.handle
@@ -424,13 +388,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								{
 									executorExports: agent.getLoopbackExports(),
 									capabilityRegistry: registry,
-									storageTools: activeStorageId
-										? {
-												userId: callerContext.user?.userId ?? '',
-												storageId: activeStorageId,
-												writable: writable ?? false,
-											}
-										: undefined,
 									packageInvokeTools,
 									rawFetchHostSink: rawFetchHosts.sink,
 									conversationId: resolvedConversationId,
@@ -527,7 +484,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						structuredContent: {
 							conversationId: resolvedConversationId,
 							timing,
-							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 							...(runId ? { runId } : {}),
 							returnedBytes: 0,
 							error: errorMessage,
@@ -578,9 +534,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							structuredContent: {
 								conversationId: resolvedConversationId,
 								timing,
-								...(activeStorageId
-									? { storage: { id: activeStorageId } }
-									: {}),
 								...(runId ? { runId } : {}),
 								returnedBytes: 0,
 								error: message,
@@ -608,9 +561,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							structuredContent: {
 								conversationId: resolvedConversationId,
 								timing,
-								...(activeStorageId
-									? { storage: { id: activeStorageId } }
-									: {}),
 								...(runId ? { runId } : {}),
 								returnedBytes: contentLimited.returnedBytes,
 								truncated: true,
@@ -641,7 +591,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						structuredContent: {
 							conversationId: resolvedConversationId,
 							timing,
-							...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 							...(runId ? { runId } : {}),
 							returnedBytes:
 								contentLimited.returnedBytes +
@@ -698,7 +647,6 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					structuredContent: {
 						conversationId: resolvedConversationId,
 						timing,
-						...(activeStorageId ? { storage: { id: activeStorageId } } : {}),
 						...(runId ? { runId } : {}),
 						returnedBytes: structuredResultValue.returnedBytes,
 						...(structuredResultValue.truncated
@@ -737,11 +685,7 @@ function buildKeyedExecuteLookupResponse(input: {
 		endedAt: string
 		durationMs: number
 	}
-	activeStorageId: string | null
 }) {
-	const storage = input.activeStorageId
-		? { storage: { id: input.activeStorageId } }
-		: {}
 	if (input.run.status === 'running') {
 		return {
 			content: prependToolMetadataContent(input.conversationId, [
@@ -753,7 +697,6 @@ function buildKeyedExecuteLookupResponse(input: {
 			structuredContent: {
 				conversationId: input.conversationId,
 				timing: input.timing,
-				...storage,
 				runId: input.run.id,
 				inProgress: true,
 				status: 'running' as const,
@@ -776,7 +719,6 @@ function buildKeyedExecuteLookupResponse(input: {
 			structuredContent: {
 				conversationId: input.conversationId,
 				timing: input.timing,
-				...storage,
 				runId: input.run.id,
 				replayed: true,
 				returnedBytes: 0,
@@ -804,7 +746,6 @@ function buildKeyedExecuteLookupResponse(input: {
 		structuredContent: {
 			conversationId: input.conversationId,
 			timing: input.timing,
-			...storage,
 			runId: input.run.id,
 			replayed: true,
 			returnedBytes: 0,

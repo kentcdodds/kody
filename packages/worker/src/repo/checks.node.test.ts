@@ -1511,7 +1511,7 @@ export default async function main() {
 	expect(ambientStorageLint).toMatchObject({ kind: 'lint', ok: false })
 	expect(ambientStorageLint?.message).toContain('"src/index.ts"')
 	expect(ambientStorageLint?.message).toContain('packageStorage()')
-	expect(ambientStorageLint?.message).toContain('`storageId`')
+	expect(ambientStorageLint?.message).toContain('not a kody:runtime export')
 
 	// packageStorage()-only package code passes; the lint result stays the
 	// placeholder.

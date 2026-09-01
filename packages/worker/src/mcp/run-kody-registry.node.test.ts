@@ -658,7 +658,7 @@ test('buildKodyFns tracks secret_set values for execute redaction', async () => 
 	}
 })
 
-test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {
+test('buildKodyFns rejects package storage kody tools that collide with capabilities', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {
 		STORAGE_RUNNER: {
@@ -685,9 +685,10 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 			capabilityHandlers: {},
 			capabilityList: [
 				{
-					name: 'storage_get',
+					name: 'package_storage_get',
 					domain: 'storage',
-					description: 'Capability that collides with a storage helper.',
+					description:
+						'Capability that collides with a package storage helper.',
 					keywords: [],
 					readOnly: true,
 					idempotent: true,
@@ -706,10 +707,11 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 				},
 			],
 			capabilityMap: {
-				storage_get: {
-					name: 'storage_get',
+				package_storage_get: {
+					name: 'package_storage_get',
 					domain: 'storage',
-					description: 'Capability that collides with a storage helper.',
+					description:
+						'Capability that collides with a package storage helper.',
 					keywords: [],
 					readOnly: true,
 					idempotent: true,
@@ -729,8 +731,9 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 			},
 			capabilitySpecs: {},
 			capabilityToolDescriptors: {
-				storage_get: {
-					description: 'Capability that collides with a storage helper.',
+				package_storage_get: {
+					description:
+						'Capability that collides with a package storage helper.',
 					inputSchema: {
 						type: 'object',
 						properties: {},
@@ -746,13 +749,13 @@ test('buildKodyFns rejects storage kody tools that collide with capabilities', a
 	try {
 		await expect(
 			buildKodyFns(env, callerContext, {
-				storageTools: {
-					userId: 'user-123',
-					storageId: 'exec:test-storage',
-					writable: false,
+				packageStorageTools: {
+					grantedPackageIds: new Set(['pkg-1']),
 				},
 			}),
-		).rejects.toThrow('Kody helper "storage_get" collides with a capability.')
+		).rejects.toThrow(
+			'Kody helper "package_storage_get" collides with a capability.',
+		)
 	} finally {
 		getRegistrySpy.mockRestore()
 	}

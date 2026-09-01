@@ -224,11 +224,6 @@ test('executeJobOnce repo-backed job execution workflow', async () => {
 				}),
 			})
 			expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
-				storageTools: {
-					userId: 'user-123',
-					storageId: `job:${jobView.id}`,
-					writable: true,
-				},
 				runRecord: {
 					surface: 'job',
 					name: 'Capability-created one-off job',
@@ -1259,11 +1254,6 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 			})
 			expect(executeSpy).toHaveBeenCalledTimes(1)
 			expect(executeSpy.mock.calls[0]?.[4]).toMatchObject({
-				storageTools: {
-					userId: 'user-123',
-					storageId: 'job:job-repo-module',
-					writable: true,
-				},
 				packageContext: {
 					packageId: 'job-repo-module',
 					kodyId: 'repo-module-job',

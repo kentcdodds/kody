@@ -1510,7 +1510,6 @@ export function getExecutionErrorDetails(
  */
 const kodyRuntimeExportNames = new Set([
 	'kody',
-	'storage',
 	'packageStorage',
 	'createAuthenticatedFetch',
 	'secretHeaders',
@@ -1526,13 +1525,11 @@ const kodyRuntimeExportNames = new Set([
 /**
  * Remedies for guard-less access to an optional `kody:runtime` export that
  * the execution context intentionally left unbound (`undefined` / `null` so
- * `if (storage) { ... }` guards stay falsy). The message itself is produced
+ * `if (email) { ... }` guards stay falsy). The message itself is produced
  * by `createUnboundRuntimeHelperMessage` in
  * `#worker/package-runtime/unbound-runtime-helpers.ts`.
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
-	storage:
-		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, statically import that package's export (`import fn from \"kody:@scope/package/export\"`) so its stamped `packageStorage()` does the reading and writing. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
 		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts. Prefer a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Guard with `if (packages) { ... }` when this helper is optional.',
 	events:

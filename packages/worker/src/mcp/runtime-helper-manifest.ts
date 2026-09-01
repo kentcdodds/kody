@@ -11,9 +11,6 @@ import {
 import {
 	createPackageStorageHelperPrelude,
 	createPackageStorageKodyTools,
-	createStorageBytesEntitlementRunCache,
-	createStorageKodyTools,
-	createStorageHelperPrelude,
 } from '#worker/storage-runner.ts'
 import { type PackageWorkflowCreateInput } from '#worker/package-runtime/package-workflows.ts'
 import {
@@ -26,12 +23,6 @@ export type AdditionalKodyTools = Record<
 	string,
 	(args: unknown) => Promise<unknown>
 >
-
-export type StorageToolOptions = {
-	userId: string
-	storageId: string
-	writable: boolean
-}
 
 export type PackageStorageToolOptions = {
 	/**
@@ -139,7 +130,6 @@ export type RuntimeHelperManifestContext = {
 	callerContext: McpCallerContext
 	capabilityMap: Record<string, unknown>
 	provider?: ResolvedProvider | undefined
-	storageTools?: StorageToolOptions | undefined
 	packageStorageTools?: PackageStorageToolOptions | undefined
 	packageSecretTools?: PackageSecretToolOptions | undefined
 	emailTools?: EmailToolOptions | undefined
@@ -450,32 +440,6 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				? providerExposesExecuteHelperCapabilities(context.provider)
 				: false,
 		createPrelude: () => createExecuteHelperPrelude(),
-	},
-	{
-		runtimeName: 'storage',
-		runtimeBindings: [{ runtimeName: 'storage', absentValue: 'undefined' }],
-		unboundNames: ['storage'],
-		isBound: (context) => Boolean(context.storageTools),
-		createPrelude: (context) => {
-			const storageTools = context.storageTools
-			if (!storageTools) return ''
-			return createStorageHelperPrelude({
-				storageId: storageTools.storageId,
-				writable: storageTools.writable,
-			})
-		},
-		createKodyTools: async (context) => {
-			const storageTools = context.storageTools
-			if (!storageTools) return {}
-			return await createStorageKodyTools({
-				env: context.env,
-				userId: context.callerContext.user?.userId ?? '',
-				email: context.callerContext.user?.email,
-				storageId: storageTools.storageId,
-				writable: storageTools.writable,
-				entitlementCache: createStorageBytesEntitlementRunCache(),
-			})
-		},
 	},
 	{
 		runtimeName: 'packageStorage',

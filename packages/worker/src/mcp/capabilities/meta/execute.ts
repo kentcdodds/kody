@@ -10,7 +10,6 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
 import {
 	conversationIdInputField,
 	memoryContextInputField,
@@ -28,14 +27,9 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 
-const storageOutputSchema = z.object({
-	id: z.string(),
-})
-
 const executeOutputSchema = z.object({
 	ok: z.boolean(),
 	conversationId: z.string(),
-	storage: storageOutputSchema.optional(),
 	runId: z.string().optional(),
 	replayed: z.boolean().optional(),
 	inProgress: z.boolean().optional(),
@@ -80,19 +74,6 @@ export const executeCapability = defineDomainCapability(
 				.describe(
 					'Optional JSON params passed as the first argument to the module default export at execution time.',
 				),
-			storageId: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(
-					'Optional durable storage id to bind to this execute call. Defaults to the caller context storage id when present.',
-				),
-			writable: z
-				.boolean()
-				.optional()
-				.describe(
-					'Optional write access toggle for bound storage. Defaults to false.',
-				),
 			responseLimit: z
 				.number()
 				.int()
@@ -117,35 +98,17 @@ export const executeCapability = defineDomainCapability(
 			args: {
 				code: string
 				params?: Record<string, unknown>
-				storageId?: string
-				writable?: boolean
 				responseLimit?: number
 				conversationId?: string
 				idempotencyKey?: string
 			},
 			ctx: CapabilityContext,
 		) {
-			const requestedStorageId = args.storageId?.trim()
-			const resolvedStorageId = requestedStorageId
-				? authorizeCapabilityStorageId({
-						callerContext: ctx.callerContext,
-						capabilityName: 'execute',
-						storageId: requestedStorageId,
-					})
-				: ctx.callerContext.storageContext?.storageId || null
-			const callerContext = {
-				...ctx.callerContext,
-				storageContext: {
-					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-					appId: ctx.callerContext.storageContext?.appId ?? null,
-					packageId: ctx.callerContext.storageContext?.packageId ?? null,
-					storageId: resolvedStorageId,
-				},
-			}
+			const callerContext = ctx.callerContext
 			const conversationId = resolveConversationId(args.conversationId)
-			const storage = resolvedStorageId ? { id: resolvedStorageId } : undefined
 			const idempotencyKey = args.idempotencyKey?.trim() || null
 			const userId = callerContext.user?.userId ?? null
+			const existingStorageId = callerContext.storageContext?.storageId || null
 
 			if (idempotencyKey && userId) {
 				const existing = await getRunRecordByIdempotencyKey({
@@ -161,7 +124,6 @@ export const executeCapability = defineDomainCapability(
 							// failure — callers should poll run_get / retry the key.
 							ok: true,
 							conversationId,
-							...(storage ? { storage } : {}),
 							runId: existing.id,
 							inProgress: true,
 							status: 'running' as const,
@@ -173,7 +135,6 @@ export const executeCapability = defineDomainCapability(
 						return {
 							ok: false,
 							conversationId,
-							...(storage ? { storage } : {}),
 							runId: existing.id,
 							replayed: true,
 							status: 'error' as const,
@@ -187,7 +148,6 @@ export const executeCapability = defineDomainCapability(
 					return {
 						ok: true,
 						conversationId,
-						...(storage ? { storage } : {}),
 						runId: existing.id,
 						replayed: true,
 						status: 'success' as const,
@@ -205,7 +165,7 @@ export const executeCapability = defineDomainCapability(
 					context: {
 						surface: 'execute',
 						name: null,
-						storageId: resolvedStorageId,
+						storageId: existingStorageId,
 						idempotencyKey,
 						metadata: { conversationId },
 					},
@@ -214,7 +174,6 @@ export const executeCapability = defineDomainCapability(
 					return {
 						ok: false,
 						conversationId,
-						...(storage ? { storage } : {}),
 						error:
 							'Unable to claim execute idempotency key; RUN_LOG is unavailable.',
 						logs: [],
@@ -225,7 +184,6 @@ export const executeCapability = defineDomainCapability(
 						return {
 							ok: true,
 							conversationId,
-							...(storage ? { storage } : {}),
 							runId: claim.run.id,
 							inProgress: true,
 							status: 'running' as const,
@@ -237,7 +195,6 @@ export const executeCapability = defineDomainCapability(
 						return {
 							ok: false,
 							conversationId,
-							...(storage ? { storage } : {}),
 							runId: claim.run.id,
 							replayed: true,
 							status: 'error' as const,
@@ -251,7 +208,6 @@ export const executeCapability = defineDomainCapability(
 					return {
 						ok: true,
 						conversationId,
-						...(storage ? { storage } : {}),
 						runId: claim.run.id,
 						replayed: true,
 						status: 'success' as const,
@@ -273,20 +229,13 @@ export const executeCapability = defineDomainCapability(
 					args.code,
 					args.params,
 					{
-						storageTools: resolvedStorageId
-							? {
-									userId: callerContext.user?.userId ?? '',
-									storageId: resolvedStorageId,
-									writable: args.writable ?? false,
-								}
-							: undefined,
 						runRecordHandle: claimedRunHandle,
 						waitUntil: ctx.waitUntil,
 						reportProgress: ctx.reportProgress,
 						runRecord: {
 							surface: 'execute',
 							name: null,
-							storageId: resolvedStorageId,
+							storageId: existingStorageId,
 							idempotencyKey,
 							metadata: { conversationId },
 						},
@@ -316,7 +265,6 @@ export const executeCapability = defineDomainCapability(
 				return {
 					ok: false,
 					conversationId,
-					...(storage ? { storage } : {}),
 					...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 					error: getErrorMessage(cause),
 					errorDetails: getExecutionErrorDetails(cause),
@@ -337,7 +285,6 @@ export const executeCapability = defineDomainCapability(
 				return {
 					ok: false,
 					conversationId,
-					...(storage ? { storage } : {}),
 					...(runId ? { runId } : {}),
 					error: getErrorMessage(result.error),
 					errorDetails: getExecutionErrorDetails(result.error),
@@ -353,7 +300,6 @@ export const executeCapability = defineDomainCapability(
 			return {
 				ok: true,
 				conversationId,
-				...(storage ? { storage } : {}),
 				...(runId ? { runId } : {}),
 				returnedBytes: limitedResult.returnedBytes,
 				...(limitedResult.truncated

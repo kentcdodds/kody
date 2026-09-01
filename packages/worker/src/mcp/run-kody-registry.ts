@@ -42,7 +42,6 @@ import {
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
-	type StorageToolOptions,
 } from '#mcp/runtime-helper-manifest.ts'
 import {
 	buildKodyModuleBundle,
@@ -202,7 +201,6 @@ export async function buildKodyFns(
 	options?: {
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
-		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -220,7 +218,6 @@ async function buildKodyToolContext(
 	options?: {
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
-		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -250,7 +247,6 @@ async function buildKodyToolContext(
 		capabilityMap,
 	})
 	const additionalTools = options?.additionalTools ?? {}
-	const storageTools = options?.storageTools
 	assertNoCapabilityCollisions(capabilityMap, additionalTools)
 	const capabilityKodyTools = Object.fromEntries(
 		Object.entries(capabilityMap).map(([capabilityName, capability]) => [
@@ -304,7 +300,6 @@ async function buildKodyToolContext(
 		env,
 		callerContext,
 		capabilityMap,
-		storageTools,
 		packageStorageTools: options?.packageStorageTools,
 		packageSecretTools: options?.packageSecretTools,
 		emailTools: options?.emailTools,
@@ -422,7 +417,6 @@ export async function buildKodyProvider(
 	options?: {
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
-		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
@@ -462,7 +456,6 @@ export async function runModuleWithRegistry(
 	options?: {
 		executorExports?: typeof workerExports
 		additionalTools?: AdditionalKodyTools
-		storageTools?: StorageToolOptions
 		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -616,7 +609,6 @@ export async function runBundledModuleWithRegistry(
 	options?: {
 		executorExports?: typeof workerExports
 		additionalTools?: AdditionalKodyTools
-		storageTools?: StorageToolOptions
 		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -659,7 +651,6 @@ export async function runBundledModuleWithRegistry(
 				...options.runRecord,
 				storageId:
 					options.runRecord.storageId ??
-					options.storageTools?.storageId ??
 					normalizedStorageContext?.storageId ??
 					null,
 			}
@@ -834,7 +825,6 @@ export async function runBundledModuleWithRegistry(
 				secretRedactor.track(value)
 			},
 			additionalTools: options?.additionalTools,
-			storageTools: options?.storageTools,
 			packageStorageTools,
 			packageSecretTools,
 			emailTools: options?.emailTools,
@@ -853,7 +843,6 @@ export async function runBundledModuleWithRegistry(
 			callerContext,
 			capabilityMap: {},
 			provider,
-			storageTools: options?.storageTools,
 			packageStorageTools,
 			packageSecretTools,
 			emailTools: options?.emailTools,
@@ -1043,7 +1032,7 @@ ${runtimeHelperRuntimePropertySource}
 }
 /**
  * A guard-less access to an unbound optional `kody:runtime` helper (for
- * example `storage.sql(...)` in an execute call without a bound `storageId`)
+ * example `email.getMessage(...)` outside an email-triggered run)
  * throws a bare TypeError that gives the caller no path to self-correct.
  * Enrich the message so `getExecutionErrorDetails` can attach a structured
  * next step naming the unbound helper.
