@@ -2,7 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminPackageCodemodStepInputSchema,
-	packageCodemodPagingHint,
+	packageCodemodHeavyPagingHint,
 	packageCodemodStepResultSchema,
 	runFleetPackageCodemodStep,
 } from '#mcp/capabilities/packages/package-codemod-shared.ts'
@@ -16,7 +16,7 @@ export const adminPackageCodemodDryRunCapability = defineDomainCapability(
 	{
 		...adminCapabilityAccess,
 		name: 'adminPackageCodemodDryRun',
-		description: `Fleet dry-run a registered package codemod: transform in memory and run publish checks without writing. Optional filters canary by userIds or packageIds. ${packageCodemodPagingHint}`,
+		description: `Fleet dry-run a registered package codemod: transform in memory and run publish checks without writing. Optional filters canary by userIds or packageIds. ${packageCodemodHeavyPagingHint}`,
 		keywords: [
 			'admin',
 			'package',
