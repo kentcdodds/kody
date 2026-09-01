@@ -244,12 +244,30 @@ export function formatOptional(value: string | null | undefined) {
 	return value?.trim() ? value : 'None'
 }
 
-export function connectActionLabel(status: 'Connected' | 'Needs setup') {
-	return status === 'Connected' ? 'Reconnect' : 'Connect'
+export type ConnectionStatusLabel =
+	| 'Needs you'
+	| 'Service issue'
+	| 'Connected'
+	| 'Needs setup'
+
+export function connectActionLabel(status: ConnectionStatusLabel) {
+	if (status === 'Needs setup') return 'Connect'
+	return 'Reconnect'
 }
 
 export function connectionStatusLabel(integration: AccountIntegrationListItem) {
+	const failure = integration.lastAuthFailure
+	if (failure) {
+		return failure.who === 'you' ? 'Needs you' : 'Service issue'
+	}
 	return integration.authorization?.authorizeUrl ? 'Connected' : 'Needs setup'
+}
+
+export function shouldShowReconnectAction(
+	integration: AccountIntegrationListItem,
+) {
+	if (!integration.lastAuthFailure) return true
+	return integration.lastAuthFailure.who === 'you'
 }
 
 export function hostFromUrl(url: string | null | undefined) {
