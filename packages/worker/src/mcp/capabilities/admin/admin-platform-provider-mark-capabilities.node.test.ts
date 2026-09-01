@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 vi.unmock('#worker/audit-log.ts')
@@ -99,4 +100,30 @@ test('save/list/delete provider marks store a fitted logo and write audit rows',
 		{ action: 'admin_platform_provider_mark_delete', result: 'success' },
 		{ action: 'admin_platform_provider_mark_list', result: 'success' },
 	])
+})
+
+test('delete provider mark fails when logo storage is missing', async () => {
+	const { ctx, env } = createHarness()
+	await adminPlatformProviderMarkSaveCapability.handler(
+		{
+			slug: 'google',
+			label: 'Google',
+			logoBase64: bytesToBase64(tinyPngBytes),
+		},
+		ctx,
+	)
+	const missingStorageCtx = {
+		...ctx,
+		env: { ...env, COMMUNITY_ASSETS: undefined },
+	} as typeof ctx
+
+	await expect(
+		adminPlatformProviderMarkDeleteCapability.handler(
+			{ slug: 'google' },
+			missingStorageCtx,
+		),
+	).rejects.toThrow(McpCallerError)
+	expect(
+		(await adminPlatformProviderMarkListCapability.handler({}, ctx)).marks,
+	).toHaveLength(1)
 })

@@ -169,6 +169,12 @@ async function handleDeleteAction(input: {
 		db: input.env.APP_DB,
 		slug,
 	})
+	if (existing?.logoKey && !input.env.COMMUNITY_ASSETS) {
+		return jsonResponse(
+			{ ok: false, error: 'Logo storage is not configured.' },
+			503,
+		)
+	}
 	const deleted = await deletePlatformProviderMark({
 		db: input.env.APP_DB,
 		slug,

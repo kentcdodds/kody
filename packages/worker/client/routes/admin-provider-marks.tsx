@@ -173,7 +173,6 @@ export function AdminProviderMarksRoute(handle: Handle) {
 			message = successMessage
 			messageTone = 'info'
 			resetFormState()
-			formRevision += 1
 			return true
 		} catch (error) {
 			message =
@@ -219,6 +218,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 					marks.find((mark) => mark.slug === canonicalSlug)?.slug ??
 					marks.find((mark) => mark.slug === slug)?.slug ??
 					null
+				formRevision += 1
 				handle.update()
 			},
 		)
@@ -233,6 +233,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 			if (!ok) return
 			creating = false
 			selectedSlug = null
+			formRevision += 1
 			handle.update()
 		})
 	}

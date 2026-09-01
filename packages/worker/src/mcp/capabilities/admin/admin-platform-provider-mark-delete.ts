@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -49,6 +50,9 @@ export const adminPlatformProviderMarkDeleteCapability = defineDomainCapability(
 						db: ctx.env.APP_DB,
 						slug: args.slug,
 					})
+					if (existing?.logoKey && !ctx.env.COMMUNITY_ASSETS) {
+						throw new McpCallerError('Logo storage is not configured.')
+					}
 					const deleted = await deletePlatformProviderMark({
 						db: ctx.env.APP_DB,
 						slug: args.slug,
