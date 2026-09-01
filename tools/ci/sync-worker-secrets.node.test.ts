@@ -8,6 +8,7 @@ import {
 	collectSpawnedProcessOutput,
 	parseDotenv,
 	retrySecretBulkUpload,
+	toDotenv,
 } from './sync-worker-secrets'
 
 const baseOptions = {
@@ -30,6 +31,15 @@ test('parseDotenv unescapes double-quoted PEM newlines', () => {
 	expect(secrets.get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(
 		'-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
 	)
+})
+
+test('toDotenv round-trips multiline PEM values', () => {
+	const pem = '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----'
+	const encoded = toDotenv(new Map([['OIDC_SIGNING_PRIVATE_KEY_PEM', pem]]))
+	expect(encoded).toBe(
+		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
+	)
+	expect(parseDotenv(encoded).get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(pem)
 })
 
 test('buildSpawnEnv preserves optional vars only when they have values', () => {

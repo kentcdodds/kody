@@ -306,10 +306,22 @@ export function buildSpawnEnv(
 	return spawnEnv
 }
 
-function toDotenv(secrets: ReadonlyMap<string, string>) {
+function escapeDotenvValue(value: string) {
+	if (!/[\n\r\t"\\]/.test(value) && value === value.trim()) {
+		return value
+	}
+	return `"${value
+		.replace(/\\/g, '\\\\')
+		.replace(/\n/g, '\\n')
+		.replace(/\r/g, '\\r')
+		.replace(/\t/g, '\\t')
+		.replace(/"/g, '\\"')}"`
+}
+
+export function toDotenv(secrets: ReadonlyMap<string, string>) {
 	const lines = Array.from(secrets.entries())
 		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, value]) => `${key}=${value}`)
+		.map(([key, value]) => `${key}=${escapeDotenvValue(value)}`)
 	return `${lines.join('\n')}\n`
 }
 
