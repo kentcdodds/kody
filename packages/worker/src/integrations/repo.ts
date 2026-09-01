@@ -718,6 +718,12 @@ export async function writeIntegrationAuthFailure(input: {
 	providerErrorDescription?: string | null
 	httpStatus?: number | null
 	reconnectable: boolean
+	/**
+	 * Snapshot from the refresh that is failing. `IS` is NULL-safe so a
+	 * concurrent winner that already advanced `token_refreshed_at` (and
+	 * cleared health) is not overwritten by a loser `invalid_grant`.
+	 */
+	expectedTokenRefreshedAt: string | null
 	occurredAt?: string
 }): Promise<void> {
 	const now = input.occurredAt ?? new Date().toISOString()
@@ -731,7 +737,7 @@ export async function writeIntegrationAuthFailure(input: {
 				auth_failed_http_status = ?,
 				auth_failed_reconnectable = ?,
 				updated_at = ?
-			WHERE user_id = ? AND name = ?`,
+			WHERE user_id = ? AND name = ? AND token_refreshed_at IS ?`,
 		)
 		.bind(
 			now,
@@ -743,6 +749,7 @@ export async function writeIntegrationAuthFailure(input: {
 			now,
 			input.userId,
 			input.name,
+			input.expectedTokenRefreshedAt,
 		)
 		.run()
 }

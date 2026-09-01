@@ -684,6 +684,7 @@ async function persistAuthFailureSnapshot(input: {
 		providerError: input.error.providerError,
 		providerErrorDescription: input.error.providerErrorDescription,
 		httpStatus: input.error.httpStatus,
+		expectedTokenRefreshedAt: snapshot.tokenRefreshedAt,
 	})
 }
 
@@ -705,6 +706,7 @@ async function persistProviderUnavailableSnapshot(input: {
 		providerError: input.providerError ?? null,
 		providerErrorDescription: input.providerErrorDescription ?? null,
 		httpStatus: input.httpStatus ?? null,
+		expectedTokenRefreshedAt: input.joined.connection.tokenRefreshedAt,
 	})
 }
 
@@ -718,6 +720,7 @@ async function persistAuthFailureRow(input: {
 	providerError?: string | null
 	providerErrorDescription?: string | null
 	httpStatus?: number | null
+	expectedTokenRefreshedAt: string | null
 }) {
 	const copy = integrationAuthFailureCopy({
 		name: input.name,
@@ -735,6 +738,7 @@ async function persistAuthFailureRow(input: {
 			providerErrorDescription: input.providerErrorDescription,
 			httpStatus: input.httpStatus,
 			reconnectable: copy.reconnectable,
+			expectedTokenRefreshedAt: input.expectedTokenRefreshedAt,
 		})
 	} catch (error) {
 		console.warn('integration auth failure snapshot persist failed', {

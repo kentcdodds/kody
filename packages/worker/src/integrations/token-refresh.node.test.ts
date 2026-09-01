@@ -9,6 +9,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
+import { writeIntegrationAuthFailure } from './repo.ts'
 import {
 	getJoinedIntegration,
 	upsertIntegration,
@@ -183,6 +184,40 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
 			auth_failed_reason: null,
 			auth_failed_reconnectable: null,
+		})
+
+		const afterRefresh = await getJoinedIntegration({
+			env,
+			userId,
+			name: 'github',
+		})
+		expect(afterRefresh?.connection.tokenRefreshedAt).toEqual(
+			expect.stringMatching(/^\d{4}-/),
+		)
+		await writeIntegrationAuthFailure({
+			db: env.APP_DB,
+			userId,
+			name: 'github',
+			reason: 'provider_rejected',
+			reconnectable: true,
+			expectedTokenRefreshedAt: '2020-01-01T00:00:00.000Z',
+		})
+		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
+			auth_failed_reason: null,
+			auth_failed_reconnectable: null,
+		})
+		await writeIntegrationAuthFailure({
+			db: env.APP_DB,
+			userId,
+			name: 'github',
+			reason: 'provider_rejected',
+			reconnectable: true,
+			expectedTokenRefreshedAt:
+				afterRefresh?.connection.tokenRefreshedAt ?? null,
+		})
+		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
+			auth_failed_reason: 'provider_rejected',
+			auth_failed_reconnectable: 1,
 		})
 	} finally {
 		vi.unstubAllGlobals()
