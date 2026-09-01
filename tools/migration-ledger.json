@@ -151,6 +151,10 @@
 		{
 			"filename": "0037-drop-openapi-bindings.sql",
 			"sha256": "ef8fdf2c2b94f0d281afaa43977787827ef5792ff0d33adaa273eedf6c41ba56"
+		},
+		{
+			"filename": "0038-integration-auth-failure.sql",
+			"sha256": "147acc4287512ae6666f4be4a0dbcc7f61edfd412f7ed932c5688a1634000339"
 		}
 	]
 }

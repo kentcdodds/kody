@@ -12,6 +12,8 @@ const emptySignals: WaitingSignals = {
 	onboardingDismissed: true,
 	onboardingRemaining: [],
 	mcpServers: [],
+	integrationAuth: [],
+	expiredSecrets: [],
 	lockedPackages: [],
 	pendingEmailChange: null,
 	errorRate: null,
@@ -61,6 +63,8 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 				error: null,
 			},
 		],
+		integrationAuth: [],
+		expiredSecrets: [],
 		lockedPackages: [
 			{ id: 'pkg-1', name: 'gmail-drafts', kodyId: 'gmail-drafts' },
 		],
@@ -121,4 +125,57 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		onboardingRemaining: ['connect-agent'],
 	})
 	expect(emptyAfterDismiss).toEqual([])
+
+	const connectionHealth = buildWaitingItems({
+		...emptySignals,
+		mcpServers: [
+			{
+				id: 'srv-outage',
+				name: 'Linear',
+				state: 'failed',
+				error: 'HTTP 503 from upstream',
+			},
+		],
+		integrationAuth: [
+			{
+				name: 'google',
+				accountLabel: 'kent@gmail.com',
+				lane: 'user',
+				reason: 'provider_rejected',
+			},
+			{
+				name: 'spotify',
+				accountLabel: null,
+				lane: 'user',
+				reason: 'provider_unavailable',
+			},
+		],
+		expiredSecrets: [
+			{ name: 'githubAccessToken' },
+			{ name: 'one' },
+			{ name: 'two' },
+			{ name: 'three' },
+		],
+	})
+	expect(connectionHealth.map((item) => item.id)).toEqual([
+		'integration-auth:google',
+		'secret-expired:githubAccessToken',
+		'secret-expired:one',
+		'secret-expired:two',
+		'secret-expired-more',
+	])
+	expect(
+		connectionHealth.find((item) => item.id === 'mcp-server:srv-outage'),
+	).toBeUndefined()
+	expect(
+		connectionHealth.find((item) => item.id === 'integration-auth:spotify'),
+	).toBeUndefined()
+	expect(
+		connectionHealth.find((item) => item.id === 'integration-auth:google'),
+	).toMatchObject({
+		who: 'you',
+		doLabel: 'Reconnect',
+		href: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+		severity: 'block',
+	})
 })

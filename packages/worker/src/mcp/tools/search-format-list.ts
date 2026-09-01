@@ -112,7 +112,10 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')
-		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const trouble = match.lastAuthFailure?.reconnectable
+			? ` ${escapeMarkdownText(match.lastAuthFailure.why)} ${escapeMarkdownText(match.lastAuthFailure.doLabel)} at ${formatMarkdownInlineCode(match.lastAuthFailure.reconnectHref)}.`
+			: ''
+		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${trouble}`
 	}
 	if (match.type === 'retriever_result') {
 		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`

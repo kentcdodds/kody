@@ -14,7 +14,10 @@ Typical items:
 
 - verify your email (outbound mail stays off until you confirm)
 - finish OAuth or reconnect an MCP server that is authenticating, failed, or
-  disconnected
+  disconnected — unless the error looks like a vendor outage
+- reconnect a third-party grant that last refresh classified as yours to fix
+  (`invalid_grant`, missing refresh token, missing user credential)
+- update an expired user-scope secret (up to three, then a “more” card)
 - review a locked package (published code stays put until you promote or unlock)
 - confirm a pending email change
 - a plan resource at its cap
@@ -22,12 +25,14 @@ Typical items:
 - unfinished onboarding steps, unless you dismissed the checklist
 
 Vendor outages, operator work, and other people's queues do not appear here.
-Session-scoped secret approvals stay on the session that requested them.
+Session-scoped secret approvals stay on the session that requested them. Missing
+secret _names_ stay off Waiting (the agent’s `nextStep` and
+`/account/secrets/new` already cover those).
 
-OAuth integration last-failure is not stored, so a dead third-party grant does
-not invent a Waiting row. Reconnect from
-[Integrations](https://kody.codes/account/integrations) or the MCP server page
-the card already links to.
+OAuth last-failure **is** stored on the connection. A reconnectable grant shows
+a Waiting card with Reconnect. A provider 5xx or timeout is stored for
+[Integrations](https://kody.codes/account/integrations) as a service issue, but
+it does not appear here and does not emit `integration.auth.failed`.
 
 ## Not Activity, not Email
 

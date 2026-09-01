@@ -127,13 +127,16 @@ hosts or retarget `tokenUrl` to an unapproved host; reconnect at
 operator-pinned rows, so no user-secret allowlist applies.
 
 Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing
-refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
-host-approval gaps, invalid connection config) best-effort dispatch
+refresh token, provider HTTP 4xx / `invalid_grant`, user-lane missing secrets,
+host-approval gaps, invalid connection config) persist a last-failure snapshot
+on `user_integrations` (`auth_failed_*`) and best-effort dispatch
 `integration.auth.failed` to the owning user's packages that declare the topic.
-Successful refreshes and successful `/connect/oauth` token persists dispatch
-`integration.auth.succeeded`. Every classified attempt emits; the platform does
-not coalesce repeats or store working ↔ failed itself. Provider HTTP 5xx and
-missing connections do not emit failed. Both payloads are metadata-first
+Successful refreshes and successful `/connect/oauth` token persists clear that
+snapshot and dispatch `integration.auth.succeeded`. Every classified attempt
+emits; the platform does not coalesce repeats. Provider HTTP 5xx and token
+endpoint timeouts persist `provider_unavailable` for Integrations /
+`integrationGet` without emitting failed and without a Waiting card. Missing
+connections do not write or emit failed. Both payloads are metadata-first
 (connection name, lane, account label, description, scopes, connect/refresh
 timestamps, and for failed: reason, optional provider error fields, trusted
 `reconnect_url` and `account_url`; for succeeded: `source` and trusted

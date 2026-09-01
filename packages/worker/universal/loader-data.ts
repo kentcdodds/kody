@@ -26,6 +26,7 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
 import {
 	type AccountActivityStatusFilter,
@@ -1023,6 +1024,8 @@ export type AccountIntegrationListItem = {
 	/** Omitted or `any` is execute plus every package. */
 	usageMode?: 'any' | 'packages'
 	allowedPackageIds?: Array<string>
+	/** Last classified OAuth refresh outcome. Absent when the sign-in is healthy. */
+	lastAuthFailure?: IntegrationAuthFailureView
 }
 
 export type AccountOauthAppConnectionRef = {

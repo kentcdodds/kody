@@ -1,6 +1,7 @@
 # Waiting inbox
 
-Things waiting on the signed-in human (approvals, reconnects, publish locks).
+Things waiting on the signed-in human (approvals, reconnects, expired secrets,
+publish locks). Fold connection-health here — do not invent another inbox.
 
 ## How to get there
 

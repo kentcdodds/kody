@@ -82,6 +82,14 @@ and `search({ domain })` do not attach memories. **execute** retrieves memories
 only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
+Those same ranked `search({ query })` calls may also prepend a **`## Waiting`**
+block when something the signed-in human must clear is `block` or `degraded`
+(reconnectable OAuth, expired secrets, MCP reconnects). Setup/onboarding cards
+stay off this block. At most three items, then “N more” pointing at
+`waitingSummary` and `/account/waiting`. Entity lookups, `search({ domain })`,
+and empty/broad discovery do not inject it. Matching integration hits also carry
+the reconnect `nextStep` when the last refresh was reconnectable.
+
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
 how long the ranked lookup or entity lookup took.

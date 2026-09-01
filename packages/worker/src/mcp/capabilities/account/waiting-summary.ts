@@ -3,7 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
-import { deriveWaitingItems } from '#mcp/waiting/derive-waiting.ts'
+import { deriveWaitingItemsForStableUser } from '#mcp/waiting/derive-waiting.ts'
 import { waitingItemKinds, waitingSeverities } from '#universal/waiting.ts'
 
 const waitingItemSchema = z.object({
@@ -22,7 +22,7 @@ export const waitingSummaryCapability = defineDomainCapability(
 	{
 		name: 'waitingSummary',
 		description:
-			'List things currently waiting on the signed-in human: email verification, MCP reconnects, locked-package publishes, plan caps, and unfinished setup. This is a current-state queue, not run history — use runSummary for Activity.',
+			'List things currently waiting on the signed-in human: email verification, OAuth reconnects, expired secrets, MCP reconnects, locked-package publishes, plan caps, and unfinished setup. This is a current-state queue, not run history — use runSummary for Activity. Vendor outages do not appear here.',
 		keywords: [
 			'waiting',
 			'inbox',
@@ -34,6 +34,9 @@ export const waitingSummaryCapability = defineDomainCapability(
 			'verify email',
 			'locked package',
 			'MCP disconnected',
+			'expired secret',
+			'oauth',
+			'integration',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -47,26 +50,10 @@ export const waitingSummaryCapability = defineDomainCapability(
 		async handler(_args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const origin = ctx.callerContext.baseUrl.replace(/\/+$/, '')
-			const userRow = await ctx.env.APP_DB.prepare(
-				`SELECT id, email_verified_at FROM users WHERE stable_user_id = ? LIMIT 1`,
-			)
-				.bind(user.userId)
-				.first<{ id: number; email_verified_at: string | null }>()
-			if (!userRow) {
-				return {
-					count: 0,
-					waiting_url: `${origin}/account/waiting`,
-					items: [],
-				}
-			}
-			const items = await deriveWaitingItems({
+			const items = await deriveWaitingItemsForStableUser({
 				env: ctx.env,
-				user: {
-					userId: userRow.id,
-					stableUserId: user.userId,
-					email: user.email,
-					emailVerified: Boolean(userRow.email_verified_at),
-				},
+				stableUserId: user.userId,
+				email: user.email,
 			})
 			return {
 				count: items.length,

@@ -103,6 +103,7 @@ export const integrationSearchEntityPlugin = {
 						accessTokenSecretName: config.accessTokenSecretName,
 						refreshTokenSecretName: config.refreshTokenSecretName ?? null,
 						authorization: config.authorization ?? null,
+						lastAuthFailure: config.lastAuthFailure,
 					},
 					type: 'integration' as const,
 					id: connection.name,
@@ -140,7 +141,9 @@ export const integrationSearchEntityPlugin = {
 			requiredHosts: match.requiredHosts,
 			clientId: match.clientId,
 			authorization: match.authorization ?? null,
-			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secretSet or secretSetMany.`,
+			nextStep: match.lastAuthFailure?.reconnectable
+				? `${match.lastAuthFailure.why} ${match.lastAuthFailure.doLabel} at ${match.lastAuthFailure.reconnectHref}.`
+				: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secretSet or secretSetMany.`,
 		}
 	},
 	formatEntityDetail(detail) {
@@ -172,6 +175,17 @@ export const integrationSearchEntityPlugin = {
 			`- Client ID: \`${detail.config.clientId}\``,
 			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integrationTokenRefresh\`. Do not read or write them with \`secretSet\`, \`secretSetMany\`, or \`secretList\`.`,
 		]
+		if (detail.config.lastAuthFailure?.reconnectable) {
+			const failure = detail.config.lastAuthFailure
+			lines.push(
+				'',
+				'## Needs you',
+				'',
+				escapeMarkdownText(failure.why),
+				'',
+				`${escapeMarkdownText(failure.doLabel)} at ${formatMarkdownInlineCode(failure.reconnectHref)}.`,
+			)
+		}
 		if (authorization) {
 			lines.push(
 				'',

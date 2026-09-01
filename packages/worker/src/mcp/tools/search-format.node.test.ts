@@ -742,6 +742,82 @@ test('package search formatting keeps runnable actions and hosted URLs in struct
 	})
 })
 
+test('integration search hits surface reconnect nextStep when last auth failure is yours', () => {
+	const matches = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		matches: [
+			{
+				type: 'integration',
+				integrationName: 'google',
+				title: 'google',
+				description: 'Google OAuth integration config',
+				flow: 'confidential',
+				tokenUrl: 'https://oauth2.googleapis.com/token',
+				apiBaseUrl: 'https://www.googleapis.com',
+				requiredHosts: ['www.googleapis.com'],
+				clientId: 'google-client-id',
+				clientSecretSecretName: null,
+				accessTokenSecretName: 'googleAccessToken',
+				refreshTokenSecretName: 'googleRefreshToken',
+				lastAuthFailure: {
+					reason: 'provider_rejected',
+					occurredAt: '2026-09-01T00:00:00.000Z',
+					reconnectable: true,
+					providerError: 'invalid_grant',
+					providerErrorDescription: 'Token has been expired or revoked.',
+					httpStatus: 400,
+					title: 'Google · kent@gmail.com stopped working',
+					why: 'The provider rejected the saved sign-in (invalid_grant: Token has been expired or revoked.).',
+					who: 'you',
+					doLabel: 'Reconnect',
+					reconnectHref:
+						'/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+					accountHref: '/account/integrations/google',
+				},
+			},
+		],
+	})
+	expect(matches[0]).toMatchObject({
+		type: 'integration',
+		nextStep:
+			'The provider rejected the saved sign-in (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com.',
+	})
+	expect(
+		formatSearchMarkdown({
+			matches: [
+				{
+					type: 'integration',
+					integrationName: 'google',
+					title: 'google',
+					description: 'Google OAuth integration config',
+					flow: 'confidential',
+					tokenUrl: 'https://oauth2.googleapis.com/token',
+					apiBaseUrl: 'https://www.googleapis.com',
+					requiredHosts: ['www.googleapis.com'],
+					clientId: 'google-client-id',
+					clientSecretSecretName: null,
+					accessTokenSecretName: 'googleAccessToken',
+					refreshTokenSecretName: 'googleRefreshToken',
+					lastAuthFailure: {
+						reason: 'provider_rejected',
+						occurredAt: '2026-09-01T00:00:00.000Z',
+						reconnectable: true,
+						providerError: 'invalid_grant',
+						providerErrorDescription: null,
+						httpStatus: 400,
+						title: 'Google stopped working',
+						why: 'The provider rejected the saved sign-in.',
+						who: 'you',
+						doLabel: 'Reconnect',
+						reconnectHref: '/connect/oauth?provider=google',
+						accountHref: '/account/integrations/google',
+					},
+				},
+			],
+		}),
+	).toContain('Reconnect at `/connect/oauth?provider=google`')
+})
+
 test('search markdown summarizes broad results safely and only suggests entity detail for entity-backed hits', () => {
 	const sensitiveWarning = 'Saved package metadata warning with long details.'
 	const retrieverWarning = 'Package retriever warning with long details.'

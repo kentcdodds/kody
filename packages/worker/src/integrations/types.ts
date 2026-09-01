@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type IntegrationAuthFailureReason } from '#universal/connection-trouble.ts'
 import {
 	integrationFlowValues,
 	tokenExchangeStyleValues,
@@ -56,7 +57,9 @@ export const userIntegrationConnectionSchema = z.object({
 
 export type UserIntegrationConnection = z.infer<
 	typeof userIntegrationConnectionSchema
->
+> & {
+	lastAuthFailure?: IntegrationAuthFailureSnapshot | null
+}
 
 export type UserOauthAppWithConnectionCount = UserOauthApp & {
 	connectionCount: number
@@ -119,6 +122,21 @@ export type UserIntegrationRow = {
 	allowed_packages_json?: string
 	connected_at: string | null
 	token_refreshed_at: string | null
+	auth_failed_at?: string | null
+	auth_failed_reason?: string | null
+	auth_failed_provider_error?: string | null
+	auth_failed_provider_description?: string | null
+	auth_failed_http_status?: number | null
+	auth_failed_reconnectable?: number | null
 	created_at: string
 	updated_at: string
+}
+
+export type IntegrationAuthFailureSnapshot = {
+	occurredAt: string
+	reason: IntegrationAuthFailureReason
+	providerError: string | null
+	providerErrorDescription: string | null
+	httpStatus: number | null
+	reconnectable: boolean
 }
