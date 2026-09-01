@@ -17,7 +17,11 @@ export const fleetEntitlementCrossingThresholds = [
 export type FleetEntitlementCrossingThreshold =
 	(typeof fleetEntitlementCrossingThresholds)[number]
 
-export type FleetEntitlementCrossingKind = 'entitlement' | 'runtime_duration'
+export type FleetEntitlementCrossingKind =
+	| 'entitlement'
+	| 'runtime_duration'
+	| 'repeated_entitlement'
+	| 'dynamic_worker_cost'
 
 export type FleetEntitlementCrossingUser = {
 	id: string
@@ -50,9 +54,36 @@ export type FleetRuntimeDurationCrossedEvent = {
 	observed_at: string
 }
 
+export type FleetRepeatedEntitlementCrossedEvent = {
+	event: FleetEntitlementCrossedTopic
+	kind: 'repeated_entitlement'
+	user: FleetEntitlementCrossingUser
+	resource: AdminUsageEntitlementResource
+	days_at_limit: number
+	window_days: number
+	threshold_days: number
+	insights_url: string
+	users_url: string
+	observed_at: string
+}
+
+export type FleetDynamicWorkerCostCrossedEvent = {
+	event: FleetEntitlementCrossedTopic
+	kind: 'dynamic_worker_cost'
+	user: FleetEntitlementCrossingUser
+	unique_worker_days: number
+	estimated_gross_usd: number
+	threshold_usd: number
+	insights_url: string
+	users_url: string
+	observed_at: string
+}
+
 export type FleetEntitlementCrossedEvent =
 	| FleetEntitlementResourceCrossedEvent
 	| FleetRuntimeDurationCrossedEvent
+	| FleetRepeatedEntitlementCrossedEvent
+	| FleetDynamicWorkerCostCrossedEvent
 
 export function isFleetEntitlementCrossingEventTopic(
 	value: string,
@@ -110,6 +141,52 @@ export function buildFleetRuntimeDurationCrossedEvent(input: {
 	}
 }
 
+export function buildFleetRepeatedEntitlementCrossedEvent(input: {
+	user: FleetEntitlementCrossingUser
+	resource: AdminUsageEntitlementResource
+	daysAtLimit: number
+	windowDays: number
+	thresholdDays: number
+	insightsUrl: string
+	usersUrl: string
+	observedAt: string
+}): FleetRepeatedEntitlementCrossedEvent {
+	return {
+		event: fleetEntitlementCrossedTopic,
+		kind: 'repeated_entitlement',
+		user: input.user,
+		resource: input.resource,
+		days_at_limit: input.daysAtLimit,
+		window_days: input.windowDays,
+		threshold_days: input.thresholdDays,
+		insights_url: input.insightsUrl,
+		users_url: input.usersUrl,
+		observed_at: input.observedAt,
+	}
+}
+
+export function buildFleetDynamicWorkerCostCrossedEvent(input: {
+	user: FleetEntitlementCrossingUser
+	uniqueWorkerDays: number
+	estimatedGrossUsd: number
+	thresholdUsd: number
+	insightsUrl: string
+	usersUrl: string
+	observedAt: string
+}): FleetDynamicWorkerCostCrossedEvent {
+	return {
+		event: fleetEntitlementCrossedTopic,
+		kind: 'dynamic_worker_cost',
+		user: input.user,
+		unique_worker_days: input.uniqueWorkerDays,
+		estimated_gross_usd: input.estimatedGrossUsd,
+		threshold_usd: input.thresholdUsd,
+		insights_url: input.insightsUrl,
+		users_url: input.usersUrl,
+		observed_at: input.observedAt,
+	}
+}
+
 export function buildFleetEntitlementCrossingIdempotencyKey(input: {
 	event: FleetEntitlementCrossedEvent
 	packageId: string
@@ -122,6 +199,10 @@ export function buildFleetEntitlementCrossingIdempotencyKey(input: {
 			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.threshold}:${input.event.resource}${dailySuffix}:${input.packageId}`
 		}
 		case 'runtime_duration':
+			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.observed_at.slice(0, 7)}:${input.packageId}`
+		case 'repeated_entitlement':
+			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.resource}:${input.packageId}`
+		case 'dynamic_worker_cost':
 			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.observed_at.slice(0, 7)}:${input.packageId}`
 		default: {
 			const exhaustive: never = input.event

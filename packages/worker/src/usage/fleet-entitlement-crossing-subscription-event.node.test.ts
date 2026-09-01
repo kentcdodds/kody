@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	buildFleetDynamicWorkerCostCrossedEvent,
 	buildFleetEntitlementCrossingIdempotencyKey,
 	buildFleetEntitlementResourceCrossedEvent,
+	buildFleetRepeatedEntitlementCrossedEvent,
 	buildFleetRuntimeDurationCrossedEvent,
 	fleetEntitlementCrossedTopic,
 	isFleetEntitlementCrossingEventTopic,
@@ -90,5 +92,43 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 		}),
 	).toBe(
 		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:entitlement:reached:execute_calls_per_day:2026-08-24:package-1',
+	)
+
+	const repeated = buildFleetRepeatedEntitlementCrossedEvent({
+		user: entitlement.user,
+		resource: 'execute_calls_per_day',
+		daysAtLimit: 3,
+		windowDays: 7,
+		thresholdDays: 3,
+		insightsUrl: entitlement.insights_url,
+		usersUrl: entitlement.users_url,
+		observedAt: entitlement.observed_at,
+	})
+	const cost = buildFleetDynamicWorkerCostCrossedEvent({
+		user: entitlement.user,
+		uniqueWorkerDays: 1000,
+		estimatedGrossUsd: 2,
+		thresholdUsd: 2,
+		insightsUrl: entitlement.insights_url,
+		usersUrl: entitlement.users_url,
+		observedAt: entitlement.observed_at,
+	})
+	expect(repeated.kind).toBe('repeated_entitlement')
+	expect(cost.kind).toBe('dynamic_worker_cost')
+	expect(
+		buildFleetEntitlementCrossingIdempotencyKey({
+			event: repeated,
+			packageId: 'package-1',
+		}),
+	).toBe(
+		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:repeated_entitlement:execute_calls_per_day:package-1',
+	)
+	expect(
+		buildFleetEntitlementCrossingIdempotencyKey({
+			event: cost,
+			packageId: 'package-1',
+		}),
+	).toBe(
+		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:dynamic_worker_cost:2026-08:package-1',
 	)
 })

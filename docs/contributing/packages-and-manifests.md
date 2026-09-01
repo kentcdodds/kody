@@ -423,10 +423,11 @@ this topic. See
 Fleet entitlement crossings are a separate admin-only, best-effort path. The
 hourly `usage_entitlement_alert` lane fans `fleet.entitlement.crossed` only to
 packages whose owners hold the admin role at dispatch time, once per 80% or 100%
-crossing (and per first over-threshold runtime-duration month). The payload is
-stable user id, username, resource counts or runtime duration, and admin URLs.
-It omits emails, plans, secrets, and package source. There is no Queue for this
-topic. See
+crossing (and per first over-threshold runtime-duration month, unique Dynamic
+Worker cost month, or three-of-seven execute-cap train). The payload is stable
+user id, username, resource counts, runtime duration, unique-worker days, or
+days at the execute cap, and admin URLs. It omits emails, plans, secrets, and
+package source. There is no Queue for this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 
 Verification-mail terminal failures are a separate admin-only, best-effort path.

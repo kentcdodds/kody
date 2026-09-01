@@ -1038,11 +1038,17 @@ topic, but it never receives the event. Role revocation stops delivery on the
 next crossing.
 
 One event fires per crossing of 80% (`approaching`) or 100% (`reached`) on a
-specific entitlement, or when a non-admin account first exceeds 24h of combined
-execute / job / workflow runtime in the UTC month. Staying over the same
-threshold does not emit again. A later drop below that threshold, then a climb
-back over it, is a new instance. A same-hour jump to 100% emits `reached` only
-and claims the 80% crossing so a later drop into the 80–99% band stays silent.
+specific entitlement, when a non-admin account first exceeds 24h of combined
+execute / job / workflow runtime in the UTC month, when a non-admin account
+first reaches a plan-aware unique Dynamic Worker cost threshold this UTC month
+(Free $2, Standard $12, Pro $29; `max` and admin accounts do not page), or when
+a non-admin account first hits 100% of `execute_calls_per_day` on three of the
+last seven UTC days. Staying over the same threshold does not emit again. A
+later drop below that threshold, then a climb back over it, is a new instance. A
+same-hour jump to 100% emits `reached` only and claims the 80% crossing so a
+later drop into the 80–99% band stays silent. Execute-cap days are recorded on
+durable hit keys so a later drop below 100% the same day does not erase the
+train.
 
 There is no Queue / DLQ for this topic. A missed invoke is logged and does not
 fail the hourly sweep. Retry happens on the next hour if the crossing is still
@@ -1088,6 +1094,29 @@ type FleetEntitlementCrossedEvent =
 			users_url: string
 			observed_at: string
 	  }
+	| {
+			event: 'fleet.entitlement.crossed'
+			kind: 'repeated_entitlement'
+			user: { id: string; username: string }
+			resource: 'execute_calls_per_day'
+			days_at_limit: number
+			window_days: 7
+			threshold_days: 3
+			insights_url: string
+			users_url: string
+			observed_at: string
+	  }
+	| {
+			event: 'fleet.entitlement.crossed'
+			kind: 'dynamic_worker_cost'
+			user: { id: string; username: string }
+			unique_worker_days: number
+			estimated_gross_usd: number
+			threshold_usd: number
+			insights_url: string
+			users_url: string
+			observed_at: string
+	  }
 ```
 
 `user.id` is the stable account user id. `insights_url` and `users_url` are
@@ -1097,8 +1126,10 @@ include the topic, user id, crossing kind, threshold or UTC month, resource, UTC
 day for `*_per_day` resources, and subscriber package id.
 
 Use this topic for notifier packages that send an operator message (for example
-Discord) when an account first crosses a plan limit. Do not treat this topic as
-permission to read another user's packages, secrets, or Activity.
+Discord) when an account first crosses a plan limit, repeats an execute cap, or
+crosses the unique-worker cost line. Filter on `kind` if a busy-day 80% crossing
+is too noisy. Do not treat this topic as permission to read another user's
+packages, secrets, or Activity.
 
 ## User created and deleted (admins)
 

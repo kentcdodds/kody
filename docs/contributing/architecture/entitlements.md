@@ -194,12 +194,16 @@ the same cold zero-init path):
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
   ~15 active users by current-month event count. The lane emits one
   `fleet.entitlement.crossed` event per 80% or 100% crossing (and per first
-  over-threshold runtime-duration month) to admin-owned packages. Staying over
-  the same threshold does not emit again; dropping below and climbing back is a
-  new instance. KV prefix `fleet-entitlement-crossing:v1` stores
+  over-threshold runtime-duration month, unique Dynamic Worker cost month, or
+  three-of-seven execute-cap train) to admin-owned packages. Staying over the
+  same threshold does not emit again; dropping below and climbing back is a new
+  instance. KV prefix `fleet-entitlement-crossing:v1` stores
   `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock limits,
-  appends the UTC day for `*_per_day` counters, and uses
-  `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal.
+  appends the UTC day for `*_per_day` counters, uses
+  `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal,
+  `{prefix}:{userId}:dynamic_worker_cost:{month}` for the unique-worker cost
+  signal, and `{prefix}:{userId}:repeated_entitlement:{resource}` for the
+  execute-cap train. Hit days live under `fleet-entitlement-hit:v1`.
 - User entitlement warning emails (same hourly lane) — emails verified person
   accounts when usage crosses 80% or 100% of their effective plan (transactional
   template). Throttle is one mail per crossing of a given percentage on a

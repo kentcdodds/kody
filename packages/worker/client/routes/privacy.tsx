@@ -172,14 +172,18 @@ export function PrivacyRoute(_handle: Handle) {
 					ids, package ids, error strings, logs, and unrelated account content.
 					Admin-configured notification packages may also receive a
 					metadata-only <code>fleet.entitlement.crossed</code> event when a
-					swept account first crosses 80% or 100% of a plan-limit resource, or
-					when a non-admin account first exceeds the monthly runtime-duration
-					threshold. Entitlement events include stable user id, username,
-					resource counts, and admin dashboard URLs; runtime-duration events
-					include stable user id, username, <code>total_duration_ms</code>,{' '}
-					<code>threshold_ms</code>, and admin dashboard URLs. Both event kinds
-					omit emails, plans, secrets, package source, and unrelated account
-					content.
+					swept account first crosses 80% or 100% of a plan-limit resource, when
+					a non-admin account first exceeds the monthly runtime-duration
+					threshold, when a non-admin account first reaches a plan-aware unique
+					Dynamic Worker cost threshold, or when a non-admin account first hits
+					the execute cap on three of the last seven UTC days. Entitlement
+					events include stable user id, username, resource counts, and admin
+					dashboard URLs; runtime-duration events include stable user id,
+					username, <code>total_duration_ms</code>, <code>threshold_ms</code>,
+					and admin dashboard URLs; unique-worker-cost and repeated-execute
+					events include the counts that tripped the threshold and admin
+					dashboard URLs. These event kinds omit emails, plans, secrets, package
+					source, and unrelated account content.
 				</p>
 			</section>
 

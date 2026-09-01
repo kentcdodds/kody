@@ -36,12 +36,14 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		eventType: 'dynamic_worker_day',
 		entityId: 'kody-worker-a',
 		outcome: 'success',
+		timestamp: now.toISOString(),
 	})
 	expect(recordUsageSpy.mock.calls[1]?.[1]).toEqual({
 		userId: 'user-1',
 		eventType: 'dynamic_worker_day',
 		entityId: 'kody-worker-b',
 		outcome: 'success',
+		timestamp: now.toISOString(),
 	})
 	recordUsageSpy.mockRestore()
 })

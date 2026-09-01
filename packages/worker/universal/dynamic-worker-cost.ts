@@ -1,3 +1,5 @@
+import { type PlanName } from './plans.ts'
+
 /**
  * Cloudflare Dynamic Worker list price used for operator cost estimates.
  *
@@ -9,6 +11,35 @@
 
 export const dynamicWorkerUsdPerUniqueDay = 0.002
 export const dynamicWorkersIncludedPerAccountMonth = 1000
+
+/**
+ * Gross unique-worker-day cost at which a non-admin account pages operators.
+ * Paid thresholds match monthly list price (the unique-execute break-even).
+ * Free uses the account-wide included allotment ($2 = 1,000 unique days) so
+ * one Free account eating that bucket is enough to look.
+ */
+export const fleetDynamicWorkerCostAlertUsdByPlan = {
+	free: 2,
+	standard: 12,
+	pro: 29,
+} as const
+
+export function fleetDynamicWorkerCostAlertUsd(plan: PlanName): number | null {
+	switch (plan) {
+		case 'free':
+			return fleetDynamicWorkerCostAlertUsdByPlan.free
+		case 'standard':
+			return fleetDynamicWorkerCostAlertUsdByPlan.standard
+		case 'pro':
+			return fleetDynamicWorkerCostAlertUsdByPlan.pro
+		case 'max':
+			return null
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown plan: ${String(exhaustive)}`)
+		}
+	}
+}
 
 export function estimateDynamicWorkerUsd(uniqueWorkerDays: number): number {
 	const safeDays = Number.isFinite(uniqueWorkerDays)

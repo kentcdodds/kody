@@ -49,6 +49,7 @@ function createFleetDb(input: {
 		event_count: number
 	}>
 	dynamicWorkerDays?: number
+	uniqueWorkerDaysByUser?: Record<string, number>
 	onDurationQueryBind?: (params: Array<unknown>) => void
 }) {
 	return {
@@ -77,10 +78,9 @@ function createFleetDb(input: {
 				},
 				async all<T>() {
 					if (
-						normalized.includes('sum(total_duration_ms)') &&
-						normalized.includes('group by user_id') &&
+						normalized.includes('sum(r.total_duration_ms)') &&
 						normalized.includes('limit ?') &&
-						!normalized.includes('partition by metric')
+						!normalized.includes('partition by')
 					) {
 						return {
 							results: (input.runtimeLeaders ?? []) as Array<T>,
@@ -88,7 +88,7 @@ function createFleetDb(input: {
 					}
 					if (
 						normalized.includes('u.plan') &&
-						normalized.includes('ranked.event_count')
+						normalized.includes('event_count')
 					) {
 						return {
 							results: (input.activeUsers ?? []) as Array<T>,
@@ -105,8 +105,7 @@ function createFleetDb(input: {
 						}
 					}
 					if (
-						normalized.includes('sum(event_count)') &&
-						normalized.includes('group by user_id') &&
+						normalized.includes('sum(r.event_count)') &&
 						normalized.includes('limit ?')
 					) {
 						return {
@@ -115,7 +114,19 @@ function createFleetDb(input: {
 					}
 					if (
 						normalized.includes("metric = 'dynamic_worker_day'") &&
-						normalized.includes('ranked.event_count')
+						normalized.includes('user_id in')
+					) {
+						const rows = Object.entries(input.uniqueWorkerDaysByUser ?? {}).map(
+							([user_id, event_count]) => ({
+								user_id,
+								event_count,
+							}),
+						)
+						return { results: rows as Array<T> }
+					}
+					if (
+						normalized.includes("metric = 'dynamic_worker_day'") &&
+						normalized.includes('limit ?')
 					) {
 						return {
 							results: (input.dynamicWorkerLeaders ?? []) as Array<T>,
@@ -256,7 +267,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 	})
 })
 
-test('detectFleetUsagePressure flags entitlement and runtime duration thresholds', async () => {
+test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cost', async () => {
 	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
 		async (input) => {
 			if (input.usageUserId === 'user-a') {
@@ -316,6 +327,10 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			'user-b': fleetRuntimeDurationAlertThresholdMs + 1,
 			'user-admin': fleetRuntimeDurationAlertThresholdMs * 2,
 		},
+		uniqueWorkerDaysByUser: {
+			'user-a': 1000,
+			'user-admin': 50_000,
+		},
 		onDurationQueryBind(params) {
 			durationQueryBind = params
 		},
@@ -335,6 +350,14 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			current: 9,
 			limit: 10,
 			percentOfLimit: 0.9,
+		},
+		{
+			kind: 'dynamic_worker_cost',
+			stableUserId: 'user-a',
+			username: 'alice',
+			uniqueWorkerDays: 1000,
+			estimatedGrossUsd: 2,
+			thresholdUsd: 2,
 		},
 		{
 			kind: 'entitlement',

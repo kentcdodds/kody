@@ -40,6 +40,7 @@ export async function recordUniqueDynamicWorkerDay(input: {
 			eventType: 'dynamic_worker_day',
 			entityId: input.workerId,
 			outcome: 'success',
+			timestamp: now.toISOString(),
 		})
 	} catch (error) {
 		console.warn('dynamic-worker-day-record-failed', error)

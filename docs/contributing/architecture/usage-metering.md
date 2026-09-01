@@ -385,14 +385,21 @@ Guarantees and rules:
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages
   once when a swept account first crosses 80% or 100% of a plan-limit resource,
-  or when a non-admin account's combined execute, job_run, and workflow_run
+  when a non-admin account's combined execute, job_run, and workflow_run
   duration for the month first exceeds `fleetRuntimeDurationAlertThresholdMs`
-  (24h). Staying over the same threshold does not emit again. Admin-role
-  dogfooding stays on `/admin/insights` rankings and can still appear as an
-  entitlement crossing, but does not page the runtime-duration signal. KV prefix
-  `fleet-entitlement-crossing:v1` claims each crossing. Admin links in the
-  payload are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL`
-  cannot produce `https://host//admin/…`. See
+  (24h), when a non-admin account's unique Dynamic Worker cost for the month
+  first reaches the plan-aware threshold (Free
+  $2 / 1,000 unique days, Standard
+  $12, Pro $29), or when a non-admin account
+  hits 100% of `execute_calls_per_day` on three of the last seven UTC days.
+  Staying over the same threshold does not emit again. Admin-role dogfooding
+  stays on `/admin/insights` rankings and can still appear as an entitlement
+  crossing, but does not page the runtime-duration, unique-worker-cost, or
+  repeated- execute signals. KV prefix `fleet-entitlement-crossing:v1` claims
+  each crossing. Execute-cap trains also write `fleet-entitlement-hit:v1` day
+  keys so a later drop below 100% the same day does not erase the count. Admin
+  links in the payload are built with `joinAppUrl` so a trailing slash on
+  `APP_BASE_URL` cannot produce `https://host//admin/…`. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 - **Fleet package error rate** (same `usage_aggregation` hour): a second
   Analytics Engine SQL, not grouped by user, totals `package_export`,
