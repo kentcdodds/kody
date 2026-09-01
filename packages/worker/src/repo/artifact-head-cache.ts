@@ -58,7 +58,6 @@ function readHeadCacheKv(env: Env): KVNamespace | null {
 async function loadArtifactSourceHead(input: {
 	env: Env
 	repoId: string
-	forceFresh: boolean
 }): Promise<ArtifactSourceHead> {
 	const kv = readHeadCacheKv(input.env)
 	if (!kv) return resolveArtifactSourceHead(input.env, input.repoId)
@@ -67,7 +66,6 @@ async function loadArtifactSourceHead(input: {
 		cache: createKvCachifiedCache(kv),
 		ttl: headTtlMs,
 		staleWhileRevalidate: headStaleWhileRevalidateMs,
-		forceFresh: input.forceFresh,
 		checkValue: isArtifactSourceHead,
 		async getFreshValue(context) {
 			const head = await resolveArtifactSourceHead(input.env, input.repoId)
@@ -86,11 +84,14 @@ async function loadArtifactSourceHead(input: {
 /**
  * Cached HEAD for `repoId`, resolved at most once per request. Falls back to
  * the live lookup when the KV binding is absent (unit tests, minimal envs).
+ * Callers that must see the live value use `resolveArtifactSourceHead`
+ * directly rather than a bypass flag here: the request memo would otherwise
+ * hand a "fresh" caller the cached promise from an earlier lookup.
  */
 export function resolveCachedArtifactSourceHead(
 	env: Env,
 	repoId: string,
-	options?: { request?: Request; forceFresh?: boolean },
+	options?: { request?: Request },
 ): Promise<ArtifactSourceHead> {
 	return memoizePerRequest({
 		request: options?.request,
@@ -98,12 +99,7 @@ export function resolveCachedArtifactSourceHead(
 		load: () =>
 			recordServerTiming(
 				'artifacts-head',
-				() =>
-					loadArtifactSourceHead({
-						env,
-						repoId,
-						forceFresh: options?.forceFresh ?? false,
-					}),
+				() => loadArtifactSourceHead({ env, repoId }),
 				options?.request,
 			),
 	})

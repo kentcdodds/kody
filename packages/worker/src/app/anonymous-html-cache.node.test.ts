@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	anonymousHtmlCacheControl,
 	anonymousPersonalizedJsonCacheHeaders,
+	anonymousVisibilityGatedCacheControl,
 	isCacheableAnonymousPath,
 	publicSharedJsonCacheHeaders,
 	requestHasSessionCookie,
@@ -175,8 +176,24 @@ test('anonymous package pages are cacheable, but only successful documents', () 
 				request: request(`https://example.com${pathname}`),
 				responseSetsCookie: false,
 			}),
-		).toEqual({ cacheControl: anonymousHtmlCacheControl, vary: 'Cookie' })
+		).toEqual({
+			cacheControl: anonymousVisibilityGatedCacheControl,
+			vary: 'Cookie',
+		})
 	}
+	expect(anonymousVisibilityGatedCacheControl).not.toMatch(
+		/stale-while-revalidate/,
+	)
+	expect(
+		anonymousPersonalizedJsonCacheHeaders({
+			personalized: false,
+			request: request('https://example.com/x.json'),
+			visibilityGated: true,
+		}),
+	).toEqual({
+		'Cache-Control': anonymousVisibilityGatedCacheControl,
+		Vary: 'Cookie',
+	})
 	// Owner-only and JSON shapes stay private.
 	expect(isCacheableAnonymousPath('/@kentcdodds/sentry/settings')).toBe(false)
 	expect(

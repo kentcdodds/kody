@@ -378,6 +378,7 @@ export function createCommunityDetailApiHandler(env: Env) {
 				anonymousPersonalizedJsonCacheHeaders({
 					personalized: detail.loggedIn,
 					request,
+					visibilityGated: true,
 				}),
 			)
 		},
@@ -451,6 +452,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 				anonymousPersonalizedJsonCacheHeaders({
 					personalized: page.loggedIn,
 					request,
+					visibilityGated: true,
 				}),
 			)
 		},

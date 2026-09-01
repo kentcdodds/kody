@@ -346,6 +346,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 				headers: anonymousPersonalizedJsonCacheHeaders({
 					personalized: false,
 					request,
+					visibilityGated: true,
 				}),
 				serverTiming: collectServerTiming(request, serverTiming),
 			})
@@ -386,6 +387,7 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 				headers: anonymousPersonalizedJsonCacheHeaders({
 					personalized: false,
 					request,
+					visibilityGated: true,
 				}),
 				serverTiming: collectServerTiming(request, serverTiming),
 			})
