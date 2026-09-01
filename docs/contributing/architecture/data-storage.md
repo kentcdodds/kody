@@ -383,7 +383,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   pointing at `secret_entries`. The non-secret `client_id` is stored inline on
   the owning app row.
 - `user_openapi_bindings` / `user_openapi_binding_operations`
-  (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0036`
+  (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0037`
   drops them. Do not add new readers or writers.
 
 App access pattern:
@@ -1267,7 +1267,7 @@ on write unless a migration backfills existing rows.
   secret-store values onto null ciphertext columns (see
   [Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
 - `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
-  (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0036`
+  (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
   drops the tables. Do not add new parsers.
 
 ### Durable Object id contracts
