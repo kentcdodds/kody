@@ -446,6 +446,7 @@ async function attachCloudflareMock(
 	mockEnv.CLOUDFLARE_API_BASE_URL = baseUrl
 	mockEnv.CLOUDFLARE_API_TOKEN = apiToken
 	mockEnv.CLOUDFLARE_ACCOUNT_ID = 'cf_account_mock_123'
+	mockEnv.CLOUDFLARE_API_SOURCE_SNAPSHOTS = 'true'
 	const didStart = await waitForMockReady(baseUrl, child)
 	if (!didStart) {
 		console.warn(

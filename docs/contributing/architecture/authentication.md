@@ -404,9 +404,8 @@ Password reset handlers are in
 - `POST /password-reset` creates a one-time token and stores only its hash
 - the response is uniform for registered and unregistered addresses in both body
   and latency: after the user lookup the token writes and the email send are
-  deferred past the response (`packages/worker/src/app/deferred-work.ts`, kept
-  alive by `ctx.waitUntil`), so response time cannot be used to enumerate
-  accounts
+  deferred past the response (`packages/worker/src/deferred-work.ts`, kept alive
+  by `ctx.waitUntil`), so response time cannot be used to enumerate accounts
 - `POST /password-reset/confirm` verifies token hash and expiry, updates the
   password, revokes every MCP OAuth grant for that user, stamps
   `users.password_changed_at`, then revokes again so a grant created in that

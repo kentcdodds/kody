@@ -2,8 +2,8 @@ import {
 	hasArtifactsAccess,
 	type ArtifactBootstrapAccess,
 	isLoopbackArtifactsRemote,
-	writeMockArtifactSnapshot,
 } from './artifacts.ts'
+import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
@@ -186,7 +186,7 @@ export async function syncArtifactSourceSnapshot(
 						if (oversizedFile) {
 							throw new Error(buildRepoLargeFileMessage(oversizedFile))
 						}
-						const snapshot = await writeMockArtifactSnapshot({
+						const snapshot = await writeArtifactSourceSnapshot({
 							env: input.env,
 							repoId: source.repo_id,
 							files: input.files,

@@ -1332,6 +1332,15 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   listing icon cache; registered as a user-owned KV surface and deleted for a
   user's listings during account deletion (including leftover
   `community-icon:v1` and `community-icon:v2` prefixes).
+- `derived-cache:v1:artifact-head:v1:{namespace}:{repoId}` — default-branch HEAD
+  (`{ branch, commit }`) of an Artifacts repo, read by package home, tree, and
+  file pages instead of a live binding + REST + git `info/refs` chain
+  (`packages/worker/src/repo/artifact-head-cache.ts`). Filled only by a page
+  view (5 minute TTL, 1 hour stale-while-revalidate, 60 second TTL when HEAD is
+  unresolved); a `cf.artifacts.repo.pushed` event to the cached default branch
+  rewrites the commit from the payload, and a push to an unviewed repo writes
+  nothing. Retention is the KV `expirationTtl`, so account deletion does not
+  clean it up.
 - `webhook-dispatch-payload:v1:{userId}:{deliveryId}` — ephemeral ack-mode
   webhook body spill written with KV `expirationTtl` (24 hours) when the
   serialized queue message would exceed 120 KB. Immediate account-deletion

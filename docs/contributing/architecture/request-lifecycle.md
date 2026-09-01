@@ -152,12 +152,35 @@ session, logout, password reset, health).
 `renderAppPage` sets
 `Cache-Control: public, max-age=60, stale-while-revalidate=300` and
 `Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
-`/onboarding`, `/guides`, and `/guides/:slug`. Anonymous `/onboarding.json` uses
-that same short cache. `/guides/:slug.json` is publicly cacheable without a
-cookie vary (the payload is identical for every visitor). The response stays
-`no-store` when the request carries a `kody_session` cookie, `loadSessionInfo`
-resolves a session, or the response sets a cookie. Auth, OAuth, account, and
-every other HTML path stay `no-store`.
+`/onboarding`, `/guides`, and `/guides/:slug`. The public package surfaces
+(`/@:username/:kodyId`, `/@:username/:kodyId/tree/:ref/*`, `/community/:id`,
+`/community/:id/files/*`) and their JSON companions
+(`/profiles/:username/packages/:kodyId.json`, `/community/:id.json`,
+`.../files.json`) are shared too, but with `public, max-age=60` and no
+stale-while-revalidate: an owner can unpublish or make a package private and
+nothing purges shared caches, so a stale public response is bounded to one
+minute. They are shared only when the document is a `200` (a `401` or `404` to a
+stranger stays `no-store` so making a package public takes effect at once) and,
+for JSON, when the request has no session cookie and the payload carries no
+viewer state. Anonymous `/onboarding.json` uses the marketing policy.
+`/guides/:slug.json` is publicly cacheable without a cookie vary (the payload is
+identical for every visitor). The response stays `no-store` when the request
+carries a `kody_session` cookie, `loadSessionInfo` resolves a session, or the
+response sets a cookie. Auth, OAuth, account, and every other HTML path stay
+`no-store`.
+
+## Request context
+
+`handleRequest` wraps the router in `runWithRequestContext`
+(`packages/worker/src/request-context.ts`): an `AsyncLocalStorage` store, also
+keyed by `Request`, holding a per-request memo and the Server-Timing entries.
+`memoizePerRequest` dedupes lookups a page needs more than once — the package
+handler, the streaming `community-detail` frame, and the files loader all
+resolve the same `loadPackagePage`, and the tree page resolves the same
+Artifacts HEAD from two loaders. Callers that hold the `Request` pass it, since
+SSR frames render after the async scope has exited; repo-layer code without a
+request falls back to the store. Without any context the helpers just run the
+load, so unit tests and jobs are unaffected.
 
 ## Page Server-Timing
 
@@ -171,6 +194,17 @@ are:
 - `highlight` — token batch (`desc` is `hit`, `worker`, `miss`, or `fallback`)
 - `listings` — onboarding featured/chooser load
 - `code-runs` — homepage public ticker window
+- `package-page` — `loadPackagePage` (URL resolution, viewer, listing and owner
+  detail), recorded once per request thanks to the memo; nested inside it:
+  `resolve-url`, `auth`, `listing` (public listing + source row on a data-cache
+  miss), `artifacts-head` (cached default-branch HEAD), `owner-package`
+- `owner-readme` — README read from the owner's published source snapshot
+- `files-route` — tree URL canonicalization for `/tree/:ref` and `/files`
+- `files` — tree snapshot read (KV, then the listing pin snapshot)
+
+Loader phases recorded through `recordServerTiming` land on the request context
+and are merged into the header by `renderAppPage`, the package JSON companions,
+and frame responses.
 
 Signed-in `/onboarding` loads featured listings, then derives the setup
 checklist from verification, MCP OAuth grants, saved integrations or MCP

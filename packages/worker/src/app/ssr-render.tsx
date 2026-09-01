@@ -29,6 +29,7 @@ import {
 } from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
 import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
+import { collectServerTiming } from '#worker/request-context.ts'
 import {
 	applyServerTimingHeader,
 	pushServerTiming,
@@ -186,6 +187,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			session,
 			request,
 			responseSetsCookie,
+			status: status ?? 200,
 		})
 		const headers = new Headers({
 			'Cache-Control': pageCache.cacheControl,
@@ -212,6 +214,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			}),
 		)
 	})
-	applyServerTimingHeader(response.headers, serverTiming)
+	applyServerTimingHeader(
+		response.headers,
+		collectServerTiming(request, serverTiming),
+	)
 	return response
 }

@@ -5,10 +5,21 @@
  * anonymous markup.
  */
 
+import { createMatcher } from 'remix/route-pattern/match'
+import { routes } from '#universal/routes.ts'
+
 export const sessionCookieName = 'kody_session'
 
 export const anonymousHtmlCacheControl =
 	'public, max-age=60, stale-while-revalidate=300'
+
+/**
+ * Package surfaces answer to an owner's visibility switch (unpublish, make
+ * private). Nothing purges shared caches on that switch, so they get the
+ * shorter policy: a stale public response can outlive the change by at most
+ * one minute instead of riding the marketing pages' revalidation window.
+ */
+export const anonymousVisibilityGatedCacheControl = 'public, max-age=60'
 
 const cacheableAnonymousExactPaths = new Set([
 	'/',
@@ -20,11 +31,32 @@ const cacheableAnonymousExactPaths = new Set([
 	'/guides',
 ])
 
+// Public package surfaces: home, tree, and the listing-uuid shapes they
+// replaced. Anonymous markup for these is viewer-independent, and anonymous
+// traffic is most of what they see.
+const cacheableAnonymousRouteMatchers = [
+	routes.communityPackage,
+	routes.communityPackageTree,
+	routes.communityDetail,
+	routes.communityDetailFiles,
+].map((route) => createMatcher(route.pattern))
+
+const matcherOrigin = 'https://kody.local'
+
+export function isVisibilityGatedAnonymousPath(pathname: string) {
+	const url = new URL(pathname, matcherOrigin)
+	return cacheableAnonymousRouteMatchers.some(
+		(matcher) => matcher.match(url) !== null,
+	)
+}
+
 export function isCacheableAnonymousPath(pathname: string) {
 	if (cacheableAnonymousExactPaths.has(pathname)) return true
-	if (!pathname.startsWith('/guides/')) return false
-	const rest = pathname.slice('/guides/'.length)
-	return rest.length > 0 && !rest.includes('/')
+	if (pathname.startsWith('/guides/')) {
+		const rest = pathname.slice('/guides/'.length)
+		return rest.length > 0 && !rest.includes('/')
+	}
+	return isVisibilityGatedAnonymousPath(pathname)
 }
 
 export function requestHasSessionCookie(request: Request): boolean {
@@ -37,8 +69,13 @@ export function resolveAppPageCacheControl(input: {
 	session: unknown | null
 	request: Request
 	responseSetsCookie: boolean
+	/** Only successful documents are shared; a 404 or 401 must not outlive its cause. */
+	status?: number
 }): { cacheControl: string; vary?: string } {
 	if (input.session !== null) {
+		return { cacheControl: 'no-store' }
+	}
+	if ((input.status ?? 200) !== 200) {
 		return { cacheControl: 'no-store' }
 	}
 	if (input.responseSetsCookie) {
@@ -51,7 +88,9 @@ export function resolveAppPageCacheControl(input: {
 		return { cacheControl: 'no-store' }
 	}
 	return {
-		cacheControl: anonymousHtmlCacheControl,
+		cacheControl: isVisibilityGatedAnonymousPath(input.pathname)
+			? anonymousVisibilityGatedCacheControl
+			: anonymousHtmlCacheControl,
 		vary: 'Cookie',
 	}
 }
@@ -63,12 +102,16 @@ export function publicSharedJsonCacheHeaders(): HeadersInit {
 export function anonymousPersonalizedJsonCacheHeaders(input: {
 	personalized: boolean
 	request: Request
+	/** Payload for a surface an owner can make private; see the shorter policy. */
+	visibilityGated?: boolean
 }): HeadersInit {
 	if (input.personalized || requestHasSessionCookie(input.request)) {
 		return { 'Cache-Control': 'no-store' }
 	}
 	return {
-		'Cache-Control': anonymousHtmlCacheControl,
+		'Cache-Control': input.visibilityGated
+			? anonymousVisibilityGatedCacheControl
+			: anonymousHtmlCacheControl,
 		Vary: 'Cookie',
 	}
 }

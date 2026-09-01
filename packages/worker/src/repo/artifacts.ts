@@ -566,7 +566,7 @@ function redactArtifactsRestPath(path: string) {
 	return path.replace(/\/tokens\/[^/?#]+/g, '/tokens/:token')
 }
 
-async function requestArtifactsApi<T>(
+export async function requestArtifactsApi<T>(
 	client: ReturnType<typeof createCloudflareRestClient>,
 	input: {
 		method: 'GET' | 'POST' | 'DELETE'
@@ -583,7 +583,7 @@ async function requestArtifactsApi<T>(
 	return envelope.result
 }
 
-async function requestArtifactsEnvelope<T>(
+export async function requestArtifactsEnvelope<T>(
 	client: ReturnType<typeof createCloudflareRestClient>,
 	input: {
 		method: 'GET' | 'POST' | 'DELETE'
@@ -851,49 +851,6 @@ export function isLoopbackArtifactsRemote(remote: string) {
 	} catch {
 		return false
 	}
-}
-
-type MockArtifactSnapshot = {
-	published_commit: string
-	files: Record<string, string>
-}
-
-function buildArtifactsNamespaceBasePath(env: Env) {
-	return `/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/artifacts/namespaces/${getArtifactsNamespace(env)}`
-}
-
-export async function writeMockArtifactSnapshot(input: {
-	env: Env
-	repoId: string
-	files: Record<string, string>
-}) {
-	const client = createCloudflareRestClient(input.env)
-	const result = await requestArtifactsApi<MockArtifactSnapshot>(client, {
-		method: 'POST',
-		path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
-		body: {
-			files: input.files,
-		},
-	})
-	return result
-}
-
-export async function readMockArtifactSnapshot(input: {
-	env: Env
-	repoId: string
-	commit: string | null
-}) {
-	const client = createCloudflareRestClient(input.env)
-	const envelope = await requestArtifactsEnvelope<MockArtifactSnapshot>(
-		client,
-		{
-			method: 'GET',
-			path: `${buildArtifactsNamespaceBasePath(input.env)}/repos/${encodeURIComponent(input.repoId)}/mock-source-snapshot`,
-			query: input.commit ? { commit: input.commit } : undefined,
-			treat404AsNull: true,
-		},
-	)
-	return envelope.result
 }
 
 function isArtifactRepoAlreadyExistsError(error: unknown) {

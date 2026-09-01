@@ -1,0 +1,215 @@
+import { createCacheEntry } from '@epic-web/cachified'
+import { beforeEach, expect, test, vi } from 'vitest'
+import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
+import { runWithRequestContext } from '#worker/request-context.ts'
+
+const mocks = vi.hoisted(() => ({
+	resolveArtifactSourceHead:
+		vi.fn<() => Promise<{ branch: string; commit: string | null }>>(),
+}))
+
+vi.mock('./artifacts.ts', () => ({
+	getArtifactsNamespace: () => 'default',
+	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+		mocks.resolveArtifactSourceHead(...(args as [])),
+}))
+
+const {
+	applyArtifactSourcePushToHeadCache,
+	buildArtifactSourceHeadCacheKey,
+	resolveCachedArtifactSourceHead,
+} = await import('./artifact-head-cache.ts')
+
+type StoredEntry = { value: string; expirationTtl: number | undefined }
+
+function createKv() {
+	const store = new Map<string, StoredEntry>()
+	const kv = {
+		store,
+		async get(key: string, type?: string) {
+			const stored = store.get(key)
+			if (!stored) return null
+			return type === 'json' ? JSON.parse(stored.value) : stored.value
+		},
+		async put(
+			key: string,
+			value: string,
+			options?: { expirationTtl?: number },
+		) {
+			store.set(key, { value, expirationTtl: options?.expirationTtl })
+		},
+		async delete(key: string) {
+			store.delete(key)
+		},
+	}
+	return kv
+}
+
+function createEnv(kv: ReturnType<typeof createKv> | null) {
+	return (kv ? { BUNDLE_ARTIFACTS_KV: kv } : {}) as unknown as Env
+}
+
+function storedHead(kv: ReturnType<typeof createKv>, env: Env, repoId: string) {
+	const raw = kv.store.get(
+		derivedCacheKeyPrefix + buildArtifactSourceHeadCacheKey(env, repoId),
+	)
+	return raw ? (JSON.parse(raw.value) as { value: unknown }).value : undefined
+}
+
+beforeEach(() => {
+	mocks.resolveArtifactSourceHead.mockReset()
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-live',
+	})
+})
+
+test('first read resolves live and later reads come from KV', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+
+	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
+		{ branch: 'main', commit: 'commit-live' },
+	)
+	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
+		{ branch: 'main', commit: 'commit-live' },
+	)
+	expect(mocks.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+	expect(storedHead(kv, env, 'repo-1')).toEqual({
+		branch: 'main',
+		commit: 'commit-live',
+	})
+})
+
+test('one request resolves a repo once even when several loaders ask', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	const request = new Request('https://kody.test/@owner/demo/tree/main')
+
+	await runWithRequestContext(request, () =>
+		Promise.all([
+			resolveCachedArtifactSourceHead(env, 'repo-1', { request }),
+			resolveCachedArtifactSourceHead(env, 'repo-1', { request }),
+			resolveCachedArtifactSourceHead(env, 'repo-1'),
+		]),
+	)
+	expect(mocks.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+})
+
+test('a missing HEAD is cached only briefly', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: null,
+	})
+
+	await resolveCachedArtifactSourceHead(env, 'repo-1')
+	const raw = kv.store.get(
+		derivedCacheKeyPrefix + buildArtifactSourceHeadCacheKey(env, 'repo-1'),
+	)
+	expect(raw?.expirationTtl).toBe(60)
+})
+
+test('falls back to the live lookup without a KV binding', async () => {
+	const env = createEnv(null)
+	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
+		{ branch: 'main', commit: 'commit-live' },
+	)
+	expect(mocks.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+})
+
+test('a stale entry is served immediately and refreshed in the background', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	const key =
+		derivedCacheKeyPrefix + buildArtifactSourceHeadCacheKey(env, 'repo-1')
+	kv.store.set(key, {
+		value: JSON.stringify(
+			createCacheEntry(
+				{ branch: 'main', commit: 'commit-stale' },
+				{
+					ttl: 5 * 60_000,
+					swr: 60 * 60_000,
+					createdTime: Date.now() - 10 * 60_000,
+				},
+			),
+		),
+		expirationTtl: undefined,
+	})
+
+	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
+		{ branch: 'main', commit: 'commit-stale' },
+	)
+	await vi.waitFor(() => {
+		expect(storedHead(kv, env, 'repo-1')).toEqual({
+			branch: 'main',
+			commit: 'commit-live',
+		})
+	})
+	expect(mocks.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+})
+
+test('a push to the cached default branch rewrites the commit without a lookup', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	await resolveCachedArtifactSourceHead(env, 'repo-1')
+	mocks.resolveArtifactSourceHead.mockClear()
+
+	await applyArtifactSourcePushToHeadCache({
+		env,
+		repoId: 'repo-1',
+		ref: 'refs/heads/main',
+		after: 'commit-pushed',
+	})
+	expect(storedHead(kv, env, 'repo-1')).toEqual({
+		branch: 'main',
+		commit: 'commit-pushed',
+	})
+	await expect(resolveCachedArtifactSourceHead(env, 'repo-1')).resolves.toEqual(
+		{ branch: 'main', commit: 'commit-pushed' },
+	)
+	expect(mocks.resolveArtifactSourceHead).not.toHaveBeenCalled()
+})
+
+test('a push to another branch leaves the cached HEAD alone', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	await resolveCachedArtifactSourceHead(env, 'repo-1')
+
+	await applyArtifactSourcePushToHeadCache({
+		env,
+		repoId: 'repo-1',
+		ref: 'refs/heads/feature',
+		after: 'commit-feature',
+	})
+	expect(storedHead(kv, env, 'repo-1')).toEqual({
+		branch: 'main',
+		commit: 'commit-live',
+	})
+})
+
+test('a push to a repo nobody has viewed writes nothing', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	await applyArtifactSourcePushToHeadCache({
+		env,
+		repoId: 'repo-unvisited',
+		ref: 'refs/heads/main',
+		after: 'commit-pushed',
+	})
+	expect(kv.store.size).toBe(0)
+})
+
+test('deleting the default branch drops the cached HEAD', async () => {
+	const kv = createKv()
+	const env = createEnv(kv)
+	await resolveCachedArtifactSourceHead(env, 'repo-1')
+	await applyArtifactSourcePushToHeadCache({
+		env,
+		repoId: 'repo-1',
+		ref: 'refs/heads/main',
+		after: '0000000000000000000000000000000000000000',
+	})
+	expect(storedHead(kv, env, 'repo-1')).toBeUndefined()
+})

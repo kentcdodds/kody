@@ -26,10 +26,9 @@ import {
 } from '#app/highlight-code.ts'
 import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
-import {
-	readMockArtifactSnapshot,
-	resolveArtifactSourceHead,
-} from '#worker/repo/artifacts.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
+import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
+import { recordServerTiming } from '#worker/request-context.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
@@ -122,9 +121,14 @@ export async function loadCommunityPackageFilesData(input: {
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
 	const treeRef = input.ref?.trim() ?? ''
-	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
+	// The source row and the viewer are independent reads.
+	const [source, viewerUserId] = await Promise.all([
+		getEntitySourceById(input.env.APP_DB, listing.sourceId),
+		readOptionalViewerUserId({ env: input.env, request: input.request }),
+	])
 	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
+		request: input.request,
 		sourceRepoId: source?.repo_id ?? null,
 		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
 		pinnedCommit: listing.pinnedCommit,
@@ -136,6 +140,7 @@ export async function loadCommunityPackageFilesData(input: {
 		: treeRef
 	const loaded = await loadPublicTreeFiles({
 		env: input.env,
+		request: input.request,
 		listingId: listing.id,
 		sourceId: listing.sourceId,
 		sourceRepoId: source?.repo_id ?? null,
@@ -167,10 +172,6 @@ export async function loadCommunityPackageFilesData(input: {
 	})
 	if (!view) return null
 
-	const viewerUserId = await readOptionalViewerUserId({
-		env: input.env,
-		request: input.request,
-	})
 	return toLoaderData({
 		env: input.env,
 		title: listing.name,
@@ -192,6 +193,7 @@ export async function loadCommunityPackageFilesData(input: {
 
 async function resolvePublicTreeCommit(input: {
 	env: Env
+	request: Request
 	sourceRepoId: string | null
 	publishedCommit: string | null
 	pinnedCommit: string
@@ -202,9 +204,10 @@ async function resolvePublicTreeCommit(input: {
 	let defaultBranch = fallbackDefaultBranchName
 	if (input.sourceRepoId) {
 		try {
-			const head = await resolveArtifactSourceHead(
+			const head = await resolveCachedArtifactSourceHead(
 				input.env,
 				input.sourceRepoId,
+				{ request: input.request },
 			)
 			headCommit = head.commit
 			defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
@@ -239,7 +242,23 @@ async function resolvePublicTreeCommit(input: {
 	}
 }
 
-async function loadPublicTreeFiles(input: {
+function loadPublicTreeFiles(input: {
+	env: Env
+	request: Request
+	listingId?: string | null
+	sourceId: string
+	sourceRepoId: string | null
+	commit: string | null
+	pinnedCommit: string
+}) {
+	return recordServerTiming(
+		'files',
+		() => loadPublicTreeFilesUncached(input),
+		input.request,
+	)
+}
+
+async function loadPublicTreeFilesUncached(input: {
 	env: Env
 	listingId?: string | null
 	sourceId: string
@@ -267,13 +286,13 @@ async function loadPublicTreeFiles(input: {
 	}
 	if (input.sourceRepoId && commit) {
 		try {
-			const mock = await readMockArtifactSnapshot({
+			const treeSnapshot = await readArtifactSourceSnapshot({
 				env: input.env,
 				repoId: input.sourceRepoId,
 				commit,
 			})
-			if (mock?.files) {
-				return { files: mock.files, fromListingSnapshot: false }
+			if (treeSnapshot?.files) {
+				return { files: treeSnapshot.files, fromListingSnapshot: false }
 			}
 		} catch {
 			// Fall through to the listing pin snapshot.
@@ -311,6 +330,7 @@ export async function loadAccountPackageFilesData(input: {
 	const treeRef = input.ref?.trim() ?? ''
 	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
+		request: input.request,
 		sourceRepoId: source?.repo_id ?? null,
 		publishedCommit: source?.published_commit ?? '',
 		pinnedCommit: source?.published_commit ?? '',
@@ -318,6 +338,7 @@ export async function loadAccountPackageFilesData(input: {
 	})
 	const loaded = await loadPublicTreeFiles({
 		env: input.env,
+		request: input.request,
 		sourceId: record.sourceId,
 		sourceRepoId: source?.repo_id ?? null,
 		commit: resolved.commit,

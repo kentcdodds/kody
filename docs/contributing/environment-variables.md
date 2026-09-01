@@ -355,6 +355,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   control-plane endpoints used by `packages/worker/src/repo/artifacts.ts`
   (`repos`, `tokens`, and `fork`), so local repo create/get/list/token/fork
   calls do not need the live Artifacts REST API.
+- `CLOUDFLARE_API_SOURCE_SNAPSHOTS` — set to `true` only when
+  `CLOUDFLARE_API_BASE_URL` points at a local Cloudflare API stand-in that can
+  return a repo's whole tree at a commit (`npm run dev` and the MCP e2e harness
+  set it alongside the mock). The real Cloudflare API has no such endpoint, so
+  production leaves it unset and
+  `packages/worker/src/repo/artifact-source-snapshot.ts` returns `null` without
+  a request; published trees come from `BUNDLE_ARTIFACTS_KV` snapshots.
 - `USER_EMAIL_DOMAIN` — optional override for the user email domain (see
   `packages/worker/src/email/platform-address.ts`). Defaults to
   `inbox.<APP_BASE_URL hostname>` (for example `inbox.kody.codes`): every user

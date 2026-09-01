@@ -25,8 +25,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('#worker/repo/artifacts.ts', () => ({
-	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
+	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
 }))
 

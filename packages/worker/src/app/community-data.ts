@@ -26,12 +26,10 @@ import {
 } from '#universal/loader-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
-import {
-	getCommunityListingById,
-	listCommunityForksByListingIdsAndUser,
-} from '#worker/community/repo.ts'
+import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cache.ts'
+import { recordServerTiming } from '#worker/request-context.ts'
 import {
 	getCommunityCategoryCounts,
 	getCommunityListingWithAggregates,
@@ -299,66 +297,99 @@ export function loadCommunityDetailData(
 	return pending
 }
 
+/**
+ * The public listing with aggregates and the Artifacts repo behind it. Cached
+ * as one unit so a warm isolate answers the listing half of a page without
+ * touching D1. The owner's profile visibility is deliberately not in here: it
+ * is a privacy control and stays a fresh read on every request.
+ */
+type CommunityDetailPublicData = {
+	listing: PublicCommunityListing
+	sourceRepoId: string | null
+}
+
+function loadCommunityDetailPublicData(
+	env: Env,
+	request: Request,
+	listingId: string,
+): Promise<CommunityDetailPublicData | null> {
+	return loadWithCommunityCache(
+		env,
+		request,
+		buildCommunityDetailListingCacheKey(listingId),
+		() =>
+			recordServerTiming(
+				'listing',
+				async () => {
+					const row = await getCommunityListingWithAggregates({
+						env,
+						listingId,
+						includeDelisted: false,
+					})
+					if (!row) return null
+					const source = await getEntitySourceById(env.APP_DB, row.sourceId)
+					return {
+						listing: toPublicCommunityListing(row),
+						sourceRepoId: source?.repo_id ?? null,
+					}
+				},
+				request,
+			),
+	)
+}
+
+/**
+ * Overlay the repo's current default-branch HEAD on the listing. HEAD is
+ * best-effort: a failed lookup still renders the page with the fallback
+ * branch name, and a listing without a source row is returned untouched.
+ */
+async function withSourceHead(
+	env: Env,
+	request: Request,
+	listing: PublicCommunityListing,
+	sourceRepoId: string | null,
+): Promise<PublicCommunityListing> {
+	if (!sourceRepoId) return listing
+	try {
+		const head = await resolveCachedArtifactSourceHead(env, sourceRepoId, {
+			request,
+		})
+		const defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
+		const headCommit = head.commit
+		return {
+			...listing,
+			defaultBranch,
+			...(headCommit && headCommit !== listing.pinnedCommit
+				? { headCommit, sourceAhead: true }
+				: {}),
+		}
+	} catch {
+		return { ...listing, defaultBranch: fallbackDefaultBranchName }
+	}
+}
+
 async function loadCommunityDetailDataUncached(
 	env: Env,
 	request: Request,
 	listingId: string,
 ): Promise<CommunityDetailLoaderData | null> {
-	const cacheKey = buildCommunityDetailListingCacheKey(listingId)
-	const listing = await loadWithCommunityCache(
+	const publicData = await loadCommunityDetailPublicData(
 		env,
 		request,
-		cacheKey,
-		async () => {
-			const row = await getCommunityListingWithAggregates({
-				env,
-				listingId,
-				includeDelisted: false,
-			})
-			if (!row) return null
-			return toPublicCommunityListing(row)
-		},
-	)
-
-	if (!listing) return null
-
-	const listingRecord = await getCommunityListingById(env.APP_DB, {
 		listingId,
-		includeDelisted: false,
-	})
-	let sourceAheadListing = listing
-	if (listingRecord) {
-		const source = await getEntitySourceById(env.APP_DB, listingRecord.sourceId)
-		if (source) {
-			try {
-				const head = await resolveArtifactSourceHead(env, source.repo_id)
-				const defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
-				const headCommit = head.commit
-				sourceAheadListing = {
-					...listing,
-					defaultBranch,
-					...(headCommit && headCommit !== listing.pinnedCommit
-						? { headCommit, sourceAhead: true }
-						: {}),
-				}
-			} catch {
-				// Public HEAD is best-effort; the listing page still renders.
-				sourceAheadListing = {
-					...listing,
-					defaultBranch: fallbackDefaultBranchName,
-				}
-			}
-		}
-	}
-
-	const ownerRow = await getUserSocialRowByUsername(
-		env.APP_DB,
-		sourceAheadListing.ownerUsername,
 	)
+	if (!publicData) return null
+	const { listing, sourceRepoId } = publicData
+
+	// HEAD lives in Artifacts, the owner row in D1, and the viewer in the
+	// session cookie; none of the three reads needs another.
+	const [sourceAheadListing, ownerRow, user] = await Promise.all([
+		withSourceHead(env, request, listing, sourceRepoId),
+		getUserSocialRowByUsername(env.APP_DB, listing.ownerUsername),
+		readOptionalAuthenticatedAppUser(request, env),
+	])
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
 	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
-
-	const user = await readOptionalAuthenticatedAppUser(request, env)
 	const viewerUserId = user?.mcpUser.userId ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId

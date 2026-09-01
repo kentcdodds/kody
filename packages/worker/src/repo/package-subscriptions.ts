@@ -9,6 +9,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { applyArtifactSourcePushToHeadCache } from './artifact-head-cache.ts'
 import { getArtifactsNamespace } from './artifacts.ts'
 import {
 	type CloudflareArtifactsRepoEvent,
@@ -408,6 +409,15 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 		isSessionBranchRef(providerEvent.payload.ref)
 	) {
 		return { outcome: 'ignored', providerEvent }
+	}
+
+	if (providerEvent.type === 'cf.artifacts.repo.pushed') {
+		await applyArtifactSourcePushToHeadCache({
+			env: input.env,
+			repoId: providerEvent.source.repoName,
+			ref: providerEvent.payload.ref,
+			after: providerEvent.payload.after,
+		})
 	}
 
 	const source = await getEntitySourceByRepoId(

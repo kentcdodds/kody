@@ -12,6 +12,7 @@ import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
+import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -28,6 +29,10 @@ import { type CommunityListingRecord } from '#worker/community/types.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 import { highlightMarkdownFences } from '#app/highlight-code.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import {
+	collectServerTiming,
+	recordServerTiming,
+} from '#worker/request-context.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 const reportReasonSchema = z
@@ -161,15 +166,21 @@ async function readmeForPackagePage(
 	serverTiming?: Array<ServerTimingEntry>,
 ) {
 	let readmeContent = input.listingReadme ?? null
-	if (!readmeContent && input.viewerIsOwner && input.ownerSourceId) {
+	const ownerSourceId = input.ownerSourceId
+	if (!readmeContent && input.viewerIsOwner && ownerSourceId) {
 		const user = await readAuthenticatedAppUser(input.request, input.env)
 		if (user) {
-			readmeContent = await loadOwnerPackageReadme({
-				env: input.env,
-				request: input.request,
-				userId: user.mcpUser.userId,
-				sourceId: input.ownerSourceId,
-			})
+			readmeContent = await recordServerTiming(
+				'owner-readme',
+				() =>
+					loadOwnerPackageReadme({
+						env: input.env,
+						request: input.request,
+						userId: user.mcpUser.userId,
+						sourceId: ownerSourceId,
+					}),
+				input.request,
+			)
 		}
 	}
 	return {
@@ -364,6 +375,11 @@ export function createCommunityDetailApiHandler(env: Env) {
 				},
 				200,
 				serverTiming,
+				anonymousPersonalizedJsonCacheHeaders({
+					personalized: detail.loggedIn,
+					request,
+					visibilityGated: true,
+				}),
 			)
 		},
 	} satisfies Action<typeof routes.communityDetailApi>
@@ -433,6 +449,11 @@ export function createCommunityPackageApiHandler(env: Env) {
 				},
 				200,
 				serverTiming,
+				anonymousPersonalizedJsonCacheHeaders({
+					personalized: page.loggedIn,
+					request,
+					visibilityGated: true,
+				}),
 			)
 		},
 	} satisfies Action<typeof routes.communityPackageApi>
@@ -650,11 +671,14 @@ function jsonResponse(
 	body: Record<string, unknown>,
 	status = 200,
 	serverTiming?: Array<ServerTimingEntry>,
+	cacheHeaders?: HeadersInit,
 ) {
 	const cacheLookup = getRequestDataCacheLookup(request)
+	const headers = new Headers(cacheHeaders)
+	if (cacheLookup) headers.set('X-Kody-Cache', cacheLookup)
 	return buildJsonResponse(body, {
 		status,
-		headers: cacheLookup ? { 'X-Kody-Cache': cacheLookup } : undefined,
-		serverTiming,
+		headers,
+		serverTiming: collectServerTiming(request, serverTiming),
 	})
 }

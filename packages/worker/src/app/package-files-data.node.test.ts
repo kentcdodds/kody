@@ -20,10 +20,13 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('#worker/repo/artifacts.ts', () => ({
-	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
+	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
-	readMockArtifactSnapshot: async () => null,
+}))
+
+vi.mock('#worker/repo/artifact-source-snapshot.ts', () => ({
+	readArtifactSourceSnapshot: async () => null,
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({

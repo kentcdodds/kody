@@ -1,5 +1,6 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { createCommunityDetailHandler } from './community-detail.tsx'
+import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -45,8 +46,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('#worker/repo/artifacts.ts', () => ({
-	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
+	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
 }))
 
@@ -93,6 +94,12 @@ const sampleListing = {
 } satisfies CommunityListingWithAggregates
 
 const env = {} as Env
+
+// Every test addresses `listing-1` with its own source fixture; the
+// in-isolate listing cache must not carry one test's answer into the next.
+beforeEach(() => {
+	resetDataCacheForTests()
+})
 
 test('community detail handler returns bare detail frame HTML for target header', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)

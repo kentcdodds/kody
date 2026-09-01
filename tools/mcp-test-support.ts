@@ -170,6 +170,7 @@ async function startDevServerWithCloudflareMock() {
 		CLOUDFLARE_API_BASE_URL: cloudflareMock.origin,
 		CLOUDFLARE_API_TOKEN: cloudflareMock.token,
 		CLOUDFLARE_ACCOUNT_ID: 'cf_account_mock_123',
+		CLOUDFLARE_API_SOURCE_SNAPSHOTS: 'true',
 	}
 	const harness = createTestHarness({
 		root: projectRoot,
