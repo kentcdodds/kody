@@ -1045,6 +1045,59 @@ export function filterResolveFrameFetchNetworkSentryEvent<
 	return event
 }
 
+/**
+ * Cloudflare Turnstile client failures that are visitor-environment or
+ * challenge-edge noise, not app defects (KODY-6D script blocked by
+ * ad-blocker / network; KODY-6E TurnstileError 300* generic challenge
+ * failure). Match only our exact load/init strings and Turnstile's own
+ * `[Cloudflare Turnstile] Error: NNNNNN` / `TurnstileError` signature so
+ * unrelated Errors stay Sentry-visible.
+ */
+const cloudflareTurnstileClientErrorMessage =
+	/^(?:Error:\s*)?(?:Turnstile script failed to load\.|Turnstile API did not initialize\.|\[Cloudflare Turnstile\] Error: \d+\.?)$/i
+
+export function isCloudflareTurnstileClientErrorMessage(message: string) {
+	return cloudflareTurnstileClientErrorMessage.test(message.trim())
+}
+
+export function isCloudflareTurnstileClientError(error: unknown) {
+	if (typeof error === 'string') {
+		return isCloudflareTurnstileClientErrorMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : undefined
+	if (name === 'TurnstileError') return true
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isCloudflareTurnstileClientErrorMessage(error.message)
+}
+
+export function isCloudflareTurnstileClientSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isCloudflareTurnstileClientError(originalException)) return true
+	if (
+		event.exception?.values?.some((value) => value.type === 'TurnstileError')
+	) {
+		return true
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isCloudflareTurnstileClientErrorMessage(message),
+	)
+}
+
+export function filterCloudflareTurnstileClientSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isCloudflareTurnstileClientSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -1154,6 +1207,12 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterResolveFrameFetchNetworkSentryEvent(event, originalException) === null
+	) {
+		return null
+	}
+	if (
+		filterCloudflareTurnstileClientSentryEvent(event, originalException) ===
+		null
 	) {
 		return null
 	}

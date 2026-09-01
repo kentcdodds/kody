@@ -75,15 +75,21 @@ test('renderTurnstileWidgets remounts hosts whose children were wiped by a re-re
 	expect(render).toHaveBeenCalledWith(orphan, {
 		sitekey: 'site-key',
 		'response-field-name': 'turnstileToken',
+		'error-callback': expect.any(Function),
 	})
 	expect(render).toHaveBeenCalledWith(fresh, {
 		sitekey: 'site-key',
 		'response-field-name': 'turnstileToken',
+		'error-callback': expect.any(Function),
 	})
 	expect(render).not.toHaveBeenCalledWith(live, expect.anything())
 	expect(orphan.dataset.turnstileRendered).toBe('true')
 	expect(fresh.dataset.turnstileRendered).toBe('true')
 	expect(live.dataset.turnstileRendered).toBe('true')
+	const renderOptions = render.mock.calls[0]?.[1] as {
+		'error-callback': (code: number) => boolean
+	}
+	expect(renderOptions['error-callback'](300010)).toBe(true)
 
 	vi.unstubAllGlobals()
 })
@@ -103,6 +109,37 @@ test('renderTurnstileWidgets does not leave the rendered marker when render thro
 		'render failed',
 	)
 	expect(container.dataset.turnstileRendered).toBeUndefined()
+
+	vi.unstubAllGlobals()
+})
+
+test('renderTurnstileWidgets soft-fails when the Turnstile script fails to load', async () => {
+	const listeners = new Map<string, EventListener>()
+	const script = {
+		async: false,
+		defer: false,
+		src: '',
+		dataset: {} as DOMStringMap & { kodyTurnstile?: string },
+		addEventListener(type: string, handler: EventListener) {
+			listeners.set(type, handler)
+		},
+		remove: vi.fn(),
+	}
+
+	vi.stubGlobal('window', {})
+	vi.stubGlobal('document', {
+		querySelector: vi.fn(() => null),
+		querySelectorAll: vi.fn(() => []),
+		createElement: vi.fn(() => script),
+		head: {
+			append() {
+				listeners.get('error')?.(new Event('error'))
+			},
+		},
+	})
+
+	await expect(renderTurnstileWidgets('site-key')).resolves.toBeUndefined()
+	expect(script.remove).toHaveBeenCalled()
 
 	vi.unstubAllGlobals()
 })

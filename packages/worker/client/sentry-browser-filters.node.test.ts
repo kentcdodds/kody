@@ -848,3 +848,73 @@ test('browser Sentry filters drop Chromium Failed to fetch (host) via createFram
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop Turnstile client load and challenge failures (KODY-6D / KODY-6E)', () => {
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Turnstile script failed to load.',
+						stacktrace: {
+							frames: [
+								{
+									function: 'r.addEventListener.once',
+									filename: '../../client/public-form-protection.ts',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'something else' }],
+				},
+			},
+			new Error('Turnstile API did not initialize.'),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TurnstileError',
+						value: '[Cloudflare Turnstile] Error: 300010.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'wrapped' }],
+				},
+			},
+			Object.assign(new Error('[Cloudflare Turnstile] Error: 300010.'), {
+				name: 'TurnstileError',
+			}),
+		),
+	).toBeNull()
+	// Unrelated Errors must stay visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Turnstile widget host missing in layout',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})
