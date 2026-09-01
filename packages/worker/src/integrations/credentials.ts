@@ -16,6 +16,7 @@ import {
 import {
 	getIntegrationCredentialCiphertexts,
 	getOauthAppClientSecretCiphertext,
+	clearIntegrationAuthFailure,
 	updateIntegrationCredentialCiphertexts,
 	updateOauthAppClientSecretCiphertext,
 } from './repo.ts'
@@ -50,6 +51,15 @@ export async function persistIntegrationTokens(input: {
 		accessTokenEncrypted,
 		refreshTokenEncrypted,
 	})
+	try {
+		await clearIntegrationAuthFailure({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: input.name,
+		})
+	} catch {
+		// Clearing last-failure is best-effort; token persist must still succeed.
+	}
 
 	const storageContext = { sessionId: null, appId: null, packageId: null }
 	await saveSecret({

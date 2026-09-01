@@ -1,9 +1,14 @@
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
+	integrationAuthFailureCopy,
+	type IntegrationAuthFailureReason,
+} from '#universal/connection-trouble.ts'
+import {
 	persistIntegrationTokens,
 	resolveIntegrationRefreshToken,
 	resolveUserOauthAppClientSecret,
 } from './credentials.ts'
+import { writeIntegrationAuthFailure } from './repo.ts'
 import { assertCanUseIntegration } from './package-access.ts'
 import {
 	buildOAuthTokenExchangeRequest,
@@ -304,9 +309,12 @@ function scheduleSubscriptionEmit(
  * client secret has no user-facing secret name by design. User-lane
  * connections may also refresh here (`integrationTokenRefresh`).
  *
- * Reconnectable caller-errors emit `integration.auth.failed` once per attempt.
- * Successful refreshes emit `integration.auth.succeeded`. The platform does
- * not coalesce repeats; notifier packages edge-detect working ↔ failed.
+ * Reconnectable caller-errors emit `integration.auth.failed` once per attempt
+ * and persist a last-failure snapshot for Waiting / Integrations. Provider
+ * HTTP 5xx and timeouts persist `provider_unavailable` without emitting
+ * failed or inventing a Waiting row. Successful refreshes clear the snapshot
+ * and emit `integration.auth.succeeded`. The platform does not coalesce
+ * repeats; notifier packages edge-detect working ↔ failed.
  */
 export async function refreshIntegrationTokens(input: {
 	env: Env
@@ -322,6 +330,11 @@ export async function refreshIntegrationTokens(input: {
 		return await refreshIntegrationTokensOrThrow(input)
 	} catch (error) {
 		if (error instanceof IntegrationTokenRefreshCallerError) {
+			await persistAuthFailureSnapshot({
+				env: input.env,
+				userId: input.userId,
+				error,
+			})
 			const pending = emitIntegrationAuthFailedEvent({
 				env: input.env,
 				userId: input.userId,
@@ -528,12 +541,28 @@ async function refreshIntegrationTokensOrThrow(input: {
 	// Bound the provider round trip: every integrationTokenRefresh caller
 	// (including createAuthenticatedFetch's automatic 401 retry) inherits this
 	// latency, so a stalled token endpoint must not hold the invocation open.
-	const response = await fetch(app.tokenUrl, {
-		method: 'POST',
-		headers: exchangeRequest.headers,
-		body: exchangeRequest.body,
-		signal: AbortSignal.timeout(30_000),
-	})
+	let response: Response
+	try {
+		response = await fetch(app.tokenUrl, {
+			method: 'POST',
+			headers: exchangeRequest.headers,
+			body: exchangeRequest.body,
+			signal: AbortSignal.timeout(30_000),
+		})
+	} catch (error) {
+		if (isProviderTimeoutError(error)) {
+			await persistProviderUnavailableSnapshot({
+				env: input.env,
+				userId: input.userId,
+				joined,
+			})
+			throw new Error(
+				`Token refresh timed out for integration "${connection.name}".`,
+				{ cause: error },
+			)
+		}
+		throw error
+	}
 	const payload = (await response.json().catch(() => null)) as Record<
 		string,
 		unknown
@@ -544,7 +573,8 @@ async function refreshIntegrationTokensOrThrow(input: {
 		const detailSuffix = providerDetail ? ` (${providerDetail})` : ''
 		// Provider 4xx is almost always revoked/expired grant or bad client
 		// state the user (or operator) clears by reconnecting — not a platform
-		// defect worth a Sentry issue. 5xx stays a plain Error for visibility.
+		// defect worth a Sentry issue. 5xx / timeout persist
+		// `provider_unavailable` for Integrations without emitting failed.
 		if (response.status >= 400 && response.status < 500) {
 			throw fail(
 				`Token refresh was rejected for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}. Reconnect at ${reconnectPath}.`,
@@ -556,6 +586,14 @@ async function refreshIntegrationTokensOrThrow(input: {
 				},
 			)
 		}
+		await persistProviderUnavailableSnapshot({
+			env: input.env,
+			userId: input.userId,
+			joined,
+			providerError: provider.error,
+			providerErrorDescription: provider.description,
+			httpStatus: response.status,
+		})
 		throw new Error(
 			`Token refresh failed for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}.`,
 		)
@@ -594,7 +632,14 @@ async function refreshIntegrationTokensOrThrow(input: {
 	const refreshedAt = new Date().toISOString()
 	await input.env.APP_DB.prepare(
 		`UPDATE user_integrations
-		SET token_refreshed_at = ?, updated_at = ?
+		SET token_refreshed_at = ?,
+			updated_at = ?,
+			auth_failed_at = NULL,
+			auth_failed_reason = NULL,
+			auth_failed_provider_error = NULL,
+			auth_failed_provider_description = NULL,
+			auth_failed_http_status = NULL,
+			auth_failed_reconnectable = NULL
 		WHERE user_id = ? AND name = ?`,
 	)
 		.bind(refreshedAt, refreshedAt, input.userId, connection.name)
@@ -618,4 +663,90 @@ async function refreshIntegrationTokensOrThrow(input: {
 	await scheduleSubscriptionEmit(input.waitUntil, pending)
 
 	return { refreshedAt, refreshTokenRotated }
+}
+
+async function persistAuthFailureSnapshot(input: {
+	env: Env
+	userId: string
+	error: IntegrationTokenRefreshCallerError
+}) {
+	const reason = input.error.reason
+	if (reason === 'not_found') return
+	const snapshot = input.error.integration
+	if (!snapshot) return
+	await persistAuthFailureRow({
+		env: input.env,
+		userId: input.userId,
+		name: snapshot.name,
+		lane: snapshot.lane,
+		accountLabel: snapshot.accountLabel,
+		reason,
+		providerError: input.error.providerError,
+		providerErrorDescription: input.error.providerErrorDescription,
+		httpStatus: input.error.httpStatus,
+	})
+}
+
+async function persistProviderUnavailableSnapshot(input: {
+	env: Env
+	userId: string
+	joined: JoinedIntegration
+	providerError?: string | null
+	providerErrorDescription?: string | null
+	httpStatus?: number | null
+}) {
+	await persistAuthFailureRow({
+		env: input.env,
+		userId: input.userId,
+		name: input.joined.connection.name,
+		lane: input.joined.lane,
+		accountLabel: input.joined.connection.accountLabel,
+		reason: 'provider_unavailable',
+		providerError: input.providerError ?? null,
+		providerErrorDescription: input.providerErrorDescription ?? null,
+		httpStatus: input.httpStatus ?? null,
+	})
+}
+
+async function persistAuthFailureRow(input: {
+	env: Env
+	userId: string
+	name: string
+	lane: 'user' | 'platform'
+	accountLabel: string | null
+	reason: IntegrationAuthFailureReason
+	providerError?: string | null
+	providerErrorDescription?: string | null
+	httpStatus?: number | null
+}) {
+	const copy = integrationAuthFailureCopy({
+		name: input.name,
+		accountLabel: input.accountLabel,
+		lane: input.lane,
+		reason: input.reason,
+	})
+	try {
+		await writeIntegrationAuthFailure({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: input.name,
+			reason: input.reason,
+			providerError: input.providerError,
+			providerErrorDescription: input.providerErrorDescription,
+			httpStatus: input.httpStatus,
+			reconnectable: copy.reconnectable,
+		})
+	} catch (error) {
+		console.warn('integration auth failure snapshot persist failed', {
+			integrationName: input.name,
+			error,
+		})
+	}
+}
+
+function isProviderTimeoutError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	if (error.name === 'TimeoutError' || error.name === 'AbortError') return true
+	const message = error.message.toLowerCase()
+	return message.includes('timeout') || message.includes('timed out')
 }

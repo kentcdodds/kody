@@ -50,6 +50,21 @@ function createHarness() {
 
 const storageContext = { sessionId: null, appId: null, packageId: null }
 
+async function readAuthFailure(env: Env, userId: string, name: string) {
+	return env.APP_DB.prepare(
+		`SELECT auth_failed_reason, auth_failed_reconnectable, auth_failed_http_status
+		 FROM user_integrations
+		 WHERE user_id = ? AND name = ?
+		 LIMIT 1`,
+	)
+		.bind(userId, name)
+		.first<{
+			auth_failed_reason: string | null
+			auth_failed_reconnectable: number | null
+			auth_failed_http_status: number | null
+		}>()
+}
+
 async function seedUserTokens(env: Env, userId: string, provider: string) {
 	await saveSecret({
 		env,
@@ -165,6 +180,10 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 				}),
 			}),
 		)
+		expect(await readAuthFailure(env, userId, 'github')).toMatchObject({
+			auth_failed_reason: null,
+			auth_failed_reconnectable: null,
+		})
 	} finally {
 		vi.unstubAllGlobals()
 	}
@@ -222,6 +241,12 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 				lane: 'platform',
 			}),
 		}),
+	)
+	expect(await readAuthFailure(env, 'user-no-refresh', 'github')).toMatchObject(
+		{
+			auth_failed_reason: 'missing_refresh_token',
+			auth_failed_reconnectable: 1,
+		},
 	)
 })
 
@@ -314,6 +339,11 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 				},
 			}),
 		)
+		expect(await readAuthFailure(env, userId, 'google')).toMatchObject({
+			auth_failed_reason: 'provider_rejected',
+			auth_failed_reconnectable: 1,
+			auth_failed_http_status: 400,
+		})
 
 		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(
@@ -331,6 +361,11 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 		expect(
 			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
 		).not.toHaveBeenCalled()
+		expect(await readAuthFailure(env, userId, 'google')).toMatchObject({
+			auth_failed_reason: 'provider_unavailable',
+			auth_failed_reconnectable: 0,
+			auth_failed_http_status: 503,
+		})
 
 		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(

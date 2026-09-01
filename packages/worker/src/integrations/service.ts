@@ -1,5 +1,6 @@
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
+import { toIntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import {
 	canonicalIntegrationName,
 	integrationConfigSchema,
@@ -169,15 +170,34 @@ function usageFields(connection: UserIntegrationConnection) {
 export function toJoinedIntegrationConfig(
 	joined: JoinedIntegration,
 ): IntegrationConfig {
-	switch (joined.lane) {
-		case 'user':
-			return toIntegrationConfig(joined.app, joined.connection)
-		case 'platform':
-			return toPlatformIntegrationConfig(joined.app, joined.connection)
-		default: {
-			const exhaustiveCheck: never = joined
-			throw new Error(`Unhandled integration lane: ${String(exhaustiveCheck)}`)
+	const config = (() => {
+		switch (joined.lane) {
+			case 'user':
+				return toIntegrationConfig(joined.app, joined.connection)
+			case 'platform':
+				return toPlatformIntegrationConfig(joined.app, joined.connection)
+			default: {
+				const exhaustiveCheck: never = joined
+				throw new Error(
+					`Unhandled integration lane: ${String(exhaustiveCheck)}`,
+				)
+			}
 		}
+	})()
+	const snapshot = joined.connection.lastAuthFailure
+	if (!snapshot) return config
+	return {
+		...config,
+		lastAuthFailure: toIntegrationAuthFailureView({
+			name: joined.connection.name,
+			accountLabel: joined.connection.accountLabel,
+			lane: joined.lane,
+			reason: snapshot.reason,
+			occurredAt: snapshot.occurredAt,
+			providerError: snapshot.providerError,
+			providerErrorDescription: snapshot.providerErrorDescription,
+			httpStatus: snapshot.httpStatus,
+		}),
 	}
 }
 
