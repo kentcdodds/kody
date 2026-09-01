@@ -494,7 +494,6 @@ export const kody =
 		? __kodyCreateRuntimeObjectProxy('kody')
 		: undefined;
 export const storage = __kodyOptionalRuntimeObjectExport('storage', undefined);
-export const refreshAccessToken = __kodyOptionalRuntimeFunctionExport('refreshAccessToken');
 export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('createAuthenticatedFetch');
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
@@ -509,7 +508,6 @@ const __kodyRuntimeNamedExports = {
 	kody,
 	storage,
 	packageStorage,
-	refreshAccessToken,
 	createAuthenticatedFetch,
 	secretHeaders,
 	oauthClientCredentials,

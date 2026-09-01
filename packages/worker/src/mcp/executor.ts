@@ -1512,7 +1512,6 @@ const kodyRuntimeExportNames = new Set([
 	'kody',
 	'storage',
 	'packageStorage',
-	'refreshAccessToken',
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',

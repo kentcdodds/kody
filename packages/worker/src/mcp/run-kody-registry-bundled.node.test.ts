@@ -597,7 +597,6 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 				additionalTools: {
 					integration_get: async () => ({}),
 					integration_token_refresh: async () => ({}),
-					integration_refresh_access_token: async () => ({}),
 					value_get: async () => ({}),
 				},
 			}),
@@ -606,8 +605,8 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 		const [withoutHelpers, withHelpers] = wrappedSources
 		expect(withoutHelpers).toBeTruthy()
 		expect(withHelpers).toBeTruthy()
-		expect(withoutHelpers).not.toContain('__kodyRefreshAccessToken')
-		expect(withHelpers).toContain('__kodyRefreshAccessToken')
+		expect(withoutHelpers).not.toContain('__kodyCreateAuthenticatedFetch')
+		expect(withHelpers).toContain('__kodyCreateAuthenticatedFetch')
 		expect(withHelpers!.length).toBeGreaterThan(withoutHelpers!.length)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()

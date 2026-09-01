@@ -403,7 +403,6 @@ declare const capabilities: Record<
   (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
 >;
 
-declare function refreshAccessToken(providerName: string): Promise<string>;
 declare function createAuthenticatedFetch(
   providerName: string,
 ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;
@@ -432,7 +431,6 @@ declare module "kody:runtime" {
     string,
     (args: KodyCapabilityArgs) => Promise<KodyCapabilityResult>
   >;
-  export function refreshAccessToken(providerName: string): Promise<string>;
   export function createAuthenticatedFetch(
     providerName: string,
   ): Promise<(input: string | URL | Request, init?: RequestInit) => Promise<Response>>;

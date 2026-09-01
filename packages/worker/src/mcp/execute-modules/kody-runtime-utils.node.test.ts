@@ -8,13 +8,11 @@ import {
 	createAuthenticatedFetch,
 	createExecuteHelperPrelude,
 	type oauthClientCredentials,
-	refreshAccessToken,
 	type secretHeaders,
 } from './kody-runtime-utils.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 type SandboxHelpers = {
-	refreshAccessToken: (providerName: string) => Promise<string>
 	createAuthenticatedFetch: (
 		providerName: string,
 	) => Promise<
@@ -41,28 +39,17 @@ const spotifyIntegration = {
 	requiredHosts: ['api.spotify.test'],
 }
 
-const githubConfidentialIntegration = {
-	name: 'github',
-	tokenUrl: 'https://github.test/login/oauth/access_token',
-	apiBaseUrl: 'https://api.github.test',
-	flow: 'confidential' as const,
-	clientId: 'github-client-id',
-	clientSecretSecretName: 'githubClientSecret',
-	accessTokenSecretName: 'githubAccessToken',
-	refreshTokenSecretName: 'githubRefreshToken',
-	requiredHosts: ['api.github.test'],
-}
-
 function createKody(
 	integration = spotifyIntegration,
 	options: {
 		accessToken?: string
-		onRefreshAccessToken?: (args: CapabilityArgs) => void | Promise<void>
 	} = {},
 ) {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
-	const refreshAccessTokenCalls: Array<CapabilityArgs> = []
 	const storedSecrets = new Map<string, string>()
+	if (options.accessToken) {
+		storedSecrets.set(integration.accessTokenSecretName, options.accessToken)
+	}
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			const name = args.name
@@ -77,23 +64,11 @@ function createKody(
 				refreshTokenRotated: false,
 			}
 		},
-		async integration_refresh_access_token(args: CapabilityArgs) {
-			refreshAccessTokenCalls.push(args)
-			await options.onRefreshAccessToken?.(args)
-			const accessToken = options.accessToken ?? 'new-access-token'
-			storedSecrets.set(integration.accessTokenSecretName, accessToken)
-			return {
-				accessToken,
-				refreshedAt: new Date().toISOString(),
-				refreshTokenRotated: false,
-			}
-		},
 	} satisfies KodyNamespace
 
 	return {
 		kody,
 		tokenRefreshCalls,
-		refreshAccessTokenCalls,
 		storedSecrets,
 	}
 }
@@ -185,31 +160,6 @@ function createSpotifyFetchInterceptor(
 }
 
 test('kody oauth helpers refresh tokens, retry on missing or expired access tokens, and persist rotations', async () => {
-	const rotatedRefreshFetchCalls: Array<Request> = []
-	const {
-		kody: rotatedKody,
-		refreshAccessTokenCalls,
-		storedSecrets: rotatedStoredSecrets,
-	} = createKody(spotifyIntegration, { accessToken: 'new-access-token' })
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: {
-					access_token: 'should-not-be-used-in-sandbox',
-					refresh_token: 'should-not-be-used-in-sandbox',
-				},
-				fetchCalls: rotatedRefreshFetchCalls,
-			}),
-		)
-		const rotatedAccessToken = await refreshAccessToken(rotatedKody, 'spotify')
-		expect(rotatedAccessToken).toBe('new-access-token')
-	}
-	expect(refreshAccessTokenCalls).toEqual([{ name: 'spotify' }])
-	expect(rotatedRefreshFetchCalls).toEqual([])
-	expect(Object.fromEntries(rotatedStoredSecrets)).toEqual({
-		spotifyAccessToken: 'new-access-token',
-	})
-
 	const storedTokenFetchCalls: Array<Request> = []
 	const { kody: storedTokenKody, tokenRefreshCalls: storedTokenRefreshCalls } =
 		createKody()
@@ -299,42 +249,11 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 })
 
-test('refreshAccessToken forwards host-side use denials and never exchanges tokens in the sandbox', async () => {
-	const fetchCalls: Array<Request> = []
-	const { kody, refreshAccessTokenCalls, storedSecrets } = createKody(
-		spotifyIntegration,
-		{
-			onRefreshAccessToken() {
-				throw new Error(
-					'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
-				)
-			},
-		},
-	)
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: {
-					access_token: 'should-not-be-issued',
-					refresh_token: 'should-not-be-issued',
-				},
-				fetchCalls,
-			}),
-		)
-		await expect(refreshAccessToken(kody, 'spotify')).rejects.toThrow(
-			'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
-		)
-	}
-	expect(fetchCalls).toEqual([])
-	expect(refreshAccessTokenCalls).toEqual([{ name: 'spotify' }])
-	expect(storedSecrets.size).toBe(0)
-})
-
 test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
 	const prelude = createExecuteHelperPrelude()
 	const createSandboxHelpers = new Function(
 		'kody',
-		`${prelude}; return { refreshAccessToken, createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
+		`${prelude}; return { createAuthenticatedFetch, secretHeaders, oauthClientCredentials };`,
 	) as (kodyNamespace: KodyNamespace) => SandboxHelpers
 
 	const helpers = createSandboxHelpers(createKody().kody)
@@ -349,9 +268,6 @@ test('createExecuteHelperPrelude exposes sandbox oauth and secret helper binding
 	)
 
 	const platformHelpers = createSandboxHelpers(createPlatformKody().kody)
-	await expect(platformHelpers.refreshAccessToken('github')).rejects.toThrow(
-		'raw tokens are never exposed to sandboxed code',
-	)
 	expect(typeof platformHelpers.createAuthenticatedFetch).toBe('function')
 
 	const clientCredentialsCalls: Array<Request> = []
@@ -403,7 +319,6 @@ const githubPlatformIntegration = {
 
 function createPlatformKody() {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
-	const refreshAccessTokenCalls: Array<CapabilityArgs> = []
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			expect(args.name).toBe(githubPlatformIntegration.name)
@@ -417,25 +332,9 @@ function createPlatformKody() {
 				refreshTokenRotated: false,
 			}
 		},
-		async integration_refresh_access_token(args: CapabilityArgs) {
-			refreshAccessTokenCalls.push(args)
-			throw new Error(
-				'platform refresh must never materialize a raw access token',
-			)
-		},
 	} satisfies KodyNamespace
-	return { kody, tokenRefreshCalls, refreshAccessTokenCalls }
+	return { kody, tokenRefreshCalls }
 }
-
-test('refreshAccessToken refuses platform integrations instead of exposing a raw token', async () => {
-	const { kody, tokenRefreshCalls, refreshAccessTokenCalls } =
-		createPlatformKody()
-	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
-		'raw tokens are never exposed to sandboxed code',
-	)
-	expect(tokenRefreshCalls).toEqual([])
-	expect(refreshAccessTokenCalls).toEqual([])
-})
 
 test('createAuthenticatedFetch refreshes platform integrations host-side and retries with a placeholder header', async () => {
 	const fetchCalls: Array<Request> = []
@@ -493,43 +392,3 @@ function createGithubPlatformFetchInterceptor(options: {
 		},
 	}
 }
-
-test('confidential-flow refreshAccessToken still delegates persist to the host helper', async () => {
-	const fetchCalls: Array<Request> = []
-	const { kody, refreshAccessTokenCalls } = createKody(
-		githubConfidentialIntegration,
-		{ accessToken: 'new-github-access' },
-	)
-	{
-		using _server = createMswNodeServer([
-			http.post(githubConfidentialIntegration.tokenUrl, async ({ request }) => {
-				fetchCalls.push(request.clone())
-				return HttpResponse.json({ access_token: 'should-not-be-used' })
-			}),
-		])
-		const accessToken = await refreshAccessToken(kody, 'github')
-		expect(accessToken).toBe('new-github-access')
-	}
-	expect(refreshAccessTokenCalls).toEqual([{ name: 'github' }])
-	expect(fetchCalls).toEqual([])
-})
-
-test('refreshAccessToken throws when the host helper capability is missing', async () => {
-	const { kody } = createKody(githubConfidentialIntegration)
-	const namespace = {
-		integration_get: kody.integration_get,
-		integration_token_refresh: kody.integration_token_refresh,
-	}
-	await expect(refreshAccessToken(namespace, 'github')).rejects.toThrow(
-		'kody.integration_refresh_access_token is not available in this sandbox.',
-	)
-})
-
-test('refreshAccessToken throws when the host helper returns no access token', async () => {
-	const { kody } = createKody(githubConfidentialIntegration, {
-		accessToken: '',
-	})
-	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
-		'Host-side token refresh for integration "github" did not return an access token.',
-	)
-})

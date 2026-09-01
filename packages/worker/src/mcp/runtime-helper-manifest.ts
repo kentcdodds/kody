@@ -436,13 +436,11 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 	{
 		runtimeName: 'execute',
 		runtimeBindings: [
-			{ runtimeName: 'refreshAccessToken', absentValue: 'undefined' },
 			{ runtimeName: 'createAuthenticatedFetch', absentValue: 'undefined' },
 			{ runtimeName: 'secretHeaders', absentValue: 'undefined' },
 			{ runtimeName: 'oauthClientCredentials', absentValue: 'undefined' },
 		],
 		unboundNames: [
-			'refreshAccessToken',
 			'createAuthenticatedFetch',
 			'secretHeaders',
 			'oauthClientCredentials',
