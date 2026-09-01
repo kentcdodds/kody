@@ -190,9 +190,9 @@ export function PricingRoute(handle: Handle) {
 							Pro
 						</h2>
 						<p mix={css(planPriceCss)}>
-							$29<small mix={css(planPriceUnitCss)}>/month</small>
+							$49<small mix={css(planPriceUnitCss)}>/month</small>
 						</p>
-						<p mix={css(planPriceNoteCss)}>$24/mo billed annually</p>
+						<p mix={css(planPriceNoteCss)}>$40/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
 							Same factory. More room for storage, jobs, workflows, and daily
 							volume.
@@ -223,8 +223,8 @@ export function PricingRoute(handle: Handle) {
 									</th>
 									<th scope="col">
 										<span data-limits-plan>Pro</span>
-										<span data-limits-price>$29/mo</span>
-										<span data-limits-annual>$24/mo billed annually</span>
+										<span data-limits-price>$49/mo</span>
+										<span data-limits-annual>$40/mo billed annually</span>
 									</th>
 								</tr>
 							</thead>

@@ -1042,7 +1042,7 @@ One event fires per crossing of 80% (`approaching`) or 100% (`reached`) on a
 specific entitlement, when a non-admin account first exceeds 24h of combined
 execute / job / workflow runtime in the UTC month, when a non-admin account
 first reaches a plan-aware unique Dynamic Worker cost threshold this UTC month
-(Free $2, Standard $12, Pro $29; `max` and admin accounts do not page), or when
+(Free $2, Standard $12, Pro $49; `max` and admin accounts do not page), or when
 a non-admin account first hits 100% of `execute_calls_per_day` on three of the
 last seven UTC days. Staying over the same threshold does not emit again. A
 later drop below that threshold, then a climb back over it, is a new instance. A

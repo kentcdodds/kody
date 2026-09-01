@@ -292,8 +292,10 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
-		// Above the heaviest Pro payer (~670/day avg).
-		maxExecuteCallsPerDay: 2_000,
+		// Above the heaviest Pro payer (~670/day August avg) with room
+		// for a busy day. Unique-execute ceiling at 800/day is about
+		// the $49 list price ($0.002 × 800 × 30 ≈ $48).
+		maxExecuteCallsPerDay: 800,
 		maxOutboundFetchesPerDay: 40_000,
 		maxJobRunsPerDay: 20_000,
 		minJobIntervalMs: 0,
@@ -318,7 +320,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 100 * 1024 * 1024 * 1024,
 		// 50× pro (100) → 5_000.
 		maxConcurrentWorkflows: 5_000,
-		// Retained operator ceiling (not 50× the current pro 2_000).
+		// Retained operator ceiling (not 50× the current pro 800).
 		maxExecuteCallsPerDay: 500_000,
 		// 50× pro (40_000) → 2_000_000.
 		maxOutboundFetchesPerDay: 2_000_000,

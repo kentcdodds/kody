@@ -21,7 +21,7 @@ export const dynamicWorkersIncludedPerAccountMonth = 1000
 export const fleetDynamicWorkerCostAlertUsdByPlan = {
 	free: 2,
 	standard: 12,
-	pro: 29,
+	pro: 49,
 } as const
 
 export function fleetDynamicWorkerCostAlertUsd(plan: PlanName): number | null {

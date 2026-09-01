@@ -82,10 +82,10 @@ const planTiers: Array<{
 	{
 		id: 'pro',
 		name: 'Pro',
-		price: '$29/month',
-		annualPrice: '$24/mo billed annually',
+		price: '$49/month',
+		annualPrice: '$40/mo billed annually',
 		description:
-			'For heavy daily automation — roughly double Standard on every axis.',
+			'For heavy daily automation — more room for storage, jobs, workflows, and daily volume.',
 	},
 ]
 

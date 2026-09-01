@@ -25,6 +25,6 @@ test('toAdminDynamicWorkerCost truncates to a non-negative integer day count', (
 	expect(formatDynamicWorkerUsd(1)).toBe('$1.00')
 	expect(fleetDynamicWorkerCostAlertUsd('free')).toBe(2)
 	expect(fleetDynamicWorkerCostAlertUsd('standard')).toBe(12)
-	expect(fleetDynamicWorkerCostAlertUsd('pro')).toBe(29)
+	expect(fleetDynamicWorkerCostAlertUsd('pro')).toBe(49)
 	expect(fleetDynamicWorkerCostAlertUsd('max')).toBeNull()
 })

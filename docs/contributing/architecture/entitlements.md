@@ -806,7 +806,7 @@ instead of acknowledging an unrecoverable stale projection. The
 class exists without moving canonical billing data out of D1.
 
 Published prices: Free $0, Standard $12/mo or $120/year ($10/mo billed
-annually), Pro $29/mo or $288/year ($24/mo billed annually). Env vars and deploy
+annually), Pro $49/mo or $480/year ($40/mo billed annually). Env vars and deploy
 wiring are documented in
 [`../environment-variables.md`](../environment-variables.md).
 
