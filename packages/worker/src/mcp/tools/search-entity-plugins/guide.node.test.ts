@@ -170,4 +170,35 @@ test('guide search entities rank advertised docs and open full markdown on entit
 			(match) => match.type === 'guide' && match.id === 'provider_google',
 		),
 	).toBe(false)
+
+	const documentedDiscovery = await searchUnified({
+		env: {} as Env,
+		query: 'package authoring lifecycle',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		documentedDiscovery.matches.some(
+			(match) => match.type === 'guide' && match.id === 'package_authoring',
+		),
+	).toBe(true)
+	expect(
+		documentedDiscovery.matches.some(
+			(match) => match.type === 'guide' && match.id === 'package_lifecycle',
+		),
+	).toBe(true)
+
+	const suffixDiscovery = await searchUnified({
+		env: {} as Env,
+		query: 'google guide',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		suffixDiscovery.matches.some(
+			(match) => match.type === 'guide' && match.id === 'provider_google',
+		),
+	).toBe(true)
 })

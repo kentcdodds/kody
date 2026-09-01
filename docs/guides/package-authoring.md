@@ -224,8 +224,8 @@ owner operates. Open `search({ entity: "heavy_work_offload:guide" })`.
 When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 `kody.secretMounts`):
 
-1. Ensure each secret exists (see `connect_secret:guide` /
-   `secret_backed_integration:guide`).
+1. Ensure each secret exists (open `search({ entity: "connect_secret:guide" })`
+   / `search({ entity: "secret_backed_integration:guide" })`).
 2. Self-authored packages and community forks adopted with
    `community_fork_adopt` after a real source review get automatic read/use
    access to user secrets (host approval still applies; `secret_set` /

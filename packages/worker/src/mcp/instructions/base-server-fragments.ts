@@ -6,7 +6,7 @@ https://github.com/kentcdodds/kody/tree/main/docs/use`
 export const quickStartInstructions = `Start here
 - Almost every task: \`search({ query })\` first; pass \`domain\` to narrow (domain ids listed below).
 - One-off work / smoke tests: \`execute\`. Durable reusable behavior: a package (after \`community_search\` when nothing in-account fits).
-- Official guides: \`search({ entity: "{id}:guide" })\` for a known guide (\`package_authoring\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, \`provider_*\`). Discover with \`search({ query: "… guide" })\`. Skip \`coding_guide_get\` unless execute-module code needs the markdown body.`
+- Official guides: \`search({ entity: "{id}:guide" })\` for a known id (\`package_authoring\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, or a resolved \`provider_<slug>\`). Discover with \`search({ query: "… guide" })\`, then open that exact entity ref. Skip \`coding_guide_get\` unless execute-module code needs the markdown body.`
 
 export const packageLifecycleInstructions = `Package lifecycle (primary mental model):
 1. Discover and invoke: \`search\` for an existing capability, connected surface, or saved package; open entity detail for the exact call shape; invoke rather than reimplement.

@@ -27,27 +27,52 @@ function guideSearchText(guide: GuideMetadata) {
 		.join('\n')
 }
 
+const guideDiscoveryNoise = new Set([
+	'guide',
+	'guides',
+	'docs',
+	'documentation',
+	'official',
+])
+
 function phraseHasMultipleTokens(phrase: string) {
 	return extractSearchTokens(phrase).length >= 2
 }
 
+function guideQueryTokens(query: string) {
+	return extractMeaningfulSearchTokens(query).filter(
+		(token) => !guideDiscoveryNoise.has(token),
+	)
+}
+
+function identityTokensCoveredByQuery(
+	identityPhrase: string,
+	queryTokens: ReadonlyArray<string>,
+) {
+	const identityTokens = extractSearchTokens(identityPhrase)
+	if (identityTokens.length < 2) return false
+	return identityTokens.every((token) => queryTokens.includes(token))
+}
+
 function guideHasStrongQueryMatch(query: string, guide: GuideMetadata) {
 	const identity = normalizeSearchText(guideSearchText(guide))
-	const normalizedQuery = normalizeSearchText(query)
-	if (!normalizedQuery) return false
-	if (identity.includes(normalizedQuery)) return true
+	const tokens = guideQueryTokens(query)
+	if (tokens.length === 0) return false
+	const focusedQuery = tokens.join(' ')
+	if (identity.includes(focusedQuery)) return true
 	const idPhrase = normalizeSearchText(guide.id)
 	const slugPhrase = normalizeSearchText(guide.slug)
-	if (phraseHasMultipleTokens(idPhrase) && normalizedQuery.includes(idPhrase)) {
+	if (phraseHasMultipleTokens(idPhrase) && focusedQuery.includes(idPhrase)) {
 		return true
 	}
 	if (
 		phraseHasMultipleTokens(slugPhrase) &&
-		normalizedQuery.includes(slugPhrase)
+		focusedQuery.includes(slugPhrase)
 	) {
 		return true
 	}
-	const tokens = extractMeaningfulSearchTokens(query)
+	if (identityTokensCoveredByQuery(idPhrase, tokens)) return true
+	if (identityTokensCoveredByQuery(slugPhrase, tokens)) return true
 	if (tokens.length === 1) {
 		return extractSearchTokens(identity).includes(tokens[0] ?? '')
 	}
