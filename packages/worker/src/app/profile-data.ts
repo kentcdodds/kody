@@ -7,12 +7,11 @@ import {
 } from '#app/community-public.ts'
 import { type ProfileLoaderData } from '#universal/loader-data.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
-import { getUserFollow } from '#worker/community/social-repo.ts'
 import {
 	getCommunityProfileByUsername,
 	getProfileActivity,
 	listPublicProfilePackages,
-} from '#worker/community/social-service.ts'
+} from '#worker/community/profile-service.ts'
 
 const defaultProfilePackageLimit = 50
 const defaultProfileActivityLimit = 20
@@ -72,7 +71,7 @@ async function loadProfileDataUncached(
 		100,
 	)
 
-	const [packages, activity, isFollowing] = await Promise.all([
+	const [packages, activity] = await Promise.all([
 		listPublicProfilePackages({
 			env,
 			ownerStableUserId: profile.userId,
@@ -86,12 +85,6 @@ async function loadProfileDataUncached(
 			limit: defaultProfileActivityLimit,
 			isSelf,
 		}),
-		viewerStableId && !isSelf
-			? getUserFollow(env.APP_DB, {
-					followerUserId: viewerStableId,
-					followeeUserId: profile.userId,
-				})
-			: Promise.resolve(false),
 	])
 
 	return {
@@ -104,6 +97,5 @@ async function loadProfileDataUncached(
 		query: query || null,
 		isSelf,
 		loggedIn: Boolean(user),
-		isFollowing,
 	}
 }

@@ -37,7 +37,7 @@ import {
 } from '#universal/code-runs.ts'
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
-import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
+import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -88,12 +88,10 @@ vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof CommunitySocialRepo>()
+vi.mock('#worker/community/profile-repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityProfileRepo>()
 	return {
 		...actual,
-		getCommunityStar: vi.fn().mockResolvedValue(false),
-		getUserFollow: vi.fn().mockResolvedValue(false),
 		getUserSocialRowByUsername: (...args: Array<unknown>) =>
 			communityMockModule.getUserSocialRowByUsername(...args),
 	}
@@ -127,7 +125,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 type TestUser = {
@@ -1670,7 +1667,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).not.toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
-	expect(html).toContain('data-testid="community-detail-star"')
+	expect(html).not.toContain('data-testid="community-detail-star"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
@@ -1698,21 +1695,19 @@ test('listing-uuid URLs redirect to the canonical pair when possible and keep se
 		'/@kentcdodds/github-triage',
 	)
 
-	// The follow control redirects back with `followError`, so the query has to
-	// survive the hop or the message vanishes.
+	// Query strings ride the hop so a shared or bookmarked listing-uuid URL
+	// does not drop its extra params on the way to the canonical pair.
 	const redirect = await createCommunityDetailHandler(env).handler({
 		request: new Request(
-			'https://example.com/community/listing-detail-1?followError=nope',
+			'https://example.com/community/listing-detail-1?source=share',
 		),
-		url: new URL(
-			'https://example.com/community/listing-detail-1?followError=nope',
-		),
+		url: new URL('https://example.com/community/listing-detail-1?source=share'),
 		params: { listingId: 'listing-detail-1' },
 	} as never)
 
 	expect(redirect.status).toBe(301)
 	expect(redirect.headers.get('location')).toBe(
-		'https://example.com/@kentcdodds/github-triage?followError=nope',
+		'https://example.com/@kentcdodds/github-triage?source=share',
 	)
 	// The same URL serves frame HTML, which must not get this redirect back.
 	expect(redirect.headers.get('vary')).toBe('x-remix-target')

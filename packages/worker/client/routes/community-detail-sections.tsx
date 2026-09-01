@@ -107,7 +107,6 @@ export type InstallStripProps = {
 	installState: 'idle' | 'confirming' | 'submitting' | 'error'
 	installMessage: string | null
 	installOutcome: CommunityInstallOutcome | null
-	starMessage: string | null
 	onConfirmInstall: () => void
 	onCancelInstall: () => void
 }
@@ -162,11 +161,6 @@ export function renderInstallStrip(props: InstallStripProps) {
 			{props.installMessage ? (
 				<p mix={css(errorTextCss)} role="alert">
 					{props.installMessage}
-				</p>
-			) : null}
-			{props.starMessage ? (
-				<p mix={css(errorTextCss)} role="alert">
-					{props.starMessage}
 				</p>
 			) : null}
 		</div>

@@ -1370,7 +1370,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 			ratingCount: 1,
 			averageAdaptationEffort: 1,
 			forkCount: 9,
-			starCount: 2,
 		},
 		{
 			id: 'canva-untrusted',
@@ -1399,7 +1398,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 		{
 			id: 'canva-trusted',
@@ -1428,7 +1426,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 			ratingCount: 2,
 			averageAdaptationEffort: 1,
 			forkCount: 3,
-			starCount: 4,
 		},
 	])
 	const handler = createAccountSecretsApiHandler(createEnv())

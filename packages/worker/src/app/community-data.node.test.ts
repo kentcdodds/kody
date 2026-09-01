@@ -27,8 +27,6 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
-	getCommunityStar: vi.fn(),
-	getUserFollow: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
 }))
 
@@ -64,10 +62,7 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 		mockModule.getEntitySourceById(...args),
 }))
 
-vi.mock('#worker/community/social-repo.ts', () => ({
-	getCommunityStar: (...args: Array<unknown>) =>
-		mockModule.getCommunityStar(...args),
-	getUserFollow: (...args: Array<unknown>) => mockModule.getUserFollow(...args),
+vi.mock('#worker/community/profile-repo.ts', () => ({
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
 }))
@@ -112,7 +107,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 function categoryCounts(
@@ -254,8 +248,6 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 		profile_visibility: 'public',
 		stable_user_id: 'owner-mcp-id',
 	})
-	mockModule.getCommunityStar.mockResolvedValue(false)
-	mockModule.getUserFollow.mockResolvedValue(false)
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 

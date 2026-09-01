@@ -142,15 +142,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
-		id: 'stars',
-		question: 'What is a star?',
-		match: accountSection(routes.accountStars.href()),
-		paragraphs: [
-			'A star is your bookmark for a public package listing. It is separate from the 1–5 rating you can leave on a listing.',
-			'Star packages you want to find again, fork later, or keep an eye on. Stars are public on listings; this page is your personal list.',
-		],
-	},
-	{
 		id: 'usage',
 		question: 'What is usage?',
 		match: accountSection(routes.accountUsage.href()),
@@ -175,15 +166,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			href: routes.guideDetail.href({ slug: 'what-is-kody' }),
 			label: 'What is Kody?',
 		},
-	},
-	{
-		id: 'timeline',
-		question: 'What is the timeline?',
-		match: (pathname) => pathname === routes.timeline.href(),
-		paragraphs: [
-			'The timeline is a feed of public community activity from accounts you follow: publishes, republishes, forks, and stars. Private package edits never appear.',
-			'Follow public profiles to see what they ship. Your own public activity shows up on your profile; this page is the follow-graph view of the same events.',
-		],
 	},
 ]
 

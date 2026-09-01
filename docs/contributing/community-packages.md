@@ -36,7 +36,7 @@ package vector indexes.
 ### D1 tables
 
 The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
-defines the community tables and social columns.
+defines the community tables and profile columns.
 
 | Table                | Purpose                                                                            |
 | -------------------- | ---------------------------------------------------------------------------------- |
@@ -52,11 +52,9 @@ defines the community tables and social columns.
 | `users.profile_visibility`        | `public` (default) or `private`                                                  |
 | `saved_packages.is_private`       | Repo visibility (`0` public / catalog, `1` private). Not `package.json#private`. |
 | `user_repos.is_private`           | Same visibility flag on plain repos (default private).                           |
-| `user_follows`                    | Follow edges keyed by MCP stable user ids                                        |
-| `community_stars`                 | Listing stargazers (bookmark stars; not 1–5 ratings)                             |
 | `community_activity_events`       | Stored `listing_published` / `listing_updated` events only                       |
 
-Follow, star, and activity actor columns store the MCP **stable user id**
+Activity actor columns store the MCP **stable user id**
 (`users.stable_user_id`), matching other community ownership columns such as
 `community_listings.owner_user_id`.
 
@@ -65,14 +63,9 @@ Follow, star, and activity actor columns store the MCP **stable user id**
 Active community listings backfill to public; leftover `"private": false`
 teasers stay private.
 
-### Derived timeline events
-
-Timelines merge stored `community_activity_events` with **read-time derived**
-fork and star items from `community_forks` / `community_stars`. Forks appear
-only while the forker's saved package copy has `is_private = 0`; unstarring
-drops the star item immediately. Ratings are never projected into timelines.
-Storing only publish/update events avoids orphaned fork/star timeline rows when
-privacy flips or a star is removed — see `social-repo.ts` / `social-service.ts`.
+Profile activity reads stored `community_activity_events` plus public forks from
+`community_forks`. Forks appear only while the forker's saved package copy has
+`is_private = 0`. Ratings are never projected into profile activity.
 
 `community_forks.origin_commit` is the origin SHA the fork last absorbed. It
 starts as HEAD copied at fork time. When origin HEAD later moves, `package_get`
@@ -164,18 +157,18 @@ icon entries for the listing.
 
 Core logic: `packages/worker/src/community/`
 
-| Module              | Role                                                                |
-| ------------------- | ------------------------------------------------------------------- |
-| `service.ts`        | Publish, unpublish, search, fork, rate, report, admin resolution    |
-| `social-service.ts` | Profiles, follows, timeline merge, stars / stargazers               |
-| `social-repo.ts`    | D1 for profiles, follows, stars, activity, public package lists     |
-| `install.ts`        | One-click install: fork + publish checks + projection publish       |
-| `repo.ts`           | D1 queries                                                          |
-| `activity-*`        | Admin activity feed and durable admin subscription dispatch         |
-| `snapshot.ts`       | KV snapshot I/O                                                     |
-| `fork-scan.ts`      | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
-| `og-image.ts`       | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
-| `types.ts`          | Shared record types                                                 |
+| Module               | Role                                                                |
+| -------------------- | ------------------------------------------------------------------- |
+| `service.ts`         | Publish, unpublish, search, fork, rate, report, admin resolution    |
+| `profile-service.ts` | Profiles, profile activity, public package lists                    |
+| `profile-repo.ts`    | D1 for profiles, activity events, and public package lists          |
+| `install.ts`         | One-click install: fork + publish checks + projection publish       |
+| `repo.ts`            | D1 queries                                                          |
+| `activity-*`         | Admin activity feed and durable admin subscription dispatch         |
+| `snapshot.ts`        | KV snapshot I/O                                                     |
+| `fork-scan.ts`       | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
+| `og-image.ts`        | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
+| `types.ts`           | Shared record types                                                 |
 
 `publishCommunityListing` has no MIT, logo, or Intent gates. It requires a
 published commit and that the owner is not community-banned. It upserts D1
@@ -236,10 +229,7 @@ Capabilities:
 - `community_fork`
 - `community_fork_adopt`
 - `community_rate`
-- `community_star` / `community_unstar` / `community_starred_list`
 - `community_profile_get` / `community_profile_update`
-- `community_follow` / `community_unfollow`
-- `community_timeline`
 - `community_report`
 - `community_set_featured` (admin-only via `requiredRole`)
 
@@ -311,8 +301,9 @@ operator notifications such as Discord.
 
 The first successful listing publish enqueues `{ eventId, listingId }` for
 durable `community.listing.published` delivery (same admin fan-out as activity
-events). Republishes write `listing_updated` for the timeline but do not enqueue
-this topic. Enqueue failures are logged and never fail `community_publish`. See
+events). Republishes write `listing_updated` for profile activity but do not
+enqueue this topic. Enqueue failures are logged and never fail
+`community_publish`. See
 [the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins)
 for the handler payload.
 
@@ -368,25 +359,24 @@ count.
 
 - Forks are copies; **no cross-user `kody:@…` import ever resolves**.
 - Deliberate cross-user data flows are public listing snapshots, aggregate
-  ratings, star counts/stargazers, and public profile / timeline surfaces.
+  ratings, and public profile / catalog surfaces.
 - Private profiles and private packages (`profile_visibility = private`,
-  `saved_packages.is_private = 1`) must not appear on public social reads.
+  `saved_packages.is_private = 1`) must not appear on public catalog reads.
 - Package name scope and public profiles reveal the owner's username by design;
   browsing does not require exposing a stable owner user id on every search hit.
 - Community results stay out of general MCP `search` and per-user package vector
   indexes.
 
-Account deletion and export cover social tables through `accountUserDataTargets`
-(`user_follows` on both follower and followee columns, `community_stars` by user
-and by owned listing, `community_activity_events` by actor and by owned
+Account deletion and export cover community activity through
+`accountUserDataTargets` (`community_activity_events` by actor and by owned
 listing), matching the multi-column pattern used for `community_reports`.
 
 ## Related docs
 
-- [Community profiles (usage)](../use/community-profiles.md) — agent-facing
-  profiles, follows, timelines, and stars
+- [Public packages (usage)](../use/community-packages.md) — catalog, profiles,
+  and ratings
 - [Packages and manifests](./packages-and-manifests.md) — saved package model
 - [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
 - [Adding capabilities](./adding-capabilities.md) — domain registration
-- [Primitives map](./architecture/primitives.yaml) — `community-listings` and
-  `community-social` primitive entries
+- [Primitives map](./architecture/primitives.yaml) — `community-listings`
+  primitive entry

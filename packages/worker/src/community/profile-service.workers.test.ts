@@ -5,23 +5,14 @@ import {
 	resetDataCacheForTests,
 } from '#app/data-cache.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { CommunityActionError } from './errors.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
+import { insertCommunityActivityEvent } from './profile-repo.ts'
 import {
-	followCommunityUser,
 	getCommunityProfileByUsername,
-	getCommunityTimeline,
 	getProfileActivity,
 	listPublicProfilePackages,
-	starCommunityListing,
-	unfollowCommunityUser,
-	unstarCommunityListing,
 	updateCommunityProfile,
-} from './social-service.ts'
-import {
-	countCommunityStarsByListingIds,
-	insertCommunityActivityEvent,
-} from './social-repo.ts'
+} from './profile-service.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
@@ -88,7 +79,7 @@ async function insertListing(input: {
 		input.kodyId,
 		input.name,
 		`${input.kodyId} description`,
-		JSON.stringify(['social']),
+		JSON.stringify(['catalog']),
 		'MIT',
 		'commit-1',
 		now,
@@ -119,7 +110,7 @@ async function insertSavedPackage(input: {
 		input.name,
 		input.kodyId,
 		input.description ?? `${input.kodyId} description`,
-		JSON.stringify(input.tags ?? ['social']),
+		JSON.stringify(input.tags ?? ['catalog']),
 		input.searchText ?? `${input.kodyId} search`,
 		`source-${input.id}`,
 		input.hidden ? 1 : 0,
@@ -128,252 +119,6 @@ async function insertSavedPackage(input: {
 		input.updatedAt ?? '2026-07-01T00:00:00.000Z',
 	)
 }
-
-test('follow and unfollow enforce private profiles and self-follow', async () => {
-	const alice = await insertUser({
-		email: `alice-follow-${crypto.randomUUID()}@example.com`,
-		username: `alicef${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const bob = await insertUser({
-		email: `bob-follow-${crypto.randomUUID()}@example.com`,
-		username: `bobf${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const privateUser = await insertUser({
-		email: `private-follow-${crypto.randomUUID()}@example.com`,
-		username: `privf${crypto.randomUUID().slice(0, 8)}`,
-		visibility: 'private',
-	})
-
-	await expect(
-		followCommunityUser({
-			env,
-			followerUserId: alice.userId,
-			followeeUsername: alice.username,
-		}),
-	).rejects.toBeInstanceOf(CommunityActionError)
-
-	await expect(
-		followCommunityUser({
-			env,
-			followerUserId: alice.userId,
-			followeeUsername: privateUser.username,
-		}),
-	).rejects.toThrow('This profile is not available.')
-
-	await followCommunityUser({
-		env,
-		followerUserId: alice.userId,
-		followeeUsername: bob.username,
-	})
-	const bobProfile = await getCommunityProfileByUsername({
-		env,
-		username: bob.username,
-	})
-	expect(bobProfile?.followerCount).toBe(1)
-
-	await unfollowCommunityUser({
-		env,
-		followerUserId: alice.userId,
-		followeeUsername: bob.username,
-	})
-	const bobAfter = await getCommunityProfileByUsername({
-		env,
-		username: bob.username,
-	})
-	expect(bobAfter?.followerCount).toBe(0)
-
-	// Not-following is a successful no-op.
-	await unfollowCommunityUser({
-		env,
-		followerUserId: alice.userId,
-		followeeUsername: bob.username,
-	})
-
-	// Unknown usernames are also a silent no-op (no existence oracle).
-	await expect(
-		unfollowCommunityUser({
-			env,
-			followerUserId: alice.userId,
-			followeeUsername: `missing${crypto.randomUUID().slice(0, 8)}`,
-		}),
-	).resolves.toBeUndefined()
-})
-
-test('star and unstar update starCount aggregates', async () => {
-	const owner = await insertUser({
-		email: `owner-star-${crypto.randomUUID()}@example.com`,
-		username: `owners${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const stargazer = await insertUser({
-		email: `stargazer-${crypto.randomUUID()}@example.com`,
-		username: `stars${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const listingId = `listing-star-${crypto.randomUUID()}`
-	await insertListing({
-		id: listingId,
-		ownerUserId: owner.userId,
-		packageId: `pkg-${listingId}`,
-		name: `@${owner.username}/starred`,
-		kodyId: 'starred',
-	})
-
-	await starCommunityListing({
-		env,
-		userId: stargazer.userId,
-		listingId,
-	})
-	await starCommunityListing({
-		env,
-		userId: stargazer.userId,
-		listingId,
-	})
-	expect(
-		await countCommunityStarsByListingIds(env.APP_DB, [listingId]),
-	).toEqual({ [listingId]: 1 })
-
-	await unstarCommunityListing({
-		env,
-		userId: stargazer.userId,
-		listingId,
-	})
-	expect(
-		await countCommunityStarsByListingIds(env.APP_DB, [listingId]),
-	).toEqual({ [listingId]: 0 })
-})
-
-test('timeline merges stored and derived events with fork privacy and private actors', async () => {
-	const viewer = await insertUser({
-		email: `viewer-${crypto.randomUUID()}@example.com`,
-		username: `view${crypto.randomUUID().slice(0, 8)}`,
-	})
-	const actor = await insertUser({
-		email: `actor-${crypto.randomUUID()}@example.com`,
-		username: `actor${crypto.randomUUID().slice(0, 8)}`,
-		displayName: 'Actor Display',
-	})
-	const privateActor = await insertUser({
-		email: `private-actor-${crypto.randomUUID()}@example.com`,
-		username: `pact${crypto.randomUUID().slice(0, 8)}`,
-		visibility: 'private',
-	})
-
-	const listingId = `listing-tl-${crypto.randomUUID()}`
-	const forkPackageId = `fork-pkg-${crypto.randomUUID()}`
-	await insertListing({
-		id: listingId,
-		ownerUserId: actor.userId,
-		packageId: `pkg-${listingId}`,
-		name: `@${actor.username}/timeline`,
-		kodyId: 'timeline',
-	})
-	await insertSavedPackage({
-		id: forkPackageId,
-		userId: actor.userId,
-		name: `@${actor.username}/timeline-fork`,
-		kodyId: 'timeline-fork',
-		isPrivate: true,
-	})
-	await runSql(
-		`INSERT INTO community_forks (
-			id, listing_id, forker_user_id, origin_commit, forked_package_id,
-			forked_source_id, target_kody_id, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		`fork-${crypto.randomUUID()}`,
-		listingId,
-		actor.userId,
-		'commit-1',
-		forkPackageId,
-		`source-${forkPackageId}`,
-		'timeline-fork',
-		'2026-07-03T00:00:00.000Z',
-	)
-	await insertCommunityActivityEvent(env.APP_DB, {
-		id: crypto.randomUUID(),
-		actorUserId: actor.userId,
-		eventType: 'listing_published',
-		listingId,
-		createdAt: '2026-07-01T00:00:00.000Z',
-	})
-	await starCommunityListing({
-		env,
-		userId: actor.userId,
-		listingId,
-	})
-	await runSql(
-		`UPDATE community_stars SET created_at = ? WHERE listing_id = ? AND user_id = ?`,
-		'2026-07-02T00:00:00.000Z',
-		listingId,
-		actor.userId,
-	)
-	await insertCommunityActivityEvent(env.APP_DB, {
-		id: crypto.randomUUID(),
-		actorUserId: privateActor.userId,
-		eventType: 'listing_published',
-		listingId,
-		createdAt: '2026-07-04T00:00:00.000Z',
-	})
-
-	await followCommunityUser({
-		env,
-		followerUserId: viewer.userId,
-		followeeUsername: actor.username,
-	})
-	// Following private profiles is rejected; insert the follow row directly so
-	// the timeline can prove private actors are still filtered out.
-	await runSql(
-		`INSERT INTO user_follows (follower_user_id, followee_user_id)
-		VALUES (?, ?)`,
-		viewer.userId,
-		privateActor.userId,
-	)
-
-	const timelinePrivateFork = await getCommunityTimeline({
-		env,
-		userId: viewer.userId,
-		limit: 20,
-	})
-	expect(timelinePrivateFork.map((item) => item.type)).toEqual([
-		'listing_starred',
-		'listing_published',
-	])
-	expect(
-		timelinePrivateFork.every((item) => item.actorUserId === actor.userId),
-	).toBe(true)
-	expect(timelinePrivateFork[0]?.actorDisplayName).toBe('Actor Display')
-
-	await runSql(
-		`UPDATE saved_packages SET is_private = 0 WHERE id = ? AND user_id = ?`,
-		forkPackageId,
-		actor.userId,
-	)
-	const timelinePublicFork = await getCommunityTimeline({
-		env,
-		userId: viewer.userId,
-		limit: 20,
-	})
-	expect(timelinePublicFork.map((item) => item.type)).toEqual([
-		'listing_forked',
-		'listing_starred',
-		'listing_published',
-	])
-
-	const selfActivity = await getProfileActivity({
-		env,
-		actorUserId: privateActor.userId,
-		limit: 10,
-		isSelf: true,
-	})
-	expect(selfActivity.some((item) => item.type === 'listing_published')).toBe(
-		true,
-	)
-	const publicActivity = await getProfileActivity({
-		env,
-		actorUserId: privateActor.userId,
-		limit: 10,
-		isSelf: false,
-	})
-	expect(publicActivity).toEqual([])
-})
 
 test('profile get hides private profiles unless includePrivate', async () => {
 	const user = await insertUser({
@@ -571,4 +316,44 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 	expect(
 		ownInventory.find((pkg) => pkg.kodyId === 'secret-notes')?.isPrivate,
 	).toBe(true)
+})
+
+test('profile activity includes own private publishes and hides them from public reads', async () => {
+	const actor = await insertUser({
+		email: `actor-${crypto.randomUUID()}@example.com`,
+		username: `actor${crypto.randomUUID().slice(0, 8)}`,
+		visibility: 'private',
+	})
+	const listingId = `listing-act-${crypto.randomUUID()}`
+	await insertListing({
+		id: listingId,
+		ownerUserId: actor.userId,
+		packageId: `pkg-${listingId}`,
+		name: `@${actor.username}/notes`,
+		kodyId: 'notes',
+	})
+	await insertCommunityActivityEvent(env.APP_DB, {
+		id: crypto.randomUUID(),
+		actorUserId: actor.userId,
+		eventType: 'listing_published',
+		listingId,
+		createdAt: '2026-07-01T00:00:00.000Z',
+	})
+
+	const selfActivity = await getProfileActivity({
+		env,
+		actorUserId: actor.userId,
+		limit: 10,
+		isSelf: true,
+	})
+	expect(selfActivity.some((item) => item.type === 'listing_published')).toBe(
+		true,
+	)
+	const publicActivity = await getProfileActivity({
+		env,
+		actorUserId: actor.userId,
+		limit: 10,
+		isSelf: false,
+	})
+	expect(publicActivity).toEqual([])
 })

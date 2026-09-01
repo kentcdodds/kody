@@ -16,7 +16,6 @@ import {
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
-import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
 import {
 	colors,
 	radius,
@@ -40,10 +39,6 @@ export type ProfileContentProps = {
 	activity: Array<PublicCommunityActivityItem>
 	query: string | null
 	isSelf: boolean
-	loggedIn: boolean
-	isFollowing: boolean
-	returnTo: string
-	followError: string | null
 }
 
 function renderForkIcon() {
@@ -89,17 +84,7 @@ function renderProfilePackageDates(
 }
 
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
-	const {
-		profile,
-		packages,
-		activity,
-		query,
-		isSelf,
-		loggedIn,
-		isFollowing,
-		returnTo,
-		followError,
-	} = handle.props
+	const { profile, packages, activity, query, isSelf } = handle.props
 
 	return () => (
 		<div data-testid="profile-frame">
@@ -115,25 +100,9 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 						<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
 							{profile.displayName}
 						</h1>
-						{/* A div, not a p: the signed-in follow control is a form,
-						    and browsers close a p before a form. */}
-						<div
-							mix={css(profileUsernameLineCss)}
-							data-testid="profile-username"
-						>
-							<span>@{profile.username}</span>
-							{!isSelf
-								? renderProfileFollowControl({
-										username: profile.username,
-										loggedIn,
-										isFollowing,
-										returnTo,
-										followError,
-										testId: 'profile-follow',
-										errorTestId: 'profile-follow-error',
-									})
-								: null}
-						</div>
+						<p mix={css(profileUsernameLineCss)} data-testid="profile-username">
+							@{profile.username}
+						</p>
 					</div>
 				</div>
 				{profile.bio ? (
@@ -156,19 +125,6 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 						<dd data-testid="profile-joined">
 							{formatCommunityPublishedDate(profile.joinedAt)}
 						</dd>
-					</div>
-					<div>
-						<dt>Followers</dt>
-						<dd
-							data-testid="profile-followers"
-							data-community-follower-count=""
-						>
-							{profile.followerCount}
-						</dd>
-					</div>
-					<div>
-						<dt>Following</dt>
-						<dd data-testid="profile-following">{profile.followingCount}</dd>
 					</div>
 				</dl>
 			</header>
@@ -254,8 +210,8 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 			<section mix={css(sectionCss)} data-testid="profile-activity">
 				<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
 				<p mix={css(mutedCss)} data-testid="profile-activity-hint">
-					Community publishes, forks, and stars. Editing a package without
-					republishing it does not appear here.
+					Community publishes and forks. Editing a package without republishing
+					it does not appear here.
 				</p>
 				{activity.length === 0 ? (
 					<p mix={css(descriptionCss)}>No public activity yet.</p>

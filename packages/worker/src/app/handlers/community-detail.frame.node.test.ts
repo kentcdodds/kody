@@ -6,7 +6,6 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingWithAggregates: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
-	getUserFollow: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
@@ -28,9 +27,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mockModule.readAuthenticatedAppUser(...args),
 }))
 
-vi.mock('#worker/community/social-repo.ts', () => ({
-	getCommunityStar: vi.fn().mockResolvedValue(false),
-	getUserFollow: (...args: Array<unknown>) => mockModule.getUserFollow(...args),
+vi.mock('#worker/community/profile-repo.ts', () => ({
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
 }))
@@ -87,7 +84,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const env = {} as Env
@@ -105,7 +101,6 @@ test('community detail handler returns bare detail frame HTML for target header'
 		profile_visibility: 'public',
 		stable_user_id: 'owner-mcp-id',
 	})
-	mockModule.getUserFollow.mockResolvedValue(false)
 
 	const handler = createCommunityDetailHandler(env)
 	const publicResponse = await handler.handler({
@@ -126,13 +121,13 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('>by</')
 	expect(publicHtml).toContain('href="/@kentcdodds"')
 	expect(publicHtml).toContain('>@kentcdodds</a>')
-	expect(publicHtml).toContain('data-testid="community-detail-owner-follow"')
-	expect(publicHtml).toContain('title="Follow"')
-	expect(publicHtml).toContain('/login?redirectTo=%2Fcommunity%2Flisting-1')
+	expect(publicHtml).not.toContain(
+		'data-testid="community-detail-owner-follow"',
+	)
 	expect(publicHtml).not.toContain(
 		'data-testid="community-detail-owner-private"',
 	)
-	expect(publicHtml).toContain('data-testid="community-detail-star"')
+	expect(publicHtml).not.toContain('data-testid="community-detail-star"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
@@ -190,9 +185,10 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(signedInHtml).not.toMatch(
 		/<p[^>]*data-testid="community-detail-owner-line"/,
 	)
-	expect(signedInHtml).toContain('data-testid="community-detail-star"')
-	expect(signedInHtml).toContain('data-starred="false"')
-	expect(signedInHtml).toContain('data-testid="community-detail-owner-follow"')
+	expect(signedInHtml).not.toContain('data-testid="community-detail-star"')
+	expect(signedInHtml).not.toContain(
+		'data-testid="community-detail-owner-follow"',
+	)
 	expect(signedInHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)
@@ -200,38 +196,4 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(
 		signedInHtml.indexOf('data-testid="community-detail-viewer-install-badge"'),
 	).toBeGreaterThan(signedInHtml.indexOf('</h1>'))
-	expect(signedInHtml).toContain('name="follow"')
-	expect(signedInHtml).toContain('name="returnTo"')
-	expect(signedInHtml).toContain('/profiles/kentcdodds/follow.json')
-	expect(signedInHtml).toContain('title="Follow"')
-
-	mockModule.getUserFollow.mockResolvedValue(true)
-	const followingResponse = await handler.handler({
-		request: new Request('https://example.com/community/listing-1', {
-			headers: { 'x-remix-target': 'community-detail' },
-		}),
-		params: { listingId: 'listing-1' },
-		url: new URL('https://example.com/community/listing-1'),
-	} as never)
-	const followingHtml = await followingResponse.text()
-	expect(followingHtml).toContain('data-following="true"')
-	expect(followingHtml).toContain('title="Unfollow"')
-
-	const followErrorResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/community/listing-1?followError=You%20cannot%20follow%20yourself.',
-			{
-				headers: { 'x-remix-target': 'community-detail' },
-			},
-		),
-		params: { listingId: 'listing-1' },
-		url: new URL(
-			'https://example.com/community/listing-1?followError=You%20cannot%20follow%20yourself.',
-		),
-	} as never)
-	const followErrorHtml = await followErrorResponse.text()
-	expect(followErrorHtml).toContain(
-		'data-testid="community-detail-owner-follow-error"',
-	)
-	expect(followErrorHtml).toContain('You cannot follow yourself.')
 })

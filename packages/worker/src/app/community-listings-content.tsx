@@ -228,7 +228,7 @@ function renderCommunityListingCard(
 				{listing.ratingCount > 0 ? (
 					/*
 					 * Every other stat in this row says what it is
-					 * ("12 forks", "5 stars", "effort …"), but the
+					 * ("12 forks", "effort …"), but the
 					 * rating is a glyph and two bare numbers, which
 					 * announced as "black star 4.5 (12)". The glyph is
 					 * decorative and the numbers get a spoken label.
@@ -255,9 +255,6 @@ function renderCommunityListingCard(
 				)}
 				<span data-testid={`community-listing-forks-${listing.id}`}>
 					{formatCount(listing.forkCount, 'fork')}
-				</span>
-				<span data-testid={`community-listing-stars-${listing.id}`}>
-					{formatCount(listing.starCount, 'star')}
 				</span>
 				<span
 					data-testid={`community-listing-published-${listing.id}`}

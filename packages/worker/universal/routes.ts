@@ -172,8 +172,6 @@ export const routes = route({
 	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	communityFeatureApiPost: post('/community/:listingId/feature.json'),
 	communityInstallApiPost: post('/community/:listingId/install.json'),
-	communityStarApiPost: post('/community/:listingId/star.json'),
-	communityStargazersApi: '/community/:listingId/stargazers.json',
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
 	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
@@ -191,13 +189,10 @@ export const routes = route({
 	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.
 	profileAvatar: '/profiles/:username/avatar/:hash.:ext',
 	profileOgImage: '/profiles/:username/og.png',
-	profileFollowApiPost: post('/profiles/:username/follow.json'),
 	webhookIngress: post(
 		'/@:username/webhooks/:packageKodyId/:webhookName/:urlSecret',
 	),
 	stripeWebhook: post('/webhooks/stripe'),
-	timeline: '/timeline',
-	timelineApi: '/timeline.json',
 	health: '/health',
 	healthComponents: '/health/components',
 	codeRunsApi: '/code-runs.json',
@@ -222,8 +217,6 @@ export const routes = route({
 	signup: '/signup',
 	waitingList: post('/waiting-list'),
 	account: '/account',
-	accountStars: '/account/stars',
-	accountStarsApi: '/account/stars.json',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

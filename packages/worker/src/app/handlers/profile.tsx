@@ -1,48 +1,15 @@
-import { z } from 'zod'
 import { type Action } from 'remix/router'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
 import { type routes } from '#universal/routes.ts'
-import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getUserAvatarObject } from '#worker/community/avatar.ts'
-import { CommunityActionError } from '#worker/community/errors.ts'
-import {
-	followCommunityUser,
-	getCommunityProfileByUsername,
-	unfollowCommunityUser,
-} from '#worker/community/social-service.ts'
+import { getCommunityProfileByUsername } from '#worker/community/profile-service.ts'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
-
-const followBodySchema = z.object({
-	follow: z.boolean(),
-})
-
-function parseBooleanFormField(value: FormDataEntryValue | null) {
-	if (typeof value !== 'string') return null
-	if (value === 'true') return true
-	if (value === 'false') return false
-	return null
-}
-
-function readSafeReturnTo(value: FormDataEntryValue | null) {
-	if (typeof value !== 'string') return null
-	return normalizeRedirectTo(value)
-}
-
-function redirectWithFollowError(returnTo: string, message: string) {
-	const url = new URL(returnTo, 'https://kody.invalid')
-	url.searchParams.set('followError', message.slice(0, 200))
-	return new Response(null, {
-		status: 303,
-		headers: { Location: `${url.pathname}${url.search}${url.hash}` },
-	})
-}
 
 export function createProfileHandler(env: Env) {
 	return {
@@ -80,7 +47,6 @@ export function createProfileHandler(env: Env) {
 						bio: data.profile.bio,
 						isSelf: data.isSelf,
 						loggedIn: data.loggedIn,
-						isFollowing: data.isFollowing,
 						visibility: data.profile.visibility,
 					},
 				},
@@ -168,7 +134,6 @@ export function createProfileOgImageHandler(env: Env) {
 				displayName: profile.displayName,
 				username: profile.username,
 				bio: profile.bio,
-				followerCount: profile.followerCount,
 				publicPackageCount: profile.publicPackageCount,
 				listingCount: profile.listingCount,
 				avatarDataUri,
@@ -185,92 +150,4 @@ export function createProfileOgImageHandler(env: Env) {
 			})
 		},
 	} satisfies Action<typeof routes.profileOgImage>
-}
-
-export function createProfileFollowApiPostHandler(env: Env) {
-	return {
-		middleware: [],
-		async handler({ request, params }) {
-			if (request.method !== 'POST') {
-				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
-			}
-
-			const user = await readAuthenticatedAppUser(request, env)
-			if (!user) {
-				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
-			}
-
-			const contentType = request.headers.get('content-type') ?? ''
-			let follow: boolean | null = null
-			let returnTo: string | null = null
-			if (contentType.includes('application/json')) {
-				const body = await request.json().catch(() => null)
-				const parsed = followBodySchema.safeParse(body)
-				if (!parsed.success) {
-					return jsonResponse(
-						{ ok: false, error: 'Invalid request body.' },
-						400,
-					)
-				}
-				follow = parsed.data.follow
-			} else {
-				const form = await request.formData().catch(() => null)
-				if (!form) {
-					return jsonResponse(
-						{ ok: false, error: 'Invalid request body.' },
-						400,
-					)
-				}
-				follow = parseBooleanFormField(form.get('follow'))
-				returnTo = readSafeReturnTo(form.get('returnTo'))
-				if (follow == null) {
-					return jsonResponse(
-						{ ok: false, error: 'Invalid request body.' },
-						400,
-					)
-				}
-			}
-
-			try {
-				if (follow) {
-					await followCommunityUser({
-						env,
-						followerUserId: user.mcpUser.userId,
-						followeeUsername: params.username,
-					})
-				} else {
-					await unfollowCommunityUser({
-						env,
-						followerUserId: user.mcpUser.userId,
-						followeeUsername: params.username,
-					})
-				}
-				if (returnTo) {
-					return new Response(null, {
-						status: 303,
-						headers: { Location: returnTo },
-					})
-				}
-				return jsonResponse({ ok: true, following: follow })
-			} catch (error) {
-				if (error instanceof CommunityActionError) {
-					if (returnTo) {
-						return redirectWithFollowError(returnTo, error.message)
-					}
-					return jsonResponse({ ok: false, error: error.message }, 400)
-				}
-				console.error('Profile follow update failed:', error)
-				if (returnTo) {
-					return redirectWithFollowError(
-						returnTo,
-						'Unable to update follow status.',
-					)
-				}
-				return jsonResponse(
-					{ ok: false, error: 'Unable to update follow status.' },
-					500,
-				)
-			}
-		},
-	} satisfies Action<typeof routes.profileFollowApiPost>
 }

@@ -259,7 +259,6 @@ registerPreloadPatterns(
 		routePattern(routes.accountPackages),
 		routePattern(routes.accountPackageDetail),
 		routePattern(routes.accountPackageApprovePublish),
-		routePattern(routes.accountStars),
 		routePattern(routes.accountPasskeys),
 		routePattern(routes.accountMcpOauthClients),
 		routePattern(routes.accountSecrets),
@@ -317,7 +316,6 @@ registerPreloadPatterns(
 		routePattern(routes.communityDetail),
 		routePattern(routes.communityPackage),
 		routePattern(routes.profile),
-		routePattern(routes.timeline),
 	],
 	{
 		name: 'community-area',

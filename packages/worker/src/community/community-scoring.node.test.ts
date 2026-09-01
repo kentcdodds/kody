@@ -6,7 +6,6 @@ const mockModule = vi.hoisted(() => ({
 	listCommunityListingCandidates: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
-	countCommunityStarsByListingIds: vi.fn(),
 }))
 
 vi.mock('./repo.ts', async (importOriginal) => {
@@ -23,11 +22,6 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.countCommunityForksByListingIds(...args),
 	}
 })
-
-vi.mock('./social-repo.ts', () => ({
-	countCommunityStarsByListingIds: (...args: Array<unknown>) =>
-		mockModule.countCommunityStarsByListingIds(...args),
-}))
 
 const {
 	COMMUNITY_SEARCH_CANDIDATE_LIMIT,
@@ -117,9 +111,6 @@ function mockListings(listings: Array<CommunityListingRecord>) {
 	)
 	mockModule.countCommunityForksByListingIds.mockResolvedValue(
 		Object.fromEntries(listings.map((listing) => [listing.id, 1])),
-	)
-	mockModule.countCommunityStarsByListingIds.mockResolvedValue(
-		Object.fromEntries(listings.map((listing) => [listing.id, 0])),
 	)
 }
 

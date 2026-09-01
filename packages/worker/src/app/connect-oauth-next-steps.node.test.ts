@@ -55,7 +55,6 @@ function listing(
 		ratingCount: 0,
 		averageAdaptationEffort: null,
 		forkCount: 0,
-		starCount: 0,
 		...overrides,
 		kodyId,
 		name,

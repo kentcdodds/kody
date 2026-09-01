@@ -448,7 +448,6 @@ const accountNavItems = [
 	{ href: '/account/packages', label: 'Packages' },
 	{ href: '/account/jobs', label: 'Jobs' },
 	{ href: '/account/workflows', label: 'Workflows' },
-	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },
 	{ href: '/account/mcp-servers', label: 'MCP servers' },

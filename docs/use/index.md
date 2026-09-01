@@ -49,9 +49,7 @@ Read in order for a full tour, or jump to a topic.
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
   the owner operates a container or machine and the package calls it
 - [Public packages](./community-packages.md) — share, browse, and fork published
-  packages on the same deployment
-- [Community profiles](./community-profiles.md) — public profiles, follows,
-  timelines, and listing stars
+  packages on the same deployment; public catalogs live at `/@username`
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
 - [Secrets and host approval](./secrets-and-values.md)

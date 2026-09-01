@@ -6,8 +6,7 @@ values).
 
 **Public package listings** are not included. Use the `community` domain
 (`community_search`, `community_get`) or the public `/community` pages. See
-[Public packages](./community-packages.md) and
-[Community profiles](./community-profiles.md).
+[Public packages](./community-packages.md).
 
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
