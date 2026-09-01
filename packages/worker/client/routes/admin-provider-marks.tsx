@@ -53,6 +53,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 	let lastFailedHref: string | null = null
 	let loadRequestId = 0
 	let pendingLogoBase64: string | undefined = undefined
+	let logoReadRevision = 0
 	let removeLogoChecked = false
 	let formRevision = 0
 	const deleteCheck = createDoubleCheck(handle)
@@ -124,13 +125,16 @@ export function AdminProviderMarksRoute(handle: Handle) {
 		if (!(input instanceof HTMLInputElement)) return
 		const file = input.files?.[0]
 		if (!file) {
+			logoReadRevision += 1
 			pendingLogoBase64 = undefined
 			handle.update()
 			return
 		}
 		removeLogoChecked = false
+		const revision = ++logoReadRevision
 		const reader = new FileReader()
 		reader.onload = () => {
+			if (revision !== logoReadRevision) return
 			if (typeof reader.result !== 'string') return
 			const commaIndex = reader.result.indexOf(',')
 			pendingLogoBase64 =
@@ -215,6 +219,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 					marks.find((mark) => mark.slug === canonicalSlug)?.slug ??
 					marks.find((mark) => mark.slug === slug)?.slug ??
 					null
+				handle.update()
 			},
 		)
 	}
@@ -228,6 +233,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 			if (!ok) return
 			creating = false
 			selectedSlug = null
+			handle.update()
 		})
 	}
 

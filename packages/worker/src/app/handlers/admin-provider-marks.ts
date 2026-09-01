@@ -95,6 +95,32 @@ async function handleSaveAction(input: {
 				(value): value is string => typeof value === 'string',
 			)
 		: undefined
+	let logoBytes: Uint8Array | null | undefined
+	let logoEnv: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'> | undefined
+	if (record.logoBase64 !== undefined) {
+		const assets = input.env.COMMUNITY_ASSETS
+		const images = input.env.IMAGES
+		if (!assets || !images) {
+			return jsonResponse(
+				{ ok: false, error: 'Logo storage is not configured.' },
+				503,
+			)
+		}
+		logoEnv = { COMMUNITY_ASSETS: assets, IMAGES: images }
+		const logoBase64 = record.logoBase64
+		if (typeof logoBase64 === 'string' && logoBase64.trim()) {
+			try {
+				logoBytes = base64ToBytes(logoBase64.trim())
+			} catch {
+				return jsonResponse(
+					{ ok: false, error: 'Logo file is not valid base64.' },
+					400,
+				)
+			}
+		} else {
+			logoBytes = null
+		}
+	}
 	try {
 		let mark = await upsertPlatformProviderMark({
 			db: input.env.APP_DB,
@@ -102,25 +128,12 @@ async function handleSaveAction(input: {
 			...(label ? { label } : {}),
 			...(aliases ? { aliases } : {}),
 		})
-		if (record.logoBase64 !== undefined) {
-			if (!input.env.COMMUNITY_ASSETS || !input.env.IMAGES) {
-				return jsonResponse(
-					{ ok: false, error: 'Logo storage is not configured.' },
-					503,
-				)
-			}
-			const logoBase64 = record.logoBase64
+		if (logoBytes !== undefined && logoEnv) {
 			mark = await setPlatformProviderMarkLogo({
 				db: input.env.APP_DB,
-				env: {
-					COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS,
-					IMAGES: input.env.IMAGES,
-				},
+				env: logoEnv,
 				slug: mark.slug,
-				sourceBytes:
-					typeof logoBase64 === 'string' && logoBase64.trim()
-						? base64ToBytes(logoBase64.trim())
-						: null,
+				sourceBytes: logoBytes,
 			})
 		}
 		void logAuditEvent({

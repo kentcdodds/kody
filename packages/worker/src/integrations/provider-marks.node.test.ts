@@ -156,6 +156,22 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 	})
 	expect(withLogo.logoKey).toMatch(/^platform-provider-marks\/google\//)
 	expect(objects.has(withLogo.logoKey!)).toBe(true)
+	const cleared = await setPlatformProviderMarkLogo({
+		db: env.APP_DB,
+		env,
+		slug: 'google',
+		sourceBytes: null,
+	})
+	expect(cleared.logoKey).toBeNull()
+	expect(objects.has(withLogo.logoKey!)).toBe(false)
+	const restored = await setPlatformProviderMarkLogo({
+		db: env.APP_DB,
+		env,
+		slug: 'google',
+		sourceBytes: tinyPngBytes,
+	})
+	expect(restored.logoKey).toMatch(/^platform-provider-marks\/google\//)
+	expect(objects.has(restored.logoKey!)).toBe(true)
 	expect(
 		resolveProviderMarkLogoPath({
 			marks: await listPlatformProviderMarks({ db: env.APP_DB }),

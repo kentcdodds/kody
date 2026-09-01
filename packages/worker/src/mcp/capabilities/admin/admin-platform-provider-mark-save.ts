@@ -91,24 +91,35 @@ export const adminPlatformProviderMarkSaveCapability = defineDomainCapability(
 				async () => {
 					try {
 						const slug = canonicalIntegrationName(args.slug)
+						let logoBytes: Uint8Array | null | undefined
+						if (args.logoBase64 !== undefined) {
+							if (!ctx.env.COMMUNITY_ASSETS || !ctx.env.IMAGES) {
+								throw new McpCallerError('Logo storage is not configured.')
+							}
+							if (args.logoBase64 === null) {
+								logoBytes = null
+							} else {
+								try {
+									logoBytes = base64ToBytes(args.logoBase64)
+								} catch (error) {
+									throw new McpCallerError('Logo file is not valid base64.', {
+										cause: error,
+									})
+								}
+							}
+						}
 						let mark = await upsertPlatformProviderMark({
 							db: ctx.env.APP_DB,
 							slug: args.slug,
 							label: args.label,
 							aliases: args.aliases,
 						})
-						if (args.logoBase64 !== undefined) {
-							if (!ctx.env.COMMUNITY_ASSETS || !ctx.env.IMAGES) {
-								throw new McpCallerError('Logo storage is not configured.')
-							}
+						if (logoBytes !== undefined) {
 							mark = await setPlatformProviderMarkLogo({
 								db: ctx.env.APP_DB,
 								env: ctx.env,
 								slug: mark.slug || slug,
-								sourceBytes:
-									args.logoBase64 === null
-										? null
-										: base64ToBytes(args.logoBase64),
+								sourceBytes: logoBytes,
 							})
 						}
 						return { mark: toPlatformProviderMarkPublic(mark) }

@@ -762,6 +762,33 @@ test('session config parsing is strict: usePkce and clientId are required and st
 		parseSessionConnectOauthConfig(
 			JSON.stringify({
 				...sessionConfig,
+				catalogLogoPath:
+					'/integrations/provider-marks/google?v=abcdef0123456789',
+			}),
+		),
+	).toMatchObject({
+		catalogLogoPath: '/integrations/provider-marks/google?v=abcdef0123456789',
+	})
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
+				catalogLogoPath: '/integrations/logos/google',
+			}),
+		),
+	).toMatchObject({ catalogLogoPath: null })
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
+				catalogLogoPath: '/account/integrations',
+			}),
+		),
+	).toMatchObject({ catalogLogoPath: null })
+	expect(
+		parseSessionConnectOauthConfig(
+			JSON.stringify({
+				...sessionConfig,
 				flow: 'confidential',
 				usePkce: false,
 			}),

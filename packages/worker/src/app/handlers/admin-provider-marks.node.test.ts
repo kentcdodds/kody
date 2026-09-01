@@ -131,3 +131,35 @@ test('admin provider marks API saves and lists operator marks', async () => {
 	}
 	expect(deletedBody.marks).toEqual([])
 })
+
+test('admin provider marks API rejects a logo write when storage is missing without creating the mark', async () => {
+	const { env } = createHarness()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
+	const handler = createAdminProviderMarksApiHandler({
+		...env,
+		COMMUNITY_ASSETS: undefined,
+	} as Env)
+
+	const saved = await handler.handler({
+		request: postRequest({
+			action: 'save',
+			slug: 'google',
+			label: 'Google',
+			logoBase64: bytesToBase64(tinyPngBytes),
+		}),
+		params: {},
+		url: new URL('https://example.com/admin/provider-marks.json'),
+	})
+	expect(saved.status).toBe(503)
+
+	const listed = await createAdminProviderMarksApiHandler(env).handler({
+		request: new Request('https://example.com/admin/provider-marks.json'),
+		params: {},
+		url: new URL('https://example.com/admin/provider-marks.json'),
+	})
+	const listedBody = (await listed.json()) as {
+		ok: true
+		marks: Array<{ slug: string }>
+	}
+	expect(listedBody.marks).toEqual([])
+})

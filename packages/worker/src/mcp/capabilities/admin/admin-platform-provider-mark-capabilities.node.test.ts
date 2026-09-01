@@ -56,11 +56,11 @@ function createHarness() {
 			},
 		}),
 	} as CapabilityContext
-	return { env, ctx, objects }
+	return { env, ctx, objects, auditSqlite }
 }
 
 test('save/list/delete provider marks store a fitted logo and write audit rows', async () => {
-	const { ctx } = createHarness()
+	const { ctx, auditSqlite } = createHarness()
 
 	const saved = await adminPlatformProviderMarkSaveCapability.handler(
 		{
@@ -90,4 +90,13 @@ test('save/list/delete provider marks store a fitted logo and write audit rows',
 	expect(
 		(await adminPlatformProviderMarkListCapability.handler({}, ctx)).marks,
 	).toEqual([])
+	const auditActions = auditSqlite
+		.prepare('SELECT action, result FROM audit_events ORDER BY id ASC')
+		.all() as Array<{ action: string; result: string }>
+	expect(auditActions).toEqual([
+		{ action: 'admin_platform_provider_mark_save', result: 'success' },
+		{ action: 'admin_platform_provider_mark_list', result: 'success' },
+		{ action: 'admin_platform_provider_mark_delete', result: 'success' },
+		{ action: 'admin_platform_provider_mark_list', result: 'success' },
+	])
 })
