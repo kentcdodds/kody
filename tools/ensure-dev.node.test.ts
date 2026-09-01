@@ -427,8 +427,52 @@ test('ensureDev leaves a still-starting wrangler running when /health misses the
 			'Local server updated and ready\nReloading local server...',
 		),
 	).toBe(true)
-	expect(isWranglerStillStarting('Ready on http://localhost:3742')).toBe(true)
+	expect(isWranglerStillStarting('Ready on http://localhost:3742')).toBe(false)
+	expect(
+		isWranglerStillStarting(
+			'Reloading local server...\nReady on http://localhost:3742',
+		),
+	).toBe(false)
 	expect(
 		isWranglerStillStarting('Cannot apply deleted_classes migration'),
 	).toBe(false)
+})
+
+test('ensureDev stops a wrangler that claimed Ready but never became healthy', async () => {
+	const stopped: Array<string> = []
+	const unrefed: Array<string> = []
+	await expect(
+		ensureDev({
+			ports: [3742],
+			probeHealth: async () => false,
+			listListenerPids: () => [],
+			readProcess: () => null,
+			protectedPids: new Set([1]),
+			killProcess: () => {},
+			startDev: () => ({
+				unref() {
+					unrefed.push('unref')
+				},
+				async stop() {
+					stopped.push('stop')
+				},
+				hasExited: () => false,
+				lastOutput: () =>
+					'Local server updated and ready\nReady on http://localhost:3742',
+			}),
+			sleep: async () => {},
+			now: (() => {
+				let t = 0
+				return () => {
+					t += 1
+					return t
+				}
+			})(),
+			readyTimeoutMs: 2,
+			readyPollMs: 1,
+			log: () => {},
+		}),
+	).rejects.toThrow(/did not become ready/)
+	expect(stopped).toEqual(['stop'])
+	expect(unrefed).toEqual([])
 })

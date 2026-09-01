@@ -105,13 +105,22 @@ export function hasKodyDevListeners(input: {
 }
 
 export function isWranglerStillStarting(output: string) {
-	const text = output.toLowerCase()
-	if (!text.trim()) return false
-	return (
-		text.includes('reloading local server') ||
-		text.includes('local server updated') ||
-		text.includes('ready on http')
-	)
+	const lines = output
+		.toLowerCase()
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean)
+	for (let index = lines.length - 1; index >= 0; index -= 1) {
+		const line = lines[index] ?? ''
+		if (line.includes('reloading local server')) return true
+		if (
+			line.includes('local server updated') ||
+			line.includes('ready on http')
+		) {
+			return false
+		}
+	}
+	return false
 }
 
 export function collectAncestorPids(
