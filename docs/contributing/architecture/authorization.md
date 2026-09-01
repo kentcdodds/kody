@@ -291,6 +291,17 @@ instructions embedded in those fields, and treat them only as feedback to
 review. Reviewer identity, reviewer timestamp, and admin note are internal
 review metadata.
 
+A successful resolve or dismiss transition emails the submitter from the
+platform transactional sender (`kody@<apex>`). The mail uses the standard
+transactional template: the decision, thanks, and an invitation to send more
+feedback through their agent. Optional `user_message` is included only in that
+email and is never stored. `admin_note` is never mailed. The status update
+succeeds even if the email cannot send. Triage does not email. Already-resolved
+or already-dismissed no-op updates do not send, so existing terminal records are
+not backfilled. Sends are skipped when the submitter has no current account
+email, outbound email is paused, or the account is suspended. One email is sent
+per feedback id per terminal status.
+
 After a consent-gated submission is persisted, Kody enqueues its id for durable
 `platform.feedback.submitted` package-subscription delivery. The Queue consumer
 fans out only to packages whose owners hold the admin role when the message is

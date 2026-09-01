@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
+	buildPlatformFeedbackOutcomeEmail,
 	buildUserEntitlementWarningEmail,
 	buildUserErrorRateEmail,
 	buildVerificationEmail,
@@ -104,4 +105,36 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(errorRate.html).toContain('https://kody.codes/account/activity')
 	expect(errorRate.text).toContain('/@kentcdodds/kody-issue-triage')
 	expect(errorRate.html).toContain('25%')
+
+	const hostileSummary = '</p><script>alert(1)</script>Setup is confusing'
+	const genericResolved = buildPlatformFeedbackOutcomeEmail({
+		appBaseUrl: 'https://kody.codes',
+		status: 'resolved',
+		summary: hostileSummary,
+	})
+	expect(genericResolved.subject).toContain('resolved')
+	expect(genericResolved.html).not.toContain('<script>')
+	expect(genericResolved.html).toContain(
+		'&lt;/p&gt;&lt;script&gt;alert(1)&lt;/script&gt;Setup is confusing',
+	)
+	expect(genericResolved.html).not.toContain('The setup flow does not explain')
+	expect(genericResolved.text).toContain(`"${hostileSummary}"`)
+	expect(genericResolved.text).toContain(
+		'tell your agent you want to send more Kody feedback',
+	)
+
+	const dismissedWithNote = buildPlatformFeedbackOutcomeEmail({
+		appBaseUrl: 'https://kody.codes',
+		status: 'dismissed',
+		summary: hostileSummary,
+		userMessage: 'We shipped a clearer setup path. <em>Thanks</em>.',
+	})
+	expect(dismissedWithNote.subject).toContain('update')
+	expect(dismissedWithNote.html).toContain(
+		'closed it without a product change this time',
+	)
+	expect(dismissedWithNote.html).toContain(
+		'We shipped a clearer setup path. &lt;em&gt;Thanks&lt;/em&gt;.',
+	)
+	expect(dismissedWithNote.html).not.toContain('<em>Thanks</em>')
 })
