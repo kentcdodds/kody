@@ -583,6 +583,9 @@ jobs:
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STATUS_INCIDENT_EVENT_SECRET:
             ${{ secrets.STATUS_INCIDENT_EVENT_SECRET }}
+          OIDC_SIGNING_PRIVATE_KEY_PEM:
+            ${{ secrets.OIDC_SIGNING_PRIVATE_KEY_PEM }}
+          OIDC_SIGNING_KEY_ID: ${{ secrets.OIDC_SIGNING_KEY_ID }}
         run: >
           node tools/ci/sync-worker-secrets.ts --env "" --name kody-platform
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
@@ -601,6 +604,8 @@ jobs:
           --set-from-env-optional KIT_API_KEY --set-from-env-optional
           STRIPE_SECRET_KEY --set-from-env-optional STRIPE_WEBHOOK_SECRET
           --set-from-env-optional STATUS_INCIDENT_EVENT_SECRET
+          --set-from-env-optional OIDC_SIGNING_PRIVATE_KEY_PEM
+          --set-from-env-optional OIDC_SIGNING_KEY_ID
 
       - name: 🗄️ Apply D1 Migrations
         env:
