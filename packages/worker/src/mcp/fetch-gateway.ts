@@ -53,6 +53,13 @@ type FetchGatewayProps = {
 }
 export type { FetchGatewayProps }
 
+/** Bindings every gateway fetch needs: secrets, quota, and usage metering. */
+export type FetchGatewayEnv = Pick<
+	Env,
+	'APP_DB' | 'SECRET_STORE_KEY' | 'USER_METER'
+> &
+	UsageEnv
+
 /**
  * Request header that disables secret placeholder resolution for one gateway
  * fetch: `x-kody-secret-resolution: off`. The header is stripped before the
@@ -148,7 +155,7 @@ function applyOutboundFetchTimeout(
 }
 
 export async function executeGatewayFetch(input: {
-	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY' | 'USER_METER'> & UsageEnv
+	env: FetchGatewayEnv
 	props: FetchGatewayProps
 	request: Request
 	globalFetch?: typeof fetch

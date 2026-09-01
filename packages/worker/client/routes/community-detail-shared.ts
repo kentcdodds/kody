@@ -199,7 +199,7 @@ export async function communityDetailRouteLoader(
 		throw new Error('Community listing not found.')
 	}
 	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load community package.')
+		throw new Error('Unable to load public package.')
 	}
 
 	await framePrefetchPromise

@@ -480,11 +480,11 @@ export function HomeRoute(handle: Handle) {
 						It already speaks your stack
 					</h2>
 					<p class="landing-world-lead">
-						Community packages cover the tools you live in. Browse what other
+						Public packages cover the tools you live in. Browse what other
 						people built, fork it with your agent, and make it yours.
 					</p>
 					<ul
-						aria-label="Services covered by community packages"
+						aria-label="Services covered by public packages"
 						class="landing-world-cloud"
 					>
 						{worldBrands.map((brand, index) => (

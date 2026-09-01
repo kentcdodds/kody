@@ -49,7 +49,7 @@ export const communityProfilePackageSchema = z.object({
 		.boolean()
 		.optional()
 		.describe(
-			'Present only on the caller’s own profile. Mirrors package.json#private.',
+			'Present only on the caller’s own profile. Repo visibility (`saved_packages.is_private`), not package.json#private.',
 		),
 })
 

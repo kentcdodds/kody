@@ -11,7 +11,7 @@ export const quickStartInstructions = `Start here
 export const packageLifecycleInstructions = `Package lifecycle (primary mental model):
 1. Discover and invoke: \`search\` for an existing capability, connected surface, or saved package; open entity detail for the exact call shape; invoke rather than reimplement.
 2. Explore temporarily: \`execute\` for one-off work, composition, authenticated smoke tests, and experiments. Execute modules are ephemeral.
-3. Prefer a close community package before creating: community listings are excluded from general \`search\` — use \`community_search\` (prefer \`trusted\`). If close, \`community_fork\`, review, adapt, publish. Create only when nothing suitable exists.
+3. Prefer a close public package before creating: catalog listings are excluded from general \`search\` — use \`community_search\`. If close, \`community_fork\`, review, adapt, publish. Create only when nothing suitable exists.
 4. Create or evolve a repo-backed package when behavior should be reused, maintained, tested, exposed as an app, or given a package-owned schedule, and step 3 found nothing. Search once more before creating so you extend an existing package when that fits.`
 
 export const packageEscalationInstructions = `Escalate from \`execute\` to a package when the user wants reusable named behavior they will keep improving; when the code needs multiple files, dependencies, tests, binary assets, version history, or review; when it needs a durable surface (exports, package-owned jobs, or app); or when you keep rewriting substantially the same execute module. Recurring schedules belong on a package (\`kody.jobs\`). Deferred one-shot work uses \`workflows.create({ runAt })\` from \`execute\` or package runtime.`

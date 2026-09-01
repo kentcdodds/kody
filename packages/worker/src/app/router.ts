@@ -96,6 +96,7 @@ import {
 	createCommunityDetailFilesHandler,
 	createCommunityPackageFilesApiHandler,
 	createCommunityPackageFilesHandler,
+	createCommunityPackageTreeHandler,
 } from '#app/handlers/package-files.ts'
 import {
 	createAccountPasskeysApiHandler,
@@ -118,6 +119,7 @@ import {
 } from '#app/handlers/account-two-factor.ts'
 import {
 	createAccountBillingApiHandler,
+	createAccountBillingCancellationFeedbackApiHandler,
 	createAccountBillingCheckoutApiHandler,
 	createAccountBillingHandler,
 	createAccountBillingPortalHandler,
@@ -368,6 +370,8 @@ export function createAppRouter(env: Env) {
 			accountBilling: createAccountBillingHandler(env),
 			accountBillingApi: createAccountBillingApiHandler(env),
 			accountBillingCheckoutPost: createAccountBillingCheckoutApiHandler(env),
+			accountBillingCancellationFeedbackPost:
+				createAccountBillingCancellationFeedbackApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
 			accountUsage: createAccountUsageHandler(env),
@@ -453,6 +457,7 @@ export function createAppRouter(env: Env) {
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
+			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),

@@ -44,6 +44,64 @@ export function AccountPackageOwnerDetails(
 		onPackagesPayload: (payload: AccountPackagesLoaderData) => void
 	}>,
 ) {
+	let confirmName = ''
+	let visibilityState: 'idle' | 'submitting' | 'error' = 'idle'
+	let visibilityMessage: string | null = null
+
+	async function submitVisibility(
+		packageDetail: AccountPackageDetail,
+		visibility: 'public' | 'private',
+	) {
+		if (visibilityState === 'submitting') return
+		if (
+			visibility === 'private' &&
+			confirmName.trim() !== packageDetail.kodyId
+		) {
+			visibilityState = 'error'
+			visibilityMessage = `Type ${packageDetail.kodyId} to make this package private. Public URLs will 404; existing forks keep their copies.`
+			handle.update()
+			return
+		}
+		visibilityState = 'submitting'
+		visibilityMessage = null
+		handle.update()
+		try {
+			const response = await fetch('/account/packages.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'set-visibility',
+					packageId: packageDetail.id,
+					visibility,
+					confirmName: confirmName.trim(),
+				}),
+			})
+			const payload = (await response.json()) as AccountPackagesLoaderData & {
+				error?: string
+			}
+			if (!response.ok || !payload?.ok) {
+				throw new Error(
+					payload?.error ?? 'Could not update package visibility.',
+				)
+			}
+			visibilityState = 'idle'
+			confirmName = ''
+			handle.props.onPackagesPayload(payload)
+			handle.update()
+		} catch (error) {
+			visibilityState = 'error'
+			visibilityMessage =
+				error instanceof Error
+					? error.message
+					: 'Could not update package visibility.'
+			handle.update()
+		}
+	}
+
 	return () => {
 		const {
 			packageDetail,
@@ -133,10 +191,84 @@ export function AccountPackageOwnerDetails(
 						<span mix={css(statusBadgeCss)}>Private</span>
 					) : null}
 					{packageDetail.hasCommunityListing ? (
-						<span mix={css(communityBadgeCss)}>Community</span>
+						<span mix={css(communityBadgeCss)}>Public</span>
 					) : (
-						<span mix={css(statusBadgeCss)}>Not published</span>
+						<span mix={css(statusBadgeCss)}>Not listed</span>
 					)}
+				</div>
+				<div
+					mix={css({ display: 'grid', gap: spacing.xs })}
+					data-testid="package-visibility-controls"
+				>
+					{packageDetail.isPrivate ? (
+						<button
+							type="button"
+							disabled={visibilityState === 'submitting'}
+							data-testid="package-make-public"
+							mix={[
+								css(getGhostButtonCss()),
+								on(
+									'click',
+									() => void submitVisibility(packageDetail, 'public'),
+								),
+							]}
+						>
+							{visibilityState === 'submitting' ? 'Saving…' : 'Make public'}
+						</button>
+					) : (
+						<>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								Making this package private unlists it from /community and 404s
+								public URLs. Existing forks keep their copies. Type the slug to
+								confirm.
+							</p>
+							<label mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css(visuallyHiddenCss)}>
+									Type {packageDetail.kodyId} to make private
+								</span>
+								<input
+									value={confirmName}
+									placeholder={packageDetail.kodyId}
+									data-testid="package-make-private-confirm"
+									mix={[
+										css({
+											padding: spacing.sm,
+											borderRadius: radius.md,
+											border: `1px solid ${colors.border}`,
+											backgroundColor: colors.surface,
+											color: colors.text,
+										}),
+										on('input', (event) => {
+											if (!(event.currentTarget instanceof HTMLInputElement)) {
+												return
+											}
+											confirmName = event.currentTarget.value
+											handle.update()
+										}),
+									]}
+								/>
+							</label>
+							<button
+								type="button"
+								disabled={visibilityState === 'submitting'}
+								data-testid="package-make-private"
+								mix={[
+									css(getGhostButtonCss()),
+									on(
+										'click',
+										() => void submitVisibility(packageDetail, 'private'),
+									),
+								]}
+							>
+								{visibilityState === 'submitting' ? 'Saving…' : 'Make private'}
+							</button>
+						</>
+					)}
+					{visibilityMessage ? (
+						<p mix={css({ margin: 0, color: colors.danger })} role="alert">
+							{visibilityMessage}
+						</p>
+					) : null}
 				</div>
 				{packageDetail.tags.length > 0 ? (
 					<RecordChips items={packageDetail.tags} />

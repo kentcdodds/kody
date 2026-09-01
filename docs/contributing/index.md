@@ -57,7 +57,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Package codemods](./package-codemods.md)
 - [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
   (soak telemetry for the quarantined helper leftover)
-- [Community packages](./community-packages.md)
+- [Public packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
 - [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,

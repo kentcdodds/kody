@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
+import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -21,13 +22,6 @@ import {
 	renderTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-
-function normalizeRedirectTo(value: string | null) {
-	if (!value) return null
-	if (!value.startsWith('/')) return null
-	if (value.startsWith('//')) return null
-	return value
-}
 
 function buildLoginHref(redirectTo: string | null) {
 	return redirectTo

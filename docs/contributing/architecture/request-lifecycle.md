@@ -383,8 +383,10 @@ sessions contain personal content. Envelopes are sent through the same-origin
 `POST /sentry-tunnel` route
 (`packages/worker/src/app/handlers/sentry-tunnel.ts`), which only forwards
 envelopes whose DSN matches the Worker's own `SENTRY_DSN` — this keeps the
-first-party CSP at `connect-src 'self'`. The CSP allows `worker-src blob:` for
-the replay compression Web Worker.
+first-party CSP at `connect-src 'self'`. Because that DSN is public, the route
+is also rate limited per IP before it buffers a body (see
+[security.md](../security.md)). The CSP allows `worker-src blob:` for the replay
+compression Web Worker.
 
 ### Source maps
 

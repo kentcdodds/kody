@@ -2,6 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { openApiSpecFetchGatewayFor } from '#mcp/capabilities/openapi-spec-fetch-gateway.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { fetchOpenApiSpecText } from '#worker/openapi/fetch-spec.ts'
 import { parseOpenApiSpec } from '#worker/openapi/parse-spec.ts'
@@ -143,10 +144,13 @@ export const openapiSpecSummarizeCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema,
 		outputSchema,
-		async handler(args, _ctx: CapabilityContext) {
+		async handler(args, ctx: CapabilityContext) {
 			let rawText: string
 			try {
-				rawText = await fetchOpenApiSpecText({ specUrl: args.specUrl })
+				rawText = await fetchOpenApiSpecText({
+					specUrl: args.specUrl,
+					gateway: openApiSpecFetchGatewayFor(ctx),
+				})
 			} catch (cause) {
 				const message = getErrorMessage(cause)
 				throw new Error(message)

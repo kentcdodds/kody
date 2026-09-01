@@ -805,7 +805,13 @@ export type AdminSystemEmailLoaderData = {
 export type AdminPlatformFeedbackListItem = {
 	id: string
 	submitter_user_id: string
-	category: 'friction' | 'bug' | 'experience' | 'suggestion' | 'other'
+	category:
+		| 'friction'
+		| 'bug'
+		| 'experience'
+		| 'suggestion'
+		| 'cancellation'
+		| 'other'
 	summary_untrusted: string
 	status: 'open' | 'triaged' | 'resolved' | 'dismissed'
 	reviewed_by_user_id: string | null
@@ -889,7 +895,7 @@ export type OnboardingLoaderData = {
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
-	/** Admin-featured trusted listings offered as one-click starter installs. */
+	/** Admin-featured listings offered as one-click starter installs. */
 	featuredListings: Array<OnboardingFeaturedListing>
 	/** Official workspace MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>

@@ -6,7 +6,9 @@ import {
 	buildClaudeCodeAddCommand,
 	buildCodexMcpAddCommand,
 	buildOpenClawMcpAddCommand,
+	cursorMcpGuideUrl,
 	defaultKodyMcpUrl,
+	grokBotConnectPluginsUrl,
 	grokBotInstallUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
@@ -58,10 +60,13 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
 	expect(cursor).toContain('data-agent="cursor"')
-	expect(cursor).toContain('data-testid="onboarding-agent-change"')
+	expect(cursor).not.toContain('data-testid="onboarding-agent-change"')
+	expect(cursor).not.toContain('Connecting')
 	expect(cursor).toContain(kodyCursorMarketplaceUrl)
 	expect(cursor).toContain(kodyCursorAddPluginCommand)
 	expect(cursor).toContain('data-testid="onboarding-authenticate-callout"')
+	expect(cursor).toContain('data-testid="onboarding-agent-help"')
+	expect(cursor).toContain(cursorMcpGuideUrl)
 	expect(cursor).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
 	expect(cursor).not.toContain(grokBotInstallUrl)
 	const pluginBlocks = [
@@ -122,9 +127,25 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(desktop).toContain('data-agent="grok-bot"')
 	expect(desktop).toContain('data-surface="desktop"')
 	expect(desktop).toContain(grokBotInstallUrl)
+	expect(desktop).toContain('data-testid="onboarding-agent-help"')
+	expect(desktop).toContain(grokBotConnectPluginsUrl)
+	expect(desktop).toContain('Plugins')
+	expect(desktop).not.toContain('Click Add to Grok Bot')
+	expect(desktop).not.toContain('Install the official Kody plugin')
+	expect(desktop).not.toContain('onboarding-mcp-plugin-alternative')
+	expect(desktop.indexOf('onboarding-mcp-plugin-primary')).toBeLessThan(
+		desktop.indexOf('Or add Kody from'),
+	)
+	expect(desktop.indexOf('onboarding-agent-help')).toBeLessThan(
+		desktop.indexOf('onboarding-agent-warning'),
+	)
+	expect(desktop).toContain(
+		'Grok.com (xAI web connectors) and Grok CLI are separate products',
+	)
 	expect(desktop).not.toContain('data-surface="mobile"')
 	expect(mobile).toContain('data-surface="mobile"')
 	expect(mobile).toContain(grokBotInstallUrl)
+	expect(mobile).not.toContain('onboarding-mcp-plugin-alternative')
 	expect(mobile).not.toContain('data-surface="desktop"')
 
 	const openclaw = await renderToString(
@@ -136,7 +157,7 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(openclaw).toContain('data-agent="openclaw"')
 	expect(openclaw).toContain(buildOpenClawMcpAddCommand(defaultKodyMcpUrl))
 	expect(openclaw).toContain('openclaw mcp login kody')
-	expect(openclaw).toContain('openclaw mcp doctor kody --probe')
+	expect(openclaw).not.toContain('openclaw mcp doctor kody --probe')
 	expect(openclaw).not.toContain('on a computer')
 
 	const openclawMobile = await renderToString(

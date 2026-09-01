@@ -213,7 +213,7 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 								</span>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Leave this empty to ask before Kody sends this secret to a
-									site.
+									site. Self-authored packages do not skip host approval.
 								</p>
 							</div>
 							<div

@@ -6,6 +6,7 @@ import {
 	getRequestIp,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
+import { deferWork } from '#app/deferred-work.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
@@ -103,36 +104,36 @@ export function createPasswordResetRequestHandler(env: Env) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { email: normalizedEmail },
 			})
-			const emailConfig = userRecord
-				? getPasswordResetEmailConfig(env, url)
-				: null
-
-			const expiresAt = Date.now() + passwordResetTokenExpiryMs
-			const resetToken = userRecord
-				? await createPasswordResetToken({
-						db: env.APP_DB,
-						userId: userRecord.id,
-						expiresAt,
-					})
-				: null
-
-			const token = resetToken?.token ?? ''
 
 			if (userRecord) {
-				const appBaseUrl = new URL(emailConfig?.appBaseUrl ?? url).origin
-				const resetUrl = new URL('/reset-password', appBaseUrl)
-				resetUrl.searchParams.set('token', token)
-				const email = buildPasswordResetEmail({
-					appBaseUrl,
-					resetUrl: resetUrl.toString(),
-				})
-
-				if (!emailConfig) {
-					logMissingEmailConfig({
-						to: normalizedEmail,
-						subject: email.subject,
+				const userId = userRecord.id
+				// Token writes and the email send happen after the response so
+				// the reply latency does not depend on whether the address is
+				// registered; the uniform message body alone would still leak
+				// account existence through a timing side channel.
+				void deferWork('password-reset-request-error', async () => {
+					const emailConfig = getPasswordResetEmailConfig(env, url)
+					const resetToken = await createPasswordResetToken({
+						db: env.APP_DB,
+						userId,
+						expiresAt: Date.now() + passwordResetTokenExpiryMs,
 					})
-				} else {
+					const appBaseUrl = new URL(emailConfig?.appBaseUrl ?? url).origin
+					const resetUrl = new URL('/reset-password', appBaseUrl)
+					resetUrl.searchParams.set('token', resetToken.token)
+					const email = buildPasswordResetEmail({
+						appBaseUrl,
+						resetUrl: resetUrl.toString(),
+					})
+
+					if (!emailConfig) {
+						logMissingEmailConfig({
+							to: normalizedEmail,
+							subject: email.subject,
+						})
+						return
+					}
+
 					try {
 						await sendCloudflareEmail(
 							{
@@ -151,7 +152,7 @@ export function createPasswordResetRequestHandler(env: Env) {
 					} catch (error) {
 						console.warn('cloudflare-email-error', error)
 					}
-				}
+				})
 
 				void logAuditEvent({
 					category: 'auth',

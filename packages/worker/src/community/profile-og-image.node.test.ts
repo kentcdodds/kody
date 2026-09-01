@@ -26,7 +26,7 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 	const withAvatar = await renderProfileOgImage({
 		displayName: 'Jane Doe',
 		username: 'jane',
-		bio: 'Builds weather bots and keeps community packages tidy for everyone.',
+		bio: 'Builds weather bots and keeps public packages tidy for everyone.',
 		followerCount: 12,
 		publicPackageCount: 3,
 		listingCount: 1,

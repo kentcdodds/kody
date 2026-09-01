@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { openApiSpecFetchGatewayFor } from '#mcp/capabilities/openapi-spec-fetch-gateway.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	normalizeOpenApiBinding,
@@ -52,7 +53,10 @@ export const openapiBindingSaveCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const rawText = await fetchOpenApiSpecText({ specUrl: args.specUrl })
+			const rawText = await fetchOpenApiSpecText({
+				specUrl: args.specUrl,
+				gateway: openApiSpecFetchGatewayFor(ctx),
+			})
 			const parsed = parseOpenApiSpec(rawText)
 			const resolved = resolveOpenApiSelection({
 				operations: parsed.operations,

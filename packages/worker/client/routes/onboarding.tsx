@@ -578,6 +578,7 @@ export function OnboardingRoute(handle: Handle) {
 									activeStep,
 									onSelectStep: selectStep,
 									hasMcpClient,
+									loggedIn,
 									selectedAgent,
 									selectedAgentLabel,
 									selectedSurface,

@@ -28,6 +28,9 @@ import {
 const communityPackageFilesMatcher = createMatcher(
 	routes.communityPackageFiles.pattern,
 )
+const communityPackageTreeMatcher = createMatcher(
+	routes.communityPackageTree.pattern,
+)
 const communityDetailFilesMatcher = createMatcher(
 	routes.communityDetailFiles.pattern,
 )
@@ -50,6 +53,26 @@ type FilesLocation =
 	  }
 
 function readFilesLocation(url: URL): FilesLocation | null {
+	const communityTree = communityPackageTreeMatcher.match(url)
+	if (communityTree) {
+		const selectedPath = normalizePackageFilesPath(
+			communityTree.params.relativePath ?? '',
+		)
+		if (selectedPath == null) return null
+		const apiHref = buildPackageFilesApiHref(
+			routes.communityPackageFilesApi.href({
+				username: communityTree.params.username,
+				kodyId: communityTree.params.kodyId,
+			}),
+			selectedPath,
+		)
+		const separator = apiHref.includes('?') ? '&' : '?'
+		return {
+			kind: 'community-package',
+			apiHref: `${apiHref}${separator}ref=${encodeURIComponent(communityTree.params.ref)}`,
+		}
+	}
+
 	const communityPackage = communityPackageFilesMatcher.match(url)
 	if (communityPackage) {
 		const selectedPath = normalizePackageFilesPath(

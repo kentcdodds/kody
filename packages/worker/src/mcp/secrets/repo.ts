@@ -1,9 +1,15 @@
+import {
+	chunkArray,
+	maxD1BoundParameters,
+} from '@kody-internal/shared/chunk.ts'
 import { earliestSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import {
 	type SecretBucketRow,
 	type SecretEntryRow,
 	type SecretScope,
 } from './types.ts'
+
+const listPackageScopeSecretFixedBindings = 2
 
 type SecretMetadataRow = {
 	scope: SecretScope
@@ -409,20 +415,33 @@ export async function listPackageScopeSecretMetadata(input: {
 }): Promise<Array<SecretMetadataRow>> {
 	if (input.packageIds.length === 0) return []
 	const now = input.now ?? new Date().toISOString()
-	const placeholders = input.packageIds.map(() => '?').join(', ')
-	const { results } = await input.db
-		.prepare(
-			`SELECT b.scope, b.binding_key, e.name, e.description, e.allowed_hosts, e.allowed_packages, e.created_at, e.updated_at, e.expires_at AS entry_expires_at, b.expires_at AS bucket_expires_at
-			FROM secret_buckets b
-			JOIN secret_entries e ON e.bucket_id = b.id
-			WHERE b.user_id = ? AND b.scope = 'package'
-				AND b.binding_key IN (${placeholders})
-				AND (b.expires_at IS NULL OR b.expires_at > ?)
-			ORDER BY e.name ASC`,
-		)
-		.bind(input.userId, ...input.packageIds, now)
-		.all<Record<string, unknown>>()
-	return (results ?? []).map(mapSecretMetadataRow)
+	const uniquePackageIds = [...new Set(input.packageIds)]
+	const rows: Array<SecretMetadataRow> = []
+	// `/account/secrets` lists every saved package, then binds those ids in one
+	// IN (...). userId + now are two extra params; 99+ packages exceeds D1's
+	// 100-binding cap (`too many SQL variables`) and 500s the page.
+	for (const idChunk of chunkArray(
+		uniquePackageIds,
+		maxD1BoundParameters - listPackageScopeSecretFixedBindings,
+	)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const { results } = await input.db
+			.prepare(
+				`SELECT b.scope, b.binding_key, e.name, e.description, e.allowed_hosts, e.allowed_packages, e.created_at, e.updated_at, e.expires_at AS entry_expires_at, b.expires_at AS bucket_expires_at
+				FROM secret_buckets b
+				JOIN secret_entries e ON e.bucket_id = b.id
+				WHERE b.user_id = ? AND b.scope = 'package'
+					AND b.binding_key IN (${placeholders})
+					AND (b.expires_at IS NULL OR b.expires_at > ?)
+				ORDER BY e.name ASC`,
+			)
+			.bind(input.userId, ...idChunk, now)
+			.all<Record<string, unknown>>()
+		for (const row of results ?? []) {
+			rows.push(mapSecretMetadataRow(row))
+		}
+	}
+	return rows.sort((left, right) => left.name.localeCompare(right.name))
 }
 
 function mapSecretBucketRow(row: Record<string, unknown>): SecretBucketRow {

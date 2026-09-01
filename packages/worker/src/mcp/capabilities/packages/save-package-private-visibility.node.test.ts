@@ -49,7 +49,10 @@ vi.mock('#worker/repo/source-safety-policy.ts', async (importOriginal) => {
 
 const { savePackageCapability } = await import('./save-package.ts')
 
+let lastSavedPackageInsertParams: Array<unknown> | null = null
+
 function createDatabase(users: Array<Record<string, unknown>>) {
+	lastSavedPackageInsertParams = null
 	return {
 		prepare(query: string) {
 			return {
@@ -95,6 +98,7 @@ function createDatabase(users: Array<Record<string, unknown>>) {
 						},
 						async run() {
 							if (query.includes('INSERT INTO saved_packages')) {
+								lastSavedPackageInsertParams = params
 								return { meta: { changes: 1 } }
 							}
 							throw new Error(`Unsupported run query: ${query}`)
@@ -226,9 +230,10 @@ test('package_save injects private:true for new packages that omit private, even
 	)
 
 	expect(readSyncedPackageJson()['private']).toBe(true)
+	expect(lastSavedPackageInsertParams?.[10]).toBe(1)
 })
 
-test('package_save creates a public package only with an explicit private:false plus confirmation', async () => {
+test('package_save ignores leftover private:false for catalog visibility', async () => {
 	setupPersistenceMocks()
 	const ctx = await createContext()
 
@@ -241,6 +246,7 @@ test('package_save creates a public package only with an explicit private:false 
 	)
 
 	expect(readSyncedPackageJson()['private']).toBe(false)
+	expect(lastSavedPackageInsertParams?.[10]).toBe(1)
 })
 
 test('package_save rejects an explicit private:false create without confirmation', async () => {

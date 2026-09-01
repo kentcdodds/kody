@@ -22,6 +22,7 @@ import {
 	isDefaultKodyMcpUrl,
 	isValidOnboardingAgentChooserPick,
 	mcpClientTabs,
+	onboardingAgentHelp,
 	onboardingAgentLabel,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
@@ -96,6 +97,12 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'copilot-app',
 		'gemini',
 	])
+
+	for (const tab of mcpClientTabs) {
+		const help = onboardingAgentHelp(tab.id)
+		expect(help.href).toMatch(/^https:\/\//)
+		expect(help.label.length).toBeGreaterThan(0)
+	}
 
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)

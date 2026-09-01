@@ -64,6 +64,7 @@ export const adminSystemEmailListCapability = defineDomainCapability(
 			'operator inbox',
 			'abuse',
 			'postmaster',
+			'psl',
 		],
 		inputSchema,
 		outputSchema,

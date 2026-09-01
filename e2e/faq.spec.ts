@@ -22,7 +22,7 @@ test('public FAQ page works logged out with native disclosures', async ({
 	await expect(sharedAccount).toHaveAttribute('open', '')
 	await expect(
 		page.getByText(
-			'Your assistant is yours unless you publish a community package.',
+			'Your assistant is yours unless you publish a public package.',
 		),
 	).toBeVisible()
 

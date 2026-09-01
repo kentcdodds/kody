@@ -9,13 +9,11 @@ export type CommunityInstallClickDecision = 'ignore' | 'submit' | 'confirm'
 /**
  * The Install pill lives in the server frame, so it stays clickable while
  * the client is submitting, confirming, or waiting for a reload. Ignore
- * those clicks; use the in-memory trust flag (updated on 409) rather than
- * the frame's stale `data-trusted`.
+ * those clicks. Every install takes one generic confirm.
  */
 export function decideCommunityInstallClick(input: {
 	installState: CommunityInstallUiState
 	alreadyInstalled: boolean
-	listingTrusted: boolean
 }): CommunityInstallClickDecision {
 	if (input.alreadyInstalled) return 'ignore'
 	switch (input.installState) {
@@ -24,7 +22,7 @@ export function decideCommunityInstallClick(input: {
 			return 'ignore'
 		case 'idle':
 		case 'error':
-			return input.listingTrusted ? 'submit' : 'confirm'
+			return 'confirm'
 		default: {
 			const exhaustive: never = input.installState
 			throw new Error(`Unhandled install state: ${String(exhaustive)}`)

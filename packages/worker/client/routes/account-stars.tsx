@@ -171,7 +171,7 @@ export function AccountStarsRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Starred packages"
-					description="Community packages you have starred."
+					description="Public packages you have starred."
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -189,7 +189,7 @@ export function AccountStarsRoute(handle: Handle) {
 				) : null}
 				{status === 'ready' && listings.length === 0 ? (
 					<p mix={css(descriptionCss)} data-testid="account-stars-empty">
-						You have not starred any community packages yet.{' '}
+						You have not starred any public packages yet.{' '}
 						<a href={routes.community.href()} mix={css(mutedLinkCss)}>
 							Browse the community
 						</a>

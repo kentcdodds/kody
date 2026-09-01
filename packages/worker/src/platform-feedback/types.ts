@@ -3,6 +3,7 @@ export const platformFeedbackCategories = [
 	'bug',
 	'experience',
 	'suggestion',
+	'cancellation',
 	'other',
 ] as const
 

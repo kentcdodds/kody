@@ -5,7 +5,7 @@ summary:
   START HERE when a third-party integration must work before saving a
   dependent package or package app: inspect integration/secret state, stop
   for setup, run an authenticated smoke test, then use connect nextSteps or
-  community_search (prefer trusted) before building from scratch.
+  community_search before building from scratch.
 category: platform
 ---
 
@@ -121,16 +121,15 @@ If those conditions are not met, stop and fix the integration first.
      integration record itself.
    - If the user just finished `/connect/oauth`, read `nextSteps` from the
      connect success payload/UI first: it already includes same-provider
-     trusted-first community helpers suggestions (listing name, kody id, or tags
-     must mention the connected provider) and a create-helpers prompt.
+     community helpers suggestions (listing name, kody id, or tags must mention
+     the connected provider) and a create-helpers prompt.
    - `search({ entity: "<provider>:integration" })` may already surface a small
-     same-provider package suggestion set (user packages first, else
-     trusted-first community listings). Use those when present.
+     same-provider package suggestion set (user packages first, else community
+     listings). Use those when present.
    - Otherwise search the user's account for an existing package that wraps the
-     integration, then call `community_search` for the provider or workflow
-     (prefer `trusted` matches). If a listing is close to the user's goal, fork
-     or point them at one-click install, then adapt — do not reimplement from
-     scratch.
+     integration, then call `community_search` for the provider or workflow. If
+     a listing is close to the user's goal, fork or point them at one-click
+     install, then adapt — do not reimplement from scratch.
    - Create or save a thin helpers package only when no suitable community
      listing exists.
    - If the integration or tokens already exist and the smoke test passes,

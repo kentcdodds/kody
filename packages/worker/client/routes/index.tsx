@@ -278,6 +278,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		packageFilesArea,
 		(m) => m.packageFilesRouteLoader,
 	),
+	[routePattern(routes.communityPackageTree)]: lazyRouteLoader(
+		packageFilesArea,
+		(m) => m.packageFilesRouteLoader,
+	),
 	[routePattern(routes.profile)]: lazyRouteLoader(
 		communityArea,
 		(m) => m.profileRouteLoader,
@@ -509,6 +513,9 @@ export const clientRoutes = {
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
 	),
 	[routePattern(routes.communityPackageFiles)]: (
+		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
+	),
+	[routePattern(routes.communityPackageTree)]: (
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
 	),
 	[routePattern(routes.profile)]: (

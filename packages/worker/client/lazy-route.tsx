@@ -382,6 +382,7 @@ registerPreloadPatterns(
 		routePattern(routes.accountPackageFiles),
 		routePattern(routes.communityDetailFiles),
 		routePattern(routes.communityPackageFiles),
+		routePattern(routes.communityPackageTree),
 	],
 	{
 		name: 'package-files-area',

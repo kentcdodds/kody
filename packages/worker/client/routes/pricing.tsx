@@ -125,7 +125,11 @@ export function PricingRoute(handle: Handle) {
 						<br />
 						Pay when Kody <em>earns it</em>.
 					</h1>
-					<p>Every plan is the whole factory. You pay for volume.</p>
+					<p>
+						The home your agents share is a factory: it turns the work they do
+						once into durable software that keeps running. Every plan is the
+						whole factory. You pay for volume.
+					</p>
 				</header>
 
 				<div mix={css(plansCss)}>

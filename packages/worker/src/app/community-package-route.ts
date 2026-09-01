@@ -5,6 +5,7 @@ import {
 } from '#worker/community/package-url.ts'
 import {
 	getCommunityPackageFilesHref,
+	isReservedPackageFilesKodyId,
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
 import { routes } from '#universal/routes.ts'
@@ -73,14 +74,27 @@ const communityDetailFilesMatcher = createMatcher(
 const communityPackageFilesMatcher = createMatcher(
 	routes.communityPackageFiles.pattern,
 )
+const communityPackageTreeMatcher = createMatcher(
+	routes.communityPackageTree.pattern,
+)
 
 export type CommunityFilesRouteTarget =
-	| { kind: 'listing'; listingId: string; selectedPath: string }
+	| {
+			kind: 'listing'
+			listingId: string
+			selectedPath: string
+			ref: string
+	  }
 	| { kind: 'redirect'; to: string }
 	| { kind: 'invalid-path' }
 
 function selectedPathFromParams(relativePath: string | undefined) {
 	return normalizePackageFilesPath(relativePath ?? '')
+}
+
+function normalizeTreeRef(ref: string | undefined) {
+	const trimmed = ref?.trim() ?? ''
+	return trimmed.length > 0 ? trimmed : 'HEAD'
 }
 
 export async function resolveCommunityFilesRoute(input: {
@@ -95,19 +109,47 @@ export async function resolveCommunityFilesRoute(input: {
 			kind: 'listing',
 			listingId: detailMatch.params.listingId,
 			selectedPath,
+			ref: normalizeTreeRef(input.url.searchParams.get('ref') ?? 'HEAD'),
 		}
 	}
 
-	const packageMatch = communityPackageFilesMatcher.match(input.url)
-	if (!packageMatch) return null
+	const leftoverFilesMatch = communityPackageFilesMatcher.match(input.url)
+	if (leftoverFilesMatch) {
+		const selectedPath = selectedPathFromParams(
+			leftoverFilesMatch.params.relativePath,
+		)
+		if (selectedPath == null) return { kind: 'invalid-path' }
+		if (isReservedPackageFilesKodyId(leftoverFilesMatch.params.kodyId)) {
+			return { kind: 'invalid-path' }
+		}
+		const target = await resolveCommunityPackageUrl({
+			db: input.env.APP_DB,
+			username: leftoverFilesMatch.params.username,
+			kodyId: leftoverFilesMatch.params.kodyId,
+		})
+		if (!target) return null
+		return {
+			kind: 'redirect',
+			to: getCommunityPackageFilesHref({
+				listingId: target.listingId,
+				ownerUsername: target.username,
+				kodyId: target.kodyId,
+				relativePath: selectedPath,
+				ref: 'HEAD',
+			}),
+		}
+	}
 
-	const selectedPath = selectedPathFromParams(packageMatch.params.relativePath)
+	const treeMatch = communityPackageTreeMatcher.match(input.url)
+	if (!treeMatch) return null
+
+	const selectedPath = selectedPathFromParams(treeMatch.params.relativePath)
 	if (selectedPath == null) return { kind: 'invalid-path' }
 
 	const target = await resolveCommunityPackageUrl({
 		db: input.env.APP_DB,
-		username: packageMatch.params.username,
-		kodyId: packageMatch.params.kodyId,
+		username: treeMatch.params.username,
+		kodyId: treeMatch.params.kodyId,
 	})
 	if (!target) return null
 	if (target.kind === 'redirect') {
@@ -118,6 +160,7 @@ export async function resolveCommunityFilesRoute(input: {
 				ownerUsername: target.username,
 				kodyId: target.kodyId,
 				relativePath: selectedPath,
+				ref: normalizeTreeRef(treeMatch.params.ref),
 			}),
 		}
 	}
@@ -125,6 +168,7 @@ export async function resolveCommunityFilesRoute(input: {
 		kind: 'listing',
 		listingId: target.listingId,
 		selectedPath,
+		ref: normalizeTreeRef(treeMatch.params.ref),
 	}
 }
 
@@ -134,6 +178,7 @@ export async function resolveCanonicalFilesPath(input: {
 	ownerUsername: string
 	kodyId: string
 	selectedPath: string
+	ref?: string
 }): Promise<string | null> {
 	const target = await resolveCommunityPackageUrl({
 		db: input.env.APP_DB,
@@ -146,5 +191,6 @@ export async function resolveCanonicalFilesPath(input: {
 		ownerUsername: target.username,
 		kodyId: target.kodyId,
 		relativePath: input.selectedPath,
+		ref: input.ref,
 	})
 }

@@ -1112,12 +1112,12 @@ test('worker entrypoint renders OAuth errors for delegated authorize route excep
 		}),
 	)
 
-	expect(response.status).toBe(500)
+	expect(response.status).toBe(400)
 	expect(response.headers.get('Content-Type')).toContain('application/json')
 	await expect(response.json()).resolves.toEqual({
 		ok: false,
-		error: 'OAuth authorization failed. Please start the connection again.',
-		code: 'server_error',
+		error: 'Invalid form data',
+		code: 'invalid_request',
 	})
 })
 

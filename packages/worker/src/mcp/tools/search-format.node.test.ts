@@ -626,6 +626,7 @@ export declare function fetch(request: Request): Promise<Response>
 		listingAhead: null,
 	})
 	expect(observedPackageDetail.markdown).not.toContain('community_fork_absorb')
+	expect(observedPackageDetail.markdown).not.toContain('repo_publish_session')
 })
 
 test('package search surfaces listing ahead only when the fork is behind', () => {
@@ -649,7 +650,7 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(currentMatch).not.toHaveProperty('listingAhead')
 	expect(
 		currentMatch && 'nextStep' in currentMatch ? currentMatch.nextStep : '',
-	).not.toContain('community_fork_absorb')
+	).not.toContain('repo_publish_session')
 
 	const [aheadMatch] = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
@@ -675,7 +676,13 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	})
 	expect(
 		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
-	).toContain('community_fork_absorb')
+	).toContain('repo_publish_session')
+	expect(
+		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
+	).toContain('absorbed_upstream_commit')
+	expect(
+		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
+	).not.toContain('community_fork_absorb')
 
 	const aheadDetail = formatEntityDetailMarkdown({
 		type: 'package',
@@ -715,7 +722,9 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 		},
 	})
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
-	expect(aheadDetail.markdown).toContain('community_fork_absorb')
+	expect(aheadDetail.markdown).toContain('repo_publish_session')
+	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
+	expect(aheadDetail.markdown).not.toContain('community_fork_absorb')
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {

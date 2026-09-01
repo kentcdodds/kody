@@ -90,6 +90,7 @@ test('community files API resolves the listing, rejects traversal, and 404s miss
 		env: {},
 		listingId: 'listing-1',
 		selectedPath: 'src/index.ts',
+		ref: 'HEAD',
 		serverTiming: expect.any(Array),
 	})
 

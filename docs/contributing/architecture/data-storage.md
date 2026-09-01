@@ -14,8 +14,8 @@ the project must follow the same convention; user-scoped tests should exercise
 both the "happy" path and a cross-user denial path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
-platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
-`admin`). The permanent D1 tables are `system_email_threads`,
+platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`,
+`admin`, and `psl`). The permanent D1 tables are `system_email_threads`,
 `system_email_messages`, `system_email_attachments`, and
 `system_email_delivery_events`. They omit `user_id` because the operator owner
 is implicit. They are the sole live `system:email` graph authority. The reserved
@@ -319,13 +319,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
-  intact, `is_private` (0/1) projecting `package.json#private` for
-  public-profile and timeline filters, and `locked_at` (nullable ISO timestamp)
-  that blocks agent and reconcile promotion of `published_commit` until the
-  owner approves a specific commit in the account UI
+  intact, `is_private` (0/1) for repo visibility (default private; not
+  `package.json#private`) used by public-profile and timeline filters, and
+  `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
+  of `published_commit` until the owner approves a specific commit in the
+  account UI
 - `community_listings`, `community_forks`, `community_ratings`,
-  `community_reports`, `community_bans`: public community package listings and
-  moderation (see [Community packages](../community-packages.md))
+  `community_reports`, `community_bans`: public package listings and moderation
+  (see [Public packages](../community-packages.md))
 - `user_follows`: follow edges between MCP stable user ids (`follower_user_id` /
   `followee_user_id`)
 - `community_stars`: listing stargazer bookmarks (`listing_id` + `user_id`),
@@ -346,7 +347,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   read path. Updating or deleting a user secret from package code (`secret_set`
   / `secret_delete`) always requires that grant, regardless of fork or adoption
   state. Official OAuth token rotation persists host-side and does not use that
-  write grant.
+  write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
+  gate and are never implied by authorship or adoption.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
   `(user_id, slug)`. Holds shared client id, client-secret ciphertext (soak
   dual-write also keeps `client_secret_secret_name`), provider endpoints, and
@@ -367,7 +369,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
-- `platform_provider_marks` (`0033-platform-provider-marks.sql`): operator-owned
+- `platform_provider_marks` (`0035-platform-provider-marks.sql`): operator-owned
   brand marks for saved integrations, keyed by `slug`, with no `user_id`.
   `aliases_json` holds extra provider keys and authorize hosts. `logo_key` /
   `logo_content_type` point at a fitted WebP in `COMMUNITY_ASSETS` under
@@ -1258,8 +1260,9 @@ on write unless a migration backfills existing rows.
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secret_set` /
   `secret_delete`) always require the grant. Official OAuth token rotation
-  persists host-side and does not use that write grant. Package-scoped secrets
-  are owned exclusively by the package id in their bucket binding.
+  persists host-side and does not use that write grant. Authorship and adoption
+  never imply a host allowlist. Package-scoped secrets are owned exclusively by
+  the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, `user_integrations.required_hosts_json`, and
   `user_integrations.allowed_packages_json` (`0001-squashed-init.sql` /
@@ -1465,7 +1468,7 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
    (for example `@kody/github`) into the caller's scope before importing or
    invoking it (decision
    [0036 — Person accounts do not run official platform packages](../decisions/0036-platform-packages-fork-only.md)).
-   Person-account and community package scopes never grant cross-user imports.
+   Person-account and public package scopes never grant cross-user imports.
    Platform-account packages may still compose with each other.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.

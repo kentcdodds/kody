@@ -1,21 +1,36 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	buildEnvelopeIngestUrl,
 	createSentryTunnelHandler,
 } from './sentry-tunnel.ts'
+import { sentryTunnelRateLimitConfig } from '#app/rate-limit.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const configuredDsn = 'https://publickey@o123.ingest.us.sentry.io/456'
+
+function createAppDb() {
+	return createD1FromSqlite(new DatabaseSync(':memory:'))
+}
 
 function buildEnvelope(dsn?: string) {
 	const header = JSON.stringify(dsn ? { dsn } : {})
 	return `${header}\n{"type":"event"}\n{"message":"boom"}`
 }
 
-function tunnelRequest(body: string | ArrayBuffer) {
+function tunnelRequest(
+	body: string | ArrayBuffer,
+	headers: Record<string, string> = {},
+) {
+	const length =
+		typeof body === 'string'
+			? new TextEncoder().encode(body).byteLength
+			: body.byteLength
 	return {
 		request: new Request('http://example.com/sentry-tunnel', {
 			method: 'POST',
+			headers: { 'content-length': String(length), ...headers },
 			body,
 		}),
 		url: new URL('http://example.com/sentry-tunnel'),
@@ -50,6 +65,7 @@ test('sentry tunnel forwards matching envelopes and rejects everything else', as
 	using _okFetch = stubFetch(forwardMock)
 	const forwardHandler = createSentryTunnelHandler({
 		SENTRY_DSN: configuredDsn,
+		APP_DB: createAppDb(),
 	})
 	const forwarded = await forwardHandler.handler(
 		tunnelRequest(buildEnvelope(configuredDsn)),
@@ -67,6 +83,7 @@ test('sentry tunnel forwards matching envelopes and rejects everything else', as
 	using _rejectFetch = stubFetch(rejectMock)
 	const rejectHandler = createSentryTunnelHandler({
 		SENTRY_DSN: configuredDsn,
+		APP_DB: createAppDb(),
 	})
 	expect(
 		(
@@ -85,7 +102,7 @@ test('sentry tunnel forwards matching envelopes and rejects everything else', as
 	).toBe(403)
 	expect(
 		(
-			await createSentryTunnelHandler({}).handler(
+			await createSentryTunnelHandler({ APP_DB: createAppDb() }).handler(
 				tunnelRequest(buildEnvelope(configuredDsn)),
 			)
 		).status,
@@ -100,9 +117,78 @@ test('sentry tunnel forwards matching envelopes and rejects everything else', as
 	})
 	using _failFetch = stubFetch(failMock)
 	consoleWarn.mockImplementation(() => {})
-	const failHandler = createSentryTunnelHandler({ SENTRY_DSN: configuredDsn })
+	const failHandler = createSentryTunnelHandler({
+		SENTRY_DSN: configuredDsn,
+		APP_DB: createAppDb(),
+	})
 	expect(
 		(await failHandler.handler(tunnelRequest(buildEnvelope(configuredDsn))))
 			.status,
 	).toBe(502)
+})
+
+test('sentry tunnel caps forwarding per address and needs a declared length', async () => {
+	const forwardMock = vi.fn(async () => new Response(null, { status: 200 }))
+	using _okFetch = stubFetch(forwardMock)
+	const limit = vi.fn(async ({ key }: RateLimitOptions) => {
+		expect(key).toBe('sentry-tunnel:ip:198.51.100.42')
+		return { success: forwardMock.mock.calls.length < 2 }
+	})
+	const handler = createSentryTunnelHandler({
+		SENTRY_DSN: configuredDsn,
+		APP_DB: createAppDb(),
+		SENTRY_TUNNEL_RATE_LIMITER: { limit } as unknown as RateLimit,
+	})
+	const flood = () =>
+		handler.handler(
+			tunnelRequest(buildEnvelope(configuredDsn), {
+				'CF-Connecting-IP': '198.51.100.42',
+			}),
+		)
+
+	expect((await flood()).status).toBe(200)
+	expect((await flood()).status).toBe(200)
+	const throttled = await flood()
+	expect(throttled.status).toBe(429)
+	expect(throttled.headers.get('Retry-After')).toBe(
+		String(sentryTunnelRateLimitConfig.windowSeconds),
+	)
+	expect(forwardMock).toHaveBeenCalledTimes(2)
+
+	// An undeclared body length is refused before anything is buffered.
+	const chunked = await handler.handler(
+		tunnelRequest(buildEnvelope(configuredDsn), { 'content-length': '' }),
+	)
+	expect(chunked.status).toBe(411)
+	expect(forwardMock).toHaveBeenCalledTimes(2)
+})
+
+test('sentry tunnel falls back to D1 rate limiting without the binding', async () => {
+	const forwardMock = vi.fn(async () => new Response(null, { status: 200 }))
+	using _okFetch = stubFetch(forwardMock)
+	const handler = createSentryTunnelHandler({
+		SENTRY_DSN: configuredDsn,
+		APP_DB: createAppDb(),
+	})
+
+	let throttled: Response | null = null
+	for (
+		let attempt = 0;
+		attempt <= sentryTunnelRateLimitConfig.maxRequests;
+		attempt++
+	) {
+		const response = await handler.handler(
+			tunnelRequest(buildEnvelope(configuredDsn), {
+				'CF-Connecting-IP': '203.0.113.9',
+			}),
+		)
+		if (response.status === 429) {
+			throttled = response
+			break
+		}
+	}
+	expect(throttled?.status).toBe(429)
+	expect(forwardMock).toHaveBeenCalledTimes(
+		sentryTunnelRateLimitConfig.maxRequests,
+	)
 })

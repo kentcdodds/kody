@@ -14,6 +14,7 @@ test('reserved username validation rejects brand, support, and infrastructure na
 		'no-reply',
 		'admin',
 		'mcp',
+		'psl',
 		'kody-r-0123456789abcdef',
 	]) {
 		expect(isReservedUsername(reserved)).toBe(true)
