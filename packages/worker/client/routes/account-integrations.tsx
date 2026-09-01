@@ -520,6 +520,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										label: oauthAppTitle(app),
 										logoPath: app.platformLogoPath ?? app.logoPath,
 										autoLogoPath: app.autoLogoPath,
+										catalogLogoPath: app.catalogLogoPath,
 										host: hostFromUrl(app.authorizeUrl ?? app.tokenUrl),
 										builtIn: isBuiltInApp(app),
 									}),

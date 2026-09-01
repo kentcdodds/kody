@@ -10,6 +10,7 @@ export type ConnectOauthChooserOption = {
 	providerKey: string
 	logoPath: string | null
 	autoLogoPath: string | null
+	catalogLogoPath: string | null
 	kind: ConnectOauthChooserKind
 }
 
@@ -36,6 +37,7 @@ export function buildConnectOauthChooserOptions(input: {
 		providerKey: string
 		logoPath: string | null
 		autoLogoPath: string | null
+		catalogLogoPath: string | null
 		platform: boolean
 		appSlug: string
 		canDrive: boolean
@@ -62,6 +64,7 @@ export function buildConnectOauthChooserOptions(input: {
 				providerKey,
 				logoPath: connection.logoPath,
 				autoLogoPath: connection.autoLogoPath,
+				catalogLogoPath: connection.catalogLogoPath,
 				kind: 'connection' as const,
 			}
 		})

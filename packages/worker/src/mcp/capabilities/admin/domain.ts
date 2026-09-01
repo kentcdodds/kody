@@ -16,6 +16,9 @@ import { adminPlatformAccountCreateCapability } from './admin-platform-account-c
 import { adminPlatformOauthAppDeleteCapability } from './admin-platform-oauth-app-delete.ts'
 import { adminPlatformOauthAppListCapability } from './admin-platform-oauth-app-list.ts'
 import { adminPlatformOauthAppSaveCapability } from './admin-platform-oauth-app-save.ts'
+import { adminPlatformProviderMarkDeleteCapability } from './admin-platform-provider-mark-delete.ts'
+import { adminPlatformProviderMarkListCapability } from './admin-platform-provider-mark-list.ts'
+import { adminPlatformProviderMarkSaveCapability } from './admin-platform-provider-mark-save.ts'
 import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-get.ts'
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
@@ -58,6 +61,7 @@ export const adminDomain = defineDomain({
 		'community activity',
 		'platform accounts',
 		'platform oauth apps',
+		'provider marks',
 		'package scope grants',
 		'codemod',
 		'package codemod',
@@ -88,6 +92,9 @@ export const adminDomain = defineDomain({
 		adminPlatformOauthAppSaveCapability,
 		adminPlatformOauthAppListCapability,
 		adminPlatformOauthAppDeleteCapability,
+		adminPlatformProviderMarkSaveCapability,
+		adminPlatformProviderMarkListCapability,
+		adminPlatformProviderMarkDeleteCapability,
 		adminPackageScopeGrantCreateCapability,
 		adminPackageScopeGrantRevokeCapability,
 		adminPackageScopeGrantListCapability,

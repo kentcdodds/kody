@@ -691,6 +691,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						label={currentConfig.provider}
 						logoPath={currentConfig.platformLogoPath ?? currentConfig.logoPath}
 						autoLogoPath={currentConfig.autoLogoPath}
+						catalogLogoPath={currentConfig.catalogLogoPath}
 						host={currentConfig.authorizeHost}
 					/>
 					<span mix={css(connectOauthEyebrowCss)}>Connect an account</span>

@@ -1086,6 +1086,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 							providerKey: 'google',
 							logoPath: null,
 							autoLogoPath: null,
+							catalogLogoPath: null,
 							kind: 'connection',
 						},
 					],
@@ -1119,6 +1120,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		providerKey: slug,
 		logoPath: null,
 		autoLogoPath: null,
+		catalogLogoPath: null,
 		kind: 'connection' as const,
 	}))
 	const sixChooserResponse = await renderAppPage({

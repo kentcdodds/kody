@@ -41,5 +41,10 @@ test('resolveProviderMarkSource prefers upload, then favicon, then letter', () =
 			autoLogoPath: '/integrations/logos/obscure-crm?v=2',
 		}),
 	).toBe('favicon')
+	expect(
+		resolveProviderMarkSource({
+			catalogLogoPath: '/integrations/provider-marks/google?v=1',
+		}),
+	).toBe('catalog')
 	expect(resolveProviderMarkSource({})).toBe('letter')
 })

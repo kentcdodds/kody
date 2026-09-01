@@ -218,6 +218,7 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 	const expectedTables = [
 		'fleet_execute_days',
 		'platform_oauth_apps',
+		'platform_provider_marks',
 		'repo_session_storage_bucket_cursor',
 		'system_email_attachments',
 		'system_email_delivery_events',
@@ -246,10 +247,12 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 					reason: expect.stringContaining(
 						table === 'platform_oauth_apps'
 							? 'Operator-provisioned built-in OAuth app'
-							: table.startsWith('repo_session_') ||
-								  table === 'fleet_execute_days'
-								? 'Platform-owned'
-								: 'operator-owned system email',
+							: table === 'platform_provider_marks'
+								? 'Operator-owned provider brand marks'
+								: table.startsWith('repo_session_') ||
+									  table === 'fleet_execute_days'
+									? 'Platform-owned'
+									: 'operator-owned system email',
 					),
 				}),
 			),

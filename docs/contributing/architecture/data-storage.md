@@ -369,6 +369,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
+- `platform_provider_marks` (`0035-platform-provider-marks.sql`): operator-owned
+  brand marks for saved integrations, keyed by `slug`, with no `user_id`.
+  `aliases_json` holds extra provider keys and authorize hosts. `logo_key` /
+  `logo_content_type` point at a fitted WebP in `COMMUNITY_ASSETS` under
+  `platform-provider-marks/{slug}/`. Display falls back to these after an
+  explicit upload and auto-favicon miss. See
+  [OAuth integrations](./integrations.md#provider-logos).
 - `user_integrations` (squashed baseline, rebuilt by
   `0004-platform-oauth-apps.sql`): per-user OAuth connections keyed by
   `(user_id, name)`. Exactly one of nullable `app_slug` (composite FK

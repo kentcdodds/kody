@@ -300,6 +300,7 @@ registerPreloadPatterns(
 		routePattern(routes.adminPlatformIntegrations),
 		routePattern(routes.adminPlatformIntegrationNew),
 		routePattern(routes.adminPlatformIntegrationDetail),
+		routePattern(routes.adminProviderMarks),
 		routePattern(routes.adminCodemods),
 		routePattern(routes.adminRoles),
 		routePattern(routes.adminCommunityReports),

@@ -43,6 +43,7 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 				providerKey: 'google',
 				logoPath: null,
 				autoLogoPath: null,
+				catalogLogoPath: '/integrations/provider-marks/google',
 				platform: false,
 				appSlug: 'google',
 				canDrive: true,
@@ -53,6 +54,7 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 				providerKey: 'linear',
 				logoPath: null,
 				autoLogoPath: null,
+				catalogLogoPath: null,
 				platform: false,
 				appSlug: 'linear',
 				canDrive: false,
@@ -63,6 +65,7 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 				providerKey: 'github',
 				logoPath: '/integrations/logos/github',
 				autoLogoPath: null,
+				catalogLogoPath: null,
 				platform: true,
 				appSlug: 'github',
 				canDrive: true,
@@ -78,6 +81,7 @@ test('connect chooser lists reconnectable connections and hides unused built-ins
 		href: '/connect/oauth?provider=google-work&app=google',
 		kind: 'connection',
 		detail: 'Reconnect your OAuth app',
+		catalogLogoPath: '/integrations/provider-marks/google',
 	})
 	expect(options[1]).toMatchObject({
 		href: '/connect/oauth?provider=github',

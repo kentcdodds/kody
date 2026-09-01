@@ -71,6 +71,8 @@ export type ConnectOauthConfig = {
 	logoPath?: string | null
 	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
+	/** Operator-curated provider mark (after upload and favicon). */
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
 	/**
@@ -115,6 +117,7 @@ export type StoredIntegrationConfig = Omit<
 	platformLogoPath?: string | null
 	logoPath?: string | null
 	autoLogoPath?: string | null
+	catalogLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats). */
 	platformDescription?: string | null
 }
@@ -204,6 +207,7 @@ export function toStoredIntegrationConfig(
 			: null,
 		logoPath: integration.logoPath ?? null,
 		autoLogoPath: integration.autoLogoPath ?? null,
+		catalogLogoPath: integration.catalogLogoPath ?? null,
 		...(integration.platform === true
 			? {
 					platformAppSlug: integration.appSlug,
@@ -418,6 +422,7 @@ export function mergeConnectOauthConfig(input: {
 		platformLogoPath: null,
 		logoPath: input.storedIntegration?.logoPath?.trim() || null,
 		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
+		catalogLogoPath: input.storedIntegration?.catalogLogoPath?.trim() || null,
 		platformDescription: null,
 		platformAllowedScopes: [],
 		provider,
@@ -528,6 +533,7 @@ export function parseSessionConnectOauthConfig(
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
 		logoPath: parsePlatformLogoPath(record.logoPath),
 		autoLogoPath: parsePlatformLogoPath(record.autoLogoPath),
+		catalogLogoPath: parseCatalogLogoPath(record.catalogLogoPath),
 		platformDescription:
 			typeof record.platformDescription === 'string' &&
 			record.platformDescription.trim()
@@ -542,6 +548,14 @@ export function parseSessionConnectOauthConfig(
 	}
 }
 
+const sameOriginLogoSlug = '[A-Za-z0-9._~%-]+'
+const sameOriginLogoCacheTag = '(?:\\?v=[0-9a-f]{1,64})?'
+
+function parseSameOriginLogoPath(raw: unknown, pattern: RegExp): string | null {
+	if (typeof raw !== 'string') return null
+	return pattern.test(raw) ? raw : null
+}
+
 /**
  * Logo paths render as <img src>; only same-origin serving paths from the
  * integration-logo route are accepted — one clean slug segment plus an
@@ -549,12 +563,26 @@ export function parseSessionConnectOauthConfig(
  * other same-origin paths via `..` or extra segments.
  */
 export function parsePlatformLogoPath(raw: unknown): string | null {
-	if (typeof raw !== 'string') return null
-	return /^\/integrations\/logos\/[A-Za-z0-9._~%-]+(?:\?v=[0-9a-f]{1,64})?$/.test(
+	return parseSameOriginLogoPath(
 		raw,
+		new RegExp(
+			`^/integrations/logos/${sameOriginLogoSlug}${sameOriginLogoCacheTag}$`,
+		),
 	)
-		? raw
-		: null
+}
+
+/**
+ * Operator catalog marks live on `/integrations/provider-marks/:slug`, not
+ * the per-app logo route. Session restore must keep those paths or the
+ * connect callback falls back to the letter after the provider redirect.
+ */
+export function parseCatalogLogoPath(raw: unknown): string | null {
+	return parseSameOriginLogoPath(
+		raw,
+		new RegExp(
+			`^/integrations/provider-marks/${sameOriginLogoSlug}${sameOriginLogoCacheTag}$`,
+		),
+	)
 }
 
 export function summarizeStoredSetupState(input: {
