@@ -165,7 +165,12 @@ export async function verifyOidcJwtSignature(
 		['verify'],
 	)
 	const signingInput = `${encodedHeader}.${encodedPayload}`
-	const signature = base64UrlToBytes(encodedSignature)
+	let signature: ArrayBuffer
+	try {
+		signature = base64UrlToBytes(encodedSignature)
+	} catch {
+		return null
+	}
 	const valid = await crypto.subtle.verify(
 		{ name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
 		key,
@@ -184,7 +189,7 @@ function base64UrlToBytes(value: string) {
 	for (let index = 0; index < binary.length; index += 1) {
 		bytes[index] = binary.charCodeAt(index)
 	}
-	return bytes
+	return bytes.buffer
 }
 
 export function resetOidcSigningKeyCacheForTests() {

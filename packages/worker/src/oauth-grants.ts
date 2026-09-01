@@ -3,6 +3,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 export type OAuthGrantListItem = {
 	id: string
 	clientId: string
+	scope: Array<string>
 }
 
 export type OAuthGrantPage = {
@@ -27,7 +28,11 @@ export async function listUserOAuthGrants(
 	do {
 		const page = await helpers.listUserGrants(userId, { cursor })
 		for (const grant of page.items) {
-			grants.push({ id: grant.id, clientId: grant.clientId })
+			grants.push({
+				id: grant.id,
+				clientId: grant.clientId,
+				scope: Array.isArray(grant.scope) ? grant.scope : [],
+			})
 		}
 		cursor = page.cursor
 	} while (cursor)

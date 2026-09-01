@@ -39,6 +39,7 @@ import {
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import {
 	evaluateOidcAuthorizeGate,
+	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
 
@@ -685,7 +686,18 @@ export async function loadOAuthAuthorizeData(
 	request: Request,
 	env: Env,
 ): Promise<OAuthAuthorizeDataResult> {
-	const oidcParams = parseOidcAuthorizeParams(request)
+	const oidcParamsOrError = parseOidcAuthorizeParams(request)
+	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
+		return {
+			data: {
+				ok: false,
+				error: oidcParamsOrError.error,
+				allowClientReset: false,
+			},
+			setCookie: null,
+		}
+	}
+	const oidcParams = oidcParamsOrError
 	const helpers = getOAuthHelpers(env)
 	const resolution = await resolveAuthRequest(helpers, request, env)
 	if ('error' in resolution) {
@@ -835,7 +847,16 @@ async function tryHandleSilentOidcAuthorize(
 	request: Request,
 	env: Env,
 ): Promise<Response | null> {
-	const oidcParams = parseOidcAuthorizeParams(request)
+	const oidcParamsOrError = parseOidcAuthorizeParams(request)
+	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
+		return respondAuthorizeError(
+			request,
+			oidcParamsOrError.error,
+			400,
+			oidcParamsOrError.errorCode,
+		)
+	}
+	const oidcParams = oidcParamsOrError
 	const prompts = oidcParams.prompt?.split(/\s+/).filter(Boolean) ?? []
 	if (!prompts.includes('none')) return null
 
@@ -962,6 +983,29 @@ async function tryHandleSilentOidcAuthorize(
 		return respondAuthorizeError(request, resolvedScopes.error)
 	}
 
+	const existingGrants = await listUserOAuthGrantsForClient(
+		helpers,
+		approvedUserId,
+		authRequest.clientId,
+	)
+	const hasMatchingConsent = existingGrants.some((grant) =>
+		resolvedScopes.every((scope) => grant.scope.includes(scope)),
+	)
+	if (!hasMatchingConsent) {
+		const redirectTo = createOidcClientErrorRedirectUrl(
+			authRequest,
+			'consent_required',
+			'Consent is required for this client.',
+		)
+		if (redirectTo) return Response.redirect(redirectTo, 302)
+		return respondAuthorizeError(
+			request,
+			'Consent is required for this client.',
+			401,
+			'consent_required',
+		)
+	}
+
 	const authTime = authorizeSession.issuedAt
 		? Math.floor(authorizeSession.issuedAt / 1000)
 		: Math.floor(Date.now() / 1000)
@@ -1013,7 +1057,16 @@ export async function handleAuthorizeRequest(
 
 	const requestIp = getRequestIp(request) ?? undefined
 	const helpers = getOAuthHelpers(env)
-	const oidcParams = parseOidcAuthorizeParams(request)
+	const oidcParamsOrError = parseOidcAuthorizeParams(request)
+	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
+		return respondAuthorizeError(
+			request,
+			oidcParamsOrError.error,
+			400,
+			oidcParamsOrError.errorCode,
+		)
+	}
+	const oidcParams = oidcParamsOrError
 	const oidcGate = await evaluateOidcAuthorizeGate({
 		params: oidcParams,
 		session: await resolveAuthorizeSession(request, env).then((session) => ({

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	evaluateOidcAuthorizeGate,
 	getUnsupportedOidcResponseTypeError,
+	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
 import {
@@ -40,6 +41,17 @@ test('authorize-oidc parses nonce prompt max_age and id_token_hint', () => {
 		idTokenHint: 'eyJ.test',
 		responseType: 'code',
 	})
+})
+
+test('authorize-oidc rejects malformed max_age', () => {
+	const request = new Request(
+		'https://heykody.dev/oauth/authorize?response_type=code&max_age=300abc',
+	)
+	const parsed = parseOidcAuthorizeParams(request)
+	expect(isOidcAuthorizeParamsParseError(parsed)).toBe(true)
+	if (isOidcAuthorizeParamsParseError(parsed)) {
+		expect(parsed.errorCode).toBe('invalid_request')
+	}
 })
 
 test('authorize-oidc rejects prompt=none combined with login or consent', async () => {

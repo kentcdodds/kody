@@ -107,9 +107,16 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 		if (!payload || payload.iss !== issuer) {
 			return new Response('Invalid id_token_hint', { status: 400 })
 		}
-		if (!clientId) {
-			clientId = readAudienceClientId(payload)
+		const audienceClientId = readAudienceClientId(payload)
+		if (!audienceClientId) {
+			return new Response('Invalid id_token_hint', { status: 400 })
 		}
+		if (clientId && clientId !== audienceClientId) {
+			return new Response('Invalid client_id for id_token_hint', {
+				status: 400,
+			})
+		}
+		clientId = audienceClientId
 	}
 
 	if (params.postLogoutRedirectUri) {

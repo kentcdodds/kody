@@ -32,15 +32,25 @@ export type OidcAuthorizeGateResult =
 
 export function parseOidcAuthorizeParams(
 	request: Request,
-): OidcAuthorizeParams {
+): OidcAuthorizeParams | { error: string; errorCode: string } {
 	const url = new URL(request.url)
 	const maxAgeRaw = url.searchParams.get('max_age')?.trim()
 	let maxAge: number | undefined
 	if (maxAgeRaw) {
-		const parsed = Number.parseInt(maxAgeRaw, 10)
-		if (Number.isFinite(parsed) && parsed >= 0) {
-			maxAge = parsed
+		if (!/^\d+$/.test(maxAgeRaw)) {
+			return {
+				error: 'max_age must be a non-negative integer.',
+				errorCode: 'invalid_request',
+			}
 		}
+		const parsed = Number.parseInt(maxAgeRaw, 10)
+		if (!Number.isFinite(parsed) || parsed < 0) {
+			return {
+				error: 'max_age must be a non-negative integer.',
+				errorCode: 'invalid_request',
+			}
+		}
+		maxAge = parsed
 	}
 	return {
 		nonce: url.searchParams.get('nonce')?.trim() || undefined,
@@ -49,6 +59,12 @@ export function parseOidcAuthorizeParams(
 		idTokenHint: url.searchParams.get('id_token_hint')?.trim() || undefined,
 		responseType: url.searchParams.get('response_type')?.trim() || 'code',
 	}
+}
+
+export function isOidcAuthorizeParamsParseError(
+	value: ReturnType<typeof parseOidcAuthorizeParams>,
+): value is { error: string; errorCode: string } {
+	return 'errorCode' in value
 }
 
 export function getUnsupportedOidcResponseTypeError(responseType: string) {
