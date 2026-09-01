@@ -1,16 +1,15 @@
 import { onboardingChecklistSearchLabels } from '#universal/onboarding-process.ts'
 import {
 	deriveOnboardingChecklist,
-	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
 
 /**
  * One-line onboarding reminder appended to `search` notices, at most once per
  * conversation (the runner tracks shown conversations in agent state) and
- * only while the derived checklist is incomplete and undismissed. When the
- * checklist completes, the dismissal column is written automatically so
- * established accounts stop paying the derivation on new conversations.
+ * only while the derived checklist is incomplete and undismissed. Search does
+ * not write the dismissal column; that stays on `/onboarding` so search can
+ * stay read-only.
  */
 
 const itemLabels = onboardingChecklistSearchLabels
@@ -20,7 +19,6 @@ export async function buildOnboardingSearchNotice(input: {
 	userId: string
 	/** Deployment origin for the details link, e.g. https://kody.codes */
 	baseUrl: string
-	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<string | null> {
 	try {
 		const dismissed = await readOnboardingChecklistDismissed({
@@ -37,12 +35,6 @@ export async function buildOnboardingSearchNotice(input: {
 			hasMcpClient: true,
 		})
 		if (checklist.complete) {
-			const retire = dismissOnboardingChecklist({
-				env: input.env,
-				userId: input.userId,
-			}).catch(() => {})
-			if (input.waitUntil) input.waitUntil(retire)
-			else await retire
 			return null
 		}
 

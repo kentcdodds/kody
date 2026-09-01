@@ -579,7 +579,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		return this.buildConnectResult(serverId)
 	}
 
-	async getSnapshot(): Promise<McpClientHubSnapshot> {
+	private async collectServerSnapshots(): Promise<Array<McpServerSnapshot>> {
 		await this.ensureRestored()
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
@@ -590,11 +590,26 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
+		return this.manager
+			.listServers()
+			.map((row) => this.buildServerSnapshot(row))
+	}
+
+	async getSnapshot(): Promise<McpClientHubSnapshot> {
 		return {
-			servers: this.manager
-				.listServers()
-				.map((row) => this.buildServerSnapshot(row)),
+			servers: await this.collectServerSnapshots(),
 			connectionEvents: await this.takeConnectionEvents(),
+		}
+	}
+
+	/**
+	 * Current server cards without draining pending connection events.
+	 * Read-only callers (search waiting) use this so a cache miss cannot
+	 * dispatch package subscriptions.
+	 */
+	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
+		return {
+			servers: await this.collectServerSnapshots(),
 		}
 	}
 
