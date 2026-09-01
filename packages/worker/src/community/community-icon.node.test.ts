@@ -440,15 +440,21 @@ test('deleteCommunityIconAssets removes superseded revisions and keeps servable 
 		`derived-cache:v1:community-icon:v1:${listingId}:${commit}`
 	const kvKeyV2 = (listingId: string, commit: string) =>
 		`derived-cache:v1:community-icon:v2:${listingId}:${commit}`
+	const kvKeyV3 = (listingId: string, commit: string) =>
+		`derived-cache:v1:community-icon:v3:${listingId}:${commit}`
 	const r2KeyV1 = (listingId: string, commit: string) =>
 		`community-icon:v1/${listingId}/${commit}/asset`
 	const r2KeyV2 = (listingId: string, commit: string) =>
 		`community-icon:v2/${listingId}/${commit}/asset`
+	const r2KeyV3 = (listingId: string, commit: string) =>
+		`community-icon:v3/${listingId}/${commit}/asset`
 	for (const commit of ['commit-1', 'commit-2', 'commit-3']) {
 		kvValues.set(kvKeyV1(listing.id, commit), '{}')
 		kvValues.set(kvKeyV2(listing.id, commit), '{}')
+		kvValues.set(kvKeyV3(listing.id, commit), '{}')
 		r2Values.set(r2KeyV1(listing.id, commit), Uint8Array.from([1]))
 		r2Values.set(r2KeyV2(listing.id, commit), Uint8Array.from([1]))
+		r2Values.set(r2KeyV3(listing.id, commit), Uint8Array.from([1]))
 	}
 	kvValues.set(kvKeyV1('other-listing', 'commit-1'), '{}')
 	kvValues.set(kvKeyV2('other-listing', 'commit-1'), '{}')
@@ -463,14 +469,14 @@ test('deleteCommunityIconAssets removes superseded revisions and keeps servable 
 
 	expect(Array.from(kvValues.keys()).sort()).toEqual(
 		[
-			kvKeyV2(listing.id, 'commit-2'),
+			kvKeyV3(listing.id, 'commit-2'),
 			kvKeyV1('other-listing', 'commit-1'),
 			kvKeyV2('other-listing', 'commit-1'),
 		].sort(),
 	)
 	expect(Array.from(r2Values.keys()).sort()).toEqual(
 		[
-			r2KeyV2(listing.id, 'commit-2'),
+			r2KeyV3(listing.id, 'commit-2'),
 			r2KeyV1('other-listing', 'commit-1'),
 			r2KeyV2('other-listing', 'commit-1'),
 		].sort(),
@@ -491,15 +497,21 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 		`derived-cache:v1:community-icon:v1:${listing.id}:${commit}`
 	const kvKeyV2 = (commit: string) =>
 		`derived-cache:v1:community-icon:v2:${listing.id}:${commit}`
+	const kvKeyV3 = (commit: string) =>
+		`derived-cache:v1:community-icon:v3:${listing.id}:${commit}`
 	const r2KeyV1 = (commit: string) =>
 		`community-icon:v1/${listing.id}/${commit}/asset`
 	const r2KeyV2 = (commit: string) =>
 		`community-icon:v2/${listing.id}/${commit}/asset`
+	const r2KeyV3 = (commit: string) =>
+		`community-icon:v3/${listing.id}/${commit}/asset`
 	for (const commit of [listing.pinnedCommit, 'old-publish', 'new-publish']) {
 		kvValues.set(kvKeyV1(commit), '{}')
 		kvValues.set(kvKeyV2(commit), '{}')
+		kvValues.set(kvKeyV3(commit), '{}')
 		r2Values.set(r2KeyV1(commit), Uint8Array.from([1]))
 		r2Values.set(r2KeyV2(commit), Uint8Array.from([1]))
+		r2Values.set(r2KeyV3(commit), Uint8Array.from([1]))
 	}
 
 	mocks.getCommunityListingByOwnerAndPackage.mockResolvedValue({
@@ -514,10 +526,10 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 	})
 
 	expect(Array.from(kvValues.keys()).sort()).toEqual(
-		[kvKeyV2(listing.pinnedCommit), kvKeyV2('new-publish')].sort(),
+		[kvKeyV3(listing.pinnedCommit), kvKeyV3('new-publish')].sort(),
 	)
 	expect(Array.from(r2Values.keys()).sort()).toEqual(
-		[r2KeyV2(listing.pinnedCommit), r2KeyV2('new-publish')].sort(),
+		[r2KeyV3(listing.pinnedCommit), r2KeyV3('new-publish')].sort(),
 	)
 	expect(getCommunityPublicCacheVersion()).toBe(1)
 

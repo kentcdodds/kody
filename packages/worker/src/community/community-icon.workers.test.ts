@@ -61,7 +61,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 				ttl: 30 * 24 * 60 * 60 * 1000,
 			},
 			value: {
-				version: 2,
+				version: 3,
 				listingId: listing.id,
 				iconCommit: listing.iconCommit,
 				r2Key,
