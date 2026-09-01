@@ -1,0 +1,25 @@
+# Sign up and email verify
+
+Create an account, then confirm email.
+
+## How to get there
+
+`/signup` → verification email → `/verify-email` or `/pending-verification`.
+
+## Drive it
+
+Prefer the seeded login. Creating accounts in preview is rarely needed.
+
+```bash
+node tools/control-kody.ts request GET /signup --origin http://localhost:3742 --skip-login
+```
+
+## APIs
+
+- `POST /auth` `{ mode: "signup", ... }`
+- `POST /account/resend-verification.json`
+
+## Gotchas
+
+- Preview seed is already verified. Do not invent a second user unless the
+  change is the signup path itself.

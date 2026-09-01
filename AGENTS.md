@@ -21,9 +21,12 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 - Setup, checks, docs maintenance, preview deploys, and seeding:
   - [docs/contributing/setup/index.md](./docs/contributing/setup/index.md)
 - Manual PR preview testing (medium/high risk, logged-in user + data):
-  - [docs/contributing/preview-manual-testing.md](./docs/contributing/preview-manual-testing.md)
-    and the
-    [preview-manual-test skill](./.agents/skills/preview-manual-test/SKILL.md)
+- [docs/contributing/preview-manual-testing.md](./docs/contributing/preview-manual-testing.md)
+  and the
+  [preview-manual-test skill](./.agents/skills/preview-manual-test/SKILL.md)
+- App verification CLI and Feature Map:
+- [docs/contributing/control-kody.md](./docs/contributing/control-kody.md) and
+  the [control-kody skill](./.agents/skills/control-kody/SKILL.md)
 - Documentation principles (usage vs contributing, MCP text, gardening, prefer
   checkers over should-lists):
   - [docs/contributing/documentation.md](./docs/contributing/documentation.md)

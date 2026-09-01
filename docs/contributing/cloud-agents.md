@@ -87,14 +87,15 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
 ## Quick commands
 
-| Task               | Command                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| Install deps       | `npm install`                                                   |
-| Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                  |
-| Migrate local D1   | `npm run migrate:local`                                         |
-| Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below) |
-| Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)   |
-| Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)   |
+| Task               | Command                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Install deps       | `npm install`                                                                                                                    |
+| Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                                                                                   |
+| Migrate local D1   | `npm run migrate:local`                                                                                                          |
+| Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below)                                                                  |
+| Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)                                                                    |
+| Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)                                                                    |
+| App verification   | `npm run control-kody -- doctor` then `login` / `request` / `map` / `preview` / `health` (see [control-kody](./control-kody.md)) |
 
 ## Dev server
 

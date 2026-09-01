@@ -16,6 +16,8 @@ style, tests, MCP capabilities, and runtime architecture.
   [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Manual PR preview testing](./preview-manual-testing.md)
+- [control-kody](./control-kody.md) (Feature Map + CLI; daily
+  `@kentcdodds/verification-skill-maintain`)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Cursor Cloud Agent notes](./cloud-agents.md)
 - [Nx remote cache](../../packages/nx-cache/readme.md) (self-hosted HTTP cache

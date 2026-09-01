@@ -13,6 +13,13 @@ Read
 Do not improvise `gh` comment scraping, local E2E against the preview URL, or
 raw D1 seeding of preview resources.
 
+Prefer [`control-kody`](../control-kody/SKILL.md) when you also need `doctor`,
+local login, Feature Map lookup, or a `/health` SHA check:
+
+```bash
+npm run control-kody -- preview -- --request 'GET /onboarding.json' --check /onboarding
+```
+
 ## Command
 
 ```bash
