@@ -48,7 +48,7 @@ export type CommunityOgImageInput = {
 	iconDataUri: string
 }
 
-function formatForkAndStarCounts(input: CommunityOgImageInput): string {
+function formatForkCount(input: CommunityOgImageInput): string {
 	const forkLabel = input.forkCount === 1 ? 'fork' : 'forks'
 	return `${input.forkCount} ${forkLabel}`
 }
@@ -287,7 +287,7 @@ export function createCommunityOgMarkup(
 									fontSize: 22,
 									color: palette.textMuted,
 								},
-								children: formatForkAndStarCounts(input),
+								children: formatForkCount(input),
 							},
 						},
 					],
