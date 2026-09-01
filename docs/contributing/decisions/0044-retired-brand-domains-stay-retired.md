@@ -29,6 +29,6 @@ remain so published trees that still mention the old hosts can rewrite to
 Cloudflare-level redirects to the canonical hosts; they are not product
 surfaces.
 
-Revisit-if a retired hostname must become a product origin again (new brand
+Revisit if a retired hostname must become a product origin again (new brand
 cutover, registrar constraint, or a documented traffic gate that the canonical
 host cannot serve).

@@ -53,13 +53,13 @@ Prerequisites, install, and `npm run dev` notes. See the
   fully simulated by the local mock. Password reset and email-verification
   messages send through the same Cloudflare Email API helper. Both send from
   `kody@<SYSTEM_EMAIL_DOMAIN>` (falling back to the `APP_BASE_URL` hostname) and
-  put that same sending domain on action and asset links, so a stale
-  `APP_BASE_URL` cannot pin a retired hostname into the message. Local
-  `npm run dev` keeps those action and asset links on the request origin so they
-  stay clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
-  entirely. The main worker streams logs live; the client bundle and background
-  mock workers buffer logs and only print them if that child process exits with
-  an error.
+  put that same sending domain on action and asset links when
+  `SYSTEM_EMAIL_DOMAIN` is set, so a stale `APP_BASE_URL` cannot pin a retired
+  hostname into the message. Local `npm run dev` keeps those action and asset
+  links on the request origin so they stay clickable. Set
+  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. The main
+  worker streams logs live; the client bundle and background mock workers buffer
+  logs and only print them if that child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
