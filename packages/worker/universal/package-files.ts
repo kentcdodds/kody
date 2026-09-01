@@ -396,6 +396,32 @@ export function getCommunityPackageFilesHref(input: {
 	return getCommunityPackageTreeHref(input)
 }
 
+export function getPackageTreeHref(input: {
+	username: string
+	kodyId: string
+	listingId?: string | null
+	ref?: string
+	relativePath?: string
+}) {
+	return getCommunityPackageTreeHref({
+		listingId: input.listingId ?? '',
+		ownerUsername: input.username,
+		kodyId: input.kodyId,
+		ref: input.ref,
+		relativePath: input.relativePath,
+	})
+}
+
+export function getPackageSettingsHref(input: {
+	username: string
+	kodyId: string
+}) {
+	return routes.communityPackageSettings.href({
+		username: input.username,
+		kodyId: input.kodyId,
+	})
+}
+
 export function getAccountPackageFilesHref(input: {
 	packageId: string
 	relativePath?: string

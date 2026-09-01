@@ -1,16 +1,19 @@
-// remix-skill: HTML + JSON /files controllers for community and account
-// snapshots. Pages SSR the explorer; JSON companions use `?path=`.
+// remix-skill: HTML + JSON /files controllers. Pages SSR the explorer;
+// JSON companions use `?path=`. Public and private packages share this
+// path; visibility is enforced by loadPackagePage.
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
-import { resolveCommunityPackageUrl } from '#worker/community/package-url.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	resolveCanonicalFilesPath,
 	resolveCommunityFilesRoute,
+	treeHrefFromPackageHome,
 } from '#app/community-package-route.ts'
+import { loadPackagePage } from '#app/package-page.ts'
 import {
-	loadAccountPackageFilesData,
+	loadAccessiblePackageFilesData,
 	loadCommunityPackageFilesData,
 	readPackageFilesSelectedPath,
 } from '#app/package-files-data.ts'
@@ -18,15 +21,28 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
-	getCommunityPackageFilesHref,
+	getPackageTreeHref,
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
 import { type routes } from '#universal/routes.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
-function redirectToCanonicalPath(input: { path: string; url: URL }) {
+function redirectToCanonicalPath(input: {
+	path: string
+	url: URL
+	cache?: 'public' | 'private'
+}) {
 	const destination = new URL(input.path, input.url)
 	destination.search = input.url.search
+	if (input.cache === 'private') {
+		return new Response(null, {
+			status: 302,
+			headers: {
+				location: destination.toString(),
+				'cache-control': 'private, no-store',
+			},
+		})
+	}
 	return new Response(null, {
 		status: 301,
 		headers: {
@@ -36,7 +52,32 @@ function redirectToCanonicalPath(input: { path: string; url: URL }) {
 	})
 }
 
-async function renderCommunityFilesPage(input: {
+function renderFilesNotFound(input: {
+	request: Request
+	env: Env
+	serverTiming?: Array<ServerTimingEntry>
+}) {
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: 'Package files not found',
+		notFound: true,
+		status: 404,
+		serverTiming: input.serverTiming,
+	})
+}
+
+function renderFilesUnauthorized(input: { request: Request; env: Env }) {
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: 'Unauthorized',
+		unauthorized: true,
+		status: 401,
+	})
+}
+
+async function renderListingFilesPage(input: {
 	request: Request
 	env: Env
 	listingId: string | null
@@ -47,6 +88,7 @@ async function renderCommunityFilesPage(input: {
 	const data = input.listingId
 		? await loadCommunityPackageFilesData({
 				env: input.env,
+				request: input.request,
 				listingId: input.listingId,
 				selectedPath: input.selectedPath,
 				ref: input.ref,
@@ -54,12 +96,9 @@ async function renderCommunityFilesPage(input: {
 			})
 		: null
 	if (!data) {
-		return renderAppPage({
+		return renderFilesNotFound({
 			request: input.request,
 			env: input.env,
-			title: 'Package files not found',
-			notFound: true,
-			status: 404,
 			serverTiming,
 		})
 	}
@@ -72,29 +111,90 @@ async function renderCommunityFilesPage(input: {
 	})
 }
 
+async function renderPackageFilesPage(input: {
+	request: Request
+	env: Env
+	username: string
+	kodyId: string
+	selectedPath: string
+	ref?: string
+}) {
+	const serverTiming: Array<ServerTimingEntry> = []
+	const data = await loadAccessiblePackageFilesData({
+		env: input.env,
+		request: input.request,
+		username: input.username,
+		kodyId: input.kodyId,
+		selectedPath: input.selectedPath,
+		ref: input.ref,
+		serverTiming,
+	})
+	if (!data) {
+		return renderFilesNotFound({
+			request: input.request,
+			env: input.env,
+			serverTiming,
+		})
+	}
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: `${data.title} files`,
+		loaderData: { packageFiles: data },
+		serverTiming,
+	})
+}
+
+async function renderResolvedFilesPage(input: {
+	request: Request
+	env: Env
+	url: URL
+}) {
+	const target = await resolveCommunityFilesRoute({
+		env: input.env,
+		url: input.url,
+		request: input.request,
+	})
+	if (target?.kind === 'invalid-path' || !target) {
+		return renderFilesNotFound({ request: input.request, env: input.env })
+	}
+	if (target.kind === 'unauthorized') {
+		return renderFilesUnauthorized({ request: input.request, env: input.env })
+	}
+	if (target.kind === 'redirect') {
+		return redirectToCanonicalPath({
+			path: target.to,
+			url: input.url,
+			cache: target.shared ? 'public' : 'private',
+		})
+	}
+	if (target.kind === 'package') {
+		return renderPackageFilesPage({
+			request: input.request,
+			env: input.env,
+			username: target.username,
+			kodyId: target.kodyId,
+			selectedPath: target.selectedPath,
+			ref: target.ref,
+		})
+	}
+	return renderListingFilesPage({
+		request: input.request,
+		env: input.env,
+		listingId: target.listingId,
+		selectedPath: target.selectedPath,
+		ref: target.ref,
+	})
+}
+
 export function createCommunityPackageFilesHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
-			const url = new URL(request.url)
-			const target = await resolveCommunityFilesRoute({ env, url })
-			if (target?.kind === 'invalid-path') {
-				return renderCommunityFilesPage({
-					request,
-					env,
-					listingId: null,
-					selectedPath: '',
-				})
-			}
-			if (target?.kind === 'redirect') {
-				return redirectToCanonicalPath({ path: target.to, url })
-			}
-			return renderCommunityFilesPage({
+			return renderResolvedFilesPage({
 				request,
 				env,
-				listingId: target?.listingId ?? null,
-				selectedPath: target?.selectedPath ?? '',
-				ref: target?.kind === 'listing' ? target.ref : undefined,
+				url: new URL(request.url),
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageFiles>
@@ -111,17 +211,33 @@ export function createCommunityDetailFilesHandler(env: Env) {
 		middleware: [],
 		async handler({ request }) {
 			const url = new URL(request.url)
-			const target = await resolveCommunityFilesRoute({ env, url })
+			const target = await resolveCommunityFilesRoute({
+				env,
+				url,
+				request,
+			})
 			if (target?.kind === 'invalid-path' || !target) {
-				return renderCommunityFilesPage({
-					request,
-					env,
-					listingId: null,
-					selectedPath: '',
-				})
+				return renderFilesNotFound({ request, env })
+			}
+			if (target.kind === 'unauthorized') {
+				return renderFilesUnauthorized({ request, env })
 			}
 			if (target.kind === 'redirect') {
-				return redirectToCanonicalPath({ path: target.to, url })
+				return redirectToCanonicalPath({
+					path: target.to,
+					url,
+					cache: target.shared ? 'public' : 'private',
+				})
+			}
+			if (target.kind === 'package') {
+				return renderPackageFilesPage({
+					request,
+					env,
+					username: target.username,
+					kodyId: target.kodyId,
+					selectedPath: target.selectedPath,
+					ref: target.ref,
+				})
 			}
 
 			const listing = await getCommunityListingById(env.APP_DB, {
@@ -146,7 +262,7 @@ export function createCommunityDetailFilesHandler(env: Env) {
 				return redirectToCanonicalPath({ path: canonicalPath, url })
 			}
 
-			return renderCommunityFilesPage({
+			return renderListingFilesPage({
 				request,
 				env,
 				listingId: target.listingId,
@@ -169,21 +285,19 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					400,
 				)
 			}
-			const treeRef = url.searchParams.get('ref')?.trim() || 'HEAD'
-			const target = await resolveCommunityPackageUrl({
-				db: env.APP_DB,
+			const treeRef = url.searchParams.get('ref')?.trim() || ''
+			const page = await loadPackagePage({
+				env,
+				request,
 				username: params.username,
 				kodyId: params.kodyId,
 			})
-			if (target?.kind === 'redirect') {
+			if (page.kind === 'redirect') {
 				return jsonResponse(
 					{
 						ok: false,
-						error: 'Public package moved.',
-						redirectTo: getCommunityPackageFilesHref({
-							listingId: target.listingId,
-							ownerUsername: target.username,
-							kodyId: target.kodyId,
+						error: 'Package moved.',
+						redirectTo: treeHrefFromPackageHome(page.to, {
 							relativePath: selectedPath,
 							ref: treeRef,
 						}),
@@ -191,19 +305,28 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
+			if (page.kind === 'unauthorized') {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			if (page.kind !== 'page') {
+				return jsonResponse(
+					{ ok: false, error: 'Package files not found.' },
+					404,
+				)
+			}
 			const serverTiming: Array<ServerTimingEntry> = []
-			const data = target
-				? await loadCommunityPackageFilesData({
-						env,
-						listingId: target.listingId,
-						selectedPath,
-						ref: treeRef,
-						serverTiming,
-					})
-				: null
+			const data = await loadAccessiblePackageFilesData({
+				env,
+				request,
+				username: page.username,
+				kodyId: page.kodyId,
+				selectedPath,
+				ref: treeRef,
+				serverTiming,
+			})
 			if (!data) {
 				return jsonResponse(
-					{ ok: false, error: 'Public package files not found.' },
+					{ ok: false, error: 'Package files not found.' },
 					404,
 				)
 			}
@@ -223,11 +346,11 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					400,
 				)
 			}
-			const treeRef =
-				new URL(request.url).searchParams.get('ref')?.trim() || 'HEAD'
+			const treeRef = new URL(request.url).searchParams.get('ref')?.trim() || ''
 			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadCommunityPackageFilesData({
 				env,
+				request,
 				listingId: params.listingId,
 				selectedPath,
 				ref: treeRef,
@@ -255,41 +378,24 @@ export function createAccountPackageFilesHandler(env: Env) {
 				typeof params.relativePath === 'string' ? params.relativePath : '',
 			)
 			if (selectedPath == null) {
-				return renderAppPage({
-					request,
-					env,
-					title: 'Package files not found',
-					notFound: true,
-					status: 404,
-				})
+				return renderFilesNotFound({ request, env })
 			}
 
-			const serverTiming: Array<ServerTimingEntry> = []
-			const data = await loadAccountPackageFilesData({
-				env,
-				request,
+			const record = await getSavedPackageById(env.APP_DB, {
 				userId: user.mcpUser.userId,
-				username: user.username,
 				packageId: params.packageId,
-				selectedPath,
-				serverTiming,
 			})
-			if (!data) {
-				return renderAppPage({
-					request,
-					env,
-					title: 'Package files not found',
-					notFound: true,
-					status: 404,
-					serverTiming,
-				})
+			if (!record) {
+				return renderFilesNotFound({ request, env })
 			}
-			return renderAppPage({
-				request,
-				env,
-				title: `${data.title} files`,
-				loaderData: { packageFiles: data },
-				serverTiming,
+			return redirectToCanonicalPath({
+				path: getPackageTreeHref({
+					username: user.username,
+					kodyId: record.kodyId,
+					relativePath: selectedPath,
+				}),
+				url: new URL(request.url),
+				cache: 'private',
 			})
 		},
 	} satisfies Action<typeof routes.accountPackageFiles>
@@ -313,23 +419,28 @@ export function createAccountPackageFilesApiHandler(env: Env) {
 					400,
 				)
 			}
-			const serverTiming: Array<ServerTimingEntry> = []
-			const data = await loadAccountPackageFilesData({
-				env,
-				request,
+			const record = await getSavedPackageById(env.APP_DB, {
 				userId: user.mcpUser.userId,
-				username: user.username,
 				packageId: params.packageId,
-				selectedPath,
-				serverTiming,
 			})
-			if (!data) {
+			if (!record) {
 				return jsonResponse(
 					{ ok: false, error: 'Package files not found.' },
 					404,
 				)
 			}
-			return jsonResponse(data, { serverTiming })
+			return jsonResponse(
+				{
+					ok: false,
+					error: 'Package files moved.',
+					redirectTo: getPackageTreeHref({
+						username: user.username,
+						kodyId: record.kodyId,
+						relativePath: selectedPath,
+					}),
+				},
+				404,
+			)
 		},
 	} satisfies Action<typeof routes.accountPackageFilesApi>
 }

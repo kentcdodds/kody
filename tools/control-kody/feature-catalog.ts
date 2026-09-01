@@ -207,7 +207,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'community',
 		title: 'Community listings and profiles',
 		file: 'community.md',
-		paths: ['/community', '/@:username'],
+		paths: ['/community', '/@:username', '/@:username/:kodyId'],
 		apis: [
 			'/community.json',
 			'/community/:listingId.json',

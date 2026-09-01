@@ -157,6 +157,7 @@ import {
 	createCommunityDetailOgImageHandler,
 	createCommunityPackageApiHandler,
 	createCommunityPackageHandler,
+	createCommunityPackageSettingsHandler,
 	createCommunityReportApiPostHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
@@ -449,6 +450,7 @@ export function createAppRouter(env: Env) {
 			communityDetailFilesApi: createCommunityDetailFilesApiHandler(env),
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
+			communityPackageSettings: createCommunityPackageSettingsHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),

@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
 	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
 	resolveArtifactSourceHead: vi.fn<() => Promise<unknown>>(),
+	loadPackagePage: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('#worker/community/package-url.ts', () => ({
@@ -27,6 +28,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/artifacts.ts', () => ({
 	resolveArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
+}))
+
+vi.mock('#app/package-page.ts', () => ({
+	loadPackagePage: (...args: Array<unknown>) =>
+		mockModule.loadPackagePage(...args),
 }))
 
 const { resolveCommunityFilesRoute } =
@@ -62,6 +68,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(leftover).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+		shared: true,
 	})
 
 	const head = await resolveCommunityFilesRoute({
@@ -71,6 +78,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(head).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release',
+		shared: true,
 	})
 
 	const headFile = await resolveCommunityFilesRoute({
@@ -80,6 +88,7 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(headFile).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+		shared: true,
 	})
 
 	mockModule.resolveArtifactSourceHead.mockClear()
@@ -115,5 +124,110 @@ test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async
 	expect(fallback).toEqual({
 		kind: 'redirect',
 		to: '/@kentcdodds/devin/tree/main',
+		shared: true,
+	})
+})
+
+test('unlisted owner tree uses the package page; strangers are unauthorized', async () => {
+	mockModule.resolveCommunityPackageUrl.mockResolvedValue(null)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		listing: null,
+		ownerPackage: { sourceId: 'src-1', isPrivate: true },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+
+	const owner = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/tree/main'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log/tree/main',
+		),
+	})
+	expect(owner).toEqual({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		selectedPath: '',
+		ref: 'main',
+	})
+
+	mockModule.loadPackagePage.mockResolvedValue({ kind: 'unauthorized' })
+	const stranger = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/tree/main'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log/tree/main',
+		),
+	})
+	expect(stranger).toEqual({ kind: 'unauthorized' })
+})
+
+test('unlisted leftover /files and rename hops stay owner-private', async () => {
+	mockModule.resolveCommunityPackageUrl.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue(null)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log',
+		listing: null,
+		ownerPackage: { sourceId: 'src-1', isPrivate: true },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+
+	const leftover = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log/files'),
+		request: new Request('https://example.com/@kentcdodds/friction-log/files'),
+	})
+	expect(leftover).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log/tree/main',
+		shared: false,
+	})
+
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log',
+		shared: false,
+	})
+	const renamed = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/old-log/tree/main'),
+		request: new Request('https://example.com/@kentcdodds/old-log/tree/main'),
+	})
+	expect(renamed).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log/tree/main',
+		shared: false,
+	})
+
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'kentcdodds',
+		kodyId: 'friction-log-two',
+		listing: { listing: { id: 'listing-1', kodyId: 'friction-log' } },
+		ownerPackage: { sourceId: 'src-1', isPrivate: false },
+		viewerIsOwner: true,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+	const unpublishedLeftover = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/friction-log-two/files'),
+		request: new Request(
+			'https://example.com/@kentcdodds/friction-log-two/files',
+		),
+	})
+	expect(unpublishedLeftover).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/friction-log-two/tree/main',
+		shared: false,
 	})
 })

@@ -1,11 +1,14 @@
 # Community listings and profiles
 
-Public catalog and owner-scoped package URLs.
+Public catalog and owner-scoped package URLs. Public and private packages share
+the same `/@username/:kodyId` surface; visibility is the only gate.
 
 ## How to get there
 
-`/community` → `/community/:listingId`. Human share URL: `/@username/kody-id`
-(never construct `/community/{listing_id}` for people). Profile: `/@username`.
+`/community` → `/@username/kody-id`. Human share URL: `/@username/kody-id`
+(never construct `/community/{listing_id}` for people). Files:
+`/@username/kody-id/tree/main`. Owner settings: `/@username/kody-id/settings`.
+Profile: `/@username`.
 
 ## Drive it
 
@@ -19,6 +22,7 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - `GET /community/:listingId.json`
 - `GET /profiles/:username.json`
 - `GET /profiles/:username/packages/:kodyId.json`
+- `GET /profiles/:username/packages/:kodyId/files.json`
 - `POST /community/:listingId/{report,feature,install}.json`
 - `POST /community/:listingId/trust.json` returns 410 (no trusted-listing mark)
 
@@ -26,4 +30,6 @@ node tools/control-kody.ts request GET /community.json --skip-login
 
 - Profiles are public catalogs (packages, ratings, forks). There is no follow
   graph, bookmark-star, or social timeline.
-- Files and tree URLs are public read for listed packages.
+- Files and tree URLs are public read for listed packages and owner-only for
+  private ones.
+- Package settings 404 for anyone who is not the owner.

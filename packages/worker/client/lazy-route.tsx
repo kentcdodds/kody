@@ -315,6 +315,7 @@ registerPreloadPatterns(
 		routePattern(routes.community),
 		routePattern(routes.communityDetail),
 		routePattern(routes.communityPackage),
+		routePattern(routes.communityPackageSettings),
 		routePattern(routes.profile),
 	],
 	{
