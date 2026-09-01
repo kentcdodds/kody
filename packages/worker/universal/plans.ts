@@ -218,9 +218,10 @@ export const maxPlanEmailLimits = {
  * subscriptions onto these plan names; the limit numbers stay independent
  * of list prices.
  *
- * Ordinary `max` ceilings are explicit product choices based on the `pro`
- * plan. Most retain high operator ceilings even where that is 25× or 50×
- * pro rather than a uniform multiplier. Email resources intentionally use
+ * Ordinary `max` stock ceilings are explicit product choices based on the
+ * `pro` plan (often 25× or 50×). Compute rate limits on `max` are operator
+ * runaway caps sized from production usage with at least 2× busy-day
+ * headroom, and they still dominate every paid plan. Email resources use
  * {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
@@ -318,14 +319,17 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 10_000,
 		// 20× pro (5 GiB) → 100 GiB.
 		maxStorageBytes: 100 * 1024 * 1024 * 1024,
-		// 50× pro (100) → 5_000.
-		maxConcurrentWorkflows: 5_000,
-		// Retained operator ceiling (not 50× the current pro 800).
-		maxExecuteCallsPerDay: 500_000,
-		// 50× pro (40_000) → 2_000_000.
-		maxOutboundFetchesPerDay: 2_000_000,
-		// 50× pro (20_000) → 1_000_000.
-		maxJobRunsPerDay: 1_000_000,
+		// 2× pro (100). Observed concurrent ~35.
+		maxConcurrentWorkflows: 200,
+		// Operator runaway cap. kentcdodds August 2026 rollup avg ~3,800
+		// execute/day (116k/month); entitlement meter today ~1,810. Daily
+		// peak is not stored; 25,000 is at least 2× a ~12,500 peak (~3×
+		// August avg). Unique-DW ceiling is $50/day ($0.002 × 25,000).
+		maxExecuteCallsPerDay: 25_000,
+		// 2× pro (40_000). Today's fetch spike (~17,000) stays well under.
+		maxOutboundFetchesPerDay: 80_000,
+		// 2× pro (20_000). Busy days are ~1,500–1,700 job runs.
+		maxJobRunsPerDay: 40_000,
 		minJobIntervalMs: 0,
 	},
 }

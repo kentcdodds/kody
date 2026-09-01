@@ -75,24 +75,27 @@ sending is an outreach-abuse surface — `resolvePlanLimit` resolves those caps
 like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message ceiling is a platform
-bound, not a scalable quota). All other resources use the ordinary
-`planLimits.max` numbers.
+bound, not a scalable quota). Compute rate limits on `max`
+(`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
+`concurrent_workflows`) are operator runaway caps sized from production usage
+with at least 2× busy-day headroom, and they still dominate every paid plan. All
+other resources use the ordinary `planLimits.max` numbers.
 
-| Resource                   | Limit     |
-| -------------------------- | --------- |
-| `email_sends_per_day`      | 10,000    |
-| `email_receives_per_day`   | 20,000    |
-| `stored_email_messages`    | 100,000   |
-| `email_message_bytes`      | 768 KiB   |
-| `concurrent_workflows`     | 5,000     |
-| `scheduled_jobs`           | 5,000     |
-| `saved_packages`           | 10,000    |
-| `repo_sessions`            | 20,000    |
-| `secrets`                  | 10,000    |
-| `storage_bytes`            | 100 GiB   |
-| `execute_calls_per_day`    | 500,000   |
-| `outbound_fetches_per_day` | 2,000,000 |
-| `job_runs_per_day`         | 1,000,000 |
+| Resource                   | Limit   |
+| -------------------------- | ------- |
+| `email_sends_per_day`      | 10,000  |
+| `email_receives_per_day`   | 20,000  |
+| `stored_email_messages`    | 100,000 |
+| `email_message_bytes`      | 768 KiB |
+| `concurrent_workflows`     | 200     |
+| `scheduled_jobs`           | 5,000   |
+| `saved_packages`           | 10,000  |
+| `repo_sessions`            | 20,000  |
+| `secrets`                  | 10,000  |
+| `storage_bytes`            | 100 GiB |
+| `execute_calls_per_day`    | 25,000  |
+| `outbound_fetches_per_day` | 80,000  |
+| `job_runs_per_day`         | 40,000  |
 
 ## Compute rate limits
 
