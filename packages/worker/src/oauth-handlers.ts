@@ -616,12 +616,27 @@ function respondAuthorizeError(
 	errorCode = 'invalid_request',
 	headers?: HeadersInit,
 ) {
-	return wantsJson(request)
-		? jsonResponse(
-				{ ok: false, error: message, code: errorCode },
-				{ status, headers },
-			)
-		: createAuthorizeErrorRedirect(request, errorCode, message, headers)
+	if (wantsJson(request)) {
+		return jsonResponse(
+			{ ok: false, error: message, code: errorCode },
+			{ status, headers },
+		)
+	}
+	// GET must not 303 back to /oauth/authorize with the same query string —
+	// parse failures like malformed max_age would redirect forever.
+	if (request.method === 'GET' || request.method === 'HEAD') {
+		const response = standaloneAuthorizeErrorHtmlResponse(message, status)
+		if (!headers) return response
+		const merged = new Headers(response.headers)
+		new Headers(headers).forEach((value, key) => {
+			merged.append(key, value)
+		})
+		return new Response(response.body, {
+			status: response.status,
+			headers: merged,
+		})
+	}
+	return createAuthorizeErrorRedirect(request, errorCode, message, headers)
 }
 
 async function resolveSessionEmail(request: Request, env: Env) {
@@ -847,8 +862,26 @@ async function tryHandleSilentOidcAuthorize(
 	request: Request,
 	env: Env,
 ): Promise<Response | null> {
+	const prompts =
+		new URL(request.url).searchParams
+			.get('prompt')
+			?.trim()
+			.split(/\s+/)
+			.filter(Boolean) ?? []
+	if (!prompts.includes('none')) return null
+
 	const oidcParamsOrError = parseOidcAuthorizeParams(request)
 	if (isOidcAuthorizeParamsParseError(oidcParamsOrError)) {
+		const helpers = getOAuthHelpers(env)
+		const resolution = await resolveAuthRequest(helpers, request, env)
+		if (!('error' in resolution)) {
+			const redirectTo = createOidcClientErrorRedirectUrl(
+				resolution.authRequest,
+				oidcParamsOrError.errorCode,
+				oidcParamsOrError.error,
+			)
+			if (redirectTo) return Response.redirect(redirectTo, 302)
+		}
 		return respondAuthorizeError(
 			request,
 			oidcParamsOrError.error,
@@ -857,8 +890,6 @@ async function tryHandleSilentOidcAuthorize(
 		)
 	}
 	const oidcParams = oidcParamsOrError
-	const prompts = oidcParams.prompt?.split(/\s+/).filter(Boolean) ?? []
-	if (!prompts.includes('none')) return null
 
 	const helpers = getOAuthHelpers(env)
 	const resolution = await resolveAuthRequest(helpers, request, env)

@@ -1595,3 +1595,36 @@ test('worker entrypoint returns id_token when openid scope is granted', async ()
 		globalThis.fetch = originalFetch
 	}
 })
+
+test('malformed max_age does not redirect authorize GET to itself', async () => {
+	const authorizeUrl =
+		'https://example.com/oauth/authorize?response_type=code&client_id=client-123&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=openid&state=demo&max_age=not-a-number'
+
+	const interactive = await handleAuthorizeRequest(
+		new Request(authorizeUrl),
+		createEnv(createHelpers()),
+	)
+	expect(interactive.status).toBe(200)
+	expect(interactive.headers.get('Location')).toBeNull()
+	expect(interactive.headers.get('Content-Type')).toContain('text/html')
+	const interactiveHtml = await interactive.text()
+	expect(interactiveHtml).toContain('"oauthAuthorize"')
+	expect(interactiveHtml).toMatch(/max_age must be a non-negative integer/i)
+
+	const silent = await handleAuthorizeRequest(
+		new Request(`${authorizeUrl}&prompt=none`),
+		createEnv(createHelpers()),
+	)
+	expect(silent.status).toBe(302)
+	const silentLocation = silent.headers.get('Location')
+	expect(silentLocation).toBeTruthy()
+	const silentRedirect = new URL(silentLocation ?? '')
+	expect(silentRedirect.origin + silentRedirect.pathname).toBe(
+		'https://example.com/callback',
+	)
+	expect(silentRedirect.searchParams.get('error')).toBe('invalid_request')
+	expect(silentRedirect.searchParams.get('error_description')).toMatch(
+		/max_age must be a non-negative integer/i,
+	)
+	expect(silentRedirect.searchParams.get('state')).toBe('demo')
+})
