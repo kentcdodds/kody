@@ -513,7 +513,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_write_file({})' },
+			input: { code: 'await kody.repo_edit_files({})' },
 			output: { written: true },
 		},
 		{
