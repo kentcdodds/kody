@@ -1,5 +1,5 @@
 /**
- * Workers-unit D1 does not apply migrations. Suites that call package_get
+ * Workers-unit D1 does not apply migrations. Suites that call packageGet
  * (which lists tokens) need this table.
  */
 export async function ensurePackageInvocationTokensTestSchema(db: D1Database) {

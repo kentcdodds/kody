@@ -27,7 +27,7 @@ function createContext() {
 	}
 }
 
-test('repo_search maps invalid regex failures to McpCallerError and rethrows other errors', async () => {
+test('repoSearch maps invalid regex failures to McpCallerError and rethrows other errors', async () => {
 	const compileMessage =
 		'Invalid regular expression: /(?s).|^$/gi: Invalid group'
 	const topLevel = vi

@@ -336,7 +336,7 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	}).catch((caught: unknown) => caught)
 	expect(emptyCodeError).toBeInstanceOf(McpCallerError)
 	expect(emptyCodeError).toMatchObject({
-		message: 'Job code cannot be changed via job_update.',
+		message: 'Job code cannot be changed via jobUpdate.',
 	})
 })
 
@@ -414,8 +414,8 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
 	const identityErrorMessage =
-		'Package-owned jobs cannot change name or published source via job_update. Change the job entry in the package repo and publish the package.'
-	const codeErrorMessage = 'Job code cannot be changed via job_update.'
+		'Package-owned jobs cannot change name or published source via jobUpdate. Change the job entry in the package repo and publish the package.'
+	const codeErrorMessage = 'Job code cannot be changed via jobUpdate.'
 	const codeError = await updateJob({
 		env,
 		callerContext,
@@ -542,7 +542,7 @@ test('updateJob rejects code changes on leftover jobs', async () => {
 
 	expect(updateError).toBeInstanceOf(McpCallerError)
 	expect(updateError).toMatchObject({
-		message: 'Job code cannot be changed via job_update.',
+		message: 'Job code cannot be changed via jobUpdate.',
 	})
 })
 

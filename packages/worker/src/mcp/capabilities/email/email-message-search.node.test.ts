@@ -44,7 +44,7 @@ function createUserContext() {
 	})
 }
 
-test('email_message_search requires a signed-in, verified user and forwards the query scoped to that user', async () => {
+test('emailMessageSearch requires a signed-in, verified user and forwards the query scoped to that user', async () => {
 	await expect(
 		emailMessageSearchCapability.handler(
 			{ query: 'invoice', limit: 25 },

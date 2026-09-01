@@ -176,7 +176,7 @@ helpers in **your** scope instead of raw `createAuthenticatedFetch` calls.
 
 1. Search for `@kody/google`. It covers Gmail, Calendar, Drive, People, and
    YouTube.
-2. `community_fork` it into your scope (or click **Install** on the listing).
+2. `communityFork` it into your scope (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the `personal` account alias maps
    to an integration named `google` — the default name this guide's connect link
    uses, so the primary lane needs no adaptation.

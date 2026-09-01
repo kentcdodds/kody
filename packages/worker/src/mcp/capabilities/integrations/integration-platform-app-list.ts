@@ -11,9 +11,9 @@ const outputSchema = z.object({
 export const integrationPlatformAppListCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_platform_app_list',
+		name: 'integrationPlatformAppList',
 		description:
-			'Platform (built-in) OAuth apps are being retired. This list is always empty. Connect with a bring-your-own provider app at /connect/oauth. Operators inspect remaining apps with admin_platform_oauth_app_list.',
+			'Platform (built-in) OAuth apps are being retired. This list is always empty. Connect with a bring-your-own provider app at /connect/oauth. Operators inspect remaining apps with adminPlatformOauthAppList.',
 		keywords: [
 			'integration',
 			'oauth',

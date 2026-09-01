@@ -50,6 +50,15 @@ export async function handleAccountPackageVisibilityAction(input: {
 
 	try {
 		if (visibility === 'public' && savedPackage.isPrivate) {
+			if (confirmName !== savedPackage.kodyId) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: `Type the package slug "${savedPackage.kodyId}" to make it public. Anyone will be able to read and fork the default branch.`,
+					},
+					400,
+				)
+			}
 			await publishCommunityListing({
 				env: input.env,
 				baseUrl: new URL(input.request.url).origin,

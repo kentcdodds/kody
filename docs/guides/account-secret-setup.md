@@ -25,7 +25,7 @@ Use it when:
 
 - the user must provide a sensitive value
 - a named secret needed for `fetch` placeholders or a named lookup (for example
-  `secret_jwt_sign`) is missing
+  `secretJwtSign`) is missing
 - the user needs to rotate a stored secret value
 
 Do **not** ask the user to paste secrets into chat.
@@ -60,13 +60,13 @@ so the user can paste immediately.
 
 ## Package approval URLs (after a package exists)
 
-Self-authored packages and adopted community forks (`community_fork_adopt`) can
+Self-authored packages and adopted community forks (`communityForkAdopt`) can
 read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Agents can
-add a package to that grant with `secret_lock`; removing a grant is
-website-only. When an **unadopted community-forked** package needs access to one
-or more **existing** user secrets, either adopt it after reviewing the source or
-send the user an approval link — do not ask them to recreate the secrets.
+add a package to that grant with `secretLock`; removing a grant is website-only.
+When an **unadopted community-forked** package needs access to one or more
+**existing** user secrets, either adopt it after reviewing the source or send
+the user an approval link — do not ask them to recreate the secrets.
 
 - Single secret:
   `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`
@@ -89,4 +89,4 @@ secret and lets the user approve them in one click.
 5. For common non-OAuth integrations, continue with
    `guide: "secret_backed_integration"` after the secret exists.
 6. Proceed using `{{secret:name}}` fetch placeholders or a named secret lookup
-   such as `secret_jwt_sign`.
+   such as `secretJwtSign`.

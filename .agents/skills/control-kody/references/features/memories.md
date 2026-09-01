@@ -1,6 +1,6 @@
 # Memories
 
-Durable user facts. Verify-first writes (`meta_memory_verify` before
+Durable user facts. Verify-first writes (`metaMemoryVerify` before
 upsert/delete).
 
 ## How to get there

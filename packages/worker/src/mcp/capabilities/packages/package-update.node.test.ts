@@ -70,7 +70,7 @@ function createSavedPackage(input?: {
 	}
 }
 
-test('package_update hides and unhides a user-scoped package and returns persisted summaries', async () => {
+test('packageUpdate hides and unhides a user-scoped package and returns persisted summaries', async () => {
 	mockModule.updateSavedPackage.mockResolvedValue(true)
 	mockModule.getSavedPackageById
 		.mockResolvedValueOnce(createSavedPackage())
@@ -131,7 +131,7 @@ test('package_update hides and unhides a user-scoped package and returns persist
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
 })
 
-test('package_update locks a package and rejects unlock with the owner website URL', async () => {
+test('packageUpdate locks a package and rejects unlock with the owner website URL', async () => {
 	const lockedPackage = createSavedPackage({
 		lockedAt: '2026-08-28T12:00:00.000Z',
 	})
@@ -197,7 +197,7 @@ test('package_update locks a package and rejects unlock with the owner website U
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
-test('package_update rejects invalid changes and cross-user or unauthenticated access', async () => {
+test('packageUpdate rejects invalid changes and cross-user or unauthenticated access', async () => {
 	await expect(
 		packageUpdateCapability.handler(
 			{ package_id: 'pkg-1', changes: {} },
@@ -212,7 +212,7 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 			},
 			createCtx(),
 		),
-	).rejects.toThrow('Invalid input for capability "package_update"')
+	).rejects.toThrow('Invalid input for capability "packageUpdate"')
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageById.mockResolvedValueOnce(null)

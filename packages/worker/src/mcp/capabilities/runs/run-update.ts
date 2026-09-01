@@ -16,7 +16,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Run id from run_list, run_get, job_get recent_runs, or another run reference.',
+			'Run id from runList, runGet, jobGet recent_runs, or another run reference.',
 		),
 	triage: runErrorTriageUpdateSchema.describe(
 		'Set soft triage on a retained error run: ignored (noise / soft-failure), resolved (already fixed), or open (clear triage and show it again in default listings). Does not delete the run or change error_name / error_message.',
@@ -31,9 +31,9 @@ const outputSchema = z.object({
 export const runUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.runs,
 	{
-		name: 'run_update',
+		name: 'runUpdate',
 		description:
-			'Mark a retained error run as ignored or resolved (or clear triage back to open) so Activity / run_list / run_summary can hide already-handled noise without deleting history. Only error runs accept ignored/resolved; original error details stay intact. Optional note records why. Default run_list and run_summary hide ignored/resolved errors — pass error_triage "all", "ignored", or "resolved" on run_list to inspect them.',
+			'Mark a retained error run as ignored or resolved (or clear triage back to open) so Activity / runList / runSummary can hide already-handled noise without deleting history. Only error runs accept ignored/resolved; original error details stay intact. Optional note records why. Default runList and runSummary hide ignored/resolved errors — pass error_triage "all", "ignored", or "resolved" on runList to inspect them.',
 		keywords: [
 			'run',
 			'update',

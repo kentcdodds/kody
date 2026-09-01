@@ -15,7 +15,7 @@ async function auditSystemEmailRead(input: {
 	env: Env
 	request: Request
 	actorEmail?: string | null
-	action: 'admin_system_email_list' | 'admin_system_email_get'
+	action: 'adminSystemEmailList' | 'adminSystemEmailGet'
 	messageId?: string | null
 }) {
 	await logAuditEvent({
@@ -47,8 +47,8 @@ export function createAdminSystemEmailHandler(env: Env) {
 				request,
 				actorEmail: actor.email,
 				action: adminSystemEmail.selectedMessage
-					? 'admin_system_email_get'
-					: 'admin_system_email_list',
+					? 'adminSystemEmailGet'
+					: 'adminSystemEmailList',
 				messageId: adminSystemEmail.selectedMessage?.id,
 			})
 
@@ -74,8 +74,8 @@ export function createAdminSystemEmailApiHandler(env: Env) {
 					request,
 					actorEmail: actor.email,
 					action: payload.selectedMessage
-						? 'admin_system_email_get'
-						: 'admin_system_email_list',
+						? 'adminSystemEmailGet'
+						: 'adminSystemEmailList',
 					messageId: payload.selectedMessage?.id,
 				})
 				return jsonResponse(payload)

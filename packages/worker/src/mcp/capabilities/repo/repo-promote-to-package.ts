@@ -44,7 +44,7 @@ const repoIdentitySchema = z
 export const repoPromoteToPackageCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_promote_to_package',
+		name: 'repoPromoteToPackage',
 		description:
 			'Promote a package-shaped plain repo (root package.json at HEAD) into a saved package. Runs the full external-push publish checks; on success creates the saved-package projection and removes the plain-repo row.',
 		keywords: ['repo', 'promote', 'package', 'activate'],
@@ -227,7 +227,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}).catch(() => undefined)
 			// Listing is best-effort after publish committed: throwing here
 			// would fail a successful promote, leave the plain-repo row, and
-			// make retry report "already promoted". community_publish retries
+			// make retry report "already promoted". communityPublish retries
 			// the catalog row for an already-public package.
 			let listingMessage: string | undefined
 			if (!userRepo.isPrivate) {
@@ -240,7 +240,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 						packageId,
 					})
 				} catch (error) {
-					listingMessage = `Promoted to a public package, but listing on /community failed: ${getErrorMessage(error)}. Retry community_publish for package_id ${packageId}.`
+					listingMessage = `Promoted to a public package, but listing on /community failed: ${getErrorMessage(error)}. Retry communityPublish for package_id ${packageId}.`
 				}
 			}
 			await deleteUserRepo(ctx.env.APP_DB, {

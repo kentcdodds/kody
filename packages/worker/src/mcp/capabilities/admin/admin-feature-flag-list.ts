@@ -26,7 +26,7 @@ export const adminFeatureFlagListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_feature_flag_list',
+		name: 'adminFeatureFlagList',
 		description:
 			"List feature flags for admin review, including registry metadata, global state, per-user overrides, and each flag's declared success metric with its on/off cohort readout (exposures joined with usage events, current month to date). Registry flags without a success metric carry a successMetricNotice strongly recommending one. Admin-only; never returns user content.",
 		keywords: [
@@ -46,7 +46,7 @@ export const adminFeatureFlagListCapability = defineDomainCapability(
 		async handler(_args, ctx: CapabilityContext) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_feature_flag_list',
+				'adminFeatureFlagList',
 				async () => {
 					const flags = await listFeatureFlagsForAdmin(ctx.env.APP_DB)
 					await attachFeatureFlagMetricReadouts(ctx.env, flags)

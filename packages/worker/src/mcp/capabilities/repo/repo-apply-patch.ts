@@ -9,12 +9,12 @@ import {
 } from './repo-shared.ts'
 
 const fileLevelApiNote =
-	'This is the file-level repo session API: use `repo_rebase_session` to merge from the published default branch. There is no git-command channel; branch, checkout, and remote operations are not available in sessions (use the git lane via `package_get_git_remote` for full git).'
+	'This is the file-level repo session API: use `repoRebaseSession` to merge from the published default branch. There is no git-command channel; branch, checkout, and remote operations are not available in sessions (use the git lane via `packageGetGitRemote` for full git).'
 
 export const repoApplyPatchCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_apply_patch',
+		name: 'repoApplyPatch',
 		description: [
 			'Apply a unified-diff patch to the active repo session workspace.',
 			fileLevelApiNote,

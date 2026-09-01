@@ -119,7 +119,7 @@ export function formatRawFetchHostNudge(input: {
 	const mentalModel =
 		'Integrations = auth; packages = how agents should call the product.'
 	const packagesFirst =
-		'Prefer a package: search for an existing wrapper, then community_search, then fork or create a thin helpers package.'
+		'Prefer a package: search for an existing wrapper, then communitySearch, then fork or create a thin helpers package.'
 	if (input.usedIntegrationAuthHelpers) {
 		return `Raw integration auth hit ${input.hostname} ${input.count}x this conversation. ${mentalModel} ${packagesFirst}`
 	}

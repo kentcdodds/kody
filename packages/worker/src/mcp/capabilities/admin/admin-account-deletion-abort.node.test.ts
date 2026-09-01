@@ -66,7 +66,7 @@ function createAdminContext(
 	}
 }
 
-test('admin_account_deletion_abort clears D1 and UserMeter fences', async () => {
+test('adminAccountDeletionAbort clears D1 and UserMeter fences', async () => {
 	const { sqlite, db } = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
@@ -99,14 +99,14 @@ test('admin_account_deletion_abort clears D1 and UserMeter fences', async () => 
 	expect(await meterStub.readDeletionState()).toEqual({ deletingAt: null })
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_account_deletion_abort',
+			action: 'adminAccountDeletionAbort',
 			result: 'success',
 			reason: `target_stable_user_id=${stableUserId};reason=${abortReason}`,
 		}),
 	)
 })
 
-test('admin_account_deletion_abort fails closed for an unknown user', async () => {
+test('adminAccountDeletionAbort fails closed for an unknown user', async () => {
 	const { db } = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const ctx = createAdminContext(db, meter.env)
@@ -123,7 +123,7 @@ test('admin_account_deletion_abort fails closed for an unknown user', async () =
 	).rejects.toThrow('User not found.')
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_account_deletion_abort',
+			action: 'adminAccountDeletionAbort',
 			result: 'failure',
 			reason: 'User not found.',
 		}),

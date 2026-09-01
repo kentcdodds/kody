@@ -111,7 +111,7 @@ test('admin platform feedback JSON requires admin and audits list and detail rea
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
-			action: 'admin_platform_feedback_list',
+			action: 'adminPlatformFeedbackList',
 			result: 'success',
 			email: 'admin@example.com',
 			ip: '127.0.0.1',
@@ -128,7 +128,7 @@ test('admin platform feedback JSON requires admin and audits list and detail rea
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
-			action: 'admin_platform_feedback_get',
+			action: 'adminPlatformFeedbackGet',
 			result: 'success',
 			reason: 'feedback_id=feedback-1',
 		}),
@@ -141,7 +141,7 @@ test('admin platform feedback JSON requires admin and audits list and detail rea
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
-			action: 'admin_platform_feedback_get',
+			action: 'adminPlatformFeedbackGet',
 			result: 'success',
 			reason: 'feedback_id=missing-feedback;not_found',
 		}),

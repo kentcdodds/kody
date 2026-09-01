@@ -26,7 +26,7 @@ import {
 export const getPackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_get',
+		name: 'packageGet',
 		description:
 			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, invocation token metadata, and canonical owner-scoped external invocation URLs for each export.',
 		keywords: [

@@ -24,7 +24,6 @@ import {
 import { RecordChips, recordBodyCss } from './record-table.tsx'
 import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
 import { AccountPackageTokens } from './account-package-tokens.tsx'
-import { getAccountPackageFilesHref } from '#universal/package-files.ts'
 import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
@@ -54,12 +53,12 @@ export function AccountPackageOwnerDetails(
 		visibility: 'public' | 'private',
 	) {
 		if (visibilityState === 'submitting') return
-		if (
-			visibility === 'private' &&
-			confirmName.trim() !== packageDetail.kodyId
-		) {
+		if (confirmName.trim() !== packageDetail.kodyId) {
 			visibilityState = 'error'
-			visibilityMessage = `Type ${packageDetail.kodyId} to make this package private. Public URLs will 404; existing forks keep their copies.`
+			visibilityMessage =
+				visibility === 'public'
+					? `Type ${packageDetail.kodyId} to make this package public. Anyone will be able to read and fork the default branch.`
+					: `Type ${packageDetail.kodyId} to make this package private. Public URLs will 404; existing forks keep their copies.`
 			handle.update()
 			return
 		}
@@ -201,70 +200,67 @@ export function AccountPackageOwnerDetails(
 					mix={css({ display: 'grid', gap: spacing.xs })}
 					data-testid="package-visibility-controls"
 				>
-					{packageDetail.isPrivate ? (
-						<button
-							type="button"
-							disabled={visibilityState === 'submitting'}
-							data-testid="package-make-public"
+					<p mix={css({ margin: 0, color: colors.textMuted })}>
+						{packageDetail.isPrivate
+							? 'Making this package public lists it on /community. Anyone can read and fork the default branch. Type the slug to confirm.'
+							: 'Making this package private unlists it from /community and 404s public URLs. Existing forks keep their copies. Type the slug to confirm.'}
+					</p>
+					<label mix={css({ display: 'grid', gap: spacing.xs })}>
+						<span mix={css(visuallyHiddenCss)}>
+							Type {packageDetail.kodyId} to change visibility
+						</span>
+						<input
+							value={confirmName}
+							placeholder={packageDetail.kodyId}
+							data-testid={
+								packageDetail.isPrivate
+									? 'package-make-public-confirm'
+									: 'package-make-private-confirm'
+							}
 							mix={[
-								css(getGhostButtonCss()),
-								on(
-									'click',
-									() => void submitVisibility(packageDetail, 'public'),
-								),
+								css({
+									padding: spacing.sm,
+									borderRadius: radius.md,
+									border: `1px solid ${colors.border}`,
+									backgroundColor: colors.surface,
+									color: colors.text,
+								}),
+								on('input', (event) => {
+									if (!(event.currentTarget instanceof HTMLInputElement)) {
+										return
+									}
+									confirmName = event.currentTarget.value
+									handle.update()
+								}),
 							]}
-						>
-							{visibilityState === 'submitting' ? 'Saving…' : 'Make public'}
-						</button>
-					) : (
-						<>
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								Making this package private unlists it from /community and 404s
-								public URLs. Existing forks keep their copies. Type the slug to
-								confirm.
-							</p>
-							<label mix={css({ display: 'grid', gap: spacing.xs })}>
-								<span mix={css(visuallyHiddenCss)}>
-									Type {packageDetail.kodyId} to make private
-								</span>
-								<input
-									value={confirmName}
-									placeholder={packageDetail.kodyId}
-									data-testid="package-make-private-confirm"
-									mix={[
-										css({
-											padding: spacing.sm,
-											borderRadius: radius.md,
-											border: `1px solid ${colors.border}`,
-											backgroundColor: colors.surface,
-											color: colors.text,
-										}),
-										on('input', (event) => {
-											if (!(event.currentTarget instanceof HTMLInputElement)) {
-												return
-											}
-											confirmName = event.currentTarget.value
-											handle.update()
-										}),
-									]}
-								/>
-							</label>
-							<button
-								type="button"
-								disabled={visibilityState === 'submitting'}
-								data-testid="package-make-private"
-								mix={[
-									css(getGhostButtonCss()),
-									on(
-										'click',
-										() => void submitVisibility(packageDetail, 'private'),
+						/>
+					</label>
+					<button
+						type="button"
+						disabled={visibilityState === 'submitting'}
+						data-testid={
+							packageDetail.isPrivate
+								? 'package-make-public'
+								: 'package-make-private'
+						}
+						mix={[
+							css(getGhostButtonCss()),
+							on(
+								'click',
+								() =>
+									void submitVisibility(
+										packageDetail,
+										packageDetail.isPrivate ? 'public' : 'private',
 									),
-								]}
-							>
-								{visibilityState === 'submitting' ? 'Saving…' : 'Make private'}
-							</button>
-						</>
-					)}
+							),
+						]}
+					>
+						{visibilityState === 'submitting'
+							? 'Saving…'
+							: packageDetail.isPrivate
+								? 'Make public'
+								: 'Make private'}
+					</button>
 					{visibilityMessage ? (
 						<p mix={css({ margin: 0, color: colors.danger })} role="alert">
 							{visibilityMessage}
@@ -340,18 +336,6 @@ export function AccountPackageOwnerDetails(
 						</div>
 					) : null}
 				</div>
-				<a
-					href={getAccountPackageFilesHref({
-						packageId: packageDetail.id,
-					})}
-					data-testid="account-browse-files"
-					mix={css({
-						...getGhostButtonCss({ size: 'sm' }),
-						width: 'fit-content',
-					})}
-				>
-					Browse files
-				</a>
 				<AccountPackageTokens
 					packageDetail={packageDetail}
 					currentHref={currentHref}

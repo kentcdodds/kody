@@ -94,9 +94,9 @@ targets that connection instead of the default `salesforce` name.
 
 ## Verify
 
-After connecting, `community_fork` `@kody/salesforce` into your scope and run
-the fork's smoke test from `execute` (pass `integrationName` when the connection
-is not named `salesforce`):
+After connecting, `communityFork` `@kody/salesforce` into your scope and run the
+fork's smoke test from `execute` (pass `integrationName` when the connection is
+not named `salesforce`):
 
 ```ts
 import smokeTest from 'kody:@<your-username>/salesforce/smoke-test'

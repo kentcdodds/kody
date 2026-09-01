@@ -47,7 +47,7 @@ const outputSchema = z.object({
 export const metaMemoryVerifyCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_memory_verify',
+		name: 'metaMemoryVerify',
 		description:
 			'Always run this capability before writing or deleting memory. Submit the candidate memory, review the related memories returned here, then decide whether to upsert, delete, both, or do nothing. Do not upsert memory blindly.',
 		keywords: ['memory', 'verify', 'related memories', 'dedupe', 'search'],

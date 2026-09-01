@@ -1,5 +1,9 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { z } from 'zod'
+import {
+	connectionTroubleActors,
+	integrationAuthFailureReasons,
+} from '#universal/connection-trouble.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 export const integrationFlowValues = ['pkce', 'confidential'] as const
@@ -69,7 +73,7 @@ export const integrationConfigSchema = z.object({
 	 * True when the connection uses a platform (built-in) OAuth app. Platform
 	 * connections never expose a client secret name: the shared secret lives
 	 * encrypted outside the user secret store and token exchange runs
-	 * host-side (`integration_token_refresh`).
+	 * host-side (`integrationTokenRefresh`).
 	 */
 	platform: z.boolean().optional(),
 	/**
@@ -78,6 +82,23 @@ export const integrationConfigSchema = z.object({
 	 */
 	usageMode: z.enum(['any', 'packages']).optional(),
 	allowedPackageIds: z.array(z.string()).optional(),
+	/** Last classified OAuth refresh outcome. Output-only; save ignores it. */
+	lastAuthFailure: z
+		.object({
+			reason: z.enum(integrationAuthFailureReasons),
+			occurredAt: z.string().min(1),
+			reconnectable: z.boolean(),
+			providerError: z.string().nullable(),
+			providerErrorDescription: z.string().nullable(),
+			httpStatus: z.number().int().nullable(),
+			title: z.string(),
+			why: z.string(),
+			who: z.enum(connectionTroubleActors),
+			doLabel: z.string(),
+			reconnectHref: z.string(),
+			accountHref: z.string(),
+		})
+		.optional(),
 })
 
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>

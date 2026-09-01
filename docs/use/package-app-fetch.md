@@ -1,6 +1,6 @@
 # Package app fetch
 
-`package_app_fetch` invokes a published package app's fetch handler over MCP. It
+`packageAppFetch` invokes a published package app's fetch handler over MCP. It
 is a **platform-marked real-surface** `app_fetch` run: same package runtime,
 `packageStorage()`, and secret mounts as production traffic. **Side effects are
 real.**
@@ -18,7 +18,7 @@ Hosted-URL checks remain useful for UI, OAuth redirects, and websocket facets.
 
 ## When to use it
 
-- After `package_publish_external_push` when the package declares
+- After `packagePublishExternalPush` when the package declares
   `package.json#kody.app`
 - When `test_hints.app` is present on the publish response (copy-paste starting
   point)
@@ -31,7 +31,7 @@ deliveries.
 
 ## Call shape
 
-Search the `packages` domain, then call `package_app_fetch`:
+Search the `packages` domain, then call `packageAppFetch`:
 
 ```json
 {

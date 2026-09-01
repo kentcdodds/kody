@@ -100,7 +100,7 @@ export const measuredFeatureFlagKeys: ReadonlySet<FeatureFlagKey> = new Set(
 )
 
 /**
- * Shared notice shown by the admin UI and the `admin_feature_flag_list`
+ * Shared notice shown by the admin UI and the `adminFeatureFlagList`
  * capability for registry flags that do not declare a success metric.
  */
 export const missingSuccessMetricNotice =

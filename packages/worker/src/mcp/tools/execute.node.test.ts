@@ -14,7 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	createExecutePackageInvokeTools: vi.fn(),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityHandlers: {
-			coding_guide_get: true,
+			codingGuideGet: true,
 		},
 	})),
 	getRunRecordByIdempotencyKey: vi.fn(async () => null),
@@ -227,7 +227,7 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 		expect.objectContaining({
 			capabilityRegistry: {
 				capabilityHandlers: {
-					coding_guide_get: true,
+					codingGuideGet: true,
 				},
 			},
 		}),

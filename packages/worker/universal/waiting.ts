@@ -1,4 +1,11 @@
 import {
+	expiredSecretCopy,
+	integrationAuthFailureCopy,
+	isVendorLikelyMcpError,
+	waitingExpiredSecretCap,
+	type IntegrationAuthFailureReason,
+} from './connection-trouble.ts'
+import {
 	onboardingChecklistItemHref,
 	onboardingChecklistItemLabels,
 	type OnboardingChecklistItemId,
@@ -8,6 +15,8 @@ import { routes } from './routes.ts'
 export const waitingItemKinds = [
 	'verify-email',
 	'mcp-server',
+	'integration-auth',
+	'secret-expired',
 	'publish-lock',
 	'email-change',
 	'entitlement',
@@ -58,6 +67,17 @@ export type WaitingMcpServerSignal = {
 	error: string | null
 }
 
+export type WaitingIntegrationAuthSignal = {
+	name: string
+	accountLabel: string | null
+	lane: 'user' | 'platform'
+	reason: IntegrationAuthFailureReason
+}
+
+export type WaitingExpiredSecretSignal = {
+	name: string
+}
+
 export type WaitingLockedPackageSignal = {
 	id: string
 	name: string
@@ -74,6 +94,8 @@ export type WaitingSignals = {
 	onboardingDismissed: boolean
 	onboardingRemaining: Array<OnboardingChecklistItemId>
 	mcpServers: Array<WaitingMcpServerSignal>
+	integrationAuth: Array<WaitingIntegrationAuthSignal>
+	expiredSecrets: Array<WaitingExpiredSecretSignal>
 	lockedPackages: Array<WaitingLockedPackageSignal>
 	pendingEmailChange: string | null
 	errorRate: { errorCount: number; eventCount: number } | null
@@ -89,11 +111,13 @@ const severityRank: Record<WaitingSeverity, number> = {
 const kindRank: Record<WaitingItemKind, number> = {
 	'verify-email': 0,
 	'mcp-server': 1,
-	'publish-lock': 2,
-	'email-change': 3,
-	entitlement: 4,
-	'error-rate': 5,
-	onboarding: 6,
+	'integration-auth': 2,
+	'secret-expired': 3,
+	'publish-lock': 4,
+	'email-change': 5,
+	entitlement: 6,
+	'error-rate': 7,
+	onboarding: 8,
 }
 
 const mcpHumanStates = new Set(['authenticating', 'failed', 'disconnected'])
@@ -126,6 +150,52 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 	for (const server of signals.mcpServers) {
 		const item = buildMcpServerWaitingItem(server)
 		if (item) items.push(item)
+	}
+
+	for (const connection of signals.integrationAuth) {
+		const copy = integrationAuthFailureCopy(connection)
+		if (copy.who !== 'you' || !copy.reconnectable) continue
+		items.push({
+			id: `integration-auth:${connection.name}`,
+			kind: 'integration-auth',
+			title: copy.title,
+			why: copy.why,
+			who: 'you',
+			doLabel: copy.doLabel,
+			href: copy.href,
+			severity: 'block',
+		})
+	}
+
+	const expiredSecrets = signals.expiredSecrets.slice(
+		0,
+		waitingExpiredSecretCap,
+	)
+	for (const secret of expiredSecrets) {
+		const copy = expiredSecretCopy(secret.name)
+		items.push({
+			id: `secret-expired:${secret.name}`,
+			kind: 'secret-expired',
+			title: copy.title,
+			why: copy.why,
+			who: 'you',
+			doLabel: copy.doLabel,
+			href: copy.href,
+			severity: 'degraded',
+		})
+	}
+	const extraExpired = signals.expiredSecrets.length - expiredSecrets.length
+	if (extraExpired > 0) {
+		items.push({
+			id: 'secret-expired-more',
+			kind: 'secret-expired',
+			title: `${String(extraExpired)} more expired secrets`,
+			why: 'Open Secrets to paste new values. Do not put them in chat.',
+			who: 'you',
+			doLabel: 'Open Secrets',
+			href: routes.accountSecrets.href(),
+			severity: 'degraded',
+		})
 	}
 
 	for (const pkg of signals.lockedPackages) {
@@ -209,6 +279,8 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 		if (severity !== 0) return severity
 		const kind = kindRank[left.kind] - kindRank[right.kind]
 		if (kind !== 0) return kind
+		if (left.id === 'secret-expired-more') return 1
+		if (right.id === 'secret-expired-more') return -1
 		return left.title.localeCompare(right.title)
 	})
 }
@@ -230,6 +302,7 @@ function buildMcpServerWaitingItem(
 		}
 	}
 	if (server.state === 'failed') {
+		if (isVendorLikelyMcpError(server.error)) return null
 		return {
 			id: `mcp-server:${server.id}`,
 			kind: 'mcp-server',
@@ -244,6 +317,7 @@ function buildMcpServerWaitingItem(
 		}
 	}
 	if (server.state === 'disconnected') {
+		if (isVendorLikelyMcpError(server.error)) return null
 		return {
 			id: `mcp-server:${server.id}`,
 			kind: 'mcp-server',

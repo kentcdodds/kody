@@ -24,7 +24,7 @@ import {
 export const communityGetCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_get',
+		name: 'communityGet',
 		description:
 			'Load full detail for one public community listing, including untrusted README content and aggregate ratings.',
 		keywords: ['community', 'get', 'listing', 'detail', 'readme', 'package'],

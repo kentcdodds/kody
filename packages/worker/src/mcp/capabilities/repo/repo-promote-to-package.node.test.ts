@@ -215,7 +215,7 @@ function resetMocks() {
 	mockModule.publishCommunityListing.mockResolvedValue({ id: 'listing-1' })
 }
 
-test('repo_promote_to_package rejects repos without package.json at HEAD', async () => {
+test('repoPromoteToPackage rejects repos without package.json at HEAD', async () => {
 	resetMocks()
 	mockModule.readArtifactFileAtCommit.mockResolvedValueOnce(null)
 	const { ctx } = createCapabilityContext()
@@ -225,7 +225,7 @@ test('repo_promote_to_package rejects repos without package.json at HEAD', async
 	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
 })
 
-test('repo_promote_to_package seeds published_commit from the opened session base so publish is not treated as a stale session', async () => {
+test('repoPromoteToPackage seeds published_commit from the opened session base so publish is not treated as a stale session', async () => {
 	resetMocks()
 	// HEAD snapshot can lag a concurrent git-lane push; the opened session
 	// base is the commit publishSession will compare against.
@@ -288,7 +288,7 @@ test('repo_promote_to_package seeds published_commit from the opened session bas
 	})
 })
 
-test('repo_promote_to_package inherits repo visibility, not package.json private', async () => {
+test('repoPromoteToPackage inherits repo visibility, not package.json private', async () => {
 	resetMocks()
 	mockModule.resolveOwnedUserRepo.mockResolvedValue({
 		userRepo: {
@@ -330,7 +330,7 @@ test('repo_promote_to_package inherits repo visibility, not package.json private
 	expect(mockModule.publishCommunityListing).not.toHaveBeenCalled()
 })
 
-test('repo_promote_to_package rolls back the kind flip and published_commit when publish reports base_moved', async () => {
+test('repoPromoteToPackage rolls back the kind flip and published_commit when publish reports base_moved', async () => {
 	resetMocks()
 	const rpc = createSessionRpc({
 		publish: {
@@ -372,7 +372,7 @@ test('repo_promote_to_package rolls back the kind flip and published_commit when
 	expect(mockModule.deleteUserRepo).not.toHaveBeenCalled()
 })
 
-test('repo_promote_to_package still finishes when community listing publish fails', async () => {
+test('repoPromoteToPackage still finishes when community listing publish fails', async () => {
 	resetMocks()
 	mockModule.publishCommunityListing.mockRejectedValue(
 		new Error('listing failed'),
@@ -392,7 +392,7 @@ test('repo_promote_to_package still finishes when community listing publish fail
 		published_commit: 'commit-1',
 	})
 	expect(result.message).toContain('listing failed')
-	expect(result.message).toContain('community_publish')
+	expect(result.message).toContain('communityPublish')
 	expect(result.message).toContain(result.package_id)
 	expect(mockModule.deleteUserRepo).toHaveBeenCalledWith(expect.anything(), {
 		userId: 'user-1',

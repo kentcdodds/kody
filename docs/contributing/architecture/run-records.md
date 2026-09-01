@@ -27,7 +27,7 @@ package-scoped debug rows.
 Code lives in `packages/worker/src/run-records/` (types, worker service, and the
 `RunLog` Durable Object). MCP capabilities live under
 `packages/worker/src/mcp/capabilities/runs/` (list/get/summary plus soft triage
-via `run_update`). The account UI is `/account/activity`.
+via `runUpdate`). The account UI is `/account/activity`.
 
 ## Surfaces
 
@@ -68,7 +68,7 @@ intentional.
 
 When an external MCP client times out (for example MCP error `-32001`) while the
 sandbox continues, a keyed execute call still has a recoverable record: the
-caller can poll `run_get` with the returned `runId`, or retry `execute` with the
+caller can poll `runGet` with the returned `runId`, or retry `execute` with the
 same `idempotencyKey` to receive a `replayed: true` result (or
 `inProgress: true` while the first attempt is still running) without starting a
 duplicate sandbox.
@@ -135,7 +135,7 @@ Rules:
   (`runRecordMaxResultSnapshotBytes`, currently 4 KiB). Oversized values become
   `{ __truncated__: true, preview }`. Eager surfaces that produce a handler
   return value (at minimum webhook deliveries and package exports, plus keyed
-  execute) should pass it so `run_get` can show what the handler returned.
+  execute) should pass it so `runGet` can show what the handler returned.
 - Keyed execute claims the idempotency key through `claimRunRecord` (awaited DO
   RPC) before sandbox work so a concurrent retry sees `running` or the terminal
   row instead of starting a second attempt. Lookups are scoped by
@@ -205,7 +205,7 @@ single RPC stays bounded.
 Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
 Loader `evaluate`) are reconciled to `status=error` with the stable
 `errorName=platform_interrupted`. This name means platform weather ended the
-host execution and its outcome is unknown; Activity, `run_list`, and triage
+host execution and its outcome is unknown; Activity, `runList`, and triage
 automation must not classify it as a user-authored package failure.
 Reconciliation uses the surface-aware TTLs above and runs on the DO alarm, on
 retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
@@ -369,18 +369,18 @@ user.
 **Entity state** stays on the entity (or its dedicated projection table). Job
 last-run error, duration, and counters live in RunLog `job_run_observability`;
 D1 `jobs` keeps schedule fields and `last_run_at` / `last_run_status` as
-retention anchors only. History browsers (`/account/activity`, `run_list` /
-`run_get` / `run_summary`) read `RunLog`.
+retention anchors only. History browsers (`/account/activity`, `runList` /
+`runGet` / `runSummary`) read `RunLog`.
 
 ## Soft error triage
 
 Execution `status` stays `running` / `success` / `error`. Retained **error**
 rows may also carry soft triage (`error_triage`: `ignored` | `resolved`, plus
 optional `triage_note`, `triaged_at`, `triaged_by`). Triage is non-destructive:
-error name/message/logs stay put; Activity's Open errors view and `run_list`
+error name/message/logs stay put; Activity's Open errors view and `runList`
 default to `error_triage=open` so handled noise drops out of the default view;
 Activity's Recent runs view lists the last 7 days with `error_triage=all`;
-`run_summary.errors` counts only open errors and exposes separate `ignored` /
+`runSummary.errors` counts only open errors and exposes separate `ignored` /
 `resolved` totals. Terminal `finishRun` upserts preserve triage on error
 finishes and clear it if a row somehow finishes non-error. A later successful
 run for the same immutable `job_id` automatically soft-resolves prior open
@@ -389,7 +389,7 @@ not overwritten, and every resolved row keeps `status=error` plus its original
 error details. Auto-resolution is intentionally job-only: names on other
 surfaces are not uniformly immutable identities.
 
-`run_update_bulk` is the bounded operational relief valve. It selects up to 100
+`runUpdateBulk` is the bounded operational relief valve. It selects up to 100
 error rows either by explicit run ids or exact-match filters (`surface`,
 `package_id`, `job_id`, `name`, `error_name`, `error_message`, and current
 triage). Filters must contain at least one identity/error field; filtered reopen
@@ -404,8 +404,8 @@ Schema version 10 on the RunLog DO.
   last 7 days of successes and errors; status / triage / surface filters, 7-day
   summary with ignored/resolved counts, log viewer, cursor pagination).
   `/account/jobs` recent runs link into it.
-- MCP domain `runs`: `run_list`, `run_get`, `run_summary`, `run_update`,
-  `run_update_bulk`.
+- MCP domain `runs`: `runList`, `runGet`, `runSummary`, `runUpdate`,
+  `runUpdateBulk`.
 - Account export: section `run_records` pages through the user’s `RunLog`.
 - Account deletion: `clearAll` on the user’s `RunLog` stub (deletes every DO
   table — runs, ledger, and dedicated state — then reinitializes schema).

@@ -17,6 +17,7 @@ import {
 	createSchemaTypeDefinition,
 } from './schema-type-definitions.ts'
 import { assertCallerCanAccessCapability } from './access-control.ts'
+import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
@@ -24,12 +25,15 @@ export function defineCapability<
 	TInputSchema extends CapabilitySchemaDefinition,
 	TOutputSchema extends CapabilitySchemaDefinition | undefined = undefined,
 >(definition: CapabilityDefinition<TInputSchema, TOutputSchema>): Capability {
+	const source = definition.source ?? 'builtin'
+	if (source === 'builtin') {
+		assertKodyRuntimeIdentifier('capability', definition.name)
+	}
 	const inputParser = createSchemaParser(definition.inputSchema)
 	const outputParser = definition.outputSchema
 		? createSchemaParser(definition.outputSchema)
 		: null
 	const keywords = mergeKeywords(definition.keywords, definition.tags)
-	const source = definition.source ?? 'builtin'
 
 	// Derived schema artifacts (JSON Schema conversion + TypeScript type-text
 	// generation) are deferred to first access: `defineCapability` runs at

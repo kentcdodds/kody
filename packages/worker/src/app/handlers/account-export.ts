@@ -32,8 +32,8 @@ export function createAccountExportHandler(env: Env) {
 				{
 					manifest,
 					completeExport: {
-						manifestCapability: 'account_export_manifest',
-						sectionCapability: 'account_export_section',
+						manifestCapability: 'accountExportManifest',
+						sectionCapability: 'accountExportSection',
 						note: 'This browser download is a bounded metadata manifest. Retrieve every section page, including r2_object chunks, through the account MCP export capabilities for a complete portable export.',
 					},
 				},

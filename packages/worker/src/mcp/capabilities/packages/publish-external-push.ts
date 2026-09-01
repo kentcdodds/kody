@@ -64,7 +64,7 @@ const externalPublishRetryDelaysMs = [100, 500] as const
 
 const durablePublishWorkflowCode = `import { kody } from 'kody:runtime'
 export default async function main(params = {}) {
-	return await kody.package_publish_external_push(params)
+	return await kody.packagePublishExternalPush(params)
 }`
 
 function isTransientDurableObjectResetError(error: unknown) {
@@ -88,7 +88,7 @@ function logExternalPublishRetry(input: {
 	const errorMessage = getErrorMessage(input.error)
 	console.warn(
 		JSON.stringify({
-			message: 'package_publish_external_push transient Durable Object reset',
+			message: 'packagePublishExternalPush transient Durable Object reset',
 			sourceId: input.sourceId,
 			repoId: input.repoId,
 			packageId: input.packageId,
@@ -472,10 +472,7 @@ export function buildExternalPublishIdempotencyParts(
 	// the same publish; that is safe because re-invoking publish when
 	// published_commit already matches HEAD returns already_published without
 	// checks or D1 writes.
-	return [
-		'package_publish_external_push',
-		canonicalJsonStringify(input),
-	] as const
+	return ['packagePublishExternalPush', canonicalJsonStringify(input)] as const
 }
 
 function shouldEscalateExternalPublish(executionOrigin: string | undefined) {
@@ -691,7 +688,7 @@ async function runExternalPublishAttempt(input: {
 		}
 	}
 	throw new Error(
-		`package_publish_external_push could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
+		`packagePublishExternalPush could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
 			lastTransientError,
 		)}`,
 	)
@@ -700,9 +697,9 @@ async function runExternalPublishAttempt(input: {
 export const publishExternalPushCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_publish_external_push',
+		name: 'packagePublishExternalPush',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a package_get_git_remote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflow_run_list instead of hanging until an opaque execute timeout.',
+			'Publish the current Artifacts git HEAD for a saved package after a packageGetGitRemote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~55s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflowRunList instead of hanging until an opaque execute timeout.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -778,7 +775,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				userEmail: user.email,
 				budgetMs: defaultDurableEscalationBudgetMs,
 				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),
-				workflowName: 'package_publish_external_push',
+				workflowName: 'packagePublishExternalPush',
 				packageContext: {
 					packageId,
 					kodyId,

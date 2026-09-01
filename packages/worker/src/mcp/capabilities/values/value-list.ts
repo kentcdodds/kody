@@ -10,7 +10,7 @@ import { valueMetadataSchema } from './shared.ts'
 export const valueListCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'value_list',
+		name: 'valueList',
 		description:
 			'List existing persisted leftovers. When scope is omitted, results include every accessible scope in precedence order.',
 		keywords: ['config', 'list', 'metadata'],

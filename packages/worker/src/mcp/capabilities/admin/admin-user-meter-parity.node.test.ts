@@ -43,7 +43,7 @@ function createCapabilityTestDb() {
 	return createD1FromSqlite(sqlite)
 }
 
-test('admin_user_meter_parity returns null for missing users and omits lease secrets', async () => {
+test('adminUserMeterParity returns null for missing users and omits lease secrets', async () => {
 	const db = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
@@ -82,7 +82,7 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 	expect(missing).toEqual({ report: null })
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_user_meter_parity',
+			action: 'adminUserMeterParity',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('missing@example.com')}`,
 		}),
@@ -100,7 +100,7 @@ test('admin_user_meter_parity returns null for missing users and omits lease sec
 	expect(present.report?.deletion.activeLeaseCount).toBe(1)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_user_meter_parity',
+			action: 'adminUserMeterParity',
 			result: 'success',
 			reason: `target_stable_user_id=${stableUserId}`,
 		}),

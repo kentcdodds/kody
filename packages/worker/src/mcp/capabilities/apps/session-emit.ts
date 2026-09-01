@@ -9,7 +9,7 @@ import {
 export const sessionEmitCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
 	{
-		name: 'session_emit',
+		name: 'sessionEmit',
 		description:
 			'Send one websocket event to one active package realtime session.',
 		keywords: ['session', 'websocket', 'emit', 'realtime', 'app'],

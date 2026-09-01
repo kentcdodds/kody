@@ -134,9 +134,9 @@ export function buildPackageSaveNextSteps(input: {
 }) {
 	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
-		`call package_get_git_remote({ kody_id: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with package_publish_external_push.`,
+		`call packageGetGitRemote({ kody_id: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with packagePublishExternalPush.`,
 		'Binary assets and multi-file refactors are only supported through that git lane.',
-		'Tool-only agents without local git can continue with package_save or repo sessions.',
+		'Tool-only agents without local git can continue with packageSave or repo sessions.',
 	]
 	const guidance = input.pendingSecretApprovalsGuidance?.trim()
 	if (guidance) {
@@ -147,7 +147,7 @@ export function buildPackageSaveNextSteps(input: {
 
 /**
  * Per-user `saved_packages` uniqueness is on (user_id, name) and
- * (user_id, kody_id). package_save resolves "existing" by package_id when
+ * (user_id, kody_id). packageSave resolves "existing" by package_id when
  * provided, otherwise by kody_id. A wrong/new package_id must not skip the
  * kody_id check and fall into INSERT — that surfaces as a raw D1 UNIQUE on
  * name (KODY-CLOUDFLARE-5J).
@@ -157,7 +157,7 @@ export function buildSavedPackageNameCollisionMessage(input: {
 	existingKodyId: string
 	existingPackageId: string
 }) {
-	return `A saved package named "${input.name}" already exists (kody_id "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call package_save with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+	return `A saved package named "${input.name}" already exists (kody_id "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call packageSave with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
 }
 
 export function buildSavedPackageIdMismatchMessage(input: {
@@ -181,16 +181,16 @@ function buildSavedPackageUniqueConstraintCallerMessage(input: {
 	message: string
 }) {
 	if (/saved_packages\.kody_id/i.test(input.message)) {
-		return `A saved package with kody id "${input.kodyId}" already exists. Call package_save with that package's package_id to update it, or change package.json#kody.id.`
+		return `A saved package with kody id "${input.kodyId}" already exists. Call packageSave with that package's package_id to update it, or change package.json#kody.id.`
 	}
-	return `A saved package named "${input.name}" already exists. Change package.json#name, or call package_save with that package's package_id to update it.`
+	return `A saved package named "${input.name}" already exists. Change package.json#name, or call packageSave with that package's package_id to update it.`
 }
 
 export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_save',
-		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer package_get_git_remote (pass create: true for new packages) to clone, edit, push, and publish with package_publish_external_push; tool-only agents use package_save or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
+		name: 'packageSave',
+		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer packageGetGitRemote (pass create: true for new packages) to clone, edit, push, and publish with packagePublishExternalPush; tool-only agents use packageSave or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
 			'save',
@@ -325,7 +325,7 @@ export const savePackageCapability = defineDomainCapability(
 					beforeContent: priorManifestContent,
 					afterContent: packageJsonContent,
 					isNewPackage: existing == null,
-					operation: 'package_save',
+					operation: 'packageSave',
 					confirmed: args.confirm_private_visibility_change,
 				})
 			} catch (error) {
@@ -344,7 +344,7 @@ export const savePackageCapability = defineDomainCapability(
 							canonicalExistingSource?.id === ensuredSource.id
 								? canonicalExistingSource
 								: ensuredSource,
-						operation: 'package_save',
+						operation: 'packageSave',
 						confirmed: args.confirm_destructive_overwrite,
 					})
 				} catch (error) {

@@ -23,9 +23,9 @@ const outputSchema = z.object({
 export const metaMemoryDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_memory_delete',
+		name: 'metaMemoryDelete',
 		description:
-			'Soft-delete a stored memory by default, or hard-delete it when `force` is true. Always run `meta_memory_verify` before deleting memory. Do not delete memory blindly. Review related memories first, decide the correct action, then delete.',
+			'Soft-delete a stored memory by default, or hard-delete it when `force` is true. Always run `metaMemoryVerify` before deleting memory. Do not delete memory blindly. Review related memories first, decide the correct action, then delete.',
 		keywords: [
 			'memory',
 			'delete',
@@ -48,7 +48,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			verified_by_agent: z
 				.boolean()
 				.describe(
-					'Agent assertion that `meta_memory_verify` was run before deletion.',
+					'Agent assertion that `metaMemoryVerify` was run before deletion.',
 				),
 			verification_reference: z
 				.string()
@@ -63,7 +63,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			if (!args.verified_by_agent) {
 				throw new Error(
-					'Agents must run meta_memory_verify before calling meta_memory_delete. Set verified_by_agent=true only after review.',
+					'Agents must run metaMemoryVerify before calling metaMemoryDelete. Set verified_by_agent=true only after review.',
 				)
 			}
 			const existing = await getMemory({

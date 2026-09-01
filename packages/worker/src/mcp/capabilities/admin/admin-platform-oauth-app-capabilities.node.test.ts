@@ -114,10 +114,10 @@ test('save/list/delete platform OAuth apps never expose the client secret and wr
 		.prepare('SELECT action, result FROM audit_events ORDER BY id ASC')
 		.all() as Array<{ action: string; result: string }>
 	expect(auditActions).toEqual([
-		{ action: 'admin_platform_oauth_app_save', result: 'success' },
-		{ action: 'admin_platform_oauth_app_save', result: 'success' },
-		{ action: 'admin_platform_oauth_app_list', result: 'success' },
-		{ action: 'admin_platform_oauth_app_delete', result: 'success' },
+		{ action: 'adminPlatformOauthAppSave', result: 'success' },
+		{ action: 'adminPlatformOauthAppSave', result: 'success' },
+		{ action: 'adminPlatformOauthAppList', result: 'success' },
+		{ action: 'adminPlatformOauthAppDelete', result: 'success' },
 	])
 })
 
@@ -144,7 +144,7 @@ test('delete refuses while connections exist and records the failure in the audi
 			`SELECT action FROM audit_events WHERE result = 'failure' ORDER BY id ASC`,
 		)
 		.all() as Array<{ action: string }>
-	expect(failures).toEqual([{ action: 'admin_platform_oauth_app_delete' }])
+	expect(failures).toEqual([{ action: 'adminPlatformOauthAppDelete' }])
 })
 
 test('enabling a confidential app without a client secret is an McpCallerError with audit failure', async () => {
@@ -169,6 +169,6 @@ test('enabling a confidential app without a client secret is an McpCallerError w
 		)
 		.all() as Array<{ action: string; result: string }>
 	expect(failures).toEqual([
-		{ action: 'admin_platform_oauth_app_save', result: 'failure' },
+		{ action: 'adminPlatformOauthAppSave', result: 'failure' },
 	])
 })

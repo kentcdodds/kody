@@ -5,14 +5,14 @@ The **search** tool finds **built-in capabilities**, **official guides**,
 (metadata only, not secret values).
 
 **Public package listings** are not included. Use the `community` domain
-(`community_search`, `community_get`) or the public `/community` pages. See
+(`communitySearch`, `communityGet`) or the public `/community` pages. See
 [Public packages](./community-packages.md).
 
 **Hidden saved packages** are excluded from ranked **query** results by default.
 Pass **`includeHiddenPackages: true`** to include them. Hiding is not deletion:
 known-id **`entity`** lookups (for example `my-package:package`),
-**`package_list`**, and **`package_get`** return hidden packages. Use
-**`package_update`** with **`changes: { hidden: true }`** to hide a package (or
+**`packageList`**, and **`packageGet`** return hidden packages. Use
+**`packageUpdate`** with **`changes: { hidden: true }`** to hide a package (or
 `false` to unhide it). See [Packages](./packages.md#hidden-packages).
 
 ## Queries and ranking
@@ -35,8 +35,8 @@ compact **domain index** instead of ranked individual hits. Each row has the
 domain id, one-line description, capability count, and two or three sample
 names. Drill in with `search({ query, domain })` or `search({ domain })`.
 Task-specific queries ("send an email to Kent") keep returning ranked results.
-`meta_list_capabilities()` returns the same domain index;
-`meta_list_capabilities({ domain })` lists that domain.
+`metaListCapabilities()` returns the same domain index;
+`metaListCapabilities({ domain })` lists that domain.
 
 ### Packages before synthesized providers
 
@@ -82,6 +82,14 @@ and `search({ domain })` do not attach memories. **execute** retrieves memories
 only when its caller opts in with **`memoryContext`**. Archived or very weak
 memory matches are not surfaced automatically.
 
+Those same ranked `search({ query })` calls may also prepend a **`## Waiting`**
+block when something the signed-in human must clear is `block` or `degraded`
+(reconnectable OAuth, expired secrets, MCP reconnects). Setup/onboarding cards
+stay off this block. At most three items, then “N more” pointing at
+`waitingSummary` and `/account/waiting`. Entity lookups, `search({ domain })`,
+and empty/broad discovery do not inject it. Matching integration hits also carry
+the reconnect `nextStep` when the last refresh was reconnectable.
+
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
 how long the ranked lookup or entity lookup took.
@@ -109,7 +117,7 @@ Examples:
 
 - `package_authoring:guide`
 - `["package_authoring:guide", "package_lifecycle:guide"]`
-- `coding_guide_get:capability`
+- `codingGuideGet:capability`
 - `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
 - `github:integration`
 - `my-package:package`
@@ -119,8 +127,8 @@ Examples:
 
 Official guides are first-class entities. Ranked search can return `{id}:guide`
 hits; `search({ entity: "package_authoring:guide" })` returns the full bundled
-markdown. Prefer that over executing `coding_guide_get` just to read a guide.
-`coding_guide_get` is for execute-module code that needs the body
+markdown. Prefer that over executing `codingGuideGet` just to read a guide.
+`codingGuideGet` is for execute-module code that needs the body
 programmatically.
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
@@ -143,9 +151,9 @@ Package entity detail is a slim index: summary, export subpaths with one-line
 purposes, job and retriever names, and the README `Intent` section. Structured
 content mirrors that index and does not contain a full export tree. When a
 community fork is behind its listing, detail includes `listingAhead: true` and a
-one-line absorb next step (`community_get`, then `repo_publish_session` with
+one-line absorb next step (`communityGet`, then `repoPublishSession` with
 `absorbed_upstream_commit`). Ranked package hits include that same notice only
-when the fork is behind. Follow the returned `package_get` / `package_authoring`
+when the fork is behind. Follow the returned `packageGet` / `package_authoring`
 pointer when you need types, external token URLs, the full README, source, or
 maintenance steps.
 
@@ -155,23 +163,21 @@ Capability detail shows the exact runtime pattern for **execute**:
 import { kody } from 'kody:runtime'
 
 export default async function main(input = {}) {
-	return await kody.email_send(input)
+	return await kody.emailSend(input)
 }
 ```
 
 Use the call shape emitted by capability detail and pass an object matching the
-displayed input type. Built-in capabilities stay flat on `kody`: valid
-JavaScript identifier ids use dot notation such as `kody.email_send(input)`, and
-non-identifier built-in ids use bracket notation such as
-`kody["capability-id"](input)`. MCP server tools are namespaced by server:
-`kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has no
+displayed input type. Built-in capabilities stay flat on `kody` as JavaScript
+identifiers such as `kody.emailSend(input)`. MCP server tools are namespaced by
+server: `kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has no
 required fields.
 
 ## When results look thin
 
 If ranked search misses what you need, **rephrase the query** or call
-**`meta_list_capabilities()`** for the domain index, then
-**`meta_list_capabilities({ domain })`** for one live domain (including dynamic
+**`metaListCapabilities()`** for the domain index, then
+**`metaListCapabilities({ domain })`** for one live domain (including dynamic
 MCP entries). **`entity`** looks up a known id; it does not improve an empty
 ranked list.
 
@@ -191,21 +197,20 @@ Long-term memory retrieval also requires a signed-in MCP user.
 
 Use **search** as the default way to discover whether an integration or secret
 already exists before switching to **execute**. Runtime code inside **execute**
-can call **`kody.secret_list(...)`** when it needs secret metadata, but
+can call **`kody.secretList(...)`** when it needs secret metadata, but
 **search** is the primary discovery path.
 
 Saved integrations and the `integration_*` capabilities live in the
-**integrations** domain (`integration_list`, `integration_get`,
-`integration_save`, `integration_lock`, `integration_delete`, plus
-`integration_oauth_app_list`, `integration_oauth_app_delete`,
-`integration_oauth_app_rotate_credentials` for shared OAuth apps, and
-`integration_token_refresh` for host-side metadata-only refresh). For a new
-provider, load `integration_bootstrap` and prefer `community_search` for a close
-helpers package before writing fetch code. For integrations.sh registry lookup,
-`community_fork` `@kody/integrations-sh`. See the OpenAPI integrations guide
-under `docs/guides/` when the API publishes a spec. For a named bind-and-call
-surface, `community_fork` `@kody/openapi` into the user's account — person
-accounts cannot import `@kody/*` live.
+**integrations** domain (`integrationList`, `integrationGet`, `integrationSave`,
+`integrationLock`, `integrationDelete`, plus `integrationOauthAppList`,
+`integrationOauthAppDelete`, `integrationOauthAppRotateCredentials` for shared
+OAuth apps, and `integrationTokenRefresh` for host-side metadata-only refresh).
+For a new provider, load `integration_bootstrap` and prefer `communitySearch`
+for a close helpers package before writing fetch code. For integrations.sh
+registry lookup, `communityFork` `@kody/integrations-sh`. See the OpenAPI
+integrations guide under `docs/guides/` when the API publishes a spec. For a
+named bind-and-call surface, `communityFork` `@kody/openapi` into the user's
+account — person accounts cannot import `@kody/*` live.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
 with `search({ entity: "integration_bootstrap:guide" })`. Inspect the relevant

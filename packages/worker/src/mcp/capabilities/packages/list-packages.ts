@@ -15,7 +15,7 @@ import {
 export const listPackagesCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
-		name: 'package_list',
+		name: 'packageList',
 		description:
 			'List saved packages for the signed-in user, including community-fork source listing provenance, so agents can discover package ids and kody ids for later execution, editing, or UI opening.',
 		keywords: ['package', 'list', 'saved packages'],

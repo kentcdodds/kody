@@ -163,7 +163,7 @@ A saved package is a repo with the package extension activated. Four concepts:
   `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
   access stays structurally impossible because storage runner names are keyed by
   the calling user's id. Platform-owned **dependencies** are excluded from that
-  grant set (`platformOwned`). Person accounts must `community_fork` an official
+  grant set (`platformOwned`). Person accounts must `communityFork` an official
   package before importing it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
@@ -206,7 +206,7 @@ and agents do not get that helper. Fleet source migrates with package codemod
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
 resolves that caller-owned person package. A `kody:@kody/...` target is not
-runnable in a person account (`community_fork` first). Foreign person accounts
+runnable in a person account (`communityFork` first). Foreign person accounts
 remain unresolvable. Platform-account packages may compose with each other.
 
 Literal `import("kody:@...")` is a teaching error: known names are static
@@ -247,7 +247,7 @@ Jobs belong to packages.
 - Package config stays keyed by the saved package id
 - Manifest `enabled` is the create-time default and can turn an existing job on.
   Republishing with `"enabled": false` does not disable a job that is already
-  running; use `job_update` (or a package pause/resume export) to turn one off.
+  running; use `jobUpdate` (or a package pause/resume export) to turn one off.
 
 Jobs are not their own top-level saved primitive.
 
@@ -282,7 +282,7 @@ publish. At runtime, event dispatch invokes the handler through the package
 execution path with package context, package-owned storage, package secrets, and
 the host-owned `kody:runtime` module.
 
-The built-in `package_subscriptions_list` capability is the generic discovery
+The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
 manifests and returns package id, `kody.id`, package name, topic, handler,
 description, and filters, optionally narrowed by exact topic.
@@ -294,9 +294,9 @@ topic). The payload is intentionally metadata-first: message id, address
 metadata, headers useful for threading, processing status, timestamps, and
 attachment metadata. Do not embed parsed bodies or attachment bytes in the
 event. Handlers should fetch full bodies or bytes only when needed through
-`email_message_get`, `email_attachment_get`, or the package runtime `email`
-helper. Reclassifying a stored message later does not retroactively dispatch
-either topic.
+`emailMessageGet`, `emailAttachmentGet`, or the package runtime `email` helper.
+Reclassifying a stored message later does not retroactively dispatch either
+topic.
 
 For user Activity failures, `run.error.recorded` dispatches best-effort after a
 successful run-record write for the owning user. The payload is metadata-first
@@ -308,7 +308,7 @@ emit (recursion guard). See
 
 For reconnectable OAuth refresh failures, `integration.auth.failed` dispatches
 best-effort from host-side `refreshIntegrationTokens`
-(`createAuthenticatedFetch` 401 retry and explicit `integration_token_refresh`).
+(`createAuthenticatedFetch` 401 retry and explicit `integrationTokenRefresh`).
 Successful refreshes and successful `/connect/oauth` token persists dispatch
 `integration.auth.succeeded`. Both payloads are metadata-first (connection name,
 account label, scopes, timestamps, and for failed: reason, optional provider
@@ -393,7 +393,7 @@ The first community listing publish similarly enqueues
 Republishes write `listing_updated` for the timeline but do not enqueue this
 topic. Payload shape, admin gating, and delivery semantics match
 [the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins);
-enqueue failures are logged and never fail `community_publish`.
+enqueue failures are logged and never fail `communityPublish`.
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.
 The isolated status worker POSTs metadata to
@@ -552,18 +552,17 @@ Retriever implementations should truncate or paginate before returning.
 
 Package source is edited and published through repo-backed flows.
 
-- prefer `repo_edit_files`, `repo_apply_patch`, and related file-level session
+- prefer `repoEditFiles`, `repoApplyPatch`, and related file-level session
   capabilities for package changes
 - repo sessions expose a file-level API (write/replace/delete/move, patch apply,
   status, diff, log, commit, restore), not arbitrary shell or git-command
   strings; keep agent-facing guidance aligned with the deployed capability
   schema
-- prefer a `repo_edit_files` `write` edit for whole-file replacements
-  (single-file job sources, freshly generated package modules, one-line config
-  edits) — it avoids the unified-diff context drift that makes `git apply`
-  heredocs brittle
-- use `package_get_git_remote` and `package_publish_external_push` when a human
-  or autonomous agent should drive a normal git client directly against the
+- prefer a `repoEditFiles` `write` edit for whole-file replacements (single-file
+  job sources, freshly generated package modules, one-line config edits) — it
+  avoids the unified-diff context drift that makes `git apply` heredocs brittle
+- use `packageGetGitRemote` and `packagePublishExternalPush` when a human or
+  autonomous agent should drive a normal git client directly against the
   package's Cloudflare Artifacts repo
 - open repo sessions by package identity when possible
 - for an existing package, treat the repo snapshot as the durable source of
@@ -572,26 +571,25 @@ Package source is edited and published through repo-backed flows.
 ## External Artifacts pushes
 
 Saved package source repos are real Cloudflare Artifacts git repositories.
-`package_get_git_remote` mints a short-lived read or write token for the
-canonical source repo and returns a plain remote URL, `git_author` (the
-signed-in Kody account), and setup commands that use `http.extraHeader` for
-secret-bearing credentials and set local git `user.email` / `user.name` from
-that account identity.
+`packageGetGitRemote` mints a short-lived read or write token for the canonical
+source repo and returns a plain remote URL, `git_author` (the signed-in Kody
+account), and setup commands that use `http.extraHeader` for secret-bearing
+credentials and set local git `user.email` / `user.name` from that account
+identity.
 
-After a direct `git push`, `package_publish_external_push` resolves the
-package's default-branch HEAD, opens a transient repo session checkout at that
-commit, and uses `publishFromExternalRef` to run the same package checks before
-advancing `entity_sources.published_commit`. Check failures return the failed
-checks and do not mutate D1, KV snapshots, published bundle artifacts, package
-projections, or vectors. Non-fast-forward external heads are refused unless the
-caller passes `allow_force: true`. When `saved_packages.locked_at` is set,
-checks still run and the result is `locked` with an approval URL;
-`published_commit` does not move until the owner promotes that commit on the
-website.
+After a direct `git push`, `packagePublishExternalPush` resolves the package's
+default-branch HEAD, opens a transient repo session checkout at that commit, and
+uses `publishFromExternalRef` to run the same package checks before advancing
+`entity_sources.published_commit`. Check failures return the failed checks and
+do not mutate D1, KV snapshots, published bundle artifacts, package projections,
+or vectors. Non-fast-forward external heads are refused unless the caller passes
+`allow_force: true`. When `saved_packages.locked_at` is set, checks still run
+and the result is `locked` with an approval URL; `published_commit` does not
+move until the owner promotes that commit on the website.
 
-When publish succeeds, `package_publish_external_push` decorates the response
-with `static_dependents`, a bounded summary of direct saved packages whose
-published bundle artifact dependency metadata references the published package.
+When publish succeeds, `packagePublishExternalPush` decorates the response with
+`static_dependents`, a bounded summary of direct saved packages whose published
+bundle artifact dependency metadata references the published package.
 `already_published` responses include the same summary when the published commit
 is available. The stale count compares each dependent artifact's captured
 dependency commit to the current published commit.
@@ -621,19 +619,19 @@ presence. Search should not frame exports or jobs as separate top-level saved
 entities.
 
 Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
-via **`package_update`** with `changes.hidden`). Ranked search excludes hidden
+via **`packageUpdate`** with `changes.hidden`). Ranked search excludes hidden
 packages by default. The public MCP **search** tool and the **meta** domain
 **search** capability both accept **`includeHiddenPackages`**. Exact package
 queries recognize user-owned UUIDs, `kody.id` values, current-origin account
 package URLs, and owner-matching hosted package URLs without mixing in semantic
 capability results. Hidden exact query matches require the opt-in; known-id
-entity lookup by UUID or `kody.id`, **`package_list`**, **`package_get`**, and
+entity lookup by UUID or `kody.id`, **`packageList`**, **`packageGet`**, and
 context-scope package retrievers are unaffected. Hiding is not deletion,
-community delisting, or entitlement exclusion. Deletion is `package_delete`
+community delisting, or entitlement exclusion. Deletion is `packageDelete`
 (agents, `confirm_name` matching the package name) or **Delete package** on the
 package page (type the package name).
 
-`package_update` is reserved for mutable package settings (`hidden`, and
+`packageUpdate` is reserved for mutable package settings (`hidden`, and
 `locked: true`; unlocking is website-only). Manifest-derived metadata and
 projections remain canonical in `package.json` and change only through save or
 publish.

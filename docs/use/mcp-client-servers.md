@@ -9,35 +9,35 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 ## Add a server
 
 1. Open [`/account/mcp-servers`](https://kody.codes/account/mcp-servers), or ask
-   your agent to use `mcp_server_add` with a short kebab-case `name` and the
+   your agent to use `mcpServerAdd` with a short kebab-case `name` and the
    server `url` (https required).
 2. If the server authenticates with a static bearer token (or other
    Authorization scheme), paste it in the optional Bearer token field — or pass
-   `bearerToken` to `mcp_server_add`. Bare tokens are sent as
+   `bearerToken` to `mcpServerAdd`. Bare tokens are sent as
    `Authorization: Bearer <token>`; scheme-prefixed values and full
    `Authorization: …` header pastes are normalized. The credential is stored
    only in your private MCP client hub and is never returned later.
 3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
-4. Confirm with `mcp_server_list` (or refresh the account page). Connected tools
+4. Confirm with `mcpServerList` (or refresh the account page). Connected tools
    show up in `search` under a `mcp:<name>` domain.
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
-lists it and links to `/account/mcp-servers/:id`. `waiting_summary` returns the
+lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the
 same items.
 
 ## Lock a server to a package
 
 By default every enabled server is callable from execute and every package. Set
 **Usage** on `/account/mcp-servers/:serverId` to **Specific packages only**, or
-ask an agent to call `mcp_server_lock` with the server and a saved `package_id`.
+ask an agent to call `mcpServerLock` with the server and a saved `package_id`.
 
 After that lock:
 
 - Ad hoc execute cannot call `kody.mcp["server-name"]`.
 - Packages that are not on the grant list cannot call it either.
 - Approved packages still can, including jobs and package apps.
-- `mcp_server_list` still shows the server to the owner.
+- `mcpServerList` still shows the server to the owner.
 
 Agents can lock (grant). Unlocking or removing a grant is website-only on that
 server's account page. See
@@ -67,8 +67,8 @@ invalid redirect URI error:
 
 1. In the remote MCP server's identity provider, allow Kody's client origin and
    register the exact redirect URI shown on `/account/mcp-servers` (also
-   returned as `oauthClientOrigin` / `oauthCallbackUrl` from `mcp_server_add`
-   and `mcp_server_list`).
+   returned as `oauthClientOrigin` / `oauthCallbackUrl` from `mcpServerAdd` and
+   `mcpServerList`).
 2. Remove and re-add the server in Kody (or reconnect) so client registration
    picks up the allowlisted values.
 3. Authorize again.

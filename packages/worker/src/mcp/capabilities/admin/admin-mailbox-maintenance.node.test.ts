@@ -161,7 +161,7 @@ function createAdminCtx() {
 	}
 }
 
-test('admin_mailbox_maintenance routes final status, retention, and delete with audits', async () => {
+test('adminMailboxMaintenance routes final status, retention, and delete with audits', async () => {
 	mockModule.loadAdminMailboxMaintenanceStatus.mockResolvedValue(emptyStatus)
 	mockModule.runAdminMailboxMaintenanceRetention.mockResolvedValue(
 		emptyRetentionResult,
@@ -181,7 +181,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 	expect(status.status.systemEmail).toEqual(emptyStatus.systemEmail)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
+			action: 'adminMailboxMaintenance',
 			result: 'success',
 		}),
 	)
@@ -233,7 +233,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			{ action: 'reconcile', batch_size: 101 },
 			ctx,
 		),
-	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
+	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
@@ -242,10 +242,10 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			},
 			ctx,
 		),
-	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
+	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler({ action: 'seed' }, ctx),
-	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
+	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
@@ -255,7 +255,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			},
 			ctx,
 		),
-	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
+	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
 
 	const notFound = new AdminMailboxMessageNotFoundError({
 		stableUserId,
@@ -281,7 +281,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 	)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_mailbox_maintenance',
+			action: 'adminMailboxMaintenance',
 			result: 'failure',
 			reason: notFound.message,
 		}),

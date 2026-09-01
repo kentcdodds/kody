@@ -50,6 +50,11 @@ const maxOnboardingNoticeConversationIds = 256
 const onboardingNoticeCooldownMs = 6 * 60 * 60 * 1000
 import { prependToolMetadataContent } from './tool-response-content.ts'
 import { finishToolTiming, startToolTiming } from './tool-timing.ts'
+import { deriveWaitingItemsForStableUser } from '#mcp/waiting/derive-waiting.ts'
+import {
+	formatSearchWaitingMarkdown,
+	toSearchWaitingStructured,
+} from './search-waiting.ts'
 
 export async function runSearchTool(input: {
 	agent: McpRegistrationAgent
@@ -453,6 +458,38 @@ export async function runSearchTool(input: {
 			if (block.type !== 'text' || !('text' in block)) return total
 			return total + (total > 0 ? 1 : 0) + block.text.length
 		}, 0)
+		const returnsDomainIndex =
+			execution.result.matches.length > 0 &&
+			execution.result.matches.every((match) => match.type === 'domain')
+		const shouldInjectWaiting =
+			userId !== null &&
+			trimmedQuery.length > 0 &&
+			!domainFilter &&
+			!returnsDomainIndex
+		let waitingMarkdown: string | null = null
+		let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
+		if (shouldInjectWaiting) {
+			try {
+				const waitingItems = await deriveWaitingItemsForStableUser({
+					env: agent.getEnv(),
+					stableUserId: userId,
+					email: callerContext.user?.email ?? '',
+				})
+				const origin = baseUrl.replace(/\/+$/, '')
+				waitingMarkdown = formatSearchWaitingMarkdown({
+					items: waitingItems,
+					origin,
+				})
+				waitingStructured = toSearchWaitingStructured({
+					items: waitingItems,
+					origin,
+				})
+			} catch {
+				waitingMarkdown = null
+				waitingStructured = null
+			}
+		}
+		const reservedWaitingChars = waitingMarkdown?.length ?? 0
 		const formattingStartMs = performance.now()
 		const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
 			payload,
@@ -469,7 +506,9 @@ export async function runSearchTool(input: {
 			}),
 			(value) => value.matches.length,
 			{
-				reservedChars: reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0,
+				reservedChars:
+					(reservedMemoryChars > 0 ? reservedMemoryChars + 1 : 0) +
+					(reservedWaitingChars > 0 ? reservedWaitingChars + 1 : 0),
 			},
 		)
 		const trimmedMatchCount = Math.max(
@@ -501,6 +540,11 @@ export async function runSearchTool(input: {
 			...(searchMemories
 				? {
 						memories: searchMemories,
+					}
+				: {}),
+			...(waitingStructured
+				? {
+						waiting: waitingStructured,
 					}
 				: {}),
 			matches: toSlimStructuredMatches({
@@ -536,6 +580,14 @@ export async function runSearchTool(input: {
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [
+				...(waitingMarkdown
+					? [
+							{
+								type: 'text' as const,
+								text: waitingMarkdown,
+							},
+						]
+					: []),
 				{
 					type: 'text',
 					text: truncateSearchText(serialized),

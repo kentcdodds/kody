@@ -28,10 +28,10 @@ export function buildOnboardingSetupPrompt() {
 	return [
 		'Help me get started with Kody.',
 		'Briefly explain what Kody can do.',
-		`Then help me give Kody access to ${formatOnboardingFeaturedMcpChoice()}: call mcp_server_add with one of ${formatOnboardingFeaturedMcpAddHint()}. If I already connected one on /onboarding, skip add and use mcp_server_list. When the result includes an authUrl, ask me to open it and authorize, then check mcp_server_list.`,
+		`Then help me give Kody access to ${formatOnboardingFeaturedMcpChoice()}: call mcpServerAdd with one of ${formatOnboardingFeaturedMcpAddHint()}. If I already connected one on /onboarding, skip add and use mcpServerList. When the result includes an authUrl, ask me to open it and authorize, then check mcpServerList.`,
 		'If none of those help, add a custom remote MCP server (name + URL) or skip to a zero-auth example.',
 		'Do not start a bring-your-own-key walkthrough unless I ask.',
-		'Smoke-test with one execute call against the connected tools, then persist that working code with package_save.',
+		'Smoke-test with one execute call against the connected tools, then persist that working code with packageSave.',
 	].join(' ')
 }
 
@@ -109,7 +109,7 @@ export function buildPersistFirstPackagePrompt(input: {
 	return [
 		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build.`,
 		step2Context,
-		`${executeHint} Show the result, then persist that working code with package_save.`,
+		`${executeHint} Show the result, then persist that working code with packageSave.`,
 		'Explain that I own the package. Ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
 		'Keep messages short. Do not poll.',
 	].join(' ')

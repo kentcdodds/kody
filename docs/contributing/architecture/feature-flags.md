@@ -54,8 +54,8 @@ default-on flag can never bypass an operator kill switch when D1 is unavailable.
 
 - **Admin UI**: `/admin/feature-flags` (+ `/admin/feature-flags.json` API),
   admin-role gated, audited via `logAuditEvent` (`feature_flag_*` actions).
-- **MCP capabilities**: `admin_feature_flag_list`, `admin_feature_flag_set`,
-  `admin_feature_flag_override` (admin role required, audited).
+- **MCP capabilities**: `adminFeatureFlagList`, `adminFeatureFlagSet`,
+  `adminFeatureFlagOverride` (admin role required, audited).
 - **Client**: evaluated per-request in `loadSessionInfo` (cached per request in
   `request-feature-flags-cache.ts`) and shipped as `session.featureFlags`; gate
   UI with `isFeatureFlagEnabled(session, key)` from
@@ -92,7 +92,7 @@ The field is compile-checked against the closed `UsageEventType` union
 (`packages/worker/universal/usage-event-types.ts`), so a flag can only be judged
 against a metric the usage-metering pipeline already collects. It stays optional
 for genuinely unmeasurable flags (like the permanent `demo-indicator`), but the
-admin UI and the `admin_feature_flag_list` capability render a notice strongly
+admin UI and the `adminFeatureFlagList` capability render a notice strongly
 recommending one everywhere else.
 
 ### Exposures
@@ -116,7 +116,7 @@ comparisons, while `rollout` users are deterministically bucketed.
 declared `eventType` over the current UTC month to date, splits users into
 on/off cohorts (excluding override and mixed-exposure users, reported
 separately), and aggregates event count, error rate, and average duration per
-cohort. The admin UI (`/admin/feature-flags`) and `admin_feature_flag_list`
-attach this readout to every measured flag. The comparison is decision support
-for a human — "keep rolling out or kill it" stays an operator call, not an
-automated one.
+cohort. The admin UI (`/admin/feature-flags`) and `adminFeatureFlagList` attach
+this readout to every measured flag. The comparison is decision support for a
+human — "keep rolling out or kill it" stays an operator call, not an automated
+one.

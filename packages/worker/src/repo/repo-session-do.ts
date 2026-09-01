@@ -336,7 +336,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		} catch (error) {
 			// Only wrap Artifacts-transient signatures (HTTP 5xx / packfile
 			// corruption). Bare Cloudflare opaque internals must stay unwrapped
-			// so repo_open_session can still match and retry with a fresh
+			// so repoOpenSession can still match and retry with a fresh
 			// session id (KODY-CLOUDFLARE-4H).
 			if (isTransientArtifactsGitError(error)) {
 				throw wrapArtifactsGitHttpError({
@@ -657,7 +657,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			publishedCommit: null,
 			sessionBaseCommit: input.sessionBaseCommit,
 			currentPublishedCommit: input.currentPublishedCommit,
-			repairHint: 'repo_rebase_session',
+			repairHint: 'repoRebaseSession',
 			message:
 				'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
 		}
@@ -977,7 +977,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const assertNoContentConflict = (path: string) => {
 			if (contentEditConflictKeys.has(editConflictKey(path))) {
 				throw new Error(
-					`repo session edits cannot combine a delete/move touching "${path}" with a write/replace/writeJson edit for the same path in one call. Split them into separate repo_edit_files calls.`,
+					`repo session edits cannot combine a delete/move touching "${path}" with a write/replace/writeJson edit for the same path in one call. Split them into separate repoEditFiles calls.`,
 				)
 			}
 		}
@@ -1259,7 +1259,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					? await assertPublishedPackageSourceRepoHead({
 							env: this.env,
 							source,
-							operation: 'repo_open_session',
+							operation: 'repoOpenSession',
 							requirePublishedCommitHead: true,
 						})
 					: null
@@ -2574,7 +2574,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				publishedCommit: null,
 				sessionBaseCommit: input.sessionRow.base_commit,
 				currentPublishedCommit: liveHead,
-				repairHint: 'repo_rebase_session',
+				repairHint: 'repoRebaseSession',
 				message:
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
@@ -2693,7 +2693,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				sessionId: input.sessionId,
 				publishedCommit: null,
 				message:
-					'Run repo_run_checks on the current session state before publishing.',
+					'Run repoRunChecks on the current session state before publishing.',
 			}
 		}
 		if ((source.published_commit ?? '') !== sessionRow.base_commit) {
@@ -2703,7 +2703,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				publishedCommit: null,
 				sessionBaseCommit: sessionRow.base_commit,
 				currentPublishedCommit: source.published_commit,
-				repairHint: 'repo_rebase_session',
+				repairHint: 'repoRebaseSession',
 				message:
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
@@ -2916,7 +2916,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw new Error(
 				buildSourceRecoveryProblemMessage({
 					source,
-					operation: 'package_publish_external_push',
+					operation: 'packagePublishExternalPush',
 					reason: message.includes('source clone or commit checkout failed:')
 						? message
 						: `source clone or commit checkout failed: ${message}`,

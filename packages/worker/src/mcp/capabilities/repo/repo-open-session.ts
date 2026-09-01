@@ -40,7 +40,7 @@ function delay(ms: number) {
 function mapOpenSessionError(error: unknown): never {
 	const message = getErrorMessage(error)
 	// Unpublished git-lane pushes leave HEAD ahead of published_commit
-	// until package_publish_external_push (or reconcile) lands. Keep the
+	// until packagePublishExternalPush (or reconcile) lands. Keep the
 	// safety gate, but classify it as a caller precondition so Sentry
 	// does not open platform-bug issues for expected workflow state.
 	if (isPublishedCommitHeadMismatchMessage(message)) {
@@ -55,7 +55,7 @@ function mapOpenSessionError(error: unknown): never {
 export const repoOpenSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_open_session',
+		name: 'repoOpenSession',
 		description:
 			"Open or resume an MCP-native repo-backed editing session for a saved source artifact when editing through Kody tools instead of a local clone. Later repo capabilities can read, search, edit, validate, and publish against a mutable session branch. Pass conversation_id to resume that conversation's active session. Omitting conversation_id always mints a new session so concurrent callers of the same source do not share a workspace that has not checkpointed yet.",
 		keywords: ['repo', 'session', 'open', 'resume', 'artifact', 'source'],
@@ -68,7 +68,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 			const user = ctx.callerContext.user
 			if (!user) {
 				throw new McpCallerError(
-					'repo_open_session requires an authenticated user.',
+					'repoOpenSession requires an authenticated user.',
 				)
 			}
 
@@ -142,7 +142,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					console.warn(
 						JSON.stringify({
 							message:
-								'repo_open_session transient Cloudflare opaque internal error',
+								'repoOpenSession transient Cloudflare opaque internal error',
 							sourceId: requested.source.id,
 							attempt: attempt + 1,
 							nextDelayMs: retryDelayMs,

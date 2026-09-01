@@ -72,7 +72,7 @@ test('published commit HEAD mismatch messages are detected for caller-error clas
 			published_commit: 'commit-published',
 			repo_id: 'package-1',
 		}),
-		operation: 'repo_open_session',
+		operation: 'repoOpenSession',
 		reason:
 			'artifact source repo "package-1" default branch HEAD "commit-unpublished" does not match published commit "commit-published"',
 	})
@@ -81,13 +81,13 @@ test('published commit HEAD mismatch messages are detected for caller-error clas
 		isPublishedCommitHeadMismatchMessage(
 			buildSourceRecoveryProblemMessage({
 				source: packageSource(),
-				operation: 'repo_open_session',
+				operation: 'repoOpenSession',
 				reason: 'artifact source repo "package-1" was not found',
 			}),
 		),
 	).toBe(false)
 	expect(buildPublishedCommitHeadMismatchCallerMessage(mismatch)).toContain(
-		'package_publish_external_push',
+		'packagePublishExternalPush',
 	)
 })
 
@@ -98,7 +98,7 @@ test('package source overwrite and private-visibility changes require explicit c
 			env: createEnvWithSnapshot({ 'package.json': '{}' }),
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'package_save',
+			operation: 'packageSave',
 		})
 	} catch (error) {
 		overwriteMessage = error instanceof Error ? error.message : String(error)
@@ -107,7 +107,7 @@ test('package source overwrite and private-visibility changes require explicit c
 	expect(isDestructiveOverwriteConfirmationMessage(overwriteMessage)).toBe(true)
 	expect(
 		isDestructiveOverwriteConfirmationMessage(
-			'package_save stopped by the production package source safety policy.',
+			'packageSave stopped by the production package source safety policy.',
 		),
 	).toBe(false)
 
@@ -117,7 +117,7 @@ test('package source overwrite and private-visibility changes require explicit c
 			beforeContent: '{"name":"@x/y","private":true}',
 			afterContent: '{"name":"@x/y","private":false}',
 			isNewPackage: false,
-			operation: 'package_save',
+			operation: 'packageSave',
 		})
 	} catch (error) {
 		visibilityMessage = error instanceof Error ? error.message : String(error)
@@ -128,7 +128,7 @@ test('package source overwrite and private-visibility changes require explicit c
 	)
 	expect(
 		isPrivateVisibilityChangeConfirmationMessage(
-			'package_save would overwrite existing package source "source-1".',
+			'packageSave would overwrite existing package source "source-1".',
 		),
 	).toBe(false)
 })
@@ -139,7 +139,7 @@ test('restorable package source snapshot verification rejects corrupt snapshots 
 			env: createEnvWithSnapshot(null),
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'package_publish_external_push force publish',
+			operation: 'packagePublishExternalPush force publish',
 		}),
 	).rejects.toThrow('Stop and report this source recovery problem')
 
@@ -148,7 +148,7 @@ test('restorable package source snapshot verification rejects corrupt snapshots 
 			env: createEnvWithSnapshot({ 'src/index.ts': 'export {}' }),
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'package_publish_external_push force publish',
+			operation: 'packagePublishExternalPush force publish',
 		}),
 	).rejects.toThrow('missing manifest "package.json"')
 
@@ -162,7 +162,7 @@ test('restorable package source snapshot verification rejects corrupt snapshots 
 			}),
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'package_publish_external_push force publish',
+			operation: 'packagePublishExternalPush force publish',
 		}),
 	).rejects.toThrow('the published source snapshot is missing or malformed')
 
@@ -174,7 +174,7 @@ test('restorable package source snapshot verification rejects corrupt snapshots 
 			}),
 			userId: 'user-1',
 			source: packageSource(),
-			operation: 'package_get_git_remote write access',
+			operation: 'packageGetGitRemote write access',
 		}),
 	).resolves.toEqual({
 		sourceId: 'source-1',

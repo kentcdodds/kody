@@ -67,7 +67,7 @@ function createSavedPackage() {
 	}
 }
 
-test('package_delete requires the owner-typed package name before deleting', async () => {
+test('packageDelete requires the owner-typed package name before deleting', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.deleteSavedPackageProjection.mockResolvedValue(undefined)
 	const expectedError =

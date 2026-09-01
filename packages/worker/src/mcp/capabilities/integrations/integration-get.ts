@@ -17,9 +17,9 @@ const outputSchema = z.object({
 export const integrationGetCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_get',
+		name: 'integrationGet',
 		description:
-			'Read an OAuth integration connection by name. Tokens live on the connection — call createAuthenticatedFetch(name) or integration_token_refresh. Do not persist tokens with secret_set.',
+			'Read an OAuth integration connection by name. Tokens live on the connection — call createAuthenticatedFetch(name) or integrationTokenRefresh. Do not persist tokens with secretSet.',
 		keywords: [
 			'integration',
 			'oauth',

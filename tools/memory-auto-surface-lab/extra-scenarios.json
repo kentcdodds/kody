@@ -15,7 +15,7 @@
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "fresh"
 			}
@@ -32,19 +32,19 @@
 		"calls": [
 			{
 				"tool": "search",
-				"query": "email_send capability",
+				"query": "emailSend capability",
 				"memoryContext": true,
 				"conversationId": "fresh"
 			},
 			{
 				"tool": "search",
-				"query": "email_message_list recent",
+				"query": "emailMessageList recent",
 				"memoryContext": true,
 				"conversationId": "echo"
 			},
 			{
 				"tool": "execute",
-				"query": "email_send draft",
+				"query": "emailSend draft",
 				"memoryContext": true,
 				"conversationId": "echo"
 			}
@@ -62,19 +62,19 @@
 		"calls": [
 			{
 				"tool": "execute",
-				"query": "email_message_list()",
+				"query": "emailMessageList()",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_get(id)",
+				"query": "emailMessageGet(id)",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "omit"
 			}
@@ -116,7 +116,7 @@
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "echo"
 			}
@@ -125,7 +125,7 @@
 	},
 	{
 		"id": "execute-only-agent-no-warmup",
-		"name": "Execute-only jump to email_send with no memoryContext",
+		"name": "Execute-only jump to emailSend with no memoryContext",
 		"host": "both",
 		"windowSize": 999,
 		"expectVisible": true,
@@ -134,7 +134,7 @@
 		"calls": [
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "fresh"
 			}
@@ -169,7 +169,7 @@
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "echo"
 			}
@@ -198,7 +198,7 @@
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, html })",
+				"query": "emailSend({ to, subject, html })",
 				"memoryContext": true,
 				"conversationId": "echo"
 			}
@@ -216,43 +216,43 @@
 		"calls": [
 			{
 				"tool": "search",
-				"query": "email_send",
+				"query": "emailSend",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_list()",
+				"query": "emailMessageList()",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_get(1)",
+				"query": "emailMessageGet(1)",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_get(2)",
+				"query": "emailMessageGet(2)",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_get(3)",
+				"query": "emailMessageGet(3)",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_get(4)",
+				"query": "emailMessageGet(4)",
 				"memoryContext": false,
 				"conversationId": "omit"
 			},
 			{
 				"tool": "execute",
-				"query": "email_send({ to, subject, body })",
+				"query": "emailSend({ to, subject, body })",
 				"memoryContext": false,
 				"conversationId": "omit"
 			}
@@ -269,13 +269,13 @@
 		"calls": [
 			{
 				"tool": "search",
-				"query": "email_send capability",
+				"query": "emailSend capability",
 				"memoryContext": true,
 				"conversationId": "fresh"
 			},
 			{
 				"tool": "execute",
-				"query": "email_message_list({ limit: 10 })",
+				"query": "emailMessageList({ limit: 10 })",
 				"memoryContext": true,
 				"conversationId": "echo"
 			}

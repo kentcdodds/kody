@@ -10,7 +10,7 @@ const ctx = {
 	},
 }
 
-test('coding_guide_get serves every bundled guide without frontmatter', async () => {
+test('codingGuideGet serves every bundled guide without frontmatter', async () => {
 	expect(guides.length).toBeGreaterThan(0)
 	for (const guide of guides) {
 		const result = await kodyOfficialGuideCapability.handler(

@@ -259,7 +259,7 @@ function buildPackageFiles(input: { name: string; kodyId: string }) {
 	]
 }
 
-test('package_save maps id mismatch, legacy name collision, and UNIQUE insert races to caller errors', async () => {
+test('packageSave maps id mismatch, legacy name collision, and UNIQUE insert races to caller errors', async () => {
 	setupPersistenceMocks()
 	const mismatchEmail = 'mismatch@example.com'
 	const mismatchUserId = await createStableUserIdFromEmail(mismatchEmail)

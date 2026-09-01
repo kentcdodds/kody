@@ -31,14 +31,14 @@ export const adminUserGetCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_user_get',
+		name: 'adminUserGet',
 		description:
 			'Get one user account metadata record and roles by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: ['admin', 'user', 'account', 'roles', 'lookup', 'rbac'],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			return auditAdminCapabilityInvocation(ctx, 'admin_user_get', async () => {
+			return auditAdminCapabilityInvocation(ctx, 'adminUserGet', async () => {
 				const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
 				return { user }
 			})

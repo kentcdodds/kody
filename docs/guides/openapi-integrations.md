@@ -21,10 +21,10 @@ the packages-first path for OpenAPI-backed APIs.
 Do not hand-roll a full client from a spec when a maintained wrapper already
 exists.
 
-1. `community_search` for a close helpers package that already wraps the
+1. `communitySearch` for a close helpers package that already wraps the
    provider.
-2. If one fits, inspect it with `community_get` and review the source.
-3. `community_fork` it into the user's account, adapt it, then publish.
+2. If one fits, inspect it with `communityGet` and review the source.
+3. `communityFork` it into the user's account, adapt it, then publish.
 4. Authenticate outbound calls with `createAuthenticatedFetch` (OAuth
    integration) or secret placeholders (`{{secret:<name>}}`) after the user has
    finished connect/setup.
@@ -32,7 +32,7 @@ exists.
 ## When nothing close exists
 
 If community search finds no close package, prefer `@kody/openapi` for standard
-bind-and-call. Person accounts cannot import `@kody/*` live — `community_fork`
+bind-and-call. Person accounts cannot import `@kody/*` live — `communityFork`
 the listing first, then import the copy.
 
 Write a thin helpers package with `createAuthenticatedFetch` (or secret-backed
@@ -74,7 +74,7 @@ suggested hosts as approval.
 
 Choose the auth path from the provider's official docs:
 
-- OAuth authorization-code → `integration_save` + `/connect/oauth` +
+- OAuth authorization-code → `integrationSave` + `/connect/oauth` +
   `createAuthenticatedFetch`
 - Bearer / API key → a secret placeholder and approved hosts
 

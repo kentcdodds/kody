@@ -166,7 +166,7 @@ test('repo target accepts camelCase aliases for its snake_case fields', () => {
 	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
 })
 
-test('repo_open_session maps published HEAD mismatch to McpCallerError', async () => {
+test('repoOpenSession maps published HEAD mismatch to McpCallerError', async () => {
 	resetMocks()
 	const email = 'head-mismatch@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -197,7 +197,7 @@ test('repo_open_session maps published HEAD mismatch to McpCallerError', async (
 		new Error(
 			buildSourceRecoveryProblemMessage({
 				source,
-				operation: 'repo_open_session',
+				operation: 'repoOpenSession',
 				reason: `artifact source repo "${source.repo_id}" default branch HEAD "commit-unpublished" does not match published commit "${source.published_commit}"`,
 			}),
 		),
@@ -218,12 +218,12 @@ test('repo_open_session maps published HEAD mismatch to McpCallerError', async (
 
 	expect(error).toBeInstanceOf(McpCallerError)
 	expect(error).toMatchObject({
-		message: expect.stringContaining('package_publish_external_push'),
+		message: expect.stringContaining('packagePublishExternalPush'),
 	})
 	expect(openRpc.openSession).toHaveBeenCalled()
 })
 
-test('repo_open_session enforces the repo sessions entitlement for plan users opening a new session', async () => {
+test('repoOpenSession enforces the repo sessions entitlement for plan users opening a new session', async () => {
 	resetMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -272,7 +272,7 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 		)
 
 	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from repo_open_session.')
+		throw new Error('Expected an EntitlementLimitError from repoOpenSession.')
 	}
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
@@ -284,7 +284,7 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 	expect(openRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session resumes an existing active session without enforcing the repo sessions entitlement', async () => {
+test('repoOpenSession resumes an existing active session without enforcing the repo sessions entitlement', async () => {
 	resetMocks()
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -341,7 +341,7 @@ test('repo_open_session resumes an existing active session without enforcing the
 	expect(resumeRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session mints a new session when conversation_id is omitted', async () => {
+test('repoOpenSession mints a new session when conversation_id is omitted', async () => {
 	resetMocks()
 	const email = 'mint-new@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -394,7 +394,7 @@ test('repo_open_session mints a new session when conversation_id is omitted', as
 	expect(mockModule.countActiveRepoSessions).toHaveBeenCalled()
 })
 
-test('repo_open_session allows below-max usage and denies at the max plan ceiling', async () => {
+test('repoOpenSession allows below-max usage and denies at the max plan ceiling', async () => {
 	resetMocks()
 	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
@@ -490,7 +490,7 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 	expect(deniedRpc.openSession).not.toHaveBeenCalled()
 })
 
-test('repo_open_session retries opaque Cloudflare internal errors then rethrows when exhausted', async () => {
+test('repoOpenSession retries opaque Cloudflare internal errors then rethrows when exhausted', async () => {
 	consoleWarn.mockImplementation(() => {})
 	resetMocks()
 	const email = 'opaque-internal@example.com'
@@ -541,7 +541,7 @@ test('repo_open_session retries opaque Cloudflare internal errors then rethrows 
 	expect(mockModule.repoSessionRpc).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining(
-			'repo_open_session transient Cloudflare opaque internal error',
+			'repoOpenSession transient Cloudflare opaque internal error',
 		),
 	)
 

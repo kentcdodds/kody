@@ -8,13 +8,18 @@ import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-r
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	buildPackageFilesView,
-	getAccountPackageFilesHref,
+	fallbackDefaultBranchName,
+	findDirectoryReadmePath,
 	getCommunityPackageFilesHref,
+	getPackageTreeHref,
+	isPublicTreeDefaultRefAlias,
 	normalizePackageFilesPath,
 	type PackageFilesView,
 } from '#universal/package-files.ts'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
+import { loadPackagePage } from '#app/package-page.ts'
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	highlightMarkdownFences,
 	highlightSnippets,
@@ -40,6 +45,10 @@ async function toLoaderData(input: {
 	filesBasePath: string
 	view: PackageFilesView
 	serverTiming?: Array<ServerTimingEntry>
+	username?: string
+	kodyId?: string
+	viewerIsOwner?: boolean
+	isPrivate?: boolean
 }): Promise<PackageFilesLoaderData> {
 	const content = input.view.content
 	const language = input.view.language
@@ -77,11 +86,29 @@ async function toLoaderData(input: {
 		language,
 		contentFences,
 		contentHighlighted,
+		username: input.username,
+		kodyId: input.kodyId,
+		viewerIsOwner: input.viewerIsOwner,
+		isPrivate: input.isPrivate,
+	}
+}
+
+async function readOptionalViewerUserId(input: { env: Env; request: Request }) {
+	try {
+		const user = await readAuthenticatedAppUser(input.request, input.env)
+		return user?.mcpUser.userId ?? null
+	} catch (error) {
+		console.error(
+			'Failed to resolve authenticated viewer for package files:',
+			error,
+		)
+		return null
 	}
 }
 
 export async function loadCommunityPackageFilesData(input: {
 	env: Env
+	request: Request
 	listingId: string
 	selectedPath: string
 	ref?: string
@@ -94,15 +121,19 @@ export async function loadCommunityPackageFilesData(input: {
 	if (!listing) return null
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
-	const treeRef = input.ref?.trim() || 'HEAD'
+	const treeRef = input.ref?.trim() ?? ''
 	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
-	const resolvedCommit = await resolvePublicTreeCommit({
+	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
 		sourceRepoId: source?.repo_id ?? null,
 		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
 		pinnedCommit: listing.pinnedCommit,
 		ref: treeRef,
 	})
+	const resolvedCommit = resolved.commit
+	const urlRef = isPublicTreeDefaultRefAlias(treeRef)
+		? resolved.defaultBranch
+		: treeRef
 	const loaded = await loadPublicTreeFiles({
 		env: input.env,
 		listingId: listing.id,
@@ -128,7 +159,7 @@ export async function loadCommunityPackageFilesData(input: {
 		listingId: listing.id,
 		ownerUsername,
 		kodyId: listing.kodyId,
-		ref: treeRef,
+		ref: urlRef,
 	})
 	const view = buildPackageFilesView({
 		files,
@@ -136,6 +167,10 @@ export async function loadCommunityPackageFilesData(input: {
 	})
 	if (!view) return null
 
+	const viewerUserId = await readOptionalViewerUserId({
+		env: input.env,
+		request: input.request,
+	})
 	return toLoaderData({
 		env: input.env,
 		title: listing.name,
@@ -144,10 +179,14 @@ export async function loadCommunityPackageFilesData(input: {
 			ownerUsername,
 			kodyId: listing.kodyId,
 		}),
-		backLabel: 'Package listing',
+		backLabel: 'Code',
 		filesBasePath,
 		view,
 		serverTiming: input.serverTiming,
+		username: ownerUsername ?? undefined,
+		kodyId: listing.kodyId,
+		viewerIsOwner: viewerUserId === listing.ownerUserId,
+		isPrivate: false,
 	})
 }
 
@@ -157,10 +196,10 @@ async function resolvePublicTreeCommit(input: {
 	publishedCommit: string | null
 	pinnedCommit: string
 	ref: string
-}): Promise<string | null> {
-	const ref = input.ref.trim() || 'HEAD'
+}): Promise<{ commit: string | null; defaultBranch: string }> {
+	const ref = input.ref.trim()
 	let headCommit: string | null = null
-	let defaultBranch = 'main'
+	let defaultBranch = fallbackDefaultBranchName
 	if (input.sourceRepoId) {
 		try {
 			const head = await resolveArtifactSourceHead(
@@ -168,35 +207,41 @@ async function resolvePublicTreeCommit(input: {
 				input.sourceRepoId,
 			)
 			headCommit = head.commit
-			defaultBranch = head.branch || 'main'
+			defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
 		} catch {
 			headCommit = input.publishedCommit
 		}
 	}
-	if (ref === 'HEAD' || ref === defaultBranch) {
-		return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+	if (isPublicTreeDefaultRefAlias(ref) || ref === defaultBranch) {
+		return {
+			commit: headCommit ?? input.publishedCommit ?? input.pinnedCommit,
+			defaultBranch,
+		}
 	}
 	if (headCommit && (headCommit === ref || headCommit.startsWith(ref))) {
-		return headCommit
+		return { commit: headCommit, defaultBranch }
 	}
 	if (
 		input.publishedCommit &&
 		(input.publishedCommit === ref || input.publishedCommit.startsWith(ref))
 	) {
-		return input.publishedCommit
+		return { commit: input.publishedCommit, defaultBranch }
 	}
 	if (input.pinnedCommit === ref || input.pinnedCommit.startsWith(ref)) {
-		return input.pinnedCommit
+		return { commit: input.pinnedCommit, defaultBranch }
 	}
 	if (/^[0-9a-f]{7,40}$/i.test(ref)) {
-		return ref
+		return { commit: ref, defaultBranch }
 	}
-	return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+	return {
+		commit: headCommit ?? input.publishedCommit ?? input.pinnedCommit,
+		defaultBranch,
+	}
 }
 
 async function loadPublicTreeFiles(input: {
 	env: Env
-	listingId: string
+	listingId?: string | null
 	sourceId: string
 	sourceRepoId: string | null
 	commit: string | null
@@ -234,7 +279,7 @@ async function loadPublicTreeFiles(input: {
 			// Fall through to the listing pin snapshot.
 		}
 	}
-	if (input.env.BUNDLE_ARTIFACTS_KV) {
+	if (input.listingId && input.env.BUNDLE_ARTIFACTS_KV) {
 		const listingSnapshot = await readCommunitySnapshot(
 			input.env.BUNDLE_ARTIFACTS_KV,
 			input.listingId,
@@ -243,7 +288,7 @@ async function loadPublicTreeFiles(input: {
 			return { files: listingSnapshot.files, fromListingSnapshot: true }
 		}
 	}
-	return { files: {}, fromListingSnapshot: true }
+	return { files: {}, fromListingSnapshot: Boolean(input.listingId) }
 }
 
 export async function loadAccountPackageFilesData(input: {
@@ -253,6 +298,7 @@ export async function loadAccountPackageFilesData(input: {
 	username: string
 	packageId: string
 	selectedPath: string
+	ref?: string
 	serverTiming?: Array<ServerTimingEntry>
 }): Promise<PackageFilesLoaderData | null> {
 	const record = await getSavedPackageById(input.env.APP_DB, {
@@ -261,17 +307,38 @@ export async function loadAccountPackageFilesData(input: {
 	})
 	if (!record) return null
 
-	let files: Record<string, string> = {}
-	try {
-		const loaded = await loadPackageSourceBySourceId({
-			env: input.env,
-			baseUrl: getAppBaseUrl({ env: input.env, requestUrl: input.request.url }),
-			userId: input.userId,
-			sourceId: record.sourceId,
-		})
-		files = loaded.files
-	} catch {
-		files = {}
+	const source = await getEntitySourceById(input.env.APP_DB, record.sourceId)
+	const treeRef = input.ref?.trim() ?? ''
+	const resolved = await resolvePublicTreeCommit({
+		env: input.env,
+		sourceRepoId: source?.repo_id ?? null,
+		publishedCommit: source?.published_commit ?? '',
+		pinnedCommit: source?.published_commit ?? '',
+		ref: treeRef,
+	})
+	const loaded = await loadPublicTreeFiles({
+		env: input.env,
+		sourceId: record.sourceId,
+		sourceRepoId: source?.repo_id ?? null,
+		commit: resolved.commit,
+		pinnedCommit: source?.published_commit ?? '',
+	})
+	let files = loaded.files
+	if (Object.keys(files).length === 0) {
+		try {
+			const packageSource = await loadPackageSourceBySourceId({
+				env: input.env,
+				baseUrl: getAppBaseUrl({
+					env: input.env,
+					requestUrl: input.request.url,
+				}),
+				userId: input.userId,
+				sourceId: record.sourceId,
+			})
+			files = packageSource.files
+		} catch {
+			files = {}
+		}
 	}
 
 	const view = buildPackageFilesView({
@@ -280,6 +347,9 @@ export async function loadAccountPackageFilesData(input: {
 	})
 	if (!view) return null
 
+	const urlRef = isPublicTreeDefaultRefAlias(treeRef)
+		? resolved.defaultBranch
+		: treeRef || resolved.defaultBranch
 	return toLoaderData({
 		env: input.env,
 		title: record.name,
@@ -287,9 +357,93 @@ export async function loadAccountPackageFilesData(input: {
 			username: input.username,
 			kodyId: record.kodyId,
 		}),
-		backLabel: 'Package',
-		filesBasePath: getAccountPackageFilesHref({ packageId: record.id }),
+		backLabel: 'Code',
+		filesBasePath: getPackageTreeHref({
+			username: input.username,
+			kodyId: record.kodyId,
+			ref: urlRef,
+		}),
 		view,
 		serverTiming: input.serverTiming,
+		username: input.username,
+		kodyId: record.kodyId,
+		viewerIsOwner: true,
+		isPrivate: record.isPrivate,
 	})
+}
+
+export async function loadAccessiblePackageFilesData(input: {
+	env: Env
+	request: Request
+	username: string
+	kodyId: string
+	selectedPath: string
+	ref?: string
+	serverTiming?: Array<ServerTimingEntry>
+}): Promise<PackageFilesLoaderData | null> {
+	const page = await loadPackagePage({
+		env: input.env,
+		request: input.request,
+		username: input.username,
+		kodyId: input.kodyId,
+	})
+	if (page.kind !== 'page') return null
+
+	if (page.listing?.listing) {
+		const data = await loadCommunityPackageFilesData({
+			env: input.env,
+			request: input.request,
+			listingId: page.listing.listing.id,
+			selectedPath: input.selectedPath,
+			ref: input.ref,
+			serverTiming: input.serverTiming,
+		})
+		if (!data) return null
+		return {
+			...data,
+			viewerIsOwner: page.viewerIsOwner,
+			isPrivate: page.ownerPackage?.isPrivate ?? false,
+			username: page.username,
+			kodyId: page.kodyId,
+		}
+	}
+
+	if (!page.ownerPackage) return null
+	const user = await readAuthenticatedAppUser(input.request, input.env)
+	if (!user) return null
+	return loadAccountPackageFilesData({
+		env: input.env,
+		request: input.request,
+		userId: user.mcpUser.userId,
+		username: page.username,
+		packageId: page.ownerPackage.id,
+		selectedPath: input.selectedPath,
+		ref: input.ref,
+		serverTiming: input.serverTiming,
+	})
+}
+
+export async function loadOwnerPackageReadme(input: {
+	env: Env
+	request: Request
+	userId: string
+	sourceId: string
+}): Promise<string | null> {
+	try {
+		const loaded = await loadPackageSourceBySourceId({
+			env: input.env,
+			baseUrl: getAppBaseUrl({
+				env: input.env,
+				requestUrl: input.request.url,
+			}),
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+		const path = findDirectoryReadmePath(loaded.files, '')
+		if (!path) return null
+		const content = loaded.files[path]?.trim()
+		return content ? content : null
+	} catch {
+		return null
+	}
 }

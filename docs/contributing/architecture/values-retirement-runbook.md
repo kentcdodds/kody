@@ -10,9 +10,9 @@ save is gone. Search, domain listing, MCP instructions, and `values:guide`
 advertisements do not mention values. The unadvertised `values` guide stays
 callable by exact entity id. `primitives.yaml` has no `id: values` entry.
 
-`value_get` / `value_list` / `value_delete` remain as an unadvertised drain
-until the D1 tables drop. `/account/values` stays as an operator drain and is
-not in account nav. There is no `values-writes` feature flag.
+`valueGet` / `valueList` / `valueDelete` remain as an unadvertised drain until
+the D1 tables drop. `/account/values` stays as an operator drain and is not in
+account nav. There is no `values-writes` feature flag.
 
 Live leftover count as of 2026-08-24: 19 buckets / 46 entries / 19 users; 0
 `onboardingChecklistDismissed` leftovers.
@@ -44,10 +44,10 @@ lives in `docs/guides/values.md` and stays unadvertised. An empty
 ## Remaining work
 
 Expand/contract leftover: keep the unadvertised drain until leftover rows are
-gone, then drop `value_get` / `value_list` / `value_delete` and the
-`value_entries` / `value_buckets` tables. Do not drop the D1 tables in the same
-deploy that first disables reads. Account export should have a final snapshot
-before the drop.
+gone, then drop `valueGet` / `valueList` / `valueDelete` and the `value_entries`
+/ `value_buckets` tables. Do not drop the D1 tables in the same deploy that
+first disables reads. Account export should have a final snapshot before the
+drop.
 
 Re-query leftover counts before the table-drop PR:
 

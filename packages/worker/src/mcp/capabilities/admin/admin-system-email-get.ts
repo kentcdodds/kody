@@ -42,7 +42,7 @@ export const adminSystemEmailGetCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_system_email_get',
+		name: 'adminSystemEmailGet',
 		description:
 			'Read one operator-owned system inbox message, including body content and attachment metadata. Admin-only; never reads user-owned email.',
 		keywords: [
@@ -58,7 +58,7 @@ export const adminSystemEmailGetCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_system_email_get',
+				'adminSystemEmailGet',
 				async () => {
 					const message = await loadAdminSystemEmailMessageById(
 						ctx.env.APP_DB,

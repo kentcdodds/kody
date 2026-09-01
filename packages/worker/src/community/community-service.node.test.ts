@@ -1180,7 +1180,7 @@ test('forkCommunityListing rejects repeat fork without a new kody_id', async () 
 			listingId: 'listing-1',
 		}),
 	).rejects.toThrow(
-		'You already forked this listing with kody id "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repo_open_session, or pass a different kody_id to fork again.',
+		'You already forked this listing with kody id "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repoOpenSession, or pass a different kody_id to fork again.',
 	)
 
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()

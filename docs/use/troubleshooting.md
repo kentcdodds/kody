@@ -63,7 +63,7 @@ Cloudflare Tunnel and Access, also see
 
 - **Rephrase the query** using domain vocabulary from the search tool’s domain
   hints (for example “GitHub”, “Cloudflare”, “meta capabilities”).
-- Try **`meta_list_capabilities`** for the full live registry, including dynamic
+- Try **`metaListCapabilities`** for the full live registry, including dynamic
   entries from MCP servers.
 - **`entity: "id:capability"`** looks up a **known** id. It does **not** turn an
   empty ranked **`query`** into better matches — rephrase or list capabilities
@@ -95,7 +95,7 @@ signed in, user-scoped package results are empty.
 ## MCP servers
 
 If tools from a connected MCP server appear missing, open
-[`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcp_server_list`) and
+[`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcpServerList`) and
 confirm the server is connected and authorized. When **Usage** is **Specific
 packages only**, ad hoc execute and other packages cannot see or call
 `kody.mcp["server-name"]` — only granted packages can. Home automation is a
@@ -112,6 +112,6 @@ reset email.
 ## Job, webhook, or package app failed
 
 Open **[`/account/activity`](./activity.md)** (failures-first) or ask your agent
-to use **`run_summary`** / **`run_list`** / **`run_get`**. Successful key-less
+to use **`runSummary`** / **`runList`** / **`runGet`**. Successful key-less
 ad-hoc **`execute`** calls are not stored there — only execute failures, keyed
 execute runs (including successes), and other runtime surfaces.

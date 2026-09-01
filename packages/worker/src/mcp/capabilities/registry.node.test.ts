@@ -95,27 +95,25 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 		callerContext: regularContext,
 	})
 
-	expect(adminRegistry.capabilityMap.admin_user_list).toBeTruthy()
-	expect(adminRegistry.capabilityMap.admin_user_meter_parity).toBeTruthy()
-	expect(adminRegistry.capabilityMap.admin_account_deletion_abort).toBeTruthy()
-	expect(adminRegistry.capabilityMap.admin_mailbox_maintenance).toBeTruthy()
+	expect(adminRegistry.capabilityMap.adminUserList).toBeTruthy()
+	expect(adminRegistry.capabilityMap.adminUserMeterParity).toBeTruthy()
+	expect(adminRegistry.capabilityMap.adminAccountDeletionAbort).toBeTruthy()
+	expect(adminRegistry.capabilityMap.adminMailboxMaintenance).toBeTruthy()
 	expect(
-		adminRegistry.capabilityMap.admin_user_meter_storage_reconcile,
+		adminRegistry.capabilityMap.adminUserMeterStorageReconcile,
 	).toBeTruthy()
 	expect(
 		adminRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(true)
-	expect(regularRegistry.capabilityMap.admin_user_list).toBeUndefined()
-	expect(regularRegistry.capabilityMap.admin_user_meter_parity).toBeUndefined()
+	expect(regularRegistry.capabilityMap.adminUserList).toBeUndefined()
+	expect(regularRegistry.capabilityMap.adminUserMeterParity).toBeUndefined()
 	expect(
-		regularRegistry.capabilityMap.admin_account_deletion_abort,
+		regularRegistry.capabilityMap.adminAccountDeletionAbort,
 	).toBeUndefined()
 	expect(
-		regularRegistry.capabilityMap.admin_user_meter_storage_reconcile,
+		regularRegistry.capabilityMap.adminUserMeterStorageReconcile,
 	).toBeUndefined()
-	expect(
-		regularRegistry.capabilityMap.admin_mailbox_maintenance,
-	).toBeUndefined()
+	expect(regularRegistry.capabilityMap.adminMailboxMaintenance).toBeUndefined()
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)

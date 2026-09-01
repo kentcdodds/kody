@@ -36,7 +36,7 @@ export const adminPackageScopeGrantCreateCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_package_scope_grant_create',
+		name: 'adminPackageScopeGrantCreate',
 		description:
 			'Grant a person account permission to act inside a platform account package scope. Grants are only possible on platform accounts. Admin-only; does not expose package contents.',
 		keywords: [
@@ -54,7 +54,7 @@ export const adminPackageScopeGrantCreateCapability = defineDomainCapability(
 			const username = normalizeUsername(args.username)
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_scope_grant_create',
+				'adminPackageScopeGrantCreate',
 				async () => {
 					const platformAccount = await getPlatformAccountByUsername(
 						ctx.env.APP_DB,

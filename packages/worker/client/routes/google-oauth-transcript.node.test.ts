@@ -26,8 +26,8 @@ test('google oauth transcript covers discover, console, and connect', () => {
 		tools.every((tool) =>
 			tool.inputs.every(
 				(input) =>
-					!input.value.includes('package_save') &&
-					!input.value.includes('community_fork') &&
+					!input.value.includes('packageSave') &&
+					!input.value.includes('communityFork') &&
 					!input.value.includes('packages.invoke'),
 			),
 		),

@@ -32,7 +32,7 @@ function parseDetail(value: string) {
 export const emailDeliveryEventListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_delivery_event_list',
+		name: 'emailDeliveryEventList',
 		description:
 			'List stored email delivery events, including outbound provider lifecycle updates and SMTP details.',
 		keywords: [

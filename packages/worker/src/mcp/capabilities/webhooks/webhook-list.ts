@@ -8,9 +8,9 @@ import { listedWebhookSchema, toListedWebhookCapability } from './shared.ts'
 export const webhookListCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_list',
+		name: 'webhookList',
 		description:
-			"List package.json#kody.webhooks declarations across the signed-in user's saved packages, joined with minted URL / enabled state. Declaring a webhook does not open ingress until webhook_url_mint is called. URL secrets are never returned.",
+			"List package.json#kody.webhooks declarations across the signed-in user's saved packages, joined with minted URL / enabled state. Declaring a webhook does not open ingress until webhookUrlMint is called. URL secrets are never returned.",
 		keywords: [
 			'webhook',
 			'list',

@@ -17,7 +17,16 @@ export const turnstileWidgetClassName = 'kody-turnstile'
 type TurnstileApi = {
 	render(
 		container: HTMLElement,
-		options: { sitekey: string; 'response-field-name': string },
+		options: {
+			sitekey: string
+			'response-field-name': string
+			/**
+			 * Returning a non-falsy value tells Turnstile the error was handled so
+			 * it does not escalate to console / window listeners that Sentry
+			 * captures as TurnstileError (KODY-6E).
+			 */
+			'error-callback'?: (errorCode: string | number) => boolean | void
+		},
 	): string
 	reset?(container: HTMLElement | string): void
 	remove?(container: HTMLElement | string): void
@@ -29,6 +38,16 @@ function getTurnstileApi() {
 	return (window as typeof window & { turnstile?: TurnstileApi }).turnstile
 }
 
+/**
+ * Exact messages thrown when challenges.cloudflare.com is blocked (ad
+ * blocker / privacy extension / network) or the script loads without
+ * exposing `window.turnstile`. Matched by browser Sentry filters (KODY-6D).
+ */
+export const turnstileScriptFailedToLoadMessage =
+	'Turnstile script failed to load.'
+export const turnstileApiDidNotInitializeMessage =
+	'Turnstile API did not initialize.'
+
 function loadTurnstileScript() {
 	const existingApi = getTurnstileApi()
 	if (existingApi) return Promise.resolve(existingApi)
@@ -39,15 +58,24 @@ function loadTurnstileScript() {
 			'script[data-kody-turnstile]',
 		)
 		const script = existingScript ?? document.createElement('script')
+		const fail = (message: string) => {
+			// Clear so a later render attempt can inject a fresh script tag
+			// (one blocked load must not pin the page for the whole session).
+			turnstileScriptPromise = null
+			if (!existingScript) {
+				script.remove()
+			}
+			reject(new Error(message))
+		}
 		const handleLoad = () => {
 			const api = getTurnstileApi()
 			if (api) resolve(api)
-			else reject(new Error('Turnstile API did not initialize.'))
+			else fail(turnstileApiDidNotInitializeMessage)
 		}
 		script.addEventListener('load', handleLoad, { once: true })
 		script.addEventListener(
 			'error',
-			() => reject(new Error('Turnstile script failed to load.')),
+			() => fail(turnstileScriptFailedToLoadMessage),
 			{ once: true },
 		)
 		if (!existingScript) {
@@ -88,9 +116,26 @@ function abandonOrphanedTurnstileWidget(
 	}
 }
 
+/**
+ * Turnstile's documented contract: a non-falsy return means the host handled
+ * the client error (300* generic challenge failures, iframe load blips, …)
+ * so Turnstile skips its default window escalation.
+ */
+function handleTurnstileWidgetError(_errorCode: string | number) {
+	return true
+}
+
 export async function renderTurnstileWidgets(siteKey: string | null) {
 	if (!siteKey || typeof document === 'undefined') return
-	const api = await loadTurnstileScript()
+	let api: TurnstileApi
+	try {
+		api = await loadTurnstileScript()
+	} catch {
+		// Script blocked or CDN blip — expected visitor-environment degradation
+		// (KODY-6D). Auth/waitlist POSTs still surface a server-side protection
+		// error if the user submits without a token; do not Sentry-noise this.
+		return
+	}
 	for (const container of document.querySelectorAll<HTMLElement>(
 		`.${turnstileWidgetClassName}`,
 	)) {
@@ -102,6 +147,7 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
 			api.render(container, {
 				sitekey: siteKey,
 				'response-field-name': turnstileResponseFieldName,
+				'error-callback': handleTurnstileWidgetError,
 			})
 			container.dataset.turnstileRendered = 'true'
 		} catch (error) {

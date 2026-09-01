@@ -40,7 +40,7 @@ export const adminSystemEmailSenderRuleSetCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_system_email_sender_rule_set',
+		name: 'adminSystemEmailSenderRuleSet',
 		description:
 			'Create or update a sender rule that controls inbound spam policy for operator system inboxes (kody@, abuse@, and other reserved locals on the apex domain). Admin-only; never mutates user-owned email rules.',
 		keywords: [
@@ -57,7 +57,7 @@ export const adminSystemEmailSenderRuleSetCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_system_email_sender_rule_set',
+				'adminSystemEmailSenderRuleSet',
 				async () => {
 					try {
 						const rule = await upsertEmailSenderRule({

@@ -60,7 +60,7 @@ test('oauth scope helpers unique, order the menu, and steer reconnect prompts', 
 		platform: false,
 		currentScopes: ['calendar.readonly'],
 	})
-	expect(byo).toContain('integration_save')
+	expect(byo).toContain('integrationSave')
 	expect(byo).toContain('/connect/oauth?provider=google-work')
 
 	const platform = buildChangeIntegrationScopesPrompt({
@@ -69,6 +69,6 @@ test('oauth scope helpers unique, order the menu, and steer reconnect prompts', 
 		currentScopes: ['openid'],
 		allowedScopes: ['openid', 'email'],
 	})
-	expect(platform).toContain('Do not call integration_save')
+	expect(platform).toContain('Do not call integrationSave')
 	expect(platform).toContain('/connect/oauth?provider=google')
 })

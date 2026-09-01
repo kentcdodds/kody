@@ -34,7 +34,7 @@ quickly.
    - Keep provider API calls and durable coordination in package-owned backend
      modules or internal Worker/DO implementation details.
 5. Open the hosted package app and iterate.
-   - Save with `package_save`.
+   - Save with `packageSave`.
    - Reopen with the hosted package URL.
    - Iterate on the hosted package app instead of repeatedly pasting large
      inline HTML blobs back into model context.

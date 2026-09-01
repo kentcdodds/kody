@@ -19,7 +19,7 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 
 const { mcpServerLockCapability } = await import('./mcp-server-lock.ts')
 
-test('mcp_server_lock grants a package and rejects missing packages', async () => {
+test('mcpServerLock grants a package and rejects missing packages', async () => {
 	mockModule.resolveMcpServerSetting.mockResolvedValue({
 		id: 'server-1',
 		name: 'linear',

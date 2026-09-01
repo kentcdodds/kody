@@ -1,5 +1,9 @@
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
+	isIntegrationAuthFailureReason,
+	type IntegrationAuthFailureReason,
+} from '#universal/connection-trouble.ts'
+import {
 	parseAllowedPackages,
 	stringifyAllowedPackages,
 } from '#mcp/secrets/allowed-packages.ts'
@@ -40,6 +44,12 @@ type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
 		allowed_packages_json: string | null
 		connected_at: string | null
 		token_refreshed_at: string | null
+		auth_failed_at: string | null
+		auth_failed_reason: string | null
+		auth_failed_provider_error: string | null
+		auth_failed_provider_description: string | null
+		auth_failed_http_status: number | null
+		auth_failed_reconnectable: number | null
 		connection_created_at: string
 		connection_updated_at: string
 	}
@@ -112,6 +122,12 @@ const joinedSelectColumns = `
 	i.allowed_packages_json AS allowed_packages_json,
 	i.connected_at AS connected_at,
 	i.token_refreshed_at AS token_refreshed_at,
+	i.auth_failed_at AS auth_failed_at,
+	i.auth_failed_reason AS auth_failed_reason,
+	i.auth_failed_provider_error AS auth_failed_provider_error,
+	i.auth_failed_provider_description AS auth_failed_provider_description,
+	i.auth_failed_http_status AS auth_failed_http_status,
+	i.auth_failed_reconnectable AS auth_failed_reconnectable,
 	i.created_at AS connection_created_at,
 	i.updated_at AS connection_updated_at
 `
@@ -687,8 +703,100 @@ export function mapIntegrationRow(
 		allowedPackageIds: parseAllowedPackages(row.allowed_packages_json),
 		connectedAt: row.connected_at,
 		tokenRefreshedAt: row.token_refreshed_at,
+		lastAuthFailure: mapLastAuthFailure(row),
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+	}
+}
+
+export async function writeIntegrationAuthFailure(input: {
+	db: D1Database
+	userId: string
+	name: string
+	reason: IntegrationAuthFailureReason
+	providerError?: string | null
+	providerErrorDescription?: string | null
+	httpStatus?: number | null
+	reconnectable: boolean
+	/**
+	 * Snapshot from the refresh that is failing. `IS` is NULL-safe so a
+	 * concurrent winner that already advanced `token_refreshed_at` (and
+	 * cleared health) is not overwritten by a loser `invalid_grant`.
+	 */
+	expectedTokenRefreshedAt: string | null
+	occurredAt?: string
+}): Promise<void> {
+	const now = input.occurredAt ?? new Date().toISOString()
+	await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET auth_failed_at = ?,
+				auth_failed_reason = ?,
+				auth_failed_provider_error = ?,
+				auth_failed_provider_description = ?,
+				auth_failed_http_status = ?,
+				auth_failed_reconnectable = ?,
+				updated_at = ?
+			WHERE user_id = ? AND name = ? AND token_refreshed_at IS ?`,
+		)
+		.bind(
+			now,
+			input.reason,
+			input.providerError ?? null,
+			input.providerErrorDescription ?? null,
+			input.httpStatus ?? null,
+			input.reconnectable ? 1 : 0,
+			now,
+			input.userId,
+			input.name,
+			input.expectedTokenRefreshedAt,
+		)
+		.run()
+}
+
+export async function clearIntegrationAuthFailure(input: {
+	db: D1Database
+	userId: string
+	name: string
+}): Promise<void> {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET auth_failed_at = NULL,
+				auth_failed_reason = NULL,
+				auth_failed_provider_error = NULL,
+				auth_failed_provider_description = NULL,
+				auth_failed_http_status = NULL,
+				auth_failed_reconnectable = NULL,
+				updated_at = ?
+			WHERE user_id = ? AND name = ?`,
+		)
+		.bind(now, input.userId, input.name)
+		.run()
+}
+
+function mapLastAuthFailure(row: {
+	auth_failed_at?: string | null
+	auth_failed_reason?: string | null
+	auth_failed_provider_error?: string | null
+	auth_failed_provider_description?: string | null
+	auth_failed_http_status?: number | null
+	auth_failed_reconnectable?: number | null
+}) {
+	const occurredAt = row.auth_failed_at?.trim() ?? ''
+	const reason = row.auth_failed_reason?.trim() ?? ''
+	if (!occurredAt || !isIntegrationAuthFailureReason(reason)) return null
+	return {
+		occurredAt,
+		reason,
+		providerError: row.auth_failed_provider_error ?? null,
+		providerErrorDescription: row.auth_failed_provider_description ?? null,
+		httpStatus:
+			row.auth_failed_http_status == null
+				? null
+				: Number(row.auth_failed_http_status),
+		reconnectable: row.auth_failed_reconnectable === 1,
 	}
 }
 
@@ -708,6 +816,12 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 		allowed_packages_json: row.allowed_packages_json ?? '[]',
 		connected_at: row.connected_at,
 		token_refreshed_at: row.token_refreshed_at,
+		auth_failed_at: row.auth_failed_at,
+		auth_failed_reason: row.auth_failed_reason,
+		auth_failed_provider_error: row.auth_failed_provider_error,
+		auth_failed_provider_description: row.auth_failed_provider_description,
+		auth_failed_http_status: row.auth_failed_http_status,
+		auth_failed_reconnectable: row.auth_failed_reconnectable,
 		created_at: row.connection_created_at,
 		updated_at: row.connection_updated_at,
 	})

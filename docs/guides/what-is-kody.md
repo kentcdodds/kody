@@ -74,13 +74,13 @@ supporting cast.
    one. Code references secrets by name and Kody substitutes them at the network
    boundary, only for hosts you approved. The
    [secrets capabilities](https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets)
-   are `secret_list`, `secret_set`, `secret_set_many`, `secret_lock`,
-   `secret_delete`, and `secret_jwt_sign`; there is deliberately no
-   `secret_get`. See [Secrets and host approval](../use/secrets-and-values.md).
-   When a provider token is coarser than the job — Gmail has a send-only scope
-   and no drafts-only scope — a locked package is the real grant: published code
-   cannot silently start sending. After publish lock, `integration_lock` limits
-   the token so execute cannot call `createAuthenticatedFetch`. See
+   are `secretList`, `secretSet`, `secretSetMany`, `secretLock`, `secretDelete`,
+   and `secretJwtSign`; there is deliberately no `secret_get`. See
+   [Secrets and host approval](../use/secrets-and-values.md). When a provider
+   token is coarser than the job — Gmail has a send-only scope and no
+   drafts-only scope — a locked package is the real grant: published code cannot
+   silently start sending. After publish lock, `integrationLock` limits the
+   token so execute cannot call `createAuthenticatedFetch`. See
    [Gmail drafts without send](./locked-gmail-drafts.md). A connected MCP server
    can be locked to a package so execute cannot call the raw tools. See
    [Lock an MCP server to a package](./locked-mcp-server.md).

@@ -35,7 +35,7 @@ function createContext() {
 	}
 }
 
-test('email_message_list forwards classification filter and returns classification fields', async () => {
+test('emailMessageList forwards classification filter and returns classification fields', async () => {
 	const context = createContext()
 	mocks.listOwnerEmailMessages.mockResolvedValueOnce([
 		{

@@ -31,7 +31,7 @@ classes run on the single `kody-test` script with no `script_name`.
 Remix/blog/UI-only deploys upload origin and skip platform, runtime, and jobs.
 Official guide markdown (`docs/guides/`, `packages/worker/src/guides/`) uploads
 origin and platform because MCP `search({ entity: "{id}:guide" })` and
-`coding_guide_get` bundle those files.
+`codingGuideGet` bundle those files.
 
 MCP `execute` resolves `KodyFetchGateway` from `ctx.exports` on the script that
 owns the `MCP` Durable Object (`kody-platform`). Origin
@@ -136,7 +136,7 @@ arbitrary hosts:
 
 This invariant must hold for any code path that materializes an integration
 token and then attaches it to an outbound request. Host-side refresh via
-`integration_token_refresh` materializes tokens only server-side and returns
+`integrationTokenRefresh` materializes tokens only server-side and returns
 metadata. See [OAuth integrations](./integrations.md).
 
 ## Source of truth in code

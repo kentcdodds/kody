@@ -22,7 +22,7 @@ const outputSchema = z.object({
 export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_set_mcp_server_instructions',
+		name: 'metaSetMcpServerInstructions',
 		description:
 			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Prefer memories for durable facts and preferences; use this overlay only for rare always-on session policy—not package inventory (popular packages are hinted automatically when available). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [

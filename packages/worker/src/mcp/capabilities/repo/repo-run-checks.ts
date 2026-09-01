@@ -12,7 +12,7 @@ import {
 export const repoRunChecksCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_run_checks',
+		name: 'repoRunChecks',
 		description:
 			'Run the Worker-native validation pipeline for an active repo session so edits can be checked before publish.',
 		keywords: ['repo', 'checks', 'validate', 'typecheck', 'bundle', 'manifest'],

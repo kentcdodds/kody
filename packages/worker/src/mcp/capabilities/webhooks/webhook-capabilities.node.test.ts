@@ -265,7 +265,7 @@ function makeWebhookRun(input: {
 	}
 }
 
-test('webhook_delivery_list pushes name filter and returns a full page for one webhook', async () => {
+test('webhookDeliveryList pushes name filter and returns a full page for one webhook', async () => {
 	mockModule.resolveSavedPackage.mockResolvedValue({
 		id: 'pkg-1',
 		kodyId: 'sentry-bridge',
@@ -326,7 +326,7 @@ test('webhook_delivery_list pushes name filter and returns a full page for one w
 	})
 })
 
-test('webhook_delivery_list round-trips explicit outcomes', async () => {
+test('webhookDeliveryList round-trips explicit outcomes', async () => {
 	mockModule.resolveSavedPackage.mockResolvedValue({
 		id: 'pkg-1',
 		kodyId: 'sentry-bridge',

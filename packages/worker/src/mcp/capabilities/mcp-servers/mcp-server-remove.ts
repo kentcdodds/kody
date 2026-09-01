@@ -15,7 +15,7 @@ const outputSchema = z.object({
 export const mcpServerRemoveCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_remove',
+		name: 'mcpServerRemove',
 		description:
 			'Remove a saved MCP server: disconnects it, deletes stored OAuth tokens and client registrations, and removes its kody.mcp capabilities.',
 		keywords: ['mcp', 'server', 'remove', 'delete', 'disconnect', 'client'],

@@ -43,7 +43,7 @@ export const adminFeatureFlagSetCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_feature_flag_set',
+		name: 'adminFeatureFlagSet',
 		description:
 			'Set global enabled state and optional percentage rollout for one registry feature flag. Admin-only; never returns user content.',
 		keywords: [
@@ -60,7 +60,7 @@ export const adminFeatureFlagSetCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_feature_flag_set',
+				'adminFeatureFlagSet',
 				async () => {
 					const key = assertFeatureFlagKey(args.key)
 					const updatedBy = await resolveActingAdminUserId(ctx)

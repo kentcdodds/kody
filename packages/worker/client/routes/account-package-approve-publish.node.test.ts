@@ -22,7 +22,7 @@ const loaderData: AccountPackageApprovePublishLoaderData = {
 	publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
 	pendingCommit: '34f338c19f91c698c3a28edd2992e0ab87dcb4e0',
 	alreadyPublished: false,
-	filesHref: '/account/packages/1c43570a-b9ab-46c9-86ec-6c9f02926944/files',
+	filesHref: '/@kodykoala/gmail-drafts/tree/main',
 	packageHref: '/@kodykoala/gmail-drafts',
 }
 

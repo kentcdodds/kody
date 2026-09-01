@@ -41,8 +41,8 @@ while pasting a new raw token replaces the stored hash. The UI never shows the
 existing raw token or token hash.
 
 Agents can inspect existing token record metadata with
-`package_invocation_token_list` (requires `package_id`),
-`package_invocation_token_get`, and `package_get` (includes `tokens`). These
+`packageInvocationTokenList` (requires `package_id`),
+`packageInvocationTokenGet`, and `packageGet` (includes `tokens`). These
 capabilities return record ids, names, the owning package, export scopes,
 timestamps, last-used metadata, and revocation status for the signed-in user's
 own records. They never return raw bearer token values or stored token hashes.
@@ -117,7 +117,7 @@ authentication or determine idempotency. For Kent's YouTube Worker, callers
 typically send `"source": "youtube-websub-proxy"`.
 
 Prefer canonical URL metadata from package discovery over manual string
-construction. `package_get` and package entity search details include canonical
+construction. `packageGet` and package entity search details include canonical
 external invocation metadata with the URL, path, route export name, normalized
 export name used for token scope checks, token setup URL, and source guidance
 for each callable export.
@@ -129,14 +129,13 @@ that orchestrator; it does not use tokens. Or they speak MCP.
 ## Agent instructions
 
 1. Identify the saved package and export the external system needs to call.
-   - Use `package_get` so the setup URL includes the saved package id.
+   - Use `packageGet` so the setup URL includes the saved package id.
    - Use `*` only when the client should call every export on that package.
-2. If debugging an existing setup, call `package_invocation_token_list` with
-   that `package_id`, `package_invocation_token_get`, or read `tokens` from
-   `package_get` first to confirm which token record exists and whether its
-   export scopes match the external caller. Do not ask the user to read token
-   metadata out of the browser UI unless the capability response is
-   insufficient.
+2. If debugging an existing setup, call `packageInvocationTokenList` with that
+   `package_id`, `packageInvocationTokenGet`, or read `tokens` from `packageGet`
+   first to confirm which token record exists and whether its export scopes
+   match the external caller. Do not ask the user to read token metadata out of
+   the browser UI unless the capability response is insufficient.
 3. Generate an `/@<username>/<kodyId>?newToken=1` URL with `name` and export
    scope. Those query params prefill the create form: `exportNames` checks the
    matching export boxes, and `*` checks **Any export**.

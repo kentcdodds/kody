@@ -82,7 +82,7 @@ const googleBase = {
 	},
 }
 
-test('mergeIntegrationConfig and integration_save create, canonicalize identity, and persist non-default usePkce', async () => {
+test('mergeIntegrationConfig and integrationSave create, canonicalize identity, and persist non-default usePkce', async () => {
 	const current = integrationConfigSchema.parse({
 		name: 'spotify',
 		tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -244,7 +244,7 @@ test('mergeIntegrationConfig and integration_save create, canonicalize identity,
 	).rejects.toThrow(/letters or numbers/i)
 })
 
-test('integration_save reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {
+test('integrationSave reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {
 	const { env } = createEnv()
 	const userId = 'user-reuse'
 
@@ -350,7 +350,7 @@ test('integration_save reuses an existing app when credentials match and preserv
 	)
 })
 
-test('integration_delete and credential rotation return the expected MCP response shapes', async () => {
+test('integrationDelete and credential rotation return the expected MCP response shapes', async () => {
 	const { env } = createEnv()
 	const userId = 'user-rotate'
 
@@ -480,7 +480,7 @@ test('integration capabilities deny cross-user reads and require authentication'
 	).rejects.toThrow('Authenticated MCP user is required for this capability.')
 })
 
-test('integration_save refuses platform (built-in) connections instead of converting them to the user lane', async () => {
+test('integrationSave refuses platform (built-in) connections instead of converting them to the user lane', async () => {
 	const { env } = createEnv()
 	const platformEnv = {
 		...env,
@@ -524,7 +524,7 @@ test('integration_save refuses platform (built-in) connections instead of conver
 	expect(got.integration?.platform).toBe(true)
 })
 
-test('integration_save persists accountLabel on an existing user-lane connection', async () => {
+test('integrationSave persists accountLabel on an existing user-lane connection', async () => {
 	const { env } = createEnv()
 	await integrationSaveCapability.handler(spotifyBase, {
 		env,

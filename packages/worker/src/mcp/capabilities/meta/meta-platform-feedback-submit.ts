@@ -12,7 +12,7 @@ const interactiveApprovalErrorMessage =
 export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_platform_feedback_submit',
+		name: 'metaPlatformFeedbackSubmit',
 		description:
 			'Submit platform feedback only from an interactive MCP agent flow after showing the user the exact proposed summary and details, asking first, and receiving explicit approval. Open `search({ entity: "platform_friction:guide" })` first for the approval flow and content guidance. The exact approved summary and details plus the account user id, username, and email may be delivered immediately to deployment admins through admin-configured notifications. Copies already delivered outside Kody may remain after Kody account deletion under the deployment operator’s retention and deletion controls. Non-interactive package code and package apps cannot submit. Do not include secrets or unrelated private content.',
 		keywords: [

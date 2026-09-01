@@ -75,7 +75,7 @@ function applyDomainFilter(
 export const metaListCapabilitiesCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_list_capabilities',
+		name: 'metaListCapabilities',
 		description:
 			'Browse the current runtime capability registry, including dynamic capabilities from connected MCP servers. Without a domain, returns a compact domain index. Pass a domain for exact capability names and optional TypeScript call shapes.',
 		keywords: [

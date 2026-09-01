@@ -108,7 +108,7 @@ function createEstimateEnv() {
 	} as unknown as Env
 }
 
-test('writable storage_sql skips read-only fan-out and enforces mutating entitlement', async () => {
+test('writable storageSql skips read-only fan-out and enforces mutating entitlement', async () => {
 	expect(isReadOnlyStorageSqlQuery('SELECT 1')).toBe(true)
 	expect(isReadOnlyStorageSqlQuery('  explain query plan select 1')).toBe(true)
 	expect(isReadOnlyStorageSqlQuery('PRAGMA table_info(skills)')).toBe(true)
@@ -131,7 +131,7 @@ test('writable storage_sql skips read-only fan-out and enforces mutating entitle
 	})
 
 	await expect(
-		tools.storage_sql({
+		tools.storageSql({
 			query: 'SELECT id FROM skills',
 			params: [],
 			writable: true,
@@ -142,7 +142,7 @@ test('writable storage_sql skips read-only fan-out and enforces mutating entitle
 	expect(mockModule.maybeRefreshStorageBucketEstimate).not.toHaveBeenCalled()
 
 	await expect(
-		tools.storage_sql({
+		tools.storageSql({
 			query: 'CREATE TABLE IF NOT EXISTS skills (id TEXT)',
 			params: [],
 			writable: true,

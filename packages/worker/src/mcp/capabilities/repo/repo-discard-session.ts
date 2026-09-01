@@ -10,7 +10,7 @@ import {
 export const repoDiscardSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_discard_session',
+		name: 'repoDiscardSession',
 		description:
 			'Discard a repo editing session and delete its tracked workspace state.',
 		keywords: ['repo', 'session', 'discard', 'delete', 'close'],

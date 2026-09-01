@@ -14,7 +14,7 @@ import { accountExportManifestOutputSchema } from './account-export-shared.ts'
 export const accountExportManifestCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
-		name: 'account_export_manifest',
+		name: 'accountExportManifest',
 		description:
 			'Build a signed-in user data export manifest with schema version, section counts, redactions, warnings, and chunking instructions. Secret values are never exported.',
 		keywords: ['account', 'export', 'backup', 'migration', 'gdpr', 'ccpa'],

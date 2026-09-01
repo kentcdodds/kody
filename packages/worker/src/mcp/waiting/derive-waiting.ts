@@ -3,6 +3,7 @@ import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
+import { listSecrets } from '#mcp/secrets/service.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import { type McpClientHubSnapshot } from '#worker/mcp-client/types.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
@@ -10,10 +11,13 @@ import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
+import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import {
 	buildWaitingItems,
 	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
+	type WaitingExpiredSecretSignal,
+	type WaitingIntegrationAuthSignal,
 	type WaitingItem,
 	type WaitingMcpServerSignal,
 	type WaitingSignals,
@@ -48,6 +52,38 @@ export async function deriveWaitingItems(input: {
 	return buildWaitingItems(signals)
 }
 
+/**
+ * Same queue as `deriveWaitingItems`, looked up by MCP `stable_user_id`.
+ * Fail-open: missing user or a probe blip returns no items.
+ */
+export async function deriveWaitingItemsForStableUser(input: {
+	env: WaitingEnv
+	stableUserId: string
+	email: string
+	now?: Date
+}): Promise<Array<WaitingItem>> {
+	try {
+		const userRow = await input.env.APP_DB.prepare(
+			`SELECT id, email_verified_at FROM users WHERE stable_user_id = ? LIMIT 1`,
+		)
+			.bind(input.stableUserId)
+			.first<{ id: number; email_verified_at: string | null }>()
+		if (!userRow) return []
+		return await deriveWaitingItems({
+			env: input.env,
+			user: {
+				userId: userRow.id,
+				stableUserId: input.stableUserId,
+				email: input.email,
+				emailVerified: Boolean(userRow.email_verified_at),
+			},
+			now: input.now,
+		})
+	} catch {
+		return []
+	}
+}
+
 export async function collectWaitingSignals(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
@@ -60,6 +96,8 @@ export async function collectWaitingSignals(input: {
 		onboardingDismissed,
 		hasMcpClient,
 		mcpServers,
+		integrationAuth,
+		expiredSecrets,
 		lockedPackages,
 		pendingEmailChange,
 		errorRate,
@@ -71,6 +109,8 @@ export async function collectWaitingSignals(input: {
 		}).catch(() => true),
 		userHasMcpOAuthGrants(env, user.stableUserId),
 		collectMcpServerSignals(env, user.stableUserId),
+		collectIntegrationAuthSignals(env, user.stableUserId),
+		collectExpiredSecretSignals(env, user.stableUserId),
 		collectLockedPackageSignals(env, user.stableUserId),
 		collectPendingEmailChange(env, user.userId, now),
 		collectErrorRate(env, user.stableUserId, now),
@@ -95,6 +135,8 @@ export async function collectWaitingSignals(input: {
 			.filter((item) => !item.done)
 			.map((item) => item.id),
 		mcpServers,
+		integrationAuth,
+		expiredSecrets,
 		lockedPackages,
 		pendingEmailChange,
 		errorRate,
@@ -149,6 +191,41 @@ async function collectMcpServerSignals(
 		})
 	}
 	return items
+}
+
+async function collectIntegrationAuthSignals(
+	env: Env,
+	userId: string,
+): Promise<Array<WaitingIntegrationAuthSignal>> {
+	const rows = await listJoinedIntegrations({ env, userId }).catch(
+		() => [] as Awaited<ReturnType<typeof listJoinedIntegrations>>,
+	)
+	const items: Array<WaitingIntegrationAuthSignal> = []
+	for (const joined of rows) {
+		const failure = joined.connection.lastAuthFailure
+		if (!failure?.reconnectable) continue
+		items.push({
+			name: joined.connection.name,
+			accountLabel: joined.connection.accountLabel,
+			lane: joined.lane,
+			reason: failure.reason,
+		})
+	}
+	return items
+}
+
+async function collectExpiredSecretSignals(
+	env: Env,
+	userId: string,
+): Promise<Array<WaitingExpiredSecretSignal>> {
+	const secrets = await listSecrets({
+		env,
+		userId,
+		scope: 'user',
+	}).catch(() => [] as Awaited<ReturnType<typeof listSecrets>>)
+	return secrets
+		.filter((secret) => secret.ttlMs != null && secret.ttlMs <= 0)
+		.map((secret) => ({ name: secret.name }))
 }
 
 async function collectLockedPackageSignals(env: Env, userId: string) {

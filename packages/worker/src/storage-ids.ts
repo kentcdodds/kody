@@ -21,7 +21,7 @@ export function buildPackageStorageId(packageId: string) {
  * deterministic bucket, its app facet buckets (`{packageId}:…`), and its
  * package job buckets (`job:package-job:{packageId}:…`).
  *
- * Prefix matching is UUID-gated on purpose. `package_save` accepts arbitrary
+ * Prefix matching is UUID-gated on purpose. `packageSave` accepts arbitrary
  * non-empty package ids, so a raw `{packageId}:` prefix could otherwise claim
  * reserved storage namespaces (`job:`, `exec:`, …) or carry LIKE metacharacters
  * (`%`, `_`) when this feeds inventory queries. A UUID cannot contain `:` or

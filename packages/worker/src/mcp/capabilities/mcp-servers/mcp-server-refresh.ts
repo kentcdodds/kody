@@ -17,7 +17,7 @@ const outputSchema = z.object({
 export const mcpServerRefreshCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_refresh',
+		name: 'mcpServerRefresh',
 		description:
 			'Re-discover the tools exposed by a connected MCP server (for example after the server ships new tools).',
 		keywords: ['mcp', 'server', 'refresh', 'tools', 'discover', 'client'],

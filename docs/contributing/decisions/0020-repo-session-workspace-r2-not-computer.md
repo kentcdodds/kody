@@ -5,7 +5,7 @@
 
 ## Context
 
-Interactive repo sessions (`repo_open_session` and the file-level `repo_*` API)
+Interactive repo sessions (`repoOpenSession` and the file-level `repo_*` API)
 are a full Artifacts clone inside the RepoSession Durable Object
 `@cloudflare/shell` Workspace, not a pointer. isomorphic-git writes the incoming
 packfile as one blob. Without an R2 bucket, Workspace stores that inline and

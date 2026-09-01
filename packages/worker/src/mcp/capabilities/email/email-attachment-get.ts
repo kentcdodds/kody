@@ -18,7 +18,7 @@ const emailAttachmentContentSchema = z.object({
 export const emailAttachmentGetCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_attachment_get',
+		name: 'emailAttachmentGet',
 		description:
 			'Get one stored email attachment by id, returning metadata plus the attachment bytes as base64.',
 		keywords: ['email', 'attachment', 'get', 'download'],

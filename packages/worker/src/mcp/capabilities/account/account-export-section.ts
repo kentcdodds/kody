@@ -15,9 +15,9 @@ import {
 export const accountExportSectionCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
-		name: 'account_export_section',
+		name: 'accountExportSection',
 		description:
-			'Read a paged section of the signed-in user account export. Use account_export_manifest first for section counts and warnings. Secret values are never exported.',
+			'Read a paged section of the signed-in user account export. Use accountExportManifest first for section counts and warnings. Secret values are never exported.',
 		keywords: ['account', 'export', 'chunk', 'backup', 'migration'],
 		readOnly: true,
 		idempotent: true,
@@ -43,7 +43,7 @@ export const accountExportSectionCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.optional()
-				.describe('Opaque cursor from a previous account_export_section page.'),
+				.describe('Opaque cursor from a previous accountExportSection page.'),
 		}),
 		outputSchema: accountExportSectionOutputSchema,
 		async handler(args, ctx: CapabilityContext) {

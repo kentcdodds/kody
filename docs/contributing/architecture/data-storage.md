@@ -175,9 +175,9 @@ a complete export. It deliberately does not inline D1 rows, Durable Object
 state, or R2 bytes. The MCP capability domain `account` provides the complete,
 migration-safe chunked interface:
 
-- `account_export_manifest` returns the manifest, counts, warnings, and chunking
+- `accountExportManifest` returns the manifest, counts, warnings, and chunking
   instructions.
-- `account_export_section` pages through one section at a time. D1 rows are read
+- `accountExportSection` pages through one section at a time. D1 rows are read
   with `section: "d1_table"` and a table name. Durable storage buckets are read
   with `section: "storage_runner"` and a `storage_id`, using the same
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
@@ -198,7 +198,7 @@ migration-safe chunked interface:
 D1 manifest counts use bounded SQL `COUNT(*)` queries. D1 section rows are read
 with SQL-level keyset pagination: every query orders by the table's `rowid`,
 resumes strictly after an opaque cursor, and applies a SQL `LIMIT`, so a single
-query never loads a whole table. `account_export_section` fetches only the
+query never loads a whole table. `accountExportSection` fetches only the
 requested page.
 
 Durable Object export behavior:
@@ -257,7 +257,7 @@ Cloudflare Artifacts repo contents are not inlined in the JSON export. D1 stores
 metadata/projections, while canonical package, job, and app source lives in the
 Artifacts repos referenced by `entity_sources.repo_id` and the
 `RepoSessionIndex` catalog `source_repo_id`. For account migration to a new
-Cloudflare account, first run `account_export_manifest`, page through export
+Cloudflare account, first run `accountExportManifest`, page through export
 sections as needed, then separately fetch or clone every repo listed in
 `artifactRepos` using Artifacts access and recreate those repos in the
 destination account before importing D1 projections or republishing packages.
@@ -335,13 +335,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   package runtimes may use their own package secrets. User secrets are
   auto-granted for read/use to self-authored packages (no `community_forks` row
   for that `saved_packages.id` + `userId`) and adopted forks
-  (`community_forks.adopted_at` set via `community_fork_adopt`). Person accounts
+  (`community_forks.adopted_at` set via `communityForkAdopt`). Person accounts
   do not run official platform packages
   ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
-  read path. Updating or deleting a user secret from package code (`secret_set`
-  / `secret_delete`) always requires that grant, regardless of fork or adoption
+  read path. Updating or deleting a user secret from package code (`secretSet` /
+  `secretDelete`) always requires that grant, regardless of fork or adoption
   state. Official OAuth token rotation persists host-side and does not use that
   write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
   gate and are never implied by authorship or adoption.
@@ -660,7 +660,7 @@ Write-lease rows clear on release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
-or day index. `admin_user_meter_parity` reports meter-only daily counts. See
+or day index. `adminUserMeterParity` reports meter-only daily counts. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -674,7 +674,7 @@ preserving an existing deleting tombstone during cleanup). After the D1 user row
 is removed, origin drops that tombstone so a later signup with the same email
 can use the hashed `stable_user_id` again. Account export pages
 `UserMeter.exportCounters` through the `user_meter` manifest section /
-`account_export_section` (daily counters plus authoritative `storageBytesState`
+`accountExportSection` (daily counters plus authoritative `storageBytesState`
 and sanitized `deletionState` on the first page only when present).
 
 ## Durable Objects (`Mailbox`)
@@ -1064,38 +1064,38 @@ Operational notes:
 - Saved packages are the user-facing repo-backed identity. They resolve through
   D1 metadata to `entity_sources.id` when a repo editing session is opened.
 - `source_id` is the internal durable join key for repo-backed packages, but
-  most MCP callers should prefer package identity with `repo_open_session` and
-  the file-level session capabilities (`repo_edit_files`, etc.).
+  most MCP callers should prefer package identity with `repoOpenSession` and the
+  file-level session capabilities (`repoEditFiles`, etc.).
 - Once repo-backed source exists, the repo snapshot is the durable source of
   truth for later edits and publishes. Search and detail payloads are derived
   projections of that repo-backed source rather than a competing second source
   of truth.
 - Repo sessions expose a file-level API inside the RepoSession Durable Object:
-  batch edits (`repo_edit_files`: write/replace/writeJson/delete/move; same-path
-  content edits compose in order), unified diff apply (`repo_apply_patch`), git
-  inspection (`repo_status`, `repo_diff`, `repo_log`), commit (`repo_commit`),
-  and restore (`repo_restore`). There is no git-command parser channel;
+  batch edits (`repoEditFiles`: write/replace/writeJson/delete/move; same-path
+  content edits compose in order), unified diff apply (`repoApplyPatch`), git
+  inspection (`repoStatus`, `repoDiff`, `repoLog`), commit (`repoCommit`), and
+  restore (`repoRestore`). There is no git-command parser channel;
   branch/checkout/remote operations require the Artifacts git lane via
-  `package_get_git_remote`. Package runtime bundles are loaded from published
+  `packageGetGitRemote`. Package runtime bundles are loaded from published
   artifacts rather than a mounted checkout. The session Workspace spills objects
   above the inline threshold to `REPO_SESSION_BLOBS` so clone and checkout can
   honor the 10 MiB per-file policy without hitting the Durable Object SQLite 2
   MiB row limit.
-- `repo_edit_files` `write` edits use the same Durable Object `applyEdits` write
-  path for whole-file overwrites. Prefer a `write` edit over `repo_apply_patch`
+- `repoEditFiles` `write` edits use the same Durable Object `applyEdits` write
+  path for whole-file overwrites. Prefer a `write` edit over `repoApplyPatch`
   when the agent is replacing an entire file (for example, a single-file job
   source) instead of patching a hunk with surrounding context.
 
 ### Direct Artifacts git publishes
 
 Saved package source can also be edited through Artifacts git remotes directly.
-`package_get_git_remote` resolves package identity to `entity_sources`, mints a
+`packageGetGitRemote` resolves package identity to `entity_sources`, mints a
 short-lived Artifacts repo token, and returns a plain remote, `git_author`
 (signed-in account email and display name), and setup commands that pass the
 token through `http.extraHeader` and set local `user.email` / `user.name` from
 `git_author`.
 
-After an external `git push`, `package_publish_external_push` reconciles the
+After an external `git push`, `packagePublishExternalPush` reconciles the
 current Artifacts default-branch HEAD with `entity_sources.published_commit`.
 The RepoSession Durable Object clones that commit, checks that it is a
 fast-forward unless `allow_force` is set, runs `runRepoChecks(...)`, and then
@@ -1119,19 +1119,19 @@ pushed the session commit to the source Artifacts repo.
 
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
-`package_publish_external_push` call. In production, the `kody-jobs` cron
-trigger (`packages/jobs-worker/wrangler.jsonc` `*/5 * * * *`) runs every five
-minutes and sends each due maintenance lane to `kody-scheduled-dispatch`. Origin
-itself has no cron trigger. The consumer is configured for one message per
-invocation with independent concurrency, so a slow reconcile cannot consume the
-runtime budget of retention, OAuth purge, or another sibling lane. Preview and
-local runtimes execute the same registry inline when the production-only queue
-binding is unavailable. A write-token mint sets the source's
-`external_check_until` to the token expiry plus a one-hour grace period. The
-normal pass only scans these pending sources, using `last_external_check_at` for
-the five-minute cadence and keyset paging until the pending queue is drained or
-a wall-clock time budget (`reconcileTimeBudgetMs`, ~60 seconds) is exhausted.
-Dormant package sources do not incur an Artifacts HEAD lookup on every tick.
+`packagePublishExternalPush` call. In production, the `kody-jobs` cron trigger
+(`packages/jobs-worker/wrangler.jsonc` `*/5 * * * *`) runs every five minutes
+and sends each due maintenance lane to `kody-scheduled-dispatch`. Origin itself
+has no cron trigger. The consumer is configured for one message per invocation
+with independent concurrency, so a slow reconcile cannot consume the runtime
+budget of retention, OAuth purge, or another sibling lane. Preview and local
+runtimes execute the same registry inline when the production-only queue binding
+is unavailable. A write-token mint sets the source's `external_check_until` to
+the token expiry plus a one-hour grace period. The normal pass only scans these
+pending sources, using `last_external_check_at` for the five-minute cadence and
+keyset paging until the pending queue is drained or a wall-clock time budget
+(`reconcileTimeBudgetMs`, ~60 seconds) is exhausted. Dormant package sources do
+not incur an Artifacts HEAD lookup on every tick.
 
 For each pending source, reconcile resolves the Artifacts default-branch HEAD.
 When HEAD matches `published_commit`, it advances `last_external_check_at`
@@ -1238,7 +1238,7 @@ on write unless a migration backfills existing rows.
 - `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
   (`0001-squashed-init.sql`) back memory search and provenance.
 - `secret_entries.expires_at` (`0023-secret-entry-expires-at.sql`) is the
-  optional per-secret UTC expiry the account UI and `secret_set` write. Session
+  optional per-secret UTC expiry the account UI and `secretSet` write. Session
   lifetime stays on `secret_buckets.expires_at`. Resolve and fetch placeholders
   treat an expired entry as missing; list and account views still show the row
   so it can be rotated. Effective remaining TTL is the earlier of entry and
@@ -1251,9 +1251,9 @@ on write unless a migration backfills existing rows.
   package read/use path (provenance via `community_forks.forked_package_id` +
   `forker_user_id`; index in `0001-squashed-init.sql`). Self-authored packages
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
-  grant for read/use only. Mutations from package code (`secret_set` /
-  `secret_delete`) always require the grant. Agents add a package to that grant
-  with `secret_lock`; removing a grant is website-only. Official OAuth token
+  grant for read/use only. Mutations from package code (`secretSet` /
+  `secretDelete`) always require the grant. Agents add a package to that grant
+  with `secretLock`; removing a grant is website-only. Official OAuth token
   rotation persists host-side and does not use that write grant. Authorship and
   adoption never imply a host allowlist. Package-scoped secrets are owned
   exclusively by the package id in their bucket binding.
@@ -1455,7 +1455,7 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
    `kody:@` prefix, the `@scope/name` package name, and an optional export
    subpath (default `.`).
 2. Resolution is scoped to the caller's `userId`. Person accounts — ad hoc
-   execute and saved packages — must `community_fork` a platform-account package
+   execute and saved packages — must `communityFork` a platform-account package
    (for example `@kody/github`) into the caller's scope before importing or
    invoking it (decision
    [0036 — Person accounts do not run official platform packages](../decisions/0036-platform-packages-fork-only.md)).
@@ -1519,7 +1519,7 @@ Current retention policies:
   `system:email` stays on the dedicated D1 retention job and has no
   provider-index rows.
 - UserMeter daily counter rows keep seven UTC days
-  (`userMeterDailyCounterRetentionDays`); `admin_user_meter_parity` reports
+  (`userMeterDailyCounterRetentionDays`); `adminUserMeterParity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention. Months before the

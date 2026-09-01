@@ -1,5 +1,5 @@
 import { type AccountPackageApprovePublishLoaderData } from '#universal/loader-data.ts'
-import { getAccountPackageFilesHref } from '#universal/package-files.ts'
+import { getPackageTreeHref } from '#universal/package-files.ts'
 import { routes } from '#universal/routes.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
@@ -74,7 +74,10 @@ export async function loadAccountPackageApprovePublishData(input: {
 			pendingCommit != null &&
 			publishedCommit != null &&
 			pendingCommit === publishedCommit,
-		filesHref: getAccountPackageFilesHref({ packageId: savedPackage.id }),
+		filesHref: getPackageTreeHref({
+			username: input.user.username,
+			kodyId: savedPackage.kodyId,
+		}),
 		packageHref: routes.communityPackage.href({
 			username: input.user.username,
 			kodyId: savedPackage.kodyId,

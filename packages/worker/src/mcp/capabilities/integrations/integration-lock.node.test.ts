@@ -13,7 +13,7 @@ vi.mock('#worker/integrations/service.ts', () => ({
 
 const { integrationLockCapability } = await import('./integration-lock.ts')
 
-test('integration_lock grants a package and rejects missing packages', async () => {
+test('integrationLock grants a package and rejects missing packages', async () => {
 	mockModule.lockIntegrationToPackage.mockResolvedValue({
 		name: 'google',
 		allowedPackageIds: ['pkg-drafts'],

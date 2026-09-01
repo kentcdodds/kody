@@ -34,6 +34,7 @@ import {
 	detailItemCss,
 	detailLabelCss,
 	detailValueCss,
+	getAccentCalloutCss,
 	getPillButtonCss,
 	hoverMq,
 	insetCardCss,
@@ -47,6 +48,7 @@ import {
 	connectionLabel,
 	connectionStatusLabel,
 	dangerButtonCss,
+	shouldShowReconnectAction,
 	formatList,
 	formatOptional,
 	hostFromUrl,
@@ -411,12 +413,18 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 							const status = connection
 								? connectionStatusLabel(connection)
 								: 'Needs setup'
-							const connectHref = buildConnectOauthHref({
-								name: connectionRef.name,
-								appSlug: connection?.platform
-									? undefined
-									: (connection?.appSlug ?? selectedApp.slug),
-							})
+							const showReconnect = connection
+								? shouldShowReconnectAction(connection)
+								: true
+							const connectHref =
+								connection?.lastAuthFailure?.who === 'you'
+									? connection.lastAuthFailure.reconnectHref
+									: buildConnectOauthHref({
+											name: connectionRef.name,
+											appSlug: connection?.platform
+												? undefined
+												: (connection?.appSlug ?? selectedApp.slug),
+										})
 							const disconnectCheck = getDisconnectCheck(connectionRef.name)
 							const confirmingDisconnect = disconnectCheck.doubleCheck
 							const disconnectLabel = connectionLabel(
@@ -479,6 +487,25 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 													}`
 												: ''}
 										</p>
+										{connection?.lastAuthFailure ? (
+											<p
+												mix={css({
+													...getAccentCalloutCss({
+														accentColor:
+															connection.lastAuthFailure.who === 'you'
+																? colors.danger
+																: colors.border,
+													}),
+													margin: 0,
+													padding: spacing.sm,
+													color: colors.textMuted,
+													fontSize: '0.95rem',
+													lineHeight: 1.5,
+												})}
+											>
+												{connection.lastAuthFailure.why}
+											</p>
+										) : null}
 									</div>
 									{connection ? (
 										<ConnectionUsageForm
@@ -499,18 +526,20 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 											gap: spacing.xs,
 										})}
 									>
-										<a
-											href={connectHref}
-											mix={css({
-												...getPillButtonCss({
-													size: 'sm',
-												}),
-												display: 'inline-flex',
-												textDecoration: 'none',
-											})}
-										>
-											{connectActionLabel(status)}
-										</a>
+										{showReconnect ? (
+											<a
+												href={connectHref}
+												mix={css({
+													...getPillButtonCss({
+														size: 'sm',
+													}),
+													display: 'inline-flex',
+													textDecoration: 'none',
+												})}
+											>
+												{connectActionLabel(status)}
+											</a>
+										) : null}
 										<button
 											type="button"
 											data-testid="disconnect-connection"

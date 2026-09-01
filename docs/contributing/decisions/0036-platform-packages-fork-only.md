@@ -24,11 +24,11 @@ lane.
 Person accounts do not run official platform packages.
 
 - Ad hoc `execute` must not statically import or `packages.invoke` a platform
-  scope. The bundler and invoke contract fail closed with a `community_fork`
+  scope. The bundler and invoke contract fail closed with a `communityFork`
   teaching error.
 - Saved person-account packages still must not statically import, declare, or
   `packages.invoke` a platform scope (0035's saved-package half, unchanged).
-- To use an official helper, `community_fork` into the caller's scope and import
+- To use an official helper, `communityFork` into the caller's scope and import
   or invoke that copy.
 - Platform-account packages may still compose with each other when the operator
   publishes them.

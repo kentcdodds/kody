@@ -10,7 +10,7 @@ import {
 export const jobDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
-		name: 'job_delete',
+		name: 'jobDelete',
 		description:
 			'Delete a leftover scheduled job by id. Package-owned jobs cannot be deleted this way — remove the job from the package and publish. Recurring schedules belong on a package (`kody.jobs`); deferred one-shots use `workflows.create`.',
 		keywords: ['job', 'delete', 'remove', 'cancel', 'unschedule', 'cleanup'],

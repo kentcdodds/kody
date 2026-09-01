@@ -1,6 +1,6 @@
 /**
  * Single source of truth for guide ordering. `#worker/guides/catalog.ts`
- * (web catalog, `coding_guide_get` schema description) and
+ * (web catalog, `codingGuideGet` schema description) and
  * `tools/build-guide-catalog-modules.ts` (generated metadata/full-catalog
  * modules) both sort their parsed guides through `sortGuidesByAuthoredOrder`
  * below, so the authored order can never silently drift between the two.
@@ -51,7 +51,7 @@ const guideOrder: ReadonlyArray<string> = [
  * Throws on any mismatch between `guides` and `guideOrder` rather than
  * silently falling back to input order, so a guide added to `docs/guides/`
  * without a matching `guideOrder` entry (or vice versa) fails loudly instead
- * of quietly reordering `coding_guide_get`'s schema description or the web
+ * of quietly reordering `codingGuideGet`'s schema description or the web
  * catalog.
  */
 export function sortGuidesByAuthoredOrder<T extends { slug: string }>(

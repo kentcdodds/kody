@@ -4,8 +4,11 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 ## How to get there
 
-`/account/packages` → `/account/packages/:packageId` →
-`/account/packages/:packageId/approve-publish`.
+`/account/packages` lists your packages. Each package lives at
+`/@username/:kodyId` (README), `/@username/:kodyId/tree/:ref` (files), and
+`/@username/:kodyId/settings` (tokens, lock, visibility, delete). Leftover
+`/account/packages/:packageId` and `/account/packages/:packageId/files` redirect
+to those URLs.
 
 ## Drive it
 
@@ -24,7 +27,9 @@ assert the empty state.
 ## APIs
 
 - `GET|POST /account/packages.json`
-- `GET /account/packages/:packageId/files.json`
+- `GET /profiles/:username/packages/:kodyId.json`
+- `GET /profiles/:username/packages/:kodyId/files.json`
+- `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 
 ## Gotchas
@@ -32,3 +37,4 @@ assert the empty state.
 - Stay on the preview origin. Do not follow a package-app handoff into
   production.
 - Unlocking a locked package is website-only.
+- Making a package public or private requires typing the slug.

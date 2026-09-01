@@ -28,7 +28,7 @@ function createContext(userId = 'user-alice') {
 	}
 }
 
-test('community_fork_adopt adopts by package_id or kody_id and rejects invalid reviews', async () => {
+test('communityForkAdopt adopts by package_id or kody_id and rejects invalid reviews', async () => {
 	mocks.adoptCommunityFork.mockResolvedValue({
 		packageId: 'pkg-1',
 		kodyId: 'demo-fork',
@@ -109,6 +109,6 @@ test('community_fork_adopt adopts by package_id or kody_id and rejects invalid r
 			},
 			createContext(),
 		),
-	).rejects.toThrow('Invalid input for capability "community_fork_adopt"')
+	).rejects.toThrow('Invalid input for capability "communityForkAdopt"')
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
 })

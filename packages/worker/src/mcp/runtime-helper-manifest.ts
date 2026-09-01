@@ -166,7 +166,7 @@ const packageSecrets = {
     if (!normalizedAlias) {
       throw new Error('packageSecrets.get requires a non-empty alias.')
     }
-    const result = await kody.package_secret_get({ alias: normalizedAlias });
+    const result = await kody.packageSecretGet({ alias: normalizedAlias });
     return typeof result?.value === 'string' ? result.value : '';
   },
   has: async (alias) => {
@@ -174,7 +174,7 @@ const packageSecrets = {
     if (!normalizedAlias) {
       throw new Error('packageSecrets.has requires a non-empty alias.')
     }
-    const result = await kody.package_secret_has({ alias: normalizedAlias });
+    const result = await kody.packageSecretHas({ alias: normalizedAlias });
     return result?.has === true;
   },
 };
@@ -190,7 +190,7 @@ const email = {
     if (!normalizedMessageId) {
       throw new Error('email.getMessage requires a non-empty message id.')
     }
-    return await kody.email_message_get({ message_id: normalizedMessageId });
+    return await kody.emailMessageGet({ message_id: normalizedMessageId });
   },
   getAttachment: async (attachmentId) => {
     const normalizedAttachmentId =
@@ -198,7 +198,7 @@ const email = {
     if (!normalizedAttachmentId) {
       throw new Error('email.getAttachment requires a non-empty attachment id.')
     }
-    const result = await kody.email_attachment_get({
+    const result = await kody.emailAttachmentGet({
       attachment_id: normalizedAttachmentId,
     });
     if (!result || typeof result !== 'object') {
@@ -213,7 +213,7 @@ const email = {
         typeof result.data_base64 === 'string' ? result.data_base64 : null,
     };
   },
-  reply: async (input) => await kody.email_reply(input ?? {}),
+  reply: async (input) => await kody.emailReply(input ?? {}),
 };
 	`.trim()
 }
@@ -221,7 +221,7 @@ const email = {
 function createWorkflowsHelperPrelude() {
 	return `
 const workflows = {
-  create: async (input) => await kody.package_workflow_create(input ?? {}),
+  create: async (input) => await kody.packageWorkflowCreate(input ?? {}),
 };
 	`.trim()
 }
@@ -299,7 +299,7 @@ function createPackageSecretKodyTools(
 	packageSecretTools: PackageSecretToolOptions,
 ): AdditionalKodyTools {
 	return {
-		package_secret_get: async (args: unknown) => {
+		packageSecretGet: async (args: unknown) => {
 			const alias =
 				typeof args === 'object' && args !== null && 'alias' in args
 					? String((args as { alias: unknown }).alias ?? '')
@@ -308,7 +308,7 @@ function createPackageSecretKodyTools(
 				value: await packageSecretTools.get(alias),
 			}
 		},
-		package_secret_has: async (args: unknown) => {
+		packageSecretHas: async (args: unknown) => {
 			const alias =
 				typeof args === 'object' && args !== null && 'alias' in args
 					? String((args as { alias: unknown }).alias ?? '')
@@ -325,10 +325,10 @@ function createEmailKodyTools(
 	emailTools: EmailToolOptions,
 ): AdditionalKodyTools {
 	return {
-		...(context.capabilityMap.email_message_get
+		...(context.capabilityMap.emailMessageGet
 			? {}
 			: {
-					email_message_get: async (args: unknown) => {
+					emailMessageGet: async (args: unknown) => {
 						const messageId =
 							typeof args === 'object' && args !== null && 'message_id' in args
 								? String((args as { message_id: unknown }).message_id ?? '')
@@ -336,10 +336,10 @@ function createEmailKodyTools(
 						return await emailTools.getMessage(messageId)
 					},
 				}),
-		...(context.capabilityMap.email_attachment_get
+		...(context.capabilityMap.emailAttachmentGet
 			? {}
 			: {
-					email_attachment_get: async (args: unknown) => {
+					emailAttachmentGet: async (args: unknown) => {
 						const attachmentId =
 							typeof args === 'object' &&
 							args !== null &&
@@ -358,7 +358,7 @@ function createWorkflowKodyTools(
 	workflowTools: PackageWorkflowTools,
 ): AdditionalKodyTools {
 	return {
-		package_workflow_create: async (args: unknown) =>
+		packageWorkflowCreate: async (args: unknown) =>
 			await workflowTools.create(args as PackageWorkflowCreateInput),
 	}
 }

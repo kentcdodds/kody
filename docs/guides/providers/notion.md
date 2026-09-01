@@ -166,7 +166,7 @@ integration and does not read `notionToken`.
 
 1. Search for `@kody/notion`. It wraps pages, databases, and a generic request
    escape hatch.
-2. `community_fork` it into your scope (or click **Install** on the listing).
+2. `communityFork` it into your scope (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: it expects an OAuth integration
    named `notion` — the default name this guide's Lane B connect link uses, so
    no adaptation is needed.

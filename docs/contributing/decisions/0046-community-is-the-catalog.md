@@ -23,7 +23,7 @@ off `/community` (or the MCP `community` domain) to match GitHub Explore.
 - **Public / private** — repo visibility, the share switch.
 - **Community** — the catalog place and the official Discord server.
 - **Listing** — internal catalog row / snapshot. Keep `listing_id`,
-  `community_listings`, `community_publish` (visibility alias), and
+  `community_listings`, `communityPublish` (visibility alias), and
   `community.listing.published` until a dual-declare cut. Do not put “listing”
   in Discord posts or human share copy.
 

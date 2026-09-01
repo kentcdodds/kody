@@ -69,7 +69,7 @@ export const adminPlatformProviderMarkSaveCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_platform_provider_mark_save',
+		name: 'adminPlatformProviderMarkSave',
 		description:
 			'Create or update an operator-owned provider brand mark used as the saved-integration fallback after an upload or auto-favicon. Admin-only.',
 		keywords: [
@@ -87,7 +87,7 @@ export const adminPlatformProviderMarkSaveCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_provider_mark_save',
+				'adminPlatformProviderMarkSave',
 				async () => {
 					try {
 						const slug = canonicalIntegrationName(args.slug)

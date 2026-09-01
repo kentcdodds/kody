@@ -148,29 +148,29 @@ export function toOnboardingFeaturedListing(
 }
 
 export function buildForkPrompt(input: { name: string; listingId: string }) {
-	return `Use Kody to fork the public package "${input.name}" (listing id: ${input.listingId}). Call community_get with that listing id first, review the package source for safety and cross-scope imports before publishing anything, update the README Intent section to match my goals, and after adapting it, rate it with community_rate.`
+	return `Use Kody to fork the public package "${input.name}" (listing id: ${input.listingId}). Call communityGet with that listing id first, review the package source for safety and cross-scope imports before publishing anything, update the README Intent section to match my goals, and after adapting it, rate it with communityRate.`
 }
 
 export function buildInstallSuccessPrompt(input: { targetName: string }) {
-	return `I just one-click installed the public package "${input.targetName}" into my Kody account. Call package_get for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
+	return `I just one-click installed the public package "${input.targetName}" into my Kody account. Call packageGet for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
 }
 
 export function buildInstallAdaptPrompt(input: {
 	targetName: string
 	sourceId: string
 }) {
-	return `I one-click installed the public package "${input.targetName}" on Kody, but it needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repo_open_session, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repo_publish_session.`
+	return `I one-click installed the public package "${input.targetName}" on Kody, but it needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repoOpenSession, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repoPublishSession.`
 }
 
 export function buildExistingInstallPrompt(input: { targetName: string }) {
-	return `I have the public package "${input.targetName}" installed in my Kody account. Call package_get for it and read its README, then adapt it to my needs: update the README Intent section, change behavior if needed, and publish the result.`
+	return `I have the public package "${input.targetName}" installed in my Kody account. Call packageGet for it and read its README, then adapt it to my needs: update the README Intent section, change behavior if needed, and publish the result.`
 }
 
 export function buildExistingAdaptPrompt(input: {
 	targetName: string
 	sourceId: string
 }) {
-	return `I already forked the public package "${input.targetName}" on Kody, but it still needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repo_open_session, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repo_publish_session.`
+	return `I already forked the public package "${input.targetName}" on Kody, but it still needs adaptation before it can be published. The fork is an inert source in my account (source_id: ${input.sourceId}). Open it with repoOpenSession, do a read-only safety review of all files, fix the failing publish checks — re-implement or remove any cross-scope kody:@ imports — rewrite the README Intent section for my goals, then publish with repoPublishSession.`
 }
 
 export function toViewerListingInstall(input: {

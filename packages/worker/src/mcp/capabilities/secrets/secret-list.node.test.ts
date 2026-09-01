@@ -65,7 +65,7 @@ const listedSecrets = [
 	secretMetadata({ name: 'packageToken', scope: 'package' }),
 ]
 
-test('secret_list matches implicit user-secret read access and still lists package secrets', async () => {
+test('secretList matches implicit user-secret read access and still lists package secrets', async () => {
 	const listSecretsSpy = vi
 		.spyOn(secretService, 'listSecrets')
 		.mockResolvedValue(listedSecrets)

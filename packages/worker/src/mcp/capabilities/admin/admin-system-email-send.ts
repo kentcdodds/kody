@@ -54,9 +54,9 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_system_email_send',
+		name: 'adminSystemEmailSend',
 		description:
-			'Send operator correspondence from a reserved system sender (kody@<apex> by default) to an external recipient. Admin-only and audit-logged; capped per sender per day. Replies land in the operator system inbox. Use email_send/email_reply for user mail — this sender speaks for the platform, not for a user account.',
+			'Send operator correspondence from a reserved system sender (kody@<apex> by default) to an external recipient. Admin-only and audit-logged; capped per sender per day. Replies land in the operator system inbox. Use emailSend/emailReply for user mail — this sender speaks for the platform, not for a user account.',
 		keywords: [
 			'admin',
 			'system email',
@@ -73,7 +73,7 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_system_email_send',
+				'adminSystemEmailSend',
 				async () => {
 					const result = await sendSystemEmail({
 						env: ctx.env,

@@ -13,10 +13,7 @@ import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
-import {
-	type AccountPackageDetail,
-	type AppLoaderData,
-} from '#universal/loader-data.ts'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 import {
 	type CommunityDetailApiPayload,
 	type CommunityInstallApiPayload,
@@ -26,17 +23,14 @@ import {
 	buildCommunityDetailFrameSrc,
 	buildReportApiPath,
 	getListingPageRef,
-	postPackageLock,
 	rememberListingId,
 } from './community-detail-shared.ts'
 import {
 	detailArticleCss,
-	inlineLinkCss,
-	missingHeadCss,
 	renderAdminFeatureSection,
+	renderEmptyReadme,
 	renderInstallStrip,
 	renderMissingListing,
-	renderOwnerPackageSection,
 	renderReadmeSection,
 	renderReportDisclosure,
 	renderShellStatus,
@@ -45,12 +39,12 @@ import {
 /**
  * Community detail, ported from the redesign prototype
  * (`landing/community-detail.html`). A 46rem article mirroring the blog
- * post: the listing head (back link, icon + name + author + badges, tags,
- * quiet meta row) stays server-rendered in the `community-detail` frame —
- * see `src/app/community-detail-content.tsx` — while this shell renders the
- * interactive sections around it: the README as `.prose`, admin tools, and
- * the report disclosure. Install / Installed / Fork outdated live in the
- * frame next to Trusted.
+ * post: the listing head (back link, `@owner / name`, visibility, Code /
+ * Settings tabs, tags, quiet meta row) stays server-rendered in the
+ * `community-detail` frame — see `src/app/community-detail-content.tsx` —
+ * while this shell renders the README as `.prose`, admin tools, and the
+ * report disclosure. Install / Installed / Fork outdated live in the frame
+ * next to Featured. Owner controls live on `/settings`.
  */
 
 function getCurrentListingId(handle: Handle) {
@@ -78,11 +72,6 @@ export function CommunityDetailRoute(handle: Handle) {
 	// way.
 	let shellLoadedForPathname: string | null = null
 	let shellRequestedForPathname: string | null = null
-	let ownerPackage: AccountPackageDetail | null = null
-	let username = ''
-	let invocationUrlOrigin = ''
-	let ownerDetailsMessage: string | null = null
-	const lockInFlight = new Map<string, string | null>()
 	let shellUnauthorized = false
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
@@ -123,10 +112,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		readmeFences = snapshot.readmeFences ?? []
 		reportState = 'idle'
 		reportMessage = null
-		ownerPackage = snapshot.ownerPackage
-		username = snapshot.username
-		invocationUrlOrigin = snapshot.invocationUrlOrigin
-		ownerDetailsMessage = null
 		shellUnauthorized = false
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
@@ -181,12 +166,21 @@ export function CommunityDetailRoute(handle: Handle) {
 				{
 					loggedIn: payload.loggedIn,
 					viewerIsAdmin: payload.viewerIsAdmin,
+					viewerIsOwner: payload.viewerIsOwner,
 					trusted: payload.listing?.trusted ?? false,
 					featured: payload.listing?.featured ?? false,
-					readmeContent: payload.listing?.readmeContent ?? null,
+					readmeContent:
+						payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 					readmeFences: payload.readmeFences,
 					ownerPackage: payload.ownerPackage,
 					username: payload.username,
+					kodyId:
+						payload.kodyId ||
+						payload.listing?.kodyId ||
+						payload.ownerPackage?.kodyId ||
+						'',
+					isPrivate:
+						payload.isPrivate ?? payload.ownerPackage?.isPrivate ?? false,
 					invocationUrlOrigin: payload.invocationUrlOrigin,
 				},
 				ref.pathname,
@@ -200,47 +194,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			shellStatus = 'error'
 			handle.update()
 		}
-	}
-
-	function applyOwnerPackageLock(packageId: string, lockedAt: string | null) {
-		if (ownerPackage?.id === packageId) {
-			ownerPackage = { ...ownerPackage, lockedAt }
-		}
-	}
-
-	async function togglePackageLock() {
-		if (!ownerPackage || lockInFlight.has(ownerPackage.id)) return
-		const packageId = ownerPackage.id
-		const previousLockedAt = ownerPackage.lockedAt
-		const nextLocked = !(
-			typeof previousLockedAt === 'string' && previousLockedAt.trim().length > 0
-		)
-		const nextLockedAt = nextLocked ? new Date().toISOString() : null
-		lockInFlight.set(packageId, nextLockedAt)
-		ownerDetailsMessage = null
-		applyOwnerPackageLock(packageId, nextLockedAt)
-		handle.update()
-
-		const result = await postPackageLock(packageId, nextLocked)
-		lockInFlight.delete(packageId)
-		if (result.status === 'unauthorized') {
-			window.location.assign('/login')
-			handle.update()
-			return
-		}
-		if (result.status === 'error') {
-			applyOwnerPackageLock(packageId, previousLockedAt)
-			if (ownerPackage?.id === packageId) {
-				ownerDetailsMessage = result.message
-			}
-			handle.update()
-			return
-		}
-		applyOwnerPackageLock(packageId, result.lockedAt ?? nextLockedAt)
-		if (result.selectedPackage?.id === packageId) {
-			ownerPackage = result.selectedPackage
-		}
-		handle.update()
 	}
 
 	async function submitReport() {
@@ -527,7 +480,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			? 'Unable to load fork and report details for this listing.'
 			: showShellReady
 				? ''
-				: 'Loading public package details…'
+				: 'Loading package details…'
 
 		return (
 			<article
@@ -535,41 +488,28 @@ export function CommunityDetailRoute(handle: Handle) {
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
-				{showShellReady && ownerPackage && !listingId ? (
-					<header mix={css(missingHeadCss)}>
-						<h1>{ownerPackage.name}</h1>
-						<p>
-							Owner view for{' '}
-							<a
-								href={routes.profile.href({ username })}
-								mix={css(inlineLinkCss)}
-							>
-								@{username}
-							</a>
-						</p>
-					</header>
-				) : null}
-
 				{renderShellStatus(shellStatusMessage)}
 
-				{showShellReady && listingId ? (
+				{showShellReady ? (
 					<>
-						{renderInstallStrip({
-							installState,
-							installMessage,
-							installOutcome,
-							onConfirmInstall: () => void submitInstall(),
-							onCancelInstall: () => {
-								installState = 'idle'
-								handle.update()
-							},
-						})}
+						{listingId
+							? renderInstallStrip({
+									installState,
+									installMessage,
+									installOutcome,
+									onConfirmInstall: () => void submitInstall(),
+									onCancelInstall: () => {
+										installState = 'idle'
+										handle.update()
+									},
+								})
+							: null}
 
 						{readmeContent
 							? renderReadmeSection(renderReadme(readmeContent, readmeFences))
-							: null}
+							: renderEmptyReadme()}
 
-						{viewerIsAdmin
+						{listingId && viewerIsAdmin
 							? renderAdminFeatureSection({
 									featured,
 									featureState,
@@ -578,37 +518,21 @@ export function CommunityDetailRoute(handle: Handle) {
 								})
 							: null}
 
-						{renderReportDisclosure({
-							loggedIn,
-							reportReason,
-							reportState,
-							reportMessage,
-							onReasonInput: (value) => {
-								reportReason = value
-								handle.update()
-							},
-							onSubmitReport: () => void submitReport(),
-						})}
+						{listingId
+							? renderReportDisclosure({
+									loggedIn,
+									reportReason,
+									reportState,
+									reportMessage,
+									onReasonInput: (value) => {
+										reportReason = value
+										handle.update()
+									},
+									onSubmitReport: () => void submitReport(),
+								})
+							: null}
 					</>
 				) : null}
-
-				{showShellReady && ownerPackage
-					? renderOwnerPackageSection({
-							ownerPackage,
-							username,
-							invocationUrlOrigin,
-							currentHref,
-							lockInFlight: lockInFlight.has(ownerPackage.id),
-							ownerDetailsMessage,
-							onToggleLock: () => void togglePackageLock(),
-							onPackagesPayload: (payload) => {
-								if (payload.selectedPackage?.id === ownerPackage?.id) {
-									ownerPackage = payload.selectedPackage
-									handle.update()
-								}
-							},
-						})
-					: null}
 			</article>
 		)
 	}

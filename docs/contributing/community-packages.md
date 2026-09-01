@@ -13,19 +13,19 @@ workflows.
 ## Architecture overview
 
 ```
-Owner sets visibility public (package_update)
+Owner sets visibility public (packageUpdate)
         │
         ▼
 D1 saved_packages.is_private = 0 + community_listings row
         │              KV source snapshot keyed by SHA
         ▼
-Public /community + /@username/:name + /tree/:ref
+Public /community + /@username/:name + /tree/:ref + /settings
         │
         ▼
-Visitor forks ──► community_fork ──► entity_sources (no saved_packages row)
+Visitor forks ──► communityFork ──► entity_sources (no saved_packages row)
         │                              copy of HEAD, inert until publish
         ▼
-repo_open_session → review → fix imports → repo_publish_session
+repoOpenSession → review → fix imports → repoPublishSession
         │                              (optional absorbed_upstream_commit)
         ▼
 Live saved package in forker's account
@@ -63,7 +63,7 @@ Activity actor columns store the MCP **stable user id**
 `community_listings.owner_user_id`.
 
 `saved_packages.is_private` defaults to `1`. Visibility is a repo setting
-(`package_update` / `repo_update`), not a `package.json#private` projection.
+(`packageUpdate` / `repoUpdate`), not a `package.json#private` projection.
 Active community listings backfill to public; leftover `"private": false`
 teasers stay private.
 
@@ -72,11 +72,11 @@ Profile activity reads stored `community_activity_events` plus public forks from
 `is_private = 0`. Ratings are never projected into profile activity.
 
 `community_forks.origin_commit` is the origin SHA the fork last absorbed. It
-starts as HEAD copied at fork time. When origin HEAD later moves, `package_get`
-/ `package_list` set `listing_ahead`, and `/account/packages` plus the listing
-page replace Installed / Forked with a **Fork outdated** button. Package search
-hits and `{kodyId}:package` entity detail also set `listingAhead`. Clearing the
-banner is done by publishing with `repo_publish_session` and
+starts as HEAD copied at fork time. When origin HEAD later moves, `packageGet` /
+`packageList` set `listing_ahead`, and `/account/packages` plus the listing page
+replace Installed / Forked with a **Fork outdated** button. Package search hits
+and `{kodyId}:package` entity detail also set `listingAhead`. Clearing the
+banner is done by publishing with `repoPublishSession` and
 `absorbed_upstream_commit`; that does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
@@ -98,7 +98,7 @@ passing `package_scope` while holding a package scope grant; see
 `OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
 badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
-`community_set_featured` capability, and onboarding Steps 2–3: Step 2 offers
+`communitySetFeatured` capability, and onboarding Steps 2–3: Step 2 offers
 official one-click access (Notion, Linear, Atlassian, Stripe, Sentry, Canva)
 plus the matching `@kody/*-mcp` helper, a custom MCP URL, Advanced provider
 guides, Just-try-Kody zero-auth examples, or skip as the quicker first-value
@@ -108,7 +108,7 @@ execute → persist prompt. Step 2 Connect forks the matching `@kody/*-mcp`
 listing automatically. Signed-in onboarding, `/community` cards, and listing
 detail overlay a per-request `viewerInstall` when the viewer already has a
 matching slug saved package or a `community_forks` row for that listing, so
-those surfaces show Copy prompt instead of Install. `community_get` exposes the
+those surfaces show Copy prompt instead of Install. `communityGet` exposes the
 `featured` flag. Onboarding loads up to 12 featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
@@ -184,7 +184,7 @@ id to the forker's scope, scans cross-scope references, calls
 `ensureEntitySource` + `syncArtifactSourceSnapshot`, and records
 `community_forks` — **without** inserting `saved_packages`.
 
-`community_fork` returns request-scoped `serverTiming` entries
+`communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
 D1 or Analytics Engine. Nested `bootstrap-*` phases come from the RepoSession
 Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
@@ -211,12 +211,12 @@ index; neither email nor stable user id enters the feed or event.
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks
 pass, `refreshSavedPackageProjection` — the same projection step
-`repo_publish_session` ends with, so declared jobs are scheduled immediately.
-When checks fail (typically cross-scope imports), the fork stays inert and the
+`repoPublishSession` ends with, so declared jobs are scheduled immediately. When
+checks fail (typically cross-scope imports), the fork stays inert and the
 failing checks are returned for agent follow-up. The HTTP surface is
 `POST /community/:listingId/install.json` (authenticated); callers must send
 `acknowledged: true` or the handler responds `409`. There is intentionally
-**no** MCP capability for install: agents must go through `community_fork` +
+**no** MCP capability for install: agents must go through `communityFork` +
 repo-session review, so a prompt-injected agent cannot silently activate
 community code.
 
@@ -226,18 +226,18 @@ Domain module: `packages/worker/src/mcp/capabilities/community/`
 
 Capabilities:
 
-- `community_publish`
-- `community_unpublish`
-- `community_search`
-- `community_get`
-- `community_fork`
-- `community_fork_adopt`
-- `community_rate`
-- `community_profile_get` / `community_profile_update`
-- `community_report`
-- `community_set_featured` (admin-only via `requiredRole`)
+- `communityPublish`
+- `communityUnpublish`
+- `communitySearch`
+- `communityGet`
+- `communityFork`
+- `communityForkAdopt`
+- `communityRate`
+- `communityProfileGet` / `communityProfileUpdate`
+- `communityReport`
+- `communitySetFeatured` (admin-only via `requiredRole`)
 
-The admin domain also exposes `admin_community_activity_list`, guarded by
+The admin domain also exposes `adminCommunityActivityList`, guarded by
 `requiredRole: 'admin'`, for the narrow operator activity feed.
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
@@ -260,7 +260,8 @@ Client routes: `packages/worker/client/routes/community*`
   `package_kody_id_redirects` map prior owner usernames and package slugs to a
   redirect at that URL
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
-  (branch, SHA, or `HEAD`). Leftover `/files` URLs 301 here
+  (default-branch name from git, SHA, or another branch). `HEAD` and leftover
+  `/files` URLs 301 to `/tree/{defaultBranch}` (`main` when lookup misses)
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (requires login
   and a generic confirm), fork prompt, and report link (report requires login)
@@ -307,7 +308,7 @@ The first successful listing publish enqueues `{ eventId, listingId }` for
 durable `community.listing.published` delivery (same admin fan-out as activity
 events). Republishes write `listing_updated` for profile activity but do not
 enqueue this topic. Enqueue failures are logged and never fail
-`community_publish`. See
+`communityPublish`. See
 [the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins)
 for the handler payload.
 
@@ -320,10 +321,10 @@ Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
 - `kody:@…` imports from the fork do not execute
 - search and execute cannot treat the fork as a live saved package
 
-Activation happens through two paths: the forker runs `repo_publish_session`, or
-a one-click `installCommunityListing` whose publish checks pass — both end in
-the same saved-package projection. Repo checks reject publishes that still
-contain cross-scope static imports or foreign `kody.dependencies` entries
+Activation happens through two paths: the forker runs `repoPublishSession`, or a
+one-click `installCommunityListing` whose publish checks pass — both end in the
+same saved-package projection. Repo checks reject publishes that still contain
+cross-scope static imports or foreign `kody.dependencies` entries
 (`fork-scan.ts` surfaces these at fork time).
 
 ## Search ranking

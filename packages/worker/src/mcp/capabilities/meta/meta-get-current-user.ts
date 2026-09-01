@@ -16,7 +16,7 @@ const outputSchema = z.object({
 export const metaGetCurrentUserCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_get_current_user',
+		name: 'metaGetCurrentUser',
 		description:
 			'Get harmless identity fields for the signed-in MCP user: id, email, and display name. Use email and display_name as git user.email / user.name on Kody remotes when a git-remote result is not already in hand.',
 		keywords: [

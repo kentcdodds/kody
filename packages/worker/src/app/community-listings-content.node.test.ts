@@ -157,7 +157,7 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
 
 	const aheadPrompt =
-		'Compare the current listing snapshot, keep local customizations, then publish with repo_publish_session and absorbed_upstream_commit.'
+		'Compare the current listing snapshot, keep local customizations, then publish with repoPublishSession and absorbed_upstream_commit.'
 	const aheadHtml = await renderCommunityListingsContentHtml({
 		listings: [
 			{

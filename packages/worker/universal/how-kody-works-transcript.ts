@@ -89,7 +89,7 @@ import whatShipped from './what-shipped.ts'
 export default async function dailyDigest() {
 	const result = await whatShipped()
 	if (result.shipped.length === 0) return { emailed: false }
-	await kody.email_send({
+	await kody.emailSend({
 		subject:
 			result.shipped.length === 1
 				? 'kody-bot shipped something'
@@ -215,7 +215,7 @@ function asEmbeddedTemplateLiteral(value: string) {
 const getGitRemoteCreateCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
-	return await kody.package_get_git_remote({
+	return await kody.packageGetGitRemote({
 		kody_id: 'kody-bot-shipped',
 		create: true,
 		description: 'What kody-bot shipped since you last asked.',
@@ -225,7 +225,7 @@ export default async function main() {
 const publishExternalPushCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
-	return await kody.package_publish_external_push({
+	return await kody.packagePublishExternalPush({
 		kody_id: 'kody-bot-shipped',
 	})
 }`
@@ -314,11 +314,11 @@ const addDailyJobSessionCode = `import { kody } from 'kody:runtime'
 const dailyDigest = ${asEmbeddedTemplateLiteral(dailyDigestSource)}
 
 export default async function main() {
-	const session = await kody.repo_open_session({
+	const session = await kody.repoOpenSession({
 		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
 		conversation_id: '${notifyConversationId}',
 	})
-	await kody.repo_edit_files({
+	await kody.repoEditFiles({
 		session_id: session.id,
 		edits: [
 			{
@@ -356,12 +356,12 @@ export default async function main() {
 			},
 		],
 	})
-	await kody.repo_commit({
+	await kody.repoCommit({
 		session_id: session.id,
 		message: 'Add a quiet daily digest job',
 	})
-	const checks = await kody.repo_run_checks({ session_id: session.id })
-	const published = await kody.repo_publish_session({
+	const checks = await kody.repoRunChecks({ session_id: session.id })
+	const published = await kody.repoPublishSession({
 		session_id: session.id,
 	})
 	return { session_id: session.id, checks, published }
@@ -370,11 +370,11 @@ export default async function main() {
 const enableDailyJobSessionCode = `import { kody } from 'kody:runtime'
 
 export default async function main() {
-	const session = await kody.repo_open_session({
+	const session = await kody.repoOpenSession({
 		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
 		conversation_id: '${notifyConversationId}',
 	})
-	await kody.repo_edit_files({
+	await kody.repoEditFiles({
 		session_id: session.id,
 		edits: [
 			{
@@ -385,12 +385,12 @@ export default async function main() {
 			},
 		],
 	})
-	await kody.repo_commit({
+	await kody.repoCommit({
 		session_id: session.id,
 		message: 'Enable the daily digest job',
 	})
-	const checks = await kody.repo_run_checks({ session_id: session.id })
-	const published = await kody.repo_publish_session({
+	const checks = await kody.repoRunChecks({ session_id: session.id })
+	const published = await kody.repoPublishSession({
 		session_id: session.id,
 	})
 	return { session_id: session.id, checks, published }
@@ -481,8 +481,8 @@ const notifySearchMarkdown = `# Search results
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
 1. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\`
-2. **capability** \`webhook_url_mint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhook_url_mint:capability\`
-3. **capability** \`job_list\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`job_list:capability\``
+2. **capability** \`webhookUrlMint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhookUrlMint:capability\`
+3. **capability** \`jobList\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`jobList:capability\``
 
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
@@ -862,7 +862,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'execute',
 						summary: 'Patch the package in a repo session, job left off',
-						note: '`package_save` would replace every file. A repo session writes the new wrapper and `replace`s only the changed lines in `package.json` and `README.md`. The job stays off until the wrapper has been invoked once.',
+						note: '`packageSave` would replace every file. A repo session writes the new wrapper and `replace`s only the changed lines in `package.json` and `README.md`. The job stays off until the wrapper has been invoked once.',
 						inputs: [
 							{
 								name: 'code',

@@ -13,7 +13,7 @@ import {
 export const webhookUrlRotateCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_url_rotate',
+		name: 'webhookUrlRotate',
 		description:
 			'Rotate the URL secret for a minted package webhook and return the new full URL once. The replaced URL stops working immediately.',
 		keywords: ['webhook', 'rotate', 'secret', 'credential', 'url'],

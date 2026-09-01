@@ -11,7 +11,7 @@ import {
 export const repoReadFileCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_read_file',
+		name: 'repoReadFile',
 		description:
 			'Read a file from the active repo session workspace. Reads the live session overlay, not just the published base commit.',
 		keywords: ['repo', 'session', 'read', 'file', 'workspace'],

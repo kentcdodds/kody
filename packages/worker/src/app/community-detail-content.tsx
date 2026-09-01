@@ -12,64 +12,77 @@ import {
 	shortCommunityCommit,
 } from '#universal/community-display.ts'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
-import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import {
-	communityBadgePillCss,
 	communityTagListCss,
 	communityTagPillCss,
 	renderCommunityViewerInstallBadge,
 } from '#app/community-listings-content.tsx'
-import { getCommunityPackageFilesHref } from '#universal/package-files.ts'
-import { routes } from '#universal/routes.ts'
-import { visuallyHiddenCss } from '#universal/styles/style-primitives.ts'
+import {
+	fallbackDefaultBranchName,
+	getPackageTreeHref,
+} from '#universal/package-files.ts'
+import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { colors } from '#universal/styles/tokens.ts'
 
 /**
- * Server-rendered community detail head (the `community-detail` frame),
- * restyled to the redesign prototype's `.pkg-detail` grammar
- * (`landing/community-detail.html`): back link → icon + name + author +
- * badges → description → hairline tag chips → quiet dt/dd meta row between
- * hairlines. The page-open `data-rise` choreography is pure CSS keyed on
- * `html.js` + reduced-motion, so this frame HTML animates on every load or
- * reload without any client component hydrating here.
+ * Server-rendered package head (the `community-detail` frame): GitHub-style
+ * `@owner / name` + visibility + Code/Settings tabs, then the public catalog
+ * extras (icon, install badges, tags, facts) when a listing exists.
  */
 
 export type CommunityDetailContentProps = {
 	listing: PublicCommunityListing | null
+	username: string
+	kodyId: string
+	description: string
+	isPrivate: boolean
 	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsOwner: boolean
 	returnTo: string
+	treeRef?: string
 }
 
 export function CommunityDetailContent(
 	handle: Handle<CommunityDetailContentProps>,
 ) {
-	const { listing, ownerProfilePublic, loggedIn, viewerIsOwner, returnTo } =
-		handle.props
+	const {
+		listing,
+		username,
+		kodyId,
+		description,
+		isPrivate,
+		ownerProfilePublic,
+		loggedIn,
+		viewerIsOwner,
+		returnTo,
+		treeRef,
+	} = handle.props
 
-	if (!listing) {
-		return () => null
-	}
+	const filesHref = getPackageTreeHref({
+		username,
+		kodyId,
+		listingId: listing?.id,
+		ref: listing?.defaultBranch ?? treeRef ?? fallbackDefaultBranchName,
+	})
 
 	return () => (
 		<div data-testid="community-detail-frame">
-			<a
-				data-rise
-				style={{ '--rise': '0' }}
-				href={routes.community.href()}
-				mix={css(backLinkCss)}
-			>
-				← Public packages
-			</a>
+			{renderPackageRepoChrome({
+				username,
+				kodyId,
+				isPrivate,
+				viewerIsOwner,
+				active: 'code',
+				description,
+				ownerProfilePublic,
+				animate: true,
+			})}
 
-			<header data-rise style={{ '--rise': '1' }} mix={css(detailHeadCss)}>
-				<CommunityListingIcon listing={listing} size="detail" />
-				<div mix={css(headTextCss)}>
-					<div mix={css(titleRowCss)}>
-						<h1>{renderCommunityListingName(listing.name)}</h1>
-					</div>
-					<span mix={css(detailBadgeGroupCss)}>
+			{listing ? (
+				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
+					<CommunityListingIcon listing={listing} size="detail" />
+					<div mix={css(listingBadgeGroupCss)}>
 						{listing.sourceAhead ? (
 							<span
 								data-testid="community-detail-source-ahead-badge"
@@ -95,64 +108,13 @@ export function CommunityDetailContent(
 							returnTo,
 							viewerIsOwner,
 						})}
-					</span>
-					<div
-						mix={css(ownerLineCss)}
-						data-testid="community-detail-owner-line"
-					>
-						<span>by</span>
-						{ownerProfilePublic ? (
-							<a
-								href={routes.profile.href({
-									username: listing.ownerUsername,
-								})}
-								mix={css(ownerLinkCss)}
-							>
-								@{listing.ownerUsername}
-							</a>
-						) : (
-							<span mix={css(ownerPrivateNameCss)}>
-								@{listing.ownerUsername}
-								<span
-									data-testid="community-detail-owner-private"
-									title="This profile is private"
-									mix={css(ownerPrivateLockCss)}
-								>
-									<svg
-										viewBox="0 0 16 16"
-										width="0.9em"
-										height="0.9em"
-										aria-hidden="true"
-										focusable={false}
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="1.5"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									>
-										<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
-										<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
-									</svg>
-									<span mix={css(visuallyHiddenCss)}>
-										This profile is private
-									</span>
-								</span>
-							</span>
-						)}
 					</div>
-				</div>
-			</header>
+				</header>
+			) : null}
 
-			<p data-rise style={{ '--rise': '2' }} mix={css(detailSubCss)}>
-				{listing.description}
-			</p>
-			<p data-rise style={{ '--rise': '2' }} mix={css(filesLinkRowCss)}>
+			<p data-rise style={{ '--rise': '3' }} mix={css(filesLinkRowCss)}>
 				<a
-					href={getCommunityPackageFilesHref({
-						listingId: listing.id,
-						ownerUsername: listing.ownerUsername,
-						kodyId: listing.kodyId,
-					})}
+					href={filesHref}
 					data-testid="community-browse-files"
 					mix={css(filesLinkCss)}
 				>
@@ -160,61 +122,69 @@ export function CommunityDetailContent(
 				</a>
 			</p>
 
-			<ul
-				data-rise
-				style={{ '--rise': '3' }}
-				aria-label="Category and tags"
-				mix={css(detailTagListCss)}
-			>
-				<li mix={css(communityTagPillCss)}>
-					<a
-						href={buildCommunityIndexHref({ category: listing.category })}
-						data-testid="community-listing-category"
-						mix={css(detailCategoryLinkCss)}
+			{listing ? (
+				<>
+					<ul
+						data-rise
+						style={{ '--rise': '3' }}
+						aria-label="Category and tags"
+						mix={css(detailTagListCss)}
 					>
-						{communityPackageCategoryCopy[listing.category].label}
-					</a>
-				</li>
-				{listing.tags.map((tag) => (
-					<li key={tag} mix={css(communityTagPillCss)}>
-						{tag}
-					</li>
-				))}
-			</ul>
+						<li mix={css(communityTagPillCss)}>
+							<a
+								href={buildCommunityIndexHref({ category: listing.category })}
+								data-testid="community-listing-category"
+								mix={css(detailCategoryLinkCss)}
+							>
+								{communityPackageCategoryCopy[listing.category].label}
+							</a>
+						</li>
+						{listing.tags.map((tag) => (
+							<li key={tag} mix={css(communityTagPillCss)}>
+								{tag}
+							</li>
+						))}
+					</ul>
 
-			{/* Facts as a quiet definition row, not a stat billboard. */}
-			<dl data-rise style={{ '--rise': '4' }} mix={css(metaCss)}>
-				<div>
-					<dt>License</dt>
-					<dd>{listing.license}</dd>
-				</div>
-				<div>
-					<dt>Published</dt>
-					<dd>{formatCommunityPublishedDate(listing.publishedAt)}</dd>
-				</div>
-				<div>
-					<dt>Pinned commit</dt>
-					<dd>
-						<code>{shortCommunityCommit(listing.pinnedCommit)}</code>
-					</dd>
-				</div>
-				<div>
-					<dt>Rating</dt>
-					<dd data-testid="community-detail-rating">
-						{formatCommunityStars(listing.averageStars, listing.ratingCount)}
-					</dd>
-				</div>
-				<div>
-					<dt>Forks</dt>
-					<dd data-testid="community-detail-forks">{listing.forkCount}</dd>
-				</div>
-				<div>
-					<dt>Adaptation effort</dt>
-					<dd>
-						{formatCommunityAdaptationEffort(listing.averageAdaptationEffort)}
-					</dd>
-				</div>
-			</dl>
+					<dl data-rise style={{ '--rise': '4' }} mix={css(metaCss)}>
+						<div>
+							<dt>License</dt>
+							<dd>{listing.license}</dd>
+						</div>
+						<div>
+							<dt>Published</dt>
+							<dd>{formatCommunityPublishedDate(listing.publishedAt)}</dd>
+						</div>
+						<div>
+							<dt>Pinned commit</dt>
+							<dd>
+								<code>{shortCommunityCommit(listing.pinnedCommit)}</code>
+							</dd>
+						</div>
+						<div>
+							<dt>Rating</dt>
+							<dd data-testid="community-detail-rating">
+								{formatCommunityStars(
+									listing.averageStars,
+									listing.ratingCount,
+								)}
+							</dd>
+						</div>
+						<div>
+							<dt>Forks</dt>
+							<dd data-testid="community-detail-forks">{listing.forkCount}</dd>
+						</div>
+						<div>
+							<dt>Adaptation effort</dt>
+							<dd>
+								{formatCommunityAdaptationEffort(
+									listing.averageAdaptationEffort,
+								)}
+							</dd>
+						</div>
+					</dl>
+				</>
+			) : null}
 		</div>
 	)
 }
@@ -225,112 +195,35 @@ export async function renderCommunityDetailContentHtml(
 	return renderToString(<CommunityDetailContent {...props} />)
 }
 
-/* ---------- styles (prototype: `.pkg-detail` in landing/styles.css) ---------- */
-
-const backLinkCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.4rem',
-	fontSize: '0.95rem',
-	fontWeight: 550,
-	color: colors.primaryText,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.text,
-	},
-}
-
-const detailHeadCss = {
-	marginTop: '1.8rem',
+const listingHeadCss = {
+	marginTop: '1.4rem',
 	display: 'flex',
 	alignItems: 'flex-start',
 	gap: '1.1rem',
 }
 
-const headTextCss = {
-	minWidth: 0,
-	flex: 1,
-	display: 'flex',
-	flexDirection: 'column' as const,
-	gap: '0.45rem',
-	'& h1': {
-		margin: 0,
-		fontSize: 'clamp(1.7rem, 4vw, 2.4rem)',
-		fontWeight: 760,
-		letterSpacing: '-0.024em',
-		lineHeight: 1.05,
-		overflowWrap: 'anywhere' as const,
-	},
-}
-
-const titleRowCss = {
-	display: 'flex',
-	alignItems: 'center',
-	flexWrap: 'wrap' as const,
-	gap: '0.5rem',
-	minWidth: 0,
-	'& h1': {
-		flex: '0 1 auto',
-		minWidth: 0,
-	},
-}
-
-const detailBadgeGroupCss = {
+const listingBadgeGroupCss = {
 	display: 'flex',
 	alignItems: 'center',
 	flexWrap: 'wrap' as const,
 	gap: '0.35rem',
-}
-
-const ownerLineCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	flexWrap: 'nowrap' as const,
-	gap: '0.35rem',
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.95rem',
-	width: 'max-content',
-	maxWidth: '100%',
-}
-
-const ownerLinkCss = {
-	color: colors.textMuted,
-	fontWeight: 550,
-	textDecoration: 'none',
-	'&:hover': {
-		color: colors.primaryText,
-	},
-}
-
-const ownerPrivateNameCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.25rem',
-	minWidth: 0,
-}
-
-const ownerPrivateLockCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	color: colors.textMuted,
-	cursor: 'help',
-	flexShrink: 0,
+	paddingTop: '0.35rem',
 }
 
 const badgeCss = {
-	...communityBadgePillCss,
-}
-
-const detailSubCss = {
-	margin: '1.4rem 0 0',
+	display: 'inline-flex',
+	alignItems: 'center',
+	padding: '0.15rem 0.55rem',
+	borderRadius: '999px',
+	fontSize: '0.78rem',
+	fontWeight: 600,
+	backgroundColor: colors.surface,
+	border: `1px solid ${colors.border}`,
 	color: colors.textMuted,
-	fontSize: '1.05rem',
-	maxWidth: '58ch',
 }
 
 const filesLinkRowCss = {
-	margin: '0.7rem 0 0',
+	margin: '0.9rem 0 0',
 }
 
 const filesLinkCss = {

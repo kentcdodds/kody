@@ -91,7 +91,7 @@ function exampleImportHint(scopedName: string, kodyId: string): string {
 		case 'personal-capture':
 			return `${searchHint} Example: import capture from "${specifier}/capture" then await capture({ text: "Onboarding first build" }), then import listCaptures from "${specifier}/listCaptures" then await listCaptures({ limit: 5 }).`
 		default:
-			return `${searchHint} Call package_get for that installed package, read its README exports, then statically import one export from its scoped kody: module specifier.`
+			return `${searchHint} Call packageGet for that installed package, read its README exports, then statically import one export from its scoped kody: module specifier.`
 	}
 }
 
@@ -121,7 +121,7 @@ export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
 	return [
 		`Help me change my Kody package "${kodyId}" or create a new package.`,
 		'First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }).',
-		`Then call package_get_git_remote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
+		`Then call packageGetGitRemote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
 		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')
 }

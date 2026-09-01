@@ -42,7 +42,7 @@ and publish paths are covered in
   CI, because its correctness is pinned to a platform version and it runs
   fleet-wide over other users' source. A user transforming **their own**
   packages with **their own** transform needs no primitive — every required
-  power (repo sessions, `repo_run_checks` against a staged tree, gated publish,
+  power (repo sessions, `repoRunChecks` against a staged tree, gated publish,
   git history) already exists as user capabilities. That userland pattern is
   packaged as the
   [`@kentcdodds/codemod-runner`](https://kody.codes/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
@@ -313,6 +313,25 @@ owner-action count without publishing private package ids or owners. Codemod
 0007 and the local prefixless teaching error remain the repair path for those
 documents.
 
+### `0009-snake-case-kody-members`
+
+This one-shot cleanup recases leftover snake_case builtin `kody` members to
+camelCase JavaScript identifiers:
+
+- Rewrites `kody.package_get(...)` and `kody["package_get"](...)` to
+  `kody.packageGet(...)` in JavaScript and TypeScript modules, including
+  leftover ambient `kody` calls that never imported `kody:runtime`.
+- Rewrites `package_get:capability` entity refs in those modules and in Markdown
+  / MDX.
+- Leaves `kody.mcp["server"].tool_name(...)` unchanged. MCP-synthesized tools
+  keep their upstream names.
+- Emits `needsManual` for computed `kody[id]` where the property is data, and
+  for files that mention a snake_case member but cannot be parsed.
+
+Builtin capability and domain ids are camelCase identifiers (`emailSend`,
+`mcpServers`). Input field names, usage-metric event types, Codex TOML
+`[mcp_servers.kody]`, and SQL `cf_agents_mcp_servers` stay snake_case.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
@@ -440,10 +459,10 @@ fleet transforms; see
 
 Admin-gated operator fleet runs:
 
-- `admin_package_codemod_scan`
-- `admin_package_codemod_dry_run`
-- `admin_package_codemod_apply`
-- `admin_package_codemod_revert`
+- `adminPackageCodemodScan`
+- `adminPackageCodemodDryRun`
+- `adminPackageCodemodApply`
+- `adminPackageCodemodRevert`
 
 Admin capabilities require `requiredRole: 'admin'` and follow the RBAC boundary
 in [Authorization](./architecture/authorization.md).

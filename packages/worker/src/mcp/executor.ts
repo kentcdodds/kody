@@ -43,6 +43,8 @@ import {
 	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
+import { buildIntegrationReconnectHref } from '#universal/connection-trouble.ts'
+import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/token-refresh.ts'
 import {
 	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
@@ -1214,6 +1216,16 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'integration_auth_failed'
+			message: string
+			nextStep: string
+			integrationName: string | null
+			reconnectHref: string | null
+			suggestedAction: {
+				type: 'reconnect_integration'
+			}
+	  }
+	| {
 			kind: 'auth_required'
 			message: string
 			nextStep: string
@@ -1295,6 +1307,48 @@ export type ExecutionErrorDetails =
 				type: 'fix_code'
 			}
 	  }
+
+function parseIntegrationTokenRefreshCallerMessage(message: string) {
+	const nameMatch = /[Ii]ntegration "([^"]+)"/.exec(message)
+	const integrationName = nameMatch?.[1] ?? null
+	if (!integrationName) {
+		return { integrationName: null, reconnectHref: null }
+	}
+	return {
+		integrationName,
+		reconnectHref: buildIntegrationReconnectHref({
+			name: integrationName,
+			accountLabel: parseTrustedReconnectLoginHint(message, integrationName),
+		}),
+	}
+}
+
+/**
+ * Provider `error_description` is interpolated before our generated
+ * `Reconnect at /connect/oauth?...` suffix. Only the last root-relative
+ * connect path whose provider matches the named integration is trusted.
+ */
+function parseTrustedReconnectLoginHint(
+	message: string,
+	integrationName: string,
+) {
+	let loginHint: string | null = null
+	for (const match of message.matchAll(/Reconnect at (\S+)/g)) {
+		const raw = match[1]?.replace(/[.)]+$/, '') ?? ''
+		if (!raw.startsWith('/connect/oauth?')) continue
+		let parsed: URL
+		try {
+			parsed = new URL(raw, 'https://kody.invalid')
+		} catch {
+			continue
+		}
+		if (parsed.origin !== 'https://kody.invalid') continue
+		if (parsed.pathname !== '/connect/oauth') continue
+		if (parsed.searchParams.get('provider') !== integrationName) continue
+		loginHint = parsed.searchParams.get('loginHint')
+	}
+	return loginHint
+}
 
 export function getExecutionErrorDetails(
 	error: unknown,
@@ -1456,6 +1510,24 @@ export function getExecutionErrorDetails(
 		}
 	}
 
+	if (isIntegrationTokenRefreshCallerMessage(message)) {
+		const parsed = parseIntegrationTokenRefreshCallerMessage(message)
+		const reconnectHref = parsed.reconnectHref
+		const name = parsed.integrationName
+		return {
+			kind: 'integration_auth_failed',
+			message,
+			nextStep: reconnectHref
+				? `Send the user to ${reconnectHref} so they can reconnect ${name ?? 'this integration'}, then retry.`
+				: 'Ask the user to reconnect this integration from /account/waiting or /account/integrations, then retry.',
+			integrationName: name,
+			reconnectHref,
+			suggestedAction: {
+				type: 'reconnect_integration',
+			},
+		}
+	}
+
 	const missingSecretDetails = parseMissingSecretMessage(message)
 	if (missingSecretDetails) {
 		return {
@@ -1607,7 +1679,7 @@ function createExecutionTimedOutNextStep(timedOutAfterMs: number | null) {
 		timedOutAfterMs === null
 			? 'The sandbox enforces a hard execution time budget (~90s for ad hoc execute), so retrying the identical call will time out again.'
 			: `The sandbox enforces a hard execution time budget and this run used its full ${formatTimeoutBudget(timedOutAfterMs)}, so retrying the identical call will time out again.`
-	return `${budgetSentence} For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — \`import { workflows } from 'kody:runtime'\` then \`workflows.create({ code, params })\` — and inspect progress with \`workflow_run_list\`. Otherwise split the work into smaller calls that each finish well within the budget.`
+	return `${budgetSentence} For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — \`import { workflows } from 'kody:runtime'\` then \`workflows.create({ code, params })\` — and inspect progress with \`workflowRunList\`. Otherwise split the work into smaller calls that each finish well within the budget.`
 }
 
 function formatTimeoutBudget(timeoutMs: number) {

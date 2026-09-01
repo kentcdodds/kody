@@ -1,6 +1,6 @@
 /**
  * Caller-clearable failures from user-authored SQL against a durable storage
- * bucket (storage_query / storage.sql). Cloudflare Durable Object SQL surfaces
+ * bucket (storageQuery / storage.sql). Cloudflare Durable Object SQL surfaces
  * SQLite failures as `<detail>: SQLITE_<CODE>` (for example
  * `no such table: articles: SQLITE_ERROR`). Policy denials thrown by
  * storage-runner before exec use stable `storage.sql …` / `Read-only

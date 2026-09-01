@@ -28,7 +28,7 @@ function createContext() {
 	}
 }
 
-test('community_get throws McpCallerError when the listing is missing', async () => {
+test('communityGet throws McpCallerError when the listing is missing', async () => {
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(null)
 
 	const error = await communityGetCapability

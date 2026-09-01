@@ -19,9 +19,7 @@ Import runtime APIs from **`kody:runtime`** when you need Kody helpers. These
 helpers are runtime exports:
 
 - use **`import { kody } from 'kody:runtime'`** to call builtin capabilities
-  discovered by **search** as **`await kody.capability_id(input)`** for valid
-  identifier names, or **`await kody["capability-id"](input)`** for
-  non-identifier capability ids
+  discovered by **search** as **`await kody.capabilityId(input)`**
 - use
   **`import { createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
   for OAuth helpers
@@ -117,7 +115,7 @@ is capped at 60s (30s under that budget) unless the caller passes a tighter
 `AbortSignal`. For multi-step or long-running work (>~60s, batch sweeps,
 migrations, polling loops), use one **execute** call to submit
 `workflows.create({ code, params })`, then inspect progress with
-`workflow_run_list` instead of chaining many MCP tool calls. Sandbox timeout
+`workflowRunList` instead of chaining many MCP tool calls. Sandbox timeout
 errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.
@@ -136,7 +134,7 @@ must be recoverable:
 - Kody persists that execute run **eagerly** (a `running` row at start, terminal
   row at finish) and stores a **bounded result snapshot** on the run record.
 - The tool response includes **`runId`** whenever a record exists — poll
-  **`run_get`** with it if the client timed out.
+  **`runGet`** with it if the client timed out.
 - Retrying with the **same** `idempotencyKey` after completion returns the
   retained result with **`replayed: true`** and the same **`runId`** (no second
   sandbox).
@@ -145,7 +143,7 @@ must be recoverable:
 - If a keyed run is stranded as `running` (for example the Worker isolate reset
   before the terminal write), Kody reconciles it to an error with
   **`errorName=platform_interrupted`** after a few minutes (platform weather;
-  outcome unknown — not a user-authored package failure). Polling **`run_get`**
+  outcome unknown — not a user-authored package failure). Polling **`runGet`**
   or retrying the same key then returns that terminal outcome instead of
   `inProgress` forever.
 
@@ -172,19 +170,19 @@ module-oriented runtime model:
 - package apps are optional UI surfaces declared under `package.json#kody.app`
 - deferred one-shot work uses **`workflows.create({ runAt, ... })`** from
   `execute` or package runtime — see [Workflows](./workflows.md)
-- **`kody.job_update(...)`** updates metadata on an existing job (schedule,
+- **`kody.jobUpdate(...)`** updates metadata on an existing job (schedule,
   timezone, enabled, kill switch, preserved, `expires_at`). Package job name and
   source stay in the package repo.
-- Optional **`expires_at`** on `job_update` stops the platform from scheduling
+- Optional **`expires_at`** on `jobUpdate` stops the platform from scheduling
   the job after that UTC time. When expiry is reached, Kody auto-disables the
-  job (`enabled=false`) so it shows as disabled in `job_list` / `job_get` (with
+  job (`enabled=false`) so it shows as disabled in `jobList` / `jobGet` (with
   `expired: true`) and can age out via normal retention. This is separate from
   **`preserved`**, which only skips auto-deletion.
-- **`kody.job_get({ id, includeCode: true })`** returns the scheduled job
+- **`kody.jobGet({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored entrypoint path and source code
 - Package-owned jobs are removed by editing the package and publishing, not by
-  `job_delete`.
-- **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
+  `jobDelete`.
+- **`kody.jobRunNow(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging.
   Expired jobs are rejected.
 
@@ -203,10 +201,10 @@ instead of internal source ids whenever possible.
 
 For common edit-and-check workflows, use the file-level repo session API
 documented in [Repo-backed editing sessions](./repo-sessions.md): open a session
-with `repo_open_session`, edit with `repo_edit_files` or `repo_apply_patch`,
-inspect with `repo_diff`, commit with `repo_commit`, validate with
-`repo_run_checks`, and publish with `repo_publish_session`. There is no
-git-command channel inside sessions; use `package_get_git_remote` for full git.
+with `repoOpenSession`, edit with `repoEditFiles` or `repoApplyPatch`, inspect
+with `repoDiff`, commit with `repoCommit`, validate with `repoRunChecks`, and
+publish with `repoPublishSession`. There is no git-command channel inside
+sessions; use `packageGetGitRemote` for full git.
 
 ## Agent turns
 
@@ -244,9 +242,9 @@ wrote storage.
 
 For dedicated inspection, use:
 
-- **`storage_export`** — export one storage bucket as JSON
-- **`storage_query`** — run SQL against one storage bucket (read-only by
-  default, opt into writes explicitly)
+- **`storageExport`** — export one storage bucket as JSON
+- **`storageQuery`** — run SQL against one storage bucket (read-only by default,
+  opt into writes explicitly)
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its
@@ -269,10 +267,10 @@ basic latency instrumentation around tool runs.
 
 For memory mutations, the workflow is explicit and strict:
 
-- **Always run `meta_memory_verify` before writing or deleting memory**
-- then decide whether to call **`meta_memory_upsert`**,
-  **`meta_memory_delete`**, both, or neither
-- **`meta_memory_upsert`** creates a new memory when **`memory_id`** is omitted
+- **Always run `metaMemoryVerify` before writing or deleting memory**
+- then decide whether to call **`metaMemoryUpsert`**, **`metaMemoryDelete`**,
+  both, or neither
+- **`metaMemoryUpsert`** creates a new memory when **`memory_id`** is omitted
   and updates an existing memory when **`memory_id`** is provided
 
 Kody retrieves related memories, but the **consuming agent** is responsible for
@@ -281,8 +279,7 @@ deciding what action to take.
 ## MCP server instructions
 
 Users can read or replace their own MCP server instruction overlay with
-**`meta_get_mcp_server_instructions`** and
-**`meta_set_mcp_server_instructions`**.
+**`metaGetMcpServerInstructions`** and **`metaSetMcpServerInstructions`**.
 
 This overlay is appended after Kody's built-in server instructions for that
 user. Prefer **memories** for durable facts and preferences; use the overlay
@@ -294,10 +291,9 @@ MCP sessions, so reconnect the MCP client if the host caches server
 instructions.
 
 Some MCP clients keep only the first 2048 characters of server instructions.
-**`meta_get_mcp_server_instructions`** and
-**`meta_set_mcp_server_instructions`** report `assembled_chars` and a `warning`
-when the assembled text meets that cut, so the overlay may never reach the
-model.
+**`metaGetMcpServerInstructions`** and **`metaSetMcpServerInstructions`** report
+`assembled_chars` and a `warning` when the assembled text meets that cut, so the
+overlay may never reach the model.
 
 ## Network and OAuth helpers
 
@@ -316,7 +312,7 @@ const response = await googleFetch('/calendar/v3/users/me/calendarList')
 
 Integration names should usually follow `<provider>-<purpose>` when multiple
 accounts may exist, such as `google`, `google-business`, or
-`google-youtube-brand`. Call **`integration_list`** up front when a provider may
+`google-youtube-brand`. Call **`integrationList`** up front when a provider may
 have multiple accounts connected.
 
 OAuth integrations may include `authorization` metadata with the saved
@@ -355,11 +351,11 @@ to be approved for both secrets, and only sends the derived Basic header in the
 outbound request.
 
 See [Secrets and host approval](./secrets-and-values.md) for placeholders, host
-approval, **`kody.secret_list`** / **`secret_set`**, and the rules for
-mentioning placeholder syntax without resolving it (the inert
-`{{secret:<name>}}` form and the `x-kody-secret-resolution: off` header). Treat
-placeholder syntax as operational wiring, not prose — never place a resolvable
-**`{{secret:...}}`** token into content shown to users or sent to third parties.
+approval, **`kody.secretList`** / **`secretSet`**, and the rules for mentioning
+placeholder syntax without resolving it (the inert `{{secret:<name>}}` form and
+the `x-kody-secret-resolution: off` header). Treat placeholder syntax as
+operational wiring, not prose — never place a resolvable **`{{secret:...}}`**
+token into content shown to users or sent to third parties.
 
 ## Named state
 

@@ -329,6 +329,28 @@ export function buildPackageFilesView(input: {
 	}
 }
 
+/**
+ * Last-resort public tree ref when git head lookup has not run. Matches
+ * `resolveArtifactSourceHead` — not `master`. Callers that know the repo's
+ * default branch should pass that name instead of relying on this fallback.
+ */
+export const fallbackDefaultBranchName = 'main'
+
+/**
+ * Empty / omitted / `HEAD` (any case) mean "this repo's default branch", not
+ * a branch literally named HEAD. Named refs such as `main` or `release` are
+ * left alone so `/tree/main` is not rewritten to `/tree/release`.
+ */
+export function isPublicTreeDefaultRefAlias(ref: string | null | undefined) {
+	const trimmed = ref?.trim() ?? ''
+	return trimmed === '' || trimmed.toUpperCase() === 'HEAD'
+}
+
+export function publicTreeRefForHref(ref: string | null | undefined) {
+	if (isPublicTreeDefaultRefAlias(ref)) return fallbackDefaultBranchName
+	return ref!.trim()
+}
+
 export function getCommunityPackageTreeHref(input: {
 	listingId: string
 	ownerUsername?: string | null
@@ -337,7 +359,7 @@ export function getCommunityPackageTreeHref(input: {
 	relativePath?: string
 }) {
 	const relativePath = input.relativePath?.trim() || undefined
-	const ref = input.ref?.trim() || 'HEAD'
+	const ref = publicTreeRefForHref(input.ref)
 	if (
 		input.ownerUsername &&
 		input.kodyId &&
@@ -372,6 +394,32 @@ export function getCommunityPackageFilesHref(input: {
 	ref?: string
 }) {
 	return getCommunityPackageTreeHref(input)
+}
+
+export function getPackageTreeHref(input: {
+	username: string
+	kodyId: string
+	listingId?: string | null
+	ref?: string
+	relativePath?: string
+}) {
+	return getCommunityPackageTreeHref({
+		listingId: input.listingId ?? '',
+		ownerUsername: input.username,
+		kodyId: input.kodyId,
+		ref: input.ref,
+		relativePath: input.relativePath,
+	})
+}
+
+export function getPackageSettingsHref(input: {
+	username: string
+	kodyId: string
+}) {
+	return routes.communityPackageSettings.href({
+		username: input.username,
+		kodyId: input.kodyId,
+	})
 }
 
 export function getAccountPackageFilesHref(input: {

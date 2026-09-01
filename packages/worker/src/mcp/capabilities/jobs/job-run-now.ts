@@ -10,7 +10,7 @@ import {
 export const jobRunNowCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
-		name: 'job_run_now',
+		name: 'jobRunNow',
 		description:
 			'Run an existing scheduled job immediately by id using the normal job runtime, then return the updated job state and execution result for debugging. Recurring schedules belong on a package (`kody.jobs`); deferred one-shots use `workflows.create`.',
 		keywords: [

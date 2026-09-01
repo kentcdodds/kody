@@ -10,7 +10,7 @@ import { secretScopeValues } from '#mcp/secrets/types.ts'
 export const secretDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
-		name: 'secret_delete',
+		name: 'secretDelete',
 		description:
 			'Delete an existing secret reference for the signed-in user. Plaintext values stay hidden. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Use this to remove execute-time access to a secret.',
 		keywords: ['secret', 'delete', 'remove', 'revoke', 'credential'],

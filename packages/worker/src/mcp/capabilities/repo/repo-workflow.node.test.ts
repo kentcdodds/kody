@@ -342,7 +342,7 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 	})
 })
 
-test('repo_publish_session covers base_moved repair, artifact rebuild, and rebuild failures', async () => {
+test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild failures', async () => {
 	resetMocks()
 	const baseMovedRpc = createRepoRpc()
 	baseMovedRpc.getSessionInfo.mockResolvedValueOnce({
@@ -369,7 +369,7 @@ test('repo_publish_session covers base_moved repair, artifact rebuild, and rebui
 		publishedCommit: null,
 		message:
 			'The source repo has moved since this session opened. Rebase the session before publishing.',
-		repairHint: 'repo_rebase_session',
+		repairHint: 'repoRebaseSession',
 		sessionBaseCommit: 'commit-old',
 		currentPublishedCommit: 'commit-new',
 	})
@@ -383,7 +383,7 @@ test('repo_publish_session covers base_moved repair, artifact rebuild, and rebui
 		status: 'base_moved',
 		session_id: 'session-1',
 		published_commit: null,
-		repair_hint: 'repo_rebase_session',
+		repair_hint: 'repoRebaseSession',
 		session_base_commit: 'commit-old',
 		current_published_commit: 'commit-new',
 	})

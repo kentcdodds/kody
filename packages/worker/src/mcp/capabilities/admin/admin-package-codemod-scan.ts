@@ -15,7 +15,7 @@ export const adminPackageCodemodScanCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_package_codemod_scan',
+		name: 'adminPackageCodemodScan',
 		description: `Fleet-scan saved packages for matches of a registered package codemod (detect only; no writes). Optional filters canary by userIds or packageIds. ${packageCodemodPagingHint}`,
 		keywords: [
 			'admin',
@@ -33,7 +33,7 @@ export const adminPackageCodemodScanCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return await auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_codemod_scan',
+				'adminPackageCodemodScan',
 				async () =>
 					await runFleetPackageCodemodStep(ctx, {
 						codemodId: args.codemodId,

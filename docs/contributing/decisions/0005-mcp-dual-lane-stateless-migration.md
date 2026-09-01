@@ -40,7 +40,7 @@ revisit. Retiring the legacy lane later also deletes the `mcp_agent_sessions`
 registry, the `MCP_OBJECT` Durable Object, and the session purge path. Tasks
 (the `io.modelcontextprotocol/tasks` extension) are deliberately not implemented
 yet: the SDK v2 ships the vocabulary without a runtime, no major client supports
-it, and execute's idempotency-key + `run_get` flow already covers the need;
+it, and execute's idempotency-key + `runGet` flow already covers the need;
 revisit when a major host ships task support.
 
 ## Retirement criterion (added 2026-08-10)

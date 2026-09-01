@@ -1,6 +1,6 @@
 /**
  * Overlay user-scoped RunLog job_run_observability onto D1 job scheduling rows
- * for user-facing readers (job_get, job_list, account jobs).
+ * for user-facing readers (jobGet, jobList, account jobs).
  */
 
 import {

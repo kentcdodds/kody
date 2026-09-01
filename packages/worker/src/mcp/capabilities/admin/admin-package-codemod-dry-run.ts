@@ -15,7 +15,7 @@ export const adminPackageCodemodDryRunCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_package_codemod_dry_run',
+		name: 'adminPackageCodemodDryRun',
 		description: `Fleet dry-run a registered package codemod: transform in memory and run publish checks without writing. Optional filters canary by userIds or packageIds. ${packageCodemodPagingHint}`,
 		keywords: [
 			'admin',
@@ -33,7 +33,7 @@ export const adminPackageCodemodDryRunCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return await auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_codemod_dry_run',
+				'adminPackageCodemodDryRun',
 				async () =>
 					await runFleetPackageCodemodStep(ctx, {
 						codemodId: args.codemodId,

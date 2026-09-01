@@ -255,10 +255,10 @@ test('kody:runtime exports resolve against the current run when the module insta
 		'.__kody_virtual__/runtime.js': createRuntimeModuleSource(),
 		'entry.js': [
 			"import { kody, email } from './.__kody_virtual__/runtime.js'",
-			'const capturedSearch = kody.community_search',
+			'const capturedSearch = kody.communitySearch',
 			'export default async function main() {',
 			'\treturn {',
-			"\t\tviaProxy: await kody.community_search({ query: 'slack' }),",
+			"\t\tviaProxy: await kody.communitySearch({ query: 'slack' }),",
 			"\t\tviaTopLevelCapture: await capturedSearch({ query: 'slack' }),",
 			'\t\temail,',
 			'\t}',
@@ -273,7 +273,7 @@ test('kody:runtime exports resolve against the current run when the module insta
 		)) as RuntimeModule
 		const createRunRuntime = (label: string, state: { disposed: boolean }) => ({
 			kody: {
-				community_search: async (args: unknown) => {
+				communitySearch: async (args: unknown) => {
 					if (state.disposed) {
 						throw new Error('RPC stub used after being disposed.')
 					}
@@ -584,7 +584,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 				"import { kody } from './.__kody_virtual__/runtime.js'",
 				'',
 				'export default async function runDependency() {',
-				'\treturn await kody.secret_list({ scope: "user" })',
+				'\treturn await kody.secretList({ scope: "user" })',
 				'}',
 			].join('\n'),
 		[nestedRuntimePath]: staleRuntimeSource,
@@ -597,13 +597,13 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		await expect(
 			staleEntry.runWithRuntime({
 				kody: {
-					async secret_list() {
+					async secretList() {
 						return { ok: true }
 					},
 				},
 			}),
 		).rejects.toThrow(
-			"Cannot read properties of undefined (reading 'secret_list')",
+			"Cannot read properties of undefined (reading 'secretList')",
 		)
 	} finally {
 		await staleModuleGraph.cleanup()
@@ -628,7 +628,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		}
 		const result = await hydratedEntry.runWithRuntime({
 			kody: {
-				async secret_list(args: unknown) {
+				async secretList(args: unknown) {
 					return { ok: true, args }
 				},
 			},
@@ -687,7 +687,7 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 				},
 			}),
 			'src/index.ts':
-				'import { kody } from "kody:runtime"\nexport async function runAgentTurnNonStreaming() { return await kody.value_get({ name: "ai-chat" }) }',
+				'import { kody } from "kody:runtime"\nexport async function runAgentTurnNonStreaming() { return await kody.valueGet({ name: "ai-chat" }) }',
 		},
 	})
 	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
@@ -704,7 +704,7 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 				'dist/index.js': [
 					"import { kody } from './.__kody_virtual__/runtime.js'",
 					'export async function runAgentTurnNonStreaming() {',
-					'\treturn await kody.value_get({ name: "ai-chat" })',
+					'\treturn await kody.valueGet({ name: "ai-chat" })',
 					'}',
 				].join('\n'),
 				'dist/.__kody_virtual__/runtime.js': staleRuntimeSource,

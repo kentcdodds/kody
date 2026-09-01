@@ -32,7 +32,7 @@ test('search structured content passes advertised schema for all return paths', 
 				warnings: [],
 				telemetry: { topResultTypes: ['capability'] },
 				phaseTimings: { formattingMs: 2 },
-				matches: [{ type: 'capability', name: 'email_send' }],
+				matches: [{ type: 'capability', name: 'emailSend' }],
 			},
 		},
 		{

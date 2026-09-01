@@ -3,8 +3,8 @@ id: package_subscriptions
 title: Package subscription guide
 summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
-  subscribers with package_subscriptions_list; smoke-test handlers with
-  package_subscription_dispatch; follow metadata-first email, run.error.recorded
+  subscribers with packageSubscriptionsList; smoke-test handlers with
+  packageSubscriptionDispatch; follow metadata-first email, run.error.recorded
   activity notifiers, integration.auth.failed / integration.auth.succeeded
   reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
   connection episodes, consent-gated admin-only platform.feedback.submitted
@@ -65,7 +65,7 @@ package-owned secrets, and `kody:runtime`.
 ## Discovery
 
 Use `search` for package subscription work, then call the built-in
-`package_subscriptions_list` capability to inspect the signed-in user's declared
+`packageSubscriptionsList` capability to inspect the signed-in user's declared
 subscriptions:
 
 ```json
@@ -80,7 +80,7 @@ fan-out, or deciding whether a package already subscribes to a topic.
 
 ## Synthetic dispatch
 
-`package_subscription_dispatch` invokes **one** subscription handler on **one**
+`packageSubscriptionDispatch` invokes **one** subscription handler on **one**
 saved package over MCP. It is a platform-marked real-surface run with real side
 effects. Use it immediately after publish to verify handler wiring without
 waiting for production fan-out.
@@ -109,10 +109,10 @@ Pass exactly one of `params` or `email_message_id`. There is no caller
 `idempotency_key` — the platform generates internal idempotency keys.
 
 Final `published` and `already_published` results from
-`package_publish_external_push` include `test_hints.subscriptions[]` with a
-starter snippet per declared topic when subscriptions are present. For a
-`dispatched` result, poll the workflow to completion before reading its final
-publish result. Failed and non-fast-forward results have no test hints.
+`packagePublishExternalPush` include `test_hints.subscriptions[]` with a starter
+snippet per declared topic when subscriptions are present. For a `dispatched`
+result, poll the workflow to completion before reading its final publish result.
+Failed and non-fast-forward results have no test hints.
 
 ### Handler guidance
 
@@ -315,7 +315,7 @@ type EmailMessageReceivedEvent = {
 
 Do not expect parsed bodies or attachment bytes in the event. Fetch full message
 bodies, parsed headers beyond the event metadata, or attachment bytes only when
-the handler needs them with `email_message_get`, `email_attachment_get`, or the
+the handler needs them with `emailMessageGet`, `emailAttachmentGet`, or the
 package runtime `email` helper.
 
 ## `email.message.quarantined`
@@ -352,12 +352,12 @@ The payload matches `email.message.received` (with
 the stored message in the admin interface (`/admin/system-email?messageId=...`).
 Handlers run as the admin package owner, so the user-scoped email capabilities
 and the `email` runtime helper cannot read the system message — use the metadata
-and `admin_url` for notifications, and the admin `admin_system_email_get`
+and `admin_url` for notifications, and the admin `adminSystemEmailGet`
 capability for full contents.
 
 ## `email.system-message.sent` (admins)
 
-A successful `admin_system_email_send` / `sendSystemEmail` fans
+A successful `adminSystemEmailSend` / `sendSystemEmail` fans
 `email.system-message.sent` to packages saved by users who hold the admin role
 at dispatch time. This includes sends from the `@kentcdodds/system-email`
 utility and raw capability calls. A non-admin package may declare the topic, but
@@ -394,7 +394,7 @@ on `provider_message_id` when a utility already recorded the same send.
 
 ## `platform.feedback.submitted` (admins)
 
-A successful, consent-gated `meta_platform_feedback_submit` insert enqueues a
+A successful, consent-gated `metaPlatformFeedbackSubmit` insert enqueues a
 durable `platform.feedback.submitted` attempt. The Queue consumer dispatches to
 packages saved by users who hold the admin role when the message is processed. A
 non-admin package may declare the topic, but it never receives the event. Admin
@@ -500,7 +500,7 @@ type RunErrorRecordedEvent = {
 
 `activity_url` is built from the trusted deployment origin and links to
 `/account/activity/<runId>`. The event deliberately omits log lines and the full
-run `metadata` blob — fetch detail with `run_get` when needed. Error name and
+run `metadata` blob — fetch detail with `runGet` when needed. Error name and
 message use the same truncation budget as the stored run record.
 
 Recursion guard: runs whose surface is `subscription` never emit this event.
@@ -632,7 +632,7 @@ Never-ready servers (still `authenticating` after add), disabled servers, and
 in-flight `connecting` / `connected` / `discovering` states do not emit. Token
 loss that parks in `authenticating` after a prior `ready` emits disconnected
 without the lightweight retry — the user must reopen `/account/mcp-servers`.
-`mcp_server_reconnect` remains the explicit OAuth restart; listener packages
+`mcpServerReconnect` remains the explicit OAuth restart; listener packages
 should not call it on every event.
 
 Delivery is best-effort after the hub observes the transition — there is no
@@ -661,8 +661,8 @@ type McpServerConnectionEvent = {
 `account_url` is built from the trusted deployment origin and links to
 `/account/mcp-servers/<id>`. The event omits server URLs, OAuth tokens, bearer
 headers, auth URLs, and discovered tool lists. Fetch live status with
-`mcp_server_list` when needed. Idempotency keys include the topic, episode id,
-and subscriber package id, so one disconnected and one reconnected invoke per
+`mcpServerList` when needed. Idempotency keys include the topic, episode id, and
+subscriber package id, so one disconnected and one reconnected invoke per
 episode.
 
 Use these topics for notifier packages that post to Discord or otherwise tell
@@ -903,7 +903,7 @@ unpublished listings are a permanent cancellation; transient lookup, discovery,
 and package-invocation infrastructure failures retry and can reach the dedicated
 DLQ. `event_id` provides a distinct package-invocation idempotency key for every
 first-publish enqueue. Enqueue failures are logged and never fail
-`community_publish`.
+`communityPublish`.
 
 ## `status.incident.opened` / `status.incident.resolved` (admins)
 
@@ -1233,8 +1233,8 @@ include the topic, user id, timestamp, and subscriber package id.
 Use this topic for notifier packages that email or page an operator when a
 signup is stranded. `user.created` still fires for every new person account,
 including accounts that later verify themselves. Do not treat this topic as
-permission to mark the account verified or mint a link — call
-`admin_user_verify` from an admin session when ownership is proven.
+permission to mark the account verified or mint a link — call `adminUserVerify`
+from an admin session when ownership is proven.
 
 ## `user.email_outbound.paused` (admins)
 

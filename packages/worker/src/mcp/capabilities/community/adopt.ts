@@ -7,7 +7,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 export const communityForkAdoptCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_fork_adopt',
+		name: 'communityForkAdopt',
 		description:
 			'Mark a community-forked package as reviewed and trusted by you. Adoption keeps fork provenance but grants self-authored-like read/use access to your user secrets (mutations still need an allowed_packages grant). Agents must actually review the package source (repo session or fork files) before calling this, include what was reviewed in `review_summary`, and tell the user the fork was adopted.',
 		keywords: [

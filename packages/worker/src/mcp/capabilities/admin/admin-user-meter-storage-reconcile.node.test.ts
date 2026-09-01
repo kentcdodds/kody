@@ -47,7 +47,7 @@ function createAdminContext(env: Env) {
 	}
 }
 
-test('admin_user_meter_storage_reconcile routes batch size, audits, and rejects OOB', async () => {
+test('adminUserMeterStorageReconcile routes batch size, audits, and rejects OOB', async () => {
 	mockModule.reconcileD1StorageBytes.mockResolvedValueOnce({
 		scanned: 3,
 		updated: 2,
@@ -79,7 +79,7 @@ test('admin_user_meter_storage_reconcile routes batch size, audits, and rejects 
 	)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
-			action: 'admin_user_meter_storage_reconcile',
+			action: 'adminUserMeterStorageReconcile',
 			result: 'success',
 		}),
 	)
@@ -106,12 +106,12 @@ test('admin_user_meter_storage_reconcile routes batch size, audits, and rejects 
 	await expect(
 		adminUserMeterStorageReconcileCapability.handler({ batch_size: 0 }, ctx),
 	).rejects.toThrow(
-		'Invalid input for capability "admin_user_meter_storage_reconcile"',
+		'Invalid input for capability "adminUserMeterStorageReconcile"',
 	)
 	await expect(
 		adminUserMeterStorageReconcileCapability.handler({ batch_size: 9 }, ctx),
 	).rejects.toThrow(
-		'Invalid input for capability "admin_user_meter_storage_reconcile"',
+		'Invalid input for capability "adminUserMeterStorageReconcile"',
 	)
 	expect(mockModule.reconcileD1StorageBytes).not.toHaveBeenCalled()
 })

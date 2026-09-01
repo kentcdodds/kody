@@ -79,7 +79,7 @@ function resetMocks() {
 	})
 }
 
-test('repo_publish_session keeps a successful publish when fork absorb fails', async () => {
+test('repoPublishSession keeps a successful publish when fork absorb fails', async () => {
 	resetMocks()
 	mockModule.absorbCommunityForkUpstream.mockRejectedValue(
 		new Error('origin listing is gone'),
@@ -100,7 +100,7 @@ test('repo_publish_session keeps a successful publish when fork absorb fails', a
 		published_commit: 'commit-1',
 		message: 'Published session to repo-artifacts-1.',
 		notice:
-			'Published, but the behind-upstream banner did not clear: origin listing is gone. Retry repo_publish_session with absorbed_upstream_commit.',
+			'Published, but the behind-upstream banner did not clear: origin listing is gone. Retry repoPublishSession with absorbed_upstream_commit.',
 	})
 	expect(mockModule.absorbCommunityForkUpstream).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -111,7 +111,7 @@ test('repo_publish_session keeps a successful publish when fork absorb fails', a
 	)
 })
 
-test('repo_publish_session skips absorb notice for self-authored packages', async () => {
+test('repoPublishSession skips absorb notice for self-authored packages', async () => {
 	resetMocks()
 	mockModule.absorbCommunityForkUpstream.mockRejectedValue(
 		new CommunityActionError(

@@ -37,7 +37,7 @@ export function formatSearchMarkdown(input: {
 
 	if (input.matches.length === 0) {
 		lines.push(
-			'> **No matches.** Rephrase `query` or call `meta_list_capabilities` for the full capability registry. `entity` looks up a known id — it does not improve an empty ranked list.',
+			'> **No matches.** Rephrase `query` or call `metaListCapabilities` for the full capability registry. `entity` looks up a known id — it does not improve an empty ranked list.',
 		)
 	} else {
 		input.matches.forEach((match, index) => {
@@ -106,13 +106,16 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 				: ''
 		const listingAheadNote =
 			match.listingAhead === true
-				? ' Listing ahead — origin has new commits; community_get then repo_publish_session with absorbed_upstream_commit.'
+				? ' Listing ahead — origin has new commits; communityGet then repoPublishSession with absorbed_upstream_commit.'
 				: ''
 		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
 	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')
-		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const trouble = match.lastAuthFailure?.reconnectable
+			? ` ${escapeMarkdownText(match.lastAuthFailure.why)} ${escapeMarkdownText(match.lastAuthFailure.doLabel)} at ${formatMarkdownInlineCode(match.lastAuthFailure.reconnectHref)}.`
+			: ''
+		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${trouble}`
 	}
 	if (match.type === 'retriever_result') {
 		const source = match.source ?? `${match.kodyId}/${match.retrieverKey}`

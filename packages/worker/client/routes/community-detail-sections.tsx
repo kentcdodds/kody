@@ -178,6 +178,17 @@ export function renderReadmeSection(readme: Array<RemixNode>) {
 	)
 }
 
+export function renderEmptyReadme() {
+	return (
+		<section aria-labelledby="readme-title" mix={css(readmeSectionCss)}>
+			<h2 id="readme-title">README</h2>
+			<p data-testid="community-readme-empty" mix={css(mutedTextCss)}>
+				This package has no README yet.
+			</p>
+		</section>
+	)
+}
+
 export type AdminFeatureSectionProps = {
 	featured: boolean
 	featureState: 'idle' | 'submitting' | 'error'

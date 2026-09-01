@@ -13,9 +13,9 @@ import {
 export const repoCreateCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_create',
+		name: 'repoCreate',
 		description:
-			'Create a plain Artifacts-backed repo for the signed-in user. Plain repos are live-at-HEAD (no publish step). Use repo_get_git_remote for the git lane or repo_open_session for MCP file editing.',
+			'Create a plain Artifacts-backed repo for the signed-in user. Plain repos are live-at-HEAD (no publish step). Use repoGetGitRemote for the git lane or repoOpenSession for MCP file editing.',
 		keywords: ['repo', 'create', 'plain', 'artifacts', 'storage'],
 		readOnly: false,
 		idempotent: false,
@@ -103,9 +103,9 @@ export const repoCreateCapability = defineDomainCapability(
 				source_id: ensuredSource.id,
 				repo_git_id: ensuredSource.repo_id,
 				session_hint:
-					'Open an MCP editing session with repo_open_session using target { kind: "repo", name } or source_id.',
+					'Open an MCP editing session with repoOpenSession using target { kind: "repo", name } or source_id.',
 				git_lane_hint:
-					'Mint a short-lived write remote with repo_get_git_remote; pushes are live at HEAD with no publish reconcile step.',
+					'Mint a short-lived write remote with repoGetGitRemote; pushes are live at HEAD with no publish reconcile step.',
 			}
 		},
 	},

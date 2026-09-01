@@ -179,8 +179,8 @@ A saved integration or bot-token secret is credentials only. Finish by putting a
 package in front of it so your automations call maintained helpers instead of
 repeating raw API calls:
 
-1. Run `community_search({ query: 'discord' })` for an existing listing and
-   prefer a trusted match when one appears; fork it with `community_fork` (or
+1. Run `communitySearch({ query: 'discord' })` for an existing listing and
+   prefer a trusted match when one appears; fork it with `communityFork` (or
    click **Install** on the listing page), align its README **Required setup**
    with the integration or secret names from this guide, and run its smoke test
    from `execute`.
