@@ -116,7 +116,7 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 	expect(resetOutcome.ok).toBe(false)
 	expect(resetOutcome.message).toContain('memory or CPU limits')
 	expect(resetOutcome.message).toContain(
-		'coding_guide_get({ guide: "heavy_work_offload" })',
+		'search({ entity: "heavy_work_offload:guide" })',
 	)
 	expect(resetOutcome.target).toEqual(target)
 

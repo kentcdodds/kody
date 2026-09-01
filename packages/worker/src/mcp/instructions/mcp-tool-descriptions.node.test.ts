@@ -8,7 +8,7 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 		mcpServerInstructionsClientHeadLimitChars,
 	)
 	expect(searchTool.description).toContain('"send a message"')
-	expect(searchTool.description).toContain('coding_guide_get:capability')
+	expect(searchTool.description).toContain('package_authoring:guide')
 	expect(searchTool.description).not.toContain('meta_list_capabilities')
 	expect(searchTool.description).not.toContain('drill in with')
 

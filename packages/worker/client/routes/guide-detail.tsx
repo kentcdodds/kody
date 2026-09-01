@@ -316,7 +316,7 @@ export function GuideDetailRoute(handle: Handle) {
 									/guides/{guide.slug}.md
 								</a>
 								, or load it over MCP with{' '}
-								<code>{`coding_guide_get({ guide: '${guide.id}' })`}</code>.
+								<code>{`search({ entity: '${guide.id}:guide' })`}</code>.
 							</p>
 						</footer>
 					</>

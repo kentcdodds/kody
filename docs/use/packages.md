@@ -216,9 +216,9 @@ Person-owned packages must not import a platform scope; `community_fork` first.
 
 There is no author-facing `packages.invoke`. External trusted clients that must
 call a named export over HTTP use package invocation tokens. Before sending a
-user to create one, load `coding_guide_get` with
-`guide: "package_invocation_token_setup"` and construct a prefilled
-`/@{username}/{kodyId}?newToken=1` URL without raw token material.
+user to create one, open
+`search({ entity: "package_invocation_token_setup:guide" })` and construct a
+prefilled `/@{username}/{kodyId}?newToken=1` URL without raw token material.
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
@@ -320,9 +320,9 @@ Use the package app model when the package needs:
 
 When a package app depends on OAuth, saved secrets, or a third-party API, run
 the integration bootstrap first: use `search` for the saved integration or
-secret reference, load `coding_guide_get` with `guide: "integration_bootstrap"`,
-and complete a minimal authenticated `execute` smoke test before treating the
-app as ready.
+secret reference, open `search({ entity: "integration_bootstrap:guide" })`, and
+complete a minimal authenticated `execute` smoke test before treating the app as
+ready.
 
 Treat package apps like Worker-style modules:
 

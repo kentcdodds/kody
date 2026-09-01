@@ -75,7 +75,7 @@ export function buildIntegrationSetupPrompt(
 		// personal-token lane), so the prompt defers to it instead of
 		// hardcoding an OAuth-app walkthrough.
 		return [
-			`Load the official Kody setup guide with coding_guide_get({ guide: 'provider_${provider.guideSlug}' }) and follow it to connect ${provider.name} to my Kody account.`,
+			`Open the official Kody setup guide with search({ entity: "provider_${provider.guideSlug}:guide" }) and follow it to connect ${provider.name} to my Kody account.`,
 			'First explain the plan in plain language.',
 			`Then walk me through the guide's recommended path step by step, choose the minimal access for ${provider.scopeHint},`,
 			'save the integration in Kody, and verify the connection with the guide\u2019s smoke test.',

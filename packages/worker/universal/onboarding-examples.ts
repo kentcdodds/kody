@@ -120,7 +120,7 @@ export function buildOnboardingExamplePrompt(input: {
 export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
 	return [
 		`Help me change my Kody package "${kodyId}" or create a new package.`,
-		'First load coding_guide_get({ guide: "package_authoring" }) and coding_guide_get({ guide: "package_lifecycle" }).',
+		'First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }).',
 		`Then call package_get_git_remote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
 		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')

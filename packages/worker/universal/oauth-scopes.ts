@@ -67,7 +67,7 @@ export function buildIncompleteConnectOauthPrompt(input: {
 		: '/connect/oauth'
 	return [
 		`I opened ${href} to connect "${provider}" to my Kody account, but Kody does not have enough OAuth configuration to start the flow (missing authorize URL and/or token URL).`,
-		`Load coding_guide_get({ guide: "oauth" }) and the matching provider_* guide if one exists.`,
+		`Open search({ entity: "oauth:guide" }) and the matching provider_*:guide if one exists.`,
 		`Then give me a complete /connect/oauth URL with the required query parameters (provider, authorizeUrl, tokenUrl, and any scopes, flow, and allowedHosts the provider needs) so I can connect.`,
 	].join(' ')
 }
@@ -98,7 +98,7 @@ export function buildChangeIntegrationScopesPrompt(input: {
 		`Add the scopes I need to the "${name}" OAuth integration.`,
 		`authorization.scopes is reconnect metadata — the list the next /connect/oauth visit will request — not the current access token.`,
 		`It currently requests: ${currentList}.`,
-		`Load coding_guide_get({ guide: "oauth" }) and the matching provider_* guide.`,
+		`Open search({ entity: "oauth:guide" }) and the matching provider_*:guide.`,
 		`Call integration_get / integration_list first. Scopes are per connection; sibling accounts that share an OAuth app keep their own scope lists.`,
 		`Use integration_save to widen authorization.scopes on this connection only.`,
 		`Then tell me in plain language that the saved integration now requests those scopes but existing tokens do not, and ask whether I want to reconnect this account (and any other accounts I name) at ${reconnectHref}.`,

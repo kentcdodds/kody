@@ -3,11 +3,12 @@
 Official markdown guides for agent and contributor workflows. Each guide carries
 YAML frontmatter (`id`, `title`, `summary`, `category`, and for provider guides
 `provider` and `lastVerified`). Sources live under `docs/guides/` and are
-bundled into origin and `kody-platform` at build time so web `/guides` and MCP
-`coding_guide_get` serve the same deployed content. Official guide deploys
-upload those two scripts and skip runtime and jobs:
+bundled into origin and `kody-platform` at build time so web `/guides` and
+`search({ entity: "{id}:guide" })` serve the same deployed content. Official
+guide deploys upload those two scripts and skip runtime and jobs:
 
-- **`coding_guide_get`** over MCP — pass the stable `id` from frontmatter
+- **`search({ entity: "{id}:guide" })`** over MCP — pass the stable frontmatter
+  `id` (for example `package_authoring:guide`)
 - **`/guides`** on the web — Work with Kody index (Start here + more guides)
 - **`/guides/connect`** — connection (provider) walkthrough index
 - **Raw markdown** — `/guides/<slug>.md`, `/guides.md`, `/guides/connect.md`, or

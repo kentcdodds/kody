@@ -147,17 +147,17 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		['nope:capability', 'Capability not found.'],
 		[
 			'user:missing-value:value',
-			'Entity type must be one of: capability, package, secret, or integration.',
+			'Entity type must be one of: capability, guide, integration, package, or secret.',
 		],
 		['notion:integration', 'Saved integration not found for this user.'],
 		['API_KEY:secret', 'Secret not found for this user.'],
 		[
 			'not-a-ref',
-			'Entity must use the format "{id}:{type}" where type is capability, package, secret, or integration.',
+			'Entity must use the format "{id}:{type}" where type is capability, guide, integration, package, or secret.',
 		],
 		[
 			'thing:widget',
-			'Entity type must be one of: capability, package, secret, or integration.',
+			'Entity type must be one of: capability, guide, integration, package, or secret.',
 		],
 	] as const
 
@@ -166,6 +166,41 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 		await expect(detail).rejects.toThrow(McpCallerError)
 		await expect(detail).rejects.toThrow(message)
 	}
+})
+
+test('resolveEntityDetail loads official guides without a signed-in user', async () => {
+	const agent = createAgent()
+	const detail = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: null,
+		username: null,
+		entity: 'package_authoring:guide',
+		searchRows: emptySearchRows() as never,
+	})
+
+	expect(detail).toMatchObject({
+		type: 'guide',
+		id: 'package_authoring',
+		slug: 'package-authoring',
+		category: 'platform',
+	})
+	if (detail.type !== 'guide') {
+		throw new Error('expected guide entity detail')
+	}
+	expect(detail.body.startsWith('#')).toBe(true)
+	expect(detail.title.length).toBeGreaterThan(0)
+
+	await expect(
+		resolveEntityDetail({
+			agent,
+			callerContext: agent.getCallerContext(),
+			userId: null,
+			username: null,
+			entity: 'not_a_real_guide:guide',
+			searchRows: emptySearchRows() as never,
+		}),
+	).rejects.toThrow('Guide not found.')
 })
 
 test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', async () => {

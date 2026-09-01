@@ -2,6 +2,7 @@ import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { importGuideCatalog } from '#worker/guide-catalog-modules.ts'
 import {
 	getJoinedIntegration,
 	toJoinedIntegrationConfig,
@@ -43,6 +44,25 @@ export async function resolveEntityDetail(input: {
 			description: spec.description,
 			spec,
 			...(relatedOperationCount > 0 ? { relatedOperationCount } : {}),
+		}
+	}
+
+	if (ref.type === 'guide') {
+		const { guides } = await importGuideCatalog()
+		const guide = guides.find((candidate) => candidate.id === ref.id) ?? null
+		if (!guide) {
+			throw new McpCallerError('Guide not found.')
+		}
+		return {
+			type: 'guide' as const,
+			id: guide.id,
+			title: guide.title,
+			description: guide.summary,
+			body: guide.body,
+			slug: guide.slug,
+			category: guide.category,
+			provider: guide.provider,
+			lastVerified: guide.lastVerified,
 		}
 	}
 

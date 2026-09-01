@@ -11,6 +11,6 @@ export function isolatedRunnerResourceLimitAdvice() {
 		'source — is too large to bundle inside a Worker isolate. Shrink the ' +
 		'graph, or keep the Kody package as a thin orchestrator and offload ' +
 		'the heavy work to a process you operate. Load ' +
-		`\`coding_guide_get({ guide: "${heavyWorkOffloadGuideId}" })\`.`
+		`\`search({ entity: "${heavyWorkOffloadGuideId}:guide" })\`.`
 	)
 }

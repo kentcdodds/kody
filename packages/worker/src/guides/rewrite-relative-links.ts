@@ -19,7 +19,7 @@ function resolveRepoPath(baseDir: string, target: string): string | null {
 
 /**
  * Rewrite relative markdown link targets in a bundled guide body so every
- * serving surface (web page, raw `.md`, `coding_guide_get`) gets resolvable
+ * serving surface (web page, raw `.md`, `{id}:guide` search) gets resolvable
  * links. The files on GitHub keep their authored relative form; this runs on
  * the bundled copy only.
  *

@@ -1,5 +1,6 @@
 import { capabilitySearchEntityPlugin } from './search-entity-plugins/capability.ts'
 import { domainSearchEntityPlugin } from './search-entity-plugins/domain.ts'
+import { guideSearchEntityPlugin } from './search-entity-plugins/guide.ts'
 import { integrationSearchEntityPlugin } from './search-entity-plugins/integration.ts'
 import { packageSearchEntityPlugin } from './search-entity-plugins/package.ts'
 import { providerSearchEntityPlugin } from './search-entity-plugins/provider.ts'
@@ -12,6 +13,7 @@ import {
 
 export const searchEntityPlugins = [
 	capabilitySearchEntityPlugin,
+	guideSearchEntityPlugin,
 	packageSearchEntityPlugin,
 	integrationSearchEntityPlugin,
 	secretSearchEntityPlugin,

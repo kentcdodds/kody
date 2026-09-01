@@ -5,7 +5,10 @@ import { buildPackageImportSpecifier } from '#worker/package-registry/package-im
 import { type PackageJobSchedule } from '#worker/package-registry/types.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 
-import { type SearchEntityType } from './search-format-types.ts'
+import {
+	searchEntityRefTypes,
+	type SearchEntityType,
+} from './search-format-types.ts'
 
 export { buildKodyCapabilityAccessor } from '#mcp/kody-capability-accessors.ts'
 
@@ -115,6 +118,20 @@ export function buildSecretUsage(name: string) {
 		: '(secret placeholder unavailable for this name)'
 }
 
+export function buildGuideUsage(id: string) {
+	return `search({ entity: ${JSON.stringify(buildEntityRef(id, 'guide'))} })`
+}
+
+export function formatSearchEntityRefTypeList() {
+	const types = [...searchEntityRefTypes]
+	if (types.length <= 1) return types[0] ?? ''
+	return `${types.slice(0, -1).join(', ')}, or ${types[types.length - 1]}`
+}
+
+function isSearchEntityRefType(type: string): type is SearchEntityType {
+	return (searchEntityRefTypes as ReadonlyArray<string>).includes(type)
+}
+
 function formatOneLineSummary(value: string, maxLength = 180) {
 	const summary = value.replace(/\s+/g, ' ').trim()
 	if (summary.length <= maxLength) return summary
@@ -148,19 +165,14 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new McpCallerError(
-			'Entity must use the format "{id}:{type}" where type is capability, package, secret, or integration.',
+			`Entity must use the format "{id}:{type}" where type is ${formatSearchEntityRefTypeList()}.`,
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
 	const type = trimmed.slice(separator + 1).trim()
-	if (
-		type !== 'capability' &&
-		type !== 'package' &&
-		type !== 'secret' &&
-		type !== 'integration'
-	) {
+	if (!isSearchEntityRefType(type)) {
 		throw new McpCallerError(
-			'Entity type must be one of: capability, package, secret, or integration.',
+			`Entity type must be one of: ${formatSearchEntityRefTypeList()}.`,
 		)
 	}
 	if (!id) {

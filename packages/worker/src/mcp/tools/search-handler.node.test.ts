@@ -1468,11 +1468,15 @@ test('provider-name search ranks a wrapping package and provider card without an
 			wrappingPackage?: { kodyId: string } | null
 		}>
 	}
-	expect(result.matches.map((match) => match.type)).toEqual([
-		'package',
-		'provider',
-	])
-	expect(result.matches[1]).toMatchObject({
+	expect(result.matches.some((match) => match.type === 'guide')).toBe(true)
+	expect(
+		result.matches
+			.filter((match) => match.type !== 'guide')
+			.map((match) => match.type),
+	).toEqual(['package', 'provider'])
+	expect(
+		result.matches.find((match) => match.type === 'provider'),
+	).toMatchObject({
 		type: 'provider',
 		wrappingPackage: { kodyId: 'github' },
 	})

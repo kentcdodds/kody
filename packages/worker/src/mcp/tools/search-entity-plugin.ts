@@ -28,6 +28,8 @@ export type SearchEntityCandidateInput = {
 	retrieverResults: Array<PackageRetrieverSurfaceResult>
 	queryEmbedding: ReadonlyArray<number>
 	sharedQueryVector?: ReadonlyArray<number>
+	/** Capability domain id when ranked search is scoped to one domain. */
+	domain?: string
 }
 
 export type SearchEntityDescriptorInput = {
@@ -36,6 +38,8 @@ export type SearchEntityDescriptorInput = {
 		OptionalSearchRowsResult,
 		'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 	>
+	/** Capability domain id when ranked search is scoped to one domain. */
+	domain?: string
 }
 
 export type SearchEntitySlimFormatInput<
