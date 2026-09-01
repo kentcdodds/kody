@@ -185,9 +185,15 @@ test('ensureDev replaces a stale workerd leftover then starts until /health is o
 			return { unref() {}, async stop() {} }
 		},
 		sleep: async () => {},
-		now: () => 0,
-		readyTimeoutMs: 1_000,
-		readyPollMs: 10,
+		now: (() => {
+			let t = 0
+			return () => {
+				t += 1
+				return t
+			}
+		})(),
+		readyTimeoutMs: 10,
+		readyPollMs: 1,
 		log: (line) => {
 			logs.push(line)
 		},
@@ -199,6 +205,9 @@ test('ensureDev replaces a stale workerd leftover then starts until /health is o
 	})
 	expect(killed).toEqual(['699', '700'])
 	expect(logs[0]).toBe(
+		'Existing kody listener is not healthy yet; waiting before replacing it.',
+	)
+	expect(logs).toContain(
 		'Replaced stale kody listener pid=699 comm=npm port=3742',
 	)
 	expect(logs.at(-1)).toBe('App running at http://localhost:3742')
