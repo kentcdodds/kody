@@ -38,6 +38,7 @@ import {
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { renderAccountProfilePanel } from '#client/routes/account-profile-panel.tsx'
+import { AccountPasswordPanel } from '#client/routes/account-password-panel.tsx'
 import {
 	createAccountConnections,
 	readConnectionCallbackMessage,
@@ -684,19 +685,12 @@ export function AccountRoute(handle: Handle) {
 							onDraftEmailInput: updateDraftEmail,
 							onEmailChangePasswordInput: updateEmailChangePassword,
 						})}
-						<AccountManagementPanel
-							title="Security"
-							description="Protect your account with two-factor authentication, or sign in without a password using passkeys."
-						>
-							<div mix={css(accountActionsCss)}>
-								<a href="/account/two-factor" mix={css(compactGhostButtonCss)}>
-									Two-factor authentication
-								</a>
-								<a href="/account/passkeys" mix={css(compactGhostButtonCss)}>
-									Passkeys
-								</a>
-							</div>
-						</AccountManagementPanel>
+						<AccountPasswordPanel
+							hasUsablePassword={accountConnections.hasUsablePassword}
+							onPasswordSet={() => {
+								accountConnections.markHasUsablePassword()
+							}}
+						/>
 						{accountConnections.render()}
 						<AccountManagementPanel
 							title="Your data"

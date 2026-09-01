@@ -8,10 +8,12 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
+	turnstileResponseFieldName,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import {
@@ -315,8 +317,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				body.set('email', email)
 				body.set('password', password)
 				const protection = readPublicFormProtection(formData)
-				body.set('website', protection.website)
-				body.set('turnstileToken', protection.turnstileToken)
+				body.set(honeypotFieldName, protection[honeypotFieldName])
+				body.set(
+					turnstileResponseFieldName,
+					protection[turnstileResponseFieldName],
+				)
 			}
 			const response = await fetch(window.location.href, {
 				method: 'POST',
@@ -558,14 +563,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							on('submit', handleSubmit),
 						]}
 					>
-						<input
-							type="text"
-							name={honeypotFieldName}
-							tabIndex={-1}
-							autoComplete="off"
-							aria-hidden="true"
-							mix={css(honeypotCss)}
-						/>
+						{renderHoneypot()}
 						{!isLoggedIn && isSessionReady ? (
 							<>
 								<label mix={css(fieldCss)}>
@@ -634,17 +632,12 @@ const pageCss = {
 	margin: '0 auto',
 }
 
-const honeypotCss = {
-	position: 'absolute' as const,
-	left: '-10000px',
-	width: '1px',
-	height: '1px',
-	overflow: 'hidden' as const,
-}
-
 const headerCss = pageHeaderCss
 const eyebrowCss = pageEyebrowCss
-const primaryButtonCss = getPrimaryButtonCss({ size: 'lg', weight: 'semibold' })
+const primaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
 const secondaryButtonCss = getSecondaryButtonCss({
 	size: 'lg',
 	weight: 'semibold',

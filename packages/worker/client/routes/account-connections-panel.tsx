@@ -194,6 +194,11 @@ export function createAccountConnections(handle: Handle) {
 		get hasUsablePassword() {
 			return hasUsablePassword
 		},
+		markHasUsablePassword() {
+			hasUsablePassword = true
+			canDisconnect = true
+			handle.update()
+		},
 		setMessage(next: { text: string; tone: 'error' | 'info' } | null) {
 			connectionsMessage = next ?? connectionsMessage
 		},

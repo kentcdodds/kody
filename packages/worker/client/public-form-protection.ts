@@ -1,5 +1,17 @@
-export const honeypotFieldName = 'website'
-export const turnstileResponseFieldName = 'turnstileToken'
+import {
+	emptyPublicFormProtection,
+	honeypotFieldName,
+	turnstileResponseFieldName,
+	type PublicFormProtectionFields,
+} from '#universal/public-form-protection.ts'
+
+export {
+	emptyPublicFormProtection,
+	honeypotFieldName,
+	turnstileResponseFieldName,
+	type PublicFormProtectionFields,
+}
+
 export const turnstileWidgetClassName = 'kody-turnstile'
 
 type TurnstileApi = {
@@ -128,9 +140,13 @@ export function resetTurnstileWidgets() {
 	}
 }
 
-export function readPublicFormProtection(formData: FormData) {
+export function readPublicFormProtection(
+	formData: FormData,
+): PublicFormProtectionFields {
 	return {
-		website: String(formData.get(honeypotFieldName) ?? ''),
-		turnstileToken: String(formData.get(turnstileResponseFieldName) ?? ''),
+		[honeypotFieldName]: String(formData.get(honeypotFieldName) ?? ''),
+		[turnstileResponseFieldName]: String(
+			formData.get(turnstileResponseFieldName) ?? '',
+		),
 	}
 }

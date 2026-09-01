@@ -102,6 +102,7 @@ export const routes = route({
 	accountUsage: '/account/usage',
 	accountUsageApi: '/account/usage.json',
 	accountEmailChange: post('/account/email-change.json'),
+	accountPassword: post('/account/password.json'),
 	accountResendVerification: post('/account/resend-verification.json'),
 	accountExport: '/account/export.json',
 	admin: '/admin',
