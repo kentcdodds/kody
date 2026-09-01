@@ -63,7 +63,7 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 
-const executeTool = {
+export const executeTool = {
 	name: 'execute',
 	title: 'Execute Capabilities',
 	description: executeToolDescription,

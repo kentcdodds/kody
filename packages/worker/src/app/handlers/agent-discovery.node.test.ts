@@ -6,12 +6,20 @@ import {
 	createApiCatalogHandler,
 	createAuthMarkdownHandler,
 	createMcpServerCardHandler,
+	createOpenaiAppsChallengeHandler,
 	createRobotsTxtHandler,
 	createSecurityTxtHandler,
 	createSitemapHandler,
 } from './agent-discovery.ts'
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
+
+/**
+ * Independently pinned OpenAI Apps portal challenge value. Do not import the
+ * handler constant here — a mistyped shared export would still pass.
+ */
+const expectedOpenaiAppsChallengeToken =
+	'cgisbN1peOFC_FcpE83Zn5gihUckKsjEVj-tItKRkxU'
 
 type Handler = {
 	handler: (args: {
@@ -119,6 +127,19 @@ test('agent discovery handlers serve robots, sitemap, cards, auth.md, and skills
 	)
 	expect(await securityTxt.text()).toContain('mailto:me@kentcdodds.com')
 
+	const openaiChallenge = await call(
+		createOpenaiAppsChallengeHandler(env) as never,
+		'https://kody.example/.well-known/openai-apps-challenge',
+	)
+	expect(openaiChallenge.status).toBe(200)
+	expect(openaiChallenge.headers.get('content-type')).toBe(
+		'text/plain; charset=utf-8',
+	)
+	expect(openaiChallenge.headers.get('www-authenticate')).toBeNull()
+	expect(openaiChallenge.headers.get('location')).toBeNull()
+	expect(openaiChallenge.headers.get('access-control-allow-origin')).toBe('*')
+	expect(await openaiChallenge.text()).toBe(expectedOpenaiAppsChallengeToken)
+
 	const homeMarkdown = await createHomeHandler(env).handler({
 		request: new Request('https://kody.example/', {
 			headers: { accept: 'text/markdown' },
@@ -129,4 +150,23 @@ test('agent discovery handlers serve robots, sitemap, cards, auth.md, and skills
 	)
 	expect(homeMarkdown.headers.get('link')).toContain('rel="api-catalog"')
 	expect(await homeMarkdown.text()).toMatch(/^# Kody\n/)
+})
+
+test('openai apps challenge stays unauthenticated and returns exact token bytes', async () => {
+	const action = createOpenaiAppsChallengeHandler(env)
+	expect(action.middleware).toEqual([])
+
+	const response = await call(
+		action as never,
+		'https://kody.example/.well-known/openai-apps-challenge',
+		{ method: 'GET' },
+	)
+	expect(response.status).toBe(200)
+	expect(response.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+	expect(response.headers.get('www-authenticate')).toBeNull()
+	expect(response.headers.get('location')).toBeNull()
+	const body = await response.text()
+	expect(body).toBe(expectedOpenaiAppsChallengeToken)
+	expect(body).not.toMatch(/\s$/)
+	expect(body.length).toBe(43)
 })
