@@ -102,6 +102,11 @@ export function isWaitingMcpServerState(state: string) {
 	return mcpHumanStates.has(state)
 }
 
+/** `pending_email_changes.expires_at` is a millisecond epoch, not a datetime. */
+export function isUnexpiredEpochMs(expiresAt: number, now: Date) {
+	return Number.isFinite(expiresAt) && expiresAt > now.getTime()
+}
+
 export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 	const items: Array<WaitingItem> = []
 
@@ -127,10 +132,10 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 		items.push({
 			id: `publish-lock:${pkg.id}`,
 			kind: 'publish-lock',
-			title: `Promote a publish for ${pkg.name}`,
-			why: 'This package is locked. Agents can push drafts, but published code does not move until you promote a commit.',
+			title: `${pkg.name} is locked`,
+			why: 'Agents can push drafts, but published code does not move until you promote a commit or unlock it.',
 			who: 'you',
-			doLabel: 'Review publish',
+			doLabel: 'Review lock',
 			href: routes.accountPackageApprovePublish.href({
 				packageId: pkg.id,
 			}),

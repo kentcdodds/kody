@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	buildWaitingItems,
 	isElevatedUserErrorRate,
+	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
 	type WaitingSignals,
 } from './waiting.ts'
@@ -28,6 +29,11 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 20 })).toBe(true)
 	expect(isElevatedUserErrorRate({ errorCount: 4, eventCount: 10 })).toBe(false)
 	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 40 })).toBe(false)
+
+	const now = new Date('2026-08-31T00:00:00.000Z')
+	expect(isUnexpiredEpochMs(now.getTime() + 1, now)).toBe(true)
+	expect(isUnexpiredEpochMs(now.getTime(), now)).toBe(false)
+	expect(isUnexpiredEpochMs(Number.NaN, now)).toBe(false)
 
 	expect(buildWaitingItems(emptySignals)).toEqual([])
 

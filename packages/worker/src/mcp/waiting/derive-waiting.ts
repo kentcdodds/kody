@@ -12,6 +12,7 @@ import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import {
 	buildWaitingItems,
+	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
 	type WaitingItem,
 	type WaitingMcpServerSignal,
@@ -71,7 +72,7 @@ export async function collectWaitingSignals(input: {
 		userHasMcpOAuthGrants(env, user.stableUserId),
 		collectMcpServerSignals(env, user.stableUserId),
 		collectLockedPackageSignals(env, user.stableUserId),
-		collectPendingEmailChange(env, user.userId),
+		collectPendingEmailChange(env, user.userId, now),
 		collectErrorRate(env, user.stableUserId, now),
 		collectEntitlementCaps(env, user, now),
 	])
@@ -122,12 +123,16 @@ async function collectMcpServerSignals(
 	const enabled = settings.filter((server) => server.enabled)
 	if (enabled.length === 0) return []
 
-	const snapshot = await getCachedMcpClientHubSnapshot({
-		env,
-		userId,
-	}).catch((): McpClientHubSnapshot => ({
-		servers: [],
-	}))
+	let snapshot: McpClientHubSnapshot
+	try {
+		snapshot = await getCachedMcpClientHubSnapshot({
+			env,
+			userId,
+		})
+	} catch {
+		// A hub blip must not invent reconnect cards for every enabled server.
+		return []
+	}
 	const byId = new Map(
 		snapshot.servers.map((server) => [server.serverId, server]),
 	)
@@ -135,13 +140,12 @@ async function collectMcpServerSignals(
 	const items: Array<WaitingMcpServerSignal> = []
 	for (const server of enabled) {
 		const live = byId.get(server.id)
-		const state = live?.state ?? 'disconnected'
-		if (!isWaitingMcpServerState(state)) continue
+		if (!live || !isWaitingMcpServerState(live.state)) continue
 		items.push({
 			id: server.id,
 			name: server.name,
-			state,
-			error: live?.error ?? null,
+			state: live.state,
+			error: live.error ?? null,
 		})
 	}
 	return items
@@ -160,19 +164,21 @@ async function collectLockedPackageSignals(env: Env, userId: string) {
 		}))
 }
 
-async function collectPendingEmailChange(env: Env, userId: number) {
+async function collectPendingEmailChange(env: Env, userId: number, now: Date) {
 	try {
 		const row = await env.APP_DB.prepare(
-			`SELECT new_email
+			`SELECT new_email, expires_at
 			 FROM pending_email_changes
 			 WHERE user_id = ?
-			   AND expires_at > CURRENT_TIMESTAMP
 			 ORDER BY expires_at DESC
 			 LIMIT 1`,
 		)
 			.bind(userId)
-			.first<{ new_email: string }>()
-		const email = row?.new_email?.trim()
+			.first<{ new_email: string; expires_at: number }>()
+		if (!row || !isUnexpiredEpochMs(Number(row.expires_at), now)) {
+			return null
+		}
+		const email = row.new_email?.trim()
 		return email ? email : null
 	} catch {
 		return null
