@@ -201,4 +201,30 @@ test('guide search entities rank advertised docs and open full markdown on entit
 			(match) => match.type === 'guide' && match.id === 'provider_google',
 		),
 	).toBe(true)
+
+	const howKodyWorks = await searchUnified({
+		env: {} as Env,
+		query: 'how kody works',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		howKodyWorks.matches.some(
+			(match) => match.type === 'guide' && match.id === 'how_kody_works',
+		),
+	).toBe(true)
+
+	const stopwordInId = await searchUnified({
+		env: {} as Env,
+		query: 'what is kody',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		stopwordInId.matches.every(
+			(match) => match.type !== 'guide' || match.id !== 'first_win',
+		),
+	).toBe(true)
 })

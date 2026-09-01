@@ -49,7 +49,7 @@ function identityTokensCoveredByQuery(
 	identityPhrase: string,
 	queryTokens: ReadonlyArray<string>,
 ) {
-	const identityTokens = extractSearchTokens(identityPhrase)
+	const identityTokens = guideQueryTokens(identityPhrase)
 	if (identityTokens.length < 2) return false
 	return identityTokens.every((token) => queryTokens.includes(token))
 }
