@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { openaiAppsChallengeToken } from '#app/agent-discovery.ts'
 import { createHomeHandler } from './home.ts'
 import {
 	createAgentSkillMarkdownHandler,
@@ -14,6 +13,13 @@ import {
 } from './agent-discovery.ts'
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
+
+/**
+ * Independently pinned OpenAI Apps portal challenge value. Do not import the
+ * handler constant here — a mistyped shared export would still pass.
+ */
+const expectedOpenaiAppsChallengeToken =
+	'cgisbN1peOFC_FcpE83Zn5gihUckKsjEVj-tItKRkxU'
 
 type Handler = {
 	handler: (args: {
@@ -132,7 +138,7 @@ test('agent discovery handlers serve robots, sitemap, cards, auth.md, and skills
 	expect(openaiChallenge.headers.get('www-authenticate')).toBeNull()
 	expect(openaiChallenge.headers.get('location')).toBeNull()
 	expect(openaiChallenge.headers.get('access-control-allow-origin')).toBe('*')
-	expect(await openaiChallenge.text()).toBe(openaiAppsChallengeToken)
+	expect(await openaiChallenge.text()).toBe(expectedOpenaiAppsChallengeToken)
 
 	const homeMarkdown = await createHomeHandler(env).handler({
 		request: new Request('https://kody.example/', {
@@ -160,7 +166,7 @@ test('openai apps challenge stays unauthenticated and returns exact token bytes'
 	expect(response.headers.get('www-authenticate')).toBeNull()
 	expect(response.headers.get('location')).toBeNull()
 	const body = await response.text()
-	expect(body).toBe(openaiAppsChallengeToken)
+	expect(body).toBe(expectedOpenaiAppsChallengeToken)
 	expect(body).not.toMatch(/\s$/)
 	expect(body.length).toBe(43)
 })
