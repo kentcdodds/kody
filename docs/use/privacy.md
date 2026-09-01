@@ -159,9 +159,10 @@ period and have at most 100 active submissions (open or triaged). Open and
 triaged feedback remains until it is resolved, dismissed, or your account is
 deleted. Resolved and dismissed feedback is removed 365 days after its last
 update. Account deletion removes any remaining submissions. When an admin
-resolves or dismisses your feedback, Kody emails you from the platform sender
+resolves or dismisses your feedback, Kody may email you from the platform sender
 with the decision, thanks, and a way to send more feedback through your agent.
-Internal admin notes are not included.
+That mail is skipped if your account has no email, outbound email is paused, or
+the account is suspended. Internal admin notes are not included.
 
 When a notification is still queued, Kody rechecks that the feedback exists
 immediately before delivery and cancels it after account deletion when possible.
