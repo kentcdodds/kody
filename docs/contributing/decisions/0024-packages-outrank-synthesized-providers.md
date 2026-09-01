@@ -1,6 +1,6 @@
 # 0024: Packages outrank synthesized providers
 
-- **Status:** accepted
+- **Status:** accepted (MCP servers only; OpenAPI synthesis removed)
 - **Date:** 2026-08-19
 
 ## Context

@@ -40,8 +40,8 @@ Task-specific queries ("send an email to Kent") keep returning ranked results.
 
 ### Packages before synthesized providers
 
-When a saved package's id, name, tags, or README matches an OpenAPI or connected
-MCP provider, the package ranks before the provider's raw operations. General
+When a saved package's id, name, tags, or README matches a connected MCP
+provider, the package ranks before the provider's raw operations. General
 provider discovery returns one provider card with its operation count, runtime
 call pattern, and matching wrapper package instead of flooding the result with
 operations. Search an exact operation/tool name or pass the provider's `domain`
@@ -59,10 +59,10 @@ Pass optional **`domain`** with a capability domain id:
   browse flow: broad query → domain overview → domain listing.
 
 Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
-synthesized ones for connected MCP servers (`mcp:home`, `mcp:linear`) and
-OpenAPI bindings (`openapi:canva`). An unknown id returns an error listing the
-available domains. The `search` meta capability (usable inside **execute**)
-accepts the same `domain` argument alongside `query`.
+synthesized ones for connected MCP servers (`mcp:home`, `mcp:linear`). An
+unknown id returns an error listing the available domains. The `search` meta
+capability (usable inside **execute**) accepts the same `domain` argument
+alongside `query`.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
@@ -96,18 +96,17 @@ a tight size budget does not drop them.
 To inspect one hit, call **search** again with **`entity`** set to
 `"{id}:{type}"` where **`type`** is `capability`, `integration`, `package`, or
 `secret`. Capability entities additionally include a ready-to-run **execute**
-snippet plus `inputTypeDefinition` / `outputTypeDefinition`. OpenAPI capability
-titles use `METHOD path`; the operation slug stays in the entity ref.
+snippet plus `inputTypeDefinition` / `outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
-once (for example a create/poll OpenAPI pair). Each ref resolves independently:
+once (for example a create/poll MCP pair). Each ref resolves independently:
 failures become per-entity error lines without aborting the whole batch. If
 every ref fails, the tool returns an error result.
 
 Examples:
 
 - `coding_guide_get:capability`
-- `["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"]`
+- `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
 - `github:integration`
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`
@@ -121,9 +120,8 @@ Top-level ranked result cards include an explicit entity ref for each hit when
 applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
-For synthesized provider capabilities (OpenAPI bindings and connected MCP
-servers), capability detail reports the **related operation count**. Use
-`search({ domain })` to list siblings.
+For synthesized MCP provider capabilities, capability detail reports the
+**related operation count**. Use `search({ domain })` to list siblings.
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
@@ -164,8 +162,8 @@ no required fields.
 If ranked search misses what you need, **rephrase the query** or call
 **`meta_list_capabilities()`** for the domain index, then
 **`meta_list_capabilities({ domain })`** for one live domain (including dynamic
-MCP/OpenAPI entries). **`entity`** looks up a known id; it does not improve an
-empty ranked list.
+MCP entries). **`entity`** looks up a known id; it does not improve an empty
+ranked list.
 
 ## Authentication
 

@@ -56,8 +56,8 @@ Authoring flow:
    **`getStaticRegistry()`** on first use per isolate, providing access to
    builtin capabilities, handlers, tool descriptors, and domain metadata. At
    request time, **`getCapabilityRegistryForContext()`** merges MCP client
-   servers and OpenAPI bindings, then applies caller
-   role/permission/feature-flag filtering for search and execute.
+   servers, then applies caller role/permission/feature-flag filtering for
+   search and execute.
 
 To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
