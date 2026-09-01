@@ -23,13 +23,11 @@ helpers are runtime exports:
   identifier names, or **`await kody["capability-id"](input)`** for
   non-identifier capability ids
 - use
-  **`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
+  **`import { createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
   for OAuth helpers
 - use **`import { secretHeaders } from 'kody:runtime'`** when an approved
   `fetch` request needs host-derived auth headers from saved secrets, such as
   Basic Auth from a saved client id and client secret
-- use **`import { storage } from 'kody:runtime'`** when the execute call is
-  bound to a storage id
 - use **`import { packageStorage } from 'kody:runtime'`** inside saved-package
   code for the package's own bucket — always, in every package surface; see
   [Package storage](./packages.md#package-storage)
@@ -218,29 +216,18 @@ from execute or another saved package.
 
 ## Storage
 
-One rule per context: ad hoc execute code binds a `storageId` on the call and
-uses ambient `storage`; saved-package code always uses `packageStorage()` for
-the package's own data; another package's data goes through a static import of
-that package's export so its stamp does the reading and writing. See
-[Package storage](./packages.md#package-storage).
+Ad hoc execute has no scratch SQLite helper. Persist durable state from a saved
+package with **`packageStorage()`**. Another package's data goes through a
+static import of that package's export so its stamp does the reading and
+writing. See [Package storage](./packages.md#package-storage).
 
-Kody supports durable storage binding for execute and package-owned jobs:
-
-- bound storage is execute-, app-, or job-owned durable state; saved-package
-  invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`
-  — package code, including package apps, reaches the shared package bucket
-  through `packageStorage()`
-- import **`storage`** from **`kody:runtime`**
-- use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
-  and **`storage.sql(query, params?)`**
-
-Both `storage` and `packageStorage()` expose the same interface; everything
-below applies to both.
-
-`storage.sql(...)` returns a result object, not the row array directly:
+`packageStorage()` exposes `get` / `set` / `list` / `sql` / `delete` / `clear` /
+`id`. `sql(...)` returns a result object, not the row array directly:
 
 ```ts
-const result = await storage.sql('select value from counters')
+import { packageStorage } from 'kody:runtime'
+
+const result = await packageStorage().sql('select value from counters')
 
 return {
 	columns: result.columns,
@@ -263,10 +250,9 @@ For dedicated inspection, use:
 
 Both are scoped to the caller. Code running as a saved package (invocations,
 jobs, package apps, retrievers) may name only buckets that package owns — its
-own bucket, its app facet buckets, and its package job buckets — the same way
-`execute`'s **`storageId`** is restricted there. Another package's bucket is
-reachable only through `packageStorage()`, which is gated by bundler-recorded
-provenance grants.
+own bucket, its app facet buckets, and its package job buckets. Another
+package's bucket is reachable only through `packageStorage()`, which is gated by
+bundler-recorded provenance grants.
 
 ## Long-term memory
 
@@ -318,7 +304,7 @@ model.
 The sandbox exposes global **`fetch`** plus secret placeholders in approved
 contexts. OAuth and secret-header helpers are imported from **`kody:runtime`**:
 
-**`import { refreshAccessToken, createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'`**
+**`import { createAuthenticatedFetch, oauthClientCredentials, secretHeaders } from 'kody:runtime'`**
 
 `createAuthenticatedFetch(providerName)` is async. Await it before calling the
 returned fetch wrapper:

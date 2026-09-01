@@ -153,6 +153,4 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 
 ## Related docs
 
-- [OpenAPI provider bindings](./openapi-bindings.md) — curated HTTP provider
-  counterpart with the same naming pattern (`kody.openapi[...]`).
 - [Data storage](./data-storage.md) — D1 vs Durable Object storage split.

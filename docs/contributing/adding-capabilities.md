@@ -70,12 +70,6 @@ driven by the `mcp_server_settings` D1 table and per-user hub snapshots. Home
 automation and similar outbound tools are ordinary MCP servers
 (`kody.mcp["home"]`), not a separate product surface.
 
-**OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
-domains from the user's curated OpenAPI provider bindings (see
-[`architecture/openapi-bindings.md`](./architecture/openapi-bindings.md)),
-stored in user-scoped D1 tables and invoked as
-`kody.openapi["<name>"].<operation_slug>(input)`.
-
 `defineCapability()` in
 `packages/worker/src/mcp/capabilities/define-capability.ts` normalizes Zod →
 JSON Schema and wraps handlers with logging; domain helpers call it for you.

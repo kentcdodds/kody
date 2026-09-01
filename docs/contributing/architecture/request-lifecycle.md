@@ -314,9 +314,7 @@ The MCP server flow adds one more Durable Object:
   sockets.
 
 The runtime capability registry **merges** synthesized domains from enabled
-**MCP client servers** and user **OpenAPI provider bindings**. See
-[MCP client servers](./mcp-client-servers.md), and
-[OpenAPI provider bindings](./openapi-bindings.md).
+**MCP client servers**. See [MCP client servers](./mcp-client-servers.md).
 
 Shared options are built in `packages/worker/src/sentry-options.ts`: **release**
 comes from `APP_COMMIT_SHA` when set (deploy workflows pass it as a var), and

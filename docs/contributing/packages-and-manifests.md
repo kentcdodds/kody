@@ -167,12 +167,8 @@ A saved package is a repo with the package extension activated. Four concepts:
   package before importing it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
-  code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through a static import or `import(specifier)`. Package-invocation runs
-  (exports, subscription handlers, retrievers) bind no ambient `storage`, so
-  guard-less ambient access in those contexts fails with the structured
-  `runtime_helper_unbound` hint pointing at `packageStorage()`. Job runtimes
-  bind job-scoped scratch buckets. Repo checks fail (the `lint` result) when
+  has no scratch SQLite helper; another package's data goes through a static
+  import or `import(specifier)`. Repo checks fail (the `lint` result) when
   package sources import ambient `storage` from `kody:runtime` with a value
   named import; type-only imports and `.d.ts` files are exempt. The rule runs on
   new session check runs, publishes, and community fork installs —
@@ -312,8 +308,7 @@ emit (recursion guard). See
 
 For reconnectable OAuth refresh failures, `integration.auth.failed` dispatches
 best-effort from host-side `refreshIntegrationTokens`
-(`createAuthenticatedFetch` 401 retry, `refreshAccessToken` /
-`integration_refresh_access_token`, and explicit `integration_token_refresh`).
+(`createAuthenticatedFetch` 401 retry and explicit `integration_token_refresh`).
 Successful refreshes and successful `/connect/oauth` token persists dispatch
 `integration.auth.succeeded`. Both payloads are metadata-first (connection name,
 account label, scopes, timestamps, and for failed: reason, optional provider

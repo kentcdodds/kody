@@ -234,29 +234,27 @@ Every saved package owns one durable storage bucket per user
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — always, including package apps, exports, subscriptions, retrievers, jobs,
   and workflows.
-- **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
-  `storageId` on the execute call and use ambient `storage`.
+- **Writing ad hoc `execute` code?** Persist durable state from a saved package
+  with `packageStorage()`, or statically import the owning package's export. Ad
+  hoc execute has no scratch SQLite helper.
 - **Touching another package's data?** Statically import that package's export
   (`import fn from 'kody:@scope/package/export'`) so its stamped
   `packageStorage()` does the reading and writing.
 
-`packageStorage()` returns the same storage interface as ambient `storage`
-(`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
-declaring package's own bucket no matter where the code runs:
+`packageStorage()` returns `get`/`set`/`list`/`sql`/`delete`/`clear`/`id`,
+writable, always bound to the declaring package's own bucket no matter where the
+code runs:
 
 - In the package's own export/invocation runtime it is the only way to reach the
-  package bucket — those runs bind no ambient `storage`.
-- In package apps and jobs it reaches the same shared package bucket. Jobs may
-  also bind separate run-scoped scratch buckets on ambient `storage`; use
-  `packageStorage()` for shared durable data.
+  package bucket.
+- In package apps and jobs it reaches the same shared package bucket. Keep
+  run-scoped state in that bucket under run-scoped keys.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
   the bucket of the package it came from, under the calling user's account.
-  Ambient `storage` cannot do this; the binding is per-run, so statically
-  imported code sees the caller's bucket or `undefined`. Note that grants are
-  per-bundle, not per-module: statically importing a package grants the whole
-  bundle read/write access to that package's bucket, so treat static imports of
-  unadopted community forks as a trust decision (adopt after review).
+  Grants are per-bundle, not per-module: statically importing a package grants
+  the whole bundle read/write access to that package's bucket, so treat static
+  imports of unadopted community forks as a trust decision (adopt after review).
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -276,28 +274,16 @@ Hand-written code cannot claim another package's id to read its bucket. Two
 consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
-  an actionable error there. Bind a `storageId` and use ambient `storage`, or
-  statically import the owning package's export.
+  an actionable error there. Statically import the owning package's export.
 - Provenance grants cover directly imported packages. For data owned by a
   package that is not the running package and not statically imported by the
   bundle, import that package's export and let its stamp do the reading.
 
-### Ambient `storage` in package code
-
-Saved-package runtimes, including apps, exports, subscription handlers, and
-retrievers, do not bind ambient `storage`. In those contexts ambient `storage`
-is `undefined`; guard-less access fails with a structured
-`runtime_helper_unbound` error whose remedy points at `packageStorage()`, the
-one way package code reaches its bucket (same interface, same bucket).
+### Ambient `storage` is not a `kody:runtime` export
 
 Repo checks fail when package source imports ambient `storage` from
-`kody:runtime` (type-only imports and `.d.ts` files are exempt).
-
-Ambient `storage` is available for ad hoc `execute` code with a `storageId`
-bound on the call, and for package job and service runtimes that bind
-job-/service-scoped scratch buckets distinct from the package bucket. Because
-repo checks reject ambient `storage` imports in package source, job and service
-code keeps run-scoped state in the package bucket under run-scoped keys.
+`kody:runtime` (type-only imports and `.d.ts` files are exempt). Use
+`packageStorage()` instead. Ad hoc execute has no scratch SQLite helper.
 
 ## Package apps
 
