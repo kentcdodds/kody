@@ -1,8 +1,7 @@
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { defaultClientEntryPath } from './dev-client-ready.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
-
-const defaultClientEntryPath = 'packages/worker/public/client-entry.js'
 
 export function ensureE2eClientBuilt(options?: {
 	clientEntryPath?: string

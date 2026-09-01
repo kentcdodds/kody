@@ -15,10 +15,13 @@ description:
 - Node 26 required: `export PATH="$HOME/.nvm/versions/node/v26.7.0/bin:$PATH"`.
 - To start or reuse the local app, run `npm run dev:ensure`. It probes origin
   `/health` on 3742–3751, prints `App running at http://localhost:<port>` and
-  exits 0 when a server is already up, replaces a stale kody/workerd leftover
-  that is listening but not serving, then starts `npm run dev` and waits until
-  `/health` is actually ok. Do not inventory Cursor terminal files or curl 3742
-  as a substitute.
+  exits 0 when a server is already up, waits for a stale kody/workerd leftover
+  that is listening but not serving before replacing it, then starts
+  `npm run dev` and waits until `/health` is actually ok. `npm run dev` waits up
+  to 30s for the first client bundle before Wrangler so `public/` does not
+  trigger Reloading after Ready. If that wait expires, Wrangler still starts and
+  may reload when the bundle lands. Do not inventory Cursor terminal files or
+  curl 3742 as a substitute.
 - Run interactive `npm run dev` in tmux when you need the CLI shortcuts; it
   starts the client watcher, the mock Cloudflare API worker, and
   `wrangler dev --local` with the origin config, the committed `kody-jobs`

@@ -13,6 +13,11 @@ import {
 	type ProcessOutputMode,
 } from './tools/dev-process-output.ts'
 import {
+	defaultClientEntryPath,
+	defaultClientReadyTimeoutMs,
+	waitForClientEntryReady,
+} from './tools/dev-client-ready.ts'
+import {
 	defaultHealthTimeoutMs,
 	defaultWorkerPort,
 	isWorkerHealthOk,
@@ -285,6 +290,7 @@ async function restartDev(
 	clearLockedPorts()
 	const workerPort = await getPort({ port: portRange })
 	workerOrigin = resolveWorkerOrigin(workerPort)
+	const clientStartedAt = Date.now()
 	const client = runNpmScript(
 		'dev:client',
 		[],
@@ -295,6 +301,17 @@ async function restartDev(
 			mode: 'buffer-on-error',
 		},
 	)
+	const clientDidBuild = await waitForClientEntryReady({
+		sinceMs: clientStartedAt,
+		timeoutMs: defaultClientReadyTimeoutMs,
+		isCancelled: () => client.killed || client.exitCode !== null,
+	})
+	if (!clientDidBuild) {
+		console.warn(
+			`dev:client did not write ${defaultClientEntryPath} within ${defaultClientReadyTimeoutMs}ms; ` +
+				`wrangler may reload when the bundle lands in public/.`,
+		)
+	}
 	const workerVarEnv = {
 		...mockEnv,
 	}
