@@ -616,6 +616,12 @@ export async function runBundledModuleWithRegistry(
 		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		skipCapabilityRegistry?: boolean
+		/**
+		 * Retriever enrichment profile: no capability map, no workflows,
+		 * no package invoke/events, read-only packageStorage, no outbound
+		 * fetch. Search annotations depend on this being a runtime constraint.
+		 */
+		closedWorldRetrieverRuntime?: boolean
 		executorTimeoutMs?: number | null
 		signal?: AbortSignal
 		runRecord?: RunRecordContext | null
@@ -783,6 +789,8 @@ export async function runBundledModuleWithRegistry(
 					.filter((packageId): packageId is string => Boolean(packageId)),
 			),
 		})
+		const closedWorldRetrieverRuntime =
+			options?.closedWorldRetrieverRuntime === true
 		const executor = createExecuteExecutor({
 			env,
 			exports: options?.executorExports ?? workerExports,
@@ -803,20 +811,25 @@ export async function runBundledModuleWithRegistry(
 				surface: options?.runRecord?.surface,
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
+			allowOutboundFetch: !closedWorldRetrieverRuntime,
 		})
-		const workflowTools =
-			options?.workflowTools ??
-			createWorkflowTools({
-				env,
-				callerContext,
-				packageContext: options?.packageContext ?? null,
-			})
+		const workflowTools = closedWorldRetrieverRuntime
+			? undefined
+			: (options?.workflowTools ??
+				createWorkflowTools({
+					env,
+					callerContext,
+					packageContext: options?.packageContext ?? null,
+				}))
 		// Register the package_storage_* tools whenever the run has a user, even
 		// with an empty grant set: an unauthorized packageStorage() call then
 		// fails with the structured provenance message instead of a bare
 		// missing-capability TypeError.
 		const packageStorageTools = callerContext.user?.userId
-			? { grantedPackageIds: grantedPackageStorageIds }
+			? {
+					grantedPackageIds: grantedPackageStorageIds,
+					writable: !closedWorldRetrieverRuntime,
+				}
 			: undefined
 		const packageSecretTools = options?.packageContext
 			? createPackageSecretTools({
@@ -832,10 +845,13 @@ export async function runBundledModuleWithRegistry(
 			additionalTools: options?.additionalTools,
 			packageStorageTools,
 			packageSecretTools,
-			emailTools: options?.emailTools,
+			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
-			skipCapabilityRegistry: options?.skipCapabilityRegistry,
-			capabilityRegistry: options?.capabilityRegistry,
+			skipCapabilityRegistry:
+				closedWorldRetrieverRuntime || options?.skipCapabilityRegistry,
+			capabilityRegistry: closedWorldRetrieverRuntime
+				? undefined
+				: options?.capabilityRegistry,
 			reportProgress,
 			waitUntil: options?.waitUntil,
 		})
@@ -850,10 +866,14 @@ export async function runBundledModuleWithRegistry(
 			provider,
 			packageStorageTools,
 			packageSecretTools,
-			emailTools: options?.emailTools,
+			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
-			packageInvokeTools: options?.packageInvokeTools,
-			packageEventTools: options?.packageEventTools,
+			packageInvokeTools: closedWorldRetrieverRuntime
+				? undefined
+				: options?.packageInvokeTools,
+			packageEventTools: closedWorldRetrieverRuntime
+				? undefined
+				: options?.packageEventTools,
 			staticCallMeterTools,
 		}
 		const runtimeHelperPreludes =

@@ -1209,17 +1209,22 @@ export function createPackageStorageAccessDeniedMessage(packageId: string) {
  * installed packages' buckets. Cross-user access is structurally impossible:
  * `storageRunnerDurableObjectName` keys the durable object on this run's user id.
  */
+export const packageStorageRetrieverReadOnlyMessage =
+	'packageStorage() is read-only during retriever runs. Persist writes from an export, job, or execute call.'
+
 export function createPackageStorageKodyTools(input: {
 	env: Env
 	userId: string
 	email?: string | null
 	grantedPackageIds: ReadonlySet<string>
+	writable?: boolean
 }) {
+	const writable = input.writable !== false
 	// One cache for the whole sandbox so nested packageStorage() SQL across
 	// granted packages (and repeated CREATE/INSERT in one export) does not
 	// rescan every inventoried bucket on each statement.
 	const entitlementCache = createStorageBytesEntitlementRunCache()
-	const createWritableStorageTools = (packageId: string) => {
+	const createGrantedStorageTools = (packageId: string) => {
 		const {
 			storageGet,
 			storageList,
@@ -1232,10 +1237,10 @@ export function createPackageStorageKodyTools(input: {
 			userId: input.userId,
 			email: input.email,
 			storageId: buildPackageStorageId(packageId),
-			writable: true,
+			writable,
 			entitlementCache,
 		})
-		if (!storageSet || !storageDelete || !storageClear) {
+		if (writable && (!storageSet || !storageDelete || !storageClear)) {
 			// createStorageKodyTools only omits these when writable is false.
 			throw new Error('Writable package storage tools are missing writes.')
 		}
@@ -1250,7 +1255,7 @@ export function createPackageStorageKodyTools(input: {
 	}
 	const toolsByPackageId = new Map<
 		string,
-		ReturnType<typeof createWritableStorageTools>
+		ReturnType<typeof createGrantedStorageTools>
 	>()
 	const resolveTools = (args: unknown) => {
 		const packageId =
@@ -1265,10 +1270,13 @@ export function createPackageStorageKodyTools(input: {
 		}
 		let tools = toolsByPackageId.get(packageId)
 		if (!tools) {
-			tools = createWritableStorageTools(packageId)
+			tools = createGrantedStorageTools(packageId)
 			toolsByPackageId.set(packageId, tools)
 		}
 		return tools
+	}
+	const rejectReadOnlyWrite = async () => {
+		throw new Error(packageStorageRetrieverReadOnlyMessage)
 	}
 	return {
 		packageStorageGet: async (args: unknown) =>
@@ -1277,12 +1285,15 @@ export function createPackageStorageKodyTools(input: {
 			await resolveTools(args).storageList(args),
 		packageStorageSql: async (args: unknown) =>
 			await resolveTools(args).storageSql(args),
-		packageStorageSet: async (args: unknown) =>
-			await resolveTools(args).storageSet(args),
-		packageStorageDelete: async (args: unknown) =>
-			await resolveTools(args).storageDelete(args),
-		packageStorageClear: async (args: unknown) =>
-			await resolveTools(args).storageClear(),
+		packageStorageSet: writable
+			? async (args: unknown) => await resolveTools(args).storageSet!(args)
+			: rejectReadOnlyWrite,
+		packageStorageDelete: writable
+			? async (args: unknown) => await resolveTools(args).storageDelete!(args)
+			: rejectReadOnlyWrite,
+		packageStorageClear: writable
+			? async (args: unknown) => await resolveTools(args).storageClear!()
+			: rejectReadOnlyWrite,
 	}
 }
 
@@ -1293,8 +1304,13 @@ export function createPackageStorageKodyTools(input: {
  * through the AsyncLocalStorage runtime store; the host still validates the
  * id against the run's provenance grants in `createPackageStorageKodyTools`.
  */
-export function createPackageStorageHelperPrelude() {
-	// Always writable; `id` mirrors buildPackageStorageId above (covered by a unit test).
+export function createPackageStorageHelperPrelude(input?: {
+	writable?: boolean
+}) {
+	const writable = input?.writable !== false
+	// `id` mirrors buildPackageStorageId above (covered by a unit test).
+	// Retriever runs pass writable:false so set/delete/clear/sql mutations
+	// fail in the sandbox instead of depending on a convention.
 	return `
 const __kodyPackageStorage = (packageId) => ({
   id: 'package:' + encodeURIComponent(packageId),
@@ -1305,7 +1321,7 @@ const __kodyPackageStorage = (packageId) => ({
       packageId,
       query,
       params,
-      writable: true,
+      writable: ${writable ? 'true' : 'false'},
     }),
   set: async (key, value) => await kody.packageStorageSet({ packageId, key, value }),
   delete: async (key) => await kody.packageStorageDelete({ packageId, key }),

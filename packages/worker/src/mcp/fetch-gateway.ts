@@ -50,6 +50,11 @@ type FetchGatewayProps = {
 	 * budget. `null` disables the gateway timeout (caller signal only).
 	 */
 	outboundFetchTimeoutMs?: number | null
+	/**
+	 * When false, every sandbox `fetch` is rejected. Retriever runs use
+	 * this to stay closed-world. Defaults to true.
+	 */
+	allowOutboundFetch?: boolean
 }
 export type { FetchGatewayProps }
 
@@ -118,6 +123,9 @@ export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
 	return Math.max(defaultOutboundFetchTimeoutMs, derived)
 }
 
+export const retrieverOutboundFetchDeniedMessage =
+	'Outbound fetch is not available in retriever runs.'
+
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
 		return executeGatewayFetch({
@@ -177,6 +185,9 @@ export async function executeGatewayFetch(input: {
 	})
 
 	try {
+		if (input.props.allowOutboundFetch === false) {
+			throw new Error(retrieverOutboundFetchDeniedMessage)
+		}
 		// Daily outbound-fetch quota: every sandbox fetch leaves through
 		// this gateway, so the atomic counter here bounds cost abuse and
 		// third-party hammering from user code. Consumed before secret
