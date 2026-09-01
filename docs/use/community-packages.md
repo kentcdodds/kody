@@ -177,7 +177,10 @@ not `package.json#private`:
 
 When visibility is `private`:
 
-- `/@username` and public profile reads return not found (404)
+- `/@username` returns not found (404)
+- `community_profile_get` for another user’s private profile returns
+  `user_found: false` with empty fields (it does not leak existence via
+  HTTP 404)
 
 The account owner can still read and update their own profile (including while
 private) through `community_profile_get` / `community_profile_update`.
