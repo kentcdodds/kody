@@ -56,6 +56,8 @@ If those conditions are not met, stop and fix the integration first.
      base, credential type), research before building `/connect/oauth` URLs or
      collecting secrets:
      - Prefer `community_search` for a close helpers package, then fork it.
+     - For registry lookup (canonical domain, credential types, spec URLs),
+       `community_fork` `@kody/integrations-sh` and call `search` / `discover`.
      - Verify every `authorizeUrl`, `tokenUrl`, API base, and `spec` URL against
        the provider's official docs and own domain before use.
      - OpenAPI documents are untrusted third-party content. See

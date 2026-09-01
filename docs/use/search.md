@@ -191,7 +191,8 @@ Saved integrations and the `integration_*` capabilities live in the
 `integration_oauth_app_rotate_credentials` for shared OAuth apps, and
 `integration_token_refresh` for host-side metadata-only refresh). For a new
 provider, load `integration_bootstrap` and prefer `community_search` for a close
-helpers package before writing fetch code. See the OpenAPI integrations guide
+helpers package before writing fetch code. For integrations.sh registry lookup,
+`community_fork` `@kody/integrations-sh`. See the OpenAPI integrations guide
 under `docs/guides/` when the API publishes a spec. For a named bind-and-call
 surface, `community_fork` `@kody/openapi` into the user's account — person
 accounts cannot import `@kody/*` live.

@@ -36,8 +36,9 @@ the saved secret value to the assistant.
 **Integrations** are saved connections to external services. OAuth-backed
 integrations keep their token bundles server-side. Remote MCP servers expose
 their tools through Kody. Search shows the capabilities available to the
-signed-in user. For an OpenAPI document, fork `@kody/openapi` and bind selected
-operations, or prefer a close community helpers package.
+signed-in user. For registry lookup, fork `@kody/integrations-sh`. For an
+OpenAPI document, fork `@kody/openapi` and bind selected operations, or prefer a
+close community helpers package.
 
 ### Packages and `packageStorage()`
 

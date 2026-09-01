@@ -36,8 +36,9 @@ uses `createAuthenticatedFetch` (or secret-backed headers) and a small
 hand-written client. Keep the surface narrow — the operations the user actually
 needs.
 
-`@kody/api-research` is the research library (registry search, summarize,
-scaffold). `@kody/openapi` is the bind-and-call replacement for the old
+`@kody/integrations-sh` is the integrations.sh registry client (search, detect,
+cached surface, live discover). `@kody/api-research` summarizes and scaffolds
+OpenAPI 3.x specs. `@kody/openapi` is the bind-and-call replacement for the old
 `kody.openapi["name"].operation()` capability. Person accounts cannot import
 `@kody/*` live — `community_fork` the listing first, then import the copy.
 
@@ -97,7 +98,9 @@ then smoke-test a cheap GET before building a dependent package.
 - [secret-backed-integration.md](./secret-backed-integration.md) — non-OAuth
   secret recipe
 - [oauth.md](./oauth.md) — standard `/connect/oauth` path
+- [@kody/integrations-sh](https://kody.codes/@kody/integrations-sh) — registry
+  search, detect, surface, and discover after a community fork
 - [@kody/openapi](https://kody.codes/@kody/openapi) — bind and call selected
   operations after a community fork
-- [@kody/api-research](https://kody.codes/@kody/api-research) — registry,
-  summarize, and scaffold
+- [@kody/api-research](https://kody.codes/@kody/api-research) — OpenAPI
+  summarize and scaffold
