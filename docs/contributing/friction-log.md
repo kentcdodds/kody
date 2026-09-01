@@ -11,6 +11,17 @@ command that needs a secret handshake, a type that lies.
 This page is the policy for humans and agents. Do not write entries under
 `.agents/friction-log/`. GitHub is the log.
 
+## Labels
+
+| Label              | Purpose                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| `friction`         | Marks a repo papercut. Applied by the issue form and by `create`. |
+| `friction-skipped` | Daily sweep will not re-investigate until this label is removed.  |
+
+This repository does not define labels in-tree (no `.github/labels.yml`). Create
+or update them with the GitHub API or `gh label create` / `gh label edit`. The
+live `friction-skipped` label description should match the table above.
+
 ## File an entry
 
 Search open `friction` issues first (`gh issue list --label friction` or
@@ -58,8 +69,9 @@ papercuts.
 ## Daily investigation
 
 Kent's `@kentcdodds/friction-log` package runs a daily job at 05:00
-America/Denver. It lists open `friction` issues and, when any are eligible,
-spawns one Cursor Cloud Agent on `kentcdodds/kody` `main`.
+America/Denver. Daily sweep eligibility is: open + `friction` + NOT
+`friction-skipped`. When any issues are eligible, it spawns one Cursor Cloud
+Agent on `kentcdodds/kody` `main`. Eligibility does not scrape issue comments.
 
 If this run was spawned by that package, the prompt already lists eligible
 issues. Do not re-query every open issue from scratch. Fetch only the listed
@@ -76,13 +88,10 @@ For each listed issue, choose exactly one outcome:
    and close the issue.
 3. **Skip** — a fix is possible but you should not ship it without Kent (unclear
    product call, high risk, or you are not confident). Comment a concrete
-   recommended fix and include this HTML marker on its own line:
-
-   `<!-- friction-log:skipped -->`
-
-   Tell @kentcdodds the next run stays skipped until he replies with: close as
-   already fixed, close as invalid, ship the recommended fix, or a different
-   approach. Do not open a speculative PR.
+   recommended fix, ping @kentcdodds, and apply the GitHub label
+   `friction-skipped`. Tell @kentcdodds he can reply with: close as already
+   fixed, close as invalid, ship the recommended fix, or a different approach.
+   Unskip by removing `friction-skipped`. Do not open a speculative PR.
 
 4. **Fix** — implement on a fresh branch, push, and create or update the pull
    request with Cursor Cloud **ManagePullRequest**. Do not have Kody, a Kody
@@ -92,8 +101,10 @@ For each listed issue, choose exactly one outcome:
    Close the issue when the PR merges; if the PR is parked, skip the issue
    (outcome 3) and link the PR.
 
-If @kentcdodds already replied after a skip, follow that reply. Do not re-skip
-the same recommendation unless new evidence changed the choice.
+If @kentcdodds already replied after a skip, follow that reply. When acting on
+that reply (close, ship, or a different approach), remove `friction-skipped` if
+present. Do not re-skip the same recommendation unless new evidence changed the
+choice.
 
 Risk gate: docs, tests, harness, or isolated contributor-tooling changes are low
 or medium. Auth, per-user isolation, billing, migrations, or disaster-recovery
@@ -128,7 +139,7 @@ finish, record `failed` with what you learned.
 | Export                                         | Purpose                                        |
 | ---------------------------------------------- | ---------------------------------------------- |
 | `kody:@kentcdodds/friction-log/create`         | File a `friction` issue (always labeled).      |
-| `kody:@kentcdodds/friction-log/scan`           | Read-only eligibility scan. No agent.          |
+| `kody:@kentcdodds/friction-log/scan`           | Read-only label eligibility scan. No agent.    |
 | `kody:@kentcdodds/friction-log/sweep`          | Scan and optionally spawn (`dryRun`, `force`). |
 | `kody:@kentcdodds/friction-log/pause`          | Kill switch: stop spawning.                    |
 | `kody:@kentcdodds/friction-log/resume`         | Re-enable spawning.                            |
