@@ -7,6 +7,8 @@ import {
 	releasePackageKodyIdRedirect,
 	retirePackageKodyId,
 } from '#worker/community/package-url.ts'
+import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
 import {
@@ -478,6 +480,7 @@ export async function deleteSavedPackageProjection(input: {
 	env: Env
 	userId: string
 	packageId: string
+	actorUserId?: string
 }) {
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
@@ -494,6 +497,21 @@ export async function deleteSavedPackageProjection(input: {
 			])
 			let packageJobsRemoved = false
 			if (savedPackage) {
+				const listing = await getCommunityListingByOwnerAndPackage(
+					input.env.APP_DB,
+					{
+						ownerUserId: input.userId,
+						packageId: input.packageId,
+					},
+				)
+				if (listing?.status === 'active') {
+					await unpublishCommunityListing({
+						env: input.env,
+						userId: input.userId,
+						actorUserId: input.actorUserId ?? input.userId,
+						listingId: listing.id,
+					})
+				}
 				await cleanupArtifactReposForPackage({
 					env: input.env,
 					userId: input.userId,

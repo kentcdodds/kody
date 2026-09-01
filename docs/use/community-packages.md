@@ -32,6 +32,9 @@ filled-in cards).
 - New packages are always created **private**.
 - Making a package **private** unlists it: public URLs 404; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
+- Deleting a package (`package_delete` or **Delete package** on the package
+  page) also unlists it. Type the package name to confirm. Existing forks keep
+  their copies.
 - Hidden and locked stay separate from visibility.
 
 ### Icon
@@ -175,6 +178,8 @@ Use the MCP `community` domain:
   `package_update` with `changes.visibility: "public"`)
 - `community_unpublish` — make a package private / unlist it (prefer
   `package_update` with `changes.visibility: "private"` and `confirm_name`)
+- `package_delete` — permanently delete a saved package (type the package name;
+  `confirm_name` must match)
 - `community_search` — search active listings (`sort: "newest"` for last
   published first; optional `category` to browse one listing category)
 - `community_get` — fetch one listing's metadata and aggregates (including star

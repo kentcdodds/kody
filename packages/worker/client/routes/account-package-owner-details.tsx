@@ -22,6 +22,7 @@ import {
 	TimestampValue,
 } from './account-management-components.tsx'
 import { RecordChips, recordBodyCss } from './record-table.tsx'
+import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
 import { AccountPackageTokens } from './account-package-tokens.tsx'
 import { getAccountPackageFilesHref } from '#universal/package-files.ts'
 import {
@@ -358,6 +359,7 @@ export function AccountPackageOwnerDetails(
 					invocationUrlOrigin={invocationUrlOrigin}
 					onPackagesPayload={onPackagesPayload}
 				/>
+				<AccountPackageDeleteDialog packageDetail={packageDetail} />
 				{packageDetail.searchText ? (
 					<details mix={css(accountDisclosureCss)}>
 						<summary>Search text</summary>
