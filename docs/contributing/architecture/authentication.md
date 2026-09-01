@@ -646,8 +646,7 @@ routed from `packages/worker/src/index.ts`.
   the `openid` scope, and does not expose a standards-shaped `/userinfo`
   endpoint. Grant props (including verified email) ride on the access-token
   props used by `/mcp` and the OAuth-protected `/api/me` JSON helper. OpenAI's
-  optional enterprise domain-restriction warning follows from that gap; see
-  [OpenAI Apps submission](../openai-apps-submission.md#openid-connect-gap).
+  optional enterprise domain-restriction warning follows from that gap.
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login returns to the original OAuth request. Password signup lands
