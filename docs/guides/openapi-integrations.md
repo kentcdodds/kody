@@ -31,16 +31,20 @@ exists.
 
 ## When nothing close exists
 
-If community search finds no close package, create a thin helpers package that
-uses `createAuthenticatedFetch` (or secret-backed headers) and a small
-hand-written client. Keep the surface narrow — the operations the user actually
-needs.
+If community search finds no close package, prefer `@kody/openapi` for standard
+bind-and-call. Person accounts cannot import `@kody/*` live — `community_fork`
+the listing first, then import the copy.
+
+Write a thin helpers package with `createAuthenticatedFetch` (or secret-backed
+headers) and a small hand-written client only when `@kody/openapi` cannot
+provide the behavior — for example a non-OpenAPI contract, or request shaping
+the binder does not support. Keep that surface narrow: the operations the user
+actually needs.
 
 `@kody/integrations-sh` is the integrations.sh registry client (search, detect,
 cached surface, live discover). `@kody/api-research` summarizes and scaffolds
 OpenAPI 3.x specs. `@kody/openapi` is the bind-and-call replacement for the old
-`kody.openapi["name"].operation()` capability. Person accounts cannot import
-`@kody/*` live — `community_fork` the listing first, then import the copy.
+`kody.openapi["name"].operation()` capability.
 
 ```ts
 import bind from 'kody:@<username>/openapi/bind'
