@@ -49,7 +49,8 @@ filled-in cards).
 
 Prefer a root `icon.svg`, `icon.png`, `icon.webp`, `icon.jpg`, or `icon.jpeg`.
 `community-icon.*` is also accepted. The first existing file in that combined
-order wins.
+order wins. Packages without an icon get a generated swirl based on the package
+name.
 
 ## Browsing listings
 

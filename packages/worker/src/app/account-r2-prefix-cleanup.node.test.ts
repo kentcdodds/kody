@@ -47,7 +47,7 @@ test('community asset prefix cleanup paginates and preserves other users', async
 		listingIds: ['listing-a'],
 	})
 	expect(count).toBe(6)
-	expect(list).toHaveBeenCalledTimes(6)
+	expect(list).toHaveBeenCalledTimes(7)
 	expect(deleted.sort()).toEqual([
 		'community-icon:v1/listing-a/current/asset',
 		'community-icon:v1/listing-a/historical/asset',
