@@ -1,6 +1,10 @@
 # Public packages
 
-Public **packages** are the community catalog. Visibility lives on the **repo
+**Public / private** is repo visibility. **Community** is the catalog
+(`/community`, `/@username`) and the official Discord server — not a second kind
+of package. A listing is the catalog row for a public package.
+
+Public **packages** appear in that catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on

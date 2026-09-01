@@ -1,5 +1,9 @@
 # Public packages
 
+**Public / private** is repo visibility. **Community** is the catalog place
+(`/community`, MCP `community` domain), not a package kind. A listing is the
+catalog row. See [0046](./decisions/0046-community-is-the-catalog.md).
+
 Community listings let users on the same deployment share **pinned snapshots**
 of published saved packages. Listings are public read; forks stay **inert**
 until the forker publishes through a repo session. See
