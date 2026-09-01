@@ -10,8 +10,10 @@ import {
 	buildProviderMarkLogoPath,
 	deletePlatformProviderMark,
 	getPlatformProviderMarkBySlug,
+	hostMatchesProviderMarkToken,
 	listPlatformProviderMarks,
 	normalizeProviderMarkAliases,
+	providerMarkAliasTokens,
 	providerMarkMatches,
 	resolveProviderMark,
 	resolveProviderMarkLogoPath,
@@ -92,6 +94,30 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 		true,
 	)
 	expect(providerMarkMatches({ mark: x, providerKey: 'twitter' })).toBe(true)
+	expect(
+		providerMarkMatches({
+			mark: { slug: 'github', aliases: [] },
+			host: 'api.github.com',
+		}),
+	).toBe(true)
+	expect(
+		providerMarkMatches({
+			mark: { slug: 'github', aliases: [] },
+			providerKey: 'github-platform',
+		}),
+	).toBe(true)
+	expect(hostMatchesProviderMarkToken('accounts.google.com', 'google')).toBe(
+		true,
+	)
+	expect(hostMatchesProviderMarkToken('github.com', 'git')).toBe(false)
+	expect(hostMatchesProviderMarkToken('example.com', 'x')).toBe(false)
+	expect(providerMarkAliasTokens({ slug: 'youtube', aliases: [] })).toEqual(
+		expect.arrayContaining([
+			'google-youtube-brand',
+			'google-youtube-plus',
+			'www.youtube.com',
+		]),
+	)
 
 	const marks = [
 		{
@@ -119,6 +145,41 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 			providerKey: 'google-youtube-brand',
 		})?.slug,
 	).toBe('google')
+	expect(
+		resolveProviderMark({
+			marks: [
+				...marks,
+				{
+					slug: 'youtube',
+					label: 'YouTube',
+					aliases: [],
+					logoKey: 'platform-provider-marks/youtube/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			providerKey: 'google-youtube-brand',
+			host: 'www.youtube.com',
+		})?.slug,
+	).toBe('youtube')
+	expect(
+		resolveProviderMark({
+			marks: [
+				{
+					slug: 'nodedotjs',
+					label: 'Node.js',
+					aliases: [],
+					logoKey: 'platform-provider-marks/nodedotjs/abc.webp',
+					logoContentType: 'image/webp',
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+			],
+			providerKey: 'nodejs',
+			host: 'nodejs.org',
+		})?.slug,
+	).toBe('nodedotjs')
 	expect(
 		resolveProviderMarkLogoPath({
 			marks,

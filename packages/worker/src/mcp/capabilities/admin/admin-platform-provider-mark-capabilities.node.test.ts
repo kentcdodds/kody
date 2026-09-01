@@ -75,8 +75,10 @@ test('save/list/delete provider marks store a fitted logo and write audit rows',
 	expect(saved.mark).toMatchObject({
 		slug: 'google',
 		label: 'Google',
-		aliases: ['accounts.google.com', 'googleapis.com'],
 	})
+	expect(saved.mark.aliases).toEqual(
+		expect.arrayContaining(['accounts.google.com', 'googleapis.com']),
+	)
 	expect(saved.mark.logoPath).toMatch(/^\/integrations\/provider-marks\/google/)
 
 	const listed = await adminPlatformProviderMarkListCapability.handler({}, ctx)
