@@ -12,7 +12,7 @@ import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 export const emailMessageListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_message_list',
+		name: 'emailMessageList',
 		description:
 			'List stored inbound and outbound email messages owned by the signed-in user.',
 		keywords: ['email', 'message', 'inbox', 'list', 'quarantine'],

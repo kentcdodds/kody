@@ -215,7 +215,7 @@ function readSyncedPackageJson() {
 	return JSON.parse(files['package.json'] ?? '{}') as Record<string, unknown>
 }
 
-test('package_save injects private:true for new packages that omit private, even with confirm_private_visibility_change', async () => {
+test('packageSave injects private:true for new packages that omit private, even with confirm_private_visibility_change', async () => {
 	setupPersistenceMocks()
 	const ctx = await createContext()
 
@@ -233,7 +233,7 @@ test('package_save injects private:true for new packages that omit private, even
 	expect(lastSavedPackageInsertParams?.[10]).toBe(1)
 })
 
-test('package_save ignores leftover private:false for catalog visibility', async () => {
+test('packageSave ignores leftover private:false for catalog visibility', async () => {
 	setupPersistenceMocks()
 	const ctx = await createContext()
 
@@ -249,7 +249,7 @@ test('package_save ignores leftover private:false for catalog visibility', async
 	expect(lastSavedPackageInsertParams?.[10]).toBe(1)
 })
 
-test('package_save rejects an explicit private:false create without confirmation', async () => {
+test('packageSave rejects an explicit private:false create without confirmation', async () => {
 	setupPersistenceMocks()
 	const ctx = await createContext()
 

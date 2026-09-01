@@ -13,7 +13,7 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 
 const { secretLockCapability } = await import('./secret-lock.ts')
 
-test('secret_lock grants a package and rejects missing packages', async () => {
+test('secretLock grants a package and rejects missing packages', async () => {
 	mockModule.lockSecretToPackage.mockResolvedValue({
 		name: 'openai-api-key',
 		allowedPackages: ['pkg-drafts'],

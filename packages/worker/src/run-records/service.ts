@@ -93,7 +93,7 @@ function serializeJson(value: unknown, maxBytes = runRecordMaxJsonBytes) {
 
 /**
  * Bound a JSON-serializable handler result for `metadata.result`. Oversized
- * values become `{ __truncated__: true, preview }` so `run_get` stays useful
+ * values become `{ __truncated__: true, preview }` so `runGet` stays useful
  * without blowing per-user DO storage.
  */
 export function snapshotRunRecordResult(

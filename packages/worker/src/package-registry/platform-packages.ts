@@ -14,7 +14,7 @@ type PlatformAccountRef = {
  * Platform (built-in) packages: packages owned by platform accounts
  * (`users.account_type = 'platform'`). Search and community surfaces may
  * list them as fork sources. Person accounts — ad hoc execute and saved
- * packages — must `community_fork` into the caller's scope (decision 0036).
+ * packages — must `communityFork` into the caller's scope (decision 0036).
  * Platform-account packages may still compose with each other. Hidden and
  * private packages stay owner-only.
  */

@@ -969,7 +969,6 @@ test('invokePackageExport asks for republish when a published artifact is missin
 		entryPoints: [
 			{
 				path: 'src/dispatch-message-created.ts',
-				includeStorage: true,
 			},
 		],
 		emittedEventTopics: [],

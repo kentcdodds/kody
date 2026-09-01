@@ -24,7 +24,7 @@ surface).
 There are two lanes for writing package source. Pick based on whether you have
 local filesystem and git access:
 
-- **Git lane (coding agents — preferred).** Call `package_get_git_remote` with
+- **Git lane (coding agents — preferred).** Call `packageGetGitRemote` with
   `create: true` and a new `kody_id` to register a stub saved package and mint a
   short-lived authenticated remote in one call (for existing packages, omit
   `create`). Run the returned `setup_commands` to clone into a temporary
@@ -32,15 +32,15 @@ local filesystem and git access:
   `git_author` (the signed-in Kody account). Do not invent or guess a git
   identity. Edit normally — binary assets, multi-file refactors, and local
   build/test loops all work — commit, push, then publish with
-  `package_publish_external_push`. If that tool returns `locked`, open the
-  returned `approval_url` so the owner can promote the named commit. Do not
-  treat HEAD as live until `published_commit` moves. When the OAuth token is
-  coarser than the export (Gmail drafts without send), lock after the first
-  publish — see [locked-gmail-drafts.md](./locked-gmail-drafts.md).
+  `packagePublishExternalPush`. If that tool returns `locked`, open the returned
+  `approval_url` so the owner can promote the named commit. Do not treat HEAD as
+  live until `published_commit` moves. When the OAuth token is coarser than the
+  export (Gmail drafts without send), lock after the first publish — see
+  [locked-gmail-drafts.md](./locked-gmail-drafts.md).
 - **Tool-only lane.** Without local filesystem/git access, create with
-  `package_save` (complete UTF-8 text file set; no binary files) and edit
-  through repo sessions (`repo_open_session`, `repo_edit_files`, `repo_commit`,
-  then `repo_run_checks` before `repo_publish_session`).
+  `packageSave` (complete UTF-8 text file set; no binary files) and edit through
+  repo sessions (`repoOpenSession`, `repoEditFiles`, `repoCommit`, then
+  `repoRunChecks` before `repoPublishSession`).
 
 If a request needs binary assets, many-file changes, or local build/test loops
 and you are tool-only, tell the user the task fits a coding-capable agent better
@@ -199,7 +199,7 @@ leaf (the URL slug). Prefer omitting it and letting the leaf be the slug.
 ## Package visibility
 
 New packages are always **private**. Visibility is a repo setting
-(`package_update` `changes.visibility` or `repo_update`), not
+(`packageUpdate` `changes.visibility` or `repoUpdate`), not
 `package.json#private`. Ignore leftover `"private"` in manifests.
 
 - Public means default-branch HEAD is world-readable and forkable and the
@@ -226,14 +226,14 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (open `search({ entity: "connect_secret:guide" })`
    / `search({ entity: "secret_backed_integration:guide" })`).
-2. Self-authored packages and community forks adopted with
-   `community_fork_adopt` after a real source review get automatic read/use
-   access to user secrets (host approval still applies; `secret_set` /
-   `secret_delete` still need an `allowed_packages` grant). After save/publish,
-   read `pending_secret_package_approvals` from the tool result — it is non-null
-   only for unadopted community forks.
+2. Self-authored packages and community forks adopted with `communityForkAdopt`
+   after a real source review get automatic read/use access to user secrets
+   (host approval still applies; `secretSet` / `secretDelete` still need an
+   `allowed_packages` grant). After save/publish, read
+   `pending_secret_package_approvals` from the tool result — it is non-null only
+   for unadopted community forks.
 3. When pending approvals are present, either review the fork source and call
-   `community_fork_adopt` with a `review_summary`, or send the user
+   `communityForkAdopt` with a `review_summary`, or send the user
    `bulk_approval_url` / each `approval_url`.
 4. Wait for approval or adoption (when required), then smoke-test from `execute`
    with a static `kody:@scope/package/export` import. Use a read-only export or
@@ -257,19 +257,19 @@ declared surface before calling the package complete. Synthetic invocations are
 real-surface runs with real side effects; use a deliberately visible
 irreversible-side-effect guard when a smoke test should stay safe.
 
-1. Read `test_hints` on the `package_publish_external_push` result when present.
-   It lists copy-pasteable calls for declared apps and subscription topics.
+1. Read `test_hints` on the `packagePublishExternalPush` result when present. It
+   lists copy-pasteable calls for declared apps and subscription topics.
 2. **Exports and secret mounts** — statically import
    `kody:@scope/package/export` from `execute` against a read-only export or
    package-supported dry-run input that exercises approved secrets (see
    [Secret-using packages](#secret-using-packages) above).
-3. **Package apps** — `package_app_fetch({ kody_id })` with the path, method,
-   and body your handler needs. Confirm `{ status, headers, body, truncated }`
-   and any `packageStorage()` side effects. See
+3. **Package apps** — `packageAppFetch({ kody_id })` with the path, method, and
+   body your handler needs. Confirm `{ status, headers, body, truncated }` and
+   any `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md).
-4. **Subscriptions** — `package_subscription_dispatch({ kody_id, topic, … })`
-   with exactly one of `params` (fixture) or `email_message_id` (stored-mail
-   replay) for each declared topic. See
+4. **Subscriptions** — `packageSubscriptionDispatch({ kody_id, topic, … })` with
+   exactly one of `params` (fixture) or `email_message_id` (stored-mail replay)
+   for each declared topic. See
    [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the
    [package subscriptions guide](./package-subscriptions.md#synthetic-dispatch).
 5. Optional UI checks — open `hosted_app_url` when the publish response includes

@@ -20,9 +20,9 @@ const waitingItemSchema = z.object({
 export const waitingSummaryCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
-		name: 'waiting_summary',
+		name: 'waitingSummary',
 		description:
-			'List things currently waiting on the signed-in human: email verification, MCP reconnects, locked-package publishes, plan caps, and unfinished setup. This is a current-state queue, not run history — use run_summary for Activity.',
+			'List things currently waiting on the signed-in human: email verification, MCP reconnects, locked-package publishes, plan caps, and unfinished setup. This is a current-state queue, not run history — use runSummary for Activity.',
 		keywords: [
 			'waiting',
 			'inbox',

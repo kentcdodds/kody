@@ -38,5 +38,5 @@ the card already links to.
 
 ## Ask your agent
 
-`waiting_summary` lives on the existing `account` domain. It returns the same
-self-scoped items as the page. Use `run_summary` when you want Activity.
+`waitingSummary` lives on the existing `account` domain. It returns the same
+self-scoped items as the page. Use `runSummary` when you want Activity.

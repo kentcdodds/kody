@@ -640,7 +640,7 @@ test('an artifact rebuild resolves its entry point from the fresh source, not th
 		mockModule.typecheckPackageEntrypointsFromSourceFiles,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			entryPoints: [{ path: 'src/probe-v2.ts', includeStorage: true }],
+			entryPoints: [{ path: 'src/probe-v2.ts' }],
 		}),
 	)
 	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(

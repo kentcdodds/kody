@@ -38,7 +38,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_user_update',
+		name: 'adminUserUpdate',
 		description:
 			'Update account metadata for one user by stable user id, email, or username. Supports setting the manual entitlement grant (null maps to free; Stripe subscriptions stay on stripe_plan). Admin-only; never touches user content.',
 		keywords: ['admin', 'user', 'update', 'account', 'plan', 'entitlements'],
@@ -47,7 +47,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_user_update',
+				'adminUserUpdate',
 				async () => {
 					const user = await updateAdminUserPlan(ctx.env.APP_DB, {
 						stableUserId: args.stableUserId,

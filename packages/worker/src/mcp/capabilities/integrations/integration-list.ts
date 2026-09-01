@@ -16,9 +16,9 @@ const outputSchema = z.object({
 export const integrationListCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_list',
+		name: 'integrationList',
 		description:
-			'List saved OAuth integration connections. Call createAuthenticatedFetch(name) to use one. Do not persist access or refresh tokens with secret_set.',
+			'List saved OAuth integration connections. Call createAuthenticatedFetch(name) to use one. Do not persist access or refresh tokens with secretSet.',
 		keywords: [
 			'integration',
 			'oauth',

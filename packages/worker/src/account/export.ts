@@ -1285,7 +1285,7 @@ async function exportStorageRunners(input: {
 			storageRunners.push({ storageId, export: runnerExport })
 			if (runnerExport.truncated) {
 				input.warnings.push(
-					`Storage runner ${storageId} was truncated in the full export; use account_export_section with section "storage_runner" and storage_id "${storageId}" to retrieve additional pages.`,
+					`Storage runner ${storageId} was truncated in the full export; use accountExportSection with section "storage_runner" and storage_id "${storageId}" to retrieve additional pages.`,
 				)
 			}
 		} catch (error) {
@@ -1310,7 +1310,7 @@ async function exportUserRunRecords(input: {
 		})
 		if (runRecords.truncated) {
 			input.warnings.push(
-				`Run records were truncated in the full export; use account_export_section with section "run_records" to retrieve additional pages.`,
+				`Run records were truncated in the full export; use accountExportSection with section "run_records" to retrieve additional pages.`,
 			)
 		}
 		return runRecords
@@ -1340,7 +1340,7 @@ async function exportUserMeterCounters(input: {
 		})
 		if (page.truncated) {
 			input.warnings.push(
-				`User meter counters were truncated in the full export; use account_export_section with section "user_meter" to retrieve additional pages.`,
+				`User meter counters were truncated in the full export; use accountExportSection with section "user_meter" to retrieve additional pages.`,
 			)
 		}
 		return page
@@ -1363,7 +1363,7 @@ async function exportMailboxRows(input: {
 		})
 		if (page.truncated) {
 			input.warnings.push(
-				`Mailbox rows were truncated in the full export; use account_export_section with section "mailbox" to retrieve additional pages.`,
+				`Mailbox rows were truncated in the full export; use accountExportSection with section "mailbox" to retrieve additional pages.`,
 			)
 		}
 		return page
@@ -1394,7 +1394,7 @@ async function exportRepoSessionIndexRows(input: {
 		})
 		if (page.truncated) {
 			input.warnings.push(
-				`Repo session index rows were truncated in the full export; use account_export_section with section "repo_session_index" to retrieve additional pages.`,
+				`Repo session index rows were truncated in the full export; use accountExportSection with section "repo_session_index" to retrieve additional pages.`,
 			)
 		}
 		return page

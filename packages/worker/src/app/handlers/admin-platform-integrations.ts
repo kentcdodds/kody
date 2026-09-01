@@ -82,7 +82,7 @@ type AdminActor = Awaited<ReturnType<typeof requireUserWithRole>>
 
 /**
  * Create/update a platform app. Field semantics mirror the
- * `admin_platform_oauth_app_save` capability: `clientSecret` and
+ * `adminPlatformOauthAppSave` capability: `clientSecret` and
  * `logoBase64` are write-only (omit retains, null/empty clears the logo;
  * an empty clientSecret clears only for pkce flow), and omitted optional
  * fields retain stored values through the upsert's retain-on-omit contract.

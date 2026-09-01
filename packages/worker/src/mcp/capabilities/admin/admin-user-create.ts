@@ -35,7 +35,7 @@ export const adminUserCreateCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_user_create',
+		name: 'adminUserCreate',
 		description:
 			'Create one user account by email, assign the default user role, and return a password setup link. Admin-only; does not expose user content.',
 		keywords: [
@@ -52,7 +52,7 @@ export const adminUserCreateCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_user_create',
+				'adminUserCreate',
 				async () => {
 					const createdUser = await adminCreateUserWithPasswordSetup({
 						db: ctx.env.APP_DB,

@@ -42,7 +42,7 @@ repos Origin mirrors _out_ to GitHub are in scope.
 - Installation tokens last at most 15 minutes. Kody mints them just in time from
   a stored Ed25519 private key. Do not save an `oit_…` token as the durable
   secret.
-- `secret_jwt_sign` signs the app JWT host-side (`algorithm: "EdDSA"`). The
+- `secretJwtSign` signs the app JWT host-side (`algorithm: "EdDSA"`). The
   private key never enters execute or package code.
 
 ## Lane A: Origin App (durable)
@@ -81,9 +81,9 @@ Approve `api.cursor.com` on that page. The name `originAppPrivateKey` is what
 ### Save the readable ids
 
 App id and installation id are not secrets. Put them in a memory
-(`meta_memory_verify`, then `meta_memory_upsert`) so later agents can recall
-them. Inside a saved package, `packageStorage()` holds that package's own knobs
-— do not call it from bare `execute`.
+(`metaMemoryVerify`, then `metaMemoryUpsert`) so later agents can recall them.
+Inside a saved package, `packageStorage()` holds that package's own knobs — do
+not call it from bare `execute`.
 
 - `originAppId` — the `app_01…` id (JWT `iss` and `kid`)
 - `originInstallationId` — the `i_01…` id used to mint installation tokens
@@ -106,7 +106,7 @@ export default async function main(input: { appId?: string } = {}) {
 		throw new Error('Pass appId in execute params.')
 	}
 	const now = Math.floor(Date.now() / 1000)
-	const { jwt } = await kody.secret_jwt_sign({
+	const { jwt } = await kody.secretJwtSign({
 		private_key_secret_name: 'originAppPrivateKey',
 		algorithm: 'EdDSA',
 		header: { kid: appId },
@@ -139,7 +139,7 @@ not accept the credential kind — confirm you are signing with the Origin App
 private key, not `cursorApiKey`.
 
 After the smoke test passes, prefer a community helpers package
-(`community_search` for `origin`) over raw `secret_jwt_sign` + `fetch` in later
+(`communitySearch` for `origin`) over raw `secretJwtSign` + `fetch` in later
 work. Integrations are auth; the package is how agents should call Origin.
 
 ## Helpers package

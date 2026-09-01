@@ -39,21 +39,19 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	).toBe(true)
 	expect(
 		tools.some((tool) =>
-			tool.inputs.some((input) =>
-				input.value.includes('package_get_git_remote'),
-			),
+			tool.inputs.some((input) => input.value.includes('packageGetGitRemote')),
 		),
 	).toBe(true)
 	expect(
 		tools.some((tool) =>
 			tool.inputs.some((input) =>
-				input.value.includes('package_publish_external_push'),
+				input.value.includes('packagePublishExternalPush'),
 			),
 		),
 	).toBe(true)
 	expect(
 		tools.some((tool) =>
-			tool.inputs.some((input) => input.value.includes('repo_edit_files')),
+			tool.inputs.some((input) => input.value.includes('repoEditFiles')),
 		),
 	).toBe(true)
 

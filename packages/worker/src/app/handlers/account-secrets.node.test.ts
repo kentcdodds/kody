@@ -752,7 +752,7 @@ test('approval requests reject invalid targets and ignore stale capability query
 
 	const staleCapabilityResponse = await handler.handler({
 		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secret_set',
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secretSet',
 			{
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -772,7 +772,7 @@ test('approval requests reject invalid targets and ignore stale capability query
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 	const staleCapabilityView = await handler.handler({
 		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secret_set',
+			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secretSet',
 			{ method: 'GET' },
 		),
 		params: {},

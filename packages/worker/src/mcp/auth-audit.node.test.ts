@@ -28,7 +28,7 @@ vi.mock('@sentry/cloudflare', () => ({
 }))
 
 const adminCapability = {
-	name: 'admin_user_get',
+	name: 'adminUserGet',
 	requiredRole: 'admin',
 } as const
 
@@ -60,7 +60,7 @@ test('a single capability denial is audited without becoming a Sentry error', as
 			result: 'failure',
 			reason: 'role',
 			email: 'user-1@example.com',
-			path: 'admin_user_get',
+			path: 'adminUserGet',
 		}),
 	)
 	expect(sentryMock.captureException).not.toHaveBeenCalled()

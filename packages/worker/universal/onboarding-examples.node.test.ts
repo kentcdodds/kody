@@ -120,7 +120,7 @@ test('example prompt searches the user-owned scoped package and statically impor
 	)
 	expect(prompt).toContain('not a platform "kody:@kody/')
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
-		'package_get_git_remote',
+		'packageGetGitRemote',
 	)
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'hn-pulse',

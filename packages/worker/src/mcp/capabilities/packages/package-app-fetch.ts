@@ -32,7 +32,7 @@ import {
 export const packageAppFetchMaxBodyBytes = 102_400
 
 const packageRuntimeCallerErrorMessage =
-	'package_app_fetch is unavailable from package runtime contexts. Call it from an interactive MCP agent instead.'
+	'packageAppFetch is unavailable from package runtime contexts. Call it from an interactive MCP agent instead.'
 
 const blockedRequestHeaderNames = new Set([
 	'cookie',
@@ -97,12 +97,12 @@ function normalizePackageAppFetchPath(path: string | undefined) {
 			decoded = decodeURIComponent(segment)
 		} catch {
 			throw new McpCallerError(
-				'package_app_fetch path contains invalid percent encoding.',
+				'packageAppFetch path contains invalid percent encoding.',
 			)
 		}
 		if (decoded === '..') {
 			throw new McpCallerError(
-				'package_app_fetch path must not contain parent traversal segments.',
+				'packageAppFetch path must not contain parent traversal segments.',
 			)
 		}
 	}
@@ -248,7 +248,7 @@ function assertRequestBodyWithinLimit(body: string | undefined) {
 	const byteLength = new TextEncoder().encode(body).byteLength
 	if (byteLength > packageAppFetchMaxBodyBytes) {
 		throw new McpCallerError(
-			`package_app_fetch request body exceeds ${packageAppFetchMaxBodyBytes} bytes.`,
+			`packageAppFetch request body exceeds ${packageAppFetchMaxBodyBytes} bytes.`,
 		)
 	}
 }
@@ -351,7 +351,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 			const method = (args.method?.trim().toUpperCase() || 'GET') as string
 			if (!allowedMethods.has(method)) {
 				throw new McpCallerError(
-					`package_app_fetch does not support HTTP method "${method}".`,
+					`packageAppFetch does not support HTTP method "${method}".`,
 				)
 			}
 			if (
@@ -369,7 +369,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 				})
 			) {
 				throw new McpCallerError(
-					'package_app_fetch does not support websocket Upgrade requests.',
+					'packageAppFetch does not support websocket Upgrade requests.',
 				)
 			}
 			assertRequestBodyWithinLimit(args.body)

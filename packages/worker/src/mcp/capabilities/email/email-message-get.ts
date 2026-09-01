@@ -12,7 +12,7 @@ import { emailMessageDetailSchema, toMessageDetail } from './shared.ts'
 export const emailMessageGetCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_message_get',
+		name: 'emailMessageGet',
 		description:
 			'Get one stored email message, including parsed bodies, headers, attachment metadata, and processing state.',
 		keywords: ['email', 'message', 'get', 'headers', 'attachments'],

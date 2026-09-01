@@ -140,17 +140,13 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 			{ ...input, user_confirmed: false } as never,
 			createCapabilityContext({ userId: 'user-1' }),
 		),
-	).rejects.toThrow(
-		'Invalid input for capability "meta_platform_feedback_submit"',
-	)
+	).rejects.toThrow('Invalid input for capability "metaPlatformFeedbackSubmit"')
 	await expect(
 		metaPlatformFeedbackSubmitCapability.handler(
 			{ ...input, metadata: { conversation: 'private' } } as never,
 			createCapabilityContext({ userId: 'user-1' }),
 		),
-	).rejects.toThrow(
-		'Invalid input for capability "meta_platform_feedback_submit"',
-	)
+	).rejects.toThrow('Invalid input for capability "metaPlatformFeedbackSubmit"')
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
 	await expect(
 		metaPlatformFeedbackSubmitCapability.handler(
@@ -406,11 +402,11 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 	)
 	expect(auditEventSummaries()).toEqual([
 		'mcp_capability_denied:failure',
-		'admin_platform_feedback_list:success',
-		'admin_platform_feedback_get:success',
-		'admin_platform_feedback_update:success',
-		'admin_platform_feedback_update:failure',
-		'admin_platform_feedback_update:failure',
+		'adminPlatformFeedbackList:success',
+		'adminPlatformFeedbackGet:success',
+		'adminPlatformFeedbackUpdate:success',
+		'adminPlatformFeedbackUpdate:failure',
+		'adminPlatformFeedbackUpdate:failure',
 	])
 })
 

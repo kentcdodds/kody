@@ -25,7 +25,7 @@ export const adminSystemEmailSenderRuleDeleteCapability =
 	defineDomainCapability(capabilityDomainNames.admin, {
 		...adminMutationCapabilityAccess,
 		destructive: true,
-		name: 'admin_system_email_sender_rule_delete',
+		name: 'adminSystemEmailSenderRuleDelete',
 		description:
 			'Delete a sender rule that controls inbound spam policy for operator system inboxes (kody@, abuse@, and other reserved locals on the apex domain). Admin-only; never mutates user-owned email rules.',
 		keywords: [
@@ -41,7 +41,7 @@ export const adminSystemEmailSenderRuleDeleteCapability =
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_system_email_sender_rule_delete',
+				'adminSystemEmailSenderRuleDelete',
 				async () => {
 					const deleted = await deleteEmailSenderRule({
 						db: ctx.env.APP_DB,

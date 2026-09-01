@@ -277,7 +277,7 @@ export async function setSecretsAtomically(input: {
 	if (scope === 'user' && packageId) {
 		if (input.secrets.some((secret) => secret.expiresAt !== undefined)) {
 			throw new McpCallerError(
-				'Package runtimes cannot change user secret expiry. Set expires_at from the account page or secret_set outside a package.',
+				'Package runtimes cannot change user secret expiry. Set expires_at from the account page or secretSet outside a package.',
 			)
 		}
 		for (const secret of input.secrets) {

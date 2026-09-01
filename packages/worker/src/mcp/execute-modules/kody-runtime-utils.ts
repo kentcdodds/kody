@@ -34,7 +34,7 @@ type IntegrationConfig = {
 	/**
 	 * Platform (built-in) app connection: the shared client secret stays
 	 * server-side, so token refresh must go through the host-side
-	 * `integration_token_refresh` capability.
+	 * `integrationTokenRefresh` capability.
 	 */
 	platform?: boolean
 }
@@ -78,18 +78,18 @@ export const secretHeaders = {
 }
 
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
-	'integration_get',
-	'integration_token_refresh',
+	'integrationGet',
+	'integrationTokenRefresh',
 ] as const
 
 async function refreshIntegrationTokensHostSide(
 	kody: KodyNamespace,
 	providerName: string,
 ) {
-	const tokenRefresh = kody.integration_token_refresh
+	const tokenRefresh = kody.integrationTokenRefresh
 	if (typeof tokenRefresh !== 'function') {
 		throw new Error(
-			'kody.integration_token_refresh is not available in this sandbox.',
+			'kody.integrationTokenRefresh is not available in this sandbox.',
 		)
 	}
 	const result = (await tokenRefresh({ name: providerName })) as {
@@ -110,7 +110,7 @@ export async function createAuthenticatedFetch(
 > {
 	const integration = await readIntegrationConfig(kody, providerName)
 
-	// Both lanes refresh host-side (integration_token_refresh) and retry with
+	// Both lanes refresh host-side (integrationTokenRefresh) and retry with
 	// a placeholder header the gateway resolves to the fresh token, so the
 	// raw token never enters the sandbox. The user lane enforces each
 	// secret's allowed_hosts against the token URL host-side — the same
@@ -194,9 +194,9 @@ async function readIntegrationConfig(
 	kody: KodyNamespace,
 	providerName: string,
 ) {
-	const integrationGet = kody.integration_get
+	const integrationGet = kody.integrationGet
 	if (typeof integrationGet !== 'function') {
-		throw new Error('kody.integration_get is not available in this sandbox.')
+		throw new Error('kody.integrationGet is not available in this sandbox.')
 	}
 	const result = (await integrationGet({
 		name: providerName,
@@ -449,9 +449,9 @@ const secretHeaders = {
   },
 };
 const __kodyReadIntegrationConfig = async (providerName) => {
-  const integrationGet = kody.integration_get;
+  const integrationGet = kody.integrationGet;
   if (typeof integrationGet !== 'function') {
-    throw new Error('kody.integration_get is not available in this sandbox.');
+    throw new Error('kody.integrationGet is not available in this sandbox.');
   }
   const result = await integrationGet({ name: providerName });
   const integration = result?.integration ?? null;
@@ -506,10 +506,10 @@ const __kodyResolveRequestUrl = (input, integration) => {
   return input;
 };
 const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
-  const tokenRefresh = kody.integration_token_refresh;
+  const tokenRefresh = kody.integrationTokenRefresh;
   if (typeof tokenRefresh !== 'function') {
     throw new Error(
-      'kody.integration_token_refresh is not available in this sandbox.',
+      'kody.integrationTokenRefresh is not available in this sandbox.',
     );
   }
   const result = await tokenRefresh({ name: providerName });

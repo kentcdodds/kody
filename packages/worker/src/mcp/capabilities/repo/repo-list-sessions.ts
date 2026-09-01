@@ -54,7 +54,7 @@ async function resolveListSessionTarget(input: {
 export const repoListSessionsCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_list_sessions',
+		name: 'repoListSessions',
 		description:
 			'List repo editing sessions for the signed-in user, defaulting to active sessions so agents can discover sessions to resume, inspect, publish, or discard without already knowing session ids.',
 		keywords: [

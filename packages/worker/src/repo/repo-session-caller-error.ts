@@ -30,7 +30,7 @@ export function isRepoSessionNotFoundMessage(message: string) {
 }
 
 export const repoSessionNotFoundGuidance =
-	'Use repo_list_sessions or repo_open_session to obtain a valid session_id.'
+	'Use repoListSessions or repoOpenSession to obtain a valid session_id.'
 
 export function buildRepoSessionNotFoundMessage(sessionId: string) {
 	return `Repo session "${sessionId}" was not found. ${repoSessionNotFoundGuidance}`
@@ -76,7 +76,7 @@ export function isGitPushNotFastForwardError(error: unknown) {
  * RegExp rejects; treat those as caller-correctable input, not platform bugs.
  */
 export const repoSearchInvalidRegexMessagePrefix =
-	'repo_search received an invalid regex'
+	'repoSearch received an invalid regex'
 
 export function isRepoSearchInvalidRegexMessage(message: string) {
 	return message.startsWith(repoSearchInvalidRegexMessagePrefix)

@@ -17,7 +17,7 @@ import {
 export const communityProfileUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_profile_update',
+		name: 'communityProfileUpdate',
 		description:
 			'Update your community profile display name, bio, and/or visibility. At least one field is required. Visibility private hides your profile from other users.',
 		keywords: [

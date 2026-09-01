@@ -42,7 +42,7 @@ const outputSchema = z.toJSONSchema(
 export const repoGetGitRemoteCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_get_git_remote',
+		name: 'repoGetGitRemote',
 		description:
 			'Mint a short-lived Cloudflare Artifacts git remote for a plain repo. Write pushes are live at HEAD — no package publish reconcile step runs afterward. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary); larger files are rejected with external-hosting guidance. The Artifacts remote itself fails pushes above ~32 MiB of decompressed pack content with a raw HTTP 413.',
 		keywords: ['repo', 'git', 'remote', 'artifacts', 'clone', 'push', 'plain'],

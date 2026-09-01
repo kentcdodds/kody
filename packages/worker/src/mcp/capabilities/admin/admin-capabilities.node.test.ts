@@ -701,13 +701,13 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	).toEqual({ usage: null })
 
 	const audit = await adminAuditLogQueryCapability.handler(
-		{ action: 'admin_user_get', limit: 10 },
+		{ action: 'adminUserGet', limit: 10 },
 		ctx,
 	)
 	expect(audit.total).toBe(1)
 	expect(audit.events).toEqual([
 		expect.objectContaining({
-			action: 'admin_user_get',
+			action: 'adminUserGet',
 			category: 'admin',
 			result: 'success',
 			email_hash: expect.any(String),
@@ -716,15 +716,15 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	])
 	expect(audit.events[0]).not.toHaveProperty('email')
 	expect(auditEvents.map((event) => event.action)).toEqual([
-		'admin_user_list',
-		'admin_user_get',
-		'admin_user_usage',
-		'admin_user_usage',
-		'admin_audit_log_query',
+		'adminUserList',
+		'adminUserGet',
+		'adminUserUsage',
+		'adminUserUsage',
+		'adminAuditLogQuery',
 	])
 })
 
-test('admin_audit_log_query accepts legacy SQLite rowids through output parse', async () => {
+test('adminAuditLogQuery accepts legacy SQLite rowids through output parse', async () => {
 	const { db, auditEvents } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -868,9 +868,9 @@ test('admin system email capabilities read only system-owned mail and audit read
 		await adminSystemEmailGetCapability.handler({ id: 'user-message-1' }, ctx),
 	).toEqual({ message: null })
 	expect(auditEvents.map((event) => event.action)).toEqual([
-		'admin_system_email_list',
-		'admin_system_email_get',
-		'admin_system_email_get',
+		'adminSystemEmailList',
+		'adminSystemEmailGet',
+		'adminSystemEmailGet',
 	])
 	expect(auditEvents[1]).toMatchObject({
 		reason: 'target_message_id=system-message-1',
@@ -910,7 +910,7 @@ test('insert into users mock rejects missing stable_user_id bind parameter', asy
 	)
 })
 
-test('admin_user_create records audit metadata and assigns the default role', async () => {
+test('adminUserCreate records audit metadata and assigns the default role', async () => {
 	const { db, auditEvents, userRoles, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -942,7 +942,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	expect(userRoles).toContainEqual({ user_id: 2, role_name: 'user' })
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
-			action: 'admin_user_create',
+			action: 'adminUserCreate',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('person+launch@example.com')};target_email=***@example.com`,
 		}),
@@ -958,7 +958,7 @@ test('admin_user_create records audit metadata and assigns the default role', as
 	})
 })
 
-test('admin_user_update sets plan and maps null clear to free with audit metadata', async () => {
+test('adminUserUpdate sets plan and maps null clear to free with audit metadata', async () => {
 	const { db, auditEvents, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -1012,19 +1012,19 @@ test('admin_user_update sets plan and maps null clear to free with audit metadat
 
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
-			action: 'admin_user_update',
+			action: 'adminUserUpdate',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};plan=pro`,
 		}),
 		expect.objectContaining({
-			action: 'admin_user_update',
+			action: 'adminUserUpdate',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};plan=free`,
 		}),
 	])
 })
 
-test('admin_user_update rejects unknown users and unknown plan names', async () => {
+test('adminUserUpdate rejects unknown users and unknown plan names', async () => {
 	const { db, auditEvents } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -1047,7 +1047,7 @@ test('admin_user_update rejects unknown users and unknown plan names', async () 
 	).rejects.toThrow('User not found.')
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
-			action: 'admin_user_update',
+			action: 'adminUserUpdate',
 			result: 'failure',
 			reason: 'User not found.',
 		}),
@@ -1058,7 +1058,7 @@ test('admin_user_update rejects unknown users and unknown plan names', async () 
 			{ id: 1, plan: 'enterprise' } as never,
 			ctx,
 		),
-	).rejects.toThrow('Invalid input for capability "admin_user_update"')
+	).rejects.toThrow('Invalid input for capability "adminUserUpdate"')
 })
 
 test('admin user lookup does not fall through from an invalid stable id', async () => {
@@ -1083,7 +1083,7 @@ test('admin user lookup does not fall through from an invalid stable id', async 
 	).resolves.toBeNull()
 })
 
-test('admin_user_verify marks verified and mints a one-time url with audit metadata', async () => {
+test('adminUserVerify marks verified and mints a one-time url with audit metadata', async () => {
 	const { db, auditEvents, users } = createAdminCapabilityTestDb({
 		users: [
 			adminTestUser({
@@ -1132,12 +1132,12 @@ test('admin_user_verify marks verified and mints a one-time url with audit metad
 
 	expect(auditEvents).toEqual([
 		expect.objectContaining({
-			action: 'admin_user_verify',
+			action: 'adminUserVerify',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};action=mint_verify_url`,
 		}),
 		expect.objectContaining({
-			action: 'admin_user_verify',
+			action: 'adminUserVerify',
 			result: 'success',
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};action=mark_verified`,
 		}),
@@ -1151,7 +1151,7 @@ test('admin_user_verify marks verified and mints a one-time url with audit metad
 	).rejects.toThrow('Email is already verified.')
 	expect(auditEvents.at(-1)).toEqual(
 		expect.objectContaining({
-			action: 'admin_user_verify',
+			action: 'adminUserVerify',
 			result: 'failure',
 			reason: 'Email is already verified.',
 		}),

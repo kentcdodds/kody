@@ -10,7 +10,7 @@ import { repoSearchInputSchema, repoSearchOutputSchema } from './repo-shared.ts'
 export const repoSearchCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_search',
+		name: 'repoSearch',
 		description:
 			'Search within a repo session using rg-style lexical matching over the live session workspace. This is scoped code/file search, not semantic retrieval. When mode=regex, patterns must be valid JavaScript RegExp syntax (not Python/PCRE inline flags).',
 		keywords: ['repo', 'search', 'ripgrep', 'regex', 'literal', 'files'],

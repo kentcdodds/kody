@@ -11,7 +11,7 @@ export const adminAccountWriteLeaseListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_account_write_lease_list',
+		name: 'adminAccountWriteLeaseList',
 		description:
 			'Inspect active non-expiring account write leases before manual repair. Admin-only.',
 		keywords: ['admin', 'account', 'deletion', 'lease', 'repair'],
@@ -30,7 +30,7 @@ export const adminAccountWriteLeaseListCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_account_write_lease_list',
+				'adminAccountWriteLeaseList',
 				async () => ({
 					leases: await listActiveAccountWriteLeases(
 						ctx.env,

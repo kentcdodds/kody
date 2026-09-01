@@ -98,7 +98,7 @@ function savedPackage(overrides?: { hasApp?: boolean }) {
 	}
 }
 
-test('package_app_fetch dispatches synthetic in-process app requests against hosted URLs', async () => {
+test('packageAppFetch dispatches synthetic in-process app requests against hosted URLs', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response(JSON.stringify({ ok: true }), {
@@ -159,7 +159,7 @@ test('package_app_fetch dispatches synthetic in-process app requests against hos
 	expect(request.headers.get('X-Test')).toBe('kept')
 })
 
-test('package_app_fetch resolves owned packages by package_id', async () => {
+test('packageAppFetch resolves owned packages by package_id', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage())
 	mockModule.servePackageAppRequest.mockResolvedValue(
 		new Response('ok', { status: 200 }),
@@ -183,7 +183,7 @@ test('package_app_fetch resolves owned packages by package_id', async () => {
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
-test('package_app_fetch rejects invalid callers, paths, and missing packages', async () => {
+test('packageAppFetch rejects invalid callers, paths, and missing packages', async () => {
 	await expect(
 		packageAppFetchCapability.handler({}, createContext()),
 	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
@@ -200,7 +200,7 @@ test('package_app_fetch rejects invalid callers, paths, and missing packages', a
 			createContext({ packageId: 'package-1' }),
 		),
 	).rejects.toThrow(
-		'package_app_fetch is unavailable from package runtime contexts.',
+		'packageAppFetch is unavailable from package runtime contexts.',
 	)
 	await expect(
 		packageAppFetchCapability.handler(
@@ -208,7 +208,7 @@ test('package_app_fetch rejects invalid callers, paths, and missing packages', a
 			createContext({ executionOrigin: 'background' }),
 		),
 	).rejects.toThrow(
-		'package_app_fetch is unavailable from package runtime contexts.',
+		'packageAppFetch is unavailable from package runtime contexts.',
 	)
 
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
@@ -221,7 +221,7 @@ test('package_app_fetch rejects invalid callers, paths, and missing packages', a
 			createContext(),
 		),
 	).rejects.toThrow(
-		'package_app_fetch does not support websocket Upgrade requests.',
+		'packageAppFetch does not support websocket Upgrade requests.',
 	)
 	await expect(
 		packageAppFetchCapability.handler(
@@ -229,7 +229,7 @@ test('package_app_fetch rejects invalid callers, paths, and missing packages', a
 			createContext(),
 		),
 	).rejects.toThrow(
-		'package_app_fetch path must not contain parent traversal segments.',
+		'packageAppFetch path must not contain parent traversal segments.',
 	)
 	await expect(
 		packageAppFetchCapability.handler(
@@ -262,7 +262,7 @@ test('package_app_fetch rejects invalid callers, paths, and missing packages', a
 	).rejects.toThrow('has no declared app')
 })
 
-test('package_app_fetch truncates oversized bodies and encodes binary as base64', async () => {
+test('packageAppFetch truncates oversized bodies and encodes binary as base64', async () => {
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(savedPackage())
 	const oversized = 'x'.repeat(102_401)
 	mockModule.servePackageAppRequest.mockResolvedValue(

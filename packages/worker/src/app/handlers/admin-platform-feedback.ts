@@ -32,7 +32,7 @@ async function auditPlatformFeedbackRead(input: {
 	env: Env
 	request: Request
 	actorEmail?: string | null
-	action: 'admin_platform_feedback_list' | 'admin_platform_feedback_get'
+	action: 'adminPlatformFeedbackList' | 'adminPlatformFeedbackGet'
 	feedbackId?: string | null
 	notFound?: boolean
 }) {
@@ -71,8 +71,8 @@ export function createAdminPlatformFeedbackHandler(env: Env) {
 				request,
 				actorEmail: actor.email,
 				action: requestedFeedbackId
-					? 'admin_platform_feedback_get'
-					: 'admin_platform_feedback_list',
+					? 'adminPlatformFeedbackGet'
+					: 'adminPlatformFeedbackList',
 				feedbackId: requestedFeedbackId,
 				notFound:
 					requestedFeedbackId !== null &&
@@ -102,8 +102,8 @@ export function createAdminPlatformFeedbackApiHandler(env: Env) {
 					request,
 					actorEmail: actor.email,
 					action: requestedFeedbackId
-						? 'admin_platform_feedback_get'
-						: 'admin_platform_feedback_list',
+						? 'adminPlatformFeedbackGet'
+						: 'adminPlatformFeedbackList',
 					feedbackId: requestedFeedbackId,
 					notFound:
 						requestedFeedbackId !== null && payload.selectedFeedback === null,

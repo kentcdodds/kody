@@ -212,7 +212,7 @@ known `sender_block`. The first terminal failure fans
 
 Operators can unblock a stranded signup without a raw D1 write:
 
-- `admin_user_verify` (`mark_verified` or `mint_verify_url`) and the matching
+- `adminUserVerify` (`mark_verified` or `mint_verify_url`) and the matching
   `/admin/users` actions (`mark_email_verified`, `mint_verify_url`)
 - `mark_verified` sets `email_verified_at` (idempotent), clears outstanding
   tokens, and clears the delivery fields

@@ -53,8 +53,8 @@ Storage paths use **only** `ownerUserId`. The actor is never written into
 ownership columns; it appears in audit events instead.
 
 Capabilities that accept `package_scope` include package save/get/list/delete/
-update, git-lane publish (`package_get_git_remote`,
-`package_publish_external_push`), and community publish/unpublish.
+update, git-lane publish (`packageGetGitRemote`, `packagePublishExternalPush`),
+and community publish/unpublish.
 
 ## Security invariant
 
@@ -81,12 +81,11 @@ Each delegated resolution logs `package_scope_delegated_access` in the audit log
 
 The `admin` MCP domain exposes:
 
-- `admin_platform_account_create` — provision a platform account (reserved
+- `adminPlatformAccountCreate` — provision a platform account (reserved
   username, no login).
-- `admin_package_scope_grant_create` — grant a person access to a platform
-  scope.
-- `admin_package_scope_grant_revoke` — remove a grant.
-- `admin_package_scope_grant_list` — list grants (optionally filtered by scope
+- `adminPackageScopeGrantCreate` — grant a person access to a platform scope.
+- `adminPackageScopeGrantRevoke` — remove a grant.
+- `adminPackageScopeGrantList` — list grants (optionally filtered by scope
   owner).
 
 ## Operator workflow
@@ -96,9 +95,9 @@ Typical path for official packages and onboarding starters:
 1. Operator creates the `kody` platform account (if missing).
 2. Operator receives a package scope grant on `@kody`.
 3. From their own MCP session, the operator passes `package_scope: "kody"` to
-   the git lane: `package_get_git_remote` → clone/edit/push →
-   `package_publish_external_push`.
-4. Community listings are published with `community_publish` and the same
+   the git lane: `packageGetGitRemote` → clone/edit/push →
+   `packagePublishExternalPush`.
+4. Community listings are published with `communityPublish` and the same
    `package_scope`, so featured starters display as `@kody/...`.
 
 ## Intentionally not built

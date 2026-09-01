@@ -15,7 +15,7 @@ import {
  * with no request-time GitHub dependency.
  *
  * Only `guideMetadataList` (frontmatter, no bodies) is statically imported
- * here — registering `coding_guide_get` must not add every guide body's
+ * here — registering `codingGuideGet` must not add every guide body's
  * parse/link cost to every platform/runtime Worker isolate's main-module
  * cold start. The full catalog is loaded lazily by `importGuideCatalog()`
  * inside the handler; see `#worker/guide-catalog-modules.ts`.
@@ -61,7 +61,7 @@ const outputSchema = z.object({
 })
 
 const allKeywords = [
-	'coding_guide_get',
+	'codingGuideGet',
 	'official guide capability',
 	'load guide from execute',
 ]
@@ -69,7 +69,7 @@ const allKeywords = [
 export const kodyOfficialGuideCapability = defineDomainCapability(
 	capabilityDomainNames.coding,
 	{
-		name: 'coding_guide_get',
+		name: 'codingGuideGet',
 		description: buildCapabilityDescription(),
 		keywords: [...allKeywords],
 		readOnly: true,

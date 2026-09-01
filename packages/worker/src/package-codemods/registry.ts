@@ -6,6 +6,7 @@ import { kodyDependenciesToWildcardMapCodemod } from './codemods/0005-kody-depen
 import { invokeObjectToSpecifierCodemod } from './codemods/0006-invoke-object-to-specifier.ts'
 import { prefixPackagesInvokeSpecifiersCodemod } from './codemods/0007-prefix-packages-invoke-specifiers.ts'
 import { packagesInvokeToStaticImportCodemod } from './codemods/0008-packages-invoke-to-static-import.ts'
+import { snakeCaseKodyMembersCodemod } from './codemods/0009-snake-case-kody-members.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -17,6 +18,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	invokeObjectToSpecifierCodemod,
 	prefixPackagesInvokeSpecifiersCodemod,
 	packagesInvokeToStaticImportCodemod,
+	snakeCaseKodyMembersCodemod,
 ]
 
 const packageCodemodsById = new Map(

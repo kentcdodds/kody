@@ -35,7 +35,7 @@ test('integration provider suggestions resolve guide-backed prompts and keep a g
 	expect(slack!.guideSlug).toBeUndefined()
 	const prompt = buildIntegrationSetupPrompt(slack!)
 	expect(prompt.length).toBeGreaterThan(0)
-	expect(prompt).not.toContain('coding_guide_get')
+	expect(prompt).not.toContain('codingGuideGet')
 })
 
 test('next suggested connection name skips taken {slug}-{n} keys', () => {

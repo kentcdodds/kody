@@ -12,7 +12,7 @@ official platform packages, including ad hoc execute).
 Built-in (platform) integrations pair naturally with official helper packages
 (for example `@kody/github` alongside the `github` platform OAuth app), so
 agents do not hand-roll provider glue. Before this decision, the only way for a
-user to run another account's package code was `community_fork`: a copy into the
+user to run another account's package code was `communityFork`: a copy into the
 user's own scope. Copies have no upstream story — a bug fix in the official
 package would require codemodding every fork — and shipping helpers as worker
 source would put provider code on the deploy cadence while the providers

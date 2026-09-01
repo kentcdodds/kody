@@ -41,7 +41,7 @@ test('isRepoSessionNotFoundMessage matches missing and wrong-user phrases only',
 	).toBe(true)
 	expect(
 		isRepoSessionNotFoundMessage(
-			'Repo session "none" was not found. Use repo_list_sessions or repo_open_session to obtain a valid session_id.',
+			'Repo session "none" was not found. Use repoListSessions or repoOpenSession to obtain a valid session_id.',
 		),
 	).toBe(true)
 	expect(

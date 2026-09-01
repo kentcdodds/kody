@@ -21,7 +21,7 @@ export const adminPlatformProviderMarkListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_platform_provider_mark_list',
+		name: 'adminPlatformProviderMarkList',
 		description:
 			'List operator-owned provider brand marks used as the saved-integration fallback after an upload or auto-favicon. Admin-only.',
 		keywords: [
@@ -39,7 +39,7 @@ export const adminPlatformProviderMarkListCapability = defineDomainCapability(
 		async handler(_args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_provider_mark_list',
+				'adminPlatformProviderMarkList',
 				async () => {
 					const marks = await listPlatformProviderMarks({
 						db: ctx.env.APP_DB,

@@ -51,7 +51,7 @@ function createPackageCallerContext(packageId: string) {
 	})
 }
 
-test('storage_query wraps Durable Object SQL caller mistakes and rethrows platform failures', async () => {
+test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platform failures', async () => {
 	mockModule.sqlQuery.mockRejectedValueOnce(
 		new Error('no such table: articles: SQLITE_ERROR'),
 	)
@@ -92,7 +92,7 @@ test('storage_query wraps Durable Object SQL caller mistakes and rethrows platfo
 	).rejects.toBe(platformError)
 })
 
-test('storage_query denies package runtimes buckets their package does not own', async () => {
+test('storageQuery denies package runtimes buckets their package does not own', async () => {
 	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
 	const victimPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 	mockModule.sqlQuery.mockClear()

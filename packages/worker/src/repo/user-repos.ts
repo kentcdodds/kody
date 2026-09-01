@@ -21,10 +21,10 @@ export type UserRepoRecord = {
 }
 
 export const plainRepoPromotionNotice =
-	'This repo exists but is not a package — promote it with repo_promote_to_package.'
+	'This repo exists but is not a package — promote it with repoPromoteToPackage.'
 
 export const plainRepoPackageShapedNotice =
-	'Root package.json detected at HEAD. Promote with repo_promote_to_package to activate package runtime surfaces.'
+	'Root package.json detected at HEAD. Promote with repoPromoteToPackage to activate package runtime surfaces.'
 
 const userRepoSelectColumns = `id, user_id, name, description, is_private, created_at, updated_at`
 

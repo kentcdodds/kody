@@ -189,7 +189,7 @@ Use this section when you want to answer "can Agents do X?" quickly.
   https://developers.cloudflare.com/agents/api-reference/run-workflows/
 - In Kody runtime code, use `workflows.create` for durable batch sweeps,
   migrations, polling loops, or retryable work that may outlive execute's
-  timeout; inspect runs with `workflow_run_list`.
+  timeout; inspect runs with `workflowRunList`.
 
 ### LLM integration (bring your model/provider)
 

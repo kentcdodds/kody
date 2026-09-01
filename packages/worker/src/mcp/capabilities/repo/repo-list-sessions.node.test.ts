@@ -120,7 +120,7 @@ function mockSourceAndPackage() {
 	})
 }
 
-test('repo_list_sessions defaults to active sessions for the signed-in user', async () => {
+test('repoListSessions defaults to active sessions for the signed-in user', async () => {
 	resetMocks()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
 		createSession({
@@ -167,7 +167,7 @@ test('repo_list_sessions defaults to active sessions for the signed-in user', as
 	})
 })
 
-test('repo_list_sessions status all includes inactive sessions', async () => {
+test('repoListSessions status all includes inactive sessions', async () => {
 	resetMocks()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
 		createSession({ id: 'session-active', status: 'active' }),
@@ -189,7 +189,7 @@ test('repo_list_sessions status all includes inactive sessions', async () => {
 	expect(result.sessions[1]?.expires_at).toBe('2026-05-12T00:00:00.000Z')
 })
 
-test('repo_list_sessions does not return rows for another user even if storage is malformed', async () => {
+test('repoListSessions does not return rows for another user even if storage is malformed', async () => {
 	resetMocks()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
 		createSession({ id: 'session-other-user', user_id: 'other-user' }),
@@ -202,7 +202,7 @@ test('repo_list_sessions does not return rows for another user even if storage i
 	expect(mockModule.getEntitySourceByIdForUser).not.toHaveBeenCalled()
 })
 
-test('repo_list_sessions supports source_id narrowing and limit', async () => {
+test('repoListSessions supports source_id narrowing and limit', async () => {
 	resetMocks()
 	mockModule.listRepoSessionsBySource.mockResolvedValue([
 		createSession({
@@ -233,7 +233,7 @@ test('repo_list_sessions supports source_id narrowing and limit', async () => {
 	])
 })
 
-test('repo_list_sessions applies limit after dropping sessions with missing sources', async () => {
+test('repoListSessions applies limit after dropping sessions with missing sources', async () => {
 	resetMocks()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
 		createSession({

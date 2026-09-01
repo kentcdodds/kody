@@ -20,7 +20,7 @@ const outputSchema = z.object({
 export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_get_mcp_server_instructions',
+		name: 'metaGetMcpServerInstructions',
 		description:
 			'Read the signed-in user’s custom MCP server instructions overlay (if any). Empty means none. Same character limit as set. Prefer memories for durable facts and preferences; the overlay is only for rare always-on session policy. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [

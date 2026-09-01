@@ -148,11 +148,11 @@ helpers in front of it. There is no live official `@kody/spotify` package, so
 this path is a person-account community listing — review the source, then fork
 only because it is not an official `@kody/*` helper.
 
-1. Find the listing with `community_search({ query: 'spotify' })` — the
+1. Find the listing with `communitySearch({ query: 'spotify' })` — the
    `@kentcdodds/spotify` listing wraps playback, playlists, search, library, and
    devices. It is not admin-trusted, so review the forked source before
    publishing (forks land inert until you publish them).
-2. Fork it with `community_fork` (or click **Install** on the listing page).
+2. Fork it with `communityFork` (or click **Install** on the listing page).
 3. Check the fork's README **Required setup**: the default account maps to an
    integration named `spotify` — the name this guide's connect link uses, so the
    primary lane works as-is. Remove the `spotify-family` second-account wiring

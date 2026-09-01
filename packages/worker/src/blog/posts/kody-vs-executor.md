@@ -137,7 +137,7 @@ place code runs. Each layer does one job.
 Add Executor as a remote MCP server on Kody, with code mode disabled. Kody can
 already do this:
 [connect a remote MCP server](https://github.com/kentcdodds/kody/blob/main/docs/use/mcp-client-servers.md)
-from `/account/mcp-servers`, or ask your agent to call `mcp_server_add`. Hosted
+from `/account/mcp-servers`, or ask your agent to call `mcpServerAdd`. Hosted
 Executor is the easy HTTPS path. After it connects, Executor's tools show up in
 `search` under `mcp:executor`, and your assistant calls them from Kody execute
 as `kody.mcp["executor"].tool_name(...)`.

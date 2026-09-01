@@ -26,7 +26,7 @@ const outputSchema = z.object({
 export const mcpServerAddCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
-		name: 'mcp_server_add',
+		name: 'mcpServerAdd',
 		description:
 			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin, oauthCallbackUrl, and oauthClientMetadataUrl (CIMD client_id) when present.',
 		keywords: [
@@ -91,12 +91,12 @@ export const mcpServerAddCapability = defineDomainCapability(
 				: null
 			const nextStep =
 				connection.state === 'authenticating' && connection.authUrl
-					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin, redirect URI, or CIMD client_id, they must allow ${oauth.clientOrigin}, ${oauth.callbackUrl}${oauth.clientMetadataUrl ? `, and ${oauth.clientMetadataUrl}` : ''}, then reconnect the server. After authorizing, check mcp_server_list.`
+					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin, redirect URI, or CIMD client_id, they must allow ${oauth.clientOrigin}, ${oauth.callbackUrl}${oauth.clientMetadataUrl ? `, and ${oauth.clientMetadataUrl}` : ''}, then reconnect the server. After authorizing, check mcpServerList.`
 					: connection.state === 'ready'
-						? `Connected with ${connection.toolCount} tool(s). Use search or meta_list_capabilities to discover kody.mcp["${setting.name}"] capabilities.`
+						? `Connected with ${connection.toolCount} tool(s). Use search or metaListCapabilities to discover kody.mcp["${setting.name}"] capabilities.`
 						: error
 							? `Connection state is "${connection.state}": ${error}`
-							: `Connection state is "${connection.state}". Check mcp_server_list and use mcp_server_reconnect if it does not become ready.`
+							: `Connection state is "${connection.state}". Check mcpServerList and use mcpServerReconnect if it does not become ready.`
 			return {
 				id: setting.id,
 				name: setting.name,

@@ -105,7 +105,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_user_usage',
+		name: 'adminUserUsage',
 		description:
 			'Read usage rollups, entitlement counters, plan-limit consumption, and estimated Cloudflare Dynamic Worker cost for one user account by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: [
@@ -120,18 +120,14 @@ export const adminUserUsageCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {
-			return auditAdminCapabilityInvocation(
-				ctx,
-				'admin_user_usage',
-				async () => {
-					const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
-					if (!user) return { usage: null }
-					const data = await loadAdminUserUsageData(ctx.env, user.stableUserId)
-					if (!data) return { usage: null }
-					const { ok: _ok, ...usage } = data
-					return { usage }
-				},
-			)
+			return auditAdminCapabilityInvocation(ctx, 'adminUserUsage', async () => {
+				const user = await loadAdminUserByTarget(ctx.env.APP_DB, args)
+				if (!user) return { usage: null }
+				const data = await loadAdminUserUsageData(ctx.env, user.stableUserId)
+				if (!data) return { usage: null }
+				const { ok: _ok, ...usage } = data
+				return { usage }
+			})
 		},
 	},
 )

@@ -51,12 +51,12 @@ function createKody(
 		storedSecrets.set(integration.accessTokenSecretName, options.accessToken)
 	}
 	const kody = {
-		async integration_get(args: CapabilityArgs) {
+		async integrationGet(args: CapabilityArgs) {
 			const name = args.name
 			expect(name).toBe(integration.name)
 			return { integration }
 		},
-		async integration_token_refresh(args: CapabilityArgs) {
+		async integrationTokenRefresh(args: CapabilityArgs) {
 			tokenRefreshCalls.push(args)
 			return {
 				ok: true,
@@ -320,11 +320,11 @@ const githubPlatformIntegration = {
 function createPlatformKody() {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
 	const kody = {
-		async integration_get(args: CapabilityArgs) {
+		async integrationGet(args: CapabilityArgs) {
 			expect(args.name).toBe(githubPlatformIntegration.name)
 			return { integration: githubPlatformIntegration }
 		},
-		async integration_token_refresh(args: CapabilityArgs) {
+		async integrationTokenRefresh(args: CapabilityArgs) {
 			tokenRefreshCalls.push(args)
 			return {
 				ok: true,

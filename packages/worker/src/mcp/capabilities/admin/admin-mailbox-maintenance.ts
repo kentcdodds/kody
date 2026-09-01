@@ -195,7 +195,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_mailbox_maintenance',
+		name: 'adminMailboxMaintenance',
 		description:
 			'Admin-only Mailbox retention/delete maintenance and structural status: final authority marker, provider repair, due-owner and delivery-alert health, thin provider-index counts, dedicated system-email counts/health, keyset-paged Mailbox retention, or owner-scoped delete_message. Audited.',
 		keywords: [
@@ -214,7 +214,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_mailbox_maintenance',
+				'adminMailboxMaintenance',
 				async () => {
 					switch (args.action) {
 						case 'status': {
@@ -257,7 +257,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 						default: {
 							const exhaustive: never = args
 							throw new Error(
-								`Unhandled admin_mailbox_maintenance action: ${JSON.stringify(exhaustive)}`,
+								`Unhandled adminMailboxMaintenance action: ${JSON.stringify(exhaustive)}`,
 							)
 						}
 					}

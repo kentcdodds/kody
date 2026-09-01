@@ -9,7 +9,7 @@ import { communityListingStatusSchema } from './shared.ts'
 export const communitySetFeaturedCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
-		name: 'community_set_featured',
+		name: 'communitySetFeatured',
 		description:
 			'Admin-only curation: mark a public community listing as an onboarding starter package, or remove the mark. Featured is editorial placement on /onboarding, not a safety review.',
 		keywords: [
@@ -47,7 +47,7 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 			requireMcpUser(ctx.callerContext)
 			return await auditAdminCapabilityInvocation(
 				ctx,
-				'community_set_featured',
+				'communitySetFeatured',
 				async () => {
 					const listing = await setCommunityListingFeatured({
 						env: ctx.env,

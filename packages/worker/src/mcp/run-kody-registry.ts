@@ -1067,11 +1067,11 @@ function trackPersistedSecretInputValues(
 	track?: (value: string) => void,
 ) {
 	if (!track) return
-	if (capabilityName === 'secret_set' && typeof args.value === 'string') {
+	if (capabilityName === 'secretSet' && typeof args.value === 'string') {
 		track(args.value)
 		return
 	}
-	if (capabilityName === 'secret_set_many' && Array.isArray(args.secrets)) {
+	if (capabilityName === 'secretSetMany' && Array.isArray(args.secrets)) {
 		for (const entry of args.secrets) {
 			if (isRecord(entry) && typeof entry.value === 'string') {
 				track(entry.value)

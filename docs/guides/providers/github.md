@@ -170,7 +170,7 @@ instead of hand-rolled API calls.
 
 1. Search for `@kody/github`. It wraps REST, GraphQL, pagination, and PR
    helpers.
-2. `community_fork` it into your scope (or click **Install** on the listing).
+2. `communityFork` it into your scope (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the default `bot` account reads
    the `githubAccessToken` secret — the exact name Lane A saved, so no
    adaptation is needed for the PAT lane. For OAuth (Lane B), remap the account

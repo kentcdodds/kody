@@ -262,9 +262,9 @@ present, activation first-seen timestamps (email verified, first MCP connection,
 first execute, first saved package), MCP client name when known, last-active
 stamps, `created_at`, `updated_at`, and role assignments. The plan is account
 metadata (it drives quota enforcement), not user content, and admins can change
-it via `/admin/users` or the `admin_user_update` MCP capability. Admins can mark
+it via `/admin/users` or the `adminUserUpdate` MCP capability. Admins can mark
 an account email verified or mint a one-time verify URL via `/admin/users` or
-`admin_user_verify`.
+`adminUserVerify`.
 
 **Admins can see and triage user-approved platform feedback.** The submit
 capability requires `user_confirmed: true` and accepts submissions only from an
@@ -349,8 +349,8 @@ community surfaces expose content users chose to publish or report; they do not
 grant access to private package source or unrelated account content.
 
 **Admins can inspect activity metadata for public community listings.** The
-`admin_community_activity_list` capability returns a paginated, newest-first
-feed of fork and rating rows with listing id/name/kody id, acting username,
+`adminCommunityActivityList` capability returns a paginated, newest-first feed
+of fork and rating rows with listing id/name/kody id, acting username,
 timestamp, and rating scores. Existing storage does not distinguish a one-click
 install from an ordinary fork, so both appear as `fork`. The capability omits
 stable user ids, forked package/source ids, origin commits, target kody ids,
@@ -375,7 +375,7 @@ enqueue this topic. Fan-out, payload redaction, and retry semantics match
 [the subscription guide](../../guides/package-subscriptions.md#communitylistingpublished-admins):
 admin owners only, metadata-only listing fields (including canonical
 `public_url`), permanent cancellation for missing or inactive listings, and
-enqueue failures that never fail `community_publish`.
+enqueue failures that never fail `communityPublish`.
 
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort
@@ -448,13 +448,13 @@ suppresses repeat pages. Delivery is best-effort (no Queue).
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, `admin`, and `psl`). That
 mail is stored under `system:email` as platform content, not under Kent's or any
-other user's account. Admin reads through MCP (`admin_system_email_list`,
-`admin_system_email_get`) and the `/admin/system-email` UI are audit logged.
-Admins can also **send** from those reserved addresses with
-`admin_system_email_send` (also audit logged, with redacted recipients): that
-channel speaks for the platform, so it uses no user mailbox, sender identity, or
-plan entitlement, and it never reads or writes user-owned mail. Stored system
-mail also fans out metadata (never bodies or attachment bytes) on the
+other user's account. Admin reads through MCP (`adminSystemEmailList`,
+`adminSystemEmailGet`) and the `/admin/system-email` UI are audit logged. Admins
+can also **send** from those reserved addresses with `adminSystemEmailSend`
+(also audit logged, with redacted recipients): that channel speaks for the
+platform, so it uses no user mailbox, sender identity, or plan entitlement, and
+it never reads or writes user-owned mail. Stored system mail also fans out
+metadata (never bodies or attachment bytes) on the
 `email.system-message.received` package subscription topic, and only to packages
 saved by users who hold the admin role at dispatch time — a non-admin subscriber
 never receives the event, and revoking admin stops delivery immediately.
@@ -481,7 +481,7 @@ This boundary is enforced structurally:
    get and triage operations address only the selected approved submission. They
    never join unrelated user-content tables.
 4. **Community activity has a dedicated role-gated metadata projection.**
-   `admin_community_activity_list` unions only `community_forks` and
+   `adminCommunityActivityList` unions only `community_forks` and
    `community_ratings`, uses snapshotted/public listing identity plus acting
    username, and projects an explicit field allowlist. It never selects package
    source, rating notes, email, stable user ids, or unrelated user-content

@@ -84,7 +84,7 @@ export async function resolveEntityDetail(input: {
 				kodyId: ref.id,
 			}))
 		// Platform (built-in) packages stay discoverable without a fork so
-		// agents can inspect and community_fork them. The caller's own copy
+		// agents can inspect and communityFork them. The caller's own copy
 		// wins when both exist.
 		const platformFallback = ownRecord
 			? null

@@ -12,7 +12,7 @@ vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
 
 const { workflowCancelCapability } = await import('./workflow-cancel.ts')
 
-test('workflow_run_cancel maps service outcomes for the signed-in user', async () => {
+test('workflowRunCancel maps service outcomes for the signed-in user', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://example.com',

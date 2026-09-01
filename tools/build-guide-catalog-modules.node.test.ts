@@ -89,7 +89,7 @@ test('ensureGuideCatalogModules generates metadata and a full catalog matching t
 
 	// Order matters, not just membership: the web catalog preserves an
 	// intentional authored order (see `#worker/guides/guide-order.ts`), and
-	// `coding_guide_get`'s schema description follows `guideMetadataList`
+	// `codingGuideGet`'s schema description follows `guideMetadataList`
 	// order directly.
 	expect(guideMetadataList.map((guide) => guide.id)).toEqual(
 		webGuides.map((guide) => guide.id),

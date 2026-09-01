@@ -105,7 +105,7 @@ export const executorSandboxTimeoutMessagePrefix = 'Execution timed out'
  * complete, so retries need idempotency.
  */
 export const executorSandboxTimeoutMessageExplanation =
-	': Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with run_get or replay the same idempotencyKey.'
+	': Kody stopped observing the sandbox. Nested work was asked to abort, but already-started remote work and side effects may still complete. Do not retry side-effecting work without an idempotencyKey; recover with runGet or replay the same idempotencyKey.'
 
 /**
  * Budget-less form of the sandbox timeout message. Inline workflows rethrow
@@ -187,7 +187,7 @@ export function filterIntegrationTokenRefreshCallerSentryEvent(
  * architectural change outside a triage fix. Match only the bare platform
  * strings (plus the storage form that requires a support `reference =`
  * token) so wrapped failures such as exhausted
- * `package_publish_external_push` recovery messages stay visible.
+ * `packagePublishExternalPush` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
 	"Durable Object's isolate exceeded its memory limit and was reset."
@@ -305,7 +305,7 @@ export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 
 /**
  * Bare Cloudflare platform "internal error" with no support reference and no
- * app context. Observed on `repo_open_session` when Durable Object / Artifacts
+ * app context. Observed on `repoOpenSession` when Durable Object / Artifacts
  * infrastructure fails opaquely (KODY-CLOUDFLARE-4H). Distinct from D1/DO
  * storage resets that carry `reference = <id>`, and from bare `internal error`
  * which stays Sentry-visible because it is too short to attribute safely.

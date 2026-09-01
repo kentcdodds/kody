@@ -26,7 +26,7 @@ surface.
 Do not implement SEP-2640 now — neither as a platform primitive nor via a
 package (the latter is architecturally impossible). Skill-shaped content is
 served through the existing compact surface instead: skills authored as package
-files, discovered via `search`, read via `execute` (the `coding_guide_get`
+files, discovered via `search`, read via `execute` (the `codingGuideGet`
 progressive-disclosure pattern).
 
 ## Consequences

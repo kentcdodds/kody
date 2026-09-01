@@ -1607,7 +1607,7 @@ function createExecutionTimedOutNextStep(timedOutAfterMs: number | null) {
 		timedOutAfterMs === null
 			? 'The sandbox enforces a hard execution time budget (~90s for ad hoc execute), so retrying the identical call will time out again.'
 			: `The sandbox enforces a hard execution time budget and this run used its full ${formatTimeoutBudget(timedOutAfterMs)}, so retrying the identical call will time out again.`
-	return `${budgetSentence} For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — \`import { workflows } from 'kody:runtime'\` then \`workflows.create({ code, params })\` — and inspect progress with \`workflow_run_list\`. Otherwise split the work into smaller calls that each finish well within the budget.`
+	return `${budgetSentence} For genuinely long-running work (batch sweeps, migrations, polling loops), have one short execute call submit a durable workflow — \`import { workflows } from 'kody:runtime'\` then \`workflows.create({ code, params })\` — and inspect progress with \`workflowRunList\`. Otherwise split the work into smaller calls that each finish well within the budget.`
 }
 
 function formatTimeoutBudget(timeoutMs: number) {

@@ -755,7 +755,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	expect(truncatedExport.durableObjects.userMeter?.truncated).toBe(true)
 	expect(truncatedExport.manifest.sections.user_meter?.count).toBe(1)
 	expect(truncatedExport.manifest.warnings).toContain(
-		'User meter counters were truncated in the full export; use account_export_section with section "user_meter" to retrieve additional pages.',
+		'User meter counters were truncated in the full export; use accountExportSection with section "user_meter" to retrieve additional pages.',
 	)
 })
 
@@ -919,7 +919,7 @@ test('account export includes mailbox rows, pages them, and warns on truncation'
 	})
 	expect(truncatedExport.durableObjects.mailbox?.truncated).toBe(true)
 	expect(truncatedExport.manifest.warnings).toContain(
-		'Mailbox rows were truncated in the full export; use account_export_section with section "mailbox" to retrieve additional pages.',
+		'Mailbox rows were truncated in the full export; use accountExportSection with section "mailbox" to retrieve additional pages.',
 	)
 })
 

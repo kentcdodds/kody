@@ -141,7 +141,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 		return true
 	}
 	// User-authored SQL against a storage bucket (missing tables/columns,
-	// constraints, read-only policy). storage_query wraps these as
+	// constraints, read-only policy). storageQuery wraps these as
 	// McpCallerError; this message match covers plain Errors that still
 	// arrive via RPC without subclass identity.
 	if (
@@ -152,7 +152,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	) {
 		return true
 	}
-	// Published / inactive / missing repo sessions and invalid repo_search
+	// Published / inactive / missing repo sessions and invalid repoSearch
 	// regexes are thrown inside the RepoSession Durable Object as plain Errors.
 	// Match the stable phrases so they stay out of Sentry even when a
 	// capability forgets to re-wrap as McpCallerError.

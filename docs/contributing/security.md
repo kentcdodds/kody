@@ -336,7 +336,7 @@ MCP authentication and authorization denials are recorded in `audit_events`
 routine agent turn, so it is not an error; a burst from one principal is how
 permission probing or a compromised account would look, and the audit log is the
 surface built for that — hashed identifiers, 180-day retention, an admin-only
-query (`admin_audit_log_query`), and the failure-per-day and failure-per-hour
+query (`adminAuditLogQuery`), and the failure-per-day and failure-per-hour
 charts on `/admin/insights`. Two sites record:
 
 - `handleMcpRequest` rejecting a resolved grant (`mcp_token_rejected`):
@@ -438,7 +438,7 @@ stored but suppresses `email.system-message.received`. Successful
 reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
 correspondence. Reclassification never retroactively fires subscription events.
 Users manage rules via `email_sender_rule_*` (200-rule cap) and reclassify via
-`email_message_classify` or `/account/email`; operators use
+`emailMessageClassify` or `/account/email`; operators use
 `admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare
 Email Routing already rejects mail failing both SPF and DKIM and honors sender
 DMARC policy.

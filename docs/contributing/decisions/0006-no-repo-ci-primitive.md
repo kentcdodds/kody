@@ -21,13 +21,13 @@ config file in the repo?
 ## Decision
 
 Not now. The main authoring lane — coding agents with a local clone — already
-runs tests locally before `package_publish_external_push`, so CI would re-run
-what already ran; in single-user personal software the pusher and the
-beneficiary are the same person's agent, so the multi-contributor trust problem
-CI solves does not exist. Tool-only authoring lanes (`package_save`, repo
-sessions) cannot run tests, but `runRepoChecks` already covers the worst failure
-modes there. Per-push sandbox time is the first per-run compute cost of this
-size, and the value does not justify it today.
+runs tests locally before `packagePublishExternalPush`, so CI would re-run what
+already ran; in single-user personal software the pusher and the beneficiary are
+the same person's agent, so the multi-contributor trust problem CI solves does
+not exist. Tool-only authoring lanes (`packageSave`, repo sessions) cannot run
+tests, but `runRepoChecks` already covers the worst failure modes there.
+Per-push sandbox time is the first per-run compute cost of this size, and the
+value does not justify it today.
 
 ## Consequences
 

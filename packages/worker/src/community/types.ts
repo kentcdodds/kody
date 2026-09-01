@@ -171,7 +171,7 @@ export type CommunityActivityRecord =
 
 /**
  * Who caused a fork: a person clicking install in the web app, or that
- * person's agent calling `community_fork` over MCP. Null on rows created
+ * person's agent calling `communityFork` over MCP. Null on rows created
  * before the distinction was recorded.
  */
 export type CommunityForkActor = 'human' | 'agent'

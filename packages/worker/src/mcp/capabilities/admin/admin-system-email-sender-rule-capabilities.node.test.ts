@@ -146,9 +146,9 @@ test('admin system email sender rules require admin and operate on systemEmailOw
 
 	expect(auditEventSummaries()).toEqual(
 		expect.arrayContaining([
-			'admin_system_email_sender_rule_list:success',
-			'admin_system_email_sender_rule_set:success',
-			'admin_system_email_sender_rule_delete:success',
+			'adminSystemEmailSenderRuleList:success',
+			'adminSystemEmailSenderRuleSet:success',
+			'adminSystemEmailSenderRuleDelete:success',
 		]),
 	)
 })

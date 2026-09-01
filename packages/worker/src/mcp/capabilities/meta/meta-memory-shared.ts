@@ -107,9 +107,9 @@ export const memoryMatchSchema = memoryRecordSchema.extend({
 })
 
 export const verifyFirstGuidance =
-	'Always run meta_memory_verify before upserting or deleting memories. Review the related memories returned by verify, then decide whether to upsert, delete, both, or do nothing. Do not mutate memory blindly.'
+	'Always run metaMemoryVerify before upserting or deleting memories. Review the related memories returned by verify, then decide whether to upsert, delete, both, or do nothing. Do not mutate memory blindly.'
 
 export const verifyFirstWarning =
-	'If you are considering writing or deleting memory, run meta_memory_verify first and review related memories before taking action.'
+	'If you are considering writing or deleting memory, run metaMemoryVerify first and review related memories before taking action.'
 
 export const requireMcpUser = requireMetaUser

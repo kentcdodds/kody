@@ -10,7 +10,7 @@ import { valueMetadataSchema } from './shared.ts'
 export const valueGetCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'value_get',
+		name: 'valueGet',
 		description:
 			'Read an existing persisted leftover by name. When scope is omitted, Kody checks accessible scopes in precedence order.',
 		keywords: ['config', 'read', 'lookup'],

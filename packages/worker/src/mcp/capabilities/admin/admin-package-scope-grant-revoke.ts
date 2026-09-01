@@ -35,7 +35,7 @@ export const adminPackageScopeGrantRevokeCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_package_scope_grant_revoke',
+		name: 'adminPackageScopeGrantRevoke',
 		description:
 			'Revoke a person account grant to act inside a platform account package scope. Grants are only possible on platform accounts. Admin-only; does not expose package contents.',
 		keywords: [
@@ -53,7 +53,7 @@ export const adminPackageScopeGrantRevokeCapability = defineDomainCapability(
 			const username = normalizeUsername(args.username)
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_scope_grant_revoke',
+				'adminPackageScopeGrantRevoke',
 				async () => {
 					const platformAccount = await getPlatformAccountByUsername(
 						ctx.env.APP_DB,

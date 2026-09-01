@@ -27,13 +27,13 @@ metadata, and public activity are visible on `/@username`. When visibility is
 [Public packages](./community-packages.md#public-profiles).
 
 Account export includes your profile columns and activity you authored. The
-browser download is a bounded metadata manifest; use its
-`account_export_section` instructions to retrieve every D1, Durable Object, and
-R2 page for a complete portable export. Account settings can delete the account
-after you type `GOODBYE KODY` in a confirmation modal (and re-enter your
-password when the account has one), and can change a password or set one on an
-account that currently signs in only with a connected provider or passkey.
-Account deletion removes those same user-owned rows and objects.
+browser download is a bounded metadata manifest; use its `accountExportSection`
+instructions to retrieve every D1, Durable Object, and R2 page for a complete
+portable export. Account settings can delete the account after you type
+`GOODBYE KODY` in a confirmation modal (and re-enter your password when the
+account has one), and can change a password or set one on an account that
+currently signs in only with a connected provider or passkey. Account deletion
+removes those same user-owned rows and objects.
 
 ## Connected accounts
 

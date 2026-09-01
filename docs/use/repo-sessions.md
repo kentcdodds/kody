@@ -11,20 +11,20 @@ directly.
 
 There are two supported ways to edit repo-backed source:
 
-- **Repo sessions** (`repo_open_session` and the file-level `repo_*` session
+- **Repo sessions** (`repoOpenSession` and the file-level `repo_*` session
   capabilities). Use these when you are a tool-only agent without a real
   filesystem, or when you only need structured file edits inside an isolated
   workspace. Package-owned jobs live in the same package repo — open the
   package, not a separate job source.
-- **A short-lived authenticated git remote** via `package_get_git_remote` plus
-  `package_publish_external_push`. Use this when you have local filesystem and
-  git access and want to clone the repo into a temp directory, edit normally,
-  and push the resulting HEAD back. Commits use `git_author` from the remote
-  result (the signed-in Kody account); do not invent a git email. This path is
+- **A short-lived authenticated git remote** via `packageGetGitRemote` plus
+  `packagePublishExternalPush`. Use this when you have local filesystem and git
+  access and want to clone the repo into a temp directory, edit normally, and
+  push the resulting HEAD back. Commits use `git_author` from the remote result
+  (the signed-in Kody account); do not invent a git email. This path is
   **saved-package-only**.
 
 When you only need to inspect the current scheduled job source, call
-**`job_get`** with `includeCode: true`. The response includes the published
+**`jobGet`** with `includeCode: true`. The response includes the published
 manifest-declared entrypoint path and source code, so you do not need to open a
 repo session just to read the job module.
 
@@ -32,31 +32,30 @@ repo session just to read the job module.
 
 Repo sessions expose a **file-level API**. There is no git-command channel:
 branch, checkout, fetch, pull, push, and remote operations are not available
-inside sessions. For saved packages, use `package_get_git_remote` when you need
-full git. Leftover non-package job rows are inspectable with `job_get` and can
-be disabled or deleted; their source is not an edit surface.
+inside sessions. For saved packages, use `packageGetGitRemote` when you need
+full git. Leftover non-package job rows are inspectable with `jobGet` and can be
+disabled or deleted; their source is not an edit surface.
 
 Merge drift from the published default branch is handled separately by
-**`repo_rebase_session`**.
+**`repoRebaseSession`**.
 
 ### Core edit and git-inspection capabilities
 
-| Capability             | Purpose                                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `repo_edit_files`      | Batch write, replace, writeJson, delete, or move edits (10 MiB per-file limit on content-changing results) |
-| `repo_apply_patch`     | Apply a unified-diff patch (all-or-nothing)                                                                |
-| `repo_status`          | Git status for the session workspace                                                                       |
-| `repo_diff`            | Git diff for uncommitted changes                                                                           |
-| `repo_log`             | Commit history (`depth` optional)                                                                          |
-| `repo_commit`          | Stage all changes and commit with a message                                                                |
-| `repo_restore`         | Restore paths to content at a commit (default: session base)                                               |
-| `repo_run_checks`      | Run Worker-native validation                                                                               |
-| `repo_publish_session` | Publish after checks pass                                                                                  |
+| Capability           | Purpose                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `repoEditFiles`      | Batch write, replace, writeJson, delete, or move edits (10 MiB per-file limit on content-changing results) |
+| `repoApplyPatch`     | Apply a unified-diff patch (all-or-nothing)                                                                |
+| `repoStatus`         | Git status for the session workspace                                                                       |
+| `repoDiff`           | Git diff for uncommitted changes                                                                           |
+| `repoLog`            | Commit history (`depth` optional)                                                                          |
+| `repoCommit`         | Stage all changes and commit with a message                                                                |
+| `repoRestore`        | Restore paths to content at a commit (default: session base)                                               |
+| `repoRunChecks`      | Run Worker-native validation                                                                               |
+| `repoPublishSession` | Publish after checks pass                                                                                  |
 
 ### Unified-diff patch format
 
-`repo_apply_patch` accepts a standard unified diff. Each file patch must
-include:
+`repoApplyPatch` accepts a standard unified diff. Each file patch must include:
 
 - a `--- a/<path>` line and a `+++ b/<path>` line (use `/dev/null` on either
   side to create or delete a file)
@@ -64,13 +63,13 @@ include:
 - normal context (` `), removal (`-`), and addition (`+`) lines inside each hunk
 
 Multiple file patches can be stacked back-to-back in one patch string. If you
-have the full new file body, prefer a `write` edit in `repo_edit_files` instead
-of hand-crafting hunks.
+have the full new file body, prefer a `write` edit in `repoEditFiles` instead of
+hand-crafting hunks.
 
 ## Opening by package identity
 
-`repo_open_session` can open repo-backed packages by user-facing identity
-instead of requiring the internal `source_id`.
+`repoOpenSession` can open repo-backed packages by user-facing identity instead
+of requiring the internal `source_id`.
 
 Examples:
 
@@ -96,8 +95,8 @@ Publish-oriented repo flows return structured detail for important failure
 states:
 
 - **`checks_outdated`** when a session changed after the last successful check
-- **`base_moved`** with `repair_hint: "repo_rebase_session"` plus both the
-  session base commit and current published commit
+- **`base_moved`** with `repair_hint: "repoRebaseSession"` plus both the session
+  base commit and current published commit
 - **`locked`** with `approval_url` when the package has `locked_at` set. The
   session commit is already on HEAD; promoting it is a website click at that
   URL. Approving one commit does not unlock the package.
@@ -109,16 +108,16 @@ parsing.
 
 Use the other repo capabilities when you need more control over the session:
 
-- discover current sessions with `repo_list_sessions` before you know a
+- discover current sessions with `repoListSessions` before you know a
   `session_id`; it defaults to active sessions and can be filtered by `status`
   or `source_id`
-- browse files with `repo_tree` and `repo_read_file`
-- search the workspace with `repo_search`
-- inspect status with `repo_get_check_status`
-- repair drift with `repo_rebase_session`
+- browse files with `repoTree` and `repoReadFile`
+- search the workspace with `repoSearch`
+- inspect status with `repoGetCheckStatus`
+- repair drift with `repoRebaseSession`
 
 If you find an active session you no longer need, pass its `id` as `session_id`
-to `repo_discard_session` to close it. One-shot package helpers that open a
+to `repoDiscardSession` to close it. One-shot package helpers that open a
 session to read or write should discard in a `finally` so leftovers do not
 accumulate against the `repo_sessions` entitlement. Unused (never-checkpointed)
 sessions are swept after 30 minutes idle; checkpointed sessions are swept after
@@ -126,7 +125,7 @@ sessions are swept after 30 minutes idle; checkpointed sessions are swept after
 
 ### `write` edits vs patches
 
-A `repo_edit_files` `write` edit overwrites one file with full new content and
+A `repoEditFiles` `write` edit overwrites one file with full new content and
 returns a per-file diff plus a `changed` flag. Reach for it when:
 
 - replacing the entire body of a package export module, job module, or app
@@ -134,8 +133,8 @@ returns a per-file diff plus a `changed` flag. Reach for it when:
 - writing a freshly generated package file that does not yet exist
 - patching a one-line config when you do not want to hand-craft a diff hunk
 
-It only mutates the live session overlay. Pair it with `repo_commit`,
-`repo_run_checks`, and `repo_publish_session` when you are ready to publish.
+It only mutates the live session overlay. Pair it with `repoCommit`,
+`repoRunChecks`, and `repoPublishSession` when you are ready to publish.
 
 ```json
 {
@@ -153,11 +152,11 @@ It only mutates the live session overlay. Pair it with `repo_commit`,
 ## Example
 
 ```ts
-const session = await kody.repo_open_session({
+const session = await kody.repoOpenSession({
 	target: { kind: 'package', kody_id: 'my-package' },
 })
 
-await kody.repo_edit_files({
+await kody.repoEditFiles({
 	session_id: session.id,
 	edits: [
 		{
@@ -169,21 +168,21 @@ await kody.repo_edit_files({
 	],
 })
 
-await kody.repo_diff({ session_id: session.id })
+await kody.repoDiff({ session_id: session.id })
 
-await kody.repo_commit({
+await kody.repoCommit({
 	session_id: session.id,
 	message: 'Mark triage complete',
 })
 
-await kody.repo_run_checks({ session_id: session.id })
+await kody.repoRunChecks({ session_id: session.id })
 
-await kody.repo_publish_session({ session_id: session.id })
+await kody.repoPublishSession({ session_id: session.id })
 ```
 
-Same-path `write`, `replace`, and `writeJson` edits in one `repo_edit_files`
-call compose in order: each instruction sees the file as left by the previous
-one. The last same-path edit's `content` is the file after the whole batch.
+Same-path `write`, `replace`, and `writeJson` edits in one `repoEditFiles` call
+compose in order: each instruction sees the file as left by the previous one.
+The last same-path edit's `content` is the file after the whole batch.
 
 Each step returns structured JSON so agents can inspect diffs, check outcomes,
 and publish results without shell parsing.

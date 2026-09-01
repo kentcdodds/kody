@@ -17,9 +17,9 @@ const outputSchema = z.object({
 export const secretLockCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
-		name: 'secret_lock',
+		name: 'secretLock',
 		description:
-			'Grant a user-scoped secret to a saved package by adding that package id to allowed_packages. Additional grants accumulate. Agents can grant; removing a grant is website-only at /account/secrets/user/:name. This capability cannot remove packages. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secret_set cannot change allowed_packages.',
+			'Grant a user-scoped secret to a saved package by adding that package id to allowed_packages. Additional grants accumulate. Agents can grant; removing a grant is website-only at /account/secrets/user/:name. This capability cannot remove packages. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secretSet cannot change allowed_packages.',
 		keywords: [
 			'secret',
 			'lock',

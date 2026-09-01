@@ -60,7 +60,7 @@ function createUserContext(userId = 'user-1') {
 	})
 }
 
-test('email_sender_rule_set/list/delete scopes to the caller and maps domain errors', async () => {
+test('emailSenderRuleSet/list/delete scopes to the caller and maps domain errors', async () => {
 	const env = createEnv()
 	const rule = {
 		id: 'rule-1',

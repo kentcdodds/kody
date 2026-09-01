@@ -44,7 +44,7 @@ with any piece of software you depend on, and each rung is a level of ownership:
 4. **Schedule it.** Turn it into a job that runs on your schedule, with your
    secrets, on infrastructure that doesn't care whether your laptop is open.
 5. **Publish your improved version back.** If your changes would help someone
-   else, `community_publish` puts your version out there, MIT licensed, for the
+   else, `communityPublish` puts your version out there, MIT licensed, for the
    next person to fork.
 
 Most ecosystems stop you at rung one. The whole business model depends on you

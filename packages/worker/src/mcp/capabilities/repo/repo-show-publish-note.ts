@@ -54,7 +54,7 @@ const outputSchema = z.object({
 export const repoShowPublishNoteCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_show_publish_note',
+		name: 'repoShowPublishNote',
 		description:
 			'Read the Kody publish harness git note attached to a published Artifacts commit. Use this to inspect publish provenance, session/conversation ids, and check summaries without opening D1.',
 		keywords: [

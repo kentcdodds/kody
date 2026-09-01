@@ -271,7 +271,7 @@ export async function rotateWebhookUrlForUser(input: {
 	})
 	if (!existing) {
 		throw new Error(
-			'Webhook URL has not been minted. Call webhook_url_mint first.',
+			'Webhook URL has not been minted. Call webhookUrlMint first.',
 		)
 	}
 	return mintWebhookUrlForUser({
@@ -305,7 +305,7 @@ export async function setWebhookEnabledForUser(input: {
 	})
 	if (!updated) {
 		throw new Error(
-			'Webhook URL has not been minted. Call webhook_url_mint first.',
+			'Webhook URL has not been minted. Call webhookUrlMint first.',
 		)
 	}
 	return updated

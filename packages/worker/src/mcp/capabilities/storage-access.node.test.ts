@@ -36,7 +36,7 @@ function authorize(
 ) {
 	return authorizeCapabilityStorageId({
 		callerContext: createCallerContext(callerPackageId, boundStorageId),
-		capabilityName: 'storage_query',
+		capabilityName: 'storageQuery',
 		storageId,
 	})
 }
@@ -103,7 +103,7 @@ test('denial names the capability, package, and bucket', () => {
 		authorize(packageId, buildPackageStorageId(victimPackageId)),
 	).toThrow(
 		new RegExp(
-			`storage_query.+${buildPackageStorageId(victimPackageId)}.+${packageId}`,
+			`storageQuery.+${buildPackageStorageId(victimPackageId)}.+${packageId}`,
 		),
 	)
 })

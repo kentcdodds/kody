@@ -41,39 +41,39 @@ platform-assigned sender address.
 
 Use the MCP `email` domain:
 
-- `email_inbox_list` lists inboxes and automatic platform addresses for the
+- `emailInboxList` lists inboxes and automatic platform addresses for the
   signed-in user.
-- `email_send` sends a notification email to your own account email address
+- `emailSend` sends a notification email to your own account email address
   (notify-self only; any other recipient is rejected).
-- `email_reply` replies to a stored inbound message. The recipient always comes
+- `emailReply` replies to a stored inbound message. The recipient always comes
   from the stored message. Optional `attachments` (up to 10 of
   `{ filename, content_type, content_base64 }`) are sent with the reply and
-  stored as `external` attachments readable later via `email_attachment_get`.
-  With attachments, the whole message (bodies plus decoded attachment bytes)
-  must fit the plan's `email_message_bytes` per-message cap.
-- `email_attachment_get` returns stored attachment bytes by attachment id.
-- `email_message_list` lists stored inbound and outbound messages. Rows include
+  stored as `external` attachments readable later via `emailAttachmentGet`. With
+  attachments, the whole message (bodies plus decoded attachment bytes) must fit
+  the plan's `email_message_bytes` per-message cap.
+- `emailAttachmentGet` returns stored attachment bytes by attachment id.
+- `emailMessageList` lists stored inbound and outbound messages. Rows include
   `classification` and `classification_reason`; pass an optional
   `classification` filter (`accepted` or `quarantined`) to narrow the list.
-- `email_message_search` searches stored messages by case-insensitive substring
+- `emailMessageSearch` searches stored messages by case-insensitive substring
   match against the subject, header `From`, and envelope sender. It accepts the
   same `inbox_id` / `direction` / `processing_status` / `delivery_status`
-  filters and limit caps as `email_message_list`.
-- `email_message_get` returns parsed bodies, headers, thread metadata, and
+  filters and limit caps as `emailMessageList`.
+- `emailMessageGet` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
-- `email_message_classify` reclassifies a stored inbound message as `accepted`
-  or `quarantined`. Reclassification never retroactively dispatches package
+- `emailMessageClassify` reclassifies a stored inbound message as `accepted` or
+  `quarantined`. Reclassification never retroactively dispatches package
   subscription events.
-- `email_sender_rule_list` lists sender allow/block/quarantine rules.
-- `email_sender_rule_set` creates or updates a sender rule by address or domain
+- `emailSenderRuleList` lists sender allow/block/quarantine rules.
+- `emailSenderRuleSet` creates or updates a sender rule by address or domain
   (`kind` / `value` / `effect` / optional `note`).
-- `email_sender_rule_delete` deletes one sender rule by id. Each user may store
-  at most 200 sender rules.
-- `email_delivery_event_list` lists stored delivery history, including final
-  Email Sending outcomes, SMTP responses, bounces, rejections, and complaints.
-- `usage_get` (account domain) returns the signed-in user's entitlement usage
-  and limits, including stored email message count, today's send and receive
-  counts, the applicable caps, and the plan name.
+- `emailSenderRuleDelete` deletes one sender rule by id. Each user may store at
+  most 200 sender rules.
+- `emailDeliveryEventList` lists stored delivery history, including final Email
+  Sending outcomes, SMTP responses, bounces, rejections, and complaints.
+- `usageGet` (account domain) returns the signed-in user's entitlement usage and
+  limits, including stored email message count, today's send and receive counts,
+  the applicable caps, and the plan name.
 
 ## Quotas
 
@@ -104,7 +104,7 @@ Inbound storage is quota-gated per user:
   per attempt — they are already bounded by the daily receive quota and the
   detail helps debug a misbehaving sender.
 - Outbound sending stays limited by `email_sends_per_day` for plan users.
-- Check where you stand with `usage_get`.
+- Check where you stand with `usageGet`.
 
 ## Safety model
 
@@ -121,10 +121,10 @@ Inbound storage is quota-gated per user:
 - Display names are not trusted. Kody stores envelope sender, parsed `From`, and
   authentication headers separately.
 - Outbound sending requires a verified account email, sends only from the
-  platform-assigned address, and `email_send` only delivers to the signed-in
-  user's own account email. `email_reply` is the only way for a user account to
+  platform-assigned address, and `emailSend` only delivers to the signed-in
+  user's own account email. `emailReply` is the only way for a user account to
   address external recipients, and only recipients taken from stored inbound
-  mail. Admins have a separate operator channel (`admin_system_email_send`) that
+  mail. Admins have a separate operator channel (`adminSystemEmailSend`) that
   speaks for the platform rather than for any user account: it sends from a
   reserved system sender, uses no user mailbox or plan entitlement, is
   audit-logged, and is capped per sender per UTC day.
@@ -132,8 +132,8 @@ Inbound storage is quota-gated per user:
   send attempts per UTC day.
 - A successful send request has `processing_status: "sent"`. Cloudflare delivery
   events independently populate `delivery_status` with `delivered`, `deferred`,
-  `bounced`, `failed`, `rejected`, or `complained`; use
-  `email_delivery_event_list` for the event history and SMTP details.
+  `bounced`, `failed`, `rejected`, or `complained`; use `emailDeliveryEventList`
+  for the event history and SMTP details.
 - Delivery events feed an automatic abuse pause: one spam complaint, or five or
   more bounced sends within a UTC day, pauses outbound sending for the account
   (receiving is unaffected). Every user sends from the same platform domain, so
@@ -151,8 +151,8 @@ Inbound storage is quota-gated per user:
   subscriptions. This is package behavior, not a separate Kody-owned email
   handler or agent-loop primitive.
 - Subscription event payloads are metadata-first. Package handlers receive the
-  stored message id and receipt metadata, then use `email_message_get` or
-  `email_attachment_get` (or `import { email } from 'kody:runtime'`) when they
+  stored message id and receipt metadata, then use `emailMessageGet` or
+  `emailAttachmentGet` (or `import { email } from 'kody:runtime'`) when they
   need bodies or attachment bytes.
 - Subscription handlers run with the normal package runtime context: signed-in
   package user, package-owned storage via `packageStorage()`
@@ -185,9 +185,9 @@ Inbound mail is classified at receive time. Each stored message carries
    Authentication-Results header fails open to `accepted`.
 
 Each user may store at most 200 sender rules. Manage them with
-`email_sender_rule_list`, `email_sender_rule_set` (kind / value / effect /
-note), and `email_sender_rule_delete`. Reclassify a stored inbound message with
-`email_message_classify`, or filter `email_message_list` by `classification`.
+`emailSenderRuleList`, `emailSenderRuleSet` (kind / value / effect / note), and
+`emailSenderRuleDelete`. Reclassify a stored inbound message with
+`emailMessageClassify`, or filter `emailMessageList` by `classification`.
 
 On `/account/email`, quarantined messages show a Quarantined badge (with the
 reason as tooltip/secondary text), the list can filter to Quarantined only, and
@@ -255,8 +255,8 @@ type EmailMessageReceivedEvent = {
 ```
 
 The event does not include parsed bodies or attachment bytes. Fetch those only
-when the handler needs them with `email_message_get`, `email_attachment_get`, or
-the package runtime `email` helper. Use `package_subscriptions_list` with
+when the handler needs them with `emailMessageGet`, `emailAttachmentGet`, or the
+package runtime `email` helper. Use `packageSubscriptionsList` with
 `topic: "email.message.received"` or `topic: "email.message.quarantined"` to
 discover which saved packages subscribe for the signed-in user.
 
@@ -336,10 +336,10 @@ system mail, and a revoked admin stops receiving immediately.
 
 Quarantined system-inbox mail is stored for operators but never dispatches
 `email.system-message.received` (or any other admin package subscription).
-Operators manage system sender rules with `admin_system_email_sender_rule_list`,
-`admin_system_email_sender_rule_set`, and
-`admin_system_email_sender_rule_delete` (same address/domain matching and
-effects as user sender rules, scoped to the `system:email` owner).
+Operators manage system sender rules with `adminSystemEmailSenderRuleList`,
+`adminSystemEmailSenderRuleSet`, and `adminSystemEmailSenderRuleDelete` (same
+address/domain matching and effects as user sender rules, scoped to the
+`system:email` owner).
 
 The payload is the same metadata-first envelope as `email.message.received`
 (with `event: 'email.system-message.received'`), plus one extra field:
@@ -358,12 +358,12 @@ type SystemEmailMessageReceivedEvent = Omit<
 Handlers run as the admin package owner, not the system owner, so the
 user-scoped email capabilities and the `kody:runtime` `email` helper cannot read
 the system message. Use the metadata for routing and notifications (for example
-a Discord report), and follow `admin_url` (or the admin `admin_system_email_get`
+a Discord report), and follow `admin_url` (or the admin `adminSystemEmailGet`
 capability) for full contents.
 
 ## `email.system-message.sent` package subscription (admins)
 
-A successful send from a reserved system sender (`admin_system_email_send` /
+A successful send from a reserved system sender (`adminSystemEmailSend` /
 `sendSystemEmail`) fans `email.system-message.sent` to packages saved by users
 who hold the admin role at dispatch time. Raw capability calls and utility
 wrappers both go through that send path, so archive packages see every operator
@@ -407,5 +407,5 @@ Message-ID: <hello@example.com>
 Hello from local email routing.'
 ```
 
-Then inspect the message with `email_message_list`, `email_message_search`, and
-`email_message_get`.
+Then inspect the message with `emailMessageList`, `emailMessageSearch`, and
+`emailMessageGet`.

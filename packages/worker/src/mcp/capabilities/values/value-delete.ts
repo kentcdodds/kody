@@ -9,7 +9,7 @@ import { valueScopeValues } from '#mcp/values/types.ts'
 export const valueDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
-		name: 'value_delete',
+		name: 'valueDelete',
 		description:
 			'Delete an existing leftover persisted row for the signed-in user.',
 		keywords: ['config', 'delete', 'remove'],

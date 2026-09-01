@@ -14,7 +14,7 @@ import { type JobSourceInspection, type JobView } from './types.ts'
 /**
  * Read-side job inspection helpers for capability/UI list+get paths.
  *
- * Kept separate from `service.ts` so `job_list` / `job_get` do not lazy-load the
+ * Kept separate from `service.ts` so `jobList` / `jobGet` do not lazy-load the
  * job execution graph (`run-kody-registry`, bundler, entitlements, …) on the
  * first cold-isolate capability dispatch.
  */

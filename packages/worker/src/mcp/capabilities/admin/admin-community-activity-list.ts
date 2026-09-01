@@ -63,7 +63,7 @@ export const adminCommunityActivityListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_community_activity_list',
+		name: 'adminCommunityActivityList',
 		description:
 			'List admin-only metadata about who forked or rated public community listings and when. Fork rows include both agent forks and one-click installs because the existing data model records both identically. Returns no package source, rating notes, secrets, or unrelated user content.',
 		keywords: [
@@ -109,7 +109,7 @@ export const adminCommunityActivityListCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_community_activity_list',
+				'adminCommunityActivityList',
 				async () => {
 					const result = await listCommunityActivityForAdmin({
 						db: ctx.env.APP_DB,

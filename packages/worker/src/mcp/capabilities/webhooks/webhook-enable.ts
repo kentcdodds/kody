@@ -8,7 +8,7 @@ import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
 export const webhookEnableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_enable',
+		name: 'webhookEnable',
 		description:
 			'Enable a disabled package webhook so ingress accepts deliveries again.',
 		keywords: ['webhook', 'enable', 'activate'],

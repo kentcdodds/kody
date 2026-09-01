@@ -108,7 +108,7 @@ export default async function main() {
 		sessionId: `ai-chat-search-smoke-${Date.now()}`,
 		system:
 			'You are a smoke-test assistant. Use the search tool exactly once when asked to search, then answer briefly.',
-		messages: [{ role: 'user', content: 'Search Kody for package_save.' }],
+		messages: [{ role: 'user', content: 'Search Kody for packageSave.' }],
 		maxSteps: 4,
 	})
 	const toolCalls = result.result?.toolCalls ?? []

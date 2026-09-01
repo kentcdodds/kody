@@ -82,7 +82,7 @@ capability from **`defineDomainCapability(...)`**.
 
 Required (inside the `definition` object):
 
-- `name`: snake_case capability name exposed through `search` and `execute`
+- `name`: camelCase capability name exposed through `search` and `execute`
 - `description`: capability description shown to the model
 - `inputSchema`: Zod or plain JSON Schema
 - `handler(args, ctx)`: async host-side implementation
@@ -139,7 +139,7 @@ export const exampleAdminCapability = defineDomainCapability(
 ```
 
 The registry filters role-gated capabilities from `search`,
-`meta_list_capabilities`, and MCP server domain instructions for callers who do
+`metaListCapabilities`, and MCP server domain instructions for callers who do
 not satisfy the requirement. This filtering is UX only; execute-time checks are
 the security boundary. The kody wrapper and normalized capability handler also
 reject unauthorized calls, even if a test or internal caller accidentally passes
@@ -189,12 +189,12 @@ user/role account metadata, sanitized audit metadata, feedback that a user
 explicitly approved for admin review, operator-owned system email, and the
 documented metadata projection for activity on public community listings.
 
-`admin_system_email_send` is the operator correspondence channel: it sends from
-a reserved system sender (`kody@<apex>` by default) to arbitrary recipients, so
+`adminSystemEmailSend` is the operator correspondence channel: it sends from a
+reserved system sender (`kody@<apex>` by default) to arbitrary recipients, so
 the platform can answer a feedback report or a system-inbox message. It never
 touches a user mailbox, sender identity, or plan entitlement, and it carries its
-own per-sender daily cap. User mail keeps its own boundary: `email_send` remains
-notify-self and `email_reply` remains reply-only.
+own per-sender daily cap. User mail keeps its own boundary: `emailSend` remains
+notify-self and `emailReply` remains reply-only.
 
 Platform feedback list/get is the only admin capability surface that reviews
 user-authored private text, and only after explicit approval. Community activity
@@ -219,37 +219,37 @@ where operator ergonomics call for lookup. They never accept or return numeric
 only after boundary validation. Admin URLs and audit reasons follow the same
 rule.
 
-- `admin_user_list`
-- `admin_user_get`
-- `admin_user_create`
-- `admin_user_update`
-- `admin_user_verify`
-- `admin_account_write_lease_list`
-- `admin_account_write_lease_repair`
-- `admin_account_deletion_abort`
-- `admin_platform_account_create`
-- `admin_package_scope_grant_create`
-- `admin_package_scope_grant_revoke`
-- `admin_package_scope_grant_list`
-- `admin_audit_log_query`
-- `admin_user_usage`
-- `admin_feature_flag_list`
-- `admin_feature_flag_set`
-- `admin_feature_flag_override`
-- `admin_system_email_list`
-- `admin_system_email_get`
-- `admin_system_email_send`
-- `admin_system_email_sender_rule_list`
-- `admin_system_email_sender_rule_set`
-- `admin_system_email_sender_rule_delete`
-- `admin_platform_feedback_list`
-- `admin_platform_feedback_get`
-- `admin_platform_feedback_update`
-- `admin_community_activity_list`
-- `admin_package_codemod_scan`
-- `admin_package_codemod_dry_run`
-- `admin_package_codemod_apply`
-- `admin_package_codemod_revert`
+- `adminUserList`
+- `adminUserGet`
+- `adminUserCreate`
+- `adminUserUpdate`
+- `adminUserVerify`
+- `adminAccountWriteLeaseList`
+- `adminAccountWriteLeaseRepair`
+- `adminAccountDeletionAbort`
+- `adminPlatformAccountCreate`
+- `adminPackageScopeGrantCreate`
+- `adminPackageScopeGrantRevoke`
+- `adminPackageScopeGrantList`
+- `adminAuditLogQuery`
+- `adminUserUsage`
+- `adminFeatureFlagList`
+- `adminFeatureFlagSet`
+- `adminFeatureFlagOverride`
+- `adminSystemEmailList`
+- `adminSystemEmailGet`
+- `adminSystemEmailSend`
+- `adminSystemEmailSenderRuleList`
+- `adminSystemEmailSenderRuleSet`
+- `adminSystemEmailSenderRuleDelete`
+- `adminPlatformFeedbackList`
+- `adminPlatformFeedbackGet`
+- `adminPlatformFeedbackUpdate`
+- `adminCommunityActivityList`
+- `adminPackageCodemodScan`
+- `adminPackageCodemodDryRun`
+- `adminPackageCodemodApply`
+- `adminPackageCodemodRevert`
 
 When adding more admin actions, expose service-layer functions by adding new
 `admin/*` capability files that call those service functions directly, set
@@ -444,15 +444,18 @@ Use filename suffixes to choose the Vitest project:
 
 ## Naming
 
-- Use snake_case capability names.
-- Prefer `<domain>_<noun>_<verb>` or `<domain>_<verb>` names for new
-  capabilities. Keep the domain prefix unless the capability is one of the
-  intentionally tiny public/meta primitives (`search`, `execute`) where the
-  short name is already part of the contract.
+- Use camelCase JavaScript-identifier capability names so they can be called as
+  `kody.packageGet(...)`. `defineCapability` rejects non-identifiers, reserved
+  words, and snake_case for builtin names. MCP-synthesized tools keep their
+  upstream names and are called as `kody.mcp["server"].tool_name(...)`.
+- Prefer `<domain><Noun><Verb>` or `<domain><Verb>` names for new capabilities.
+  Keep the domain prefix unless the capability is one of the intentionally tiny
+  public/meta primitives (`search`, `execute`) where the short name is already
+  part of the contract.
 - Keep names action-oriented, specific, and boring. Avoid temporary project
   names, implementation details, brand names, or current product UI labels
   unless those terms are the stable user-facing concept forever.
-- Use singular nouns for single-entity operations (`package_get`) and plural
+- Use singular nouns for single-entity operations (`packageGet`) and plural
   nouns only when the object being manipulated is itself plural.
 - Before open signup, fix bad names directly while Kent is the only user and can
   manually update saved packages, jobs, and secret allowlists. After real users

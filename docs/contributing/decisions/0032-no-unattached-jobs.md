@@ -23,9 +23,9 @@ package job. Deferred or long-running one-shot work is a workflow started from
 `execute` or package runtime. Do not add workflow cron, a `schedule()` wrapper
 package, or an unattached-job capability.
 
-`job_list`, `job_get`, `job_run_now`, metadata `job_update`, and `job_delete`
-remain for package jobs and for any leftover unattached rows until those rows
-are gone. The runner does not care how a row was created.
+`jobList`, `jobGet`, `jobRunNow`, metadata `jobUpdate`, and `jobDelete` remain
+for package jobs and for any leftover unattached rows until those rows are gone.
+The runner does not care how a row was created.
 
 ## Consequences
 

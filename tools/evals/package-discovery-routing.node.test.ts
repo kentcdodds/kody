@@ -54,10 +54,10 @@ const createPassingTranscript = (): unknown => {
 							input: {
 								code:
 									terminalAction === 'author-package'
-										? 'await kody.package_save({})'
+										? 'await kody.packageSave({})'
 										: evalCase.id === 'schedule-single-reminder'
 											? "await workflows.create({ runAt: '2026-07-15T16:00:00.000Z', code: 'export default async function main() {}' })"
-											: 'return await kody.value_list({})',
+											: 'return await kody.valueList({})',
 							},
 							output: { result: 'captured execution output' },
 						} as const)
@@ -206,7 +206,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 		action: 'author-package',
 		toolName: 'execute',
 		status: 'failed',
-		input: { code: 'await kody.package_save({})' },
+		input: { code: 'await kody.packageSave({})' },
 		output: { error: 'failed' },
 	})
 	transcript.results.splice(transcript.results.indexOf(controlledResult), 1, {
@@ -287,7 +287,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 		throw new Error('Expected an authoring event fixture.')
 	}
 	authoringEvent.input = {
-		code: 'await kody.coding_guide_get({}); await kody.package_save({})',
+		code: 'await kody.codingGuideGet({}); await kody.packageSave({})',
 	}
 	authoringResult.events.splice(-1, 0, {
 		...authoringEvent,
@@ -305,7 +305,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 		)
 		if (mismatch === 'input') {
 			mismatchedResult.events.at(-1)!.input = {
-				code: 'await kody.package_save({})',
+				code: 'await kody.packageSave({})',
 			}
 		} else {
 			mismatchedResult.events.at(-1)!.output = { result: 'different output' }
@@ -337,7 +337,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 			action: 'inspect-authoring-guidance' as const,
 			toolName: 'execute' as const,
 			status: 'succeeded' as const,
-			input: { code: 'await kody.coding_guide_get({})' },
+			input: { code: 'await kody.codingGuideGet({})' },
 			output: { guide: 'captured' },
 		})),
 	)
@@ -362,7 +362,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 			action: 'author-package' as const,
 			toolName: 'execute' as const,
 			status: 'succeeded' as const,
-			input: { code: 'await kody.package_save({})' },
+			input: { code: 'await kody.packageSave({})' },
 			output: { saved: true },
 		})),
 	]
@@ -413,7 +413,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'inspect-authoring-guidance',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.coding_guide_get({})' },
+			input: { code: 'await kody.codingGuideGet({})' },
 			output: { guide: 'captured' },
 		},
 		{
@@ -421,7 +421,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.package_get_git_remote({})' },
+			input: { code: 'await kody.packageGetGitRemote({})' },
 			output: { remote: 'captured' },
 		},
 		{
@@ -429,7 +429,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_edit_files({})' },
+			input: { code: 'await kody.repoEditFiles({})' },
 			output: { edited: true },
 		},
 		{
@@ -437,7 +437,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.package_publish_external_push({})' },
+			input: { code: 'await kody.packagePublishExternalPush({})' },
 			output: { published: true },
 		},
 	]
@@ -462,7 +462,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.package_save({ enabled: false })' },
+			input: { code: 'await kody.packageSave({ enabled: false })' },
 			output: { published: true, enabled: false },
 		},
 		{
@@ -471,7 +471,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			toolName: 'execute',
 			status: 'succeeded',
 			input: {
-				code: "await kody.repo_edit_files({ session_id: 's', edits: [{ kind: 'write', path: 'a.ts', content: 'test' }] })",
+				code: "await kody.repoEditFiles({ session_id: 's', edits: [{ kind: 'write', path: 'a.ts', content: 'test' }] })",
 			},
 			output: { passed: true },
 		},
@@ -480,7 +480,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.package_save({ enabled: true })' },
+			input: { code: 'await kody.packageSave({ enabled: true })' },
 			output: { published: true, enabled: true },
 		},
 	]
@@ -505,7 +505,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_open_session({})' },
+			input: { code: 'await kody.repoOpenSession({})' },
 			output: { sessionId: 'repo-session' },
 		},
 		{
@@ -513,7 +513,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_edit_files({})' },
+			input: { code: 'await kody.repoEditFiles({})' },
 			output: { written: true },
 		},
 		{
@@ -521,7 +521,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_edit_files({})' },
+			input: { code: 'await kody.repoEditFiles({})' },
 			output: { committed: true },
 		},
 		{
@@ -529,7 +529,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_run_checks({})' },
+			input: { code: 'await kody.repoRunChecks({})' },
 			output: { passed: true },
 		},
 		{
@@ -537,7 +537,7 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 			action: 'author-package',
 			toolName: 'execute',
 			status: 'succeeded',
-			input: { code: 'await kody.repo_publish_session({})' },
+			input: { code: 'await kody.repoPublishSession({})' },
 			output: { published: true },
 		},
 	]
@@ -594,7 +594,7 @@ test('scorer rejects removed scheduling primitives and requires workflows.create
 	if (!missingEvent) {
 		throw new Error('Expected an execute-one-off fixture.')
 	}
-	missingEvent.input = { code: 'return await kody.value_list({})' }
+	missingEvent.input = { code: 'return await kody.valueList({})' }
 	const missingReport = scorePackageDiscoveryTranscript(
 		evalSet,
 		missingWorkflowTranscript,

@@ -9,7 +9,7 @@ import { emailSenderRuleSchema, toSenderRule } from './shared.ts'
 export const emailSenderRuleListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_sender_rule_list',
+		name: 'emailSenderRuleList',
 		description:
 			'List sender allow/block/quarantine rules for the signed-in user. Inbound mail is classified at receive time using these rules (address beats domain; subdomain suffix matching) before Authentication-Results (SPF/DKIM/DMARC).',
 		keywords: [

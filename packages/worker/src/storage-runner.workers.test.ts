@@ -155,7 +155,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 	})
 
 	const denied = await plannedTools
-		.storage_set({
+		.storageSet({
 			key: 'new-key',
 			value: 'new-value',
 		})
@@ -195,7 +195,7 @@ test('storage runner write tools enforce storage byte entitlements for planned u
 		writable: true,
 	})
 	await expect(
-		maxTools.storage_set({
+		maxTools.storageSet({
 			key: 'new-key',
 			value: 'new-value',
 		}),

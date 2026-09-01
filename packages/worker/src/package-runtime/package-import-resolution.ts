@@ -23,7 +23,7 @@ export type KodyPackageSpecifier = {
  * Isolation invariant: platform resolution only widens *which published
  * source the bundler may read*, and only when the caller is a platform
  * account composing with another platform scope (decision 0036). Person
- * accounts — ad hoc execute and saved packages — must `community_fork`
+ * accounts — ad hoc execute and saved packages — must `communityFork`
  * into the caller's scope. The caller's own copy always wins.
  */
 export type ResolvedPackageImport = {

@@ -37,7 +37,7 @@ function createContext() {
 	}
 }
 
-test('email_message_classify updates classification and reports not-found', async () => {
+test('emailMessageClassify updates classification and reports not-found', async () => {
 	const context = createContext()
 	mocks.setEmailMessageClassification.mockResolvedValueOnce(true)
 

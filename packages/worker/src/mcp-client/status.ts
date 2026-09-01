@@ -38,7 +38,7 @@ export async function getMcpServerStatus(input: {
 				name: input.ref.name,
 				ready: false,
 				toolCount: 0,
-				message: `The ${label} has no active connection. Reconnect it from /account/mcp-servers or with mcp_server_reconnect.`,
+				message: `The ${label} has no active connection. Reconnect it from /account/mcp-servers or with mcpServerReconnect.`,
 				error: null,
 			}
 		}
@@ -92,7 +92,7 @@ function buildStatusMessage(input: {
 		case 'failed':
 			return `The ${input.label} failed to connect${input.error ? `: ${input.error}` : '.'}`
 		case 'disconnected':
-			return `The ${input.label} is not connected. Reconnect it from /account/mcp-servers or with mcp_server_reconnect.`
+			return `The ${input.label} is not connected. Reconnect it from /account/mcp-servers or with mcpServerReconnect.`
 		default: {
 			const exhaustive: never = input.state
 			throw new Error(`Unhandled MCP server state: ${String(exhaustive)}`)
@@ -104,5 +104,5 @@ export function formatMcpServerUnavailableMessage(status: McpServerStatus) {
 	if (status.ready && status.toolCount > 0) {
 		return status.message
 	}
-	return `${status.message} Check mcp_server_list for connection status.`
+	return `${status.message} Check mcpServerList for connection status.`
 }

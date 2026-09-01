@@ -321,7 +321,7 @@ export type RepoSessionPublishResult =
 			publishedCommit: null
 			sessionBaseCommit: string
 			currentPublishedCommit: string | null
-			repairHint: 'repo_rebase_session'
+			repairHint: 'repoRebaseSession'
 	  }
 	| {
 			status: 'locked'

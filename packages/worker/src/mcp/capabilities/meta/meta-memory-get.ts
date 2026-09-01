@@ -9,7 +9,7 @@ import { requireMcpUser } from './require-user.ts'
 export const metaMemoryGetCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_memory_get',
+		name: 'metaMemoryGet',
 		description: 'Load one stored durable memory by id for the signed-in user.',
 		keywords: ['memory', 'get', 'load', 'read', 'durable memory'],
 		readOnly: true,

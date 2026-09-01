@@ -43,7 +43,7 @@ Example shape:
 ## Token refresh
 
 All integrations refresh host-side through `createAuthenticatedFetch`, which
-calls `integration_token_refresh` on 401 and retries with a secret placeholder —
+calls `integrationTokenRefresh` on 401 and retries with a secret placeholder —
 raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
 `integration.auth.failed` to packages that subscribe; successful refreshes and
 `/connect/oauth` persists dispatch `integration.auth.succeeded` (see
@@ -138,13 +138,13 @@ metadata needed for future reconnects in the integration record:
 - provider-specific `extraAuthorizeParams` such as Google `access_type=offline`
   and `prompt=consent`
 
-For an existing integration, agents can call `integration_get` or
-`integration_list` to inspect this metadata. To reconnect without rebuilding the
+For an existing integration, agents can call `integrationGet` or
+`integrationList` to inspect this metadata. To reconnect without rebuilding the
 full authorize URL by hand, open `/connect/oauth?provider=<integration-name>`;
 the page derives the provider authorize URL from the saved integration config
 and the current client credentials.
 
-`integration_save` can widen `authorization.scopes` on a connection. That field
+`integrationSave` can widen `authorization.scopes` on a connection. That field
 is reconnect metadata — the list the next `/connect/oauth` visit requests — not
 the current access token. After saving, tell the user the token is unchanged
 until they reconnect, then ask whether to reconnect each affected account.
@@ -170,8 +170,7 @@ credentials updates every connection sharing it.
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
-`integration_list` up front when a provider may have multiple accounts
-connected.
+`integrationList` up front when a provider may have multiple accounts connected.
 
 Manage integrations from `/account/integrations`. The list is one row per
 service; opening a row unfolds its connections in the table. User-registered
@@ -179,9 +178,9 @@ integrations also resolve at `/account/integrations/apps/<app-slug>`. Disconnect
 a connected account or delete a user-registered integration from that expanded
 row — both ask for a second click, then offer Undo for a few seconds. App
 metadata and the client-secret rotation form live under Advanced details, with
-an explicit confirmation step. Agents can call `integration_oauth_app_list`,
-`integration_oauth_app_delete`, and `integration_oauth_app_rotate_credentials`
-when working outside the account UI.
+an explicit confirmation step. Agents can call `integrationOauthAppList`,
+`integrationOauthAppDelete`, and `integrationOauthAppRotateCredentials` when
+working outside the account UI.
 
 ## Not the same as MCP OAuth
 
@@ -227,8 +226,8 @@ thin helpers package.
    secret when the flow is confidential), and wait for success.
 5. Run the authenticated smoke test from `integration_bootstrap`
    (`createAuthenticatedFetch`). Do not persist access or refresh tokens with
-   `secret_set` / `secret_set_many`.
-6. Use the connect success `nextSteps` (or `community_search`, preferring
+   `secretSet` / `secretSetMany`.
+6. Use the connect success `nextSteps` (or `communitySearch`, preferring
    `trusted`) to fork/adapt a helpers package, or create a thin helpers package
    when none fits. Continue with dependent package apps only after that surface
    exists and the smoke test passes.

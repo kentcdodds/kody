@@ -22,13 +22,13 @@ export function buildPackageTestHints(input: {
 		.sort((left, right) => left.localeCompare(right))
 		.map((topic) => ({
 			topic,
-			snippet: `package_subscription_dispatch({ ${packageIdentity}, topic: ${JSON.stringify(topic)}, params: {} })`,
+			snippet: `packageSubscriptionDispatch({ ${packageIdentity}, topic: ${JSON.stringify(topic)}, params: {} })`,
 		}))
 	if (!input.hasApp && subscriptions.length === 0) return undefined
 	return {
 		...(input.hasApp
 			? {
-					app: `package_app_fetch({ ${packageIdentity} })`,
+					app: `packageAppFetch({ ${packageIdentity} })`,
 				}
 			: {}),
 		...(subscriptions.length > 0 ? { subscriptions } : {}),

@@ -11,7 +11,7 @@ import {
 export const repoGetCheckStatusCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
-		name: 'repo_get_check_status',
+		name: 'repoGetCheckStatus',
 		description:
 			'Inspect the most recent Worker-native check run metadata for an active repo session.',
 		keywords: ['repo', 'checks', 'status', 'validate', 'session'],

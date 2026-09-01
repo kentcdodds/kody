@@ -104,7 +104,7 @@ function createDatabase(
 const userEmail = 'repo-create@test.invalid'
 const stableUserId = createStableUserIdFromEmail(userEmail)
 
-test('repo_create creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
+test('repoCreate creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
 	mockModule.ensureEntitySource.mockResolvedValue({
 		id: 'source-1',
 		repo_id: 'repo-artifacts-1',

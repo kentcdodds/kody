@@ -13,7 +13,7 @@ import { emailMessageSummarySchema, toMessageSummary } from './shared.ts'
 export const emailMessageSearchCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
-		name: 'email_message_search',
+		name: 'emailMessageSearch',
 		description:
 			'Search stored email messages owned by the signed-in user by case-insensitive substring match against subject, header From, and envelope sender.',
 		keywords: ['email', 'message', 'inbox', 'search', 'find', 'query'],

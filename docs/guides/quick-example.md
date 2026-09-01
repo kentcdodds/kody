@@ -23,12 +23,12 @@ Agent notes — for AI agents driving onboarding Step 3 from this page:
 - Keep messages short — under roughly 120 words.
 - NEVER poll, sleep, or retry on a timer. If access is still authorizing, ask
   them to say when /onboarding shows Connected and try once more.
-- Discover tools with search or mcp_server_list. Call them from execute as
+- Discover tools with search or mcpServerList. Call them from execute as
   kody.mcp["notion"].tool_name(...), kody.mcp["linear"].tool_name(...), or the
   matching connected server name.
-- Persist with package_save after the ad hoc call works. Do not invoke official
+- Persist with packageSave after the ad hoc call works. Do not invoke official
   @kody/* packages — person accounts run the owned fork from Connect, or a new
-  package_save.
+  packageSave.
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.
@@ -47,14 +47,14 @@ their agent as soon as they reach that step.
 
 The account needs a verified email and an authorized MCP host. If they gave Kody
 access on `/onboarding` Step 2 (featured or custom), confirm the server is ready
-with `mcp_server_list` before calling its tools. If they installed a
-Just-try-Kody example, invoke that owned package. If they skipped, ask what they
-want to try and use whatever tools are already available.
+with `mcpServerList` before calling its tools. If they installed a Just-try-Kody
+example, invoke that owned package. If they skipped, ask what they want to try
+and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
 If they named a service they gave Kody access to, look it up once with
-`mcp_server_list` (or `search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`,
+`mcpServerList` (or `search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`,
 `mcp:stripe`, `mcp:sentry`, or `mcp:canva`).
 
 If the server is still authorizing, tell them to finish the provider window and
@@ -82,7 +82,7 @@ works.
 
 Save that working module as a package they own:
 
-- `package_save` when you are writing the first version, or
+- `packageSave` when you are writing the first version, or
 - the owned helper Connect already copied into their account when that is
   closer. Do not invoke `kody:@kody/*`.
 
@@ -107,6 +107,5 @@ for now. List the options. If they skip, they are done with Get started.
 - **No connected tools** — they skipped Step 2, or the server name is not one of
   the Step 2 cards. Ask what they want, or send them back to
   `/onboarding#connect-mcp`.
-- **`package_save` rejected** — the ad hoc module is incomplete. Keep the
-  execute evidence, fix the package files, and save again. Do not invent extra
-  packages.
+- **`packageSave` rejected** — the ad hoc module is incomplete. Keep the execute
+  evidence, fix the package files, and save again. Do not invent extra packages.

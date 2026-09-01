@@ -21,4 +21,4 @@ Preview seed has no jobs until a package with `kody.jobs` exists.
 ## Gotchas
 
 - Republishing `"enabled": false` does not disable a running job. Use
-  `job_update` or the package pause export.
+  `jobUpdate` or the package pause export.

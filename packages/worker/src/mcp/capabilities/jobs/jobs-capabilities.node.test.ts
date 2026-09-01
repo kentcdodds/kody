@@ -57,7 +57,7 @@ function resetMocks() {
 	mockModule.listRunRecords.mockResolvedValue({ runs: [], nextCursor: null })
 }
 
-test('job_update and job_delete require authentication and mutate existing jobs for the signed-in user', async () => {
+test('jobUpdate and jobDelete require authentication and mutate existing jobs for the signed-in user', async () => {
 	resetMocks()
 	const env = {} as Env
 	const unauthenticatedContext = createMcpCallerContext({
@@ -284,7 +284,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 				callerContext: signedInContext,
 			},
 		),
-	).rejects.toThrow('Job code cannot be changed via job_update.')
+	).rejects.toThrow('Job code cannot be changed via jobUpdate.')
 	await expect(
 		jobUpdateCapability.handler(
 			{
@@ -297,7 +297,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 				callerContext: signedInContext,
 			},
 		),
-	).rejects.toThrow('Job code cannot be changed via job_update.')
+	).rejects.toThrow('Job code cannot be changed via jobUpdate.')
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 
 	mockModule.deleteJob.mockResolvedValue({
@@ -337,7 +337,7 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 	expect(mockModule.deleteJob).toHaveBeenCalledTimes(1)
 })
 
-test('job_update accepts interval and cron schedule replacements', async () => {
+test('jobUpdate accepts interval and cron schedule replacements', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -481,7 +481,7 @@ test('job_update accepts interval and cron schedule replacements', async () => {
 	})
 })
 
-test('job_run_now executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
+test('jobRunNow executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
 	resetMocks()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -982,7 +982,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	}
 })
 
-test('job_update and job_list round-trip expires_at and surface expired state', async () => {
+test('jobUpdate and jobList round-trip expires_at and surface expired state', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))

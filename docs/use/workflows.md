@@ -13,7 +13,7 @@ re-executes instead of replaying a cached timeout. Outbound `fetch` in that
 sandbox is capped ~30s under the same budget (~4 minutes), so a single slow
 upstream can finish without the execute-oriented 60s fetch deadline. The initial
 `execute` call should submit one `workflows.create`; inspect that workflow later
-with `workflow_run_list`, or cancel it with `workflow_run_cancel`.
+with `workflowRunList`, or cancel it with `workflowRunCancel`.
 
 ```ts
 import { workflows } from 'kody:runtime'
@@ -32,7 +32,7 @@ Check status from a later MCP call:
 import { kody } from 'kody:runtime'
 
 export default async function main() {
-	return await kody.workflow_run_list({ limit: 10 })
+	return await kody.workflowRunList({ limit: 10 })
 }
 ```
 
@@ -59,16 +59,16 @@ example `storage-sweep:2026-05-08`. Kody enforces a finite per-user concurrent
 workflow limit from the account plan (free 2, standard 50, pro 100, max 5000);
 if the cap is reached, `workflows.create` returns a clear quota error.
 
-Use `workflow_run_list` to inspect recent workflow runs and statuses, and
-`workflow_run_cancel` to stop a run by id.
+Use `workflowRunList` to inspect recent workflow runs and statuses, and
+`workflowRunCancel` to stop a run by id.
 
 ## Cancelling workflow runs
 
-`workflow_run_cancel({ id })` cancels one workflow run by id. Run ids look like
+`workflowRunCancel({ id })` cancels one workflow run by id. Run ids look like
 `dynwf-…` for inline runs and `pkgwf-…` for package runs; get them from
-`workflows.create` output or `workflow_run_list`. The call terminates the
+`workflows.create` output or `workflowRunList`. The call terminates the
 underlying Cloudflare Workflow instance and marks the run `cancelled` in
-`workflow_run_list`.
+`workflowRunList`.
 
 You can only cancel your own runs. Unknown ids or another user's id return a
 "not found" error.
@@ -89,16 +89,16 @@ pick a new idempotency key. This prevents a cancelled self-rescheduling chain
 from being accidentally revived by a retry that reuses old keys.
 
 Cancelling one run does not un-schedule runs it already created. Each queued run
-is an independent workflow instance — use `workflow_run_list` to find every
-queued run in the chain and cancel each one by id. A run that is mid-execution
-may still create its successor before termination lands, so list again after
+is an independent workflow instance — use `workflowRunList` to find every queued
+run in the chain and cancel each one by id. A run that is mid-execution may
+still create its successor before termination lands, so list again after
 cancelling to catch stragglers.
 
 ```ts
 import { kody } from 'kody:runtime'
 
 export default async function main() {
-	return await kody.workflow_run_cancel({ id: 'dynwf-abc123' })
+	return await kody.workflowRunCancel({ id: 'dynwf-abc123' })
 }
 ```
 

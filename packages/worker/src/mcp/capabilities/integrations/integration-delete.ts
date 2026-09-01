@@ -16,7 +16,7 @@ const outputSchema = z.object({
 export const integrationDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
-		name: 'integration_delete',
+		name: 'integrationDelete',
 		description:
 			'Delete a saved OAuth integration connection by name. When it is the last connection on its OAuth app, the unused app is removed too.',
 		keywords: [

@@ -16,7 +16,7 @@ const inputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Run id from run_list, job_get recent_runs, or another run reference.',
+			'Run id from runList, jobGet recent_runs, or another run reference.',
 		),
 })
 
@@ -28,7 +28,7 @@ const outputSchema = z.object({
 export const runGetCapability = defineDomainCapability(
 	capabilityDomainNames.runs,
 	{
-		name: 'run_get',
+		name: 'runGet',
 		description:
 			'Load one retained run with its captured log lines, error details, soft triage fields (error_triage / note / who / when), and (when available) a bounded metadata.result snapshot of the handler return value — useful for webhook deliveries, package exports, and keyed execute recovery. Works for ignored/resolved runs too. Records are retained about 30 days, capped per user, and pruned failure-last. Key-less successful ad-hoc execute runs are not stored; execute failures and execute calls that supplied an idempotencyKey are retained.',
 		keywords: [

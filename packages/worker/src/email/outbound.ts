@@ -105,7 +105,7 @@ export type EmailSendInput = {
 } & (
 	| {
 			/**
-			 * Notify-self policy (email_send): only the acting user's own
+			 * Notify-self policy (emailSend): only the acting user's own
 			 * account email may be addressed — never an outreach channel.
 			 */
 			recipientPolicy: 'self'
@@ -114,7 +114,7 @@ export type EmailSendInput = {
 	  }
 	| {
 			/**
-			 * Reply policy (email_reply): the recipient is derived from the
+			 * Reply policy (emailReply): the recipient is derived from the
 			 * stored inbound message; callers never supply it.
 			 */
 			recipientPolicy: 'reply'
@@ -168,11 +168,11 @@ function resolveSelfRecipients(input: {
 	})
 	const disallowed = normalized.filter((value) => value !== accountEmail)
 	if (disallowed.length > 0) {
-		// email_send is notify-self only; agents often pass a third-party
+		// emailSend is notify-self only; agents often pass a third-party
 		// address by mistake. That is a routine caller correction (use
-		// email_reply), not a platform defect — keep it off Sentry.
+		// emailReply), not a platform defect — keep it off Sentry.
 		throw new McpCallerError(
-			`email_send only delivers to your own account email (${accountEmail}). Use email_reply to answer stored inbound messages.`,
+			`emailSend only delivers to your own account email (${accountEmail}). Use emailReply to answer stored inbound messages.`,
 		)
 	}
 	return [accountEmail]

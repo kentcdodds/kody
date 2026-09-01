@@ -25,7 +25,7 @@ export const adminPlatformOauthAppDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_platform_oauth_app_delete',
+		name: 'adminPlatformOauthAppDelete',
 		description:
 			'Delete a platform (built-in) OAuth app. Fails while user connections still reference it — disable the app instead when users are connected. Admin-only.',
 		keywords: [
@@ -42,7 +42,7 @@ export const adminPlatformOauthAppDeleteCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_oauth_app_delete',
+				'adminPlatformOauthAppDelete',
 				async () => {
 					const existing = await getPlatformOauthAppBySlug({
 						db: ctx.env.APP_DB,

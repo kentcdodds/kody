@@ -1,5 +1,5 @@
 export const packageSubscriptionDispatchCapabilityName =
-	'package_subscription_dispatch'
+	'packageSubscriptionDispatch'
 
 export const syntheticPackageSubscriptionSource = 'synthetic'
 
@@ -47,7 +47,7 @@ export function buildPackageSubscriptionNotFoundMessage(input: {
 	kodyId: string
 	topic: string
 }) {
-	return `Package "${input.kodyId}" does not declare subscription "${input.topic}" in package.json#kody.subscriptions. Inspect handlers with package_subscriptions_list, or test dispatch with ${packageSubscriptionDispatchCapabilityName} once a handler is declared.`
+	return `Package "${input.kodyId}" does not declare subscription "${input.topic}" in package.json#kody.subscriptions. Inspect handlers with packageSubscriptionsList, or test dispatch with ${packageSubscriptionDispatchCapabilityName} once a handler is declared.`
 }
 
 /**

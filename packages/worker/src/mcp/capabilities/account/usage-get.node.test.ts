@@ -76,7 +76,7 @@ function createUsageTestDb(input: {
 	}
 }
 
-test('usage_get returns self-scoped entitlement snapshot', async () => {
+test('usageGet returns self-scoped entitlement snapshot', async () => {
 	const email = 'usage-get@example.com'
 	const userId = testStableUserIdFromEmail(email)
 	const { db } = createUsageTestDb({

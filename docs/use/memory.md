@@ -48,7 +48,7 @@ When retrieval runs, Kody may return the top one or two relevant active
 memories, including ones surfaced earlier, in the tool text (as
 `## Relevant memories`) and in structured content. Auto-surface is compact:
 **subject**, **summary**, and **id** (structured). Details stay behind
-`meta_memory_get`. Later ranked hits that share a non-empty `dedupe_key` are
+`metaMemoryGet`. Later ranked hits that share a non-empty `dedupe_key` are
 collapsed so two copies of the same fact cannot spend both slots; blank or
 missing keys surface independently.
 
@@ -67,7 +67,7 @@ Agents must treat long-term memory writes as an explicit workflow.
 If the agent believes durable memory should be created, updated, or deleted, it
 should:
 
-1. call **`meta_memory_verify`** first
+1. call **`metaMemoryVerify`** first
 2. review the related memories returned by verify
 3. decide whether to:
    - upsert a memory
@@ -82,13 +82,13 @@ for deciding what those related memories mean.
 
 Use these through **`execute`**:
 
-- **`meta_memory_verify`** — required first step before mutating memory
-- **`meta_memory_upsert`** — create a new memory when `memory_id` is omitted, or
+- **`metaMemoryVerify`** — required first step before mutating memory
+- **`metaMemoryUpsert`** — create a new memory when `memory_id` is omitted, or
   update an existing memory when `memory_id` is provided
-- **`meta_memory_delete`** — soft-delete by default; pass `force: true` for
+- **`metaMemoryDelete`** — soft-delete by default; pass `force: true` for
   permanent deletion
-- **`meta_memory_get`** — load one stored memory by id
-- **`meta_memory_search`** — browse/search stored memories directly
+- **`metaMemoryGet`** — load one stored memory by id
+- **`metaMemorySearch`** — browse/search stored memories directly
 
 Memory records can also include optional **`source_uris`** — opaque canonical
 document URLs such as GitHub files, R2 object URLs, or Notion pages.

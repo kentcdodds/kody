@@ -83,7 +83,7 @@ function toDeliveryFromRunRecord(run: RunRecord) {
 export const webhookDeliveryListCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
-		name: 'webhook_delivery_list',
+		name: 'webhookDeliveryList',
 		description:
 			'List recent inbound webhook deliveries for one minted package webhook from run records (metadata only; payload bodies are never stored).',
 		keywords: ['webhook', 'delivery', 'log', 'debug', 'history', 'runs'],
@@ -133,7 +133,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 			})
 			if (!mint) {
 				throw new Error(
-					'Webhook URL has not been minted. Call webhook_url_mint first.',
+					'Webhook URL has not been minted. Call webhookUrlMint first.',
 				)
 			}
 			const limit = args.limit ?? 25

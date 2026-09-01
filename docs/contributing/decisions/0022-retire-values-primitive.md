@@ -19,7 +19,7 @@ address). ADR [0003](./0003-repos-as-base-primitive.md) named "documents live
 chunked in values" as the problem repos were meant to end. Admin insights counts
 memories and secrets, not values.
 
-The leftover unique job — deterministic cross-package `value_get({ name })` — is
+The leftover unique job — deterministic cross-package `valueGet({ name })` — is
 a handful of Discord/org ids. That does not justify a four-capability domain, a
 search entity that prints stored contents, an account screen, and two D1 tables.
 Secrets stay: their contract (raw values never enter prompts) is unique. Values
@@ -43,11 +43,11 @@ MCP, search, `/account/values`, export/deletion, and entitlements byte math lose
 a surface. Shared D1 write traffic for `value_entries` goes away
 ([0002](./0002-data-placement.md) listed values as D1 config; that placement
 becomes moot when the tables drop). Community listings and packages that still
-say `value_get` need a migration pass. Revisit only if a real cross-package
+say `valueGet` need a migration pass. Revisit only if a real cross-package
 config need appears that memories plus a settings package cannot cover.
 
 ## LATER-NOTE (2026-08-24)
 
-Writes and agent-facing surfaces are gone. `value_get` / `value_list` /
-`value_delete` remain as an unadvertised drain until the D1 tables drop. See the
+Writes and agent-facing surfaces are gone. `valueGet` / `valueList` /
+`valueDelete` remain as an unadvertised drain until the D1 tables drop. See the
 [values retirement runbook](../architecture/values-retirement-runbook.md).

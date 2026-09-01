@@ -22,7 +22,7 @@ vi.mock('#mcp/run-kody-registry.ts', async (importOriginal) => ({
 	runBundledModuleWithRegistry: mocks.runBundledModuleWithRegistry,
 }))
 
-test('subscription execution exposes the owner account identity to meta_get_current_user', async () => {
+test('subscription execution exposes the owner account identity to metaGetCurrentUser', async () => {
 	const userId = 'a'.repeat(64)
 	const email = 'subscription-owner@example.com'
 	const displayName = 'Subscription Owner'

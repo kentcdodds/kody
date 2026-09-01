@@ -36,7 +36,7 @@ export const adminPackageScopeGrantListCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminCapabilityAccess,
-		name: 'admin_package_scope_grant_list',
+		name: 'adminPackageScopeGrantList',
 		description:
 			'List package scope grants that let person accounts act inside platform account scopes. Optionally filter by platform account username. Admin-only; does not expose package contents.',
 		keywords: [
@@ -52,7 +52,7 @@ export const adminPackageScopeGrantListCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_package_scope_grant_list',
+				'adminPackageScopeGrantList',
 				async () => {
 					let scopeOwnerUserId: string | undefined
 					if (args.scope !== undefined) {

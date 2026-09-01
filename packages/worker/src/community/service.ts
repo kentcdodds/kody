@@ -289,7 +289,7 @@ function buildRepeatForkErrorMessage(input: {
 	forkedSourceId: string
 	forkedPackageId: string
 }) {
-	return `You already forked this listing with kody id "${input.targetKodyId}". Resume the existing fork with source_id "${input.forkedSourceId}" (package_id "${input.forkedPackageId}") via repo_open_session, or pass a different kody_id to fork again.`
+	return `You already forked this listing with kody id "${input.targetKodyId}". Resume the existing fork with source_id "${input.forkedSourceId}" (package_id "${input.forkedPackageId}") via repoOpenSession, or pass a different kody_id to fork again.`
 }
 
 async function cleanupFailedCommunityFork(input: {
@@ -1131,7 +1131,7 @@ export type PrepareCommunityForkInput = {
 	expectedPinnedCommit?: string
 	/**
 	 * Who is forking. One-click install in the web app is `human`; the
-	 * `community_fork` capability is `agent`. Recorded so activation metrics
+	 * `communityFork` capability is `agent`. Recorded so activation metrics
 	 * can separate what a user chose from what their agent did on its own.
 	 */
 	actor?: CommunityForkActor | null
@@ -1264,7 +1264,7 @@ export async function prepareCommunityFork(
 		})
 		// Validate the rewritten snapshot before Artifacts bootstrap. Stale
 		// listing pins (e.g. pre-map kody.dependencies) are owner-fixable via
-		// community_publish — keep them on mcp-event, not Sentry.
+		// communityPublish — keep them on mcp-event, not Sentry.
 		parseAuthoredPackageJson({
 			content: rewrittenManifest.content,
 			manifestPath: 'package.json',

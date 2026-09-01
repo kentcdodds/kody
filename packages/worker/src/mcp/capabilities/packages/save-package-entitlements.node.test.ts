@@ -306,7 +306,7 @@ function createHandlerContext(input: {
 	}
 }
 
-test('package_save enforces the saved packages entitlement for plan users on create', async () => {
+test('packageSave enforces the saved packages entitlement for plan users on create', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxSavedPackages
@@ -342,7 +342,7 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 		)
 
 	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected an EntitlementLimitError from package_save.')
+		throw new Error('Expected an EntitlementLimitError from packageSave.')
 	}
 	expect(error.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
@@ -354,7 +354,7 @@ test('package_save enforces the saved packages entitlement for plan users on cre
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 })
 
-test('package_save does not gate updates to an existing package at the limit', async () => {
+test('packageSave does not gate updates to an existing package at the limit', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const limit = planLimits.pro.maxSavedPackages
@@ -411,7 +411,7 @@ test('package_save does not gate updates to an existing package at the limit', a
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 })
 
-test('package_save rejects a file over the per-file repo size limit with hosting guidance', async () => {
+test('packageSave rejects a file over the per-file repo size limit with hosting guidance', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const db = createDatabase({
@@ -443,7 +443,7 @@ test('package_save rejects a file over the per-file repo size limit with hosting
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
-test('package_save responses steer coding agents toward the git lane', async () => {
+test('packageSave responses steer coding agents toward the git lane', async () => {
 	const email = 'planned@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const db = createDatabase({
@@ -459,13 +459,13 @@ test('package_save responses steer coding agents toward the git lane', async () 
 		ctx,
 	)
 
-	expect(result.next_steps).toContain('package_get_git_remote')
-	expect(result.next_steps).toContain('package_publish_external_push')
+	expect(result.next_steps).toContain('packageGetGitRemote')
+	expect(result.next_steps).toContain('packagePublishExternalPush')
 	expect(result.next_steps).toContain(JSON.stringify(result.kody_id))
 	expect(result.pending_secret_package_approvals).toBeNull()
 })
 
-test('package_save allows below-max usage and denies at the max plan ceiling', async () => {
+test('packageSave allows below-max usage and denies at the max plan ceiling', async () => {
 	const email = 'max@example.com'
 	const userId = await createStableUserIdFromEmail(email)
 	const maxLimit = planLimits.max.maxSavedPackages

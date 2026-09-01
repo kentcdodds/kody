@@ -95,7 +95,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 	capabilityDomainNames.admin,
 	{
 		...adminMutationCapabilityAccess,
-		name: 'admin_platform_oauth_app_save',
+		name: 'adminPlatformOauthAppSave',
 		description:
 			'Create or update a platform (built-in) OAuth app that every user can connect through /connect/oauth without registering their own provider app. The client secret is encrypted at rest outside the user secret store and is never returned. Admin-only.',
 		keywords: [
@@ -113,7 +113,7 @@ export const adminPlatformOauthAppSaveCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
 				ctx,
-				'admin_platform_oauth_app_save',
+				'adminPlatformOauthAppSave',
 				async () => {
 					// A changed slug renames in place first (carrying the
 					// write-only secret, logo, and user connections), then the

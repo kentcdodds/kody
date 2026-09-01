@@ -60,7 +60,7 @@ const inputSchema = z.object({
 	verified_by_agent: z
 		.boolean()
 		.describe(
-			'Must be true when writing memory. Agents must run meta_memory_verify first and then decide whether to upsert.',
+			'Must be true when writing memory. Agents must run metaMemoryVerify first and then decide whether to upsert.',
 		),
 	verification_reference: z
 		.string()
@@ -80,9 +80,9 @@ const outputSchema = z.object({
 export const metaMemoryUpsertCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
-		name: 'meta_memory_upsert',
+		name: 'metaMemoryUpsert',
 		description:
-			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `meta_memory_verify` first and decide the next action themselves. Do not blindly write durable memory without verification.',
+			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification.',
 		keywords: [
 			'memory',
 			'upsert',
@@ -100,7 +100,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			if (!args.verified_by_agent) {
 				throw new Error(
-					'Agents must run meta_memory_verify before calling meta_memory_upsert. Set verified_by_agent=true only after review.',
+					'Agents must run metaMemoryVerify before calling metaMemoryUpsert. Set verified_by_agent=true only after review.',
 				)
 			}
 			const result = await upsertMemory({

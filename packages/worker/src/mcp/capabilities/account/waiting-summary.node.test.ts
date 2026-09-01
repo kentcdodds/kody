@@ -55,7 +55,7 @@ function createWaitingTestDb(input: {
 	}
 }
 
-test('waiting_summary requires auth and stays self-scoped', async () => {
+test('waitingSummary requires auth and stays self-scoped', async () => {
 	const email = 'waiting-summary@example.com'
 	const { stableUserId, db } = createWaitingTestDb({
 		email,
