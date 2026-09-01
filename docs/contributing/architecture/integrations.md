@@ -199,8 +199,8 @@ stored or built-in alias (`google-youtube-brand` → `youtube`, `nodejs` →
 `nodedotjs`), then the longest family key (`github-kent` → `github`,
 `x-kodykoala` → `x`), then an authorize-host token. The slug itself is a host
 label (`api.github.com` matches `github`) unless the token is shorter than three
-characters or a generic TLD (`com`, `app`). Host fallback prefers the longest
-matching slug so `calendar.google.com` uses `google-calendar` rather than
+characters or a generic TLD (`com`, `app`). Host fallback prefers an exact or
+suffix alias over a slug label so `mail.google.com` uses `gmail` rather than
 `google`. Built-in keys and hosts live in `default-provider-mark-aliases.ts` so
 a catalog row that omitted `github.com` still resolves. Saves strip those
 built-ins from stored aliases; the admin editor lists them as read-only. Assets
