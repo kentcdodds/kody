@@ -552,23 +552,13 @@
 				// as https://kody.run/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kody.run",
-				// Dual-served package-app apex (`kodyapps.dev`) alongside
-				// PACKAGE_APP_BASE_URL. Generated runtime zone routes replace
-				// the whole set, so omitting this host would detach
-				// `*.kodyapps.dev` and delete its DNS.
-				"PACKAGE_APP_LEGACY_HOSTS": "kodyapps.dev",
 				// Email domains are committed (not just GitHub Actions vars) so
 				// they can never silently rederive from APP_BASE_URL. Canonical
-				// email lives on kody.codes; the LEGACY_* lists also accept
-				// inbound mail for heykody.app / heykody.dev addresses on the
-				// same inboxes. Empty those lists when retiring the old
-				// domains' email DNS. Outbound always sends from the canonical
-				// domains, which requires Email Routing + Email Sending
-				// verification on the kody.codes zone.
+				// email lives on kody.codes. Outbound always sends from the
+				// canonical domains, which requires Email Routing + Email
+				// Sending verification on the kody.codes zone.
 				"USER_EMAIL_DOMAIN": "inbox.kody.codes",
 				"SYSTEM_EMAIL_DOMAIN": "kody.codes",
-				"LEGACY_USER_EMAIL_DOMAINS": "inbox.heykody.app,inbox.heykody.dev",
-				"LEGACY_SYSTEM_EMAIL_DOMAINS": "heykody.app,heykody.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",

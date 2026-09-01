@@ -57,6 +57,6 @@
 		"ACCESS_ALLOWED_EMAIL": "me@kentcdodds.com",
 		// DR (KCD) account: isolated restore drills only, never production.
 		"DRILL_ACCOUNT_ID": "a41d50ecaf0ae0f86dd1824ef6729cb2",
-		"PRIMARY_WORKER_ORIGIN": "https://heykody.dev",
+		"PRIMARY_WORKER_ORIGIN": "https://kody.codes",
 	},
 }

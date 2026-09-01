@@ -1088,10 +1088,10 @@ Operational notes:
   above the inline threshold to `REPO_SESSION_BLOBS` so clone and checkout can
   honor the 10 MiB per-file policy without hitting the Durable Object SQLite 2
   MiB row limit.
-- `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
-  a first-class MCP capability for whole-file overwrites. Prefer it over
-  `repo_apply_patch` when the agent is replacing an entire file (for example, a
-  single-file job source) instead of patching a hunk with surrounding context.
+- `repo_edit_files` `write` edits use the same Durable Object `applyEdits` write
+  path for whole-file overwrites. Prefer a `write` edit over `repo_apply_patch`
+  when the agent is replacing an entire file (for example, a single-file job
+  source) instead of patching a hunk with surrounding context.
 
 ### Direct Artifacts git publishes
 

@@ -25,11 +25,11 @@ platform-assigned sender address.
 - Mail to unknown usernames is rejected, and the app's apex domain is never a
   user inbox: user mail lives exclusively on the configured platform domain (the
   `inbox.` subdomain by default), while the apex hosts only system mail — the
-  transactional sender (`kody@<apex>`, used for verification and password-reset
-  mail) and the operator-owned system inboxes (`kody`, `support`, `abuse`,
-  `postmaster`, `security`, `admin`, and `psl` at the apex route to Kody's
-  system inbox, so replies to transactional mail land there). All other apex
-  mail is rejected.
+  transactional sender (`kody@<apex>`, used for verification, password-reset,
+  billing, and platform-feedback resolve/dismiss mail) and the operator-owned
+  system inboxes (`kody`, `support`, `abuse`, `postmaster`, `security`, `admin`,
+  and `psl` at the apex route to Kody's system inbox, so replies to
+  transactional mail land there). All other apex mail is rejected.
 - Reserved local parts never route to a user inbox and can never be registered
   as usernames.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
@@ -71,9 +71,9 @@ Use the MCP `email` domain:
   at most 200 sender rules.
 - `email_delivery_event_list` lists stored delivery history, including final
   Email Sending outcomes, SMTP responses, bounces, rejections, and complaints.
-- `email_usage_get` returns the signed-in user's email usage and limits: stored
-  message count, today's send and receive counts, the applicable caps, and the
-  plan name.
+- `usage_get` (account domain) returns the signed-in user's entitlement usage
+  and limits, including stored email message count, today's send and receive
+  counts, the applicable caps, and the plan name.
 
 ## Quotas
 
@@ -103,7 +103,7 @@ Inbound storage is quota-gated per user:
   per attempt — they are already bounded by the daily receive quota and the
   detail helps debug a misbehaving sender.
 - Outbound sending stays limited by `email_sends_per_day` for plan users.
-- Check where you stand with `email_usage_get`.
+- Check where you stand with `usage_get`.
 
 ## Safety model
 

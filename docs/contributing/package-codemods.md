@@ -427,25 +427,18 @@ cross-user reads are a bug.
 **revert** for a selected codemod. Filters include `userIds`, `packageIds`, and
 `limit` so operators can canary a subset before a full fleet apply.
 
-### MCP — caller's own packages (`packages` domain)
+### User-owned packages
 
-Authenticated users can migrate **their own** saved packages:
-
-- `package_codemod_list`
-- `package_codemod_scan`
-- `package_codemod_dry_run`
-- `package_codemod_apply`
-- `package_codemod_revert`
-
-These capabilities scope to the calling user's `userId` and saved package rows.
-`package_codemod_revert` accepts a prior **apply** run id and reverts that
-user's applied items — including items from a **fleet** apply run, as long as
-the run is not scoped to another user (`scope_user_id` is `NULL` or matches the
-caller).
+Users transforming **their own** packages use the
+[`@kentcdodds/codemod-runner`](https://kody.codes/community/b06c0f98-865a-4379-adb0-d0fb2cdda14f)
+public package (same `detect`/`transform` contract, dry-run-before-apply, and
+revert snapshots). The built-in engine stays reserved for platform-authored
+fleet transforms; see
+[What codemods are and are not](#what-codemods-are-and-are-not).
 
 ### MCP — fleet (`admin` domain)
 
-Admin-gated equivalents for operator fleet runs:
+Admin-gated operator fleet runs:
 
 - `admin_package_codemod_scan`
 - `admin_package_codemod_dry_run`

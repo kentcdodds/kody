@@ -134,11 +134,8 @@ This project uses the following resources:
     Per-user package apps are served from
     `https://{username}.kody.run/packages/{kodyId}/...`; the apex serves
     redirects (`/@user/packages/...` → per-user subdomain, `/` to the app
-    origin). `kodyapps.dev` is dual-served as a package-app zone
-    (`PACKAGE_APP_LEGACY_HOSTS`) for bookmarks, iframe embeds, and published
-    package URLs on that host. `__Host-kody_pkg_session` is host-only, so each
-    zone has its own sessions. With `PACKAGE_APP_LEGACY_REDIRECT=true`, browser
-    GET/HEAD on `{username}.kodyapps.dev` 308 to `{username}.kody.run`.
+    origin). `__Host-kody_pkg_session` is host-only, so each package-app zone
+    has its own sessions.
   - **No custom domain in this zone.** The deploy publishes this zone's Worker
     route table, and replacing a zone's routes detaches any Workers custom
     domain in that zone and deletes its DNS record. Package-app hosts therefore
@@ -148,17 +145,16 @@ This project uses the following resources:
   - **DNS records (idempotent, per deploy).** Zone routes do not create DNS
     records. Production CI (`tools/ci/production-resources.ts ensure`)
     idempotently ensures proxied records for both names in every package-app
-    zone (canonical plus `PACKAGE_APP_LEGACY_HOSTS`): `kody.run`, `*.kody.run`,
-    `kodyapps.dev`, and `*.kodyapps.dev` → AAAA `100::` (orange-cloud proxied).
-    The deploy token needs **DNS:Edit** on those zones (in addition to Workers
-    deploy permissions). Forks must create the zone and either run `ensure` or
-    add the records manually before the first per-user-subdomain deploy.
+    zone (canonical plus any `PACKAGE_APP_LEGACY_HOSTS`): `kody.run` and
+    `*.kody.run` → AAAA `100::` (orange-cloud proxied). The deploy token needs
+    **DNS:Edit** on those zones (in addition to Workers deploy permissions).
+    Forks must create the zone and either run `ensure` or add the records
+    manually before the first per-user-subdomain deploy.
   - **Zone routes.** `tools/ci/runtime-worker-config.ts` publishes
-    `{ pattern: "kody.run/*", zone_name: "kody.run" }`,
-    `{ pattern: "*.kody.run/*", zone_name: "kody.run" }`, and the matching
-    `kodyapps.dev` pair on the runtime Worker. Cloudflare Universal SSL covers
-    one wildcard label (`*.kody.run`), which is enough for
-    `{username}.kody.run`. Do **not** attach `*kody.run/*` to
+    `{ pattern: "kody.run/*", zone_name: "kody.run" }` and
+    `{ pattern: "*.kody.run/*", zone_name: "kody.run" }` on the runtime Worker.
+    Cloudflare Universal SSL covers one wildcard label (`*.kody.run`), which is
+    enough for `{username}.kody.run`. Do **not** attach `*kody.run/*` to
     `kody-domain-redirect`: that wildcard would shadow the runtime Worker.
     `www.kody.run/*` is the only redirect route on this zone (301 to the app
     origin), matching `www.kody.codes`.
@@ -177,11 +173,10 @@ This project uses the following resources:
     a partial set. Any domain attached out-of-band must be added here before the
     next deploy, or that deploy will remove it. List every dual-served legacy
     app host in the `APP_LEGACY_HOSTS` repository variable (comma-separated bare
-    hostnames, e.g. `heykody.dev`) so generated routes keep those origins
-    attached. List every dual-served package-app host in committed
-    `PACKAGE_APP_LEGACY_HOSTS` (e.g. `kodyapps.dev`) so the runtime Worker
-    publishes matching `*.kodyapps.dev` zone routes alongside
-    `PACKAGE_APP_BASE_URL`.
+    hostnames) so generated routes keep those origins attached. List every
+    dual-served package-app host in `PACKAGE_APP_LEGACY_HOSTS` so the runtime
+    Worker publishes matching apex and wildcard zone routes alongside
+    `PACKAGE_APP_BASE_URL`. Production leaves both lists unset.
   - Publishing routes also flips `workers_dev` to `false`, which silently drops
     the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
     hostname with error 1042). The generator sets `workers_dev: true` alongside
@@ -325,11 +320,7 @@ jobs worker over a service binding — never through the origin app and never vi
 a public jobs hostname. It does not probe `kody-platform` HTTP (`kody-platform`
 is health-only and not a public product surface). It never touches `APP_DB` (see
 decision record [0004](./decisions/0004-status-page-separate-worker.md)).
-`status.heykody.dev` is also attached as a custom domain: GET/HEAD other than
-`/health` 308 to `status.kody.codes`. `/health` is sticky on
-`status.heykody.dev` so deploy healthchecks can probe that host when the
-canonical hostname returns Cloudflare 1016. Component probes do not use the
-status hostname.
+Component probes do not use the status hostname.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
@@ -389,23 +380,24 @@ automatically:
   for confirmed local/preview/test runtimes; origin for hosted package apps.
   Production sets `https://kody.run` in `packages/worker/wrangler.jsonc`, and
   the deploy publishes apex and wildcard zone routes (`kody.run/*`,
-  `*.kody.run/*`, plus the dual-served `kodyapps.dev` pair) on the runtime
-  Worker (see the Cloudflare resources list above — never a custom domain in
-  this zone). Per-user apps use `{username}.kody.run` subdomains; production CI
-  ensures the proxied apex and wildcard DNS records. Must be a **separate
-  registrable domain** from `APP_BASE_URL` — see
+  `*.kody.run/*`) on the runtime Worker (see the Cloudflare resources list above
+  — never a custom domain in this zone). Per-user apps use `{username}.kody.run`
+  subdomains; production CI ensures the proxied apex and wildcard DNS records.
+  Must be a **separate registrable domain** from `APP_BASE_URL` — see
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
   Local dev ignores any value it cannot serve itself, and preview/test leave it
   unset, so those keep serving package apps inline on the app origin. Point it
   at `http://packages.localhost:<port>` in `packages/worker/.env` to exercise
   the two-origin flow locally.)
-- `PACKAGE_APP_LEGACY_HOSTS` (Wrangler `var`; production commits `kodyapps.dev`
-  so that package-app zone stays dual-served alongside `PACKAGE_APP_BASE_URL`.
-  Generated runtime zone routes replace the whole set, so omitting a listed host
-  detaches it and deletes its DNS.)
+- `PACKAGE_APP_LEGACY_HOSTS` (optional Wrangler `var` or GitHub Actions
+  variable; additional package-app apex hostnames dual-served alongside
+  `PACKAGE_APP_BASE_URL`. Generated runtime zone routes replace the whole set,
+  so omitting a listed host detaches it and deletes its DNS. Production leaves
+  this unset.)
 - `PACKAGE_APP_LEGACY_REDIRECT` (optional GitHub Actions variable; exact string
-  `true` enables GET/HEAD 308s from `{username}.kodyapps.dev` to
-  `{username}.kody.run`. Leave unset to dual-serve.)
+  `true` enables GET/HEAD 308s from `{username}.<legacy-apex>` to
+  `{username}.kody.run`. Leave unset to dual-serve. Production leaves this
+  unset.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
 - `APP_DEPLOY_INFO` (optional; set automatically by deploy workflows as
@@ -635,26 +627,23 @@ How to get/set each value:
   - Production also commits `USER_EMAIL_DOMAIN=inbox.kody.codes` (and
     `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so the
     email domains can never silently rederive from `APP_BASE_URL`; the deploy
-    tooling reads the same committed pin. The committed
-    `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.app,inbox.heykody.dev` and
-    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` accept inbound mail to
-    those addresses on the same inboxes; empty the lists when retiring the old
-    domains' email DNS.
+    tooling reads the same committed pin. Optional `LEGACY_USER_EMAIL_DOMAINS` /
+    `LEGACY_SYSTEM_EMAIL_DOMAINS` accept inbound mail to additional addresses on
+    the same inboxes; production leaves those lists unset.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
   **variables** for dual-served app hosts; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).
-  - `APP_LEGACY_HOSTS` lists additional app hostnames (comma-separated, e.g.
-    `heykody.dev`) that stay attached to the Worker as custom domains and are
-    dual-served.
+  - `APP_LEGACY_HOSTS` lists additional app hostnames (comma-separated) that
+    stay attached to the Worker as custom domains and are dual-served.
+    Production leaves this unset.
   - `APP_LEGACY_REDIRECT=true` enables 308 redirects for browser GET/HEAD
     navigation from those hosts to the canonical origin; protocol surfaces
     (`/mcp`, OAuth, well-known, auth callbacks, webhooks, health) always keep
     serving directly.
 - `PACKAGE_APP_LEGACY_HOSTS` / `PACKAGE_APP_LEGACY_REDIRECT` — package-app
   dual-serve; see
-  [environment-variables.md](./environment-variables.md#hosted-package-app-origin)
-  (production commits `PACKAGE_APP_LEGACY_HOSTS=kodyapps.dev`; leave redirect
-  unset to dual-serve host-only sessions and published URLs on that zone).
+  [environment-variables.md](./environment-variables.md#hosted-package-app-origin).
+  Production leaves both unset.
 - `AI_GATEWAY_ID`
   - Create a Cloudflare AI Gateway in the dashboard and copy its production
     gateway ID. The Worker uses this for Workers AI embedding calls when set;

@@ -562,9 +562,10 @@ Package source is edited and published through repo-backed flows.
   status, diff, log, commit, restore), not arbitrary shell or git-command
   strings; keep agent-facing guidance aligned with the deployed capability
   schema
-- prefer `repo_write_file` for whole-file replacements (single-file job sources,
-  freshly generated package modules, one-line config edits) — it avoids the
-  unified-diff context drift that makes `git apply` heredocs brittle
+- prefer a `repo_edit_files` `write` edit for whole-file replacements
+  (single-file job sources, freshly generated package modules, one-line config
+  edits) — it avoids the unified-diff context drift that makes `git apply`
+  heredocs brittle
 - use `package_get_git_remote` and `package_publish_external_push` when a human
   or autonomous agent should drive a normal git client directly against the
   package's Cloudflare Artifacts repo
