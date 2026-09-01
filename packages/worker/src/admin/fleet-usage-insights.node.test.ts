@@ -43,6 +43,12 @@ function createFleetDb(input: {
 	}>
 	runtimeByUser?: Record<string, number>
 	adminUserIds?: Array<string>
+	dynamicWorkerLeaders?: Array<{
+		stable_user_id: string
+		username: string
+		event_count: number
+	}>
+	dynamicWorkerDays?: number
 	onDurationQueryBind?: (params: Array<unknown>) => void
 }) {
 	return {
@@ -57,6 +63,17 @@ function createFleetDb(input: {
 						input.onDurationQueryBind?.(params)
 					}
 					return this
+				},
+				async first<T>() {
+					if (
+						normalized.includes("metric = 'dynamic_worker_day'") &&
+						normalized.includes('sum(event_count)')
+					) {
+						return {
+							unique_worker_days: input.dynamicWorkerDays ?? 0,
+						} as T
+					}
+					return null
 				},
 				async all<T>() {
 					if (
@@ -94,6 +111,14 @@ function createFleetDb(input: {
 					) {
 						return {
 							results: (input.eventLeaders ?? []) as Array<T>,
+						}
+					}
+					if (
+						normalized.includes("metric = 'dynamic_worker_day'") &&
+						normalized.includes('ranked.event_count')
+					) {
+						return {
+							results: (input.dynamicWorkerLeaders ?? []) as Array<T>,
 						}
 					}
 					if (normalized.includes('row_number() over')) {
@@ -163,6 +188,14 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 				event_count: 50,
 			},
 		],
+		dynamicWorkerDays: 150,
+		dynamicWorkerLeaders: [
+			{
+				stable_user_id: 'user-c',
+				username: 'cara',
+				event_count: 90,
+			},
+		],
 	})
 	const data = await loadFleetUsageInsights({
 		db,
@@ -207,6 +240,20 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 			],
 		},
 	])
+	expect(data.dynamicWorkerCost).toEqual({
+		uniqueWorkerDays: 150,
+		estimatedGrossUsd: 0.3,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 1000,
+		topConsumers: [
+			{
+				stableUserId: 'user-c',
+				username: 'cara',
+				uniqueWorkerDays: 90,
+				estimatedGrossUsd: 0.18,
+			},
+		],
+	})
 })
 
 test('detectFleetUsagePressure flags entitlement and runtime duration thresholds', async () => {

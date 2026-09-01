@@ -287,6 +287,7 @@ async function queryAdminInsights(
 		topEventCountConsumers: fleetUsage.topEventCountConsumers,
 		topDurationConsumersByMetric: fleetUsage.topDurationConsumersByMetric,
 		entitlementPressure: fleetUsage.entitlementPressure,
+		dynamicWorkerCost: fleetUsage.dynamicWorkerCost,
 		packageErrorRate: toInsightsPackageErrorRate(packageErrorRateSnapshot),
 	}
 }

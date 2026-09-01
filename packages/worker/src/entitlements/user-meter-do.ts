@@ -32,7 +32,7 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 10
+const userMeterSchemaVersion = 11
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
@@ -40,6 +40,7 @@ const deletionStateRowId = 1
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
+const maxDynamicWorkerIdLength = 128
 const maxWriteLeaseTokenLength = 64
 const maxWriteLeaseHolderLength = 256
 const maxWriteLeaseRepairIdLength = 64
@@ -284,6 +285,19 @@ function assertInboundDeliveryId(deliveryId: string): string {
 		)
 	}
 	return deliveryId
+}
+
+function assertDynamicWorkerId(workerId: string): string {
+	if (
+		typeof workerId !== 'string' ||
+		workerId.length === 0 ||
+		workerId.length > maxDynamicWorkerIdLength
+	) {
+		throw new Error(
+			`UserMeter dynamic worker id must be a non-empty string up to ${maxDynamicWorkerIdLength} characters.`,
+		)
+	}
+	return workerId
 }
 
 function assertDeletionTimestamp(label: string, value: string): string {
@@ -557,6 +571,18 @@ class UserMeterBase extends DurableObject<Env> {
 			`CREATE INDEX IF NOT EXISTS idx_account_write_leases_acquired_token
 			ON account_write_leases (acquired_at, token)`,
 		)
+		// Unique Dynamic Worker ids per UTC day (schema v11). Used to emit
+		// one `dynamic_worker_day` usage event per (user, worker, day) so
+		// Cloudflare unique-worker billing can be attributed without
+		// exporting the hashed worker ids.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS dynamic_worker_days (
+				worker_id TEXT NOT NULL,
+				day TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY (day, worker_id)
+			)
+		`)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -608,6 +634,10 @@ class UserMeterBase extends DurableObject<Env> {
 		)
 		this.ctx.storage.sql.exec(
 			`DELETE FROM inbound_delivery_claims WHERE day < ?`,
+			cutoffDay,
+		)
+		this.ctx.storage.sql.exec(
+			`DELETE FROM dynamic_worker_days WHERE day < ?`,
 			cutoffDay,
 		)
 	}
@@ -852,6 +882,31 @@ class UserMeterBase extends DurableObject<Env> {
 			day,
 			resource,
 		}
+	}
+
+	/**
+	 * Claim one unique Dynamic Worker id for a UTC day. First insert wins;
+	 * later claims for the same `(day, worker_id)` return `created: false`.
+	 * Used only for cost attribution — not an entitlement cap.
+	 */
+	async claimDynamicWorkerDay(input: {
+		workerId: string
+		day: string
+		createdAt: string
+	}): Promise<{ created: boolean }> {
+		const workerId = assertDynamicWorkerId(input.workerId)
+		const day = assertUtcDayKey(input.day)
+		const now = new Date(input.createdAt)
+		this.deleteStaleCounters(Number.isNaN(now.valueOf()) ? new Date() : now)
+		const cursor = this.ctx.storage.sql.exec(
+			`INSERT INTO dynamic_worker_days (worker_id, day, created_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(day, worker_id) DO NOTHING`,
+			workerId,
+			day,
+			input.createdAt,
+		)
+		return { created: cursor.rowsWritten > 0 }
 	}
 
 	/** Decrement one unit (floors at zero); missing keys stay uninitialized. */
@@ -1574,6 +1629,12 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		day: string
 		updatedAt: string
 	}) => Promise<UserMeterRefundResult>
+	/** First-seen unique Dynamic Worker id for a UTC day. */
+	claimDynamicWorkerDay: (input: {
+		workerId: string
+		day: string
+		createdAt: string
+	}) => Promise<{ created: boolean }>
 	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	initializeStorageBytes: (input: {
 		bytes: number

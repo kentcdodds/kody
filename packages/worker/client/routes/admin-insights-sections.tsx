@@ -6,11 +6,13 @@ import {
 	formatIntegerNumber,
 	formatPercentShare,
 } from '#client/charts/chart-theme.ts'
+import { formatDynamicWorkerUsd } from '#universal/dynamic-worker-cost.ts'
 import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
 	type AdminInsightsDurationConsumer,
 	type AdminInsightsEntitlementPressureUser,
+	type AdminInsightsDynamicWorkerCost,
 	type AdminInsightsEventCountConsumer,
 	type AdminInsightsMetricDurationConsumers,
 	type AdminInsightsPackageErrorRate,
@@ -119,6 +121,45 @@ export function renderDurationConsumers(
 			value: formatDurationHours(consumer.totalDurationMs),
 		})),
 	})
+}
+
+export function renderDynamicWorkerCost(cost: AdminInsightsDynamicWorkerCost) {
+	return (
+		<div mix={css({ display: 'grid', gap: spacing.md })}>
+			<div
+				mix={css({
+					display: 'flex',
+					justifyContent: 'space-between',
+					gap: spacing.sm,
+					flexWrap: 'wrap',
+				})}
+			>
+				<strong mix={css({ fontSize: typography.fontSize.sm })}>
+					{formatDynamicWorkerUsd(cost.estimatedGrossUsd)} gross
+				</strong>
+				<span
+					mix={css({
+						color: colors.textMuted,
+						fontSize: typography.fontSize.sm,
+						fontVariantNumeric: 'tabular-nums',
+					})}
+				>
+					{formatIntegerNumber(cost.uniqueWorkerDays)} unique worker-days
+				</span>
+			</div>
+			{renderConsumerTable({
+				ariaLabel: 'Top Dynamic Worker cost consumers this month',
+				emptyText: 'No unique Dynamic Worker days recorded this month yet.',
+				valueHeader: 'Gross cost',
+				rows: cost.topConsumers.map((consumer) => ({
+					key: consumer.stableUserId,
+					username: consumer.username,
+					stableUserId: consumer.stableUserId,
+					value: `${formatDynamicWorkerUsd(consumer.estimatedGrossUsd)} (${formatIntegerNumber(consumer.uniqueWorkerDays)})`,
+				})),
+			})}
+		</div>
+	)
 }
 
 export function renderEventCountConsumers(

@@ -67,6 +67,7 @@ events for the admin on/off cohort readout.
 | `outbound_fetch`      | one outbound fetch through the gateway                                            | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                       | request host                   |
 | `email_send`          | one outbound email send attempt                                                   | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                               | email message id               |
 | `email_received`      | one inbound receive attempt for a routed inbox                                    | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                       | email message id (when stored) |
+| `dynamic_worker_day`  | first use of one Dynamic Worker id on a UTC day                                   | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId`, every surface; uniqueness via `UserMeter.claimDynamicWorkerDay`                                  | worker id                      |
 
 `email_received` covers receive attempts once an inbound message is routed to a
 known, enabled inbox: stored messages record `success`; unverified-account
@@ -145,9 +146,18 @@ execute-tool run that calls statically imported package exports still produces
 one `package_static_call` per call **inside** that run's `execute` span. Each
 metric answers its own question (`execute` is ad-hoc execute-tool volume;
 `job_run` is job activity; `package_export` is saved-package entrypoints;
-`package_static_call` is per-callee reuse). Never add durations across different
+`package_static_call` is per-callee reuse). `dynamic_worker_day` is the
+Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
+every sandbox surface that creates a worker. It is not an entitlement and does
+not replace `execute` / `job_run`. Never add durations across different
 `eventType` values — that double counts nested layers. Within one `eventType`,
 each chokepoint records exactly one event per metered unit, so sums are safe.
+
+Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
+Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique
+worker-days per month are account-wide, so per-user dollars are not a net bill
+share. Worker ids stay inside UserMeter and Analytics Engine `entityId`; account
+export does not list them.
 
 ## Sinks
 

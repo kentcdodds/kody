@@ -4,6 +4,7 @@ import { parseStoredPlanName, resolveEffectivePlan } from '#universal/plans.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
+import { toAdminDynamicWorkerCost } from '#universal/dynamic-worker-cost.ts'
 import {
 	type AdminUsageMetric,
 	type AdminUsageMonthRollup,
@@ -20,6 +21,7 @@ export const adminUsageMetrics = [
 	'outbound_fetch',
 	'email_send',
 	'email_received',
+	'dynamic_worker_day',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 /**
@@ -99,6 +101,9 @@ export async function loadAdminUserUsageData(
 	const currentMonthUsage =
 		monthUsage.find((entry) => entry.month === currentMonth)?.usage ??
 		toCompleteUsage([])
+	const uniqueWorkerDays =
+		currentMonthUsage.find((row) => row.metric === 'dynamic_worker_day')
+			?.eventCount ?? 0
 
 	return {
 		ok: true,
@@ -111,6 +116,7 @@ export async function loadAdminUserUsageData(
 		monthUsage,
 		entitlementConsumption,
 		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
+		dynamicWorkerCost: toAdminDynamicWorkerCost(uniqueWorkerDays),
 	}
 }
 

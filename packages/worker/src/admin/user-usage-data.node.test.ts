@@ -261,6 +261,51 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		},
 	])
 	expect(data?.warnings).toEqual([])
+	expect(data?.dynamicWorkerCost).toEqual({
+		uniqueWorkerDays: 0,
+		estimatedGrossUsd: 0,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 1000,
+	})
+})
+
+test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-days', async () => {
+	const email = 'dw-cost@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUserUsageTestDb({
+		users: [
+			{
+				id: 3,
+				username: 'dwcost',
+				email,
+				plan: 'pro',
+				stable_user_id: usageUserId,
+			},
+		],
+		usageRollups: [
+			usageRow({
+				user_id: usageUserId,
+				metric: 'dynamic_worker_day',
+				month: '2026-07',
+				event_count: 150,
+			}),
+		],
+		resourceCounts: { [usageUserId]: {} },
+	})
+
+	const data = await loadAdminUserUsageData(
+		withUserMeter({ APP_DB: db }) as Env,
+		usageUserId,
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+
+	expect(getEventCount(data?.currentMonthUsage, 'dynamic_worker_day')).toBe(150)
+	expect(data?.dynamicWorkerCost).toEqual({
+		uniqueWorkerDays: 150,
+		estimatedGrossUsd: 0.3,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 1000,
+	})
 })
 
 test('loadAdminUserUsageData warns above eighty percent of plan limits', async () => {
@@ -314,6 +359,7 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 
 	expect(data?.stableUserId).toBe(usageUserId)
 	expect(getEventCount(data?.currentMonthUsage, 'job_run')).toBe(4)
+	expect(data?.dynamicWorkerCost.uniqueWorkerDays).toBe(0)
 	expect(data?.monthUsage.map((month) => month.month)).toEqual([
 		'2026-07',
 		'2026-06',

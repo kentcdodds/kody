@@ -138,7 +138,10 @@ Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
 **authoritative in the per-user `UserMeter` Durable Object** (`USER_METER`
 binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
 `user-meter-client.ts`; storage layout and naming are documented in
-[Data storage](./data-storage.md).
+[Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
+Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
+double-counting; that table is cost attribution, not a plan cap. See
+[Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO

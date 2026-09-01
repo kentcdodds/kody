@@ -1,5 +1,9 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
+	estimateDynamicWorkerUsd,
+	toAdminDynamicWorkerCost,
+} from '#universal/dynamic-worker-cost.ts'
+import {
 	parseStoredPlanName,
 	resolveEffectivePlan,
 	type PlanName,
@@ -8,6 +12,7 @@ import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
 	type AdminInsightsDurationConsumer,
+	type AdminInsightsDynamicWorkerCost,
 	type AdminInsightsEntitlementPressureUser,
 	type AdminInsightsEventCountConsumer,
 	type AdminInsightsMetricDurationConsumers,
@@ -105,6 +110,7 @@ export async function loadFleetUsageInsights(input: {
 	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
 	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
 	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
+	dynamicWorkerCost: AdminInsightsDynamicWorkerCost
 }> {
 	const currentMonth = utcMonthKey(input.now)
 	const [
@@ -112,17 +118,20 @@ export async function loadFleetUsageInsights(input: {
 		topEventCountConsumers,
 		topDurationConsumersByMetric,
 		entitlementPressure,
+		dynamicWorkerCost,
 	] = await Promise.all([
 		queryTopRuntimeDurationConsumers(input.db, currentMonth),
 		queryTopEventCountConsumers(input.db, currentMonth),
 		queryTopDurationConsumersByMetric(input.db, currentMonth),
 		buildEntitlementPressurePanel(input),
+		queryDynamicWorkerCost(input.db, currentMonth),
 	])
 	return {
 		topRuntimeDurationConsumers,
 		topEventCountConsumers,
 		topDurationConsumersByMetric,
 		entitlementPressure,
+		dynamicWorkerCost,
 	}
 }
 
@@ -288,6 +297,57 @@ async function queryTopEventCountConsumers(
 		username: row.username,
 		eventCount: Number(row.event_count),
 	}))
+}
+
+async function queryDynamicWorkerCost(
+	db: D1Database,
+	currentMonth: string,
+): Promise<AdminInsightsDynamicWorkerCost> {
+	const [totalRow, consumerRows] = await Promise.all([
+		db
+			.prepare(
+				`SELECT COALESCE(SUM(event_count), 0) AS unique_worker_days
+				 FROM usage_rollups
+				 WHERE month = ?
+					AND metric = 'dynamic_worker_day'`,
+			)
+			.bind(currentMonth)
+			.first<{ unique_worker_days: number }>(),
+		db
+			.prepare(
+				`SELECT u.stable_user_id, u.username, ranked.event_count
+				 FROM (
+					SELECT user_id, event_count
+					FROM usage_rollups
+					WHERE month = ?
+						AND metric = 'dynamic_worker_day'
+					ORDER BY event_count DESC
+					LIMIT ?
+				 ) AS ranked
+				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 WHERE u.deleting_at IS NULL
+				 ORDER BY ranked.event_count DESC`,
+			)
+			.bind(currentMonth, adminFleetTopConsumersLimit)
+			.all<{
+				stable_user_id: string
+				username: string
+				event_count: number
+			}>(),
+	])
+	const uniqueWorkerDays = Number(totalRow?.unique_worker_days ?? 0)
+	return {
+		...toAdminDynamicWorkerCost(uniqueWorkerDays),
+		topConsumers: (consumerRows.results ?? []).map((row) => {
+			const days = Number(row.event_count)
+			return {
+				stableUserId: row.stable_user_id,
+				username: row.username,
+				uniqueWorkerDays: days,
+				estimatedGrossUsd: estimateDynamicWorkerUsd(days),
+			}
+		}),
+	}
 }
 
 async function queryTopDurationConsumersByMetric(

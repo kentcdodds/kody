@@ -56,8 +56,8 @@ function accountWriteLeaseColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh UserMeter schema v10 creates the final write-lease shape', async () => {
-	const user = await seedFreeUser('meter-schema-v10-fresh')
+test('fresh UserMeter schema v11 creates write-lease and unique worker-day tables', async () => {
+	const user = await seedFreeUser('meter-schema-v11-fresh')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
 	)
@@ -69,17 +69,25 @@ test('fresh UserMeter schema v10 creates the final write-lease shape', async () 
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
 			'acquired_at',
 			'pending_repair_id',
 		])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table' AND name = 'dynamic_worker_days'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'dynamic_worker_days' }])
 	})
 }, 30_000)
 
-test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () => {
+test('warm UserMeter schema v7 upgrades to v11 and preserves leases', async () => {
 	const user = await seedFreeUser('meter-schema-v7-upgrade')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
@@ -130,7 +138,7 @@ test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () =
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -175,6 +183,71 @@ test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () =
 			)
 			.toArray()
 		expect(packageServiceTables).toEqual([])
+		expect(
+			state.storage.sql
+				.exec<{ name: string }>(
+					`SELECT name FROM sqlite_master
+					WHERE type = 'table' AND name = 'dynamic_worker_days'`,
+				)
+				.toArray(),
+		).toEqual([{ name: 'dynamic_worker_days' }])
+	})
+}, 30_000)
+
+test('UserMeter claimDynamicWorkerDay is first-seen per worker and day', async () => {
+	const user = await seedFreeUser('meter-dw-day-claim')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	const day = utcDayKey(new Date())
+	const createdAt = new Date().toISOString()
+
+	expect(
+		await meter.claimDynamicWorkerDay({
+			workerId: 'kody-worker-a',
+			day,
+			createdAt,
+		}),
+	).toEqual({ created: true })
+	expect(
+		await meter.claimDynamicWorkerDay({
+			workerId: 'kody-worker-a',
+			day,
+			createdAt,
+		}),
+	).toEqual({ created: false })
+	expect(
+		await meter.claimDynamicWorkerDay({
+			workerId: 'kody-worker-b',
+			day,
+			createdAt,
+		}),
+	).toEqual({ created: true })
+}, 30_000)
+
+test('UserMeter prunes stale unique worker-day claims with daily counters', async () => {
+	const user = await seedFreeUser('meter-dw-day-prune')
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	const staleDay = '2020-01-01'
+	const today = utcDayKey(new Date())
+	await stub.claimDynamicWorkerDay({
+		workerId: 'kody-stale',
+		day: staleDay,
+		createdAt: `${staleDay}T00:00:00.000Z`,
+	})
+	await stub.claimDynamicWorkerDay({
+		workerId: 'kody-fresh',
+		day: today,
+		createdAt: new Date().toISOString(),
+	})
+
+	await runInDurableObject(stub, async (_instance: UserMeter, state) => {
+		const rows = state.storage.sql
+			.exec<{ worker_id: string; day: string }>(
+				`SELECT worker_id, day FROM dynamic_worker_days ORDER BY worker_id`,
+			)
+			.toArray()
+		expect(rows).toEqual([{ worker_id: 'kody-fresh', day: today }])
 	})
 }, 30_000)
 

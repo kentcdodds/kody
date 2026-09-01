@@ -33,6 +33,11 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 		label: 'Email receives',
 		color: chartColor.fuchsia,
 	},
+	{
+		metric: 'dynamic_worker_day',
+		label: 'Unique worker-days',
+		color: chartColor.rose,
+	},
 ]
 
 export const monthShortNames = [

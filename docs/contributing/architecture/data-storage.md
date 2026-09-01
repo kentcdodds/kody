@@ -628,7 +628,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**10**):
+**11**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -657,13 +657,17 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   user row. After that row is deleted, origin clears the tombstone so the
   email-derived `stable_user_id` can be reused by a later signup. Account export
   emits a sanitized `deletionState` without raw token/holder.
+- `dynamic_worker_days` — first-seen Dynamic Worker ids per UTC day
+  (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used only to emit
+  one `dynamic_worker_day` usage event per unique Cloudflare bill unit. Not an
+  entitlement counter and not included in `exportCounters`.
 
 Retention is self-enforced inside the DO: every read/write path
-opportunistically deletes counter and claim rows older than seven UTC days
-(`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
-the window covers timezone edge cases, recent account exports, and inbound
-retries. Storage-byte state is not time-pruned. Write-lease rows clear on
-release/repair/purge.
+opportunistically deletes counter, inbound-claim, and unique-worker-day rows
+older than seven UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
+only needs the current day; the window covers timezone edge cases, recent
+account exports, and inbound retries. Storage-byte state is not time-pruned.
+Write-lease rows clear on release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table

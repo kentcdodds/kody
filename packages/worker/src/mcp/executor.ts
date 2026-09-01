@@ -24,6 +24,8 @@ import {
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
@@ -147,7 +149,7 @@ type DynamicWorkerExecutorInput = {
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	appCommitSha?: string | null
-	usageEnv: UsageEnv
+	usageEnv: UsageEnv & UserMeterEnv
 	rawFetchHostSink?: RawFetchHostSink
 	/**
 	 * When false, skip the `execute` usage event. Job, package-export, and
@@ -665,6 +667,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				gatewayProps: input.gatewayProps,
 				timeoutMs: input.timeout,
 				workerOptions,
+			})
+			await recordUniqueDynamicWorkerDay({
+				env: input.usageEnv,
+				userId: input.gatewayProps.userId,
+				workerId,
 			})
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
