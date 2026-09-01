@@ -198,7 +198,13 @@ export function isVendorLikelyMcpError(error: string | null | undefined) {
 	if (!text) return false
 	if (/\b(500|502|503|504)\b/.test(text)) return true
 	if (text.includes('timeout') || text.includes('timed out')) return true
-	if (text.includes('econnrefused') || text.includes('enotfound')) return true
+	if (
+		text.includes('econnrefused') ||
+		text.includes('econnreset') ||
+		text.includes('enotfound')
+	) {
+		return true
+	}
 	if (text.includes('fetch failed')) return true
 	if (text.includes('temporarily unavailable')) return true
 	if (text.includes('service unavailable')) return true

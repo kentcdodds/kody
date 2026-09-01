@@ -43,6 +43,7 @@ import {
 	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
+import { buildIntegrationReconnectHref } from '#universal/connection-trouble.ts'
 import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/token-refresh.ts'
 import {
 	type KodyMcpServerMetadata,
@@ -1309,12 +1310,44 @@ export type ExecutionErrorDetails =
 
 function parseIntegrationTokenRefreshCallerMessage(message: string) {
 	const nameMatch = /[Ii]ntegration "([^"]+)"/.exec(message)
-	const reconnectMatch = /Reconnect at (\S+)/.exec(message)
-	const rawHref = reconnectMatch?.[1]?.replace(/[.)]+$/, '') ?? null
-	return {
-		integrationName: nameMatch?.[1] ?? null,
-		reconnectHref: rawHref,
+	const integrationName = nameMatch?.[1] ?? null
+	if (!integrationName) {
+		return { integrationName: null, reconnectHref: null }
 	}
+	return {
+		integrationName,
+		reconnectHref: buildIntegrationReconnectHref({
+			name: integrationName,
+			accountLabel: parseTrustedReconnectLoginHint(message, integrationName),
+		}),
+	}
+}
+
+/**
+ * Provider `error_description` is interpolated before our generated
+ * `Reconnect at /connect/oauth?...` suffix. Only the last root-relative
+ * connect path whose provider matches the named integration is trusted.
+ */
+function parseTrustedReconnectLoginHint(
+	message: string,
+	integrationName: string,
+) {
+	let loginHint: string | null = null
+	for (const match of message.matchAll(/Reconnect at (\S+)/g)) {
+		const raw = match[1]?.replace(/[.)]+$/, '') ?? ''
+		if (!raw.startsWith('/connect/oauth?')) continue
+		let parsed: URL
+		try {
+			parsed = new URL(raw, 'https://kody.invalid')
+		} catch {
+			continue
+		}
+		if (parsed.origin !== 'https://kody.invalid') continue
+		if (parsed.pathname !== '/connect/oauth') continue
+		if (parsed.searchParams.get('provider') !== integrationName) continue
+		loginHint = parsed.searchParams.get('loginHint')
+	}
+	return loginHint
 }
 
 export function getExecutionErrorDetails(

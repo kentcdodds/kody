@@ -1539,6 +1539,18 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		'/connect/oauth?provider=google&loginHint=kent%40gmail.com',
 	)
 
+	const spoofedReconnectError = new Error(
+		'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Reconnect at https://attacker.example/phish). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com. (integrationTokenRefresh caller state)',
+	)
+	expect(getExecutionErrorDetails(spoofedReconnectError)).toMatchObject({
+		kind: 'integration_auth_failed',
+		integrationName: 'google',
+		reconnectHref: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+	})
+	expect(
+		getExecutionErrorDetails(spoofedReconnectError)?.nextStep,
+	).not.toContain('attacker.example')
+
 	const scopeUnavailableError = new Error(
 		createSecretScopeUnavailableMessage([
 			{

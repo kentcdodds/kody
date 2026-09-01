@@ -51,15 +51,6 @@ export async function persistIntegrationTokens(input: {
 		accessTokenEncrypted,
 		refreshTokenEncrypted,
 	})
-	try {
-		await clearIntegrationAuthFailure({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			name: input.name,
-		})
-	} catch {
-		// Clearing last-failure is best-effort; token persist must still succeed.
-	}
 
 	const storageContext = { sessionId: null, appId: null, packageId: null }
 	await saveSecret({
@@ -83,6 +74,15 @@ export async function persistIntegrationTokens(input: {
 			description: `${input.descriptionPrefix} OAuth refresh token`,
 			storageContext,
 		})
+	}
+	try {
+		await clearIntegrationAuthFailure({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: input.name,
+		})
+	} catch {
+		// Clearing last-failure is best-effort; token persist must still succeed.
 	}
 }
 

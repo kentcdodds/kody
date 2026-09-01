@@ -62,6 +62,7 @@ test('connection trouble copy names the actor and keeps vendor items off the you
 
 	expect(isVendorLikelyMcpError('HTTP 503 from upstream')).toBe(true)
 	expect(isVendorLikelyMcpError('fetch failed')).toBe(true)
+	expect(isVendorLikelyMcpError('ECONNRESET')).toBe(true)
 	expect(isVendorLikelyMcpError('Token exchange failed.')).toBe(false)
 	expect(isVendorLikelyMcpError(null)).toBe(false)
 

@@ -127,7 +127,7 @@ hosts or retarget `tokenUrl` to an unapproved host; reconnect at
 operator-pinned rows, so no user-secret allowlist applies.
 
 Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing
-refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
+refresh token, provider HTTP 4xx / `invalid_grant`, user-lane missing secrets,
 host-approval gaps, invalid connection config) persist a last-failure snapshot
 on `user_integrations` (`auth_failed_*`) and best-effort dispatch
 `integration.auth.failed` to the owning user's packages that declare the topic.
