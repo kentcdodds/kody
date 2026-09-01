@@ -1,5 +1,5 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
@@ -9,7 +9,9 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	adminProviderMarksApiPath,
 	filterMarks,
+	groupMarks,
 	isAdminProviderMarksPath,
+	markGroupKey,
 	splitAliasInput,
 } from '#client/routes/admin-provider-marks-shared.ts'
 import {
@@ -18,13 +20,18 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 } from './account-management-components.tsx'
-import { RecordTableSearch, recordCellClamp } from './record-table.tsx'
+import { RecordTableSearch } from './record-table.tsx'
 import {
 	type AdminProviderMark,
 	type AdminProviderMarksLoaderData,
 	type AppLoaderData,
 } from '#universal/loader-data.ts'
-import { colors, spacing } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
 	fieldLabelCss,
@@ -32,12 +39,55 @@ import {
 	getGhostButtonCss,
 	getLogoWellCss,
 	getPillButtonCss,
+	hoverMq,
+	nativeDisclosureCss,
 } from '#universal/styles/style-primitives.ts'
 
 type PageStatus = 'loading' | 'ready' | 'error'
 type ActionState = 'idle' | 'saving' | 'deleting'
 
-const clampedCellCss = css(recordCellClamp(28))
+const markGroupCss = {
+	...nativeDisclosureCss,
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.md,
+	padding: spacing.sm,
+	'& > summary': {
+		...nativeDisclosureCss['& > summary'],
+		width: '100%',
+		display: 'flex',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		gap: spacing.sm,
+		fontVariantNumeric: 'tabular-nums',
+	},
+	'&[open] > summary': { marginBottom: spacing.sm },
+}
+
+const markGridCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fill, minmax(2.25rem, 1fr))',
+	gap: '0.25rem',
+}
+
+const markTileCss = {
+	display: 'grid',
+	placeItems: 'center',
+	aspectRatio: '1 / 1',
+	padding: '0.2rem',
+	border: `1px solid ${colors.border}`,
+	borderRadius: radius.sm,
+	background: 'transparent',
+	color: 'inherit',
+	cursor: 'pointer',
+	minWidth: 0,
+	'&[data-selected]': {
+		borderColor: colors.primary,
+		backgroundColor: colors.primarySoftest,
+	},
+	[hoverMq]: {
+		'&:not([data-selected]):hover': { backgroundColor: colors.background },
+	},
+}
 
 export function AdminProviderMarksRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
@@ -56,6 +106,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 	let logoReadRevision = 0
 	let removeLogoChecked = false
 	let formRevision = 0
+	const openGroups = new Set<string>()
 	const deleteCheck = createDoubleCheck(handle)
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
@@ -73,6 +124,14 @@ export function AdminProviderMarksRoute(handle: Handle) {
 		pendingLogoBase64 = undefined
 		removeLogoChecked = false
 		deleteCheck.reset()
+	}
+
+	function selectMark(slug: string | null) {
+		creating = false
+		selectedSlug = slug
+		if (slug) openGroups.add(markGroupKey(slug))
+		resetFormState()
+		formRevision += 1
 	}
 
 	async function loadMarks() {
@@ -215,9 +274,10 @@ export function AdminProviderMarksRoute(handle: Handle) {
 				creating = false
 				const canonicalSlug = normalizeProviderKey(slug)
 				selectedSlug =
-					marks.find((mark) => mark.slug === canonicalSlug)?.slug ??
-					marks.find((mark) => mark.slug === slug)?.slug ??
+					marks.find((item) => item.slug === canonicalSlug)?.slug ??
+					marks.find((item) => item.slug === slug)?.slug ??
 					null
+				if (selectedSlug) openGroups.add(markGroupKey(selectedSlug))
 				formRevision += 1
 				handle.update()
 			},
@@ -236,6 +296,189 @@ export function AdminProviderMarksRoute(handle: Handle) {
 			formRevision += 1
 			handle.update()
 		})
+	}
+
+	function renderMarkGlyph(
+		mark: Pick<AdminProviderMark, 'label' | 'logoPath'>,
+	) {
+		return (
+			<span mix={css(getLogoWellCss({ size: '1.75rem', radius: '0' }))}>
+				{mark.logoPath ? (
+					<img
+						src={mark.logoPath}
+						alt=""
+						width={20}
+						height={20}
+						mix={css({
+							display: 'block',
+							width: '70%',
+							height: '70%',
+							objectFit: 'contain',
+						})}
+					/>
+				) : (
+					mark.label.trim().charAt(0).toUpperCase() || '?'
+				)}
+			</span>
+		)
+	}
+
+	function renderEditor(editingMark: AdminProviderMark | null) {
+		const isMutating = actionState !== 'idle'
+		return (
+			<form
+				key={formRevision}
+				data-testid="provider-mark-editor"
+				mix={[
+					css({
+						display: 'grid',
+						gap: spacing.md,
+						borderBottom: `1px solid ${colors.border}`,
+						paddingBottom: spacing.md,
+					}),
+					on('submit', handleSaveFormSubmit),
+					ref((node) => {
+						node.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+					}),
+				]}
+			>
+				<h2 mix={css({ margin: 0, fontSize: typography.fontSize.lg })}>
+					{editingMark ? `Edit ${editingMark.slug}` : 'New provider mark'}
+				</h2>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Slug</span>
+					<input
+						data-field-ring
+						name="slug"
+						required
+						disabled={isMutating || editingMark != null}
+						defaultValue={editingMark?.slug ?? ''}
+						placeholder="google"
+						mix={css(accountInputCss)}
+					/>
+				</label>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Label</span>
+					<input
+						data-field-ring
+						name="label"
+						disabled={isMutating}
+						defaultValue={editingMark?.label ?? ''}
+						placeholder="Google"
+						mix={css(accountInputCss)}
+					/>
+				</label>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>
+						Aliases (provider keys and authorize hosts)
+					</span>
+					<input
+						data-field-ring
+						name="aliases"
+						disabled={isMutating}
+						defaultValue={editingMark?.aliases.join(', ') ?? ''}
+						placeholder="accounts.google.com, googleapis.com"
+						mix={css(accountInputCss)}
+					/>
+					<span
+						mix={css({
+							color: colors.textMuted,
+							fontSize: typography.fontSize.sm,
+						})}
+					>
+						Also matches this slug as a host label, built-in keys for known
+						providers, and family keys like {editingMark?.slug ?? 'slug'}-*.
+					</span>
+				</label>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Logo</span>
+					<input
+						data-field-ring
+						name="logo"
+						type="file"
+						accept="image/svg+xml,image/png,image/jpeg,image/webp"
+						disabled={isMutating}
+						mix={[on('change', handleLogoFileChange), css(accountInputCss)]}
+					/>
+				</label>
+				{editingMark?.logoPath ? (
+					<label
+						mix={css({
+							...fieldCss,
+							display: 'flex',
+							flexDirection: 'row',
+							alignItems: 'center',
+							gap: spacing.sm,
+						})}
+					>
+						<img src={editingMark.logoPath} alt="" width={32} height={32} />
+						<input
+							name="removeLogo"
+							type="checkbox"
+							checked={removeLogoChecked}
+							disabled={isMutating}
+							mix={on('change', (event) => {
+								const checkbox = event.currentTarget
+								if (!(checkbox instanceof HTMLInputElement)) return
+								removeLogoChecked = checkbox.checked
+								handle.update()
+							})}
+						/>
+						<span mix={css(fieldLabelCss)}>Remove logo</span>
+					</label>
+				) : null}
+				<div
+					mix={css({
+						display: 'flex',
+						gap: spacing.sm,
+						flexWrap: 'wrap',
+					})}
+				>
+					<button
+						type="submit"
+						disabled={isMutating}
+						mix={css(primaryButtonCss)}
+					>
+						{actionState === 'saving' ? 'Saving…' : 'Save mark'}
+					</button>
+					<button
+						type="button"
+						disabled={isMutating}
+						mix={[
+							css(ghostButtonCss),
+							on('click', () => {
+								creating = false
+								selectedSlug = null
+								resetFormState()
+								handle.update()
+							}),
+						]}
+					>
+						Cancel
+					</button>
+					{editingMark ? (
+						<button
+							type="button"
+							disabled={isMutating}
+							mix={[
+								css(dangerButtonCss),
+								...deleteCheck.getButtonMix({
+									on: {
+										click: () => handleDelete(editingMark),
+									},
+								}),
+							]}
+						>
+							{deleteCheck.doubleCheck
+								? 'Click again to delete'
+								: actionState === 'deleting'
+									? 'Deleting…'
+									: 'Delete'}
+						</button>
+					) : null}
+				</div>
+			</form>
+		)
 	}
 
 	return () => {
@@ -266,17 +509,18 @@ export function AdminProviderMarksRoute(handle: Handle) {
 		}
 
 		const filteredMarks = filterMarks(marks, search)
+		const groups = groupMarks(filteredMarks)
+		const searchActive = search.trim().length > 0
 		const editingMark = creating
 			? null
-			: (marks.find((mark) => mark.slug === selectedSlug) ?? null)
-		const showEditor = creating || editingMark != null
+			: (marks.find((item) => item.slug === selectedSlug) ?? null)
 		const isMutating = actionState !== 'idle'
 
 		return (
 			<AccountManagementShell>
 				<AdminPageHeader
 					title="Admin provider marks"
-					description="Operator-owned brand marks for saved integrations. Upload an SVG or image; Kody uses it after an explicit upload and auto-favicon miss. Login and onboarding use their inline icons."
+					description="Operator-owned brand marks for saved integrations. Open a letter, pick a mark, and edit it in that group. Login and onboarding keep their inline icons."
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -296,252 +540,136 @@ export function AdminProviderMarksRoute(handle: Handle) {
 						handle.update()
 					}}
 				/>
-				<div
+				<p
 					mix={css({
-						display: 'flex',
-						justifyContent: 'flex-end',
+						margin: 0,
+						color: colors.textMuted,
+						fontSize: typography.fontSize.sm,
+						fontVariantNumeric: 'tabular-nums',
 					})}
 				>
-					<button
-						type="button"
-						disabled={isMutating}
-						mix={[
-							css(primaryButtonCss),
-							on('click', () => {
-								if (isMutating) return
+					{searchActive
+						? `${filteredMarks.length} match${filteredMarks.length === 1 ? '' : 'es'} of ${marks.length} marks`
+						: `${marks.length} marks`}
+				</p>
+				<details
+					open={creating ? true : undefined}
+					data-testid="add-mark"
+					mix={[
+						css(markGroupCss),
+						on('toggle', (event) => {
+							if (!(event.currentTarget instanceof HTMLDetailsElement)) return
+							if (event.currentTarget.open) {
+								selectMark(null)
 								creating = true
-								selectedSlug = null
+							} else if (creating) {
+								creating = false
 								resetFormState()
-								formRevision += 1
-								handle.update()
-							}),
-						]}
-					>
-						Add mark
-					</button>
-				</div>
+							}
+							handle.update()
+						}),
+					]}
+				>
+					<summary>Add mark</summary>
+					{creating ? renderEditor(null) : null}
+				</details>
 				{status === 'ready' && filteredMarks.length === 0 ? (
 					<p mix={css({ color: colors.textMuted })}>No provider marks yet.</p>
 				) : (
-					<ul
+					<div
+						data-testid="provider-mark-groups"
 						mix={css({
-							listStyle: 'none',
-							margin: 0,
-							padding: 0,
 							display: 'grid',
-							gap: spacing.xs,
+							gap: spacing.sm,
 						})}
 					>
-						{filteredMarks.map((mark) => (
-							<li key={mark.slug}>
-								<button
-									type="button"
-									disabled={isMutating}
+						{groups.map((group) => {
+							const groupOpen = searchActive || openGroups.has(group.key)
+							const groupEditing =
+								editingMark != null &&
+								markGroupKey(editingMark.slug) === group.key
+							return (
+								<details
+									key={group.key}
+									open={groupOpen ? true : undefined}
+									data-testid={`mark-group-${group.key}`}
 									mix={[
-										css({
-											display: 'grid',
-											gridTemplateColumns: 'auto 1fr',
-											gap: spacing.sm,
-											alignItems: 'center',
-											width: '100%',
-											textAlign: 'left',
-											padding: spacing.sm,
-											border: `1px solid ${
-												selectedSlug === mark.slug && !creating
-													? colors.primary
-													: colors.border
-											}`,
-											background: 'transparent',
-											color: 'inherit',
-											cursor: 'pointer',
-										}),
-										on('click', () => {
-											if (isMutating) return
-											creating = false
-											selectedSlug = mark.slug
-											resetFormState()
-											formRevision += 1
+										css(markGroupCss),
+										on('toggle', (event) => {
+											if (
+												!(event.currentTarget instanceof HTMLDetailsElement)
+											) {
+												return
+											}
+											if (event.currentTarget.open) {
+												openGroups.add(group.key)
+											} else {
+												openGroups.delete(group.key)
+												if (
+													selectedSlug &&
+													markGroupKey(selectedSlug) === group.key
+												) {
+													selectMark(null)
+												}
+											}
 											handle.update()
 										}),
 									]}
 								>
-									<span
-										mix={css(getLogoWellCss({ size: '1.75rem', radius: '0' }))}
-									>
-										{mark.logoPath ? (
-											<img
-												src={mark.logoPath}
-												alt=""
-												width={20}
-												height={20}
-												mix={css({
-													display: 'block',
-													width: '70%',
-													height: '70%',
-													objectFit: 'contain',
-												})}
-											/>
-										) : (
-											mark.label.trim().charAt(0).toUpperCase() || '?'
-										)}
-									</span>
-									<span mix={css({ display: 'grid', gap: spacing.xs })}>
-										<span mix={clampedCellCss}>{mark.label}</span>
-										<span
-											mix={css({
-												...recordCellClamp(28),
-												color: colors.textMuted,
-											})}
-										>
-											{[mark.slug, ...mark.aliases].join(', ')}
+									<summary>
+										<span>{group.key}</span>
+										<span mix={css({ color: colors.textMuted })}>
+											{group.marks.length}
 										</span>
-									</span>
-								</button>
-							</li>
-						))}
-					</ul>
+									</summary>
+									{groupOpen ? (
+										<div mix={css({ display: 'grid', gap: spacing.md })}>
+											{groupEditing && editingMark
+												? renderEditor(editingMark)
+												: null}
+											<div mix={css(markGridCss)}>
+												{group.marks.map((item) => (
+													<button
+														key={item.slug}
+														type="button"
+														title={`${item.label} (${item.slug})`}
+														aria-label={`${item.label} (${item.slug})`}
+														aria-pressed={
+															selectedSlug === item.slug && !creating
+																? 'true'
+																: 'false'
+														}
+														data-testid={`mark-tile-${item.slug}`}
+														data-selected={
+															selectedSlug === item.slug && !creating
+																? 'true'
+																: undefined
+														}
+														disabled={isMutating}
+														mix={[
+															css(markTileCss),
+															on('click', () => {
+																if (isMutating) return
+																if (selectedSlug === item.slug && !creating) {
+																	selectMark(null)
+																} else {
+																	selectMark(item.slug)
+																}
+																handle.update()
+															}),
+														]}
+													>
+														{renderMarkGlyph(item)}
+													</button>
+												))}
+											</div>
+										</div>
+									) : null}
+								</details>
+							)
+						})}
+					</div>
 				)}
-				{showEditor ? (
-					<form
-						key={formRevision}
-						mix={[
-							css({
-								display: 'grid',
-								gap: spacing.md,
-								borderTop: `1px solid ${colors.border}`,
-								paddingTop: spacing.lg,
-							}),
-							on('submit', handleSaveFormSubmit),
-						]}
-					>
-						<h2 mix={css({ margin: 0 })}>
-							{creating ? 'New provider mark' : `Edit ${editingMark?.slug}`}
-						</h2>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Slug</span>
-							<input
-								data-field-ring
-								name="slug"
-								required
-								disabled={isMutating || !creating}
-								defaultValue={editingMark?.slug ?? ''}
-								placeholder="google"
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Label</span>
-							<input
-								data-field-ring
-								name="label"
-								disabled={isMutating}
-								defaultValue={editingMark?.label ?? ''}
-								placeholder="Google"
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>
-								Aliases (provider keys and authorize hosts)
-							</span>
-							<input
-								data-field-ring
-								name="aliases"
-								disabled={isMutating}
-								defaultValue={editingMark?.aliases.join(', ') ?? ''}
-								placeholder="accounts.google.com, googleapis.com"
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Logo</span>
-							<input
-								data-field-ring
-								name="logo"
-								type="file"
-								accept="image/svg+xml,image/png,image/jpeg,image/webp"
-								disabled={isMutating}
-								mix={[on('change', handleLogoFileChange), css(accountInputCss)]}
-							/>
-						</label>
-						{editingMark?.logoPath ? (
-							<label
-								mix={css({
-									...fieldCss,
-									display: 'flex',
-									flexDirection: 'row',
-									alignItems: 'center',
-									gap: spacing.sm,
-								})}
-							>
-								<img src={editingMark.logoPath} alt="" width={32} height={32} />
-								<input
-									name="removeLogo"
-									type="checkbox"
-									checked={removeLogoChecked}
-									disabled={isMutating}
-									mix={on('change', (event) => {
-										const checkbox = event.currentTarget
-										if (!(checkbox instanceof HTMLInputElement)) return
-										removeLogoChecked = checkbox.checked
-										handle.update()
-									})}
-								/>
-								<span mix={css(fieldLabelCss)}>Remove logo</span>
-							</label>
-						) : null}
-						<div
-							mix={css({
-								display: 'flex',
-								gap: spacing.sm,
-								flexWrap: 'wrap',
-							})}
-						>
-							<button
-								type="submit"
-								disabled={isMutating}
-								mix={css(primaryButtonCss)}
-							>
-								{actionState === 'saving' ? 'Saving…' : 'Save mark'}
-							</button>
-							<button
-								type="button"
-								disabled={isMutating}
-								mix={[
-									css(ghostButtonCss),
-									on('click', () => {
-										creating = false
-										selectedSlug = null
-										resetFormState()
-										handle.update()
-									}),
-								]}
-							>
-								Cancel
-							</button>
-							{editingMark ? (
-								<button
-									type="button"
-									disabled={isMutating}
-									mix={[
-										css(dangerButtonCss),
-										...deleteCheck.getButtonMix({
-											on: {
-												click: () => handleDelete(editingMark),
-											},
-										}),
-									]}
-								>
-									{deleteCheck.doubleCheck
-										? 'Click again to delete'
-										: actionState === 'deleting'
-											? 'Deleting…'
-											: 'Delete'}
-								</button>
-							) : null}
-						</div>
-					</form>
-				) : null}
 			</AccountManagementShell>
 		)
 	}
