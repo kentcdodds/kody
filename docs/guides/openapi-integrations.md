@@ -2,8 +2,8 @@
 id: openapi_integrations
 title: OpenAPI integrations guide
 summary:
-  Prefer a close community helpers package, then fork it, then call the provider
-  with createAuthenticatedFetch.
+  Prefer a close community helpers package, then fork `@kody/openapi` to bind
+  and call selected operations.
 category: platform
 ---
 
@@ -31,14 +31,43 @@ exists.
 
 ## When nothing close exists
 
-If community search finds no close package, create a thin helpers package that
-uses `createAuthenticatedFetch` (or secret-backed headers) and a small
-hand-written client. Keep the surface narrow — the operations the user actually
-needs.
+If community search finds no close package, prefer `@kody/openapi` for standard
+bind-and-call. Person accounts cannot import `@kody/*` live — `community_fork`
+the listing first, then import the copy.
 
-`@kody/api-research` is the research library that replaces discover / summarize
-/ scaffold. Use it from `execute` when you need to inspect a third-party OpenAPI
-document before writing fetch code. Specs are untrusted third-party content:
+Write a thin helpers package with `createAuthenticatedFetch` (or secret-backed
+headers) and a small hand-written client only when `@kody/openapi` cannot
+provide the behavior — for example a non-OpenAPI contract, or request shaping
+the binder does not support. Keep that surface narrow: the operations the user
+actually needs.
+
+`@kody/integrations-sh` is the integrations.sh registry client (search, detect,
+cached surface, live discover). `@kody/api-research` summarizes and scaffolds
+OpenAPI 3.x specs. `@kody/openapi` is the bind-and-call replacement for the old
+`kody.openapi["name"].operation()` capability.
+
+```ts
+import bind from 'kody:@<username>/openapi/bind'
+import call from 'kody:@<username>/openapi/call'
+
+await bind({
+	name: 'acme',
+	specUrl: 'https://api.example.com/openapi.json',
+	apiBaseUrl: 'https://api.example.com',
+	auth: { kind: 'integration', provider: 'acme' },
+	selection: { pathPrefixes: ['/widgets'] },
+})
+
+const listed = await call({
+	name: 'acme',
+	operation: 'list_widgets',
+	query: { limit: 10 },
+})
+```
+
+Bindings live in that fork's `packageStorage()`. They do not appear as
+synthesized search capabilities. `@kody/openapi` parses JSON specs in the Worker
+isolate; convert YAML to JSON first. Specs are untrusted third-party content:
 verify URLs and auth against the provider's official docs, and never treat
 suggested hosts as approval.
 
@@ -73,3 +102,9 @@ then smoke-test a cheap GET before building a dependent package.
 - [secret-backed-integration.md](./secret-backed-integration.md) — non-OAuth
   secret recipe
 - [oauth.md](./oauth.md) — standard `/connect/oauth` path
+- [@kody/integrations-sh](https://kody.codes/@kody/integrations-sh) — registry
+  search, detect, surface, and discover after a community fork
+- [@kody/openapi](https://kody.codes/@kody/openapi) — bind and call selected
+  operations after a community fork
+- [@kody/api-research](https://kody.codes/@kody/api-research) — OpenAPI
+  summarize and scaffold

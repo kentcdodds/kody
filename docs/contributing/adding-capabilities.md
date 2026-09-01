@@ -304,7 +304,7 @@ domain when you introduce a new system boundary or ownership area (e.g.
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
    extends the `BuiltinCapabilityDomain` union; `CapabilityDomain` itself is a
-   plain `string` so runtime MCP/OpenAPI domains stay valid).
+   plain `string` so runtime MCP domains stay valid).
 2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
    files, and direct imports from those files in `domain.ts`.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
@@ -461,10 +461,10 @@ Use filename suffixes to choose the Vitest project:
 
 ## Compatibility and versioning policy
 
-Capability names, input field names, output field names, domain ids, and
-MCP/OpenAPI synthesized names are compatibility contracts once real users can
-reference them. Treat every change as if it might affect saved user code. This
-policy is for the post-cleanup, pre-open-signup line in the sand; do not add
+Capability names, input field names, output field names, domain ids, and MCP
+synthesized names are compatibility contracts once real users can reference
+them. Treat every change as if it might affect saved user code. This policy is
+for the post-cleanup, pre-open-signup line in the sand; do not add
 alias/deprecation machinery for the current Kent-only cleanup.
 
 - Inputs are additive-only. Add optional fields first; never make an existing

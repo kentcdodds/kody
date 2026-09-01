@@ -174,10 +174,10 @@ reviewer identity, notes, and timestamps are not included. If an admin who
 reviewed your feedback deletes their account, Kody clears that reviewer's
 attribution while retaining your submission for the lifecycle described above.
 
-Community stars, stored activity events, ratings, forks, and reports appear only
-in the participating user's account export. Owning the related listing does not
-expose another user's event timestamps or types, identity, rating or adoption
-notes, report reasons, or moderation details.
+Community ratings, stored activity events, forks, and reports appear only in the
+participating user's account export. Owning the related listing does not expose
+another user's event timestamps or types, identity, rating or adoption notes,
+report reasons, or moderation details.
 
 ## What an admin can never see
 
