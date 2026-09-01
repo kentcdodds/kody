@@ -131,7 +131,7 @@ export function DiscordRoute(handle: Handle) {
 			const protection =
 				page?.signedIn || !connectForm
 					? emptyPublicFormProtection()
-					: readPublicFormProtection(new FormData(connectForm))
+					: readPublicFormProtection(new FormData(connectForm), connectForm)
 			const errorMessage = await startSocialSignIn(
 				'discord',
 				discordPath,

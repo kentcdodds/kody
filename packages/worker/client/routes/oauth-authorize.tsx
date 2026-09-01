@@ -316,7 +316,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				}
 				body.set('email', email)
 				body.set('password', password)
-				const protection = readPublicFormProtection(formData)
+				const protection = readPublicFormProtection(formData, form)
 				body.set(honeypotFieldName, protection[honeypotFieldName])
 				body.set(
 					turnstileResponseFieldName,

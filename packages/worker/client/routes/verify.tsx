@@ -51,10 +51,11 @@ export function VerifyRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
 
-		const formData = new FormData(event.currentTarget)
+		const formData = new FormData(form)
 		const code = String(formData.get('code') ?? '').trim()
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 		if (!code) {
 			message = 'Enter the 6-digit code from your authenticator app.'
 			handle.update()

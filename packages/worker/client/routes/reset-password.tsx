@@ -57,10 +57,11 @@ export function ResetPasswordRoute(handle: Handle) {
 	async function submitResetRequest(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
 
-		const formData = new FormData(event.currentTarget)
+		const formData = new FormData(form)
 		const email = String(formData.get('email') ?? '').trim()
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 		if (!email) {
 			setState('error', 'Email is required.')
 			return
@@ -97,10 +98,11 @@ export function ResetPasswordRoute(handle: Handle) {
 	async function submitResetConfirm(event: SubmitEvent, token: string) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
 
-		const formData = new FormData(event.currentTarget)
+		const formData = new FormData(form)
 		const password = String(formData.get('password') ?? '')
-		const protection = readPublicFormProtection(formData)
+		const protection = readPublicFormProtection(formData, form)
 		if (!password) {
 			setState('error', 'Password is required.')
 			return
