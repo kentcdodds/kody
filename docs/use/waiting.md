@@ -15,7 +15,7 @@ Typical items:
 - verify your email (outbound mail stays off until you confirm)
 - finish OAuth or reconnect an MCP server that is authenticating, failed, or
   disconnected
-- promote a publish for a locked package
+- review a locked package (published code stays put until you promote or unlock)
 - confirm a pending email change
 - a plan resource at its cap
 - an elevated error rate (one card that points at Activity)
