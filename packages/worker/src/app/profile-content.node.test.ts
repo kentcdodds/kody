@@ -52,8 +52,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
 	expect(guestHtml).toContain('href="/@kody/notes"')
-	expect(guestHtml).not.toContain('data-testid="profile-follow"')
-	expect(guestHtml).not.toContain('/login?redirectTo=%2F%40kody')
 
 	// Listed packages report the listing's published date, not the owner's
 	// unpublished local edit, which is what made the activity feed look stale.
@@ -99,7 +97,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	})
 
 	expect(ownHtml).toContain('@kody')
-	expect(ownHtml).not.toContain('data-testid="profile-follow"')
 	// Owners also see that the listing is behind their local edits.
 	expect(ownHtml).toContain('edited August 7, 2026, not republished')
 

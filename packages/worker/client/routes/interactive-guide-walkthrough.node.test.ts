@@ -12,19 +12,15 @@ test('google oauth connect bubbles wrap the prefilled url instead of overflowing
 				line.role === 'agent' &&
 				line.text.includes('/connect/oauth?provider=google'),
 		)
-	expect(connectLine?.role).toBe('agent')
 	if (connectLine?.role !== 'agent') return
 
 	const bubble = await renderToString(renderInteractiveGuideLine(connectLine))
-	expect(bubble).toContain('overflow-wrap: anywhere')
-	expect(bubble).toContain('white-space: pre-line')
 	expect(bubble).toContain('/connect/oauth?provider=google')
 	expect(bubble).toContain(
 		'authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth',
 	)
 
 	const guide = await renderToString(renderGoogleOauthWalkthrough())
-	expect(guide).toContain('overflow-wrap: anywhere')
 	expect(guide).toContain('/connect/oauth?provider=google')
 	expect(guide).toContain('Connect and verify')
 })

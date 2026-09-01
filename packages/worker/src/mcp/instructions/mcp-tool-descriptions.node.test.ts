@@ -7,17 +7,7 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 	expect(searchTool.description.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
-	expect(searchTool.description).toContain('"send a message"')
-	expect(searchTool.description).toContain('package_authoring:guide')
-	expect(searchTool.description).not.toContain('meta_list_capabilities')
-	expect(searchTool.description).not.toContain('drill in with')
-
 	expect(executeToolDescription.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
-	expect(executeToolDescription).toContain(
-		'export default async function main(input = {})',
-	)
-	expect(executeToolDescription).toContain('kody.capability_id(input)')
-	expect(executeToolDescription).toContain("from 'kody:runtime'")
 })

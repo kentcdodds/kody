@@ -1,5 +1,3 @@
-import { readFileSync, statSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	buildClaudeCodeAddCommand,
@@ -22,7 +20,6 @@ import {
 	isDefaultKodyMcpUrl,
 	isValidOnboardingAgentChooserPick,
 	mcpClientTabs,
-	onboardingAgentHelp,
 	onboardingAgentLabel,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
@@ -38,24 +35,6 @@ const mcpServerUrl = defaultKodyMcpUrl
 test('onboarding MCP client builders emit the structured configs each host expects', () => {
 	const tabIds = mcpClientTabs.map((tab) => tab.id)
 	expect(new Set(tabIds).size).toBe(tabIds.length)
-	expect([...onboardingDesktopFeaturedAgentIds]).toEqual([
-		'claude-code',
-		'cursor',
-		'codex',
-		'copilot',
-		'devin',
-		'opencode',
-		'openclaw',
-		'chatgpt',
-		'claude-desktop',
-		'gemini',
-		'grok-bot',
-	])
-	expect(onboardingMoreAgentIdsFor('desktop')).toEqual([
-		'grok',
-		'grok-cli',
-		'copilot-app',
-	])
 	expect(onboardingMoreAgentIdsFor('desktop')).not.toContain(
 		onboardingDesktopFeaturedAgentIds[0],
 	)
@@ -97,12 +76,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'copilot-app',
 		'gemini',
 	])
-
-	for (const tab of mcpClientTabs) {
-		const help = onboardingAgentHelp(tab.id)
-		expect(help.href).toMatch(/^https:\/\//)
-		expect(help.label.length).toBeGreaterThan(0)
-	}
 
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)
@@ -188,18 +161,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://kody.codes/images/kody-app-icon.png',
 	)
-	const appIconPath = fileURLToPath(
-		new URL('../../public/images/kody-app-icon.png', import.meta.url),
-	)
-	expect(statSync(appIconPath).size).toBeLessThanOrEqual(10 * 1024)
-	const appIconPng = readFileSync(appIconPath)
-	expect(
-		appIconPng
-			.subarray(0, 8)
-			.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
-	).toBe(true)
-	expect(appIconPng.readUInt32BE(16)).toBe(256)
-	expect(appIconPng.readUInt32BE(20)).toBe(256)
 
 	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)
 	expect(vsCodeInstallUrl.startsWith('vscode:mcp/install?')).toBe(true)

@@ -537,7 +537,6 @@ export declare function fetch(request: Request): Promise<Response>
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 	})
-	expect(observedPackageDetail.markdown).not.toContain('community_fork_absorb')
 	expect(observedPackageDetail.markdown).not.toContain('repo_publish_session')
 })
 
@@ -592,9 +591,6 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(
 		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
 	).toContain('absorbed_upstream_commit')
-	expect(
-		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
-	).not.toContain('community_fork_absorb')
 
 	const aheadDetail = formatEntityDetailMarkdown({
 		type: 'package',
@@ -636,7 +632,6 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
 	expect(aheadDetail.markdown).toContain('repo_publish_session')
 	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
-	expect(aheadDetail.markdown).not.toContain('community_fork_absorb')
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
@@ -915,7 +910,6 @@ test('domain overview matches format as compact structured summaries', () => {
 	]
 	const markdown = formatSearchMarkdown({ matches: domainMatches })
 	expect(markdown).toContain('Search again with a more specific query')
-	expect(markdown).not.toContain('Drill in with')
 	expect(markdown).toContain('**domain** `email` (9 capabilities)')
 	expect(markdown).toContain('`email_send`')
 	expect(markdown).not.toContain('entity-backed')

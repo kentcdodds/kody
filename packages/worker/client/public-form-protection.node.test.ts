@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 import {
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
-	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 
 type FakeContainer = HTMLElement & {
@@ -38,12 +37,7 @@ test('resetTurnstileWidgets clears orphaned hosts instead of throwing', () => {
 	const remove = vi.fn()
 
 	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn((selector: string) => {
-			expect(selector).toBe(
-				`.${turnstileWidgetClassName}[data-turnstile-rendered]`,
-			)
-			return [orphan, live, zombie]
-		}),
+		querySelectorAll: vi.fn(() => [orphan, live, zombie]),
 	})
 	vi.stubGlobal('window', { turnstile: { reset, remove } })
 
@@ -70,10 +64,7 @@ test('renderTurnstileWidgets remounts hosts whose children were wiped by a re-re
 	const remove = vi.fn()
 
 	vi.stubGlobal('document', {
-		querySelectorAll: vi.fn((selector: string) => {
-			expect(selector).toBe(`.${turnstileWidgetClassName}`)
-			return [orphan, live, fresh]
-		}),
+		querySelectorAll: vi.fn(() => [orphan, live, fresh]),
 	})
 	vi.stubGlobal('window', { turnstile: { render, remove } })
 

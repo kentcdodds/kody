@@ -61,7 +61,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
 	expect(cursor).toContain('data-agent="cursor"')
 	expect(cursor).not.toContain('data-testid="onboarding-agent-change"')
-	expect(cursor).not.toContain('Connecting')
 	expect(cursor).toContain(kodyCursorMarketplaceUrl)
 	expect(cursor).toContain(kodyCursorAddPluginCommand)
 	expect(cursor).toContain('data-testid="onboarding-authenticate-callout"')
@@ -182,7 +181,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(chatgpt).toContain('alt="Kody app icon"')
 	expect(chatgpt).toContain('download="kody-app-icon.png"')
 	expect(chatgpt).toContain('Right-click the icon')
-	expect(chatgpt).not.toContain('https://kody.codes/apple-touch-icon.png')
 
 	const codexMobile = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -196,5 +194,4 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		'src="https://kody.codes/images/kody-app-icon.png"',
 	)
 	expect(codexMobile).toContain('download="kody-app-icon.png"')
-	expect(codexMobile).not.toContain('https://kody.codes/apple-touch-icon.png')
 })

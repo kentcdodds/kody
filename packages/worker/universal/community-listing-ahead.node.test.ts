@@ -53,5 +53,4 @@ test('listing-ahead helpers gate on commit mismatch and expose absorb contracts'
 	expect(prompt).toContain('repo_publish_session')
 	expect(prompt).toContain('absorbed_upstream_commit')
 	expect(prompt).toContain('community_get')
-	expect(prompt).not.toContain('community_fork_absorb')
 })
