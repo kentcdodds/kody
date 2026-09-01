@@ -15,22 +15,19 @@ first MCP connection, first execute, first saved package), MCP client name when
 known, last-active day stamps used for return metrics, secrets, memories,
 packages and their source, jobs, email inboxes and messages, durable storage,
 MCP server configuration, OAuth grants, package invocation tokens, short-lived
-execution history (see [Activity](./activity.md)), community social graph edges
-(follows, listing stars, and stored activity events), and any platform feedback
-you approve for submission. All of this remains scoped to your account except
-for content you deliberately make public (community listings and a public
-profile), the narrow admin review of approved platform feedback, and the
-community activity metadata described below.
+execution history (see [Activity](./activity.md)), stored community activity
+events, and any platform feedback you approve for submission. All of this
+remains scoped to your account except for content you deliberately make public
+(community listings and a public profile), the narrow admin review of approved
+platform feedback, and the community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
-metadata, follow counts, and public activity are visible on `/@username` and
-related social surfaces. When visibility is **private**, the public profile is
-not found, others cannot follow you, and you are omitted from stargazer lists
-and other users' timelines. See [Community profiles](./community-profiles.md).
+metadata, and public activity are visible on `/@username`. When visibility is
+**private**, the public profile is not found. See
+[Public packages](./community-packages.md#public-profiles).
 
-Account export includes your profile columns and social rows where you are a
-participant (follows as follower or followee, stars you placed, and activity you
-authored). The browser download is a bounded metadata manifest; use its
+Account export includes your profile columns and activity you authored. The
+browser download is a bounded metadata manifest; use its
 `account_export_section` instructions to retrieve every D1, Durable Object, and
 R2 page for a complete portable export. Account settings can delete the account
 after you type `GOODBYE KODY` in a confirmation modal (and re-enter your

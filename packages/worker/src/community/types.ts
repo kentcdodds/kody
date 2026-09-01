@@ -85,7 +85,6 @@ export type CommunityListingAggregates = {
 	ratingCount: number
 	averageAdaptationEffort: number | null
 	forkCount: number
-	starCount: number
 }
 
 export type ProfileVisibility = 'public' | 'private'
@@ -98,8 +97,6 @@ export type CommunityProfileRecord = {
 	avatarKey: string | null
 	visibility: ProfileVisibility
 	joinedAt: string
-	followerCount: number
-	followingCount: number
 	publicPackageCount: number
 	listingCount: number
 }
@@ -108,7 +105,6 @@ export type CommunityActivityEventType =
 	| 'listing_published'
 	| 'listing_updated'
 	| 'listing_forked'
-	| 'listing_starred'
 
 export type CommunityActivityItem = {
 	type: CommunityActivityEventType
@@ -141,14 +137,6 @@ export type PublicProfilePackage = {
 	isPrivate: boolean
 	/** Owner-only: hidden from ranked search. Always false on public profile lists. */
 	hidden: boolean
-}
-
-export type CommunityStargazer = {
-	userId: string
-	username: string
-	displayName: string
-	avatarKey: string | null
-	starredAt: string
 }
 
 export type CommunityListingWithAggregates = CommunityListingRecord &

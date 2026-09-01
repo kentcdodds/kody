@@ -4,7 +4,6 @@ import {
 	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
 	type PublicCommunityProfile,
-	type PublicCommunityStargazer,
 	type PublicProfilePackageItem,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
@@ -145,14 +144,11 @@ export type CommunityDetailLoaderData = {
 	listing: PublicCommunityListing | null
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
-	/** True when the signed-in viewer follows the listing owner. */
-	viewerFollowsOwner: boolean
 	/** True when the signed-in viewer owns this listing. */
 	viewerIsOwner: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
-	starredByViewer: boolean
 	/** Existing fork/install for the signed-in viewer, when one exists. */
 	viewerInstall: ViewerListingInstall | null
 	readmeFences?: Array<HighlightedCode>
@@ -198,8 +194,6 @@ export type CommunityDetailShellLoaderData = {
 	featured: boolean
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
-	starCount: number
-	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
 	username: string
@@ -219,7 +213,6 @@ export type ProfileLoaderData = {
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
-	isFollowing: boolean
 }
 
 /** SSR-embedded shell data for client-only regions on the profile page. */
@@ -230,29 +223,12 @@ export type ProfileShellLoaderData = {
 	bio: string | null
 	isSelf: boolean
 	loggedIn: boolean
-	isFollowing: boolean
 	visibility: ProfileVisibility
 }
 
 export type ProfileUnavailableLoaderData = {
 	ok: false
 	unavailable: true
-}
-
-export type TimelineLoaderData = {
-	ok: true
-	items: Array<PublicCommunityActivityItem>
-}
-
-export type AccountStarsLoaderData = {
-	ok: true
-	listings: Array<PublicCommunityListing>
-}
-
-export type CommunityStargazersLoaderData = {
-	ok: true
-	totalStars: number
-	stargazers: Array<PublicCommunityStargazer>
 }
 
 /**
@@ -1729,8 +1705,6 @@ export type AppLoaderData = {
 		| CommunityPackageUnauthorizedLoaderData
 	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
-	timeline?: TimelineLoaderData
-	accountStars?: AccountStarsLoaderData
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData

@@ -9,13 +9,9 @@ const mocks = vi.hoisted(() => ({
 	renderProfileOgImage: vi.fn(),
 }))
 
-vi.mock('#worker/community/social-service.ts', () => ({
+vi.mock('#worker/community/profile-service.ts', () => ({
 	getCommunityProfileByUsername: (...args: Array<unknown>) =>
 		mocks.getCommunityProfileByUsername(...args),
-	followCommunityUser: vi.fn(),
-	unfollowCommunityUser: vi.fn(),
-	getProfileActivity: vi.fn(),
-	listPublicProfilePackages: vi.fn(),
 }))
 
 vi.mock('#worker/community/avatar.ts', () => ({
@@ -36,8 +32,6 @@ const publicProfile = {
 	avatarKey: 'user-avatars/stable-alice/abcdef.png',
 	visibility: 'public',
 	joinedAt: '2026-01-01T00:00:00.000Z',
-	followerCount: 2,
-	followingCount: 1,
 	publicPackageCount: 1,
 	listingCount: 1,
 } satisfies CommunityProfileRecord

@@ -37,7 +37,7 @@ import {
 } from '#universal/code-runs.ts'
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
-import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
+import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -88,12 +88,10 @@ vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof CommunitySocialRepo>()
+vi.mock('#worker/community/profile-repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityProfileRepo>()
 	return {
 		...actual,
-		getCommunityStar: vi.fn().mockResolvedValue(false),
-		getUserFollow: vi.fn().mockResolvedValue(false),
 		getUserSocialRowByUsername: (...args: Array<unknown>) =>
 			communityMockModule.getUserSocialRowByUsername(...args),
 	}
@@ -127,7 +125,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 type TestUser = {

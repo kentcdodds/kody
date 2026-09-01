@@ -5,7 +5,7 @@ import {
 	getUserAvatarObject,
 	parseUserAvatarCacheKey,
 } from '#worker/community/avatar.ts'
-import { getUserSocialRowByUsername } from '#worker/community/social-repo.ts'
+import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
 const publicUserAvatarCacheControl = 'public, max-age=31536000, immutable'

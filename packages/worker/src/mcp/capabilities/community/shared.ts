@@ -8,7 +8,6 @@ import {
 	type CommunityActivityItem,
 	type CommunityListingAggregates,
 	type CommunityListingRecord,
-	type CommunityListingWithAggregates,
 } from '#worker/community/types.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 
@@ -74,7 +73,6 @@ export const communityListingAggregatesSchema = z.object({
 	rating_count: z.number().int().nonnegative(),
 	average_adaptation_effort: z.number().nullable(),
 	fork_count: z.number().int().nonnegative(),
-	star_count: z.number().int().nonnegative(),
 })
 
 export const communityTrustedFieldSchema = z
@@ -113,20 +111,10 @@ export const communitySearchMatchSchema =
 		public_url: communityPublicUrlSchema,
 	})
 
-export const communityStarredListingSchema = communityListingSummarySchema
-	.merge(communityListingAggregatesSchema)
-	.extend({
-		trusted: communityTrustedFieldSchema,
-		featured: communityFeaturedFieldSchema,
-		tags: z.array(z.string()),
-		category: z.enum(communityListingCategories),
-	})
-
 export const communityActivityTypeSchema = z.enum([
 	'listing_published',
 	'listing_updated',
 	'listing_forked',
-	'listing_starred',
 ])
 
 export const communityActivityItemSchema = z.object({
@@ -139,13 +127,6 @@ export const communityActivityItemSchema = z.object({
 	listing_kody_id: z.string(),
 	created_at: z.string(),
 	public_url: communityPublicUrlSchema,
-})
-
-export const communityStargazerSchema = z.object({
-	username: z.string(),
-	display_name: z.string(),
-	avatar_url: z.string().nullable(),
-	starred_at: z.string(),
 })
 
 export const crossScopeReferenceSchema = z.object({
@@ -161,7 +142,6 @@ export function toCommunityListingAggregatesOutput(
 		rating_count: listing.ratingCount,
 		average_adaptation_effort: listing.averageAdaptationEffort,
 		fork_count: listing.forkCount,
-		star_count: listing.starCount,
 	}
 }
 
@@ -184,20 +164,6 @@ export function toCommunityListingSummaryOutput(
 			kodyId: listing.kodyId,
 		}),
 		published_at: listing.publishedAt,
-	}
-}
-
-export function toCommunityStarredListingOutput(
-	listing: CommunityListingWithAggregates,
-	baseUrl: string,
-) {
-	return {
-		...toCommunityListingSummaryOutput(listing, baseUrl),
-		...toCommunityListingAggregatesOutput(listing),
-		trusted: listing.trusted,
-		featured: listing.featured,
-		tags: listing.tags,
-		category: listing.category,
 	}
 }
 

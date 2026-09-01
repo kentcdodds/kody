@@ -13,7 +13,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		mocks.readAuthenticatedAppUser(...args),
 }))
 
-vi.mock('#worker/community/social-repo.ts', () => ({
+vi.mock('#worker/community/profile-repo.ts', () => ({
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mocks.getUserSocialRowByUsername(...args),
 }))

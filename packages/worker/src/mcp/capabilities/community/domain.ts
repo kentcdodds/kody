@@ -1,7 +1,6 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
 import { communityForkAdoptCapability } from './adopt.ts'
-import { communityFollowCapability } from './follow.ts'
 import { communityForkCapability } from './fork.ts'
 import { communityGetCapability } from './get.ts'
 import { communityProfileGetCapability } from './profile-get.ts'
@@ -11,17 +10,12 @@ import { communityRateCapability } from './rate.ts'
 import { communityReportCapability } from './report.ts'
 import { communitySearchCapability } from './search.ts'
 import { communitySetFeaturedCapability } from './set-featured.ts'
-import { communityStarCapability } from './star.ts'
-import { communityStarredListCapability } from './starred-list.ts'
-import { communityTimelineCapability } from './timeline.ts'
-import { communityUnfollowCapability } from './unfollow.ts'
 import { communityUnpublishCapability } from './unpublish.ts'
-import { communityUnstarCapability } from './unstar.ts'
 
 export const communityDomain = defineDomain({
 	name: capabilityDomainNames.community,
 	description:
-		'Public package listings and social profiles (excluded from general search).',
+		'Public package listings and user catalogs (excluded from general search).',
 	keywords: [
 		'community',
 		'package',
@@ -33,10 +27,6 @@ export const communityDomain = defineDomain({
 		'marketplace',
 		'share',
 		'profile',
-		'follow',
-		'timeline',
-		'stars',
-		'stargazers',
 	],
 	capabilities: [
 		communityPublishCapability,
@@ -50,11 +40,5 @@ export const communityDomain = defineDomain({
 		communitySetFeaturedCapability,
 		communityProfileGetCapability,
 		communityProfileUpdateCapability,
-		communityFollowCapability,
-		communityUnfollowCapability,
-		communityTimelineCapability,
-		communityStarCapability,
-		communityUnstarCapability,
-		communityStarredListCapability,
 	],
 })

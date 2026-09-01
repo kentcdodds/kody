@@ -48,20 +48,18 @@ export function PrivacyRoute(_handle: Handle) {
 					used for return metrics, secrets, memories, packages and their source,
 					jobs, email inboxes and messages, durable storage, MCP server
 					configuration, OAuth grants, package invocation tokens, short-lived
-					execution history, community social graph edges (follows, listing
-					stars, and stored activity events), and any platform feedback you
-					approve for submission. All of this remains scoped to your account
-					except for content you deliberately make public (community listings
-					and a public profile), the narrow admin review of approved platform
-					feedback, and the community activity metadata described below.
+					execution history, stored community activity events, and any platform
+					feedback you approve for submission. All of this remains scoped to
+					your account except for content you deliberately make public
+					(community listings and a public profile), the narrow admin review of
+					approved platform feedback, and the community activity metadata
+					described below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
-					public package metadata, follow counts, and public activity are
-					visible on <code>/@username</code> and related social surfaces. When
-					visibility is <strong>private</strong>, the public profile is not
-					found, others cannot follow you, and you are omitted from stargazer
-					lists and other users&apos; timelines.
+					public package metadata, and public activity are visible on{' '}
+					<code>/@username</code>. When visibility is <strong>private</strong>,
+					the public profile is not found.
 				</p>
 			</section>
 

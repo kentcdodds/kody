@@ -90,10 +90,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		packageFilesArea,
 		(m) => m.packageFilesRouteLoader,
 	),
-	[routePattern(routes.accountStars)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountStarsRouteLoader,
-	),
 	[routePattern(routes.accountPasskeys)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountPasskeysRouteLoader,
@@ -290,10 +286,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		communityArea,
 		(m) => m.profileRouteLoader,
 	),
-	[routePattern(routes.timeline)]: lazyRouteLoader(
-		communityArea,
-		(m) => m.timelineRouteLoader,
-	),
 	[routePattern(routes.login)]: lazyRouteLoader(
 		authArea,
 		(m) => m.authProvidersRouteLoader,
@@ -377,9 +369,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountPackageFiles)]: (
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
-	),
-	[routePattern(routes.accountStars)]: (
-		<LazyAccountRoute render={(m) => <m.AccountStarsRoute />} />
 	),
 	[routePattern(routes.accountPasskeys)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPasskeysRoute />} />
@@ -527,9 +516,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.profile)]: (
 		<LazyCommunityRoute render={(m) => <m.ProfileRoute />} />
-	),
-	[routePattern(routes.timeline)]: (
-		<LazyCommunityRoute render={(m) => <m.TimelineRoute />} />
 	),
 	[routePattern(routes.login)]: (
 		<LazyAuthRoute render={(m) => <m.LoginRoute />} />

@@ -143,6 +143,10 @@
 		{
 			"filename": "0035-platform-provider-marks.sql",
 			"sha256": "49c97eb2871fe00bc823ff09438ed4ce4115ea840c09abf571def8740451e448"
+		},
+		{
+			"filename": "0036-drop-community-social.sql",
+			"sha256": "e8933bf1fc751ae81334569ceb378bf581ca39f7c9153d5f08554739806952c6"
 		}
 	]
 }

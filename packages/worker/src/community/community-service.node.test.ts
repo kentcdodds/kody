@@ -18,10 +18,8 @@ const mockModule = vi.hoisted(() => ({
 	countActiveCommunityListingsByCategory: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
-	countCommunityStarsByListingIds: vi.fn(),
 	insertCommunityActivityEvent: vi.fn(),
 	deleteCommunityActivityEventsByListingId: vi.fn(),
-	deleteCommunityStarsByListingId: vi.fn(),
 	writeCommunitySnapshot: vi.fn(),
 	insertCommunityListing: vi.fn(),
 	repointOrphanedCommunityForksToListing: vi.fn(),
@@ -173,15 +171,11 @@ vi.mock('./snapshot.ts', () => ({
 		mockModule.deleteCommunitySnapshot(...args),
 }))
 
-vi.mock('./social-repo.ts', () => ({
-	countCommunityStarsByListingIds: (...args: Array<unknown>) =>
-		mockModule.countCommunityStarsByListingIds(...args),
+vi.mock('./profile-repo.ts', () => ({
 	insertCommunityActivityEvent: (...args: Array<unknown>) =>
 		mockModule.insertCommunityActivityEvent(...args),
 	deleteCommunityActivityEventsByListingId: (...args: Array<unknown>) =>
 		mockModule.deleteCommunityActivityEventsByListingId(...args),
-	deleteCommunityStarsByListingId: (...args: Array<unknown>) =>
-		mockModule.deleteCommunityStarsByListingId(...args),
 }))
 
 const {
@@ -586,10 +580,6 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 	expect(
 		mockModule.deleteCommunityActivityEventsByListingId,
 	).toHaveBeenCalledWith(expect.anything(), 'listing-1')
-	expect(mockModule.deleteCommunityStarsByListingId).toHaveBeenCalledWith(
-		expect.anything(),
-		'listing-1',
-	)
 	expect(mockModule.deleteCommunitySnapshot).toHaveBeenCalledWith(
 		expect.anything(),
 		'listing-1',
@@ -637,10 +627,6 @@ test('searchCommunityListings empty query uses publishedAt tiebreaker', async ()
 		'listing-older': 0,
 		'listing-newer': 0,
 	})
-	mockModule.countCommunityStarsByListingIds.mockResolvedValue({
-		'listing-older': 0,
-		'listing-newer': 0,
-	})
 
 	const results = await searchCommunityListings({
 		env: createEnv(),
@@ -680,9 +666,6 @@ test('searchCommunityListings falls back to unfiltered candidates when LIKE pref
 		},
 	})
 	mockModule.countCommunityForksByListingIds.mockResolvedValue({
-		'listing-fallback-match': 0,
-	})
-	mockModule.countCommunityStarsByListingIds.mockResolvedValue({
 		'listing-fallback-match': 0,
 	})
 
@@ -740,7 +723,6 @@ test('listCommunityIndexOverview queries only populated categories and uses SQL 
 	)
 	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({})
 	mockModule.countCommunityForksByListingIds.mockResolvedValue({})
-	mockModule.countCommunityStarsByListingIds.mockResolvedValue({})
 
 	const overview = await listCommunityIndexOverview({
 		env: createEnv(),

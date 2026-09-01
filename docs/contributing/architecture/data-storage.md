@@ -320,20 +320,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, `is_private` (0/1) for repo visibility (default private; not
-  `package.json#private`) used by public-profile and timeline filters, and
+  `package.json#private`) used by public-profile catalog filters, and
   `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
   of `published_commit` until the owner approves a specific commit in the
   account UI
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
   (see [Public packages](../community-packages.md))
-- `user_follows`: follow edges between MCP stable user ids (`follower_user_id` /
-  `followee_user_id`)
-- `community_stars`: listing stargazer bookmarks (`listing_id` + `user_id`),
-  distinct from 1–5 `community_ratings`
 - `community_activity_events`: stored `listing_published` / `listing_updated`
-  timeline events (`actor_user_id` + `listing_id`); fork and star timeline items
-  are derived at read time from `community_forks` / `community_stars`
+  profile activity events (`actor_user_id` + `listing_id`); public forks are
+  derived at read time from `community_forks`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
   package runtimes may use their own package secrets. User secrets are

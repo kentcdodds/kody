@@ -75,7 +75,6 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
 const env = {} as Env

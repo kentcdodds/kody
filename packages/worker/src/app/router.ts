@@ -111,10 +111,6 @@ import { createAccountConnectionsApiHandler } from '#app/handlers/account-connec
 import { createAccountAvatarApiPostHandler } from '#app/handlers/account-avatar.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
-	createAccountStarsApiHandler,
-	createAccountStarsHandler,
-} from '#app/handlers/account-stars.ts'
-import {
 	createAccountTwoFactorApiHandler,
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
@@ -171,22 +167,13 @@ import { createMcpServerLogoHandler } from '#app/handlers/mcp-server-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
 import {
-	createCommunityStarApiPostHandler,
-	createCommunityStargazersApiHandler,
-} from '#app/handlers/community-star.ts'
-import {
 	createProfileApiHandler,
-	createProfileFollowApiPostHandler,
 	createProfileHandler,
 	createProfileOgImageHandler,
 } from '#app/handlers/profile.tsx'
 import { createProfileAvatarHandler } from '#app/handlers/profile-avatar.ts'
 import { createWebhookIngressHandler } from '#app/handlers/webhook-ingress.ts'
 import { createStripeWebhookHandler } from '#app/handlers/stripe-webhook.ts'
-import {
-	createTimelineApiHandler,
-	createTimelineHandler,
-} from '#app/handlers/timeline.tsx'
 import {
 	createBlogApiHandler,
 	createBlogHandler,
@@ -367,8 +354,6 @@ export function createAppRouter(env: Env) {
 			accountProfileApi: createAccountProfileApiHandler(env),
 			accountProfileApiPost: createAccountProfileApiHandler(env),
 			accountAvatarApiPost: createAccountAvatarApiPostHandler(env),
-			accountStars: createAccountStarsHandler(env),
-			accountStarsApi: createAccountStarsApiHandler(env),
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
@@ -475,17 +460,12 @@ export function createAppRouter(env: Env) {
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
-			communityStarApiPost: createCommunityStarApiPostHandler(env),
-			communityStargazersApi: createCommunityStargazersApiHandler(env),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
 			profileAvatar: createProfileAvatarHandler(env),
 			profileOgImage: createProfileOgImageHandler(env),
-			profileFollowApiPost: createProfileFollowApiPostHandler(env),
 			webhookIngress: createWebhookIngressHandler(env),
 			stripeWebhook: createStripeWebhookHandler(env),
-			timeline: createTimelineHandler(env),
-			timelineApi: createTimelineApiHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),

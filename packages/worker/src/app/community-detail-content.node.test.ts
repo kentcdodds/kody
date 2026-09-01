@@ -21,15 +21,12 @@ const sampleListing = {
 	ratingCount: 2,
 	averageAdaptationEffort: 3,
 	forkCount: 1,
-	starCount: 0,
 } satisfies PublicCommunityListing
 
 const detailBase = {
 	ownerProfilePublic: true,
-	viewerFollowsOwner: false,
 	viewerIsOwner: false,
 	returnTo: '/@kentcdodds/github-triage',
-	followError: null,
 } as const
 
 test('community detail head covers install, installed, and listing-ahead badges', async () => {
@@ -37,7 +34,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		listing: sampleListing,
 		...detailBase,
 		loggedIn: true,
-		starredByViewer: false,
 	})
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
@@ -62,7 +58,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		},
 		...detailBase,
 		loggedIn: true,
-		starredByViewer: false,
 	})
 	expect(installedHtml).not.toContain(
 		'data-testid="community-detail-trusted-badge"',
@@ -82,7 +77,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		},
 		...detailBase,
 		loggedIn: true,
-		starredByViewer: false,
 	})
 	expect(sourceAheadHtml).toContain(
 		'data-testid="community-detail-source-ahead-badge"',
@@ -103,7 +97,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		...detailBase,
 		viewerIsOwner: true,
 		loggedIn: true,
-		starredByViewer: false,
 	})
 	expect(ownInstalledHtml).not.toContain(
 		'data-testid="community-detail-viewer-install-badge"',
@@ -130,7 +123,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		...detailBase,
 		returnTo: '/community',
 		loggedIn: true,
-		starredByViewer: false,
 	})
 	expect(aheadHtml).toContain(
 		'data-testid="community-detail-listing-ahead-badge"',
@@ -141,46 +133,4 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'data-testid="community-detail-viewer-install-badge"',
 	)
 	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
-})
-
-test('community detail title star covers empty, starred, and logged-out states', async () => {
-	const emptyHtml = await renderCommunityDetailContentHtml({
-		listing: sampleListing,
-		...detailBase,
-		loggedIn: true,
-		starredByViewer: false,
-	})
-	expect(emptyHtml).toContain('data-testid="community-detail-star"')
-	expect(emptyHtml).toContain('data-community-star')
-	expect(emptyHtml).toContain('data-starred="false"')
-	expect(emptyHtml).toContain('data-listing-name=')
-	expect(emptyHtml).toContain('data-community-star-label')
-	expect(emptyHtml).toContain('data-community-star-count')
-	expect(emptyHtml).toContain('data-community-follow')
-	expect(emptyHtml).toContain('data-follow-username="kentcdodds"')
-	expect(
-		emptyHtml.indexOf('data-testid="community-detail-star"'),
-	).toBeGreaterThan(emptyHtml.indexOf('<h1'))
-
-	const starredHtml = await renderCommunityDetailContentHtml({
-		listing: sampleListing,
-		...detailBase,
-		loggedIn: true,
-		starredByViewer: true,
-	})
-	expect(starredHtml).toContain('data-starred="true"')
-
-	const loggedOutHtml = await renderCommunityDetailContentHtml({
-		listing: sampleListing,
-		...detailBase,
-		loggedIn: false,
-		starredByViewer: false,
-	})
-	expect(loggedOutHtml).toContain('data-testid="community-detail-star"')
-	expect(loggedOutHtml).toContain(
-		'/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage',
-	)
-	expect(loggedOutHtml).not.toMatch(
-		/data-testid="community-detail-star"[^>]*data-starred=/,
-	)
 })

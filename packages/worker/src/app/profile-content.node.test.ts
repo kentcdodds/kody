@@ -12,8 +12,6 @@ const profile = {
 	avatarUrl: null,
 	visibility: 'public',
 	joinedAt: '2026-01-01T00:00:00.000Z',
-	followerCount: 0,
-	followingCount: 0,
 	publicPackageCount: 2,
 	listingCount: 1,
 } satisfies PublicCommunityProfile
@@ -47,10 +45,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		activity: [],
 		query: null,
 		isSelf: false,
-		loggedIn: false,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
 	})
 
 	expect(guestHtml).toContain('href="/@kody/fathom-analytics"')
@@ -58,8 +52,8 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
 	expect(guestHtml).toContain('href="/@kody/notes"')
-	expect(guestHtml).toContain('data-testid="profile-follow"')
-	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
+	expect(guestHtml).not.toContain('data-testid="profile-follow"')
+	expect(guestHtml).not.toContain('/login?redirectTo=%2F%40kody')
 
 	// Listed packages report the listing's published date, not the owner's
 	// unpublished local edit, which is what made the activity feed look stale.
@@ -82,39 +76,19 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		activity: [],
 		query: null,
 		isSelf: false,
-		loggedIn: false,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
 	})
 	expect(driftedHtml).toContain('href="/@kody/fathom-analytics"')
 	expect(driftedHtml).not.toContain('href="/@kody/fathom"')
 
-	const followingHtml = await renderProfileContentHtml({
+	const guestEmptyHtml = await renderProfileContentHtml({
 		profile,
 		packages: [],
 		activity: [],
 		query: null,
 		isSelf: false,
-		loggedIn: true,
-		isFollowing: true,
-		returnTo: '/@kody',
-		followError: 'Unable to follow.',
 	})
-
-	expect(followingHtml).toMatch(/<div[^>]*data-testid="profile-username"/)
-	expect(followingHtml).not.toMatch(/<p[^>]*data-testid="profile-username"/)
-	expect(followingHtml).toContain('data-testid="profile-follow"')
-	expect(followingHtml).toContain('data-community-follow')
-	expect(followingHtml).toContain('data-following="true"')
-	expect(followingHtml).toContain('data-community-follow-label')
-	expect(followingHtml).toContain('data-community-follower-count')
-	expect(followingHtml).toContain('/profiles/kody/follow.json')
-	expect(followingHtml).toContain('data-testid="profile-follow-error"')
-	expect(followingHtml).toContain('No public packages yet.')
-	expect(followingHtml.indexOf('data-testid="profile-follow"')).toBeGreaterThan(
-		followingHtml.indexOf('data-testid="profile-username"'),
-	)
+	expect(guestEmptyHtml).toContain('No public packages yet.')
+	expect(guestEmptyHtml).toMatch(/<p[^>]*data-testid="profile-username"/)
 
 	const ownHtml = await renderProfileContentHtml({
 		profile,
@@ -122,10 +96,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		activity: [],
 		query: null,
 		isSelf: true,
-		loggedIn: true,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
 	})
 
 	expect(ownHtml).toContain('@kody')
@@ -145,10 +115,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		activity: [],
 		query: null,
 		isSelf: true,
-		loggedIn: true,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
 	})
 	expect(ownInventoryHtml).toContain('href="/@kody/notes"')
 	expect(ownInventoryHtml).toContain('Hidden')
@@ -161,10 +127,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		activity: [],
 		query: null,
 		isSelf: true,
-		loggedIn: true,
-		isFollowing: false,
-		returnTo: '/@kody',
-		followError: null,
 	})
 	expect(ownEmptyHtml).toContain('No packages yet.')
 	expect(ownEmptyHtml).not.toContain('No public packages yet.')

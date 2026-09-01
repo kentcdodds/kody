@@ -360,16 +360,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'community_ratings' },
 	{
 		kind: 'community_listing_child',
-		table: 'community_stars',
-		listingColumn: 'listing_id',
-		includeInExport: false,
-		surface: 'community_listing_stars_by_other_users',
-		reason:
-			'Stars belong in the stargazer export. Listing-owner deletion still cascades them, but listing-owner export must not disclose another user’s bookmark or its timestamp.',
-	},
-	{ kind: 'user_id', table: 'community_stars' },
-	{
-		kind: 'community_listing_child',
 		table: 'community_activity_events',
 		listingColumn: 'listing_id',
 		includeInExport: false,
@@ -381,11 +371,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		kind: 'user_columns',
 		table: 'community_activity_events',
 		columns: ['actor_user_id'],
-	},
-	{
-		kind: 'user_columns',
-		table: 'user_follows',
-		columns: ['follower_user_id', 'followee_user_id'],
 	},
 	{
 		kind: 'community_listing_child',
@@ -789,13 +774,11 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	webhook_endpoints: ['url_secret_hash'],
 }
 
-// Social-graph export rows can include another user's stable id. Keep the
+// Cross-user export rows can include another user's stable id. Keep the
 // exporter's own id; replace every other value in these columns.
 export const accountExportForeignUserIdColumnsByTable: Readonly<
 	Record<string, ReadonlyArray<string>>
 > = {
-	user_follows: ['follower_user_id', 'followee_user_id'],
-	community_stars: ['user_id'],
 	community_activity_events: ['actor_user_id'],
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],

@@ -103,17 +103,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 							{link.label}
 						</a>
 					))}
-					{handle.props.loggedIn ? (
-						<a
-							href="/timeline"
-							aria-current={ariaCurrent(
-								handle.props.currentPathname,
-								'/timeline',
-							)}
-						>
-							Timeline
-						</a>
-					) : null}
 					{handle.props.showAdminLink ? (
 						<a
 							href="/admin/users"
@@ -195,17 +184,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 								{link.label}
 							</a>
 						))}
-						{handle.props.loggedIn ? (
-							<a
-								href="/timeline"
-								aria-current={ariaCurrent(
-									handle.props.currentPathname,
-									'/timeline',
-								)}
-							>
-								Timeline
-							</a>
-						) : null}
 						{handle.props.showAdminLink ? (
 							<a
 								href="/admin/users"

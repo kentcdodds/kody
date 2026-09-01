@@ -14,7 +14,6 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 
 const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
 
@@ -180,11 +179,6 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			error instanceof Error ? error.message : 'Unable to create setup link.',
 		)
 	}
-
-	await followDefaultWelcomeAccounts({
-		db: input.db,
-		followerUserId: stableUserId,
-	})
 
 	return {
 		userId,

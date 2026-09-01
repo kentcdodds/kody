@@ -187,7 +187,6 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/faq' ||
 			currentPathname === '/blog' ||
 			currentPathname === '/community' ||
-			currentPathname === '/timeline' ||
 			currentPathname === '/onboarding' ||
 			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null

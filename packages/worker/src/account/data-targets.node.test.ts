@@ -36,8 +36,8 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 		{ kind: 'db_user_target', table: 'verifications' },
 		{
 			kind: 'user_columns',
-			table: 'user_follows',
-			columns: ['follower_user_id', 'followee_user_id'],
+			table: 'community_activity_events',
+			columns: ['actor_user_id'],
 		},
 		{
 			kind: 'null_user_column',
@@ -69,7 +69,7 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 		},
 		{
 			kind: 'community_listing_child',
-			table: 'community_stars',
+			table: 'community_ratings',
 			listingColumn: 'listing_id',
 		},
 		{ kind: 'mcp_memory_suppression' },
@@ -102,11 +102,10 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 		mutation: { kind: 'delete' },
 	})
 	expect(matchFor(samples[3]!)).toEqual({
-		table: 'user_follows',
-		whereSql: 'follower_user_id = ? OR followee_user_id = ?',
-		qualifiedWhereSql:
-			'user_follows.follower_user_id = ? OR user_follows.followee_user_id = ?',
-		params: ['user-aaa', 'user-aaa'],
+		table: 'community_activity_events',
+		whereSql: 'actor_user_id = ?',
+		qualifiedWhereSql: 'community_activity_events.actor_user_id = ?',
+		params: ['user-aaa'],
 		mutation: { kind: 'delete' },
 	})
 
@@ -156,7 +155,7 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 					)`,
 	)
 	expect(matchFor(samples[8]!).qualifiedWhereSql).toBe(
-		`community_stars.listing_id IN (
+		`community_ratings.listing_id IN (
 						SELECT id FROM community_listings WHERE owner_user_id = ?
 					)`,
 	)
@@ -194,9 +193,9 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	expect(accountExportRedactedColumnsByTable.user_oauth_apps).toEqual(
 		expect.arrayContaining(['client_secret_encrypted']),
 	)
-	expect(accountExportForeignUserIdColumnsByTable.user_follows).toEqual(
-		expect.arrayContaining(['follower_user_id', 'followee_user_id']),
-	)
+	expect(
+		accountExportForeignUserIdColumnsByTable.community_activity_events,
+	).toEqual(expect.arrayContaining(['actor_user_id']))
 	expect(accountExportRedactedForeignUserId.length).toBeGreaterThan(0)
 
 	const excludedListingChildren = accountUserDataTargets.filter(

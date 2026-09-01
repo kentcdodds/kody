@@ -855,7 +855,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 		{
 			id: 'listing-cursor',
@@ -885,7 +884,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 	])
 
@@ -995,7 +993,6 @@ test('integration entity detail enriches related packages without bloating ranke
 			ratingCount: 0,
 			averageAdaptationEffort: null,
 			forkCount: 0,
-			starCount: 0,
 		},
 	])
 

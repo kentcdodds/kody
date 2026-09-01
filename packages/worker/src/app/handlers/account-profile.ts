@@ -15,7 +15,7 @@ import {
 } from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { retireUsername } from '#worker/community/package-url.ts'
-import { updateCommunityProfile } from '#worker/community/social-service.ts'
+import { updateCommunityProfile } from '#worker/community/profile-service.ts'
 import {
 	republishCommunityListingsAfterUsernameChange,
 	updatePackagesForUsernameChange,

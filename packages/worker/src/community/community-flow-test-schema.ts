@@ -3,9 +3,8 @@ import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test
 import { ensurePackageInvocationTokensTestSchema } from '#worker/package-invocations/test-schema.ts'
 
 /**
- * Community flow workers-unit schema. Adds the community/social tables and the
- * profile columns the social migration introduced on top of the shared `users`
- * schema.
+ * Community flow workers-unit schema. Adds the community tables and the
+ * profile columns on top of the shared `users` schema.
  */
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	await ensureUsersTestSchema({
@@ -176,22 +175,6 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			reason TEXT NOT NULL,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		)`,
-		`CREATE TABLE IF NOT EXISTS user_follows (
-			follower_user_id TEXT NOT NULL,
-			followee_user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-			PRIMARY KEY (follower_user_id, followee_user_id)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_user_follows_followee_user_id
-			ON user_follows(followee_user_id)`,
-		`CREATE TABLE IF NOT EXISTS community_stars (
-			listing_id TEXT NOT NULL,
-			user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-			PRIMARY KEY (listing_id, user_id)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_community_stars_user_id
-			ON community_stars(user_id)`,
 		`CREATE TABLE IF NOT EXISTS community_activity_events (
 			id TEXT PRIMARY KEY NOT NULL,
 			actor_user_id TEXT NOT NULL,

@@ -153,7 +153,6 @@ const routeDocumentHeads = {
 		const files = loaderData?.packageFiles
 		return titleOnly(files?.ok ? `${files.title} files` : 'Package files')
 	},
-	[routePattern(routes.accountStars)]: titleOnly('Starred packages'),
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
 	[routePattern(routes.accountMcpOauthClients)]: titleOnly('MCP OAuth clients'),
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
@@ -312,7 +311,6 @@ const routeDocumentHeads = {
 			},
 		}
 	},
-	[routePattern(routes.timeline)]: titleOnly('Timeline'),
 	[routePattern(routes.login)]: publicPageHead('login', DEFAULT_DOCUMENT_TITLE),
 	[routePattern(routes.signup)]: publicPageHead(
 		'signup',
