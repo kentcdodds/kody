@@ -15,8 +15,6 @@ node tools/control-kody.ts preview -- \
   --check /account/waiting
 ```
 
-`#1928` seeded a waiting probe, then recorded a preview video of the live page.
-
 ## APIs
 
 - `GET /account/waiting.json`

@@ -43,8 +43,7 @@ actually needs.
 
 `@kody/integrations-sh` is the integrations.sh registry client (search, detect,
 cached surface, live discover). `@kody/api-research` summarizes and scaffolds
-OpenAPI 3.x specs. `@kody/openapi` is the bind-and-call replacement for the old
-`kody.openapi["name"].operation()` capability.
+OpenAPI 3.x specs. `@kody/openapi` binds and calls selected operations.
 
 ```ts
 import bind from 'kody:@<username>/openapi/bind'

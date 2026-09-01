@@ -16,8 +16,8 @@ node tools/control-kody.ts preview -- \
   --check /account/secrets
 ```
 
-GET the page body after a claimed fix. `#1918` shipped with “try
-https://kody.codes/account/secrets” and no body — that is not proof.
+GET the page body after a claimed fix. A “try
+https://kody.codes/account/secrets” note with no body is not proof.
 
 ## APIs
 

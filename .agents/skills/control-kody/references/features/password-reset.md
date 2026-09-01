@@ -17,8 +17,7 @@ node tools/control-kody.ts request GET /account
 node tools/control-kody.ts request GET /reset-password --skip-login
 ```
 
-Password `#1923` proved the signed-in change with a preview video. GET the page
-after a change; do not stop at "try this URL."
+GET the page after a change; do not stop at "try this URL."
 
 ## APIs
 

@@ -19,10 +19,11 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - `GET /community/:listingId.json`
 - `GET /profiles/:username.json`
 - `GET /profiles/:username/packages/:kodyId.json`
-- `POST /community/:listingId/{report,trust,feature,install}.json`
+- `POST /community/:listingId/{report,feature,install}.json`
+- `POST /community/:listingId/trust.json` returns 410 (no trusted-listing mark)
 
 ## Gotchas
 
-- Follows, stars, and the social timeline are gone. Do not add them back from
-  memory.
+- Profiles are public catalogs (packages, ratings, forks). There is no follow
+  graph, bookmark-star, or social timeline.
 - Files and tree URLs are public read for listed packages.
