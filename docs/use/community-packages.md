@@ -4,7 +4,7 @@ Public **packages** are the community catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on
-promote; they do not yet appear on `/community`. Package **runtime** still uses
+promote; they do not yet appear on `/community`. Package **runtime** uses
 `published_commit`; pushing to a public default branch is world-readable at HEAD
 even before the next package publish.
 
@@ -23,8 +23,8 @@ Community discovery uses the MCP **`community`** domain. Catalog listings do
 ## Making a package public
 
 Ask your agent to set visibility with `package_update`
-(`changes.visibility: "public"`). `community_publish` still exists as an alias
-for the same action.
+(`changes.visibility: "public"`). `community_publish` is an alias for the same
+action.
 
 There are **no** MIT, logo, README Intent, or `package.json#private` gates.
 Tags, description, category, and an icon are optional (ranking can prefer
@@ -41,7 +41,7 @@ filled-in cards).
 ### Icon
 
 Prefer a root `icon.svg`, `icon.png`, `icon.webp`, `icon.jpg`, or `icon.jpeg`.
-`community-icon.*` is still accepted. The first existing file in that combined
+`community-icon.*` is also accepted. The first existing file in that combined
 order wins.
 
 ## Browsing listings
@@ -162,8 +162,8 @@ images before upload. Stored avatars are PNG, JPEG, or WebP, up to 1 MB, with
 each side between 64px and 4096px and an aspect ratio of at most 3:1. Dropping a
 photo on the account page opens that editor; dropping a file elsewhere in the
 app does not navigate away. Avatars appear on the public profile and in profile
-activity rows. Private profiles still keep the avatar for the owner; other users
-do not see it.
+activity rows. Private profiles keep the avatar for the owner; other users do
+not see it.
 
 Package privacy follows the repo visibility flag (`saved_packages.is_private`),
 not `package.json#private`:
@@ -182,7 +182,7 @@ When visibility is `private`:
   `user_found: false` with empty fields (it does not leak existence via
   HTTP 404)
 
-The account owner can still read and update their own profile (including while
+The account owner can read and update their own profile (including while
 private) through `community_profile_get` / `community_profile_update`.
 
 ## Ratings

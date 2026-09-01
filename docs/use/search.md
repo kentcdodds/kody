@@ -120,7 +120,7 @@ Examples:
 Official guides are first-class entities. Ranked search can return `{id}:guide`
 hits; `search({ entity: "package_authoring:guide" })` returns the full bundled
 markdown. Prefer that over executing `coding_guide_get` just to read a guide.
-`coding_guide_get` stays available for execute-module code that needs the body
+`coding_guide_get` is for execute-module code that needs the body
 programmatically.
 
 There is **no separate `detail` flag** on search. Deeper inspection uses

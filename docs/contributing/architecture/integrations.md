@@ -97,7 +97,7 @@ so sandboxed code has no resolution path to the shared credential.
 **Invariant:** `getPlatformOauthAppClientSecret`
 (`packages/worker/src/integrations/platform-apps.ts`) is the only decrypt
 accessor, and its remaining caller is host-side token refresh
-(`integration_token_refresh`). `/connect/oauth` no longer decrypts or exchanges
+(`integration_token_refresh`). `/connect/oauth` does not decrypt or exchange
 through the shared secret. The decrypted value must never appear in capability
 outputs, loader payloads, or logs. Public projections (`platform-app-shared.ts`)
 expose at most a `hasClientSecret` boolean.

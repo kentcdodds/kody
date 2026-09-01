@@ -18,7 +18,8 @@ node tools/control-kody.ts preview -- \
   --check /account/packages
 ```
 
-Package delete `#1932` used a preview video plus the empty-state shot.
+To prove delete, create a package through the JSON API, then delete it and
+assert the empty state.
 
 ## APIs
 

@@ -1,19 +1,20 @@
 # Values
 
-Named user values (locale and similar knobs).
+Leftover drain for retired named values. Not in account nav. Do not write new
+rows; map leftovers to memories, package storage, repos, secrets, or
+integrations. See `docs/guides/values.md`.
 
 ## How to get there
 
-`/account/values` → `/account/values/new` → `/account/values/:valueId`.
+`/account/values` → `/account/values/:valueId`.
 
 ## Drive it
 
 ```bash
-node tools/control-kody.ts request \
-  POST /account/values.json \
-  --body '{"action":"save","name":"locale","value":"en-US"}'
+node tools/control-kody.ts request GET /account/values.json
 ```
 
 ## APIs
 
-- `GET|POST /account/values.json`
+- `GET /account/values.json`
+- `POST /account/values.json` — `delete` only

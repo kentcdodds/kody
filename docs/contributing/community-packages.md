@@ -80,7 +80,7 @@ Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
 KV snapshot, and ratings.
 
-Trusted listings are **removed**. `trusted_*` columns remain until a follow-up
+There is no trusted-listing mark. Leftover `trusted_*` columns stay until a
 schema drop. Product reads always treat `trusted` as false.
 `POST /community/:listingId/trust.json` returns 410.
 

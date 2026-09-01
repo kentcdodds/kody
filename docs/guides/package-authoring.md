@@ -282,11 +282,10 @@ user explicitly skips a surface) treat the package as ready to run.
 ## Package icon
 
 Public packages should include one root `icon.svg`, `icon.png`, `icon.webp`,
-`icon.jpg`, or `icon.jpeg`. `community-icon.*` is still accepted. Prefer a
-square visual with a simple silhouette that remains legible at 56 pixels. Keep
-it under 2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of
-that source (or a generated package-name fallback when the repository has no
-icon).
+`icon.jpg`, or `icon.jpeg`. `community-icon.*` is also accepted. Prefer a square
+visual with a simple silhouette that remains legible at 56 pixels. Keep it under
+2 MiB and 16 megapixels. Kody stores a 256-pixel WebP derivative of that source
+(or a generated package-name fallback when the repository has no icon).
 
 Publishing the package refreshes the catalog listing icon automatically. The
 candidate paths win in the order `icon.*` then `community-icon.*` (svg, png,
