@@ -8,8 +8,10 @@ import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-r
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	buildPackageFilesView,
+	fallbackDefaultBranchName,
 	getAccountPackageFilesHref,
 	getCommunityPackageFilesHref,
+	isPublicTreeDefaultRefAlias,
 	normalizePackageFilesPath,
 	type PackageFilesView,
 } from '#universal/package-files.ts'
@@ -94,15 +96,19 @@ export async function loadCommunityPackageFilesData(input: {
 	if (!listing) return null
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
-	const treeRef = input.ref?.trim() || 'HEAD'
+	const treeRef = input.ref?.trim() ?? ''
 	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
-	const resolvedCommit = await resolvePublicTreeCommit({
+	const resolved = await resolvePublicTreeCommit({
 		env: input.env,
 		sourceRepoId: source?.repo_id ?? null,
 		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
 		pinnedCommit: listing.pinnedCommit,
 		ref: treeRef,
 	})
+	const resolvedCommit = resolved.commit
+	const urlRef = isPublicTreeDefaultRefAlias(treeRef)
+		? resolved.defaultBranch
+		: treeRef
 	const loaded = await loadPublicTreeFiles({
 		env: input.env,
 		listingId: listing.id,
@@ -128,7 +134,7 @@ export async function loadCommunityPackageFilesData(input: {
 		listingId: listing.id,
 		ownerUsername,
 		kodyId: listing.kodyId,
-		ref: treeRef,
+		ref: urlRef,
 	})
 	const view = buildPackageFilesView({
 		files,
@@ -157,10 +163,10 @@ async function resolvePublicTreeCommit(input: {
 	publishedCommit: string | null
 	pinnedCommit: string
 	ref: string
-}): Promise<string | null> {
-	const ref = input.ref.trim() || 'HEAD'
+}): Promise<{ commit: string | null; defaultBranch: string }> {
+	const ref = input.ref.trim()
 	let headCommit: string | null = null
-	let defaultBranch = 'main'
+	let defaultBranch = fallbackDefaultBranchName
 	if (input.sourceRepoId) {
 		try {
 			const head = await resolveArtifactSourceHead(
@@ -168,30 +174,36 @@ async function resolvePublicTreeCommit(input: {
 				input.sourceRepoId,
 			)
 			headCommit = head.commit
-			defaultBranch = head.branch || 'main'
+			defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
 		} catch {
 			headCommit = input.publishedCommit
 		}
 	}
-	if (ref === 'HEAD' || ref === defaultBranch) {
-		return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+	if (isPublicTreeDefaultRefAlias(ref) || ref === defaultBranch) {
+		return {
+			commit: headCommit ?? input.publishedCommit ?? input.pinnedCommit,
+			defaultBranch,
+		}
 	}
 	if (headCommit && (headCommit === ref || headCommit.startsWith(ref))) {
-		return headCommit
+		return { commit: headCommit, defaultBranch }
 	}
 	if (
 		input.publishedCommit &&
 		(input.publishedCommit === ref || input.publishedCommit.startsWith(ref))
 	) {
-		return input.publishedCommit
+		return { commit: input.publishedCommit, defaultBranch }
 	}
 	if (input.pinnedCommit === ref || input.pinnedCommit.startsWith(ref)) {
-		return input.pinnedCommit
+		return { commit: input.pinnedCommit, defaultBranch }
 	}
 	if (/^[0-9a-f]{7,40}$/i.test(ref)) {
-		return ref
+		return { commit: ref, defaultBranch }
 	}
-	return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+	return {
+		commit: headCommit ?? input.publishedCommit ?? input.pinnedCommit,
+		defaultBranch,
+	}
 }
 
 async function loadPublicTreeFiles(input: {

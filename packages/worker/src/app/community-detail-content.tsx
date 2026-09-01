@@ -152,6 +152,7 @@ export function CommunityDetailContent(
 						listingId: listing.id,
 						ownerUsername: listing.ownerUsername,
 						kodyId: listing.kodyId,
+						ref: listing.defaultBranch,
 					})}
 					data-testid="community-browse-files"
 					mix={css(filesLinkCss)}

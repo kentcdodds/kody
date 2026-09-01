@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	listCommunityForksByListingIdsAndUser: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	resolveArtifactSourceHead: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
@@ -42,6 +43,11 @@ vi.mock('#worker/community/repo.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+}))
+
+vi.mock('#worker/repo/artifacts.ts', () => ({
+	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+		mockModule.resolveArtifactSourceHead(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -126,7 +132,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 	)
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
-	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
+	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).not.toContain('<html')
 
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
@@ -185,4 +191,36 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(
 		signedInHtml.indexOf('data-testid="community-detail-viewer-install-badge"'),
 	).toBeGreaterThan(signedInHtml.indexOf('</h1>'))
+})
+
+test('community detail browse-files uses the looked-up default branch', async () => {
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'release',
+		commit: 'abc1234567890',
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+
+	const handler = createCommunityDetailHandler(env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const html = await response.text()
+	expect(html).toContain('href="/@kentcdodds/github-triage/tree/release"')
+	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
+	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
 })

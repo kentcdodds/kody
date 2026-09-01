@@ -256,7 +256,8 @@ Client routes: `packages/worker/client/routes/community*`
   `package_kody_id_redirects` map prior owner usernames and package slugs to a
   redirect at that URL
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
-  (branch, SHA, or `HEAD`). Leftover `/files` URLs 301 here
+  (default-branch name from git, SHA, or another branch). `HEAD` and leftover
+  `/files` URLs 301 to `/tree/{defaultBranch}` (`main` when lookup misses)
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (requires login
   and a generic confirm), fork prompt, and report link (report requires login)

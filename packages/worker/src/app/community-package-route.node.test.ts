@@ -1,0 +1,119 @@
+import { expect, test, vi } from 'vitest'
+
+const mockModule = vi.hoisted(() => ({
+	resolveCommunityPackageUrl: vi.fn<() => Promise<unknown>>(),
+	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
+	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
+	resolveArtifactSourceHead: vi.fn<() => Promise<unknown>>(),
+}))
+
+vi.mock('#worker/community/package-url.ts', () => ({
+	getCommunityPackageHref: (input: { username: string; kodyId: string }) =>
+		`/@${input.username}/${input.kodyId}`,
+	resolveCommunityPackageUrl: (...args: Array<unknown>) =>
+		mockModule.resolveCommunityPackageUrl(...args),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingById: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingById(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
+}))
+
+vi.mock('#worker/repo/artifacts.ts', () => ({
+	resolveArtifactSourceHead: (...args: Array<unknown>) =>
+		mockModule.resolveArtifactSourceHead(...args),
+}))
+
+const { resolveCommunityFilesRoute } =
+	await import('./community-package-route.ts')
+
+const env = { APP_DB: {} } as Env
+
+function filesUrl(pathname: string) {
+	return new URL(`https://example.com${pathname}`)
+}
+
+test('leftover /files and /tree/HEAD 301 to the looked-up default branch', async () => {
+	mockModule.resolveCommunityPackageUrl.mockResolvedValue({
+		kind: 'listing',
+		listingId: 'listing-1',
+		username: 'kentcdodds',
+		kodyId: 'devin',
+	})
+	mockModule.getCommunityListingById.mockResolvedValue({
+		id: 'listing-1',
+		sourceId: 'src-1',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'release',
+		commit: 'abc',
+	})
+
+	const leftover = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/files/src/index.ts'),
+	})
+	expect(leftover).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+	})
+
+	const head = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/tree/HEAD'),
+	})
+	expect(head).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/devin/tree/release',
+	})
+
+	const headFile = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/tree/head/src/index.ts'),
+	})
+	expect(headFile).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/devin/tree/release/src/index.ts',
+	})
+
+	mockModule.resolveArtifactSourceHead.mockClear()
+	const defaultBranch = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/tree/release'),
+	})
+	expect(defaultBranch).toEqual({
+		kind: 'listing',
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'release',
+	})
+	expect(mockModule.resolveArtifactSourceHead).not.toHaveBeenCalled()
+
+	const otherBranch = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/tree/main'),
+	})
+	expect(otherBranch).toEqual({
+		kind: 'listing',
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(mockModule.resolveArtifactSourceHead).not.toHaveBeenCalled()
+
+	mockModule.resolveArtifactSourceHead.mockRejectedValue(new Error('no git'))
+	const fallback = await resolveCommunityFilesRoute({
+		env,
+		url: filesUrl('/@kentcdodds/devin/files'),
+	})
+	expect(fallback).toEqual({
+		kind: 'redirect',
+		to: '/@kentcdodds/devin/tree/main',
+	})
+})

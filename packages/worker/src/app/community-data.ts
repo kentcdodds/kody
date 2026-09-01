@@ -19,6 +19,7 @@ import {
 import { parseCommunityListingCategory } from '#universal/community-categories.ts'
 import { listOnboardingFeaturedMcpListingIds } from '#universal/onboarding-mcp-chooser.ts'
 import { parseCommunityListingSort } from '#universal/community-search.ts'
+import { fallbackDefaultBranchName } from '#universal/package-files.ts'
 import {
 	type CommunityDetailLoaderData,
 	type CommunityIndexLoaderData,
@@ -331,16 +332,21 @@ async function loadCommunityDetailDataUncached(
 		if (source) {
 			try {
 				const head = await resolveArtifactSourceHead(env, source.repo_id)
+				const defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
 				const headCommit = head.commit
-				if (headCommit && headCommit !== listing.pinnedCommit) {
-					sourceAheadListing = {
-						...listing,
-						headCommit,
-						sourceAhead: true,
-					}
+				sourceAheadListing = {
+					...listing,
+					defaultBranch,
+					...(headCommit && headCommit !== listing.pinnedCommit
+						? { headCommit, sourceAhead: true }
+						: {}),
 				}
 			} catch {
 				// Public HEAD is best-effort; the listing page still renders.
+				sourceAheadListing = {
+					...listing,
+					defaultBranch: fallbackDefaultBranchName,
+				}
 			}
 		}
 	}
