@@ -44,7 +44,7 @@ export async function enrichOAuthTokenResponse(
 	const contentType = response.headers.get('Content-Type') ?? ''
 	if (!contentType.includes('application/json')) return response
 
-	const body = (await response.json()) as Record<string, unknown>
+	const body = (await response.clone().json()) as Record<string, unknown>
 	if (typeof body.access_token !== 'string' || !body.access_token) {
 		return response
 	}
