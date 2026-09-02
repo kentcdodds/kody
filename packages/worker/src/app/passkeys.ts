@@ -122,3 +122,11 @@ export async function deletePasskeyForUser(
 		.run()
 	return (result.meta?.changes ?? 0) > 0
 }
+
+export async function deletePasskeysForUser(db: D1Database, userId: number) {
+	const result = await db
+		.prepare(`DELETE FROM passkeys WHERE user_id = ?`)
+		.bind(userId)
+		.run()
+	return result.meta?.changes ?? 0
+}

@@ -167,7 +167,7 @@ export async function cancelTwoFactorSetup(db: D1Database, userId: number) {
 export async function disableTwoFactor(db: D1Database, userId: number) {
 	// Also drop any pending setup so a stale scanned secret can't be
 	// re-activated later without going through the full setup flow.
-	await db
+	const result = await db
 		.prepare(`DELETE FROM verifications WHERE target = ? AND type IN (?, ?)`)
 		.bind(
 			getTwoFactorTarget(userId),
@@ -175,4 +175,5 @@ export async function disableTwoFactor(db: D1Database, userId: number) {
 			twoFactorSetupVerificationType,
 		)
 		.run()
+	return result.meta?.changes ?? 0
 }

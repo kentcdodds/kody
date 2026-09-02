@@ -83,6 +83,18 @@ package-app surfaces:
     only) and suspend or delete the squatting account with existing
     capabilities. `users.stable_user_id` is never recomputed for an existing
     account.
+12. **Unverified accounts are reclaimed on a provider-verified social match.**
+    When a social login profile presents a verified email that matches
+    `users.email` and `email_verified_at` is null, treat the row as a possible
+    squat before linking: rotate `password_hash` to an unusable sentinel, stamp
+    `password_changed_at` (browser sessions and MCP bearers fail closed), revoke
+    MCP grants, delete TOTP rows, passkeys, other `oauth_connections`, and
+    outstanding `password_resets`, then link the provider and mark the account
+    verified. An already-verified match only links and signs in.
+13. **Password-reset confirmation clears second factors and linked providers.**
+    `POST /password-reset/confirm` disables TOTP, deletes passkeys and
+    `oauth_connections`, and tells the owner in the confirmation email.
+    Signed-in `POST /account/password.json` leaves those factors in place.
 
 ## First-party HTTP security headers
 
@@ -506,13 +518,16 @@ change to these decisions here so future agents do not relitigate them.
   signed cookie with no server store, so there is no separate "log out
   everywhere" button. Password reset confirmation and signed-in password change
   (`POST /account/password.json`) both revoke every MCP OAuth grant for the
-  user, stamp `users.password_changed_at`, then revoke again. Browser and
-  package-app sessions carry `issuedAt`; `resolveRequestAuth` rejects cookies
-  issued at or before that timestamp (missing `issuedAt` fails closed once a
-  password change exists). `/mcp` applies the same timestamp to the access token
-  `createdAt` (Unix seconds) so already-issued bearers fail closed as
-  `invalid_token`. A signed-in password change re-issues the current browser
-  cookie so that tab stays signed in; every other session still dies.
+  user, stamp `users.password_changed_at`, then revoke again. Password-reset
+  confirmation also disables TOTP, deletes passkeys, and deletes
+  `oauth_connections`. Browser and package-app sessions carry `issuedAt`;
+  `resolveRequestAuth` rejects cookies issued at or before that timestamp
+  (missing `issuedAt` fails closed once a password change exists). `/mcp`
+  applies the same timestamp to the access token `createdAt` (Unix seconds) so
+  already-issued bearers fail closed as `invalid_token`. A signed-in password
+  change re-issues the current browser cookie so that tab stays signed in; every
+  other session still dies. Reclaiming an unverified account on a
+  provider-verified social match uses the same `password_changed_at` lockout.
 - **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
   mismatched DCR client for **their** grants only. `deleteClient` runs only when
   `user_mcp_oauth_clients` shows they own that registration. Shared host clients

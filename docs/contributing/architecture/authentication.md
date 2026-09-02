@@ -42,13 +42,19 @@ The cookie payload stores:
 
 Password reset confirmation and signed-in password change revoke every MCP OAuth
 grant for that user, write `users.password_changed_at`, then revoke again so a
-grant created in that window cannot survive. Session resolution rejects cookies
-whose `issuedAt` is missing or at/before that timestamp, so a reset invalidates
-every existing browser and package-app session. A signed-in change re-issues the
-current `kody_session` cookie with a later `issuedAt` so that browser stays
-signed in. `/mcp` rejects access tokens whose `createdAt` is at or before that
-timestamp (`invalid_token`), so already-issued bearers die immediately; hosts
-that refresh then hit the revoked grant and must start a new OAuth flow.
+grant created in that window cannot survive. Password-reset confirmation also
+disables two-factor authentication, deletes passkeys, and deletes linked sign-in
+providers (`oauth_connections`), then emails the owner listing those cleared
+methods.
+
+Session resolution rejects cookies whose `issuedAt` is missing or at/before that
+timestamp, so a reset invalidates every existing browser and package-app
+session. A signed-in change re-issues the current `kody_session` cookie with a
+later `issuedAt` so that browser stays signed in and leaves second factors and
+linked providers in place. `/mcp` rejects access tokens whose `createdAt` is at
+or before that timestamp (`invalid_token`), so already-issued bearers die
+immediately; hosts that refresh then hit the revoked grant and must start a new
+OAuth flow.
 
 `users.id` never crosses the cookie boundary. Session resolution looks up the
 stable id and only then uses the numeric primary key for internal D1 joins.
@@ -409,7 +415,9 @@ Password reset handlers are in
 - `POST /password-reset/confirm` verifies token hash and expiry, updates the
   password, revokes every MCP OAuth grant for that user, stamps
   `users.password_changed_at`, then revokes again so a grant created in that
-  window cannot survive
+  window cannot survive. It also disables two-factor authentication, deletes
+  passkeys and `oauth_connections`, and sends a confirmation email listing those
+  cleared sign-in methods
 - Session cookies and package-app sessions whose `issuedAt` is missing or at or
   before `password_changed_at` fail closed; `/mcp` rejects access tokens whose
   `createdAt` is at or before that timestamp (`invalid_token`)
@@ -433,7 +441,9 @@ Signed-in password change is `POST /account/password.json`
   first password without a current password
 - New passwords go through `getPasswordPolicyError`
 - Shares `applyPasswordChange` with reset confirmation: revoke MCP grants, stamp
-  `users.password_changed_at`, revoke again, delete outstanding reset tokens
+  `users.password_changed_at`, revoke again, delete outstanding reset tokens.
+  Unlike reset confirmation, this path does not clear two-factor, passkeys, or
+  linked providers
 - Re-issues the current session cookie with `issuedAt` strictly after
   `password_changed_at` so this browser stays signed in
 - Joins the shared auth rate-limit bucket and a per-user password-change budget
@@ -587,8 +597,12 @@ token. The member role is assigned on connect; Standard and Pro roles follow
   `/account/connections.json` (disconnect is refused when the connection is the
   only sign-in method). `/discord` is the public **Connect Discord** page (one
   action joins the official server and links the account)
-- A provider-verified email matching an existing account auto-links and signs
-  in; otherwise account creation follows the signup posture
+- A provider-verified email matching an existing **verified** account auto-links
+  and signs in. A match against an **unverified** account reclaims that row
+  first (unusable password sentinel, `password_changed_at` lockout, TOTP /
+  passkeys / other `oauth_connections` / reset tokens cleared) so a squatted
+  password signup cannot keep access after the real owner signs in with the
+  provider; otherwise account creation follows the signup posture
   (`SIGNUP_MODE !== 'open'` requires a valid invite code carried from the invite
   signup panel; the `test` env remains open without one)
 - Buttons only render for providers whose client id/secret env vars are set;

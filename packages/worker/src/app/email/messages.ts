@@ -332,3 +332,22 @@ export function buildPasswordResetEmail(input: {
 			'If you did not request a reset, you can safely ignore this email — your password stays unchanged.',
 	})
 }
+
+export function buildPasswordResetConfirmedEmail(input: {
+	appBaseUrl: string
+	accountUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your Kody password was reset',
+		preheader: 'Your password changed. Extra sign-in methods were removed.',
+		heading: 'Your password was reset',
+		body: [
+			'Your Kody password was changed using a reset link.',
+			'Two-factor authentication, passkeys, and linked sign-in providers were removed; set them up again from your account.',
+		],
+		action: { label: 'Open account settings', url: input.accountUrl },
+		footnote:
+			'If you did not reset your password, sign in and change it again, then review your account security.',
+	})
+}

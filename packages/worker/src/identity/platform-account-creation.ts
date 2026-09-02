@@ -7,9 +7,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-
-const platformAccountNoUsablePasswordHash =
-	'platform_account_no_usable_password'
+import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 
 export type PlatformAccountCreateErrorCode =
 	| 'invalid_email'
@@ -95,7 +93,7 @@ export async function createPlatformAccount(input: {
 			.bind(
 				username,
 				email,
-				platformAccountNoUsablePasswordHash,
+				unusablePasswordHash.platformAccount,
 				nowIso,
 				stableUserId,
 			)

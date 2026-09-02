@@ -61,4 +61,11 @@ test('password hash verify upgrades legacy, rejects over-cap and tampered metada
 	]) {
 		await expect(verifyPassword(password, tamperedHash)).resolves.toBe(false)
 	}
+
+	await expect(
+		verifyPassword(password, 'reclaimed_unverified_no_usable_password'),
+	).resolves.toBe(false)
+	await expect(
+		verifyPassword(password, 'oauth_created_no_usable_password'),
+	).resolves.toBe(false)
 })

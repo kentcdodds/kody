@@ -9,9 +9,15 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
+import {
+	type ClearedAccountFactors,
+	clearSecondFactorsAndConnections,
+} from '#app/clear-account-factors.ts'
+
+export type { ClearedAccountFactors }
 
 export type ApplyPasswordChangeResult =
-	| { ok: true; changedAtMs: number }
+	| { ok: true; changedAtMs: number; cleared: ClearedAccountFactors | null }
 	| {
 			ok: false
 			reason: 'oauth_provider_unavailable'
@@ -25,6 +31,10 @@ export type ApplyPasswordChangeResult =
 			changedAtMs?: number
 	  }
 
+type ApplyPasswordChangeCredential =
+	| { password: string; unusablePasswordHash?: undefined }
+	| { unusablePasswordHash: string; password?: undefined }
+
 /**
  * Stamp a new password hash, revoke MCP grants around the stamp, and drop
  * outstanding reset tokens. Callers map the result onto HTTP + audit events.
@@ -32,14 +42,21 @@ export type ApplyPasswordChangeResult =
  * Reset tokens stay until both revoke passes succeed so a retry remains
  * safe. `changedAtMs` is millisecond-precision so a freshly issued session
  * cookie can postdate `password_changed_at`.
+ *
+ * Password-reset confirmation passes `clearSecondFactorsAndConnections` so
+ * attacker-added TOTP, passkeys, and linked providers cannot survive the
+ * new password. Signed-in password change leaves those factors in place.
  */
-export async function applyPasswordChange(input: {
-	db: AppDatabase
-	helpers: OAuthGrantHelpers | undefined
-	userId: number
-	stableUserId: string
-	password: string
-}): Promise<ApplyPasswordChangeResult> {
+export async function applyPasswordChange(
+	input: {
+		db: AppDatabase
+		d1: D1Database
+		helpers: OAuthGrantHelpers | undefined
+		userId: number
+		stableUserId: string
+		clearSecondFactorsAndConnections?: boolean
+	} & ApplyPasswordChangeCredential,
+): Promise<ApplyPasswordChangeResult> {
 	if (!input.helpers) {
 		return { ok: false, reason: 'oauth_provider_unavailable', stamped: false }
 	}
@@ -72,7 +89,7 @@ export async function applyPasswordChange(input: {
 	}
 
 	const changedAtMs = Date.now()
-	const passwordHash = await createPasswordHash(input.password)
+	const passwordHash = await resolvePasswordHash(input)
 	await input.db.update(usersTable, input.userId, {
 		password_hash: passwordHash,
 		password_changed_at: new Date(changedAtMs).toISOString(),
@@ -96,5 +113,16 @@ export async function applyPasswordChange(input: {
 		where: { user_id: input.userId },
 	})
 
-	return { ok: true, changedAtMs }
+	const cleared = input.clearSecondFactorsAndConnections
+		? await clearSecondFactorsAndConnections(input.d1, input.userId)
+		: null
+
+	return { ok: true, changedAtMs, cleared }
+}
+
+async function resolvePasswordHash(input: ApplyPasswordChangeCredential) {
+	if (input.unusablePasswordHash !== undefined) {
+		return input.unusablePasswordHash
+	}
+	return createPasswordHash(input.password)
 }

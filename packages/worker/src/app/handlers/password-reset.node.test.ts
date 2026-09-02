@@ -339,6 +339,8 @@ test('password reset confirm revokes MCP grants before stamping password_changed
 	const handler = createPasswordResetConfirmHandler(
 		createEnv({
 			OAUTH_PROVIDER: helpers,
+			APP_BASE_URL: 'https://kody.codes',
+			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
 		}),
 	)
 
@@ -373,7 +375,14 @@ test('password reset confirm revokes MCP grants before stamping password_changed
 			category: 'auth',
 			action: 'password_reset_confirm',
 			result: 'success',
+			reason: 'two_factor=0;passkeys=0;oauth_connections=0',
 		}),
+	)
+	const [, confirmMessage] = mockModule.sendCloudflareEmail.mock.calls[0]!
+	expect((confirmMessage as { to: string }).to).toBe('user@example.com')
+	expect((confirmMessage as { from: string }).from).toBe('kody@kody.codes')
+	expect((confirmMessage as { text: string }).text).toContain(
+		'Two-factor authentication, passkeys, and linked sign-in providers were removed',
 	)
 })
 
@@ -388,6 +397,8 @@ test('password reset confirm revokes a grant created between first revoke and pa
 	const handler = createPasswordResetConfirmHandler(
 		createEnv({
 			OAUTH_PROVIDER: helpers,
+			APP_BASE_URL: 'https://kody.codes',
+			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
 		}),
 	)
 
