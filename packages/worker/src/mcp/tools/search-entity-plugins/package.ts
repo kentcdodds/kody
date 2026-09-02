@@ -507,6 +507,13 @@ export const packageSearchEntityPlugin = {
 			key,
 			name: retriever.name,
 		}))
+		const webhooks = (detail.manifest.kody.webhooks ?? []).map((webhook) => ({
+			name: webhook.name,
+			exportName: webhook.export,
+			responseMode: webhook.responseMode ?? 'ack',
+			replay: webhook.replay ?? null,
+			signedPayload: webhook.verification?.signedPayload ?? null,
+		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
 		const readmeIntent = buildPackageReadmeIntent({
 			files: detail.files,
@@ -561,6 +568,27 @@ export const packageSearchEntityPlugin = {
 				),
 			)
 		}
+		if (webhooks.length > 0) {
+			lines.push(
+				'',
+				'## Webhooks',
+				'',
+				...webhooks.map((webhook) => {
+					const replayParts = [
+						webhook.signedPayload ? `signed ${webhook.signedPayload}` : null,
+						webhook.replay?.timestampHeader
+							? `timestamp ${webhook.replay.timestampHeader}${webhook.replay.timestampFormat ? ` ${webhook.replay.timestampFormat}` : ''}`
+							: null,
+						webhook.replay?.deliveryIdHeader
+							? `delivery ${webhook.replay.deliveryIdHeader}`
+							: null,
+					].filter((value): value is string => value != null)
+					const replaySuffix =
+						replayParts.length > 0 ? ` (${replayParts.join(', ')})` : ''
+					return `- ${formatMarkdownInlineCode(webhook.name)} → ${formatMarkdownInlineCode(webhook.exportName)} (${webhook.responseMode}${replaySuffix})`
+				}),
+			)
+		}
 		if (readmeIntent) {
 			lines.push(
 				'',
@@ -598,6 +626,7 @@ export const packageSearchEntityPlugin = {
 				exports: exportDetails,
 				jobs,
 				retrievers,
+				webhooks,
 				readmeIntent,
 				followUp,
 				listingAhead: detail.listingAhead,

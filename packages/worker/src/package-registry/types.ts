@@ -58,25 +58,92 @@ export type PackageSubscriptionDefinition = z.infer<
 /** RFC 9110 token characters for HTTP field names. */
 const httpFieldNamePattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
+export const webhookSignedPayloadValues = ['body', 'timestamp.body'] as const
+export type WebhookSignedPayload = (typeof webhookSignedPayloadValues)[number]
+
+export const webhookTimestampFormatValues = [
+	'unix-seconds',
+	'unix-millis',
+	'iso-8601',
+	'stripe-signature',
+] as const
+export type WebhookTimestampFormat =
+	(typeof webhookTimestampFormatValues)[number]
+
 export const packageWebhookVerificationSchema = z.object({
 	type: z.enum(['hmac-sha256', 'hmac-sha1']),
 	header: z.string().regex(httpFieldNamePattern),
 	secretName: z.string().min(1),
 	encoding: z.enum(['hex', 'base64']),
 	prefix: z.string().optional(),
+	signedPayload: z.enum(webhookSignedPayloadValues).optional(),
 })
 
 export type PackageWebhookVerification = z.infer<
 	typeof packageWebhookVerificationSchema
 >
 
-export const packageWebhookDefinitionSchema = z.object({
-	name: z.string().regex(kodyPackageIdPattern),
-	export: z.string().min(1),
-	description: z.string().min(1).optional(),
-	responseMode: z.enum(['ack', 'sync']).optional(),
-	verification: packageWebhookVerificationSchema.optional(),
-})
+const webhookTimestampFormatSchema = z.string().superRefine((value, ctx) => {
+	if (
+		!(webhookTimestampFormatValues as ReadonlyArray<string>).includes(value)
+	) {
+		ctx.addIssue({
+			code: 'custom',
+			message: `Unknown webhook replay timestampFormat "${value}". Expected one of: ${webhookTimestampFormatValues.join(', ')}.`,
+		})
+	}
+}) as z.ZodType<WebhookTimestampFormat>
+
+export const packageWebhookReplaySchema = z
+	.object({
+		timestampHeader: z.string().regex(httpFieldNamePattern).optional(),
+		timestampFormat: webhookTimestampFormatSchema.optional(),
+		toleranceSeconds: z.number().int().positive().max(86_400).optional(),
+		deliveryIdHeader: z.string().regex(httpFieldNamePattern).optional(),
+	})
+	.superRefine((replay, ctx) => {
+		if (replay.timestampHeader && replay.timestampFormat === undefined) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['timestampFormat'],
+				message:
+					'replay.timestampFormat is required when timestampHeader is set.',
+			})
+		}
+		if (replay.timestampFormat !== undefined && !replay.timestampHeader) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['timestampHeader'],
+				message:
+					'replay.timestampHeader is required when timestampFormat is set.',
+			})
+		}
+	})
+
+export type PackageWebhookReplay = z.infer<typeof packageWebhookReplaySchema>
+
+export const packageWebhookDefinitionSchema = z
+	.object({
+		name: z.string().regex(kodyPackageIdPattern),
+		export: z.string().min(1),
+		description: z.string().min(1).optional(),
+		responseMode: z.enum(['ack', 'sync']).optional(),
+		verification: packageWebhookVerificationSchema.optional(),
+		replay: packageWebhookReplaySchema.optional(),
+	})
+	.superRefine((webhook, ctx) => {
+		if (
+			webhook.verification?.signedPayload === 'timestamp.body' &&
+			!webhook.replay?.timestampHeader
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['verification', 'signedPayload'],
+				message:
+					'verification.signedPayload "timestamp.body" requires replay.timestampHeader.',
+			})
+		}
+	})
 
 export type PackageWebhookDefinition = z.infer<
 	typeof packageWebhookDefinitionSchema

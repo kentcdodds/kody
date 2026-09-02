@@ -11,8 +11,13 @@ import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
-	webhookUrlSecretMatches,
+	buildWebhookDeliveryIdempotencyKey,
+	buildWebhookTimestampBodyPayload,
+	isWebhookTimestampWithinTolerance,
+	parseWebhookReplayTimestamp,
+	providedWebhookHmacValues,
 	verifyWebhookHmacSignature,
+	webhookUrlSecretMatches,
 } from './crypto.ts'
 import {
 	dispatchWebhookInvocation,
@@ -34,6 +39,7 @@ import { collectSafeWebhookHeaders } from './headers.ts'
 import { buildWebhookExportParams } from './params.ts'
 import { getWebhookEndpointByKey } from './repo.ts'
 import {
+	webhookDefaultReplayToleranceSeconds,
 	webhookMaxPayloadBytes,
 	webhookRateLimitConfig,
 	webhookSyncInvocationTimeoutMs,
@@ -144,6 +150,29 @@ function unauthorizedSignatureResponse() {
 		},
 		{ status: 401 },
 	)
+}
+
+async function rejectUnauthorizedSignature(input: {
+	env: Env
+	endpoint: Parameters<typeof recordWebhookDelivery>[0]['endpoint']
+	kodyId: string
+	error: string
+	payloadBytes: number
+	startedAt: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	await recordWebhookDelivery({
+		env: input.env,
+		endpoint: input.endpoint,
+		kodyId: input.kodyId,
+		outcome: 'rejected',
+		httpStatus: 401,
+		error: input.error,
+		payloadBytes: input.payloadBytes,
+		startedAt: input.startedAt,
+		waitUntil: input.waitUntil,
+	})
+	return unauthorizedSignatureResponse()
 }
 
 function dispatchUnavailableResponse() {
@@ -356,22 +385,62 @@ export async function handleWebhookIngressRequest(
 	) as ArrayBuffer
 	const bodyText = new TextDecoder().decode(bodyBytes)
 
+	const rejectUnauthorized = (error: string) =>
+		rejectUnauthorizedSignature({
+			env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
+			error,
+			payloadBytes: bodyBytes.byteLength,
+			startedAt: receivedAt,
+			waitUntil,
+		})
+
+	let replayTimestampToken: string | undefined
+	if (declared.replay?.timestampHeader) {
+		const timestampFormat = declared.replay.timestampFormat
+		if (!timestampFormat) {
+			return rejectUnauthorized('invalid_timestamp')
+		}
+		const parsedTimestamp = parseWebhookReplayTimestamp({
+			headerValue: request.headers.get(declared.replay.timestampHeader),
+			format: timestampFormat,
+		})
+		if (!parsedTimestamp.ok) {
+			return rejectUnauthorized(
+				parsedTimestamp.reason === 'missing'
+					? 'missing_timestamp'
+					: 'invalid_timestamp',
+			)
+		}
+		const toleranceSeconds =
+			declared.replay.toleranceSeconds ?? webhookDefaultReplayToleranceSeconds
+		if (
+			!isWebhookTimestampWithinTolerance({
+				timestampMs: parsedTimestamp.timestampMs,
+				nowMs: Date.parse(receivedAt),
+				toleranceSeconds,
+			})
+		) {
+			return rejectUnauthorized('timestamp_outside_tolerance')
+		}
+		replayTimestampToken = parsedTimestamp.timestampToken
+	}
+
+	if (declared.replay?.deliveryIdHeader) {
+		const deliveryIdValue = request.headers
+			.get(declared.replay.deliveryIdHeader)
+			?.trim()
+		if (!deliveryIdValue) {
+			return rejectUnauthorized('missing_delivery_id')
+		}
+	}
+
 	if (declared.verification) {
 		const headerName = declared.verification.header
 		const provided = request.headers.get(headerName)
 		if (!provided) {
-			await recordWebhookDelivery({
-				env,
-				endpoint,
-				kodyId: savedPackage.kodyId,
-				outcome: 'rejected',
-				httpStatus: 401,
-				error: 'missing_signature',
-				payloadBytes: bodyBytes.byteLength,
-				startedAt: receivedAt,
-				waitUntil,
-			})
-			return unauthorizedSignatureResponse()
+			return rejectUnauthorized('missing_signature')
 		}
 		const resolved = await resolveSecret({
 			env,
@@ -384,47 +453,58 @@ export async function handleWebhookIngressRequest(
 			},
 		})
 		if (!resolved.found || !resolved.value) {
-			await recordWebhookDelivery({
-				env,
-				endpoint,
-				kodyId: savedPackage.kodyId,
-				outcome: 'rejected',
-				httpStatus: 401,
-				error: `verification_secret_missing:${declared.verification.secretName}`,
-				payloadBytes: bodyBytes.byteLength,
-				startedAt: receivedAt,
-				waitUntil,
-			})
-			return unauthorizedSignatureResponse()
+			return rejectUnauthorized(
+				`verification_secret_missing:${declared.verification.secretName}`,
+			)
 		}
-		const valid = await verifyWebhookHmacSignature({
-			algorithm: declared.verification.type,
-			secret: resolved.value,
-			body: bodyBuffer,
-			encoding: declared.verification.encoding,
-			prefix: declared.verification.prefix,
-			provided,
-		})
-		if (!valid) {
-			await recordWebhookDelivery({
-				env,
-				endpoint,
-				kodyId: savedPackage.kodyId,
-				outcome: 'rejected',
-				httpStatus: 401,
-				error: 'invalid_signature',
-				payloadBytes: bodyBytes.byteLength,
-				startedAt: receivedAt,
-				waitUntil,
+		const signedPayload = declared.verification.signedPayload ?? 'body'
+		let hmacPayload = bodyBuffer
+		if (signedPayload === 'timestamp.body') {
+			if (!replayTimestampToken) {
+				return rejectUnauthorized('invalid_timestamp')
+			}
+			hmacPayload = buildWebhookTimestampBodyPayload({
+				timestampToken: replayTimestampToken,
+				body: bodyBuffer,
 			})
-			return unauthorizedSignatureResponse()
+		}
+		const providedValues = providedWebhookHmacValues({
+			provided,
+			verificationHeader: headerName,
+			timestampHeader: declared.replay?.timestampHeader,
+			timestampFormat: declared.replay?.timestampFormat,
+		})
+		let valid = false
+		for (const candidate of providedValues) {
+			if (
+				await verifyWebhookHmacSignature({
+					algorithm: declared.verification.type,
+					secret: resolved.value,
+					body: hmacPayload,
+					encoding: declared.verification.encoding,
+					prefix: declared.verification.prefix,
+					provided: candidate,
+				})
+			) {
+				valid = true
+				break
+			}
+		}
+		if (!valid) {
+			return rejectUnauthorized('invalid_signature')
 		}
 	}
 
-	const safeHeaders = collectSafeWebhookHeaders(
-		request,
-		declared.verification ? [declared.verification.header] : [],
-	)
+	const extraAllowedHeaders = [
+		...(declared.verification ? [declared.verification.header] : []),
+		...(declared.replay?.timestampHeader
+			? [declared.replay.timestampHeader]
+			: []),
+		...(declared.replay?.deliveryIdHeader
+			? [declared.replay.deliveryIdHeader]
+			: []),
+	]
+	const safeHeaders = collectSafeWebhookHeaders(request, extraAllowedHeaders)
 	const params = buildWebhookExportParams({
 		packageKodyId: savedPackage.kodyId,
 		webhookName: route.webhookName,
@@ -434,7 +514,17 @@ export async function handleWebhookIngressRequest(
 		headers: safeHeaders,
 	})
 	const deliveryId = crypto.randomUUID()
-	const idempotencyKey = `webhook:${endpoint.id}:${deliveryId}`
+	const providerDeliveryId = declared.replay?.deliveryIdHeader
+		? request.headers.get(declared.replay.deliveryIdHeader)?.trim()
+		: undefined
+	const idempotencyKey = providerDeliveryId
+		? await buildWebhookDeliveryIdempotencyKey({
+				userId: endpoint.userId,
+				packageId: endpoint.packageId,
+				webhookName: endpoint.webhookName,
+				deliveryId: providerDeliveryId,
+			})
+		: `webhook:${endpoint.id}:${deliveryId}`
 
 	if (declared.responseMode === 'ack') {
 		let message = createWebhookDispatchQueueMessage({
