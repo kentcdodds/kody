@@ -7,7 +7,7 @@ import {
 	resolveCallerFeatureFlags,
 	type CallerFeatureFlags,
 } from './access-control.ts'
-import { builtinDomains } from './builtin-domains.ts'
+import { loadBuiltinDomains } from './builtin-domains.ts'
 import { synthesizeMcpServerToolDomain } from './mcp-server/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
@@ -16,16 +16,22 @@ import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 
-let staticRegistryMemo: BuiltCapabilityRegistry | null = null
+let staticRegistryMemo: Promise<BuiltCapabilityRegistry> | null = null
 
 /**
- * Building the builtin registry converts ~99 capability Zod schemas to JSON
- * Schema, which is far too expensive to run at module scope on every isolate
- * cold start. Memoized so the work happens at most once per isolate, on first
- * use.
+ * Building the builtin registry loads every domain module (Zod schema
+ * construction) and converts the capability schemas to JSON Schema, which is
+ * far too expensive to run at module scope on every isolate cold start.
+ * Memoized so the work happens at most once per isolate, on first use. Async
+ * because the domain modules are loaded lazily (see `builtin-domains.ts`).
  */
-export function getStaticRegistry(): BuiltCapabilityRegistry {
-	staticRegistryMemo ??= buildCapabilityRegistry(builtinDomains)
+export function getStaticRegistry(): Promise<BuiltCapabilityRegistry> {
+	staticRegistryMemo ??= loadBuiltinDomains()
+		.then((domains) => buildCapabilityRegistry(domains))
+		.catch((error: unknown) => {
+			staticRegistryMemo = null
+			throw error
+		})
 	return staticRegistryMemo
 }
 
@@ -78,6 +84,7 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 	if (synthesizedDomains.length === 0) {
 		return getStaticRegistry()
 	}
+	const builtinDomains = await loadBuiltinDomains()
 	return buildCapabilityRegistry([...builtinDomains, ...synthesizedDomains])
 }
 
@@ -157,7 +164,7 @@ export async function getCapabilityRegistryForContext(input: {
 }): Promise<BuiltCapabilityRegistry> {
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) {
-		const registry = getStaticRegistry()
+		const registry = await getStaticRegistry()
 		return filterRegistryForContext({
 			registry,
 			callerContext: input.callerContext,
@@ -174,7 +181,7 @@ export async function getCapabilityRegistryForContext(input: {
 		packageId: input.callerContext.storageContext?.packageId,
 	})
 	if (mcpServerRefs.length === 0) {
-		const registry = getStaticRegistry()
+		const registry = await getStaticRegistry()
 		return filterRegistryForContext({
 			registry,
 			callerContext: input.callerContext,

@@ -196,7 +196,8 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 		}
 	}) as typeof console.info
 	try {
-		const handler = getStaticRegistry().capabilityMap['packageSave'].handler
+		const handler = (await getStaticRegistry()).capabilityMap['packageSave']
+			.handler
 		await expect(
 			handler(
 				{},
@@ -223,7 +224,8 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	})
 
 	resetRepoPersistenceMocks()
-	const handler = getStaticRegistry().capabilityMap['packageSave'].handler
+	const handler = (await getStaticRegistry()).capabilityMap['packageSave']
+		.handler
 	const signedInContext = {
 		env: createTestEnv({
 			APP_DB: {
