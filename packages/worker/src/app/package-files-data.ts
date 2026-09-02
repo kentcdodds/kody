@@ -242,7 +242,7 @@ async function resolvePublicTreeCommit(input: {
 	}
 }
 
-function loadPublicTreeFiles(input: {
+export function loadPublicTreeFiles(input: {
 	env: Env
 	request: Request
 	listingId?: string | null

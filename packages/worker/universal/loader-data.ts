@@ -1247,6 +1247,12 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	publishedCommit: string | null
 }
 
+export type AccountPackagePublishDiffFile = {
+	path: string
+	status: 'added' | 'removed' | 'modified'
+	patch: string | null
+}
+
 export type AccountPackageApprovePublishLoaderData = {
 	ok: true
 	email: string
@@ -1262,6 +1268,10 @@ export type AccountPackageApprovePublishLoaderData = {
 	alreadyPublished: boolean
 	filesHref: string
 	packageHref: string
+	diff: {
+		files: Array<AccountPackagePublishDiffFile>
+		omittedCount: number
+	}
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
