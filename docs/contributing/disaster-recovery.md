@@ -214,12 +214,16 @@ Contract: `packages/shared/src/backup-staging.ts`.
      admission ceiling and summary-warning behavior as StorageRunner dumps.
 3. **Seal** — Control plane verifies staged checksums against
    `staging/{day}/exporter/summary.json`, requires a verified same-day D1
-   manifest for every configured source (APP_DB and JOBS_DB), copies staged
-   files under `daily/full/{day}/...`, and signs a full-backup manifest
-   (`packages/shared/src/backup-full-manifest.ts`). The sealed full-manifest
-   `d1ManifestKey` still points at the primary APP_DB export. Hourly freshness
-   also attempts to seal the last three complete days; the UI can seal a day on
-   demand.
+   manifest for every configured source (APP_DB and JOBS_DB) when sealing a new
+   day, copies staged files under `daily/full/{day}/...`, and signs a
+   full-backup manifest (`packages/shared/src/backup-full-manifest.ts`). New
+   seals record every configured D1 under optional payload `d1Sources`.
+   Historical days without `d1Sources` (schema-v1 and earlier schema-v2 mailbox
+   seals) stay restorable as APP_DB-only. Already-sealed days short-circuit
+   before source checks, so hourly seal does not treat them as incomplete when a
+   later-configured database is absent. The sealed full-manifest `d1ManifestKey`
+   still points at the primary APP_DB export. Hourly freshness also attempts to
+   seal the last three complete days; the UI can seal a day on demand.
 
 ### Restore-safe row sizes
 
@@ -434,8 +438,13 @@ import init/ingest etag. Without that prelude, drills fail with errors like
    shows SQL key/bytes/sha256 and a short-lived confirm token.
 2. **Execute** — operator types the exact primary production database name
    (`SOURCE_DATABASE_NAME`, APP_DB `kody`); Workflow
-   `kody-production-dr-restore` imports SQL into every configured production D1
-   (APP_DB then JOBS_DB) via the Cloudflare API, then loops chunked
+   `kody-production-dr-restore` restores the databases that sealed day's
+   manifest declares. Days without `d1Sources` restore APP_DB only and report
+   `JOBS_DB: not present in this backup day`. Days that list `d1Sources` restore
+   every listed database. Before any production write, restore HEAD/GET-verifies
+   every required SQL object (existence, size, sha256). It then safety-exports
+   each target and imports JOBS_DB (when listed) before APP_DB via the
+   Cloudflare API, then loops chunked
    `POST {PRIMARY_WORKER_ORIGIN}/__maintenance/dr-restore` with
    `Authorization: Bearer {DR_RESTORE_SECRET}` until the production worker
    reports `done` (StorageRunner replace, R2 put, published snapshot KV put).

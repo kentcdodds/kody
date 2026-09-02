@@ -141,6 +141,65 @@ export function configuredSourceDatabases(
 	return parseSourceDatabasesJson(env.SOURCE_DATABASES)
 }
 
+export type DeclaredD1Source = {
+	databaseId: string
+	databaseName: string
+	manifestKey: string
+	manifestSha256: string
+}
+
+export function declaredSourceDatabases(
+	env: BackupEnvironment,
+	declared?: Array<DeclaredD1Source>,
+): Array<SourceDatabase> {
+	if (declared === undefined || declared.length === 0) {
+		return [primarySourceDatabase(env)]
+	}
+	const configured = configuredSourceDatabases(env)
+	const sources: Array<SourceDatabase> = []
+	for (const entry of declared) {
+		const match = configured.find(
+			(source) =>
+				source.id.toLowerCase() === entry.databaseId.toLowerCase() &&
+				source.name === entry.databaseName,
+		)
+		if (match === undefined) {
+			throw new BackupError(
+				'restore-d1-source-not-configured',
+				`sealed D1 source ${entry.databaseName} (${entry.databaseId}) is not configured`,
+			)
+		}
+		sources.push(match)
+	}
+	return sources
+}
+
+export function absentConfiguredSourceWarning(source: SourceDatabase): string {
+	if (source.name === 'kody-jobs') {
+		return 'JOBS_DB: not present in this backup day'
+	}
+	return `${source.name}: not present in this backup day`
+}
+
+export function restoreImportOrder(
+	sources: Array<SourceDatabase>,
+	primary: SourceDatabase,
+): Array<SourceDatabase> {
+	const others = sources.filter(
+		(source) => source.id.toLowerCase() !== primary.id.toLowerCase(),
+	)
+	const primarySource = sources.find(
+		(source) => source.id.toLowerCase() === primary.id.toLowerCase(),
+	)
+	if (primarySource === undefined) {
+		throw new BackupError(
+			'restore-d1-source-not-configured',
+			'sealed D1 sources do not include the primary database',
+		)
+	}
+	return [...others, primarySource]
+}
+
 export function bindSourceDatabase(
 	env: BackupEnvironment,
 	source: SourceDatabase,

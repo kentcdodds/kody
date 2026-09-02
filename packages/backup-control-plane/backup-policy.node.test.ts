@@ -5,13 +5,17 @@ import { test } from 'vitest'
 
 import {
 	BackupError,
+	absentConfiguredSourceWarning,
 	assertConfiguredIdentity,
 	assertRemoteDatabaseIdentity,
 	backupPayload,
 	configuredSourceDatabases,
+	declaredSourceDatabases,
 	isBackupEnabled,
 	objectKeyForBookmark,
+	primarySourceDatabase,
 	resolveSourceDatabase,
+	restoreImportOrder,
 	sourceDatabaseFromObjectPrefix,
 	workflowInstanceId,
 } from './backup-policy.ts'
@@ -236,5 +240,62 @@ test('committed control-plane allowlist includes production kody-jobs', async ()
 	assert.ok(
 		wrangler.includes(`\\"${PRODUCTION_APP_DB_ID}\\",\\"name\\":\\"kody\\"`),
 		'SOURCE_DATABASES must list production kody',
+	)
+})
+
+test('declaredSourceDatabases uses the sealed day list and warns for absent configured DBs', () => {
+	const env = multiDatabaseEnv()
+	assert.deepEqual(declaredSourceDatabases(env), [primarySourceDatabase(env)])
+	assert.deepEqual(declaredSourceDatabases(env, []), [
+		primarySourceDatabase(env),
+	])
+	const declared = [
+		{
+			databaseId: DATABASE_ID,
+			databaseName: 'production-db',
+			manifestKey: `daily/d1/${DATABASE_ID}/2026-07-22/manifest.json`,
+			manifestSha256: 'a'.repeat(64),
+		},
+		{
+			databaseId: JOBS_DATABASE_ID,
+			databaseName: 'kody-jobs',
+			manifestKey: `daily/d1/${JOBS_DATABASE_ID}/2026-07-22/manifest.json`,
+			manifestSha256: 'b'.repeat(64),
+		},
+	]
+	assert.deepEqual(declaredSourceDatabases(env, declared), [
+		{ id: DATABASE_ID, name: 'production-db' },
+		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+	])
+	assert.deepEqual(
+		restoreImportOrder(declaredSourceDatabases(env, declared), {
+			id: DATABASE_ID,
+			name: 'production-db',
+		}),
+		[
+			{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+			{ id: DATABASE_ID, name: 'production-db' },
+		],
+	)
+	assert.equal(
+		absentConfiguredSourceWarning({
+			id: JOBS_DATABASE_ID,
+			name: 'kody-jobs',
+		}),
+		'JOBS_DB: not present in this backup day',
+	)
+	assert.throws(
+		() =>
+			declaredSourceDatabases(env, [
+				{
+					databaseId: '55555555-5555-4555-8555-555555555555',
+					databaseName: 'other',
+					manifestKey: 'daily/d1/other/2026-07-22/manifest.json',
+					manifestSha256: 'c'.repeat(64),
+				},
+			]),
+		(error: unknown) =>
+			error instanceof BackupError &&
+			error.code === 'restore-d1-source-not-configured',
 	)
 })

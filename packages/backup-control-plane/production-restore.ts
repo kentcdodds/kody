@@ -2,10 +2,15 @@ import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
 
 import {
 	BackupError,
+	absentConfiguredSourceWarning,
 	backupPayload,
 	bindSourceDatabase,
 	configuredSourceDatabases,
+	declaredSourceDatabases,
+	primarySourceDatabase,
+	restoreImportOrder,
 	safeLog,
+	type SourceDatabase,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import {
@@ -55,6 +60,12 @@ export type ProductionRestoreProgress = {
 	warnings: Array<string>
 	safetyExportKey?: string
 	safetyExportBytes?: number
+	safetyExports?: Array<{
+		databaseId: string
+		databaseName: string
+		objectKey: string
+		bytes: number
+	}>
 	errorCode?: string
 	errorMessage?: string
 	progress?: ProductionRestoreProgressValue
@@ -137,12 +148,88 @@ export function restoreWorkflowInstanceId(
 	return `dr-restore-${day}-${safeExpires}`
 }
 
+export type RestorableD1Source = {
+	source: SourceDatabase
+	manifestKey: string
+	sqlObjectKey: string
+	sqlBytes: number
+	sqlSha256: string
+	sqlR2Etag: string
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource)
+	return [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('')
+}
+
+async function verifyRequiredSqlObjects(
+	bucket: R2Bucket,
+	day: string,
+	sources: Array<RestorableD1Source>,
+): Promise<Map<string, Uint8Array>> {
+	const verified = new Map<string, Uint8Array>()
+	for (const source of sources) {
+		const head = await bucket.head(source.sqlObjectKey)
+		if (head === null) {
+			throw new BackupError(
+				'restore-sql-missing',
+				`SQL object missing for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
+			)
+		}
+		if (head.size !== source.sqlBytes) {
+			throw new BackupError(
+				'restore-sql-size-mismatch',
+				`SQL object size mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
+			)
+		}
+		const object = await bucket.get(source.sqlObjectKey)
+		if (object === null) {
+			throw new BackupError(
+				'restore-sql-missing',
+				`SQL object missing for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
+			)
+		}
+		const bytes = new Uint8Array(await object.arrayBuffer())
+		if (bytes.byteLength !== source.sqlBytes) {
+			throw new BackupError(
+				'restore-sql-size-mismatch',
+				`SQL object size mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
+			)
+		}
+		const digest = await sha256Hex(bytes)
+		if (digest !== source.sqlSha256) {
+			throw new BackupError(
+				'restore-sql-sha256-mismatch',
+				`SQL object sha256 mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
+			)
+		}
+		verified.set(source.source.id, bytes)
+	}
+	return verified
+}
+
+function appendAbsentConfiguredSourceWarnings(
+	env: BackupEnvironment,
+	declared: Array<SourceDatabase>,
+	progress: ProductionRestoreProgress,
+): void {
+	const declaredIds = new Set(declared.map((source) => source.id.toLowerCase()))
+	for (const source of configuredSourceDatabases(env)) {
+		if (!declaredIds.has(source.id.toLowerCase())) {
+			progress.warnings.push(absentConfiguredSourceWarning(source))
+		}
+	}
+}
+
 export async function validateSealedDayForRestore(
 	env: BackupEnvironment,
 	day: string,
 ): Promise<{
 	fullManifestKey: string
 	d1ManifestKey: string
+	declaredSources: Array<RestorableD1Source>
 	sqlObjectKey: string
 	sqlBytes: number
 	sqlSha256: string
@@ -172,37 +259,19 @@ export async function validateSealedDayForRestore(
 			'full manifest D1 key does not match configured source',
 		)
 	}
-	const d1Manifest = await readManifest(
-		env.BACKUP_BUCKET,
-		fullManifest.payload.d1ManifestKey,
-	)
-	if (d1Manifest === null) {
-		throw new BackupError(
-			'restore-d1-manifest-missing',
-			`D1 manifest missing for ${day}`,
-		)
-	}
-	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
-		throw new BackupError(
-			'restore-d1-manifest-signature-invalid',
-			`D1 manifest signature invalid for ${day}`,
-		)
-	}
-	await assertSqlRestorable(
-		env.BACKUP_BUCKET,
-		day,
-		d1Manifest.payload.sql.objectKey,
-	)
-	for (const source of configuredSourceDatabases(env)) {
+	const declared = declaredSourceDatabases(env, fullManifest.payload.d1Sources)
+	const restorableSources: Array<RestorableD1Source> = []
+	for (const source of declared) {
 		const sourceEnv = bindSourceDatabase(env, source)
+		const declaredEntry = fullManifest.payload.d1Sources?.find(
+			(entry) => entry.databaseId.toLowerCase() === source.id.toLowerCase(),
+		)
 		const sourcePayload = backupPayload(
 			sourceEnv,
 			new Date(`${day}T12:00:00.000Z`),
 		)
-		const sourceManifest = await readManifest(
-			env.BACKUP_BUCKET,
-			sourcePayload.manifestKey,
-		)
+		const manifestKey = declaredEntry?.manifestKey ?? sourcePayload.manifestKey
+		const sourceManifest = await readManifest(env.BACKUP_BUCKET, manifestKey)
 		if (sourceManifest === null) {
 			throw new BackupError(
 				'restore-d1-manifest-missing',
@@ -220,14 +289,33 @@ export async function validateSealedDayForRestore(
 			day,
 			sourceManifest.payload.sql.objectKey,
 		)
+		restorableSources.push({
+			source,
+			manifestKey,
+			sqlObjectKey: sourceManifest.payload.sql.objectKey,
+			sqlBytes: sourceManifest.payload.sql.bytes,
+			sqlSha256: sourceManifest.payload.sql.sha256,
+			sqlR2Etag: sourceManifest.payload.sql.r2Etag,
+		})
+	}
+	const primary = restorableSources.find(
+		(entry) =>
+			entry.source.id.toLowerCase() === env.SOURCE_DATABASE_ID.toLowerCase(),
+	)
+	if (primary === undefined) {
+		throw new BackupError(
+			'restore-d1-source-not-configured',
+			'sealed D1 sources do not include the primary database',
+		)
 	}
 	return {
 		fullManifestKey,
 		d1ManifestKey: fullManifest.payload.d1ManifestKey,
-		sqlObjectKey: d1Manifest.payload.sql.objectKey,
-		sqlBytes: d1Manifest.payload.sql.bytes,
-		sqlSha256: d1Manifest.payload.sql.sha256,
-		sqlR2Etag: d1Manifest.payload.sql.r2Etag,
+		declaredSources: restorableSources,
+		sqlObjectKey: primary.sqlObjectKey,
+		sqlBytes: primary.sqlBytes,
+		sqlSha256: primary.sqlSha256,
+		sqlR2Etag: primary.sqlR2Etag,
 	}
 }
 
@@ -314,8 +402,23 @@ export async function capturePreRestoreSafetyExport(
 		maxPollAttempts?: number
 		pollDelayMs?: number
 	} = {},
-): Promise<{ objectKey: string; bytes: number }> {
-	const sources = configuredSourceDatabases(env)
+	sources: Array<SourceDatabase> = configuredSourceDatabases(env),
+): Promise<{
+	objectKey: string
+	bytes: number
+	exports: Array<{
+		databaseId: string
+		databaseName: string
+		objectKey: string
+		bytes: number
+	}>
+}> {
+	const exports: Array<{
+		databaseId: string
+		databaseName: string
+		objectKey: string
+		bytes: number
+	}> = []
 	let primary: { objectKey: string; bytes: number } | undefined
 	for (const source of sources) {
 		const captured = await captureOneSourceSafetyExport(
@@ -324,6 +427,12 @@ export async function capturePreRestoreSafetyExport(
 			now,
 			options,
 		)
+		exports.push({
+			databaseId: source.id,
+			databaseName: source.name,
+			objectKey: captured.objectKey,
+			bytes: captured.bytes,
+		})
 		if (source.id.toLowerCase() === env.SOURCE_DATABASE_ID.toLowerCase()) {
 			primary = captured
 		}
@@ -334,7 +443,7 @@ export async function capturePreRestoreSafetyExport(
 			'pre-restore safety export missed the primary database',
 		)
 	}
-	return primary
+	return { objectKey: primary.objectKey, bytes: primary.bytes, exports }
 }
 
 async function captureOneSourceSafetyExport(
@@ -433,13 +542,11 @@ export async function runProductionRestore(
 	try {
 		await publish()
 		const validated = await validateSealedDayForRestore(env, payload.day)
-		const sqlHead = await env.BACKUP_BUCKET.head(validated.sqlObjectKey)
-		if (sqlHead === null) {
-			throw new BackupError(
-				'restore-sql-missing',
-				`SQL object missing for ${payload.day}`,
-			)
-		}
+		const verifiedSql = await verifyRequiredSqlObjects(
+			env.BACKUP_BUCKET,
+			payload.day,
+			validated.declaredSources,
+		)
 
 		progress.phase = 'capturing-safety-export'
 		await publish()
@@ -453,9 +560,11 @@ export async function runProductionRestore(
 			payload.day,
 			options.now ?? new Date(),
 			options,
+			validated.declaredSources.map((entry) => entry.source),
 		)
 		progress.safetyExportKey = safety.objectKey
 		progress.safetyExportBytes = safety.bytes
+		progress.safetyExports = safety.exports
 		await publish()
 		safeLog({
 			event: 'production-restore-safety-export-complete',
@@ -473,39 +582,27 @@ export async function runProductionRestore(
 			day: payload.day,
 			objectKey: validated.sqlObjectKey,
 		})
-		for (const source of configuredSourceDatabases(env)) {
-			const sourceEnv = bindSourceDatabase(env, source)
-			const sourcePayload = backupPayload(
-				sourceEnv,
-				new Date(`${payload.day}T12:00:00.000Z`),
+		const importOrder = restoreImportOrder(
+			validated.declaredSources.map((entry) => entry.source),
+			primarySourceDatabase(env),
+		)
+		for (const source of importOrder) {
+			const restorable = validated.declaredSources.find(
+				(entry) => entry.source.id.toLowerCase() === source.id.toLowerCase(),
 			)
-			const sourceManifest = await readManifest(
-				env.BACKUP_BUCKET,
-				sourcePayload.manifestKey,
-			)
-			if (sourceManifest === null) {
+			const sqlBytes = verifiedSql.get(source.id)
+			if (restorable === undefined || sqlBytes === undefined) {
 				throw new BackupError(
-					'restore-d1-manifest-missing',
-					`D1 manifest missing for ${payload.day} (${source.name})`,
+					'restore-sql-missing',
+					`SQL object missing for ${payload.day} (${source.name})`,
 				)
 			}
 			await importSqlIntoD1({
 				accountId: env.SOURCE_ACCOUNT_ID,
 				databaseId: source.id,
 				token: env.CLOUDFLARE_API_TOKEN,
-				sourceMd5Etag: sourceManifest.payload.sql.r2Etag,
-				loadSqlBody: async () => {
-					const sqlObject = await env.BACKUP_BUCKET.get(
-						sourceManifest.payload.sql.objectKey,
-					)
-					if (sqlObject?.body == null) {
-						throw new BackupError(
-							'restore-sql-missing',
-							`SQL object missing for ${payload.day} (${source.name})`,
-						)
-					}
-					return sqlObject.body
-				},
+				sourceMd5Etag: restorable.sqlR2Etag,
+				loadSqlBody: async () => sqlBytes,
 				options,
 			})
 		}
@@ -539,6 +636,11 @@ export async function runProductionRestore(
 					progress.phase = 'failed'
 					progress.errorCode = 'dr-restore-warnings'
 					progress.errorMessage = `dr-restore completed with ${String(progress.warnings.length)} warning(s)`
+					appendAbsentConfiguredSourceWarnings(
+						env,
+						validated.declaredSources.map((entry) => entry.source),
+						progress,
+					)
 					await publish()
 					safeLog({
 						event: 'production-restore-failure',
@@ -548,6 +650,11 @@ export async function runProductionRestore(
 					})
 					return progress
 				}
+				appendAbsentConfiguredSourceWarnings(
+					env,
+					validated.declaredSources.map((entry) => entry.source),
+					progress,
+				)
 				progress.phase = 'complete'
 				await publish()
 				safeLog({

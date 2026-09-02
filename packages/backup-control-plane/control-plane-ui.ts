@@ -187,6 +187,9 @@ export async function collectDayStatuses(
 				sourceManifest = await readManifest(env.BACKUP_BUCKET, d1Key)
 				if (sourceManifest === null) {
 					d1Present = false
+					d1Verified = false
+					d1Restorable = false
+					warnings.push(`${label}D1 manifest missing`)
 					continue
 				}
 				sourceVerified = await verifyBackupManifestSignature(
@@ -196,11 +199,13 @@ export async function collectDayStatuses(
 				d1Verified =
 					d1Verified === false ? false : sourceVerified ? true : false
 				if (!sourceVerified) {
+					d1Restorable = false
 					warnings.push(`${label}D1 manifest signature invalid`)
 				}
 			} catch {
 				d1Verified = null
 				d1Present = false
+				d1Restorable = false
 				warnings.push(`${label}D1 manifest unreadable`)
 				continue
 			}
