@@ -1,4 +1,10 @@
-import { BackupError, backupPayload, safeLog } from './backup-policy.ts'
+import {
+	BackupError,
+	backupPayload,
+	bindSourceDatabase,
+	resolveSourceDatabase,
+	safeLog,
+} from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import {
 	createD1Database,
@@ -13,6 +19,8 @@ import { assertSqlRestorable } from './sql-statement-stats.ts'
 
 export type DrillReport = {
 	day: string
+	sourceDatabaseName: string
+	sourceDatabaseId: string
 	databaseName: string
 	databaseId: string | null
 	keptForInspection: boolean
@@ -73,12 +81,15 @@ export async function runRestoreDrill(
 	options: ApiOptions & {
 		maxPollAttempts?: number
 		pollDelayMs?: number
+		database?: string
 	} = {},
 ): Promise<DrillReport> {
 	assertDrillAccountIsolated(env)
 	const token = requireDrillToken(env)
 	const accountId = env.DRILL_ACCOUNT_ID.trim()
-	const payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
+	const source = resolveSourceDatabase(env, options.database)
+	const sourceEnv = bindSourceDatabase(env, source)
+	const payload = backupPayload(sourceEnv, new Date(`${day}T12:00:00.000Z`))
 	const manifest = await readManifest(env.BACKUP_BUCKET, payload.manifestKey)
 	if (manifest === null) {
 		throw new BackupError(
@@ -86,7 +97,7 @@ export async function runRestoreDrill(
 			`D1 manifest missing for ${day}`,
 		)
 	}
-	if (!(await verifyBackupManifestSignature(env, manifest))) {
+	if (!(await verifyBackupManifestSignature(sourceEnv, manifest))) {
 		throw new BackupError(
 			'drill-manifest-signature-invalid',
 			`D1 manifest signature invalid for ${day}`,
@@ -102,6 +113,8 @@ export async function runRestoreDrill(
 	const databaseName = `kody-dr-drill-${day}-${randomHex(3)}`
 	const report: DrillReport = {
 		day,
+		sourceDatabaseName: source.name,
+		sourceDatabaseId: source.id,
 		databaseName,
 		databaseId: null,
 		keptForInspection: false,
@@ -115,6 +128,8 @@ export async function runRestoreDrill(
 		event: 'restore-drill-started',
 		status: 'success',
 		day,
+		databaseId: source.id,
+		databaseName: source.name,
 		objectKey: sqlObjectKey,
 	})
 
@@ -193,6 +208,8 @@ export async function runRestoreDrill(
 			event: 'restore-drill-success',
 			status: 'success',
 			day,
+			databaseId: source.id,
+			databaseName: source.name,
 		})
 		return report
 	} catch (error) {
@@ -205,6 +222,8 @@ export async function runRestoreDrill(
 			event: 'restore-drill-failure',
 			status: 'failure',
 			day,
+			databaseId: source.id,
+			databaseName: source.name,
 			errorCode: report.errorCode,
 		})
 		return report

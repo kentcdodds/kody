@@ -12,6 +12,7 @@ export type CanonicalResourceId =
 	| 'COMMUNITY_ASSETS'
 	| 'COMMUNITY_ICONS'
 	| 'EMAIL_BLOBS'
+	| 'JOBS_DB'
 	| 'OAUTH'
 	| 'QUEUES_WORKFLOWS'
 	| 'SECRET_STORE_KEY'
@@ -208,6 +209,21 @@ export const canonicalContracts = [
 			'complete checksummed D1 SQL export',
 			'migration and sqlite schema parity evidence',
 			'foreign-key, integrity, sequence, and two-user isolation evidence',
+		],
+		excludes: ['production overwrite', 'Time Travel', 'automatic cutover'],
+	},
+	{
+		id: 'JOBS_DB',
+		requiredFor: 'd1-only',
+		transfer: 'd1-logical-import',
+		requiredEvidenceKinds: [
+			...commonEvidenceKinds,
+			'd1-size-ceiling-check',
+			'd1-restore-drill',
+		],
+		includes: [
+			'complete checksummed kody-jobs D1 SQL export',
+			'jobs and archived_job_artifacts table evidence',
 		],
 		excludes: ['production overwrite', 'Time Travel', 'automatic cutover'],
 	},

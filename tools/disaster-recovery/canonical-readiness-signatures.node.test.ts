@@ -42,6 +42,10 @@ const sourceIdentity = {
 	accountId: '0123456789abcdef0123456789abcdef',
 	resourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 }
+const jobsSourceIdentity = {
+	accountId: '0123456789abcdef0123456789abcdef',
+	resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+}
 const destinationIdentity = {
 	accountId: 'fedcba9876543210fedcba9876543210',
 	resourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -60,7 +64,11 @@ const restoreProvenance = {
 	trustedBaselineSha256: '4'.repeat(64),
 }
 
-function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
+function detailsFor(
+	kind: AppKind,
+	identity = sourceIdentity,
+	provenance = restoreProvenance,
+): EvidenceDetailsByKind[AppKind] {
 	switch (kind) {
 		case 'inventory':
 			return { inventorySha256: '1'.repeat(64), itemCount: 1 }
@@ -77,16 +85,16 @@ function detailsFor(kind: AppKind): EvidenceDetailsByKind[AppKind] {
 			return { checksPassed: 5, contractVersion: '2026-07-22' }
 		case 'd1-size-ceiling-check':
 			return {
-				...restoreProvenance,
+				...provenance,
 				ceilingBytes: 4_500_000_000,
 				measuredBytes: 1024,
 				monitoredAt: performedAt,
-				sourceAccountId: sourceIdentity.accountId,
-				sourceDatabaseUuid: sourceIdentity.resourceId,
+				sourceAccountId: identity.accountId,
+				sourceDatabaseUuid: identity.resourceId,
 			}
 		case 'd1-restore-drill':
 			return {
-				...restoreProvenance,
+				...provenance,
 				foreignKeyViolations: 0,
 				quickCheck: 'ok',
 				restoredDatabaseUuid: destinationIdentity.resourceId,
@@ -126,6 +134,14 @@ function signEnvelope(
 	}
 }
 
+const jobsRestoreProvenance = {
+	...restoreProvenance,
+	backupManifestSha256: '5'.repeat(64),
+	sourceDatabaseName: 'kody-jobs',
+	sqlSha256: '6'.repeat(64),
+	trustedBaselineId: 'jobs-baseline-2026',
+}
+
 async function createFixture(
 	directory: string,
 	privateKey: KeyObject,
@@ -135,55 +151,78 @@ async function createFixture(
 	evidencePath: string
 }> {
 	const envelopes: Array<SignedEvidenceEnvelope> = []
-	const artifacts: Array<Record<string, unknown>> = []
-	for (const kind of appKinds) {
-		const uri = `${kind}.json`
-		const content: EvidenceContent = {
-			changeId: 'CHG-APP-DB-RESTORE',
-			destinationIdentity: destinationFor(kind),
-			details: detailsFor(kind),
+	async function writeResource(input: {
+		changeId: string
+		prefix: string
+		resourceId: 'APP_DB' | 'JOBS_DB'
+		identity: { accountId: string; resourceId: string }
+		provenance: typeof restoreProvenance
+	}): Promise<Record<string, unknown>> {
+		const artifacts: Array<Record<string, unknown>> = []
+		for (const kind of appKinds) {
+			const uri = `${input.prefix}${kind}.json`
+			const content: EvidenceContent = {
+				changeId: input.changeId,
+				destinationIdentity: destinationFor(kind),
+				details: detailsFor(kind, input.identity, input.provenance),
+				expiresAt,
+				kind,
+				outcome: 'passed',
+				performedAt,
+				resourceId: input.resourceId,
+				sourceIdentity: input.identity,
+				systemVersion: 'kody-build-2026.07.22',
+				uri,
+				verifierIdentity: 'recovery-verifier@example.test',
+			}
+			const envelope = signEnvelope(content, privateKey)
+			const bytes = Buffer.from(JSON.stringify(envelope))
+			await writeFile(path.join(directory, uri), bytes)
+			envelopes.push(envelope)
+			artifacts.push({
+				changeId: content.changeId,
+				destinationIdentity: content.destinationIdentity,
+				expiresAt: content.expiresAt,
+				kind: content.kind,
+				outcome: content.outcome,
+				performedAt: content.performedAt,
+				sha256: sha256(bytes),
+				sourceIdentity: content.sourceIdentity,
+				systemVersion: content.systemVersion,
+				type: 'application/vnd.kody.readiness-evidence+json',
+				uri: content.uri,
+				verifierIdentity: content.verifierIdentity,
+			})
+		}
+		return {
+			artifacts,
+			changeId: input.changeId,
 			expiresAt,
-			kind,
-			outcome: 'passed',
 			performedAt,
-			resourceId: 'APP_DB',
-			sourceIdentity,
+			resourceId: input.resourceId,
+			schemaVersion: 1,
 			systemVersion: 'kody-build-2026.07.22',
-			uri,
 			verifierIdentity: 'recovery-verifier@example.test',
 		}
-		const envelope = signEnvelope(content, privateKey)
-		const bytes = Buffer.from(JSON.stringify(envelope))
-		await writeFile(path.join(directory, uri), bytes)
-		envelopes.push(envelope)
-		artifacts.push({
-			changeId: content.changeId,
-			destinationIdentity: content.destinationIdentity,
-			expiresAt: content.expiresAt,
-			kind: content.kind,
-			outcome: content.outcome,
-			performedAt: content.performedAt,
-			sha256: sha256(bytes),
-			sourceIdentity: content.sourceIdentity,
-			systemVersion: content.systemVersion,
-			type: 'application/vnd.kody.readiness-evidence+json',
-			uri: content.uri,
-			verifierIdentity: content.verifierIdentity,
-		})
 	}
+	const evidence = [
+		await writeResource({
+			changeId: 'CHG-APP-DB-RESTORE',
+			prefix: '',
+			resourceId: 'APP_DB',
+			identity: sourceIdentity,
+			provenance: restoreProvenance,
+		}),
+		await writeResource({
+			changeId: 'CHG-JOBS-DB-RESTORE',
+			prefix: 'jobs-db-',
+			resourceId: 'JOBS_DB',
+			identity: jobsSourceIdentity,
+			provenance: jobsRestoreProvenance,
+		}),
+	]
 	return {
-		evidence: [
-			{
-				artifacts,
-				changeId: 'CHG-APP-DB-RESTORE',
-				expiresAt,
-				performedAt,
-				resourceId: 'APP_DB',
-				schemaVersion: 1,
-				systemVersion: 'kody-build-2026.07.22',
-				verifierIdentity: 'recovery-verifier@example.test',
-			},
-		],
+		evidence,
 		envelopes,
 		evidencePath: path.join(directory, 'evidence.json'),
 	}
@@ -228,6 +267,11 @@ async function isD1Ready(
 				databaseId: trustedSource.resourceId,
 				databaseName: restoreProvenance.sourceDatabaseName,
 			},
+			{
+				accountId: jobsSourceIdentity.accountId,
+				databaseId: jobsSourceIdentity.resourceId,
+				databaseName: jobsRestoreProvenance.sourceDatabaseName,
+			},
 		],
 		[
 			{
@@ -240,6 +284,20 @@ async function isD1Ready(
 				},
 				baseline: {
 					schemaSha256: restoreProvenance.schemaSha256,
+					migrationNames,
+					isolationChecks,
+				},
+			},
+			{
+				id: jobsRestoreProvenance.trustedBaselineId,
+				canonicalSha256: jobsRestoreProvenance.trustedBaselineSha256,
+				source: {
+					accountId: jobsSourceIdentity.accountId,
+					databaseId: jobsSourceIdentity.resourceId,
+					databaseName: jobsRestoreProvenance.sourceDatabaseName,
+				},
+				baseline: {
+					schemaSha256: jobsRestoreProvenance.schemaSha256,
 					migrationNames,
 					isolationChecks,
 				},
@@ -336,6 +394,7 @@ test('signed expiry rejects index-only extension, invalid timestamps, and code-a
 		}
 		reSignedRecord.expiresAt = extendedExpiresAt
 		for (const envelope of fixture.envelopes) {
+			if (envelope.content.resourceId !== 'APP_DB') continue
 			const extendedEnvelope = signEnvelope(
 				{ ...envelope.content, expiresAt: extendedExpiresAt },
 				privateKey,
@@ -595,6 +654,7 @@ test('signed D1 provenance, restore isolation, and account identities fail close
 				throw new Error('fixture is malformed')
 			}
 			for (const envelope of fixture.envelopes) {
+				if (envelope.content.resourceId !== 'APP_DB') continue
 				if (envelope.content.destinationIdentity === null) continue
 				const content: EvidenceContent =
 					envelope.content.kind === 'd1-restore-drill'
@@ -663,6 +723,7 @@ test('signed D1 provenance, restore isolation, and account identities fail close
 			}
 			let affectedEnvelopeCount = 0
 			for (const envelope of fixture.envelopes) {
+				if (envelope.content.resourceId !== 'APP_DB') continue
 				const content = structuredClone(envelope.content)
 				let affected = false
 				if (identity === 'source') {

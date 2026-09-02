@@ -355,7 +355,8 @@ export function parseSignedEvidenceEnvelope(
 	if (
 		!sourceIdentity ||
 		destinationIdentity === undefined ||
-		(input.content.resourceId === 'APP_DB' &&
+		((input.content.resourceId === 'APP_DB' ||
+			input.content.resourceId === 'JOBS_DB') &&
 			(!cloudflareAccountIdPattern.test(sourceIdentity.accountId) ||
 				(destinationIdentity !== null &&
 					!cloudflareAccountIdPattern.test(destinationIdentity.accountId)))) ||

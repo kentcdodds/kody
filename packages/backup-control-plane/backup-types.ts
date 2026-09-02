@@ -10,6 +10,7 @@ export interface BackupEnvironment {
 	SOURCE_ACCOUNT_ID: string
 	SOURCE_DATABASE_ID: string
 	SOURCE_DATABASE_NAME: string
+	SOURCE_DATABASES?: string
 	ALLOWED_SOURCE_ACCOUNT_IDS: string
 	ALLOWED_SOURCE_DATABASE_IDS: string
 	ENABLE_PRODUCTION_D1_BACKUPS: string
@@ -132,6 +133,8 @@ export interface LogRecord {
 	status: 'success' | 'failure' | 'stale-success' | 'disabled'
 	day?: string
 	instanceId?: string
+	databaseId?: string
+	databaseName?: string
 	objectKey?: string
 	manifestKey?: string
 	bytes?: number

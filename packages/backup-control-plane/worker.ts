@@ -3,6 +3,7 @@ import { runFreshnessAndRetry } from './freshness-retry.ts'
 import {
 	BackupError,
 	backupPayload,
+	configuredSourceDatabases,
 	errorCode,
 	isBackupEnabled,
 	safeLog,
@@ -45,59 +46,91 @@ async function triggerBackup(
 	env: BackupEnvironment,
 	scheduledAt: Date,
 ): Promise<void> {
-	const payload = backupPayload(env, scheduledAt)
-	const instanceId = workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day)
-	const result = await enqueueBackup(
-		env.BACKUP_WORKFLOW,
-		env.SOURCE_DATABASE_ID,
-		payload,
-	)
-	safeLog({
-		event: enqueueEvent(result),
-		status: 'success',
-		day: payload.day,
-		instanceId,
-		manifestKey: payload.manifestKey,
-	})
+	const errors: Array<unknown> = []
+	for (const source of configuredSourceDatabases(env)) {
+		const payload = backupPayload(env, scheduledAt, source)
+		const instanceId = workflowInstanceId(source.id, payload.day)
+		try {
+			const result = await enqueueBackup(
+				env.BACKUP_WORKFLOW,
+				source.id,
+				payload,
+			)
+			safeLog({
+				event: enqueueEvent(result),
+				status: 'success',
+				day: payload.day,
+				instanceId,
+				databaseId: source.id,
+				databaseName: source.name,
+				manifestKey: payload.manifestKey,
+			})
+		} catch (error) {
+			errors.push(error)
+		}
+	}
+	if (errors.length === 1) throw errors[0]
+	if (errors.length > 1) {
+		throw new AggregateError(errors, 'One or more D1 backup enqueues failed.')
+	}
 }
 
 async function retryBackup(
 	env: BackupEnvironment,
 	scheduledAt: Date,
 ): Promise<void> {
-	const payload = backupPayload(env, primaryBackupTimeForDay(scheduledAt))
-	const result = await enqueueBackupRetry(
-		env.BACKUP_WORKFLOW,
-		env.SOURCE_DATABASE_ID,
-		payload,
-		scheduledAt,
-	)
-	switch (result) {
-		case 'outside-window':
-		case 'duplicate':
-			return
-		case 'created':
-			safeLog({
-				event: 'backup-catch-up-enqueued',
-				status: 'success',
-				day: payload.day,
-				instanceId: workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day),
-				manifestKey: payload.manifestKey,
-			})
-			return
-		case 'restarted':
-			safeLog({
-				event: 'backup-restarted',
-				status: 'success',
-				day: payload.day,
-				instanceId: workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day),
-				manifestKey: payload.manifestKey,
-			})
-			return
-		default: {
-			const exhaustive: never = result
-			throw exhaustive
+	const errors: Array<unknown> = []
+	for (const source of configuredSourceDatabases(env)) {
+		const payload = backupPayload(
+			env,
+			primaryBackupTimeForDay(scheduledAt),
+			source,
+		)
+		try {
+			const result = await enqueueBackupRetry(
+				env.BACKUP_WORKFLOW,
+				source.id,
+				payload,
+				scheduledAt,
+			)
+			switch (result) {
+				case 'outside-window':
+				case 'duplicate':
+					break
+				case 'created':
+					safeLog({
+						event: 'backup-catch-up-enqueued',
+						status: 'success',
+						day: payload.day,
+						instanceId: workflowInstanceId(source.id, payload.day),
+						databaseId: source.id,
+						databaseName: source.name,
+						manifestKey: payload.manifestKey,
+					})
+					break
+				case 'restarted':
+					safeLog({
+						event: 'backup-restarted',
+						status: 'success',
+						day: payload.day,
+						instanceId: workflowInstanceId(source.id, payload.day),
+						databaseId: source.id,
+						databaseName: source.name,
+						manifestKey: payload.manifestKey,
+					})
+					break
+				default: {
+					const exhaustive: never = result
+					throw exhaustive
+				}
+			}
+		} catch (error) {
+			errors.push(error)
 		}
+	}
+	if (errors.length === 1) throw errors[0]
+	if (errors.length > 1) {
+		throw new AggregateError(errors, 'One or more D1 backup retries failed.')
 	}
 }
 

@@ -460,7 +460,14 @@ Non-secret vars:
 - `ENABLE_PRODUCTION_D1_BACKUPS` / `BACKUP_BENCHMARK_APPROVED` — both must be
   exactly `"true"` or schedules stay inert.
 - `SOURCE_ACCOUNT_ID` / `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME` plus
-  `ALLOWED_SOURCE_ACCOUNT_IDS` / `ALLOWED_SOURCE_DATABASE_IDS`.
+  `SOURCE_DATABASES` (JSON array of `{ id, name }` objects; the nightly path
+  exports every entry) and `ALLOWED_SOURCE_ACCOUNT_IDS` /
+  `ALLOWED_SOURCE_DATABASE_IDS`. `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME`
+  are the primary APP_DB (`kody`) identity and the single-database fallback when
+  `SOURCE_DATABASES` is unset. Every listed id must appear in
+  `ALLOWED_SOURCE_DATABASE_IDS`. Production `kody-jobs` UUID is the live D1
+  named `kody-jobs`; deploy resolves it by name in
+  `tools/ci/jobs-worker-resources.ts` (`jobs_d1_database_id`).
 - `BACKUP_MANIFEST_SIGNING_KEY_ID`,
   `BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64`,
   `TRUSTED_RESTORE_BASELINE_ID`, `TRUSTED_RESTORE_BASELINE_SHA256`.
