@@ -52,15 +52,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 			limit: 10,
 		},
 	})
-	const regularMatches =
-		(
-			(regularSearch as CallToolResult).structuredContent as {
-				result?: { matches?: Array<{ id?: string }> }
-			}
-		)?.result?.matches ?? []
-	expect(regularMatches.some((match) => match.id === 'adminUserList')).toBe(
-		false,
-	)
+	expect(searchMatchIds(regularSearch)).not.toContain('adminUserList')
 
 	await using bootstrapClient = await createMcpClient(
 		server.origin,
@@ -79,18 +71,34 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 		{ persistDir: database.persistDir },
 	)
 
-	const adminSearch = await adminClient.client.callTool({
-		name: 'search',
-		arguments: {
-			query: 'admin users roles audit',
-			limit: 10,
-		},
-	})
-	const adminMatches =
+	// Role writes go through a separate `wrangler d1 execute --persist-to`
+	// process. Auth and the capability registry load roles per request
+	// (`request-auth-cache` is a WeakMap; registry cache is not keyed by
+	// role), so this is local D1 snapshot lag, not a production stale-role
+	// cache. Poll until the running worker observes the grant.
+	await expect
+		.poll(
+			async () => {
+				const adminSearch = await adminClient.client.callTool({
+					name: 'search',
+					arguments: {
+						query: 'admin users roles audit',
+						limit: 10,
+					},
+				})
+				return searchMatchIds(adminSearch)
+			},
+			{ timeout: 10_000, interval: 250 },
+		)
+		.toContain('adminUserList')
+})
+
+function searchMatchIds(result: unknown) {
+	return (
 		(
-			(adminSearch as CallToolResult).structuredContent as {
+			(result as CallToolResult).structuredContent as {
 				result?: { matches?: Array<{ id?: string }> }
 			}
 		)?.result?.matches ?? []
-	expect(adminMatches.some((match) => match.id === 'adminUserList')).toBe(true)
-})
+	).flatMap((match) => (typeof match.id === 'string' ? [match.id] : []))
+}

@@ -13,7 +13,7 @@ export default defineConfig({
 	testIgnore: ['**/*.node.test.ts'],
 	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
+	retries: process.env.CI ? 1 : 0,
 	// CI runs `validate`, which executes unit, MCP, and Playwright suites
 	// concurrently on one runner. The default 30s per-test budget flakes under
 	// that resource contention (page.goto alone has been observed taking >30s).
