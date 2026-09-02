@@ -24,3 +24,5 @@ node tools/control-kody.ts request GET /signup --origin http://localhost:3742 --
 
 - Preview seed is already verified. Do not invent a second user unless the
   change is the signup path itself.
+- Signup copy: "By creating an account you agree to the Terms of Service and
+  acknowledge the Privacy Policy" (`/terms`, `/privacy`).

@@ -1,7 +1,19 @@
 # Privacy
 
 How Kody stores your data, how connected accounts work, and what a deployment
-admin can see.
+admin can see. The hosted legal policy is `/privacy`.
+
+## Who is responsible for your data
+
+Kent C. Dodds, operator of Kody at kody.codes, is the data controller for the
+hosted service (`support@kody.codes`). A separately operated Kody deployment has
+its own operator and data controller.
+
+Kody processes personal data to perform the contract for account and assistant
+features, on legitimate interests for security, abuse prevention, and analytics,
+and with consent for the waiting list and product email. Data is processed in
+the United States on Cloudflare's network. If you use Kody from outside the
+United States, you consent to that transfer.
 
 ## What Kody stores per account
 
@@ -57,8 +69,7 @@ Kody fetches data from a connected service only to fulfill a request you, or a
 job you saved, just made. Content a package or job persists (for example a saved
 summary) stays in your account under the same isolation rules. Kody does not
 sell that data, use it for advertising, share it with other Kody users, or use
-it to train a Kody model. We do not sell or share personal information as
-defined by the CCPA/CPRA. Kody makes no inference calls of its own.
+it to train a Kody model. Kody makes no inference calls of its own.
 
 **Share, transfer, and disclose.** Provider data leaves your isolated account
 only to Cloudflare, which hosts the application, database, object storage, and
@@ -240,6 +251,58 @@ finding messages — codemods are forbidden from embedding file contents in thei
 findings. Ambiguous matches are skipped and reported for the owner rather than
 rewritten.
 
+## How long Kody keeps data
+
+Account content such as packages, secrets, memories, jobs, and durable storage
+remains available while your account and that content exist. You can delete
+individual content or the whole account. Some operational records have fixed
+cleanup periods:
+
+- Email delivery events: 90 days
+- Email messages and their attachments: 365 days
+- Completed workflow runs and conversation-suppression records: 90 days
+- Resolved or dismissed platform feedback: 365 days after its last update; open
+  or triaged feedback remains until it is resolved, dismissed, or the account is
+  deleted
+- Audit events: 180 days
+- Feature-flag exposure records: 90 days
+- Daily entitlement counters: 400 days
+- Monthly usage rollups: 24 months
+- Stripe webhook event records: 30 days
+- Non-current published bundle artifacts: at least 30 days, then eligible for
+  removal when no active source or repo session needs them
+
+Deletion from a subprocessor's backups or logs follows that subprocessor's own
+retention cycle. Records may be kept longer when required by law, needed to
+resolve a dispute, or necessary to protect the service from abuse.
+
+## Service providers
+
+Kody uses these subprocessors to run the hosted service. They process only the
+data needed for their role:
+
+- Cloudflare — application hosting, database, object storage, email delivery,
+  security, and network infrastructure
+- Stripe — paid subscriptions, billing, and payment records
+- Kit — waitlist and product email subscriptions when you submit your email for
+  those purposes
+- Sentry — application error reporting and operational diagnostics
+- Fathom — privacy-focused website traffic analytics
+
+## Your choices and rights
+
+Use Account settings to export a copy of your Kody data or delete your account.
+Deletion asks you to type `GOODBYE KODY` in a confirmation modal, and to
+re-enter your password when the account has one. You can also ask to access,
+correct, delete, restrict, or receive your personal data, or object to its
+processing, by emailing `support@kody.codes`. Which rights apply depends on
+where you live. We may need to verify your identity before acting on a request.
+
+You also have the right to lodge a complaint with a supervisory authority where
+you live, including in the EEA or the United Kingdom.
+
+We do not sell or share personal information as defined by the CCPA/CPRA.
+
 ## Deployment operator access
 
 Role-based access controls the application surface. Whoever operates the
@@ -247,12 +310,3 @@ deployment — holding the Cloudflare account, D1 database access, and
 `SECRET_STORE_KEY` — sits outside any application-level control. The admin role
 grants no infrastructure access, and infrastructure access requires no admin
 role.
-
-Kody processes personal data to perform the contract for account and assistant
-features, on legitimate interests for security, abuse prevention, and analytics,
-and with consent for the waiting list and product email. Data is processed in
-the United States on Cloudflare's network. If you use Kody from outside the
-United States, you consent to that transfer. You also have the right to lodge a
-complaint with a supervisory authority where you live, including in the EEA or
-the United Kingdom. The in-app Privacy page at `/privacy` is the hosted legal
-policy.

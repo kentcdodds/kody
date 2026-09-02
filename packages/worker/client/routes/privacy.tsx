@@ -181,10 +181,17 @@ export function PrivacyRoute(_handle: Handle) {
 					<code>bounced</code>, an admin user URL, and <code>occurred_at</code>
 					). That event omits SMTP transcripts, message bodies, and unrelated
 					account content. Admin-configured notification packages may also
-					receive metadata-only <code>auth.denial.burst</code> or{' '}
-					<code>email.delivery.burst</code> events when hourly MCP auth denials
-					or shared-domain bounce/complaint counts cross their thresholds
-					(count, threshold, window, insights URL, and <code>observed_at</code>
+					receive <code>email.system-message.sent</code> when operator
+					correspondence leaves a reserved system sender (<code>kody@</code>,{' '}
+					<code>support@</code>, and the other system locals). That event
+					includes the recipients, subject, and sent text/HTML because outbound
+					system mail is not stored on the inbound system-email graph; it is
+					admin-only and omits unrelated account content. Admin-configured
+					notification packages may also receive metadata-only{' '}
+					<code>auth.denial.burst</code> or <code>email.delivery.burst</code>{' '}
+					events when hourly MCP auth denials or shared-domain bounce/complaint
+					counts cross their thresholds (count, threshold, window, insights URL,
+					and <code>observed_at</code>
 					). Those events omit user identities, tokens, recipients, and message
 					content. Admin-configured notification packages may also receive a
 					metadata-only <code>fleet.package_error_rate.elevated</code> event
