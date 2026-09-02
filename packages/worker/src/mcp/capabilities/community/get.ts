@@ -42,6 +42,12 @@ export const communityGetCapability = defineDomainCapability(
 			tags: z.array(z.string()),
 			category: z.enum(communityListingCategories),
 			license: z.string(),
+			version: z
+				.string()
+				.nullable()
+				.describe(
+					'package.json#version from the pinned listing snapshot, or null when the author did not set a string version.',
+				),
 			pinned_commit: z.string(),
 			status: communityListingStatusSchema,
 			trusted: communityTrustedFieldSchema,
@@ -81,6 +87,7 @@ export const communityGetCapability = defineDomainCapability(
 				tags: listing.tags,
 				category: listing.category,
 				license: listing.license,
+				version: listing.version ?? null,
 				pinned_commit: listing.pinnedCommit,
 				status: listing.status,
 				trusted: listing.trusted,
