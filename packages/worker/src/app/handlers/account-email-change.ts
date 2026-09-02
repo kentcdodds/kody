@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { createEmailChangeVerification } from '#app/email-change.ts'
@@ -57,6 +61,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 				: 'Invalid request body.'
 			if (validationError) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_request',
 					result: 'failure',
@@ -90,6 +95,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 			)
 			if (!rateLimit.allowed) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_request',
 					result: 'rate_limited',
@@ -117,6 +123,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 			)
 			if (!passwordValid) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_request',
 					result: 'failure',
@@ -140,6 +147,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 			})
 			if (existingUser) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_request',
 					result: 'failure',
@@ -173,6 +181,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 				}
 				console.error('Failed to request email change:', error)
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_request',
 					result: 'failure',
@@ -192,6 +201,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'account',
 				action: 'email_change_request',
 				result: 'success',

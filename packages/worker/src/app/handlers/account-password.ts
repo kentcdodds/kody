@@ -12,7 +12,11 @@ import {
 } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
@@ -84,6 +88,7 @@ export function createAccountPasswordHandler(env: Env) {
 
 			if (!parsed.success || !newPassword) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_change',
 					result: 'failure',
@@ -101,6 +106,7 @@ export function createAccountPasswordHandler(env: Env) {
 			const passwordError = getPasswordPolicyError(newPassword)
 			if (passwordError) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_change',
 					result: 'failure',
@@ -127,6 +133,7 @@ export function createAccountPasswordHandler(env: Env) {
 			)
 			if (!rateLimit.allowed) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_change',
 					result: 'rate_limited',
@@ -152,6 +159,7 @@ export function createAccountPasswordHandler(env: Env) {
 			if (hasUsablePassword) {
 				if (!currentPassword) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'password_change',
 						result: 'failure',
@@ -171,6 +179,7 @@ export function createAccountPasswordHandler(env: Env) {
 				)
 				if (!passwordValid) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'password_change',
 						result: 'failure',
@@ -190,6 +199,7 @@ export function createAccountPasswordHandler(env: Env) {
 				}
 				if (currentPassword === newPassword) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'password_change',
 						result: 'failure',
@@ -232,6 +242,7 @@ export function createAccountPasswordHandler(env: Env) {
 
 			if (!result.ok) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_change',
 					result: 'failure',
@@ -262,6 +273,7 @@ export function createAccountPasswordHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'password_change',
 				result: 'success',

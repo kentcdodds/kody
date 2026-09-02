@@ -332,7 +332,10 @@ re-check length, so existing accounts are never locked out.
 
 MCP authentication and authorization denials are recorded in `audit_events`
 (`category: 'auth'`, `result: 'failure'`) via `recordMcpAuthDenial`
-(`packages/worker/src/mcp/auth-audit.ts`), not in Sentry. A single denial is a
+(`packages/worker/src/mcp/auth-audit.ts`), not in Sentry. Browser auth events
+(signup, login, 2FA, password reset, passkeys, verification, and account
+credential changes) persist to the same `audit_events` table through
+`logAuditEvent` with `db: auditDatabaseFromEnv(env)`. A single denial is a
 routine agent turn, so it is not an error; a burst from one principal is how
 permission probing or a compromised account would look, and the audit log is the
 surface built for that — hashed identifiers, 180-day retention, an admin-only

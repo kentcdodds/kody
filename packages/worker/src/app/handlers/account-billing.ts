@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountBillingData } from '#app/account-billing-data.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { userHasMcpOAuthGrants } from '#app/onboarding-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -151,6 +155,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					metadata: { kody_stable_user_id: user.mcpUser.userId },
 				})
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'billing_checkout_started',
 					result: 'success',
@@ -237,6 +242,7 @@ export function createAccountBillingCancellationFeedbackApiHandler(env: Env) {
 					console.error('platform-feedback-dispatch-enqueue-failed', error)
 				}
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'billing_cancellation_feedback',
 					result: 'success',
@@ -286,6 +292,7 @@ export function createAccountBillingSuccessHandler(env: Env) {
 					},
 				})
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'billing_checkout_linked',
 					result: 'success',
@@ -313,6 +320,7 @@ export function createAccountBillingSuccessHandler(env: Env) {
 				const code =
 					error instanceof BillingLinkError ? error.code : 'link_failed'
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'billing_checkout_linked',
 					result: 'failure',

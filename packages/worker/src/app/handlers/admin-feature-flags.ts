@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminFeatureFlagsData } from '#app/admin-feature-flags-data.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'
@@ -152,6 +156,7 @@ async function handleSetGlobalAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'feature_flag_set_global',
 		result: 'success',
@@ -210,6 +215,7 @@ async function handleSetUserOverrideAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'feature_flag_set_user_override',
 		result: 'success',
@@ -262,6 +268,7 @@ async function handleClearUserOverrideAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'feature_flag_clear_user_override',
 		result: 'success',
@@ -312,6 +319,7 @@ async function handleDeleteStaleAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'feature_flag_delete_stale',
 		result: 'success',

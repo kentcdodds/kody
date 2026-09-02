@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	createAuthCookie,
@@ -98,6 +102,7 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 			)
 			if (!rateLimit.allowed) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'login_2fa_verify',
 					result: 'rate_limited',
@@ -141,6 +146,7 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				}))
 			if (!codeValid) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'login_2fa_verify',
 					result: 'failure',
@@ -178,6 +184,7 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				stableUserId: pendingSession.stableUserId,
 			})
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'login_2fa_verify',
 				result: 'success',
