@@ -26,19 +26,28 @@ function requestBypassesAnonymousHtmlCache(request: Request) {
 	return /\bno-cache\b/i.test(cacheControl)
 }
 
-export function isAnonymousHtmlCacheRequest(request: Request) {
+export function isAnonymousHtmlCacheRequest(
+	request: Request,
+	env: AnonymousHtmlCacheEnv,
+) {
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false
 	if (requestBypassesAnonymousHtmlCache(request)) return false
 	if (prefersMarkdown(request)) return false
-	let pathname: string
+	let url: URL
 	try {
-		pathname = new URL(request.url).pathname
+		url = new URL(request.url)
 	} catch {
 		return false
 	}
-	return isCacheableAnonymousPath(pathname)
+	// Legacy app hosts and package-app hosts have their own handlers (308
+	// redirects, package apps) that must run on every request; only the
+	// canonical first-party origin is safe to answer from the shared cache.
+	if (url.origin !== getCanonicalAppBaseUrl({ env, requestUrl: url })) {
+		return false
+	}
+	return isCacheableAnonymousPath(url.pathname)
 }
 
 export function buildAnonymousHtmlCacheKey(
@@ -136,7 +145,7 @@ export async function serveAnonymousHtmlFromCache(
 	ctx: ExecutionContext,
 	next: () => Promise<Response>,
 ): Promise<Response> {
-	const eligible = isAnonymousHtmlCacheRequest(request)
+	const eligible = isAnonymousHtmlCacheRequest(request, env)
 	if (!eligible) return next()
 
 	const cacheKey = buildAnonymousHtmlCacheKey(request, env)

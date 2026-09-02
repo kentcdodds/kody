@@ -29,18 +29,29 @@ function htmlResponse(input: {
 	})
 }
 
+const canonicalEnv = {
+	APP_BASE_URL: 'https://kody.codes',
+	APP_LEGACY_HOSTS: 'kody.codes.legacy.example',
+	PACKAGE_APP_BASE_URL: 'https://kody-apps.example',
+}
+
 test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared TTL', () => {
-	expect(isAnonymousHtmlCacheRequest(new Request('https://kody.codes/'))).toBe(
-		true,
-	)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes/'),
+			canonicalEnv,
+		),
+	).toBe(true)
 	expect(
 		isAnonymousHtmlCacheRequest(
 			new Request('https://kody.codes/', { method: 'HEAD' }),
+			canonicalEnv,
 		),
 	).toBe(true)
 	expect(
 		isAnonymousHtmlCacheRequest(
 			new Request('https://kody.codes/', { method: 'POST' }),
+			canonicalEnv,
 		),
 	).toBe(false)
 	expect(
@@ -48,6 +59,7 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 			new Request('https://kody.codes/', {
 				headers: { Cookie: 'kody_session=stale' },
 			}),
+			canonicalEnv,
 		),
 	).toBe(false)
 	expect(
@@ -55,6 +67,7 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 			new Request('https://kody.codes/', {
 				headers: { Authorization: 'Bearer x' },
 			}),
+			canonicalEnv,
 		),
 	).toBe(false)
 	expect(
@@ -62,16 +75,21 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 			new Request('https://kody.codes/', {
 				headers: { 'Cache-Control': 'no-cache' },
 			}),
+			canonicalEnv,
 		),
 	).toBe(false)
 	expect(
-		isAnonymousHtmlCacheRequest(new Request('https://kody.codes/login')),
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes/login'),
+			canonicalEnv,
+		),
 	).toBe(false)
 	expect(
 		isAnonymousHtmlCacheRequest(
 			new Request('https://kody.codes/', {
 				headers: { Accept: 'text/markdown' },
 			}),
+			canonicalEnv,
 		),
 	).toBe(false)
 	expect(
@@ -79,7 +97,30 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 			new Request('https://kody.codes/', {
 				headers: { Accept: 'text/html' },
 			}),
+			canonicalEnv,
 		),
+	).toBe(true)
+
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes.legacy.example/'),
+			canonicalEnv,
+		),
+	).toBe(false)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody-apps.example/'),
+			canonicalEnv,
+		),
+	).toBe(false)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://preview.example.workers.dev/pricing'),
+			{ APP_BASE_URL: 'https://preview.example.workers.dev' },
+		),
+	).toBe(true)
+	expect(
+		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {}),
 	).toBe(true)
 
 	const htmlKey = buildAnonymousHtmlCacheKey(
