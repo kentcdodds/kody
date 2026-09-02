@@ -229,6 +229,18 @@ test('readArtifactTreeAtCommit walks the fetched commit tree', async () => {
 					content: async () => new TextEncoder().encode('not proto\n'),
 				},
 			])
+			await input.map('community-icon.png', [
+				{
+					type: async () => 'blob',
+					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+				},
+			])
+			await input.map('other-icon.png', [
+				{
+					type: async () => 'blob',
+					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 2]),
+				},
+			])
 		},
 	)
 
@@ -240,6 +252,13 @@ test('readArtifactTreeAtCommit walks the fetched commit tree', async () => {
 	expect(tree?.['README.md']).toBe('# Hello\n')
 	expect(Object.hasOwn(tree ?? {}, '__proto__')).toBe(true)
 	expect(tree?.['__proto__']).toBe('not proto\n')
+	expect(tree?.['community-icon.png']).not.toBe(tree?.['other-icon.png'])
+	expect(tree?.['community-icon.png']).toBe(
+		new TextDecoder('latin1').decode(
+			Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+		),
+	)
+	expect(tree?.['community-icon.png']).toContain('\0')
 	expect(mocks.TREE).toHaveBeenCalledWith({
 		ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 	})

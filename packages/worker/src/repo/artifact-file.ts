@@ -214,7 +214,10 @@ export async function readArtifactTreeAtCommit(input: {
 
 function decodeArtifactBlob(content: Uint8Array | string) {
 	if (typeof content === 'string') return content
-	if (content.includes(0)) return '\0'
+	// Null-byte blobs stay byte-for-byte (latin1) so two binaries remain
+	// distinguishable. The publish diff still skips a text patch when the
+	// decoded string includes `\0`.
+	if (content.includes(0)) return new TextDecoder('latin1').decode(content)
 	return new TextDecoder().decode(content)
 }
 

@@ -43,6 +43,25 @@ test('buildPublishCommitDiff omits identical trees and binary or oversized files
 		{ path: 'bin.dat', status: 'modified', patch: null },
 		{ path: 'huge.txt', status: 'modified', patch: null },
 	])
+
+	const iconA = new TextDecoder('latin1').decode(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+	)
+	const iconB = new TextDecoder('latin1').decode(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 2]),
+	)
+	expect(
+		buildPublishCommitDiff(
+			{ 'community-icon.png': iconA },
+			{ 'community-icon.png': iconA },
+		),
+	).toEqual({ files: [], omittedCount: 0 })
+	expect(
+		buildPublishCommitDiff(
+			{ 'community-icon.png': iconA },
+			{ 'community-icon.png': iconB },
+		).files,
+	).toEqual([{ path: 'community-icon.png', status: 'modified', patch: null }])
 })
 
 test('buildPublishCommitDiff uses code-unit path order and own-property reads', () => {
