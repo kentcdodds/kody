@@ -21,6 +21,7 @@ import { createAccountProfileApiHandler } from './account-profile.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -205,11 +206,12 @@ async function createRequest(input: {
 	})
 }
 
-function createEnv(db: D1Database) {
+function createEnv(db: D1Database, kv?: KVNamespace) {
 	return {
 		APP_DB: db,
 		COOKIE_SECRET: testCookieSecret,
 		APP_BASE_URL: 'http://example.com',
+		...(kv ? { BUNDLE_ARTIFACTS_KV: kv } : {}),
 	} as Env
 }
 
@@ -604,4 +606,51 @@ test('account profile API validates profile field updates', async () => {
 		ok: false,
 		error: 'Display name must be at most 50 characters.',
 	})
+})
+
+test('account profile username change consults KV reserved additions and removals', async () => {
+	const testDb = createProfileTestDb([createUser(1, 'current-user')])
+	const kv = {
+		async get(key: string, type?: string) {
+			if (key !== reservedUsernamesKvKey) return null
+			const raw = JSON.stringify({
+				added: ['brandnew'],
+				removed: ['faq'],
+				updatedAt: '2026-09-02T00:00:00.000Z',
+				updatedBy: 'admin-stable-id',
+			})
+			return type === 'json' ? JSON.parse(raw) : raw
+		},
+	} as unknown as KVNamespace
+	const handler = createAccountProfileApiHandler(createEnv(testDb.db, kv))
+	const session = {
+		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
+		email: 'current-user@example.com',
+		rememberMe: false,
+	}
+
+	const addedResponse = await runHandler(
+		handler,
+		await createRequest({
+			session,
+			method: 'POST',
+			body: { username: 'brandnew' },
+		}),
+	)
+	expect(addedResponse.status).toBe(400)
+	expect(await addedResponse.json()).toEqual({
+		ok: false,
+		error: 'This username is reserved.',
+	})
+
+	const unreservedResponse = await runHandler(
+		handler,
+		await createRequest({
+			session,
+			method: 'POST',
+			body: { username: 'faq' },
+		}),
+	)
+	expect(unreservedResponse.status).toBe(200)
+	expect(testDb.users.get(1)?.username).toBe('faq')
 })

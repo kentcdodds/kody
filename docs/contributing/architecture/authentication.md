@@ -83,17 +83,24 @@ request so cookie signing and verification are available to handlers.
 
 ### Signup posture and invites
 
-Signup gating is controlled by the `SIGNUP_MODE` Worker var
-(`packages/worker/universal/signup-mode.ts`), read through `getSignupMode`.
-Password and social signup require a valid invite whenever the mode is not
-`open` (`invite` and `waitlist` both gate). Wrangler sets
-`SIGNUP_MODE: 'invite'` for `production` and `preview`, and `'open'` for `test`
-(Playwright / `CLOUDFLARE_ENV=test`). Local `npm run dev` defaults to the
-`production` Wrangler env (`CLOUDFLARE_ENV` defaults to `production` in
-`wrangler-env.ts`), so invite gating applies unless you point at `test`.
-`isNonProductionRuntime` is unrelated to invite gating (it still gates Kit
-waitlist soft-fail, email-send skip when no sender is configured, and similar
-non-production shortcuts).
+Signup gating is the runtime setting `resolveSignupMode` reads from
+`packages/worker/src/signup-mode-setting.ts`. A valid JSON override at the
+platform KV key `platform-settings:v1:signup-mode` wins; otherwise the
+`SIGNUP_MODE` Worker var (`packages/worker/universal/signup-mode.ts`,
+`getSignupMode`) is the default. Password and social signup require a valid
+invite whenever the resolved mode is not `open` (`invite` and `waitlist` both
+gate). Wrangler sets `SIGNUP_MODE: 'invite'` for `production` and `preview`, and
+`'open'` for `test` (Playwright / `CLOUDFLARE_ENV=test`). Local `npm run dev`
+defaults to the `production` Wrangler env (`CLOUDFLARE_ENV` defaults to
+`production` in `wrangler-env.ts`), so invite gating applies unless an admin
+override is stored or you point at `test`. Admins change the override from
+`/admin/invites` or the `adminSignupModeGet` / `adminSignupModeSet`
+capabilities. Writes require `expectedCurrentMode` matching the stored mode; a
+mismatch is refused so a stale tab cannot clobber a newer override. Setting
+`open` is refused unless both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
+are configured. `isNonProductionRuntime` is unrelated to invite gating (it still
+gates Kit waitlist soft-fail, email-send skip when no sender is configured, and
+similar non-production shortcuts).
 
 The public `/signup` page defaults to a waiting-list form (first name + email)
 backed by `POST /waiting-list`, which upserts a Kit subscriber and tags them
@@ -610,9 +617,9 @@ token. The member role is assigned on connect; Standard and Pro roles follow
   first (unusable password sentinel, `password_changed_at` lockout, TOTP /
   passkeys / other `oauth_connections` / reset tokens cleared) so a squatted
   password signup cannot keep access after the real owner signs in with the
-  provider; otherwise account creation follows the signup posture
-  (`SIGNUP_MODE !== 'open'` requires a valid invite code carried from the invite
-  signup panel; the `test` env remains open without one)
+  provider; otherwise account creation follows the signup posture (resolved mode
+  other than `open` requires a valid invite code carried from the invite signup
+  panel; the `test` env remains open without one unless a KV override is set)
 - Buttons only render for providers whose client id/secret env vars are set;
   `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
   runtimes for dev and E2E tests

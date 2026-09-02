@@ -6,6 +6,7 @@ import {
 } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
+import { type EmbedTextFn } from '#worker/vectorize/embedding.ts'
 import {
 	escapeMarkdownText,
 	formatMarkdownInlineCode,
@@ -62,6 +63,7 @@ async function loadAutomaticMemories(input: {
 	conversationId: string
 	limit?: number
 	acknowledgeSurfaced?: boolean
+	embedText?: EmbedTextFn
 }) {
 	const result = await searchMemoryRecords({
 		env: input.env,
@@ -76,6 +78,7 @@ async function loadAutomaticMemories(input: {
 		// collapsed `dedupe_key` pair can still fill the second slot.
 		limit: Math.max(input.limit ?? 5, automaticMemorySurfaceLimit * 2 + 1),
 		includeSuppressedInConversation: true,
+		...(input.embedText ? { embedText: input.embedText } : {}),
 	})
 	const memories = selectAutomaticMemories(result.matches)
 	return {
@@ -124,6 +127,7 @@ export async function loadRelevantMemoriesForTool(input: {
 	} | null
 	limit?: number
 	acknowledgeSurfaced?: boolean
+	embedText?: EmbedTextFn
 }): Promise<MemoryToolSummary | null> {
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) return null
@@ -138,6 +142,7 @@ export async function loadRelevantMemoriesForTool(input: {
 			conversationId: input.conversationId,
 			limit: input.limit,
 			acknowledgeSurfaced: input.acknowledgeSurfaced,
+			...(input.embedText ? { embedText: input.embedText } : {}),
 		}),
 		runContextPackageRetrievers({
 			env: input.env as Env,

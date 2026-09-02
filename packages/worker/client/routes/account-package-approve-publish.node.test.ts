@@ -24,6 +24,17 @@ const loaderData: AccountPackageApprovePublishLoaderData = {
 	alreadyPublished: false,
 	filesHref: '/@kodykoala/gmail-drafts/tree/main',
 	packageHref: '/@kodykoala/gmail-drafts',
+	diff: {
+		files: [
+			{
+				path: 'README.md',
+				status: 'modified',
+				patch:
+					'--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# Drafts\n+# Gmail drafts\n',
+			},
+		],
+		omittedCount: 0,
+	},
 }
 
 test('approve-publish SSR renders the promote card without a browser location', async () => {
@@ -49,4 +60,28 @@ test('approve-publish SSR renders the promote card without a browser location', 
 	expect(html).toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
 	expect(html).toContain('Promote this commit')
 	expect(html).toContain('Browse published files')
+	expect(html).toContain('data-testid="package-publish-diff"')
+	expect(html).toContain('README.md')
+	expect(html).toContain('# Gmail drafts')
+})
+
+test('unlocked approve-publish SSR offers Publish HEAD', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: approvePublishHref,
+			children: jsx(AppLoaderDataProvider, {
+				loaderData: {
+					accountPackageApprovePublish: {
+						...loaderData,
+						package: { ...loaderData.package, lockedAt: null },
+					},
+				},
+				children: jsx(AccountPackageApprovePublishRoute, {}),
+			}),
+		}),
+	)
+
+	expect(html).toContain('Publish HEAD')
+	expect(html).toContain('data-testid="approve-package-publish"')
+	expect(html).not.toContain('Promote this commit')
 })

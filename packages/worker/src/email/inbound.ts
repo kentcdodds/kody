@@ -1,4 +1,4 @@
-import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { isPermanentlyReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -220,7 +220,11 @@ export async function handleInboundEmail(
 		message.setReject('Unknown Kody email address.')
 		return
 	}
-	if (isReservedUsername(localBase)) {
+	// Permanently reserved locals (system inboxes, kody-prefixed names,
+	// reply-token aliases) are never user mail, even on the user subdomain.
+	// Other reserved names may be unreserved and claimed; delivery follows
+	// live account ownership below.
+	if (isPermanentlyReservedUsername(localBase)) {
 		message.setReject('This address is reserved for system mail.')
 		return
 	}

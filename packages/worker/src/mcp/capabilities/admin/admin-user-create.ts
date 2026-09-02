@@ -56,6 +56,7 @@ export const adminUserCreateCapability = defineDomainCapability(
 				async () => {
 					const createdUser = await adminCreateUserWithPasswordSetup({
 						db: ctx.env.APP_DB,
+						env: ctx.env,
 						email: args.email,
 						username: args.username,
 						setupLinkOrigin: ctx.callerContext.baseUrl,

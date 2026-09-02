@@ -28,7 +28,7 @@ import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { type routes } from '#universal/routes.ts'
 import {
-	getUsernameValidationError,
+	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
@@ -52,7 +52,7 @@ import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#universal/signup-mode.ts'
+import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import {
 	firstTouchAttributionCreateFields,
 	parseFirstTouchAttribution,
@@ -206,7 +206,10 @@ export function createAuthHandler(env: Env) {
 				)
 			}
 			if (normalizedMode === 'signup') {
-				const usernameError = getUsernameValidationError(normalizedUsername)
+				const usernameError = await getEffectiveUsernameValidationError(
+					normalizedUsername,
+					env,
+				)
 				if (usernameError) {
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
@@ -270,7 +273,7 @@ export function createAuthHandler(env: Env) {
 					consumedInvitePlan = null
 				}
 
-				const inviteRequired = getSignupMode(env) !== 'open'
+				const inviteRequired = (await resolveSignupMode(env)) !== 'open'
 				if (inviteRequired || normalizeInviteCode(inviteCode)) {
 					const inviteResult = await consumeInviteCode({
 						db: env.APP_DB,

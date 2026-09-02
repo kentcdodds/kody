@@ -3,6 +3,7 @@ import {
 	deterministicEmbedding,
 	embedTextForVectorize,
 	isCapabilitySearchOffline,
+	type EmbedTextFn,
 } from '#worker/vectorize/embedding.ts'
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
@@ -172,6 +173,7 @@ export async function searchUnified(input: {
 	retrieverResults?: Array<PackageRetrieverSurfaceResult>
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */
 	domain?: string
+	embedText?: EmbedTextFn
 }): Promise<SearchUnifiedResult> {
 	const offline = isCapabilitySearchOffline(input.env)
 	const query = input.query.trim()
@@ -288,7 +290,9 @@ export async function searchUnified(input: {
 	const queryEmbedding = deterministicEmbedding(intent.normalizedQuery)
 	const sharedQueryVector = offline
 		? queryEmbedding
-		: await embedTextForVectorize(input.env, intent.normalizedQuery)
+		: await (
+				input.embedText ?? ((text) => embedTextForVectorize(input.env, text))
+			)(intent.normalizedQuery)
 	const queryEmbeddingMs = elapsedMs(queryEmbeddingStart)
 
 	const candidateResults = await Promise.all(

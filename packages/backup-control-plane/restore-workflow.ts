@@ -10,6 +10,7 @@ import { BackupError, workflowBackupErrorMessage } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import {
 	runProductionRestore,
+	restoreProgressFailsWorkflow,
 	type ProductionRestorePayload,
 	type ProductionRestoreProgress,
 } from './production-restore.ts'
@@ -38,7 +39,8 @@ export class ProductionDrRestoreWorkflow extends WorkflowEntrypoint<
 			)
 			// Persist progress (including warnings) as step output, then fail the
 			// workflow instance when restore finished with any dr-restore warnings.
-			if (progress.phase === 'failed' || progress.warnings.length > 0) {
+			// Informational notes (undeclared historical databases) are not failures.
+			if (restoreProgressFailsWorkflow(progress)) {
 				const code = progress.errorCode ?? 'dr-restore-warnings'
 				throw new NonRetryableError(
 					workflowBackupErrorMessage({

@@ -419,6 +419,10 @@ automatically:
 - `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`
   `vars` as `production`, `preview`, or `test`; optional override via env for
   local dev)
+- `SIGNUP_MODE` (Wrangler var; default/bootstrap `invite` / `open` / `waitlist`.
+  Production and preview are `invite`; the Wrangler `test` env is `open`. The
+  runtime override lives in KV and is managed from `/admin/invites` — see
+  [environment-variables.md](./environment-variables.md))
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
   when unset; production pins `0` via a Wrangler var — see
   [environment-variables.md](./environment-variables.md))
@@ -494,6 +498,16 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account; also reused for remote AI and Cloudflare API workflows that run with
   account secrets + package workflows)
+- `CLOUDFLARE_RUNTIME_API_TOKEN` (optional; the value uploaded to the
+  `kody-runtime` Worker as its `CLOUDFLARE_API_TOKEN` secret. The runtime lane
+  executes package capabilities in-process, and the only Cloudflare REST APIs
+  those reach are Email Sending (`/email/sending/send`) and Artifacts
+  (`/artifacts/namespaces/...`, including repo token minting, which has no
+  binding equivalent), so this token needs exactly
+  `Account · Email Sending · Edit` and `Account · Artifacts · Edit`. Workers AI,
+  Images, Vectorize, D1, and Queues are reached through bindings or are not used
+  by the runtime lane. When unset, the deploy falls back to
+  `CLOUDFLARE_API_TOKEN`.)
 - `CLOUDFLARE_ACCOUNT_ID` (required GitHub Actions **variable** for Cloudflare
   resource provisioning and Email Service)
 - `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that

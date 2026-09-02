@@ -136,8 +136,11 @@ jobs:
             echo "Status worker deploy: skipped (no relevant path changes)."
           fi
 
+          # Do not treat deploy.yml itself as an nx-cache change. Runtime
+          # token / secret wiring edits would otherwise upload this worker
+          # and a 10000 auth miss blocks the rest of the production deploy.
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
-            '^(\.github/workflows/deploy\.yml|\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
+            '^(\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
             echo "Nx cache worker deploy: path filter matched."
           else
@@ -531,6 +534,10 @@ jobs:
       # (Cloudflare REST capabilities). Billing (Stripe), waiting-list (Kit),
       # OAuth client credentials, and maintenance secrets stay main-only so a
       # runtime-Worker compromise cannot reach them.
+      # The runtime Worker's CLOUDFLARE_API_TOKEN comes from the narrower
+      # CLOUDFLARE_RUNTIME_API_TOKEN GitHub secret (Email Sending + Artifacts
+      # only; see docs/contributing/environment-variables.md). It falls back
+      # to the deploy token until that secret exists.
       # --env "" with --name: wrangler secret bulk still suffixes -<env>
       # even when --name is set, so --env production would write
       # COOKIE_SECRET to kody-runtime-production while deploy uploads
@@ -541,6 +548,9 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_RUNTIME_API_TOKEN:
+            ${{ secrets.CLOUDFLARE_RUNTIME_API_TOKEN ||
+            secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
           COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
@@ -552,7 +562,8 @@ jobs:
           --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
-          --set-from-env-optional CLOUDFLARE_API_TOKEN
+          --set-from-env-optional
+          CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN
 
       # Platform worker is trusted (same secret set as origin): MCP Durable
       # Objects execute capabilities that need OAuth, Stripe, and the rest.

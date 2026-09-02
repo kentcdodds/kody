@@ -292,5 +292,8 @@ export async function invokePackageExportWithToolFactories(input: {
 	return await invokeSavedPackageModule({
 		...shared,
 		idempotencyKey,
+		...(input.request.idempotencyParamsHash === 'ignore'
+			? { idempotencyParamsHash: 'ignore' as const }
+			: {}),
 	})
 }

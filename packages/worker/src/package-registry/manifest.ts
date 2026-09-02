@@ -272,6 +272,17 @@ export type PackageWebhookManifestEntry = {
 		secretName: string
 		encoding: 'hex' | 'base64'
 		prefix?: string
+		signedPayload?: 'body' | 'timestamp.body'
+	} | null
+	replay: {
+		timestampHeader?: string
+		timestampFormat?:
+			| 'unix-seconds'
+			| 'unix-millis'
+			| 'iso-8601'
+			| 'stripe-signature'
+		toleranceSeconds?: number
+		deliveryIdHeader?: string
 	} | null
 }
 
@@ -292,6 +303,25 @@ export function listPackageWebhooks(
 						encoding: webhook.verification.encoding,
 						...(webhook.verification.prefix !== undefined
 							? { prefix: webhook.verification.prefix }
+							: {}),
+						...(webhook.verification.signedPayload !== undefined
+							? { signedPayload: webhook.verification.signedPayload }
+							: {}),
+					}
+				: null,
+			replay: webhook.replay
+				? {
+						...(webhook.replay.timestampHeader !== undefined
+							? { timestampHeader: webhook.replay.timestampHeader }
+							: {}),
+						...(webhook.replay.timestampFormat !== undefined
+							? { timestampFormat: webhook.replay.timestampFormat }
+							: {}),
+						...(webhook.replay.toleranceSeconds !== undefined
+							? { toleranceSeconds: webhook.replay.toleranceSeconds }
+							: {}),
+						...(webhook.replay.deliveryIdHeader !== undefined
+							? { deliveryIdHeader: webhook.replay.deliveryIdHeader }
 							: {}),
 					}
 				: null,
@@ -1427,6 +1457,15 @@ export function buildPackageSearchDocument(
 			webhook.description ?? '',
 			webhook.responseMode,
 			webhook.verification ? `verify:${webhook.verification.header}` : '',
+			webhook.verification?.signedPayload
+				? `signed:${webhook.verification.signedPayload}`
+				: '',
+			webhook.replay?.timestampHeader
+				? `replay-timestamp:${webhook.replay.timestampHeader}:${webhook.replay.timestampFormat ?? ''}`
+				: '',
+			webhook.replay?.deliveryIdHeader
+				? `replay-delivery:${webhook.replay.deliveryIdHeader}`
+				: '',
 		]
 			.filter((value) => value.length > 0)
 			.join(' '),

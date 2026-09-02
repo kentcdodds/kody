@@ -16,10 +16,34 @@ inboxes, declared alongside other package surfaces in
 
 Packages declare webhooks as an array under `kody.webhooks`. Each entry has a
 slug `name`, an `export` that must exist in `package.json#exports`, optional
-`responseMode` (`ack` default / `sync`), and optional HMAC `verification` that
-references a secret-store name (`secretName`) — never an inline secret. Parsing
-and export existence checks live in `parseAuthoredPackageJson` /
+`responseMode` (`ack` default / `sync`), optional HMAC `verification` that
+references a secret-store name (`secretName`) — never an inline secret — and
+optional `replay` for timestamp windows and delivery-id dedupe. Parsing and
+export existence checks live in `parseAuthoredPackageJson` /
 `listPackageWebhooks` (`packages/worker/src/package-registry/`).
+
+HMAC `verification` signs the raw body by default (`signedPayload` omitted or
+`'body'`). Set `signedPayload` to `'timestamp.body'` when the provider HMAC
+covers `` `${timestamp}.${rawBody}` `` (Stripe). Replay protection is
+**opt-in**: body-only HMAC without `replay` does not bind a timestamp or
+delivery id, so a captured signed payload can be replayed until the URL secret
+is rotated.
+
+`replay` fields:
+
+- `timestampHeader` — header that carries the timestamp (required with
+  `timestampFormat`)
+- `timestampFormat` — `unix-seconds` | `unix-millis` | `iso-8601` |
+  `stripe-signature` (`stripe-signature` reads `t=<unix>` from a Stripe-style
+  header). Unknown formats fail publish-time validation.
+- `toleranceSeconds` — optional; defaults to 300 when `timestampHeader` is set
+- `deliveryIdHeader` — unique delivery id; dispatches use
+  `sha256(userId + packageId + webhookName + deliveryId)` as the
+  package-invocation idempotency key. The keyed ledger matches that key alone
+  (`idempotencyParamsHash: 'ignore'`): retries change `receivedAt` (and often
+  headers), and a later body for the same id is still that delivery. A different
+  delivery id hashes to a different key, so it cannot reuse another event's
+  acknowledgement.
 
 Declaring a webhook does **not** open ingress. A minted URL secret in D1 does.
 
@@ -43,6 +67,11 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 6. When verification is declared, resolve `secretName` from the owner's secret
    store (user/package scope via package storage context). Missing secret or
    HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
+   When `replay.timestampHeader` is declared, a missing, unparseable, or stale
+   timestamp is rejected with the same generic **401** before dispatch (and
+   before any run record that implies acceptance). When
+   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
+   present ids become the invocation idempotency key.
 7. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
 8. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The

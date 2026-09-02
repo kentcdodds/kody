@@ -153,6 +153,7 @@ primitives:
       - packages/worker/src/app/handlers/account-two-factor.ts
       - packages/worker/src/app/handlers/account-passkeys.ts
       - packages/worker/src/app/invites.ts
+      - packages/worker/src/signup-mode-setting.ts
       - packages/worker/src/app/email-verification.ts
       - packages/worker/src/app/onboarding-data.ts
       - packages/worker/src/app/two-factor.ts

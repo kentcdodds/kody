@@ -42,6 +42,8 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
+import { serveAnonymousHtmlFromCache } from '#app/anonymous-html-edge-cache.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
@@ -63,6 +65,7 @@ import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 import { handleOidcLogoutRequest } from '#worker/oidc/logout.ts'
 import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 // Immutable caching is only safe when asset URLs are versioned by a real
 // commit sha. In local dev the build id falls back to a constant ('dev'), so
@@ -533,171 +536,205 @@ function createOAuthProviderExceptionResponse(
 
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url)
-
-		// Package runtime lane extraction (ADR 0016): when the runtime Worker
-		// service binding is configured, runtime-owned requests (package-app
-		// origin, inline package apps, package invocation API) are forwarded
-		// wholesale to the `kody-runtime` Worker. Without the binding (tests,
-		// single-worker local dev) the in-process handlers below keep serving.
-		if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
-			return env.RUNTIME_WORKER.fetch(request)
-		}
-
-		// Host isolation for hosted package apps runs before every other route:
-		// nothing first-party may be reachable on the package-app origin, and the
-		// app origin must not execute package code once that origin is configured.
-		const packageAppOriginResponse = await handlePackageAppOriginRequest(
-			request,
-			env,
+		return runWithDynamicWorkerEvaluationBudget(
+			async () => await fetchWithDynamicWorkerBudget(request, env, ctx),
 		)
-		if (packageAppOriginResponse) return packageAppOriginResponse
-
-		if (isPackageInvocationApiRequest(url.pathname)) {
-			return handlePackageInvocationApiRequest(request, env, ctx)
-		}
-		if (isWebhookIngressRequest(url.pathname)) {
-			return handleWebhookIngressRequest(request, env, ctx)
-		}
-
-		if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
-			return new Response('Not Found', { status: 404 })
-		}
-
-		// Domain-migration redirect for safe browser navigation from legacy app
-		// hosts. Runs after the API-shaped surfaces (package apps, invocation
-		// API, webhooks) so those keep serving on every attached
-		// host, and skips MCP/OAuth/auth/health paths itself. No-op unless
-		// APP_LEGACY_REDIRECT is enabled.
-		const legacyHostRedirect = getLegacyHostRedirectResponse({ request, env })
-		if (legacyHostRedirect) return legacyHostRedirect
-
-		// OAuthProvider serves this URL first and defaults `resource` to the origin only.
-		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
-		// token audience; otherwise authorize stores origin but the token request sends
-		// `/mcp` → invalid_target. Serve the same document as the `/mcp` metadata path.
-		const clientIdMetadataResponse =
-			handleMcpClientIdMetadataRequest(request) ??
-			handleCliClientIdMetadataRequest(request)
-		if (clientIdMetadataResponse) {
-			return addOAuthDiscoveryCorsHeaders(clientIdMetadataResponse, request)
-		}
-
-		if (url.pathname === oauthPaths.openidConfiguration) {
-			if (request.method === 'OPTIONS') {
-				return addOAuthDiscoveryCorsHeaders(
-					new Response(null, {
-						status: 204,
-						headers: { 'Content-Length': '0' },
-					}),
-					request,
-				)
-			}
-			return addOAuthDiscoveryCorsHeaders(
-				handleOpenIdConfigurationRequest(request, env),
-				request,
-			)
-		}
-
-		if (url.pathname === oauthPaths.jwks) {
-			if (request.method === 'OPTIONS') {
-				return addOAuthDiscoveryCorsHeaders(
-					new Response(null, {
-						status: 204,
-						headers: { 'Content-Length': '0' },
-					}),
-					request,
-				)
-			}
-			return addOAuthDiscoveryCorsHeaders(
-				await handleOidcJwksRequest(request, env),
-				request,
-			)
-		}
-
-		if (url.pathname === oauthPaths.userinfo) {
-			return handleOidcUserinfoRequest(request, env)
-		}
-
-		if (url.pathname === oauthPaths.logout) {
-			return handleOidcLogoutRequest(request, env)
-		}
-
-		// Serve both RFC 9728 PRM paths before OAuthProvider: the root document
-		// and the path-aware `.../mcp` document. 0.10+ would otherwise publish
-		// origin-only resource metadata on the path-aware URL and disagree with
-		// `<origin>/mcp` token audiences.
-		if (isProtectedResourceMetadataRequest(url.pathname)) {
-			if (request.method === 'OPTIONS') {
-				return addOAuthDiscoveryCorsHeaders(
-					new Response(null, {
-						status: 204,
-						headers: { 'Content-Length': '0' },
-					}),
-					request,
-				)
-			}
-			if (request.method === 'GET' || request.method === 'HEAD') {
-				const metadataRequest =
-					request.method === 'GET'
-						? request
-						: new Request(request.url, {
-								method: 'GET',
-								headers: request.headers,
-							})
-				const metadataResponse = handleProtectedResourceMetadata(
-					metadataRequest,
-					env,
-				)
-				if (request.method === 'HEAD') {
-					return addOAuthDiscoveryCorsHeaders(
-						new Response(null, {
-							status: metadataResponse.status,
-							headers: metadataResponse.headers,
-						}),
-						request,
-					)
-				}
-				return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
-			}
-		}
-		let tokenGrantType: string | null = null
-		if (url.pathname === oauthPaths.token && request.method === 'POST') {
-			const formData = await request
-				.clone()
-				.formData()
-				.catch(() => null)
-			const grantType = formData?.get('grant_type')
-			tokenGrantType = typeof grantType === 'string' ? grantType : null
-		}
-		try {
-			const response = await oauthProvider.fetch(request, env, ctx)
-			if (url.pathname === oauthPaths.token) {
-				return enrichOAuthTokenResponse(request, response, env, {
-					grantType: tokenGrantType,
-				})
-			}
-			return response
-		} catch (error) {
-			if (!isOAuthProviderOwnedPath(url.pathname)) throw error
-			Sentry.captureException(error)
-			return createOAuthProviderExceptionResponse(error, url.pathname)
-		}
 	},
 	async email(
 		message: ForwardableEmailMessage,
 		env: Env,
 		ctx: ExecutionContext,
 	) {
-		// Let storage/transient failures throw so Email Routing does not
-		// acknowledge the message (retryable). Permanent rejects use
-		// message.setReject inside handleInboundEmail.
-		await handleInboundEmail(message, env, ctx)
+		await runWithDynamicWorkerEvaluationBudget(async () => {
+			// Let storage/transient failures throw so Email Routing does not
+			// acknowledge the message (retryable). Permanent rejects use
+			// message.setReject inside handleInboundEmail.
+			await handleInboundEmail(message, env, ctx)
+		})
 	},
 	async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext) {
-		await handleQueueBatch(batch, env, ctx)
+		await runWithDynamicWorkerEvaluationBudget(
+			async () => await handleQueueBatch(batch, env, ctx),
+		)
 	},
 } satisfies ExportedHandler<Env>
+
+async function fetchWithDynamicWorkerBudget(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+) {
+	const url = new URL(request.url)
+
+	// Production `*.workers.dev` is not a product origin. `/health` stays
+	// reachable so deploy and status probes can hit the script directly.
+	const nonCanonicalHost = refuseNonCanonicalProductionHost({
+		request,
+		env,
+		allowedHealthPath: '/health',
+	})
+	if (nonCanonicalHost) return nonCanonicalHost
+
+	// Package runtime lane extraction (ADR 0016): when the runtime Worker
+	// service binding is configured, runtime-owned requests (package-app
+	// origin, inline package apps, package invocation API) are forwarded
+	// wholesale to the `kody-runtime` Worker. Without the binding (tests,
+	// single-worker local dev) the in-process handlers below keep serving.
+	if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
+		return env.RUNTIME_WORKER.fetch(request)
+	}
+
+	return serveAnonymousHtmlFromCache(request, env, ctx, () =>
+		handleOriginAppFetch(request, env, ctx, url),
+	)
+}
+
+async function handleOriginAppFetch(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+) {
+	// Host isolation for hosted package apps runs before every other route:
+	// nothing first-party may be reachable on the package-app origin, and the
+	// app origin must not execute package code once that origin is configured.
+	const packageAppOriginResponse = await handlePackageAppOriginRequest(
+		request,
+		env,
+	)
+	if (packageAppOriginResponse) return packageAppOriginResponse
+
+	if (isPackageInvocationApiRequest(url.pathname)) {
+		return handlePackageInvocationApiRequest(request, env, ctx)
+	}
+	if (isWebhookIngressRequest(url.pathname)) {
+		return handleWebhookIngressRequest(request, env, ctx)
+	}
+
+	if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
+		return new Response('Not Found', { status: 404 })
+	}
+
+	// Domain-migration redirect for safe browser navigation from legacy app
+	// hosts. Runs after the API-shaped surfaces (package apps, invocation
+	// API, webhooks) so those keep serving on every attached
+	// host, and skips MCP/OAuth/auth/health paths itself. No-op unless
+	// APP_LEGACY_REDIRECT is enabled.
+	const legacyHostRedirect = getLegacyHostRedirectResponse({ request, env })
+	if (legacyHostRedirect) return legacyHostRedirect
+
+	// OAuthProvider serves this URL first and defaults `resource` to the origin only.
+	// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
+	// token audience; otherwise authorize stores origin but the token request sends
+	// `/mcp` → invalid_target. Serve the same document as the `/mcp` metadata path.
+	const clientIdMetadataResponse =
+		handleMcpClientIdMetadataRequest(request) ??
+		handleCliClientIdMetadataRequest(request)
+	if (clientIdMetadataResponse) {
+		return addOAuthDiscoveryCorsHeaders(clientIdMetadataResponse, request)
+	}
+
+	if (url.pathname === oauthPaths.openidConfiguration) {
+		if (request.method === 'OPTIONS') {
+			return addOAuthDiscoveryCorsHeaders(
+				new Response(null, {
+					status: 204,
+					headers: { 'Content-Length': '0' },
+				}),
+				request,
+			)
+		}
+		return addOAuthDiscoveryCorsHeaders(
+			handleOpenIdConfigurationRequest(request, env),
+			request,
+		)
+	}
+
+	if (url.pathname === oauthPaths.jwks) {
+		if (request.method === 'OPTIONS') {
+			return addOAuthDiscoveryCorsHeaders(
+				new Response(null, {
+					status: 204,
+					headers: { 'Content-Length': '0' },
+				}),
+				request,
+			)
+		}
+		return addOAuthDiscoveryCorsHeaders(
+			await handleOidcJwksRequest(request, env),
+			request,
+		)
+	}
+
+	if (url.pathname === oauthPaths.userinfo) {
+		return handleOidcUserinfoRequest(request, env)
+	}
+
+	if (url.pathname === oauthPaths.logout) {
+		return handleOidcLogoutRequest(request, env)
+	}
+
+	// Serve both RFC 9728 PRM paths before OAuthProvider: the root document
+	// and the path-aware `.../mcp` document. 0.10+ would otherwise publish
+	// origin-only resource metadata on the path-aware URL and disagree with
+	// `<origin>/mcp` token audiences.
+	if (isProtectedResourceMetadataRequest(url.pathname)) {
+		if (request.method === 'OPTIONS') {
+			return addOAuthDiscoveryCorsHeaders(
+				new Response(null, {
+					status: 204,
+					headers: { 'Content-Length': '0' },
+				}),
+				request,
+			)
+		}
+		if (request.method === 'GET' || request.method === 'HEAD') {
+			const metadataRequest =
+				request.method === 'GET'
+					? request
+					: new Request(request.url, {
+							method: 'GET',
+							headers: request.headers,
+						})
+			const metadataResponse = handleProtectedResourceMetadata(
+				metadataRequest,
+				env,
+			)
+			if (request.method === 'HEAD') {
+				return addOAuthDiscoveryCorsHeaders(
+					new Response(null, {
+						status: metadataResponse.status,
+						headers: metadataResponse.headers,
+					}),
+					request,
+				)
+			}
+			return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
+		}
+	}
+	let tokenGrantType: string | null = null
+	if (url.pathname === oauthPaths.token && request.method === 'POST') {
+		const formData = await request
+			.clone()
+			.formData()
+			.catch(() => null)
+		const grantType = formData?.get('grant_type')
+		tokenGrantType = typeof grantType === 'string' ? grantType : null
+	}
+	try {
+		const response = await oauthProvider.fetch(request, env, ctx)
+		if (url.pathname === oauthPaths.token) {
+			return enrichOAuthTokenResponse(request, response, env, {
+				grantType: tokenGrantType,
+			})
+		}
+		return response
+	} catch (error) {
+		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
+		Sentry.captureException(error)
+		return createOAuthProviderExceptionResponse(error, url.pathname)
+	}
+}
 
 export const originWorkerHandler = Sentry.withSentry(
 	(env: Env) => getWorkerSentryOptions(env),

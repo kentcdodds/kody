@@ -90,7 +90,8 @@ node tools/disaster-recovery/d1-restore-drill-cli.ts \
   --backup backup.sql \
   --baseline-id approved-production-baseline \
   --target-account-id isolated-drill-account-id \
-  --target-name app-db-restore-drill
+  --target-name app-db-restore-drill \
+  --database kody
 ```
 
 This is a dry run. Inspect its ordered commands. Add `--execute` only for the
@@ -98,11 +99,14 @@ isolated target account after setting `CLOUDFLARE_D1_DRILL_EDIT_TOKEN` to a
 drill-only D1 Edit token for that account. The token is used for live creation,
 import, and checks and is never printed. `--apply-forward-migrations` is
 rejected unless `--post-forward-baseline-id approved-post-forward-baseline` is
-also supplied. After target creation the tool writes a temporary Wrangler config
-binding `D1_RESTORE_TARGET` to the returned UUID/name and pointing
-`migrations_dir` at `packages/worker/migrations`; import, checks, and migrations
-all use that config. The local config is removed afterward. The tool never
-deletes, binds, cuts over, or modifies production.
+also supplied. `--database` selects the production source (`kody` or
+`kody-jobs`, or that database's UUID) and must match the signed manifest source.
+After target creation the tool writes a temporary Wrangler config binding
+`D1_RESTORE_TARGET` to the returned UUID/name and pointing `migrations_dir` at
+`packages/worker/migrations` (APP_DB) or `packages/jobs-worker/migrations`
+(`kody-jobs`); import, checks, and migrations all use that config. The local
+config is removed afterward. The tool never deletes, binds, cuts over, or
+modifies production.
 
 ## Canonical readiness
 
@@ -112,7 +116,7 @@ verifier, change, system/build version, performed timestamp, freshness interval,
 and artifact metadata. The index `expiresAt` must exactly match every artifact's
 metadata and signed content. Every resource requires inventory,
 source/destination credential checks, support and contract checks, plus its
-resource-specific drill evidence. APP_DB additionally requires a
+resource-specific drill evidence. APP_DB and JOBS_DB additionally require a
 `d1-size-ceiling-check` whose measured bytes are strictly below a ceiling no
 greater than 4,500,000,000 bytes.
 
@@ -136,7 +140,7 @@ baseline/source registries. The restored UUID must equal
 `destinationIdentity.resourceId`; destination account and resource identities
 must both differ from the source.
 
-Every APP_DB signed `sourceIdentity.accountId` and non-null
+Every APP_DB and JOBS_DB signed `sourceIdentity.accountId` and non-null
 `destinationIdentity.accountId` must be a canonical Cloudflare account ID:
 exactly 32 lowercase ASCII hexadecimal characters. Whitespace, uppercase,
 wrong-length, non-hex, and Unicode-lookalike values are rejected without

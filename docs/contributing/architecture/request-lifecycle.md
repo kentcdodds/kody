@@ -29,14 +29,27 @@ clients (e.g. some MCP stacks) that discover metadata from the 401
 `resource_metadata` URL and would otherwise get `invalid_target` at the token
 endpoint. Protected-resource metadata and MCP auth challenges resolve the origin
 from the inbound request URL (via `getAppBaseUrl`) so clients connecting through
-`kody.codes` or a workers.dev host get matching resource values. `APP_BASE_URL`
-is only the fallback for background work with no request URL.
+`kody.codes` or a preview/local `workers.dev` host get matching resource values.
+Production refuses non-canonical hosts (see
+[Non-canonical hosts](../security.md#non-canonical-hosts)), so MCP is not served
+on the production `workers.dev` trigger. `APP_BASE_URL` is only the fallback for
+background work with no request URL.
 
 ## Routing order
 
 Requests are handled in this order:
 
-0. Package-app host isolation (before everything else — see
+0. Production canonical-host check
+   (`packages/worker/src/app/canonical-host.ts`): if the runtime is production
+   and the request host is not the `APP_BASE_URL` host, not a package-app
+   apex/subdomain (`parsePackageAppRequestHost`), and not an `APP_LEGACY_HOSTS`
+   entry, the Worker returns `404` `{ error: 'not_found' }` with
+   `Cache-Control: no-store`. `GET /health` is exempt so deploy health checks
+   and the status worker can probe the script on the `workers.dev` trigger.
+   Preview and local skip this check. Platform and runtime workers apply the
+   same rule with `/__platform/health` and `/__runtime/health` as their probe
+   exemptions.
+1. Package-app host isolation (see
    [Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)):
    - On the **package-app apex**, no package code runs: `/` redirects to the app
      origin; legacy `/@{username}/packages/*` redirects to the owning user's
@@ -52,8 +65,8 @@ Requests are handled in this order:
      is missing or is not on a separate registrable domain from `APP_BASE_URL`;
      package code never executes inline.
    - In confirmed local, preview, and test runtimes, an unset package-app origin
-     is a no-op and package apps are served inline at step 9 below.
-1. Public OAuth metadata (before `OAuthProvider`):
+     is a no-op and package apps are served inline at step 10 below.
+2. Public OAuth metadata (before `OAuthProvider`):
    - Protected resource metadata (base path only):
      `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
    - Client ID Metadata Document: `/oauth/client-metadata.json` (`GET` / `HEAD`
@@ -62,16 +75,16 @@ Requests are handled in this order:
    - Official CLI CIMD: `/oauth/cli-client-metadata.json` (`GET` / `HEAD` /
      `OPTIONS`) — `@kodycodes/cli` presents this URL as `client_id`. Loopback
      redirect is `http://127.0.0.1:43742/callback`.
-2. OAuth authorization endpoints:
+3. OAuth authorization endpoints:
    - `/oauth/authorize`
    - `/oauth/authorize-info`
    - `/oauth/callback`
-3. Browser noise endpoint:
+4. Browser noise endpoint:
    - `/.well-known/appspecific/com.chrome.devtools.json` (returns 204)
-4. OAuth protected resource metadata endpoint (inside the default handler, for
+5. OAuth protected resource metadata endpoint (inside the default handler, for
    the `/mcp` suffix path only):
    - `/.well-known/oauth-protected-resource/mcp`
-5. MCP endpoint:
+6. MCP endpoint:
    - `/mcp` (requires OAuth bearer token). After authentication,
      `packages/worker/src/mcp-auth.ts` routes by protocol era: 2025-era requests
      go to the sessionful `MCP` Durable Object (`McpAgent`, MCP SDK v1) hosted
@@ -90,7 +103,7 @@ Requests are handled in this order:
      `ctx.exports` and returns `scope: "origin-only"`,
      `proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
      smoke does not prove MCP execute health.
-6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
+7. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to
    `kody-runtime` via `RUNTIME_WORKER`; webhook ingress stays on origin:
@@ -101,26 +114,27 @@ Requests are handled in this order:
    - Retired `/@{username}/connectors/...` paths return `404`. Use outbound MCP
      servers (`kody.mcp[...]`) for home automation and similar tools.
 
-7. Static assets:
+8. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
    - Matching files under `packages/worker/public/` are asset-first at the edge
      (they do not enter this Worker list) unless listed in
      `assets.run_worker_first`
-8. Hosted package apps served inline on the app origin
+9. Hosted package apps served inline on the app origin
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when
    `PACKAGE_APP_BASE_URL` is unset.
-9. App server routes:
-   - Everything else is handled by `packages/worker/src/app/handler.ts`
-   - Public agent-discovery documents (Worker-first, origin-aware) include
-     `/robots.txt`, `/sitemap.xml`, `/auth.md`,
-     `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
-     `/.well-known/agent-skills/index.json`, skill markdown under
-     `/.well-known/agent-skills/:skillId/SKILL.md`, `/.well-known/security.txt`,
-     and OpenAI Apps domain verification at `/.well-known/openai-apps-challenge`
-     (unauthenticated `text/plain` token). The homepage adds RFC 8288 `Link`
-     headers to those documents and serves markdown when `Accept` prefers
-     `text/markdown`. DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS,
-     not a Worker route.
+10. App server routes:
+
+- Everything else is handled by `packages/worker/src/app/handler.ts`
+- Public agent-discovery documents (Worker-first, origin-aware) include
+  `/robots.txt`, `/sitemap.xml`, `/auth.md`,
+  `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
+  `/.well-known/agent-skills/index.json`, skill markdown under
+  `/.well-known/agent-skills/:skillId/SKILL.md`, `/.well-known/security.txt`,
+  and OpenAI Apps domain verification at `/.well-known/openai-apps-challenge`
+  (unauthenticated `text/plain` token). The homepage adds RFC 8288 `Link`
+  headers to those documents and serves markdown when `Accept` prefers
+  `text/markdown`. DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a
+  Worker route.
 
 ## Workflow runtime
 
@@ -158,22 +172,37 @@ session, logout, password reset, health).
 `renderAppPage` sets
 `Cache-Control: public, max-age=60, stale-while-revalidate=300` and
 `Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
-`/onboarding`, `/guides`, and `/guides/:slug`. The public package surfaces
-(`/@:username/:kodyId`, `/@:username/:kodyId/tree/:ref/*`, `/community/:id`,
-`/community/:id/files/*`) and their JSON companions
-(`/profiles/:username/packages/:kodyId.json`, `/community/:id.json`,
-`.../files.json`) are shared too, but with `public, max-age=60` and no
-stale-while-revalidate: an owner can unpublish or make a package private and
-nothing purges shared caches, so a stale public response is bounded to one
-minute. They are shared only when the document is a `200` (a `401` or `404` to a
-stranger stays `no-store` so making a package public takes effect at once) and,
-for JSON, when the request has no session cookie and the payload carries no
-viewer state. Anonymous `/onboarding.json` uses the marketing policy.
-`/guides/:slug.json` is publicly cacheable without a cookie vary (the payload is
-identical for every visitor). The response stays `no-store` when the request
-carries a `kody_session` cookie, `loadSessionInfo` resolves a session, or the
-response sets a cookie. Auth, OAuth, account, and every other HTML path stay
-`no-store`.
+`/onboarding`, `/guides`, and `/guides/:slug`. Origin `fetch` stores those
+cookie-less `GET`/`HEAD` responses in the Cache API (`caches.default`), keyed on
+the canonical origin + pathname + search and a `__accept=html` marker. Requests
+whose `Accept` prefers `text/markdown` (`prefersMarkdown`) skip the store. A
+matching HTML request with no `kody_session` cookie and no `Authorization`
+header is served from that store (`X-Kody-Cache: HIT`) without running the app
+handler. A miss runs the handler and, when the response is `200` `text/html`
+with no `Set-Cookie` and already carries that Cache-Control,
+`ctx.waitUntil(caches.default.put)` stores a clone. The stored copy drops
+`Vary: Cookie` because Cloudflare's Cache API does not use `Vary` as a key (the
+lookup already excludes cookie-bearing requests). Hits restore the
+browser-facing `Vary` from the miss (`Cookie`, plus `Accept` on negotiated
+routes). Browser-facing `Cache-Control` is unchanged. `Cache-Control: no-cache`
+on the request skips the lookup so e2e can assert fresh HTML.
+
+The public package surfaces (`/@:username/:kodyId`,
+`/@:username/:kodyId/tree/:ref/*`, `/community/:id`, `/community/:id/files/*`)
+and their JSON companions (`/profiles/:username/packages/:kodyId.json`,
+`/community/:id.json`, `.../files.json`) are shared too, but with
+`public, max-age=60` and no stale-while-revalidate: an owner can unpublish or
+make a package private and nothing purges shared caches, so a stale public
+response is bounded to one minute. They are shared only when the document is a
+`200` (a `401` or `404` to a stranger stays `no-store` so making a package
+public takes effect at once) and, for JSON, when the request has no session
+cookie and the payload carries no viewer state. JSON companions are not stored
+in the Cache API (the store is HTML-only). Anonymous `/onboarding.json` uses the
+marketing policy. `/guides/:slug.json` is publicly cacheable without a cookie
+vary (the payload is identical for every visitor). The response stays `no-store`
+when the request carries a `kody_session` cookie, `loadSessionInfo` resolves a
+session, or the response sets a cookie. Auth, OAuth, account, and every other
+HTML path stay `no-store`.
 
 ## Request context
 

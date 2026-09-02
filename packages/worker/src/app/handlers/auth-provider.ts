@@ -69,7 +69,7 @@ import {
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
-import { getSignupMode } from '#universal/signup-mode.ts'
+import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import {
 	firstTouchAttributionCreateFields,
 	hasFirstTouchAttribution,
@@ -203,7 +203,7 @@ export function createAuthProvidersApiHandler(env: Env) {
 		async handler() {
 			return jsonResponse({
 				ok: true,
-				signupMode: getSignupMode(env),
+				signupMode: await resolveSignupMode(env),
 				turnstileSiteKey: getTurnstileSiteKey(env),
 				providers: getEnabledOauthProviders(env).map((provider) => ({
 					id: provider,
@@ -666,7 +666,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				consumedInvitePlan = null
 			}
 
-			const inviteRequired = getSignupMode(env) !== 'open'
+			const inviteRequired = (await resolveSignupMode(env)) !== 'open'
 			const inviteCodeFromState = loginState.inviteCode
 			if (inviteRequired || normalizeInviteCode(inviteCodeFromState)) {
 				const inviteResult = await consumeInviteCode({
@@ -696,6 +696,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				username = await getAvailableUsernameFromBase(
 					env.APP_DB,
 					profile.username ?? usernameFromEmail(email),
+					env,
 				)
 				stableUserId = await createStableUserIdFromEmail(email)
 				const createdAt = new Date().toISOString()

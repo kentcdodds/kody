@@ -237,6 +237,11 @@ rule.
 - `adminFeatureFlagList`
 - `adminFeatureFlagSet`
 - `adminFeatureFlagOverride`
+- `adminReservedUsernameList`
+- `adminReservedUsernameAdd`
+- `adminReservedUsernameRemove`
+- `adminSignupModeGet`
+- `adminSignupModeSet`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
 - `adminSystemEmailSend`

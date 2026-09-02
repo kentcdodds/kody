@@ -255,11 +255,31 @@ function parseSetPair(pair: string) {
 	return { key, value }
 }
 
+/**
+ * `--set-from-env NAME` reads `process.env.NAME`; `--set-from-env NAME=SOURCE`
+ * reads `process.env.SOURCE` and uploads it as the Worker secret `NAME`. The
+ * alias form lets a worker receive a different value than the variable of the
+ * same name in the deploy shell (for example a narrower `CLOUDFLARE_API_TOKEN`
+ * than the one wrangler itself authenticates with).
+ */
+export function parseEnvSourceSpec(spec: string) {
+	const separator = spec.indexOf('=')
+	if (separator === -1) {
+		return { key: spec, sourceKey: spec }
+	}
+	const key = spec.slice(0, separator).trim()
+	const sourceKey = spec.slice(separator + 1).trim()
+	if (!key || !sourceKey) {
+		fail(`Invalid --set-from-env spec "${spec}" (expected NAME or NAME=SOURCE)`)
+	}
+	return { key, sourceKey }
+}
+
 function generateHexSecret(bytes: number) {
 	return randomBytes(bytes).toString('hex')
 }
 
-async function buildSecrets(options: CliOptions) {
+export async function buildSecrets(options: CliOptions) {
 	const secrets = new Map<string, string>()
 
 	for (const path of options.dotenvPaths) {
@@ -269,16 +289,18 @@ async function buildSecrets(options: CliOptions) {
 		}
 	}
 
-	for (const key of options.setFromEnv) {
-		const value = process.env[key]
+	for (const spec of options.setFromEnv) {
+		const { key, sourceKey } = parseEnvSourceSpec(spec)
+		const value = process.env[sourceKey]
 		if (typeof value !== 'string') {
-			fail(`Missing required environment variable: ${key}`)
+			fail(`Missing required environment variable: ${sourceKey}`)
 		}
 		secrets.set(key, value)
 	}
 
-	for (const key of options.setFromEnvOptional) {
-		const value = process.env[key]
+	for (const spec of options.setFromEnvOptional) {
+		const { key, sourceKey } = parseEnvSourceSpec(spec)
+		const value = process.env[sourceKey]
 		if (typeof value === 'string' && value.length > 0) {
 			secrets.set(key, value)
 		}
@@ -323,9 +345,10 @@ export function buildSpawnEnv(
 			spawnEnv[key] = value
 		}
 	}
-	for (const key of options.setFromEnvOptional) {
-		if (spawnEnv[key] !== undefined && spawnEnv[key].length === 0) {
-			delete spawnEnv[key]
+	for (const spec of options.setFromEnvOptional) {
+		const { sourceKey } = parseEnvSourceSpec(spec)
+		if (spawnEnv[sourceKey] !== undefined && spawnEnv[sourceKey].length === 0) {
+			delete spawnEnv[sourceKey]
 		}
 	}
 	return spawnEnv

@@ -3,6 +3,12 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminInvitesData } from '#app/admin-invites-data.ts'
 import {
+	setSignupModeSetting,
+	SignupModeOpenWithoutTurnstileError,
+	SignupModeStaleWriteError,
+} from '#app/signup-mode-setting.ts'
+import { isSignupMode } from '#universal/signup-mode.ts'
+import {
 	auditDatabaseFromEnv,
 	getRequestIp,
 	logAuditEvent,
@@ -84,6 +90,9 @@ export function createAdminInvitesApiHandler(env: Env) {
 				if (action === 'create_user') {
 					return handleCreateUserAction({ env, request, url, actor, body })
 				}
+				if (action === 'set_signup_mode') {
+					return handleSetSignupModeAction({ env, request, url, actor, body })
+				}
 
 				return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 			} catch (error) {
@@ -107,6 +116,7 @@ async function handleCreateUserAction(input: {
 	try {
 		const createdUser = await adminCreateUserWithPasswordSetup({
 			db: input.env.APP_DB,
+			env: input.env,
 			email,
 			username,
 			setupLinkOrigin: input.url,
@@ -286,4 +296,67 @@ function readExpiresAt(body: object): string | null | false {
 	const date = new Date(value)
 	if (Number.isNaN(date.getTime())) return false
 	return date.toISOString()
+}
+
+async function handleSetSignupModeAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithRole>>
+	body: object
+}) {
+	const mode = readNonEmptyTrimmedStringOrNumber(input.body, 'mode')
+	if (!isSignupMode(mode)) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'Signup mode must be invite, open, or waitlist.',
+			},
+			400,
+		)
+	}
+	const expectedCurrentMode = readNonEmptyTrimmedStringOrNumber(
+		input.body,
+		'expectedCurrentMode',
+	)
+	if (!isSignupMode(expectedCurrentMode)) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'expectedCurrentMode must be invite, open, or waitlist.',
+			},
+			400,
+		)
+	}
+
+	try {
+		await setSignupModeSetting({
+			env: input.env,
+			mode,
+			expectedCurrentMode,
+			updatedBy: input.actor.mcpUser.userId,
+			actorEmail: input.actor.email,
+			path: input.url.pathname,
+			ip: getRequestIp(input.request) ?? undefined,
+		})
+	} catch (error) {
+		if (error instanceof SignupModeStaleWriteError) {
+			return jsonResponse(
+				{
+					ok: false,
+					error: error.message,
+					signupMode: error.current,
+				},
+				409,
+			)
+		}
+		const message =
+			error instanceof Error ? error.message : 'Unable to update signup mode.'
+		return jsonResponse(
+			{ ok: false, error: message },
+			error instanceof SignupModeOpenWithoutTurnstileError ? 400 : 500,
+		)
+	}
+
+	return jsonResponse(await loadAdminInvitesData(input.env))
 }

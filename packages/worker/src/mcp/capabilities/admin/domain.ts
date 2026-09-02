@@ -5,6 +5,8 @@ import { adminCommunityActivityListCapability } from './admin-community-activity
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
+import { adminSignupModeGetCapability } from './admin-signup-mode-get.ts'
+import { adminSignupModeSetCapability } from './admin-signup-mode-set.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
@@ -41,11 +43,14 @@ import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-le
 import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 import { adminUserMeterStorageReconcileCapability } from './admin-user-meter-storage-reconcile.ts'
 import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.ts'
+import { adminReservedUsernameAddCapability } from './admin-reserved-username-add.ts'
+import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
+import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator tools for accounts, flags, maintenance, and community metadata.',
+		'Admin-only operator tools for accounts, flags, signup gating, maintenance, and community metadata.',
 	keywords: [
 		'admin',
 		'rbac',
@@ -57,6 +62,7 @@ export const adminDomain = defineDomain({
 		'verify',
 		'audit',
 		'feature flags',
+		'signup mode',
 		'system email',
 		'platform feedback',
 		'community activity',
@@ -76,6 +82,7 @@ export const adminDomain = defineDomain({
 		'mailbox',
 		'maintenance',
 		'retention',
+		'reserved username',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -109,6 +116,11 @@ export const adminDomain = defineDomain({
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,
+		adminReservedUsernameListCapability,
+		adminReservedUsernameAddCapability,
+		adminReservedUsernameRemoveCapability,
+		adminSignupModeGetCapability,
+		adminSignupModeSetCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
 		adminSystemEmailSendCapability,

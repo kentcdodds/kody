@@ -75,6 +75,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Security](./security.md), [secret host approval](./secret-host-approval.md),
   [secret rotation](./secret-rotation.md), [social login](./social-login.md)
 - [Production backup and disaster recovery](./disaster-recovery.md)
+- [Production rollback](./rollback.md)
 - Ops runbook: [account write-lease repair](./account-write-lease-repair.md)
 
 ## Architecture

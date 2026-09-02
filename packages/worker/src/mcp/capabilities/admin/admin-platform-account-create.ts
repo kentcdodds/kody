@@ -52,6 +52,7 @@ export const adminPlatformAccountCreateCapability = defineDomainCapability(
 				async () => {
 					const created = await createPlatformAccount({
 						db: ctx.env.APP_DB,
+						env: ctx.env,
 						email: args.email,
 						username: args.username,
 					})

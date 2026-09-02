@@ -5,6 +5,11 @@
 			"accountId": "a99ee2e72728dd52902ef288b7b1447d",
 			"databaseId": "8c1014d1-6b41-4695-a0a2-159071f0f919",
 			"databaseName": "kody"
+		},
+		{
+			"accountId": "a99ee2e72728dd52902ef288b7b1447d",
+			"databaseId": "5410331e-4d25-47e4-a1e5-a248f7cc764c",
+			"databaseName": "kody-jobs"
 		}
 	],
 	"drillTargets": [

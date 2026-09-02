@@ -476,12 +476,45 @@ test('sendOutboundEmail rejects non-self recipients under the self policy', asyn
 	expect(allowed.message.toAddresses).toEqual([accountEmail])
 })
 
-test('sendOutboundEmail blocks reserved usernames and unconfigured platform domains', async () => {
+test('sendOutboundEmail blocks permanently reserved usernames, sends from an unreserved built-in, and rejects unconfigured platform domains', async () => {
+	silenceIncidentalRuntimeWarnings()
 	await ensureEmailTestSchema(env.APP_DB)
 	const accountEmail = `system-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(accountEmail)
 	await seedVerifiedAccount({ email: accountEmail })
-	// A legacy account holding a reserved username cannot send user mail.
+	// A live account holding an unreserved built-in username can send.
+	const blogEmail = `blog-${crypto.randomUUID()}@example.com`
+	const blogUserId = await createStableUserIdFromEmail(blogEmail)
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(username) DO UPDATE SET
+				email = excluded.email,
+				email_verified_at = excluded.email_verified_at,
+				stable_user_id = excluded.stable_user_id,
+				plan = excluded.plan`,
+	)
+		.bind(
+			'blog',
+			blogEmail,
+			'test-password-hash',
+			new Date().toISOString(),
+			blogUserId,
+			'max',
+		)
+		.run()
+	const blogSent = await sendOutboundEmail({
+		env: createBindingSendEnv(),
+		userId: blogUserId,
+		accountEmail: blogEmail,
+		recipientPolicy: 'self',
+		subject: 'From blog',
+		text: 'Body',
+	})
+	expect(blogSent.status).toBe('sent')
+	expect(blogSent.message.fromAddress).toBe(`blog@${platformDomain}`)
+
+	// A legacy account holding a permanently reserved username cannot send.
 	const reservedEmail = `reserved-${crypto.randomUUID()}@example.com`
 	const reservedUserId = await createStableUserIdFromEmail(reservedEmail)
 	await env.APP_DB.prepare(

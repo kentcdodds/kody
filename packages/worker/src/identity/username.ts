@@ -1,8 +1,17 @@
 import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
+import { getEffectiveReservedUsernameError } from '#worker/identity/reserved-username-settings.ts'
 import { getReservedUsernameError } from '#worker/identity/reserved-usernames.ts'
 
 export const usernameRequirements =
 	'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.'
+
+/**
+ * Username of the operator-provisioned official platform account (`@kody`).
+ * Reserved-username denylist membership is a signup constraint, not an
+ * identity check: other reserved names (for example `user`) are not this
+ * account and do not own the `@kody` package scope.
+ */
+export const platformAccountUsername = 'kody'
 
 export function normalizeUsername(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -59,4 +68,15 @@ export function getUsernameValidationError(username: string) {
 		return formatError
 	}
 	return getReservedUsernameError(username)
+}
+
+export async function getEffectiveUsernameValidationError(
+	username: string,
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+) {
+	const formatError = getUsernameFormatValidationError(username)
+	if (formatError) {
+		return formatError
+	}
+	return getEffectiveReservedUsernameError(username, env)
 }

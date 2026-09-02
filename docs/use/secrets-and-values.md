@@ -90,10 +90,12 @@ PKCS#8 keys, used by Cursor Origin app JWTs).
 
 ## Mentioning placeholders without resolving them
 
-Resolution runs on the **final serialized request** (URL, headers, body), so a
-literal placeholder assembled by any means — including string concatenation —
-will resolve. Do **not** place resolvable placeholder tokens into user-visible
-or third-party-visible content such as issue bodies, comments, prompts, logs, or
+Resolution runs on the **final serialized request** (URL, headers, and
+non-multipart body), so a literal placeholder assembled by any means — including
+string concatenation — will resolve. `multipart/*` bodies are opaque:
+placeholders inside a part are not resolved (put credentials in the URL or
+headers). Do **not** place resolvable placeholder tokens into user-visible or
+third-party-visible content such as issue bodies, comments, prompts, logs, or
 returned strings.
 
 - To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.

@@ -184,6 +184,18 @@ underscores are rejected everywhere, and there is no lenient recognition tier
 Worker, so hostnames that are not exactly one valid username label fail closed
 with `404`.
 
+Usernames are also `{username}@<platform domain>` mail locals. The built-in
+reserved list in `packages/worker/src/identity/reserved-usernames.ts` blocks
+brand, infrastructure, mailbox, and trust labels (`autodiscover`, `mta-sts`,
+`wpad`, system-email locals, and the rest of the denylist) so those labels
+cannot become package-app subdomains or inbound mailboxes. Operators add or
+unreserve names at runtime through `platform-settings:v1:reserved-usernames`
+without a deploy; system-email locals and `kody`-prefixed built-in names stay
+permanently locked. Signup, username change, admin user creation, and social
+username generation consult the effective set (built-in plus KV). Operators run
+`adminReservedUsernameList` against production when expanding the built-in list
+so `conflicts` shows registered collisions.
+
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
 
@@ -285,6 +297,29 @@ plus 2+ years remaining on the registration. Abuse/contact mail is
 PRIVATE list. The `__Host-` cookie is the primary cookie-tossing control; PSL
 entry is an additional layer.
 
+## Non-canonical hosts
+
+All three product workers keep `workers_dev = true` so secret bulk-reapply does
+not drop zone routes. That leaves a second hostname (`*.workers.dev`) pointing
+at the same scripts as `kody.codes` and `kody.run`. WebAuthn `rpID` derives from
+the request host, and CSP/CORS reasoning assumes one origin, so production must
+not serve the app, `/mcp`, or OAuth on that trigger.
+
+`refuseNonCanonicalProductionHost` (`packages/worker/src/app/canonical-host.ts`)
+runs at the start of origin, platform, and runtime `fetch`. In production
+(`!isNonProductionRuntime(env)`), a request whose host is not the `APP_BASE_URL`
+host, not a package-app apex or `{username}.<package-app host>` shape
+(`parsePackageAppRequestHost` / `getPackageAppBaseUrl`), and not an
+`APP_LEGACY_HOSTS` entry, receives `404` `{ error: 'not_found' }` with
+`Cache-Control: no-store`. Preview, local, and test runtimes skip the check
+because preview URLs are `*.workers.dev`.
+
+Deploy health checks hit the origin at `APP_BASE_URL/health` when that var is
+set, and fall back to the workers.dev URL from `wrangler deploy` output.
+Platform and runtime health checks always use the workers.dev URL
+(`/__platform/health`, `/__runtime/health`). Those exact probe paths stay
+reachable on any host; every other workers.dev path in production is `404`.
+
 ## Auth rate limiting
 
 Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
@@ -307,6 +342,12 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /account/password.json` (signed-in password change or first-time set)
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
+
+Open signup requires Turnstile. `adminSignupModeSet` and
+`POST /admin/invites.json` refuse `mode=open` unless both `TURNSTILE_SITE_KEY`
+and `TURNSTILE_SECRET_KEY` are configured, so public password and social signup
+cannot be opened without bot defence. Writes also require `expectedCurrentMode`
+matching the stored mode; a mismatch returns 409 with the live setting.
 
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the
@@ -576,3 +617,12 @@ change to these decisions here so future agents do not relitigate them.
   decision, restated as invariant 10 above: it holds only while both halves
   hold, so revisit if any mutating endpoint starts accepting cross-site form
   posts or `SameSite=None`.
+- **Production `workers.dev` health probes stay reachable.** Origin `/health`,
+  platform `/__platform/health`, and runtime `/__runtime/health` answer on the
+  workers.dev trigger so deploy and status probes can hit the script directly.
+  The rest of those hostnames return `404`.
+- **Package inbound webhook replay protection is opt-in.** HMAC over the raw
+  body without a `replay` declaration does not bind a timestamp or delivery id,
+  so a captured signed payload can be replayed until the URL secret is rotated.
+  Authors opt in per webhook with `replay.timestampHeader` and/or
+  `replay.deliveryIdHeader`.

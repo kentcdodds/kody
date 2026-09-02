@@ -15,7 +15,10 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingFeaturedMcpServerId,
 } from '#universal/onboarding-mcp-chooser.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	type SignupMode,
+	type SignupModeSetting,
+} from '#universal/signup-mode.ts'
 import {
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
@@ -351,6 +354,22 @@ export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
 	availablePlans: Array<AdminPlanName>
+	signupMode: SignupModeSetting
+}
+
+export type AdminReservedUsernameConflict = {
+	username: string
+	stableUserId: string
+}
+
+export type AdminReservedUsernamesLoaderData = {
+	ok: true
+	builtIn: Array<string>
+	added: Array<string>
+	removed: Array<string>
+	conflicts: Array<AdminReservedUsernameConflict>
+	updatedAt: string | null
+	updatedBy: string | null
 }
 
 export type AdminFeatureFlagsLoaderData = {
@@ -1243,6 +1262,12 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	publishedCommit: string | null
 }
 
+export type AccountPackagePublishDiffFile = {
+	path: string
+	status: 'added' | 'removed' | 'modified'
+	patch: string | null
+}
+
 export type AccountPackageApprovePublishLoaderData = {
 	ok: true
 	email: string
@@ -1258,6 +1283,10 @@ export type AccountPackageApprovePublishLoaderData = {
 	alreadyPublished: boolean
 	filesHref: string
 	packageHref: string
+	diff: {
+		files: Array<AccountPackagePublishDiffFile>
+		omittedCount: number
+	}
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
@@ -1747,6 +1776,7 @@ export type AppLoaderData = {
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
+	adminReservedUsernames?: AdminReservedUsernamesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData

@@ -120,6 +120,55 @@ test('parseBackupFullManifest accepts a signed envelope and rejects shape drift'
 	).toBe(backupFullManifestLegacySchemaVersion)
 })
 
+test('parseBackupFullManifest accepts declared d1Sources and keeps historical payloads valid', () => {
+	const payload = samplePayload()
+	expect(
+		parseBackupFullManifest(signedManifest(payload)).payload.d1Sources,
+	).toBe(undefined)
+	const d1Sources = [
+		{
+			databaseId: '22222222-2222-4222-8222-222222222222',
+			databaseName: 'kody',
+			manifestKey: payload.d1ManifestKey,
+			manifestSha256: 'a'.repeat(64),
+		},
+		{
+			databaseId: '44444444-4444-4444-8444-444444444444',
+			databaseName: 'kody-jobs',
+			manifestKey:
+				'daily/d1/44444444-4444-4444-8444-444444444444/2026-07-22/manifest.json',
+			manifestSha256: 'b'.repeat(64),
+		},
+	]
+	const withSources = signedManifest({ ...payload, d1Sources })
+	expect(parseBackupFullManifest(withSources).payload.d1Sources).toEqual(
+		d1Sources,
+	)
+
+	expect(() =>
+		parseBackupFullManifest(signedManifest({ ...payload, d1Sources: [] })),
+	).toThrow(/invalid versioned shape/)
+	expect(() =>
+		parseBackupFullManifest(
+			signedManifest({
+				...payload,
+				d1Sources: [
+					{
+						...d1Sources[0]!,
+						manifestKey: 'daily/d1/other/2026-07-22/manifest.json',
+					},
+				],
+			}),
+		),
+	).toThrow(/invalid signed values/)
+	expect(() =>
+		parseBackupFullManifest({
+			...withSources,
+			payload: { ...withSources.payload, extra: true },
+		}),
+	).toThrow(/invalid versioned shape/)
+})
+
 test('full-manifest parse/sign/verify round-trip with Ed25519', async () => {
 	const { privateKey, publicKey } = generateKeyPairSync('ed25519')
 	const payload = samplePayload()
