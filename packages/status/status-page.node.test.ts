@@ -79,6 +79,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 					startedAt: '2026-08-04T11:00:00.000Z',
 					resolvedAt: null,
 					detail: 'timeout',
+					retrospective: null,
 				},
 			],
 		}),
@@ -98,6 +99,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 					startedAt: '2026-08-01T00:00:00.000Z',
 					resolvedAt: '2026-08-01T01:00:00.000Z',
 					detail: '<img src=x onerror=alert(1)>',
+					retrospective: null,
 				},
 			],
 		}),
@@ -190,4 +192,60 @@ test('status page renders provider incidents separately and omits them when abse
 	)
 	expect(unsafeLink).not.toContain('javascript:alert')
 	expect(unsafeLink).toContain('https://www.cloudflarestatus.com')
+})
+
+test('status page keeps resolved incidents glanceable and expands a retrospective', () => {
+	const withoutWriteup = renderStatusPage(
+		snapshot({
+			recentIncidents: [
+				{
+					id: 10,
+					component: 'jobs',
+					componentName: 'Jobs',
+					startedAt: '2026-09-02T21:57:54.765Z',
+					resolvedAt: '2026-09-02T22:00:51.866Z',
+					detail: 'error',
+					retrospective: null,
+				},
+			],
+		}),
+	)
+	expect(withoutWriteup).toContain('Jobs outage (resolved) — error')
+	expect(withoutWriteup).not.toContain('<details class="retrospective">')
+
+	const withWriteup = renderStatusPage(
+		snapshot({
+			recentIncidents: [
+				{
+					id: 10,
+					component: 'jobs',
+					componentName: 'Jobs',
+					startedAt: '2026-09-02T21:57:54.765Z',
+					resolvedAt: '2026-09-02T22:00:51.866Z',
+					detail: 'error',
+					retrospective: {
+						whatHappened: 'Two failed Jobs probes.',
+						impact: 'Status page looked alarming.',
+						timeline: [
+							{
+								at: '2026-09-02T21:57:54.765Z',
+								note: 'Opened after consecutive failures.',
+							},
+						],
+						cause: 'Unconfirmed. <script>alert(1)</script>',
+						whatWeDid: 'Probes recovered.',
+						whatWeWillChange: 'Publish retrospectives.',
+						publishedAt: '2026-09-02T22:20:00.000Z',
+					},
+				},
+			],
+		}),
+	)
+	expect(withWriteup).toContain('Jobs outage (resolved) — error')
+	expect(withWriteup).toContain('<details class="retrospective">')
+	expect(withWriteup).toContain('<summary>Retrospective</summary>')
+	expect(withWriteup).toContain('Two failed Jobs probes.')
+	expect(withWriteup).toContain('What we will change')
+	expect(withWriteup).not.toContain('<script>alert(1)</script>')
+	expect(withWriteup).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
 })

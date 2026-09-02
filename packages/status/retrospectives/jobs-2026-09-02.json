@@ -1,0 +1,57 @@
+{
+	"whatHappened": "Jobs probes failed twice in a row and opened status incident 10. The public page showed Jobs as down with probe detail \"error\" for two minutes, then two successful probes resolved it. All other measured status components stayed operational.",
+	"impact": "The status page looked alarming for Jobs. Live Jobs traffic uses the JOBS service binding, not a public hostname, and recovered with the probes (2 failed samples, 2 incident minutes). App & API, MCP, package runtime, primary database, KV, and assets stayed green with zero failures that day. jobs.kody.codes returning Cloudflare error 1016 is expected and is not an outage: the jobs worker has no public hostname.",
+	"timeline": [
+		{
+			"at": "2026-09-02T20:33:50Z",
+			"note": "2:33pm MDT — last full good production deploy that included jobs, highlight, and origin (run 33680026797, sha 5a0ca0b)."
+		},
+		{
+			"at": "2026-09-02T20:48:29Z",
+			"note": "2:48pm MDT — #1994 (c0cae0c) production deploy failed at Deploy jobs worker and Deploy highlight worker with Cloudflare Authentication error [code: 10000]; origin was skipped."
+		},
+		{
+			"at": "2026-09-02T20:58:12Z",
+			"note": "2:58pm MDT — #2005 filed (PR preview wrangler d1 list hitting the same Cloudflare 10000 auth error)."
+		},
+		{
+			"at": "2026-09-02T20:58:33Z",
+			"note": "2:58pm MDT — #1999 (98c97b3) production deploy failed the same way; origin skipped."
+		},
+		{
+			"at": "2026-09-02T21:08:58Z",
+			"note": "3:08pm MDT — #2004 (3e405b5) production deploy failed the same way; origin skipped."
+		},
+		{
+			"at": "2026-09-02T21:30:15Z",
+			"note": "3:30pm MDT — #2008 merged (narrower runtime Cloudflare API token wiring)."
+		},
+		{
+			"at": "2026-09-02T21:40:06Z",
+			"note": "3:40pm MDT — #2008 production deploy uploaded the jobs worker successfully (run 33685703674, sha 4701dfb). Highlight, nx-cache, origin, and status also succeeded in that 3:32–3:43pm MDT run. That is the proof the GitHub token could deploy jobs again."
+		},
+		{
+			"at": "2026-09-02T21:57:54.765Z",
+			"note": "3:57pm MDT — Jobs incident 10 opened after two consecutive failed probes (detail: error), about 15 minutes after that jobs/origin/status redeploy finished."
+		},
+		{
+			"at": "2026-09-02T21:58:57Z",
+			"note": "3:58pm MDT — #2011 merged (skip jobs, highlight, and nx-cache deploys unless those sources change)."
+		},
+		{
+			"at": "2026-09-02T22:00:51.866Z",
+			"note": "4:00pm MDT — Jobs incident 10 resolved after two consecutive successful probes (2 incident minutes)."
+		},
+		{
+			"at": "2026-09-02T22:01:23Z",
+			"note": "4:01pm MDT — origin deploy 195f28b succeeded; jobs/highlight/nx-cache were skipped."
+		},
+		{
+			"at": "2026-09-02T22:09:46Z",
+			"note": "4:09pm MDT — origin deploy 5f9e564 (#2003) succeeded; jobs skipped. Live jobs worker commit on the status page stayed 4701dfb."
+		}
+	],
+	"cause": "No confirmed root cause. Earlier that afternoon, GitHub Actions could not deploy the jobs or highlight workers after Cloudflare API tokens were scoped down (Authentication error [code: 10000] on the Cloudflare D1 list call). An operator also rolled a Cloudflare token so the new value could be stored in GitHub; rolling invalidates the old secret immediately while already-running Workers still hold it until the next secret sync, which can cause a short API blip. The two-minute Jobs probe incident started about 15 minutes after the successful jobs/origin/status redeploy that uploaded kody-jobs (JobManager Durable Object listed in that deploy). Token-roll aftershock, deploy aftershock, and flaky probes are all still plausible. This writeup does not treat any of those as proven.",
+	"whatWeDid": "Restored jobs-worker deploys by merging #2008 and completing production run 33685703674 (sha 4701dfb), including the jobs worker at 3:40pm MDT. #2011 then stopped uploading jobs, highlight, and nx-cache unless those sources change, so later origin deploys (195f28b at 4:01pm, 5f9e564 at 4:09pm) succeeded with jobs skipped. Live Jobs via the service binding recovered with the probes. We are not finishing #2010 (split the combined token) or revoking the combined token as part of this incident.",
+	"whatWeWillChange": "Publish a short public retrospective on resolved status incidents so the page is not just the probe detail. Keep treating jobs.kody.codes 1016 as expected, not an outage. If Jobs probes flap again after a jobs-worker deploy or token roll, investigate the service-binding probe before assuming customer impact. Do not split or revoke the remaining combined Cloudflare API token because of this incident."
+}

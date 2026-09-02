@@ -352,11 +352,15 @@ Worker secrets:
   than the jobs-only endpoint so restored D1 fingerprints cannot skip an empty
   index.
 - **`STATUS_INCIDENT_EVENT_SECRET`** — optional Worker secret shared with the
-  status worker. Bearer token for `POST /__maintenance/status-incidents`, which
-  fans `status.incident.opened` / `status.incident.resolved` to admin package
-  subscriptions. When unset, the endpoint returns not-configured and the status
-  worker skips emit; packages can reconcile from public `/status.json`. Synced
-  from the GitHub Actions secret of the same name on production deploy.
+  status worker. Bearer token for origin `POST /__maintenance/status-incidents`,
+  which fans `status.incident.opened` / `status.incident.resolved` to admin
+  package subscriptions, and for status
+  `POST /__maintenance/incidents/:id/retrospective`, which attaches a public
+  writeup to a resolved probe-derived incident. When unset, the origin endpoint
+  returns not-configured, the status worker skips emit, and the retrospective
+  route returns 503; packages can reconcile open/resolve from public
+  `/status.json`. Synced from the GitHub Actions secret of the same name on
+  production deploy.
 
 ## Cloudflare API (Worker + Email)
 

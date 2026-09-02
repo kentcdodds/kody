@@ -116,6 +116,24 @@ h1 { font-size: 1.5rem; margin: 0; }
 .incident.resolved { border-left-color: var(--ok); }
 .incident-title { font-weight: 600; }
 .incident-meta { color: var(--muted); font-size: 0.85rem; }
+.retrospective { margin-top: 0.5rem; }
+.retrospective summary {
+	cursor: pointer;
+	color: var(--muted);
+	font-size: 0.85rem;
+	font-weight: 600;
+}
+.retrospective-section { margin: 0.6rem 0 0; }
+.retrospective-section h3 {
+	margin: 0 0 0.2rem;
+	font-size: 0.8rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: var(--muted);
+}
+.retrospective-section p,
+.retrospective-section li { margin: 0; white-space: pre-wrap; }
+.retrospective-section ol { margin: 0; padding-left: 1.1rem; }
 .provider-section {
 	margin: 2rem 0 1rem;
 	padding: 1rem 1.25rem;
@@ -194,6 +212,27 @@ function renderComponent(component: ComponentSnapshot): string {
 </div>`
 }
 
+function renderRetrospective(incident: IncidentView): string {
+	const retrospective = incident.retrospective
+	if (!retrospective) return ''
+	const timeline = retrospective.timeline
+		.map(
+			(entry) =>
+				`<li><span class="incident-meta">${escapeHtml(entry.at)}</span> — ${escapeHtml(entry.note)}</li>`,
+		)
+		.join('')
+	return `<details class="retrospective">
+	<summary>Retrospective</summary>
+	<div class="retrospective-section"><h3>What happened</h3><p>${escapeHtml(retrospective.whatHappened)}</p></div>
+	<div class="retrospective-section"><h3>Impact</h3><p>${escapeHtml(retrospective.impact)}</p></div>
+	<div class="retrospective-section"><h3>Timeline</h3><ol>${timeline}</ol></div>
+	<div class="retrospective-section"><h3>Cause</h3><p>${escapeHtml(retrospective.cause)}</p></div>
+	<div class="retrospective-section"><h3>What we did</h3><p>${escapeHtml(retrospective.whatWeDid)}</p></div>
+	<div class="retrospective-section"><h3>What we will change</h3><p>${escapeHtml(retrospective.whatWeWillChange)}</p></div>
+	<div class="incident-meta">Published ${escapeHtml(retrospective.publishedAt)}</div>
+</details>`
+}
+
 function renderIncident(incident: IncidentView): string {
 	const resolved = incident.resolvedAt !== null
 	const detail = incident.detail ? ` — ${escapeHtml(incident.detail)}` : ''
@@ -203,6 +242,7 @@ function renderIncident(incident: IncidentView): string {
 	return `<div class="incident${resolved ? ' resolved' : ''}">
 	<div class="incident-title">${escapeHtml(incident.componentName)} ${resolved ? 'outage (resolved)' : 'is down'}${detail}</div>
 	<div class="incident-meta">${timing}</div>
+	${renderRetrospective(incident)}
 </div>`
 }
 
