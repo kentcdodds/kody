@@ -418,3 +418,31 @@ test('sealFullBackupDay is incomplete when the 501st referenced blob is missing'
 	})
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
 })
+
+test('sealFullBackupDay requires a restorable manifest for every SOURCE_DATABASES entry', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const seeded = await seedCompleteDay(bucket)
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	seeded.env.SOURCE_DATABASES = JSON.stringify([
+		{
+			id: seeded.env.SOURCE_DATABASE_ID,
+			name: seeded.env.SOURCE_DATABASE_NAME,
+		},
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	seeded.env.ALLOWED_SOURCE_DATABASE_IDS = `${seeded.env.SOURCE_DATABASE_ID},${jobsId}`
+	const result = await sealFullBackupDay(
+		seeded.env,
+		seeded.day,
+		new Date(`${seeded.day}T04:00:00.000Z`),
+	)
+	assert.deepEqual(result, {
+		kind: 'incomplete',
+		day: seeded.day,
+		reason: 'd1-manifest-missing',
+	})
+	assert.equal(await bucket.head(sealedFullManifestKey(seeded.day)), null)
+	assert.equal(consoleError.mock.calls.length, 1)
+})

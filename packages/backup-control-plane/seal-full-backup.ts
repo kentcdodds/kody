@@ -25,6 +25,8 @@ import { isRecord } from '@kody-internal/shared/is-record.ts'
 import {
 	BackupError,
 	backupPayload,
+	bindSourceDatabase,
+	configuredSourceDatabases,
 	errorCode,
 	safeLog,
 	utcDay,
@@ -416,6 +418,55 @@ export type SealDayResult =
 	| { kind: 'sealed'; day: string; manifestKey: string; alreadySealed: boolean }
 	| { kind: 'incomplete'; day: string; reason: string }
 
+async function assertSourceDayRestorable(
+	env: BackupEnvironment,
+	day: string,
+): Promise<{ kind: 'ok' } | { kind: 'incomplete'; reason: string }> {
+	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
+	const d1Manifest = await readManifest(
+		env.BACKUP_BUCKET,
+		d1Payload.manifestKey,
+	)
+	if (d1Manifest === null) {
+		return { kind: 'incomplete', reason: 'd1-manifest-missing' }
+	}
+	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
+		throw new BackupError(
+			'd1-manifest-signature-invalid',
+			`D1 manifest signature invalid for ${day}`,
+		)
+	}
+	const restorability = await readSqlRestorability(
+		env.BACKUP_BUCKET,
+		day,
+		d1Manifest.payload.sql.objectKey,
+	)
+	switch (restorability.kind) {
+		case 'restorable':
+			return { kind: 'ok' }
+		case 'legacy-unknown':
+			safeLog({
+				event: 'backup-stats-legacy-missing',
+				status: 'stale-success',
+				day,
+				databaseId: env.SOURCE_DATABASE_ID,
+				databaseName: env.SOURCE_DATABASE_NAME,
+				objectKey: d1Manifest.payload.sql.objectKey,
+			})
+			return { kind: 'ok' }
+		case 'unrestorable':
+			return { kind: 'incomplete', reason: 'backup-unrestorable-statements' }
+		case 'missing':
+			return { kind: 'incomplete', reason: 'backup-sql-stats-missing' }
+		case 'corrupt':
+			return { kind: 'incomplete', reason: 'backup-sql-stats-corrupt' }
+		default: {
+			const exhaustive: never = restorability
+			throw exhaustive
+		}
+	}
+}
+
 function incompleteForSqlStats(day: string, reason: string): SealDayResult {
 	safeLog({
 		event: 'full-backup-seal-skipped',
@@ -435,6 +486,16 @@ export async function sealFullBackupDay(
 	const manifestKey = sealedFullManifestKey(day)
 	const existing = await readFullManifest(env.BACKUP_BUCKET, manifestKey)
 
+	for (const source of configuredSourceDatabases(env)) {
+		const sourceResult = await assertSourceDayRestorable(
+			bindSourceDatabase(env, source),
+			day,
+		)
+		if (sourceResult.kind === 'incomplete') {
+			return incompleteForSqlStats(day, sourceResult.reason)
+		}
+	}
+
 	const d1Payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
 	const d1Manifest = await readManifest(
 		env.BACKUP_BUCKET,
@@ -442,39 +503,6 @@ export async function sealFullBackupDay(
 	)
 	if (d1Manifest === null) {
 		return { kind: 'incomplete', day, reason: 'd1-manifest-missing' }
-	}
-	if (!(await verifyBackupManifestSignature(env, d1Manifest))) {
-		throw new BackupError(
-			'd1-manifest-signature-invalid',
-			`D1 manifest signature invalid for ${day}`,
-		)
-	}
-	const restorability = await readSqlRestorability(
-		env.BACKUP_BUCKET,
-		day,
-		d1Manifest.payload.sql.objectKey,
-	)
-	switch (restorability.kind) {
-		case 'restorable':
-			break
-		case 'legacy-unknown':
-			safeLog({
-				event: 'backup-stats-legacy-missing',
-				status: 'stale-success',
-				day,
-				objectKey: d1Manifest.payload.sql.objectKey,
-			})
-			break
-		case 'unrestorable':
-			return incompleteForSqlStats(day, 'backup-unrestorable-statements')
-		case 'missing':
-			return incompleteForSqlStats(day, 'backup-sql-stats-missing')
-		case 'corrupt':
-			return incompleteForSqlStats(day, 'backup-sql-stats-corrupt')
-		default: {
-			const exhaustive: never = restorability
-			throw exhaustive
-		}
 	}
 	if (existing !== null) {
 		if (!(await verifyBackupFullManifestSignature(env, existing))) {

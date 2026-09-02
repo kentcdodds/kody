@@ -1,6 +1,12 @@
 import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
 
-import { BackupError, backupPayload, safeLog } from './backup-policy.ts'
+import {
+	BackupError,
+	backupPayload,
+	bindSourceDatabase,
+	configuredSourceDatabases,
+	safeLog,
+} from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 import {
 	awaitExportReady,
@@ -187,6 +193,34 @@ export async function validateSealedDayForRestore(
 		day,
 		d1Manifest.payload.sql.objectKey,
 	)
+	for (const source of configuredSourceDatabases(env)) {
+		const sourceEnv = bindSourceDatabase(env, source)
+		const sourcePayload = backupPayload(
+			sourceEnv,
+			new Date(`${day}T12:00:00.000Z`),
+		)
+		const sourceManifest = await readManifest(
+			env.BACKUP_BUCKET,
+			sourcePayload.manifestKey,
+		)
+		if (sourceManifest === null) {
+			throw new BackupError(
+				'restore-d1-manifest-missing',
+				`D1 manifest missing for ${day} (${source.name})`,
+			)
+		}
+		if (!(await verifyBackupManifestSignature(sourceEnv, sourceManifest))) {
+			throw new BackupError(
+				'restore-d1-manifest-signature-invalid',
+				`D1 manifest signature invalid for ${day} (${source.name})`,
+			)
+		}
+		await assertSqlRestorable(
+			env.BACKUP_BUCKET,
+			day,
+			sourceManifest.payload.sql.objectKey,
+		)
+	}
 	return {
 		fullManifestKey,
 		d1ManifestKey: fullManifest.payload.d1ManifestKey,
@@ -281,6 +315,37 @@ export async function capturePreRestoreSafetyExport(
 		pollDelayMs?: number
 	} = {},
 ): Promise<{ objectKey: string; bytes: number }> {
+	const sources = configuredSourceDatabases(env)
+	let primary: { objectKey: string; bytes: number } | undefined
+	for (const source of sources) {
+		const captured = await captureOneSourceSafetyExport(
+			bindSourceDatabase(env, source),
+			day,
+			now,
+			options,
+		)
+		if (source.id.toLowerCase() === env.SOURCE_DATABASE_ID.toLowerCase()) {
+			primary = captured
+		}
+	}
+	if (primary === undefined) {
+		throw new BackupError(
+			'pre-restore-download-failed',
+			'pre-restore safety export missed the primary database',
+		)
+	}
+	return primary
+}
+
+async function captureOneSourceSafetyExport(
+	env: BackupEnvironment,
+	day: string,
+	now: Date,
+	options: ApiOptions & {
+		maxPollAttempts?: number
+		pollDelayMs?: number
+	},
+): Promise<{ objectKey: string; bytes: number }> {
 	const fetcher = options.fetcher ?? fetch
 	const sleep =
 		options.sleep ?? ((milliseconds) => scheduler.wait(milliseconds))
@@ -314,7 +379,7 @@ export async function capturePreRestoreSafetyExport(
 		)
 	}
 	const contentLength = download.headers.get('content-length')
-	const objectKey = `pre-restore/${day}/${now.toISOString()}.sql`
+	const objectKey = `pre-restore/${day}/${env.SOURCE_DATABASE_ID}/${now.toISOString()}.sql`
 	if (contentLength !== null && /^\d+$/.test(contentLength)) {
 		const bytes = Number(contentLength)
 		if (!Number.isSafeInteger(bytes) || bytes <= 0) {
@@ -408,23 +473,42 @@ export async function runProductionRestore(
 			day: payload.day,
 			objectKey: validated.sqlObjectKey,
 		})
-		await importSqlIntoD1({
-			accountId: env.SOURCE_ACCOUNT_ID,
-			databaseId: env.SOURCE_DATABASE_ID,
-			token: env.CLOUDFLARE_API_TOKEN,
-			sourceMd5Etag: validated.sqlR2Etag,
-			loadSqlBody: async () => {
-				const sqlObject = await env.BACKUP_BUCKET.get(validated.sqlObjectKey)
-				if (sqlObject?.body == null) {
-					throw new BackupError(
-						'restore-sql-missing',
-						`SQL object missing for ${payload.day}`,
+		for (const source of configuredSourceDatabases(env)) {
+			const sourceEnv = bindSourceDatabase(env, source)
+			const sourcePayload = backupPayload(
+				sourceEnv,
+				new Date(`${payload.day}T12:00:00.000Z`),
+			)
+			const sourceManifest = await readManifest(
+				env.BACKUP_BUCKET,
+				sourcePayload.manifestKey,
+			)
+			if (sourceManifest === null) {
+				throw new BackupError(
+					'restore-d1-manifest-missing',
+					`D1 manifest missing for ${payload.day} (${source.name})`,
+				)
+			}
+			await importSqlIntoD1({
+				accountId: env.SOURCE_ACCOUNT_ID,
+				databaseId: source.id,
+				token: env.CLOUDFLARE_API_TOKEN,
+				sourceMd5Etag: sourceManifest.payload.sql.r2Etag,
+				loadSqlBody: async () => {
+					const sqlObject = await env.BACKUP_BUCKET.get(
+						sourceManifest.payload.sql.objectKey,
 					)
-				}
-				return sqlObject.body
-			},
-			options,
-		})
+					if (sqlObject?.body == null) {
+						throw new BackupError(
+							'restore-sql-missing',
+							`SQL object missing for ${payload.day} (${source.name})`,
+						)
+					}
+					return sqlObject.body
+				},
+				options,
+			})
+		}
 		progress.d1ImportComplete = true
 		progress.phase = 'restoring-stores'
 		await publish()

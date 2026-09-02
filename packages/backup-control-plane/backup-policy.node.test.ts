@@ -1,19 +1,38 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 import { test } from 'vitest'
 
 import {
 	BackupError,
+	assertConfiguredIdentity,
 	assertRemoteDatabaseIdentity,
 	backupPayload,
+	configuredSourceDatabases,
 	isBackupEnabled,
 	objectKeyForBookmark,
+	resolveSourceDatabase,
+	sourceDatabaseFromObjectPrefix,
 	workflowInstanceId,
 } from './backup-policy.ts'
 import {
 	DATABASE_ID,
 	environment,
 } from './backup-control-plane-test-support.ts'
+
+const PRODUCTION_APP_DB_ID = '8c1014d1-6b41-4695-a0a2-159071f0f919'
+const PRODUCTION_JOBS_DB_ID = '5410331e-4d25-47e4-a1e5-a248f7cc764c'
+const JOBS_DATABASE_ID = '44444444-4444-4444-8444-444444444444'
+
+function multiDatabaseEnv() {
+	const env = environment()
+	env.SOURCE_DATABASES = JSON.stringify([
+		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
+		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+	])
+	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${JOBS_DATABASE_ID}`
+	return env
+}
 
 test('requires both explicit enable and benchmark approval', () => {
 	const env = environment()
@@ -115,5 +134,107 @@ test('bookmark-derived keys reject unsafe bookmark path input', () => {
 	assert.notEqual(
 		objectKeyForBookmark(prefix, 'bookmark-1'),
 		objectKeyForBookmark(prefix, 'bookmark-2'),
+	)
+})
+
+test('falls back to SOURCE_DATABASE_ID when SOURCE_DATABASES is unset', () => {
+	const env = environment()
+	assert.deepEqual(configuredSourceDatabases(env), [
+		{ id: DATABASE_ID, name: 'production-db' },
+	])
+	assert.deepEqual(resolveSourceDatabase(env, undefined), {
+		id: DATABASE_ID,
+		name: 'production-db',
+	})
+})
+
+test('exports a database-specific prefix for each SOURCE_DATABASES entry', () => {
+	const env = multiDatabaseEnv()
+	assert.deepEqual(configuredSourceDatabases(env), [
+		{ id: DATABASE_ID, name: 'production-db' },
+		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+	])
+	const app = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	assert.equal(app.objectPrefix, `daily/d1/${DATABASE_ID}/2026-07-22`)
+	const jobs = backupPayload(env, new Date('2026-07-22T02:15:00Z'), {
+		id: JOBS_DATABASE_ID,
+		name: 'kody-jobs',
+	})
+	assert.equal(jobs.objectPrefix, `daily/d1/${JOBS_DATABASE_ID}/2026-07-22`)
+	assert.equal(
+		jobs.manifestKey,
+		`daily/d1/${JOBS_DATABASE_ID}/2026-07-22/manifest.json`,
+	)
+	assert.equal(
+		workflowInstanceId(JOBS_DATABASE_ID, jobs.day),
+		`d1-backup-${JOBS_DATABASE_ID}-2026-07-22`,
+	)
+	assert.deepEqual(
+		sourceDatabaseFromObjectPrefix(
+			env,
+			jobs.objectPrefix,
+			jobs.day,
+			jobs.retentionTier,
+		),
+		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+	)
+	assert.deepEqual(resolveSourceDatabase(env, 'kody-jobs'), {
+		id: JOBS_DATABASE_ID,
+		name: 'kody-jobs',
+	})
+	assert.deepEqual(resolveSourceDatabase(env, JOBS_DATABASE_ID.toUpperCase()), {
+		id: JOBS_DATABASE_ID,
+		name: 'kody-jobs',
+	})
+	assert.throws(
+		() => resolveSourceDatabase(env, 'unknown-db'),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'unknown-source-database',
+	)
+})
+
+test('rejects SOURCE_DATABASES entries that are missing from the allowlist', () => {
+	const env = multiDatabaseEnv()
+	env.ALLOWED_SOURCE_DATABASE_IDS = DATABASE_ID
+	assert.throws(
+		() => assertConfiguredIdentity(env),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'source-not-allowlisted',
+	)
+})
+
+test('requires SOURCE_DATABASE_ID/NAME to appear in SOURCE_DATABASES', () => {
+	const env = environment()
+	env.SOURCE_DATABASES = JSON.stringify([
+		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+	])
+	env.ALLOWED_SOURCE_DATABASE_IDS = `${DATABASE_ID},${JOBS_DATABASE_ID}`
+	assert.throws(
+		() => assertConfiguredIdentity(env),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'source-not-allowlisted',
+	)
+})
+
+test('committed control-plane allowlist includes production kody-jobs', async () => {
+	const wrangler = await readFile(
+		new URL('./wrangler.jsonc', import.meta.url),
+		'utf8',
+	)
+	assert.match(
+		wrangler,
+		new RegExp(
+			`"ALLOWED_SOURCE_DATABASE_IDS": "${PRODUCTION_APP_DB_ID},${PRODUCTION_JOBS_DB_ID}"`,
+		),
+	)
+	assert.ok(
+		wrangler.includes(
+			`\\"${PRODUCTION_JOBS_DB_ID}\\",\\"name\\":\\"kody-jobs\\"`,
+		),
+		'SOURCE_DATABASES must list production kody-jobs',
+	)
+	assert.ok(
+		wrangler.includes(`\\"${PRODUCTION_APP_DB_ID}\\",\\"name\\":\\"kody\\"`),
+		'SOURCE_DATABASES must list production kody',
 	)
 })

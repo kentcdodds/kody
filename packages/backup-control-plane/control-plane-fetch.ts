@@ -8,9 +8,11 @@ import {
 import {
 	BackupError,
 	backupPayload,
+	configuredSourceDatabases,
 	errorCode,
 	isBackupEnabled,
 	safeLog,
+	utcDay,
 	workflowInstanceId,
 } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
@@ -127,19 +129,28 @@ async function handleAuthenticated(
 				)
 			}
 			const scheduledAt = new Date()
-			const payload = backupPayload(env, scheduledAt)
-			const result = await enqueueBackup(
-				env.BACKUP_WORKFLOW,
-				env.SOURCE_DATABASE_ID,
-				payload,
+			const sources = configuredSourceDatabases(env)
+			const results: Array<string> = []
+			for (const source of sources) {
+				const payload = backupPayload(env, scheduledAt, source)
+				const result = await enqueueBackup(
+					env.BACKUP_WORKFLOW,
+					source.id,
+					payload,
+				)
+				safeLog({
+					event: 'ui-run-backup',
+					status: 'success',
+					day: payload.day,
+					instanceId: workflowInstanceId(source.id, payload.day),
+					databaseId: source.id,
+					databaseName: source.name,
+				})
+				results.push(`${source.name}: ${result}`)
+			}
+			return htmlResponse(
+				renderEnqueueResult(utcDay(scheduledAt), results.join('; ')),
 			)
-			safeLog({
-				event: 'ui-run-backup',
-				status: 'success',
-				day: payload.day,
-				instanceId: workflowInstanceId(env.SOURCE_DATABASE_ID, payload.day),
-			})
-			return htmlResponse(renderEnqueueResult(payload.day, result))
 		}
 		case '/actions/seal-day': {
 			const day = requireDay(form.get('day'))
@@ -182,7 +193,9 @@ async function handleAuthenticated(
 		}
 		case '/actions/run-drill': {
 			const day = requireDay(form.get('day'))
-			const report = await runRestoreDrill(env, day)
+			const report = await runRestoreDrill(env, day, {
+				database: form.get('database') ?? undefined,
+			})
 			safeLog({
 				event: 'ui-run-drill',
 				status: report.errorCode === null ? 'success' : 'failure',
