@@ -1,11 +1,21 @@
 import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
+import { type PackageInvocationRequest } from '#worker/package-invocations/common.ts'
+import {
+	createRequestHash,
+	resolveExistingInvocation,
+	type ResolvableInvocationRecord,
+} from '#worker/package-invocations/idempotency.ts'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { computeWebhookHmacSignature, hashWebhookUrlSecret } from './crypto.ts'
+import {
+	buildWebhookTimestampBodyPayload,
+	computeWebhookHmacSignature,
+	hashWebhookUrlSecret,
+} from './crypto.ts'
 import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 
@@ -46,6 +56,57 @@ vi.mock('./dispatch-queue-producer.ts', async () => {
 			mocks.enqueueWebhookDispatch(...args),
 	}
 })
+
+function createHashedIdempotencyExportMock() {
+	const ledger = new Map<string, ResolvableInvocationRecord>()
+	let exportInvocations = 0
+	const implementation = async (input: {
+		request: PackageInvocationRequest
+	}) => {
+		const key = input.request.idempotencyKey
+		if (!key) {
+			exportInvocations += 1
+			return {
+				status: 200,
+				body: { ok: true, result: { handled: true } },
+			}
+		}
+		const ignoreParams = input.request.idempotencyParamsHash === 'ignore'
+		const requestHash = await createRequestHash({
+			packageId: input.request.packageIdOrKodyId,
+			exportName: input.request.exportName,
+			params: ignoreParams ? undefined : input.request.params,
+			source: input.request.source ?? null,
+			topic: input.request.topic ?? null,
+		})
+		const existing = ledger.get(key)
+		if (existing) {
+			return resolveExistingInvocation({
+				record: existing,
+				requestHash,
+				idempotencyKey: key,
+				paramsHash: ignoreParams ? 'ignore' : 'include',
+			})
+		}
+		exportInvocations += 1
+		const response = {
+			status: 200,
+			body: { ok: true, result: { handled: true } },
+		}
+		ledger.set(key, {
+			requestHash,
+			status: 'completed',
+			storedResponse: response,
+		})
+		return response
+	}
+	return {
+		implementation,
+		get exportInvocations() {
+			return exportInvocations
+		},
+	}
+}
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -160,7 +221,18 @@ function declareWebhook(input: {
 		secretName: string
 		encoding: 'hex'
 		prefix?: string
+		signedPayload?: 'body' | 'timestamp.body'
 	} | null
+	replay?: {
+		timestampHeader?: string
+		timestampFormat?:
+			| 'unix-seconds'
+			| 'unix-millis'
+			| 'iso-8601'
+			| 'stripe-signature'
+		toleranceSeconds?: number
+		deliveryIdHeader?: string
+	}
 }) {
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
@@ -177,6 +249,7 @@ function declareWebhook(input: {
 						export: './handle-sentry-webhook',
 						responseMode: input.responseMode ?? 'ack',
 						...(input.verification ? { verification: input.verification } : {}),
+						...(input.replay ? { replay: input.replay } : {}),
 					},
 				],
 			},
@@ -586,4 +659,328 @@ test('webhook delivery records explicit rejected and failed outcomes', async () 
 		outcome: 'failed',
 		httpStatus: 502,
 	})
+})
+
+function encodeBody(text: string) {
+	const bytes = new TextEncoder().encode(text)
+	return bytes.buffer.slice(
+		bytes.byteOffset,
+		bytes.byteOffset + bytes.byteLength,
+	) as ArrayBuffer
+}
+
+test('opt-in webhook replay protection rejects stale timestamps and dedupes delivery ids', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'url-secret-plain'
+	await mintWebhook({
+		userId,
+		webhookName: 'stripe',
+		urlSecret,
+		id: 'mint-stripe',
+	})
+	await mintWebhook({
+		userId,
+		webhookName: 'github',
+		urlSecret,
+		id: 'mint-github',
+	})
+	await mintWebhook({
+		userId,
+		webhookName: 'unix',
+		urlSecret,
+		id: 'mint-unix',
+	})
+
+	mocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'hmac-shared-secret',
+		scope: 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+	mocks.enqueueWebhookDispatch.mockReset()
+	mocks.enqueueWebhookDispatch.mockResolvedValue(undefined)
+
+	const body = JSON.stringify({ event: 'invoice.paid' })
+	const bodyBuffer = encodeBody(body)
+	const nowSeconds = Math.floor(Date.now() / 1000)
+	const stripePayload = buildWebhookTimestampBodyPayload({
+		timestampToken: String(nowSeconds),
+		body: bodyBuffer,
+	})
+	const stripeV1 = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: stripePayload,
+		encoding: 'hex',
+	})
+	const bodyOnlySignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: bodyBuffer,
+		encoding: 'hex',
+	})
+
+	declareWebhook({
+		name: 'stripe',
+		responseMode: 'ack',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'stripe-signature',
+			secretName: 'stripeWebhookSecret',
+			encoding: 'hex',
+			signedPayload: 'timestamp.body',
+		},
+		replay: {
+			timestampHeader: 'Stripe-Signature',
+			timestampFormat: 'stripe-signature',
+			toleranceSeconds: 300,
+		},
+	})
+
+	const acceptedStripe = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'stripe',
+		urlSecret,
+		body,
+		headers: { 'stripe-signature': `t=${nowSeconds},v1=${stripeV1}` },
+	})
+	expect(acceptedStripe.status).toBe(202)
+	expect(await acceptedStripe.json()).toEqual({ ok: true })
+
+	const staleStripe = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'stripe',
+		urlSecret,
+		body,
+		headers: {
+			'stripe-signature': `t=${nowSeconds - 1000},v1=${await computeWebhookHmacSignature(
+				{
+					algorithm: 'hmac-sha256',
+					secret: 'hmac-shared-secret',
+					body: buildWebhookTimestampBodyPayload({
+						timestampToken: String(nowSeconds - 1000),
+						body: bodyBuffer,
+					}),
+					encoding: 'hex',
+				},
+			)}`,
+		},
+	})
+	expect(staleStripe.status).toBe(401)
+	expect(await staleStripe.json()).toEqual({
+		ok: false,
+		error: {
+			code: 'invalid_signature',
+			message: 'Webhook signature verification failed.',
+		},
+	})
+
+	const missingTimestamp = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'stripe',
+		urlSecret,
+		body,
+	})
+	expect(missingTimestamp.status).toBe(401)
+
+	const bodyOnlyAgainstTimestampPayload = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'stripe',
+		urlSecret,
+		body,
+		headers: { 'stripe-signature': `t=${nowSeconds},v1=${bodyOnlySignature}` },
+	})
+	expect(bodyOnlyAgainstTimestampPayload.status).toBe(401)
+
+	declareWebhook({
+		name: 'unix',
+		replay: {
+			timestampHeader: 'X-Timestamp',
+			timestampFormat: 'unix-seconds',
+		},
+	})
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'unix',
+				urlSecret,
+				body,
+				headers: { 'x-timestamp': String(nowSeconds) },
+			})
+		).status,
+	).toBe(202)
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'unix',
+				urlSecret,
+				body,
+				headers: { 'x-timestamp': String(nowSeconds * 1000) },
+			})
+		).status,
+	).toBe(401)
+
+	declareWebhook({
+		name: 'unix',
+		replay: {
+			timestampHeader: 'X-Timestamp',
+			timestampFormat: 'unix-millis',
+		},
+	})
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'unix',
+				urlSecret,
+				body,
+				headers: { 'x-timestamp': String(Date.now()) },
+			})
+		).status,
+	).toBe(202)
+
+	declareWebhook({
+		name: 'unix',
+		replay: {
+			timestampHeader: 'X-Timestamp',
+			timestampFormat: 'iso-8601',
+		},
+	})
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'unix',
+				urlSecret,
+				body,
+				headers: { 'x-timestamp': new Date().toISOString() },
+			})
+		).status,
+	).toBe(202)
+
+	declareWebhook({
+		name: 'github',
+		responseMode: 'sync',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-hub-signature-256',
+			secretName: 'githubWebhookSecret',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+		replay: {
+			deliveryIdHeader: 'X-GitHub-Delivery',
+		},
+	})
+	const githubBody = JSON.stringify({ ref: 'refs/heads/main' })
+	const githubSignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: encodeBody(githubBody),
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
+	const exportMock = createHashedIdempotencyExportMock()
+	mocks.invokePackageExport.mockReset()
+	mocks.invokePackageExport.mockImplementation(exportMock.implementation)
+
+	const firstGithub = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'github',
+		urlSecret,
+		body: githubBody,
+		headers: {
+			'x-hub-signature-256': githubSignature,
+			'x-github-delivery': 'delivery-abc',
+		},
+	})
+	const firstGithubBody = await firstGithub.json()
+	expect(firstGithub.status).toBe(200)
+	expect(firstGithubBody).toEqual({ ok: true, result: { handled: true } })
+
+	await new Promise((resolve) => setTimeout(resolve, 10))
+
+	const replayedGithub = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'github',
+		urlSecret,
+		body: githubBody,
+		headers: {
+			'x-hub-signature-256': githubSignature,
+			'x-github-delivery': 'delivery-abc',
+		},
+	})
+	expect(replayedGithub.status).toBe(200)
+	expect(await replayedGithub.json()).toEqual(firstGithubBody)
+	expect(exportMock.exportInvocations).toBe(1)
+	expect(mocks.invokePackageExport).toHaveBeenCalledTimes(2)
+	const firstCall = mocks.invokePackageExport.mock.calls[0]?.[0] as
+		| {
+				request: {
+					idempotencyKey: string
+					idempotencyParamsHash?: 'ignore'
+					params: { webhook: { receivedAt: string } }
+				}
+		  }
+		| undefined
+	const secondCall = mocks.invokePackageExport.mock.calls[1]?.[0] as
+		| {
+				request: {
+					idempotencyKey: string
+					idempotencyParamsHash?: 'ignore'
+					params: { webhook: { receivedAt: string } }
+				}
+		  }
+		| undefined
+	expect(firstCall?.request.idempotencyKey).toBe(
+		secondCall?.request.idempotencyKey,
+	)
+	expect(firstCall?.request.idempotencyKey).not.toMatch(/^webhook:/)
+	expect(firstCall?.request.idempotencyParamsHash).toBe('ignore')
+	expect(secondCall?.request.idempotencyParamsHash).toBe('ignore')
+	expect(firstCall?.request.params.webhook.receivedAt).not.toBe(
+		secondCall?.request.params.webhook.receivedAt,
+	)
+
+	const otherGithubBody = JSON.stringify({ ref: 'refs/heads/other' })
+	const otherGithubSignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: encodeBody(otherGithubBody),
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
+	const differentBodyReplay = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'github',
+		urlSecret,
+		body: otherGithubBody,
+		headers: {
+			'x-hub-signature-256': otherGithubSignature,
+			'x-github-delivery': 'delivery-abc',
+		},
+	})
+	expect(differentBodyReplay.status).toBe(200)
+	expect(await differentBodyReplay.json()).toEqual(firstGithubBody)
+	expect(exportMock.exportInvocations).toBe(1)
+
+	const missingDeliveryId = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'github',
+		urlSecret,
+		body: githubBody,
+		headers: { 'x-hub-signature-256': githubSignature },
+	})
+	expect(missingDeliveryId.status).toBe(401)
+	expect(exportMock.exportInvocations).toBe(1)
 })

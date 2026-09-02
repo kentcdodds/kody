@@ -20,6 +20,7 @@ export type WebhookDispatchQueueMessage = {
 	exportName: string
 	params: WebhookExportParams
 	idempotencyKey: string
+	idempotencyParamsHash?: 'ignore'
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -39,6 +40,7 @@ export function createWebhookDispatchQueueMessage(input: {
 	exportName: string
 	params: WebhookExportParams
 	idempotencyKey: string
+	idempotencyParamsHash?: 'ignore'
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -55,6 +57,9 @@ export function createWebhookDispatchQueueMessage(input: {
 			},
 		},
 		idempotencyKey: input.idempotencyKey,
+		...(input.idempotencyParamsHash === 'ignore'
+			? { idempotencyParamsHash: 'ignore' as const }
+			: {}),
 		deliveryId: input.deliveryId,
 		payloadBytes: input.payloadBytes,
 		receivedAt: input.receivedAt,
@@ -136,6 +141,13 @@ export function parseWebhookDispatchQueueMessage(
 			return null
 		}
 	}
+	const idempotencyParamsHash = message['idempotencyParamsHash']
+	if (
+		idempotencyParamsHash !== undefined &&
+		idempotencyParamsHash !== 'ignore'
+	) {
+		return null
+	}
 	return {
 		endpoint: {
 			id,
@@ -147,6 +159,9 @@ export function parseWebhookDispatchQueueMessage(
 		exportName,
 		params: params as WebhookExportParams,
 		idempotencyKey,
+		...(idempotencyParamsHash === 'ignore'
+			? { idempotencyParamsHash: 'ignore' as const }
+			: {}),
 		deliveryId,
 		payloadBytes,
 		receivedAt,

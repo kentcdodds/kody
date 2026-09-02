@@ -34,6 +34,7 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
+import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -186,6 +187,16 @@ function createMemoryKv(initial?: Record<string, string>) {
 		},
 		store,
 	} as unknown as KVNamespace
+}
+
+function createSignupModeKv(mode: 'invite' | 'open' | 'waitlist') {
+	return createMemoryKv({
+		[signupModeKvKey]: JSON.stringify({
+			mode,
+			updatedAt: '2026-09-02T00:00:00.000Z',
+			updatedBy: 'admin-stable-id',
+		}),
+	})
 }
 
 type Handler = {
@@ -1671,4 +1682,60 @@ test('github signup skips a KV-reserved provider handle', async () => {
 		.prepare(`SELECT username FROM users WHERE email = ?`)
 		.get('octo-reserved@example.com') as { username: string }
 	expect(user.username).toBe('octo-cat-2')
+})
+
+test('OAuth signup honors KV signup-mode override over the env default', async () => {
+	const openOverride = createMigratedDb()
+	const openEnv = createAppEnv(openOverride.db, {
+		SIGNUP_MODE: 'invite',
+		BUNDLE_ARTIFACTS_KV: createSignupModeKv('open'),
+	})
+	mockGithubProfileExchange('kv-open-oauth@example.com')
+	const openStart = await startProviderFlow(
+		openEnv,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const openCallback = await runHandler(
+		createAuthProviderCallbackHandler(openEnv),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${openStart.state}`,
+			{ headers: { Cookie: openStart.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(openCallback.status).toBe(302)
+	expect(openCallback.headers.get('Location')).toBe(
+		'/onboarding?accountCreated=1',
+	)
+	expect(
+		openOverride.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
+	).toEqual({ count: 1 })
+
+	const inviteOverride = createMigratedDb()
+	const inviteEnv = createAppEnv(inviteOverride.db, {
+		SIGNUP_MODE: 'open',
+		BUNDLE_ARTIFACTS_KV: createSignupModeKv('invite'),
+	})
+	mockGithubProfileExchange('kv-invite-oauth@example.com')
+	const inviteStart = await startProviderFlow(
+		inviteEnv,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const inviteCallback = await runHandler(
+		createAuthProviderCallbackHandler(inviteEnv),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${inviteStart.state}`,
+			{ headers: { Cookie: inviteStart.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(inviteCallback.status).toBe(302)
+	expect(inviteCallback.headers.get('Location')).toBe(
+		'/login?oauthError=invite-required',
+	)
+	expect(
+		inviteOverride.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
+	).toEqual({ count: 0 })
 })

@@ -1,5 +1,6 @@
 import { type AdminInvitesLoaderData } from '#universal/loader-data.ts'
 import { parseStoredPlanName, planNames } from '#universal/plans.ts'
+import { loadSignupModeSetting } from '#app/signup-mode-setting.ts'
 
 type InviteRow = {
 	code: string
@@ -17,8 +18,9 @@ type InviteRow = {
 export async function loadAdminInvitesData(
 	env: Env,
 ): Promise<AdminInvitesLoaderData> {
-	const result = await env.APP_DB.prepare(
-		`SELECT i.code,
+	const [result, signupMode] = await Promise.all([
+		env.APP_DB.prepare(
+			`SELECT i.code,
 		        u.stable_user_id AS created_by_stable_user_id,
 		        u.email AS created_by_email,
 		        i.note,
@@ -32,7 +34,9 @@ export async function loadAdminInvitesData(
 		 LEFT JOIN users u ON u.id = i.created_by
 		 ORDER BY i.created_at DESC, i.code ASC
 		 LIMIT 200`,
-	).all<InviteRow>()
+		).all<InviteRow>(),
+		loadSignupModeSetting(env),
+	])
 
 	return {
 		ok: true,
@@ -49,5 +53,6 @@ export async function loadAdminInvitesData(
 			plan: parseStoredPlanName(row.plan),
 		})),
 		availablePlans: [...planNames],
+		signupMode,
 	}
 }

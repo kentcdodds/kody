@@ -1,7 +1,10 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { isCapabilitySearchOffline } from '#worker/vectorize/embedding.ts'
+import {
+	isCapabilitySearchOffline,
+	type EmbedTextFn,
+} from '#worker/vectorize/embedding.ts'
 import {
 	acknowledgeSurfacedMemoryWrites,
 	deleteMemory as deleteMemoryRow,
@@ -111,6 +114,7 @@ type MemorySearchInput = MemoryOwnerContext & {
 	includeDeleted?: boolean
 	conversationId?: string | null
 	includeSuppressedInConversation?: boolean
+	embedText?: EmbedTextFn
 }
 
 type MemoryVerifyInput = MemoryOwnerContext & {
@@ -471,6 +475,7 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 					Math.max(memoryLexicalCandidateLimit, targetLimit * 5),
 					memoryVectorTopKCap,
 				),
+				...(input.embedText ? { embedText: input.embedText } : {}),
 			}),
 		])
 		vectorRankedIds = rankedIds
@@ -500,6 +505,7 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 		category,
 		rows: filteredRows,
 		...(vectorRankedIds ? { vectorRankedIds } : {}),
+		...(input.embedText ? { embedText: input.embedText } : {}),
 	})
 	const filtered = await filterSuppressedMatches({
 		db: input.env.APP_DB,

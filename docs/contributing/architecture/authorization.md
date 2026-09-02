@@ -399,10 +399,13 @@ hourly usage-aggregation lane compares anonymous Analytics Engine totals for
 combined error rate rises, Kody fans `fleet.package_error_rate.elevated` only to
 packages whose owners hold the admin role at dispatch time. The event contains
 window bounds, per-metric counts and rates, the public status URL, and the
-insights URL. It omits user ids, package ids, error strings, logs, and unrelated
-account content. This is operator telemetry about kody itself, not a user-data
-exception. Delivery is best-effort (no Queue). A six-hour cooldown suppresses
-repeat pages.
+insights URL. When one account or a few accounts own the recent-window errors,
+it also names those usernames and package kody ids. It omits user ids, package
+UUIDs, emails, error strings, logs, and unrelated account content. This is
+operator telemetry about kody itself, not a user-data exception. Delivery is
+best-effort (no Queue). A six-hour cooldown suppresses repeat pages. A
+concentrated spike still pages the fleet; it does not reroute as a per-user
+storm.
 
 **Admins can subscribe to fleet entitlement crossings.** The hourly
 `usage_entitlement_alert` lane sweeps the top ~15 active accounts and fans

@@ -15,7 +15,10 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingFeaturedMcpServerId,
 } from '#universal/onboarding-mcp-chooser.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	type SignupMode,
+	type SignupModeSetting,
+} from '#universal/signup-mode.ts'
 import {
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
@@ -34,6 +37,7 @@ import {
 	type AccountActivityTriageFilter,
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
+import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -350,6 +354,7 @@ export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
 	availablePlans: Array<AdminPlanName>
+	signupMode: SignupModeSetting
 }
 
 export type AdminReservedUsernameConflict = {
@@ -740,7 +745,7 @@ export type AdminInsightsPackageErrorRateComparison = {
 	previous: AdminInsightsPackageErrorRateWindow
 }
 
-/** Content-free fleet package-runtime error rates. Missing when AE/KV is empty. */
+/** Fleet package-runtime error rates. Missing when AE/KV is empty. */
 export type AdminInsightsPackageErrorRate = {
 	available: boolean
 	updatedAt: string | null
@@ -748,6 +753,7 @@ export type AdminInsightsPackageErrorRate = {
 	day: AdminInsightsPackageErrorRateComparison | null
 	hour: AdminInsightsPackageErrorRateComparison | null
 	lastAlertAt: string | null
+	concentration: FleetPackageErrorRateConcentration | null
 }
 
 export type AdminInsightsLoaderData = {

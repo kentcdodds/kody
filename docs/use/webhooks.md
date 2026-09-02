@@ -49,6 +49,12 @@ Rules:
 - `verification.secretName` references a **named secret in your secret store** —
   never an inline secret value. The platform resolves it at delivery time; if
   the secret is missing, the delivery is rejected and logged.
+- `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
+  `'timestamp.body'` when the provider HMAC covers
+  `` `${timestamp}.${rawBody}` ``.
+- `replay` is optional. Without it, body-only HMAC is **replayable**: anyone who
+  observes one legitimate signed delivery can POST it again. Opt in per webhook
+  with a timestamp window and/or a unique delivery id.
 
 Declaring a webhook does **not** open ingress by itself.
 
@@ -142,6 +148,55 @@ export async function handleSentryWebhook(input) {
 	"prefix": "sha256="
 }
 ```
+
+GitHub HMAC covers the raw body only. Add `replay.deliveryIdHeader` so a
+replayed `X-GitHub-Delivery` is acknowledged without running the export again:
+
+```json
+{
+	"name": "github",
+	"export": "./handle-github-webhook",
+	"verification": {
+		"type": "hmac-sha256",
+		"header": "x-hub-signature-256",
+		"secretName": "githubWebhookSecret",
+		"encoding": "hex",
+		"prefix": "sha256="
+	},
+	"replay": {
+		"deliveryIdHeader": "X-GitHub-Delivery"
+	}
+}
+```
+
+### Stripe
+
+Stripe signs `` `${t}.${rawBody}` `` and sends both the unix timestamp and HMAC
+in `Stripe-Signature`. Declare `signedPayload: "timestamp.body"` and a timestamp
+window:
+
+```json
+{
+	"name": "stripe",
+	"export": "./handle-stripe-webhook",
+	"verification": {
+		"type": "hmac-sha256",
+		"header": "Stripe-Signature",
+		"secretName": "stripeWebhookSecret",
+		"encoding": "hex",
+		"signedPayload": "timestamp.body"
+	},
+	"replay": {
+		"timestampHeader": "Stripe-Signature",
+		"timestampFormat": "stripe-signature",
+		"toleranceSeconds": 300
+	}
+}
+```
+
+`stripe-signature` reads `t=<unix>` from the header. Deliveries whose timestamp
+is missing, unparseable, or older than `toleranceSeconds` (default 300) are
+rejected with the same generic 401 as a bad HMAC.
 
 ## Lifecycle
 

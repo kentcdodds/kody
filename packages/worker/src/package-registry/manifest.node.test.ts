@@ -280,6 +280,20 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 				secretName: 'sentryWebhookSecret',
 				encoding: 'hex',
 			},
+			replay: null,
+		},
+	])
+	expect(manifest.kody.webhooks).toEqual([
+		{
+			name: 'sentry',
+			export: './handle-sentry-webhook',
+			responseMode: 'ack',
+			verification: {
+				type: 'hmac-sha256',
+				header: 'sentry-hook-signature',
+				secretName: 'sentryWebhookSecret',
+				encoding: 'hex',
+			},
 		},
 	])
 
@@ -350,6 +364,86 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/header/)
+})
+
+test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown timestampFormat', () => {
+	const stripe = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/stripe-bridge',
+			exports: {
+				'./handle-stripe-webhook': './src/handle-stripe-webhook.ts',
+			},
+			kody: {
+				id: 'stripe-bridge',
+				description: 'Stripe bridge',
+				webhooks: [
+					{
+						name: 'stripe',
+						export: './handle-stripe-webhook',
+						verification: {
+							type: 'hmac-sha256',
+							header: 'Stripe-Signature',
+							secretName: 'stripeWebhookSecret',
+							encoding: 'hex',
+							signedPayload: 'timestamp.body',
+						},
+						replay: {
+							timestampHeader: 'Stripe-Signature',
+							timestampFormat: 'stripe-signature',
+							toleranceSeconds: 300,
+						},
+					},
+				],
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(buildPackageSearchProjection(stripe).webhooks).toEqual([
+		{
+			name: 'stripe',
+			exportName: './handle-stripe-webhook',
+			description: null,
+			responseMode: 'ack',
+			verification: {
+				type: 'hmac-sha256',
+				header: 'Stripe-Signature',
+				secretName: 'stripeWebhookSecret',
+				encoding: 'hex',
+				signedPayload: 'timestamp.body',
+			},
+			replay: {
+				timestampHeader: 'Stripe-Signature',
+				timestampFormat: 'stripe-signature',
+				toleranceSeconds: 300,
+			},
+		},
+	])
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/stripe-bridge',
+				exports: {
+					'./handle-stripe-webhook': './src/handle-stripe-webhook.ts',
+				},
+				kody: {
+					id: 'stripe-bridge',
+					description: 'Stripe bridge',
+					webhooks: [
+						{
+							name: 'stripe',
+							export: './handle-stripe-webhook',
+							replay: {
+								timestampHeader: 'X-Timestamp',
+								timestampFormat: 'rfc-2822',
+							},
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/Unknown webhook replay timestampFormat "rfc-2822"/)
 })
 
 test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {

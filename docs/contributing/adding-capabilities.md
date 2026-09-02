@@ -240,6 +240,8 @@ rule.
 - `adminReservedUsernameList`
 - `adminReservedUsernameAdd`
 - `adminReservedUsernameRemove`
+- `adminSignupModeGet`
+- `adminSignupModeSet`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
 - `adminSystemEmailSend`

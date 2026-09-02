@@ -31,6 +31,8 @@ import {
 	type AdminInvitesLoaderData,
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
+import { type SignupModeSetting } from '#universal/signup-mode.ts'
+import { createAdminInvitesSignupModePanel } from './admin-invites-signup-mode.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -81,10 +83,17 @@ export function AdminInvitesRoute(handle: Handle) {
 	let status: PageStatus = 'loading'
 	let invites: Array<AdminInviteListItem> = []
 	let availablePlans: Array<AdminPlanName> = []
+	let signupMode: SignupModeSetting | null = null
 	let createdUser: AdminCreatedUserSetup | null = null
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	let actionState: 'idle' | 'creating' | 'creatingUser' | 'revoking' = 'idle'
+	let actionState:
+		| 'idle'
+		| 'creating'
+		| 'creatingUser'
+		| 'revoking'
+		| 'savingSignupMode' = 'idle'
+	const signupModePanel = createAdminInvitesSignupModePanel(handle)
 	let lastLoadedHref = ''
 	let loadingForHref: string | null = null
 	let lastFailedHref: string | null = null
@@ -93,6 +102,7 @@ export function AdminInvitesRoute(handle: Handle) {
 	function applyData(payload: AdminInvitesLoaderData) {
 		invites = payload.invites
 		availablePlans = payload.availablePlans
+		signupMode = payload.signupMode
 		status = 'ready'
 		message = null
 		messageTone = 'info'
@@ -143,13 +153,23 @@ export function AdminInvitesRoute(handle: Handle) {
 		}
 	}
 
+	function retryLoad() {
+		lastFailedHref = null
+		status = 'loading'
+		message = null
+		handle.update()
+		handle.queueTask(loadInvites)
+	}
+
 	async function submitAdminAction(body: Record<string, unknown>) {
 		actionState =
 			body.action === 'create_invite'
 				? 'creating'
 				: body.action === 'create_user'
 					? 'creatingUser'
-					: 'revoking'
+					: body.action === 'set_signup_mode'
+						? 'savingSignupMode'
+						: 'revoking'
 		message = null
 		messageTone = 'info'
 		handle.update()
@@ -172,8 +192,12 @@ export function AdminInvitesRoute(handle: Handle) {
 					ok?: boolean
 					error?: string
 					createdUser?: AdminCreatedUserSetup
+					signupMode?: SignupModeSetting
 				}
 			>(response)
+			if (payload?.signupMode) {
+				signupMode = payload.signupMode
+			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to update invites.')
 			}
@@ -184,7 +208,9 @@ export function AdminInvitesRoute(handle: Handle) {
 					? 'Invite created.'
 					: body.action === 'create_user'
 						? 'User created. Copy the setup link below.'
-						: 'Invite revoked.'
+						: body.action === 'set_signup_mode'
+							? 'Signup mode updated.'
+							: 'Invite revoked.'
 			messageTone = 'info'
 		} catch (error) {
 			message =
@@ -274,6 +300,20 @@ export function AdminInvitesRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
+				{signupModePanel.render({
+					setting: signupMode,
+					disabled: isMutating || signupMode == null,
+					saving: actionState === 'savingSignupMode',
+					onRetry:
+						status === 'error' && signupMode == null ? retryLoad : undefined,
+					onSave: (mode, expectedCurrentMode) => {
+						void submitAdminAction({
+							action: 'set_signup_mode',
+							mode,
+							expectedCurrentMode,
+						})
+					},
+				})}
 				<AccountManagementPanel
 					title="Create user"
 					description="Create a verified account with no usable password, then copy the setup link into a manual email."

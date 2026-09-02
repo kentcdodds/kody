@@ -291,7 +291,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 				</ChartCard>
 				<ChartCard
 					title="Fleet package error rate"
-					sub="Anonymous Analytics Engine rates for user-package runtime metrics. Rising rates page admin packages and email."
+					sub="Analytics Engine rates for user-package runtime metrics. Rising rates page admin packages. Concentrated spikes name the owning accounts."
 					span={6}
 				>
 					{renderPackageErrorRate(data.packageErrorRate)}
