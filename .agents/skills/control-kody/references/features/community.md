@@ -7,8 +7,9 @@ the same `/@username/:kodyId` surface; visibility is the only gate.
 
 `/community` → `/@username/kody-id`. Human share URL: `/@username/kody-id`
 (never construct `/community/{listing_id}` for people). Files:
-`/@username/kody-id/tree/main`. Owner settings: `/@username/kody-id/settings`.
-Profile: `/@username`.
+`/@username/kody-id/tree/:ref` (`:ref` is the repo default-branch name, a SHA,
+or another branch — leftover `/files` and `HEAD` 301 there). Owner settings:
+`/@username/kody-id/settings`. Profile: `/@username`.
 
 ## Drive it
 

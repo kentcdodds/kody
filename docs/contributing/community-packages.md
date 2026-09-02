@@ -84,15 +84,14 @@ Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
 KV snapshot, and ratings.
 
-There is no trusted-listing mark. Product reads always treat `trusted` as false.
-`POST /community/:listingId/trust.json` returns 410.
+There is no trusted-listing mark. Public listing records expose
+`trusted: false`. `POST /community/:listingId/trust.json` returns 410.
 
 Admin **featured** marks live in `featured_at` and highlight onboarding starter
 packages. Featured is editorial only (`featured_at IS NOT NULL`). Operators
 publish official starters under a platform scope (for example `@kody`) by
 passing `package_scope` while holding a package scope grant; see
 [Platform accounts](./architecture/platform-accounts.md).
-`setCommunityListingFeatured` does not require trust.
 `listFeaturedCommunityListings` feeds the onboarding page (slim
 `OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
 badge on the detail page, the admin-only toggle
@@ -124,8 +123,8 @@ Pinned file trees live in `BUNDLE_ARTIFACTS_KV` under:
 `createdAt`). Publish and re-publish overwrite the snapshot; unpublish and hard
 delete remove it. Binary icon bytes are omitted from the text-backed `files`
 map; the path metadata lets the icon route retrieve bytes from Artifacts. The
-public `/@owner/kody-id/files` explorer reads this snapshot (not a live git
-checkout).
+public `/@owner/kody-id/tree/:ref` explorer reads this snapshot (not a live git
+checkout). Leftover `/files` URLs 301 to `/tree/{defaultBranch}`.
 
 ### Community icon cache
 

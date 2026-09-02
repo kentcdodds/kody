@@ -32,8 +32,8 @@ figures below were measured directly against the repository (2026-08-30).
 ## Oversized-file cleanup receipts
 
 Every grandfathered file over budget was split along behavior boundaries with no
-runtime or assertion changes, and its ratchet exception removed in the same PR,
-so the budget is now enforced for it.
+runtime or assertion changes, and its ratchet exception removed in the same PR.
+The ratchet covers each of those files.
 
 ### Client routes (budget: 800 lines)
 

@@ -4,9 +4,8 @@ Cloudflare validates every Worker upload against a fixed startup CPU limit: the
 time spent evaluating the main module (parse, compile, and every top-level
 statement) must stay under the platform ceiling or the upload is rejected with
 `Script startup exceeded CPU time limit`. The check runs on Cloudflare's
-validation hosts, so a script that sits near the ceiling passes on one upload
-and fails on the next. That is what preview deploys did before this budget
-existed.
+validation hosts, so a script that sits near the ceiling can pass on one upload
+and fail on the next.
 
 This document records what counts toward startup, how to measure it, the rules
 that keep it low, and the CI tripwire that stops regressions.
@@ -15,8 +14,8 @@ that keep it low, and the CI tripwire that stops regressions.
 
 Module evaluation of the startup entry
 (`packages/worker/src/production-worker.ts`, `platform-worker.ts`,
-`runtime-worker.ts`) and everything it imports statically. In this codebase the
-expensive items were, in order:
+`runtime-worker.ts`) and everything it imports statically. The expensive items
+on an eager startup path are, in order:
 
 - Zod schema construction at module scope. Every capability definition builds
   its input and output schemas when its module evaluates; the MCP server SDK
@@ -92,17 +91,17 @@ only with a written justification in the PR description.
 
 ## Reference readings
 
-Best-of-three readings from the deferral work that introduced this budget. The
-GitHub-hosted runner reads roughly 1.6× the local development VM, and the
+Best-of-three readings with capability domains and heavy libraries on first use.
+The GitHub-hosted runner reads roughly 1.6× the local development VM, and the
 budgets are set against the runner (about 1.5× its steady reading), so a local
 run has more headroom than CI does.
 
-| Worker   | Local before | Local after | CI after | Budget |
-| -------- | ------------ | ----------- | -------- | ------ |
-| origin   | 309 ms       | 110 ms      | 186 ms   | 280 ms |
-| platform | 160 ms       | 166 ms      | 228 ms   | 340 ms |
-| runtime  | 199 ms       | 70 ms       | 102 ms   | 160 ms |
+| Worker   | Local  | CI     | Budget |
+| -------- | ------ | ------ | ------ |
+| origin   | 110 ms | 186 ms | 280 ms |
+| platform | 166 ms | 228 ms | 340 ms |
+| runtime  | 70 ms  | 102 ms | 160 ms |
 
-For scale: before the deferrals the origin entry would have read roughly 500 ms
-on the runner, which is the regime in which Cloudflare uploads failed
+An origin entry that evaluates those libraries at module scope reads roughly 500
+ms on the runner, which is the regime in which Cloudflare uploads fail
 intermittently.
