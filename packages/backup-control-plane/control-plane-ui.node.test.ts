@@ -12,7 +12,11 @@ import {
 	putSqlStatsFixture,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
-import { backupPayload, objectKeyForBookmark } from './backup-policy.ts'
+import {
+	backupPayload,
+	configuredSourceDatabases,
+	objectKeyForBookmark,
+} from './backup-policy.ts'
 import {
 	collectDayStatuses,
 	renderDashboard,
@@ -146,6 +150,60 @@ test('dashboard warns when a configured D1 source is missing and marks the day u
 	assert.match(html, /kody-jobs: D1 manifest missing/)
 	assert.match(html, /<td class="bad">unverified<\/td>/)
 	assert.match(html, /<td class="bad">no<\/td>/)
+})
+
+test('an unreadable D1 manifest keeps the day unverified even when a later source verifies', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	env.SOURCE_DATABASES = JSON.stringify([
+		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${jobsId}`
+	const day = '2026-07-31'
+	const scheduledAt = new Date(`${day}T12:00:00.000Z`)
+	const sql = 'CREATE TABLE t(id INTEGER);\n'
+	for (const source of configuredSourceDatabases(env)) {
+		const payload = backupPayload(env, scheduledAt, source)
+		const sqlObjectKey = objectKeyForBookmark(
+			payload.objectPrefix,
+			'bookmark-1',
+		)
+		const template = manifest({
+			bytes: sql.length,
+			sha256: createHash('sha256').update(sql).digest('hex'),
+			r2Etag: createHash('md5').update(sql).digest('hex'),
+		})
+		await bucket.put(sqlObjectKey, sql)
+		await putSqlStatsFixture(bucket, day, sqlObjectKey)
+		await putImmutableManifest(
+			bucket as unknown as R2Bucket,
+			payload.manifestKey,
+			signedManifest({
+				...template.payload,
+				export: {
+					...template.payload.export,
+					scheduledAt: `${day}T02:15:00.000Z`,
+					startedAt: `${day}T02:15:01.000Z`,
+					completedAt: `${day}T02:16:00.000Z`,
+				},
+				sql: { ...template.payload.sql, objectKey: sqlObjectKey },
+			}),
+		)
+	}
+	bucket.failGetFor(backupPayload(env, scheduledAt).manifestKey)
+
+	const [status] = await collectDayStatuses(env, scheduledAt)
+	assert.equal(status?.d1Present, false)
+	assert.equal(status?.d1Verified, false)
+	assert.equal(status?.d1Restorable, false)
+	assert.ok(
+		status?.warnings.includes(
+			`${env.SOURCE_DATABASE_NAME}: D1 manifest unreadable`,
+		),
+		status?.warnings.join('; '),
+	)
 })
 
 test('restore status lists undeclared databases as notes, not warnings', () => {

@@ -203,7 +203,7 @@ export async function collectDayStatuses(
 					warnings.push(`${label}D1 manifest signature invalid`)
 				}
 			} catch {
-				d1Verified = null
+				d1Verified = false
 				d1Present = false
 				d1Restorable = false
 				warnings.push(`${label}D1 manifest unreadable`)
