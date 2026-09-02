@@ -498,6 +498,16 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CLOUDFLARE_API_TOKEN` (Workers deploy + D1 edit access on the correct
   account; also reused for remote AI and Cloudflare API workflows that run with
   account secrets + package workflows)
+- `CLOUDFLARE_RUNTIME_API_TOKEN` (optional; the value uploaded to the
+  `kody-runtime` Worker as its `CLOUDFLARE_API_TOKEN` secret. The runtime lane
+  executes package capabilities in-process, and the only Cloudflare REST APIs
+  those reach are Email Sending (`/email/sending/send`) and Artifacts
+  (`/artifacts/namespaces/...`, including repo token minting, which has no
+  binding equivalent), so this token needs exactly
+  `Account · Email Sending · Edit` and `Account · Artifacts · Edit`. Workers AI,
+  Images, Vectorize, D1, and Queues are reached through bindings or are not used
+  by the runtime lane. When unset, the deploy falls back to
+  `CLOUDFLARE_API_TOKEN`.)
 - `CLOUDFLARE_ACCOUNT_ID` (required GitHub Actions **variable** for Cloudflare
   resource provisioning and Email Service)
 - `CLOUDFLARE_ZONE_ID` (required GitHub Actions **variable** for the zone that
