@@ -237,25 +237,6 @@ export function createAuthHandler(env: Env) {
 			}
 
 			if (normalizedMode === 'signup') {
-				const existingUser = await db.findOne(usersTable, {
-					where: { email: normalizedEmail },
-				})
-				if (existingUser) {
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'auth',
-						action: 'signup',
-						result: 'failure',
-						email: normalizedEmail,
-						ip: requestIp,
-						path: url.pathname,
-						reason: 'email_exists',
-					})
-					// Same body and status as a fresh signup so the endpoint does not
-					// confirm which addresses hold accounts. Nothing is created or
-					// sent; the owner can sign in or reset their password as usual.
-					return Response.json(signupAcceptedBody(normalizedMode))
-				}
 				const existingUsername = await db.findOne(usersTable, {
 					where: { username: normalizedUsername },
 				})
@@ -318,6 +299,29 @@ export function createAuthHandler(env: Env) {
 					}
 					consumedInviteCode = inviteResult.invite.code
 					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
+				}
+
+				// Checked after invite validation so that, in invite and waitlist
+				// modes, a registered and an unregistered address fail the same
+				// way without a code. Same body and status as a fresh signup so
+				// the endpoint does not confirm which addresses hold accounts.
+				// Nothing is created or sent; the invite is handed back.
+				const existingUser = await db.findOne(usersTable, {
+					where: { email: normalizedEmail },
+				})
+				if (existingUser) {
+					await releaseConsumedInvite()
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'email_exists',
+					})
+					return Response.json(signupAcceptedBody(normalizedMode))
 				}
 
 				let record: { id: number; stableUserId: string } | null = null

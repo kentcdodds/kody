@@ -456,7 +456,34 @@ test('auth handler login and signup workflow', async () => {
 	})
 	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
 
+	// A registered address without a code fails exactly like an unregistered
+	// one, so invite mode does not leak which emails hold accounts.
+	await productionContext.testDb.addUser('taken@example.com', 'secret', 'taken')
+	const blockedExistingResponse = await productionContext.request({
+		email: 'taken@example.com',
+		username: 'another-name',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(blockedExistingResponse.status).toBe(400)
+	expect(await blockedExistingResponse.json()).toEqual({
+		error: 'Invite code is required.',
+	})
+
 	productionContext.testDb.addInvite('PROD-INVITE')
+	// With a valid code the registered address gets the accepted body, no
+	// session, and the invite use is handed back.
+	const existingWithInviteResponse = await productionContext.request({
+		email: 'taken@example.com',
+		username: 'another-name',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'prod-invite',
+	})
+	expect(existingWithInviteResponse.status).toBe(200)
+	expect(existingWithInviteResponse.headers.get('Set-Cookie')).toBeNull()
+	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(0)
+
 	const invitedSignupResponse = await productionContext.request({
 		email: 'invited@example.com',
 		username: 'invited-user',
@@ -669,12 +696,15 @@ test('auth handler login and signup workflow', async () => {
 		'Secure',
 	)
 	// The full workflow audits exactly these events, in order: the unknown
-	// login, the invite-less production signup, the invited signup (+ invite
-	// use), the weak-password rejection, the open signup, the six username
+	// login, the invite-less production signup, the invite-less and invited
+	// registered-email attempts, the invited signup (+ invite use), the
+	// weak-password rejection, the open signup, the six username
 	// rejections, the duplicate-email rejection, and the three successful
 	// logins.
 	expect(auditEventSummaries()).toEqual([
 		'login:failure',
+		'signup:failure',
+		'signup:failure',
 		'signup:failure',
 		'signup:success',
 		'invite_use:success',
