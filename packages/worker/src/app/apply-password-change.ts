@@ -88,6 +88,14 @@ export async function applyPasswordChange(
 		}
 	}
 
+	// Clear second factors and linked providers before the stamp: a passkey or
+	// provider sign-in that completes after `password_changed_at` would mint a
+	// cookie that postdates it and survives the lockout. A failure here leaves
+	// the account unstamped and the reset token intact so the caller can retry.
+	const cleared = input.clearSecondFactorsAndConnections
+		? await clearSecondFactorsAndConnections(input.d1, input.userId)
+		: null
+
 	const changedAtMs = Date.now()
 	const passwordHash = await resolvePasswordHash(input)
 	await input.db.update(usersTable, input.userId, {
@@ -109,13 +117,11 @@ export async function applyPasswordChange(
 		}
 	}
 
+	// Reset tokens go last so every earlier step can be retried with the same
+	// token if it fails.
 	await input.db.deleteMany(passwordResetsTable, {
 		where: { user_id: input.userId },
 	})
-
-	const cleared = input.clearSecondFactorsAndConnections
-		? await clearSecondFactorsAndConnections(input.d1, input.userId)
-		: null
 
 	return { ok: true, changedAtMs, cleared }
 }
