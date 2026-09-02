@@ -516,7 +516,9 @@ function createAdminCapabilityTestDb(input: {
 						)
 					) {
 						const user = users.find((row) => row.id === Number(params[2]))
-						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
+						if (!user || user.deleting_at) {
+							return { meta: { changes: 0, last_row_id: 0 } }
+						}
 						user.email_verified_at = user.email_verified_at ?? String(params[0])
 						user.updated_at = String(params[1])
 						return { meta: { changes: 1, last_row_id: 0 } }
@@ -539,6 +541,10 @@ function createAdminCapabilityTestDb(input: {
 						normalizedQuery.includes('insert into "email_verifications"') ||
 						normalizedQuery.includes('insert into email_verifications')
 					) {
+						const user = users.find((row) => row.id === Number(params[2]))
+						if (!user || user.deleting_at) {
+							return { meta: { changes: 0, last_row_id: 0 } }
+						}
 						return { meta: { changes: 1, last_row_id: 1 } }
 					}
 					if (normalizedQuery.includes('delete from email_verifications')) {

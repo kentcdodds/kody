@@ -139,6 +139,16 @@ export function createAccountResendVerificationHandler(env: Env) {
 					redirectTo,
 				})
 			} catch (error) {
+				if (error instanceof AccountDeletionInProgressError) {
+					return jsonResponse(
+						{
+							ok: false,
+							error: error.message,
+							code: 'account_deleting',
+						},
+						409,
+					)
+				}
 				console.error('Failed to resend verification email:', error)
 				// A failed send should not eat into the user's resend
 				// allowance; refund the slot so they can retry promptly.

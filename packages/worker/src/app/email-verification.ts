@@ -209,15 +209,18 @@ export async function verifyEmailToken(input: {
 
 	const newlyVerified = !record.email_verified_at
 	const verifiedAt = now.toISOString()
-	await input.db
+	const stamped = await input.db
 		.prepare(
 			`UPDATE users
 			 SET email_verified_at = COALESCE(email_verified_at, ?),
 			     updated_at = CURRENT_TIMESTAMP
-			 WHERE id = ?`,
+			 WHERE id = ? AND deleting_at IS NULL`,
 		)
 		.bind(verifiedAt, record.user_id)
 		.run()
+	if ((stamped.meta.changes ?? 0) !== 1) {
+		return { ok: false, reason: 'invalid_token' }
+	}
 	await clearUserEmailVerificationDelivery(input.db, record.user_id).catch(
 		() => undefined,
 	)
