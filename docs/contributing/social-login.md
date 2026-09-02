@@ -37,11 +37,14 @@ itself.
 
 Callback resolution order:
 
-1. A **signed-in** user gets the provider identity linked to their account
-   (`/account` has a "Connected accounts" card for this; `/discord` is the
-   public connect page for Discord welcome messages). A provider identity
-   already linked to a different user is a conflict error, never an account
-   switch; callback errors for signed-in users redirect to
+1. A **signed-in** user whose live `email_verified_at` is set gets the provider
+   identity linked to their account (`/account` has a "Connected accounts" card
+   for this; `/discord` is the public connect page for Discord welcome
+   messages). An unverified signed-in session is refused
+   (`/account?oauthError=email-unverified`) so a password squat cannot attach a
+   provider and skip the unverified-account purge. A provider identity already
+   linked to a different user is a conflict error, never an account switch;
+   other callback errors for signed-in users also redirect to
    `/account?oauthError=<code>` unless the start request carried `redirectTo`
    (for example `/discord?oauthError=<code>`).
 2. A known connection signs in its user (the two-factor gate applies exactly as

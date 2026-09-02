@@ -315,15 +315,22 @@ export function createAuthProviderCallbackHandler(env: Env) {
 		provider: OauthProviderId
 		profile: OauthProfile
 		userId: number
+		requireVerifiedEmail?: boolean
 	}) {
-		const inserted = await env.APP_DB.prepare(
-			`INSERT INTO oauth_connections (
+		const insertSql = input.requireVerifiedEmail
+			? `INSERT INTO oauth_connections (
 				provider_name, provider_id, user_id, provider_display_name
 			)
 			 SELECT ?, ?, id, ?
 			 FROM users
-			 WHERE id = ? AND deleting_at IS NULL`,
-		)
+			 WHERE id = ? AND email_verified_at IS NOT NULL AND deleting_at IS NULL`
+			: `INSERT INTO oauth_connections (
+				provider_name, provider_id, user_id, provider_display_name
+			)
+			 SELECT ?, ?, id, ?
+			 FROM users
+			 WHERE id = ? AND deleting_at IS NULL`
+		const inserted = await env.APP_DB.prepare(insertSql)
 			.bind(
 				input.provider,
 				input.profile.providerUserId,
@@ -523,6 +530,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				if (!currentUser) {
 					return fail('account-error', 'session_user_missing')
 				}
+				// Check the live users row, not the session cookie. A password
+				// squat must not attach a provider and skip the unverified
+				// account purge; this sits before any oauth_connections write.
+				if (currentUser.email_verified_at == null) {
+					return fail('email-unverified', 'email_unverified')
+				}
 				if (connection) {
 					if (connection.user_id === currentUser.id) {
 						await completeDiscordGuildLogin({
@@ -543,6 +556,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						provider,
 						profile,
 						userId: currentUser.id,
+						requireVerifiedEmail: true,
 					})
 				} catch (error) {
 					if (error instanceof AccountDeletionInProgressError) {

@@ -607,11 +607,14 @@ token. The member role is assigned on connect; Standard and Pro roles follow
   because the CSP locks `form-action` and `connect-src` to `'self'`
 - Existing connections sign in directly; the two-factor gate applies exactly as
   for password logins (passkey sign-in skips TOTP)
-- A signed-in user hitting the callback links the provider identity to their
-  account, managed from the `/account` "Connected accounts" card backed by
-  `/account/connections.json` (disconnect is refused when the connection is the
-  only sign-in method). `/discord` is the public **Connect Discord** page (one
-  action joins the official server and links the account)
+- A signed-in user whose live `email_verified_at` is set hitting the callback
+  links the provider identity to their account, managed from the `/account`
+  "Connected accounts" card backed by `/account/connections.json` (disconnect is
+  refused when the connection is the only sign-in method). An unverified
+  signed-in session is refused (`email-unverified`) so a password squat cannot
+  attach a provider and skip the unverified-account purge. `/discord` is the
+  public **Connect Discord** page (one action joins the official server and
+  links the account)
 - A provider-verified email matching an existing **verified** account auto-links
   and signs in. A match against an **unverified** account reclaims that row
   first (unusable password sentinel, `password_changed_at` lockout, TOTP /

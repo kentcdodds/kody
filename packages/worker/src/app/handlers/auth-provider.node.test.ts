@@ -686,6 +686,7 @@ test('signed-in discord connect returns to redirectTo instead of /account', asyn
 		id: 21,
 		email: 'discord-page@example.com',
 		username: 'discord-page',
+		emailVerified: true,
 	})
 	const sessionCookiePair = getCookiePair(
 		await createAuthCookie(
@@ -955,6 +956,7 @@ test('signed-in users link and disconnect providers from their account', async (
 		id: 11,
 		email: 'linker@example.com',
 		username: 'linker',
+		emailVerified: true,
 	})
 	const sessionCookiePair = getCookiePair(
 		await createAuthCookie(
@@ -1016,6 +1018,7 @@ test('signed-in users link and disconnect providers from their account', async (
 		id: 12,
 		email: 'other@example.com',
 		username: 'other-user',
+		emailVerified: true,
 	})
 	const otherSessionCookiePair = getCookiePair(
 		await createAuthCookie(

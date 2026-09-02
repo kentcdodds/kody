@@ -34,6 +34,11 @@ const millisecondsPerDay = 24 * 60 * 60 * 1000
 const unverifiedPersonEligibilitySql = [
 	'email_verified_at IS NULL',
 	`account_type = 'person'`,
+	// Exempting any oauth_connections row is sound only because signed-in
+	// linking requires a live verified email (the insert is fenced on
+	// email_verified_at IS NOT NULL) and unauthenticated social sign-in
+	// always verifies. A password squat cannot attach a provider to skip
+	// this purge.
 	`NOT EXISTS (
 			SELECT 1
 			FROM oauth_connections

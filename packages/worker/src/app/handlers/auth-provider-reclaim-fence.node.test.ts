@@ -1,6 +1,6 @@
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
-import { setAuthSessionSecret } from '#app/auth-session.ts'
+import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -14,16 +14,19 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 
 const { createAuthProviderCallbackHandler } =
 	await import('#app/handlers/auth-provider.ts')
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import {
 	createAppEnv,
 	createMigratedDb,
+	getCookiePair,
 	runHandler,
 	seedUser,
 	startProviderFlow,
 	testCookieSecret,
 } from '#worker/test-support/auth-provider-harness.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const msw = createMswNodeServer()
 
@@ -337,6 +340,121 @@ test('google sign-in does not reclaim when a purge claim lands before the oauth 
 			action: 'oauth_login',
 			result: 'failure',
 			reason: 'account_deleting',
+		}),
+	)
+})
+
+test('signed-in unverified accounts cannot link a provider; verified accounts still can', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, {
+		GITHUB_CLIENT_ID: 'MOCK_GITHUB_CLIENT_ID',
+		GITHUB_CLIENT_SECRET: 'MOCK_GITHUB_CLIENT_SECRET',
+	})
+	await seedUser(sqlite, {
+		id: 31,
+		email: 'squat-linker@example.com',
+		username: 'squat-linker',
+		emailVerified: false,
+	})
+	await seedUser(sqlite, {
+		id: 32,
+		email: 'verified-linker@example.com',
+		username: 'verified-linker',
+		emailVerified: true,
+	})
+
+	const unverifiedSessionCookie = getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: await createStableUserIdFromEmail(
+					'squat-linker@example.com',
+				),
+				email: 'squat-linker@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+	)
+	const unverifiedStart = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const unverifiedResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(unverifiedStart.location, {
+			headers: {
+				Cookie: `${unverifiedStart.stateCookie}; ${unverifiedSessionCookie}`,
+			},
+		}),
+		{ provider: 'github' },
+	)
+	expect(unverifiedResponse.status).toBe(302)
+	expect(unverifiedResponse.headers.get('Location')).toBe(
+		'/account?oauthError=email-unverified',
+	)
+	expect(getOauthLoginErrorMessage('email-unverified')).toBe(
+		'Verify your email before connecting a sign-in provider.',
+	)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 31`,
+			)
+			.get(),
+	).toEqual({ count: 0 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_login',
+			result: 'failure',
+			reason: 'email_unverified',
+		}),
+	)
+
+	const verifiedSessionCookie = getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: await createStableUserIdFromEmail(
+					'verified-linker@example.com',
+				),
+				email: 'verified-linker@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+	)
+	const verifiedStart = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const verifiedResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(verifiedStart.location, {
+			headers: {
+				Cookie: `${verifiedStart.stateCookie}; ${verifiedSessionCookie}`,
+			},
+		}),
+		{ provider: 'github' },
+	)
+	expect(verifiedResponse.status).toBe(302)
+	expect(verifiedResponse.headers.get('Location')).toBe(
+		'/account?oauthLinked=github',
+	)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT user_id FROM oauth_connections WHERE provider_name = 'github'`,
+			)
+			.get(),
+	).toEqual({ user_id: 32 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_connection_linked',
+			result: 'success',
+			email: 'verified-linker@example.com',
 		}),
 	)
 })

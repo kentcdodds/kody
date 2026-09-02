@@ -94,14 +94,20 @@ package-app surfaces:
 13. **Unverified person accounts older than seven days are purged.** The hourly
     `unverified_account_purge` lane deletes `person` accounts whose
     `email_verified_at` is still null, `created_at` is older than seven days,
-    and no `oauth_connections` row exists. Each candidate is claimed with an
-    atomic `UPDATE` that restamps `deleting_at` only while that eligibility
-    still holds. Once claimed, email verification and social-login reclaim
-    refuse the fenced row. A claim-created fence is released only on pre-cleanup
-    failures (active writers or inventory); a partial-cleanup failure leaves the
-    fence for retry. Never-attempted rows are processed before retries. Deletion
-    uses the inventory-driven account-deletion path. Password signups are the
-    only unverified path; social-login accounts are verified at creation.
+    and no `oauth_connections` row exists. The `oauth_connections` exemption is
+    sound only because signed-in provider linking refuses a live
+    `email_verified_at IS NULL` row (the insert is fenced on
+    `email_verified_at IS NOT NULL AND deleting_at IS NULL`) and unauthenticated
+    social sign-in always verifies. Each candidate is claimed with an atomic
+    `UPDATE` that restamps `deleting_at` only while that eligibility still
+    holds. Once claimed, email verification and social-login reclaim refuse the
+    fenced row. A claim-created fence is released only on pre-cleanup failures
+    (active writers or inventory); a partial-cleanup failure leaves the fence
+    for retry. Never-attempted rows are processed before retries. Deletion uses
+    the inventory-driven account-deletion path. Password signups are the only
+    unverified path; social-login accounts are verified at creation. Signed-in
+    linking of a provider to a password account also requires that live verified
+    email.
 14. **Password-reset confirmation clears second factors and linked providers.**
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
