@@ -18,6 +18,7 @@ import {
 } from '#app/handlers/community-detail.tsx'
 import { createDiscordHandler } from '#app/handlers/discord.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
+import { createSupportHandler } from '#app/handlers/support.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
@@ -1561,6 +1562,23 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	expect(html).toContain('<details')
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
+})
+
+test('renderAppPage renders the public support page for anonymous visitors', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const response = await createSupportHandler(env).handler({
+		request: new Request('https://example.com/support'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('<title>Support</title>')
+	expect(html).toContain('mailto:support@kody.codes')
+	expect(html).toContain('support@kody.codes')
+	expect(html).toContain('href="/support">Support</a>')
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {

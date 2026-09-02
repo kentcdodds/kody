@@ -82,6 +82,13 @@ export const publicOgPages = {
 			'Common questions about what Kody is, what it is not, and how your assistant stays yours.',
 		path: '/faq',
 	},
+	support: {
+		imageTitle: 'Support',
+		imageSubtitle: 'Contact the hosted kody.codes service.',
+		ogTitle: 'Support — Kody',
+		ogDescription: 'Contact support for the hosted Kody service at kody.codes.',
+		path: '/support',
+	},
 	privacy: {
 		imageTitle: 'Privacy',
 		imageSubtitle:
