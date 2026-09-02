@@ -275,12 +275,34 @@ async function putJobsRestoreManifest(
 	}
 }
 
+function trackSqlObjectAccess(
+	bucket: MemoryBucket,
+	sqlObjectKeys: Array<string>,
+): { heads: Array<string>; gets: Array<string> } {
+	const tracked = new Set(sqlObjectKeys)
+	const heads: Array<string> = []
+	const gets: Array<string> = []
+	const originalHead = bucket.head.bind(bucket)
+	const originalGet = bucket.get.bind(bucket)
+	bucket.head = async (key: string) => {
+		if (tracked.has(key)) heads.push(key)
+		return originalHead(key)
+	}
+	bucket.get = async (key: string) => {
+		if (tracked.has(key)) gets.push(key)
+		return originalGet(key)
+	}
+	return { heads, gets }
+}
+
 test('production restore of a historical single-database day completes the workflow without failure', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
-	const { env, day, preparedImportMd5 } = await seedSealedRestoreDay(bucket)
+	const { env, day, preparedImportMd5, sqlObjectKey } =
+		await seedSealedRestoreDay(bucket)
 	configureJobsDatabase(env)
+	const sqlAccess = trackSqlObjectAccess(bucket, [sqlObjectKey])
 	let exportCalls = 0
 	const importedDatabaseIds: Array<string> = []
 	const sql = 'CREATE TABLE safety(id INTEGER);\n'
@@ -356,13 +378,15 @@ test('production restore of a historical single-database day completes the workf
 	assert.equal(restoreProgressFailsWorkflow(progress), false)
 	assert.equal(progress.safetyExports?.length, 1)
 	assert.equal(progress.safetyExports?.[0]?.databaseId, DATABASE_ID)
+	assert.deepEqual(sqlAccess.heads, [sqlObjectKey])
+	assert.deepEqual(sqlAccess.gets, [sqlObjectKey, sqlObjectKey, sqlObjectKey])
 })
 
 test('production restore verifies every required SQL object before importing APP_DB', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
-	const { env, day } = await seedSealedRestoreDay(bucket)
+	const { env, day, sqlObjectKey } = await seedSealedRestoreDay(bucket)
 	configureJobsDatabase(env)
 	const jobs = await putJobsRestoreManifest(bucket, env, day, { putSql: false })
 	const appManifestKey = backupPayload(
@@ -419,6 +443,10 @@ test('production restore verifies every required SQL object before importing APP
 		serializeBackupFullManifest(full),
 	)
 
+	const sqlAccess = trackSqlObjectAccess(bucket, [
+		sqlObjectKey,
+		jobs.sqlObjectKey,
+	])
 	let fetchCalls = 0
 	let importedAppDb = false
 	await assert.rejects(
@@ -444,4 +472,6 @@ test('production restore verifies every required SQL object before importing APP
 	)
 	assert.equal(fetchCalls, 0)
 	assert.equal(importedAppDb, false)
+	assert.deepEqual(sqlAccess.heads, [sqlObjectKey, jobs.sqlObjectKey])
+	assert.deepEqual(sqlAccess.gets, [])
 })

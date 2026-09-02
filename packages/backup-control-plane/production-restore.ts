@@ -158,19 +158,43 @@ export type RestorableD1Source = {
 	sqlR2Etag: string
 }
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource)
-	return [...new Uint8Array(digest)]
+function sha256HexFromBuffer(buffer: ArrayBuffer): string {
+	return [...new Uint8Array(buffer)]
 		.map((byte) => byte.toString(16).padStart(2, '0'))
 		.join('')
+}
+
+async function sha256ReadableStream(
+	body: ReadableStream<Uint8Array>,
+): Promise<{ bytes: number; sha256: string }> {
+	const digest = new (
+		crypto as unknown as { DigestStream: typeof DigestStream }
+	).DigestStream('SHA-256')
+	const writer = digest.getWriter()
+	const reader = body.getReader()
+	try {
+		for (;;) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (value === undefined) continue
+			await writer.write(value)
+		}
+		await writer.close()
+	} catch (error) {
+		await writer.abort(error).catch(() => undefined)
+		throw error
+	}
+	return {
+		bytes: Number(digest.bytesWritten),
+		sha256: sha256HexFromBuffer(await digest.digest),
+	}
 }
 
 async function verifyRequiredSqlObjects(
 	bucket: R2Bucket,
 	day: string,
 	sources: Array<RestorableD1Source>,
-): Promise<Map<string, Uint8Array>> {
-	const verified = new Map<string, Uint8Array>()
+): Promise<void> {
 	for (const source of sources) {
 		const head = await bucket.head(source.sqlObjectKey)
 		if (head === null) {
@@ -185,30 +209,29 @@ async function verifyRequiredSqlObjects(
 				`SQL object size mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
 			)
 		}
+	}
+	for (const source of sources) {
 		const object = await bucket.get(source.sqlObjectKey)
-		if (object === null) {
+		if (object?.body == null) {
 			throw new BackupError(
 				'restore-sql-missing',
 				`SQL object missing for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
 			)
 		}
-		const bytes = new Uint8Array(await object.arrayBuffer())
-		if (bytes.byteLength !== source.sqlBytes) {
+		const digest = await sha256ReadableStream(object.body)
+		if (digest.bytes !== source.sqlBytes) {
 			throw new BackupError(
 				'restore-sql-size-mismatch',
 				`SQL object size mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
 			)
 		}
-		const digest = await sha256Hex(bytes)
-		if (digest !== source.sqlSha256) {
+		if (digest.sha256 !== source.sqlSha256) {
 			throw new BackupError(
 				'restore-sql-sha256-mismatch',
 				`SQL object sha256 mismatch for ${day} (${source.source.name}): ${source.sqlObjectKey}`,
 			)
 		}
-		verified.set(source.source.id, bytes)
 	}
-	return verified
 }
 
 function appendAbsentConfiguredSourceNotes(
@@ -550,7 +573,7 @@ export async function runProductionRestore(
 	try {
 		await publish()
 		const validated = await validateSealedDayForRestore(env, payload.day)
-		const verifiedSql = await verifyRequiredSqlObjects(
+		await verifyRequiredSqlObjects(
 			env.BACKUP_BUCKET,
 			payload.day,
 			validated.declaredSources,
@@ -598,8 +621,7 @@ export async function runProductionRestore(
 			const restorable = validated.declaredSources.find(
 				(entry) => entry.source.id.toLowerCase() === source.id.toLowerCase(),
 			)
-			const sqlBytes = verifiedSql.get(source.id)
-			if (restorable === undefined || sqlBytes === undefined) {
+			if (restorable === undefined) {
 				throw new BackupError(
 					'restore-sql-missing',
 					`SQL object missing for ${payload.day} (${source.name})`,
@@ -610,7 +632,16 @@ export async function runProductionRestore(
 				databaseId: source.id,
 				token: env.CLOUDFLARE_API_TOKEN,
 				sourceMd5Etag: restorable.sqlR2Etag,
-				loadSqlBody: async () => sqlBytes,
+				loadSqlBody: async () => {
+					const sqlObject = await env.BACKUP_BUCKET.get(restorable.sqlObjectKey)
+					if (sqlObject?.body == null) {
+						throw new BackupError(
+							'restore-sql-missing',
+							`SQL object missing for ${payload.day} (${source.name}): ${restorable.sqlObjectKey}`,
+						)
+					}
+					return sqlObject.body
+				},
 				options,
 			})
 		}

@@ -442,10 +442,11 @@ import init/ingest etag. Without that prelude, drills fail with errors like
    manifest declares. Days without `d1Sources` restore APP_DB only and record
    `JOBS_DB: not present in this backup day` as a restore note, not a warning,
    so the Workflow instance completes. Days that list `d1Sources` restore every
-   listed database. Before any production write, restore HEAD/GET-verifies every
-   required SQL object (existence, size, sha256). It then safety-exports each
-   target and imports JOBS_DB (when listed) before APP_DB via the Cloudflare
-   API, then loops chunked
+   listed database. Before any production write, restore HEADs every required
+   SQL object for existence and size, then streams each body through a SHA-256
+   digest and discards it so SQL is not retained in memory. It then
+   safety-exports each target and imports JOBS_DB (when listed) before APP_DB by
+   streaming one database at a time via the Cloudflare API, then loops chunked
    `POST {PRIMARY_WORKER_ORIGIN}/__maintenance/dr-restore` with
    `Authorization: Bearer {DR_RESTORE_SECRET}` until the production worker
    reports `done` (StorageRunner replace, R2 put, published snapshot KV put).
