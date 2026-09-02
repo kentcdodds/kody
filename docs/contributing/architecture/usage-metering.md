@@ -407,11 +407,14 @@ Guarantees and rules:
   hour vs the hour before and the last 24 hours vs the 24 hours before. The
   snapshot lives at the platform KV key `fleet-package-error-rate:v1` and feeds
   `/admin/insights`. When the combined rate rises past a volume floor, a third
-  query groups recent-window errors by owner. One account at ≥80% of those
-  errors, or three accounts together at ≥80%, is concentrated; otherwise the
-  spike stays fleet-wide. Kody still fans `fleet.package_error_rate.elevated` to
-  admin-owned packages in every case. Concentrated payloads name usernames and
-  package kody ids only. The KV cooldown key
-  `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages for six hours.
-  The payload has no user ids, package UUIDs, emails, or error strings. See
+  query ranks owners of recent-window errors. Shares use the anonymous window
+  error total so a truncated owner sample cannot look like one account. One
+  account at ≥80% of those errors, or three accounts together at ≥80%, is
+  concentrated; otherwise the spike stays fleet-wide. A follow-up query then
+  loads package ids only for the named owners. Kody still fans
+  `fleet.package_error_rate.elevated` to admin-owned packages in every case.
+  Concentrated payloads name usernames and package kody ids only. The KV
+  cooldown key `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages
+  for six hours. The payload has no user ids, package UUIDs, emails, or error
+  strings. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).

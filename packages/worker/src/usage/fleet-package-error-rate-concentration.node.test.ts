@@ -12,6 +12,7 @@ vi.mock('./aggregate-rollups.ts', async (importOriginal) => {
 })
 
 const {
+	buildFleetPackageErrorRateConcentrationPackageQuery,
 	buildFleetPackageErrorRateConcentrationQuery,
 	foldFleetPackageErrorRateConcentrationRows,
 	parseFleetPackageErrorRateConcentration,
@@ -92,36 +93,35 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		}),
 	).toBe('fleet')
 
-	const folded = foldFleetPackageErrorRateConcentrationRows([
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.dji,
-			error_count: 40,
-		},
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.earth,
-			error_count: 30,
-		},
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.analysis,
-			error_count: 20,
-		},
-		{ user_id: 'quiet-user', entity_id: 'pkg-quiet', error_count: 2 },
-	])
+	const folded = foldFleetPackageErrorRateConcentrationRows(
+		[
+			{ user_id: 'jett-user', error_count: 90 },
+			{ user_id: 'quiet-user', error_count: 2 },
+		],
+		92,
+	)
 	expect(folded.recentErrors).toBe(92)
 	expect(folded.ownerCount).toBe(2)
-	expect(folded.packageCount).toBe(4)
 	expect(folded.topOwnerShare).toBeCloseTo(90 / 92)
+	const truncatedFleet = foldFleetPackageErrorRateConcentrationRows(
+		Array.from({ length: 50 }, (_, index) => ({
+			user_id: `user-${index}`,
+			entity_id: `pkg-${index}`,
+			error_count: 1,
+		})),
+		200,
+	)
+	expect(truncatedFleet.topOwnerShare).toBe(1 / 200)
+	expect(
+		classifyFleetPackageErrorRateConcentrationKind({
+			topOwnerShare: truncatedFleet.topOwnerShare,
+			topFewShare: truncatedFleet.topFewShare,
+		}),
+	).toBe('fleet')
 	expect(folded.ranked[0]).toMatchObject({
 		ownerId: 'jett-user',
 		errors: 90,
-		entityIds: [
-			jettPackageIds.dji,
-			jettPackageIds.earth,
-			jettPackageIds.analysis,
-		],
+		entityIds: [],
 	})
 
 	const query = buildFleetPackageErrorRateConcentrationQuery({
@@ -130,26 +130,42 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
 	})
 	expect(query).toContain('blob1 AS user_id')
-	expect(query).toContain('GROUP BY user_id, entity_id')
+	expect(query).toContain('GROUP BY user_id')
+	expect(query).not.toContain('GROUP BY user_id, entity_id')
 	expect(query).toContain("blob4 = 'error'")
+	const packageQuery = buildFleetPackageErrorRateConcentrationPackageQuery({
+		dataset: 'kody_usage_events',
+		recentStart: new Date('2026-09-01T00:00:00.000Z'),
+		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+		ownerIds: ['jett-user'],
+	})
+	expect(packageQuery).toContain("blob1 IN ('jett-user')")
+	expect(packageQuery).toContain('GROUP BY user_id, entity_id')
 
-	queryAnalyticsEngineSql.mockResolvedValueOnce([
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.dji,
-			error_count: 40,
+	queryAnalyticsEngineSql.mockImplementation(
+		async (input: { query: string }) => {
+			if (input.query.includes('GROUP BY user_id, entity_id')) {
+				return [
+					{
+						user_id: 'jett-user',
+						entity_id: jettPackageIds.dji,
+						error_count: 40,
+					},
+					{
+						user_id: 'jett-user',
+						entity_id: jettPackageIds.earth,
+						error_count: 30,
+					},
+					{
+						user_id: 'jett-user',
+						entity_id: jettPackageIds.analysis,
+						error_count: 20,
+					},
+				]
+			}
+			return [{ user_id: 'jett-user', error_count: 90 }]
 		},
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.earth,
-			error_count: 30,
-		},
-		{
-			user_id: 'jett-user',
-			entity_id: jettPackageIds.analysis,
-			error_count: 20,
-		},
-	])
+	)
 	const concentration = await resolveFleetPackageErrorRateConcentration({
 		env: {
 			APP_DB: createConcentrationDb(),
@@ -159,6 +175,7 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		dataset: 'kody_usage_events',
 		recentStart: new Date('2026-09-01T00:00:00.000Z'),
 		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+		recentErrors: 90,
 	})
 	expect(concentration).toEqual({
 		kind: 'one_account',
@@ -185,12 +202,12 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	expect(JSON.stringify(concentration)).not.toContain('jett-user')
 	expect(JSON.stringify(concentration)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
 
-	queryAnalyticsEngineSql.mockResolvedValueOnce([
-		{ user_id: 'user-a', entity_id: 'pkg-a', error_count: 20 },
-		{ user_id: 'user-b', entity_id: 'pkg-b', error_count: 20 },
-		{ user_id: 'user-c', entity_id: 'pkg-c', error_count: 20 },
-		{ user_id: 'user-d', entity_id: 'pkg-d', error_count: 20 },
-		{ user_id: 'user-e', entity_id: 'pkg-e', error_count: 20 },
+	queryAnalyticsEngineSql.mockImplementation(async () => [
+		{ user_id: 'user-a', error_count: 20 },
+		{ user_id: 'user-b', error_count: 20 },
+		{ user_id: 'user-c', error_count: 20 },
+		{ user_id: 'user-d', error_count: 20 },
+		{ user_id: 'user-e', error_count: 20 },
 	])
 	const fleet = await resolveFleetPackageErrorRateConcentration({
 		env: {
@@ -206,6 +223,7 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		dataset: 'kody_usage_events',
 		recentStart: new Date('2026-09-01T00:00:00.000Z'),
 		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+		recentErrors: 100,
 	})
 	expect(fleet).toMatchObject({
 		kind: 'fleet',

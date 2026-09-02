@@ -489,6 +489,7 @@ export async function refreshFleetPackageErrorRateSnapshot(input: {
 					dataset,
 					recentStart: elevation.comparison.recent.start,
 					recentEnd: elevation.comparison.recent.end,
+					recentErrors: elevation.comparison.recent.combined.errors,
 				})
 			: null,
 	}
@@ -502,6 +503,7 @@ async function resolveElevatedConcentration(input: {
 	dataset: string
 	recentStart: string
 	recentEnd: string
+	recentErrors: number
 }): Promise<FleetPackageErrorRateConcentration | null> {
 	try {
 		return await resolveFleetPackageErrorRateConcentration({
@@ -509,6 +511,7 @@ async function resolveElevatedConcentration(input: {
 			dataset: input.dataset,
 			recentStart: new Date(input.recentStart),
 			recentEnd: new Date(input.recentEnd),
+			recentErrors: input.recentErrors,
 		})
 	} catch (error) {
 		console.warn('fleet-package-error-rate-concentration-failed', error)

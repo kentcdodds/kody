@@ -190,7 +190,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert names a one-account concentratio
 	}
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
-			if (input.query.includes('blob1 AS user_id')) {
+			if (input.query.includes('GROUP BY user_id, entity_id')) {
 				return [
 					{
 						user_id: 'jett-user',
@@ -208,6 +208,9 @@ test('refreshFleetPackageErrorRateAndMaybeAlert names a one-account concentratio
 						error_count: 20,
 					},
 				]
+			}
+			if (input.query.includes('blob1 AS user_id')) {
+				return [{ user_id: 'jett-user', error_count: 16 }]
 			}
 			if (input.query.includes("toDateTime('2026-08-21 19:00:00')")) {
 				return [

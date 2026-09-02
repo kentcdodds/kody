@@ -11,6 +11,8 @@ import { queryAnalyticsEngineSql } from './aggregate-rollups.ts'
 import { fleetPackageErrorRateMetrics } from './fleet-package-error-rate-subscription-event.ts'
 
 const maxSqlBindingsPerChunk = 90
+const maxRankedOwners = 50
+const analyticsEngineIdPattern = /^[A-Za-z0-9:._-]+$/
 
 export type FleetPackageErrorRateConcentrationRow = {
 	user_id?: string
@@ -25,46 +27,78 @@ export type FleetPackageErrorRateConcentrationQueryEnv = {
 	CLOUDFLARE_API_BASE_URL?: string
 }
 
+type RankedOwner = {
+	ownerId: string
+	errors: number
+	entityIds: Array<string>
+}
+
 export function buildFleetPackageErrorRateConcentrationQuery(input: {
 	dataset: string
 	recentStart: Date
 	recentEnd: Date
 }) {
-	const metrics = fleetPackageErrorRateMetrics
-		.map((metric) => `'${metric}'`)
+	return `
+SELECT
+	blob1 AS user_id,
+	sum(_sample_interval) AS error_count
+FROM ${input.dataset}
+WHERE ${concentrationWhereClause(input)}
+GROUP BY user_id
+ORDER BY error_count DESC
+LIMIT ${maxRankedOwners}
+FORMAT JSON
+`.trim()
+}
+
+export function buildFleetPackageErrorRateConcentrationPackageQuery(input: {
+	dataset: string
+	recentStart: Date
+	recentEnd: Date
+	ownerIds: ReadonlyArray<string>
+}) {
+	const ownerList = input.ownerIds
+		.filter((ownerId) => analyticsEngineIdPattern.test(ownerId))
+		.map((ownerId) => `'${ownerId}'`)
 		.join(', ')
+	if (ownerList.length === 0) return null
+	const packageLimit =
+		fleetPackageErrorRateMaxNamedOwners * fleetPackageErrorRateMaxNamedPackages
 	return `
 SELECT
 	blob1 AS user_id,
 	blob3 AS entity_id,
 	sum(_sample_interval) AS error_count
 FROM ${input.dataset}
-WHERE timestamp >= toDateTime('${toAnalyticsDateTime(input.recentStart)}')
-	AND timestamp < toDateTime('${toAnalyticsDateTime(input.recentEnd)}')
-	AND blob2 IN (${metrics})
-	AND blob4 = 'error'
+WHERE ${concentrationWhereClause(input)}
+	AND blob1 IN (${ownerList})
 GROUP BY user_id, entity_id
 ORDER BY error_count DESC
-LIMIT 50
+LIMIT ${packageLimit}
 FORMAT JSON
 `.trim()
 }
 
+/**
+ * Rank owners from the owner-only AE rows. Shares use the anonymous
+ * window error total so a truncated owner sample cannot inflate
+ * `one_account` / `few_accounts`.
+ */
 export function foldFleetPackageErrorRateConcentrationRows(
 	rows: ReadonlyArray<FleetPackageErrorRateConcentrationRow>,
+	recentErrors: number,
 ) {
+	const windowErrors = Math.max(0, Math.round(recentErrors))
 	const errorsByOwner = new Map<
 		string,
 		{ errors: number; entityIds: Map<string, number> }
 	>()
-	let recentErrors = 0
 	const packageIds = new Set<string>()
 	for (const row of rows) {
 		const ownerId = row.user_id?.trim() ?? ''
 		if (ownerId.length === 0) continue
 		const errors = Math.max(0, Math.round(Number(row.error_count ?? 0)))
 		if (errors <= 0) continue
-		recentErrors += errors
 		const existing = errorsByOwner.get(ownerId) ?? {
 			errors: 0,
 			entityIds: new Map<string, number>(),
@@ -89,20 +123,18 @@ export function foldFleetPackageErrorRateConcentrationRows(
 				.map(([entityId]) => entityId),
 		}))
 		.sort((left, right) => right.errors - left.errors)
-	const topOwnerShare =
-		recentErrors === 0 ? 0 : (ranked[0]?.errors ?? 0) / recentErrors
-	const topFewShare =
-		recentErrors === 0
-			? 0
-			: ranked
-					.slice(0, fleetPackageErrorRateFewAccountLimit)
-					.reduce((sum, owner) => sum + owner.errors, 0) / recentErrors
+	const share = (errors: number) =>
+		windowErrors === 0 ? 0 : Math.min(1, errors / windowErrors)
 	return {
-		recentErrors,
+		recentErrors: windowErrors,
 		ownerCount: ranked.length,
 		packageCount: packageIds.size,
-		topOwnerShare,
-		topFewShare,
+		topOwnerShare: share(ranked[0]?.errors ?? 0),
+		topFewShare: share(
+			ranked
+				.slice(0, fleetPackageErrorRateFewAccountLimit)
+				.reduce((sum, owner) => sum + owner.errors, 0),
+		),
 		ranked,
 	}
 }
@@ -112,16 +144,19 @@ export async function resolveFleetPackageErrorRateConcentration(input: {
 	dataset: string
 	recentStart: Date
 	recentEnd: Date
+	recentErrors: number
 }): Promise<FleetPackageErrorRateConcentration | null> {
 	const accountId = input.env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = input.env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) return null
+	const windowErrors = Math.max(0, Math.round(input.recentErrors))
+	if (windowErrors === 0) return null
 	const baseUrl =
 		input.env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com'
-	let rows: Array<FleetPackageErrorRateConcentrationRow>
+	let ownerRows: Array<FleetPackageErrorRateConcentrationRow>
 	try {
-		rows = await queryAnalyticsEngineSql<FleetPackageErrorRateConcentrationRow>(
-			{
+		ownerRows =
+			await queryAnalyticsEngineSql<FleetPackageErrorRateConcentrationRow>({
 				accountId,
 				apiToken,
 				baseUrl,
@@ -130,24 +165,45 @@ export async function resolveFleetPackageErrorRateConcentration(input: {
 					recentStart: input.recentStart,
 					recentEnd: input.recentEnd,
 				}),
-			},
-		)
+			})
 	} catch (error) {
 		console.warn('fleet-package-error-rate-concentration-query-failed', error)
 		return null
 	}
-	const folded = foldFleetPackageErrorRateConcentrationRows(rows)
-	if (folded.recentErrors === 0) return null
+	const folded = foldFleetPackageErrorRateConcentrationRows(
+		ownerRows,
+		windowErrors,
+	)
+	if (folded.ranked.length === 0) return null
 	const kind = classifyFleetPackageErrorRateConcentrationKind({
 		topOwnerShare: folded.topOwnerShare,
 		topFewShare: folded.topFewShare,
 	})
+	const namedOwners = folded.ranked.slice(
+		0,
+		fleetPackageErrorRateMaxNamedOwners,
+	)
+	if (kind !== 'fleet') {
+		const packageRows = await loadOwnerPackageRows({
+			accountId,
+			apiToken,
+			baseUrl,
+			dataset: input.dataset,
+			recentStart: input.recentStart,
+			recentEnd: input.recentEnd,
+			ownerIds: namedOwners.map((owner) => owner.ownerId),
+		})
+		attachOwnerPackages(namedOwners, packageRows)
+		folded.packageCount = new Set(
+			namedOwners.flatMap((owner) => owner.entityIds),
+		).size
+	}
 	let named: FleetPackageErrorRateConcentration['owners'] = []
 	if (kind !== 'fleet') {
 		try {
 			named = await resolveNamedOwners({
 				db: input.env.APP_DB,
-				owners: folded.ranked.slice(0, fleetPackageErrorRateMaxNamedOwners),
+				owners: namedOwners,
 				recentErrors: folded.recentErrors,
 			})
 		} catch (error) {
@@ -218,11 +274,7 @@ export function parseFleetPackageErrorRateConcentration(
 
 async function resolveNamedOwners(input: {
 	db: D1Database | undefined
-	owners: Array<{
-		ownerId: string
-		errors: number
-		entityIds: Array<string>
-	}>
+	owners: Array<RankedOwner>
 	recentErrors: number
 }): Promise<FleetPackageErrorRateConcentration['owners']> {
 	if (!input.db || input.owners.length === 0) return []
@@ -238,7 +290,7 @@ async function resolveNamedOwners(input: {
 		if (!username) continue
 		named.push({
 			username,
-			error_share: owner.errors / input.recentErrors,
+			error_share: Math.min(1, owner.errors / input.recentErrors),
 			packages: owner.entityIds
 				.map((entityId) => packages.get(entityId))
 				.filter((kodyId): kodyId is string => kodyId != null)
@@ -247,6 +299,58 @@ async function resolveNamedOwners(input: {
 		})
 	}
 	return named
+}
+
+async function loadOwnerPackageRows(input: {
+	accountId: string
+	apiToken: string
+	baseUrl: string
+	dataset: string
+	recentStart: Date
+	recentEnd: Date
+	ownerIds: ReadonlyArray<string>
+}) {
+	const query = buildFleetPackageErrorRateConcentrationPackageQuery(input)
+	if (!query) return []
+	try {
+		return await queryAnalyticsEngineSql<FleetPackageErrorRateConcentrationRow>(
+			{
+				accountId: input.accountId,
+				apiToken: input.apiToken,
+				baseUrl: input.baseUrl,
+				query,
+			},
+		)
+	} catch (error) {
+		console.warn(
+			'fleet-package-error-rate-concentration-packages-failed',
+			error,
+		)
+		return []
+	}
+}
+
+function attachOwnerPackages(
+	owners: Array<RankedOwner>,
+	rows: ReadonlyArray<FleetPackageErrorRateConcentrationRow>,
+) {
+	const entityIdsByOwner = new Map<string, Map<string, number>>()
+	for (const row of rows) {
+		const ownerId = row.user_id?.trim() ?? ''
+		const entityId = row.entity_id?.trim() ?? ''
+		const errors = Math.max(0, Math.round(Number(row.error_count ?? 0)))
+		if (ownerId.length === 0 || entityId.length === 0 || errors <= 0) continue
+		const existing = entityIdsByOwner.get(ownerId) ?? new Map<string, number>()
+		existing.set(entityId, (existing.get(entityId) ?? 0) + errors)
+		entityIdsByOwner.set(ownerId, existing)
+	}
+	for (const owner of owners) {
+		const packages = entityIdsByOwner.get(owner.ownerId)
+		if (!packages) continue
+		owner.entityIds = [...packages.entries()]
+			.sort((left, right) => right[1] - left[1])
+			.map(([entityId]) => entityId)
+	}
 }
 
 async function loadUsernames(db: D1Database, ownerIds: Array<string>) {
@@ -292,6 +396,19 @@ async function loadPackageKodyIds(db: D1Database, packageIds: Array<string>) {
 		}
 	}
 	return kodyIds
+}
+
+function concentrationWhereClause(input: {
+	recentStart: Date
+	recentEnd: Date
+}) {
+	const metrics = fleetPackageErrorRateMetrics
+		.map((metric) => `'${metric}'`)
+		.join(', ')
+	return `timestamp >= toDateTime('${toAnalyticsDateTime(input.recentStart)}')
+	AND timestamp < toDateTime('${toAnalyticsDateTime(input.recentEnd)}')
+	AND blob2 IN (${metrics})
+	AND blob4 = 'error'`
 }
 
 function toAnalyticsDateTime(date: Date) {
