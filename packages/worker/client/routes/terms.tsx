@@ -145,11 +145,11 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Public packages</h2>
 				<p mix={css(descriptionCss)}>
-					By publishing a package publicly you grant Kody a licence to host,
+					By publishing a package publicly you grant Kody a license to host,
 					display, and distribute it through the community catalog, and you
-					grant other Kody users a licence to fork and run it under the licence
+					grant other Kody users a license to fork and run it under the license
 					declared in the package (or, if none is declared, a non-exclusive
-					licence to fork and run it within Kody). You retain copyright.
+					license to fork and run it within Kody). You retain copyright.
 				</p>
 			</section>
 
