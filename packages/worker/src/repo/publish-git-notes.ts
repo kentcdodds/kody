@@ -1,6 +1,4 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
 import * as Sentry from '@sentry/cloudflare'
 import { z } from 'zod'
 import {
@@ -10,6 +8,7 @@ import {
 } from './artifacts.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
+import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
 import { entityKindValues, type EntityKind } from './types.ts'
 
 export const kodyPublishGitNoteVersion = 1 as const
@@ -158,6 +157,7 @@ export async function writeAndPushPublishGitNote(input: {
 	const fs = createIsomorphicGitFs(input.filesystem)
 	const remoteName = input.remoteName ?? 'source'
 	const onAuth = () => buildArtifactsGitAuth({ token: input.token })
+	const { git, http } = await loadIsomorphicGit()
 	try {
 		await git.fetch({
 			fs,
@@ -278,6 +278,7 @@ export async function readPublishGitNoteFromArtifactsRepo(input: {
 	// ephemeral FS walker on `lstat('/repo/.')` and pulled an unused branch tip.
 	const workspace = createEphemeralGitWorkspace()
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
+	const { git, http } = await loadIsomorphicGit()
 	await git.init({
 		fs: workspace.fs,
 		dir: workspace.dir,

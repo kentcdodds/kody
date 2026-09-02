@@ -1,5 +1,3 @@
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	buildArtifactsGitAuth,
@@ -10,6 +8,7 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
+import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
 import { type RepoPublishWorkspace } from './external-publish.ts'
 import { type PublishGitNoteFileSystem } from './publish-git-notes.ts'
 
@@ -136,6 +135,7 @@ export async function cloneExternalPublishWorkspace(input: {
 		token: input.token,
 	})
 	const dir = externalPublishWorkspaceDir
+	const { git, http } = await loadIsomorphicGit()
 
 	let workspace: ReturnType<typeof createEphemeralGitWorkspace>
 	try {
