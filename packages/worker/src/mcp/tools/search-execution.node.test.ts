@@ -352,3 +352,165 @@ test('executeSearchList embeds each distinct text once and starts the query embe
 
 	expect([...embedTexts].sort()).toEqual(['draft an email', 'skills'])
 })
+
+function emptySearchRows() {
+	return {
+		packageRows: [],
+		userSecretRows: [],
+		userValueRows: [],
+		userIntegrationRows: [],
+		warnings: [],
+		registry: { capabilitySpecs: {} },
+	}
+}
+
+function signedInSearchCaller() {
+	return {
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	} as never
+}
+
+test('executeSearchList does not leak an unhandled rejection when the ranking embedding fails during row load', async () => {
+	const unhandled: Array<unknown> = []
+	const onUnhandled = (reason: unknown) => {
+		unhandled.push(reason)
+	}
+	process.on('unhandledRejection', onUnhandled)
+	try {
+		let releaseRows = () => {}
+		const rowsGate = new Promise<void>((resolve) => {
+			releaseRows = resolve
+		})
+		let resolveEmbedStarted = () => {}
+		const embedStarted = new Promise<void>((resolve) => {
+			resolveEmbedStarted = resolve
+		})
+		const embeddingError = new Error('Workers AI unavailable')
+		mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => {
+			await rowsGate
+			return emptySearchRows()
+		})
+		mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
+			memories: [],
+			retrieverResults: [],
+			retrieverWarnings: [],
+			suppressedCount: 0,
+			retrievalQuery: 'skills',
+		})
+		mockModule.searchUnified.mockImplementation(
+			async (input: {
+				embedText?: (text: string) => Promise<Array<number>>
+				query: string
+			}) => {
+				await input.embedText?.(input.query)
+				return mockModule.createEmptySearchUnifiedResult()
+			},
+		)
+		mockModule.runPackageRetrievers.mockResolvedValue({
+			results: [],
+			warnings: [],
+		})
+
+		const env = {
+			SENTRY_ENVIRONMENT: 'production',
+			AI: {
+				async run() {
+					resolveEmbedStarted()
+					throw embeddingError
+				},
+			},
+			CAPABILITY_VECTOR_INDEX: {
+				async query() {
+					return { matches: [] }
+				},
+			},
+			APP_DB: {},
+		} as unknown as Env
+
+		const searchPromise = executeSearchList({
+			env,
+			callerContext: signedInSearchCaller(),
+			conversationId: 'conv-embed-reject',
+			query: 'skills',
+			memoryQuery: 'skills',
+			limit: 15,
+			userId: 'user-1',
+			includeHiddenPackages: false,
+		})
+
+		await embedStarted
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+		releaseRows()
+		await expect(searchPromise).rejects.toThrow('Workers AI unavailable')
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+	} finally {
+		process.off('unhandledRejection', onUnhandled)
+	}
+})
+
+test('executeSearchList does not prefetch an embedding for domain-overview or index queries', async () => {
+	let aiRunCount = 0
+	mockModule.loadSearchRowsAndRegistry.mockResolvedValue(emptySearchRows())
+	mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
+		memories: [],
+		retrieverResults: [],
+		retrieverWarnings: [],
+		suppressedCount: 0,
+		retrievalQuery: 'what can kody do',
+	})
+	mockModule.searchUnified.mockImplementation(async () =>
+		mockModule.createEmptySearchUnifiedResult(),
+	)
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run() {
+				aiRunCount += 1
+				throw new Error('Workers AI should not run for overview search')
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return { matches: [] }
+			},
+		},
+		APP_DB: {},
+	} as unknown as Env
+
+	await executeSearchList({
+		env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-embed-overview',
+		query: 'what can kody do',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+	expect(aiRunCount).toBe(0)
+
+	await executeSearchList({
+		env,
+		callerContext: signedInSearchCaller(),
+		conversationId: 'conv-embed-index',
+		query: '',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+	expect(aiRunCount).toBe(0)
+})

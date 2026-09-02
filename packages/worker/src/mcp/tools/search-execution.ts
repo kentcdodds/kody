@@ -11,6 +11,7 @@ import {
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
+import { searchQueryUsesRankingEmbedding } from './search-domain-overview.ts'
 import { loadSearchRowsAndRegistry } from './search-loaders.ts'
 import {
 	launchSearchMemoryEnrichment,
@@ -120,10 +121,14 @@ async function executeSearchListWithinBudget(
 	const normalizedQuery = normalizeSearchText(input.query).trim()
 	if (
 		willRankSearch &&
+		searchQueryUsesRankingEmbedding({
+			query: input.query,
+			domain: domainFilter,
+		}) &&
 		normalizedQuery &&
 		!isCapabilitySearchOffline(input.env)
 	) {
-		void embeddingCache.embedText(normalizedQuery)
+		void embeddingCache.embedText(normalizedQuery).catch(() => {})
 	}
 	const memoryLaunch = shouldEnrichMemory
 		? launchSearchMemoryEnrichment({
