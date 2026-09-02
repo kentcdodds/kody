@@ -92,11 +92,17 @@ only with a written justification in the PR description.
 
 ## Reference readings
 
-Local readings on the same machine before and after the deferral work that
-introduced this budget, best of three:
+Best-of-three readings from the deferral work that introduced this budget. The
+GitHub-hosted runner reads roughly 1.6× the local development VM, and the
+budgets are set against the runner (about 1.5× its steady reading), so a local
+run has more headroom than CI does.
 
-| Worker   | Before | After  | Budget |
-| -------- | ------ | ------ | ------ |
-| origin   | 309 ms | 110 ms | 240 ms |
-| platform | 160 ms | 166 ms | 320 ms |
-| runtime  | 199 ms | 70 ms  | 150 ms |
+| Worker   | Local before | Local after | CI after | Budget |
+| -------- | ------------ | ----------- | -------- | ------ |
+| origin   | 309 ms       | 110 ms      | 186 ms   | 280 ms |
+| platform | 160 ms       | 166 ms      | 228 ms   | 340 ms |
+| runtime  | 199 ms       | 70 ms       | 102 ms   | 160 ms |
+
+For scale: before the deferrals the origin entry would have read roughly 500 ms
+on the runner, which is the regime in which Cloudflare uploads failed
+intermittently.

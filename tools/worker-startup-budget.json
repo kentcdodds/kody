@@ -1,8 +1,8 @@
 {
 	"maxActiveMs": {
-		"origin": 240,
-		"platform": 320,
-		"runtime": 150
+		"origin": 280,
+		"platform": 340,
+		"runtime": 160
 	},
 	"runs": 3
 }
