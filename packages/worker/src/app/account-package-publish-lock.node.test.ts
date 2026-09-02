@@ -376,3 +376,41 @@ test('approve-publish does not treat pending files as added when the published t
 	if (!loaded.ok) throw new Error('expected loader success')
 	expect(loaded.diff).toEqual({ files: [], omittedCount: 0 })
 })
+
+test('approve-publish does not treat published files as removed when HEAD is missing', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'pkg-1',
+		repo_id: 'repo-1',
+		published_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({ commit: null })
+	mockModule.loadPublicTreeFiles.mockImplementation(
+		async (input: { commit: string | null }) => {
+			if (input.commit === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+				return {
+					files: { 'README.md': '# published\n' },
+					fromListingSnapshot: false,
+				}
+			}
+			return { files: {}, fromListingSnapshot: false }
+		},
+	)
+
+	const loaded = await loadAccountPackageApprovePublishData({
+		env: { APP_DB: {} } as Env,
+		request: new Request(
+			'https://example.com/account/packages/pkg-1/approve-publish',
+		),
+		user: user as never,
+		packageId: 'pkg-1',
+	})
+	if (!loaded.ok) throw new Error('expected loader success')
+	expect(loaded.pendingCommit).toBeNull()
+	expect(loaded.diff).toEqual({ files: [], omittedCount: 0 })
+})

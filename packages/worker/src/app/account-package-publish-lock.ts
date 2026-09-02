@@ -87,7 +87,7 @@ export async function loadAccountPackageApprovePublishData(input: {
 				}),
 			])
 	const unpublishedCompare = publishedCommit != null && !publishedFiles.resolved
-	const pendingMissing = pendingCommit != null && !pendingFiles.resolved
+	const pendingMissing = !pendingFiles.resolved
 	return {
 		ok: true,
 		email: input.user.email,
