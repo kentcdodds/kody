@@ -97,7 +97,7 @@ export async function applyPasswordChange(
 	// provider sign-in that completes after `password_changed_at` would mint a
 	// cookie that postdates it and survives the lockout. A failure here leaves
 	// the account unstamped and the reset token intact so the caller can retry.
-	const cleared = input.clearSecondFactorsAndConnections
+	const clearedBeforeStamp = input.clearSecondFactorsAndConnections
 		? await clearSecondFactorsAndConnections(input.d1, input.userId)
 		: null
 
@@ -123,9 +123,20 @@ export async function applyPasswordChange(
 
 	// Same double-pass for factors: a still-live session could have enrolled a
 	// passkey or TOTP between the first sweep and the stamp.
-	if (input.clearSecondFactorsAndConnections) {
-		await clearSecondFactorsAndConnections(input.d1, input.userId)
-	}
+	const clearedAfterStamp = input.clearSecondFactorsAndConnections
+		? await clearSecondFactorsAndConnections(input.d1, input.userId)
+		: null
+	const cleared =
+		clearedBeforeStamp && clearedAfterStamp
+			? {
+					twoFactorRows:
+						clearedBeforeStamp.twoFactorRows + clearedAfterStamp.twoFactorRows,
+					passkeys: clearedBeforeStamp.passkeys + clearedAfterStamp.passkeys,
+					oauthConnections:
+						clearedBeforeStamp.oauthConnections +
+						clearedAfterStamp.oauthConnections,
+				}
+			: clearedBeforeStamp
 
 	// Reset tokens go last so every earlier step can be retried with the same
 	// token if it fails.
