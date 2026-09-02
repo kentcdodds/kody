@@ -24,6 +24,7 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -49,6 +50,7 @@ function createAuthTestContext(
 		signupMode?: 'invite' | 'open' | 'waitlist'
 		failRoleAssignment?: boolean
 		emailConfigured?: boolean
+		kv?: KVNamespace
 	} = {},
 ) {
 	const testDb = createTestDb({
@@ -62,6 +64,7 @@ function createAuthTestContext(
 			options.signupMode === 'open'
 				? ('test' as const)
 				: ('production' as const),
+		...(options.kv ? { BUNDLE_ARTIFACTS_KV: options.kv } : {}),
 		...(options.emailConfigured
 			? {
 					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
@@ -959,4 +962,56 @@ test('signup stops when an invite has an invalid stored plan', async () => {
 		false,
 	)
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
+})
+
+function createMemoryKv(initial?: Record<string, string>) {
+	const store = new Map<string, string>(Object.entries(initial ?? {}))
+	return {
+		async get(key: string, type?: string) {
+			const raw = store.get(key)
+			if (raw === undefined) return null
+			return type === 'json' ? JSON.parse(raw) : raw
+		},
+		async put(key: string, value: string) {
+			store.set(key, value)
+		},
+		store,
+	} as unknown as KVNamespace
+}
+
+test('signup rejects KV-added reserved usernames and accepts unreserved built-ins', async () => {
+	const kv = createMemoryKv({
+		[reservedUsernamesKvKey]: JSON.stringify({
+			added: ['brandnew'],
+			removed: ['faq'],
+			updatedAt: '2026-09-02T00:00:00.000Z',
+			updatedBy: 'admin-stable-id',
+		}),
+	})
+	const context = createAuthTestContext({ signupMode: 'open', kv })
+
+	const addedResponse = await context.request({
+		email: 'brandnew-holder@example.com',
+		username: 'brandnew',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(addedResponse.status).toBe(400)
+	expect(await addedResponse.json()).toEqual({
+		error: 'This username is reserved.',
+	})
+
+	const unreservedResponse = await context.request({
+		email: 'faq-holder@example.com',
+		username: 'faq',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(unreservedResponse.status).toBe(200)
+	expect(await unreservedResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
 })

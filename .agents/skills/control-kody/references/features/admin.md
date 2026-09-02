@@ -5,9 +5,10 @@ Operator tools. Seed and preview users are **not** admin.
 ## How to get there
 
 `/admin` and its children (`/admin/users`, `/admin/roles`, `/admin/invites`,
-`/admin/feature-flags`, `/admin/platform-integrations`, `/admin/provider-marks`,
-`/admin/codemods`, `/admin/community-reports`, `/admin/insights`,
-`/admin/platform-feedback`, `/admin/system-email`).
+`/admin/reserved-usernames`, `/admin/feature-flags`,
+`/admin/platform-integrations`, `/admin/provider-marks`, `/admin/codemods`,
+`/admin/community-reports`, `/admin/insights`, `/admin/platform-feedback`,
+`/admin/system-email`).
 
 ## Drive it
 

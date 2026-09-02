@@ -352,6 +352,21 @@ export type AdminInvitesLoaderData = {
 	availablePlans: Array<AdminPlanName>
 }
 
+export type AdminReservedUsernameConflict = {
+	username: string
+	stableUserId: string
+}
+
+export type AdminReservedUsernamesLoaderData = {
+	ok: true
+	builtIn: Array<string>
+	added: Array<string>
+	removed: Array<string>
+	conflicts: Array<AdminReservedUsernameConflict>
+	updatedAt: string | null
+	updatedBy: string | null
+}
+
 export type AdminFeatureFlagsLoaderData = {
 	ok: true
 	featureFlags: Array<AdminFeatureFlag>
@@ -1745,6 +1760,7 @@ export type AppLoaderData = {
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminInvites?: AdminInvitesLoaderData
+	adminReservedUsernames?: AdminReservedUsernamesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData

@@ -1,4 +1,5 @@
 import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
+import { getEffectiveReservedUsernameError } from '#worker/identity/reserved-username-settings.ts'
 import { getReservedUsernameError } from '#worker/identity/reserved-usernames.ts'
 
 export const usernameRequirements =
@@ -59,4 +60,15 @@ export function getUsernameValidationError(username: string) {
 		return formatError
 	}
 	return getReservedUsernameError(username)
+}
+
+export async function getEffectiveUsernameValidationError(
+	username: string,
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+) {
+	const formatError = getUsernameFormatValidationError(username)
+	if (formatError) {
+		return formatError
+	}
+	return getEffectiveReservedUsernameError(username, env)
 }

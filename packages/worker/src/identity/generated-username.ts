@@ -1,5 +1,5 @@
 import {
-	getUsernameValidationError,
+	getEffectiveUsernameValidationError,
 	normalizeUsername,
 	usernameFromEmail,
 } from '#worker/identity/username.ts'
@@ -20,6 +20,7 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 export async function getAvailableUsernameFromBase(
 	db: D1Database,
 	base: string,
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 ) {
 	// Provider handles may contain characters the username format rejects;
 	// map them the same way usernameFromEmail maps email local parts.
@@ -30,7 +31,7 @@ export async function getAvailableUsernameFromBase(
 		.replace(/[^a-z0-9]+$/g, '')
 	if (
 		normalizedBase &&
-		!getUsernameValidationError(normalizedBase) &&
+		!(await getEffectiveUsernameValidationError(normalizedBase, env)) &&
 		!(await userExistsByUsername(db, normalizedBase))
 	) {
 		return normalizedBase
@@ -41,7 +42,7 @@ export async function getAvailableUsernameFromBase(
 	for (let suffix = 2; suffix <= 100; suffix += 1) {
 		const candidate = `${prefix}-${suffix}`
 		if (
-			!getUsernameValidationError(candidate) &&
+			!(await getEffectiveUsernameValidationError(candidate, env)) &&
 			!(await userExistsByUsername(db, candidate))
 		) {
 			return candidate
@@ -59,6 +60,7 @@ export async function getAvailableUsernameFromBase(
 export async function getAvailableGeneratedUsername(
 	db: D1Database,
 	email: string,
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 ) {
-	return getAvailableUsernameFromBase(db, usernameFromEmail(email))
+	return getAvailableUsernameFromBase(db, usernameFromEmail(email), env)
 }

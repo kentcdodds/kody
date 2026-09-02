@@ -193,6 +193,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/admin/users.json',
 			'/admin/roles.json',
 			'/admin/invites.json',
+			'/admin/reserved-usernames.json',
 			'/admin/feature-flags.json',
 			'/admin/platform-integrations.json',
 			'/admin/provider-marks.json',

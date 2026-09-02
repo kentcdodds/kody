@@ -41,6 +41,9 @@ import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-le
 import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 import { adminUserMeterStorageReconcileCapability } from './admin-user-meter-storage-reconcile.ts'
 import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.ts'
+import { adminReservedUsernameAddCapability } from './admin-reserved-username-add.ts'
+import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
+import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -76,6 +79,7 @@ export const adminDomain = defineDomain({
 		'mailbox',
 		'maintenance',
 		'retention',
+		'reserved username',
 	],
 	capabilities: [
 		adminUserListCapability,
@@ -109,6 +113,9 @@ export const adminDomain = defineDomain({
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,
+		adminReservedUsernameListCapability,
+		adminReservedUsernameAddCapability,
+		adminReservedUsernameRemoveCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
 		adminSystemEmailSendCapability,

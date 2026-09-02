@@ -33,6 +33,7 @@ import {
 } from '#worker/test-support/audit-log-spy.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
+import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -170,6 +171,21 @@ function createAppEnv(
 		DISCORD_CLIENT_SECRET: 'discord-client-secret-test',
 		...overrides,
 	} as unknown as Env
+}
+
+function createMemoryKv(initial?: Record<string, string>) {
+	const store = new Map<string, string>(Object.entries(initial ?? {}))
+	return {
+		async get(key: string, type?: string) {
+			const raw = store.get(key)
+			if (raw === undefined) return null
+			return type === 'json' ? JSON.parse(raw) : raw
+		},
+		async put(key: string, value: string) {
+			store.set(key, value)
+		},
+		store,
+	} as unknown as KVNamespace
 }
 
 type Handler = {
@@ -1603,4 +1619,56 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 			reason: 'stable_user_id_exists',
 		}),
 	)
+})
+
+test('github signup skips a KV-reserved provider handle', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db, {
+		BUNDLE_ARTIFACTS_KV: createMemoryKv({
+			[reservedUsernamesKvKey]: JSON.stringify({
+				added: ['octo-cat'],
+				removed: [],
+				updatedAt: '2026-09-02T00:00:00.000Z',
+				updatedBy: 'admin-stable-id',
+			}),
+		}),
+	})
+
+	msw.use(
+		http.post('https://github.com/login/oauth/access_token', () =>
+			HttpResponse.json({ access_token: 'github-access-token' }),
+		),
+		http.get('https://api.github.com/user', () =>
+			HttpResponse.json({
+				id: 99002,
+				login: 'octo-cat',
+				name: 'Octo Cat',
+				email: null,
+			}),
+		),
+		http.get('https://api.github.com/user/emails', () =>
+			HttpResponse.json([
+				{ email: 'octo-reserved@example.com', primary: true, verified: true },
+			]),
+		),
+	)
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	const user = sqlite
+		.prepare(`SELECT username FROM users WHERE email = ?`)
+		.get('octo-reserved@example.com') as { username: string }
+	expect(user.username).toBe('octo-cat-2')
 })
