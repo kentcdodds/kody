@@ -71,6 +71,10 @@ smoke does not prove MCP execute health.
   [0002 — Data placement](../decisions/0002-data-placement.md).
 - [Usage Metering](./usage-metering.md): per-user usage events, the
   `recordUsage()` helper contract, and the D1 rollup table.
+- [Worker startup budget](./startup-budget.md): what counts toward Cloudflare's
+  startup CPU limit, how to profile it with `wrangler check startup`, the
+  lazy-loading rules for capability domains and heavy libraries, and the
+  `worker-startup-time:check` tripwire.
 - [Invocation overhead guardrails](./invocation-overhead-guardrails.md):
   per-call platform overhead budgets for the static-first package model (static
   imports zero, keyless package export runs tens of milliseconds), watching
