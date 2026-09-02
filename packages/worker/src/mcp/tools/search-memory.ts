@@ -5,6 +5,7 @@ import {
 	loadRelevantMemoriesForTool,
 	type MemoryToolSummary,
 } from '#mcp/tools/memory-tool-context.ts'
+import { type EmbedTextFn } from '#worker/vectorize/embedding.ts'
 
 import {
 	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
@@ -32,6 +33,7 @@ export function launchSearchMemoryEnrichment(input: {
 	conversationId: string
 	query?: string
 	memoryContext?: z.infer<typeof memoryContextInputField>
+	embedText?: EmbedTextFn
 }): {
 	promise: Promise<MemoryToolSummary | null>
 	launchedAtMs: number
@@ -49,6 +51,7 @@ export function launchSearchMemoryEnrichment(input: {
 		conversationId: input.conversationId,
 		memoryContext,
 		acknowledgeSurfaced: false,
+		...(input.embedText ? { embedText: input.embedText } : {}),
 	})
 	void promise.catch(() => {})
 	return { promise, launchedAtMs }

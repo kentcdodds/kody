@@ -4,6 +4,10 @@ import { buildMemoryRetrievalQuery } from '#mcp/tools/memory-tool-context.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
+import {
+	createTextEmbeddingCache,
+	isCapabilitySearchOffline,
+} from '#worker/vectorize/embedding.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
@@ -21,6 +25,7 @@ import {
 } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { queryMatchesSynthesizedProvider } from './search-provider-overview.ts'
+import { normalizeSearchText } from './understand-search-query.ts'
 
 export type SearchListExecutionResult = {
 	result: SearchUnifiedResult
@@ -108,6 +113,18 @@ async function executeSearchListWithinBudget(
 	const shouldEnrichMemory =
 		(Boolean(input.query) || Boolean(memoryContextRetrievalQuery)) &&
 		(!identityResolution.recognized || identityMatchesProvider)
+	const willRankSearch = !(
+		identityResolution.recognized && !identityMatchesProvider
+	)
+	const embeddingCache = createTextEmbeddingCache(input.env)
+	const normalizedQuery = normalizeSearchText(input.query).trim()
+	if (
+		willRankSearch &&
+		normalizedQuery &&
+		!isCapabilitySearchOffline(input.env)
+	) {
+		void embeddingCache.embedText(normalizedQuery)
+	}
 	const memoryLaunch = shouldEnrichMemory
 		? launchSearchMemoryEnrichment({
 				env: input.env,
@@ -115,6 +132,7 @@ async function executeSearchListWithinBudget(
 				conversationId: input.conversationId,
 				query: input.memoryQuery,
 				memoryContext: input.memoryContext,
+				embedText: embeddingCache.embedText,
 			})
 		: null
 	const memoryEnrichmentPromise = memoryLaunch?.promise ?? Promise.resolve(null)
@@ -193,6 +211,7 @@ async function executeSearchListWithinBudget(
 		registry: searchRows.registry,
 		optionalRows: searchRows,
 		retrieverResults: retrieverRun.results,
+		embedText: embeddingCache.embedText,
 		...(domainFilter ? { domain: domainFilter } : {}),
 	})
 	capabilityGuidance = result.guidance

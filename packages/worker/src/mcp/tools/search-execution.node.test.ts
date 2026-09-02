@@ -3,6 +3,10 @@ import {
 	createExecuteExecutor,
 	runWithDynamicWorkerEvaluationBudget,
 } from '#mcp/executor.ts'
+import {
+	CAPABILITY_EMBEDDING_DIMENSIONS,
+	deterministicEmbedding,
+} from '#worker/vectorize/embedding.ts'
 
 const mockModule = vi.hoisted(() => {
 	function createEmptySearchUnifiedResult() {
@@ -213,4 +217,138 @@ test('executeSearchList shares one dynamic-worker budget across memory and searc
 	expect(state.maxActive).toBe(4)
 	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledTimes(1)
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledTimes(1)
+})
+
+test('executeSearchList embeds each distinct text once and starts the query embedding before rows resolve', async () => {
+	const embedTexts: Array<string> = []
+	let releaseRows: () => void = () => {}
+	const rowsGate = new Promise<void>((resolve) => {
+		releaseRows = resolve
+	})
+	mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => {
+		await rowsGate
+		return {
+			packageRows: [],
+			userSecretRows: [],
+			userValueRows: [],
+			userIntegrationRows: [],
+			warnings: [],
+			registry: { capabilitySpecs: {} },
+		}
+	})
+	mockModule.loadRelevantMemoriesForTool.mockImplementation(
+		async (input: { embedText?: (text: string) => Promise<Array<number>> }) => {
+			await input.embedText?.('skills')
+			return {
+				memories: [],
+				retrieverResults: [],
+				retrieverWarnings: [],
+				suppressedCount: 0,
+				retrievalQuery: 'skills',
+			}
+		},
+	)
+	mockModule.searchUnified.mockImplementation(
+		async (input: { embedText?: (text: string) => Promise<Array<number>> }) => {
+			await input.embedText?.('skills')
+			return mockModule.createEmptySearchUnifiedResult()
+		},
+	)
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run(...args: Array<unknown>) {
+				const input = args[1] as { text?: unknown }
+				const batch = Array.isArray(input.text)
+					? input.text.map(String)
+					: [String(input.text ?? '')]
+				embedTexts.push(...batch)
+				return {
+					data: batch.map((text) => deterministicEmbedding(text)),
+					shape: [batch.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+				}
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return { matches: [] }
+			},
+		},
+		APP_DB: {},
+	} as unknown as Env
+
+	const searchPromise = executeSearchList({
+		env,
+		callerContext: {
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+				username: 'user',
+			},
+		} as never,
+		conversationId: 'conv-embed-once',
+		query: 'skills',
+		memoryQuery: 'skills',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+
+	await expect.poll(() => embedTexts).toEqual(['skills'])
+	releaseRows()
+	await searchPromise
+	expect(embedTexts).toEqual(['skills'])
+
+	embedTexts.length = 0
+	mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => ({
+		packageRows: [],
+		userSecretRows: [],
+		userValueRows: [],
+		userIntegrationRows: [],
+		warnings: [],
+		registry: { capabilitySpecs: {} },
+	}))
+	mockModule.loadRelevantMemoriesForTool.mockImplementation(
+		async (input: {
+			embedText?: (text: string) => Promise<Array<number>>
+			memoryContext?: { query?: string }
+		}) => {
+			await input.embedText?.(input.memoryContext?.query ?? 'draft an email')
+			return {
+				memories: [],
+				retrieverResults: [],
+				retrieverWarnings: [],
+				suppressedCount: 0,
+				retrievalQuery: 'draft an email',
+			}
+		},
+	)
+
+	await executeSearchList({
+		env,
+		callerContext: {
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+				username: 'user',
+			},
+		} as never,
+		conversationId: 'conv-embed-distinct',
+		query: 'skills',
+		memoryContext: { query: 'draft an email' },
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+	})
+
+	expect([...embedTexts].sort()).toEqual(['draft an email', 'skills'])
 })
