@@ -88,6 +88,11 @@ export async function applyPasswordChange(
 		}
 	}
 
+	// Hash before touching account state: PBKDF2 is slow by design, and any
+	// time spent between the timestamp and the row write is a window where a
+	// login could mint a cookie that postdates the stamp.
+	const passwordHash = await resolvePasswordHash(input)
+
 	// Clear second factors and linked providers before the stamp: a passkey or
 	// provider sign-in that completes after `password_changed_at` would mint a
 	// cookie that postdates it and survives the lockout. A failure here leaves
@@ -97,7 +102,6 @@ export async function applyPasswordChange(
 		: null
 
 	const changedAtMs = Date.now()
-	const passwordHash = await resolvePasswordHash(input)
 	await input.db.update(usersTable, input.userId, {
 		password_hash: passwordHash,
 		password_changed_at: new Date(changedAtMs).toISOString(),
@@ -115,6 +119,12 @@ export async function applyPasswordChange(
 			detail: afterStampFailure,
 			changedAtMs,
 		}
+	}
+
+	// Same double-pass for factors: a still-live session could have enrolled a
+	// passkey or TOTP between the first sweep and the stamp.
+	if (input.clearSecondFactorsAndConnections) {
+		await clearSecondFactorsAndConnections(input.d1, input.userId)
 	}
 
 	// Reset tokens go last so every earlier step can be retried with the same
