@@ -7,6 +7,10 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
+	loadPublicTreeFiles: vi.fn(async () => ({
+		files: {},
+		fromListingSnapshot: false,
+	})),
 	getAppBaseUrl: () => 'https://example.com',
 }))
 
@@ -30,6 +34,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/artifacts.ts', () => ({
 	resolveArtifactSourceHead: (...args: Array<unknown>) =>
 		mockModule.resolveArtifactSourceHead(...args),
+}))
+
+vi.mock('#app/package-files-data.ts', () => ({
+	loadPublicTreeFiles: (...args: Array<unknown>) =>
+		mockModule.loadPublicTreeFiles(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -210,11 +219,17 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 			commit: 'abc1234',
 		},
 	})
-	expect(unlockedApprove?.status).toBe(400)
-	await expect(unlockedApprove?.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'This package is not locked.',
-	})
+	expect(unlockedApprove?.status).toBe(200)
+	expect(mockModule.publishFromExternalRef).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'abc1234',
+		}),
+	)
+	expect(
+		mockModule.publishFromExternalRef.mock.calls.at(-1)?.[0],
+	).not.toHaveProperty('allowLockedPublish')
 	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
 
 	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
@@ -240,5 +255,6 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 			id: 'pkg-1',
 			lockedAt: '2026-08-28T12:00:00.000Z',
 		},
+		diff: { files: [], omittedCount: 0 },
 	})
 })

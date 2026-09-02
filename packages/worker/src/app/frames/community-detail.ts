@@ -1,13 +1,44 @@
+import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
+import {
+	buildSourceAheadPublishHref,
+	renderCommunityDetailContentHtml,
+} from '#app/community-detail-content.tsx'
 import { resolveCommunityListingRoute } from '#app/community-package-route.ts'
-import { loadPackagePage } from '#app/package-page.ts'
-import { renderCommunityDetailContentHtml } from '#app/community-detail-content.tsx'
-import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { registerFrame } from '#app/frame-registry.ts'
+import { loadPackagePage } from '#app/package-page.ts'
+import { type PublicCommunityListing } from '#app/community-public.ts'
+import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
+import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
+
+async function resolvePublishCompareHref(input: {
+	env: Env
+	request: Request
+	viewerIsOwner: boolean
+	listing: PublicCommunityListing | null
+	packageId?: string | null
+}) {
+	if (!input.viewerIsOwner || !input.listing?.sourceAhead) return null
+	let packageId = input.packageId ?? null
+	if (!packageId) {
+		const user = await readAuthenticatedAppUser(input.request, input.env)
+		if (user) {
+			const ownerPackage = await getSavedPackageByKodyId(input.env.APP_DB, {
+				userId: user.mcpUser.userId,
+				kodyId: input.listing.kodyId,
+			})
+			packageId = ownerPackage?.id ?? null
+		}
+	}
+	return buildSourceAheadPublishHref({
+		packageId,
+		headCommit: input.listing.headCommit,
+	})
+}
 
 registerFrame(COMMUNITY_DETAIL_TARGET, {
 	routes: [routes.communityPackage, routes.communityDetail],
@@ -21,19 +52,25 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				kodyId: packageParams.kodyId,
 			})
 			if (page.kind !== 'page') return ''
+			const listing = page.listing?.listing ?? null
 			return renderCommunityDetailContentHtml({
-				listing: page.listing?.listing ?? null,
+				listing,
 				username: page.username,
 				kodyId: page.kodyId,
 				description:
-					page.listing?.listing?.description ??
-					page.ownerPackage?.description ??
-					'',
+					listing?.description ?? page.ownerPackage?.description ?? '',
 				isPrivate: page.ownerPackage?.isPrivate ?? false,
 				ownerProfilePublic: page.listing?.ownerProfilePublic ?? true,
 				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
 				returnTo: url.pathname,
+				publishCompareHref: await resolvePublishCompareHref({
+					env,
+					request,
+					viewerIsOwner: page.viewerIsOwner,
+					listing,
+					packageId: page.ownerPackage?.id,
+				}),
 			})
 		}
 
@@ -57,6 +94,12 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			loggedIn: detail.loggedIn,
 			viewerIsOwner: detail.viewerIsOwner,
 			returnTo: url.pathname,
+			publishCompareHref: await resolvePublishCompareHref({
+				env,
+				request,
+				viewerIsOwner: detail.viewerIsOwner,
+				listing: detail.listing,
+			}),
 		})
 	},
 })
