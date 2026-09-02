@@ -22,7 +22,13 @@ function isPreviewableFileContent(content: string) {
 }
 
 function comparePaths(left: string, right: string) {
-	return left.localeCompare(right)
+	if (left < right) return -1
+	if (left > right) return 1
+	return 0
+}
+
+function ownFileContent(files: Record<string, string>, path: string) {
+	return Object.hasOwn(files, path) ? files[path] : undefined
 }
 
 function buildFilePatch(input: {
@@ -54,10 +60,12 @@ export function buildPublishCommitDiff(
 	])
 	const changed: Array<PublishCommitDiffFile> = []
 	for (const path of [...paths].sort(comparePaths)) {
-		const publishedContent = publishedFiles[path]
-		const pendingContent = pendingFiles[path]
+		const hasPublished = Object.hasOwn(publishedFiles, path)
+		const hasPending = Object.hasOwn(pendingFiles, path)
+		const publishedContent = ownFileContent(publishedFiles, path)
+		const pendingContent = ownFileContent(pendingFiles, path)
 		if (publishedContent === pendingContent) continue
-		if (publishedContent == null) {
+		if (!hasPublished) {
 			changed.push({
 				path,
 				status: 'added',
@@ -69,13 +77,13 @@ export function buildPublishCommitDiff(
 			})
 			continue
 		}
-		if (pendingContent == null) {
+		if (!hasPending) {
 			changed.push({
 				path,
 				status: 'removed',
 				patch: buildFilePatch({
 					path,
-					publishedContent,
+					publishedContent: publishedContent ?? '',
 					pendingContent: '',
 				}),
 			})
@@ -86,8 +94,8 @@ export function buildPublishCommitDiff(
 			status: 'modified',
 			patch: buildFilePatch({
 				path,
-				publishedContent,
-				pendingContent,
+				publishedContent: publishedContent ?? '',
+				pendingContent: pendingContent ?? '',
 			}),
 		})
 	}

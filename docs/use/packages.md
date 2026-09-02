@@ -577,10 +577,10 @@ package.
 Unlocked packages use the same review page. When default-branch HEAD is newer
 than the last publish, the package Code tab shows a **HEAD ahead of published**
 badge. Owners click it to open
-`/account/packages/:packageId/approve-publish?commit=<HEAD>` and publish that
-SHA with **Publish HEAD**. Visitors see the badge but not the link. The
-five-minute reconcile job still auto-publishes unlocked packages; this page is
-the explicit website path.
+`/account/packages/:packageId/approve-publish?commit=<sha>`, where `<sha>` is
+the resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
+Visitors see the badge but not the link. The five-minute reconcile job still
+auto-publishes unlocked packages; this page is the explicit website path.
 
 Fleet package-codemod apply does the same HEAD write on locked packages: the
 transform commits and pushes so you can review it the next time you publish. It

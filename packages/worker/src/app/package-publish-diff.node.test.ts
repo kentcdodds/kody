@@ -17,14 +17,14 @@ test('buildPublishCommitDiff classifies added, removed, and modified files', () 
 
 	expect(diff.omittedCount).toBe(0)
 	expect(diff.files.map((file) => [file.path, file.status])).toEqual([
+		['README.md', 'modified'],
 		['gone.ts', 'removed'],
 		['new.ts', 'added'],
-		['README.md', 'modified'],
 	])
-	expect(diff.files[0]?.patch).toContain('-export const gone = true')
-	expect(diff.files[1]?.patch).toContain('+export const added = true')
-	expect(diff.files[2]?.patch).toContain('-# Hello')
-	expect(diff.files[2]?.patch).toContain('+# Hello world')
+	expect(diff.files[0]?.patch).toContain('-# Hello')
+	expect(diff.files[0]?.patch).toContain('+# Hello world')
+	expect(diff.files[1]?.patch).toContain('-export const gone = true')
+	expect(diff.files[2]?.patch).toContain('+export const added = true')
 })
 
 test('buildPublishCommitDiff omits identical trees and binary or oversized files', () => {
@@ -42,5 +42,31 @@ test('buildPublishCommitDiff omits identical trees and binary or oversized files
 	expect(diff.files).toEqual([
 		{ path: 'bin.dat', status: 'modified', patch: null },
 		{ path: 'huge.txt', status: 'modified', patch: null },
+	])
+})
+
+test('buildPublishCommitDiff uses code-unit path order and own-property reads', () => {
+	const diff = buildPublishCommitDiff(
+		{
+			'é.md': 'old accent',
+			'z.md': 'old z',
+		},
+		{
+			'A.md': 'new A',
+			'é.md': 'new accent',
+		},
+	)
+	expect(diff.files.map((file) => file.path)).toEqual(['A.md', 'z.md', 'é.md'])
+
+	const inheritedName = buildPublishCommitDiff(
+		Object.fromEntries([['toString', 'old']]) as Record<string, string>,
+		{},
+	)
+	expect(inheritedName.files).toEqual([
+		{
+			path: 'toString',
+			status: 'removed',
+			patch: expect.stringContaining('-old'),
+		},
 	])
 })

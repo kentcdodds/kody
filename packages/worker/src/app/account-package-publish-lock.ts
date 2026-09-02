@@ -16,6 +16,7 @@ import {
 	getSavedPackageById,
 	setSavedPackageLockedAt,
 } from '#worker/package-registry/repo.ts'
+import { readArtifactTreeAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
@@ -65,25 +66,31 @@ export async function loadAccountPackageApprovePublishData(input: {
 		publishedCommit != null &&
 		pendingCommit === publishedCommit
 	const [publishedFiles, pendingFiles] = alreadyPublished
-		? [{ files: {} }, { files: {} }]
+		? [
+				{ files: {}, resolved: true },
+				{ files: {}, resolved: true },
+			]
 		: await Promise.all([
-				loadPublicTreeFiles({
+				loadPublishCompareTree({
 					env: input.env,
 					request: input.request,
 					sourceId: source.id,
 					sourceRepoId: source.repo_id,
 					commit: publishedCommit,
-					pinnedCommit: publishedCommit ?? '',
 				}),
-				loadPublicTreeFiles({
+				loadPublishCompareTree({
 					env: input.env,
 					request: input.request,
 					sourceId: source.id,
 					sourceRepoId: source.repo_id,
 					commit: pendingCommit,
-					pinnedCommit: publishedCommit ?? '',
 				}),
 			])
+	const pendingMissing =
+		pendingCommit != null &&
+		!pendingFiles.resolved &&
+		publishedFiles.resolved &&
+		Object.keys(publishedFiles.files).length > 0
 	return {
 		ok: true,
 		email: input.user.email,
@@ -105,7 +112,42 @@ export async function loadAccountPackageApprovePublishData(input: {
 			username: input.user.username,
 			kodyId: savedPackage.kodyId,
 		}),
-		diff: buildPublishCommitDiff(publishedFiles.files, pendingFiles.files),
+		diff: pendingMissing
+			? { files: [], omittedCount: 0 }
+			: buildPublishCommitDiff(publishedFiles.files, pendingFiles.files),
+	}
+}
+
+async function loadPublishCompareTree(input: {
+	env: Env
+	request: Request
+	sourceId: string
+	sourceRepoId: string | null
+	commit: string | null
+}): Promise<{ files: Record<string, string>; resolved: boolean }> {
+	if (!input.commit) return { files: {}, resolved: false }
+	const publicTree = await loadPublicTreeFiles({
+		env: input.env,
+		request: input.request,
+		sourceId: input.sourceId,
+		sourceRepoId: input.sourceRepoId,
+		commit: input.commit,
+		pinnedCommit: input.commit,
+	})
+	if (Object.keys(publicTree.files).length > 0) {
+		return { files: publicTree.files, resolved: true }
+	}
+	if (!input.sourceRepoId) return { files: {}, resolved: false }
+	try {
+		const files = await readArtifactTreeAtCommit({
+			env: input.env,
+			repoId: input.sourceRepoId,
+			commit: input.commit,
+		})
+		if (files == null) return { files: {}, resolved: false }
+		return { files, resolved: true }
+	} catch {
+		return { files: {}, resolved: false }
 	}
 }
 
