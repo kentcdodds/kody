@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { classifyProductionDeployPaths } from './deploy-path-filter.ts'
 
-test('production deploy path filter selects Durable Object scripts only when needed', () => {
+test('production deploy path filter selects worker scripts only when their sources change', () => {
 	expect(
 		classifyProductionDeployPaths([
 			'packages/worker/src/blog/posts/your-assistants-home.md',
@@ -56,8 +56,8 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployMain: true,
 		deployPlatform: true,
 		deployRuntime: true,
-		deployJobs: true,
-		deployHighlight: true,
+		deployJobs: false,
+		deployHighlight: false,
 	})
 	expect(
 		classifyProductionDeployPaths(['packages/worker/src/app/handlers/home.ts']),
@@ -97,8 +97,134 @@ test('production deploy path filter selects Durable Object scripts only when nee
 	).toEqual({
 		deployMain: true,
 		deployPlatform: true,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: false,
+	})
+
+	expect(classifyProductionDeployPaths([])).toEqual({
+		deployMain: true,
+		deployPlatform: true,
 		deployRuntime: true,
 		deployJobs: true,
 		deployHighlight: true,
+	})
+	expect(
+		classifyProductionDeployPaths(['.github/workflows/deploy.yml']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: true,
+		deployJobs: true,
+		deployHighlight: true,
+	})
+
+	expect(
+		classifyProductionDeployPaths([
+			'packages/backup-control-plane/worker.ts',
+			'tools/disaster-recovery/readiness-assessment.ts',
+			'docs/contributing/disaster-recovery.md',
+		]),
+	).toEqual({
+		deployMain: false,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths([
+			'packages/backup-control-plane/worker.ts',
+			'packages/shared/src/backup-full-manifest.ts',
+			'tools/disaster-recovery/readiness-assessment.ts',
+			'docs/contributing/disaster-recovery.md',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: false,
+	})
+
+	expect(
+		classifyProductionDeployPaths([
+			'packages/worker/src/origin-handler.ts',
+			'packages/worker/src/platform-worker.ts',
+			'packages/worker/src/runtime-worker.ts',
+			'packages/worker/src/app/canonical-host.ts',
+			'docs/contributing/architecture/request-lifecycle.md',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: true,
+		deployJobs: false,
+		deployHighlight: false,
+	})
+
+	expect(
+		classifyProductionDeployPaths([
+			'docs/use/secrets-and-values.md',
+			'packages/worker/src/mcp/fetch-gateway.ts',
+			'packages/worker/src/mcp/fetch-gateway.node.test.ts',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: false,
+	})
+
+	expect(
+		classifyProductionDeployPaths(['packages/jobs-worker/src/index.ts']),
+	).toEqual({
+		deployMain: false,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: true,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths([
+			'packages/jobs-worker/src/index.ts',
+			'packages/worker/src/app/handlers/home.ts',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: true,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths(['packages/shared/src/jobs/rpc.ts']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: true,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths([
+			'packages/worker/universal/highlighted-code.ts',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: true,
+	})
+	expect(
+		classifyProductionDeployPaths(['tools/ci/deploy-path-filter.ts']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: true,
+		deployJobs: false,
+		deployHighlight: false,
 	})
 })
