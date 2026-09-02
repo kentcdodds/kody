@@ -11,7 +11,9 @@ import {
 	verifyRows,
 } from './d1-restore-drill.ts'
 import {
+	assertRequestedDatabase,
 	manifestPublicKeyRegistryPath,
+	migrationsDirectoryForDatabase,
 	parseArguments,
 	restoreBaselineRegistryPath,
 	restoreTrustRegistryPath,
@@ -271,6 +273,11 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 				databaseId: '8c1014d1-6b41-4695-a0a2-159071f0f919',
 				databaseName: 'kody',
 			},
+			{
+				accountId: 'a99ee2e72728dd52902ef288b7b1447d',
+				databaseId: '5410331e-4d25-47e4-a1e5-a248f7cc764c',
+				databaseName: 'kody-jobs',
+			},
 		],
 		drillTargets: [
 			{
@@ -357,4 +364,51 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 			'kody-drill',
 		]),
 	).toThrow('Unknown argument: --allowlist')
+})
+
+test('restore-drill --database selects a configured source and jobs migrations', () => {
+	const parsed = parseArguments([
+		'--manifest',
+		'manifest.json',
+		'--manifest-sha256',
+		'0'.repeat(64),
+		'--backup',
+		'backup.sql',
+		'--baseline-id',
+		'production-baseline-2026',
+		'--target-account-id',
+		targetAccountId,
+		'--target-name',
+		'kody-jobs-drill',
+		'--database',
+		'kody-jobs',
+	])
+	expect(parsed.database).toBe('kody-jobs')
+	expect(() =>
+		assertRequestedDatabase(
+			'kody-jobs',
+			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
+			'kody-jobs',
+		),
+	).not.toThrow()
+	expect(() =>
+		assertRequestedDatabase(
+			'kody-jobs',
+			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
+			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
+		),
+	).not.toThrow()
+	expect(() =>
+		assertRequestedDatabase(
+			'kody',
+			'8c1014d1-6b41-4695-a0a2-159071f0f919',
+			'kody-jobs',
+		),
+	).toThrow('--database kody-jobs does not match manifest source kody')
+	expect(migrationsDirectoryForDatabase('kody')).toMatch(
+		/packages\/worker\/migrations\/?$/,
+	)
+	expect(migrationsDirectoryForDatabase('kody-jobs')).toMatch(
+		/packages\/jobs-worker\/migrations\/?$/,
+	)
 })

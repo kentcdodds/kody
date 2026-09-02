@@ -19,6 +19,7 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 /**
  * Package runtime Worker entrypoint (script `kody-runtime`, deployed from
@@ -48,34 +49,44 @@ export {
 
 const runtimeWorkerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url)
-
-		if (url.pathname === runtimeWorkerHealthPath) {
-			return Response.json(
-				buildRuntimeWorkerHealth({
-					commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
-					cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
-				}),
-			)
-		}
-
-		const packageAppOriginResponse = await handlePackageAppOriginRequest(
-			request,
-			env,
+		return runWithDynamicWorkerEvaluationBudget(
+			async () => await fetchRuntimeWorkerRequest(request, env, ctx),
 		)
-		if (packageAppOriginResponse) return packageAppOriginResponse
-
-		if (isPackageInvocationApiRequest(url.pathname)) {
-			return handlePackageInvocationApiRequest(request, env, ctx)
-		}
-
-		if (isPackageAppRequestPath(url.pathname)) {
-			return handlePackageAppRequest(request, env)
-		}
-
-		return new Response('Not Found', { status: 404 })
 	},
 } satisfies ExportedHandler<Env>
+
+async function fetchRuntimeWorkerRequest(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+) {
+	const url = new URL(request.url)
+
+	if (url.pathname === runtimeWorkerHealthPath) {
+		return Response.json(
+			buildRuntimeWorkerHealth({
+				commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
+				cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
+			}),
+		)
+	}
+
+	const packageAppOriginResponse = await handlePackageAppOriginRequest(
+		request,
+		env,
+	)
+	if (packageAppOriginResponse) return packageAppOriginResponse
+
+	if (isPackageInvocationApiRequest(url.pathname)) {
+		return handlePackageInvocationApiRequest(request, env, ctx)
+	}
+
+	if (isPackageAppRequestPath(url.pathname)) {
+		return handlePackageAppRequest(request, env)
+	}
+
+	return new Response('Not Found', { status: 404 })
+}
 
 export default Sentry.withSentry(
 	(env: Env) => getWorkerSentryOptions(env),

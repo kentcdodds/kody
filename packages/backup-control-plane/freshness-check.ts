@@ -10,6 +10,8 @@ import {
 	BackupError,
 	assertConfiguredIdentity,
 	backupPayload,
+	bindSourceDatabase,
+	configuredSourceDatabases,
 	isBookmarkObjectKey,
 	safeLog,
 } from './backup-policy.ts'
@@ -28,7 +30,7 @@ function latestExpectedDate(scheduledAt: Date): Date {
 	return expected
 }
 
-export async function checkFreshness(
+async function checkOneSourceFreshness(
 	env: BackupEnvironment,
 	scheduledAt: Date,
 	apiOptions: ApiOptions = {},
@@ -52,6 +54,8 @@ export async function checkFreshness(
 				event: 'freshness-stale',
 				status: 'stale-success',
 				day: payload.day,
+				databaseId: env.SOURCE_DATABASE_ID,
+				databaseName: env.SOURCE_DATABASE_NAME,
 				manifestKey: payload.manifestKey,
 				errorCode: error.code,
 			})
@@ -89,6 +93,8 @@ export async function checkFreshness(
 						event: 'backup-stats-legacy-missing',
 						status: 'stale-success',
 						day: payload.day,
+						databaseId: env.SOURCE_DATABASE_ID,
+						databaseName: env.SOURCE_DATABASE_NAME,
 						objectKey: manifest.payload.sql.objectKey,
 					})
 					break
@@ -141,6 +147,8 @@ export async function checkFreshness(
 					: 'freshness-success',
 		status: stale ? 'stale-success' : 'success',
 		day: payload.day,
+		databaseId: env.SOURCE_DATABASE_ID,
+		databaseName: env.SOURCE_DATABASE_NAME,
 		objectKey: manifest?.payload.sql.objectKey,
 		manifestKey: payload.manifestKey,
 		ageHours,
@@ -149,4 +157,32 @@ export async function checkFreshness(
 		oversizedStatementCount: unrestorableStats?.oversizedStatementCount,
 	})
 	return !stale
+}
+
+export async function checkFreshness(
+	env: BackupEnvironment,
+	scheduledAt: Date,
+	apiOptions: ApiOptions = {},
+): Promise<boolean> {
+	const sources = configuredSourceDatabases(env)
+	const results: Array<boolean> = []
+	const errors: Array<unknown> = []
+	for (const source of sources) {
+		try {
+			results.push(
+				await checkOneSourceFreshness(
+					bindSourceDatabase(env, source),
+					scheduledAt,
+					apiOptions,
+				),
+			)
+		} catch (error) {
+			errors.push(error)
+		}
+	}
+	if (errors.length === 1) throw errors[0]
+	if (errors.length > 1) {
+		throw new AggregateError(errors, 'One or more D1 freshness checks failed.')
+	}
+	return results.every(Boolean)
 }

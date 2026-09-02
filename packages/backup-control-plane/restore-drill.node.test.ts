@@ -73,3 +73,12 @@ test('restore drill refuses SQL with oversized statement stats before import', a
 	)
 	assert.equal(fetchCalls, 0)
 })
+
+test('restore drill rejects an unknown --database selector', async () => {
+	const env = environment()
+	await assert.rejects(
+		runRestoreDrill(env, '2026-07-31', { database: 'kody-jobs' }),
+		(error: unknown) =>
+			error instanceof BackupError && error.code === 'unknown-source-database',
+	)
+})

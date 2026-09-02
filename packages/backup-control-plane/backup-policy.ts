@@ -9,6 +9,11 @@ import {
 const CLOUDFLARE_ID_PATTERN =
 	/^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
 
+export type SourceDatabase = {
+	id: string
+	name: string
+}
+
 export class BackupError extends Error {
 	readonly code: string
 	readonly retryable: boolean
@@ -45,6 +50,220 @@ function parseAllowlist(value: string, field: string): Set<string> {
 	return new Set(entries)
 }
 
+function hasExactKeys(
+	value: Record<string, unknown>,
+	expected: ReadonlyArray<string>,
+): boolean {
+	const actual = Object.keys(value).sort()
+	const sortedExpected = [...expected].sort()
+	return (
+		actual.length === sortedExpected.length &&
+		actual.every((key, index) => key === sortedExpected[index])
+	)
+}
+
+function parseSourceDatabasesJson(value: string): Array<SourceDatabase> {
+	const trimmed = value.trim()
+	if (trimmed.length === 0) {
+		throw new BackupError(
+			'invalid-source-databases',
+			'SOURCE_DATABASES must be a JSON array of { id, name } objects',
+		)
+	}
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(trimmed) as unknown
+	} catch {
+		throw new BackupError(
+			'invalid-source-databases',
+			'SOURCE_DATABASES must be a JSON array of { id, name } objects',
+		)
+	}
+	if (!Array.isArray(parsed) || parsed.length === 0) {
+		throw new BackupError(
+			'invalid-source-databases',
+			'SOURCE_DATABASES must be a JSON array of { id, name } objects',
+		)
+	}
+	const sources: Array<SourceDatabase> = []
+	const ids = new Set<string>()
+	const names = new Set<string>()
+	for (const entry of parsed) {
+		if (
+			entry === null ||
+			typeof entry !== 'object' ||
+			Array.isArray(entry) ||
+			!hasExactKeys(entry as Record<string, unknown>, ['id', 'name'])
+		) {
+			throw new BackupError(
+				'invalid-source-databases',
+				'SOURCE_DATABASES entries must be { id, name } objects',
+			)
+		}
+		const record = entry as { id: unknown; name: unknown }
+		if (
+			typeof record.id !== 'string' ||
+			!CLOUDFLARE_ID_PATTERN.test(record.id) ||
+			typeof record.name !== 'string' ||
+			record.name.trim().length === 0
+		) {
+			throw new BackupError(
+				'invalid-source-databases',
+				'SOURCE_DATABASES entries need a UUID id and a non-empty name',
+			)
+		}
+		const id = record.id
+		const name = record.name
+		if (ids.has(id.toLowerCase()) || names.has(name)) {
+			throw new BackupError(
+				'duplicate-source-database',
+				'SOURCE_DATABASES contains a duplicate id or name',
+			)
+		}
+		ids.add(id.toLowerCase())
+		names.add(name)
+		sources.push({ id, name })
+	}
+	return sources
+}
+
+export function primarySourceDatabase(env: BackupEnvironment): SourceDatabase {
+	return { id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME }
+}
+
+export function configuredSourceDatabases(
+	env: BackupEnvironment,
+): Array<SourceDatabase> {
+	assertConfiguredIdentity(env)
+	if (env.SOURCE_DATABASES === undefined) {
+		return [primarySourceDatabase(env)]
+	}
+	return parseSourceDatabasesJson(env.SOURCE_DATABASES)
+}
+
+export type DeclaredD1Source = {
+	databaseId: string
+	databaseName: string
+	manifestKey: string
+	manifestSha256: string
+}
+
+export function declaredSourceDatabases(
+	env: BackupEnvironment,
+	declared?: Array<DeclaredD1Source>,
+): Array<SourceDatabase> {
+	if (declared === undefined || declared.length === 0) {
+		return [primarySourceDatabase(env)]
+	}
+	const configured = configuredSourceDatabases(env)
+	const sources: Array<SourceDatabase> = []
+	for (const entry of declared) {
+		const match = configured.find(
+			(source) =>
+				source.id.toLowerCase() === entry.databaseId.toLowerCase() &&
+				source.name === entry.databaseName,
+		)
+		if (match === undefined) {
+			throw new BackupError(
+				'restore-d1-source-not-configured',
+				`sealed D1 source ${entry.databaseName} (${entry.databaseId}) is not configured`,
+			)
+		}
+		sources.push(match)
+	}
+	return sources
+}
+
+export function absentConfiguredSourceNote(source: SourceDatabase): string {
+	if (source.name === 'kody-jobs') {
+		return 'JOBS_DB: not present in this backup day'
+	}
+	return `${source.name}: not present in this backup day`
+}
+
+export function restoreImportOrder(
+	sources: Array<SourceDatabase>,
+	primary: SourceDatabase,
+): Array<SourceDatabase> {
+	const others = sources.filter(
+		(source) => source.id.toLowerCase() !== primary.id.toLowerCase(),
+	)
+	const primarySource = sources.find(
+		(source) => source.id.toLowerCase() === primary.id.toLowerCase(),
+	)
+	if (primarySource === undefined) {
+		throw new BackupError(
+			'restore-d1-source-not-configured',
+			'sealed D1 sources do not include the primary database',
+		)
+	}
+	return [...others, primarySource]
+}
+
+export function bindSourceDatabase(
+	env: BackupEnvironment,
+	source: SourceDatabase,
+): BackupEnvironment {
+	return {
+		...env,
+		SOURCE_DATABASE_ID: source.id,
+		SOURCE_DATABASE_NAME: source.name,
+	}
+}
+
+export function resolveSourceDatabase(
+	env: BackupEnvironment,
+	selector: string | null | undefined,
+): SourceDatabase {
+	const sources = configuredSourceDatabases(env)
+	if (selector === null || selector === undefined || selector.trim() === '') {
+		return primarySourceDatabase(env)
+	}
+	const requested = selector.trim()
+	const match = sources.find(
+		(source) =>
+			source.name === requested ||
+			source.id.toLowerCase() === requested.toLowerCase(),
+	)
+	if (!match) {
+		throw new BackupError(
+			'unknown-source-database',
+			`source database ${requested} is not configured`,
+		)
+	}
+	return match
+}
+
+export function sourceDatabaseFromObjectPrefix(
+	env: BackupEnvironment,
+	objectPrefix: string,
+	day: string,
+	tier: RetentionTier,
+): SourceDatabase {
+	const expectedStart = `${tier}/d1/`
+	const expectedEnd = `/${day}`
+	if (
+		!objectPrefix.startsWith(expectedStart) ||
+		!objectPrefix.endsWith(expectedEnd)
+	) {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow payload objectPrefix did not match the scheduled day',
+		)
+	}
+	const databaseId = objectPrefix.slice(
+		expectedStart.length,
+		objectPrefix.length - expectedEnd.length,
+	)
+	if (databaseId.includes('/')) {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow payload objectPrefix is not a configured source database',
+		)
+	}
+	return resolveSourceDatabase(env, databaseId)
+}
+
 export function assertConfiguredIdentity(env: BackupEnvironment): void {
 	if (
 		!CLOUDFLARE_ID_PATTERN.test(env.SOURCE_ACCOUNT_ID) ||
@@ -55,26 +274,48 @@ export function assertConfiguredIdentity(env: BackupEnvironment): void {
 			'source account and database IDs must be UUIDs',
 		)
 	}
-	if (
-		!parseAllowlist(
-			env.ALLOWED_SOURCE_ACCOUNT_IDS,
-			'ALLOWED_SOURCE_ACCOUNT_IDS',
-		).has(env.SOURCE_ACCOUNT_ID.toLowerCase()) ||
-		!parseAllowlist(
-			env.ALLOWED_SOURCE_DATABASE_IDS,
-			'ALLOWED_SOURCE_DATABASE_IDS',
-		).has(env.SOURCE_DATABASE_ID.toLowerCase())
-	) {
-		throw new BackupError(
-			'source-not-allowlisted',
-			'configured source identity is not allowlisted',
-		)
-	}
 	if (!env.SOURCE_DATABASE_NAME) {
 		throw new BackupError(
 			'missing-source-name',
 			'source database name is required',
 		)
+	}
+	const allowedAccounts = parseAllowlist(
+		env.ALLOWED_SOURCE_ACCOUNT_IDS,
+		'ALLOWED_SOURCE_ACCOUNT_IDS',
+	)
+	const allowedDatabases = parseAllowlist(
+		env.ALLOWED_SOURCE_DATABASE_IDS,
+		'ALLOWED_SOURCE_DATABASE_IDS',
+	)
+	if (!allowedAccounts.has(env.SOURCE_ACCOUNT_ID.toLowerCase())) {
+		throw new BackupError(
+			'source-not-allowlisted',
+			'configured source identity is not allowlisted',
+		)
+	}
+	const sources =
+		env.SOURCE_DATABASES === undefined
+			? [primarySourceDatabase(env)]
+			: parseSourceDatabasesJson(env.SOURCE_DATABASES)
+	const primaryListed = sources.some(
+		(source) =>
+			source.id.toLowerCase() === env.SOURCE_DATABASE_ID.toLowerCase() &&
+			source.name === env.SOURCE_DATABASE_NAME,
+	)
+	if (!primaryListed) {
+		throw new BackupError(
+			'source-not-allowlisted',
+			'SOURCE_DATABASE_ID/NAME must appear in SOURCE_DATABASES',
+		)
+	}
+	for (const source of sources) {
+		if (!allowedDatabases.has(source.id.toLowerCase())) {
+			throw new BackupError(
+				'source-not-allowlisted',
+				'configured source identity is not allowlisted',
+			)
+		}
 	}
 }
 
@@ -110,11 +351,18 @@ export function retentionTier(day: string): RetentionTier {
 export function backupPayload(
 	env: BackupEnvironment,
 	scheduledAt: Date,
+	source: SourceDatabase = primarySourceDatabase(env),
 ): ScheduledBackupPayload {
-	assertConfiguredIdentity(env)
+	const resolved = resolveSourceDatabase(env, source.id)
+	if (source.name !== resolved.name) {
+		throw new BackupError(
+			'source-identity-mismatch',
+			'Cloudflare D1 identity did not match the configured UUID and name',
+		)
+	}
 	const day = utcDay(scheduledAt)
 	const tier = retentionTier(day)
-	const prefix = `${tier}/d1/${env.SOURCE_DATABASE_ID}/${day}`
+	const prefix = `${tier}/d1/${resolved.id}/${day}`
 	return {
 		kind: 'scheduled',
 		scheduledAt: scheduledAt.toISOString(),

@@ -25,6 +25,9 @@ const drillTokenEnvironmentVariable = 'CLOUDFLARE_D1_DRILL_EDIT_TOKEN'
 const applicationMigrationsDirectory = fileURLToPath(
 	new URL('../../packages/worker/migrations/', import.meta.url),
 )
+const jobsMigrationsDirectory = fileURLToPath(
+	new URL('../../packages/jobs-worker/migrations/', import.meta.url),
+)
 export const restoreTrustRegistryPath = fileURLToPath(
 	new URL('./trusted-d1-restore-identities.json', import.meta.url),
 )
@@ -43,6 +46,7 @@ type CliArguments = {
 	postForwardBaselineId?: string
 	targetAccountId: string
 	targetName: string
+	database?: string
 	execute: boolean
 	applyForwardMigrations: boolean
 }
@@ -53,6 +57,7 @@ export function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 	const valuedArguments = new Set([
 		'--backup',
 		'--baseline-id',
+		'--database',
 		'--manifest',
 		'--manifest-sha256',
 		'--post-forward-baseline-id',
@@ -92,6 +97,7 @@ export function parseArguments(argv: ReadonlyArray<string>): CliArguments {
 		postForwardBaselineId: values.get('--post-forward-baseline-id'),
 		targetAccountId: required('--target-account-id'),
 		targetName: required('--target-name'),
+		database: values.get('--database'),
 		execute: switches.has('--execute'),
 		applyForwardMigrations: switches.has('--apply-forward-migrations'),
 	}
@@ -455,6 +461,29 @@ export async function createD1DrillTarget(input: {
 	}
 }
 
+export function migrationsDirectoryForDatabase(databaseName: string): string {
+	return databaseName === 'kody-jobs'
+		? jobsMigrationsDirectory
+		: applicationMigrationsDirectory
+}
+
+export function assertRequestedDatabase(
+	databaseName: string,
+	databaseId: string,
+	requested: string | undefined,
+): void {
+	if (requested === undefined || requested.trim() === '') return
+	const selector = requested.trim()
+	if (
+		selector !== databaseName &&
+		selector.toLowerCase() !== databaseId.toLowerCase()
+	) {
+		throw new Error(
+			`--database ${selector} does not match manifest source ${databaseName}`,
+		)
+	}
+}
+
 export function createAdapters(
 	token: string,
 	targetAccountId: string,
@@ -504,6 +533,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 		args.manifestSha256,
 		manifestPublicKeyRegistry,
 	)
+	assertRequestedDatabase(
+		manifest.payload.source.databaseName,
+		manifest.payload.source.databaseId,
+		args.database,
+	)
+	const migrationsDirectory = migrationsDirectoryForDatabase(
+		manifest.payload.source.databaseName,
+	)
 	await withStagedBackupFile(
 		args.backupPath,
 		{
@@ -535,7 +572,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 					applyForwardMigrations: args.applyForwardMigrations,
 					dryRun: !args.execute,
 				},
-				createAdapters(token, args.targetAccountId),
+				createAdapters(token, args.targetAccountId, async (input) =>
+					writeTemporaryD1RestoreConfig({
+						...input,
+						migrationsDirectory,
+					}),
+				),
 			)
 			if (result.dryRun) console.log(JSON.stringify(result, null, 2))
 			else console.log('Live-created target passed all restore-drill checks.')

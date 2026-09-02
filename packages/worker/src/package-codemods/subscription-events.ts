@@ -1,5 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -176,7 +176,7 @@ async function invokeCodemodSubscriptions(input: {
 	discoveryErrors: Array<unknown>
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	const settled = await runWithDynamicWorkerEvaluationBudget(
+	const settled = await runQueueableDynamicWorkerWork(
 		async () =>
 			await Promise.allSettled(
 				input.subscriptions.map(async ({ savedPackage }) => {

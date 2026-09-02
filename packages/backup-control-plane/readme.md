@@ -14,24 +14,25 @@ The schedule and key policy use UTC exclusively:
 
 Each export object is immutable and bookmark-derived:
 `<tier>/d1/<database-uuid>/<yyyy-mm-dd>/backup-<encoded-bookmark>.sql`. The day
-has one canonical immutable `manifest.json`, which records the selected object
-key. If a process crashes after writing SQL but before its manifest, a later
-Workflow-step retry reuses the cached export bookmark and therefore inspects the
-same object before constructing the absent canonical manifest. The original
-one-hour signed URL returned by the durable export step is never used for
-transfer. On every execution of the retryable upload callback, the runtime polls
-D1 with the cached bookmark and requires a complete response for that same
-bookmark, obtaining a fresh signed URL; the upload stream-verifies exact byte
-count and SHA-256 against R2 while writing. Finalization deliberately does
-**not** poll D1 again: expired poll results can only be refreshed by starting a
-new export of a _newer_ database state, whose bytes legitimately differ from the
-stored object whenever production wrote anything in between (this exact mismatch
-made roughly every other nightly backup fail terminally with
-`existing-object-source-mismatch` before 2026-07-27). Instead, finalization
-re-reads the stored object and requires its size, R2 ETag, and full SHA-256 to
-match the durable upload-step result (`stored-object-mismatch` /
-`stored-object-missing` fail closed), then signs and writes the manifest in the
-same Workflow step. An existing manifest must match that object exactly.
+has one canonical immutable `manifest.json` per database, which records that
+source's id, name, SQL key, byte count, and sha256. If a process crashes after
+writing SQL but before its manifest, a later Workflow-step retry reuses the
+cached export bookmark and therefore inspects the same object before
+constructing the absent canonical manifest. The original one-hour signed URL
+returned by the durable export step is never used for transfer. On every
+execution of the retryable upload callback, the runtime polls D1 with the cached
+bookmark and requires a complete response for that same bookmark, obtaining a
+fresh signed URL; the upload stream-verifies exact byte count and SHA-256
+against R2 while writing. Finalization deliberately does **not** poll D1 again:
+expired poll results can only be refreshed by starting a new export of a _newer_
+database state, whose bytes legitimately differ from the stored object whenever
+production wrote anything in between (this exact mismatch made roughly every
+other nightly backup fail terminally with `existing-object-source-mismatch`
+before 2026-07-27). Instead, finalization re-reads the stored object and
+requires its size, R2 ETag, and full SHA-256 to match the durable upload-step
+result (`stored-object-mismatch` / `stored-object-missing` fail closed), then
+signs and writes the manifest in the same Workflow step. An existing manifest
+must match that object exactly.
 
 While streaming the upload, the runtime also measures SQL statement lengths
 (quote-aware semicolon splitting). D1's import path rejects statements above its
@@ -115,19 +116,23 @@ treats invalid signatures or key configuration as stale. Set
 is base64-encoded Ed25519 PKCS#8 private key material and must never appear in
 Wrangler config, logs, manifests, evidence, or signed URLs.
 
-The 02:15 UTC trigger normally creates the day's deterministic instance.
-Freshness uses the previous UTC day before 02:15 and the current day from 02:15
-onward, so the 02:45 tick cannot report yesterday as success for a failed
-current backup. Freshness ticks from 02:45 through 05:45 UTC use the same
-deterministic id and canonical 02:15 payload to create a missed instance or
-restart an errored or terminated instance. Active and complete instances are
-left alone, and no retry tick outside that bounded window creates an instance.
-Freshness inspection and enqueue/restart run as independent settled lanes, so a
-transient D1 metadata failure cannot skip the approved-window recovery attempt;
-the scheduled event still fails afterward to preserve alerting. Exhausting the
-120-poll export window is terminal for that Workflow execution; the next
-approved tick restarts it with fresh Workflow step state and a new export rather
-than replaying the cached pending poll sequence.
+The 02:15 UTC trigger normally creates the day's deterministic instance for
+every entry in `SOURCE_DATABASES` (APP_DB `kody` and JOBS_DB `kody-jobs`;
+instance id `d1-backup-<databaseId>-<day>`). When `SOURCE_DATABASES` is unset,
+only `SOURCE_DATABASE_ID` is exported. Freshness uses the previous UTC day
+before 02:15 and the current day from 02:15 onward, so the 02:45 tick cannot
+report yesterday as success for a failed current backup. Freshness ticks from
+02:45 through 05:45 UTC use the same deterministic ids and canonical 02:15
+payloads to create a missed instance or restart an errored or terminated
+instance. Active and complete instances are left alone, and no retry tick
+outside that bounded window creates an instance. Freshness inspection and
+enqueue/restart run as independent settled lanes, so a transient D1 metadata
+failure cannot skip the approved-window recovery attempt; the scheduled event
+still fails afterward to preserve alerting. Exhausting the 120-poll export
+window is terminal for that Workflow execution; the next approved tick restarts
+it with fresh Workflow step state and a new export rather than replaying the
+cached pending poll sequence. Hourly freshness is stale unless every configured
+database is fresh.
 
 ## Deploy
 

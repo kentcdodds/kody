@@ -5,7 +5,12 @@ import {
 	stagingSummaryKey,
 } from '@kody-internal/shared/backup-staging.ts'
 
-import { isBackupEnabled, utcDay, backupPayload } from './backup-policy.ts'
+import {
+	backupPayload,
+	configuredSourceDatabases,
+	isBackupEnabled,
+	utcDay,
+} from './backup-policy.ts'
 import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
 import { getD1Database } from './d1-import-api.ts'
 import { verifyBackupFullManifestSignature } from './full-manifest-signing.ts'
@@ -16,7 +21,6 @@ import { type ProductionRestoreProgress } from './production-restore.ts'
 import { type RestoreConfirmToken } from './restore-confirm-token.ts'
 import { readFullManifest } from './seal-full-backup.ts'
 import { readSqlRestorability } from './sql-statement-stats.ts'
-import { type EnqueueResult } from './workflow-trigger.ts'
 
 const DASHBOARD_DAY_COUNT = 14
 
@@ -166,65 +170,88 @@ export async function collectDayStatuses(
 		date.setUTCDate(date.getUTCDate() - offset)
 		const day = utcDay(date)
 		const warnings: Array<string> = []
-		const d1Key = backupPayload(
-			env,
-			new Date(`${day}T12:00:00.000Z`),
-		).manifestKey
-		let d1Present = false
+		const sources = configuredSourceDatabases(env)
+		let d1Present = sources.length > 0
 		let d1Verified: boolean | null = null
 		let d1Restorable: boolean | null = null
-		let d1Manifest: BackupManifest | null = null
-		try {
-			d1Manifest = await readManifest(env.BACKUP_BUCKET, d1Key)
-			d1Present = d1Manifest !== null
-			if (d1Manifest !== null) {
-				d1Verified = await verifyBackupManifestSignature(env, d1Manifest)
-				if (!d1Verified) warnings.push('D1 manifest signature invalid')
-			}
-		} catch {
-			d1Verified = null
-			warnings.push('D1 manifest unreadable')
-		}
-		if (d1Manifest !== null && d1Verified === true) {
+		for (const source of sources) {
+			const d1Key = backupPayload(
+				env,
+				new Date(`${day}T12:00:00.000Z`),
+				source,
+			).manifestKey
+			const label = sources.length === 1 ? '' : `${source.name}: `
+			let sourceManifest: BackupManifest | null = null
+			let sourceVerified = false
 			try {
-				const restorability = await readSqlRestorability(
-					env.BACKUP_BUCKET,
-					day,
-					d1Manifest.payload.sql.objectKey,
+				sourceManifest = await readManifest(env.BACKUP_BUCKET, d1Key)
+				if (sourceManifest === null) {
+					d1Present = false
+					d1Verified = false
+					d1Restorable = false
+					warnings.push(`${label}D1 manifest missing`)
+					continue
+				}
+				sourceVerified = await verifyBackupManifestSignature(
+					env,
+					sourceManifest,
 				)
-				switch (restorability.kind) {
-					case 'restorable':
-						d1Restorable = true
-						break
-					case 'unrestorable':
-						d1Restorable = false
-						warnings.push(
-							'D1 SQL contains oversized statements and cannot be restored',
-						)
-						break
-					case 'legacy-unknown':
-						warnings.push(
-							'D1 restorability unknown: legacy backup has no SQL stats',
-						)
-						break
-					case 'missing':
-						d1Restorable = false
-						warnings.push(
-							'D1 is not restorable: required SQL stats are missing',
-						)
-						break
-					case 'corrupt':
-						d1Restorable = false
-						warnings.push('D1 is not restorable: SQL stats are unreadable')
-						break
-					default: {
-						const exhaustive: never = restorability
-						throw exhaustive
-					}
+				d1Verified =
+					d1Verified === false ? false : sourceVerified ? true : false
+				if (!sourceVerified) {
+					d1Restorable = false
+					warnings.push(`${label}D1 manifest signature invalid`)
 				}
 			} catch {
+				d1Verified = false
+				d1Present = false
 				d1Restorable = false
-				warnings.push('D1 is not restorable: SQL stats lookup failed')
+				warnings.push(`${label}D1 manifest unreadable`)
+				continue
+			}
+			if (sourceManifest !== null && sourceVerified) {
+				try {
+					const restorability = await readSqlRestorability(
+						env.BACKUP_BUCKET,
+						day,
+						sourceManifest.payload.sql.objectKey,
+					)
+					switch (restorability.kind) {
+						case 'restorable':
+							if (d1Restorable !== false) d1Restorable = true
+							break
+						case 'unrestorable':
+							d1Restorable = false
+							warnings.push(
+								`${label}D1 SQL contains oversized statements and cannot be restored`,
+							)
+							break
+						case 'legacy-unknown':
+							warnings.push(
+								`${label}D1 restorability unknown: legacy backup has no SQL stats`,
+							)
+							break
+						case 'missing':
+							d1Restorable = false
+							warnings.push(
+								`${label}D1 is not restorable: required SQL stats are missing`,
+							)
+							break
+						case 'corrupt':
+							d1Restorable = false
+							warnings.push(
+								`${label}D1 is not restorable: SQL stats are unreadable`,
+							)
+							break
+						default: {
+							const exhaustive: never = restorability
+							throw exhaustive
+						}
+					}
+				} catch {
+					d1Restorable = false
+					warnings.push(`${label}D1 is not restorable: SQL stats lookup failed`)
+				}
 			}
 		}
 
@@ -268,17 +295,24 @@ export async function renderDashboard(
 ): Promise<string> {
 	const now = options.now ?? new Date()
 	const enabled = isBackupEnabled(env)
-	let sourceSizeHtml = `<span class="warn">unavailable</span>`
-	try {
-		const meta = await getD1Database({
-			accountId: env.SOURCE_ACCOUNT_ID,
-			databaseId: env.SOURCE_DATABASE_ID,
-			token: env.CLOUDFLARE_API_TOKEN,
-		})
-		sourceSizeHtml = `<strong>${escapeHtml(String(meta.fileSize))} bytes</strong>`
-	} catch (error) {
-		const message = error instanceof Error ? error.message : 'lookup failed'
-		sourceSizeHtml = `<span class="bad">${escapeHtml(message)}</span>`
+	const sources = configuredSourceDatabases(env)
+	const sourceSizeParts: Array<string> = []
+	for (const source of sources) {
+		try {
+			const meta = await getD1Database({
+				accountId: env.SOURCE_ACCOUNT_ID,
+				databaseId: source.id,
+				token: env.CLOUDFLARE_API_TOKEN,
+			})
+			sourceSizeParts.push(
+				`<div class="kv"><span>${escapeHtml(source.name)} file_size</span><strong>${escapeHtml(String(meta.fileSize))} bytes</strong></div>`,
+			)
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'lookup failed'
+			sourceSizeParts.push(
+				`<div class="kv"><span>${escapeHtml(source.name)} file_size</span><span class="bad">${escapeHtml(message)}</span></div>`,
+			)
+		}
 	}
 	const escrowPresent =
 		(await env.BACKUP_BUCKET.head(backupEscrowSecretStoreKeyKey)) !== null
@@ -316,9 +350,13 @@ ${options.flashHtml ?? ''}
 	<h2>Source identity</h2>
 	<div class="grid">
 		<div class="kv"><span>SOURCE_ACCOUNT_ID</span><strong>${escapeHtml(env.SOURCE_ACCOUNT_ID)}</strong></div>
-		<div class="kv"><span>SOURCE_DATABASE_ID</span><strong>${escapeHtml(env.SOURCE_DATABASE_ID)}</strong></div>
-		<div class="kv"><span>SOURCE_DATABASE_NAME</span><strong>${escapeHtml(env.SOURCE_DATABASE_NAME)}</strong></div>
-		<div class="kv"><span>Live D1 file_size</span>${sourceSizeHtml}</div>
+		${sources
+			.map(
+				(source) =>
+					`<div class="kv"><span>${escapeHtml(source.name)}</span><strong>${escapeHtml(source.id)}</strong></div>`,
+			)
+			.join('\n\t\t')}
+		${sourceSizeParts.join('\n\t\t')}
 		<div class="kv"><span>BUILD_COMMIT</span><strong>${escapeHtml(env.BUILD_COMMIT)}</strong></div>
 		<div class="kv"><span>Escrow blob</span><strong class="${escrowPresent ? 'ok' : 'warn'}">${escrowPresent ? 'present' : 'missing'}</strong></div>
 	</div>
@@ -359,13 +397,23 @@ ${options.flashHtml ?? ''}
 			<label>Day
 				<input type="text" name="day" placeholder="YYYY-MM-DD" required pattern="\\d{4}-\\d{2}-\\d{2}"/>
 			</label>
+			<label>Database
+				<select name="database">
+					${sources
+						.map(
+							(source) =>
+								`<option value="${escapeHtml(source.name)}">${escapeHtml(source.name)}</option>`,
+						)
+						.join('')}
+				</select>
+			</label>
 			<button type="submit">Run isolated restore drill</button>
 		</form>
 	</div>
 </section>
 <section class="panel danger">
 	<h2>Production restore (dangerous)</h2>
-	<p>This path imports SQL into the configured production D1 and then restores sealed durable stores through the primary worker. Use only during an approved incident.</p>
+	<p>This path imports SQL into every configured production D1 (APP_DB then JOBS_DB) and then restores sealed durable stores through the primary worker. Use only during an approved incident.</p>
 	<form method="post" action="/actions/restore/prepare" class="actions" onsubmit="return confirm('Prepare a PRODUCTION restore confirmation for this day?');">
 		<label>Day
 			<input type="text" name="day" placeholder="YYYY-MM-DD" required pattern="\\d{4}-\\d{2}-\\d{2}"/>
@@ -393,10 +441,7 @@ export function renderMessagePage(
 	return layout(title, body, { danger: options?.danger })
 }
 
-export function renderEnqueueResult(
-	day: string,
-	result: EnqueueResult,
-): string {
+export function renderEnqueueResult(day: string, result: string): string {
 	return renderMessagePage(
 		'D1 backup enqueue',
 		`Backup workflow for ${day}: ${result}.`,
@@ -417,6 +462,8 @@ export function renderDrillReport(report: DrillReport): string {
 		.join(', ')
 	const details = [
 		`day=${report.day}`,
+		`sourceDatabaseName=${report.sourceDatabaseName}`,
+		`sourceDatabaseId=${report.sourceDatabaseId}`,
 		`databaseName=${report.databaseName}`,
 		`databaseId=${report.databaseId ?? 'n/a'}`,
 		`quickCheck=${report.quickCheck ?? 'n/a'}`,
@@ -494,6 +541,8 @@ export function renderRestoreStatusPage(input: {
 	status: string
 	progress?: ProductionRestoreProgress | null
 }): string {
+	const notes = input.progress?.notes ?? []
+	const warnings = input.progress?.warnings ?? []
 	const details = input.progress
 		? JSON.stringify(input.progress, null, 2)
 		: 'No progress payload yet.'
@@ -504,6 +553,16 @@ export function renderRestoreStatusPage(input: {
 </header>
 <section class="panel danger">
 	<div class="kv"><span>Status</span><strong>${escapeHtml(input.status)}</strong></div>
+	${
+		notes.length > 0
+			? `<div class="kv"><span>Not in this backup day</span><span>${escapeHtml(notes.join('; '))}</span></div>`
+			: ''
+	}
+	${
+		warnings.length > 0
+			? `<div class="kv"><span>Warnings</span><span class="bad">${escapeHtml(warnings.join('; '))}</span></div>`
+			: ''
+	}
 	<pre>${escapeHtml(details)}</pre>
 	<p>
 		<a class="button" href="/restore-status?id=${encodeURIComponent(input.instanceId)}">Refresh</a>

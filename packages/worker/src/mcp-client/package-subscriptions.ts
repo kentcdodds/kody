@@ -1,6 +1,6 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { routes } from '#universal/routes.ts'
-import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -162,7 +162,7 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 		baseUrl,
 		event: input.event,
 	})
-	const settled = await runWithDynamicWorkerEvaluationBudget(
+	const settled = await runQueueableDynamicWorkerWork(
 		async () =>
 			await Promise.allSettled(
 				subscriptions.map(async ({ savedPackage }) => {

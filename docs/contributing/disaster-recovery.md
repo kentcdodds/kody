@@ -59,16 +59,17 @@ through its lifecycle.
 
 ## Objectives
 
-| Scope                 | RPO    | Notes                                                                                                                                                                                                               |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| All canonical stores  | 24h    | D1, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots. `REPO_SESSION_BLOBS` is ephemeral session scratch and is not a canonical store. |
-| Selected RunLog state | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded                                                                        |
-| D1 freshness          | hourly | Control-plane size/ETag freshness; deep checksum via drill                                                                                                                                                          |
+| Scope                         | RPO    | Notes                                                                                                                                                                                                                            |
+| ----------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All canonical stores          | 24h    | APP_DB, JOBS_DB, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots. `REPO_SESSION_BLOBS` is ephemeral session scratch and is not a canonical store. |
+| APP_DB (`kody`)               | 24h    | Nightly control-plane D1 export; hourly size/ETag freshness; deep checksum via restore drill. Production size is ~117 MB — far below the 4.5 GB export ceiling (`BACKUP_MAX_SOURCE_BYTES`, not raisable above 4,500,000,000).    |
+| JOBS_DB (`kody-jobs`)         | 24h    | Nightly control-plane D1 export of scheduled-job definitions (`jobs`) and `archived_job_artifacts`; hourly freshness; isolated drill via `--database kody-jobs`. Job definitions do not live in APP_DB.                          |
+| Selected RunLog state         | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded                                                                                     |
+| D1 freshness (both databases) | hourly | Control-plane size/ETag freshness for every configured source; deep checksum via drill                                                                                                                                           |
 
 RTO is whatever the operator can achieve with the UI restore workflow after a
 successful sealed-day drill. There is no provider-level cross-store atomic
-snapshot. Current production D1 is ~117 MB — far below the 4.5 GB export ceiling
-(`BACKUP_MAX_SOURCE_BYTES`, not raisable above 4,500,000,000).
+snapshot.
 
 Retention (UTC):
 
@@ -86,11 +87,11 @@ administered **DR (“KCD”) Cloudflare account**:
 Production worker (source account)          Backup control plane (DR account)
 ───────────────────────────────             ────────────────────────────────
 Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
-  stage Mailbox / selected RunLog state
-  / StorageRunner / R2 / artifacts      →   Hourly: D1 freshness + catch-up
-  into staging/{day}/...                    Hourly: seal complete days
-Daytime */15 ticks: staging catch-up        Admin UI: drill / production restore
-  resume a stranded day (≤2 days back)
+  stage Mailbox / selected RunLog state       (one instance per configured D1:
+  / StorageRunner / R2 / artifacts      →    APP_DB and JOBS_DB)
+  into staging/{day}/...                    Hourly: D1 freshness + catch-up
+Daytime */15 ticks: staging catch-up        Hourly: seal complete days
+  resume a stranded day (≤2 days back)      Admin UI: drill / production restore
 06:15 UTC: staging watchdog → Sentry
 ```
 
@@ -144,10 +145,21 @@ Contract: `packages/shared/src/backup-staging.ts`.
 
 1. **D1 (control plane)** — Dedicated Worker/Workflow in
    `packages/backup-control-plane/` calls the production-account D1 export API
-   with `CLOUDFLARE_API_TOKEN` (Account D1 Edit), streams SQL into the DR
-   bucket, and writes an Ed25519-signed schema-v2 manifest. Gates:
-   `ENABLE_PRODUCTION_D1_BACKUPS` and `BACKUP_BENCHMARK_APPROVED` must both be
-   exactly `"true"`. Schedule stays inert otherwise.
+   with `CLOUDFLARE_API_TOKEN` (Account D1 Edit) for every entry in
+   `SOURCE_DATABASES`: APP_DB (`kody`, `SOURCE_DATABASE_ID`) and JOBS_DB
+   (`kody-jobs`). Each database gets its own Workflow instance
+   (`d1-backup-<databaseId>-<day>`) and objects under
+   `<tier>/d1/<database-uuid>/<day>/`. The signed schema-v2 manifest records
+   that database's id, name, SQL byte count, and sha256. Restore drills sample
+   table counts after import; the manifest itself does not store row counts.
+   `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME` remain the primary APP_DB
+   identity (full-manifest `d1ManifestKey` and typed production-restore
+   confirmation). When `SOURCE_DATABASES` is unset, the control plane exports
+   only that primary database. Gates: `ENABLE_PRODUCTION_D1_BACKUPS` and
+   `BACKUP_BENCHMARK_APPROVED` must both be exactly `"true"`. Schedule stays
+   inert otherwise. The production `kody-jobs` UUID is the live D1 named
+   `kody-jobs`; deploy resolves it by name in
+   `tools/ci/jobs-worker-resources.ts` (`jobs_d1_database_id`).
 2. **Other canonical stores (production worker)** — When
    `DR_EXPORT_ENABLED=true` and DR S3 credentials are set, nightly ticks
    (`packages/worker/src/dr/exporter.ts`) stage:
@@ -202,10 +214,16 @@ Contract: `packages/shared/src/backup-staging.ts`.
      admission ceiling and summary-warning behavior as StorageRunner dumps.
 3. **Seal** — Control plane verifies staged checksums against
    `staging/{day}/exporter/summary.json`, requires a verified same-day D1
-   manifest, copies staged files under `daily/full/{day}/...`, and signs a
-   full-backup manifest (`packages/shared/src/backup-full-manifest.ts`). Hourly
-   freshness also attempts to seal the last three complete days; the UI can seal
-   a day on demand.
+   manifest for every configured source (APP_DB and JOBS_DB) when sealing a new
+   day, copies staged files under `daily/full/{day}/...`, and signs a
+   full-backup manifest (`packages/shared/src/backup-full-manifest.ts`). New
+   seals record every configured D1 under optional payload `d1Sources`.
+   Historical days without `d1Sources` (schema-v1 and earlier schema-v2 mailbox
+   seals) stay restorable as APP_DB-only. Already-sealed days short-circuit
+   before source checks, so hourly seal does not treat them as incomplete when a
+   later-configured database is absent. The sealed full-manifest `d1ManifestKey`
+   still points at the primary APP_DB export. Hourly freshness also attempts to
+   seal the last three complete days; the UI can seal a day on demand.
 
 ### Restore-safe row sizes
 
@@ -245,6 +263,7 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   upserts.
 - OAuth KV / browser sessions / provider tokens — users reconnect
 - Queues, Workflow instances, Durable Object alarms — recreate from config + D1
+  (`JobManager` alarms rebuild from restored `JOBS_DB`)
 - Derived community icons and ordinary KV caches
 - **UserMeter** — daily entitlement counters self-prune and can be
   re-established by traffic; authoritative storage-byte state is corrected by
@@ -280,7 +299,9 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   **accepted-unprotected** operator/security evidence, not user content
   (confirmed 2026-08-07): losing the retained audit trail in a DR account-loss
   event is acceptable; new events accumulate again after restore. Revisit only
-  if forensics retention across account loss becomes a requirement.
+  if forensics retention across account loss becomes a requirement. Scheduled
+  job definitions live in `JOBS_DB` (`kody-jobs`) and are part of the nightly D1
+  export; APP_DB does not store them.
 
 ### Honest gaps
 
@@ -386,9 +407,9 @@ Routes (all require Access JWT):
 | Method | Path                       | Action                                                                                                                             |
 | ------ | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `GET`  | `/`                        | Dashboard: enable gates, source identity, live D1 size, escrow presence, 14-day D1/staging/seal status with signature verification |
-| `POST` | `/actions/run-backup`      | Enqueue today's D1 backup Workflow (respects enable gates)                                                                         |
-| `POST` | `/actions/seal-day`        | Verify staging + D1 manifest and seal `daily/full/{day}/...`                                                                       |
-| `POST` | `/actions/run-drill`       | Isolated restore drill (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                                          |
+| `POST` | `/actions/run-backup`      | Enqueue today's D1 backup Workflow for every configured source (APP_DB and JOBS_DB)                                                |
+| `POST` | `/actions/seal-day`        | Verify staging + every configured D1 manifest and seal `daily/full/{day}/...`                                                      |
+| `POST` | `/actions/run-drill`       | Isolated restore drill of one selected database (fresh D1 in `DRILL_ACCOUNT_ID`, never production)                                 |
 | `POST` | `/actions/restore/prepare` | Validate sealed day; issue 10-minute HMAC confirm token                                                                            |
 | `POST` | `/actions/restore/execute` | Require typed exact `SOURCE_DATABASE_NAME` + valid token; start restore Workflow                                                   |
 | `GET`  | `/restore-status?id=...`   | Poll restore Workflow status                                                                                                       |
@@ -396,10 +417,13 @@ Routes (all require Access JWT):
 ### Isolated restore drill
 
 Creates `kody-dr-drill-{day}-{hex}` in `DRILL_ACCOUNT_ID` (must differ from
-`SOURCE_ACCOUNT_ID`), imports the day's signed D1 SQL, runs
+`SOURCE_ACCOUNT_ID`), imports one selected database's signed D1 SQL (UI
+`database` select, or CLI `--database kody` / `--database kody-jobs`), runs
 `PRAGMA quick_check`, samples table counts, then deletes the drill database on
-success (keeps it on failure for inspection). This path does not restore
-StorageRunner/R2/artifacts into production.
+success (keeps it on failure for inspection). The CLI points `migrations_dir` at
+`packages/worker/migrations` for APP_DB and `packages/jobs-worker/migrations`
+for `kody-jobs`. This path does not restore StorageRunner/R2/artifacts into
+production. Run the drill once per database when proving a sealed day.
 
 D1 remote import enforces foreign keys while applying `CREATE TABLE`, but
 Cloudflare exports are not topologically ordered. Before upload, the control
@@ -412,9 +436,17 @@ import init/ingest etag. Without that prelude, drills fail with errors like
 
 1. **Prepare** — sealed full manifest + D1 manifest signatures must verify; UI
    shows SQL key/bytes/sha256 and a short-lived confirm token.
-2. **Execute** — operator types the exact production database name; Workflow
-   `kody-production-dr-restore` imports SQL into production D1 via the
-   Cloudflare API, then loops chunked
+2. **Execute** — operator types the exact primary production database name
+   (`SOURCE_DATABASE_NAME`, APP_DB `kody`); Workflow
+   `kody-production-dr-restore` restores the databases that sealed day's
+   manifest declares. Days without `d1Sources` restore APP_DB only and record
+   `JOBS_DB: not present in this backup day` as a restore note, not a warning,
+   so the Workflow instance completes. Days that list `d1Sources` restore every
+   listed database. Before any production write, restore HEADs every required
+   SQL object for existence and size, then streams each body through a SHA-256
+   digest and discards it so SQL is not retained in memory. It then
+   safety-exports each target and imports JOBS_DB (when listed) before APP_DB by
+   streaming one database at a time via the Cloudflare API, then loops chunked
    `POST {PRIMARY_WORKER_ORIGIN}/__maintenance/dr-restore` with
    `Authorization: Bearer {DR_RESTORE_SECRET}` until the production worker
    reports `done` (StorageRunner replace, R2 put, published snapshot KV put).
@@ -424,9 +456,11 @@ import init/ingest etag. Without that prelude, drills fail with errors like
 
 Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize (`POST /__maintenance/reindex-capabilities` with
-`{ "force": true }`, omit `phases`, follow `cursor` until `complete`), re-arm
-jobs/alarms from D1, recreate queues from Wrangler config, and expect users to
-reauthorize OAuth and reconnect MCP servers.
+`{ "force": true }`, omit `phases`, follow `cursor` until `complete`); let
+`kody-jobs` re-arm JobManager Durable Object alarms from restored `JOBS_DB`
+(`jobs.next_run_at` via `JobManager.syncAlarm` and the jobs-worker watchdog —
+APP_DB is not the job schedule store); recreate queues from Wrangler config; and
+expect users to reauthorize OAuth and reconnect MCP servers.
 
 ### Durable Object point-in-time recovery
 
@@ -617,14 +651,14 @@ the correctness spec and incident-only fallback:
 
 ## Schedules and freshness
 
-| When (UTC)                       | Who               | What                                                                                                                     |
-| -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `*/5` during 00:30–06:10         | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)        |
-| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the most recent stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise |
-| 06:15                            | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry       |
-| 02:15                            | Control plane     | Primary D1 export Workflow                                                                                               |
-| 02:45–05:45 hourly               | Control plane     | Catch-up create/restart of same-day D1 Workflow                                                                          |
-| Hourly `:45`                     | Control plane     | D1 freshness (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days                       |
+| When (UTC)                       | Who               | What                                                                                                                           |
+| -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `*/5` during 00:30–06:10         | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)              |
+| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the most recent stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise       |
+| 06:15                            | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry             |
+| 02:15                            | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                        |
+| 02:45–05:45 hourly               | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                               |
+| Hourly `:45`                     | Control plane     | D1 freshness for every configured source (identity, size ceiling, manifest age ≤26h, R2 size/ETag) + seal recent complete days |
 
 ### Stranded staging days (manual finish)
 
@@ -672,7 +706,8 @@ The UI is the primary drill/restore path. Keep the CLIs for air-gapped or
 UI-down recovery:
 
 - `node tools/disaster-recovery/d1-restore-drill-cli.ts` — isolated D1 import
-  against checked-in identity/baseline/manifest-key registries
+  against checked-in identity/baseline/manifest-key registries. Pass
+  `--database kody` or `--database kody-jobs` to select the export.
 - `node tools/disaster-recovery/canonical-readiness-cli.ts` — fail-closed
   readiness assessment from local Ed25519 evidence envelopes
 - `node tools/disaster-recovery/seal-escrow.ts` — same seal used by
@@ -707,8 +742,8 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 
 - [ ] DR Cloudflare account exists and is administered separately from
       production.
-- [ ] Production source identities recorded: account id, D1 UUID, exact database
-      name (`kody`), Worker origin, R2 bucket names.
+- [ ] Production source identities recorded: account id, APP_DB UUID/name
+      (`kody`), JOBS_DB UUID/name (`kody-jobs`), Worker origin, R2 bucket names.
 - [ ] Drill account id differs from production; recorded as `DRILL_ACCOUNT_ID`.
 - [ ] Provisioner plan/apply creates the private DR bucket with `daily/` (35d)
       and `weekly/` (400d) lock/lifecycle rules; provisioner token never becomes
@@ -789,7 +824,9 @@ Work top-to-bottom. Leave gates false until the matching gate item is done.
 - D1 `file_size` ≥ 4.5 GB or any export/restore object ≥ 5 GiB (rejected)
 - Multipart D1 capture / statement-safe split restore
 - Full Artifacts Git history or unpublished repo-session work
-- Backup of Vectorize, OAuth KV, queues, Workflow runtime, alarms (rebuild)
+- Backup of Vectorize, OAuth KV, queues, Workflow runtime, Durable Object alarms
+  (JobManager rebuilds alarms from restored `JOBS_DB`; other DOs follow their
+  own restore or accepted-loss paths)
 - Backup of `RunLog` run records and logs (observability; ~30 day DO
   self-retention), invocation idempotency ledger, and workflow projections;
   never-pruned job observability and activation state are backed up
