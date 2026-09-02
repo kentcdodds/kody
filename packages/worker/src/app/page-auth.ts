@@ -21,10 +21,19 @@ function prefetchHtmlFeatureFlags(
 	env: Env,
 	user: AuthenticatedAppUser,
 ) {
+	if (
+		typeof env.APP_DB?.prepare !== 'function' ||
+		typeof env.APP_DB.batch !== 'function'
+	) {
+		return
+	}
+	// Overlap flag evaluation with page-data loading. `loadSessionInfo`
+	// awaits the same cached promise; the rejection handler is so a
+	// prefetch that never reaches a render cannot become unhandled.
 	void loadRequestFeatureFlags(request, env, {
 		userId: user.userId,
 		stableUserId: user.mcpUser.userId,
-	})
+	}).then(undefined, () => {})
 }
 
 export async function requirePageSession(
