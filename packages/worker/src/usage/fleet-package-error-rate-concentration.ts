@@ -62,8 +62,6 @@ export function buildFleetPackageErrorRateConcentrationPackageQuery(input: {
 		.map((ownerId) => `'${ownerId}'`)
 		.join(', ')
 	if (ownerList.length === 0) return null
-	const packageLimit =
-		fleetPackageErrorRateMaxNamedOwners * fleetPackageErrorRateMaxNamedPackages
 	return `
 SELECT
 	blob1 AS user_id,
@@ -74,7 +72,7 @@ WHERE ${concentrationWhereClause(input)}
 	AND blob1 IN (${ownerList})
 GROUP BY user_id, entity_id
 ORDER BY error_count DESC
-LIMIT ${packageLimit}
+LIMIT ${fleetPackageErrorRateMaxNamedPackages}
 FORMAT JSON
 `.trim()
 }
@@ -310,24 +308,32 @@ async function loadOwnerPackageRows(input: {
 	recentEnd: Date
 	ownerIds: ReadonlyArray<string>
 }) {
-	const query = buildFleetPackageErrorRateConcentrationPackageQuery(input)
-	if (!query) return []
-	try {
-		return await queryAnalyticsEngineSql<FleetPackageErrorRateConcentrationRow>(
-			{
-				accountId: input.accountId,
-				apiToken: input.apiToken,
-				baseUrl: input.baseUrl,
-				query,
-			},
-		)
-	} catch (error) {
-		console.warn(
-			'fleet-package-error-rate-concentration-packages-failed',
-			error,
-		)
-		return []
+	const rows: Array<FleetPackageErrorRateConcentrationRow> = []
+	for (const ownerId of input.ownerIds) {
+		const query = buildFleetPackageErrorRateConcentrationPackageQuery({
+			...input,
+			ownerIds: [ownerId],
+		})
+		if (!query) continue
+		try {
+			rows.push(
+				...(await queryAnalyticsEngineSql<FleetPackageErrorRateConcentrationRow>(
+					{
+						accountId: input.accountId,
+						apiToken: input.apiToken,
+						baseUrl: input.baseUrl,
+						query,
+					},
+				)),
+			)
+		} catch (error) {
+			console.warn(
+				'fleet-package-error-rate-concentration-packages-failed',
+				error,
+			)
+		}
 	}
+	return rows
 }
 
 function attachOwnerPackages(

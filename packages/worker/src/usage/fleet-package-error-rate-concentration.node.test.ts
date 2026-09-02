@@ -141,6 +141,7 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	})
 	expect(packageQuery).toContain("blob1 IN ('jett-user')")
 	expect(packageQuery).toContain('GROUP BY user_id, entity_id')
+	expect(packageQuery).toContain('LIMIT 5')
 
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
@@ -257,6 +258,52 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	).toBe(
 		'A few accounts own most recent errors (top owner 40%: ada: ada-relay; bea: bea-relay).',
 	)
+
+	queryAnalyticsEngineSql.mockImplementation(
+		async (input: { query: string }) => {
+			if (input.query.includes("blob1 IN ('user-a')")) {
+				return Array.from({ length: 5 }, (_, index) => ({
+					user_id: 'user-a',
+					entity_id: `pkg-a-${index}`,
+					error_count: 10 - index,
+				}))
+			}
+			if (input.query.includes("blob1 IN ('user-b')")) {
+				return [{ user_id: 'user-b', entity_id: 'pkg-b', error_count: 1 }]
+			}
+			return [
+				{ user_id: 'user-a', error_count: 50 },
+				{ user_id: 'user-b', error_count: 40 },
+			]
+		},
+	)
+	const few = await resolveFleetPackageErrorRateConcentration({
+		env: {
+			APP_DB: createConcentrationDb({
+				users: [
+					{ stable_user_id: 'user-a', username: 'ada' },
+					{ stable_user_id: 'user-b', username: 'bea' },
+				],
+				packages: [
+					{ id: 'pkg-a-0', kody_id: 'ada-relay' },
+					{ id: 'pkg-b', kody_id: 'bea-relay' },
+				],
+			}),
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+		},
+		dataset: 'kody_usage_events',
+		recentStart: new Date('2026-09-01T00:00:00.000Z'),
+		recentEnd: new Date('2026-09-01T01:00:00.000Z'),
+		recentErrors: 100,
+	})
+	expect(few).toMatchObject({
+		kind: 'few_accounts',
+		owners: [
+			{ username: 'ada', packages: [{ kody_id: 'ada-relay' }] },
+			{ username: 'bea', packages: [{ kody_id: 'bea-relay' }] },
+		],
+	})
 
 	expect(parseFleetPackageErrorRateConcentration(null)).toBeNull()
 	expect(
