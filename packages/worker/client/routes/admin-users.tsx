@@ -26,7 +26,8 @@ import {
 	type AdminUserFilterState,
 	adminUserUsageApiPath,
 	buildAdminUsersApiRequestUrl,
-	buildDetailHref,
+	buildFilteredListHref,
+	buildUserDetailHrefFrom,
 	getDataKey,
 	getListKey,
 	getSelection,
@@ -153,24 +154,11 @@ export function AdminUsersRoute(handle: Handle) {
 	function buildHrefWithUpdatedFilters(
 		nextFilters: Partial<AdminUserFilterState>,
 	) {
-		const url = new URL(getCurrentHref(), 'http://localhost')
-		const filters = { ...readFilterState(url.toString()), ...nextFilters }
-		if (filters.search) url.searchParams.set('q', filters.search)
-		else url.searchParams.delete('q')
-		if (filters.role) url.searchParams.set('role', filters.role)
-		else url.searchParams.delete('role')
-		if (filters.verification) {
-			url.searchParams.set('verification', filters.verification)
-		} else url.searchParams.delete('verification')
-		// Filter changes re-anchor the list at the first page.
-		url.searchParams.delete('page')
-		return `${url.pathname}${url.search}`
+		return buildFilteredListHref(getCurrentHref(), nextFilters)
 	}
 
 	function buildUserDetailHref(stableUserId: string) {
-		const url = new URL(getCurrentHref(), 'http://localhost')
-		url.searchParams.delete('page')
-		return buildDetailHref(stableUserId, url.search)
+		return buildUserDetailHrefFrom(getCurrentHref(), stableUserId)
 	}
 
 	async function loadUserUsage(stableUserId: string) {

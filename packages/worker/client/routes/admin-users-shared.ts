@@ -64,6 +64,33 @@ export function getListKey(href: string) {
 	return `q=${filters.search}&role=${filters.role}&verification=${filters.verification}`
 }
 
+/** Apply filter changes to the current href; filter changes re-anchor at page one. */
+export function buildFilteredListHref(
+	currentHref: string,
+	nextFilters: Partial<AdminUserFilterState>,
+) {
+	const url = new URL(currentHref, 'http://localhost')
+	const filters = { ...readFilterState(url.toString()), ...nextFilters }
+	if (filters.search) url.searchParams.set('q', filters.search)
+	else url.searchParams.delete('q')
+	if (filters.role) url.searchParams.set('role', filters.role)
+	else url.searchParams.delete('role')
+	if (filters.verification) {
+		url.searchParams.set('verification', filters.verification)
+	} else url.searchParams.delete('verification')
+	url.searchParams.delete('page')
+	return `${url.pathname}${url.search}`
+}
+
+export function buildUserDetailHrefFrom(
+	currentHref: string,
+	stableUserId: string,
+) {
+	const url = new URL(currentHref, 'http://localhost')
+	url.searchParams.delete('page')
+	return buildDetailHref(stableUserId, url.search)
+}
+
 export function getDataKey(href: string) {
 	const pathname = new URL(href, 'http://localhost').pathname
 	return `${pathname}?${getListKey(href)}`
