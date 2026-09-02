@@ -14,22 +14,26 @@ Do not treat “revert the commit and let deploy.yml run” as the fast path.
 (parallel), then the production job applies `APP_DB` / `AUDIT_DB` migrations and
 uploads **platform**, then **runtime**, then **origin**, then health-checks and
 the origin-only execute smoke. Concurrency group `deploy-production` queues
-rather than cancelling: a mid-sequence cancel leaves new schema with old code or
-mismatched Durable Object bindings. Do not cancel a running production deploy.
+rather than cancelling (`cancel-in-progress: false`): a mid-sequence cancel
+leaves new schema with old code or mismatched Durable Object bindings. Do not
+cancel a running production deploy. GitHub keeps at most one pending run in that
+group and replaces it with a newer pending run.
+[Freeze the deploy queue](#freeze-the-deploy-queue) before Path A so a queued
+`workflow_run` cannot redeploy current `main` after a manual rollback.
 
 ## 1. Decide fast
 
 Identify the **bad SHA** (GitHub Actions deploy, Sentry release, or `commitSha`
 / `commit` on a health endpoint). Then:
 
-| Symptom                                                                | First action                                                                                                                                                                                                                                                    |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Origin `/health` failing; platform and runtime health ok               | Treat as origin. UI-only deploys skip platform, runtime, and jobs — Path A on `kody-production` is the usual fix after the Path A safety checks.                                                                                                                |
-| One of platform / runtime / jobs / highlight health failing; others ok | Treat as that script. Path A on that `--name` after the Path A safety checks. Roll a callee without origin only when origin's health and UI still work.                                                                                                         |
-| All product workers failing or returning mixed SHAs                    | Coordinated Path A in [rollback order](#rollback-order) after the Path A safety checks. If any check fails, Path B.                                                                                                                                             |
-| `POST /__maintenance/execute-smoke` failing; `/health` ok              | Origin `KodyFetchGateway` only. The smoke is **origin-only** (`scope: "origin-only"`). It does not prove MCP `execute` (that gateway lives on `kody-platform`). Path A origin if the smoke started failing on this deploy and Path A is safe; otherwise Path B. |
-| Elevated Sentry errors after deploy; health green                      | Confirm the Sentry release SHA matches `/health`. If the errors are UI/Remix, Path A origin. If they are MCP, mailbox, or package-runtime, include platform and/or runtime. If a D1 or Durable Object migration shipped with the SHA, Path B.                   |
-| Bad UI only (layout, copy, client bundle); APIs and MCP fine           | Path A on `kody-production` after confirming the SHA did not include a D1 or Durable Object migration.                                                                                                                                                          |
+| Symptom                                                                | First action                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Origin `/health` failing; platform and runtime health ok               | Treat as origin. UI-only deploys skip platform, runtime, and jobs — Path A on `kody-production` is the usual fix after the Path A safety checks.                                                                                                                                 |
+| One of platform / runtime / jobs / highlight health failing; others ok | Treat as that script. Path A on that `--name` only when the [callee version is a known-compatible tuple](#callee-only-rollback). Origin health/UI do not prove `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT`, or cross-script Durable Object contracts. Otherwise roll the product trio. |
+| All product workers failing or returning mixed SHAs                    | Coordinated Path A in [rollback order](#rollback-order) after the Path A safety checks. If any check fails, Path B.                                                                                                                                                              |
+| `POST /__maintenance/execute-smoke` failing; `/health` ok              | Origin `KodyFetchGateway` only. The smoke is **origin-only** (`scope: "origin-only"`). It does not prove MCP `execute` (that gateway lives on `kody-platform`). Path A origin if the smoke started failing on this deploy and Path A is safe; otherwise Path B.                  |
+| Elevated Sentry errors after deploy; health green                      | Confirm the Sentry release SHA matches `/health`. If the errors are UI/Remix, Path A origin. If they are MCP, mailbox, or package-runtime, include platform and/or runtime. If a D1 or Durable Object migration shipped with the SHA, Path B.                                    |
+| Bad UI only (layout, copy, client bundle); APIs and MCP fine           | Path A on `kody-production` after confirming the SHA did not include a D1 or Durable Object migration.                                                                                                                                                                           |
 
 Verification (expect JSON `ok` / `status: "ok"` and the SHA you intend to be
 live):
@@ -56,21 +60,69 @@ curl --fail --silent --show-error --header "Accept: application/json" \
 ```
 
 Execute smoke (origin-only; bearer is GitHub secret
-`CAPABILITY_REINDEX_SECRET`):
+`CAPABILITY_REINDEX_SECRET`). Do not put the secret on `curl`'s argv.
+`npm run control-kody -- request` is session-cookie HTTP and does not send this
+bearer. `-H @file` reads the header from a file descriptor (`curl --help`:
+`--header <header/@file>`):
 
 ```sh
 curl --silent --show-error --location --max-time 30 \
   -X POST \
-  -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
+  -H @<(printf 'Authorization: Bearer %s' "$CAPABILITY_REINDEX_SECRET") \
   -H "Accept: application/json" \
   https://kody.codes/__maintenance/execute-smoke
 ```
 
-A passing body is `ok: true`, `result: 42`, `scope: "origin-only"`. Jobs and
+A passing body is `ok: true`, `result: 42`, `scope: "origin-only"`. That smoke
+does **not** prove MCP `execute`. After a platform or runtime rollback, also
+pass the [MCP execute check](#mcp-execute-jobs-and-highlight). Jobs and
 highlight have no public hostname; CI healthchecks their workers.dev `/health`
 from the deploy log (`ok` plus `commit`, not `commitSha`).
 [status.kody.codes](https://status.kody.codes) probes origin, `kody.run` runtime
 health, MCP OAuth challenge, and jobs over a service binding.
+
+### MCP execute, jobs, and highlight
+
+`npm run test:mcp` is the local MCP HTTP/OAuth smoke; it does not hit
+production. There is no production HTTP execute-smoke on `kody-platform`.
+
+After a **platform or runtime** rollback, all of these must pass:
+
+- `GET /__platform/health` on the platform workers.dev host (`status: "ok"`,
+  intended `commitSha`).
+- `GET https://kody.run/__runtime/health` (`status: "ok"`, intended
+  `commitSha`).
+- An authenticated MCP `execute` from the operator's own connected host
+  ([Connect your agent](../use/connect-your-agent.md); MCP URL
+  `https://kody.codes/mcp`). Call `execute` with a module that default-exports a
+  function returning a constant, matching the
+  [execute module shape](../use/execute.md#shape-of-the-code):
+
+```ts
+export default async function main() {
+	return 42
+}
+```
+
+Pass: the tool result has `ok: true` and `result: 42`. That path uses
+`kody-platform`'s `MCP` Durable Object and `KodyFetchGateway` plus the runtime
+lane. The origin-only `/__maintenance/execute-smoke` is not a substitute.
+
+After a **jobs** rollback: a due job runs end-to-end (`JobManager` alarm →
+`HOST.runDueJobsForUser` → a run on `/account/activity`). The
+[jobs worker migration runbook](./architecture/jobs-worker-migration-runbook.md)
+also checks `/account/jobs` and MCP `jobs_*` listing `JOBS_DB` rows. The
+five-minute cron on `kody-jobs` is the scheduler; `jobRunNow` from MCP can
+trigger an existing package job immediately. Check `/admin/insights` as well.
+
+After a **highlight** rollback: fetch a code-bearing page (guides, blog,
+onboarding — for example `https://kody.codes/guides/how-kody-works`) and require
+an HTTP `Server-Timing` `highlight` phase whose `desc` is `hit`, `worker`, or
+`miss`
+([request lifecycle](./architecture/request-lifecycle.md#page-server-timing)).
+`fallback` means the `HIGHLIGHT` binding failed or is missing; that is not a
+pass. Origin attributes `worker` vs `miss` from the highlight worker's
+`x-kody-highlight-cache` header.
 
 ## 2. Path A — Cloudflare version rollback (minutes)
 
@@ -79,6 +131,32 @@ create a new deployment of a stored Worker version and send 100% of traffic
 there. You can only roll back to one of the 100 most recently published
 versions. Kody production deploys are single-version `wrangler deploy` uploads
 (no gradual split).
+
+### Freeze the deploy queue
+
+Do this **before** any `wrangler rollback`. A queued `workflow_run` of
+`.github/workflows/deploy.yml` still deploys whatever SHA `sha-guard` accepts
+(`origin/main` HEAD). If `main` is still the bad SHA, that pending run promotes
+the bad code over a manual rollback.
+
+1. Freeze merges to `main` (no squash-merges, no Path B land, no
+   `workflow_dispatch` of Deploy) until Path A is verified or you switch to Path
+   B.
+2. Inspect queued and in-progress Deploy runs:
+
+```sh
+gh run list --workflow=deploy.yml --limit 5
+```
+
+3. Do not start Path A while a pending run could still promote `main`:
+   - **`in_progress`:** wait until it finishes, then re-check health and Path A
+     safety. Do **not** cancel it. `cancel-in-progress: false` exists so a
+     mid-sequence cancel cannot leave new D1 schema with old code or mismatched
+     Durable Object bindings.
+   - **`queued`:** either wait for it to finish (then Path A), or cancel **that
+     pending run only** (`gh run cancel <run-id>`). Cancelling a queued run is
+     safe: it has not applied migrations or uploaded workers. Do not cancel
+     `in_progress`.
 
 ### Commands
 
@@ -162,10 +240,34 @@ the caller first leaves new callees accepting the rolled-back caller's
 expectations. Rolling a callee first leaves new origin talking to old
 platform/runtime.
 
-If only one script is implicated and origin's health/UI still match the intended
-SHA, roll that one script.
-
 Re-check health after each script, not only at the end.
+
+### Callee-only rollback
+
+A single-script rollback of `kody-platform`, `kody-runtime`, `kody-jobs`, or
+`kody-highlight` is allowed only when the target version is part of a
+**known-compatible tuple**: origin, platform, and runtime (plus jobs/highlight
+when those scripts moved) were uploaded in the **same**
+`.github/workflows/deploy.yml` run.
+
+Origin `/health` and UI do not exercise `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT`,
+or cross-script Durable Object RPC. A green origin does not mean the live origin
+can call the callee version you are about to restore.
+
+How to check the tuple from `npx wrangler versions list --name <script>`
+(Version ID, Created on, Author, Source, and optional Tag or Message):
+
+- Created-on timestamps for the target versions sit in the same few-minute
+  window as one production Deploy job (jobs/highlight first, then platform,
+  runtime, origin).
+- Health endpoints report the same SHA (`commitSha` on origin/platform/runtime,
+  `commit` on jobs/highlight). Inspect a candidate with
+  `npx wrangler versions view <VERSION_ID> --name <script>` before rolling.
+
+If timestamps or SHAs do not line up, or a shared contract (service binding,
+Durable Object class method) changed between live origin and the target callee,
+roll the product trio in [rollback order](#rollback-order) instead of one
+script.
 
 ## 3. When Path A is not safe
 
@@ -185,9 +287,9 @@ git diff <good>..<bad> -- \
   tools/ci/do-deletion-allowlist.json
 ```
 
-Any new or changed `new_sqlite_classes`, `transferred_classes`, or
-`deleted_classes` tag (the legacy `migrations` array in those wrangler files) is
-a class lifecycle change. Cloudflare **refuses** a rollback that crosses it.
+Any new or changed legacy `migrations` field is a class lifecycle change:
+`new_classes`, `new_sqlite_classes`, `renamed_classes`, `transferred_classes`,
+or `deleted_classes`. Cloudflare **refuses** a rollback that crosses it.
 Applying a reverse transfer or a `deleted_classes` tag to “undo” a transfer
 strands or destroys objects. `transferred_classes` is one-shot; the
 [platform](./architecture/platform-worker-migration-runbook.md),
@@ -280,7 +382,10 @@ deploy proceed or dispatch Deploy on that HEAD.
 ## 5. After any rollback
 
 1. Re-run the [verification commands](#1-decide-fast) against the SHA you
-   restored (or the Path B SHA). Include execute smoke when origin moved.
+   restored (or the Path B SHA). Include origin execute smoke when origin moved.
+   Include the
+   [MCP execute, jobs, and highlight checks](#mcp-execute-jobs-and-highlight)
+   when those scripts moved.
 2. Check `/admin/insights` for error-rate and delivery charts.
 3. Confirm Sentry: production deploys upload source maps under `APP_COMMIT_SHA`.
    Events after Path A should attach to the restored version's `APP_COMMIT_SHA`
