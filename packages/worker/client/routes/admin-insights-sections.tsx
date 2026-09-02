@@ -7,6 +7,7 @@ import {
 	formatPercentShare,
 } from '#client/charts/chart-theme.ts'
 import { formatDynamicWorkerUsd } from '#universal/dynamic-worker-cost.ts'
+import { formatFleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
 import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
@@ -404,8 +405,8 @@ export function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
 						paddingBottom: spacing.xs,
 					})}
 				>
-					Anonymous combined rates for package_export, package_static_call,
-					job_run, and workflow_run. No user ids or package names.
+					Combined rates for package_export, package_static_call, job_run, and
+					workflow_run. Totals omit user ids and package UUIDs.
 				</caption>
 				<thead>
 					<tr>
@@ -449,6 +450,11 @@ export function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
 					))}
 				</tbody>
 			</table>
+			{rate.concentration ? (
+				<p mix={css({ margin: 0 })}>
+					{formatFleetPackageErrorRateConcentration(rate.concentration)}
+				</p>
+			) : null}
 			{rate.lastAlertAt ? (
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
 					Last elevation alert {rate.lastAlertAt}.

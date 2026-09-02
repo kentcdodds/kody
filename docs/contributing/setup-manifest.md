@@ -419,6 +419,10 @@ automatically:
 - `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`
   `vars` as `production`, `preview`, or `test`; optional override via env for
   local dev)
+- `SIGNUP_MODE` (Wrangler var; default/bootstrap `invite` / `open` / `waitlist`.
+  Production and preview are `invite`; the Wrangler `test` env is `open`. The
+  runtime override lives in KV and is managed from `/admin/invites` — see
+  [environment-variables.md](./environment-variables.md))
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
   when unset; production pins `0` via a Wrangler var — see
   [environment-variables.md](./environment-variables.md))

@@ -249,7 +249,9 @@ instead of replaying.
   writes; the current schema in
   `packages/worker/migrations/0001-squashed-init.sql` has no D1
   `package_invocations` table. Only keys claimed in this DO ledger can replay; a
-  redelivery for an unknown key executes fresh.
+  redelivery for an unknown key executes fresh. Delivery-id webhook replays pass
+  `idempotencyParamsHash: 'ignore'` so the ledger returns the retained response
+  by key even when `receivedAt` (and the rest of the hashed params) differ.
 - Account export pages ledger rows through the same `run_records` section cursor
   (runs first, then ledger rows, then dedicated unpruned state); account
   deletion purges them with `clearAll` (every DO table, then schema

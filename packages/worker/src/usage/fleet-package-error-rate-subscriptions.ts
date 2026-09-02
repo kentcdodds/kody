@@ -9,7 +9,7 @@ const fleetPackageErrorRateSubscriptionActorTokenId =
 	'internal:fleet-package-error-rate-subscriptions'
 
 /**
- * Fans a content-free fleet package error-rate elevation to admin-owned
+ * Fans a fleet package error-rate elevation to admin-owned
  * packages that declare `fleet.package_error_rate.elevated`. Best-effort: the
  * KV snapshot is already written, and a missed invoke is logged rather than
  * failing usage aggregation.

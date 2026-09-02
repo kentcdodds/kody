@@ -93,6 +93,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0046 — Community is the catalog; public is the visibility word](./0046-community-is-the-catalog.md)
   — no “community package” kind-name; do not rename `/community` or the MCP
   `community` domain; listing_* identifiers stay until a dual-declare cut
+- [0047 — One Vectorize index with per-user namespaces until 5,000 users](./0047-vectorize-per-user-namespaces-until-5k-users.md)
+  — no sharding or metadata-only filtering before 5k accounts; the shard shape
+  is pre-decided for when it is needed
 
 ## Historical / UI / implementation
 

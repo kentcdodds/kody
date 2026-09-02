@@ -4,6 +4,7 @@ import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	CAPABILITY_EMBEDDING_MAX_INPUT_CHARS,
 	CAPABILITY_EMBEDDING_MODEL,
+	createTextEmbeddingCache,
 	deterministicEmbedding,
 	embedTextsForVectorize,
 } from './embedding.ts'
@@ -169,4 +170,27 @@ test('embedding wrapper rejects mismatched Workers AI dimensions', async () => {
 	await expect(embedTextsForVectorize(env, ['alpha'])).rejects.toThrow(
 		/shape mismatch/,
 	)
+})
+
+test('createTextEmbeddingCache embeds each distinct text once and shares the pending promise', async () => {
+	const texts: Array<Array<string>> = []
+	const env = aiEnv(async (...args) => {
+		const input = args[1] as { text?: Array<string> }
+		texts.push([...(input.text ?? [])])
+		return {
+			data: (input.text ?? []).map((text) => deterministicEmbedding(text)),
+			shape: [input.text?.length ?? 0, CAPABILITY_EMBEDDING_DIMENSIONS],
+		}
+	})
+	const cache = createTextEmbeddingCache(env)
+
+	const [first, again, other] = await Promise.all([
+		cache.embedText('summarize inbox threads'),
+		cache.embedText('summarize inbox threads'),
+		cache.embedText('draft an email'),
+	])
+
+	expect(texts).toEqual([['summarize inbox threads'], ['draft an email']])
+	expect(first).toEqual(again)
+	expect(first).not.toEqual(other)
 })

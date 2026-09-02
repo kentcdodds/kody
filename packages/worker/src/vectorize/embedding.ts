@@ -81,6 +81,23 @@ export async function embedTextForVectorize(
 	return rows[0]!
 }
 
+export type EmbedTextFn = (text: string) => Promise<Array<number>>
+
+export function createTextEmbeddingCache(env: Env): {
+	embedText: EmbedTextFn
+} {
+	const pending = new Map<string, Promise<Array<number>>>()
+	return {
+		embedText(text) {
+			const cached = pending.get(text)
+			if (cached) return cached
+			const promise = embedTextForVectorize(env, text)
+			pending.set(text, promise)
+			return promise
+		},
+	}
+}
+
 export async function embedTextsForVectorize(
 	env: Env,
 	texts: ReadonlyArray<string>,

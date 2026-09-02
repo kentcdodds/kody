@@ -961,11 +961,14 @@ The hourly `usage_aggregation` lane queries Analytics Engine for anonymous fleet
 totals of `package_export`, `package_static_call`, `job_run`, and
 `workflow_run`. It compares the last completed hour to the hour before it, and
 the last 24 hours to the 24 hours before that. When the combined error rate
-rises past a volume floor, Kody writes a content-free KV snapshot for
-`/admin/insights` and fans `fleet.package_error_rate.elevated` to packages saved
-by users who hold the admin role at dispatch time. A non-admin package may
-declare the topic, but it never receives the event. Role revocation stops
-delivery on the next elevation.
+rises past a volume floor, Kody writes a KV snapshot for `/admin/insights` and
+fans `fleet.package_error_rate.elevated` to packages saved by users who hold the
+admin role at dispatch time. A second query then groups recent-window errors by
+owner. One account at ≥80% of those errors, or three accounts together at ≥80%,
+is concentrated; a true multi-user spike stays fleet-wide. Concentrated pages
+still fan out to admin packages — they name the owning accounts instead of
+looking like a fleet outage. A non-admin package may declare the topic, but it
+never receives the event. Role revocation stops delivery on the next elevation.
 
 There is no Queue / DLQ for this topic. A missed invoke is logged and does not
 fail usage rollup aggregation. A six-hour cooldown suppresses repeat pages
@@ -1016,14 +1019,28 @@ type FleetPackageErrorRateElevatedEvent = {
 		errors: number
 		rate: number | null
 	}>
+	concentration: {
+		kind: 'one_account' | 'few_accounts' | 'fleet'
+		recent_errors: number
+		owner_count: number
+		package_count: number
+		top_owner_share: number
+		owners: Array<{
+			username: string
+			error_share: number
+			packages: Array<{ kody_id: string }>
+		}>
+	} | null
 }
 ```
 
 `status_url` is the public status page. `insights_url` is the operator insights
 dashboard. Counts are fleet-wide and weighted by Analytics Engine
-`_sample_interval`. The event omits user ids, package ids, package names, error
-strings, logs, and unrelated account content. Idempotency keys include the
-topic, event id, and subscriber package id.
+`_sample_interval`. `concentration` is present when the elevation query
+succeeds. `owners` is populated only for `one_account` and `few_accounts` after
+D1 resolves usernames and package kody ids. The event omits user ids, package
+UUIDs, emails, error strings, logs, and unrelated account content. Idempotency
+keys include the topic, event id, and subscriber package id.
 
 Use this topic for notifier packages that enqueue a Kody-repo investigation
 request. Agent spawning stays on the scheduled sweep, not in the subscription

@@ -409,6 +409,49 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 		},
 	})
 
+	const ignoreCallsBefore =
+		repoMockModule.runBundledModuleWithRegistry.mock.calls.length
+	const ignoreFirst = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi', receivedAt: '2026-01-01T00:00:00.000Z' },
+			idempotencyKey: 'evt-delivery-ignore',
+			idempotencyParamsHash: 'ignore',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	const ignoreReplay = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: {
+				content: 'different',
+				receivedAt: '2026-01-01T00:00:01.000Z',
+			},
+			idempotencyKey: 'evt-delivery-ignore',
+			idempotencyParamsHash: 'ignore',
+			source: 'discord-gateway',
+			topic: 'discord.message.created',
+		},
+	})
+	expect(ignoreFirst.status).toBe(200)
+	expect(ignoreReplay.status).toBe(200)
+	expect(ignoreReplay.body).toEqual(ignoreFirst.body)
+	expect(ignoreReplay.body).not.toMatchObject({
+		idempotency: { replayed: true },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry.mock.calls.length).toBe(
+		ignoreCallsBefore + 1,
+	)
+
 	const corruptFirst = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
@@ -449,7 +492,7 @@ test('invokePackageExport enforces idempotency replay, mismatch, corruption, and
 			replayed: false,
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(3)
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(4)
 
 	const failingDb = createDatabase({ failClaim: true })
 	seedPackageResolution()

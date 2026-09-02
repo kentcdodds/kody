@@ -8,6 +8,7 @@ import { buildDomainIndexMatches } from './search-domain-index.ts'
 import {
 	type SearchIntent,
 	extractSearchTokens,
+	understandSearchQuery,
 } from './understand-search-query.ts'
 
 /**
@@ -82,6 +83,20 @@ function singularizeToken(token: string): string {
 		return token.slice(0, -1)
 	}
 	return token
+}
+
+export function searchQueryUsesRankingEmbedding(input: {
+	query: string
+	domain?: string
+}): boolean {
+	const query = input.query.trim()
+	if (!query) return false
+	if (input.domain?.trim()) return true
+	const intent = understandSearchQuery({ query, entities: [] })
+	if (intent.meaningfulTokens.length === 0) return true
+	return intent.meaningfulTokens.some(
+		(token) => !explorationQueryTokens.has(token),
+	)
 }
 
 /**

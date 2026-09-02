@@ -39,6 +39,9 @@ export async function processWebhookDispatch(
 		exportName: message.exportName,
 		params: message.params,
 		idempotencyKey: message.idempotencyKey,
+		...(message.idempotencyParamsHash === 'ignore'
+			? { idempotencyParamsHash: 'ignore' as const }
+			: {}),
 	})
 	const errorCode = readInvocationErrorCode(response.body)
 	if (errorCode && retryableInvocationErrorCodes.has(errorCode)) return 'retry'
