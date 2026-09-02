@@ -46,7 +46,6 @@ async function insertListing(
 		search_text: null,
 		readme_content: null,
 		license: 'MIT',
-		package_version: null,
 		pinned_commit: 'commit-1',
 		status: input.status ?? 'active',
 	})

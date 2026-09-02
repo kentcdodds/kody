@@ -14,8 +14,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-
-const adminCreatedNoUsablePasswordHash = 'admin_created_no_usable_password'
+import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'
@@ -121,7 +120,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			.bind(
 				username,
 				email,
-				adminCreatedNoUsablePasswordHash,
+				unusablePasswordHash.adminCreated,
 				nowIso,
 				stableUserId,
 			)

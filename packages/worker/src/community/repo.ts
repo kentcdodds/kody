@@ -290,10 +290,12 @@ export async function insertCommunityListing(
 		| 'trusted_by_user_id'
 		| 'trusted_at'
 		| 'featured_at'
+		| 'package_version'
 	> & {
 		created_at?: string
 		updated_at?: string
 		published_at?: string
+		package_version?: string | null
 	},
 ): Promise<void> {
 	const now = new Date().toISOString()
@@ -319,7 +321,7 @@ export async function insertCommunityListing(
 			row.search_text ?? null,
 			row.readme_content ?? null,
 			row.license,
-			row.package_version,
+			row.package_version ?? null,
 			row.pinned_commit,
 			row.status,
 			row.created_at ?? now,

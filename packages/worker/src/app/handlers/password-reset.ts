@@ -17,9 +17,13 @@ import {
 } from '#worker/identity/password-reset-tokens.ts'
 import { type routes } from '#universal/routes.ts'
 import { applyPasswordChange } from '#app/apply-password-change.ts'
+import { clearedFactorsAuditReason } from '#app/clear-account-factors.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
-import { buildPasswordResetEmail } from '#app/email/messages.ts'
+import {
+	buildPasswordResetConfirmedEmail,
+	buildPasswordResetEmail,
+} from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -289,10 +293,12 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				.OAUTH_PROVIDER
 			const result = await applyPasswordChange({
 				db,
+				d1: env.APP_DB,
 				helpers,
 				userId: resetRecord.user_id,
 				stableUserId: resolveUserStableId(userRecord),
 				password,
+				clearSecondFactorsAndConnections: true,
 			})
 			if (!result.ok) {
 				void logAuditEvent({
@@ -320,7 +326,45 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				result: 'success',
 				ip: requestIp,
 				path: url.pathname,
+				reason: result.cleared
+					? clearedFactorsAuditReason(result.cleared)
+					: undefined,
 			})
+
+			const emailConfig = getPasswordResetEmailConfig(env, url)
+			const accountUrl = new URL(
+				'/account',
+				emailConfig?.appBaseUrl ?? url,
+			).toString()
+			const email = buildPasswordResetConfirmedEmail({
+				appBaseUrl: emailConfig?.appBaseUrl ?? new URL(url).origin,
+				accountUrl,
+			})
+			if (!emailConfig) {
+				logMissingEmailConfig({
+					to: userRecord.email,
+					subject: email.subject,
+				})
+			} else {
+				try {
+					await sendCloudflareEmail(
+						{
+							accountId: env.CLOUDFLARE_ACCOUNT_ID,
+							apiBaseUrl: env.CLOUDFLARE_API_BASE_URL,
+							apiToken: env.CLOUDFLARE_API_TOKEN,
+						},
+						{
+							to: userRecord.email,
+							from: emailConfig.fromEmail,
+							subject: email.subject,
+							html: email.html,
+							text: email.text,
+						},
+					)
+				} catch (error) {
+					console.warn('cloudflare-email-error', error)
+				}
+			}
 
 			return Response.json({ ok: true })
 		},
