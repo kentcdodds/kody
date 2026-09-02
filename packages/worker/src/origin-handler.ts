@@ -42,6 +42,7 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
@@ -534,6 +535,15 @@ function createOAuthProviderExceptionResponse(
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
 		const url = new URL(request.url)
+
+		// Production `*.workers.dev` is not a product origin. `/health` stays
+		// reachable so deploy and status probes can hit the script directly.
+		const nonCanonicalHost = refuseNonCanonicalProductionHost({
+			request,
+			env,
+			allowedHealthPath: '/health',
+		})
+		if (nonCanonicalHost) return nonCanonicalHost
 
 		// Package runtime lane extraction (ADR 0016): when the runtime Worker
 		// service binding is configured, runtime-owned requests (package-app

@@ -285,6 +285,29 @@ plus 2+ years remaining on the registration. Abuse/contact mail is
 PRIVATE list. The `__Host-` cookie is the primary cookie-tossing control; PSL
 entry is an additional layer.
 
+## Non-canonical hosts
+
+All three product workers keep `workers_dev = true` so secret bulk-reapply does
+not drop zone routes. That leaves a second hostname (`*.workers.dev`) pointing
+at the same scripts as `kody.codes` and `kody.run`. WebAuthn `rpID` derives from
+the request host, and CSP/CORS reasoning assumes one origin, so production must
+not serve the app, `/mcp`, or OAuth on that trigger.
+
+`refuseNonCanonicalProductionHost` (`packages/worker/src/app/canonical-host.ts`)
+runs at the start of origin, platform, and runtime `fetch`. In production
+(`!isNonProductionRuntime(env)`), a request whose host is not the `APP_BASE_URL`
+host, not a package-app apex or `{username}.<package-app host>` shape
+(`parsePackageAppRequestHost` / `getPackageAppBaseUrl`), and not an
+`APP_LEGACY_HOSTS` entry, receives `404` `{ error: 'not_found' }` with
+`Cache-Control: no-store`. Preview, local, and test runtimes skip the check
+because preview URLs are `*.workers.dev`.
+
+Deploy health checks hit the origin at `APP_BASE_URL/health` when that var is
+set, and fall back to the workers.dev URL from `wrangler deploy` output.
+Platform and runtime health checks always use the workers.dev URL
+(`/__platform/health`, `/__runtime/health`). Those exact probe paths stay
+reachable on any host; every other workers.dev path in production is `404`.
+
 ## Auth rate limiting
 
 Credential-accepting POST endpoints share one per-IP auth rate-limit bucket
@@ -553,3 +576,7 @@ change to these decisions here so future agents do not relitigate them.
   decision, restated as invariant 10 above: it holds only while both halves
   hold, so revisit if any mutating endpoint starts accepting cross-site form
   posts or `SameSite=None`.
+- **Production `workers.dev` health probes stay reachable.** Origin `/health`,
+  platform `/__platform/health`, and runtime `/__runtime/health` answer on the
+  workers.dev trigger so deploy and status probes can hit the script directly.
+  The rest of those hostnames return `404`.
