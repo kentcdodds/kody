@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { normalizeMcpServerName } from '@kody-internal/shared/mcp-servers.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
-import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import { enrichMcpOAuthProviderError } from '#universal/mcp-oauth-provider-error.ts'
 import {
 	getMcpServerSettingById,
 	listMcpServerSettings,
@@ -45,6 +45,7 @@ export function buildMcpServerStatusView(input: {
 					callbackUrl: input.oauthCallbackUrl,
 					clientOrigin: input.oauthClientOrigin,
 					clientMetadataUrl: input.oauthClientMetadataUrl,
+					serverUrl: setting.url,
 				})
 			: rawError
 	return {

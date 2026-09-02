@@ -1,5 +1,6 @@
 import { css } from 'remix/ui'
 import { ProviderMark } from '#client/provider-icons.tsx'
+import { isMcpOAuthAllowlistRejection } from '#universal/mcp-oauth-provider-error.ts'
 import { recordCellClamp } from '#client/routes/record-table.tsx'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
@@ -168,6 +169,12 @@ export function readOAuthResultFromHref(href: string): {
 	}
 	if (auth === 'error') {
 		const reason = url.searchParams.get('reason')
+		if (reason && isMcpOAuthAllowlistRejection(reason)) {
+			return {
+				message: reason,
+				tone: 'error',
+			}
+		}
 		return {
 			message: reason
 				? `MCP server authorization failed: ${reason}`

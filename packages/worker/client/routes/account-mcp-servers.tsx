@@ -44,6 +44,7 @@ import {
 	renderAddMcpServerForm,
 	renderOauthCallbackSection,
 } from '#client/routes/account-mcp-servers-forms.tsx'
+import { renderMcpOAuthErrorMessage } from '#client/routes/account-mcp-servers-oauth-error.tsx'
 import {
 	clearOnboardingMcpOAuthReturnCookie,
 	closeOnboardingMcpOAuthPopupIfOpened,
@@ -391,13 +392,19 @@ export function AccountMcpServersRoute(handle: Handle) {
 					</p>
 				) : null}
 				{message ? (
-					<AccountManagementMessage
-						tone={
-							status === 'error' || messageTone === 'error' ? 'error' : 'info'
-						}
-					>
-						{message}
-					</AccountManagementMessage>
+					messageTone === 'error' || status === 'error' ? (
+						renderMcpOAuthErrorMessage({
+							message,
+							oauthClientOrigin,
+							oauthCallbackUrl,
+							oauthClientMetadataUrl,
+							serverUrl: server?.url,
+						})
+					) : (
+						<AccountManagementMessage tone="info">
+							{message}
+						</AccountManagementMessage>
+					)
 				) : null}
 
 				{status === 'ready' ? (
@@ -495,6 +502,9 @@ export function AccountMcpServersRoute(handle: Handle) {
 								renderMcpServerDetail({
 									server,
 									savedPackages,
+									oauthClientOrigin,
+									oauthCallbackUrl,
+									oauthClientMetadataUrl,
 									usageDraft: getUsageDraft(server),
 									usageSaving: usageSavingId === server.id,
 									isMutating,

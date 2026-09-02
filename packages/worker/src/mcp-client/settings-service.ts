@@ -7,6 +7,10 @@ import {
 	validateMcpServerUrl,
 	type McpServerRef,
 } from '@kody-internal/shared/mcp-servers.ts'
+import {
+	enrichMcpOAuthProviderError,
+	isMcpOAuthAllowlistRejection,
+} from '#universal/mcp-oauth-provider-error.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -249,7 +253,18 @@ export async function addMcpServer(input: {
 		})
 	} catch (error) {
 		const message = getErrorMessage(error)
-		throw new Error(`Unable to connect to MCP server: ${message}`)
+		const callbackUrl = buildMcpServerOAuthCallbackUrl(input.baseUrl)
+		const enriched = enrichMcpOAuthProviderError(message, {
+			callbackUrl,
+			clientOrigin: input.baseUrl.trim().replace(/\/+$/, ''),
+			clientMetadataUrl: resolveMcpClientMetadataUrl(callbackUrl) ?? null,
+			serverUrl: urlValidation.url,
+		})
+		throw new Error(
+			isMcpOAuthAllowlistRejection(message)
+				? enriched
+				: `Unable to connect to MCP server: ${message}`,
+		)
 	}
 	try {
 		await insertMcpServerSettingRow({ db: input.env.APP_DB, row })

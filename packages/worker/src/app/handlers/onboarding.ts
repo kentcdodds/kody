@@ -15,7 +15,10 @@ import {
 	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
 } from '#mcp/capabilities/mcp-servers/shared.ts'
-import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import {
+	listMcpServerSettings,
+	resolveMcpServerOAuthClientUrls,
+} from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	attachOnboardingMcpPackageListings,
@@ -107,6 +110,7 @@ async function loadOnboardingMcpChooserOverlay(
 			return { settings: [], statusByServerId: undefined }
 		}
 		const snapshot = await loadMcpClientHubSnapshotOrNull({ env, userId })
+		const oauth = resolveMcpServerOAuthClientUrls({ env })
 		const statusByServerId = new Map(
 			settings.map((setting) => {
 				const view = buildMcpServerStatusView({
@@ -115,6 +119,9 @@ async function loadOnboardingMcpChooserOverlay(
 						snapshot?.servers.find(
 							(server) => server.serverId === setting.id,
 						) ?? null,
+					oauthCallbackUrl: oauth.callbackUrl,
+					oauthClientOrigin: oauth.clientOrigin,
+					oauthClientMetadataUrl: oauth.clientMetadataUrl,
 				})
 				return [
 					setting.id,

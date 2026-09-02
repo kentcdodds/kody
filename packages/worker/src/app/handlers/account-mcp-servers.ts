@@ -16,7 +16,7 @@ import {
 } from '#universal/mcp-oauth-return.ts'
 import { routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
-import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import { enrichMcpOAuthProviderError } from '#universal/mcp-oauth-provider-error.ts'
 import {
 	addMcpServer,
 	deleteMcpServer,
@@ -121,13 +121,21 @@ export function createAccountMcpServersApiHandler(env: Env) {
 					return await handleDeleteAction({ env, user, body, request })
 				}
 			} catch (error) {
+				const oauth = resolveMcpServerOAuthClientUrls({
+					env,
+					requestUrl: request.url,
+				})
+				const rawError =
+					error instanceof Error
+						? error.message
+						: 'Unable to update MCP server settings.'
 				return jsonResponse(
 					{
 						ok: false,
-						error:
-							error instanceof Error
-								? error.message
-								: 'Unable to update MCP server settings.',
+						error: enrichMcpOAuthProviderError(rawError, {
+							...oauth,
+							serverUrl: readTrimmedStringOrEmpty(body, 'url'),
+						}),
 					},
 					400,
 				)
@@ -180,7 +188,17 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			}
 
 			if (authError) {
-				authError = enrichMcpOAuthProviderError(authError, oauth)
+				const setting = serverId
+					? await getMcpServerSettingById({
+							env,
+							userId: user.mcpUser.userId,
+							id: serverId,
+						})
+					: null
+				authError = enrichMcpOAuthProviderError(authError, {
+					...oauth,
+					serverUrl: setting?.url,
+				})
 			}
 
 			const returnToOnboarding =

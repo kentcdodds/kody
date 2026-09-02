@@ -62,16 +62,23 @@ Many authorization servers (including FusionAuth "authorized origins" / redirect
 URI settings, and other providers with similar allowlists) reject the authorize
 step unless those values are permitted.
 
-If authorization fails with a message like `Invalid origin uri https://…` or an
-invalid redirect URI error:
+If authorization fails with a message like `Invalid origin uri https://…` or
+`invalid_redirect_uri`, Kody names that as an **allowlist / unapproved-client**
+failure and shows the callback URL it used (`oauthCallbackUrl`).
 
-1. In the remote MCP server's identity provider, allow Kody's client origin and
-   register the exact redirect URI shown on `/account/mcp-servers` (also
-   returned as `oauthClientOrigin` / `oauthCallbackUrl` from `mcpServerAdd` and
-   `mcpServerList`).
+1. If you operate the remote MCP server's identity provider, allow Kody's client
+   origin and register the exact redirect URI shown on `/account/mcp-servers`
+   (also returned as `oauthClientOrigin` / `oauthCallbackUrl` from
+   `mcpServerAdd` and `mcpServerList`).
 2. Remove and re-add the server in Kody (or reconnect) so client registration
    picks up the allowlisted values.
 3. Authorize again.
+
+Reviewed-client hosts keep their own allowlist. **Vercel MCP**
+(`https://mcp.vercel.com`) has not approved Kody yet; that failure is Vercel's
+supported-clients list, not a Kody callback bug. See
+[Vercel MCP supported clients](https://vercel.com/docs/agent-resources/vercel-mcp)
+and tracking issue [#1986](https://github.com/kentcdodds/kody/issues/1986).
 
 Kody itself does not maintain a per-provider allowlist for this flow — the
 remote authorization server does.

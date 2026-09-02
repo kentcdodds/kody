@@ -15,6 +15,7 @@ import {
 	stateColor,
 	stateLabel,
 } from '#client/routes/account-mcp-servers-shared.tsx'
+import { renderMcpOAuthErrorMessage } from '#client/routes/account-mcp-servers-oauth-error.tsx'
 import {
 	colors,
 	radius,
@@ -181,6 +182,9 @@ export type McpServerDetailProps = {
 	primaryButtonCss: ReturnType<typeof getPillButtonCss>
 	secondaryButtonCss: ReturnType<typeof getGhostButtonCss>
 	dangerButtonCss: ReturnType<typeof getDangerPillCss>
+	oauthClientOrigin: string
+	oauthCallbackUrl: string
+	oauthClientMetadataUrl: string | null
 	onUsageDraftChange: (draft: McpServerUsageDraft) => void
 	onUsageSave: () => void
 	onReconnect: () => void
@@ -200,6 +204,9 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 		primaryButtonCss,
 		secondaryButtonCss,
 		dangerButtonCss,
+		oauthClientOrigin,
+		oauthCallbackUrl,
+		oauthClientMetadataUrl,
 		onUsageDraftChange,
 		onUsageSave,
 		onReconnect,
@@ -275,11 +282,15 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 				</code>
 			</div>
 
-			{server.error ? (
-				<AccountManagementMessage tone="error">
-					{server.error}
-				</AccountManagementMessage>
-			) : null}
+			{server.error
+				? renderMcpOAuthErrorMessage({
+						message: server.error,
+						oauthClientOrigin,
+						oauthCallbackUrl,
+						oauthClientMetadataUrl,
+						serverUrl: server.url,
+					})
+				: null}
 
 			{server.state === 'authenticating' && !server.authUrl ? (
 				<AccountManagementMessage tone="info">

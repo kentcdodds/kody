@@ -95,3 +95,34 @@ test('buildMcpServerStatusView defaults missing usage to any context', () => {
 	expect(view.allowedPackageIds).toEqual([])
 	expect(view.connected).toBe(false)
 })
+
+test('buildMcpServerStatusView names Vercel redirect-URI allowlist failures', () => {
+	const view = buildMcpServerStatusView({
+		setting: setting({
+			name: 'vercel',
+			url: 'https://mcp.vercel.com',
+		}),
+		snapshot: {
+			serverId: 'server-1',
+			name: 'vercel',
+			url: 'https://mcp.vercel.com',
+			state: 'failed',
+			authUrl: null,
+			error: 'invalid_redirect_uri',
+			instructions: null,
+			tools: [],
+		},
+		oauthCallbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+		oauthClientOrigin: 'https://kody.codes',
+		oauthClientMetadataUrl: 'https://kody.codes/oauth/client-metadata.json',
+	})
+	expect(view.error).toContain('unapproved OAuth client')
+	expect(view.error).toContain('allowlist')
+	expect(view.error).toContain(
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	expect(view.error).toContain(
+		'https://vercel.com/docs/agent-resources/vercel-mcp',
+	)
+	expect(view.error).toContain('https://github.com/kentcdodds/kody/issues/1986')
+})

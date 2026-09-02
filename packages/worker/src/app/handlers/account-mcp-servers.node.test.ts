@@ -441,7 +441,53 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	)
 	expect(originFailureLocation.searchParams.get('auth')).toBe('error')
 	expect(originFailureLocation.searchParams.get('reason')).toContain(
+		'unapproved OAuth client',
+	)
+	expect(originFailureLocation.searchParams.get('reason')).toContain(
+		'https://example.com/account/mcp-servers/oauth/callback',
+	)
+	expect(originFailureLocation.searchParams.get('reason')).toContain(
 		'https://example.com/oauth/client-metadata.json',
+	)
+
+	mockModule.getMcpServerSettingById.mockResolvedValueOnce({
+		id: 'server-1',
+		name: 'vercel',
+		url: 'https://mcp.vercel.com',
+		enabled: true,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		usageMode: 'any' as const,
+		allowedPackageIds: [],
+	})
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError: 'invalid_redirect_uri',
+		serverName: 'vercel',
+		authorizationNeeded: false,
+	})
+	const vercelFailureResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?error=invalid_redirect_uri',
+		),
+		params: {},
+	} as never)
+	const vercelFailureLocation = new URL(
+		vercelFailureResponse.headers.get('Location') ?? '',
+	)
+	expect(vercelFailureLocation.searchParams.get('auth')).toBe('error')
+	expect(vercelFailureLocation.searchParams.get('reason')).toContain(
+		'unapproved OAuth client',
+	)
+	expect(vercelFailureLocation.searchParams.get('reason')).toContain(
+		'https://example.com/account/mcp-servers/oauth/callback',
+	)
+	expect(vercelFailureLocation.searchParams.get('reason')).toContain(
+		'https://vercel.com/docs/agent-resources/vercel-mcp',
+	)
+	expect(vercelFailureLocation.searchParams.get('reason')).toContain(
+		'https://github.com/kentcdodds/kody/issues/1986',
 	)
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({

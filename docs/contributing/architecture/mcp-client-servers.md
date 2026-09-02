@@ -87,10 +87,15 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    callback, and connections that are already settling toward `ready`, recover
    without surfacing an internal state error: the hub restarts authorization
    when needed, or accepts the in-flight connection. Origin and redirect-URI
-   rejection messages are enriched with Kody's `oauthClientOrigin` and
-   `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
-   unusable tokens and request a fresh authorization URL). The account page
-   offers Reconnect when automatic recovery cannot finish.
+   rejection messages are named as allowlist / unapproved-client failures and
+   include Kody's `oauthCallbackUrl` (plus `oauthClientOrigin` and CIMD
+   `client_id` when the operator can allowlist them). Vercel MCP
+   (`mcp.vercel.com`) is a reviewed-client host that has not approved Kody;
+   those errors point at Vercel's supported-clients docs and
+   [issue 1986](https://github.com/kentcdodds/kody/issues/1986). Reconnect uses
+   the same recovery path (invalidate unusable tokens and request a fresh
+   authorization URL). The account page offers Reconnect when automatic recovery
+   cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

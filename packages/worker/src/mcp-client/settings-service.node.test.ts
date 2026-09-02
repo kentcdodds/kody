@@ -82,7 +82,10 @@ test('listEnabledMcpServerRefsCached warms per user, expires, and invalidates on
 
 	const env = { APP_DB: {} } as Env
 	const first = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
-	const second = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
+	const second = await listEnabledMcpServerRefsCached({
+		env,
+		userId: 'user-1',
+	})
 	expect(first).toEqual([
 		{
 			serverId: 'server-1',
@@ -208,6 +211,28 @@ test('addMcpServer forwards bearer tokens as Authorization headers to the hub', 
 		?.row as Record<string, unknown>
 	expect(insertedRow).not.toHaveProperty('bearerToken')
 	expect(JSON.stringify(insertedRow)).not.toContain('secret-token')
+
+	mockModule.getMcpServerSettingRowByName.mockResolvedValue(null)
+	mockModule.hubClient.addServer.mockRejectedValueOnce(
+		new Error('invalid_redirect_uri'),
+	)
+	const allowlistFailure = addMcpServer({
+		env,
+		userId: 'user-1',
+		name: 'vercel',
+		url: 'https://mcp.vercel.com',
+		baseUrl: 'https://kody.codes',
+	})
+	await expect(allowlistFailure).rejects.toThrow(/unapproved OAuth client/)
+	await expect(allowlistFailure).rejects.toThrow(
+		'https://kody.codes/account/mcp-servers/oauth/callback',
+	)
+	await expect(allowlistFailure).rejects.toThrow(
+		'https://vercel.com/docs/agent-resources/vercel-mcp',
+	)
+	await expect(allowlistFailure).rejects.toThrow(
+		'https://github.com/kentcdodds/kody/issues/1986',
+	)
 })
 
 test('MCP server usage lock hides the server from execute and grants a package', async () => {

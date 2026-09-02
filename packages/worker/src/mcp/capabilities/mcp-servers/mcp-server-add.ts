@@ -3,7 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import { enrichMcpOAuthProviderError } from '#universal/mcp-oauth-provider-error.ts'
 import {
 	addMcpServer,
 	resolveMcpServerOAuthClientUrls,
@@ -28,7 +28,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 	{
 		name: 'mcpServerAdd',
 		description:
-			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin, oauthCallbackUrl, and oauthClientMetadataUrl (CIMD client_id) when present.',
+			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. Origin or redirect URI rejections are named as allowlist / unapproved-client failures and include oauthCallbackUrl. Reviewed-client hosts (Vercel MCP) have not approved Kody yet; those errors point at Vercel\'s supported-clients list and the tracking issue.',
 		keywords: [
 			'mcp',
 			'server',
@@ -87,7 +87,10 @@ export const mcpServerAddCapability = defineDomainCapability(
 				waitUntil: ctx.waitUntil,
 			})
 			const error = connection.error
-				? enrichMcpOAuthProviderError(connection.error, oauth)
+				? enrichMcpOAuthProviderError(connection.error, {
+						...oauth,
+						serverUrl: setting.url,
+					})
 				: null
 			const nextStep =
 				connection.state === 'authenticating' && connection.authUrl

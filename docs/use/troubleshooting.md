@@ -47,15 +47,23 @@ static OAuth mode. Static mode runs authorize and token exchange.
 ## Adding a remote MCP server fails with `Invalid origin uri` or redirect URI errors
 
 That message comes from the **remote** authorization server, not from Kody being
-unreachable. Kody identifies as an OAuth client from the deployment origin and
-redirects to `{origin}/account/mcp-servers/oauth/callback`. Allow those values
-in the MCP server's identity provider (authorized origins / redirect URIs). When
-the authorization server advertises `client_id_metadata_document_supported` and
-the callback origin is HTTPS, Kody also presents
-`{origin}/oauth/client-metadata.json` as its CIMD `client_id` — allowlist that
-URL only for CIMD-capable providers. Then remove and re-add the server. See
-[Connect remote MCP servers](./mcp-client-servers.md). For a home process behind
-Cloudflare Tunnel and Access, also see
+unreachable. Kody names it as an allowlist / unapproved-client failure and shows
+the callback URL it used. Kody identifies as an OAuth client from the deployment
+origin and redirects to `{origin}/account/mcp-servers/oauth/callback`. If you
+operate the MCP server's identity provider, allow those values (authorized
+origins / redirect URIs). When the authorization server advertises
+`client_id_metadata_document_supported` and the callback origin is HTTPS, Kody
+also presents `{origin}/oauth/client-metadata.json` as its CIMD `client_id` —
+allowlist that URL only for CIMD-capable providers. Then remove and re-add the
+server. See [Connect remote MCP servers](./mcp-client-servers.md).
+
+**Vercel MCP** (`https://mcp.vercel.com`) rejects Kody's redirect URI until
+Vercel adds Kody to its reviewed-client allowlist. That is not something you can
+fix in Kody. See
+[Vercel MCP supported clients](https://vercel.com/docs/agent-resources/vercel-mcp)
+and [#1986](https://github.com/kentcdodds/kody/issues/1986).
+
+For a home process behind Cloudflare Tunnel and Access, also see
 [Connect a home MCP server](../guides/local-mcp-tunnels.md) and
 [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter).
 

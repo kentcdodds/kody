@@ -39,10 +39,13 @@ export function renderOauthCallbackSection(props: OauthCallbackSectionProps) {
 			<div mix={css({ display: 'grid', gap: spacing.xs })}>
 				<span mix={css(fieldLabelCss)}>OAuth redirect URI</span>
 				<p mix={css({ ...descriptionCss, margin: 0 })}>
-					If a remote MCP server&apos;s identity provider allowlists client
-					origins or redirect URIs (for example FusionAuth), add
-					{oauthClientOrigin ? ` ${oauthClientOrigin} and` : ''} this exact
-					callback before authorizing.
+					Kody identifies as an OAuth client from
+					{oauthClientOrigin ? ` ${oauthClientOrigin}` : ' this origin'} and
+					this exact redirect URI. If you operate the remote server (or its
+					identity provider), allow those values before authorizing. Reviewed
+					client allowlists (for example Vercel MCP) reject Kody until the
+					provider approves this callback — that is an unapproved-client
+					failure, not a Kody callback bug.
 					{oauthClientMetadataUrl
 						? " Servers that support Client ID Metadata Documents use the CIMD URL as Kody's client_id."
 						: ''}

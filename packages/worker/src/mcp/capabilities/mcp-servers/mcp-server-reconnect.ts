@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
-import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
+import { enrichMcpOAuthProviderError } from '#universal/mcp-oauth-provider-error.ts'
 import { resolveMcpServerOAuthClientUrls } from '#worker/mcp-client/settings-service.ts'
 import { resolveMcpServerSetting } from './shared.ts'
 
@@ -61,7 +61,10 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				toolCount: result.toolCount,
 				authUrl: result.authUrl,
 				error: result.error
-					? enrichMcpOAuthProviderError(result.error, oauth)
+					? enrichMcpOAuthProviderError(result.error, {
+							...oauth,
+							serverUrl: setting.url,
+						})
 					: null,
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthCallbackUrl: oauth.callbackUrl,

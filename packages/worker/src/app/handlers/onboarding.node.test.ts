@@ -42,6 +42,22 @@ vi.mock('#worker/community/service.ts', () => ({
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 	listMcpServerSettings: (...args: Array<unknown>) =>
 		mockModule.listMcpServerSettings(...args),
+	resolveMcpServerOAuthClientUrls: (input: {
+		env: { APP_BASE_URL?: string | null }
+		requestUrl?: string | URL | null
+	}) => {
+		const configured = input.env.APP_BASE_URL?.trim()
+		const clientOrigin = configured
+			? new URL(configured).origin
+			: new URL(String(input.requestUrl ?? 'https://example.com')).origin
+		return {
+			clientOrigin,
+			callbackUrl: `${clientOrigin}/account/mcp-servers/oauth/callback`,
+			clientMetadataUrl: clientOrigin.startsWith('https:')
+				? `${clientOrigin}/oauth/client-metadata.json`
+				: null,
+		}
+	},
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
