@@ -9,7 +9,11 @@ import {
 } from '@simplewebauthn/server'
 import { isoBase64URL } from '@simplewebauthn/server/helpers'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
@@ -133,6 +137,7 @@ export function createWebauthnRegistrationHandler(env: Env) {
 				})
 			} catch (error) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'passkey_register',
 					result: 'failure',
@@ -184,6 +189,7 @@ export function createWebauthnRegistrationHandler(env: Env) {
 			})
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'account',
 				action: 'passkey_register',
 				result: 'success',
@@ -258,6 +264,7 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			const passkey = await findPasskeyById(env.APP_DB, body.response.id)
 			if (!passkey) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'passkey_login',
 					result: 'failure',
@@ -287,6 +294,7 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 				})
 			} catch (error) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'passkey_login',
 					result: 'failure',
@@ -348,6 +356,7 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 				stableUserId: resolveUserStableId(userRecord),
 			})
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'passkey_login',
 				result: 'success',

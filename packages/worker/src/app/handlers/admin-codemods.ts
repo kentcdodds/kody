@@ -12,7 +12,11 @@ import {
 } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	runPackageCodemodStep,
@@ -181,6 +185,7 @@ export function createAdminCodemodsRunApiHandler(env: Env) {
 
 					const requestIp = getRequestIp(request) ?? undefined
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'admin',
 						action: 'package_codemod_run_step',
 						result: 'success',
@@ -259,6 +264,7 @@ export function createAdminCodemodsRunStopApiHandler(env: Env) {
 				}
 				const requestIp = getRequestIp(request) ?? undefined
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'admin',
 					action: 'package_codemod_run_stop',
 					result: 'success',

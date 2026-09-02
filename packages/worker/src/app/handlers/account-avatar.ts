@@ -1,6 +1,10 @@
 import { type Action } from 'remix/router'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type routes } from '#universal/routes.ts'
 import {
@@ -50,6 +54,7 @@ export function createAccountAvatarApiPostHandler(env: Env) {
 				})
 
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'delete_avatar',
 					result: 'success',
@@ -102,6 +107,7 @@ export function createAccountAvatarApiPostHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'account',
 				action: 'upload_avatar',
 				result: 'success',

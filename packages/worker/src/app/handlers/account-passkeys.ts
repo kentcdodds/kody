@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, optional, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	buildDefaultPasskeyName,
@@ -86,6 +90,7 @@ export function createAccountPasskeysApiHandler(env: Env) {
 					}
 
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'passkey_delete',
 						result: 'success',
@@ -114,6 +119,7 @@ export function createAccountPasskeysApiHandler(env: Env) {
 					}
 
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'passkey_rename',
 						result: 'success',

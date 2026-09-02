@@ -7,7 +7,11 @@ import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedString as readString } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import {
 	deletePlatformOauthAppLogoAsset,
 	setPlatformOauthAppLogo,
@@ -201,6 +205,7 @@ async function handleSaveAction(input: {
 	}
 
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'platform_oauth_app_admin_save',
 		result: 'success',
@@ -257,6 +262,7 @@ async function handleDeleteAction(input: {
 	}
 
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'platform_oauth_app_admin_delete',
 		result: 'success',

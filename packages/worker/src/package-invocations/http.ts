@@ -1,5 +1,9 @@
 import { jsonResponse } from '#worker/json-response.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import {
@@ -237,6 +241,7 @@ export async function handlePackageInvocationApiRequest(
 	const bearerToken = readBearerToken(request)
 	if (!bearerToken) {
 		logPackageInvocationAudit(ctx, {
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -252,6 +257,7 @@ export async function handlePackageInvocationApiRequest(
 	})
 	if (!routeUser) {
 		logPackageInvocationAudit(ctx, {
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -267,6 +273,7 @@ export async function handlePackageInvocationApiRequest(
 	})
 	if (!savedPackage) {
 		logPackageInvocationAudit(ctx, {
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -302,6 +309,7 @@ export async function handlePackageInvocationApiRequest(
 	}
 	if (!tokenScope) {
 		logPackageInvocationAudit(ctx, {
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -416,6 +424,7 @@ export async function handlePackageInvocationApiRequest(
 				)
 			: undefined
 	logPackageInvocationAudit(ctx, {
+		db: auditDatabaseFromEnv(env),
 		category: 'oauth',
 		action: 'package_invoke',
 		result,

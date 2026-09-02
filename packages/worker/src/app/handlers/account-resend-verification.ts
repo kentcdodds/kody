@@ -1,6 +1,10 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
@@ -54,6 +58,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 			} catch (error) {
 				if (error instanceof EmailVerificationSendBlockedError) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'email_verification_resend',
 						result: 'failure',
@@ -82,6 +87,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 			)
 			if (!rateLimit.allowed) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'email_verification_resend',
 					result: 'rate_limited',
@@ -118,6 +124,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 				// allowance; refund the slot so they can retry promptly.
 				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'email_verification_resend',
 					result: 'failure',
@@ -137,6 +144,7 @@ export function createAccountResendVerificationHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'email_verification_resend',
 				result: 'success',

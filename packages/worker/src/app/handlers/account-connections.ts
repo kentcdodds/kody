@@ -2,7 +2,11 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	maybeRemoveDiscordGuildRoles,
@@ -66,6 +70,7 @@ export function createAccountConnectionsApiHandler(env: Env) {
 				const result =
 					'status' in summary ? summary : summarizeDiscordGuildRoleSync(summary)
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'discord_member_role_sync',
 					result: result.status === 'assigned' ? 'success' : 'failure',
@@ -143,6 +148,7 @@ export function createAccountConnectionsApiHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'oauth_connection_removed',
 				result: 'success',

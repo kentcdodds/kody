@@ -3,6 +3,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAdminInvitesData } from '#app/admin-invites-data.ts'
 import {
+	auditDatabaseFromEnv,
 	getRequestIp,
 	logAuditEvent,
 	redactEmailRecipient,
@@ -121,6 +122,7 @@ async function handleCreateUserAction(input: {
 		})
 		const requestIp = getRequestIp(input.request) ?? undefined
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(input.env),
 			category: 'admin',
 			action: 'create_user',
 			result: 'success',
@@ -201,6 +203,7 @@ async function handleCreateInviteAction(input: {
 		})
 		const requestIp = getRequestIp(input.request) ?? undefined
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(input.env),
 			category: 'admin',
 			action: 'create_invite',
 			result: 'success',
@@ -264,6 +267,7 @@ async function handleRevokeInviteAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'revoke_invite',
 		result: 'success',

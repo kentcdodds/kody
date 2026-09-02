@@ -7,7 +7,11 @@ import {
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
 import { createCookie } from 'remix/cookie'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
@@ -468,6 +472,7 @@ async function handleResetClientRequest(
 	)
 	if (!sessionEmail) {
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'reset_client',
 			result: 'failure',
@@ -491,6 +496,7 @@ async function handleResetClientRequest(
 		})
 		if (!userRecord) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'reset_client',
 				result: 'failure',
@@ -526,6 +532,7 @@ async function handleResetClientRequest(
 			)
 		}
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'reset_client',
 			result: 'success',
@@ -550,6 +557,7 @@ async function handleResetClientRequest(
 		)
 	} catch (error) {
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'reset_client',
 			result: 'failure',
@@ -1058,6 +1066,7 @@ async function tryHandleSilentOidcAuthorize(
 		},
 	})
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(env),
 		category: 'oauth',
 		action: 'authorize',
 		result: 'success',
@@ -1143,6 +1152,7 @@ export async function handleAuthorizeRequest(
 	})
 	if (pkceError) {
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'authorize',
 			result: 'failure',
@@ -1187,6 +1197,7 @@ export async function handleAuthorizeRequest(
 
 	if (!hasFormCredentials && !hasSession) {
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'authorize',
 			result: 'failure',
@@ -1215,6 +1226,7 @@ export async function handleAuthorizeRequest(
 
 		if (!userRecord || !passwordValid) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'authorize',
 				result: 'failure',
@@ -1238,6 +1250,7 @@ export async function handleAuthorizeRequest(
 		const username = getValidOAuthUsername(userRecord.username)
 		if (!username) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'authorize',
 				result: 'failure',
@@ -1252,6 +1265,7 @@ export async function handleAuthorizeRequest(
 		// establish a browser session (which enforces the second factor) first.
 		if (await isTwoFactorEnabled(env.APP_DB, userRecord.id)) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'authorize',
 				result: 'failure',
@@ -1278,6 +1292,7 @@ export async function handleAuthorizeRequest(
 			: await db.findOne(usersTable, { where: { email: sessionEmail } })
 		if (!userRecord) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'authorize',
 				result: 'failure',
@@ -1291,6 +1306,7 @@ export async function handleAuthorizeRequest(
 		const username = getValidOAuthUsername(userRecord.username)
 		if (!username) {
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'oauth',
 				action: 'authorize',
 				result: 'failure',
@@ -1323,6 +1339,7 @@ export async function handleAuthorizeRequest(
 	})
 	if (!emailVerified) {
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'authorize',
 			result: 'failure',
@@ -1367,6 +1384,7 @@ export async function handleAuthorizeRequest(
 			},
 		})
 		void logAuditEvent({
+			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
 			action: 'authorize',
 			result: 'success',

@@ -1,6 +1,10 @@
 import { type Action } from 'remix/router'
 import { jsonResponse } from '#worker/json-response.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import {
 	createAuthCookie,
@@ -345,6 +349,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 
 			function fail(code: OauthLoginErrorCode, reason: string) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'oauth_login',
 					result: 'failure',
@@ -439,6 +444,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						secure,
 					)
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'oauth_login_2fa_challenge',
 						result: 'success',
@@ -463,6 +469,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				)
 				await touchLastActiveAt(env.APP_DB, { stableUserId })
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'oauth_login',
 					result: 'success',
@@ -525,6 +532,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					accessToken,
 				})
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'oauth_connection_linked',
 					result: 'success',
@@ -752,6 +760,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			})
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'oauth_signup',
 				result: 'success',
@@ -762,6 +771,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			})
 			if (consumedInviteCode) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'invite_use',
 					result: 'success',

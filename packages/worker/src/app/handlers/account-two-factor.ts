@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, optional, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -97,6 +101,7 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 						issuer: url.hostname,
 					})
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'two_factor_setup_start',
 						result: 'success',
@@ -143,6 +148,7 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 					})
 					if (!codeValid) {
 						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
 							category: 'account',
 							action: 'two_factor_enable',
 							result: 'failure',
@@ -161,6 +167,7 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 						)
 					}
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'two_factor_enable',
 						result: 'success',
@@ -196,6 +203,7 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 					})
 					if (!codeValid) {
 						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
 							category: 'account',
 							action: 'two_factor_disable',
 							result: 'failure',
@@ -208,6 +216,7 @@ export function createAccountTwoFactorApiHandler(env: Env) {
 					}
 					await disableTwoFactor(env.APP_DB, user.userId)
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'two_factor_disable',
 						result: 'success',

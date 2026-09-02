@@ -32,6 +32,7 @@ test('persisted audit events write only the dedicated sink while optional persis
 		reason: 'invalid_password',
 	})
 	await logAuditEvent({
+		db: undefined,
 		category: 'account',
 		action: 'profile_view',
 		result: 'success',

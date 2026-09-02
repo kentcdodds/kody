@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import { object, parseSafe, string } from 'remix/data-schema'
 import { createDb, passwordResetsTable, usersTable } from '#worker/db.ts'
 import {
+	auditDatabaseFromEnv,
 	logAuditEvent,
 	getRequestIp,
 	redactEmailRecipient,
@@ -86,6 +87,7 @@ export function createPasswordResetRequestHandler(env: Env) {
 
 			if (!parsed.success || !normalizedEmail) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_request',
 					result: 'failure',
@@ -151,6 +153,7 @@ export function createPasswordResetRequestHandler(env: Env) {
 				})
 
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_request',
 					result: 'success',
@@ -160,6 +163,7 @@ export function createPasswordResetRequestHandler(env: Env) {
 				})
 			} else {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_request',
 					result: 'failure',
@@ -209,6 +213,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 
 			if (!parsed.success || !token || !password) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
@@ -225,6 +230,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			const passwordError = getPasswordPolicyError(password)
 			if (passwordError) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
@@ -246,6 +252,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 					await db.delete(passwordResetsTable, resetRecord.id)
 				}
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
@@ -264,6 +271,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			})
 			if (!userRecord) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
@@ -288,6 +296,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			})
 			if (!result.ok) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'password_reset_confirm',
 					result: 'failure',
@@ -305,6 +314,7 @@ export function createPasswordResetConfirmHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'password_reset_confirm',
 				result: 'success',

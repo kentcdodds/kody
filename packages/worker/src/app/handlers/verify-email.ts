@@ -1,5 +1,9 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { verifyEmailToken } from '#app/email-verification.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { sendConnectAgentEmail } from '#app/user-account-emails.ts'
@@ -36,6 +40,7 @@ export function createVerifyEmailHandler(env: Env) {
 
 			if (!result.ok) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'email_verify',
 					result: 'failure',
@@ -58,6 +63,7 @@ export function createVerifyEmailHandler(env: Env) {
 			}
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'email_verify',
 				result: 'success',

@@ -2,7 +2,11 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -113,6 +117,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				})
 				if (existingUsername && existingUsername.id !== user.userId) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'update_username',
 						result: 'failure',
@@ -140,6 +145,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				} catch (error) {
 					if (getUniqueConstraintField(error) === 'username') {
 						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
 							category: 'account',
 							action: 'update_username',
 							result: 'failure',
@@ -181,6 +187,7 @@ export function createAccountProfileApiHandler(env: Env) {
 						)
 					}
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'account',
 						action: 'update_username',
 						result: 'failure',
@@ -233,6 +240,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				}
 
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'update_username',
 					result: 'success',
@@ -287,6 +295,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				}
 
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'update_profile',
 					result: 'success',

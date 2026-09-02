@@ -1,6 +1,10 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import {
 	clearAdminUserEmailOutboundPause,
@@ -260,6 +264,7 @@ async function handleAssignRoleAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'assign_role',
 		result: 'success',
@@ -335,6 +340,7 @@ async function handleRemoveRoleAction(input: {
 			if (targetStillAdmin) {
 				const requestIp = getRequestIp(input.request) ?? undefined
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(input.env),
 					category: 'admin',
 					action: 'remove_role',
 					result: 'failure',
@@ -365,6 +371,7 @@ async function handleRemoveRoleAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'remove_role',
 		result: 'success',
@@ -412,6 +419,7 @@ async function handleUpdatePlanAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'update_plan',
 		result: 'success',
@@ -461,6 +469,7 @@ async function handleSuspensionAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: input.suspended ? 'suspend_user' : 'unsuspend_user',
 		result: 'success',
@@ -501,6 +510,7 @@ async function handleResumeEmailOutboundAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'resume_email_outbound',
 		result: 'success',
@@ -544,6 +554,7 @@ async function handleMarkEmailVerifiedAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'mark_email_verified',
 		result: 'success',
@@ -590,6 +601,7 @@ async function handleMintVerifyUrlAction(input: {
 
 	const requestIp = getRequestIp(input.request) ?? undefined
 	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
 		category: 'admin',
 		action: 'mint_verify_url',
 		result: 'success',

@@ -13,7 +13,7 @@ export type AuditEventCategory = (typeof auditEventCategories)[number]
 export type AuditEventResult = (typeof auditEventResults)[number]
 
 type AuditEvent = {
-	db?: D1Database | null
+	db: D1Database | null | undefined
 	category: AuditEventCategory
 	action: string
 	result: AuditEventResult

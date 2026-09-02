@@ -1,5 +1,9 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUserForDeletion } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { isAccountDeletionConfirmation } from '#universal/account-deletion-confirmation.ts'
@@ -53,6 +57,7 @@ export function createAccountDeleteHandler(env: Env) {
 			const { confirmation, password } = readDeleteRequestFields(body)
 			if (!confirmation || !isAccountDeletionConfirmation(confirmation)) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'account_delete',
 					result: 'failure',
@@ -93,6 +98,7 @@ export function createAccountDeleteHandler(env: Env) {
 				)
 				if (!passwordValid) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'account_delete',
 						result: 'failure',
@@ -126,6 +132,7 @@ export function createAccountDeleteHandler(env: Env) {
 					throw error
 				}
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'account_delete',
 					result: 'failure',
@@ -158,6 +165,7 @@ export function createAccountDeleteHandler(env: Env) {
 			})
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'account_delete',
 				result: 'success',

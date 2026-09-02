@@ -10,7 +10,11 @@ import {
 	createVerifySessionCookie,
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import {
@@ -149,6 +153,7 @@ export function createAuthHandler(env: Env) {
 
 			if (!normalizedEmail || !normalizedPassword) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'authenticate',
 					result: 'failure',
@@ -166,6 +171,7 @@ export function createAuthHandler(env: Env) {
 				const usernameError = getUsernameValidationError(normalizedUsername)
 				if (usernameError) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -179,6 +185,7 @@ export function createAuthHandler(env: Env) {
 				const passwordError = getPasswordPolicyError(normalizedPassword)
 				if (passwordError) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -197,6 +204,7 @@ export function createAuthHandler(env: Env) {
 				})
 				if (existingUser) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -215,6 +223,7 @@ export function createAuthHandler(env: Env) {
 				})
 				if (existingUsername) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -250,6 +259,7 @@ export function createAuthHandler(env: Env) {
 					})
 					if (!inviteResult.ok) {
 						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
 							category: 'auth',
 							action: 'signup',
 							result: 'failure',
@@ -299,6 +309,7 @@ export function createAuthHandler(env: Env) {
 						await releaseConsumedInvite()
 						const isUsernameConflict = uniqueField === 'username'
 						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
 							category: 'auth',
 							action: 'signup',
 							result: 'failure',
@@ -321,6 +332,7 @@ export function createAuthHandler(env: Env) {
 				}
 				if (!record) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -365,6 +377,7 @@ export function createAuthHandler(env: Env) {
 					}
 					await releaseConsumedInvite()
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -401,6 +414,7 @@ export function createAuthHandler(env: Env) {
 					}
 					await releaseConsumedInvite()
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'signup',
 						result: 'failure',
@@ -470,6 +484,7 @@ export function createAuthHandler(env: Env) {
 					isSecureRequest(request),
 				)
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'signup',
 					result: 'success',
@@ -479,6 +494,7 @@ export function createAuthHandler(env: Env) {
 				})
 				if (consumedInviteCode) {
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'auth',
 						action: 'invite_use',
 						result: 'success',
@@ -517,6 +533,7 @@ export function createAuthHandler(env: Env) {
 			}
 			if (!userRecord || !passwordValid) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'login',
 					result: 'failure',
@@ -557,6 +574,7 @@ export function createAuthHandler(env: Env) {
 					secure,
 				)
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'auth',
 					action: 'login_2fa_challenge',
 					result: 'success',
@@ -587,6 +605,7 @@ export function createAuthHandler(env: Env) {
 				stableUserId: resolveUserStableId(userRecord),
 			})
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'auth',
 				action: 'login',
 				result: 'success',

@@ -1,5 +1,9 @@
 import { type Action } from 'remix/router'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
 	isSecureRequest,
@@ -46,6 +50,7 @@ export function createVerifyEmailChangeHandler(env: Env) {
 
 			if (!result.ok) {
 				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
 					category: 'account',
 					action: 'email_change_verify',
 					result: 'failure',
@@ -81,6 +86,7 @@ export function createVerifyEmailChangeHandler(env: Env) {
 					: null
 
 			void logAuditEvent({
+				db: auditDatabaseFromEnv(env),
 				category: 'account',
 				action: 'email_change_verify',
 				result: 'success',
