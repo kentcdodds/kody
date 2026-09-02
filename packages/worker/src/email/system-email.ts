@@ -23,6 +23,7 @@ export const systemEmailLocals = [
 	'kody',
 	'support',
 	'abuse',
+	'dmca',
 	'postmaster',
 	'security',
 	'admin',

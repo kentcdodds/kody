@@ -11,6 +11,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
+import { legalLastUpdated } from './legal-last-updated.ts'
 
 export function PrivacyRoute(_handle: Handle) {
 	return () => (
@@ -19,6 +20,10 @@ export function PrivacyRoute(_handle: Handle) {
 				<h1 mix={css(pageTitleCss)}>Privacy</h1>
 				<p mix={css(pageDescriptionCss)}>
 					What Kody collects, why it is needed, and the choices you have.
+				</p>
+				<p mix={css(lastUpdatedCss)}>
+					Last updated:{' '}
+					<time datetime={legalLastUpdated}>{legalLastUpdated}</time>
 				</p>
 			</header>
 
@@ -32,6 +37,17 @@ export function PrivacyRoute(_handle: Handle) {
 					</a>
 					. A separately operated Kody deployment has its own operator and data
 					controller.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Kody processes personal data to perform the contract for account and
+					assistant features, on legitimate interests for security, abuse
+					prevention, and analytics, and with consent for the waiting list and
+					product email.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Data is processed in the United States on Cloudflare&apos;s network.
+					If you use Kody from outside the United States, you consent to that
+					transfer.
 				</p>
 			</section>
 
@@ -129,18 +145,19 @@ export function PrivacyRoute(_handle: Handle) {
 					exception.
 				</p>
 				<p mix={css(descriptionCss)}>
-					Admins also moderate public community listings and attributed
-					community reports, and can see who forked or rated a public listing,
-					when, and the rating scores. One-click installs appear as forks
-					because both use the same activity record. This activity view never
-					includes private package source, rating notes, email, stable user ids,
-					private profiles, secrets, or unrelated account content.
-					Admin-configured notification packages may receive the same community
-					metadata, and a metadata-only <code>user.created</code> or{' '}
-					<code>user.deleted</code> event when a person account is created or
-					self-deleted (stable user id, username, email, the create source or
-					delete timestamp, the consumed invite code when{' '}
-					<code>user.created</code> used one, and first-touch marketing
+					Admins also moderate public community listings and community reports.
+					Reporting a listing requires a signed-in user; reports are not
+					anonymous — the reporter identity is attached. Admins can see who
+					forked or rated a public listing, when, and the rating scores.
+					One-click installs appear as forks because both use the same activity
+					record. This activity view never includes private package source,
+					rating notes, email, stable user ids, private profiles, secrets, or
+					unrelated account content. Admin-configured notification packages may
+					receive the same community metadata, and a metadata-only{' '}
+					<code>user.created</code> or <code>user.deleted</code> event when a
+					person account is created or self-deleted (stable user id, username,
+					email, the create source or delete timestamp, the consumed invite code
+					when <code>user.created</code> used one, and first-touch marketing
 					attribution fields when present). Those lifecycle events omit
 					passwords, roles, plan, secrets, and unrelated account content.
 					Admin-configured notification packages may also receive a
@@ -343,6 +360,16 @@ export function PrivacyRoute(_handle: Handle) {
 					</li>
 					<li>Fathom — privacy-focused website traffic analytics</li>
 				</ul>
+				<p mix={css(descriptionCss)}>
+					The only cookies are the session cookie (<code>kody_session</code>)
+					and the package-app session cookie on <code>kody.run</code> (
+					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
+					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
+					two-factor verification, passkey challenges, and OAuth login.
+					Analytics (Fathom) is cookieless. The browser uses sessionStorage for
+					first-touch signup attribution and scroll restoration, not tracking
+					cookies.
+				</p>
 			</section>
 
 			<section mix={css(cardCss)}>
@@ -358,6 +385,14 @@ export function PrivacyRoute(_handle: Handle) {
 					</a>
 					. Which rights apply depends on where you live. We may need to verify
 					your identity before acting on a request.
+				</p>
+				<p mix={css(descriptionCss)}>
+					You also have the right to lodge a complaint with a supervisory
+					authority where you live, including in the EEA or the United Kingdom.
+				</p>
+				<p mix={css(descriptionCss)}>
+					We do not sell or share personal information as defined by the
+					CCPA/CPRA.
 				</p>
 			</section>
 
@@ -393,6 +428,12 @@ const pageCss = {
 	...stackedPageCss,
 	maxWidth: '42rem',
 	margin: '0 auto',
+}
+
+const lastUpdatedCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
 }
 
 const listCss = {
