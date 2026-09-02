@@ -70,6 +70,7 @@ function createFeatureFlagsTestDb(
 	function createStatement(query: string, params: Array<unknown> = []) {
 		const normalized = normalize(query)
 		return {
+			query,
 			bind(...nextParams: Array<unknown>) {
 				return createStatement(query, nextParams)
 			},
@@ -244,11 +245,22 @@ function createFeatureFlagsTestDb(
 			return createStatement(query)
 		},
 		async batch(
-			statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>,
+			statements: Array<{
+				query?: string
+				all?: () => Promise<unknown>
+				run?: () => Promise<{ meta: { changes: number } }>
+			}>,
 		) {
 			const results = []
 			for (const statement of statements) {
-				results.push(await statement.run())
+				const isSelect = /^\s*select\b/i.test(statement.query ?? '')
+				if (isSelect && typeof statement.all === 'function') {
+					results.push(await statement.all())
+				} else if (typeof statement.run === 'function') {
+					results.push(await statement.run())
+				} else {
+					results.push({ meta: { changes: 0 } })
+				}
 			}
 			return results
 		},

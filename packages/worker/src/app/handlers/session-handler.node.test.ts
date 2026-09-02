@@ -7,6 +7,7 @@ import {
 } from '#app/auth-session.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const rememberedSession: AuthSession = {
@@ -83,6 +84,7 @@ function createSessionTestDb() {
 			}
 		}
 		return {
+			query,
 			bind(...nextParams: Array<unknown>) {
 				return createStatement(query, nextParams)
 			},
@@ -103,9 +105,8 @@ function createSessionTestDb() {
 		prepare(query: string) {
 			return createStatement(query)
 		},
-		// Feature-flag exposure recording upserts via db.batch in local mode.
-		async batch(statements: Array<unknown>) {
-			return statements.map(() => ({ meta: { changes: 1 } }))
+		async batch(statements: Array<{ query?: string }>) {
+			return await executePreparedD1Batch(statements)
 		},
 		async exec() {
 			return

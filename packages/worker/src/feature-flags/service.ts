@@ -165,33 +165,52 @@ export async function isFeatureEnabled(
 	return (await evaluateFeatureFlag(db, key, userId)).enabled
 }
 
+type GlobalEvaluationRow = {
+	key: string
+	enabled: number
+	rollout_percent: number | null
+}
+
+function d1ResultRows<T>(result: D1Result<T> | undefined): Array<T> {
+	return result?.results ?? []
+}
+
 export async function getFeatureFlagEvaluationsForUser(
 	db: D1Database,
 	userId: number | null,
 ): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation>> {
-	const globalResult = await db
-		.prepare(
-			`SELECT key, enabled, rollout_percent
+	const globalStatement = db.prepare(
+		`SELECT key, enabled, rollout_percent
 			 FROM feature_flags`,
-		)
-		.all<{ key: string; enabled: number; rollout_percent: number | null }>()
-	const globalByKey = new Map(
-		(globalResult.results ?? []).map((row) => [row.key, row]),
 	)
-
-	const overrideByKey = new Map<string, boolean>()
-	if (userId !== null) {
-		const overrideResult = await db
-			.prepare(
-				`SELECT flag_key, enabled
+	let globalRows: Array<GlobalEvaluationRow>
+	let overrideRows: Array<OverrideEnabledRow> = []
+	if (userId === null) {
+		const globalResult = await globalStatement.all<GlobalEvaluationRow>()
+		globalRows = globalResult.results ?? []
+	} else {
+		const [globalResult, overrideResult] = await db.batch([
+			globalStatement,
+			db
+				.prepare(
+					`SELECT flag_key, enabled
 				 FROM feature_flag_user_overrides
 				 WHERE user_id = ?`,
-			)
-			.bind(userId)
-			.all<OverrideEnabledRow>()
-		for (const row of overrideResult.results ?? []) {
-			overrideByKey.set(row.flag_key, row.enabled === 1)
-		}
+				)
+				.bind(userId),
+		])
+		globalRows = d1ResultRows<GlobalEvaluationRow>(
+			globalResult as D1Result<GlobalEvaluationRow>,
+		)
+		overrideRows = d1ResultRows<OverrideEnabledRow>(
+			overrideResult as D1Result<OverrideEnabledRow>,
+		)
+	}
+	const globalByKey = new Map(globalRows.map((row) => [row.key, row]))
+
+	const overrideByKey = new Map<string, boolean>()
+	for (const row of overrideRows) {
+		overrideByKey.set(row.flag_key, row.enabled === 1)
 	}
 
 	const evaluations = {} as Record<FeatureFlagKey, FeatureFlagEvaluation>

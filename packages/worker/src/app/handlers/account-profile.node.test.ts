@@ -21,6 +21,7 @@ import { createAccountProfileApiHandler } from './account-profile.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -133,6 +134,7 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 					}
 
 					return {
+						query,
 						async all() {
 							return executeAll()
 						},
@@ -153,9 +155,8 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 				},
 			}
 		},
-		// A username change also retires the old username (batched write).
-		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
-			return Promise.all(statements.map((statement) => statement.run()))
+		async batch(statements: Array<{ query?: string }>) {
+			return await executePreparedD1Batch(statements)
 		},
 		async exec() {
 			return

@@ -16,6 +16,7 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createAccountEmailChangeHandler } from './account-email-change.ts'
 
@@ -24,83 +25,6 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../../migrations/', import.meta.url)
 	applyAllMigrations(db, migrationsDir)
-}
-
-function createD1FromSqlite(db: DatabaseSync) {
-	function createPreparedStatement(query: string) {
-		return {
-			query,
-			bind(...params: Array<unknown>) {
-				return {
-					query,
-					async all<T>() {
-						const statement = db.prepare(query)
-						const rows = statement.all(...params) as Array<T>
-						return {
-							results: rows,
-							meta: { changes: 0, last_row_id: 0 },
-						}
-					},
-					async first<T>() {
-						const statement = db.prepare(query)
-						return (statement.get(...params) ?? null) as T | null
-					},
-					async run() {
-						const statement = db.prepare(query)
-						const result = statement.run(...params)
-						return {
-							meta: {
-								changes: result.changes,
-								last_row_id: Number(result.lastInsertRowid),
-							},
-						}
-					},
-				}
-			},
-			async all<T>() {
-				const statement = db.prepare(query)
-				const rows = statement.all() as Array<T>
-				return {
-					results: rows,
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			},
-			async first<T>() {
-				const statement = db.prepare(query)
-				return (statement.get() ?? null) as T | null
-			},
-			async run() {
-				const statement = db.prepare(query)
-				const result = statement.run()
-				return {
-					meta: {
-						changes: result.changes,
-						last_row_id: Number(result.lastInsertRowid),
-					},
-				}
-			},
-		}
-	}
-	return {
-		prepare: createPreparedStatement,
-		async batch(statements: Array<{ run: () => Promise<unknown> }>) {
-			const results = []
-			db.exec('BEGIN')
-			try {
-				for (const statement of statements) {
-					results.push(await statement.run())
-				}
-				db.exec('COMMIT')
-				return results
-			} catch (error) {
-				db.exec('ROLLBACK')
-				throw error
-			}
-		},
-		async exec(query: string) {
-			db.exec(query)
-		},
-	} as unknown as D1Database
 }
 
 function createMigratedDb() {

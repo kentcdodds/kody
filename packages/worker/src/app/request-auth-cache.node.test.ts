@@ -7,6 +7,7 @@ import {
 } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const sessionEmail = 'user@example.com'
@@ -21,40 +22,44 @@ function createAuthCacheTestDb() {
 	return {
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
+			const statement = {
+				query,
 				bind() {
-					return {
-						async all() {
-							if (
-								normalizedQuery.startsWith('select') &&
-								normalizedQuery.includes('from "users"')
-							) {
-								return {
-									results: [
-										{
-											id: 7,
-											email: sessionEmail,
-											username: 'session-user',
-											stable_user_id: stableUserId,
-										},
-									],
-									meta: { changes: 0 },
-								}
-							}
-							if (normalizedQuery.includes('from user_roles')) {
-								return { results: [], meta: { changes: 0 } }
-							}
-							return { results: [], meta: { changes: 0 } }
-						},
-						async first() {
-							return null
-						},
-						async run() {
-							return { meta: { changes: 0 } }
-						},
+					return statement
+				},
+				async all() {
+					if (
+						normalizedQuery.startsWith('select') &&
+						normalizedQuery.includes('from "users"')
+					) {
+						return {
+							results: [
+								{
+									id: 7,
+									email: sessionEmail,
+									username: 'session-user',
+									stable_user_id: stableUserId,
+								},
+							],
+							meta: { changes: 0 },
+						}
 					}
+					if (normalizedQuery.includes('from user_roles')) {
+						return { results: [], meta: { changes: 0 } }
+					}
+					return { results: [], meta: { changes: 0 } }
+				},
+				async first() {
+					return null
+				},
+				async run() {
+					return { meta: { changes: 0 } }
 				},
 			}
+			return statement
+		},
+		async batch(statements: Array<{ query?: string }>) {
+			return await executePreparedD1Batch(statements)
 		},
 		async exec() {
 			return

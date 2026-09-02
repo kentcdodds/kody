@@ -2,9 +2,10 @@
  * Per-request feature-flag evaluation cache.
  *
  * Used by `loadSessionInfo` (SSR app shell + `/session` refresh) so flag
- * evaluation happens at most once per HTTP request. API handlers that only
- * need auth should keep using `loadResolvedRequestAuth` /
- * `readAuthenticatedAppUser` and will not hit this path.
+ * evaluation happens at most once per HTTP request. Live browser sessions
+ * start this load from `resolveRequestAuth` as soon as the user id is known
+ * so `renderAppPage` awaits an already-in-flight promise. Anonymous callers
+ * still receive registry defaults without touching D1.
  *
  * Evaluation also records success-metric exposures for measured flags (see
  * `#worker/feature-flags/exposure.ts`), which is why authenticated

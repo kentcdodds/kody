@@ -29,6 +29,7 @@ import {
 } from '#worker/blog/catalog.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { firstPartySecurityHeaders } from '#app/security-headers.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { BLOG_PLACEHOLDER_CALLOUT } from '#universal/blog-display.ts'
 import {
@@ -181,6 +182,7 @@ function createUserTestDb(users: Array<TestUser>) {
 			}
 		}
 		return {
+			query,
 			bind(...nextParams: Array<unknown>) {
 				return createStatement(query, nextParams)
 			},
@@ -201,9 +203,8 @@ function createUserTestDb(users: Array<TestUser>) {
 		prepare(query: string) {
 			return createStatement(query)
 		},
-		// Feature-flag exposure recording upserts via db.batch in local mode.
-		async batch(statements: Array<unknown>) {
-			return statements.map(() => ({ meta: { changes: 1 } }))
+		async batch(statements: Array<{ query?: string }>) {
+			return await executePreparedD1Batch(statements)
 		},
 		async exec() {
 			return

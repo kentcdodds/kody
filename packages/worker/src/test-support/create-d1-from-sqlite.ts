@@ -102,12 +102,21 @@ export function createD1FromSqlite(
 			options.queries?.push(query.replace(/\s+/g, ' ').trim())
 			return createPreparedStatement(query)
 		},
-		async batch(statements: Array<StatementRunner>) {
+		async batch(
+			statements: Array<
+				StatementRunner & { all?: () => Promise<unknown>; query?: string }
+			>,
+		) {
 			const results = []
 			db.exec('BEGIN')
 			try {
 				for (const statement of statements) {
-					results.push(await statement.run())
+					const isSelect = /^\s*select\b/i.test(statement.query ?? '')
+					if (isSelect && typeof statement.all === 'function') {
+						results.push(await statement.all())
+					} else {
+						results.push(await statement.run())
+					}
 				}
 				db.exec('COMMIT')
 				return results
