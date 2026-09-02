@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -7,6 +8,7 @@ import { signupModes } from '#universal/signup-mode.ts'
 import {
 	setSignupModeSetting,
 	SignupModeOpenWithoutTurnstileError,
+	SignupModeStaleWriteError,
 } from '#worker/signup-mode-setting.ts'
 import {
 	adminMutationCapabilityAccess,
@@ -28,7 +30,7 @@ export const adminSignupModeSetCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminSignupModeSet',
 		description:
-			'Set the runtime signup mode stored in platform KV. Open signup is refused unless both Turnstile keys are configured. Admin-only; never returns user content.',
+			'Set the runtime signup mode stored in platform KV. Requires expectedCurrentMode matching the stored mode (optimistic concurrency). Open signup is refused unless both Turnstile keys are configured. Admin-only; never returns user content.',
 		keywords: [
 			'admin',
 			'signup',
@@ -50,6 +52,7 @@ export const adminSignupModeSetCapability = defineDomainCapability(
 						const result = await setSignupModeSetting({
 							env: ctx.env,
 							mode: args.mode,
+							expectedCurrentMode: args.expectedCurrentMode,
 							updatedBy: user.userId,
 							actorEmail: user.email,
 							path: '/mcp',
@@ -59,8 +62,11 @@ export const adminSignupModeSetCapability = defineDomainCapability(
 							signupMode: result.current,
 						}
 					} catch (error) {
-						if (error instanceof SignupModeOpenWithoutTurnstileError) {
-							throw new Error(error.message)
+						if (
+							error instanceof SignupModeOpenWithoutTurnstileError ||
+							error instanceof SignupModeStaleWriteError
+						) {
+							throw new McpCallerError(error.message)
 						}
 						throw error
 					}

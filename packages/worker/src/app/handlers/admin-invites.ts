@@ -5,6 +5,7 @@ import { loadAdminInvitesData } from '#app/admin-invites-data.ts'
 import {
 	setSignupModeSetting,
 	SignupModeOpenWithoutTurnstileError,
+	SignupModeStaleWriteError,
 } from '#app/signup-mode-setting.ts'
 import { isSignupMode } from '#universal/signup-mode.ts'
 import {
@@ -313,17 +314,41 @@ async function handleSetSignupModeAction(input: {
 			400,
 		)
 	}
+	const expectedCurrentMode = readNonEmptyTrimmedStringOrNumber(
+		input.body,
+		'expectedCurrentMode',
+	)
+	if (!isSignupMode(expectedCurrentMode)) {
+		return jsonResponse(
+			{
+				ok: false,
+				error: 'expectedCurrentMode must be invite, open, or waitlist.',
+			},
+			400,
+		)
+	}
 
 	try {
 		await setSignupModeSetting({
 			env: input.env,
 			mode,
+			expectedCurrentMode,
 			updatedBy: input.actor.mcpUser.userId,
 			actorEmail: input.actor.email,
 			path: input.url.pathname,
 			ip: getRequestIp(input.request) ?? undefined,
 		})
 	} catch (error) {
+		if (error instanceof SignupModeStaleWriteError) {
+			return jsonResponse(
+				{
+					ok: false,
+					error: error.message,
+					signupMode: error.current,
+				},
+				409,
+			)
+		}
 		const message =
 			error instanceof Error ? error.message : 'Unable to update signup mode.'
 		return jsonResponse(

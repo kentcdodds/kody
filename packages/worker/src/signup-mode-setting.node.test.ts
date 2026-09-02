@@ -11,6 +11,7 @@ import {
 	resolveSignupMode,
 	setSignupModeSetting,
 	SignupModeOpenWithoutTurnstileError,
+	SignupModeStaleWriteError,
 	signupModeKvKey,
 	signupModeKvReadFailedLogKey,
 } from './signup-mode-setting.ts'
@@ -139,9 +140,11 @@ test('signup mode setting: KV override, fallbacks, memo, setter, and Turnstile g
 	const setEnv = createEnv({ signupMode: 'invite', kv: setKv, turnstile: true })
 	expect(await resolveSignupMode(setEnv)).toBe('invite')
 	expect(setGetSpy).toHaveBeenCalledTimes(1)
+	const putSpy = vi.spyOn(setKv, 'put')
 	const changed = await setSignupModeSetting({
 		env: setEnv,
 		mode: 'open',
+		expectedCurrentMode: 'invite',
 		updatedBy: 'admin-stable-id',
 		actorEmail: 'admin@example.com',
 		path: '/admin/invites.json',
@@ -164,6 +167,20 @@ test('signup mode setting: KV override, fallbacks, memo, setter, and Turnstile g
 		}),
 	)
 	expect(auditEventSummaries()).toEqual(['signup_mode_set:success'])
+	expect(putSpy).toHaveBeenCalledTimes(1)
+
+	const storedAfterMatch = setKv.store.get(signupModeKvKey)
+	await expect(
+		setSignupModeSetting({
+			env: setEnv,
+			mode: 'waitlist',
+			expectedCurrentMode: 'invite',
+			updatedBy: 'admin-stable-id',
+		}),
+	).rejects.toThrow(SignupModeStaleWriteError)
+	expect(setKv.store.get(signupModeKvKey)).toBe(storedAfterMatch)
+	expect(putSpy).toHaveBeenCalledTimes(1)
+	expect(await resolveSignupMode(setEnv)).toBe('open')
 
 	const noTurnstileEnv = createEnv({
 		signupMode: 'invite',
@@ -174,6 +191,7 @@ test('signup mode setting: KV override, fallbacks, memo, setter, and Turnstile g
 		setSignupModeSetting({
 			env: noTurnstileEnv,
 			mode: 'open',
+			expectedCurrentMode: 'invite',
 			updatedBy: 'admin-stable-id',
 		}),
 	).rejects.toThrow(SignupModeOpenWithoutTurnstileError)

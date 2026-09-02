@@ -59,7 +59,10 @@ test('adminSignupModeGet and adminSignupModeSet: found, missing, non-admin denie
 		adminSignupModeGetCapability.handler({}, userCtx),
 	).rejects.toThrow('lacks required role "admin"')
 	await expect(
-		adminSignupModeSetCapability.handler({ mode: 'waitlist' }, userCtx),
+		adminSignupModeSetCapability.handler(
+			{ mode: 'waitlist', expectedCurrentMode: 'invite' },
+			userCtx,
+		),
 	).rejects.toThrow('lacks required role "admin"')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -105,7 +108,7 @@ test('adminSignupModeGet and adminSignupModeSet: found, missing, non-admin denie
 	})
 
 	const setResult = await adminSignupModeSetCapability.handler(
-		{ mode: 'waitlist' },
+		{ mode: 'waitlist', expectedCurrentMode: 'invite' },
 		missingCtx,
 	)
 	expect(setResult.previousMode).toBe('invite')
@@ -129,9 +132,18 @@ test('adminSignupModeGet and adminSignupModeSet: found, missing, non-admin denie
 		}),
 	)
 
+	const storedAfterSet = missingKv.store.get(signupModeKvKey)
 	await expect(
 		adminSignupModeSetCapability.handler(
-			{ mode: 'open' },
+			{ mode: 'open', expectedCurrentMode: 'invite' },
+			missingCtx,
+		),
+	).rejects.toThrow('Current mode is waitlist')
+	expect(missingKv.store.get(signupModeKvKey)).toBe(storedAfterSet)
+
+	await expect(
+		adminSignupModeSetCapability.handler(
+			{ mode: 'open', expectedCurrentMode: 'invite' },
 			createContext(['admin'], { BUNDLE_ARTIFACTS_KV: createMemoryKv() }),
 		),
 	).rejects.toThrow('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY')
@@ -143,6 +155,7 @@ test('adminSignupModeGet and adminSignupModeSet: found, missing, non-admin denie
 		'adminSignupModeGet:success',
 		'signup_mode_set:success',
 		'adminSignupModeSet:success',
+		'adminSignupModeSet:failure',
 		'adminSignupModeSet:failure',
 	])
 })

@@ -153,6 +153,14 @@ export function AdminInvitesRoute(handle: Handle) {
 		}
 	}
 
+	function retryLoad() {
+		lastFailedHref = null
+		status = 'loading'
+		message = null
+		handle.update()
+		handle.queueTask(loadInvites)
+	}
+
 	async function submitAdminAction(body: Record<string, unknown>) {
 		actionState =
 			body.action === 'create_invite'
@@ -184,8 +192,12 @@ export function AdminInvitesRoute(handle: Handle) {
 					ok?: boolean
 					error?: string
 					createdUser?: AdminCreatedUserSetup
+					signupMode?: SignupModeSetting
 				}
 			>(response)
+			if (payload?.signupMode) {
+				signupMode = payload.signupMode
+			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to update invites.')
 			}
@@ -290,12 +302,15 @@ export function AdminInvitesRoute(handle: Handle) {
 				) : null}
 				{signupModePanel.render({
 					setting: signupMode,
-					disabled: isMutating,
+					disabled: isMutating || signupMode == null,
 					saving: actionState === 'savingSignupMode',
-					onSave: (mode) => {
+					onRetry:
+						status === 'error' && signupMode == null ? retryLoad : undefined,
+					onSave: (mode, expectedCurrentMode) => {
 						void submitAdminAction({
 							action: 'set_signup_mode',
 							mode,
+							expectedCurrentMode,
 						})
 					},
 				})}

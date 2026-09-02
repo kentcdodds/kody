@@ -86,6 +86,17 @@ export class SignupModeOpenWithoutTurnstileError extends Error {
 	}
 }
 
+export class SignupModeStaleWriteError extends Error {
+	readonly current: SignupModeSetting
+	constructor(current: SignupModeSetting) {
+		super(
+			`Signup mode changed. Current mode is ${current.mode}. Retry with expectedCurrentMode=${current.mode}.`,
+		)
+		this.name = 'SignupModeStaleWriteError'
+		this.current = current
+	}
+}
+
 async function loadSignupModeSettingUncached(
 	env: SignupModeEnv,
 ): Promise<SignupModeSetting> {
@@ -143,19 +154,23 @@ export async function resolveSignupMode(
 export async function setSignupModeSetting(input: {
 	env: SignupModeEnv
 	mode: SignupMode
+	expectedCurrentMode: SignupMode
 	updatedBy: string
 	actorEmail?: string
 	path?: string
 	ip?: string
 }): Promise<{ previous: SignupModeSetting; current: SignupModeSetting }> {
-	if (input.mode === 'open' && !areTurnstileKeysConfigured(input.env)) {
-		throw new SignupModeOpenWithoutTurnstileError()
-	}
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!kv) {
 		throw new Error('BUNDLE_ARTIFACTS_KV is required to persist signup mode.')
 	}
 	const previous = await loadSignupModeSettingUncached(input.env)
+	if (previous.mode !== input.expectedCurrentMode) {
+		throw new SignupModeStaleWriteError(previous)
+	}
+	if (input.mode === 'open' && !areTurnstileKeysConfigured(input.env)) {
+		throw new SignupModeOpenWithoutTurnstileError()
+	}
 	const updatedAt = new Date().toISOString()
 	const record: SignupModeRecord = {
 		mode: input.mode,

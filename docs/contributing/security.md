@@ -311,7 +311,8 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 Open signup requires Turnstile. `adminSignupModeSet` and
 `POST /admin/invites.json` refuse `mode=open` unless both `TURNSTILE_SITE_KEY`
 and `TURNSTILE_SECRET_KEY` are configured, so public password and social signup
-cannot be opened without bot defence.
+cannot be opened without bot defence. Writes also require `expectedCurrentMode`
+matching the stored mode; a mismatch returns 409 with the live setting.
 
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the

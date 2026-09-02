@@ -88,10 +88,12 @@ defaults to the `production` Wrangler env (`CLOUDFLARE_ENV` defaults to
 `production` in `wrangler-env.ts`), so invite gating applies unless an admin
 override is stored or you point at `test`. Admins change the override from
 `/admin/invites` or the `adminSignupModeGet` / `adminSignupModeSet`
-capabilities. Setting `open` is refused unless both `TURNSTILE_SITE_KEY` and
-`TURNSTILE_SECRET_KEY` are configured. `isNonProductionRuntime` is unrelated to
-invite gating (it still gates Kit waitlist soft-fail, email-send skip when no
-sender is configured, and similar non-production shortcuts).
+capabilities. Writes require `expectedCurrentMode` matching the stored mode; a
+mismatch is refused so a stale tab cannot clobber a newer override. Setting
+`open` is refused unless both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
+are configured. `isNonProductionRuntime` is unrelated to invite gating (it still
+gates Kit waitlist soft-fail, email-send skip when no sender is configured, and
+similar non-production shortcuts).
 
 The public `/signup` page defaults to a waiting-list form (first name + email)
 backed by `POST /waiting-list`, which upserts a Kit subscriber and tags them
