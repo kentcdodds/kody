@@ -62,6 +62,7 @@ function isVercelMcpAllowlistMessage(message: string) {
 export function isMcpOAuthAllowlistRejection(message: string) {
 	const lower = message.trim().toLowerCase()
 	if (!lower) return false
+	if (isVercelMcpAllowlistMessage(lower)) return true
 	if (lower.includes('unapproved oauth client')) return true
 	return looksLikeOriginRejection(lower) || looksLikeRedirectRejection(lower)
 }

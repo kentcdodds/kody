@@ -398,7 +398,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 							oauthClientOrigin,
 							oauthCallbackUrl,
 							oauthClientMetadataUrl,
-							serverUrl: addUrl || server?.url || null,
+							serverUrl: server?.url || addUrl || null,
 						})
 					) : (
 						<AccountManagementMessage tone="info">
