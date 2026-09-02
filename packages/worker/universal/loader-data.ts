@@ -15,7 +15,10 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingFeaturedMcpServerId,
 } from '#universal/onboarding-mcp-chooser.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	type SignupMode,
+	type SignupModeSetting,
+} from '#universal/signup-mode.ts'
 import {
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
@@ -350,6 +353,7 @@ export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
 	availablePlans: Array<AdminPlanName>
+	signupMode: SignupModeSetting
 }
 
 export type AdminFeatureFlagsLoaderData = {

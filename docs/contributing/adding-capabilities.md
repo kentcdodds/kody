@@ -237,6 +237,8 @@ rule.
 - `adminFeatureFlagList`
 - `adminFeatureFlagSet`
 - `adminFeatureFlagOverride`
+- `adminSignupModeGet`
+- `adminSignupModeSet`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
 - `adminSystemEmailSend`

@@ -308,6 +308,11 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
 
+Open signup requires Turnstile. `adminSignupModeSet` and
+`POST /admin/invites.json` refuse `mode=open` unless both `TURNSTILE_SITE_KEY`
+and `TURNSTILE_SECRET_KEY` are configured, so public password and social signup
+cannot be opened without bot defence.
+
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the
 read-then-write race that KV-backed limiters suffer under concurrency.
