@@ -1,5 +1,5 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { listAdminStableUserIds } from '#worker/identity/permissions-db.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -155,7 +155,7 @@ export async function dispatchAdminPackageSubscriptionEvent(input: {
 		return []
 	}
 	const params = await input.getParams()
-	const invoked = await runWithDynamicWorkerEvaluationBudget(
+	const invoked = await runQueueableDynamicWorkerWork(
 		async () =>
 			await mapSettledInChunks(subscriptions, async ({ savedPackage }) => {
 				const response = await invokePackageSubscription({

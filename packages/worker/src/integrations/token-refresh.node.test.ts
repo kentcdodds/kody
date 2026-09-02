@@ -637,3 +637,75 @@ test('successful Google refresh persists userinfo email as account_label when mi
 		vi.unstubAllGlobals()
 	}
 })
+
+test('in-flight refreshes of the same connection share one provider POST and one succeeded emit', async () => {
+	mocks.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
+	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+	const { env } = createHarness()
+	const userId = 'user-coalesce-refresh'
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+		refreshTokenSecretName: 'githubRefreshToken',
+	})
+	await seedUserTokens(env, userId, 'github')
+
+	let releaseTokenEndpoint: () => void = () => {}
+	const tokenEndpointOpened = new Promise<void>((resolve) => {
+		releaseTokenEndpoint = resolve
+	})
+	const fetchMock = vi.fn(async (url: string | URL | Request) => {
+		if (String(url).includes('login/oauth/access_token')) {
+			await tokenEndpointOpened
+			return new Response(
+				JSON.stringify({
+					access_token: 'fresh-access-token',
+					refresh_token: 'rotated-refresh-token',
+				}),
+				{
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			)
+		}
+		throw new Error(`unexpected fetch ${String(url)}`)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		const first = refreshIntegrationTokens({ env, userId, name: 'github' })
+		const second = refreshIntegrationTokens({ env, userId, name: 'github' })
+		await expect.poll(() => fetchMock.mock.calls.length).toBe(1)
+		releaseTokenEndpoint()
+		const [firstResult, secondResult] = await Promise.all([first, second])
+		expect(firstResult).toEqual(secondResult)
+		expect(firstResult.refreshTokenRotated).toBe(true)
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(
+			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
+		).toHaveBeenCalledTimes(1)
+
+		await refreshIntegrationTokens({ env, userId, name: 'github' })
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(
+			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
+		).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})

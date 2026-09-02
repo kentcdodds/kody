@@ -1,5 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
@@ -222,7 +222,7 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 			userId: input.userId,
 			topic: input.topic,
 		})
-	const settled = await runWithDynamicWorkerEvaluationBudget(
+	const settled = await runQueueableDynamicWorkerWork(
 		async () =>
 			await Promise.allSettled(
 				subscriptions.map(async ({ savedPackage }) => {
@@ -280,8 +280,9 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
  * still receive the original error. Sibling handler terminal failures are
  * isolated via `Promise.allSettled`.
  *
- * Every classified caller-error emits. The platform does not coalesce repeats;
- * notifier packages decide how often to ping, typically by pairing this topic
+ * Every classified caller-error emits. Sequential attempts are not coalesced;
+ * concurrent in-flight refreshes of the same connection share one attempt.
+ * Notifier packages decide how often to ping, typically by pairing this topic
  * with `integration.auth.succeeded` and storing last-known health.
  */
 export async function dispatchIntegrationAuthFailedSubscriptionEvents(input: {
@@ -317,8 +318,10 @@ export async function dispatchIntegrationAuthFailedSubscriptionEvents(input: {
  * Fan a successful OAuth grant (host-side refresh or `/connect/oauth` persist)
  * out to the owning user's packages that declare `integration.auth.succeeded`.
  * Best-effort: discovery and invocation infrastructure failures are logged,
- * never thrown. Every successful refresh or connect persist emits; notifier
- * packages edge-detect working ↔ failed in their own storage.
+ * never thrown. Sequential successful refreshes and connect persists each
+ * emit; concurrent in-flight refreshes of the same connection share one
+ * attempt. Notifier packages edge-detect working ↔ failed in their own
+ * storage.
  */
 export async function dispatchIntegrationAuthSucceededSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>

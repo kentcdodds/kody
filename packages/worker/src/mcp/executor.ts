@@ -13,7 +13,6 @@ import {
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import {
 	outboundFetchTimeoutMsForExecutor,
 	retrieverOutboundFetchDeniedMessage,
@@ -54,6 +53,13 @@ import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.t
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import {
+	getDynamicWorkerEvaluationContext,
+	isDynamicWorkerCapacityErrorMessage,
+	maxConcurrentDynamicWorkerEvaluationsPerRequest,
+	runWithCapturedDynamicWorkerEvaluationContext,
+	withDynamicWorkerEvaluationPermit,
+} from '#worker/dynamic-worker-evaluation-budget.ts'
+import {
 	executorSandboxTimeoutMessage,
 	executorSandboxTimeoutMessageExplanation,
 	executorSandboxTimeoutMessagePrefix,
@@ -72,20 +78,14 @@ import {
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
+export { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
+
 export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
 const dynamicWorkerCacheKeyVersion = 4
-// Cloudflare caps Worker Loader evaluations at four for one incoming request.
-// Async-local state shares that budget with nested evaluations while keeping
-// unrelated requests out of the same queue.
-const maxConcurrentDynamicWorkerEvaluationsPerRequest = 4
 const hostEvaluationDrainGraceMs = 100
-const dynamicWorkerCapacityErrorMessages = [
-	'Too many concurrent dynamic workers',
-	'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
-] as const
 const reservedProviderNames = new Set([
 	'__dispatchers',
 	'__logs',
@@ -199,57 +199,9 @@ function attachHostSideEffects(
 	}
 }
 
-type DynamicWorkerPermitWaiter = {
-	resolve: () => void
-	reject: (error: Error) => void
-}
-
-type DynamicWorkerEvaluationGate = {
-	active: number
-	queue: Array<DynamicWorkerPermitWaiter>
-}
-
-type DynamicWorkerEvaluationContext = {
-	gate: DynamicWorkerEvaluationGate
-	depth: number
-}
-
 class HostEvaluationTimeoutError<T> extends Error {
 	name = 'TimeoutError'
 	evaluationResult?: T
-}
-
-const dynamicWorkerEvaluationGateStorage =
-	new AsyncLocalStorage<DynamicWorkerEvaluationContext>()
-
-export async function runWithDynamicWorkerEvaluationBudget<T>(
-	callback: () => Promise<T>,
-): Promise<T> {
-	const inheritedContext = dynamicWorkerEvaluationGateStorage.getStore()
-	if (inheritedContext) {
-		return await callback()
-	}
-	const requestContext: DynamicWorkerEvaluationContext = {
-		gate: {
-			active: 0,
-			queue: [],
-		},
-		depth: 0,
-	}
-	return await dynamicWorkerEvaluationGateStorage.run(requestContext, callback)
-}
-
-async function withDynamicWorkerEvaluationPermit<T>(
-	evaluate: () => Promise<T>,
-	signal?: AbortSignal,
-): Promise<T> {
-	return await runWithDynamicWorkerEvaluationBudget(async () => {
-		const context = dynamicWorkerEvaluationGateStorage.getStore()
-		if (!context) {
-			throw new Error('Dynamic worker evaluation budget was not initialized.')
-		}
-		return await runWithDynamicWorkerEvaluationPermit(context, evaluate, signal)
-	})
 }
 
 /**
@@ -390,95 +342,6 @@ export function createNamedExecutionError(error: unknown) {
 		namedError.name = 'TimeoutError'
 	}
 	return namedError
-}
-
-async function runWithDynamicWorkerEvaluationPermit<T>(
-	context: DynamicWorkerEvaluationContext,
-	evaluate: () => Promise<T>,
-	signal?: AbortSignal,
-): Promise<T> {
-	const { gate } = context
-	throwIfEvaluationDeadlineAborted(signal)
-	let acquired = false
-	if (gate.active < maxConcurrentDynamicWorkerEvaluationsPerRequest) {
-		gate.active += 1
-		acquired = true
-	} else if (context.depth > 0) {
-		// A nested evaluation cannot wait safely once the request is saturated:
-		// every active permit may belong to an ancestor/sibling that is itself
-		// awaiting a descendant. Only independent roots in an explicit request
-		// budget (depth 0) may queue because another root can finish without
-		// waiting for the queued evaluation.
-		throw new Error(dynamicWorkerCapacityErrorMessages[1])
-	} else {
-		await new Promise<void>((resolve, reject) => {
-			const waiter: DynamicWorkerPermitWaiter = {
-				resolve: () => {
-					cleanup()
-					resolve()
-				},
-				reject: (error) => {
-					cleanup()
-					reject(error)
-				},
-			}
-			const onAbort = () => {
-				const index = gate.queue.indexOf(waiter)
-				if (index >= 0) {
-					gate.queue.splice(index, 1)
-				}
-				// The deadline abort reason carries the budget-annotated timeout
-				// message; fall back to the bare message for non-Error reasons.
-				waiter.reject(
-					signal?.reason instanceof Error
-						? signal.reason
-						: new Error(executorSandboxTimeoutMessage),
-				)
-			}
-			const cleanup = () => {
-				if (signal) {
-					signal.removeEventListener('abort', onAbort)
-				}
-			}
-			if (signal) {
-				signal.addEventListener('abort', onAbort, { once: true })
-				if (signal.aborted) {
-					onAbort()
-					return
-				}
-			}
-			gate.queue.push(waiter)
-		})
-		// A cancelled waiter never reaches here; a transferred permit means we
-		// already own `active` without incrementing again.
-		acquired = true
-	}
-	try {
-		throwIfEvaluationDeadlineAborted(signal)
-		return await dynamicWorkerEvaluationGateStorage.run(
-			{
-				gate,
-				depth: context.depth + 1,
-			},
-			evaluate,
-		)
-	} finally {
-		if (acquired) {
-			const next = gate.queue.shift()
-			if (next) {
-				// Transfer this permit directly to the oldest waiter.
-				next.resolve()
-			} else {
-				gate.active -= 1
-			}
-		}
-	}
-}
-
-function isDynamicWorkerCapacityErrorMessage(message: string) {
-	return dynamicWorkerCapacityErrorMessages.some((candidate) =>
-		message.includes(candidate),
-	)
 }
 
 export function createKodyRemoteProxy(input: {
@@ -993,6 +856,7 @@ export function createToolDispatchers(
 	signal?: AbortSignal,
 	sideEffects?: EvaluationSideEffectTracker,
 ) {
+	const capturedEvaluationContext = getDynamicWorkerEvaluationContext()
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
 		const sanitizedFns: Record<
@@ -1017,18 +881,23 @@ export function createToolDispatchers(
 			}
 			rawNamesBySanitizedName.set(sanitizedName, name)
 			sanitizedFns[sanitizedName] = async (...args) => {
-				if (!executionState.active) {
-					throw new Error('Execution has already completed.')
-				}
-				if (
-					sideEffects &&
-					!isPlatformOnlyHostSideEffectProvider(provider.name)
-				) {
-					sideEffects.recordDispatcherAttempt()
-				}
-				return abortSignalToolNames.has(name)
-					? await fn(...args, signal)
-					: await fn(...args)
+				return await runWithCapturedDynamicWorkerEvaluationContext(
+					capturedEvaluationContext,
+					async () => {
+						if (!executionState.active) {
+							throw new Error('Execution has already completed.')
+						}
+						if (
+							sideEffects &&
+							!isPlatformOnlyHostSideEffectProvider(provider.name)
+						) {
+							sideEffects.recordDispatcherAttempt()
+						}
+						return abortSignalToolNames.has(name)
+							? await fn(...args, signal)
+							: await fn(...args)
+					},
+				)
 			}
 		}
 		dispatchers[provider.name] = new ToolDispatcher(sanitizedFns)
