@@ -9,7 +9,7 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('./mcp/capabilities/registry.ts', () => ({
-	getStaticRegistry: () => ({
+	getStaticRegistry: async () => ({
 		capabilitySpecs: {
 			example_capability: {
 				name: 'example_capability',

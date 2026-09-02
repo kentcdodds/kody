@@ -3,13 +3,12 @@ import {
 	CloudflareApiError,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
 import {
 	runArtifactsGitWithRetry,
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import { type EntityKind } from './types.ts'
+import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
 
 export type ArtifactToken = {
 	id: string
@@ -782,6 +781,7 @@ export async function listArtifactServerRefs(input: {
 		remote: input.remote,
 		token: input.token,
 	})
+	const { git, http } = await loadIsomorphicGit()
 	return runArtifactsGitWithRetry(() =>
 		git.listServerRefs({
 			http,

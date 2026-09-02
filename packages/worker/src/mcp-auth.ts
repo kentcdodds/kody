@@ -17,11 +17,11 @@ import {
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
+import type * as StatelessLane from './mcp/stateless-lane.ts'
 import {
 	classifyMcpProtocolRequest,
 	recordMcpProtocolEvent,
 } from './mcp/protocol-metrics.ts'
-import { handleStatelessMcpRequest } from './mcp/stateless-lane.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
@@ -247,6 +247,20 @@ function jsonRpcMessageNeedsAccountWriteLease(
 	return name !== 'search'
 }
 
+let statelessLaneMemo: Promise<typeof StatelessLane> | null = null
+
+// The stateless lane pulls in the MCP server SDK; load it on the first MCP
+// request instead of during Worker startup (see startup-budget.md).
+function loadStatelessLane() {
+	statelessLaneMemo ??= import('./mcp/stateless-lane.ts').catch(
+		(error: unknown) => {
+			statelessLaneMemo = null
+			throw error
+		},
+	)
+	return statelessLaneMemo
+}
+
 export async function handleMcpRequest({
 	request,
 	env,
@@ -401,7 +415,9 @@ export async function handleMcpRequest({
 						env,
 						context as ExecutionContext<OAuthContextProps>,
 					)
-				: await handleStatelessMcpRequest({
+				: await (
+						await loadStatelessLane()
+					).handleStatelessMcpRequest({
 						request,
 						env,
 						ctx,

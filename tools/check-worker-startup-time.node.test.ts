@@ -1,0 +1,62 @@
+import { expect, test } from 'vitest'
+import {
+	findStartupBudgetViolations,
+	formatStartupTimeResult,
+	parseStartupProfileSummary,
+	readStartupBudget,
+	startupTimeTargets,
+} from './check-worker-startup-time.ts'
+
+const sampleOutput = `
+│ Bundle: 27987.36 KiB / gzip: 8010.60 KiB
+│
+│ Local startup profile:
+│   Profile window: 305.1 ms
+│   Sampled time: 303.2 ms
+│   Active: 116.3 ms (including 9.3 ms garbage collection)
+│   Idle: 186.9 ms
+│   Samples: 210
+`
+
+test('parses the wrangler check startup summary block', () => {
+	expect(parseStartupProfileSummary(sampleOutput)).toEqual({
+		activeMs: 116.3,
+		garbageCollectionMs: 9.3,
+		idleMs: 186.9,
+	})
+})
+
+test('returns null when the summary block is missing', () => {
+	expect(parseStartupProfileSummary('wrangler exploded')).toBeNull()
+})
+
+test('budget file names every profiled worker with a positive ceiling', async () => {
+	const budget = await readStartupBudget()
+	expect(budget.runs).toBeGreaterThanOrEqual(1)
+	for (const target of startupTimeTargets) {
+		expect(budget.maxActiveMs[target.name]).toBeGreaterThan(0)
+	}
+})
+
+test('reports only workers whose best sample exceeds the budget', () => {
+	const results = [
+		{
+			name: 'origin' as const,
+			bestActiveMs: 120,
+			samples: [{ activeMs: 130, garbageCollectionMs: 5, idleMs: 100 }],
+			maxActiveMs: 240,
+		},
+		{
+			name: 'runtime' as const,
+			bestActiveMs: 190,
+			samples: [{ activeMs: 190, garbageCollectionMs: 5, idleMs: 100 }],
+			maxActiveMs: 150,
+		},
+	]
+	expect(findStartupBudgetViolations(results).map((r) => r.name)).toEqual([
+		'runtime',
+	])
+	expect(formatStartupTimeResult(results[0]!)).toBe(
+		'origin startup active CPU: 120.0 ms best of [130.0] (budget 240 ms)',
+	)
+})

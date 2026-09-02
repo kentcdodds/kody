@@ -155,12 +155,16 @@ async function runReindexPhase(
 ): Promise<ReindexStepResult> {
 	switch (input.phase) {
 		case 'capabilities':
-			return runReindexStep(() =>
-				reindexCapabilityVectors(env, getStaticRegistry().capabilitySpecs, {
-					afterId: input.afterId,
-					deadlineMs: input.deadlineMs,
-					force: input.force,
-				}),
+			return runReindexStep(async () =>
+				reindexCapabilityVectors(
+					env,
+					(await getStaticRegistry()).capabilitySpecs,
+					{
+						afterId: input.afterId,
+						deadlineMs: input.deadlineMs,
+						force: input.force,
+					},
+				),
 			)
 		case 'memories':
 			return runReindexStep(() =>

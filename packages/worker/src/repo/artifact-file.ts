@@ -1,5 +1,3 @@
-import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
 import {
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
@@ -13,6 +11,7 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
+import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
 
 export async function readArtifactFileAtCommit(input: {
 	env: Env
@@ -70,6 +69,7 @@ export async function readFirstArtifactFileAtCommit(input: {
 		token: token.plaintext,
 	})
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
+	const { git, http } = await loadIsomorphicGit()
 	// isomorphic-git verifies pack checksums on first readObjectPacked (during
 	// readBlob), not during fetch — so fetch+read must share one retry scope.
 	// Fresh ephemeral workspace per attempt: a corrupt pack may leave partial

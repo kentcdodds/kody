@@ -55,12 +55,12 @@ test('getCapabilityRegistryForContext returns the static registry when no dynami
 			String(query).toLowerCase().includes('feature_flag'),
 		),
 	).toBe(false)
-	expect(registry.capabilityMap).toBe(getStaticRegistry().capabilityMap)
+	expect(registry.capabilityMap).toBe((await getStaticRegistry()).capabilityMap)
 })
 
-test('getStaticRegistry memoizes the builtin registry', () => {
-	const first = getStaticRegistry()
-	const second = getStaticRegistry()
+test('getStaticRegistry memoizes the builtin registry', async () => {
+	const first = await getStaticRegistry()
+	const second = await getStaticRegistry()
 	expect(first).toBe(second)
 	expect(Object.keys(first.capabilitySpecs).length).toBeGreaterThan(0)
 })

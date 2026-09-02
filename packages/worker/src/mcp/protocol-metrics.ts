@@ -26,11 +26,7 @@
  * ```
  */
 
-import {
-	CLIENT_INFO_META_KEY,
-	PROTOCOL_VERSION_META_KEY,
-	isLegacyRequest,
-} from '@modelcontextprotocol/server'
+import type * as McpServerModule from '@modelcontextprotocol/server'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 export type McpProtocolLane = 'legacy' | 'modern'
@@ -74,9 +70,30 @@ function firstJsonRpcMessage(body: unknown): Record<string, unknown> | null {
  * never disagree. The request body is read from a clone; the request stays
  * fully readable for whichever lane serves it.
  */
+let mcpServerModuleMemo: Promise<typeof McpServerModule> | null = null
+
+/**
+ * `@modelcontextprotocol/server` builds the wire schemas for every protocol
+ * revision when it evaluates, which is a large share of Worker startup CPU.
+ * Every consumer on origin runs inside a request, so the module is loaded on
+ * first use and cached for the isolate. Keep static imports of that package
+ * off the startup path (see `docs/contributing/architecture/startup-budget.md`).
+ */
+export function loadMcpServerModule(): Promise<typeof McpServerModule> {
+	mcpServerModuleMemo ??= import('@modelcontextprotocol/server').catch(
+		(error: unknown) => {
+			mcpServerModuleMemo = null
+			throw error
+		},
+	)
+	return mcpServerModuleMemo
+}
+
 export async function classifyMcpProtocolRequest(
 	request: Request,
 ): Promise<McpProtocolClassification> {
+	const { CLIENT_INFO_META_KEY, PROTOCOL_VERSION_META_KEY, isLegacyRequest } =
+		await loadMcpServerModule()
 	let parsedBody: unknown
 	let hasParsedBody = false
 	if (request.method === 'POST') {

@@ -64,8 +64,8 @@ test('value list treats underscore-prefixed names as ordinary leftovers', async 
 	])
 })
 
-test('values domain is unadvertised while read and delete stay on the map', () => {
-	const registry = getStaticRegistry()
+test('values domain is unadvertised while read and delete stay on the map', async () => {
+	const registry = await getStaticRegistry()
 	expect(
 		registry.capabilityDomains.some((domain) => domain.name === 'values'),
 	).toBe(false)

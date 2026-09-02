@@ -60,15 +60,20 @@ export function toAdminDynamicWorkerCost(uniqueWorkerDays: number) {
 	}
 }
 
-const usdFormatter = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 2,
-	maximumFractionDigits: 3,
-})
+let usdFormatter: Intl.NumberFormat | null = null
 
-/** Format a Dynamic Worker cost so $0.002 stays visible. */
+/**
+ * Format a Dynamic Worker cost so $0.002 stays visible. The formatter is built
+ * on first use: constructing `Intl.NumberFormat` loads ICU data, which is
+ * measurable Worker startup CPU when it runs at module scope.
+ */
 export function formatDynamicWorkerUsd(amount: number): string {
+	usdFormatter ??= new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 3,
+	})
 	return usdFormatter.format(amount)
 }
 
