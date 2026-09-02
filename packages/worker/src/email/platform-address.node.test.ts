@@ -1,10 +1,15 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	buildPlatformEmailAddress,
 	getAcceptedSystemEmailDomains,
 	getAcceptedUserEmailDomains,
 	getPlatformEmailDomain,
 	getSystemEmailDomain,
+	resolveUserPlatformSender,
 } from './platform-address.ts'
 
 test('getPlatformEmailDomain derives inbox.<hostname> from APP_BASE_URL', () => {
@@ -104,4 +109,52 @@ test('buildPlatformEmailAddress normalizes the username', () => {
 			domain: 'inbox.heykody.dev',
 		}),
 	).toBe('kentcdodds@inbox.heykody.dev')
+})
+
+test('resolveUserPlatformSender sends from an unreserved built-in username and blocks permanently reserved locals', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureUsersTestSchema({ db, columns: ['email_verified_at'] })
+	const env = { APP_BASE_URL: 'https://kody.example.com' }
+
+	const blogEmail = 'blog-holder@example.com'
+	const blogUserId = await createStableUserIdFromEmail(blogEmail)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			 VALUES ('blog', ?, 'hash', ?, ?, 'max')`,
+		)
+		.bind(blogEmail, new Date().toISOString(), blogUserId)
+		.run()
+	await expect(
+		resolveUserPlatformSender({
+			db,
+			env,
+			accountEmail: blogEmail,
+			userId: blogUserId,
+		}),
+	).resolves.toEqual({
+		from: 'blog@inbox.kody.example.com',
+		accountEmail: blogEmail,
+		username: 'blog',
+		domain: 'inbox.kody.example.com',
+	})
+
+	const kodyEmail = 'kody-holder@example.com'
+	const kodyUserId = await createStableUserIdFromEmail(kodyEmail)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+			 VALUES ('kody', ?, 'hash', ?, ?, 'max')`,
+		)
+		.bind(kodyEmail, new Date().toISOString(), kodyUserId)
+		.run()
+	await expect(
+		resolveUserPlatformSender({
+			db,
+			env,
+			accountEmail: kodyEmail,
+			userId: kodyUserId,
+		}),
+	).rejects.toThrow('Reserved usernames cannot send email')
 })

@@ -1,5 +1,5 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { isPermanentlyReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
 
 /**
@@ -210,8 +210,9 @@ export type ResolvedPlatformSender = {
  * Resolve the platform-assigned outbound sender (`{username}@<platform
  * domain>`) and the backing account email for the acting user. The from
  * address is never caller-supplied: it always derives from the account's
- * username, and reserved/system local parts (including `kody@`, the
- * transactional system sender) can never send user mail.
+ * username, and permanently reserved local parts (including `kody@`, the
+ * transactional system sender) can never send user mail. Other reserved
+ * names may be unreserved and claimed; a live account may send.
  */
 export async function resolveUserPlatformSender(input: {
 	db: D1Database
@@ -232,7 +233,7 @@ export async function resolveUserPlatformSender(input: {
 	if (!account.username) {
 		throw new Error('No account username found for outbound email.')
 	}
-	if (isReservedUsername(account.username)) {
+	if (isPermanentlyReservedUsername(account.username)) {
 		throw new Error(
 			'Reserved usernames cannot send email; they are limited to system mail.',
 		)

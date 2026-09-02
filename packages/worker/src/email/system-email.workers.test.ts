@@ -208,20 +208,59 @@ test('reserved system locals store under the operator-owned system inbox', async
 	).toEqual(['kody', 'psl', 'support'])
 }, 30_000)
 
-test('non-system reserved locals still reject while username addresses are unaffected', async () => {
+test('user-subdomain mail delivers to a live unreserved built-in username and rejects permanent or unowned reserved locals', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const username = `normal-${crypto.randomUUID().slice(0, 8)}`
 	const email = `normal-${crypto.randomUUID()}@example.com`
 	const userId = await createStableUserIdFromEmail(email)
 	await seedVerifiedAccount({ email, username })
 
-	const reservedMessage = buildInboundMessage({
+	const blogEmail = `blog-${crypto.randomUUID()}@example.com`
+	const blogUserId = await createStableUserIdFromEmail(blogEmail)
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+		 VALUES ('blog', ?, ?, ?, ?, ?)
+		 ON CONFLICT(username) DO UPDATE SET
+			email = excluded.email,
+			email_verified_at = excluded.email_verified_at,
+			stable_user_id = excluded.stable_user_id,
+			plan = excluded.plan,
+			updated_at = CURRENT_TIMESTAMP`,
+	)
+		.bind(
+			blogEmail,
+			'test-password-hash',
+			new Date().toISOString(),
+			blogUserId,
+			'max',
+		)
+		.run()
+
+	const blogMessage = buildInboundMessage({
+		to: `blog@${userDomain}`,
+		subject: 'Unreserved built-in inbox',
+	})
+	await handleInboundEmail(blogMessage, createInboundEnv())
+	expect(blogMessage.rejectedReason).toBeNull()
+	expect(
+		await mailboxRpc({ env, userId: blogUserId }).listMessages({ limit: 10 }),
+	).toMatchObject({
+		messages: [expect.objectContaining({ direction: 'inbound' })],
+	})
+
+	const unownedBuiltIn = buildInboundMessage({
 		to: `help@${userDomain}`,
 	})
-	await handleInboundEmail(reservedMessage, createInboundEnv())
-	expect(reservedMessage.rejectedReason).toBe(
-		'This address is reserved for system mail.',
-	)
+	await handleInboundEmail(unownedBuiltIn, createInboundEnv())
+	expect(unownedBuiltIn.rejectedReason).toBe('Unknown Kody email address.')
+
+	// An admin-added reservation with no live account is not a system
+	// mailbox; there is no such user.
+	const addedReservation = buildInboundMessage({
+		to: `brandnew@${userDomain}`,
+	})
+	await handleInboundEmail(addedReservation, createInboundEnv())
+	expect(addedReservation.rejectedReason).toBe('Unknown Kody email address.')
 
 	// System locals only route on the apex: on the user subdomain they stay
 	// reserved, and non-system locals on the apex are not addresses at all.
