@@ -26,6 +26,13 @@ metadata, and public activity are visible on `/@username`. When visibility is
 **private**, the public profile is not found. See
 [Public packages](./community-packages.md#public-profiles).
 
+The only cookies are the session cookie (`kody_session`) and the package-app
+session cookie on `kody.run` (`__Host-kody_pkg_session` on HTTPS,
+`kody_pkg_session` on HTTP). Short-lived cookies support two-factor
+verification, passkey challenges, and OAuth login. Analytics (Fathom) is
+cookieless. The browser uses sessionStorage for first-touch signup attribution
+and scroll restoration, not tracking cookies.
+
 Account export includes your profile columns and activity you authored. The
 browser download is a bounded metadata manifest; use its `accountExportSection`
 instructions to retrieve every D1, Durable Object, and R2 page for a complete
@@ -50,7 +57,8 @@ Kody fetches data from a connected service only to fulfill a request you, or a
 job you saved, just made. Content a package or job persists (for example a saved
 summary) stays in your account under the same isolation rules. Kody does not
 sell that data, use it for advertising, share it with other Kody users, or use
-it to train a Kody model. Kody makes no inference calls of its own.
+it to train a Kody model. We do not sell or share personal information as
+defined by the CCPA/CPRA. Kody makes no inference calls of its own.
 
 **Share, transfer, and disclose.** Provider data leaves your isolated account
 only to Cloudflare, which hosts the application, database, object storage, and
@@ -88,42 +96,43 @@ UI lists users and roles; it does not expose account content.
 Platform feedback you explicitly approve for admin review is a narrow
 user-content exception.
 
-Admins also moderate public community listings and attributed community reports,
-and can see who forked or rated a public listing, when, and the rating scores.
-One-click installs appear as forks because both use the same activity record.
-This activity view never includes private package source, rating notes, email,
-stable user ids, private profiles, secrets, or unrelated account content.
-Admin-configured notification packages may receive the same community metadata,
-and a metadata-only `user.created` or `user.deleted` event when a person account
-is created or self-deleted (stable user id, username, email, the create source
-or delete timestamp, the consumed invite code when `user.created` used one, and
-first-touch marketing attribution fields when present). Those lifecycle events
-omit passwords, roles, plan, secrets, and unrelated account content.
-Admin-configured notification packages may also receive a metadata-only
-`user.email_verification.failed` event when signup/verify mail first hits a
-terminal delivery failure (stable user id, username, email, status, `class`
-(`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
-event omits SMTP transcripts, tokens, and unrelated account content.
-Admin-configured notification packages may also receive a metadata-only
-`user.email_verification.stalled` event when signup/verify mail stays `accepted`
-for an hour with no Cloudflare lifecycle event (stable user id, username, email,
-`accepted_at`, stall threshold, an admin user URL, and `occurred_at`). That
-event omits SMTP transcripts, tokens, and unrelated account content.
-Admin-configured notification packages may also receive a metadata-only
-`user.email_outbound.paused` event when outbound sending is paused after a spam
-complaint or repeated bounces (stable user id, username, email, reason, bounce
-threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
-That event omits SMTP transcripts, message bodies, and unrelated account
-content. Admin-configured notification packages may also receive
-`email.system-message.sent` when operator correspondence leaves a reserved
-system sender (`kody@`, `support@`, and the other system locals). That event
-includes the recipients, subject, and sent text/HTML because outbound system
-mail is not stored on the inbound system-email graph; it is admin-only and omits
+Admins also moderate public community listings and community reports. Reporting
+a listing requires a signed-in user; reports are **not** anonymous — the
+reporter identity is attached. Admins can see who forked or rated a public
+listing, when, and the rating scores. One-click installs appear as forks because
+both use the same activity record. This activity view never includes private
+package source, rating notes, email, stable user ids, private profiles, secrets,
+or unrelated account content. Admin-configured notification packages may receive
+the same community metadata, and a metadata-only `user.created` or
+`user.deleted` event when a person account is created or self-deleted (stable
+user id, username, email, the create source or delete timestamp, the consumed
+invite code when `user.created` used one, and first-touch marketing attribution
+fields when present). Those lifecycle events omit passwords, roles, plan,
+secrets, and unrelated account content. Admin-configured notification packages
+may also receive a metadata-only `user.email_verification.failed` event when
+signup/verify mail first hits a terminal delivery failure (stable user id,
+username, email, status, `class` (`sender_block` / `other` / `null`), an admin
+user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
 unrelated account content. Admin-configured notification packages may also
-receive metadata-only `auth.denial.burst` or `email.delivery.burst` events when
-hourly MCP auth denials or shared-domain bounce/complaint counts cross their
-thresholds (count, threshold, window, insights URL, and `observed_at`). Those
-events omit user identities, tokens, recipients, and message content.
+receive a metadata-only `user.email_verification.stalled` event when
+signup/verify mail stays `accepted` for an hour with no Cloudflare lifecycle
+event (stable user id, username, email, `accepted_at`, stall threshold, an admin
+user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
+unrelated account content. Admin-configured notification packages may also
+receive a metadata-only `user.email_outbound.paused` event when outbound sending
+is paused after a spam complaint or repeated bounces (stable user id, username,
+email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
+and `occurred_at`). That event omits SMTP transcripts, message bodies, and
+unrelated account content. Admin-configured notification packages may also
+receive `email.system-message.sent` when operator correspondence leaves a
+reserved system sender (`kody@`, `support@`, and the other system locals). That
+event includes the recipients, subject, and sent text/HTML because outbound
+system mail is not stored on the inbound system-email graph; it is admin-only
+and omits unrelated account content. Admin-configured notification packages may
+also receive metadata-only `auth.denial.burst` or `email.delivery.burst` events
+when hourly MCP auth denials or shared-domain bounce/complaint counts cross
+their thresholds (count, threshold, window, insights URL, and `observed_at`).
+Those events omit user identities, tokens, recipients, and message content.
 Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when anonymous package-runtime error
 rates rise (window bounds, per-metric counts and rates, public status URL, and
@@ -238,3 +247,12 @@ deployment — holding the Cloudflare account, D1 database access, and
 `SECRET_STORE_KEY` — sits outside any application-level control. The admin role
 grants no infrastructure access, and infrastructure access requires no admin
 role.
+
+Kody processes personal data to perform the contract for account and assistant
+features, on legitimate interests for security, abuse prevention, and analytics,
+and with consent for the waiting list and product email. Data is processed in
+the United States on Cloudflare's network. If you use Kody from outside the
+United States, you consent to that transfer. You also have the right to lodge a
+complaint with a supervisory authority where you live, including in the EEA or
+the United Kingdom. The in-app Privacy page at `/privacy` is the hosted legal
+policy.

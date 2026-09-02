@@ -330,6 +330,13 @@ export function renderAuthForm(
 					{props.submitBusyLabel}
 				</span>
 			</button>
+			{props.isSignup ? (
+				<p mix={css(signupConsentCss)}>
+					By creating an account you agree to the{' '}
+					<a href="/terms">Terms of Service</a> and acknowledge the{' '}
+					<a href="/privacy">Privacy Policy</a>.
+				</p>
+			) : null}
 			{!props.isSignup ? (
 				<button
 					type="button"
@@ -480,6 +487,20 @@ const inlineLinkCss = {
 const fieldAsideCss = {
 	...inlineLinkCss,
 	fontSize: '0.88rem',
+}
+
+const signupConsentCss = {
+	margin: 0,
+	fontSize: '0.85rem',
+	lineHeight: 1.5,
+	color: colors.textMuted,
+	'& a': {
+		color: colors.textMuted,
+		textDecoration: 'underline',
+		textDecorationThickness: '1.5px',
+		textUnderlineOffset: '3px',
+	},
+	'& a:hover': { color: colors.text },
 }
 
 const rememberCss = {

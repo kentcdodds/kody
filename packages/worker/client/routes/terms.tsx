@@ -10,6 +10,7 @@ import {
 	pageTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
+import { legalLastUpdated } from './legal-last-updated.ts'
 
 export function TermsRoute(_handle: Handle) {
 	return () => (
@@ -18,6 +19,10 @@ export function TermsRoute(_handle: Handle) {
 				<h1 mix={css(pageTitleCss)}>Terms and Acceptable Use</h1>
 				<p mix={css(pageDescriptionCss)}>
 					The plain-spoken agreement for creating an account and using Kody.
+				</p>
+				<p mix={css(lastUpdatedCss)}>
+					Last updated:{' '}
+					<time datetime={legalLastUpdated}>{legalLastUpdated}</time>
 				</p>
 			</header>
 
@@ -138,6 +143,37 @@ export function TermsRoute(_handle: Handle) {
 			</section>
 
 			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Public packages</h2>
+				<p mix={css(descriptionCss)}>
+					By publishing a package publicly you grant Kody a licence to host,
+					display, and distribute it through the community catalog, and you
+					grant other Kody users a licence to fork and run it under the licence
+					declared in the package (or, if none is declared, a non-exclusive
+					licence to fork and run it within Kody). You retain copyright.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Copyright and DMCA notices</h2>
+				<p mix={css(descriptionCss)}>
+					Kody responds to notices of claimed copyright infringement under 17
+					U.S.C. §512 concerning public community packages and profiles. Send
+					notices to{' '}
+					<a href="mailto:dmca@kody.codes" mix={css(mutedLinkCss)}>
+						dmca@kody.codes
+					</a>
+					. A valid notice must identify the copyrighted work, identify the
+					allegedly infringing material with its Kody URL, include your contact
+					information, a good-faith statement that use of the material is not
+					authorized, a statement under penalty of perjury that the information
+					is accurate and that you are the copyright owner or authorized to act
+					on the owner&apos;s behalf, and a physical or electronic signature.
+					Counter-notices go to the same address. Repeat infringers have their
+					community publishing revoked or their accounts terminated.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Suspension and termination</h2>
 				<p mix={css(descriptionCss)}>
 					Operators may suspend or terminate accounts that violate these terms,
@@ -220,6 +256,12 @@ const pageCss = {
 	...stackedPageCss,
 	maxWidth: '42rem',
 	margin: '0 auto',
+}
+
+const lastUpdatedCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
 }
 
 const listCss = {
