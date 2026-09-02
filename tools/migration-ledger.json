@@ -155,6 +155,10 @@
 		{
 			"filename": "0038-integration-auth-failure.sql",
 			"sha256": "147acc4287512ae6666f4be4a0dbcc7f61edfd412f7ed932c5688a1634000339"
+		},
+		{
+			"filename": "0039-agent-package-conversation-uses-last-used-index.sql",
+			"sha256": "24df954f08b0aa7fbbb76b880ee8cbb9b276cf120ed2c8633c37e464c39b4a68"
 		}
 	]
 }
