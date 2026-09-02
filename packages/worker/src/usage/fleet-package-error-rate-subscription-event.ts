@@ -1,3 +1,7 @@
+import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
+
+export type { FleetPackageErrorRateConcentration }
+
 export const fleetPackageErrorRateElevatedTopic =
 	'fleet.package_error_rate.elevated'
 
@@ -59,6 +63,7 @@ export type FleetPackageErrorRateElevatedEvent = {
 		previous: FleetPackageErrorRateWindowSnapshot
 	}
 	by_metric: FleetPackageErrorRateWindowSnapshot['by_metric']
+	concentration: FleetPackageErrorRateConcentration | null
 }
 
 export function isFleetPackageErrorRateEventTopic(
@@ -79,6 +84,7 @@ export function buildFleetPackageErrorRateElevatedEvent(input: {
 	reason: FleetPackageErrorRateElevationReason
 	recent: FleetPackageErrorRateWindowSnapshot
 	previous: FleetPackageErrorRateWindowSnapshot
+	concentration?: FleetPackageErrorRateConcentration | null
 }): FleetPackageErrorRateElevatedEvent {
 	return {
 		event: fleetPackageErrorRateElevatedTopic,
@@ -94,6 +100,7 @@ export function buildFleetPackageErrorRateElevatedEvent(input: {
 			previous: input.previous,
 		},
 		by_metric: input.recent.by_metric,
+		concentration: input.concentration ?? null,
 	}
 }
 
