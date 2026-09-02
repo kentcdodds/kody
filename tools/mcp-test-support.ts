@@ -337,7 +337,13 @@ function isPortAlreadyInUseError(error: unknown) {
 
 async function loginToApp(origin: string, user: TestUser) {
 	const signupResponse = await authenticateAppUser(origin, user, 'signup')
-	if (signupResponse.ok) {
+	// An already-registered email gets the same accepted body as a fresh
+	// signup but no session cookie (anti-enumeration), so only a response
+	// that actually set the session counts as a signup.
+	if (
+		signupResponse.ok &&
+		signupResponse.headers.get('Set-Cookie')?.includes('kody_session=')
+	) {
 		return readCookieHeader(signupResponse)
 	}
 

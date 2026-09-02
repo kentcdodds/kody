@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { buildRoleAssignmentSql, buildSeedUserSql } from '../tools/seed-sql.ts'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
@@ -83,5 +84,11 @@ export function clearAuthRateLimitsInE2eDatabase() {
 			ts INTEGER NOT NULL
 		);
 		DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%';`,
+	)
+}
+
+export function deleteUserInE2eDatabase(email: string) {
+	executeE2eD1Command(
+		`DELETE FROM users WHERE email = ${quoteSqlString(email)};`,
 	)
 }

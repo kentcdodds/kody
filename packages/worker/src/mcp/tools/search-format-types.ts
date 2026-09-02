@@ -328,6 +328,22 @@ export type SearchEntityDetailStructured =
 				key: string
 				name: string
 			}>
+			webhooks: Array<{
+				name: string
+				exportName: string
+				responseMode: 'ack' | 'sync'
+				replay: {
+					timestampHeader?: string
+					timestampFormat?:
+						| 'unix-seconds'
+						| 'unix-millis'
+						| 'iso-8601'
+						| 'stripe-signature'
+					toleranceSeconds?: number
+					deliveryIdHeader?: string
+				} | null
+				signedPayload: 'body' | 'timestamp.body' | null
+			}>
 			readmeIntent: {
 				path: string
 				content: string

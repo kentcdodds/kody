@@ -368,6 +368,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
+		'platform-settings:v1:signup-mode',
+		'public-code-runs:v2',
 	]
 	const kv = {
 		async get(key: string) {
@@ -792,6 +794,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedKvKeys).not.toContain(
 		`package-codemod-revert:${userBbb}:item-other`,
 	)
+	expect(deletedKvKeys).not.toContain('platform-settings:v1:signup-mode')
+	expect(deletedKvKeys).not.toContain('public-code-runs:v2')
 
 	// Result accounting captures the per-table counts. Job rows are purged
 	// through the JOBS service (ADR 0016), so they are not counted here.

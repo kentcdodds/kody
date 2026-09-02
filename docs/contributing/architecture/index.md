@@ -94,6 +94,9 @@ smoke does not prove MCP execute health.
 - [Jobs worker migration runbook](./jobs-worker-migration-runbook.md): ownership
   of `JobManager` and `JOBS_DB` on `kody-jobs` and the deploy invariants later
   uploads must keep ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
+- [Production rollback](../rollback.md): Cloudflare version rollback vs
+  forward-fix on `main` for the five product scripts, including when Durable
+  Object or D1 migrations make Path A unsafe.
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).

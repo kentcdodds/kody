@@ -33,6 +33,16 @@ export type PackageInvocationRequest = {
 	 * failure only. External HTTP token invocations still require a key.
 	 */
 	idempotencyKey: string | null
+	/**
+	 * `'ignore'` matches the ledger by key alone and returns the retained
+	 * response as stored (no `idempotency.replayed` marker). Used only by
+	 * delivery-id webhook replays: retries change `receivedAt` (and often
+	 * headers), and the same delivery id is the same event even when the
+	 * body bytes differ. The key already binds
+	 * `userId + packageId + webhookName + deliveryId`, so a different
+	 * delivery cannot reuse another event's acknowledgement.
+	 */
+	idempotencyParamsHash?: 'ignore'
 	source?: string | null
 	topic?: string | null
 }

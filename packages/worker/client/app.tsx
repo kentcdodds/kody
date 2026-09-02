@@ -118,9 +118,6 @@ export function App(handle: Handle<AppProps>) {
 		queueSessionRefresh()
 	}
 
-	// Always revalidate after hydration: the embedded session renders the
-	// first paint without a flash ('ready' status keeps the refresh silent),
-	// but auth may have changed since the document was rendered.
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
 		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
@@ -138,9 +135,13 @@ export function App(handle: Handle<AppProps>) {
 		}
 		// Fathom loads deferred; retry briefly so OAuth ?accountCreated=1 is not dropped.
 		scheduleConsumeAccountCreatedFathomSignal()
-		handle.queueTask(() => {
-			queueSessionRefresh()
-		})
+		if (handle.props.embeddedSession === undefined) {
+			handle.queueTask(() => {
+				queueSessionRefresh()
+			})
+		} else {
+			lastSessionRefreshAt = Date.now()
+		}
 		listenToRouterNavigation(handle, () => {
 			currentPathname = readRouterPathname(handle)
 			queueThrottledSessionRefresh()

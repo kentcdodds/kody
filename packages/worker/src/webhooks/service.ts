@@ -27,6 +27,7 @@ export type ListedWebhook = {
 	description: string | null
 	responseMode: 'ack' | 'sync'
 	verification: PackageWebhookManifestEntry['verification']
+	replay: PackageWebhookManifestEntry['replay']
 	minted: boolean
 	enabled: boolean | null
 	createdAt: string | null
@@ -161,6 +162,7 @@ export async function listWebhooksForUser(input: {
 				description: webhook.description,
 				responseMode: webhook.responseMode,
 				verification: webhook.verification,
+				replay: webhook.replay,
 				minted: mint !== undefined,
 				enabled: mint?.enabled ?? null,
 				createdAt: mint?.createdAt ?? null,

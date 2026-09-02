@@ -110,6 +110,9 @@
 				{ "env": "CI" },
 				"{workspaceRoot}/e2e/**/*",
 				"{workspaceRoot}/playwright.config.ts",
+				"{workspaceRoot}/tools/e2e-web-server.ts",
+				"{workspaceRoot}/tools/e2e-cloudflare-mock-state.ts",
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
 				"default"
 			],
 			"outputs": [

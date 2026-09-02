@@ -229,6 +229,17 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
 
+## Signup mode
+
+`SIGNUP_MODE` is a public Wrangler var (`invite` / `open` / `waitlist`) that
+supplies the default when no runtime override is stored. Production and preview
+are `invite`; the Wrangler `test` env is `open` for fixtures and E2E. The
+runtime override lives in `BUNDLE_ARTIFACTS_KV` at
+`platform-settings:v1:signup-mode` and is managed from `/admin/invites` (and the
+`adminSignupModeGet` / `adminSignupModeSet` capabilities). Setting `open` is
+refused unless both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are
+configured.
+
 ## Stripe billing
 
 Optional Worker secret and vars for account subscription billing

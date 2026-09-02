@@ -331,6 +331,12 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 - `POST /verify/2fa.json` and `POST /account/two-factor.json` (two-factor)
 - `POST /webauthn/authentication` (passkey authentication)
 
+Open signup requires Turnstile. `adminSignupModeSet` and
+`POST /admin/invites.json` refuse `mode=open` unless both `TURNSTILE_SITE_KEY`
+and `TURNSTILE_SECRET_KEY` are configured, so public password and social signup
+cannot be opened without bot defence. Writes also require `expectedCurrentMode`
+matching the stored mode; a mismatch returns 409 with the live setting.
+
 Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the
 read-then-write race that KV-backed limiters suffer under concurrency.
@@ -558,6 +564,22 @@ change to these decisions here so future agents do not relitigate them.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).
+- **Signup does not confirm whether an email is registered, except through the
+  session cookie.** `POST /auth` with `mode: signup` for an address that already
+  has an account returns the same `200` body as a fresh signup
+  (`emailVerificationRequired: true`), creates nothing, sends nothing, and
+  audits `signup` / `email_exists`. Only the fresh signup carries a
+  `Set-Cookie: kody_session` header, so a scripted caller that inspects headers
+  can still distinguish the two; the shared per-IP auth rate limit bounds that
+  probing to 10 attempts a minute. Closing the header side channel means not
+  issuing a session at signup at all (session on verification instead), which is
+  a larger onboarding change than the copy-level fix. Usernames are public
+  identifiers, so a duplicate username still returns `409`.
+- **Turnstile tokens must come from the request's own hostname.**
+  `verifyPublicFormProtection` rejects a siteverify success whose `hostname`
+  differs from the request URL's hostname (logged as
+  `turnstile-hostname-mismatch`), so a token minted on a preview deployment or a
+  third-party page embedding the same sitekey is not accepted on production.
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.
@@ -580,3 +602,8 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
+- **Package inbound webhook replay protection is opt-in.** HMAC over the raw
+  body without a `replay` declaration does not bind a timestamp or delivery id,
+  so a captured signed payload can be replayed until the URL secret is rotated.
+  Authors opt in per webhook with `replay.timestampHeader` and/or
+  `replay.deliveryIdHeader`.

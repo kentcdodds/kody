@@ -76,8 +76,26 @@ export async function verifyPublicFormProtection(input: {
 		)
 		const payload = (await response.json().catch(() => null)) as {
 			success?: unknown
+			hostname?: unknown
 		} | null
-		if (response.ok && payload?.success === true) return { ok: true }
+		if (response.ok && payload?.success === true) {
+			// A token is bound to the hostname that rendered the widget. Without
+			// this check a token minted on any other site sharing the sitekey
+			// (a preview deploy, a phishing page embedding the widget) would be
+			// accepted here.
+			const expectedHostname = new URL(input.request.url).hostname
+			if (
+				typeof payload.hostname === 'string' &&
+				payload.hostname.toLowerCase() === expectedHostname.toLowerCase()
+			) {
+				return { ok: true }
+			}
+			console.warn('turnstile-hostname-mismatch', {
+				expected: expectedHostname,
+				received:
+					typeof payload.hostname === 'string' ? payload.hostname : null,
+			})
+		}
 	} catch {
 		// The challenge is configured, so a verification outage must not turn
 		// into an authentication bypass.
