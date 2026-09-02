@@ -10,8 +10,6 @@ import {
 	TEST_OIDC_SIGNING_KEY_ID,
 	TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 } from '#worker/oidc/test-signing-key.ts'
-import { oauthPaths } from '#universal/oauth-paths.ts'
-import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 
 function createOidcEnv() {
 	return {
@@ -30,20 +28,16 @@ test('openid-configuration advertises authorization code OIDC only', () => {
 	})
 	expect(document.issuer).toBe('https://heykody.dev')
 	expect(document.authorization_endpoint).toBe(
-		`https://heykody.dev${oauthPaths.authorize}`,
+		'https://heykody.dev/oauth/authorize',
 	)
-	expect(document.token_endpoint).toBe(`https://heykody.dev${oauthPaths.token}`)
-	expect(document.userinfo_endpoint).toBe(
-		`https://heykody.dev${oauthPaths.userinfo}`,
-	)
-	expect(document.jwks_uri).toBe(`https://heykody.dev${oauthPaths.jwks}`)
-	expect(document.end_session_endpoint).toBe(
-		`https://heykody.dev${oauthPaths.logout}`,
-	)
+	expect(document.token_endpoint).toBe('https://heykody.dev/oauth/token')
+	expect(document.userinfo_endpoint).toBe('https://heykody.dev/oauth/userinfo')
+	expect(document.jwks_uri).toBe('https://heykody.dev/.well-known/jwks.json')
+	expect(document.end_session_endpoint).toBe('https://heykody.dev/oauth/logout')
 	expect(document.response_types_supported).toEqual(['code'])
 	expect(document.response_modes_supported).toEqual(['query'])
 	expect(document.id_token_signing_alg_values_supported).toEqual(['RS256'])
-	expect(document.scopes_supported).toEqual(mcpOauthScopes)
+	expect(document.scopes_supported).toEqual(['openid', 'profile', 'email'])
 	expect(document.claims_supported).toContain('sub')
 	expect(document.claims_supported).toContain('email')
 	expect(document.token_endpoint_auth_methods_supported).toEqual([

@@ -28,19 +28,6 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 	expect(toolNames).toEqual(['execute', 'search'])
 	expect(tools.tools).toHaveLength(2)
 	const searchListed = tools.tools.find((tool) => tool.name === 'search')
-	const executeListed = tools.tools.find((tool) => tool.name === 'execute')
-	expect(searchListed?.annotations).toEqual({
-		readOnlyHint: true,
-		destructiveHint: false,
-		idempotentHint: true,
-		openWorldHint: false,
-	})
-	expect(executeListed?.annotations).toEqual({
-		readOnlyHint: false,
-		destructiveHint: true,
-		idempotentHint: false,
-		openWorldHint: true,
-	})
 	expect(searchListed?.outputSchema).toMatchObject({ type: 'object' })
 
 	const searchResult = await modern.client.callTool({

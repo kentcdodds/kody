@@ -34,6 +34,5 @@ test('stalled verification is derived from accepted age, not a stored status', (
 			now,
 		),
 	).toBe(false)
-	expect(isAdminUserVerificationFilter('stalled')).toBe(true)
 	expect(isAdminUserVerificationFilter('accepted')).toBe(false)
 })

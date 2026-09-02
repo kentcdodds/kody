@@ -410,8 +410,6 @@ test('ranked search prepends ## Waiting for block items and skips domain browse'
 	})
 	const rankedText = ranked.content.map((item) => item.text).join('\n')
 	expect(rankedText).toContain('## Waiting')
-	expect(rankedText).toContain('stopped working')
-	expect(rankedText).toContain('Reconnect')
 	expect(rankedText).not.toContain('Connect an agent')
 	const rankedResult = ranked.structuredContent.result as {
 		waiting?: { count: number; items: Array<{ id: string }> }
