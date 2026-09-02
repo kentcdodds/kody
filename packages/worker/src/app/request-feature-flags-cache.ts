@@ -2,9 +2,12 @@
  * Per-request feature-flag evaluation cache.
  *
  * Used by `loadSessionInfo` (SSR app shell + `/session` refresh) so flag
- * evaluation happens at most once per HTTP request. API handlers that only
- * need auth should keep using `loadResolvedRequestAuth` /
- * `readAuthenticatedAppUser` and will not hit this path.
+ * evaluation happens at most once per HTTP request. Authenticated HTML pages
+ * opt in via `readAuthenticatedAppUser({ prefetchFeatureFlags: true })` as
+ * soon as the user id is known so `renderAppPage` awaits an already-in-flight
+ * promise while the handler loads page data. MCP, package-app, and JSON API
+ * auth paths do not start this load. Anonymous callers still receive registry
+ * defaults without touching D1.
  *
  * Evaluation also records success-metric exposures for measured flags (see
  * `#worker/feature-flags/exposure.ts`), which is why authenticated
@@ -16,12 +19,12 @@
  */
 
 import { recordFeatureFlagExposures } from '#worker/feature-flags/exposure.ts'
+import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 import {
 	featureFlagDefinitions,
 	featureFlagKeys,
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
-import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
 
 export type EvaluatedFeatureFlags = Record<FeatureFlagKey, boolean>
 
@@ -89,6 +92,28 @@ export function loadRequestFeatureFlags(
 		requestFeatureFlagsStore.set(request, promise)
 	}
 	return promise
+}
+
+/**
+ * Start flag evaluation for an authenticated first-party HTML render so
+ * `loadSessionInfo` can await an already-in-flight promise. Callers opt in
+ * explicitly. No-ops for test stubs whose D1 fake has no `prepare`/`batch`.
+ */
+export function prefetchRequestFeatureFlagsForHtmlPage(
+	request: Request,
+	env: Env,
+	user: FeatureFlagRequestUser,
+): void {
+	if (
+		typeof env.APP_DB?.prepare !== 'function' ||
+		typeof env.APP_DB.batch !== 'function'
+	) {
+		return
+	}
+	// Overlap flag evaluation with page-data loading. `loadSessionInfo`
+	// awaits the same cached promise; the rejection handler is so a
+	// prefetch that never reaches a render cannot become unhandled.
+	void loadRequestFeatureFlags(request, env, user).then(undefined, () => {})
 }
 
 /** True when this request already resolved (and recorded) feature-flag exposures. */

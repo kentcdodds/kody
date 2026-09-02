@@ -23,7 +23,9 @@ export function createProfileHandler(env: Env) {
 			)
 			if (frameResponse) return frameResponse
 
-			const data = await loadProfileData(env, request, username)
+			const data = await loadProfileData(env, request, username, {
+				prefetchFeatureFlags: true,
+			})
 			if (!data) {
 				return renderAppPage({
 					request,

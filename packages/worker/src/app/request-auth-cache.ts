@@ -2,29 +2,51 @@
  * Per-request auth deduplication.
  *
  * `loadSessionInfo` and `readAuthenticatedAppUser` share one D1 user + roles
- * lookup per HTTP request. We intentionally do **not** cache auth across
- * requests keyed by session id: logout and role changes would require
- * cross-isolate invalidation that we cannot prove correct without session
- * revocation hooks on every auth mutation path.
+ * lookup per HTTP request (a single `batch`). Feature flags are **not**
+ * fetched here: MCP, package-app, and JSON API callers do not need them.
+ * HTML app renders opt in with `prefetchFeatureFlags` so `loadSessionInfo`
+ * can await an already-in-flight promise. We intentionally do **not** cache
+ * auth across requests keyed by session id: logout and role changes would
+ * require cross-isolate invalidation that we cannot prove correct without
+ * session revocation hooks on every auth mutation path.
  */
 
 import * as Sentry from '@sentry/cloudflare'
 import {
 	destroyAuthCookie,
+	isAuthSessionExpired,
 	isSecureRequest,
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
-import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
-import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
-import { type PermissionString, type RoleName } from '#universal/permissions.ts'
-import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import {
+	parseUserRolesAndPermissionRows,
+	type PermissionRow,
+} from '#worker/identity/permissions-db.ts'
+import { resolveDisplayName } from '#worker/identity/username.ts'
+import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
 	parseEmailVerificationDelivery,
 	type EmailVerificationDelivery,
 } from '#universal/email-verification-delivery.ts'
+import { type PermissionString, type RoleName } from '#universal/permissions.ts'
+
+type AuthUserRow = {
+	id: number
+	email: string
+	username: string
+	avatar_key?: string | null
+	email_verified_at?: string | null
+	email_verification_delivery_status?: string | null
+	email_verification_delivery_class?: string | null
+	email_verification_delivery_at?: string | null
+	deleting_at?: string | null
+	suspended_at?: string | null
+	password_changed_at?: string | null
+	stable_user_id: string | null
+}
 
 type ResolvedAuthUser = {
 	userId: number
@@ -50,6 +72,58 @@ export type ResolvedRequestAuth = {
 
 const requestAuthStore = new WeakMap<Request, Promise<ResolvedRequestAuth>>()
 
+const authUserLookupSql = `select * from "users" where ("stable_user_id" = ?)`
+const authRolesLookupSql = `SELECT DISTINCT r.name AS role_name, p.action, p.entity, p.access
+			 FROM user_roles ur
+			 INNER JOIN roles r ON r.id = ur.role_id
+			 INNER JOIN users u ON u.id = ur.user_id
+			 LEFT JOIN role_permissions rp ON rp.role_id = r.id
+			 LEFT JOIN permissions p ON p.id = rp.permission_id
+			 WHERE u.stable_user_id = ?`
+
+function d1ResultRows<T>(result: D1Result<T> | undefined): Array<T> {
+	return result?.results ?? []
+}
+
+async function loadUserAndRoles(
+	env: Env,
+	stableUserId: string,
+): Promise<{
+	userRecord: AuthUserRow | null
+	roles: Array<RoleName>
+	permissions: Array<PermissionString>
+}> {
+	try {
+		const [userResult, rolesResult] = await env.APP_DB.batch([
+			env.APP_DB.prepare(authUserLookupSql).bind(stableUserId),
+			env.APP_DB.prepare(authRolesLookupSql).bind(stableUserId),
+		])
+		const userRecord =
+			d1ResultRows<AuthUserRow>(userResult as D1Result<AuthUserRow>)[0] ?? null
+		let roles: Array<RoleName> = []
+		let permissions: Array<PermissionString> = []
+		try {
+			;({ roles, permissions } = parseUserRolesAndPermissionRows(
+				d1ResultRows<PermissionRow>(rolesResult as D1Result<PermissionRow>),
+			))
+		} catch (error) {
+			console.error('Failed to load roles for authenticated user:', error)
+		}
+		return { userRecord, roles, permissions }
+	} catch (error) {
+		console.error('Failed to load roles for authenticated user:', error)
+		const db = createDb(env.APP_DB)
+		const userRecord = await db.findOne(usersTable, {
+			where: { stable_user_id: stableUserId },
+		})
+		return {
+			userRecord: userRecord as AuthUserRow | null,
+			roles: [],
+			permissions: [],
+		}
+	}
+}
+
 async function resolveRequestAuth(
 	request: Request,
 	env: Env,
@@ -64,10 +138,23 @@ async function resolveRequestAuth(
 	}
 	const { session, issuedAt, setCookie } = parsedSession
 
-	const db = createDb(env.APP_DB)
-	const userRecord = await db.findOne(usersTable, {
-		where: { stable_user_id: session.stableUserId },
-	})
+	if (
+		isAuthSessionExpired({
+			issuedAt,
+			rememberMe: session.rememberMe,
+		})
+	) {
+		return {
+			sessionUserId: session.stableUserId,
+			setCookie: await destroyAuthCookie(isSecureRequest(request)),
+			user: null,
+		}
+	}
+
+	const { userRecord, roles, permissions } = await loadUserAndRoles(
+		env,
+		session.stableUserId,
+	)
 
 	if (!userRecord) {
 		return {
@@ -90,22 +177,13 @@ async function resolveRequestAuth(
 		}
 	}
 
-	let roles: Array<RoleName> = []
-	let permissions: Array<PermissionString> = []
-	try {
-		;({ roles, permissions } = await getUserRolesAndPermissions(
-			env.APP_DB,
-			userRecord.id,
-		))
-	} catch (error) {
-		console.error('Failed to load roles for authenticated user:', error)
-	}
-
 	const stableUserId = resolveUserStableId(userRecord)
 	const displayName = resolveDisplayName({
 		email: userRecord.email,
 		username: userRecord.username,
 	})
+	const accountDeleting = Boolean(userRecord.deleting_at)
+	const accountSuspended = Boolean(userRecord.suspended_at)
 
 	// Associate uncaught request errors with the signed-in user in Sentry.
 	// Id only: sendDefaultPii is false and emails stay out of Sentry. Must
@@ -131,8 +209,8 @@ async function resolveRequestAuth(
 			username: userRecord.username,
 			avatarKey: userRecord.avatar_key ?? null,
 			displayName,
-			accountDeleting: Boolean(userRecord.deleting_at),
-			accountSuspended: Boolean(userRecord.suspended_at),
+			accountDeleting,
+			accountSuspended,
 			roles,
 			permissions,
 			mcpUser: {
@@ -164,9 +242,8 @@ export { parsePasswordChangedAtMs } from '#worker/password-change-lockout.ts'
  * Fail-closed behavior is scoped to accounts that have a stored timestamp: a
  * value that exists but cannot be parsed invalidates the session, and so does a
  * missing `issuedAt`. An account that has never changed its password keeps
- * sessions with no `issuedAt` — those cookies stay valid until a password
- * change, which is the documented tradeoff in the "Accepted residual risks"
- * section of `docs/contributing/security.md`.
+ * sessions with no `issuedAt` for password-change lockout — those cookies still
+ * fail the absolute session-lifetime check in `resolveRequestAuth`.
  */
 export function isSessionInvalidatedByStoredPasswordChange(input: {
 	issuedAt: number | undefined

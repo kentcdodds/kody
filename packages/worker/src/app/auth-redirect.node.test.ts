@@ -8,6 +8,7 @@ import {
 	redirectToLogin,
 	redirectToLoginWhenUnauthenticated,
 } from '#app/auth-redirect.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -18,8 +19,10 @@ function createStaleSessionTestEnv() {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 				return {
+					query,
 					bind() {
 						return {
+							query,
 							async all() {
 								if (
 									normalizedQuery.startsWith('select') &&
@@ -41,6 +44,9 @@ function createStaleSessionTestEnv() {
 						}
 					},
 				}
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 			async exec() {
 				return

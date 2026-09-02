@@ -7,6 +7,7 @@ import {
 } from '#app/auth-session.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -37,38 +38,40 @@ function createUserEnv(options: {
 		APP_DB: {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
+				const statement = {
+					query,
 					bind() {
-						return {
-							async all() {
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"')
-								) {
-									return {
-										results: user ? [user] : [],
-										meta: { changes: 0 },
-									}
-								}
-								if (normalizedQuery.includes('from user_roles ur')) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								return { results: [], meta: { changes: 0 } }
-							},
-							async first() {
-								if (normalizedQuery.includes('email_verified_at')) {
-									return user
-										? { email_verified_at: user.email_verified_at }
-										: null
-								}
-								return user
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
+						return statement
+					},
+					async all() {
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from "users"')
+						) {
+							return {
+								results: user ? [user] : [],
+								meta: { changes: 0 },
+							}
 						}
+						if (normalizedQuery.includes('from user_roles ur')) {
+							return { results: [], meta: { changes: 0 } }
+						}
+						return { results: [], meta: { changes: 0 } }
+					},
+					async first() {
+						if (normalizedQuery.includes('email_verified_at')) {
+							return user ? { email_verified_at: user.email_verified_at } : null
+						}
+						return user
+					},
+					async run() {
+						return { meta: { changes: 0 } }
 					},
 				}
+				return statement
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 			async exec() {
 				return

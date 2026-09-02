@@ -31,6 +31,12 @@ Session cookie behavior is implemented in
 - `remember me` login max age: 30 days
 - remembered sessions are renewed with a fresh 30-day cookie after 14 days of
   age
+- the browser `Max-Age` and `resolveRequestAuth` both enforce that absolute
+  lifetime: a cookie whose `issuedAt` plus TTL is in the past is treated as
+  signed out and the cookie is cleared. There is no schema-introduction
+  timestamp, so a legacy v2 cookie that omits `issuedAt` is also rejected (those
+  cookies are already rare; password-change lockout already fails them closed
+  once `users.password_changed_at` is set)
 
 The cookie payload stores:
 
@@ -49,12 +55,13 @@ methods.
 
 Session resolution rejects cookies whose `issuedAt` is missing or at/before that
 timestamp, so a reset invalidates every existing browser and package-app
-session. A signed-in change re-issues the current `kody_session` cookie with a
-later `issuedAt` so that browser stays signed in and leaves second factors and
-linked providers in place. `/mcp` rejects access tokens whose `createdAt` is at
-or before that timestamp (`invalid_token`), so already-issued bearers die
-immediately; hosts that refresh then hit the revoked grant and must start a new
-OAuth flow.
+session. It also rejects cookies past the absolute lifetime (`issuedAt` plus 7
+or 30 days) and cookies that omit `issuedAt`, clearing the cookie. A signed-in
+change re-issues the current `kody_session` cookie with a later `issuedAt` so
+that browser stays signed in and leaves second factors and linked providers in
+place. `/mcp` rejects access tokens whose `createdAt` is at or before that
+timestamp (`invalid_token`), so already-issued bearers die immediately; hosts
+that refresh then hit the revoked grant and must start a new OAuth flow.
 
 `users.id` never crosses the cookie boundary. Session resolution looks up the
 stable id and only then uses the numeric primary key for internal D1 joins.
@@ -516,11 +523,12 @@ the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
 - max age is the **remaining** lifetime of the `kody_session` that minted the
   handoff (7 days, or 30 days with remember-me), snapshotted into the token as
   `sessExp` and into the cookie as `expiresAt`. Browser `Max-Age` and a
-  server-side `expiresAt` check both use that instant, so the package-app cookie
-  cannot outlive the parent session. Remember-me renewal on the app origin does
-  not extend an already-issued package-app cookie; a later handoff mints a new
-  snapshot. Tokens without `sessExp`, and cookies without `expiresAt`, use a 12
-  hour lifetime from mint/`issuedAt`
+  server-side `expiresAt` check in `readPackageAppSession` both use that
+  instant, so the package-app cookie cannot outlive the parent session.
+  Remember-me renewal on the app origin does not extend an already-issued
+  package-app cookie; a later handoff mints a new snapshot. Tokens without
+  `sessExp`, and cookies without `expiresAt`, use a 12 hour lifetime from
+  mint/`issuedAt`
 - signed with a **derived** secret,
   `sha256Base64Url('kody-package-app-session:v2:' + COOKIE_SECRET)`, so a value
   signed for this cookie can never verify as a `kody_session`

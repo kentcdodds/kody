@@ -14,7 +14,9 @@ registerFrame(PROFILE_TARGET, {
 		if (!username) {
 			return ''
 		}
-		const data = await loadProfileData(env, request, username)
+		const data = await loadProfileData(env, request, username, {
+			prefetchFeatureFlags: true,
+		})
 		if (!data) {
 			return ''
 		}

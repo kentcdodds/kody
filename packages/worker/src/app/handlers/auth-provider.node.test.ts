@@ -32,6 +32,7 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
@@ -55,69 +56,6 @@ afterAll(() => {
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../../migrations/', import.meta.url)
 	applyAllMigrations(db, migrationsDir)
-}
-
-function createD1FromSqlite(db: DatabaseSync) {
-	function createPreparedStatement(query: string) {
-		return {
-			query,
-			bind(...params: Array<unknown>) {
-				return {
-					query,
-					async all<T>() {
-						const statement = db.prepare(query)
-						const rows = statement.all(...params) as Array<T>
-						return {
-							results: rows,
-							meta: { changes: 0, last_row_id: 0 },
-						}
-					},
-					async first<T>() {
-						const statement = db.prepare(query)
-						return (statement.get(...params) ?? null) as T | null
-					},
-					async run() {
-						const statement = db.prepare(query)
-						const result = statement.run(...params)
-						return {
-							meta: {
-								changes: result.changes,
-								last_row_id: Number(result.lastInsertRowid),
-							},
-						}
-					},
-				}
-			},
-			async all<T>() {
-				const statement = db.prepare(query)
-				const rows = statement.all() as Array<T>
-				return {
-					results: rows,
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			},
-			async first<T>() {
-				const statement = db.prepare(query)
-				return (statement.get() ?? null) as T | null
-			},
-			async run() {
-				const statement = db.prepare(query)
-				const result = statement.run()
-				return {
-					meta: {
-						changes: result.changes,
-						last_row_id: Number(result.lastInsertRowid),
-					},
-				}
-			},
-		}
-	}
-	return {
-		prepare: createPreparedStatement,
-		async exec(query: string) {
-			db.exec(query)
-		},
-	} as unknown as D1Database
 }
 
 function createMigratedDb() {

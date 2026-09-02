@@ -12,6 +12,7 @@ import {
 import { createAccountResendVerificationHandler } from './account-resend-verification.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -98,6 +99,12 @@ function createResendTestDb(
 	const db = {
 		prepare: (query: string) => createStatement(query),
 		async batch(statements: Array<{ query?: string }>) {
+			const allSelect = statements.every((statement) =>
+				/^\s*select\b/i.test(statement.query ?? ''),
+			)
+			if (allSelect) {
+				return await executePreparedD1Batch(statements)
+			}
 			if (
 				statements.some((statement) =>
 					statement.query?.includes('create table'),
@@ -127,6 +134,7 @@ function createAppEnv(db: D1Database, overrides: Record<string, unknown> = {}) {
 		APP_DB: db,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
+		FLAG_EXPOSURES: { writeDataPoint() {} },
 		...overrides,
 	} as unknown as Parameters<typeof createAccountResendVerificationHandler>[0]
 }
