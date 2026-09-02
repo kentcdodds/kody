@@ -87,6 +87,10 @@ import { applyPasswordChange } from '#app/apply-password-change.ts'
 import { clearedFactorsAuditReason } from '#app/clear-account-factors.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#worker/account/deletion-state.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -587,6 +591,17 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// attacker-added factors, then link.
 			const existingUser = await db.findOne(usersTable, { where: { email } })
 			if (existingUser) {
+				try {
+					await assertAccountWritableDb(
+						env.APP_DB,
+						resolveUserStableId(existingUser),
+					)
+				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
+					throw error
+				}
 				let sessionIssuedAt: number | undefined
 				if (!existingUser.email_verified_at) {
 					const helpers = (env as Env & { OAUTH_PROVIDER?: OAuthGrantHelpers })

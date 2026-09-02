@@ -43,6 +43,7 @@ type UserRow = {
 	updated_at: string
 	password_hash?: string
 	email_verified_at?: string | null
+	deleting_at?: string | null
 	email_verification_delivery_status?: string | null
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
@@ -212,6 +213,16 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (normalizedQuery.includes('select count(*) as total from users')) {
 						return { total: users.length } as T
+					}
+					if (
+						normalizedQuery.includes(
+							'select deleting_at from users where stable_user_id = ?',
+						)
+					) {
+						const user = users.find((row) => row.stable_user_id === params[0])
+						return user
+							? ({ deleting_at: user.deleting_at ?? null } as T)
+							: null
 					}
 					if (
 						normalizedQuery.startsWith(

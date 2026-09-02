@@ -15,6 +15,10 @@ import {
 	EmailVerificationSendBlockedError,
 	assertVerificationResendAllowed,
 } from '#worker/email/verification-delivery.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#worker/account/deletion-state.ts'
 
 export const resendVerificationRateLimitConfig = {
 	maxRequests: 3,
@@ -49,6 +53,22 @@ export function createAccountResendVerificationHandler(env: Env) {
 					{ ok: false, error: 'Your email is already verified.' },
 					400,
 				)
+			}
+
+			try {
+				await assertAccountWritableDb(env.APP_DB, user.mcpUser.userId)
+			} catch (error) {
+				if (error instanceof AccountDeletionInProgressError) {
+					return jsonResponse(
+						{
+							ok: false,
+							error: error.message,
+							code: 'account_deleting',
+						},
+						409,
+					)
+				}
+				throw error
 			}
 
 			const redirectTo = await readResendRedirectTo(request)

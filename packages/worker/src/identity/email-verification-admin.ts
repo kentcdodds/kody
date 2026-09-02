@@ -5,6 +5,7 @@ import {
 	type AdminUserListItem,
 	type AdminUserTarget,
 } from '#worker/admin/users-data.ts'
+import { assertAccountWritableDb } from '#worker/account/deletion-state.ts'
 import { clearUserEmailVerificationDelivery } from '#worker/email/verification-delivery.ts'
 import {
 	buildEmailVerificationUrl,
@@ -38,6 +39,7 @@ export async function markAdminUserEmailVerified(
 	if (!existingRow) {
 		throw new AdminEmailVerificationError('not_found', 'User not found.')
 	}
+	await assertAccountWritableDb(db, existing.stableUserId)
 
 	const now = input.now ?? new Date()
 	const verifiedAt = existing.email_verified_at ?? now.toISOString()
@@ -85,6 +87,7 @@ export async function mintAdminEmailVerificationUrl(input: {
 	if (!existingRow) {
 		throw new AdminEmailVerificationError('not_found', 'User not found.')
 	}
+	await assertAccountWritableDb(input.db, existing.stableUserId)
 
 	const minted = await insertEmailVerificationToken({
 		db: input.db,

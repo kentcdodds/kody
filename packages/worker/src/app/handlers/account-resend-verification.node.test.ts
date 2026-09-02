@@ -69,6 +69,9 @@ function createResendTestDb(
 				}
 			},
 			async first() {
+				if (normalized.includes('select deleting_at from users')) {
+					return { deleting_at: null }
+				}
 				if (normalized.includes('email_verification_delivery_status')) {
 					return {
 						email_verification_delivery_status: options.deliveryStatus ?? null,

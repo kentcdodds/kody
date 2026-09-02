@@ -8,6 +8,10 @@ import {
 	setUserEmailVerificationDelivery,
 } from '#worker/email/verification-delivery.ts'
 import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#worker/account/deletion-state.ts'
+import {
 	buildEmailVerificationUrl,
 	discardEmailVerificationToken,
 	hashVerificationToken,
@@ -192,6 +196,15 @@ export async function verifyEmailToken(input: {
 			.bind(record.id)
 			.run()
 		return { ok: false, reason: 'expired_token' }
+	}
+
+	try {
+		await assertAccountWritableDb(input.db, record.stable_user_id)
+	} catch (error) {
+		if (error instanceof AccountDeletionInProgressError) {
+			return { ok: false, reason: 'invalid_token' }
+		}
+		throw error
 	}
 
 	const newlyVerified = !record.email_verified_at

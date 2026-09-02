@@ -2,11 +2,13 @@ import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lan
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
-import { abortAccountDeleting } from '#worker/account/deletion-state.ts'
+import {
+	AccountDeletionWritersActiveError,
+	abortAccountDeleting,
+} from '#worker/account/deletion-state.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
-	AccountDeletionNoLongerEligibleError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
 
@@ -77,6 +79,13 @@ function deletionFailureWarnings(error: unknown) {
 		return error.inventoryErrors
 	}
 	return []
+}
+
+function isPreCleanupDeletionFailure(error: unknown) {
+	return (
+		error instanceof AccountDeletionInventoryError ||
+		error instanceof AccountDeletionWritersActiveError
+	)
 }
 
 function ageDays(createdAt: string, now: Date) {
@@ -150,25 +159,6 @@ async function claimUnverifiedAccountForPurge(input: {
 	return { claimed: false }
 }
 
-async function accountStillEligibleForUnverifiedPurge(input: {
-	db: D1Database
-	dbUserId: number
-}) {
-	const eligibility = unverifiedPersonEligibilitySql.join('\n			AND ')
-	const row = await runD1WithRetry(() =>
-		input.db
-			.prepare(
-				`SELECT id
-				FROM users
-				WHERE id = ?
-					AND ${eligibility}`,
-			)
-			.bind(input.dbUserId)
-			.first<{ id: number }>(),
-	)
-	return row != null
-}
-
 export async function pruneUnverifiedAccounts(input: {
 	env: Env
 	now?: Date
@@ -218,30 +208,25 @@ export async function pruneUnverifiedAccounts(input: {
 				env: input.env,
 				dbUserId: account.id,
 				mcpUserId: account.stable_user_id,
-				beforeFinalize: async () =>
-					await accountStillEligibleForUnverifiedPurge({
-						db: input.env.APP_DB,
-						dbUserId: account.id,
-					}),
-				abortFenceIfIneligible: true,
 			})
-			await logAuditEvent({
-				db: auditDatabaseFromEnv(input.env),
-				category: 'account',
-				action: 'unverified_account_purged',
-				result: 'success',
-				email: account.email,
-				reason: `unverified_for_${ageDays(account.created_at, now)}_days`,
-			})
+			try {
+				await logAuditEvent({
+					db: auditDatabaseFromEnv(input.env),
+					category: 'account',
+					action: 'unverified_account_purged',
+					result: 'success',
+					email: account.email,
+					reason: `unverified_for_${ageDays(account.created_at, now)}_days`,
+				})
+			} catch (error) {
+				console.warn('unverified_account_purge_audit_failed', {
+					userId: account.stable_user_id,
+					error,
+				})
+			}
 			result.purged += 1
 		} catch (error) {
-			if (error instanceof AccountDeletionNoLongerEligibleError) {
-				console.info('unverified_account_purge_no_longer_eligible', {
-					userId: account.stable_user_id,
-				})
-				continue
-			}
-			if (claim.created) {
+			if (claim.created && isPreCleanupDeletionFailure(error)) {
 				await abortAccountDeleting({
 					db: input.env.APP_DB,
 					dbUserId: account.id,

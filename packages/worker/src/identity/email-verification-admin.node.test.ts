@@ -4,6 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { hashVerificationToken } from './email-verification-tokens.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
 	AdminEmailVerificationError,
 	markAdminUserEmailVerified,
@@ -109,4 +110,33 @@ test('admin mark verified and mint verify url cover the operator unblock path', 
 	await expect(
 		markAdminUserEmailVerified(db, { email: 'missing@example.com' }),
 	).rejects.toMatchObject({ code: 'not_found' })
+})
+
+test('admin mark verified and mint verify url refuse a fenced account', async () => {
+	const { db, email } = await createAdminVerifyTestDb()
+	await db
+		.prepare(`UPDATE users SET deleting_at = ? WHERE id = 1`)
+		.bind('2026-09-02 12:00:00')
+		.run()
+
+	await expect(
+		markAdminUserEmailVerified(db, { email }),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	await expect(
+		mintAdminEmailVerificationUrl({
+			db,
+			appBaseUrl: 'https://kody.codes',
+			target: { email },
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(
+		await db
+			.prepare(`SELECT email_verified_at FROM users WHERE id = 1`)
+			.first<{ email_verified_at: string | null }>(),
+	).toEqual({ email_verified_at: null })
+	expect(
+		await db
+			.prepare(`SELECT COUNT(*) AS count FROM email_verifications`)
+			.first<{ count: number }>(),
+	).toEqual({ count: 0 })
 })
