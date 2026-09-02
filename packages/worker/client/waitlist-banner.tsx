@@ -16,6 +16,10 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
+import {
+	fieldErrorProps,
+	invalidFieldsForMessage,
+} from '#client/form-error-fields.ts'
 
 type WaitlistStatus = 'idle' | 'submitting' | 'success' | 'error'
 
@@ -105,6 +109,11 @@ export function WaitlistBanner(handle: Handle) {
 		}
 		const isSubmitting = status === 'submitting'
 		const isSuccess = status === 'success'
+		const statusId = `${handle.id}-waitlist-status`
+		const invalidFields = invalidFieldsForMessage(status, message, [
+			'firstName',
+			'email',
+		])
 
 		return (
 			<section aria-label="Join the waiting list" mix={css(bannerCss)}>
@@ -121,7 +130,16 @@ export function WaitlistBanner(handle: Handle) {
 								</span>{' '}
 								Join the waitlist for an invite.
 							</p>
-							<form mix={[css(formCss), on('submit', handleSubmit)]}>
+							<form
+								mix={[
+									css(formCss),
+									on('submit', handleSubmit),
+									on('input', () => {
+										if (status !== 'error') return
+										setState('idle')
+									}),
+								]}
+							>
 								{renderHoneypot()}
 								{/*
 								 * One connected pill, same grammar as the hero waitlist and
@@ -145,6 +163,7 @@ export function WaitlistBanner(handle: Handle) {
 										autoComplete="given-name"
 										maxLength={80}
 										placeholder="First name"
+										{...fieldErrorProps('firstName', invalidFields, statusId)}
 										mix={css(pillNameInputCss)}
 									/>
 									<label
@@ -160,6 +179,7 @@ export function WaitlistBanner(handle: Handle) {
 										required
 										autoComplete="email"
 										placeholder="Email"
+										{...fieldErrorProps('email', invalidFields, statusId)}
 										mix={css(pillEmailInputCss)}
 									/>
 									<button
@@ -182,8 +202,9 @@ export function WaitlistBanner(handle: Handle) {
 							 * whole point is being shallow.
 							 */}
 							<p
+								id={statusId}
 								aria-live="polite"
-								role={status === 'error' ? 'alert' : undefined}
+								role={status === 'error' ? 'alert' : 'status'}
 								mix={css(visuallyHiddenCss)}
 							>
 								{message ?? ''}
@@ -274,7 +295,7 @@ const pillCss = {
 	alignItems: 'stretch',
 	width: '100%',
 	backgroundColor: colors.surface,
-	border: `1.5px solid ${colors.border}`,
+	border: `1.5px solid ${colors.fieldBorder}`,
 	borderRadius: pillRadius,
 	padding: pillPadding,
 	boxSizing: 'border-box' as const,

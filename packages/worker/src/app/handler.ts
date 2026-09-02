@@ -1,6 +1,7 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { getEnv } from '#app/env.ts'
+import { renderInternalServerErrorPage } from '#app/internal-error-page.ts'
 import { createAppRouter } from '#app/router.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
 
@@ -39,6 +40,6 @@ export async function handleRequest(
 		)
 	} catch (error) {
 		console.error('Remix server handler failed:', error)
-		return new Response('Internal Server Error', { status: 500 })
+		return renderInternalServerErrorPage()
 	}
 }

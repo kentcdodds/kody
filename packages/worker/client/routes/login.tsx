@@ -114,6 +114,12 @@ export function LoginRoute(handle: Handle) {
 		message = null
 	}
 
+	function clearFieldError() {
+		if (status !== 'error') return
+		resetAuthState()
+		handle.update()
+	}
+
 	function applySignupSearch(searchParams: URLSearchParams) {
 		signupPanel = resolveSignupPanel(searchParams, signupMode)
 		prefillInviteCode = readPrefillInviteCode(searchParams)
@@ -515,6 +521,7 @@ export function LoginRoute(handle: Handle) {
 									message,
 									isSubmitting,
 									onSubmit: handleWaitingListSubmit,
+									onFieldEdit: clearFieldError,
 								})
 							: renderAuthForm({
 									handleId: handle.id,
@@ -529,6 +536,7 @@ export function LoginRoute(handle: Handle) {
 									submitBusyLabel,
 									onSubmit: handleSubmit,
 									onPasskeySignIn: handlePasskeySignIn,
+									onFieldEdit: clearFieldError,
 								})}
 
 						{isSignup ? (

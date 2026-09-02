@@ -2,6 +2,8 @@ import { type Handle, css } from 'remix/ui'
 import { on } from './event-mixin.ts'
 import {
 	handleForkOutdatedCopyClick,
+	handleForkOutdatedCopyFocusOut,
+	handleForkOutdatedCopyKeyDown,
 	handleForkOutdatedCopyPointerOut,
 } from './fork-outdated-copy.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
@@ -29,7 +31,10 @@ import {
 	type SessionInfo,
 	type SessionStatus,
 } from './session.ts'
-import { visuallyHiddenUntilFocusedCss } from '#universal/styles/style-primitives.ts'
+import {
+	primaryLinkCss,
+	visuallyHiddenUntilFocusedCss,
+} from '#universal/styles/style-primitives.ts'
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
 import { Toaster } from './toaster.tsx'
@@ -274,6 +279,8 @@ export function App(handle: Handle<AppProps>) {
 								on('click', (event) => {
 									void handleForkOutdatedCopyClick(event)
 								}),
+								on('keydown', handleForkOutdatedCopyKeyDown),
+								on('focusout', handleForkOutdatedCopyFocusOut),
 								on('pointerout', handleForkOutdatedCopyPointerOut),
 								css(
 									isAuthShellPath
@@ -315,7 +322,7 @@ export function App(handle: Handle<AppProps>) {
 								unauthorized={handle.props.unauthorized}
 								fallback={
 									<section>
-										<h2
+										<h1
 											mix={css({
 												fontSize: typography.fontSize.lg,
 												fontWeight: typography.fontWeight.semibold,
@@ -324,15 +331,20 @@ export function App(handle: Handle<AppProps>) {
 											})}
 										>
 											Not Found
-										</h2>
+										</h1>
 										<p mix={css({ color: colors.textMuted })}>
 											We could not find that page.
+										</p>
+										<p>
+											<a href="/" mix={css(primaryLinkCss)}>
+												Go home
+											</a>
 										</p>
 									</section>
 								}
 								unauthorizedFallback={
 									<section>
-										<h2
+										<h1
 											mix={css({
 												fontSize: typography.fontSize.lg,
 												fontWeight: typography.fontWeight.semibold,
@@ -341,9 +353,23 @@ export function App(handle: Handle<AppProps>) {
 											})}
 										>
 											Unauthorized
-										</h2>
+										</h1>
 										<p mix={css({ color: colors.textMuted })}>
 											You are not allowed to view this page.
+										</p>
+										<p
+											mix={css({
+												display: 'flex',
+												gap: spacing.md,
+												flexWrap: 'wrap',
+											})}
+										>
+											<a href="/" mix={css(primaryLinkCss)}>
+												Go home
+											</a>
+											<a href={loginHref} mix={css(primaryLinkCss)}>
+												Log in
+											</a>
 										</p>
 									</section>
 								}

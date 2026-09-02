@@ -8,6 +8,7 @@ import {
 	starterCopyPromptTooltipCss,
 	starterGhostButtonCss,
 	starterRowCss,
+	tooltipDismissMix,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingDiyCardProps = {
@@ -67,6 +68,7 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 					mix={[
 						css(isRow ? diyRowCopyButtonCss : diyCopyButtonCss),
 						on('click', () => void copyPrompt()),
+						...tooltipDismissMix,
 					]}
 					data-testid="onboarding-diy-copy"
 				>
@@ -75,7 +77,11 @@ export function OnboardingDiyCard(handle: Handle<OnboardingDiyCardProps>) {
 						: copyState === 'error'
 							? 'Copy failed'
 							: 'Copy prompt'}
-					<span id="onboarding-diy-prompt-tip" role="tooltip">
+					<span
+						id="onboarding-diy-prompt-tip"
+						role="tooltip"
+						aria-hidden="true"
+					>
 						{copyPromptTooltip}
 					</span>
 				</button>

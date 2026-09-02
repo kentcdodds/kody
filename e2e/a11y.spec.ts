@@ -34,6 +34,15 @@ const publicRoutes: RouteScenario[] = [
 			await expect(page.getByLabel('Password')).toBeVisible()
 		},
 	},
+	{
+		path: '/this-page-does-not-exist',
+		ready: async (page) => {
+			await expect(
+				page.getByRole('heading', { name: 'Not Found', level: 1 }),
+			).toBeVisible()
+			await expect(page.getByRole('link', { name: 'Go home' })).toBeVisible()
+		},
+	},
 ]
 
 const authenticatedRoutes: RouteScenario[] = [

@@ -14,6 +14,7 @@ export const colors = {
 	text: 'var(--color-text)',
 	textMuted: 'var(--color-text-muted)',
 	border: 'var(--color-border)',
+	fieldBorder: 'var(--color-field-border)',
 	danger: 'var(--color-danger)',
 	dangerHover: 'var(--color-danger-hover)',
 	onDanger: 'var(--color-on-danger)',

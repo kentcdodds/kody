@@ -25,6 +25,18 @@ import {
 	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 
+export const tooltipDismissMix = [
+	on('keydown', (event) => {
+		if (event.key !== 'Escape') return
+		if (!(event.currentTarget instanceof HTMLElement)) return
+		event.currentTarget.dataset.tooltipDismissed = ''
+	}),
+	on('blur', (event) => {
+		if (!(event.currentTarget instanceof HTMLElement)) return
+		delete event.currentTarget.dataset.tooltipDismissed
+	}),
+]
+
 type OnboardingStarterCardProps = {
 	listing: OnboardingFeaturedListing
 	loggedIn: boolean
@@ -201,6 +213,7 @@ export function OnboardingStarterCard(
 						mix={[
 							css(isRow ? rowCopyPromptButtonCss : copyPromptButtonCss),
 							on('click', () => void copyPrompt(readyPrompt)),
+							...tooltipDismissMix,
 						]}
 						data-testid={`onboarding-starter-copy-${listing.id}`}
 					>
@@ -212,6 +225,7 @@ export function OnboardingStarterCard(
 						<span
 							id={`onboarding-starter-prompt-tip-${listing.id}`}
 							role="tooltip"
+							aria-hidden="true"
 						>
 							{copyPromptTooltip}
 						</span>
@@ -385,6 +399,10 @@ export const starterCopyPromptTooltipCss = {
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,
 		visibility: 'visible' as const,
+	},
+	'&[data-tooltip-dismissed] [role="tooltip"]': {
+		opacity: 0,
+		visibility: 'hidden' as const,
 	},
 }
 
