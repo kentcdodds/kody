@@ -278,80 +278,87 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 					</button>
 				</div>
 			</form>
-			<details
-				mix={css({
-					...accountDisclosureCss,
-					marginTop: '0.6rem',
-				})}
-			>
-				<summary>Change email</summary>
-				<form
-					{...passwordManagerIgnoreProps}
-					mix={[
-						css({
-							display: 'grid',
-							gap: spacing.md,
-							maxWidth: '26rem',
-						}),
-						on('submit', onEmailChangeSubmit),
-					]}
+			{emailVerified ? (
+				<details
+					mix={css({
+						...accountDisclosureCss,
+						marginTop: '0.6rem',
+					})}
 				>
-					<p mix={css(accountFieldNoteCss)}>
-						Enter your current password. We will send a verification link to the
-						new address before changing your account email.
-					</p>
-					<label mix={css(accountFieldCss)}>
-						<span mix={css(accountFieldLabelCss)}>New email</span>
-						<input
-							type="email"
-							name="email"
-							data-field-ring
-							required
-							autoComplete="email"
-							value={draftEmail}
-							mix={[css(accountInputCss), on('input', onDraftEmailInput)]}
-						/>
-					</label>
-					<label mix={css(accountFieldCss)}>
-						<span mix={css(accountFieldLabelCss)}>Current password</span>
-						<input
-							type="password"
-							name="password"
-							data-field-ring
-							required
-							{...passwordManagerIgnoreProps}
-							value={emailChangePassword}
-							mix={[
-								css(accountInputCss),
-								on('input', onEmailChangePasswordInput),
-							]}
-						/>
-					</label>
-					<div>
-						<button
-							type="submit"
-							disabled={
-								isSendingEmailChange ||
-								normalizedDraftEmail === email.trim().toLowerCase()
-							}
-							mix={css(compactGhostButtonCss)}
-						>
-							{isSendingEmailChange ? 'Sending...' : 'Send verification link'}
-						</button>
-					</div>
-					{emailChangeMessage ? (
-						<p
-							role="status"
-							mix={css({
-								color: emailChangeTone === 'error' ? colors.error : colors.text,
-								margin: 0,
-							})}
-						>
-							{emailChangeMessage}
+					<summary>Change email</summary>
+					<form
+						{...passwordManagerIgnoreProps}
+						mix={[
+							css({
+								display: 'grid',
+								gap: spacing.md,
+								maxWidth: '26rem',
+							}),
+							on('submit', onEmailChangeSubmit),
+						]}
+					>
+						<p mix={css(accountFieldNoteCss)}>
+							Enter your current password. We will send a verification link to
+							the new address before changing your account email.
 						</p>
-					) : null}
-				</form>
-			</details>
+						<label mix={css(accountFieldCss)}>
+							<span mix={css(accountFieldLabelCss)}>New email</span>
+							<input
+								type="email"
+								name="email"
+								data-field-ring
+								required
+								autoComplete="email"
+								value={draftEmail}
+								mix={[css(accountInputCss), on('input', onDraftEmailInput)]}
+							/>
+						</label>
+						<label mix={css(accountFieldCss)}>
+							<span mix={css(accountFieldLabelCss)}>Current password</span>
+							<input
+								type="password"
+								name="password"
+								data-field-ring
+								required
+								{...passwordManagerIgnoreProps}
+								value={emailChangePassword}
+								mix={[
+									css(accountInputCss),
+									on('input', onEmailChangePasswordInput),
+								]}
+							/>
+						</label>
+						<div>
+							<button
+								type="submit"
+								disabled={
+									isSendingEmailChange ||
+									normalizedDraftEmail === email.trim().toLowerCase()
+								}
+								mix={css(compactGhostButtonCss)}
+							>
+								{isSendingEmailChange ? 'Sending...' : 'Send verification link'}
+							</button>
+						</div>
+						{emailChangeMessage ? (
+							<p
+								role="status"
+								mix={css({
+									color:
+										emailChangeTone === 'error' ? colors.error : colors.text,
+									margin: 0,
+								})}
+							>
+								{emailChangeMessage}
+							</p>
+						) : null}
+					</form>
+				</details>
+			) : (
+				<p mix={css({ ...accountFieldNoteCss, marginTop: '0.6rem' })}>
+					Verify your current email address before changing it.
+				</p>
+			)}
 		</AccountManagementPanel>
 	)
 }

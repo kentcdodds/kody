@@ -73,6 +73,16 @@ package-app surfaces:
     endpoint that accepts `application/x-www-form-urlencoded` or
     `multipart/form-data` from the browser, and do not relax the cookie to
     `SameSite=None`, without adding CSRF tokens at the same time.
+11. **Email change requires a verified current address.**
+    `POST /account/email-change.json` refuses to start a change when
+    `users.email_verified_at` is null (403, audit reason `email_unverified`). A
+    `stable_user_id` unique conflict at password or social-login signup is a
+    controlled 409 with audit reason `stable_user_id_exists` (message directs
+    the person to contact `support@kody.codes`) and releases a consumed invite.
+    Operators inspect collisions with `adminUserStableIdConflict` (metadata
+    only) and suspend or delete the squatting account with existing
+    capabilities. `users.stable_user_id` is never recomputed for an existing
+    account.
 
 ## First-party HTTP security headers
 

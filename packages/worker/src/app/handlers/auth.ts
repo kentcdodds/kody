@@ -72,6 +72,35 @@ const authRequestSchema = object({
 const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 
+const stableUserIdConflictSignupMessage =
+	'This email address cannot be used for a new account. Contact support@kody.codes.'
+
+function signupUniqueConflict(
+	uniqueField: 'email' | 'username' | 'stable_user_id',
+) {
+	switch (uniqueField) {
+		case 'username':
+			return {
+				reason: 'username_exists',
+				error: 'Username already registered.',
+			}
+		case 'email':
+			return {
+				reason: 'email_exists',
+				error: 'Email already registered.',
+			}
+		case 'stable_user_id':
+			return {
+				reason: 'stable_user_id_exists',
+				error: stableUserIdConflictSignupMessage,
+			}
+		default: {
+			const exhaustive: never = uniqueField
+			throw new Error(`Unhandled unique field: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export function createAuthHandler(env: Env) {
 	const db = createDb(env.APP_DB)
 
@@ -305,9 +334,13 @@ export function createAuthHandler(env: Env) {
 					record = { id: createdUser.id, stableUserId }
 				} catch (error) {
 					const uniqueField = getUniqueConstraintField(error)
-					if (uniqueField === 'email' || uniqueField === 'username') {
+					if (
+						uniqueField === 'email' ||
+						uniqueField === 'username' ||
+						uniqueField === 'stable_user_id'
+					) {
 						await releaseConsumedInvite()
-						const isUsernameConflict = uniqueField === 'username'
+						const conflict = signupUniqueConflict(uniqueField)
 						void logAuditEvent({
 							db: auditDatabaseFromEnv(env),
 							category: 'auth',
@@ -316,16 +349,9 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							ip: requestIp,
 							path: url.pathname,
-							reason: isUsernameConflict ? 'username_exists' : 'email_exists',
+							reason: conflict.reason,
 						})
-						return Response.json(
-							{
-								error: isUsernameConflict
-									? 'Username already registered.'
-									: 'Email already registered.',
-							},
-							{ status: 409 },
-						)
+						return Response.json({ error: conflict.error }, { status: 409 })
 					}
 					await releaseConsumedInvite()
 					throw error

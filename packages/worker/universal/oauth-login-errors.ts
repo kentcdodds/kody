@@ -21,6 +21,8 @@ export const oauthLoginErrorMessages = {
 	'invite-exhausted': 'That invite code has already been used.',
 	'connection-conflict':
 		'That provider account is already connected to a different user.',
+	'email-unavailable':
+		'This email address cannot be used for a new account. Contact support@kody.codes.',
 	'account-error': 'We could not create your account. Please try again.',
 	'rate-limited': 'Too many sign-in attempts. Please try again later.',
 } as const
