@@ -601,6 +601,32 @@ test('auth handler login and signup workflow', async () => {
 		error: 'Username already registered.',
 	})
 
+	// An already-registered email must be indistinguishable from a fresh
+	// signup in status and body (no account enumeration); only the session
+	// cookie is withheld and nothing is created.
+	const duplicateEmailResponse = await signupContext.request({
+		email: 'existing@example.com',
+		username: 'brand-new-name',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(duplicateEmailResponse.status).toBe(200)
+	expect(await duplicateEmailResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
+	expect(duplicateEmailResponse.headers.get('Set-Cookie')).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'signup',
+			result: 'failure',
+			reason: 'email_exists',
+		}),
+	)
+
 	const email = 'session-user@example.com'
 	await productionContext.testDb.addUser(email, 'secret')
 
@@ -645,7 +671,8 @@ test('auth handler login and signup workflow', async () => {
 	// The full workflow audits exactly these events, in order: the unknown
 	// login, the invite-less production signup, the invited signup (+ invite
 	// use), the weak-password rejection, the open signup, the six username
-	// rejections, and the three successful logins.
+	// rejections, the duplicate-email rejection, and the three successful
+	// logins.
 	expect(auditEventSummaries()).toEqual([
 		'login:failure',
 		'signup:failure',
@@ -653,6 +680,7 @@ test('auth handler login and signup workflow', async () => {
 		'invite_use:success',
 		'signup:failure',
 		'signup:success',
+		'signup:failure',
 		'signup:failure',
 		'signup:failure',
 		'signup:failure',

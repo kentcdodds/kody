@@ -101,6 +101,15 @@ function signupUniqueConflict(
 	}
 }
 
+function signupAcceptedBody(mode: AuthMode) {
+	return {
+		ok: true,
+		mode,
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	}
+}
+
 export function createAuthHandler(env: Env) {
 	const db = createDb(env.APP_DB)
 
@@ -242,10 +251,10 @@ export function createAuthHandler(env: Env) {
 						path: url.pathname,
 						reason: 'email_exists',
 					})
-					return Response.json(
-						{ error: 'Email already registered.' },
-						{ status: 409 },
-					)
+					// Same body and status as a fresh signup so the endpoint does not
+					// confirm which addresses hold accounts. Nothing is created or
+					// sent; the owner can sign in or reset their password as usual.
+					return Response.json(signupAcceptedBody(normalizedMode))
 				}
 				const existingUsername = await db.findOne(usersTable, {
 					where: { username: normalizedUsername },
@@ -530,19 +539,11 @@ export function createAuthHandler(env: Env) {
 						reason: `invite_code=${consumedInviteCode};stable_user_id=${record.stableUserId};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 					})
 				}
-				return Response.json(
-					{
-						ok: true,
-						mode: normalizedMode,
-						emailVerificationRequired: true,
-						message: 'Check your email to verify your account.',
+				return Response.json(signupAcceptedBody(normalizedMode), {
+					headers: {
+						'Set-Cookie': cookie,
 					},
-					{
-						headers: {
-							'Set-Cookie': cookie,
-						},
-					},
-				)
+				})
 			}
 
 			const userRecord = await db.findOne(usersTable, {
