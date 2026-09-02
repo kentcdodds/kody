@@ -100,7 +100,35 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	await page.getByRole('link', { name: memberUser.username }).click()
 	const roleSelect = page.getByLabel('Role', { exact: true })
 	await roleSelect.selectOption('admin')
+	const assignRoleResponse = page.waitForResponse((response) => {
+		if (response.request().method() !== 'POST') return false
+		let pathname = ''
+		try {
+			pathname = new URL(response.url()).pathname
+		} catch {
+			return false
+		}
+		if (pathname !== '/admin/users.json') return false
+		try {
+			const body: unknown = JSON.parse(response.request().postData() ?? '')
+			return (
+				typeof body === 'object' &&
+				body !== null &&
+				'action' in body &&
+				body.action === 'assign_role'
+			)
+		} catch {
+			return false
+		}
+	})
 	await page.getByRole('button', { name: 'Assign', exact: true }).click()
+	expect((await assignRoleResponse).ok()).toBe(true)
+	await expect(
+		page.getByRole('status', { name: 'Assigned admin role.' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('button', { name: 'Remove', exact: true }),
+	).toBeEnabled()
 
 	await page.context().clearCookies()
 	await login({
