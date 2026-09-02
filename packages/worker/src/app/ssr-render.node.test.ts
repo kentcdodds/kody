@@ -68,6 +68,7 @@ vi.mock('#worker/community/service.ts', () => ({
 		communityMockModule.getCommunityListingWithAggregates(...args),
 	reportCommunityListing: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
+	getCommunityListingsByIds: vi.fn(async () => []),
 }))
 
 // Owner/kody-id resolution is covered against the real schema in

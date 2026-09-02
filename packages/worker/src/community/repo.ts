@@ -411,6 +411,51 @@ export async function getCommunityListingById(
 	return row ? mapCommunityListingRow(row) : null
 }
 
+/**
+ * Same visibility and owner-source join as `getCommunityListingById`, for a
+ * set of ids. Unknown ids are omitted. Results follow `listingIds` order
+ * (first occurrence wins if an id is repeated).
+ */
+export async function getCommunityListingsByIds(
+	db: D1Database,
+	input: {
+		listingIds: Array<string>
+		includeDelisted: boolean
+	},
+): Promise<Array<CommunityListingRecord>> {
+	if (input.listingIds.length === 0) return []
+	const uniqueIds = [...new Set(input.listingIds)]
+	const statusClause = input.includeDelisted
+		? ''
+		: `AND community_listings.status = 'active'`
+	const byId = new Map<string, CommunityListingRecord>()
+	for (const idChunk of chunkArray(uniqueIds, maxSqlBindingsPerChunk)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT ${communityListingSelectColumns}
+				FROM community_listings
+				${communityListingSourceJoin}
+				WHERE community_listings.id IN (${placeholders}) ${statusClause}`,
+			)
+			.bind(...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			const listing = mapCommunityListingRow(row)
+			byId.set(listing.id, listing)
+		}
+	}
+	const ordered: Array<CommunityListingRecord> = []
+	const seen = new Set<string>()
+	for (const listingId of input.listingIds) {
+		if (seen.has(listingId)) continue
+		seen.add(listingId)
+		const listing = byId.get(listingId)
+		if (listing) ordered.push(listing)
+	}
+	return ordered
+}
+
 export async function getActiveCommunityListingWithPublisherUsername(
 	db: D1Database,
 	input: { listingId: string },
