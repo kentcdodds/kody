@@ -26,6 +26,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/guides">Guides</a>
 					<a href="/pricing">Pricing</a>
 					<a href="/faq">FAQ</a>
+					<a href="/support">Support</a>
 					<a href="/blog">Blog</a>
 					<a href="/privacy">Privacy</a>
 					<a href="/terms">Terms</a>

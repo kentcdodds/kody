@@ -226,6 +226,7 @@ import {
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
+import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import {
@@ -304,6 +305,7 @@ export function createAppRouter(env: Env) {
 			guideDetailOgImage: createGuideDetailOgImageHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
+			support: createSupportHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
 			discord: createDiscordHandler(env),

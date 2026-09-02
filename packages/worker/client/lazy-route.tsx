@@ -366,6 +366,7 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.pricing),
 		routePattern(routes.faq),
+		routePattern(routes.support),
 		routePattern(routes.privacy),
 		routePattern(routes.terms),
 		routePattern(routes.discord),
