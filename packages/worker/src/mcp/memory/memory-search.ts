@@ -3,6 +3,7 @@ import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
+	type EmbedTextFn,
 } from '#worker/vectorize/embedding.ts'
 import {
 	CAPABILITY_SEARCH_RRF_K,
@@ -42,10 +43,13 @@ export async function queryMemoryVectorIds(input: {
 	statuses: ReadonlyArray<McpMemoryRow['status']>
 	category?: string | null
 	topK: number
+	embedText?: EmbedTextFn
 }): Promise<Array<string>> {
 	const index = getCapabilityVectorIndex(input.env)
 	if (!index || !input.userId) return []
-	const queryVector = await embedTextForVectorize(input.env, input.query)
+	const queryVector = await (
+		input.embedText ?? ((text) => embedTextForVectorize(input.env, text))
+	)(input.query)
 	const vectorMatches = await index.query(queryVector, {
 		topK: input.topK,
 		namespace: userVectorNamespace(input.userId),
@@ -76,6 +80,7 @@ export async function searchMemories(input: {
 	category?: string | null
 	rows: Array<McpMemoryRow>
 	vectorRankedIds?: ReadonlyArray<string>
+	embedText?: EmbedTextFn
 }): Promise<{ matches: Array<MemorySearchMatch>; offline: boolean }> {
 	const query = input.query.trim()
 	const offline = isCapabilitySearchOffline(input.env)
@@ -117,7 +122,9 @@ export async function searchMemories(input: {
 		vectorOrder = sortIdsByScore(ids, (id) => similarityById[id]!)
 	} else {
 		const index = getCapabilityVectorIndex(input.env)!
-		const queryVector = await embedTextForVectorize(input.env, query)
+		const queryVector = await (
+			input.embedText ?? ((text) => embedTextForVectorize(input.env, text))
+		)(query)
 		const topK = Math.min(Math.max(ids.length, input.limit * 5), 100)
 		const vectorMatches = await index.query(queryVector, {
 			topK,

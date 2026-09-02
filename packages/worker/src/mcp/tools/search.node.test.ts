@@ -4,6 +4,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
+	createTextEmbeddingCache,
 	deterministicEmbedding,
 } from '#worker/vectorize/embedding.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
@@ -1834,4 +1835,91 @@ test('searchUnified ranks platform (built-in) package rows and drops unmarked fo
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('row userId mismatch'),
 	)
+})
+
+test('searchUnified embeds each distinct query text once online and never calls Workers AI offline', async () => {
+	const embedTexts: Array<string> = []
+	const offline = await searchUnified({
+		env: {} as Env,
+		query: 'summarize inbox threads',
+		limit: 5,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: emptyOptionalSearchRows,
+	})
+	expect(offline.offline).toBe(true)
+	expect(embedTexts).toEqual([])
+
+	const onlineEnv = {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: {
+			async run(...args: Array<unknown>) {
+				const input = args[1] as { text?: unknown }
+				const batch = Array.isArray(input.text)
+					? input.text.map(String)
+					: [String(input.text ?? '')]
+				embedTexts.push(...batch)
+				return {
+					data: batch.map((text) => deterministicEmbedding(text)),
+					shape: [batch.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+				}
+			},
+		},
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return { matches: [] }
+			},
+		},
+	} as unknown as Env
+	const cache = createTextEmbeddingCache(onlineEnv)
+	const first = await searchUnified({
+		env: onlineEnv,
+		query: 'summarize inbox threads',
+		limit: 5,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			...emptyOptionalSearchRows,
+			packageRows: [
+				leanPackage(
+					'pkg-inbox',
+					'user-1',
+					'inbox-summarizer',
+					'summarize inbox threads',
+				),
+			],
+		},
+		embedText: cache.embedText,
+	})
+	const second = await searchUnified({
+		env: onlineEnv,
+		query: 'summarize inbox threads',
+		limit: 5,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: {
+			...emptyOptionalSearchRows,
+			packageRows: [
+				leanPackage(
+					'pkg-inbox',
+					'user-1',
+					'inbox-summarizer',
+					'summarize inbox threads',
+				),
+			],
+		},
+		embedText: cache.embedText,
+	})
+
+	expect(first.offline).toBe(false)
+	expect(second.offline).toBe(false)
+	expect(embedTexts).toEqual(['summarize inbox threads'])
+	expect(first.matches.map((match) => match.type)).toEqual(
+		second.matches.map((match) => match.type),
+	)
+	expect(
+		first.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
+		),
+	).toBe(true)
 })

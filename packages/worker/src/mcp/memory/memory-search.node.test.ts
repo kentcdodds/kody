@@ -1,6 +1,7 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { searchMemories } from './memory-search.ts'
+import * as embedding from '#worker/vectorize/embedding.ts'
+import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
 import { type McpMemoryRow } from './types.ts'
 
 function row(
@@ -66,4 +67,41 @@ test('searchMemories fail-closes on foreign rows and keeps Vectorize misses lexi
 		vectorRankedIds: ['mem-weak'],
 	})
 	expect(foreign.matches).toEqual([])
+})
+
+test('queryMemoryVectorIds uses a shared embedText instead of embedding the query again', async () => {
+	const embedSpy = vi
+		.spyOn(embedding, 'embedTextForVectorize')
+		.mockRejectedValue(new Error('should not embed again'))
+	const embedTexts: Array<string> = []
+	const embedText = async (text: string) => {
+		embedTexts.push(text)
+		return [0.4, 0.5, 0.6]
+	}
+	const queried: Array<Array<number>> = []
+	const env = {
+		SENTRY_ENVIRONMENT: 'production',
+		CAPABILITY_VECTOR_INDEX: {
+			async query(values: Array<number>) {
+				queried.push(values)
+				return { matches: [] }
+			},
+		},
+	} as unknown as Env
+
+	try {
+		await queryMemoryVectorIds({
+			env,
+			query: 'summarize inbox threads',
+			userId: 'user-1',
+			statuses: ['active'],
+			topK: 5,
+			embedText,
+		})
+		expect(embedSpy).not.toHaveBeenCalled()
+		expect(embedTexts).toEqual(['summarize inbox threads'])
+		expect(queried).toEqual([[0.4, 0.5, 0.6]])
+	} finally {
+		embedSpy.mockRestore()
+	}
 })
