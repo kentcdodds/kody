@@ -83,12 +83,16 @@ import {
 	maybeJoinOfficialDiscordGuild,
 	maybeSyncDiscordGuildRolesForUser,
 } from '#worker/discord/guild-role.ts'
+import { applyPasswordChange } from '#app/apply-password-change.ts'
+import { clearedFactorsAuditReason } from '#app/clear-account-factors.ts'
+import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
+import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 
 /**
  * Accounts created through social login have no usable password until the
  * user sets one via password reset; verifyPassword rejects this sentinel.
  */
-const oauthNoUsablePasswordHash = 'oauth_created_no_usable_password'
+const oauthNoUsablePasswordHash = unusablePasswordHash.oauthCreated
 
 function getCallbackRedirectUri(env: Env, url: URL, provider: OauthProviderId) {
 	// The OAuth login state lives in a host-scoped cookie, so the provider must
@@ -429,6 +433,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					 * signups can append accountCreated=1 for Fathom).
 					 */
 					destination?: string
+					/**
+					 * Cookie `issuedAt`. Reclaim stamps `password_changed_at` first,
+					 * so the new session must postdate that timestamp.
+					 */
+					issuedAt?: number
 				} = {},
 			) {
 				const stableUserId = resolveUserStableId(user)
@@ -466,6 +475,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				const sessionCookie = await createAuthCookie(
 					{ stableUserId, email: user.email, rememberMe: false },
 					secure,
+					options.issuedAt ?? Date.now(),
 				)
 				await touchLastActiveAt(env.APP_DB, { stableUserId })
 				void logAuditEvent({
@@ -572,9 +582,44 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			const email = normalizeEmail(profile.email)
 
 			// 3. A provider-verified email matching an existing account links
-			// the identity and signs that account in.
+			// the identity and signs that account in. An unverified row is
+			// treated as a possible squat: invalidate the password, drop
+			// attacker-added factors, then link.
 			const existingUser = await db.findOne(usersTable, { where: { email } })
 			if (existingUser) {
+				let sessionIssuedAt: number | undefined
+				if (!existingUser.email_verified_at) {
+					const helpers = (env as Env & { OAUTH_PROVIDER?: OAuthGrantHelpers })
+						.OAUTH_PROVIDER
+					const reclaim = await applyPasswordChange({
+						db,
+						d1: env.APP_DB,
+						helpers,
+						userId: existingUser.id,
+						stableUserId: resolveUserStableId(existingUser),
+						unusablePasswordHash: unusablePasswordHash.reclaimedUnverified,
+						clearSecondFactorsAndConnections: true,
+					})
+					if (!reclaim.ok) {
+						return fail(
+							'account-error',
+							reclaim.reason === 'oauth_grant_revoke_failed'
+								? reclaim.detail
+								: reclaim.reason,
+						)
+					}
+					sessionIssuedAt = reclaim.changedAtMs + 1
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'social_link_reclaimed_unverified_account',
+						result: 'success',
+						email: existingUser.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: `provider=${provider};${clearedFactorsAuditReason(reclaim.cleared ?? { twoFactorRows: 0, passkeys: 0, oauthConnections: 0 })}`,
+					})
+				}
 				try {
 					await createConnection({
 						provider,
@@ -600,7 +645,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					discordUserId: profile.providerUserId,
 					accessToken,
 				})
-				return issueLogin(existingUser)
+				return issueLogin(existingUser, '/account', {
+					issuedAt: sessionIssuedAt,
+				})
 			}
 
 			// 4. New account. Production requires a valid invite carried in the

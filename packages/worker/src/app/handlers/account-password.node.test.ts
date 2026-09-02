@@ -132,6 +132,18 @@ test('signed-in password change requires the current password, revokes MCP grant
 	sqlite.exec(`
 		INSERT INTO password_resets (user_id, token_hash, expires_at)
 		VALUES (1, 'pending-reset', ${Date.now() + 60_000});
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set
+		) VALUES ('2fa', '1', 'KEEPSECRET', 'SHA-1', 6, 30, '0123456789');
+		INSERT INTO passkeys (
+			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
+			device_type, backed_up, transports, name
+		) VALUES (
+			'keep-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
+			1, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', 'laptop'
+		);
+		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
+		VALUES ('github', 'keep-github', 1, 'ada');
 	`)
 	const { helpers, revokedGrantIds } = createTrackingGrantHelpers()
 	const handler = createAccountPasswordHandler(
@@ -233,6 +245,23 @@ test('signed-in password change requires the current password, revokes MCP grant
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM password_resets`).get(),
 	).toEqual({ count: 0 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 1`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 1`,
+			)
+			.get(),
+	).toEqual({ count: 1 })
 
 	const row = sqlite
 		.prepare(

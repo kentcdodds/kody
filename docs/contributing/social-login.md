@@ -47,8 +47,11 @@ Callback resolution order:
 2. A known connection signs in its user (the two-factor gate applies exactly as
    it does for password logins; passkey sign-in skips TOTP).
 3. A **provider-verified** email matching an existing account links the identity
-   and signs that account in (this also marks the account email verified, since
-   the provider asserted ownership of the same address).
+   and signs that account in. If that account is unverified, the callback
+   reclaims it first (unusable password, session lockout, TOTP / passkeys /
+   other connections / reset tokens cleared) so a squatted password signup
+   cannot keep access. The provider also marks the account email verified, since
+   it asserted ownership of the same address.
 4. Otherwise a new account is created. Production requires a valid invite code
    carried in the signed OAuth state cookie (the invite signup panel passes
    `inviteCode` into `POST /auth/:provider`). Non-production stays open without

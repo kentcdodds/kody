@@ -8,6 +8,9 @@ test('isUsablePasswordHash accepts only pbkdf2 hashes', () => {
 	expect(isUsablePasswordHash('platform_account_no_usable_password')).toBe(
 		false,
 	)
+	expect(isUsablePasswordHash('reclaimed_unverified_no_usable_password')).toBe(
+		false,
+	)
 	expect(isUsablePasswordHash(null)).toBe(false)
 	expect(isUsablePasswordHash(undefined)).toBe(false)
 	expect(isUsablePasswordHash('')).toBe(false)

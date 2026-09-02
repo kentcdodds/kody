@@ -9,9 +9,15 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
+import {
+	type ClearedAccountFactors,
+	clearSecondFactorsAndConnections,
+} from '#app/clear-account-factors.ts'
+
+export type { ClearedAccountFactors }
 
 export type ApplyPasswordChangeResult =
-	| { ok: true; changedAtMs: number }
+	| { ok: true; changedAtMs: number; cleared: ClearedAccountFactors | null }
 	| {
 			ok: false
 			reason: 'oauth_provider_unavailable'
@@ -25,6 +31,10 @@ export type ApplyPasswordChangeResult =
 			changedAtMs?: number
 	  }
 
+type ApplyPasswordChangeCredential =
+	| { password: string; unusablePasswordHash?: undefined }
+	| { unusablePasswordHash: string; password?: undefined }
+
 /**
  * Stamp a new password hash, revoke MCP grants around the stamp, and drop
  * outstanding reset tokens. Callers map the result onto HTTP + audit events.
@@ -32,14 +42,21 @@ export type ApplyPasswordChangeResult =
  * Reset tokens stay until both revoke passes succeed so a retry remains
  * safe. `changedAtMs` is millisecond-precision so a freshly issued session
  * cookie can postdate `password_changed_at`.
+ *
+ * Password-reset confirmation passes `clearSecondFactorsAndConnections` so
+ * attacker-added TOTP, passkeys, and linked providers cannot survive the
+ * new password. Signed-in password change leaves those factors in place.
  */
-export async function applyPasswordChange(input: {
-	db: AppDatabase
-	helpers: OAuthGrantHelpers | undefined
-	userId: number
-	stableUserId: string
-	password: string
-}): Promise<ApplyPasswordChangeResult> {
+export async function applyPasswordChange(
+	input: {
+		db: AppDatabase
+		d1: D1Database
+		helpers: OAuthGrantHelpers | undefined
+		userId: number
+		stableUserId: string
+		clearSecondFactorsAndConnections?: boolean
+	} & ApplyPasswordChangeCredential,
+): Promise<ApplyPasswordChangeResult> {
 	if (!input.helpers) {
 		return { ok: false, reason: 'oauth_provider_unavailable', stamped: false }
 	}
@@ -71,8 +88,20 @@ export async function applyPasswordChange(input: {
 		}
 	}
 
+	// Hash before touching account state: PBKDF2 is slow by design, and any
+	// time spent between the timestamp and the row write is a window where a
+	// login could mint a cookie that postdates the stamp.
+	const passwordHash = await resolvePasswordHash(input)
+
+	// Clear second factors and linked providers before the stamp: a passkey or
+	// provider sign-in that completes after `password_changed_at` would mint a
+	// cookie that postdates it and survives the lockout. A failure here leaves
+	// the account unstamped and the reset token intact so the caller can retry.
+	const clearedBeforeStamp = input.clearSecondFactorsAndConnections
+		? await clearSecondFactorsAndConnections(input.d1, input.userId)
+		: null
+
 	const changedAtMs = Date.now()
-	const passwordHash = await createPasswordHash(input.password)
 	await input.db.update(usersTable, input.userId, {
 		password_hash: passwordHash,
 		password_changed_at: new Date(changedAtMs).toISOString(),
@@ -92,9 +121,35 @@ export async function applyPasswordChange(input: {
 		}
 	}
 
+	// Same double-pass for factors: a still-live session could have enrolled a
+	// passkey or TOTP between the first sweep and the stamp.
+	const clearedAfterStamp = input.clearSecondFactorsAndConnections
+		? await clearSecondFactorsAndConnections(input.d1, input.userId)
+		: null
+	const cleared =
+		clearedBeforeStamp && clearedAfterStamp
+			? {
+					twoFactorRows:
+						clearedBeforeStamp.twoFactorRows + clearedAfterStamp.twoFactorRows,
+					passkeys: clearedBeforeStamp.passkeys + clearedAfterStamp.passkeys,
+					oauthConnections:
+						clearedBeforeStamp.oauthConnections +
+						clearedAfterStamp.oauthConnections,
+				}
+			: clearedBeforeStamp
+
+	// Reset tokens go last so every earlier step can be retried with the same
+	// token if it fails.
 	await input.db.deleteMany(passwordResetsTable, {
 		where: { user_id: input.userId },
 	})
 
-	return { ok: true, changedAtMs }
+	return { ok: true, changedAtMs, cleared }
+}
+
+async function resolvePasswordHash(input: ApplyPasswordChangeCredential) {
+	if (input.unusablePasswordHash !== undefined) {
+		return input.unusablePasswordHash
+	}
+	return createPasswordHash(input.password)
 }

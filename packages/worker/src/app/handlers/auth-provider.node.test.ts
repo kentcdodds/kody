@@ -22,7 +22,11 @@ const {
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
-import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
+import {
+	createPasswordHash,
+	verifyPassword,
+} from '@kody-internal/shared/password-hash.ts'
+import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 import {
 	auditEventSummaries,
 	logAuditEventSpy,
@@ -127,26 +131,29 @@ async function seedUser(
 		email: string
 		username: string
 		stableUserId?: string
+		emailVerified?: boolean
 	},
 ) {
 	const passwordHash = await createPasswordHash('test-password')
 	const stableUserId =
 		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
+	const verifiedAt = input.emailVerified ? 'CURRENT_TIMESTAMP' : 'NULL'
 	sqlite.exec(`
-		INSERT INTO users (id, username, email, stable_user_id, password_hash)
+		INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
 		VALUES (
 			${input.id},
 			${quoteSqlString(input.username)},
 			${quoteSqlString(input.email)},
 			${quoteSqlString(stableUserId)},
-			${quoteSqlString(passwordHash)}
+			${quoteSqlString(passwordHash)},
+			${verifiedAt}
 		);
 	`)
 }
 
 function createAppEnv(
 	db: D1Database,
-	overrides: Record<string, string> = {},
+	overrides: Record<string, unknown> = {},
 ): Env {
 	return {
 		APP_DB: db,
@@ -402,7 +409,22 @@ test('google sign-in links a matching verified email to the existing account', a
 		id: 7,
 		email: 'existing@example.com',
 		username: 'existing-user',
+		emailVerified: true,
 	})
+	sqlite.exec(`
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set
+		) VALUES ('2fa', '7', 'KEEPSECRET', 'SHA-1', 6, 30, '0123456789');
+		INSERT INTO passkeys (
+			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
+			device_type, backed_up, transports, name
+		) VALUES (
+			'keep-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
+			7, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', 'laptop'
+		);
+		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
+		VALUES ('github', 'keep-github', 7, 'existing-user');
+	`)
 
 	msw.use(
 		http.post('https://oauth2.googleapis.com/token', async ({ request }) => {
@@ -442,11 +464,11 @@ test('google sign-in links a matching verified email to the existing account', a
 		{ provider: 'google' },
 	)
 	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe('/account')
+	expect(callbackResponse.headers.get('Location')).toBe('/verify')
 	expect(
 		callbackResponse.headers
 			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
+			.some((cookie) => cookie.startsWith('kody_verify=')),
 	).toBe(true)
 
 	const connection = sqlite
@@ -458,13 +480,151 @@ test('google sign-in links a matching verified email to the existing account', a
 	// The provider verified the exact account email, so the account is
 	// treated as email-verified.
 	const user = sqlite
-		.prepare(`SELECT email_verified_at FROM users WHERE id = 7`)
-		.get() as { email_verified_at: string | null }
+		.prepare(`SELECT password_hash, email_verified_at FROM users WHERE id = 7`)
+		.get() as { password_hash: string; email_verified_at: string | null }
 	expect(user.email_verified_at).toBeTruthy()
+	expect(await verifyPassword('test-password', user.password_hash)).toBe(true)
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '7'`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 7`)
+			.get(),
+	).toEqual({ count: 1 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 7`,
+			)
+			.get(),
+	).toEqual({ count: 2 })
+	expect(auditEventSummaries()).not.toContain(
+		'social_link_reclaimed_unverified_account:success',
+	)
 	const userCount = sqlite
 		.prepare(`SELECT COUNT(*) AS count FROM users`)
 		.get() as { count: number }
 	expect(userCount.count).toBe(1)
+})
+
+test('google sign-in reclaims an unverified password account matching the provider email', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const revokedGrantIds = new Array<string>()
+	const env = createAppEnv(db, {
+		OAUTH_PROVIDER: {
+			listUserGrants: async () => ({
+				items: revokedGrantIds.includes('grant-1')
+					? []
+					: [{ id: 'grant-1', clientId: 'client-a' }],
+			}),
+			revokeGrant: async (grantId: string) => {
+				revokedGrantIds.push(grantId)
+			},
+		},
+	})
+	await seedUser(sqlite, {
+		id: 8,
+		email: 'squat@example.com',
+		username: 'squatter',
+		emailVerified: false,
+	})
+	sqlite.exec(`
+		INSERT INTO verifications (
+			type, target, secret, algorithm, digits, period, char_set
+		) VALUES ('2fa', '8', 'ATTACKERSECRET', 'SHA-1', 6, 30, '0123456789');
+		INSERT INTO passkeys (
+			id, aaguid, public_key, user_id, webauthn_user_handle, counter,
+			device_type, backed_up, transports, name
+		) VALUES (
+			'attacker-passkey', '00000000-0000-0000-0000-000000000000', 'cHVibGlj',
+			8, 'd2ViYXV0aG4tdXNlcg', 0, 'multiDevice', 1, 'internal', 'attacker'
+		);
+		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
+		VALUES ('github', 'attacker-github', 8, 'squatter');
+		INSERT INTO password_resets (user_id, token_hash, expires_at)
+		VALUES (8, 'pending-reset', ${Date.now() + 60_000});
+	`)
+
+	msw.use(
+		http.post('https://oauth2.googleapis.com/token', () =>
+			HttpResponse.json({ access_token: 'google-access-token' }),
+		),
+		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
+			HttpResponse.json({
+				sub: 'google-victim-sub',
+				email: 'squat@example.com',
+				email_verified: true,
+				name: 'Real Owner',
+			}),
+		),
+	)
+
+	const start = await startProviderFlow(
+		env,
+		'google',
+		'http://example.com/auth/google',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'google' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe('/account')
+	expect(
+		callbackResponse.headers
+			.getSetCookie()
+			.some((cookie) => cookie.startsWith('kody_session=')),
+	).toBe(true)
+
+	const user = sqlite
+		.prepare(`SELECT password_hash, email_verified_at FROM users WHERE id = 8`)
+		.get() as { password_hash: string; email_verified_at: string | null }
+	expect(user.email_verified_at).toBeTruthy()
+	expect(user.password_hash).toBe(unusablePasswordHash.reclaimedUnverified)
+	expect(await verifyPassword('test-password', user.password_hash)).toBe(false)
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '8'`)
+			.get(),
+	).toEqual({ count: 0 })
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 8`)
+			.get(),
+	).toEqual({ count: 0 })
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM password_resets`).get(),
+	).toEqual({ count: 0 })
+	const connections = sqlite
+		.prepare(
+			`SELECT provider_name, provider_id FROM oauth_connections WHERE user_id = 8`,
+		)
+		.all() as Array<{ provider_name: string; provider_id: string }>
+	expect(connections).toEqual([
+		{ provider_name: 'google', provider_id: 'google-victim-sub' },
+	])
+	expect(revokedGrantIds).toEqual(['grant-1'])
+	expect(auditEventSummaries()).toEqual([
+		'social_link_reclaimed_unverified_account:success',
+		'oauth_login:success',
+	])
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'social_link_reclaimed_unverified_account',
+			result: 'success',
+			reason: expect.stringContaining(
+				'provider=google;two_factor=1;passkeys=1;oauth_connections=1',
+			),
+		}),
+	)
 })
 
 test('discord sign-in creates a verified account and assigns the guild role', async () => {

@@ -219,6 +219,7 @@ export function createAccountPasswordHandler(env: Env) {
 				.OAUTH_PROVIDER
 			const result = await applyPasswordChange({
 				db,
+				d1: env.APP_DB,
 				helpers,
 				userId: user.userId,
 				stableUserId: resolveUserStableId(userRecord),
