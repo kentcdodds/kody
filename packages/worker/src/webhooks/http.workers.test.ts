@@ -1,6 +1,12 @@
 import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
+import { type PackageInvocationRequest } from '#worker/package-invocations/common.ts'
+import {
+	createRequestHash,
+	resolveExistingInvocation,
+	type ResolvableInvocationRecord,
+} from '#worker/package-invocations/idempotency.ts'
 import type * as PackageInvocationServiceModule from '#worker/package-invocations/service.ts'
 import { clearRunRecords, listRunRecords } from '#worker/run-records/service.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
@@ -50,6 +56,57 @@ vi.mock('./dispatch-queue-producer.ts', async () => {
 			mocks.enqueueWebhookDispatch(...args),
 	}
 })
+
+function createHashedIdempotencyExportMock() {
+	const ledger = new Map<string, ResolvableInvocationRecord>()
+	let exportInvocations = 0
+	const implementation = async (input: {
+		request: PackageInvocationRequest
+	}) => {
+		const key = input.request.idempotencyKey
+		if (!key) {
+			exportInvocations += 1
+			return {
+				status: 200,
+				body: { ok: true, result: { handled: true } },
+			}
+		}
+		const ignoreParams = input.request.idempotencyParamsHash === 'ignore'
+		const requestHash = await createRequestHash({
+			packageId: input.request.packageIdOrKodyId,
+			exportName: input.request.exportName,
+			params: ignoreParams ? undefined : input.request.params,
+			source: input.request.source ?? null,
+			topic: input.request.topic ?? null,
+		})
+		const existing = ledger.get(key)
+		if (existing) {
+			return resolveExistingInvocation({
+				record: existing,
+				requestHash,
+				idempotencyKey: key,
+				paramsHash: ignoreParams ? 'ignore' : 'include',
+			})
+		}
+		exportInvocations += 1
+		const response = {
+			status: 200,
+			body: { ok: true, result: { handled: true } },
+		}
+		ledger.set(key, {
+			requestHash,
+			status: 'completed',
+			storedResponse: response,
+		})
+		return response
+	}
+	return {
+		implementation,
+		get exportInvocations() {
+			return exportInvocations
+		},
+	}
+}
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -833,32 +890,9 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 		encoding: 'hex',
 		prefix: 'sha256=',
 	})
-	const ledger = new Map<string, { status: number; body: unknown }>()
-	let exportInvocations = 0
+	const exportMock = createHashedIdempotencyExportMock()
 	mocks.invokePackageExport.mockReset()
-	mocks.invokePackageExport.mockImplementation(
-		async (input: {
-			request: { idempotencyKey: string; params?: unknown }
-		}) => {
-			const existing = ledger.get(input.request.idempotencyKey)
-			if (existing) {
-				return {
-					status: existing.status,
-					body: {
-						...(existing.body as Record<string, unknown>),
-						idempotency: { replayed: true },
-					},
-				}
-			}
-			exportInvocations += 1
-			const response = {
-				status: 200,
-				body: { ok: true, result: { handled: true } },
-			}
-			ledger.set(input.request.idempotencyKey, response)
-			return response
-		},
-	)
+	mocks.invokePackageExport.mockImplementation(exportMock.implementation)
 
 	const firstGithub = await postWebhook({
 		packageKodyId: 'sentry-bridge',
@@ -874,6 +908,8 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 	expect(firstGithub.status).toBe(200)
 	expect(firstGithubBody).toEqual({ ok: true, result: { handled: true } })
 
+	await new Promise((resolve) => setTimeout(resolve, 10))
+
 	const replayedGithub = await postWebhook({
 		packageKodyId: 'sentry-bridge',
 		webhookName: 'github',
@@ -885,23 +921,58 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 		},
 	})
 	expect(replayedGithub.status).toBe(200)
-	expect(await replayedGithub.json()).toEqual({
-		ok: true,
-		result: { handled: true },
-		idempotency: { replayed: true },
-	})
-	expect(exportInvocations).toBe(1)
+	expect(await replayedGithub.json()).toEqual(firstGithubBody)
+	expect(exportMock.exportInvocations).toBe(1)
 	expect(mocks.invokePackageExport).toHaveBeenCalledTimes(2)
 	const firstCall = mocks.invokePackageExport.mock.calls[0]?.[0] as
-		| { request: { idempotencyKey: string } }
+		| {
+				request: {
+					idempotencyKey: string
+					idempotencyParamsHash?: 'ignore'
+					params: { webhook: { receivedAt: string } }
+				}
+		  }
 		| undefined
 	const secondCall = mocks.invokePackageExport.mock.calls[1]?.[0] as
-		| { request: { idempotencyKey: string } }
+		| {
+				request: {
+					idempotencyKey: string
+					idempotencyParamsHash?: 'ignore'
+					params: { webhook: { receivedAt: string } }
+				}
+		  }
 		| undefined
 	expect(firstCall?.request.idempotencyKey).toBe(
 		secondCall?.request.idempotencyKey,
 	)
 	expect(firstCall?.request.idempotencyKey).not.toMatch(/^webhook:/)
+	expect(firstCall?.request.idempotencyParamsHash).toBe('ignore')
+	expect(secondCall?.request.idempotencyParamsHash).toBe('ignore')
+	expect(firstCall?.request.params.webhook.receivedAt).not.toBe(
+		secondCall?.request.params.webhook.receivedAt,
+	)
+
+	const otherGithubBody = JSON.stringify({ ref: 'refs/heads/other' })
+	const otherGithubSignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: encodeBody(otherGithubBody),
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
+	const differentBodyReplay = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'github',
+		urlSecret,
+		body: otherGithubBody,
+		headers: {
+			'x-hub-signature-256': otherGithubSignature,
+			'x-github-delivery': 'delivery-abc',
+		},
+	})
+	expect(differentBodyReplay.status).toBe(200)
+	expect(await differentBodyReplay.json()).toEqual(firstGithubBody)
+	expect(exportMock.exportInvocations).toBe(1)
 
 	const missingDeliveryId = await postWebhook({
 		packageKodyId: 'sentry-bridge',
@@ -911,5 +982,5 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 		headers: { 'x-hub-signature-256': githubSignature },
 	})
 	expect(missingDeliveryId.status).toBe(401)
-	expect(exportInvocations).toBe(1)
+	expect(exportMock.exportInvocations).toBe(1)
 })

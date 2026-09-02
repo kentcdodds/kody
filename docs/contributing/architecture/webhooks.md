@@ -39,8 +39,11 @@ is rotated.
 - `toleranceSeconds` — optional; defaults to 300 when `timestampHeader` is set
 - `deliveryIdHeader` — unique delivery id; dispatches use
   `sha256(userId + packageId + webhookName + deliveryId)` as the
-  package-invocation idempotency key so the RunLog keyed ledger dedupes replays
-  without re-running the export
+  package-invocation idempotency key. The keyed ledger matches that key alone
+  (`idempotencyParamsHash: 'ignore'`): retries change `receivedAt` (and often
+  headers), and a later body for the same id is still that delivery. A different
+  delivery id hashes to a different key, so it cannot reuse another event's
+  acknowledgement.
 
 Declaring a webhook does **not** open ingress. A minted URL secret in D1 does.
 

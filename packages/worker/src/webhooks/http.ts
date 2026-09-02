@@ -525,6 +525,16 @@ export async function handleWebhookIngressRequest(
 				deliveryId: providerDeliveryId,
 			})
 		: `webhook:${endpoint.id}:${deliveryId}`
+	// Delivery-id keys identify the event, not the HTTP attempt. Provider
+	// retries change `receivedAt` and often headers; the same delivery id is
+	// still that event even when body bytes differ. Matching the ledger by
+	// key alone (`idempotencyParamsHash: 'ignore'`) returns the original
+	// acknowledgement instead of hashing those volatile fields. A different
+	// delivery id cannot reuse another event's ack because the key already
+	// binds userId + packageId + webhookName + deliveryId.
+	const idempotencyParamsHash = providerDeliveryId
+		? ('ignore' as const)
+		: undefined
 
 	if (declared.responseMode === 'ack') {
 		let message = createWebhookDispatchQueueMessage({
@@ -538,6 +548,7 @@ export async function handleWebhookIngressRequest(
 			exportName: declared.exportName,
 			params,
 			idempotencyKey,
+			...(idempotencyParamsHash ? { idempotencyParamsHash } : {}),
 			deliveryId,
 			payloadBytes: bodyBytes.byteLength,
 			receivedAt,
@@ -627,6 +638,7 @@ export async function handleWebhookIngressRequest(
 				exportName: declared.exportName,
 				params,
 				idempotencyKey,
+				...(idempotencyParamsHash ? { idempotencyParamsHash } : {}),
 			}),
 			webhookSyncInvocationTimeoutMs,
 		)

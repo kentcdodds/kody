@@ -64,8 +64,12 @@ export function resolveExistingInvocation(input: {
 	record: ResolvableInvocationRecord
 	requestHash: string
 	idempotencyKey: string
+	paramsHash?: 'include' | 'ignore'
 }): PackageInvocationStoredResponse {
-	if (input.record.requestHash !== input.requestHash) {
+	if (
+		input.paramsHash !== 'ignore' &&
+		input.record.requestHash !== input.requestHash
+	) {
 		return buildJsonErrorResponse({
 			status: 409,
 			code: 'idempotency_mismatch',
@@ -84,6 +88,9 @@ export function resolveExistingInvocation(input: {
 		})
 	}
 	if (input.record.storedResponse) {
+		if (input.paramsHash === 'ignore') {
+			return input.record.storedResponse
+		}
 		return markStoredResponseAsReplayed(input.record.storedResponse)
 	}
 	return buildIdempotencyResponseUnavailable({
