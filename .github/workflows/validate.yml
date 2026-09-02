@@ -110,6 +110,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run worker-startup-bundles:check
 
+      - name: ⏱️ Worker startup time
+        if: ${{ !cancelled() }}
+        run: npm run worker-startup-time:check
+
       - name: 🚚 Origin production exports
         if: ${{ !cancelled() }}
         run: npm run origin-production-exports:check
