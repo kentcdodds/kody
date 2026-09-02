@@ -17,6 +17,7 @@ export const scheduledLaneNames = [
 	'oauth_purge_expired',
 	'retention',
 	'job_retention',
+	'unverified_account_purge',
 	'usage_aggregation',
 	'auth_denial_alert',
 	'email_delivery_alert',
@@ -184,7 +185,7 @@ export function getScheduledLaneCadence(
 		'oauth_purge_expired',
 	]
 	if (shouldRunRetentionCron(scheduledAt)) {
-		lanes.push('retention', 'job_retention')
+		lanes.push('retention', 'job_retention', 'unverified_account_purge')
 	}
 	if (shouldRunUsageAggregationCron(scheduledAt)) {
 		lanes.push('usage_aggregation')

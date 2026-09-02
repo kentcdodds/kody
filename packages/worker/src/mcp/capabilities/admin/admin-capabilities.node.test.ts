@@ -43,6 +43,7 @@ type UserRow = {
 	updated_at: string
 	password_hash?: string
 	email_verified_at?: string | null
+	deleting_at?: string | null
 	email_verification_delivery_status?: string | null
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
@@ -212,6 +213,16 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (normalizedQuery.includes('select count(*) as total from users')) {
 						return { total: users.length } as T
+					}
+					if (
+						normalizedQuery.includes(
+							'select deleting_at from users where stable_user_id = ?',
+						)
+					) {
+						const user = users.find((row) => row.stable_user_id === params[0])
+						return user
+							? ({ deleting_at: user.deleting_at ?? null } as T)
+							: null
 					}
 					if (
 						normalizedQuery.startsWith(
@@ -505,7 +516,9 @@ function createAdminCapabilityTestDb(input: {
 						)
 					) {
 						const user = users.find((row) => row.id === Number(params[2]))
-						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
+						if (!user || user.deleting_at) {
+							return { meta: { changes: 0, last_row_id: 0 } }
+						}
 						user.email_verified_at = user.email_verified_at ?? String(params[0])
 						user.updated_at = String(params[1])
 						return { meta: { changes: 1, last_row_id: 0 } }
@@ -528,6 +541,10 @@ function createAdminCapabilityTestDb(input: {
 						normalizedQuery.includes('insert into "email_verifications"') ||
 						normalizedQuery.includes('insert into email_verifications')
 					) {
+						const user = users.find((row) => row.id === Number(params[2]))
+						if (!user || user.deleting_at) {
+							return { meta: { changes: 0, last_row_id: 0 } }
+						}
 						return { meta: { changes: 1, last_row_id: 1 } }
 					}
 					if (normalizedQuery.includes('delete from email_verifications')) {

@@ -52,7 +52,7 @@ export const adminUserListCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminUserList',
 		description:
-			'List account metadata for users, including roles. Admin-only; never returns user content.',
+			'List account metadata for users, including roles. Admin-only; never returns user content. Unverified person accounts older than 7 days are purged automatically.',
 		keywords: [
 			'admin',
 			'users',

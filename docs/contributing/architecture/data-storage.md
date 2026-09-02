@@ -293,7 +293,18 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   not reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
-  `findUserAccountByStableUserId`).
+  `findUserAccountByStableUserId`). Person accounts that stay unverified for
+  seven days (`email_verified_at` is null, no `oauth_connections` row) are
+  deleted by the hourly `unverified_account_purge` lane through the
+  inventory-driven account-deletion path, which releases the username,
+  `{username}.kody.run` subdomain, `{username}@` mail local, and
+  `stable_user_id`. Each candidate is claimed with an atomic `UPDATE` that
+  restamps `deleting_at` only while that eligibility still holds. Once claimed,
+  email verification and social-login reclaim refuse the fenced row, so the
+  account cannot become eligible again. A claim-created fence is released only
+  on pre-cleanup failures (active writers or inventory); a partial-cleanup
+  failure leaves the fence for retry. Never-attempted rows are processed before
+  retries, and in-backoff fences are skipped.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -1580,6 +1591,17 @@ Current retention policies:
   days by `last_used_at`, matching the query-time window used to hint popular
   packages in MCP server instructions. The prune orders by the existing
   `(user_id, last_used_at)` time index via `last_used_at` then `rowid`.
+- Unverified person accounts: password signups that stay unverified
+  (`users.email_verified_at` is null) for seven days and have no
+  `oauth_connections` row are deleted by the hourly `unverified_account_purge`
+  lane. Each run selects a bounded batch of never-attempted rows first, then
+  oldest `created_at`, skipping rows whose `deleting_at` is inside a retry
+  backoff. Before deletion it claims the row atomically (restamping
+  `deleting_at` only while eligibility still holds). Once claimed, verify-email
+  and social-login reclaim refuse the fenced account. A claim-created fence is
+  released only on pre-cleanup failures; a partial-cleanup failure leaves the
+  fence for retry. Social-login accounts are verified at creation and are not in
+  this set.
 
 The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user

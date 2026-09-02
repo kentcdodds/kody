@@ -270,7 +270,10 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								meta: { changes: 1, last_row_id: user.id },
 							}
 						}
-						if (normalizedQuery.includes('insert into "email_verifications"')) {
+						if (
+							normalizedQuery.includes('insert into "email_verifications"') ||
+							normalizedQuery.includes('insert into email_verifications')
+						) {
 							return {
 								results: [],
 								meta: { changes: 1, last_row_id: 1 },
@@ -309,7 +312,9 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 							}
 							if (
 								normalizedQuery.includes('delete from "email_verifications"') ||
-								normalizedQuery.includes('insert into "email_verifications"')
+								normalizedQuery.includes('delete from email_verifications') ||
+								normalizedQuery.includes('insert into "email_verifications"') ||
+								normalizedQuery.includes('insert into email_verifications')
 							) {
 								return { meta: { changes: 1, last_row_id: 1 } }
 							}

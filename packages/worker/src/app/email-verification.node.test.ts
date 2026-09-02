@@ -1,9 +1,14 @@
 import { expect, test } from 'vitest'
+import { DatabaseSync } from 'node:sqlite'
 import {
 	buildEmailVerificationUrl,
+	hashVerificationToken,
 	isAccountEmailVerified,
+	verifyEmailToken,
 } from '#app/email-verification.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 test('email verification links preserve safe resume targets and reject open redirects', () => {
 	const oauthResume = '/oauth/authorize?client_id=demo&state=abc'
@@ -158,4 +163,117 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 	expect(singleKey.queries[1]?.sql.toLowerCase()).toContain(
 		'where stable_user_id = ?',
 	)
+})
+
+test('verifyEmailToken treats a fenced account as an invalid token and does not mark it verified', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const email = 'fenced-verify@example.com'
+	const stableUserId = await createStableUserIdFromEmail(email)
+	await db
+		.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id, deleting_at
+			) VALUES (?, ?, 'hash', ?, ?)`,
+		)
+		.bind('fenced-verify', email, stableUserId, '2026-09-02 12:00:00')
+		.run()
+	const token = 'fenced-verify-token'
+	const tokenHash = await hashVerificationToken(token)
+	await db
+		.prepare(
+			`INSERT INTO email_verifications (user_id, token_hash, expires_at)
+			 VALUES (1, ?, ?)`,
+		)
+		.bind(tokenHash, Date.now() + 60_000)
+		.run()
+
+	await expect(verifyEmailToken({ db, token })).resolves.toEqual({
+		ok: false,
+		reason: 'invalid_token',
+	})
+	const row = sqlite
+		.prepare(`SELECT email_verified_at FROM users WHERE id = 1`)
+		.get() as { email_verified_at: string | null }
+	expect(row.email_verified_at).toBeNull()
+})
+
+function withDeletingAtAfterWritableCheck(
+	db: D1Database,
+	deletingAt: string,
+): D1Database {
+	const originalPrepare = db.prepare.bind(db)
+	return {
+		...db,
+		prepare(query: string) {
+			const statement = originalPrepare(query)
+			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
+			if (
+				!normalized.includes('select deleting_at from users') ||
+				!normalized.includes('stable_user_id')
+			) {
+				return statement
+			}
+			return {
+				...statement,
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						...bound,
+						async first<T>() {
+							const row = await bound.first<T>()
+							await originalPrepare(
+								`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+							)
+								.bind(deletingAt, params[0])
+								.run()
+							return row
+						},
+					}
+				},
+			}
+		},
+	} as D1Database
+}
+
+test('verifyEmailToken does not mark verified when a purge claim lands between the writable check and the stamp', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = withDeletingAtAfterWritableCheck(
+		createD1FromSqlite(sqlite),
+		'2026-09-02 12:00:00',
+	)
+	const email = 'race-verify@example.com'
+	const stableUserId = await createStableUserIdFromEmail(email)
+	await db
+		.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id
+			) VALUES (?, ?, 'hash', ?)`,
+		)
+		.bind('race-verify', email, stableUserId)
+		.run()
+	const token = 'race-verify-token'
+	const tokenHash = await hashVerificationToken(token)
+	await db
+		.prepare(
+			`INSERT INTO email_verifications (user_id, token_hash, expires_at)
+			 VALUES (1, ?, ?)`,
+		)
+		.bind(tokenHash, Date.now() + 60_000)
+		.run()
+
+	await expect(verifyEmailToken({ db, token })).resolves.toEqual({
+		ok: false,
+		reason: 'invalid_token',
+	})
+	const row = sqlite
+		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 1`)
+		.get() as { email_verified_at: string | null; deleting_at: string | null }
+	expect(row.email_verified_at).toBeNull()
+	expect(row.deleting_at).toBe('2026-09-02 12:00:00')
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM email_verifications`).get(),
+	).toEqual({ count: 1 })
 })

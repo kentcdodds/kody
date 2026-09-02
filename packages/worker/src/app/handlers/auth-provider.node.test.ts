@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite'
+import { type DatabaseSync } from 'node:sqlite'
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
@@ -31,13 +31,19 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
-import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
-import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
-import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
-
-const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
+import {
+	createAppEnv,
+	createMemoryKv,
+	createMigratedDb,
+	createSignupModeKv,
+	getCookiePair,
+	runHandler,
+	seedUser,
+	startProviderFlow,
+	testCookieSecret,
+} from '#worker/test-support/auth-provider-harness.ts'
 
 const msw = createMswNodeServer()
 
@@ -52,127 +58,6 @@ afterEach(() => {
 afterAll(() => {
 	msw.close()
 })
-
-function applyMigrations(db: DatabaseSync) {
-	const migrationsDir = new URL('../../../migrations/', import.meta.url)
-	applyAllMigrations(db, migrationsDir)
-}
-
-function createMigratedDb() {
-	const sqlite = new DatabaseSync(':memory:')
-	applyMigrations(sqlite)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
-}
-
-async function seedUser(
-	sqlite: DatabaseSync,
-	input: {
-		id: number
-		email: string
-		username: string
-		stableUserId?: string
-		emailVerified?: boolean
-	},
-) {
-	const passwordHash = await createPasswordHash('test-password')
-	const stableUserId =
-		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
-	const verifiedAt = input.emailVerified ? 'CURRENT_TIMESTAMP' : 'NULL'
-	sqlite.exec(`
-		INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
-		VALUES (
-			${input.id},
-			${quoteSqlString(input.username)},
-			${quoteSqlString(input.email)},
-			${quoteSqlString(stableUserId)},
-			${quoteSqlString(passwordHash)},
-			${verifiedAt}
-		);
-	`)
-}
-
-function createAppEnv(
-	db: D1Database,
-	overrides: Record<string, unknown> = {},
-): Env {
-	return {
-		APP_DB: db,
-		COOKIE_SECRET: testCookieSecret,
-		SENTRY_ENVIRONMENT: 'test',
-		SIGNUP_MODE: 'open',
-		GITHUB_CLIENT_ID: 'github-client-id-test',
-		GITHUB_CLIENT_SECRET: 'github-client-secret-test',
-		GOOGLE_CLIENT_ID: 'google-client-id-test',
-		GOOGLE_CLIENT_SECRET: 'google-client-secret-test',
-		X_CLIENT_ID: 'x-client-id-test',
-		X_CLIENT_SECRET: 'x-client-secret-test',
-		DISCORD_CLIENT_ID: 'discord-client-id-test',
-		DISCORD_CLIENT_SECRET: 'discord-client-secret-test',
-		...overrides,
-	} as unknown as Env
-}
-
-function createMemoryKv(initial?: Record<string, string>) {
-	const store = new Map<string, string>(Object.entries(initial ?? {}))
-	return {
-		async get(key: string, type?: string) {
-			const raw = store.get(key)
-			if (raw === undefined) return null
-			return type === 'json' ? JSON.parse(raw) : raw
-		},
-		async put(key: string, value: string) {
-			store.set(key, value)
-		},
-		store,
-	} as unknown as KVNamespace
-}
-
-function createSignupModeKv(mode: 'invite' | 'open' | 'waitlist') {
-	return createMemoryKv({
-		[signupModeKvKey]: JSON.stringify({
-			mode,
-			updatedAt: '2026-09-02T00:00:00.000Z',
-			updatedBy: 'admin-stable-id',
-		}),
-	})
-}
-
-type Handler = {
-	handler(context: never): Promise<Response>
-}
-
-async function runHandler(
-	handler: Handler,
-	request: Request,
-	params: Record<string, string> = {},
-): Promise<Response> {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params,
-	} as never)
-}
-
-function getCookiePair(setCookieHeader: string) {
-	const pair = setCookieHeader.split(';')[0]
-	if (!pair) throw new Error(`Unexpected Set-Cookie header: ${setCookieHeader}`)
-	return pair
-}
-
-async function startProviderFlow(env: Env, provider: string, url: string) {
-	const startResponse = await runHandler(
-		createAuthProviderStartHandler(env),
-		new Request(url, { method: 'POST' }),
-		{ provider },
-	)
-	expect(startResponse.status).toBe(302)
-	const location = startResponse.headers.get('Location') ?? ''
-	const stateCookie = getCookiePair(
-		startResponse.headers.get('Set-Cookie') ?? '',
-	)
-	const state = new URL(location).searchParams.get('state') ?? ''
-	return { location, stateCookie, state }
-}
 
 test('providers api lists only configured providers', async () => {
 	const { db } = createMigratedDb()
@@ -801,6 +686,7 @@ test('signed-in discord connect returns to redirectTo instead of /account', asyn
 		id: 21,
 		email: 'discord-page@example.com',
 		username: 'discord-page',
+		emailVerified: true,
 	})
 	const sessionCookiePair = getCookiePair(
 		await createAuthCookie(
@@ -1070,6 +956,7 @@ test('signed-in users link and disconnect providers from their account', async (
 		id: 11,
 		email: 'linker@example.com',
 		username: 'linker',
+		emailVerified: true,
 	})
 	const sessionCookiePair = getCookiePair(
 		await createAuthCookie(
@@ -1131,6 +1018,7 @@ test('signed-in users link and disconnect providers from their account', async (
 		id: 12,
 		email: 'other@example.com',
 		username: 'other-user',
+		emailVerified: true,
 	})
 	const otherSessionCookiePair = getCookiePair(
 		await createAuthCookie(

@@ -216,6 +216,18 @@ function createAdminTestEnv(input: {
 							async first<T>() {
 								if (
 									normalizedQuery.includes(
+										'select deleting_at from users where stable_user_id',
+									)
+								) {
+									const user = Array.from(users.values()).find(
+										(row) => row.stable_user_id === params[0],
+									)
+									return (
+										user ? { deleting_at: user.deleting_at ?? null } : null
+									) as T
+								}
+								if (
+									normalizedQuery.includes(
 										'count(distinct ur.user_id) as count',
 									)
 								) {
@@ -336,7 +348,9 @@ function createAdminTestEnv(input: {
 									)
 								) {
 									const user = users.get(Number(params[2]))
-									if (!user) return { meta: { changes: 0 } }
+									if (!user || user.deleting_at) {
+										return { meta: { changes: 0 } }
+									}
 									user.email_verified_at =
 										user.email_verified_at ?? String(params[0])
 									user.updated_at = String(params[1])
@@ -362,6 +376,10 @@ function createAdminTestEnv(input: {
 									) ||
 									normalizedQuery.includes('insert into email_verifications')
 								) {
+									const user = users.get(Number(params[2]))
+									if (!user || user.deleting_at) {
+										return { meta: { changes: 0, last_row_id: 0 } }
+									}
 									return { meta: { changes: 1, last_row_id: 1 } }
 								}
 								if (

@@ -23,6 +23,8 @@ function createResendTestDb(
 		emailVerifiedAt?: string | null
 		deliveryClass?: string | null
 		deliveryStatus?: string | null
+		deletingAt?: string | null
+		fenceAfterWritableCheck?: boolean
 	} = {},
 ) {
 	const user = {
@@ -40,6 +42,7 @@ function createResendTestDb(
 		verificationDeletes: 0,
 		rateLimitAttempts: 0,
 		rateLimitMax: 3,
+		fenceAfterWritableCheck: false,
 	}
 
 	function createStatement(query: string) {
@@ -57,7 +60,7 @@ function createResendTestDb(
 						meta: { changes: 0, last_row_id: 0 } satisfies StatementMeta,
 					}
 				}
-				if (normalized.includes('insert into "email_verifications"')) {
+				if (normalized.includes('insert into email_verifications')) {
 					state.verificationInserts += 1
 					return {
 						results: [],
@@ -70,6 +73,12 @@ function createResendTestDb(
 				}
 			},
 			async first() {
+				if (normalized.includes('select deleting_at from users')) {
+					if (options.fenceAfterWritableCheck) {
+						state.fenceAfterWritableCheck = true
+					}
+					return { deleting_at: options.deletingAt ?? null }
+				}
 				if (normalized.includes('email_verification_delivery_status')) {
 					return {
 						email_verification_delivery_status: options.deliveryStatus ?? null,
@@ -85,7 +94,11 @@ function createResendTestDb(
 					state.verificationDeletes += 1
 				}
 				if (/insert into "?email_verifications"?/.test(normalized)) {
+					if (state.fenceAfterWritableCheck) {
+						return { meta: { changes: 0, last_row_id: 0 } }
+					}
 					state.verificationInserts += 1
+					return { meta: { changes: 1, last_row_id: 1 } }
 				}
 				if (normalized.includes('delete from _rate_limits')) {
 					state.rateLimitAttempts = Math.max(0, state.rateLimitAttempts - 1)
@@ -338,4 +351,40 @@ test('resend verification surfaces send failures without pretending success', as
 		}),
 	)
 	vi.unstubAllGlobals()
+})
+
+test('resend verification refuses a fenced account without minting a token', async () => {
+	const testDb = createResendTestDb({
+		emailVerifiedAt: null,
+		deletingAt: '2026-09-02 12:00:00',
+	})
+	const handler = createAccountResendVerificationHandler(
+		createAppEnv(testDb.db),
+	)
+
+	const response = await runHandler(handler, await createResendRequest(session))
+	expect(response.status).toBe(409)
+	expect(await response.json()).toMatchObject({
+		ok: false,
+		code: 'account_deleting',
+	})
+	expect(testDb.state.verificationInserts).toBe(0)
+})
+
+test('resend verification refuses a purge claim that lands after the writable check', async () => {
+	const testDb = createResendTestDb({
+		emailVerifiedAt: null,
+		fenceAfterWritableCheck: true,
+	})
+	const handler = createAccountResendVerificationHandler(
+		createAppEnv(testDb.db),
+	)
+
+	const response = await runHandler(handler, await createResendRequest(session))
+	expect(response.status).toBe(409)
+	expect(await response.json()).toMatchObject({
+		ok: false,
+		code: 'account_deleting',
+	})
+	expect(testDb.state.verificationInserts).toBe(0)
 })

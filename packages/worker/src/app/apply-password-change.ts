@@ -9,6 +9,7 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
 	type ClearedAccountFactors,
 	clearSecondFactorsAndConnections,
@@ -55,6 +56,8 @@ export async function applyPasswordChange(
 		userId: number
 		stableUserId: string
 		clearSecondFactorsAndConnections?: boolean
+		/** Stamp with `AND deleting_at IS NULL` and throw if the fence landed. */
+		requireWritableAccount?: boolean
 	} & ApplyPasswordChangeCredential,
 ): Promise<ApplyPasswordChangeResult> {
 	if (!input.helpers) {
@@ -102,11 +105,27 @@ export async function applyPasswordChange(
 		: null
 
 	const changedAtMs = Date.now()
-	await input.db.update(usersTable, input.userId, {
-		password_hash: passwordHash,
-		password_changed_at: new Date(changedAtMs).toISOString(),
-		updated_at: utcSqliteTimestamp(),
-	})
+	const changedAt = new Date(changedAtMs).toISOString()
+	const updatedAt = utcSqliteTimestamp()
+	if (input.requireWritableAccount) {
+		const stamped = await input.d1
+			.prepare(
+				`UPDATE users
+				 SET password_hash = ?, password_changed_at = ?, updated_at = ?
+				 WHERE id = ? AND deleting_at IS NULL`,
+			)
+			.bind(passwordHash, changedAt, updatedAt, input.userId)
+			.run()
+		if ((stamped.meta.changes ?? 0) !== 1) {
+			throw new AccountDeletionInProgressError()
+		}
+	} else {
+		await input.db.update(usersTable, input.userId, {
+			password_hash: passwordHash,
+			password_changed_at: changedAt,
+			updated_at: updatedAt,
+		})
+	}
 
 	// Stamp, then revoke again so a grant created in that window is still
 	// collected.

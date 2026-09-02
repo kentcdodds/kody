@@ -1,6 +1,6 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { createDb, emailVerificationsTable } from '#worker/db.ts'
+import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 
 const verificationTokenBytes = 32
 export const verificationTokenExpiryMs = 24 * 60 * 60 * 1000
@@ -41,12 +41,18 @@ export async function insertEmailVerificationToken(input: {
 	const tokenHash = await hashVerificationToken(token)
 	const now = input.now ?? new Date()
 	const expiresAt = now.getTime() + verificationTokenExpiryMs
-	const db = createDb(input.db)
-	await db.create(emailVerificationsTable, {
-		user_id: input.userId,
-		token_hash: tokenHash,
-		expires_at: expiresAt,
-	})
+	const inserted = await input.db
+		.prepare(
+			`INSERT INTO email_verifications (user_id, token_hash, expires_at)
+			 SELECT id, ?, ?
+			 FROM users
+			 WHERE id = ? AND deleting_at IS NULL`,
+		)
+		.bind(tokenHash, expiresAt, input.userId)
+		.run()
+	if ((inserted.meta.changes ?? 0) !== 1) {
+		throw new AccountDeletionInProgressError()
+	}
 	return { token, tokenHash, expiresAt }
 }
 

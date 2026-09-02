@@ -87,6 +87,10 @@ import { applyPasswordChange } from '#app/apply-password-change.ts'
 import { clearedFactorsAuditReason } from '#app/clear-account-factors.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#worker/account/deletion-state.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -311,14 +315,32 @@ export function createAuthProviderCallbackHandler(env: Env) {
 		provider: OauthProviderId
 		profile: OauthProfile
 		userId: number
+		requireVerifiedEmail?: boolean
 	}) {
-		await db.create(oauthConnectionsTable, {
-			provider_name: input.provider,
-			provider_id: input.profile.providerUserId,
-			user_id: input.userId,
-			provider_display_name:
-				input.profile.username ?? input.profile.displayName ?? undefined,
-		})
+		const insertSql = input.requireVerifiedEmail
+			? `INSERT INTO oauth_connections (
+				provider_name, provider_id, user_id, provider_display_name
+			)
+			 SELECT ?, ?, id, ?
+			 FROM users
+			 WHERE id = ? AND email_verified_at IS NOT NULL AND deleting_at IS NULL`
+			: `INSERT INTO oauth_connections (
+				provider_name, provider_id, user_id, provider_display_name
+			)
+			 SELECT ?, ?, id, ?
+			 FROM users
+			 WHERE id = ? AND deleting_at IS NULL`
+		const inserted = await env.APP_DB.prepare(insertSql)
+			.bind(
+				input.provider,
+				input.profile.providerUserId,
+				input.profile.username ?? input.profile.displayName ?? null,
+				input.userId,
+			)
+			.run()
+		if ((inserted.meta.changes ?? 0) !== 1) {
+			throw new AccountDeletionInProgressError()
+		}
 	}
 
 	async function completeDiscordGuildLogin(input: {
@@ -508,6 +530,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				if (!currentUser) {
 					return fail('account-error', 'session_user_missing')
 				}
+				// Check the live users row, not the session cookie. A password
+				// squat must not attach a provider and skip the unverified
+				// account purge; this sits before any oauth_connections write.
+				if (currentUser.email_verified_at == null) {
+					return fail('email-unverified', 'email_unverified')
+				}
 				if (connection) {
 					if (connection.user_id === currentUser.id) {
 						await completeDiscordGuildLogin({
@@ -528,8 +556,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						provider,
 						profile,
 						userId: currentUser.id,
+						requireVerifiedEmail: true,
 					})
 				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
 					if (getUniqueConstraintField(error)) {
 						return fail('connection-conflict', 'connection_conflict')
 					}
@@ -587,38 +619,57 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			// attacker-added factors, then link.
 			const existingUser = await db.findOne(usersTable, { where: { email } })
 			if (existingUser) {
+				try {
+					await assertAccountWritableDb(
+						env.APP_DB,
+						resolveUserStableId(existingUser),
+					)
+				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
+					throw error
+				}
 				let sessionIssuedAt: number | undefined
 				if (!existingUser.email_verified_at) {
 					const helpers = (env as Env & { OAUTH_PROVIDER?: OAuthGrantHelpers })
 						.OAUTH_PROVIDER
-					const reclaim = await applyPasswordChange({
-						db,
-						d1: env.APP_DB,
-						helpers,
-						userId: existingUser.id,
-						stableUserId: resolveUserStableId(existingUser),
-						unusablePasswordHash: unusablePasswordHash.reclaimedUnverified,
-						clearSecondFactorsAndConnections: true,
-					})
-					if (!reclaim.ok) {
-						return fail(
-							'account-error',
-							reclaim.reason === 'oauth_grant_revoke_failed'
-								? reclaim.detail
-								: reclaim.reason,
-						)
+					try {
+						const reclaim = await applyPasswordChange({
+							db,
+							d1: env.APP_DB,
+							helpers,
+							userId: existingUser.id,
+							stableUserId: resolveUserStableId(existingUser),
+							unusablePasswordHash: unusablePasswordHash.reclaimedUnverified,
+							clearSecondFactorsAndConnections: true,
+							requireWritableAccount: true,
+						})
+						if (!reclaim.ok) {
+							return fail(
+								'account-error',
+								reclaim.reason === 'oauth_grant_revoke_failed'
+									? reclaim.detail
+									: reclaim.reason,
+							)
+						}
+						sessionIssuedAt = reclaim.changedAtMs + 1
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'auth',
+							action: 'social_link_reclaimed_unverified_account',
+							result: 'success',
+							email: existingUser.email,
+							ip: requestIp,
+							path: url.pathname,
+							reason: `provider=${provider};${clearedFactorsAuditReason(reclaim.cleared ?? { twoFactorRows: 0, passkeys: 0, oauthConnections: 0 })}`,
+						})
+					} catch (error) {
+						if (error instanceof AccountDeletionInProgressError) {
+							return fail('email-unavailable', 'account_deleting')
+						}
+						throw error
 					}
-					sessionIssuedAt = reclaim.changedAtMs + 1
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'auth',
-						action: 'social_link_reclaimed_unverified_account',
-						result: 'success',
-						email: existingUser.email,
-						ip: requestIp,
-						path: url.pathname,
-						reason: `provider=${provider};${clearedFactorsAuditReason(reclaim.cleared ?? { twoFactorRows: 0, passkeys: 0, oauthConnections: 0 })}`,
-					})
 				}
 				try {
 					await createConnection({
@@ -627,6 +678,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						userId: existingUser.id,
 					})
 				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
 					if (getUniqueConstraintField(error)) {
 						return fail('connection-conflict', 'connection_conflict')
 					}
@@ -635,9 +689,22 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				// The provider asserted ownership of this exact email, which is
 				// the same proof the verification email flow provides.
 				if (!existingUser.email_verified_at) {
-					await db.update(usersTable, existingUser.id, {
-						email_verified_at: new Date().toISOString(),
-					})
+					const stamped = await env.APP_DB.prepare(
+						`UPDATE users
+						 SET email_verified_at = ?, updated_at = CURRENT_TIMESTAMP
+						 WHERE id = ? AND deleting_at IS NULL`,
+					)
+						.bind(new Date().toISOString(), existingUser.id)
+						.run()
+					if ((stamped.meta.changes ?? 0) !== 1) {
+						await env.APP_DB.prepare(
+							`DELETE FROM oauth_connections
+							 WHERE user_id = ? AND provider_name = ? AND provider_id = ?`,
+						)
+							.bind(existingUser.id, provider, profile.providerUserId)
+							.run()
+						return fail('email-unavailable', 'account_deleting')
+					}
 				}
 				await completeDiscordGuildLogin({
 					provider,

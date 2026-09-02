@@ -5,6 +5,10 @@ import {
 	type AdminUserListItem,
 	type AdminUserTarget,
 } from '#worker/admin/users-data.ts'
+import {
+	AccountDeletionInProgressError,
+	assertAccountWritableDb,
+} from '#worker/account/deletion-state.ts'
 import { clearUserEmailVerificationDelivery } from '#worker/email/verification-delivery.ts'
 import {
 	buildEmailVerificationUrl,
@@ -38,18 +42,22 @@ export async function markAdminUserEmailVerified(
 	if (!existingRow) {
 		throw new AdminEmailVerificationError('not_found', 'User not found.')
 	}
+	await assertAccountWritableDb(db, existing.stableUserId)
 
 	const now = input.now ?? new Date()
 	const verifiedAt = existing.email_verified_at ?? now.toISOString()
-	await db
+	const stamped = await db
 		.prepare(
 			`UPDATE users
 			 SET email_verified_at = COALESCE(email_verified_at, ?),
 			     updated_at = ?
-			 WHERE id = ?`,
+			 WHERE id = ? AND deleting_at IS NULL`,
 		)
 		.bind(verifiedAt, utcSqliteTimestamp(now), existingRow.id)
 		.run()
+	if ((stamped.meta.changes ?? 0) !== 1) {
+		throw new AccountDeletionInProgressError()
+	}
 	await clearUserEmailVerificationDelivery(db, existingRow.id)
 	await deleteEmailVerificationsForUser(db, existingRow.id)
 
@@ -85,6 +93,7 @@ export async function mintAdminEmailVerificationUrl(input: {
 	if (!existingRow) {
 		throw new AdminEmailVerificationError('not_found', 'User not found.')
 	}
+	await assertAccountWritableDb(input.db, existing.stableUserId)
 
 	const minted = await insertEmailVerificationToken({
 		db: input.db,

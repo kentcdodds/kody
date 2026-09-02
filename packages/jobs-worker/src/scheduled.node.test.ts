@@ -112,6 +112,11 @@ test('cron dispatch enqueues cadence lanes and falls back when the queue is miss
 		scheduledTime,
 		cron: '*/5 * * * *',
 	})
+	expect(send).toHaveBeenCalledWith({
+		lane: 'unverified_account_purge',
+		scheduledTime,
+		cron: '*/5 * * * *',
+	})
 	expect(queuedEnv.HOST.runScheduledLane).not.toHaveBeenCalled()
 
 	const directEnv = createEnv()
