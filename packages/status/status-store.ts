@@ -25,6 +25,16 @@ import {
 	type StatusIncidentEventPayload,
 } from './incident-events.ts'
 import {
+	addIncidentRetrospectiveColumnSql,
+	incidentRowToView,
+	incidentsTableHasRetrospectiveColumn,
+	selectIncidentByIdSql,
+	serializeIncidentRetrospective,
+	updateIncidentRetrospectiveSql,
+	type IncidentRetrospective,
+	type IncidentRow,
+} from './retrospective.ts'
+import {
 	publicAuditDbRetiredMetaKey,
 	retirePublicAuditDbData,
 } from './retire-public-audit-db.ts'
@@ -37,7 +47,6 @@ import {
 } from './provider-incidents.ts'
 import {
 	isStatusComponentId,
-	statusComponentName,
 	statusComponents,
 	type ComponentDayStat,
 	type ComponentSnapshot,
@@ -132,9 +141,11 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				component TEXT NOT NULL,
 				started_at INTEGER NOT NULL,
 				resolved_at INTEGER,
-				detail TEXT
+				detail TEXT,
+				retrospective TEXT
 			)
 		`)
+		this.ensureIncidentRetrospectiveColumn()
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS notifications (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +164,14 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		`)
 		this.maybeRetirePublicAuditDb()
 		this.maybeClearNonIncidentFailures()
+	}
+
+	private ensureIncidentRetrospectiveColumn() {
+		const columns = this.ctx.storage.sql
+			.exec<{ name: string }>(`PRAGMA table_info(incidents)`)
+			.toArray()
+		if (incidentsTableHasRetrospectiveColumn(columns)) return
+		this.ctx.storage.sql.exec(addIncidentRetrospectiveColumnSql)
 	}
 
 	private maybeRetirePublicAuditDb() {
@@ -538,6 +557,27 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		this.prune(now)
 	}
 
+	async setIncidentRetrospective(
+		id: number,
+		retrospective: IncidentRetrospective,
+	): Promise<
+		| { ok: true; incident: IncidentView }
+		| { ok: false; error: 'not-found' | 'not-resolved' }
+	> {
+		const existing = this.loadIncidentById(id)
+		if (!existing) return { ok: false, error: 'not-found' }
+		if (existing.resolvedAt === null)
+			return { ok: false, error: 'not-resolved' }
+		this.ctx.storage.sql.exec(
+			updateIncidentRetrospectiveSql,
+			serializeIncidentRetrospective(retrospective),
+			id,
+		)
+		const updated = this.loadIncidentById(id)
+		if (!updated) return { ok: false, error: 'not-found' }
+		return { ok: true, incident: updated }
+	}
+
 	async getSnapshot(): Promise<StatusSnapshot> {
 		const now = Date.now()
 		const windowStartMs = Date.parse(
@@ -665,33 +705,23 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			kind === 'open' ? 'resolved_at IS NULL' : 'resolved_at IS NOT NULL'
 		const order = kind === 'open' ? 'started_at ASC' : 'started_at DESC'
 		return this.ctx.storage.sql
-			.exec<{
-				id: number
-				component: string
-				started_at: number
-				resolved_at: number | null
-				detail: string | null
-			}>(
-				`SELECT id, component, started_at, resolved_at, detail
+			.exec<IncidentRow>(
+				`SELECT id, component, started_at, resolved_at, detail, retrospective
 				FROM incidents WHERE ${where} ORDER BY ${order} LIMIT ?`,
 				recentIncidentLimit,
 			)
 			.toArray()
 			.flatMap((row) => {
-				if (!isStatusComponentId(row.component)) return []
-				return [
-					{
-						id: row.id,
-						component: row.component,
-						componentName: statusComponentName(row.component),
-						startedAt: new Date(row.started_at).toISOString(),
-						resolvedAt:
-							row.resolved_at === null
-								? null
-								: new Date(row.resolved_at).toISOString(),
-						detail: row.detail,
-					},
-				]
+				const incident = incidentRowToView(row)
+				return incident ? [incident] : []
 			})
+	}
+
+	private loadIncidentById(id: number): IncidentView | null {
+		const row = this.ctx.storage.sql
+			.exec<IncidentRow>(selectIncidentByIdSql, id)
+			.toArray()[0]
+		if (!row) return null
+		return incidentRowToView(row)
 	}
 }

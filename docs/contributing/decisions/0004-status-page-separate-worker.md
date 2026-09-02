@@ -42,10 +42,26 @@ top; do not move the status page into the main worker. The status worker
 duplicates a small amount of email-sending code rather than importing from
 `packages/worker` (import boundaries keep it dependency-free). Incident records
 are probe-derived only; manually posted incident narratives are a possible later
-addition, not built now. `status.kody.codes` is the attached canonical hostname.
+addition, not built now (see the 2026-09-02 update). `status.kody.codes` is the
+attached canonical hostname.
 
 ## Later update (2026-09-01)
 
 `status.heykody.dev` is no longer a worker custom domain or deploy healthcheck
 fallback. The status worker attaches only `status.kody.codes`. See
 [0044](./0044-retired-brand-domains-stay-retired.md).
+
+## Later update (2026-09-02)
+
+Operator-authored retrospectives are now a supported attachment on a
+probe-derived incident, not a second incident system. Probes still open and
+resolve incidents. A resolved incident may carry an optional public writeup
+(what happened, impact, timeline, cause, what we did, what we will change)
+stored on the status Durable Object and rendered on `/` and `/status.json`.
+
+The write path is `POST /__maintenance/incidents/:id/retrospective` on
+`status.kody.codes`, authenticated with the existing
+`STATUS_INCIDENT_EVENT_SECRET` bearer. It does not go through origin or
+`APP_DB`, so a down main worker cannot block a retrospective. There is no public
+unauthenticated write. Open incidents cannot receive a writeup until probes
+resolve them.

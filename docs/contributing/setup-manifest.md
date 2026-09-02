@@ -338,8 +338,13 @@ On incident open or resolve the status worker POSTs metadata to
 `https://kody.codes/__maintenance/status-incidents` so admin packages can
 subscribe to `status.incident.opened` / `status.incident.resolved`. The notify
 is fire-and-forget with a short timeout so a down or missing secret cannot stall
-probes or email. When the GitHub secret is unset, emit stays skipped; packages
-can reconcile from the public `/status.json` snapshot.
+probes or email. The same bearer authenticates
+`POST https://status.kody.codes/__maintenance/incidents/:id/retrospective`,
+which attaches an operator writeup to a resolved probe-derived incident on the
+status Durable Object. That write stays on the status worker so origin /
+`APP_DB` being down cannot block it. When the GitHub secret is unset, emit stays
+skipped and the retrospective route returns 503; packages can reconcile incident
+open/resolve from the public `/status.json` snapshot.
 
 ## Optional Cloudflare offerings
 

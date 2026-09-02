@@ -3,6 +3,7 @@
  * state, and the snapshot shape the public page renders.
  */
 
+import { type IncidentRetrospective } from './retrospective.ts'
 import { type ProviderIncident } from './provider-incidents.ts'
 
 export type { ProviderIncident }
@@ -50,6 +51,8 @@ export type IncidentView = {
 	startedAt: string
 	resolvedAt: string | null
 	detail: string | null
+	/** Operator writeup. Null when probes opened/resolved the incident only. */
+	retrospective: IncidentRetrospective | null
 }
 
 export type ComponentDayStat = {

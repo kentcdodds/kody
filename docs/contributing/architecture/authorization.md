@@ -389,9 +389,10 @@ POSTs metadata to the main worker. Fan-out of `status.incident.opened` and
 role at dispatch time. A non-admin may declare the topic but never receives it.
 The event contains the public status URL, component id, probe detail, and ISO
 timestamps. It omits probe logs, health-check bodies, user identities, secrets,
-and unrelated account content. This is operator telemetry about kody itself, not
-a user-data exception. Delivery is best-effort (no Queue); `/status.json`
-polling remains the backstop.
+and unrelated account content. Resolved incidents may also carry an optional
+operator retrospective on `/` and `/status.json`; that text is public
+operational narrative, not user data. Delivery is best-effort (no Queue);
+`/status.json` polling remains the backstop.
 
 **Admins can subscribe to fleet package-runtime error-rate elevations.** The
 hourly usage-aggregation lane compares anonymous Analytics Engine totals for

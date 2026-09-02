@@ -1,4 +1,9 @@
 import { faviconIcoRedirectLocation } from './favicon.ts'
+import {
+	handleIncidentRetrospectiveRequest,
+	parseIncidentRetrospectivePath,
+	unknownStatusMaintenanceResponse,
+} from './retrospective-maintenance.ts'
 import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
 import { StatusStore, type StatusWorkerEnv } from './status-store.ts'
 import { type ComponentStatus } from './status-types.ts'
@@ -9,12 +14,32 @@ function getStore(env: StatusWorkerEnv) {
 	return env.STATUS_STORE.get(env.STATUS_STORE.idFromName('singleton'))
 }
 
+async function handleMaintenance(
+	request: Request,
+	env: StatusWorkerEnv,
+	pathname: string,
+): Promise<Response> {
+	const incidentId = parseIncidentRetrospectivePath(pathname)
+	if (incidentId === null) return unknownStatusMaintenanceResponse()
+	const store = getStore(env)
+	return handleIncidentRetrospectiveRequest({
+		request,
+		incidentId,
+		secret: env.STATUS_INCIDENT_EVENT_SECRET,
+		setRetrospective: (id, retrospective) =>
+			store.setIncidentRetrospective(id, retrospective),
+	})
+}
+
 export default {
 	async fetch(request, env) {
+		const url = new URL(request.url)
+		if (url.pathname.startsWith('/__maintenance/')) {
+			return handleMaintenance(request, env, url.pathname)
+		}
 		if (request.method !== 'GET' && request.method !== 'HEAD') {
 			return new Response('Method not allowed', { status: 405 })
 		}
-		const url = new URL(request.url)
 		if (url.pathname === '/health') {
 			return Response.json(
 				{ ok: true, commit: env.BUILD_COMMIT ?? null },

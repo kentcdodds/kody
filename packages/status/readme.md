@@ -44,6 +44,31 @@ subscriptions. The notify is fire-and-forget with a short timeout so a down or
 missing secret cannot stall probes or email. When the secret is unset, packages
 can reconcile from `GET /status.json`.
 
+Resolved incidents may also carry an optional operator retrospective (what
+happened, impact, timeline, cause, what we did, what we will change). Probes
+remain the source of truth for open vs resolved. The writeup is attached
+narrative, stored on `StatusStore`, and shown on the public page inside a
+`<details>` block so the incident list stays glanceable. `/status.json` includes
+`retrospective` on each incident (`null` when none is published).
+
+Publish or replace a writeup with a bearer POST to the status worker itself —
+not origin — so a down main worker cannot block it:
+
+```bash
+curl -fsS -X POST \
+  "https://status.kody.codes/__maintenance/incidents/10/retrospective" \
+  -H "Authorization: Bearer $STATUS_INCIDENT_EVENT_SECRET" \
+  -H "Content-Type: application/json" \
+  --data @packages/status/retrospectives/jobs-2026-09-02.json
+```
+
+`STATUS_INCIDENT_EVENT_SECRET` is the same Worker secret already synced from
+GitHub Actions. When it is unset, the route returns 503. Open incidents return
+409; unknown ids return 404. There is no public unauthenticated write.
+
+The 2026-09-02 Jobs incident payload lives at
+`packages/status/retrospectives/jobs-2026-09-02.json` (status incident id 10).
+
 ## Provider incidents (Cloudflare)
 
 Each cron tick also fetches Cloudflare's public Statuspage feed
@@ -64,15 +89,16 @@ suppressed based on provider status.
 
 ## Routes
 
-| Path                       | Purpose                                           |
-| -------------------------- | ------------------------------------------------- |
-| `/`                        | Public status page (HTML)                         |
-| `/status.json`             | Snapshot as JSON                                  |
-| `/health`                  | Liveness for the status worker itself             |
-| `/favicon-operational.png` | Favicon when all measured components are up       |
-| `/favicon-down.png`        | Favicon while a kody incident is open             |
-| `/favicon-unknown.png`     | Favicon when status data is unavailable           |
-| `/favicon.ico`             | 302 to the current overall-status PNG (30s cache) |
+| Path                                              | Purpose                                                                         |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/`                                               | Public status page (HTML)                                                       |
+| `/status.json`                                    | Snapshot as JSON                                                                |
+| `POST /__maintenance/incidents/:id/retrospective` | Operator writeup on a resolved incident (bearer `STATUS_INCIDENT_EVENT_SECRET`) |
+| `/health`                                         | Liveness for the status worker itself                                           |
+| `/favicon-operational.png`                        | Favicon when all measured components are up                                     |
+| `/favicon-down.png`                               | Favicon while a kody incident is open                                           |
+| `/favicon-unknown.png`                            | Favicon when status data is unavailable                                         |
+| `/favicon.ico`                                    | 302 to the current overall-status PNG (30s cache)                               |
 
 The HTML `<link rel="icon">` (and apple-touch icon) is chosen from
 `overallStatus` on each render. The page meta-refreshes every 60 seconds, so an
