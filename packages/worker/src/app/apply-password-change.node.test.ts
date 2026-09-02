@@ -52,7 +52,7 @@ test('a failed factor cleanup leaves the password, stamp, and reset token untouc
 			password: 'brand-new-password',
 			clearSecondFactorsAndConnections: true,
 		}),
-	).rejects.toThrow()
+	).rejects.toThrow(/no such table/)
 
 	const row = sqlite
 		.prepare(
