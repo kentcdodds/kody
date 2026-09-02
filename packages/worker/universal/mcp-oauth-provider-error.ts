@@ -50,6 +50,15 @@ function isVercelMcpServerUrl(url: string | null | undefined) {
 	}
 }
 
+function isVercelMcpAllowlistMessage(message: string) {
+	const lower = message.toLowerCase()
+	return (
+		lower.includes('vercel has not approved kody') ||
+		lower.includes('vercel.com/docs/agent-resources/vercel-mcp') ||
+		lower.includes('github.com/kentcdodds/kody/issues/1986')
+	)
+}
+
 export function isMcpOAuthAllowlistRejection(message: string) {
 	const lower = message.trim().toLowerCase()
 	if (!lower) return false
@@ -82,7 +91,9 @@ export function describeMcpOAuthProviderError(
 		return { kind: 'other', message: trimmed }
 	}
 
-	const vercel = isVercelMcpServerUrl(input.serverUrl)
+	const vercel =
+		isVercelMcpServerUrl(input.serverUrl) ||
+		isVercelMcpAllowlistMessage(trimmed)
 	const cimd = input.clientMetadataUrl
 		? ` Also allowlist this CIMD client_id: ${input.clientMetadataUrl}.`
 		: ''

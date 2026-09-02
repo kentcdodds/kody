@@ -193,7 +193,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 							env,
 							userId: user.mcpUser.userId,
 							id: serverId,
-						})
+						}).catch(() => null)
 					: null
 				authError = enrichMcpOAuthProviderError(authError, {
 					...oauth,

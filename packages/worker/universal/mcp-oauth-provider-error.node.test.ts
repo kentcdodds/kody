@@ -85,4 +85,14 @@ test('Vercel MCP redirect-URI rejection names the unapproved-client allowlist an
 	expect(formatted).toContain('https://github.com/kentcdodds/kody/issues/1986')
 	expect(formatted).toContain('has not approved Kody')
 	expect(formatted).not.toContain('If you operate this MCP server')
+
+	const alreadyEnriched = enrichMcpOAuthProviderError(formatted, kodyOauth)
+	expect(alreadyEnriched).toContain(
+		'https://vercel.com/docs/agent-resources/vercel-mcp',
+	)
+	expect(alreadyEnriched).toContain(
+		'https://github.com/kentcdodds/kody/issues/1986',
+	)
+	expect(alreadyEnriched).toContain('has not approved Kody')
+	expect(alreadyEnriched).not.toContain('If you operate this MCP server')
 })

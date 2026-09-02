@@ -490,6 +490,34 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		'https://github.com/kentcdodds/kody/issues/1986',
 	)
 
+	mockModule.getMcpServerSettingById.mockRejectedValueOnce(
+		new Error('d1 timeout'),
+	)
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError: 'invalid_redirect_uri',
+		serverName: 'vercel',
+		authorizationNeeded: false,
+	})
+	const lookupFailureResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?error=invalid_redirect_uri',
+		),
+		params: {},
+	} as never)
+	expect(lookupFailureResponse.status).toBe(303)
+	const lookupFailureLocation = new URL(
+		lookupFailureResponse.headers.get('Location') ?? '',
+	)
+	expect(lookupFailureLocation.searchParams.get('auth')).toBe('error')
+	expect(lookupFailureLocation.searchParams.get('reason')).toContain(
+		'unapproved OAuth client',
+	)
+	expect(lookupFailureLocation.searchParams.get('reason')).toContain(
+		'https://example.com/account/mcp-servers/oauth/callback',
+	)
+
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',
 		authSuccess: false,
