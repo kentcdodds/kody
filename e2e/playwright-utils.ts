@@ -214,13 +214,13 @@ async function signupOrLoginViaAuth(
 		...requestTimeout,
 	})
 
-	if (signupResponse.status() === 409) {
-		const signupDetail = await readResponseDetail(signupResponse)
-		if (signupDetail !== 'Email already registered.') {
-			throw new Error(
-				`Failed to seed user (${signupResponse.status()}): ${signupDetail}`,
-			)
-		}
+	// An already-registered email gets the same accepted body as a fresh
+	// signup but no session cookie (anti-enumeration), so fall back to login
+	// whenever the signup did not establish a session.
+	if (
+		signupResponse.ok() &&
+		!signupResponse.headers()['set-cookie']?.includes('kody_session=')
+	) {
 		const loginResponse = await request.post('/auth', {
 			data: { email, password, mode: 'login' },
 			headers: { 'Content-Type': 'application/json' },

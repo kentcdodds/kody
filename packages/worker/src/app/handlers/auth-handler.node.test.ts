@@ -456,7 +456,40 @@ test('auth handler login and signup workflow', async () => {
 	})
 	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
 
+	// A registered address without a code fails exactly like an unregistered
+	// one, so invite mode does not leak which emails hold accounts.
+	await productionContext.testDb.addUser('taken@example.com', 'secret', 'taken')
+	const blockedExistingResponse = await productionContext.request({
+		email: 'taken@example.com',
+		username: 'another-name',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(blockedExistingResponse.status).toBe(400)
+	expect(await blockedExistingResponse.json()).toEqual({
+		error: 'Invite code is required.',
+	})
+
 	productionContext.testDb.addInvite('PROD-INVITE')
+	// With a valid code the registered address gets the accepted body, no
+	// session, and the invite use is handed back.
+	const existingWithInviteResponse = await productionContext.request({
+		email: 'taken@example.com',
+		username: 'another-name',
+		password: 'password123',
+		mode: 'signup',
+		inviteCode: 'prod-invite',
+	})
+	expect(existingWithInviteResponse.status).toBe(200)
+	expect(await existingWithInviteResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
+	expect(existingWithInviteResponse.headers.get('Set-Cookie')).toBeNull()
+	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(0)
+
 	const invitedSignupResponse = await productionContext.request({
 		email: 'invited@example.com',
 		username: 'invited-user',
@@ -601,6 +634,32 @@ test('auth handler login and signup workflow', async () => {
 		error: 'Username already registered.',
 	})
 
+	// An already-registered email must be indistinguishable from a fresh
+	// signup in status and body (no account enumeration); only the session
+	// cookie is withheld and nothing is created.
+	const duplicateEmailResponse = await signupContext.request({
+		email: 'existing@example.com',
+		username: 'brand-new-name',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(duplicateEmailResponse.status).toBe(200)
+	expect(await duplicateEmailResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
+	expect(duplicateEmailResponse.headers.get('Set-Cookie')).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'signup',
+			result: 'failure',
+			reason: 'email_exists',
+		}),
+	)
+
 	const email = 'session-user@example.com'
 	await productionContext.testDb.addUser(email, 'secret')
 
@@ -643,16 +702,21 @@ test('auth handler login and signup workflow', async () => {
 		'Secure',
 	)
 	// The full workflow audits exactly these events, in order: the unknown
-	// login, the invite-less production signup, the invited signup (+ invite
-	// use), the weak-password rejection, the open signup, the six username
-	// rejections, and the three successful logins.
+	// login, the invite-less production signup, the invite-less and invited
+	// registered-email attempts, the invited signup (+ invite use), the
+	// weak-password rejection, the open signup, the six username
+	// rejections, the duplicate-email rejection, and the three successful
+	// logins.
 	expect(auditEventSummaries()).toEqual([
 		'login:failure',
+		'signup:failure',
+		'signup:failure',
 		'signup:failure',
 		'signup:success',
 		'invite_use:success',
 		'signup:failure',
 		'signup:success',
+		'signup:failure',
 		'signup:failure',
 		'signup:failure',
 		'signup:failure',

@@ -101,6 +101,15 @@ function signupUniqueConflict(
 	}
 }
 
+function signupAcceptedBody(mode: AuthMode) {
+	return {
+		ok: true,
+		mode,
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	}
+}
+
 export function createAuthHandler(env: Env) {
 	const db = createDb(env.APP_DB)
 
@@ -228,25 +237,6 @@ export function createAuthHandler(env: Env) {
 			}
 
 			if (normalizedMode === 'signup') {
-				const existingUser = await db.findOne(usersTable, {
-					where: { email: normalizedEmail },
-				})
-				if (existingUser) {
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'auth',
-						action: 'signup',
-						result: 'failure',
-						email: normalizedEmail,
-						ip: requestIp,
-						path: url.pathname,
-						reason: 'email_exists',
-					})
-					return Response.json(
-						{ error: 'Email already registered.' },
-						{ status: 409 },
-					)
-				}
 				const existingUsername = await db.findOne(usersTable, {
 					where: { username: normalizedUsername },
 				})
@@ -311,6 +301,36 @@ export function createAuthHandler(env: Env) {
 					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
 				}
 
+				// Checked after invite validation so that, in invite and waitlist
+				// modes, a registered and an unregistered address fail the same
+				// way without a code. Same body and status as a fresh signup so
+				// the endpoint does not confirm which addresses hold accounts.
+				// Nothing is created or sent; the invite is handed back.
+				let existingUser: Awaited<ReturnType<typeof db.findOne>> | null
+				try {
+					existingUser = await db.findOne(usersTable, {
+						where: { email: normalizedEmail },
+					})
+				} catch (error) {
+					// A transient read must not spend a single-use invite.
+					await releaseConsumedInvite()
+					throw error
+				}
+				if (existingUser) {
+					await releaseConsumedInvite()
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'email_exists',
+					})
+					return Response.json(signupAcceptedBody(normalizedMode))
+				}
+
 				let record: { id: number; stableUserId: string } | null = null
 				try {
 					const stableUserId =
@@ -351,6 +371,11 @@ export function createAuthHandler(env: Env) {
 							path: url.pathname,
 							reason: conflict.reason,
 						})
+						// A concurrent signup that lost the race on `email` must not
+						// leak the address either; only public identifiers get a 409.
+						if (uniqueField === 'email') {
+							return Response.json(signupAcceptedBody(normalizedMode))
+						}
 						return Response.json({ error: conflict.error }, { status: 409 })
 					}
 					await releaseConsumedInvite()
@@ -530,19 +555,11 @@ export function createAuthHandler(env: Env) {
 						reason: `invite_code=${consumedInviteCode};stable_user_id=${record.stableUserId};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 					})
 				}
-				return Response.json(
-					{
-						ok: true,
-						mode: normalizedMode,
-						emailVerificationRequired: true,
-						message: 'Check your email to verify your account.',
+				return Response.json(signupAcceptedBody(normalizedMode), {
+					headers: {
+						'Set-Cookie': cookie,
 					},
-					{
-						headers: {
-							'Set-Cookie': cookie,
-						},
-					},
-				)
+				})
 			}
 
 			const userRecord = await db.findOne(usersTable, {

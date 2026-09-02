@@ -535,6 +535,22 @@ change to these decisions here so future agents do not relitigate them.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).
+- **Signup does not confirm whether an email is registered, except through the
+  session cookie.** `POST /auth` with `mode: signup` for an address that already
+  has an account returns the same `200` body as a fresh signup
+  (`emailVerificationRequired: true`), creates nothing, sends nothing, and
+  audits `signup` / `email_exists`. Only the fresh signup carries a
+  `Set-Cookie: kody_session` header, so a scripted caller that inspects headers
+  can still distinguish the two; the shared per-IP auth rate limit bounds that
+  probing to 10 attempts a minute. Closing the header side channel means not
+  issuing a session at signup at all (session on verification instead), which is
+  a larger onboarding change than the copy-level fix. Usernames are public
+  identifiers, so a duplicate username still returns `409`.
+- **Turnstile tokens must come from the request's own hostname.**
+  `verifyPublicFormProtection` rejects a siteverify success whose `hostname`
+  differs from the request URL's hostname (logged as
+  `turnstile-hostname-mismatch`), so a token minted on a preview deployment or a
+  third-party page embedding the same sitekey is not accepted on production.
 - **Sandbox `fetch` has no general SSRF denylist.** Secret-bearing requests are
   constrained by per-secret host allowlists; non-secret requests rely on the
   Cloudflare Workers platform egress model.
