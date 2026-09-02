@@ -123,9 +123,8 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 	})
 	await page.getByRole('button', { name: 'Assign', exact: true }).click()
 	expect((await assignRoleResponse).ok()).toBe(true)
-	await expect(
-		page.getByRole('status', { name: 'Assigned admin role.' }),
-	).toBeVisible()
+	await expect(page.getByText('Assigned admin role.')).toBeVisible()
+	await expect(page.getByText('admin, user')).toBeVisible()
 	await expect(
 		page.getByRole('button', { name: 'Remove', exact: true }),
 	).toBeEnabled()
