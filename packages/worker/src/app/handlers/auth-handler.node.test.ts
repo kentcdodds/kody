@@ -24,6 +24,7 @@ import {
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -44,9 +45,24 @@ function createAuthRequest(
 	}
 }
 
+function createMemoryKv(initial?: Record<string, string>) {
+	const store = new Map<string, string>(Object.entries(initial ?? {}))
+	return {
+		async get(key: string, type?: string) {
+			const raw = store.get(key)
+			if (raw === undefined) return null
+			return type === 'json' ? JSON.parse(raw) : raw
+		},
+		async put(key: string, value: string) {
+			store.set(key, value)
+		},
+	} as unknown as KVNamespace
+}
+
 function createAuthTestContext(
 	options: {
 		signupMode?: 'invite' | 'open' | 'waitlist'
+		kvSignupMode?: 'invite' | 'open' | 'waitlist'
 		failRoleAssignment?: boolean
 		emailConfigured?: boolean
 	} = {},
@@ -59,9 +75,20 @@ function createAuthTestContext(
 		APP_DB: testDb.db,
 		SIGNUP_MODE: options.signupMode ?? 'invite',
 		SENTRY_ENVIRONMENT:
-			options.signupMode === 'open'
+			options.signupMode === 'open' || options.kvSignupMode === 'open'
 				? ('test' as const)
 				: ('production' as const),
+		...(options.kvSignupMode
+			? {
+					BUNDLE_ARTIFACTS_KV: createMemoryKv({
+						[signupModeKvKey]: JSON.stringify({
+							mode: options.kvSignupMode,
+							updatedAt: '2026-09-02T00:00:00.000Z',
+							updatedBy: 'admin-stable-id',
+						}),
+					}),
+				}
+			: {}),
 		...(options.emailConfigured
 			? {
 					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
@@ -959,4 +986,35 @@ test('signup stops when an invite has an invalid stored plan', async () => {
 		false,
 	)
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
+})
+
+test('password signup honors KV signup-mode override over the env default', async () => {
+	const openOverride = createAuthTestContext({
+		signupMode: 'invite',
+		kvSignupMode: 'open',
+	})
+	const openResponse = await openOverride.request({
+		email: 'kv-open@example.com',
+		username: 'kv-open',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(openResponse.status).toBe(200)
+	expect(openOverride.testDb.users.has('kv-open@example.com')).toBe(true)
+
+	const inviteOverride = createAuthTestContext({
+		signupMode: 'open',
+		kvSignupMode: 'invite',
+	})
+	const blockedResponse = await inviteOverride.request({
+		email: 'kv-invite@example.com',
+		username: 'kv-invite',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(blockedResponse.status).toBe(400)
+	expect(await blockedResponse.json()).toEqual({
+		error: 'Invite code is required.',
+	})
+	expect(inviteOverride.testDb.users.has('kv-invite@example.com')).toBe(false)
 })
