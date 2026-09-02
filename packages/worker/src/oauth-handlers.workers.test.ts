@@ -209,6 +209,9 @@ function createEnv(
 		},
 		COOKIE_SECRET: cookieSecretValue,
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		// Audit writes are console-only under the test environment; without this
+		// the handler warns about the missing AUDIT_DB binding on every call.
+		SENTRY_ENVIRONMENT: 'test',
 		OIDC_SIGNING_KEY_ID: TEST_OIDC_SIGNING_KEY_ID,
 		OIDC_SIGNING_PRIVATE_KEY_PEM: TEST_OIDC_SIGNING_PRIVATE_KEY_PEM,
 		JOB_MANAGER: mockJobDoNamespace('job-manager-test-id'),
