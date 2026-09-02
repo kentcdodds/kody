@@ -481,6 +481,12 @@ test('auth handler login and signup workflow', async () => {
 		inviteCode: 'prod-invite',
 	})
 	expect(existingWithInviteResponse.status).toBe(200)
+	expect(await existingWithInviteResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
+	})
 	expect(existingWithInviteResponse.headers.get('Set-Cookie')).toBeNull()
 	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(0)
 

@@ -306,9 +306,16 @@ export function createAuthHandler(env: Env) {
 				// way without a code. Same body and status as a fresh signup so
 				// the endpoint does not confirm which addresses hold accounts.
 				// Nothing is created or sent; the invite is handed back.
-				const existingUser = await db.findOne(usersTable, {
-					where: { email: normalizedEmail },
-				})
+				let existingUser: Awaited<ReturnType<typeof db.findOne>> | null
+				try {
+					existingUser = await db.findOne(usersTable, {
+						where: { email: normalizedEmail },
+					})
+				} catch (error) {
+					// A transient read must not spend a single-use invite.
+					await releaseConsumedInvite()
+					throw error
+				}
 				if (existingUser) {
 					await releaseConsumedInvite()
 					void logAuditEvent({
