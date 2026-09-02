@@ -22,6 +22,12 @@ import {
 	type TrustedMigrationHistory,
 } from './check-migrations.ts'
 
+function withoutInheritedGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	return Object.fromEntries(
+		Object.entries(env).filter(([key]) => !key.startsWith('GIT_')),
+	)
+}
+
 const historicalPair0009 = [
 	'0009-secret-allowed-hosts.sql',
 	'0009-ui-artifact-parameters.sql',
@@ -332,11 +338,16 @@ test(
 		const checkerPath = fileURLToPath(
 			new URL('./check-migrations.ts', import.meta.url),
 		)
+		// Husky exports GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE into hook
+		// processes. Without stripping them, `git init` and `git add` here
+		// would target the real repository instead of the scratch one.
+		const scratchGitEnv = withoutInheritedGitEnv(process.env)
 		const runGit = (...args: Array<string>) =>
 			execFileSync('git', args, {
 				cwd: tempRoot,
 				encoding: 'utf8',
 				stdio: 'pipe',
+				env: scratchGitEnv,
 			})
 
 		try {
@@ -395,7 +406,7 @@ test(
 				cwd: tempRoot,
 				encoding: 'utf8',
 				env: {
-					...process.env,
+					...scratchGitEnv,
 					GITHUB_BASE_REF: '',
 					GITHUB_REF_NAME: 'main',
 					MIGRATION_VALIDATION_BASE: '',

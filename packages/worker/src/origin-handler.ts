@@ -65,6 +65,7 @@ import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 import { handleOidcLogoutRequest } from '#worker/oidc/logout.ts'
 import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 // Immutable caching is only safe when asset URLs are versioned by a real
 // commit sha. In local dev the build id falls back to a constant ('dev'), so
@@ -535,28 +536,8 @@ function createOAuthProviderExceptionResponse(
 
 const workerHandler = {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url)
-
-		// Production `*.workers.dev` is not a product origin. `/health` stays
-		// reachable so deploy and status probes can hit the script directly.
-		const nonCanonicalHost = refuseNonCanonicalProductionHost({
-			request,
-			env,
-			allowedHealthPath: '/health',
-		})
-		if (nonCanonicalHost) return nonCanonicalHost
-
-		// Package runtime lane extraction (ADR 0016): when the runtime Worker
-		// service binding is configured, runtime-owned requests (package-app
-		// origin, inline package apps, package invocation API) are forwarded
-		// wholesale to the `kody-runtime` Worker. Without the binding (tests,
-		// single-worker local dev) the in-process handlers below keep serving.
-		if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
-			return env.RUNTIME_WORKER.fetch(request)
-		}
-
-		return serveAnonymousHtmlFromCache(request, env, ctx, () =>
-			handleOriginAppFetch(request, env, ctx, url),
+		return runWithDynamicWorkerEvaluationBudget(
+			async () => await fetchWithDynamicWorkerBudget(request, env, ctx),
 		)
 	},
 	async email(
@@ -564,15 +545,49 @@ const workerHandler = {
 		env: Env,
 		ctx: ExecutionContext,
 	) {
-		// Let storage/transient failures throw so Email Routing does not
-		// acknowledge the message (retryable). Permanent rejects use
-		// message.setReject inside handleInboundEmail.
-		await handleInboundEmail(message, env, ctx)
+		await runWithDynamicWorkerEvaluationBudget(async () => {
+			// Let storage/transient failures throw so Email Routing does not
+			// acknowledge the message (retryable). Permanent rejects use
+			// message.setReject inside handleInboundEmail.
+			await handleInboundEmail(message, env, ctx)
+		})
 	},
 	async queue(batch: MessageBatch<unknown>, env: Env, ctx: ExecutionContext) {
-		await handleQueueBatch(batch, env, ctx)
+		await runWithDynamicWorkerEvaluationBudget(
+			async () => await handleQueueBatch(batch, env, ctx),
+		)
 	},
 } satisfies ExportedHandler<Env>
+
+async function fetchWithDynamicWorkerBudget(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+) {
+	const url = new URL(request.url)
+
+	// Production `*.workers.dev` is not a product origin. `/health` stays
+	// reachable so deploy and status probes can hit the script directly.
+	const nonCanonicalHost = refuseNonCanonicalProductionHost({
+		request,
+		env,
+		allowedHealthPath: '/health',
+	})
+	if (nonCanonicalHost) return nonCanonicalHost
+
+	// Package runtime lane extraction (ADR 0016): when the runtime Worker
+	// service binding is configured, runtime-owned requests (package-app
+	// origin, inline package apps, package invocation API) are forwarded
+	// wholesale to the `kody-runtime` Worker. Without the binding (tests,
+	// single-worker local dev) the in-process handlers below keep serving.
+	if (env.RUNTIME_WORKER && isRuntimeWorkerOwnedRequest(request, env)) {
+		return env.RUNTIME_WORKER.fetch(request)
+	}
+
+	return serveAnonymousHtmlFromCache(request, env, ctx, () =>
+		handleOriginAppFetch(request, env, ctx, url),
+	)
+}
 
 async function handleOriginAppFetch(
 	request: Request,

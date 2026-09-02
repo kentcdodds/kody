@@ -1,7 +1,7 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-schema-subset.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
 import {
 	type PackageEventDispatchInput,
@@ -225,7 +225,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 	}) as Record<string, unknown>
 	const subscribers: PackageEventDeliveryResult['subscribers'] = []
 	const retryableInfrastructureErrors: Array<Error> = []
-	await runWithDynamicWorkerEvaluationBudget(async () => {
+	await runQueueableDynamicWorkerWork(async () => {
 		for (const { savedPackage, subscription } of subscriptions) {
 			const response = await invokePackageSubscriptionWithToolFactories({
 				env: input.env,

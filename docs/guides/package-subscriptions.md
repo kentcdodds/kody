@@ -580,9 +580,10 @@ When host-side OAuth token refresh persists a new access token, or
 `/connect/oauth` finishes saving tokens for a connection, Kody dispatches
 `integration.auth.succeeded` to packages saved by that same user that declare
 the topic. Every successful refresh and every successful connect persist emits.
-The platform does not coalesce repeats or track working ↔ failed itself;
-notifier packages store that edge in package storage so a later failure can
-notify only on the working → failed transition.
+Sequential attempts are not coalesced; concurrent in-flight refreshes of the
+same connection share one attempt. The platform does not track working ↔ failed
+itself; notifier packages store that edge in package storage so a later failure
+can notify only on the working → failed transition.
 
 Delivery is best-effort after the tokens are written. Failures during subscriber
 discovery or package-invocation infrastructure are logged and do not change the
