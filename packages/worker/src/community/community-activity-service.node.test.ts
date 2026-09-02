@@ -76,7 +76,7 @@ CREATE TABLE community_listings (
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	published_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-, trusted_commit TEXT, trusted_by_user_id TEXT, trusted_at TEXT, featured_at TEXT);
+, featured_at TEXT);
 CREATE TABLE community_ratings (
 	id TEXT PRIMARY KEY NOT NULL,
 	listing_id TEXT NOT NULL,

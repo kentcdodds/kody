@@ -182,8 +182,7 @@ export const communityListingSelectColumns = `community_listings.id, community_l
 	community_listings.package_version,
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
-	community_listings.trusted_commit, community_listings.trusted_by_user_id,
-	community_listings.trusted_at, community_listings.featured_at,
+	community_listings.featured_at,
 	entity_sources.published_commit AS source_published_commit`
 
 export const communityListingSourceJoin = `LEFT JOIN entity_sources
@@ -280,15 +279,12 @@ export function extractCommunityListingLikeTokens(
 export async function insertCommunityListing(
 	db: D1Database,
 	// New listings are never featured; featured_at starts NULL and is only
-	// set through setCommunityListingFeaturedAt. trusted_* columns are unused.
+	// set through setCommunityListingFeaturedAt.
 	row: Omit<
 		CommunityListingRow,
 		| 'created_at'
 		| 'updated_at'
 		| 'published_at'
-		| 'trusted_commit'
-		| 'trusted_by_user_id'
-		| 'trusted_at'
 		| 'featured_at'
 		| 'package_version'
 	> & {

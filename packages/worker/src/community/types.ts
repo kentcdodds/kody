@@ -21,9 +21,6 @@ export type CommunityListingRow = {
 	package_version: string | null
 	pinned_commit: string
 	status: CommunityListingStatus
-	trusted_commit: string | null
-	trusted_by_user_id: string | null
-	trusted_at: string | null
 	featured_at: string | null
 	created_at: string
 	updated_at: string
@@ -64,22 +61,17 @@ export type CommunityListingRecord = {
 	iconCommit: string
 	status: CommunityListingStatus
 	/**
-	 * Commit trusted for this listing, or null when never trusted (or trust was
-	 * revoked). Admin trust records the reviewed commit. Platform-owned
-	 * listings automatically trust each successfully published commit. Trust
-	 * follows the pinned content: `trusted` is true only while this matches
-	 * `pinnedCommit`, so a person-owned republish drops the effective mark
-	 * until an admin re-reviews.
+	 * Always null. Trusted listings were removed; the public record still
+	 * exposes these fields so MCP and UI contracts stay stable.
 	 */
 	trustedCommit: string | null
 	trustedAt: string | null
+	/** Always false. Trusted listings were removed. */
 	trusted: boolean
 	/**
 	 * When an admin marked this listing as an onboarding starter package, or
-	 * null when never featured (or the mark was removed). The mark survives
-	 * republishes, but the listing is only *effectively* featured while it is
-	 * also effectively trusted, so `featured` drops with `trusted` and comes
-	 * back if the same commit is re-trusted.
+	 * null when never featured (or the mark was removed). Featured is
+	 * editorial only (`featured_at IS NOT NULL`) and does not depend on trust.
 	 */
 	featuredAt: string | null
 	featured: boolean
