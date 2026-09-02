@@ -4,6 +4,7 @@ import {
 	platformWorkerHealthPath,
 } from '@kody-internal/shared/platform-worker.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
 import { UserMeter } from './entitlements/user-meter-do.ts'
@@ -45,6 +46,13 @@ export {
 const platformWorkerHandler = {
 	async fetch(request: Request, env: Env) {
 		const url = new URL(request.url)
+
+		const nonCanonicalHost = refuseNonCanonicalProductionHost({
+			request,
+			env,
+			allowedHealthPath: platformWorkerHealthPath,
+		})
+		if (nonCanonicalHost) return nonCanonicalHost
 
 		if (url.pathname === platformWorkerHealthPath) {
 			return Response.json(

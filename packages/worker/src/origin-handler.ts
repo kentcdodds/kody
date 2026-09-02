@@ -42,6 +42,8 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
+import { serveAnonymousHtmlFromCache } from '#app/anonymous-html-edge-cache.ts'
 import { handleInboundEmail } from '#worker/email/inbound.ts'
 import { handleQueueBatch } from '#worker/queue-handler.ts'
 import { handleDrRestoreRequest } from '#worker/dr/dr-restore.ts'
@@ -564,6 +566,15 @@ async function fetchWithDynamicWorkerBudget(
 ) {
 	const url = new URL(request.url)
 
+	// Production `*.workers.dev` is not a product origin. `/health` stays
+	// reachable so deploy and status probes can hit the script directly.
+	const nonCanonicalHost = refuseNonCanonicalProductionHost({
+		request,
+		env,
+		allowedHealthPath: '/health',
+	})
+	if (nonCanonicalHost) return nonCanonicalHost
+
 	// Package runtime lane extraction (ADR 0016): when the runtime Worker
 	// service binding is configured, runtime-owned requests (package-app
 	// origin, inline package apps, package invocation API) are forwarded
@@ -573,6 +584,17 @@ async function fetchWithDynamicWorkerBudget(
 		return env.RUNTIME_WORKER.fetch(request)
 	}
 
+	return serveAnonymousHtmlFromCache(request, env, ctx, () =>
+		handleOriginAppFetch(request, env, ctx, url),
+	)
+}
+
+async function handleOriginAppFetch(
+	request: Request,
+	env: Env,
+	ctx: ExecutionContext,
+	url: URL,
+) {
 	// Host isolation for hosted package apps runs before every other route:
 	// nothing first-party may be reachable on the package-app origin, and the
 	// app origin must not execute package code once that origin is configured.

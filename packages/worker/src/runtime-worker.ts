@@ -19,6 +19,7 @@ import {
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
 import { handlePackageAppOriginRequest } from '#app/package-app-origin.ts'
+import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 /**
@@ -61,6 +62,13 @@ async function fetchRuntimeWorkerRequest(
 	ctx: ExecutionContext,
 ) {
 	const url = new URL(request.url)
+
+	const nonCanonicalHost = refuseNonCanonicalProductionHost({
+		request,
+		env,
+		allowedHealthPath: runtimeWorkerHealthPath,
+	})
+	if (nonCanonicalHost) return nonCanonicalHost
 
 	if (url.pathname === runtimeWorkerHealthPath) {
 		return Response.json(
