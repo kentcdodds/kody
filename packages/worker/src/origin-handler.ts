@@ -1,6 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
-import { MCP } from './mcp/index.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
 import {
@@ -68,6 +67,29 @@ import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
 // Immutable caching is only safe when asset URLs are versioned by a real
 // commit sha. In local dev the build id falls back to a constant ('dev'), so
 // an immutable header would pin browsers to a stale bundle across rebuilds.
+type LegacyMcpFetch = Parameters<typeof handleMcpRequest>[0]['fetchMcp']
+let legacyMcpFetchMemo: Promise<LegacyMcpFetch> | null = null
+
+/**
+ * The legacy MCP lane routes through the `MCP` Durable Object stub via the
+ * agents SDK. Loading `./mcp/index.ts` statically would evaluate the agents
+ * and MCP server SDKs during Worker startup; the first legacy request pays
+ * for it instead and the served fetch is cached for the isolate.
+ */
+function loadLegacyMcpFetch(): Promise<LegacyMcpFetch> {
+	legacyMcpFetchMemo ??= import('./mcp/index.ts')
+		.then(
+			({ MCP }) =>
+				MCP.serve(mcpResourcePath, { binding: 'MCP_OBJECT' })
+					.fetch as LegacyMcpFetch,
+		)
+		.catch((error: unknown) => {
+			legacyMcpFetchMemo = null
+			throw error
+		})
+	return legacyMcpFetchMemo
+}
+
 function shouldApplyLongLivedAssetCaching(pathname: string, env: Env) {
 	const commitSha = (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA?.trim()
 	if (!commitSha) return false
@@ -326,9 +348,10 @@ const appHandler = withCors({
 				request,
 				env,
 				ctx,
-				fetchMcp: MCP.serve(mcpResourcePath, {
-					binding: 'MCP_OBJECT',
-				}).fetch,
+				fetchMcp: (mcpRequest, mcpEnv, mcpContext) =>
+					loadLegacyMcpFetch().then((fetchLegacy) =>
+						fetchLegacy(mcpRequest, mcpEnv, mcpContext),
+					),
 			})
 		}
 
