@@ -7,6 +7,10 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  *   origin + platform; skip runtime/jobs/highlight
  * - Highlight worker only → highlight
  * - Origin + highlight → origin + highlight
+ * - Backup control plane / DR tooling / contributing docs → none of the
+ *   five fleet scripts (the backup-control-plane job has its own path
+ *   filter in deploy.yml and uses DR_DEPLOY_TOKEN)
+ * - Shared backup modules (origin mailbox/DR export parsers) → origin
  * - Anything else → all five scripts
  */
 
@@ -38,6 +42,19 @@ const originOnlyPathExclusions = new Set([
 
 const highlightWorkerPathPrefix = 'packages/highlight-worker/'
 
+// Independently deployed DR control plane, its CLI/provisioners, and
+// contributing docs. None of these are bundled into the production fleet.
+const skipFleetPathPrefixes = [
+	'packages/backup-control-plane/',
+	'tools/disaster-recovery/',
+	'tools/ci/backup-resources',
+	'docs/contributing/',
+] as const
+
+// Origin parses full backup manifests for mailbox import and DR export
+// staging. Highlight/jobs/platform/runtime do not import these modules.
+const sharedBackupPathPrefix = 'packages/shared/src/backup-'
+
 export type ProductionDeployTargets = {
 	deployMain: boolean
 	deployPlatform: boolean
@@ -48,6 +65,7 @@ export type ProductionDeployTargets = {
 
 export function isOriginOnlyPath(path: string) {
 	if (originOnlyPathExclusions.has(path)) return false
+	if (isSharedBackupPath(path)) return true
 	if (originOnlyExactPaths.has(path)) return true
 	return originOnlyPathPrefixes.some((prefix) => path.startsWith(prefix))
 }
@@ -58,6 +76,14 @@ export function isOriginAndPlatformPath(path: string) {
 
 export function isHighlightWorkerPath(path: string) {
 	return path.startsWith(highlightWorkerPathPrefix)
+}
+
+export function isSkipFleetPath(path: string) {
+	return skipFleetPathPrefixes.some((prefix) => path.startsWith(prefix))
+}
+
+export function isSharedBackupPath(path: string) {
+	return path.startsWith(sharedBackupPathPrefix)
 }
 
 export function classifyProductionDeployPaths(
@@ -73,7 +99,17 @@ export function classifyProductionDeployPaths(
 			deployHighlight: true,
 		}
 	}
-	if (changed.every((path) => isHighlightWorkerPath(path))) {
+	const fleetPaths = changed.filter((path) => !isSkipFleetPath(path))
+	if (fleetPaths.length === 0) {
+		return {
+			deployMain: false,
+			deployPlatform: false,
+			deployRuntime: false,
+			deployJobs: false,
+			deployHighlight: false,
+		}
+	}
+	if (fleetPaths.every((path) => isHighlightWorkerPath(path))) {
 		return {
 			deployMain: false,
 			deployPlatform: false,
@@ -82,7 +118,7 @@ export function classifyProductionDeployPaths(
 			deployHighlight: true,
 		}
 	}
-	if (changed.every((path) => isOriginOnlyPath(path))) {
+	if (fleetPaths.every((path) => isOriginOnlyPath(path))) {
 		return {
 			deployMain: true,
 			deployPlatform: false,
@@ -92,7 +128,7 @@ export function classifyProductionDeployPaths(
 		}
 	}
 	if (
-		changed.every(
+		fleetPaths.every(
 			(path) => isOriginOnlyPath(path) || isHighlightWorkerPath(path),
 		)
 	) {
@@ -105,7 +141,7 @@ export function classifyProductionDeployPaths(
 		}
 	}
 	if (
-		changed.every(
+		fleetPaths.every(
 			(path) => isOriginOnlyPath(path) || isOriginAndPlatformPath(path),
 		)
 	) {

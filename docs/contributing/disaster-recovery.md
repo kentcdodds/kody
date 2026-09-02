@@ -356,11 +356,12 @@ Admin UI auth is dual-layer:
 The control-plane Worker deploys to the DR account from GitHub Actions
 (`.github/workflows/deploy.yml` → `deploy-backup-control-plane`) using
 `DR_DEPLOY_TOKEN`, when `packages/backup-control-plane/` or shared backup
-contracts change on `main` (or on manual `workflow_dispatch`). Local Wrangler
-against the DR account remains available for emergencies
-(`npm run backup:deploy`). Production restore requires the DR Worker to hold the
-production-account D1 token as above; Access + JWT guard every UI action that
-could use it.
+contracts change on `main` (or on manual `workflow_dispatch`). Those paths do
+not redeploy highlight, jobs, platform, or runtime; shared backup modules still
+redeploy origin. Local Wrangler against the DR account remains available for
+emergencies (`npm run backup:deploy`). Production restore requires the DR Worker
+to hold the production-account D1 token as above; Access + JWT guard every UI
+action that could use it.
 
 ## Secret escrow
 

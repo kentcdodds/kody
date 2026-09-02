@@ -265,8 +265,11 @@ Code deploys are automated by the production deploy workflow
 push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`,
 and on every manual `workflow_dispatch` of that workflow. The job uses
 `DR_DEPLOY_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
-`CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Worker
-secrets on the control plane remain one-time / out-of-band.
+`CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Those paths
+do not redeploy highlight, jobs, platform, or runtime; shared backup modules
+still redeploy origin because mailbox import and DR export staging parse the
+full manifest there. Worker secrets on the control plane remain one-time /
+out-of-band.
 
 The production Worker also stages non-D1 canonical stores into the same bucket
 when `DR_EXPORT_ENABLED=true` (StorageRunner dumps, `EMAIL_BLOBS` /

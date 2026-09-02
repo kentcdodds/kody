@@ -139,8 +139,9 @@ database is fresh.
 GitHub Actions deploys this Worker to the DR Cloudflare account from
 `.github/workflows/deploy.yml` (`deploy-backup-control-plane`) when
 `packages/backup-control-plane/` or `packages/shared/src/backup-*` change on
-`main`. Requires repository secrets `DR_DEPLOY_TOKEN` and
-`DR_BACKUP_ACCOUNT_ID`. Manual/emergency:
+`main`. Those paths do not redeploy highlight, jobs, platform, or runtime;
+shared backup modules still redeploy origin. Requires repository secrets
+`DR_DEPLOY_TOKEN` and `DR_BACKUP_ACCOUNT_ID`. Manual/emergency:
 
 ```sh
 CLOUDFLARE_ACCOUNT_ID=<DR_ACCOUNT_ID> \
