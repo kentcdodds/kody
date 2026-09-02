@@ -20,6 +20,18 @@ export const webhookVerificationPublicSchema = z
 		secretName: z.string(),
 		encoding: z.enum(['hex', 'base64']),
 		prefix: z.string().optional(),
+		signedPayload: z.enum(['body', 'timestamp.body']).optional(),
+	})
+	.nullable()
+
+export const webhookReplayPublicSchema = z
+	.object({
+		timestampHeader: z.string().optional(),
+		timestampFormat: z
+			.enum(['unix-seconds', 'unix-millis', 'iso-8601', 'stripe-signature'])
+			.optional(),
+		toleranceSeconds: z.number().int().optional(),
+		deliveryIdHeader: z.string().optional(),
 	})
 	.nullable()
 
@@ -32,6 +44,7 @@ export const listedWebhookSchema = z.object({
 	description: z.string().nullable(),
 	response_mode: z.enum(['ack', 'sync']),
 	verification: webhookVerificationPublicSchema,
+	replay: webhookReplayPublicSchema,
 	minted: z
 		.boolean()
 		.describe('True when a URL secret has been minted for this webhook.'),
@@ -91,6 +104,7 @@ export function toListedWebhookCapability(webhook: {
 	description: string | null
 	responseMode: 'ack' | 'sync'
 	verification: z.infer<typeof webhookVerificationPublicSchema>
+	replay?: z.infer<typeof webhookReplayPublicSchema>
 	minted: boolean
 	enabled: boolean | null
 	createdAt: string | null
@@ -105,6 +119,7 @@ export function toListedWebhookCapability(webhook: {
 		description: webhook.description,
 		response_mode: webhook.responseMode,
 		verification: webhook.verification,
+		replay: webhook.replay ?? null,
 		minted: webhook.minted,
 		enabled: webhook.enabled,
 		created_at: webhook.createdAt,

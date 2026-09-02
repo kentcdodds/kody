@@ -575,3 +575,8 @@ change to these decisions here so future agents do not relitigate them.
   decision, restated as invariant 10 above: it holds only while both halves
   hold, so revisit if any mutating endpoint starts accepting cross-site form
   posts or `SameSite=None`.
+- **Package inbound webhook replay protection is opt-in.** HMAC over the raw
+  body without a `replay` declaration does not bind a timestamp or delivery id,
+  so a captured signed payload can be replayed until the URL secret is rotated.
+  Authors opt in per webhook with `replay.timestampHeader` and/or
+  `replay.deliveryIdHeader`.

@@ -176,8 +176,43 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 	expect(
 		parseWebhookDispatchQueueMessage({ ...message, params: [] }),
 	).toBeNull()
+	expect(
+		parseWebhookDispatchQueueMessage({
+			...message,
+			idempotencyParamsHash: 'include',
+		}),
+	).toBeNull()
+	const withIgnore = {
+		...message,
+		idempotencyParamsHash: 'ignore' as const,
+	}
+	expect(parseWebhookDispatchQueueMessage(withIgnore)).toEqual(withIgnore)
 	expect(getWebhookDispatchQueueMessageBytes(message)).toBeLessThan(
 		webhookDispatchQueueMessageMaxBytes,
+	)
+})
+
+test('queue dispatch forwards delivery-id params-hash ignore', async () => {
+	mocks.dispatchWebhookInvocation.mockReset()
+	mocks.recordWebhookDelivery.mockReset()
+	mocks.dispatchWebhookInvocation.mockResolvedValue({
+		status: 200,
+		body: { ok: true, result: { handled: true } },
+	})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+	const message = {
+		...createMessage(),
+		idempotencyParamsHash: 'ignore' as const,
+	}
+
+	await expect(processWebhookDispatch(message, {} as Env)).resolves.toBe(
+		'terminal',
+	)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			idempotencyKey: message.idempotencyKey,
+			idempotencyParamsHash: 'ignore',
+		}),
 	)
 })
 

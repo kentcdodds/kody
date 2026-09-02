@@ -83,6 +83,7 @@ export async function invokeSavedPackageModule(input: {
 	moduleSelector: PackageModuleSelector
 	params?: Record<string, unknown>
 	idempotencyKey: string
+	idempotencyParamsHash?: 'ignore'
 	source: string | null
 	topic: string | null
 	notFoundCode: 'export_not_found' | 'subscription_not_found'
@@ -103,7 +104,7 @@ export async function invokeSavedPackageModule(input: {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,
-		params: input.params,
+		params: input.idempotencyParamsHash === 'ignore' ? undefined : input.params,
 		source: input.source,
 		topic: input.topic,
 	})
@@ -119,6 +120,8 @@ export async function invokeSavedPackageModule(input: {
 			record: toResolvableLedgerRecord(record),
 			requestHash,
 			idempotencyKey: input.idempotencyKey,
+			paramsHash:
+				input.idempotencyParamsHash === 'ignore' ? 'ignore' : 'include',
 		})
 	const buildLookupFailedResponse = () =>
 		buildJsonErrorResponse({

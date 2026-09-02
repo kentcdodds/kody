@@ -70,6 +70,7 @@ export async function dispatchWebhookInvocation(input: {
 	exportName: string
 	params: WebhookExportParams
 	idempotencyKey: string
+	idempotencyParamsHash?: 'ignore'
 }) {
 	return await invokePackageExport({
 		env: input.env,
@@ -85,6 +86,9 @@ export async function dispatchWebhookInvocation(input: {
 			exportName: input.exportName,
 			params: input.params,
 			idempotencyKey: input.idempotencyKey,
+			...(input.idempotencyParamsHash === 'ignore'
+				? { idempotencyParamsHash: 'ignore' as const }
+				: {}),
 			source: 'webhook',
 			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,
 		},
