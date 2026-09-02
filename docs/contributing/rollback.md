@@ -16,10 +16,11 @@ uploads **platform**, then **runtime**, then **origin**, then health-checks and
 the origin-only execute smoke. Concurrency group `deploy-production` queues
 rather than cancelling (`cancel-in-progress: false`): a mid-sequence cancel
 leaves new schema with old code or mismatched Durable Object bindings. Do not
-cancel a running production deploy. GitHub keeps at most one pending run in that
-group and replaces it with a newer pending run.
-[Freeze the deploy queue](#freeze-the-deploy-queue) before Path A so a queued
-`workflow_run` cannot redeploy current `main` after a manual rollback.
+cancel a Deploy run, queued or in progress. Wait for any queued or in-progress
+Deploy run to finish, then roll back from the resulting live versions.
+[Freeze the deploy queue](#freeze-the-deploy-queue) before Path A. Freeze merges
+so nothing new queues. GitHub keeps at most one pending run in that group and
+replaces it with a newer pending run.
 
 ## 1. Decide fast
 
@@ -62,16 +63,19 @@ curl --fail --silent --show-error --header "Accept: application/json" \
 Execute smoke (origin-only; bearer is GitHub secret
 `CAPABILITY_REINDEX_SECRET`). Do not put the secret on `curl`'s argv.
 `npm run control-kody -- request` is session-cookie HTTP and does not send this
-bearer. `-H @file` reads the header from a file descriptor (`curl --help`:
+bearer. `curl -H @-` reads one header line from stdin (`curl --help`:
 `--header <header/@file>`):
 
 ```sh
-curl --silent --show-error --location --max-time 30 \
+printf 'Authorization: Bearer %s\n' "$CAPABILITY_REINDEX_SECRET" | \
+  curl --silent --show-error --location --max-time 30 \
   -X POST \
-  -H @<(printf 'Authorization: Bearer %s' "$CAPABILITY_REINDEX_SECRET") \
+  -H @- \
   -H "Accept: application/json" \
   https://kody.codes/__maintenance/execute-smoke
 ```
+
+The endpoint has no request body, so stdin is free for the header.
 
 A passing body is `ok: true`, `result: 42`, `scope: "origin-only"`. That smoke
 does **not** prove MCP `execute`. After a platform or runtime rollback, also
@@ -137,26 +141,29 @@ versions. Kody production deploys are single-version `wrangler deploy` uploads
 Do this **before** any `wrangler rollback`. A queued `workflow_run` of
 `.github/workflows/deploy.yml` still deploys whatever SHA `sha-guard` accepts
 (`origin/main` HEAD). If `main` is still the bad SHA, that pending run promotes
-the bad code over a manual rollback.
+the bad code over a manual rollback. Waiting is the only supported path for a
+queued or in-progress Deploy run.
 
 1. Freeze merges to `main` (no squash-merges, no Path B land, no
    `workflow_dispatch` of Deploy) until Path A is verified or you switch to Path
-   B.
+   B. That freeze is what keeps a new Deploy from queueing.
 2. Inspect queued and in-progress Deploy runs:
 
 ```sh
 gh run list --workflow=deploy.yml --limit 5
 ```
 
-3. Do not start Path A while a pending run could still promote `main`:
-   - **`in_progress`:** wait until it finishes, then re-check health and Path A
-     safety. Do **not** cancel it. `cancel-in-progress: false` exists so a
-     mid-sequence cancel cannot leave new D1 schema with old code or mismatched
-     Durable Object bindings.
-   - **`queued`:** either wait for it to finish (then Path A), or cancel **that
-     pending run only** (`gh run cancel <run-id>`). Cancelling a queued run is
-     safe: it has not applied migrations or uploaded workers. Do not cancel
-     `in_progress`.
+3. If any Deploy run is **queued** or **in progress**, wait until it finishes.
+   Then re-check health and Path A safety, and roll back from the resulting live
+   versions (or abort Path A if the deploy already landed a Durable Object / D1
+   / secrets change that fails those checks).
+4. Do **not** cancel a Deploy run. A status check followed by `gh run cancel`
+   races the run leaving `queued`: the cancel can land after jobs or highlight
+   are live, or after a D1 migration has already applied.
+   `cancel-in-progress: false` exists so GitHub itself will not auto-cancel an
+   in-flight deploy.
+5. Confirm no Deploy run is queued or in progress before you start wrangler
+   rollbacks.
 
 ### Commands
 
@@ -254,20 +261,39 @@ Origin `/health` and UI do not exercise `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT`,
 or cross-script Durable Object RPC. A green origin does not mean the live origin
 can call the callee version you are about to restore.
 
-How to check the tuple from `npx wrangler versions list --name <script>`
-(Version ID, Created on, Author, Source, and optional Tag or Message):
+Timestamps and Git SHAs in `npx wrangler versions list` are not proof of a
+shared Deploy run. Uploads retry, each Worker uses a generated config, and the
+same SHA can be redeployed later. The evidence that counts is the GitHub Deploy
+**run id** plus the version ids that run uploaded.
 
-- Created-on timestamps for the target versions sit in the same few-minute
-  window as one production Deploy job (jobs/highlight first, then platform,
-  runtime, origin).
-- Health endpoints report the same SHA (`commitSha` on origin/platform/runtime,
-  `commit` on jobs/highlight). Inspect a candidate with
-  `npx wrangler versions view <VERSION_ID> --name <script>` before rolling.
+1. Identify the Deploy run that produced the tuple
+   (`gh run list --workflow=deploy.yml`).
+2. Read the version ids from that run's deploy-step logs. Wrangler prints
+   `Current Version ID: <uuid>` after each `Uploaded <script>` line:
 
-If timestamps or SHAs do not line up, or a shared contract (service binding,
-Durable Object class method) changed between live origin and the target callee,
-roll the product trio in [rollback order](#rollback-order) instead of one
-script.
+   ```sh
+   gh run view <id> --log | grep -E 'Uploaded |Current Version ID:'
+   ```
+
+   `grep -i version` also matches those lines, plus runner, git, and Node
+   version noise. Prefer the `Uploaded` / `Current Version ID:` pair. The
+   production job uploads platform, then runtime, then origin, in that order.
+   Jobs and highlight are earlier parallel jobs. GitHub may redact the `kody`
+   prefix as `***` in some log lines (`Uploaded ***-platform`); match on
+   `Uploaded` and `Current Version ID:` anyway.
+
+3. Compare the **current** origin (`kody-production`) version id
+   (`npx wrangler deployments status --name kody-production`) to the origin
+   version id from that run. If they match, a callee-only rollback to that run's
+   platform and/or runtime (or jobs/highlight) version ids is in contract. If
+   they do not, or you cannot produce that run id and version-id tuple, roll the
+   product trio in [rollback order](#rollback-order) instead of one script.
+
+`npx wrangler versions list --name <script>` lists the 10 most recent versions
+(`--json` is the same cap; there is no paging flag). For versions older than
+those 10, use the Worker's **Deployments** tab in the Cloudflare dashboard.
+Inspect a candidate with
+`npx wrangler versions view <VERSION_ID> --name <script>` before rolling.
 
 ## 3. When Path A is not safe
 
