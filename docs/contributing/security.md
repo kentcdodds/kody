@@ -94,8 +94,11 @@ package-app surfaces:
 13. **Unverified person accounts older than seven days are purged.** The hourly
     `unverified_account_purge` lane deletes `person` accounts whose
     `email_verified_at` is still null, `created_at` is older than seven days,
-    `deleting_at` is null, and no `oauth_connections` row exists. Deletion uses
-    the inventory-driven account-deletion path. Password signups are the only
+    and no `oauth_connections` row exists. Each candidate is claimed with an
+    atomic `UPDATE` that restamps `deleting_at` only while that eligibility
+    still holds. Failed deletions retry after a backoff on `deleting_at`;
+    never-attempted rows are processed before retries. Deletion uses the
+    inventory-driven account-deletion path. Password signups are the only
     unverified path; social-login accounts are verified at creation.
 14. **Password-reset confirmation clears second factors and linked providers.**
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
