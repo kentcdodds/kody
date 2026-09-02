@@ -83,6 +83,11 @@ test.each([
 		dependencyFile: 'packages/mock-servers/cloudflare/src/index.ts',
 	},
 	{
+		target: 'test-e2e',
+		requiredInput: '{workspaceRoot}/packages/mock-servers/cloudflare/**/*',
+		dependencyFile: 'packages/mock-servers/cloudflare/src/index.ts',
+	},
+	{
 		target: 'test-mcp',
 		requiredInput: '{workspaceRoot}/wrangler-env.ts',
 		dependencyFile: 'wrangler-env.ts',

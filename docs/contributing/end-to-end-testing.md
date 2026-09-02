@@ -61,9 +61,18 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 
 - The test server is started via Playwright `webServer` using Wrangler.
 - `playwright.config.ts` starts the E2E server with
-  `npm run e2e:web-server -- --port 3847` (D1 migrations + Wrangler) and waits
-  on `/health`. Nx `test-e2e` already ran `build-client` and `prepare-e2e-env`,
-  so the webServer does not rebuild `public/` into wrangler's assets watcher.
+  `npm run e2e:web-server -- --port 3847` (D1 migrations + the local Cloudflare
+  API mock + Wrangler) and waits on `/health`. Nx `test-e2e` already ran
+  `build-client` and `prepare-e2e-env`, so the webServer does not rebuild
+  `public/` into wrangler's assets watcher.
+- `tools/e2e-web-server.ts` starts `packages/mock-servers/cloudflare` and points
+  the origin worker's `CLOUDFLARE_API_BASE_URL` / `CLOUDFLARE_API_TOKEN` /
+  `CLOUDFLARE_ACCOUNT_ID` at it so signup and other transactional mail go
+  through the same Email Sending mock `npm run dev` uses. The mock Durable
+  Object retains outbound messages. Specs read them from authenticated
+  `GET /__mocks/messages` (Bearer token or `?token=`) using the origin and token
+  written to `.wrangler/state/e2e/cloudflare-mock.json`. Do not pull
+  verification tokens out of D1 as the primary path; that skips the email leg.
 - `preview:e2e` is the manual path: it prepares `packages/worker/.env`, rebuilds
   the client bundles, applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.

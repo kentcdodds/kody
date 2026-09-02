@@ -71,7 +71,7 @@
     "migrate:local": "node tools/apply-local-app-migrations.ts && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply AUDIT_DB --local && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply JOBS_DB --local --config packages/jobs-worker/wrangler.jsonc",
     "migrate:e2e": "node tools/apply-local-app-migrations.ts --persist-to .wrangler/state/e2e && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply AUDIT_DB --local --persist-to .wrangler/state/e2e && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply JOBS_DB --local --config packages/jobs-worker/wrangler.jsonc --persist-to .wrangler/state/e2e",
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
-    "e2e:web-server": "node tools/prepare-e2e-env.ts && node tools/ensure-e2e-client.ts && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
+    "e2e:web-server": "node tools/e2e-web-server.ts",
     "preview:e2e": "node tools/prepare-e2e-env.ts && nx run worker:build-client && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "preview:manual-test": "node tools/preview-manual-test.ts",
     "control-kody": "node tools/control-kody.ts",

@@ -35,6 +35,18 @@ const publicRoutes: RouteScenario[] = [
 		},
 	},
 	{
+		path: '/signup',
+		exclude: 'a[aria-pressed]',
+		ready: async (page) => {
+			await expect(
+				page.getByRole('heading', { name: 'Create your account' }),
+			).toBeVisible()
+			await expect(page.getByLabel('Username')).toBeVisible()
+			await expect(page.getByLabel('Email')).toBeVisible()
+			await expect(page.getByLabel('Password')).toBeVisible()
+		},
+	},
+	{
 		path: '/this-page-does-not-exist',
 		ready: async (page) => {
 			await expect(
@@ -51,6 +63,14 @@ const authenticatedRoutes: RouteScenario[] = [
 		ready: async (page) => {
 			await expect(
 				page.getByRole('heading', { name: 'Account', exact: true }),
+			).toBeVisible()
+		},
+	},
+	{
+		path: '/onboarding',
+		ready: async (page) => {
+			await expect(
+				page.getByRole('heading', { name: /Get started with\s*Kody/i }),
 			).toBeVisible()
 		},
 	},
@@ -123,6 +143,7 @@ test('critical routes have no blocking axe violations in either theme', async ({
 	seedE2eUser,
 	login,
 }) => {
+	test.setTimeout(process.env.CI ? 90_000 : 45_000)
 	await page.context().clearCookies()
 	for (const theme of themes) {
 		for (const scenario of publicRoutes) {
