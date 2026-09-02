@@ -69,6 +69,14 @@ export function renderLoginVisualPanel() {
 	)
 }
 
+// Only edits to text-like fields clear a submit error; toggling the
+// Remember me checkbox does not change the credentials that failed.
+function isTextEntryTarget(target: EventTarget | null) {
+	if (target instanceof HTMLTextAreaElement) return true
+	if (!(target instanceof HTMLInputElement)) return false
+	return target.type !== 'checkbox' && target.type !== 'radio'
+}
+
 function renderStatusMessage(
 	handleId: string,
 	status: AuthStatus,
@@ -133,7 +141,9 @@ export function renderWaitingListForm(
 			mix={[
 				css(authFormCss),
 				on('submit', props.onSubmit),
-				on('input', props.onFieldEdit),
+				on('input', (event) => {
+					if (isTextEntryTarget(event.target)) props.onFieldEdit()
+				}),
 			]}
 		>
 			{renderHoneypot()}
@@ -234,7 +244,9 @@ export function renderAuthForm(
 			mix={[
 				css(authFormCss),
 				on('submit', props.onSubmit),
-				on('input', props.onFieldEdit),
+				on('input', (event) => {
+					if (isTextEntryTarget(event.target)) props.onFieldEdit()
+				}),
 			]}
 		>
 			{renderHoneypot()}
