@@ -5,6 +5,7 @@ import * as stripeClient from '#worker/billing/stripe-client.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
+	AccountDeletionNoLongerEligibleError,
 	deleteUserAccount,
 	getAccountDeletionD1UserColumnCoverage,
 } from './account-deletion.ts'
@@ -1155,6 +1156,36 @@ test('deleteUserAccount clears the deletion fence when inventory cannot be colle
 			stable_user_id: 'user-aaa',
 			deleting_at: null,
 		}),
+	])
+	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('deleteUserAccount skips the D1 batch when beforeFinalize returns false', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		email_inboxes: [{ id: 'keep-inbox', user_id: 'user-aaa' }],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	const meter = userMeterRpc({ env, userId: 'user-aaa' })
+
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+			beforeFinalize: async () => false,
+			abortFenceIfIneligible: true,
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionNoLongerEligibleError)
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			stable_user_id: 'user-aaa',
+			deleting_at: null,
+		}),
+	])
+	expect(rows.email_inboxes).toEqual([
+		expect.objectContaining({ id: 'keep-inbox', user_id: 'user-aaa' }),
 	])
 	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })

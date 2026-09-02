@@ -96,10 +96,13 @@ package-app surfaces:
     `email_verified_at` is still null, `created_at` is older than seven days,
     and no `oauth_connections` row exists. Each candidate is claimed with an
     atomic `UPDATE` that restamps `deleting_at` only while that eligibility
-    still holds. Failed deletions retry after a backoff on `deleting_at`;
-    never-attempted rows are processed before retries. Deletion uses the
-    inventory-driven account-deletion path. Password signups are the only
-    unverified path; social-login accounts are verified at creation.
+    still holds. A claim that created the fence is released if deletion fails; a
+    restamped older fence is left in place. Eligibility is re-checked
+    immediately before the final D1 batch. Failed restamped deletions retry
+    after a backoff on `deleting_at`; never-attempted rows are processed before
+    retries. Deletion uses the inventory-driven account-deletion path. Password
+    signups are the only unverified path; social-login accounts are verified at
+    creation.
 14. **Password-reset confirmation clears second factors and linked providers.**
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.

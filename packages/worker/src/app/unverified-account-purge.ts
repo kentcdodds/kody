@@ -2,9 +2,11 @@ import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lan
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
+import { abortAccountDeleting } from '#worker/account/deletion-state.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
+	AccountDeletionNoLongerEligibleError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
 
@@ -27,12 +29,26 @@ export const unverifiedAccountPurgeRetryBackoffMs = 6 * 60 * 60 * 1000
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
 
+const unverifiedPersonEligibilitySql = [
+	'email_verified_at IS NULL',
+	`account_type = 'person'`,
+	`NOT EXISTS (
+			SELECT 1
+			FROM oauth_connections
+			WHERE oauth_connections.user_id = users.id
+		)`,
+] as const
+
 type UnverifiedAccountRow = {
 	id: number
 	stable_user_id: string
 	email: string
 	created_at: string
 }
+
+type UnverifiedAccountClaim =
+	| { claimed: false }
+	| { claimed: true; created: boolean; deletingAt: string }
 
 export type UnverifiedAccountPurgeResult = {
 	scanned: number
@@ -47,14 +63,8 @@ function cutoffIso(now: Date, millisecondsAgo: number) {
 
 function unverifiedAccountSqlConditions() {
 	return [
-		'email_verified_at IS NULL',
-		`account_type = 'person'`,
+		...unverifiedPersonEligibilitySql,
 		'datetime(created_at) < datetime(?)',
-		`NOT EXISTS (
-			SELECT 1
-			FROM oauth_connections
-			WHERE oauth_connections.user_id = users.id
-		)`,
 		'(deleting_at IS NULL OR datetime(deleting_at) < datetime(?))',
 	] as const
 }
@@ -104,27 +114,59 @@ async function claimUnverifiedAccountForPurge(input: {
 	dbUserId: number
 	now: Date
 	retryBackoffCutoff: string
-}) {
+}): Promise<UnverifiedAccountClaim> {
 	const deletingAt = utcSqliteTimestamp(input.now)
-	const result = await runD1WithRetry(() =>
+	const eligibility = unverifiedPersonEligibilitySql.join('\n					AND ')
+	const createdResult = await runD1WithRetry(() =>
 		input.db
 			.prepare(
 				`UPDATE users
 				SET deleting_at = ?, updated_at = ?
 				WHERE id = ?
-					AND email_verified_at IS NULL
-					AND account_type = 'person'
-					AND NOT EXISTS (
-						SELECT 1
-						FROM oauth_connections
-						WHERE oauth_connections.user_id = users.id
-					)
-					AND (deleting_at IS NULL OR datetime(deleting_at) < datetime(?))`,
+					AND ${eligibility}
+					AND deleting_at IS NULL`,
+			)
+			.bind(deletingAt, deletingAt, input.dbUserId)
+			.run(),
+	)
+	if ((createdResult.meta.changes ?? 0) === 1) {
+		return { claimed: true, created: true, deletingAt }
+	}
+	const restampedResult = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`UPDATE users
+				SET deleting_at = ?, updated_at = ?
+				WHERE id = ?
+					AND ${eligibility}
+					AND datetime(deleting_at) < datetime(?)`,
 			)
 			.bind(deletingAt, deletingAt, input.dbUserId, input.retryBackoffCutoff)
 			.run(),
 	)
-	return (result.meta.changes ?? 0) === 1
+	if ((restampedResult.meta.changes ?? 0) === 1) {
+		return { claimed: true, created: false, deletingAt }
+	}
+	return { claimed: false }
+}
+
+async function accountStillEligibleForUnverifiedPurge(input: {
+	db: D1Database
+	dbUserId: number
+}) {
+	const eligibility = unverifiedPersonEligibilitySql.join('\n			AND ')
+	const row = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`SELECT id
+				FROM users
+				WHERE id = ?
+					AND ${eligibility}`,
+			)
+			.bind(input.dbUserId)
+			.first<{ id: number }>(),
+	)
+	return row != null
 }
 
 export async function pruneUnverifiedAccounts(input: {
@@ -164,26 +206,24 @@ export async function pruneUnverifiedAccounts(input: {
 			result.timeBudgetExhausted = true
 			break
 		}
-		const claimed = await claimUnverifiedAccountForPurge({
+		const claim = await claimUnverifiedAccountForPurge({
 			db: input.env.APP_DB,
 			dbUserId: account.id,
 			now,
 			retryBackoffCutoff,
 		})
-		if (!claimed) continue
-		// deleteUserAccount is the self-service destructor: the authenticated
-		// owner is typically verified, and the final D1 batch is
-		// `DELETE FROM users WHERE id = ?`. Re-checking `email_verified_at IS
-		// NULL` there would refuse self-service deletion. The purge invariant
-		// is the claim UPDATE above; `markAccountDeleting` then sees
-		// `deleting_at` already set (`created: false`) and retries without
-		// rewriting the fence from an unguarded
-		// `WHERE id = ? AND deleting_at IS NULL`.
+		if (!claim.claimed) continue
 		try {
 			await deleteUserAccount({
 				env: input.env,
 				dbUserId: account.id,
 				mcpUserId: account.stable_user_id,
+				beforeFinalize: async () =>
+					await accountStillEligibleForUnverifiedPurge({
+						db: input.env.APP_DB,
+						dbUserId: account.id,
+					}),
+				abortFenceIfIneligible: true,
 			})
 			await logAuditEvent({
 				db: auditDatabaseFromEnv(input.env),
@@ -195,6 +235,20 @@ export async function pruneUnverifiedAccounts(input: {
 			})
 			result.purged += 1
 		} catch (error) {
+			if (error instanceof AccountDeletionNoLongerEligibleError) {
+				console.info('unverified_account_purge_no_longer_eligible', {
+					userId: account.stable_user_id,
+				})
+				continue
+			}
+			if (claim.created) {
+				await abortAccountDeleting({
+					db: input.env.APP_DB,
+					dbUserId: account.id,
+					env: input.env,
+					expectedDeletingAt: claim.deletingAt,
+				})
+			}
 			result.failed += 1
 			console.warn('unverified_account_purge_failed', {
 				userId: account.stable_user_id,

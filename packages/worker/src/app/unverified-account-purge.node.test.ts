@@ -8,7 +8,7 @@ import { getScheduledLaneCadence } from '@kody-internal/shared/jobs/scheduled-la
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createSuccessfulDeletionEnv } from '#worker/test-support/account-deletion.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import * as AccountDeletion from './account-deletion.ts'
 import {
@@ -60,6 +60,42 @@ function withVerifyAfterUnverifiedAccountSelect(
 									.bind(verifiedAt, row.id)
 									.run()
 							}
+							return result
+						},
+					}
+				},
+			}
+		},
+	} as D1Database
+}
+
+function withVerifyAfterPurgeClaim(
+	db: D1Database,
+	verifiedAt: string,
+): D1Database {
+	const originalPrepare = db.prepare.bind(db)
+	return {
+		...db,
+		prepare(query: string) {
+			const statement = originalPrepare(query)
+			const isCreateClaim =
+				query.includes('SET deleting_at') &&
+				query.includes('email_verified_at IS NULL') &&
+				query.includes('deleting_at IS NULL')
+			if (!isCreateClaim) return statement
+			return {
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						...bound,
+						async run() {
+							const result = await bound.run()
+							if ((result.meta.changes ?? 0) !== 1) return result
+							await originalPrepare(
+								`UPDATE users SET email_verified_at = ? WHERE id = ?`,
+							)
+								.bind(verifiedAt, params[2])
+								.run()
 							return result
 						},
 					}
@@ -236,6 +272,8 @@ test('purge deletes only aged unverified person accounts through full account de
 		env: expect.objectContaining({ APP_DB: db }),
 		dbUserId: eligible.id,
 		mcpUserId: eligible.stableUserId,
+		beforeFinalize: expect.any(Function),
+		abortFenceIfIneligible: true,
 	})
 	expect(usernames(sqlite)).toEqual([
 		'fenced-unverified',
@@ -363,7 +401,95 @@ test('a failed deletion is recorded and does not stop the rest of the batch', as
 			reason: 'unverified_for_10_days',
 		}),
 	])
-	expect(deletingAt(sqlite, 'failing')).not.toBeNull()
+	expect(deletingAt(sqlite, 'failing')).toBeNull()
+
+	deleteUserAccount.mockClear()
+	const retry = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+	expect(retry).toEqual({
+		scanned: 1,
+		purged: 1,
+		failed: 0,
+		timeBudgetExhausted: false,
+	})
+	expect(usernames(sqlite)).toEqual([])
+})
+
+test('a pre-existing fence is left in place when a restamped deletion fails', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const fenced = await seedUser(db, {
+		username: 'restamp-fail',
+		email: 'restamp-fail@example.com',
+		createdAt: daysAgo(12),
+		deletingAt: daysAgo(1),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new Error('simulated restamped deletion failure')
+	})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	expect(result).toEqual({
+		scanned: 1,
+		purged: 0,
+		failed: 1,
+		timeBudgetExhausted: false,
+	})
+	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
+		userId: fenced.stableUserId,
+		warnings: [],
+		error: expect.any(Error),
+	})
+	expect(usernames(sqlite)).toEqual(['restamp-fail'])
+	expect(deletingAt(sqlite, 'restamp-fail')).not.toBeNull()
+	expect(auditActions(audit.sqlite)).toEqual([])
+})
+
+test('an ineligible finalize keeps the account, skips the purge audit, and clears the fence', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const raced = await seedUser(db, {
+		username: 'verified-before-finalize',
+		email: 'finalize@example.com',
+		createdAt: daysAgo(8),
+	})
+	const env = createPurgeEnv(
+		withVerifyAfterPurgeClaim(db, now.toISOString()),
+		audit.db,
+	)
+
+	const result = await pruneUnverifiedAccounts({ env, now })
+
+	expect(result).toEqual({
+		scanned: 1,
+		purged: 0,
+		failed: 0,
+		timeBudgetExhausted: false,
+	})
+	expect(deleteUserAccount).toHaveBeenCalledTimes(1)
+	expect(consoleInfo).toHaveBeenCalledWith(
+		'unverified_account_purge_no_longer_eligible',
+		{ userId: raced.stableUserId },
+	)
+	expect(usernames(sqlite)).toEqual(['verified-before-finalize'])
+	expect(auditActions(audit.sqlite)).toEqual([])
+	const row = sqlite
+		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = ?`)
+		.get(raced.id) as {
+		email_verified_at: string | null
+		deleting_at: string | null
+	}
+	expect(row.email_verified_at).not.toBeNull()
+	expect(row.deleting_at).toBeNull()
 })
 
 test('a claim that loses the race to verification keeps the account and writes no audit', async () => {

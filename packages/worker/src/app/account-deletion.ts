@@ -170,6 +170,13 @@ export class AccountDeletionCleanupError extends Error {
 	}
 }
 
+export class AccountDeletionNoLongerEligibleError extends Error {
+	constructor() {
+		super('Account is no longer eligible for deletion.')
+		this.name = 'AccountDeletionNoLongerEligibleError'
+	}
+}
+
 function uniqueStrings(values: Iterable<string | null | undefined>) {
 	return Array.from(
 		new Set(
@@ -953,6 +960,15 @@ export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
 	dbUserId: number
 	mcpUserId: string
+	/**
+	 * Optional pre-batch gate. When it returns false, the D1 user row is left
+	 * in place. Self-service deletion omits this hook. Write fences already
+	 * reject most post-claim writes, so a caller that re-checks eligibility
+	 * here is defense in depth.
+	 */
+	beforeFinalize?: () => Promise<boolean>
+	/** When `beforeFinalize` returns false, clear `users.deleting_at`. */
+	abortFenceIfIneligible?: boolean
 }): Promise<AccountDeletionResult> {
 	const marked = await markAccountDeleting({
 		db: input.env.APP_DB,
@@ -1249,6 +1265,18 @@ export async function deleteUserAccount(input: {
 				error,
 			})
 		}
+	}
+
+	if (input.beforeFinalize && !(await input.beforeFinalize())) {
+		if (input.abortFenceIfIneligible) {
+			await abortAccountDeleting({
+				db: input.env.APP_DB,
+				dbUserId: input.dbUserId,
+				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
+			})
+		}
+		throw new AccountDeletionNoLongerEligibleError()
 	}
 
 	try {

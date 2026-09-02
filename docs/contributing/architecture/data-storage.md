@@ -300,9 +300,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `{username}.kody.run` subdomain, `{username}@` mail local, and
   `stable_user_id`. Each candidate is claimed with an atomic `UPDATE` that
   restamps `deleting_at` only while that eligibility still holds, so a verify or
-  social-login reclaim between select and delete keeps the account. Failed
-  deletions retry after a backoff on `deleting_at`; never-attempted rows are
-  processed before retries.
+  social-login reclaim between select and delete keeps the account. A claim that
+  created the fence is released if deletion fails, so the account is not
+  write-locked until the next retry. A restamped older fence is left in place.
+  Eligibility is re-checked immediately before the final D1 batch. Failed
+  restamped deletions retry after a backoff on `deleting_at`; never-attempted
+  rows are processed before retries.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -1578,8 +1581,10 @@ Current retention policies:
   oldest `created_at`, skipping rows whose `deleting_at` is inside a retry
   backoff. Before deletion it claims the row atomically (restamping
   `deleting_at` only while eligibility still holds) and runs the full
-  inventory-driven account deletion. Social-login accounts are verified at
-  creation and are not in this set.
+  inventory-driven account deletion. A claim that created the fence is released
+  if deletion fails; a restamped older fence is left in place. Eligibility is
+  re-checked immediately before the final D1 batch. Social-login accounts are
+  verified at creation and are not in this set.
 
 The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user
