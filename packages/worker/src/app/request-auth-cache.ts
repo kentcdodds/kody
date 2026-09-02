@@ -2,12 +2,14 @@
  * Per-request auth deduplication.
  *
  * `loadSessionInfo` and `readAuthenticatedAppUser` share one D1 user + roles
- * lookup per HTTP request (a single `batch`). Live sessions also start
- * feature-flag evaluation on this cache entry so `renderAppPage` awaits an
- * already-in-flight promise. We intentionally do **not** cache auth across
- * requests keyed by session id: logout and role changes would require
- * cross-isolate invalidation that we cannot prove correct without session
- * revocation hooks on every auth mutation path.
+ * lookup per HTTP request (a single `batch`). Feature flags are **not**
+ * fetched here: MCP, package-app, and JSON API callers do not need them.
+ * HTML app renders start evaluation from `requireAuthenticatedPageUser` /
+ * `requirePageUserWithRole` so `loadSessionInfo` can await an already-in-flight
+ * promise. We intentionally do **not** cache auth across requests keyed by
+ * session id: logout and role changes would require cross-isolate invalidation
+ * that we cannot prove correct without session revocation hooks on every auth
+ * mutation path.
  */
 
 import * as Sentry from '@sentry/cloudflare'
@@ -17,10 +19,6 @@ import {
 	isSecureRequest,
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
-import {
-	loadRequestFeatureFlags,
-	type EvaluatedFeatureFlags,
-} from '#app/request-feature-flags-cache.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import {
 	parseUserRolesAndPermissionRows,
@@ -71,7 +69,6 @@ export type ResolvedRequestAuth = {
 	sessionUserId: string | null
 	setCookie?: string | undefined
 	user: ResolvedAuthUser | null
-	featureFlags: Promise<EvaluatedFeatureFlags> | null
 }
 
 const requestAuthStore = new WeakMap<Request, Promise<ResolvedRequestAuth>>()
@@ -138,7 +135,6 @@ async function resolveRequestAuth(
 			sessionUserId: null,
 			setCookie: undefined,
 			user: null,
-			featureFlags: null,
 		}
 	}
 	const { session, issuedAt, setCookie } = parsedSession
@@ -153,7 +149,6 @@ async function resolveRequestAuth(
 			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
 			user: null,
-			featureFlags: null,
 		}
 	}
 
@@ -167,7 +162,6 @@ async function resolveRequestAuth(
 			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
 			user: null,
-			featureFlags: null,
 		}
 	}
 
@@ -181,7 +175,6 @@ async function resolveRequestAuth(
 			sessionUserId: session.stableUserId,
 			setCookie: await destroyAuthCookie(isSecureRequest(request)),
 			user: null,
-			featureFlags: null,
 		}
 	}
 
@@ -192,13 +185,6 @@ async function resolveRequestAuth(
 	})
 	const accountDeleting = Boolean(userRecord.deleting_at)
 	const accountSuspended = Boolean(userRecord.suspended_at)
-	const featureFlags =
-		accountDeleting || accountSuspended
-			? null
-			: loadRequestFeatureFlags(request, env, {
-					userId: userRecord.id,
-					stableUserId,
-				})
 
 	// Associate uncaught request errors with the signed-in user in Sentry.
 	// Id only: sendDefaultPii is false and emails stay out of Sentry. Must
@@ -212,7 +198,6 @@ async function resolveRequestAuth(
 	return {
 		sessionUserId: session.stableUserId,
 		setCookie: setCookie ?? undefined,
-		featureFlags,
 		user: {
 			userId: userRecord.id,
 			email: userRecord.email,

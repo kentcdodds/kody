@@ -6,6 +6,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
+import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
@@ -75,12 +76,12 @@ function createEnv() {
 }
 
 async function resolveCookie(cookie: string) {
-	return await loadResolvedRequestAuth(
-		new Request('https://example.com/account', {
-			headers: { Cookie: cookie.split(';')[0]! },
-		}),
-		createEnv(),
-	)
+	const request = new Request('https://example.com/account', {
+		headers: { Cookie: cookie.split(';')[0]! },
+	})
+	const resolved = await loadResolvedRequestAuth(request, createEnv())
+	expect(hasResolvedRequestFeatureFlags(request)).toBe(false)
+	return resolved
 }
 
 function expectSignedOutWithClearedCookie(

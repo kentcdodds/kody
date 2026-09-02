@@ -45,11 +45,10 @@ export async function loadSessionInfo(
 		}
 	}
 
-	const featureFlags = await (resolved.featureFlags ??
-		loadRequestFeatureFlags(request, env, {
-			userId: resolved.user.userId,
-			stableUserId: resolved.user.mcpUser.userId,
-		}))
+	const featureFlags = await loadRequestFeatureFlags(request, env, {
+		userId: resolved.user.userId,
+		stableUserId: resolved.user.mcpUser.userId,
+	})
 
 	return {
 		session: {
