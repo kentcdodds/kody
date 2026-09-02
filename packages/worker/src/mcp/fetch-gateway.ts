@@ -664,23 +664,32 @@ function isFormUrlEncodedRequest(headers: Headers) {
 	return contentType.startsWith('application/x-www-form-urlencoded')
 }
 
+function isMultipartRequest(headers: Headers) {
+	const contentType = headers.get('Content-Type')?.toLowerCase() ?? ''
+	return contentType.startsWith('multipart/')
+}
+
 type GatewayRequestBody =
 	| { kind: 'text'; text: string }
 	| { kind: 'binary'; bytes: Uint8Array<ArrayBuffer> }
 
 /**
- * Read the outbound request body without corrupting binary payloads. Bodies
- * that decode as valid UTF-8 keep the text pipeline (secret placeholder
- * scanning and replacement). Anything else — for example multipart uploads
- * carrying raw file bytes — passes through byte-for-byte, and secret
- * placeholders inside such a body are intentionally not resolved (URL and
- * header placeholders still are).
+ * Read the outbound request body without corrupting binary payloads.
+ * `multipart/*` is always opaque — a text-only Discord upload (JSON payload
+ * plus a `.txt` attachment) is valid UTF-8, but scanning that blob would
+ * resolve or throw on placeholders that appear in untrusted message content.
+ * Other bodies that decode as valid UTF-8 keep the text pipeline (secret
+ * placeholder scanning and replacement). Anything else passes through
+ * byte-for-byte. URL and header placeholders still resolve in every case.
  */
 async function readRequestBody(
 	request: Request,
 ): Promise<GatewayRequestBody | null> {
 	if (!shouldSendBody(request.method)) return null
 	const bytes = new Uint8Array(await request.arrayBuffer())
+	if (isMultipartRequest(request.headers)) {
+		return { kind: 'binary', bytes }
+	}
 	try {
 		// ignoreBOM keeps a leading UTF-8 BOM in the decoded text so text
 		// bodies round-trip byte-for-byte after placeholder expansion.

@@ -513,6 +513,80 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 			multipartBody,
 		)
 
+		const textBoundary = '----KodyDiscordBoundaryTest'
+		const payloadJson = JSON.stringify({
+			content: 'Feedback mentioned {{secret:BraveSearch}} in the docs.',
+		})
+		const textFile = [
+			'SUMMARY',
+			'secret placeholder example',
+			'',
+			'DETAILS',
+			'Use {{secret:BraveSearch}} or {{secret:kodyPathProbe|scope=user}}.',
+		].join('\n')
+		const textMultipartParts = [
+			encoder.encode(
+				`--${textBoundary}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n${payloadJson}\r\n`,
+			),
+			encoder.encode(
+				`--${textBoundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="feedback.txt"\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${textFile}\r\n`,
+			),
+			encoder.encode(`--${textBoundary}--\r\n`),
+		]
+		const textMultipartBody = new Uint8Array(
+			textMultipartParts.reduce((sum, part) => sum + part.length, 0),
+		)
+		let textMultipartOffset = 0
+		for (const part of textMultipartParts) {
+			textMultipartBody.set(part, textMultipartOffset)
+			textMultipartOffset += part.length
+		}
+		expect(() =>
+			new TextDecoder('utf-8', { fatal: true }).decode(textMultipartBody),
+		).not.toThrow()
+
+		resolveSpy.mockClear()
+		resolveSpy.mockImplementation(async ({ name }) => ({
+			found: name === 'discordBotToken',
+			value: name === 'discordBotToken' ? 'secret-value' : null,
+			scope: name === 'discordBotToken' ? 'user' : null,
+			allowedHosts: name === 'discordBotToken' ? ['discord.com'] : [],
+		}))
+		const textMultipartRequest = new Request(
+			'https://discord.com/api/channels/1/messages',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bot {{secret:discordBotToken|scope=user}}',
+					'Content-Type': `multipart/form-data; boundary=${textBoundary}`,
+				},
+				body: textMultipartBody,
+			},
+		)
+		const transformedTextMultipart = await expandSecretPlaceholders({
+			request: textMultipartRequest,
+			props,
+			env,
+		})
+		expect(transformedTextMultipart.headers.get('Authorization')).toBe(
+			'Bot secret-value',
+		)
+		expect(
+			new Uint8Array(await transformedTextMultipart.arrayBuffer()),
+		).toEqual(textMultipartBody)
+		expect(resolveSpy).toHaveBeenCalledTimes(1)
+		expect(resolveSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ name: 'discordBotToken' }),
+		)
+
+		resolveSpy.mockClear()
+		resolveSpy.mockResolvedValue({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: ['discord.com', 'example.com'],
+		})
+
 		const bomBody = new Uint8Array([
 			0xef,
 			0xbb,
@@ -545,8 +619,7 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 			props,
 			env,
 		})
-		expect(resolveSpy).toHaveBeenCalledTimes(1)
-		resolveSpy.mockClear()
+		expect(resolveSpy).not.toHaveBeenCalled()
 		expect(
 			new Uint8Array(await transformedBinaryPlaceholder.arrayBuffer()),
 		).toEqual(binaryPlaceholderBody)
