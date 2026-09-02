@@ -7,6 +7,7 @@ import {
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
+import { normalizePackageManifestVersion } from './package-version.ts'
 import {
 	type CommunityActivityKind,
 	type CommunityActivityRecord,
@@ -49,6 +50,10 @@ export function mapCommunityListingRow(
 		readmeContent:
 			row['readme_content'] == null ? null : String(row['readme_content']),
 		license: String(row['license']),
+		version:
+			row['package_version'] == null
+				? null
+				: normalizePackageManifestVersion(String(row['package_version'])),
 		pinnedCommit,
 		iconCommit:
 			row['source_published_commit'] == null
@@ -174,6 +179,7 @@ export const communityListingSelectColumns = `community_listings.id, community_l
 	community_listings.name, community_listings.description, community_listings.tags_json,
 	community_listings.category,
 	community_listings.search_text, community_listings.readme_content, community_listings.license,
+	community_listings.package_version,
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
 	community_listings.trusted_commit, community_listings.trusted_by_user_id,
@@ -295,9 +301,10 @@ export async function insertCommunityListing(
 		.prepare(
 			`INSERT INTO community_listings (
 				id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, category, search_text, readme_content, license, pinned_commit, status,
+				tags_json, category, search_text, readme_content, license, package_version,
+				pinned_commit, status,
 				created_at, updated_at, published_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -312,6 +319,7 @@ export async function insertCommunityListing(
 			row.search_text ?? null,
 			row.readme_content ?? null,
 			row.license,
+			row.package_version,
 			row.pinned_commit,
 			row.status,
 			row.created_at ?? now,
@@ -335,6 +343,7 @@ export async function updateCommunityListing(
 		searchText?: string | null
 		readmeContent?: string | null
 		license?: string
+		packageVersion?: string | null
 		pinnedCommit?: string
 		status?: CommunityListingStatus
 		publishedAt?: string
@@ -364,6 +373,9 @@ export async function updateCommunityListing(
 		addAssignment('readme_content', input.readmeContent ?? null)
 	}
 	if (input.license !== undefined) addAssignment('license', input.license)
+	if (input.packageVersion !== undefined) {
+		addAssignment('package_version', input.packageVersion)
+	}
 	if (input.pinnedCommit !== undefined) {
 		addAssignment('pinned_commit', input.pinnedCommit)
 	}

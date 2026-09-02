@@ -147,6 +147,14 @@ export function CommunityDetailContent(
 					</ul>
 
 					<dl data-rise style={{ '--rise': '4' }} mix={css(metaCss)}>
+						{listing.version ? (
+							<div>
+								<dt>Version</dt>
+								<dd data-testid="community-detail-version">
+									{listing.version}
+								</dd>
+							</div>
+						) : null}
 						<div>
 							<dt>License</dt>
 							<dd>{listing.license}</dd>

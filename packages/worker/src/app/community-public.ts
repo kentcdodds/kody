@@ -119,6 +119,7 @@ export function toPublicCommunityListing(
 		category: listing.category,
 		readmeContent: listing.readmeContent,
 		license: listing.license,
+		version: listing.version ?? null,
 		pinnedCommit: listing.pinnedCommit,
 		publishedAt: listing.publishedAt,
 		ownerUsername: getOwnerUsernameFromListingName(listing.name),

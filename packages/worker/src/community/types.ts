@@ -17,6 +17,8 @@ export type CommunityListingRow = {
 	search_text: string | null
 	readme_content: string | null
 	license: string
+	/** package.json#version at last community publish, or null when absent. */
+	package_version: string | null
 	pinned_commit: string
 	status: CommunityListingStatus
 	trusted_commit: string | null
@@ -45,6 +47,12 @@ export type CommunityListingRecord = {
 	searchText: string | null
 	readmeContent: string | null
 	license: string
+	/**
+	 * Author-supplied `package.json#version` captured at community publish.
+	 * Null/omitted when the author did not set a string, or the listing
+	 * predates the column. Not a platform versioning contract.
+	 */
+	version?: string | null
 	pinnedCommit: string
 	/**
 	 * Commit the public listing icon is derived from: the owner package's

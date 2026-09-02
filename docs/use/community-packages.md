@@ -68,11 +68,13 @@ The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial onboarding placement only — not a safety badge. There
 is no trusted-listing review mark.
 
-The detail page opens with the README. Next to **Featured** (when present) a
-pill says **Install**, **Installed**, **Forked**, or **Fork outdated**. When
-default-branch HEAD is newer than the last package publish, a **HEAD ahead of
-published** badge appears. You can also ask your agent to use `communitySearch`
-or `communityGet`.
+The detail page opens with the README. The facts row shows **Version** from
+`package.json#version` when the author set a string (same label on catalog
+cards), plus license, last publish date, and the pinned commit. Next to
+**Featured** (when present) a pill says **Install**, **Installed**, **Forked**,
+or **Fork outdated**. When default-branch HEAD is newer than the last package
+publish, a **HEAD ahead of published** badge appears. You can also ask your
+agent to use `communitySearch` or `communityGet`.
 
 ## Forking a listing
 

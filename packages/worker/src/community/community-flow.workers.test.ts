@@ -119,6 +119,7 @@ async function seedOwnerPackage(input: {
 	const packageJson = `${JSON.stringify(
 		{
 			name: packageName,
+			version: '1.0.4',
 			license: 'MIT',
 			exports: { '.': './src/index.ts' },
 			kody: {
@@ -254,6 +255,7 @@ test('public package flow works end-to-end through capability handlers', async (
 		name: `@usera/${kodyId}`,
 		kody_id: kodyId,
 		license: '',
+		version: '1.0.4',
 		status: 'active',
 		pinned_commit: publishedCommit,
 		public_url: `${baseUrl}/@usera/${kodyId}`,

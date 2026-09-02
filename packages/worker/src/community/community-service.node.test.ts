@@ -333,6 +333,7 @@ function validPublishSource() {
 		files: {
 			'package.json': JSON.stringify({
 				name: '@owner/discord-gateway',
+				version: '1.0.4',
 				license: 'MIT',
 				exports: { '.': './src/index.ts' },
 				kody: {
@@ -788,6 +789,7 @@ test('publishCommunityListing stores long README content and drops binary icon b
 		expect.objectContaining({
 			readme_content: expect.stringContaining('## Intent'),
 			category: 'integrations',
+			package_version: '1.0.4',
 		}),
 	)
 	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(

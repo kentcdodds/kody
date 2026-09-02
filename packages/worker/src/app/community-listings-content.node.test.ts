@@ -12,6 +12,7 @@ const sampleListing = {
 	category: 'integrations',
 	readmeContent: '# README',
 	license: 'MIT',
+	version: '1.0.4',
 	pinnedCommit: 'abc1234567890',
 	publishedAt: '2026-07-13T00:00:00.000Z',
 	ownerUsername: 'kentcdodds',
@@ -61,6 +62,10 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(listingsHtml).toContain(
 		'data-testid="community-listing-published-listing-1"',
 	)
+	expect(listingsHtml).toContain(
+		'data-testid="community-listing-version-listing-1"',
+	)
+	expect(listingsHtml).toContain('1.0.4')
 	expect(listingsHtml).toContain('href="/community?sort=newest"')
 	expect(listingsHtml).toContain('href="/community"')
 	expect(listingsHtml).toContain('data-testid="community-listings-categories"')
