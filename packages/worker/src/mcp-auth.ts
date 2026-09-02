@@ -2,6 +2,7 @@ import {
 	type OAuthHelpers,
 	type TokenSummary,
 } from '@cloudflare/workers-oauth-provider'
+import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { auditDatabaseFromEnv, getRequestIp } from '#worker/audit-log.ts'
 import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
@@ -12,6 +13,7 @@ import {
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
+	assertAccountWritableDb,
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
@@ -216,6 +218,35 @@ function audienceMatches(
 	return allowed.some((value) => value === origin || value === resourcePath)
 }
 
+/**
+ * The account write lease fences mutating MCP traffic during deletion. Read-only
+ * JSON-RPC (`initialize`, `tools/list`, `ping`, `search`) skips the UserMeter
+ * RPCs and checks D1 `users.deleting_at` only. Unclassified bodies, JSON-RPC
+ * batches that include a write, and any `tools/call` other than `search` keep
+ * the full lease.
+ */
+export function mcpParsedBodyNeedsAccountWriteLease(parsedBody: unknown) {
+	if (parsedBody === undefined) return true
+	const messages = Array.isArray(parsedBody)
+		? parsedBody.filter(isRecord)
+		: isRecord(parsedBody)
+			? [parsedBody]
+			: []
+	if (messages.length === 0) return true
+	return messages.some((message) =>
+		jsonRpcMessageNeedsAccountWriteLease(message),
+	)
+}
+
+function jsonRpcMessageNeedsAccountWriteLease(
+	message: Record<string, unknown>,
+) {
+	if (message['method'] !== 'tools/call') return false
+	const params = isRecord(message['params']) ? message['params'] : null
+	const name = typeof params?.['name'] === 'string' ? params['name'] : null
+	return name !== 'search'
+}
+
 export async function handleMcpRequest({
 	request,
 	env,
@@ -363,28 +394,33 @@ export async function handleMcpRequest({
 	)
 
 	try {
-		return await withAccountWriteLease({
-			db: env.APP_DB,
-			stableUserId: mcpUser.userId,
-			holder: `mcp:${request.method} ${url.pathname}`,
-			env,
-			write: async () =>
-				classification.lane === 'legacy'
-					? await fetchMcp(
-							request,
-							env,
-							context as ExecutionContext<OAuthContextProps>,
-						)
-					: await handleStatelessMcpRequest({
-							request,
-							env,
-							ctx,
-							callerContext: props,
-							...(classification.parsedBody === undefined
-								? {}
-								: { parsedBody: classification.parsedBody }),
-						}),
-		})
+		const serveMcp = async () =>
+			classification.lane === 'legacy'
+				? await fetchMcp(
+						request,
+						env,
+						context as ExecutionContext<OAuthContextProps>,
+					)
+				: await handleStatelessMcpRequest({
+						request,
+						env,
+						ctx,
+						callerContext: props,
+						...(classification.parsedBody === undefined
+							? {}
+							: { parsedBody: classification.parsedBody }),
+					})
+		if (mcpParsedBodyNeedsAccountWriteLease(classification.parsedBody)) {
+			return await withAccountWriteLease({
+				db: env.APP_DB,
+				stableUserId: mcpUser.userId,
+				holder: `mcp:${request.method} ${url.pathname}`,
+				env,
+				write: serveMcp,
+			})
+		}
+		await assertAccountWritableDb(env.APP_DB, mcpUser.userId)
+		return await serveMcp()
 	} catch (error) {
 		if (error instanceof AccountDeletionInProgressError) {
 			return createAccountDeletingResponse(409)

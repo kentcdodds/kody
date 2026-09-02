@@ -2,11 +2,13 @@ import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
+	agentPackageConversationUseRetentionDays,
 	auditEventRetentionDays,
 	featureFlagExposureRetentionDays,
 	getRetentionPolicyCoverage,
 	memorySuppressionRetentionDays,
 	platformFeedbackRetentionDays,
+	pruneAgentPackageConversationUsesForRetention,
 	pruneAuditEventsForRetention,
 	pruneFeatureFlagExposuresForRetention,
 	pruneMemorySuppressionsForRetention,
@@ -162,6 +164,14 @@ function createRetentionDb() {
 			status TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
+		CREATE TABLE agent_package_conversation_uses (
+			user_id TEXT NOT NULL,
+			package_id TEXT NOT NULL,
+			conversation_id TEXT NOT NULL,
+			first_used_at TEXT NOT NULL,
+			last_used_at TEXT NOT NULL,
+			PRIMARY KEY (user_id, package_id, conversation_id)
+		);
 	`)
 	return {
 		sqlite,
@@ -284,7 +294,9 @@ test('platform feedback retention prunes terminal rows in bounded batches and ru
 	>
 	const result = await pruneRetention({ env, now })
 	expect(result.platformFeedback).toBe(1)
+	expect(result.agentPackageConversationUses).toBe(0)
 	expect(result.batchesPerTable['platform_feedback']).toBe(1)
+	expect(result.batchesPerTable['agent_package_conversation_uses']).toBe(1)
 	expect(idsForTable(sqlite, 'platform_feedback')).toEqual([
 		'active-old-open',
 		'active-old-triaged',
@@ -335,6 +347,19 @@ test('memory suppression, audit, and stripe webhook retention respect boundaries
 			)
 			.run(eventId, processedAt)
 	}
+	for (const [packageId, lastUsedAt] of [
+		['pkg-old', daysAgo(agentPackageConversationUseRetentionDays + 1)],
+		['pkg-boundary', daysAgo(agentPackageConversationUseRetentionDays)],
+		['pkg-recent', daysAgo(1)],
+	]) {
+		sqlite
+			.prepare(
+				`INSERT INTO agent_package_conversation_uses (
+				user_id, package_id, conversation_id, first_used_at, last_used_at
+			) VALUES ('user-1', ?, 'conversation', ?, ?)`,
+			)
+			.run(packageId, lastUsedAt, lastUsedAt)
+	}
 
 	expect(await pruneMemorySuppressionsForRetention({ db, now })).toEqual({
 		selected: 1,
@@ -345,6 +370,12 @@ test('memory suppression, audit, and stripe webhook retention respect boundaries
 		deleted: 1,
 	})
 	expect(await pruneStripeWebhookEventsForRetention({ db, now })).toEqual({
+		selected: 1,
+		deleted: 1,
+	})
+	expect(
+		await pruneAgentPackageConversationUsesForRetention({ db, now }),
+	).toEqual({
 		selected: 1,
 		deleted: 1,
 	})
@@ -373,6 +404,15 @@ test('memory suppression, audit, and stripe webhook retention respect boundaries
 				.all() as Array<{ event_id: string }>
 		).map((row) => row.event_id),
 	).toEqual(['evt_boundary'])
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT package_id FROM agent_package_conversation_uses ORDER BY package_id`,
+				)
+				.all() as Array<{ package_id: string }>
+		).map((row) => row.package_id),
+	).toEqual(['pkg-boundary', 'pkg-recent'])
 })
 
 test('retention prune reports selected separately from deleted when rows vanish mid-batch', async () => {
@@ -814,10 +854,15 @@ test('retention coverage includes every live growth-pattern table or documented 
 			table.name === 'platform_feedback' &&
 			columnNames.has('submitter_user_id') &&
 			columnNames.has('updated_at')
+		const hasAgentPackageConversationUsesGrowthShape =
+			table.name === 'agent_package_conversation_uses' &&
+			columnNames.has('user_id') &&
+			columnNames.has('last_used_at')
 		if (
 			hasUserCreatedGrowthShape ||
 			hasGlobalStripeWebhookShape ||
-			hasPlatformFeedbackGrowthShape
+			hasPlatformFeedbackGrowthShape ||
+			hasAgentPackageConversationUsesGrowthShape
 		) {
 			candidateTables.add(table.name)
 		}

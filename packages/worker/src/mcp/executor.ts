@@ -160,6 +160,12 @@ type DynamicWorkerExecutorInput = {
 	 * runs (and ad-hoc executor callers) should emit `execute`.
 	 */
 	recordExecuteUsage?: boolean
+	/**
+	 * When set, unique-worker-day metering and the first-execute activation
+	 * stamp run on `waitUntil` instead of the sandbox critical path. Without
+	 * an execution context the writes stay awaited so they are not dropped.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 type DynamicWorkerExecutorOptions = {
@@ -606,6 +612,11 @@ export function createExecuteExecutor(input: {
 	 * closed-world. Defaults to true.
 	 */
 	allowOutboundFetch?: boolean
+	/**
+	 * When set, unique-worker-day metering and the first-execute activation
+	 * stamp run on `waitUntil` instead of the sandbox critical path.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const allowOutboundFetch = input.allowOutboundFetch !== false
 	const loopbackExports = input.exports ?? workerExports
@@ -636,6 +647,7 @@ export function createExecuteExecutor(input: {
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
 		recordExecuteUsage: input.recordExecuteUsage,
+		waitUntil: input.waitUntil,
 	})
 }
 
@@ -680,11 +692,15 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				timeoutMs: input.timeout,
 				workerOptions,
 			})
-			await recordUniqueDynamicWorkerDay({
-				env: input.usageEnv,
-				userId: input.gatewayProps.userId,
-				workerId,
-			})
+			await runExecuteBookkeeping(
+				recordUniqueDynamicWorkerDay({
+					env: input.usageEnv,
+					userId: input.gatewayProps.userId,
+					workerId,
+				}),
+				input.waitUntil,
+				'dynamic-worker-day-record-failed',
+			)
 			const executionState = { active: true }
 			const startedAtMs = Date.now()
 			let outcome: 'success' | 'error' = 'success'
@@ -780,16 +796,35 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			} finally {
 				executionState.active = false
 				if (input.recordExecuteUsage !== false && input.gatewayProps.userId) {
-					await recordUsage(input.usageEnv, {
-						userId: input.gatewayProps.userId,
-						eventType: 'execute',
-						durationMs: Date.now() - startedAtMs,
-						outcome,
-					})
+					await recordUsage(
+						input.usageEnv,
+						{
+							userId: input.gatewayProps.userId,
+							eventType: 'execute',
+							durationMs: Date.now() - startedAtMs,
+							outcome,
+						},
+						{ waitUntil: input.waitUntil },
+					)
 				}
 			}
 		},
 	}
+}
+
+async function runExecuteBookkeeping(
+	work: Promise<unknown>,
+	waitUntil: ((promise: Promise<unknown>) => void) | undefined,
+	warnKey: string,
+) {
+	const tracked = work.catch((error: unknown) => {
+		console.warn(warnKey, error)
+	})
+	if (waitUntil) {
+		waitUntil(tracked)
+		return
+	}
+	await tracked
 }
 
 function validateProviders(providers: Array<ResolvedProvider>) {

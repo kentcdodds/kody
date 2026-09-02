@@ -85,7 +85,7 @@ export async function recordAgentPackageConversationUse(
 
 /**
  * Record conversation uses for many packages (e.g. static/dynamic execute
- * deps). Dedupes package ids; never throws.
+ * deps). Dedupes package ids; never throws. Issues one D1 batch of upserts.
  */
 export async function recordAgentPackageConversationUses(
 	env: AgentPackageConversationUseEnv,
@@ -96,17 +96,35 @@ export async function recordAgentPackageConversationUses(
 		usedAt?: string
 	},
 ): Promise<void> {
-	const seen = new Set<string>()
-	for (const packageId of input.packageIds) {
-		const trimmed = packageId.trim()
-		if (!trimmed || seen.has(trimmed)) continue
-		seen.add(trimmed)
-		await recordAgentPackageConversationUse(env, {
-			userId: input.userId,
-			packageId: trimmed,
-			conversationId: input.conversationId,
-			usedAt: input.usedAt,
-		})
+	try {
+		const userId = input.userId.trim()
+		const conversationId = input.conversationId.trim()
+		if (!userId || !conversationId) return
+		const db = env.APP_DB
+		if (!db) {
+			console.debug('agent-package-conversation-use-skipped', 'missing APP_DB')
+			return
+		}
+		const seen = new Set<string>()
+		const packageIds: Array<string> = []
+		for (const packageId of input.packageIds) {
+			const trimmed = packageId.trim()
+			if (!trimmed || seen.has(trimmed)) continue
+			seen.add(trimmed)
+			packageIds.push(trimmed)
+		}
+		if (packageIds.length === 0) return
+		const usedAt = input.usedAt ?? new Date().toISOString()
+		const conversationKey = await hashConversationId(conversationId)
+		await db.batch(
+			packageIds.map((packageId) =>
+				db
+					.prepare(upsertStatement)
+					.bind(userId, packageId, conversationKey, usedAt),
+			),
+		)
+	} catch (error) {
+		console.warn('agent-package-conversation-use-record-failed', error)
 	}
 }
 

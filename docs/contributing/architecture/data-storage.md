@@ -1554,6 +1554,10 @@ Current retention policies:
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.
+- `agent_package_conversation_uses`: per-user package popularity rows keep 180
+  days by `last_used_at`, matching the query-time window used to hint popular
+  packages in MCP server instructions. The prune orders by the existing
+  `(user_id, last_used_at)` time index via `last_used_at` then `rowid`.
 
 The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user

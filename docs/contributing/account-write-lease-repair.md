@@ -4,6 +4,10 @@ Account write leases do not expire. A crashed writer intentionally blocks
 account deletion until an administrator verifies that the process is gone and
 releases its exact token with an audit reason.
 
+Read-only MCP traffic (`initialize`, `tools/list`, `ping`, and `search`) does
+not acquire a write lease; mutating `tools/call` (including `execute`) still
+does. Deleting accounts are rejected on both paths via D1 `users.deleting_at`.
+
 Active leases live in the UserMeter DO. All callers supply `env` (including
 email paths), so every lease is a UserMeter-authoritative row. D1 has no
 `account_write_leases` table; `account_write_lease_repairs` remains the audit
