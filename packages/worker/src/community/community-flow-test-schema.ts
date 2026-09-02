@@ -252,4 +252,11 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 	} catch {
 		// Column already present.
 	}
+	try {
+		await db
+			.prepare(`ALTER TABLE community_listings ADD COLUMN package_version TEXT`)
+			.run()
+	} catch {
+		// Column already present.
+	}
 }
