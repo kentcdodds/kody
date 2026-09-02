@@ -371,6 +371,11 @@ export function createAuthHandler(env: Env) {
 							path: url.pathname,
 							reason: conflict.reason,
 						})
+						// A concurrent signup that lost the race on `email` must not
+						// leak the address either; only public identifiers get a 409.
+						if (uniqueField === 'email') {
+							return Response.json(signupAcceptedBody(normalizedMode))
+						}
 						return Response.json({ error: conflict.error }, { status: 409 })
 					}
 					await releaseConsumedInvite()
