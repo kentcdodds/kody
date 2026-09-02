@@ -152,7 +152,7 @@ export async function readArtifactTreeAtCommit(input: {
 			repoId: input.repoId,
 			commit: input.commit,
 		})
-		return snapshot?.files ?? {}
+		return snapshot?.files ?? null
 	}
 
 	const token = await repo.createToken('read', 300)
@@ -188,7 +188,7 @@ export async function readArtifactTreeAtCommit(input: {
 					return auth
 				},
 			})
-			const files: Record<string, string> = {}
+			const files = Object.create(null) as Record<string, string>
 			await git.walk({
 				fs: workspace.fs,
 				dir: workspace.dir,

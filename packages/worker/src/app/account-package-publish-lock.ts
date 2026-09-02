@@ -86,11 +86,8 @@ export async function loadAccountPackageApprovePublishData(input: {
 					commit: pendingCommit,
 				}),
 			])
-	const pendingMissing =
-		pendingCommit != null &&
-		!pendingFiles.resolved &&
-		publishedFiles.resolved &&
-		Object.keys(publishedFiles.files).length > 0
+	const unpublishedCompare = publishedCommit != null && !publishedFiles.resolved
+	const pendingMissing = pendingCommit != null && !pendingFiles.resolved
 	return {
 		ok: true,
 		email: input.user.email,
@@ -112,9 +109,10 @@ export async function loadAccountPackageApprovePublishData(input: {
 			username: input.user.username,
 			kodyId: savedPackage.kodyId,
 		}),
-		diff: pendingMissing
-			? { files: [], omittedCount: 0 }
-			: buildPublishCommitDiff(publishedFiles.files, pendingFiles.files),
+		diff:
+			unpublishedCompare || pendingMissing
+				? { files: [], omittedCount: 0 }
+				: buildPublishCommitDiff(publishedFiles.files, pendingFiles.files),
 	}
 }
 

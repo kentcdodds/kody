@@ -339,3 +339,40 @@ test('approve-publish loads unpublished HEAD from Artifacts when KV has no snaps
 	if (!failedPending.ok) throw new Error('expected loader success')
 	expect(failedPending.diff).toEqual({ files: [], omittedCount: 0 })
 })
+
+test('approve-publish does not treat pending files as added when the published tree is unresolved', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'pkg-1',
+		repo_id: 'repo-1',
+		published_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.loadPublicTreeFiles.mockResolvedValue({
+		files: {},
+		fromListingSnapshot: false,
+	})
+	mockModule.readArtifactTreeAtCommit.mockImplementation(
+		async (input: { commit: string }) => {
+			if (input.commit === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+				throw new Error('published fetch failed')
+			}
+			return { 'README.md': '# head\n' }
+		},
+	)
+
+	const loaded = await loadAccountPackageApprovePublishData({
+		env: { APP_DB: {} } as Env,
+		request: new Request(
+			'https://example.com/account/packages/pkg-1/approve-publish?commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+		),
+		user: user as never,
+		packageId: 'pkg-1',
+	})
+	if (!loaded.ok) throw new Error('expected loader success')
+	expect(loaded.diff).toEqual({ files: [], omittedCount: 0 })
+})
