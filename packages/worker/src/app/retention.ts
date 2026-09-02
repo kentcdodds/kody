@@ -1,5 +1,6 @@
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { agentPackagePopularityMaxAgeDays } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -46,6 +47,8 @@ export const usageRollupRetentionMonths = 24
 export const featureFlagExposureRetentionDays = 90
 export const auditEventRetentionDays = 180
 export const stripeWebhookEventRetentionDays = 30
+export const agentPackageConversationUseRetentionDays =
+	agentPackagePopularityMaxAgeDays
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
 
@@ -107,6 +110,14 @@ export const retentionPolicies: ReadonlyArray<RetentionPolicy> = [
 		description:
 			'Stripe platform webhook idempotency rows keep 30 days by processed_at and are independent of account deletion.',
 	},
+	{
+		table: 'agent_package_conversation_uses',
+		scope: 'per-user',
+		retentionDays: agentPackageConversationUseRetentionDays,
+		batchSize: retentionDefaultBatchSize,
+		description:
+			'Agent package conversation-use rows keep 180 days by last_used_at, matching the query-time popularity window.',
+	},
 ] as const
 
 export const retentionPolicyExemptions: ReadonlyArray<RetentionPolicyExemption> =
@@ -139,6 +150,7 @@ export type RetentionPruneResult = {
 	featureFlagExposureRollups: number
 	auditEvents: number
 	stripeWebhookEvents: number
+	agentPackageConversationUses: number
 	batchesPerTable: Record<string, number>
 	timeBudgetExhausted: boolean
 }
@@ -525,6 +537,29 @@ export async function pruneStripeWebhookEventsForRetention(input: {
 	})
 }
 
+export async function pruneAgentPackageConversationUsesForRetention(input: {
+	db: D1Database
+	now?: Date
+	batchSize?: number
+}) {
+	const cutoff = cutoffIso(
+		input.now ?? new Date(),
+		agentPackageConversationUseRetentionDays,
+	)
+	return selectAndDeleteByIds({
+		db: input.db,
+		column: 'rowid',
+		bindings: [cutoff, input.batchSize ?? retentionDefaultBatchSize],
+		sql: `SELECT rowid
+			FROM agent_package_conversation_uses
+			WHERE last_used_at < ?
+			ORDER BY last_used_at ASC, rowid ASC
+			LIMIT ?`,
+		table: 'agent_package_conversation_uses',
+		idColumn: 'rowid',
+	})
+}
+
 export async function pruneRetention(input: {
 	env: Pick<Env, 'APP_DB' | 'AUDIT_DB' | 'BUNDLE_ARTIFACTS_KV'>
 	now?: Date
@@ -548,6 +583,7 @@ export async function pruneRetention(input: {
 		featureFlagExposureRollups: 0,
 		auditEvents: 0,
 		stripeWebhookEvents: 0,
+		agentPackageConversationUses: 0,
 		batchesPerTable: {},
 		timeBudgetExhausted: false,
 	}
@@ -627,6 +663,13 @@ export async function pruneRetention(input: {
 			() => pruneStripeWebhookEventsForRetention({ db, now }),
 			(count) => {
 				result.stripeWebhookEvents += count
+			},
+		),
+		countTask(
+			'agent_package_conversation_uses',
+			() => pruneAgentPackageConversationUsesForRetention({ db, now }),
+			(count) => {
+				result.agentPackageConversationUses += count
 			},
 		),
 	]

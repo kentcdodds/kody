@@ -112,11 +112,13 @@ ON CONFLICT (day) DO UPDATE SET
  *
  * Callers should `await` it (cheap: one `writeDataPoint`, or one D1 upsert in
  * local dev) or hand the promise to `ctx.waitUntil(...)` inside Durable
- * Objects.
+ * Objects. Successful `execute` events still stamp `users.first_execute_at`;
+ * pass `waitUntil` to keep that D1 write off the critical path.
  */
 export async function recordUsage(
 	env: UsageEnv,
 	event: UsageEvent,
+	options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): Promise<void> {
 	try {
 		if (!event.userId) {
@@ -130,10 +132,17 @@ export async function recordUsage(
 			event.outcome === 'success' &&
 			env.APP_DB
 		) {
-			await stampFirstExecute(env.APP_DB, {
+			const stamp = stampFirstExecute(env.APP_DB, {
 				stableUserId: event.userId,
 				at: timestamp,
+			}).catch((error: unknown) => {
+				console.warn('activation-stamp-execute-failed', error)
 			})
+			if (options?.waitUntil) {
+				options.waitUntil(stamp)
+			} else {
+				await stamp
+			}
 		}
 		if (env.USAGE_EVENTS) {
 			writeUsageDataPoint(env, event, timestamp)

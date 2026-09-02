@@ -292,7 +292,12 @@ authoritative for lease acquire / held / release / count via `acquireWriteLease`
 / `assertWriteLeaseHeld` / `releaseWriteLease` / `countActiveWriteLeases`.
 Missing `USER_METER` binding **fails closed**. D1 `account_write_lease_repairs`
 is the audit log for repairs. ALS nested-lease reuse propagates per
-`stableUserId` across the async call chain.
+`stableUserId` across the async call chain. MCP `/mcp` takes the full UserMeter
+write lease only for mutating JSON-RPC (`tools/call` other than `search`,
+batches that include a write, and unclassified bodies); read-only methods
+(`initialize`, `tools/list`, `ping`, and `search`) check D1 `users.deleting_at`
+only so a deleting account still gets `409 account_deleting` without the acquire
+/ held / release RPCs.
 
 **`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO

@@ -9,6 +9,7 @@ import {
 	handleMcpRequest,
 	handleProtectedResourceMetadata,
 	mcpInvalidTokenDescription,
+	mcpParsedBodyNeedsAccountWriteLease,
 	mcpResourcePath,
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
@@ -123,6 +124,10 @@ type MockDbOptions = {
 	verificationLookups?: Array<VerificationLookupKind>
 	// Optional sink for consolidated users SELECTs.
 	userSelects?: Array<string>
+	// Optional deleting_at for the write-lease D1 gate only (profile lookup
+	// still uses accountByStableId.deleting_at). Lets tests reach 409 without
+	// the auth context loader treating the account as unidentified.
+	writableCheckDeletingAt?: string | null
 }
 
 function createMockDb(options: MockDbOptions = {}) {
@@ -205,6 +210,9 @@ function createMockDb(options: MockDbOptions = {}) {
 				}
 				if (normalized.includes('select deleting_at from users')) {
 					if (!boundStableUserId) return null
+					if (options.writableCheckDeletingAt !== undefined) {
+						return { deleting_at: options.writableCheckDeletingAt }
+					}
 					if (options.accountByStableId !== undefined) {
 						if (
 							options.accountByStableId === null ||
@@ -1135,4 +1143,236 @@ test('mcp request heals a leftover UserMeter tombstone for a live account', asyn
 	expect(response.status).toBe(200)
 	expect(fetchMcpCalled).toBe(true)
 	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+function instrumentWriteLeaseRpcs(namespace: DurableObjectNamespace) {
+	const calls: Array<string> = []
+	return {
+		calls,
+		namespace: {
+			idFromName: (name: string) => namespace.idFromName(name),
+			get(id: DurableObjectId) {
+				const target = namespace.get(id)
+				return new Proxy(target, {
+					get(target, prop, receiver) {
+						const value = Reflect.get(target, prop, receiver)
+						if (
+							prop === 'acquireWriteLease' ||
+							prop === 'assertWriteLeaseHeld' ||
+							prop === 'releaseWriteLease'
+						) {
+							return async (args: unknown) => {
+								calls.push(String(prop))
+								return (
+									target as unknown as Record<
+										string,
+										(args: unknown) => Promise<unknown>
+									>
+								)[String(prop)](args)
+							}
+						}
+						return typeof value === 'function'
+							? (value as (...args: Array<unknown>) => unknown).bind(target)
+							: value
+					},
+				})
+			},
+		} as unknown as DurableObjectNamespace,
+	}
+}
+
+function createVerifiedMcpToken(input: {
+	userId: string
+	email: string
+	origin: string
+}): TokenSummary {
+	return {
+		id: 'token',
+		grantId: 'grant',
+		userId: input.userId,
+		createdAt: 0,
+		expiresAt: 999999,
+		audience: `${input.origin}${mcpResourcePath}`,
+		grant: {
+			clientId: 'client',
+			scope: oauthScopes,
+			props: { userId: input.userId, email: input.email },
+		},
+	}
+}
+
+function createJsonRpcMcpRequest(input: { origin: string; body: unknown }) {
+	return new Request(`${input.origin}${mcpResourcePath}`, {
+		method: 'POST',
+		headers: {
+			Authorization: 'Bearer token',
+			'Content-Type': 'application/json',
+			Accept: 'application/json, text/event-stream',
+		},
+		body: JSON.stringify(input.body),
+	})
+}
+
+test('mcp write lease is scoped to mutating tools/call and still rejects deleting accounts', async () => {
+	const origin = 'https://example.com'
+	const userId = `lease-scope-${crypto.randomUUID()}`
+	const email = 'lease-scope@example.com'
+	const verifiedAt = new Date(0).toISOString()
+	const instrumented = instrumentWriteLeaseRpcs(env.USER_METER)
+	const token = createVerifiedMcpToken({ userId, email, origin })
+	const envForUser = (writableCheckDeletingAt?: string | null) =>
+		createEnv(
+			createHelpers({ unwrapToken: async () => token }),
+			{ USER_METER: instrumented.namespace },
+			{
+				emailVerifiedAt: verifiedAt,
+				expectedEmail: email,
+				expectedStableUserId: userId,
+				writableCheckDeletingAt,
+				accountByStableId: {
+					id: 31,
+					email,
+					username: 'lease-scope',
+					display_name: null,
+					stable_user_id: userId,
+					email_verified_at: verifiedAt,
+					deleting_at: null,
+				},
+			},
+		)
+	let fetchMcpCalls = 0
+	const fetchMcp = () => {
+		fetchMcpCalls += 1
+		return new Response('legacy-ok')
+	}
+
+	expect(mcpParsedBodyNeedsAccountWriteLease(undefined)).toBe(true)
+	expect(
+		mcpParsedBodyNeedsAccountWriteLease({
+			jsonrpc: '2.0',
+			method: 'tools/list',
+			id: 1,
+		}),
+	).toBe(false)
+	expect(
+		mcpParsedBodyNeedsAccountWriteLease({
+			jsonrpc: '2.0',
+			method: 'tools/call',
+			params: { name: 'search', arguments: { query: 'email' } },
+			id: 2,
+		}),
+	).toBe(false)
+	expect(
+		mcpParsedBodyNeedsAccountWriteLease({
+			jsonrpc: '2.0',
+			method: 'tools/call',
+			params: { name: 'execute', arguments: { code: 'async () => 1' } },
+			id: 3,
+		}),
+	).toBe(true)
+	expect(
+		mcpParsedBodyNeedsAccountWriteLease([
+			{ jsonrpc: '2.0', method: 'tools/list', id: 4 },
+			{
+				jsonrpc: '2.0',
+				method: 'tools/call',
+				params: { name: 'execute' },
+				id: 5,
+			},
+		]),
+	).toBe(true)
+
+	const listResponse = await handleMcpRequestAndDrain({
+		request: createJsonRpcMcpRequest({
+			origin,
+			body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+		}),
+		env: envForUser(),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(listResponse.status).toBe(200)
+	expect(await listResponse.text()).toBe('legacy-ok')
+	expect(instrumented.calls).toEqual([])
+
+	const searchResponse = await handleMcpRequestAndDrain({
+		request: createJsonRpcMcpRequest({
+			origin,
+			body: {
+				jsonrpc: '2.0',
+				id: 2,
+				method: 'tools/call',
+				params: { name: 'search', arguments: { query: 'email' } },
+			},
+		}),
+		env: envForUser(),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(searchResponse.status).toBe(200)
+	expect(instrumented.calls).toEqual([])
+
+	const executeResponse = await handleMcpRequestAndDrain({
+		request: createJsonRpcMcpRequest({
+			origin,
+			body: {
+				jsonrpc: '2.0',
+				id: 3,
+				method: 'tools/call',
+				params: { name: 'execute', arguments: { code: 'async () => 1' } },
+			},
+		}),
+		env: envForUser(),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(executeResponse.status).toBe(200)
+	expect(instrumented.calls).toEqual([
+		'acquireWriteLease',
+		'assertWriteLeaseHeld',
+		'releaseWriteLease',
+	])
+	expect(fetchMcpCalls).toBe(3)
+
+	instrumented.calls.length = 0
+	const deletingSearch = await handleMcpRequestAndDrain({
+		request: createJsonRpcMcpRequest({
+			origin,
+			body: {
+				jsonrpc: '2.0',
+				id: 4,
+				method: 'tools/call',
+				params: { name: 'search', arguments: { query: 'email' } },
+			},
+		}),
+		env: envForUser('2026-09-02 00:00:00'),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(deletingSearch.status).toBe(409)
+	expect(await deletingSearch.json()).toMatchObject({
+		error: 'account_deleting',
+	})
+	expect(instrumented.calls).toEqual([])
+
+	const deletingExecute = await handleMcpRequestAndDrain({
+		request: createJsonRpcMcpRequest({
+			origin,
+			body: {
+				jsonrpc: '2.0',
+				id: 5,
+				method: 'tools/call',
+				params: { name: 'execute', arguments: { code: 'async () => 1' } },
+			},
+		}),
+		env: envForUser('2026-09-02 00:00:00'),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(deletingExecute.status).toBe(409)
+	expect(await deletingExecute.json()).toMatchObject({
+		error: 'account_deleting',
+	})
+	expect(instrumented.calls).toEqual([])
+	expect(fetchMcpCalls).toBe(3)
 })

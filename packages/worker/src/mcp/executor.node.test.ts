@@ -1230,6 +1230,59 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id'
 	expect(dataPoints).toHaveLength(1)
 })
 
+test('createExecuteExecutor defers unique-worker-day and first-execute stamp via waitUntil', async () => {
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const activationStampWrites: Array<string> = []
+	const meter = createInMemoryUserMeterEnv()
+	const usageBindings = {
+		...meter.env,
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) dataPoints.push(point)
+			},
+		},
+		APP_DB: {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return {
+							async run() {
+								if (sql.includes('first_execute_at')) {
+									activationStampWrites.push(sql)
+								}
+								return {}
+							},
+						}
+					},
+				}
+			},
+		},
+	}
+	const waitUntilTasks: Array<Promise<unknown>> = []
+	const waitUntil = (promise: Promise<unknown>) => {
+		waitUntilTasks.push(promise)
+	}
+	const loader = createFakeWorkerLoader()
+	const result = await createExecuteExecutor({
+		env: {
+			...createExecutorTestEnv(loader.loader),
+			...usageBindings,
+		} as Env,
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('usage-user-waituntil'),
+		waitUntil,
+	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
+
+	expect(result.error).toBeUndefined()
+	expect(waitUntilTasks.length).toBeGreaterThanOrEqual(2)
+	await Promise.all(waitUntilTasks)
+	expect(activationStampWrites).toHaveLength(1)
+	expect(dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
+		'dynamic_worker_day',
+		'execute',
+	])
+})
+
 test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	for (const name of ['class', 'private']) {

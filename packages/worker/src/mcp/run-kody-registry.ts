@@ -90,6 +90,19 @@ type ExecuteServerTimingEntry = {
 	durationMs: number
 }
 
+async function scheduleAgentPackageConversationUses(
+	env: Env,
+	input: Parameters<typeof recordAgentPackageConversationUses>[1],
+	waitUntil?: (promise: Promise<unknown>) => void,
+) {
+	const work = recordAgentPackageConversationUses(env, input)
+	if (waitUntil) {
+		waitUntil(work)
+		return
+	}
+	await work
+}
+
 export type {
 	PackageEventDispatchInput,
 	PackageEventTools,
@@ -521,11 +534,15 @@ export async function runModuleWithRegistry(
 			.map((dependency) => dependency.packageId)
 			.filter((packageId): packageId is string => Boolean(packageId))
 		if (packageIds.length > 0) {
-			void recordAgentPackageConversationUses(env, {
-				userId,
-				packageIds,
-				conversationId,
-			})
+			await scheduleAgentPackageConversationUses(
+				env,
+				{
+					userId,
+					packageIds,
+					conversationId,
+				},
+				options?.waitUntil,
+			)
 		}
 	}
 	const runStartedAtMs = Date.now()
@@ -755,11 +772,15 @@ export async function runBundledModuleWithRegistry(
 			agentUserId &&
 			dynamicDependencyPackageIds.length > 0
 		) {
-			void recordAgentPackageConversationUses(env, {
-				userId: agentUserId,
-				packageIds: dynamicDependencyPackageIds,
-				conversationId: agentConversationId,
-			})
+			await scheduleAgentPackageConversationUses(
+				env,
+				{
+					userId: agentUserId,
+					packageIds: dynamicDependencyPackageIds,
+					conversationId: agentConversationId,
+				},
+				waitUntil,
+			)
 		}
 		await reportExecutePhaseProgress(reportProgress, 'provider-assembly')
 		const providerAssemblyStartedAtMs = Date.now()
@@ -817,6 +838,7 @@ export async function runBundledModuleWithRegistry(
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
 			allowOutboundFetch: !closedWorldRetrieverRuntime,
+			waitUntil: options?.waitUntil,
 		})
 		const workflowTools = closedWorldRetrieverRuntime
 			? undefined
