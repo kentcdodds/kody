@@ -36,6 +36,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 vi.mock('#worker/community/service.ts', () => ({
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
 	getCommunityListingWithAggregates: vi.fn(async () => null),
+	getCommunityListingsByIds: vi.fn(async () => []),
 }))
 
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
