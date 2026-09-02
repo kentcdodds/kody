@@ -2,8 +2,10 @@
  * Shared Cache-Control for anonymous marketing HTML. Session pages and any
  * response that sets a cookie stay `no-store`. The origin Worker stores
  * cookie-less GET responses in `caches.default` keyed on canonical origin +
- * pathname + search; `Vary: Cookie` remains on the browser-facing response
- * so intermediary caches that honour it still split on the session cookie.
+ * pathname + search plus a `__accept=html` marker; markdown-preferring
+ * `Accept` values (`prefersMarkdown`) bypass the store. Hits restore the miss
+ * `Vary` (`Cookie`, plus `Accept` on negotiated routes) so intermediary
+ * caches still split on the session cookie.
  */
 
 import { createMatcher } from 'remix/route-pattern/match'

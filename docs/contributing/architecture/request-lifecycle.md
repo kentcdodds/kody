@@ -168,15 +168,18 @@ session, logout, password reset, health).
 `Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
 `/onboarding`, `/guides`, and `/guides/:slug`. Origin `fetch` stores those
 cookie-less `GET`/`HEAD` responses in the Cache API (`caches.default`), keyed on
-the canonical origin + pathname + search. A matching request with no
-`kody_session` cookie and no `Authorization` header is served from that store
-(`X-Kody-Cache: HIT`) without running the app handler. A miss runs the handler
-and, when the response is `200` `text/html` with no `Set-Cookie` and already
-carries that Cache-Control, `ctx.waitUntil(caches.default.put)` stores a clone.
-The stored copy drops `Vary: Cookie` because Cloudflare's Cache API does not use
-`Vary` as a key (the lookup already excludes cookie-bearing requests).
-Browser-facing `Cache-Control` is unchanged. `Cache-Control: no-cache` on the
-request skips the lookup so e2e can assert fresh HTML.
+the canonical origin + pathname + search and a `__accept=html` marker. Requests
+whose `Accept` prefers `text/markdown` (`prefersMarkdown`) skip the store. A
+matching HTML request with no `kody_session` cookie and no `Authorization`
+header is served from that store (`X-Kody-Cache: HIT`) without running the app
+handler. A miss runs the handler and, when the response is `200` `text/html`
+with no `Set-Cookie` and already carries that Cache-Control,
+`ctx.waitUntil(caches.default.put)` stores a clone. The stored copy drops
+`Vary: Cookie` because Cloudflare's Cache API does not use `Vary` as a key (the
+lookup already excludes cookie-bearing requests). Hits restore the
+browser-facing `Vary` from the miss (`Cookie`, plus `Accept` on negotiated
+routes). Browser-facing `Cache-Control` is unchanged. `Cache-Control: no-cache`
+on the request skips the lookup so e2e can assert fresh HTML.
 
 The public package surfaces (`/@:username/:kodyId`,
 `/@:username/:kodyId/tree/:ref/*`, `/community/:id`, `/community/:id/files/*`)

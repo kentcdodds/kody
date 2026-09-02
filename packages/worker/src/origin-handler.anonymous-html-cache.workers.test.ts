@@ -42,8 +42,40 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(hit.status).toBe(200)
 	expect(hit.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
 	expect(hit.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+	expect(hit.headers.get('Vary')).toBe(miss.headers.get('Vary'))
+	expect(hit.headers.get('Vary')?.toLowerCase()).toContain('cookie')
+	expect(hit.headers.get('X-Kody-Browser-Vary')).toBeNull()
 	expectSecurityHeaders(hit)
 	await expect(hit.text()).resolves.toBe(missHtml)
+
+	const guidesUrl = `https://test.kody.dev/guides?edge-accept=${probe}`
+	const htmlGuides = await workerFetch(
+		new Request(guidesUrl, { headers: { Accept: 'text/html' } }),
+	)
+	expect(htmlGuides.status).toBe(200)
+	expect(htmlGuides.headers.get('Content-Type')).toMatch(/text\/html/i)
+	expect(htmlGuides.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+	expect(htmlGuides.headers.get('Vary')?.toLowerCase()).toContain('cookie')
+	expect(htmlGuides.headers.get('Vary')?.toLowerCase()).toContain('accept')
+	const htmlGuidesBody = await htmlGuides.text()
+
+	const markdownGuides = await workerFetch(
+		new Request(guidesUrl, { headers: { Accept: 'text/markdown' } }),
+	)
+	expect(markdownGuides.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe(
+		'HIT',
+	)
+	expect(markdownGuides.headers.get('Content-Type')).toMatch(/text\/markdown/i)
+	const markdownBody = await markdownGuides.text()
+	expect(markdownBody).not.toBe(htmlGuidesBody)
+	expect(markdownBody.startsWith('#')).toBe(true)
+
+	const htmlGuidesHit = await workerFetch(
+		new Request(guidesUrl, { headers: { Accept: 'text/html' } }),
+	)
+	expect(htmlGuidesHit.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+	expect(htmlGuidesHit.headers.get('Vary')).toBe(htmlGuides.headers.get('Vary'))
+	await expect(htmlGuidesHit.text()).resolves.toBe(htmlGuidesBody)
 
 	const session = await workerFetch(
 		new Request(pricingUrl, {

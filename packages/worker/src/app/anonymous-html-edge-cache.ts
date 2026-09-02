@@ -5,8 +5,13 @@ import {
 	isCacheableAnonymousPath,
 	requestHasSessionCookie,
 } from '#app/anonymous-html-cache.ts'
+import { prefersMarkdown } from '#app/markdown-negotiation.ts'
 
 export const anonymousHtmlEdgeCacheHeader = 'X-Kody-Cache'
+export const anonymousHtmlCacheAcceptParam = '__accept'
+export const anonymousHtmlCacheAcceptHtml = 'html'
+
+const browserVaryStorageHeader = 'X-Kody-Browser-Vary'
 
 type AnonymousHtmlCacheEnv = {
 	APP_BASE_URL?: string | null
@@ -26,6 +31,7 @@ export function isAnonymousHtmlCacheRequest(request: Request) {
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false
 	if (requestBypassesAnonymousHtmlCache(request)) return false
+	if (prefersMarkdown(request)) return false
 	let pathname: string
 	try {
 		pathname = new URL(request.url).pathname
@@ -41,6 +47,10 @@ export function buildAnonymousHtmlCacheKey(
 ) {
 	const url = new URL(request.url)
 	const origin = getCanonicalAppBaseUrl({ env, requestUrl: url })
+	url.searchParams.set(
+		anonymousHtmlCacheAcceptParam,
+		anonymousHtmlCacheAcceptHtml,
+	)
 	return new Request(`${origin}${url.pathname}${url.search}`, {
 		method: 'GET',
 	})
@@ -72,6 +82,10 @@ function stripCookieVary(headers: Headers) {
 function cloneResponseForAnonymousHtmlCache(response: Response) {
 	const headers = new Headers(response.headers)
 	headers.delete(anonymousHtmlEdgeCacheHeader)
+	const originalVary = headers.get('Vary')
+	if (originalVary) {
+		headers.set(browserVaryStorageHeader, originalVary)
+	}
 	stripCookieVary(headers)
 	return new Response(response.body, {
 		status: response.status,
@@ -86,6 +100,15 @@ function withAnonymousHtmlCacheLookup(
 	method: string,
 ) {
 	const headers = new Headers(response.headers)
+	if (lookup === 'HIT') {
+		const storedVary = headers.get(browserVaryStorageHeader)
+		headers.delete(browserVaryStorageHeader)
+		if (storedVary) {
+			headers.set('Vary', storedVary)
+		} else {
+			headers.set('Vary', 'Cookie')
+		}
+	}
 	headers.set(anonymousHtmlEdgeCacheHeader, lookup)
 	if (method === 'HEAD') {
 		return new Response(null, {
