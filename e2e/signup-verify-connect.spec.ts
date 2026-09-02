@@ -144,6 +144,9 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			page.getByRole('heading', { name: /Get started with\s*Kody/i }),
 		).toBeVisible()
 
+		const stepsNav = page.getByRole('navigation', { name: 'Onboarding steps' })
+		await stepsNav.getByRole('link', { name: '3 Try it, then persist' }).click()
+		await expect(page.getByTestId('onboarding-first-build')).toBeVisible()
 		const checklist = page.getByRole('region', { name: 'Onboarding checklist' })
 		await expect(checklist).toBeVisible()
 		const verifyItem = checklist.getByRole('listitem').filter({
@@ -151,6 +154,8 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		})
 		await expect(verifyItem).toHaveAttribute('data-done', 'true')
 
+		await stepsNav.getByRole('link', { name: '1 Connect your agent' }).click()
+		await expect(page.getByTestId('onboarding-agent-picker')).toBeVisible()
 		await page
 			.locator(
 				'[data-testid="onboarding-agent-picker"] ul[data-surface="desktop"]',
