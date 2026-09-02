@@ -107,6 +107,7 @@ test('fleet package error-rate dispatch fans metadata-only events through admin 
 			actorTokenId: 'internal:fleet-package-error-rate-subscriptions',
 		},
 	})
+	expect(event.concentration).toBeNull()
 	expect(JSON.stringify(result[0]?.params)).not.toContain('user_id')
 	expect(JSON.stringify(result[0]?.params)).not.toContain('error_message')
 })

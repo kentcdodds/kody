@@ -34,6 +34,7 @@ import {
 	type AccountActivityTriageFilter,
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
+import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -725,7 +726,7 @@ export type AdminInsightsPackageErrorRateComparison = {
 	previous: AdminInsightsPackageErrorRateWindow
 }
 
-/** Content-free fleet package-runtime error rates. Missing when AE/KV is empty. */
+/** Fleet package-runtime error rates. Missing when AE/KV is empty. */
 export type AdminInsightsPackageErrorRate = {
 	available: boolean
 	updatedAt: string | null
@@ -733,6 +734,7 @@ export type AdminInsightsPackageErrorRate = {
 	day: AdminInsightsPackageErrorRateComparison | null
 	hour: AdminInsightsPackageErrorRateComparison | null
 	lastAlertAt: string | null
+	concentration: FleetPackageErrorRateConcentration | null
 }
 
 export type AdminInsightsLoaderData = {

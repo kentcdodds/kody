@@ -3,7 +3,12 @@ import {
 	resolveUsageEventsDataset,
 } from './aggregate-rollups.ts'
 import {
+	parseFleetPackageErrorRateConcentration,
+	resolveFleetPackageErrorRateConcentration,
+} from './fleet-package-error-rate-concentration.ts'
+import {
 	fleetPackageErrorRateMetrics,
+	type FleetPackageErrorRateConcentration,
 	type FleetPackageErrorRateCounts,
 	type FleetPackageErrorRateElevationReason,
 	type FleetPackageErrorRateMetric,
@@ -52,6 +57,12 @@ export type FleetPackageErrorRateSnapshot = {
 	hour: FleetPackageErrorRateComparison
 	lastAlertAt: string | null
 	lastAlertEventId: string | null
+	/**
+	 * Who owns the recent-window error spike. Null when the rate is not
+	 * elevated, the concentration query failed, or owners could not be
+	 * resolved. Never includes user ids, emails, or package UUIDs.
+	 */
+	concentration: FleetPackageErrorRateConcentration | null
 }
 
 export type FleetPackageErrorRateElevation = {
@@ -203,6 +214,9 @@ export function parseFleetPackageErrorRateSnapshot(
 			typeof record.lastAlertEventId === 'string'
 				? record.lastAlertEventId
 				: null,
+		concentration: parseFleetPackageErrorRateConcentration(
+			record.concentration,
+		),
 	}
 }
 
@@ -357,8 +371,10 @@ export type FleetPackageErrorRateSnapshotResult =
 	  }
 
 /**
- * Recompute anonymous fleet package-runtime error rates from Analytics
- * Engine and persist the content-free KV snapshot for `/admin/insights`.
+ * Recompute fleet package-runtime error rates from Analytics Engine and
+ * persist the KV snapshot for `/admin/insights`. Totals stay anonymous;
+ * an elevated refresh may attach named concentration (usernames and
+ * package kody ids only).
  */
 export async function refreshFleetPackageErrorRateSnapshot(input: {
 	env: FleetPackageErrorRateEnv
@@ -458,6 +474,7 @@ export async function refreshFleetPackageErrorRateSnapshot(input: {
 		}),
 	}
 
+	const elevation = chooseFleetPackageErrorRateElevation({ hour, day })
 	const snapshot: FleetPackageErrorRateSnapshot = {
 		version: 1,
 		updatedAt: now.toISOString(),
@@ -466,11 +483,37 @@ export async function refreshFleetPackageErrorRateSnapshot(input: {
 		hour,
 		lastAlertAt: existing?.lastAlertAt ?? null,
 		lastAlertEventId: existing?.lastAlertEventId ?? null,
+		concentration: elevation
+			? await resolveElevatedConcentration({
+					env: input.env,
+					dataset,
+					recentStart: elevation.comparison.recent.start,
+					recentEnd: elevation.comparison.recent.end,
+				})
+			: null,
 	}
 
-	const elevation = chooseFleetPackageErrorRateElevation({ hour, day })
 	await writeFleetPackageErrorRateSnapshot(kv, snapshot)
 	return { status: 'refreshed', snapshot, elevation }
+}
+
+async function resolveElevatedConcentration(input: {
+	env: FleetPackageErrorRateEnv
+	dataset: string
+	recentStart: string
+	recentEnd: string
+}): Promise<FleetPackageErrorRateConcentration | null> {
+	try {
+		return await resolveFleetPackageErrorRateConcentration({
+			env: input.env,
+			dataset: input.dataset,
+			recentStart: new Date(input.recentStart),
+			recentEnd: new Date(input.recentEnd),
+		})
+	} catch (error) {
+		console.warn('fleet-package-error-rate-concentration-failed', error)
+		return null
+	}
 }
 
 export async function writeFleetPackageErrorRateSnapshot(

@@ -1,3 +1,4 @@
+import { formatFleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
 import {
 	fleetPackageErrorRateAlertCooldownMinutes as defaultCooldownMinutes,
@@ -38,9 +39,10 @@ export type FleetPackageErrorRateRefreshResult =
 	  }
 
 /**
- * Recompute the anonymous fleet snapshot, then fan
+ * Recompute the fleet snapshot, then fan
  * `fleet.package_error_rate.elevated` to admin-owned packages when the
- * combined package-runtime error rate is rising.
+ * combined package-runtime error rate is rising. A concentrated spike
+ * still pages the fleet; the event names the owning accounts.
  */
 export async function refreshFleetPackageErrorRateAndMaybeAlert(input: {
 	env: FleetPackageErrorRateEnv
@@ -97,6 +99,9 @@ export async function refreshFleetPackageErrorRateAndMaybeAlert(input: {
 			window: event.trigger.window,
 			reason: event.trigger.reason,
 			checkedAt: now.toISOString(),
+			concentration: event.concentration
+				? formatFleetPackageErrorRateConcentration(event.concentration)
+				: null,
 		})
 		return {
 			status: 'refreshed',
@@ -132,6 +137,7 @@ function buildElevatedEvent(input: {
 		reason: input.elevation.reason,
 		recent: input.elevation.comparison.recent,
 		previous: input.elevation.comparison.previous,
+		concentration: input.snapshot.concentration,
 	})
 }
 

@@ -303,6 +303,7 @@ function toInsightsPackageErrorRate(
 			day: null,
 			hour: null,
 			lastAlertAt: null,
+			concentration: null,
 		}
 	}
 	return {
@@ -312,6 +313,7 @@ function toInsightsPackageErrorRate(
 		day: snapshot.day,
 		hour: snapshot.hour,
 		lastAlertAt: snapshot.lastAlertAt,
+		concentration: snapshot.concentration,
 	}
 }
 

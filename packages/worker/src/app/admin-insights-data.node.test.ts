@@ -830,10 +830,11 @@ test('admin insights uses content-free getAdminInsightsSnapshot point reads only
 		day: null,
 		hour: null,
 		lastAlertAt: null,
+		concentration: null,
 	})
 })
 
-test('admin insights surfaces the content-free fleet package error-rate snapshot', async () => {
+test('admin insights surfaces the fleet package error-rate snapshot', async () => {
 	consoleWarn.mockImplementation(() => {})
 	stubSnapshotsByUser({
 		'user-a': emptySnapshot(),
@@ -875,6 +876,20 @@ test('admin insights surfaces the content-free fleet package error-rate snapshot
 				by_metric: [],
 			},
 		},
+		concentration: {
+			kind: 'one_account',
+			recent_errors: 90,
+			owner_count: 1,
+			package_count: 3,
+			top_owner_share: 1,
+			owners: [
+				{
+					username: 'jett',
+					error_share: 1,
+					packages: [{ kody_id: 'dji-cloud-relay-staging-deploy' }],
+				},
+			],
+		},
 	})
 	const data = await loadAdminInsightsData(
 		{
@@ -891,7 +906,22 @@ test('admin insights surfaces the content-free fleet package error-rate snapshot
 		lastAlertAt: '2026-08-22T19:32:00.000Z',
 		day: expect.objectContaining({ kind: 'day' }),
 		hour: expect.objectContaining({ kind: 'hour' }),
+		concentration: {
+			kind: 'one_account',
+			recent_errors: 90,
+			owner_count: 1,
+			package_count: 3,
+			top_owner_share: 1,
+			owners: [
+				{
+					username: 'jett',
+					error_share: 1,
+					packages: [{ kody_id: 'dji-cloud-relay-staging-deploy' }],
+				},
+			],
+		},
 	})
+	expect(JSON.stringify(data.packageErrorRate)).toContain('jett')
 	expect(JSON.stringify(data.packageErrorRate)).not.toContain('user_id')
 })
 

@@ -178,6 +178,41 @@ test('fleet package error-rate detection stays anonymous and prefers day rises',
 		}),
 	).toBeNull()
 	expect(
+		parseFleetPackageErrorRateSnapshot({
+			version: 1,
+			updatedAt: '2026-08-22T19:00:00.000Z',
+			environment: 'production',
+			day: windowOf({
+				kind: 'day',
+				recentEvents: 80,
+				recentErrors: 16,
+				previousEvents: 80,
+				previousErrors: 2,
+			}),
+			hour: windowOf({
+				kind: 'hour',
+				recentEvents: 40,
+				recentErrors: 2,
+				previousEvents: 40,
+				previousErrors: 1,
+			}),
+			concentration: {
+				kind: 'one_account',
+				recent_errors: 90,
+				owner_count: 1,
+				package_count: 1,
+				top_owner_share: 1,
+				owners: [
+					{
+						username: 'jett',
+						error_share: 1,
+						packages: [{ kody_id: 'dji-cloud-relay-staging-deploy' }],
+					},
+				],
+			},
+		})?.concentration,
+	).toMatchObject({ kind: 'one_account', owners: [{ username: 'jett' }] })
+	expect(
 		alignToUtcHour(new Date('2026-08-22T19:32:11.123Z')).toISOString(),
 	).toBe('2026-08-22T19:00:00.000Z')
 })
