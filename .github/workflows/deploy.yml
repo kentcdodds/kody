@@ -18,6 +18,9 @@ permissions:
 # Queue rather than cancel: the job runs D1 migrations before the worker
 # uploads and deploys platform before runtime, so cancelling mid-sequence
 # leaves new schema with old code or mismatched Durable Object bindings.
+# GitHub keeps at most one pending run per group and replaces it with a newer
+# one; that is intended, because the job only ever deploys `main` HEAD, so a
+# superseded pending run would have been a no-op.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
