@@ -136,8 +136,11 @@ jobs:
             echo "Status worker deploy: skipped (no relevant path changes)."
           fi
 
+          # Do not treat deploy.yml itself as an nx-cache change. Runtime
+          # token / secret wiring edits would otherwise upload this worker
+          # and a 10000 auth miss blocks the rest of the production deploy.
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
-            '^(\.github/workflows/deploy\.yml|\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
+            '^(\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
             echo "Nx cache worker deploy: path filter matched."
           else

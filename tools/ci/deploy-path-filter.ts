@@ -2,12 +2,26 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
  * Production deploy path classification:
- * - Remix/blog/UI-only → origin; skip platform/runtime/jobs/highlight
+ * - Remix/blog/UI handlers → origin; skip platform/runtime/jobs/highlight
  * - Official guide markdown (also bundled into the MCP Durable Object) →
  *   origin + platform; skip runtime/jobs/highlight
- * - Highlight worker only → highlight
- * - Origin + highlight → origin + highlight
- * - Anything else → all five scripts
+ * - Highlight worker or shared highlight types → highlight (plus origin when
+ *   origin also imports those types)
+ * - Jobs worker or shared jobs modules → jobs (plus origin when origin also
+ *   imports those modules)
+ * - Fleet-shared helpers (`d1-retry`, `chat` context types) → origin +
+ *   platform + runtime + jobs; platform MCP imports those too
+ * - Backup/DR control plane, contributing docs, and usage docs → no app
+ *   workers (the backup plane has its own workflow job)
+ * - Shared backup modules → origin (origin parses full backup manifests)
+ * - MCP sources, shared app modules, the deploy workflow, and unknown app
+ *   sources → origin + platform + runtime. Jobs/highlight only when their
+ *   sources or shared deps change.
+ *
+ * Empty path lists still deploy all five (workflow_dispatch / safety).
+ * `.github/workflows/deploy.yml` does **not** force jobs/highlight: a
+ * runtime-token or secret-wiring edit must not 10000 those siblings and
+ * block origin.
  */
 
 const originOnlyPathPrefixes = [
@@ -16,7 +30,9 @@ const originOnlyPathPrefixes = [
 	'packages/worker/src/blog/posts/',
 	'packages/worker/src/app/handlers/',
 	'packages/worker/src/app/ssr-stubs/',
+	'packages/worker/src/origin-handler',
 	'packages/worker/universal/styles/',
+	'packages/shared/src/backup-',
 ] as const
 
 const originAndPlatformPathPrefixes = [
@@ -31,12 +47,50 @@ const originOnlyExactPaths = new Set([
 ])
 
 // Origin still handles package-app origin isolation and inline serving
-// before the runtime forward (see packages/worker/src/index.ts).
+// before the runtime forward (see packages/worker/src/index.ts). Those
+// files, plus shared host checks, also run on platform/runtime.
 const originOnlyPathExclusions = new Set([
 	'packages/worker/src/app/handlers/package-app.ts',
 ])
 
 const highlightWorkerPathPrefix = 'packages/highlight-worker/'
+const highlightSharedPathPrefixes = [
+	'packages/worker/universal/highlight-',
+	'packages/worker/universal/highlighted-code',
+] as const
+
+const jobsWorkerPathPrefix = 'packages/jobs-worker/'
+const jobsWorkerResourcesPathPrefix = 'tools/ci/jobs-worker-resources'
+const jobsSharedPathPrefix = 'packages/shared/src/jobs/'
+
+// Shared helpers imported by origin, platform MCP, runtime, and jobs.
+// Classifying these as jobs-only would skip platform on a retry/context fix.
+const fleetSharedExactPaths = new Set([
+	'packages/shared/src/d1-retry.ts',
+	'packages/shared/src/chat.ts',
+])
+
+const platformPathPrefixes = [
+	'packages/platform-worker/',
+	'packages/worker/src/platform-worker',
+	'packages/shared/src/platform-worker',
+	'tools/ci/platform-worker-config',
+] as const
+
+const runtimePathPrefixes = [
+	'packages/runtime-worker/',
+	'packages/worker/src/runtime-worker',
+	'packages/shared/src/runtime-worker',
+	'tools/ci/runtime-worker-config',
+] as const
+
+const skipAppWorkerPathPrefixes = [
+	'packages/backup-control-plane/',
+	'tools/disaster-recovery/',
+	'tools/ci/backup-resources',
+	'docs/contributing/',
+	'docs/use/',
+] as const
 
 export type ProductionDeployTargets = {
 	deployMain: boolean
@@ -46,84 +100,178 @@ export type ProductionDeployTargets = {
 	deployHighlight: boolean
 }
 
+type DeployScript = 'origin' | 'platform' | 'runtime' | 'jobs' | 'highlight'
+
+type PathClass =
+	| { kind: 'skip' }
+	| { kind: 'unknown' }
+	| { kind: 'scripts'; scripts: ReadonlyArray<DeployScript> }
+
+const allWorkers = {
+	deployMain: true,
+	deployPlatform: true,
+	deployRuntime: true,
+	deployJobs: true,
+	deployHighlight: true,
+} as const satisfies ProductionDeployTargets
+
+const noWorkers = {
+	deployMain: false,
+	deployPlatform: false,
+	deployRuntime: false,
+	deployJobs: false,
+	deployHighlight: false,
+} as const satisfies ProductionDeployTargets
+
+const unknownFallback = {
+	deployMain: true,
+	deployPlatform: true,
+	deployRuntime: true,
+	deployJobs: false,
+	deployHighlight: false,
+} as const satisfies ProductionDeployTargets
+
+function startsWithAny(path: string, prefixes: ReadonlyArray<string>): boolean {
+	return prefixes.some((prefix) => path.startsWith(prefix))
+}
+
 export function isOriginOnlyPath(path: string) {
 	if (originOnlyPathExclusions.has(path)) return false
 	if (originOnlyExactPaths.has(path)) return true
-	return originOnlyPathPrefixes.some((prefix) => path.startsWith(prefix))
+	return startsWithAny(path, originOnlyPathPrefixes)
 }
 
 export function isOriginAndPlatformPath(path: string) {
-	return originAndPlatformPathPrefixes.some((prefix) => path.startsWith(prefix))
+	return startsWithAny(path, originAndPlatformPathPrefixes)
 }
 
 export function isHighlightWorkerPath(path: string) {
 	return path.startsWith(highlightWorkerPathPrefix)
 }
 
+export function isHighlightSharedPath(path: string) {
+	return startsWithAny(path, highlightSharedPathPrefixes)
+}
+
+export function isJobsWorkerPath(path: string) {
+	return (
+		path.startsWith(jobsWorkerPathPrefix) ||
+		path.startsWith(jobsWorkerResourcesPathPrefix)
+	)
+}
+
+export function isJobsSharedPath(path: string) {
+	return path.startsWith(jobsSharedPathPrefix)
+}
+
+export function isFleetSharedPath(path: string) {
+	return fleetSharedExactPaths.has(path)
+}
+
+export function isPlatformPath(path: string) {
+	return startsWithAny(path, platformPathPrefixes)
+}
+
+export function isRuntimePath(path: string) {
+	return startsWithAny(path, runtimePathPrefixes)
+}
+
+export function isSkipAppWorkerPath(path: string) {
+	if (isOriginAndPlatformPath(path)) return false
+	return startsWithAny(path, skipAppWorkerPathPrefixes)
+}
+
+function classifyPath(path: string): PathClass {
+	if (isSkipAppWorkerPath(path)) return { kind: 'skip' }
+
+	const scripts = new Set<DeployScript>()
+	if (isHighlightWorkerPath(path) || isHighlightSharedPath(path)) {
+		scripts.add('highlight')
+	}
+	if (
+		isJobsWorkerPath(path) ||
+		isJobsSharedPath(path) ||
+		isFleetSharedPath(path)
+	) {
+		scripts.add('jobs')
+	}
+	if (
+		isPlatformPath(path) ||
+		isOriginAndPlatformPath(path) ||
+		isFleetSharedPath(path)
+	) {
+		scripts.add('platform')
+	}
+	if (isRuntimePath(path) || isFleetSharedPath(path)) {
+		scripts.add('runtime')
+	}
+	if (
+		isOriginOnlyPath(path) ||
+		isOriginAndPlatformPath(path) ||
+		isHighlightSharedPath(path) ||
+		isJobsSharedPath(path) ||
+		isFleetSharedPath(path)
+	) {
+		scripts.add('origin')
+	}
+
+	if (scripts.size > 0) return { kind: 'scripts', scripts: [...scripts] }
+	return { kind: 'unknown' }
+}
+
+function targetsFromScripts(
+	scripts: ReadonlySet<DeployScript>,
+): ProductionDeployTargets {
+	return {
+		deployMain: scripts.has('origin'),
+		deployPlatform: scripts.has('platform'),
+		deployRuntime: scripts.has('runtime'),
+		deployJobs: scripts.has('jobs'),
+		deployHighlight: scripts.has('highlight'),
+	}
+}
+
 export function classifyProductionDeployPaths(
 	paths: ReadonlyArray<string>,
 ): ProductionDeployTargets {
 	const changed = paths.filter((path) => path.length > 0)
-	if (changed.length === 0) {
-		return {
-			deployMain: true,
-			deployPlatform: true,
-			deployRuntime: true,
-			deployJobs: true,
-			deployHighlight: true,
+	if (changed.length === 0) return { ...allWorkers }
+
+	const scripts = new Set<DeployScript>()
+	let sawUnknown = false
+	let sawClassified = false
+
+	for (const path of changed) {
+		const classified = classifyPath(path)
+		switch (classified.kind) {
+			case 'skip':
+				break
+			case 'unknown':
+				sawUnknown = true
+				sawClassified = true
+				break
+			case 'scripts':
+				sawClassified = true
+				for (const script of classified.scripts) scripts.add(script)
+				break
+			default: {
+				const exhaustive: never = classified
+				throw new Error(
+					`Unhandled deploy path class: ${JSON.stringify(exhaustive)}`,
+				)
+			}
 		}
 	}
-	if (changed.every((path) => isHighlightWorkerPath(path))) {
+
+	if (!sawClassified) return { ...noWorkers }
+	if (sawUnknown) {
 		return {
-			deployMain: false,
-			deployPlatform: false,
-			deployRuntime: false,
-			deployJobs: false,
-			deployHighlight: true,
+			...unknownFallback,
+			deployJobs: scripts.has('jobs'),
+			deployHighlight: scripts.has('highlight'),
 		}
 	}
-	if (changed.every((path) => isOriginOnlyPath(path))) {
-		return {
-			deployMain: true,
-			deployPlatform: false,
-			deployRuntime: false,
-			deployJobs: false,
-			deployHighlight: false,
-		}
-	}
-	if (
-		changed.every(
-			(path) => isOriginOnlyPath(path) || isHighlightWorkerPath(path),
-		)
-	) {
-		return {
-			deployMain: true,
-			deployPlatform: false,
-			deployRuntime: false,
-			deployJobs: false,
-			deployHighlight: true,
-		}
-	}
-	if (
-		changed.every(
-			(path) => isOriginOnlyPath(path) || isOriginAndPlatformPath(path),
-		)
-	) {
-		return {
-			deployMain: true,
-			deployPlatform: true,
-			deployRuntime: false,
-			deployJobs: false,
-			deployHighlight: false,
-		}
-	}
-	return {
-		deployMain: true,
-		deployPlatform: true,
-		deployRuntime: true,
-		deployJobs: true,
-		deployHighlight: true,
-	}
+	return targetsFromScripts(scripts)
 }
 
 export function formatGitHubDeployOutputs(targets: ProductionDeployTargets) {
