@@ -333,6 +333,7 @@ function validPublishSource() {
 		files: {
 			'package.json': JSON.stringify({
 				name: '@owner/discord-gateway',
+				version: '1.0.4',
 				license: 'MIT',
 				exports: { '.': './src/index.ts' },
 				kody: {
@@ -400,7 +401,7 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 		}),
 	)
 
-	const existingListing = sampleListing()
+	const existingListing = sampleListing({ version: '1.0.3' })
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
 		existingListing,
 	)
@@ -421,6 +422,7 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 		expect.anything(),
 		expect.objectContaining({
 			listingId: existingListing.id,
+			packageVersion: '1.0.3',
 			pinnedCommit: existingListing.pinnedCommit,
 			publishedAt: existingListing.publishedAt,
 		}),
@@ -788,6 +790,7 @@ test('publishCommunityListing stores long README content and drops binary icon b
 		expect.objectContaining({
 			readme_content: expect.stringContaining('## Intent'),
 			category: 'integrations',
+			package_version: '1.0.4',
 		}),
 	)
 	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(

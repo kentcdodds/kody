@@ -256,6 +256,12 @@ function renderCommunityListingCard(
 				<span data-testid={`community-listing-forks-${listing.id}`}>
 					{formatCount(listing.forkCount, 'fork')}
 				</span>
+				{listing.version ? (
+					<span data-testid={`community-listing-version-${listing.id}`}>
+						<span mix={css(visuallyHiddenCss)}>Version </span>
+						{listing.version}
+					</span>
+				) : null}
 				<span
 					data-testid={`community-listing-published-${listing.id}`}
 					title={`Last published ${formatCommunityPublishedDate(listing.publishedAt)}`}

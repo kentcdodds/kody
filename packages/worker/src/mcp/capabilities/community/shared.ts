@@ -62,6 +62,12 @@ export const communityListingSummarySchema = z.object({
 	description: z.string(),
 	category: z.enum(communityListingCategories),
 	license: z.string(),
+	version: z
+		.string()
+		.nullable()
+		.describe(
+			'package.json#version from the pinned listing snapshot, or null when the author did not set a string version.',
+		),
 	pinned_commit: z.string(),
 	status: communityListingStatusSchema,
 	public_url: communityPublicUrlSchema,
@@ -93,6 +99,12 @@ export const communitySearchMatchSchema =
 		description: z.string(),
 		tags: z.array(z.string()),
 		category: z.enum(communityListingCategories),
+		version: z
+			.string()
+			.nullable()
+			.describe(
+				'package.json#version from the pinned listing snapshot, or null when the author did not set a string version.',
+			),
 		owner_anonymous: z.literal(true),
 		trusted: communityTrustedFieldSchema,
 		relevance: z
@@ -156,6 +168,7 @@ export function toCommunityListingSummaryOutput(
 		description: listing.description,
 		category: listing.category,
 		license: listing.license,
+		version: listing.version ?? null,
 		pinned_commit: listing.pinnedCommit,
 		status: listing.status,
 		public_url: buildCommunityPublicUrl(baseUrl, {

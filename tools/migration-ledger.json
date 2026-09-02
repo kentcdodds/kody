@@ -159,6 +159,10 @@
 		{
 			"filename": "0039-agent-package-conversation-uses-last-used-index.sql",
 			"sha256": "24df954f08b0aa7fbbb76b880ee8cbb9b276cf120ed2c8633c37e464c39b4a68"
+		},
+		{
+			"filename": "0040-community-listing-package-version.sql",
+			"sha256": "5c81de9e1ed697b2bdf86ba930962ffbf1f4ef0d582d741796df9ab3d91a46b0"
 		}
 	]
 }

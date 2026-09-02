@@ -36,6 +36,11 @@ export type PublicCommunityListing = {
 	category: CommunityListingCategory
 	readmeContent: string | null
 	license: string
+	/**
+	 * Author-supplied `package.json#version` when present on the pinned
+	 * snapshot. Omitted or null when the author did not set a string.
+	 */
+	version?: string | null
 	pinnedCommit: string
 	/**
 	 * Git default-branch name for public `/tree/:ref` URLs. Omitted on cached

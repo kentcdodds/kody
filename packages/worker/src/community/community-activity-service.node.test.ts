@@ -70,6 +70,7 @@ CREATE TABLE community_listings (
 	search_text TEXT,
 	readme_content TEXT,
 	license TEXT NOT NULL,
+	package_version TEXT,
 	pinned_commit TEXT NOT NULL,
 	status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'delisted')),
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),

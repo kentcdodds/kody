@@ -42,13 +42,13 @@ package vector indexes.
 The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
 defines the community tables and profile columns.
 
-| Table                | Purpose                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `community_listings` | Listing metadata, pinned commit, browse `category`, status (`active` / `delisted`) |
-| `community_forks`    | Fork records linking listing, forker, and inert `source_id`                        |
-| `community_ratings`  | Per-user ratings (upsert on `listing_id` + `user_id`)                              |
-| `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id`                 |
-| `community_bans`     | Community-wide bans (publish, fork, rate, report)                                  |
+| Table                | Purpose                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `community_listings` | Listing metadata, pinned commit, optional `package_version` (`package.json#version`), browse `category`, status (`active` / `delisted`) |
+| `community_forks`    | Fork records linking listing, forker, and inert `source_id`                                                                             |
+| `community_ratings`  | Per-user ratings (upsert on `listing_id` + `user_id`)                                                                                   |
+| `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id`                                                                      |
+| `community_bans`     | Community-wide bans (publish, fork, rate, report)                                                                                       |
 
 | Table / column                    | Purpose                                                                          |
 | --------------------------------- | -------------------------------------------------------------------------------- |

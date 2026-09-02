@@ -12,6 +12,7 @@ const sampleListing = {
 	category: 'integrations',
 	readmeContent: '# README',
 	license: 'MIT',
+	version: '1.0.4',
 	pinnedCommit: 'abc1234567890',
 	publishedAt: '2026-07-13T00:00:00.000Z',
 	ownerUsername: 'kentcdodds',
@@ -145,7 +146,16 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
+	expect(publicHtml).toContain('data-testid="community-detail-version"')
+	expect(publicHtml).toContain('1.0.4')
 	expect(publicHtml).toContain('← Public packages')
+
+	const noVersionHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: { ...sampleListing, version: null },
+		loggedIn: false,
+	})
+	expect(noVersionHtml).not.toContain('data-testid="community-detail-version"')
 
 	const ownerHtml = await renderCommunityDetailContentHtml({
 		...detailBase,

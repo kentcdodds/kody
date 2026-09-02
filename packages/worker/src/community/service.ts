@@ -88,6 +88,10 @@ import {
 	deleteCommunityBan,
 } from './repo.ts'
 import {
+	readPackageManifestVersion,
+	resolveListingPackageVersion,
+} from './package-version.ts'
+import {
 	deleteCommunityActivityEventsByListingId,
 	insertCommunityActivityEvent,
 } from './profile-repo.ts'
@@ -464,6 +468,7 @@ async function restoreCommunityListingAfterPublishFailure(input: {
 				searchText: input.existingListing.searchText,
 				readmeContent: input.existingListing.readmeContent,
 				license: input.existingListing.license,
+				packageVersion: input.existingListing.version ?? null,
 				pinnedCommit: input.existingListing.pinnedCommit,
 				publishedAt: input.existingListing.publishedAt,
 			})
@@ -549,6 +554,7 @@ export async function publishCommunityListing(input: {
 		)
 	}
 	const license = existingListing?.license ?? ''
+	const packageVersion = readPackageManifestVersion(packageJsonContent)
 	const fullReadme = buildPackageReadmeDetail({
 		files: loadedSource.files,
 		maxChars: Number.MAX_SAFE_INTEGER,
@@ -602,6 +608,7 @@ export async function publishCommunityListing(input: {
 				searchText: savedPackage.searchText,
 				readmeContent: fullReadme?.content ?? '',
 				license,
+				packageVersion,
 				pinnedCommit: publishedCommit,
 				publishedAt: now,
 				requireStatus: 'active',
@@ -625,6 +632,7 @@ export async function publishCommunityListing(input: {
 				search_text: savedPackage.searchText,
 				readme_content: fullReadme?.content ?? '',
 				license,
+				package_version: packageVersion,
 				pinned_commit: publishedCommit,
 				status: 'active',
 				published_at: now,
@@ -830,7 +838,34 @@ export async function getCommunityListingWithAggregates(input: {
 		includeDelisted: input.includeDelisted,
 	})
 	if (!listing) return null
-	return await attachListingAggregates(input.env.APP_DB, listing)
+	return await attachListingAggregates(
+		input.env.APP_DB,
+		await withSnapshotPackageVersion(input.env, listing),
+	)
+}
+
+async function withSnapshotPackageVersion(
+	env: Env,
+	listing: CommunityListingRecord,
+): Promise<CommunityListingRecord> {
+	if (listing.version || !env.BUNDLE_ARTIFACTS_KV) return listing
+	try {
+		const snapshot = await readCommunitySnapshot(
+			env.BUNDLE_ARTIFACTS_KV,
+			listing.id,
+		)
+		const version = resolveListingPackageVersion({
+			stored: listing.version,
+			packageJson: snapshot?.files['package.json'],
+		})
+		return version ? { ...listing, version } : listing
+	} catch (error) {
+		console.error(
+			'Failed to read community snapshot for listing package version:',
+			error,
+		)
+		return listing
+	}
 }
 
 /**
