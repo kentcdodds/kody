@@ -184,6 +184,18 @@ underscores are rejected everywhere, and there is no lenient recognition tier
 Worker, so hostnames that are not exactly one valid username label fail closed
 with `404`.
 
+Usernames are also `{username}@<platform domain>` mail locals. The built-in
+reserved list in `packages/worker/src/identity/reserved-usernames.ts` blocks
+brand, infrastructure, mailbox, and trust labels (`autodiscover`, `mta-sts`,
+`wpad`, system-email locals, and the rest of the denylist) so those labels
+cannot become package-app subdomains or inbound mailboxes. Operators add or
+unreserve names at runtime through `platform-settings:v1:reserved-usernames`
+without a deploy; system-email locals and `kody`-prefixed built-in names stay
+permanently locked. Signup, username change, admin user creation, and social
+username generation consult the effective set (built-in plus KV). Operators run
+`adminReservedUsernameList` against production when expanding the built-in list
+so `conflicts` shows registered collisions.
+
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
 

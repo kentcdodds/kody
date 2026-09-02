@@ -471,8 +471,9 @@ OAuth provider state is stored in `OAUTH_KV` through the
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
 platform-owned `public-code-runs:v2` delayed daily window for the homepage
-ticker and the platform-owned `platform-settings:v1:signup-mode` runtime signup
-gating override.
+ticker, the platform-owned `platform-settings:v1:reserved-usernames` runtime
+reserved-username override, and the platform-owned
+`platform-settings:v1:signup-mode` runtime signup gating override.
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1356,6 +1357,15 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   deletion must not remove it. Homepage GET fills the cache from D1 when the key
   is missing or `updateAt` has passed; the `usage_aggregation` lane syncs daily
   D1 rows and refreshes the triple.
+- `platform-settings:v1:reserved-usernames` — platform-owned runtime reserved
+  username override (`{ added, removed, updatedAt, updatedBy }`, where
+  `updatedBy` is a stable user id). Not scoped by user id; account deletion must
+  not remove it. The effective reserved set is `(builtIn ∪ added) − removed`.
+  `removed` cannot unreserve system-email locals or `kody`-prefixed built-in
+  names. When the key is missing or unreadable, signup-facing checks fail closed
+  to the code-defined built-in list. Admins manage it from
+  `/admin/reserved-usernames` and the `adminReservedUsernameList` /
+  `adminReservedUsernameAdd` / `adminReservedUsernameRemove` capabilities.
 - `platform-settings:v1:signup-mode` — platform-owned runtime signup gating
   override (`{ mode, updatedAt, updatedBy }`, where `mode` is `invite`, `open`,
   or `waitlist` and `updatedBy` is a stable user id). Not scoped by user id;

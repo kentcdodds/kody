@@ -116,6 +116,7 @@ async function handleCreateUserAction(input: {
 	try {
 		const createdUser = await adminCreateUserWithPasswordSetup({
 			db: input.env.APP_DB,
+			env: input.env,
 			email,
 			username,
 			setupLinkOrigin: input.url,

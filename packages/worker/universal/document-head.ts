@@ -189,6 +189,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.adminUsers)]: titleOnly('Admin users'),
 	[routePattern(routes.adminUserDetail)]: titleOnly('Admin users'),
 	[routePattern(routes.adminInvites)]: titleOnly('Admin invites'),
+	[routePattern(routes.adminReservedUsernames)]: titleOnly(
+		'Admin reserved usernames',
+	),
 	[routePattern(routes.adminFeatureFlags)]: titleOnly('Admin feature flags'),
 	[routePattern(routes.adminPlatformIntegrations)]: titleOnly(
 		'Admin platform integrations',

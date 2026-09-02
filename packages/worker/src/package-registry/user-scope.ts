@@ -1,6 +1,6 @@
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import {
-	getUsernameValidationError,
+	getUsernameFormatValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 
@@ -10,7 +10,7 @@ type UsernameRow = {
 
 function normalizePackageScopeUsername(value: unknown) {
 	const username = normalizeUsername(value)
-	const validationError = getUsernameValidationError(username)
+	const validationError = getUsernameFormatValidationError(username)
 	if (validationError) {
 		throw new Error(
 			`Cannot validate package scope because the signed-in username is invalid: ${validationError}`,

@@ -295,6 +295,7 @@ registerPreloadPatterns(
 		routePattern(routes.adminUsers),
 		routePattern(routes.adminUserDetail),
 		routePattern(routes.adminInvites),
+		routePattern(routes.adminReservedUsernames),
 		routePattern(routes.adminFeatureFlags),
 		routePattern(routes.adminPlatformIntegrations),
 		routePattern(routes.adminPlatformIntegrationNew),
