@@ -1329,29 +1329,3 @@ const __kodyPackageStorage = (packageId) => ({
 });
 	`.trim()
 }
-
-export function createStorageHelperPrelude(input: {
-	storageId: string
-	writable: boolean
-}) {
-	return `
-const storage = {
-  id: ${JSON.stringify(input.storageId)},
-  get: async (key) => (await kody.storageGet({ key })).value,
-  list: async (options = {}) => await kody.storageList(options),
-  sql: async (query, params = []) =>
-    await kody.storageSql({
-      query,
-      params,
-      writable: ${input.writable ? 'true' : 'false'},
-    }),
-  ${
-		input.writable
-			? `set: async (key, value) => await kody.storageSet({ key, value }),
-  delete: async (key) => await kody.storageDelete({ key }),
-  clear: async () => await kody.storageClear({}),`
-			: ''
-	}
-};
-	`.trim()
-}
