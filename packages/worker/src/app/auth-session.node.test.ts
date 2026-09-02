@@ -3,6 +3,7 @@ import { createCookie } from 'remix/cookie'
 import {
 	createAuthCookie,
 	getAuthSessionExpiresAtMs,
+	isAuthSessionExpired,
 	isAuthSessionInvalidatedByPasswordChange,
 	readParsedAuthSession,
 	setAuthSessionSecret,
@@ -33,16 +34,56 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 		getAuthSessionExpiresAtMs({
 			rememberMe: false,
 			issuedAt: parsed?.issuedAt,
-			now,
 		}),
 	).toBe(now + 7 * 24 * 60 * 60 * 1000)
 	expect(
 		getAuthSessionExpiresAtMs({
 			rememberMe: true,
 			issuedAt: now - 24 * 60 * 60 * 1000,
-			now,
 		}),
 	).toBe(now + 29 * 24 * 60 * 60 * 1000)
+})
+
+test('absolute session lifetime rejects expired and legacy cookies', () => {
+	const now = 1_700_000_000_000
+	const eightDaysMs = 8 * 24 * 60 * 60 * 1000
+	const thirtyOneDaysMs = 31 * 24 * 60 * 60 * 1000
+
+	expect(
+		isAuthSessionExpired({
+			rememberMe: false,
+			issuedAt: now,
+			now,
+		}),
+	).toBe(false)
+	expect(
+		isAuthSessionExpired({
+			rememberMe: false,
+			issuedAt: now - eightDaysMs,
+			now,
+		}),
+	).toBe(true)
+	expect(
+		isAuthSessionExpired({
+			rememberMe: true,
+			issuedAt: now - eightDaysMs,
+			now,
+		}),
+	).toBe(false)
+	expect(
+		isAuthSessionExpired({
+			rememberMe: true,
+			issuedAt: now - thirtyOneDaysMs,
+			now,
+		}),
+	).toBe(true)
+	expect(
+		isAuthSessionExpired({
+			rememberMe: false,
+			issuedAt: undefined,
+			now,
+		}),
+	).toBe(true)
 })
 
 test('legacy numeric-id session cookies fail closed', async () => {

@@ -11,6 +11,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import {
 	destroyAuthCookie,
+	isAuthSessionExpired,
 	isSecureRequest,
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
@@ -63,6 +64,19 @@ async function resolveRequestAuth(
 		}
 	}
 	const { session, issuedAt, setCookie } = parsedSession
+
+	if (
+		isAuthSessionExpired({
+			issuedAt,
+			rememberMe: session.rememberMe,
+		})
+	) {
+		return {
+			sessionUserId: session.stableUserId,
+			setCookie: await destroyAuthCookie(isSecureRequest(request)),
+			user: null,
+		}
+	}
 
 	const db = createDb(env.APP_DB)
 	const userRecord = await db.findOne(usersTable, {
