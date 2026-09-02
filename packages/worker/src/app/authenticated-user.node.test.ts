@@ -8,7 +8,10 @@ import {
 	readAuthenticatedAppUser,
 	readAuthenticatedAppUserForDeletion,
 } from './authenticated-user.ts'
-import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
+import {
+	hasResolvedRequestFeatureFlags,
+	loadRequestFeatureFlags,
+} from '#app/request-feature-flags-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
@@ -141,7 +144,6 @@ test('readAuthenticatedAppUser fails closed to empty roles when the rbac query e
 			{
 				APP_DB: db,
 				COOKIE_SECRET: testCookieSecret,
-				FLAG_EXPOSURES: { writeDataPoint() {} },
 			} as Env,
 		)
 
@@ -213,7 +215,7 @@ test('deleting accounts are invalid for normal requests but can retry deletion',
 	)
 })
 
-test('readAuthenticatedAppUser prefetches flags for HTML pages and skips JSON and package-app paths', async () => {
+test('readAuthenticatedAppUser prefetches flags only when HTML pages opt in', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const email = 'user@example.com'
 	const stableUserId = testStableUserIdFromEmail(email)
@@ -225,10 +227,16 @@ test('readAuthenticatedAppUser prefetches flags for HTML pages and skips JSON an
 		} satisfies AuthSession,
 		false,
 	)
-	const counts = { batch: 0 }
+	const counts = { batch: 0, flagPrepares: 0 }
 	const db = {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			if (
+				normalized.includes('from feature_flags') ||
+				normalized.includes('from feature_flag_user_overrides')
+			) {
+				counts.flagPrepares += 1
+			}
 			const statement = {
 				query,
 				bind() {
@@ -270,34 +278,34 @@ test('readAuthenticatedAppUser prefetches flags for HTML pages and skips JSON an
 		FLAG_EXPOSURES: { writeDataPoint() {} },
 	} as Env
 
+	const apiRequest = new Request('https://example.com/account/connections', {
+		headers: { Cookie: cookie },
+	})
+	const apiUser = await readAuthenticatedAppUser(apiRequest, env)
+	expect(apiUser?.username).toBe('html-user')
+	expect(hasResolvedRequestFeatureFlags(apiRequest)).toBe(false)
+	// API-style: user+roles only. No Accept/path heuristic can start flags.
+	expect(counts.flagPrepares).toBe(0)
+	expect(counts.batch).toBe(1)
+
 	const htmlRequest = new Request('https://example.com/', {
 		headers: { Cookie: cookie },
 	})
-	const htmlUser = await readAuthenticatedAppUser(htmlRequest, env)
+	const htmlUser = await readAuthenticatedAppUser(htmlRequest, env, {
+		prefetchFeatureFlags: true,
+	})
 	expect(htmlUser?.username).toBe('html-user')
+	expect(htmlUser).not.toBeNull()
+	if (!htmlUser) throw new Error('expected authenticated html user')
 	expect(hasResolvedRequestFeatureFlags(htmlRequest)).toBe(true)
-	expect(counts.batch).toBe(2)
+	// HTML opt-in adds one user+roles batch and one flags batch (total 3).
+	expect(counts.flagPrepares).toBe(2)
+	expect(counts.batch).toBe(3)
 
-	const jsonRequest = new Request(
-		'https://example.com/account/connections.json',
-		{
-			headers: {
-				Cookie: cookie,
-				Accept: 'application/json',
-			},
-		},
-	)
-	const jsonBatchesBefore = counts.batch
-	await readAuthenticatedAppUser(jsonRequest, env)
-	expect(hasResolvedRequestFeatureFlags(jsonRequest)).toBe(false)
-	expect(counts.batch).toBe(jsonBatchesBefore + 1)
-
-	const packageAppRequest = new Request(
-		'https://example.com/@html-user/packages/demo',
-		{ headers: { Cookie: cookie } },
-	)
-	const packageBatchesBefore = counts.batch
-	await readAuthenticatedAppUser(packageAppRequest, env)
-	expect(hasResolvedRequestFeatureFlags(packageAppRequest)).toBe(false)
-	expect(counts.batch).toBe(packageBatchesBefore + 1)
+	await loadRequestFeatureFlags(htmlRequest, env, {
+		userId: htmlUser.userId,
+		stableUserId: htmlUser.mcpUser.userId,
+	})
+	expect(counts.flagPrepares).toBe(2)
+	expect(counts.batch).toBe(3)
 })

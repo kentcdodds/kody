@@ -35,7 +35,9 @@ export async function requireAuthenticatedPageUser(
 		return redirectToLogin(request)
 	}
 
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readAuthenticatedAppUser(request, env, {
+		prefetchFeatureFlags: true,
+	})
 	if (user) {
 		return user
 	}
@@ -56,7 +58,9 @@ export async function requirePageUserWithRole(
 	role: RoleName,
 ): Promise<AuthenticatedAppUser | Response> {
 	try {
-		return await requireUserWithRole(request, env, role)
+		return await requireUserWithRole(request, env, role, {
+			prefetchFeatureFlags: true,
+		})
 	} catch (error) {
 		if (error instanceof Response) {
 			return error

@@ -1,6 +1,7 @@
 import {
 	readAuthenticatedAppUser,
 	type AuthenticatedAppUser,
+	type ReadAuthenticatedAppUserOptions,
 } from '#app/authenticated-user.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import {
@@ -48,8 +49,9 @@ async function requireAuthorizedUser(
 	request: Request,
 	env: Env,
 	check: (user: AuthenticatedAppUser) => boolean,
+	options?: ReadAuthenticatedAppUserOptions,
 ): Promise<AuthenticatedAppUser> {
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readAuthenticatedAppUser(request, env, options)
 	if (!user) {
 		throw await unauthenticatedResponse(request, env)
 	}
@@ -73,6 +75,12 @@ export async function requireUserWithRole(
 	request: Request,
 	env: Env,
 	role: RoleName,
+	options?: ReadAuthenticatedAppUserOptions,
 ): Promise<AuthenticatedAppUser> {
-	return requireAuthorizedUser(request, env, (user) => userHasRole(user, role))
+	return requireAuthorizedUser(
+		request,
+		env,
+		(user) => userHasRole(user, role),
+		options,
+	)
 }

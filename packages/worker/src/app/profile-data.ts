@@ -1,5 +1,8 @@
 import { readPositiveInt } from '#worker/query-params.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type ReadAuthenticatedAppUserOptions,
+} from '#app/authenticated-user.ts'
 import {
 	toPublicCommunityActivityItem,
 	toPublicCommunityProfile,
@@ -25,6 +28,7 @@ export function loadProfileData(
 	env: Env,
 	request: Request,
 	username: string,
+	options?: ReadAuthenticatedAppUserOptions,
 ): Promise<ProfileLoaderData | null> {
 	let byUsername = requestProfileDataStore.get(request)
 	if (!byUsername) {
@@ -34,7 +38,7 @@ export function loadProfileData(
 	const cacheKey = `${username}:${new URL(request.url).search}`
 	let pending = byUsername.get(cacheKey)
 	if (!pending) {
-		pending = loadProfileDataUncached(env, request, username)
+		pending = loadProfileDataUncached(env, request, username, options)
 		byUsername.set(cacheKey, pending)
 	}
 	return pending
@@ -44,12 +48,13 @@ async function loadProfileDataUncached(
 	env: Env,
 	request: Request,
 	username: string,
+	options?: ReadAuthenticatedAppUserOptions,
 ): Promise<ProfileLoaderData | null> {
 	if (getUsernameFormatValidationError(username)) {
 		return null
 	}
 
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readAuthenticatedAppUser(request, env, options)
 	const profile = await getCommunityProfileByUsername({
 		env,
 		username,

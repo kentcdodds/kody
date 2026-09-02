@@ -4,11 +4,11 @@
  * `loadSessionInfo` and `readAuthenticatedAppUser` share one D1 user + roles
  * lookup per HTTP request (a single `batch`). Feature flags are **not**
  * fetched here: MCP, package-app, and JSON API callers do not need them.
- * HTML app renders start evaluation from `readAuthenticatedAppUser` so
- * `loadSessionInfo` can await an already-in-flight promise. We intentionally
- * do **not** cache auth across requests keyed by session id: logout and role
- * changes would require cross-isolate invalidation that we cannot prove
- * correct without session revocation hooks on every auth mutation path.
+ * HTML app renders opt in with `prefetchFeatureFlags` so `loadSessionInfo`
+ * can await an already-in-flight promise. We intentionally do **not** cache
+ * auth across requests keyed by session id: logout and role changes would
+ * require cross-isolate invalidation that we cannot prove correct without
+ * session revocation hooks on every auth mutation path.
  */
 
 import * as Sentry from '@sentry/cloudflare'

@@ -3,11 +3,11 @@
  *
  * Used by `loadSessionInfo` (SSR app shell + `/session` refresh) so flag
  * evaluation happens at most once per HTTP request. Authenticated HTML pages
- * start this load from `readAuthenticatedAppUser` as soon as the user id is
- * known so `renderAppPage` awaits an already-in-flight promise while the
- * handler loads page data. MCP, package-app, and JSON API auth paths do not
- * start this load. Anonymous callers still receive registry defaults without
- * touching D1.
+ * opt in via `readAuthenticatedAppUser({ prefetchFeatureFlags: true })` as
+ * soon as the user id is known so `renderAppPage` awaits an already-in-flight
+ * promise while the handler loads page data. MCP, package-app, and JSON API
+ * auth paths do not start this load. Anonymous callers still receive registry
+ * defaults without touching D1.
  *
  * Evaluation also records success-metric exposures for measured flags (see
  * `#worker/feature-flags/exposure.ts`), which is why authenticated
@@ -18,11 +18,8 @@
  * D1 is unavailable. Anonymous requests still use registry defaults.
  */
 
-import { parsePackageAppRequestHost } from '#worker/app-base-url.ts'
 import { recordFeatureFlagExposures } from '#worker/feature-flags/exposure.ts'
 import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
-import { isPackageAppRequestPath } from '#worker/package-runtime/package-app-serve.ts'
-import { wantsJson } from '#worker/utils.ts'
 import {
 	featureFlagDefinitions,
 	featureFlagKeys,
@@ -97,42 +94,22 @@ export function loadRequestFeatureFlags(
 	return promise
 }
 
-function shouldPrefetchRequestFeatureFlags(request: Request, env: Env) {
-	if (
-		typeof env.APP_DB?.prepare !== 'function' ||
-		typeof env.APP_DB.batch !== 'function'
-	) {
-		return false
-	}
-	if (wantsJson(request)) return false
-	const accept = request.headers.get('Accept')
-	if (accept && !accept.includes('text/html') && !accept.includes('*/*')) {
-		return false
-	}
-	let url: URL
-	try {
-		url = new URL(request.url)
-	} catch {
-		return false
-	}
-	if (url.pathname.endsWith('.json')) return false
-	if (url.pathname === '/mcp' || url.pathname.startsWith('/mcp/')) return false
-	if (isPackageAppRequestPath(url.pathname)) return false
-	if (parsePackageAppRequestHost({ env, url })) return false
-	return true
-}
-
 /**
  * Start flag evaluation for an authenticated first-party HTML render so
- * `loadSessionInfo` can await an already-in-flight promise. No-ops for MCP,
- * JSON, package-app, and test stubs whose D1 fake has no `prepare`/`batch`.
+ * `loadSessionInfo` can await an already-in-flight promise. Callers opt in
+ * explicitly. No-ops for test stubs whose D1 fake has no `prepare`/`batch`.
  */
 export function prefetchRequestFeatureFlagsForHtmlPage(
 	request: Request,
 	env: Env,
 	user: FeatureFlagRequestUser,
 ): void {
-	if (!shouldPrefetchRequestFeatureFlags(request, env)) return
+	if (
+		typeof env.APP_DB?.prepare !== 'function' ||
+		typeof env.APP_DB.batch !== 'function'
+	) {
+		return
+	}
 	// Overlap flag evaluation with page-data loading. `loadSessionInfo`
 	// awaits the same cached promise; the rejection handler is so a
 	// prefetch that never reaches a render cannot become unhandled.

@@ -19,10 +19,15 @@ export type AuthenticatedAppUser = {
 	artifactOwnerIds: Array<string>
 }
 
+export type ReadAuthenticatedAppUserOptions = {
+	prefetchFeatureFlags?: boolean
+}
+
 async function readAuthenticatedAppUserInternal(
 	request: Request,
 	env: Env,
 	allowDeleting: boolean,
+	prefetchFeatureFlags: boolean,
 ) {
 	setAuthSessionSecret(env.COOKIE_SECRET)
 	const resolved = await loadResolvedRequestAuth(request, env)
@@ -45,7 +50,7 @@ async function readAuthenticatedAppUserInternal(
 		artifactOwnerIds: resolved.user.artifactOwnerIds,
 		mcpUser: resolved.user.mcpUser,
 	} satisfies AuthenticatedAppUser
-	if (!allowDeleting) {
+	if (prefetchFeatureFlags) {
 		prefetchRequestFeatureFlagsForHtmlPage(request, env, {
 			userId: user.userId,
 			stableUserId: user.mcpUser.userId,
@@ -54,13 +59,22 @@ async function readAuthenticatedAppUserInternal(
 	return user
 }
 
-export async function readAuthenticatedAppUser(request: Request, env: Env) {
-	return await readAuthenticatedAppUserInternal(request, env, false)
+export async function readAuthenticatedAppUser(
+	request: Request,
+	env: Env,
+	options?: ReadAuthenticatedAppUserOptions,
+) {
+	return await readAuthenticatedAppUserInternal(
+		request,
+		env,
+		false,
+		options?.prefetchFeatureFlags === true,
+	)
 }
 
 export async function readAuthenticatedAppUserForDeletion(
 	request: Request,
 	env: Env,
 ) {
-	return await readAuthenticatedAppUserInternal(request, env, true)
+	return await readAuthenticatedAppUserInternal(request, env, true, false)
 }
