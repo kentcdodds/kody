@@ -51,7 +51,9 @@ async function loadConnectOauthLoaderData(
 		if (!isBareConnectOauthVisit(requestUrl)) {
 			return { ok: true, provider: null, integration: null, redirectUri }
 		}
-		const user = await readAuthenticatedAppUser(request, env)
+		const user = await readAuthenticatedAppUser(request, env, {
+			prefetchFeatureFlags: true,
+		})
 		return {
 			ok: true,
 			provider: null,
@@ -65,7 +67,9 @@ async function loadConnectOauthLoaderData(
 				: { options: [] },
 		}
 	}
-	const user = await readAuthenticatedAppUser(request, env)
+	const user = await readAuthenticatedAppUser(request, env, {
+		prefetchFeatureFlags: true,
+	})
 	if (!user) {
 		return { ok: true, provider: null, integration: null, redirectUri }
 	}

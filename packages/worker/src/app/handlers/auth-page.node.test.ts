@@ -6,6 +6,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAuthPageHandler } from '#app/handlers/auth-page.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -29,8 +30,10 @@ function createStaleSessionTestEnv() {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 				return {
+					query,
 					bind() {
 						return {
+							query,
 							async all() {
 								if (
 									normalizedQuery.startsWith('select') &&
@@ -52,6 +55,9 @@ function createStaleSessionTestEnv() {
 						}
 					},
 				}
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 			async exec() {
 				return
@@ -95,8 +101,10 @@ test('auth page renders login for a deleting account instead of redirecting to /
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 				return {
+					query,
 					bind() {
 						return {
+							query,
 							async all() {
 								if (
 									normalizedQuery.startsWith('select') &&
@@ -129,6 +137,9 @@ test('auth page renders login for a deleting account instead of redirecting to /
 						}
 					},
 				}
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 			async exec() {
 				return

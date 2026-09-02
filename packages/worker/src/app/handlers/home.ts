@@ -46,7 +46,9 @@ export function createHomeHandler(env: Env) {
 			const walkthroughHosts = pickWalkthroughHosts()
 			const signupMode = await resolveSignupMode(env)
 
-			const user = await readAuthenticatedAppUser(request, env)
+			const user = await readAuthenticatedAppUser(request, env, {
+				prefetchFeatureFlags: true,
+			})
 			if (!user) {
 				// Anonymous visits still embed the public onboarding payload so
 				// the hero's discovery-prompt copy renders server-side instead

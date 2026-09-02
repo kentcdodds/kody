@@ -206,6 +206,7 @@ export const routes = route({
 	ogPageImage: '/og/:page.png',
 	pricing: '/pricing',
 	faq: '/faq',
+	support: '/support',
 	privacy: '/privacy',
 	terms: '/terms',
 	discord: '/discord',

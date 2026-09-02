@@ -1,6 +1,6 @@
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 
-type PermissionRow = {
+export type PermissionRow = {
 	role_name: string
 	action: string | null
 	entity: string | null
@@ -13,6 +13,27 @@ function formatPermissionString(row: {
 	access: string
 }): PermissionString {
 	return `${row.action}:${row.entity}:${row.access}` as PermissionString
+}
+
+export function parseUserRolesAndPermissionRows(
+	rows: Array<PermissionRow> | null | undefined,
+): { roles: Array<RoleName>; permissions: Array<PermissionString> } {
+	const roleSet = new Set<RoleName>()
+	const permissionSet = new Set<PermissionString>()
+	for (const row of rows ?? []) {
+		if (row.role_name === 'user' || row.role_name === 'admin') {
+			roleSet.add(row.role_name)
+		}
+		const { action, entity, access } = row
+		if (action && entity && access) {
+			permissionSet.add(formatPermissionString({ action, entity, access }))
+		}
+	}
+
+	return {
+		roles: Array.from(roleSet).sort(),
+		permissions: Array.from(permissionSet).sort(),
+	}
 }
 
 export async function getUserRolesAndPermissions(
@@ -34,22 +55,7 @@ export async function getUserRolesAndPermissions(
 		.bind(userId)
 		.all<PermissionRow>()
 
-	const roleSet = new Set<RoleName>()
-	const permissionSet = new Set<PermissionString>()
-	for (const row of result.results ?? []) {
-		if (row.role_name === 'user' || row.role_name === 'admin') {
-			roleSet.add(row.role_name)
-		}
-		const { action, entity, access } = row
-		if (action && entity && access) {
-			permissionSet.add(formatPermissionString({ action, entity, access }))
-		}
-	}
-
-	return {
-		roles: Array.from(roleSet).sort(),
-		permissions: Array.from(permissionSet).sort(),
-	}
+	return parseUserRolesAndPermissionRows(result.results)
 }
 
 function isMissingRbacTableError(error: unknown) {

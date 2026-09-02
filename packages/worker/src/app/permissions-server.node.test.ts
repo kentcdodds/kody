@@ -19,6 +19,7 @@ import {
 	userHasRole,
 } from '#universal/permissions.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -159,8 +160,21 @@ function createAuthenticatedUserEnv(input: {
 		APP_DB: {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
+				const statement = {
+					query,
 					bind(...params: Array<unknown>) {
+						function resolveUserId() {
+							const bound = params[0]
+							if (typeof bound === 'number') return bound
+							const asNumber = Number(bound)
+							if (Number.isInteger(asNumber) && asNumber > 0) {
+								return asNumber
+							}
+							return (
+								[...users.values()].find((row) => row.stable_user_id === bound)
+									?.id ?? -1
+							)
+						}
 						function execute(loadUserId: number) {
 							return rbacRows
 								.filter((row) => row.user_id === loadUserId)
@@ -172,13 +186,14 @@ function createAuthenticatedUserEnv(input: {
 								}))
 						}
 						return {
+							query,
 							async all<T>() {
 								if (
 									normalizedQuery.includes('from user_roles ur') &&
 									normalizedQuery.includes('join roles r')
 								) {
 									return {
-										results: execute(Number(params[0])) as Array<T>,
+										results: execute(resolveUserId()) as Array<T>,
 										meta: { changes: 0 },
 									}
 								}
@@ -207,6 +222,10 @@ function createAuthenticatedUserEnv(input: {
 						}
 					},
 				}
+				return statement
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 		} as unknown as D1Database,
 	}

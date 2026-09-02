@@ -566,20 +566,27 @@ blast radius:
 These were reviewed and intentionally left as-is for this project. Document any
 change to these decisions here so future agents do not relitigate them.
 
-- **Stateless sessions revoke after a password change.** `kody_session` is a
-  signed cookie with no server store, so there is no separate "log out
-  everywhere" button. Password reset confirmation and signed-in password change
-  (`POST /account/password.json`) both revoke every MCP OAuth grant for the
-  user, stamp `users.password_changed_at`, then revoke again. Password-reset
-  confirmation also disables TOTP, deletes passkeys, and deletes
-  `oauth_connections`. Browser and package-app sessions carry `issuedAt`;
-  `resolveRequestAuth` rejects cookies issued at or before that timestamp
-  (missing `issuedAt` fails closed once a password change exists). `/mcp`
-  applies the same timestamp to the access token `createdAt` (Unix seconds) so
-  already-issued bearers fail closed as `invalid_token`. A signed-in password
-  change re-issues the current browser cookie so that tab stays signed in; every
-  other session still dies. Reclaiming an unverified account on a
-  provider-verified social match uses the same `password_changed_at` lockout.
+- **Stateless sessions revoke after a password change and expire at the absolute
+  lifetime.** `kody_session` is a signed cookie with no server store, so there
+  is no separate "log out everywhere" button. Password reset confirmation and
+  signed-in password change (`POST /account/password.json`) both revoke every
+  MCP OAuth grant for the user, stamp `users.password_changed_at`, then revoke
+  again. Password-reset confirmation also disables TOTP, deletes passkeys, and
+  deletes `oauth_connections`. Browser and package-app sessions carry
+  `issuedAt`; `resolveRequestAuth` rejects cookies issued at or before that
+  timestamp (missing `issuedAt` fails closed once a password change exists) and
+  also rejects cookies whose `issuedAt` plus the cookie TTL (7 days, or 30 with
+  remember-me) is in the past, clearing the cookie the same way as a
+  password-change revocation. There is no schema-introduction timestamp, so a
+  legacy v2 cookie that omits `issuedAt` is treated as already expired. Package-
+  app sessions already expire server-side via `expiresAt` (12 hour fallback from
+  `issuedAt` when the field is missing). `/mcp` applies the password-change
+  timestamp to the access token `createdAt` (Unix seconds) so already-issued
+  bearers fail closed as `invalid_token`; MCP bearer lifetime stays the OAuth
+  provider TTLs. A signed-in password change re-issues the current browser
+  cookie so that tab stays signed in; every other session still dies. Reclaiming
+  an unverified account on a provider-verified social match uses the same
+  `password_changed_at` lockout.
 - **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
   mismatched DCR client for **their** grants only. `deleteClient` runs only when
   `user_mcp_oauth_clients` shows they own that registration. Shared host clients

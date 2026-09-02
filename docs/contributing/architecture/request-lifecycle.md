@@ -157,6 +157,12 @@ there is no separate context-specific Workflow class.
 configures session cookie signing (`COOKIE_SECRET`) before creating the app
 router.
 
+Authenticated HTML requests resolve the user row and RBAC roles in one D1
+`batch`, start feature-flag evaluation (global flags + per-user overrides in a
+second `batch`) as soon as the user id is known, and `renderAppPage` awaits that
+already-started promise after page data instead of opening a new D1 wave.
+Anonymous callers still receive registry flag defaults without touching D1.
+
 `packages/worker/src/app/router.ts` maps route patterns from
 `packages/worker/universal/routes.ts` to handler modules (home, auth, account,
 session, logout, password reset, health).

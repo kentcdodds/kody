@@ -240,7 +240,9 @@ export function createOnboardingHandler(env: Env) {
 		middleware: [],
 		async handler({ request }) {
 			const serverTiming: Array<ServerTimingEntry> = []
-			const user = await readAuthenticatedAppUser(request, env)
+			const user = await readAuthenticatedAppUser(request, env, {
+				prefetchFeatureFlags: true,
+			})
 			if (!user) {
 				const { persistContext: _persistContext, ...chooser } =
 					await pushServerTiming(serverTiming, 'listings', () =>

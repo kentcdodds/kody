@@ -5,6 +5,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
+import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -21,41 +22,45 @@ test('loadSessionInfo signs out a deleting account and clears the session cookie
 		APP_DB: {
 			prepare(query: string) {
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
+				const statement = {
+					query,
 					bind() {
-						return {
-							async all() {
-								if (
-									normalizedQuery.startsWith('select') &&
-									normalizedQuery.includes('from "users"')
-								) {
-									return {
-										results: [
-											{
-												id: 7,
-												email: 'deleting@example.com',
-												username: 'deleting-user',
-												stable_user_id: 'a'.repeat(64),
-												deleting_at: '2026-08-31 15:00:00',
-											},
-										],
-										meta: { changes: 0 },
-									}
-								}
-								if (normalizedQuery.includes('from user_roles ur')) {
-									return { results: [], meta: { changes: 0 } }
-								}
-								return { results: [], meta: { changes: 0 } }
-							},
-							async first() {
-								return null
-							},
-							async run() {
-								return { meta: { changes: 0 } }
-							},
+						return statement
+					},
+					async all() {
+						if (
+							normalizedQuery.startsWith('select') &&
+							normalizedQuery.includes('from "users"')
+						) {
+							return {
+								results: [
+									{
+										id: 7,
+										email: 'deleting@example.com',
+										username: 'deleting-user',
+										stable_user_id: 'a'.repeat(64),
+										deleting_at: '2026-08-31 15:00:00',
+									},
+								],
+								meta: { changes: 0 },
+							}
 						}
+						if (normalizedQuery.includes('from user_roles ur')) {
+							return { results: [], meta: { changes: 0 } }
+						}
+						return { results: [], meta: { changes: 0 } }
+					},
+					async first() {
+						return null
+					},
+					async run() {
+						return { meta: { changes: 0 } }
 					},
 				}
+				return statement
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				return await executePreparedD1Batch(statements)
 			},
 			async exec() {
 				return

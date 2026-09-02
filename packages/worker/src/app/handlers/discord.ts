@@ -8,8 +8,11 @@ import { type routes } from '#universal/routes.ts'
 async function loadDiscordPageForRequest(input: {
 	env: Env
 	request: Request
+	prefetchFeatureFlags?: boolean
 }) {
-	const user = await readAuthenticatedAppUser(input.request, input.env)
+	const user = await readAuthenticatedAppUser(input.request, input.env, {
+		prefetchFeatureFlags: input.prefetchFeatureFlags,
+	})
 	return loadDiscordPageData({
 		env: input.env,
 		userId: user?.userId,
@@ -24,7 +27,11 @@ export function createDiscordHandler(env: Env) {
 				request,
 				env,
 				loaderData: {
-					discord: await loadDiscordPageForRequest({ env, request }),
+					discord: await loadDiscordPageForRequest({
+						env,
+						request,
+						prefetchFeatureFlags: true,
+					}),
 				},
 			})
 		},
