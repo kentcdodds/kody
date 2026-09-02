@@ -163,6 +163,10 @@
 		{
 			"filename": "0040-community-listing-package-version.sql",
 			"sha256": "5c81de9e1ed697b2bdf86ba930962ffbf1f4ef0d582d741796df9ab3d91a46b0"
+		},
+		{
+			"filename": "0041-drop-community-listing-trusted.sql",
+			"sha256": "49a3ada82d467e11fd9806532192a9af6b968ef711e1ae30d60554d77968cbbd"
 		}
 	]
 }
