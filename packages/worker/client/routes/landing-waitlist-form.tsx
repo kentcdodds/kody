@@ -9,6 +9,10 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
+import {
+	fieldErrorProps,
+	invalidFieldsForMessage,
+} from '#client/form-error-fields.ts'
 
 /**
  * Connected-pill waitlist form (name · divider · email · button) with an
@@ -131,6 +135,11 @@ export function WaitlistForm(handle: Handle) {
 		const isSubmitting = status === 'submitting'
 		const protectionPending = waitingForProtection()
 		const submitDisabled = isSubmitting || protectionPending
+		const statusId = `${handle.id}-waitlist-status`
+		const invalidFields = invalidFieldsForMessage(status, message, [
+			'firstName',
+			'email',
+		])
 
 		return (
 			<form
@@ -138,6 +147,10 @@ export function WaitlistForm(handle: Handle) {
 				class="landing-waitlist"
 				mix={[
 					on('submit', handleSubmit),
+					on('input', () => {
+						if (status !== 'error') return
+						setState('idle')
+					}),
 					ref((node, signal) => {
 						const stop = observeNearViewport(node, () => {
 							if (protectionArmed) return
@@ -155,7 +168,11 @@ export function WaitlistForm(handle: Handle) {
 				 * that state unmounts the submit button, so focus moves to the
 				 * confirmation instead, which announces it once.
 				 */}
-				<p role="status" class="visually-hidden">
+				<p
+					id={statusId}
+					role={status === 'error' ? 'alert' : 'status'}
+					class="visually-hidden"
+				>
 					{status === 'success' ? '' : (message ?? '')}
 				</p>
 				{status === 'success' ? (
@@ -190,6 +207,7 @@ export function WaitlistForm(handle: Handle) {
 								placeholder="First name"
 								autoComplete="given-name"
 								class="landing-waitlist-input"
+								{...fieldErrorProps('firstName', invalidFields, statusId)}
 							/>
 							<label for={`${handle.id}-email`} class="visually-hidden">
 								Email address
@@ -202,6 +220,7 @@ export function WaitlistForm(handle: Handle) {
 								placeholder="you@yourdomain.dev"
 								autoComplete="email"
 								class="landing-waitlist-input landing-waitlist-email"
+								{...fieldErrorProps('email', invalidFields, statusId)}
 							/>
 							<button
 								type="submit"

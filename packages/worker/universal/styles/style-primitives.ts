@@ -808,7 +808,7 @@ export const inputCss = {
 	maxWidth: '100%',
 	padding: spacing.sm,
 	borderRadius: radius.md,
-	border: `1px solid ${colors.border}`,
+	border: `1px solid ${colors.fieldBorder}`,
 	backgroundColor: colors.background,
 	color: colors.text,
 	fontSize: typography.fontSize.base,
@@ -859,7 +859,7 @@ export function getAuthInputCss(options: AuthInputCssOptions = {}) {
 		color: colors.text,
 		backgroundColor:
 			options.background === 'canvas' ? colors.background : colors.surface,
-		border: `1.5px solid ${colors.border}`,
+		border: `1.5px solid ${colors.fieldBorder}`,
 		borderRadius: '12px',
 		padding: '0.85rem 1.05rem',
 		minWidth: 0,

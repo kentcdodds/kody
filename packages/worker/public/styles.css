@@ -96,6 +96,11 @@
 	--color-text: oklch(0.22 0.012 260);
 	--color-text-muted: oklch(0.44 0.014 260);
 	--color-border: oklch(0.84 0.008 250);
+	/* Form-control chrome (WCAG 1.4.11). --color-border is a decorative
+	   divider and only reads ~1.3–1.5:1 on surface/background; field borders
+	   need 3:1. Light 0.60 measures 3.21:1 on --color-background and 3.67:1
+	   on --color-surface. */
+	--color-field-border: oklch(0.6 0.012 250);
 	/* One step darker than the 0.55 this started at, which measured 4.34:1 on
 	   --color-background for 15px danger-pill text (Delete account on
 	   /account) — just under the 4.5:1 AA floor. 0.535 reads 4.64:1 there
@@ -118,6 +123,9 @@
 	--color-text-dark: oklch(0.945 0.005 250);
 	--color-text-muted-dark: oklch(0.72 0.01 255);
 	--color-border-dark: oklch(0.33 0.01 255);
+	/* 0.55 measures 3.81:1 on --color-background-dark and 3.44:1 on
+	   --color-surface-dark. */
+	--color-field-border-dark: oklch(0.55 0.012 255);
 	--color-danger-dark: oklch(0.75 0.16 25);
 	--color-danger-hover-dark: oklch(0.7 0.17 25);
 	--color-on-danger-dark: oklch(0.2 0.05 25);
@@ -222,6 +230,7 @@
 		--color-text: var(--color-text-dark);
 		--color-text-muted: var(--color-text-muted-dark);
 		--color-border: var(--color-border-dark);
+		--color-field-border: var(--color-field-border-dark);
 		--color-danger: var(--color-danger-dark);
 		--color-danger-hover: var(--color-danger-hover-dark);
 		--color-on-danger: var(--color-on-danger-dark);
@@ -1753,22 +1762,42 @@ html.is-settled {
 .landing-testimonials-dots {
 	display: flex;
 	justify-content: center;
-	gap: 0.55rem;
+	align-items: center;
+	gap: 0.25rem;
 	margin-top: 1.1rem;
 }
 
 .landing-testimonials-dot {
-	width: 0.55rem;
-	height: 0.55rem;
+	box-sizing: border-box;
+	position: relative;
+	width: 24px;
+	height: 24px;
 	margin: 0;
 	padding: 0;
 	border: none;
-	border-radius: var(--radius-full);
-	background: color-mix(in oklab, var(--color-text-muted) 45%, transparent);
+	border-radius: 0;
+	background: transparent;
 	cursor: pointer;
 }
 
-.landing-testimonials-dot.is-active {
+.landing-testimonials-dot::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 0.55rem;
+	height: 0.55rem;
+	transform: translate(-50%, -50%);
+	border-radius: var(--radius-full);
+	/* 70% muted on the page ground clears 3:1 in both themes (WCAG 1.4.11). */
+	background: color-mix(
+		in oklab,
+		var(--color-text-muted) 70%,
+		var(--color-background)
+	);
+}
+
+.landing-testimonials-dot.is-active::after {
 	background: var(--color-primary);
 }
 
@@ -2011,7 +2040,7 @@ html.is-settled {
 	grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr) auto;
 	align-items: stretch;
 	background-color: var(--color-surface);
-	border: 1.5px solid var(--color-border);
+	border: 1.5px solid var(--color-field-border);
 	border-radius: 999px;
 	padding: 0.3rem;
 	transition:

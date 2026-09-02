@@ -1,5 +1,9 @@
 import { css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import {
+	fieldErrorProps,
+	invalidFieldsForMessage,
+} from '#client/form-error-fields.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
 import { turnstileWidgetClassName } from '#client/public-form-protection.ts'
@@ -65,16 +69,25 @@ export function renderLoginVisualPanel() {
 	)
 }
 
-function renderStatusMessage(status: AuthStatus, message: string | null) {
+function renderStatusMessage(
+	handleId: string,
+	status: AuthStatus,
+	message: string | null,
+) {
 	return (
 		<>
 			{/*
 			 * A live region only announces text that changes while the
 			 * region is already in the accessibility tree, so the announcer
-			 * stays mounted for the life of the form and keeps one fixed
-			 * role. It is out of flow, so it costs no flex gap while empty.
+			 * stays mounted for the life of the form. Errors use `alert`
+			 * (assertive); everything else stays `status`. It is out of
+			 * flow, so it costs no flex gap while empty.
 			 */}
-			<p role="status" mix={css(visuallyHiddenCss)}>
+			<p
+				id={`${handleId}-form-status`}
+				role={status === 'error' ? 'alert' : 'status'}
+				mix={css(visuallyHiddenCss)}
+			>
 				{message ?? ''}
 			</p>
 			{/*
@@ -100,18 +113,28 @@ export type LoginFormSharedProps = {
 	status: AuthStatus
 	message: string | null
 	isSubmitting: boolean
+	onFieldEdit: () => void
 }
 
 export function renderWaitingListForm(
 	props: LoginFormSharedProps & { onSubmit: (event: SubmitEvent) => void },
 ) {
+	const statusId = `${props.handleId}-form-status`
+	const invalidFields = invalidFieldsForMessage(props.status, props.message, [
+		'firstName',
+		'email',
+	])
 	return (
 		<form
 			key="waiting-list"
 			data-rise
 			method="post"
 			style={{ '--rise': '1' }}
-			mix={[css(authFormCss), on('submit', props.onSubmit)]}
+			mix={[
+				css(authFormCss),
+				on('submit', props.onSubmit),
+				on('input', props.onFieldEdit),
+			]}
 		>
 			{renderHoneypot()}
 			<div mix={css(authFieldCss)}>
@@ -131,6 +154,7 @@ export function renderWaitingListForm(
 					maxLength={80}
 					placeholder="Ada"
 					data-field-ring
+					{...fieldErrorProps('firstName', invalidFields, statusId)}
 					mix={css(authInputCss)}
 				/>
 			</div>
@@ -149,13 +173,14 @@ export function renderWaitingListForm(
 					autoComplete="email"
 					placeholder="you@yourdomain.dev"
 					data-field-ring
+					{...fieldErrorProps('email', invalidFields, statusId)}
 					mix={css(authInputCss)}
 				/>
 			</div>
 			{props.turnstileSiteKey ? (
 				<div class={turnstileWidgetClassName}></div>
 			) : null}
-			{renderStatusMessage(props.status, props.message)}
+			{renderStatusMessage(props.handleId, props.status, props.message)}
 			<button
 				type={props.status === 'success' ? 'button' : 'submit'}
 				aria-disabled={
@@ -194,6 +219,11 @@ export function renderAuthForm(
 		onPasskeySignIn: () => void
 	},
 ) {
+	const statusId = `${props.handleId}-form-status`
+	const invalidFields = invalidFieldsForMessage(props.status, props.message, [
+		'email',
+		'password',
+	])
 	return (
 		<form
 			key="authentication"
@@ -201,7 +231,11 @@ export function renderAuthForm(
 			data-rise
 			method="post"
 			style={{ '--rise': '1' }}
-			mix={[css(authFormCss), on('submit', props.onSubmit)]}
+			mix={[
+				css(authFormCss),
+				on('submit', props.onSubmit),
+				on('input', props.onFieldEdit),
+			]}
 		>
 			{renderHoneypot()}
 			{props.isSignup ? (
@@ -223,6 +257,7 @@ export function renderAuthForm(
 						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 						placeholder="kent"
 						data-field-ring
+						{...fieldErrorProps('username', invalidFields, statusId)}
 						mix={css(authInputCss)}
 					/>
 				</div>
@@ -240,6 +275,7 @@ export function renderAuthForm(
 					autoComplete="email"
 					placeholder="you@yourdomain.dev"
 					data-field-ring
+					{...fieldErrorProps('email', invalidFields, statusId)}
 					mix={css(authInputCss)}
 				/>
 			</div>
@@ -272,6 +308,7 @@ export function renderAuthForm(
 					autoComplete={props.isSignup ? 'new-password' : 'current-password'}
 					placeholder={props.isSignup ? 'At least 8 characters' : undefined}
 					data-field-ring
+					{...fieldErrorProps('password', invalidFields, statusId)}
 					mix={css(authInputCss)}
 				/>
 			</div>
@@ -291,6 +328,7 @@ export function renderAuthForm(
 						autoComplete="one-time-code"
 						placeholder="Enter your invite code"
 						data-field-ring
+						{...fieldErrorProps('inviteCode', invalidFields, statusId)}
 						mix={css(authInputCss)}
 					/>
 				</div>
@@ -309,7 +347,7 @@ export function renderAuthForm(
 					<span>Remember me on this device</span>
 				</label>
 			) : null}
-			{renderStatusMessage(props.status, props.message)}
+			{renderStatusMessage(props.handleId, props.status, props.message)}
 			<button
 				type="submit"
 				disabled={props.isSubmitting}

@@ -37,6 +37,7 @@ type ForkOutdatedCopyButtonProps = {
  * `data-copy-text` on click and swaps the tooltip.
  */
 export function renderCopyPromptPill(input: CopyPromptPillInput) {
+	const tooltipId = `${input.testId}-tooltip`
 	return (
 		<button
 			type="button"
@@ -44,6 +45,7 @@ export function renderCopyPromptPill(input: CopyPromptPillInput) {
 			data-copy-prompt=""
 			data-copy-text={input.prompt}
 			data-copy-tooltip={input.tooltip}
+			aria-describedby={tooltipId}
 			{...(input.tone === 'outdated' ? { 'data-fork-outdated-copy': '' } : {})}
 			mix={css(
 				input.tone === 'outdated'
@@ -52,7 +54,9 @@ export function renderCopyPromptPill(input: CopyPromptPillInput) {
 			)}
 		>
 			{input.label}
-			<span role="tooltip">{input.tooltip}</span>
+			<span id={tooltipId} role="tooltip" aria-hidden="true">
+				{input.tooltip}
+			</span>
 		</button>
 	)
 }
@@ -116,6 +120,10 @@ const copyPromptTooltipCss = {
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,
 		visibility: 'visible' as const,
+	},
+	'&[data-tooltip-dismissed] [role="tooltip"]': {
+		opacity: 0,
+		visibility: 'hidden' as const,
 	},
 }
 

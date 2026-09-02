@@ -21,6 +21,7 @@ import {
 import {
 	starterCardCss,
 	starterCopyPromptTooltipCss,
+	tooltipDismissMix,
 } from '#client/routes/onboarding-starter-card.tsx'
 
 type OnboardingExampleCardProps = {
@@ -203,6 +204,7 @@ export function OnboardingExampleCard(
 							mix={[
 								css(exampleCopyButtonCss),
 								on('click', () => void copyPrompt(examplePrompt)),
+								...tooltipDismissMix,
 							]}
 							data-testid={`onboarding-example-copy-${listing.id}`}
 						>
@@ -214,6 +216,7 @@ export function OnboardingExampleCard(
 							<span
 								id={`onboarding-example-prompt-tip-${listing.id}`}
 								role="tooltip"
+								aria-hidden="true"
 							>
 								{copyPromptTooltip}
 							</span>

@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
+import { firstPartySecurityHeaders } from './security-headers.ts'
 import { getEnv } from './env.ts'
 import { handleRequest } from './handler.ts'
+import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 
 function createEnv(overrides: Record<string, unknown> = {}) {
@@ -59,4 +61,22 @@ test('handleRequest serves multiple requests from the same env object', async ()
 	expect(first.status).toBe(200)
 	expect(second.status).toBe(200)
 	await expect(second.json()).resolves.toMatchObject({ ok: true })
+})
+
+test('uncaught handler failures return an HTML 500 with a document title, lang, and CSP', async () => {
+	silenceExpectedConsoleErrors(['Remix server handler failed:'])
+	const response = await handleRequest(
+		new Request('https://example.com/health'),
+		createEnv({ SENTRY_ENVIRONMENT: 'production' }),
+	)
+	const body = await response.text()
+
+	expect(response.status).toBe(500)
+	expect(response.headers.get('content-type')).toMatch(/text\/html/)
+	expect(body).toContain('lang="en"')
+	expect(body).toContain('<title>Something went wrong — kody</title>')
+	expect(body).toMatch(/<h1>\s*Something went wrong\s*<\/h1>/)
+	expect(response.headers.get('Content-Security-Policy')).toBe(
+		firstPartySecurityHeaders['Content-Security-Policy'],
+	)
 })

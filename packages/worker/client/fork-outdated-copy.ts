@@ -7,7 +7,11 @@ import {
 export const FORK_OUTDATED_COPY_BUTTON_SELECTOR = COPY_PROMPT_SELECTOR
 
 type CopyPromptButtonEl = {
-	dataset: { copyText?: string; copyTooltip?: string }
+	dataset: {
+		copyText?: string
+		copyTooltip?: string
+		tooltipDismissed?: string
+	}
 	querySelector: (selector: string) => { textContent: string | null } | null
 	contains: (node: Node) => boolean
 }
@@ -63,4 +67,26 @@ export function handleForkOutdatedCopyPointerOut(event: Event) {
 		button,
 		button.dataset.copyTooltip ?? COPY_PROMPT_COPIED_TOOLTIP,
 	)
+	delete button.dataset.tooltipDismissed
+}
+
+export function handleForkOutdatedCopyKeyDown(event: Event) {
+	if (!('key' in event) || event.key !== 'Escape') return
+	const button = findCopyPromptButton(event)
+	if (!button) return
+	button.dataset.tooltipDismissed = ''
+}
+
+export function handleForkOutdatedCopyFocusOut(event: Event) {
+	const button = findCopyPromptButton(event)
+	if (!button) return
+	const related = 'relatedTarget' in event ? event.relatedTarget : null
+	if (
+		related != null &&
+		typeof related === 'object' &&
+		button.contains(related as Node)
+	) {
+		return
+	}
+	delete button.dataset.tooltipDismissed
 }
