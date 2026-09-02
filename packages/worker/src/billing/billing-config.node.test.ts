@@ -269,8 +269,10 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	expect(getPurchasablePlans(env)).toEqual(['standard', 'pro'])
 	expect(getPurchasablePlans({})).toEqual([])
 
-	expect(parseBillingInterval('month')).toBe('month')
-	expect(parseBillingInterval('year')).toBe('year')
+	expect(parseBillingInterval(undefined)).toBe('month')
+	expect(parseBillingInterval(null)).toBe('month')
+	expect(parseBillingInterval('')).toBe('month')
+	expect(parseBillingInterval('weekly')).toBeNull()
 
 	expect(getPriceIdForPlan(env, 'standard')).toBe('price_standard')
 	expect(getPriceIdForPlan(env, 'standard', 'year')).toBe(

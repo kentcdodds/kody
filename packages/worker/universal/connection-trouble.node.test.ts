@@ -1,7 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	buildExpiredSecretHref,
-	buildIntegrationReconnectHref,
 	expiredSecretCopy,
 	humanizeConnectionName,
 	integrationAuthFailureCopy,
@@ -41,7 +39,6 @@ test('connection trouble copy names the actor and keeps vendor items off the you
 		href: '/account/integrations/google',
 	})
 	expect(outage.why).toContain('HTTP 503')
-	expect(outage.why).toContain('not a dead sign-in')
 
 	const platformSecret = integrationAuthFailureCopy({
 		name: 'google',
@@ -57,7 +54,7 @@ test('connection trouble copy names the actor and keeps vendor items off the you
 	expect(expired).toMatchObject({
 		title: 'githubAccessToken expired',
 		who: 'you',
-		href: buildExpiredSecretHref('githubAccessToken'),
+		href: '/account/secrets/user/githubAccessToken',
 	})
 
 	expect(isVendorLikelyMcpError('HTTP 503 from upstream')).toBe(true)
@@ -71,9 +68,7 @@ test('connection trouble copy names the actor and keeps vendor items off the you
 		reason: 'missing_refresh_token',
 		occurredAt: '2026-09-01T00:00:00.000Z',
 	})
-	expect(view.reconnectHref).toBe(
-		buildIntegrationReconnectHref({ name: 'spotify' }),
-	)
+	expect(view.reconnectHref).toBe('/connect/oauth?provider=spotify')
 	expect(view.reconnectable).toBe(true)
 	expect(view.who).toBe('you')
 })

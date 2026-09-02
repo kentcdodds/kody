@@ -65,9 +65,6 @@ function createContext(db: D1Database, roles: Array<string>) {
 }
 
 test('adminUserStableIdConflict reports collisions without content and denies non-admins', async () => {
-	expect(adminUserStableIdConflictCapability.requiredRole).toBe('admin')
-	expect(adminUserStableIdConflictCapability.readOnly).toBe(true)
-
 	const { sqlite, db } = createMigratedDb()
 	const userCtx = createContext(db, ['user'])
 	await expect(

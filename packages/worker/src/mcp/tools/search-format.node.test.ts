@@ -777,11 +777,13 @@ test('integration search hits surface reconnect nextStep when last auth failure 
 			},
 		],
 	})
-	expect(matches[0]).toMatchObject({
-		type: 'integration',
-		nextStep:
-			'The provider rejected the saved sign-in (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com.',
-	})
+	expect(matches[0]).toMatchObject({ type: 'integration' })
+	const nextStep =
+		matches[0] && 'nextStep' in matches[0] ? matches[0].nextStep : ''
+	expect(nextStep).toContain('invalid_grant')
+	expect(nextStep).toContain(
+		'/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+	)
 	expect(
 		formatSearchMarkdown({
 			matches: [

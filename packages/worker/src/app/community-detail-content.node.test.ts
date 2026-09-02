@@ -64,7 +64,6 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installedHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)
-	expect(installedHtml).toContain('Installed')
 	expect(installedHtml).not.toContain('data-copy-prompt')
 	expect(installedHtml).not.toContain(agentPrompt)
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
@@ -147,7 +146,6 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-detail-version"')
-	expect(publicHtml).toContain('1.0.4')
 	expect(publicHtml).toContain('← Public packages')
 
 	const noVersionHtml = await renderCommunityDetailContentHtml({

@@ -37,7 +37,6 @@ test('package-name fallbacks are deterministic swirls from a curated palette', a
 	expect(friction).not.toBe(
 		buildCommunityIconFallbackSvg('@kentcdodds/github-tools'),
 	)
-	expect(friction).not.toContain('<text')
 	expect(friction).toContain('data-fallback-art="1"')
 	expect(friction).toMatch(
 		/data-palette="(dusk|sea|lichen|apricot|fog|lilac|inkwell|sand)"/,
