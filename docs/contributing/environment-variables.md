@@ -368,7 +368,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   the Cloudflare Email sender. User Cloudflare API calls from authored package
   modules use saved secrets and secret-aware `fetch` (see
   `docs/contributing/packages-and-manifests.md`). Local `npm run dev` sets this
-  to the Cloudflare mock token unless `SKIP_CLOUDFLARE_MOCK=1`.
+  to the Cloudflare mock token unless `SKIP_CLOUDFLARE_MOCK=1`. Production
+  workers do not share one value: `kody-runtime` receives the narrower
+  `CLOUDFLARE_RUNTIME_API_TOKEN` GitHub secret (Email Sending + Artifacts only)
+  via
+  `--set-from-env-optional CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN` in
+  `.github/workflows/deploy.yml`; see `docs/contributing/setup-manifest.md` for
+  the permission list.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This
   is a Worker var (not a secret) and should match the account behind

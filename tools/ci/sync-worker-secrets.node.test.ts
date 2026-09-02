@@ -3,10 +3,12 @@ import { PassThrough } from 'node:stream'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
+	buildSecrets,
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
 	collectSpawnedProcessOutput,
 	parseDotenv,
+	parseEnvSourceSpec,
 	retrySecretBulkUpload,
 	toDotenv,
 } from './sync-worker-secrets'
@@ -77,6 +79,52 @@ test('buildSpawnEnv preserves optional vars only when they have values', () => {
 	expect(spawnEnvWithOptionalValues.SENTRY_DSN).toBe(
 		'https://examplePublicKey@o0.ingest.sentry.io/0',
 	)
+})
+
+test('NAME=SOURCE specs upload the source variable under the worker secret name', async () => {
+	expect(parseEnvSourceSpec('SENTRY_DSN')).toEqual({
+		key: 'SENTRY_DSN',
+		sourceKey: 'SENTRY_DSN',
+	})
+	expect(
+		parseEnvSourceSpec('CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN'),
+	).toEqual({
+		key: 'CLOUDFLARE_API_TOKEN',
+		sourceKey: 'CLOUDFLARE_RUNTIME_API_TOKEN',
+	})
+
+	vi.stubEnv('CLOUDFLARE_API_TOKEN', 'deploy-token')
+	vi.stubEnv('CLOUDFLARE_RUNTIME_API_TOKEN', 'runtime-token')
+	vi.stubEnv('COOKIE_SECRET', 'cookie')
+	try {
+		const secrets = await buildSecrets({
+			...baseOptions,
+			setFromEnv: ['COOKIE_SECRET'],
+			setFromEnvOptional: ['CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN'],
+		})
+		expect(secrets.get('CLOUDFLARE_API_TOKEN')).toBe('runtime-token')
+		expect(secrets.get('COOKIE_SECRET')).toBe('cookie')
+		expect(secrets.has('CLOUDFLARE_RUNTIME_API_TOKEN')).toBe(false)
+
+		vi.stubEnv('CLOUDFLARE_RUNTIME_API_TOKEN', '')
+		const withoutRuntimeToken = await buildSecrets({
+			...baseOptions,
+			setFromEnvOptional: ['CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN'],
+		})
+		expect(withoutRuntimeToken.has('CLOUDFLARE_API_TOKEN')).toBe(false)
+	} finally {
+		vi.unstubAllEnvs()
+	}
+
+	const spawnEnv = buildSpawnEnv(
+		{
+			...baseOptions,
+			setFromEnvOptional: ['CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN'],
+		},
+		{ CLOUDFLARE_API_TOKEN: 'deploy-token', CLOUDFLARE_RUNTIME_API_TOKEN: '' },
+	)
+	expect(spawnEnv.CLOUDFLARE_API_TOKEN).toBe('deploy-token')
+	expect(spawnEnv.CLOUDFLARE_RUNTIME_API_TOKEN).toBeUndefined()
 })
 
 test('secret bulk omits empty --env so --name pins the unsuffixed script', () => {
