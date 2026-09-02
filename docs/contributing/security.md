@@ -91,7 +91,13 @@ package-app surfaces:
     MCP grants, delete TOTP rows, passkeys, other `oauth_connections`, and
     outstanding `password_resets`, then link the provider and mark the account
     verified. An already-verified match only links and signs in.
-13. **Password-reset confirmation clears second factors and linked providers.**
+13. **Unverified person accounts older than seven days are purged.** The hourly
+    `unverified_account_purge` lane deletes `person` accounts whose
+    `email_verified_at` is still null, `created_at` is older than seven days,
+    `deleting_at` is null, and no `oauth_connections` row exists. Deletion uses
+    the inventory-driven account-deletion path. Password signups are the only
+    unverified path; social-login accounts are verified at creation.
+14. **Password-reset confirmation clears second factors and linked providers.**
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
     Signed-in `POST /account/password.json` leaves those factors in place.

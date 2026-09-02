@@ -36,8 +36,10 @@ between users.
   `waitlist`). Production and preview are `invite`; the Wrangler `test` env is
   `open` for fixtures and E2E. People without a code can join a Kit-backed
   waiting list from `/signup`. New signups must verify their email address;
-  unverified accounts can sign in but cannot send outbound email. There is still
-  no privileged "primary user" at runtime.
+  unverified accounts can sign in but cannot send outbound email. Person
+  accounts that stay unverified for seven days are deleted, which releases the
+  username, `{username}.kody.run` subdomain, `{username}@` mail local, and
+  `stable_user_id`. There is still no privileged "primary user" at runtime.
 - Tests and fixtures may seed deterministic local accounts, but seeded accounts
   are fixtures only and are not privileged at runtime
 

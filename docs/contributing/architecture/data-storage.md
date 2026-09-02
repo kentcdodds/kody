@@ -293,7 +293,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   not reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
   with one indexed point read on `users.stable_user_id` (for example
-  `findUserAccountByStableUserId`).
+  `findUserAccountByStableUserId`). Person accounts that stay unverified for
+  seven days (`email_verified_at` is null, `deleting_at` is null, no
+  `oauth_connections` row) are deleted by the hourly `unverified_account_purge`
+  lane through the inventory-driven account-deletion path, which releases the
+  username, `{username}.kody.run` subdomain, `{username}@` mail local, and
+  `stable_user_id`.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -1562,6 +1567,13 @@ Current retention policies:
   days by `last_used_at`, matching the query-time window used to hint popular
   packages in MCP server instructions. The prune orders by the existing
   `(user_id, last_used_at)` time index via `last_used_at` then `rowid`.
+- Unverified person accounts: password signups that stay unverified
+  (`users.email_verified_at` is null) for seven days, are not already
+  deletion-fenced (`deleting_at` is null), and have no `oauth_connections` row
+  are deleted by the hourly `unverified_account_purge` lane. Each run selects a
+  bounded batch (oldest `created_at`, then `id`) and runs the full
+  inventory-driven account deletion. Social-login accounts are verified at
+  creation and are not in this set.
 
 The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user
