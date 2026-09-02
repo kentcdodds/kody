@@ -166,22 +166,34 @@ session, logout, password reset, health).
 `renderAppPage` sets
 `Cache-Control: public, max-age=60, stale-while-revalidate=300` and
 `Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
-`/onboarding`, `/guides`, and `/guides/:slug`. The public package surfaces
-(`/@:username/:kodyId`, `/@:username/:kodyId/tree/:ref/*`, `/community/:id`,
-`/community/:id/files/*`) and their JSON companions
-(`/profiles/:username/packages/:kodyId.json`, `/community/:id.json`,
-`.../files.json`) are shared too, but with `public, max-age=60` and no
-stale-while-revalidate: an owner can unpublish or make a package private and
-nothing purges shared caches, so a stale public response is bounded to one
-minute. They are shared only when the document is a `200` (a `401` or `404` to a
-stranger stays `no-store` so making a package public takes effect at once) and,
-for JSON, when the request has no session cookie and the payload carries no
-viewer state. Anonymous `/onboarding.json` uses the marketing policy.
-`/guides/:slug.json` is publicly cacheable without a cookie vary (the payload is
-identical for every visitor). The response stays `no-store` when the request
-carries a `kody_session` cookie, `loadSessionInfo` resolves a session, or the
-response sets a cookie. Auth, OAuth, account, and every other HTML path stay
-`no-store`.
+`/onboarding`, `/guides`, and `/guides/:slug`. Origin `fetch` stores those
+cookie-less `GET`/`HEAD` responses in the Cache API (`caches.default`), keyed on
+the canonical origin + pathname + search. A matching request with no
+`kody_session` cookie and no `Authorization` header is served from that store
+(`X-Kody-Cache: HIT`) without running the app handler. A miss runs the handler
+and, when the response is `200` `text/html` with no `Set-Cookie` and already
+carries that Cache-Control, `ctx.waitUntil(caches.default.put)` stores a clone.
+The stored copy drops `Vary: Cookie` because Cloudflare's Cache API does not use
+`Vary` as a key (the lookup already excludes cookie-bearing requests).
+Browser-facing `Cache-Control` is unchanged. `Cache-Control: no-cache` on the
+request skips the lookup so e2e can assert fresh HTML.
+
+The public package surfaces (`/@:username/:kodyId`,
+`/@:username/:kodyId/tree/:ref/*`, `/community/:id`, `/community/:id/files/*`)
+and their JSON companions (`/profiles/:username/packages/:kodyId.json`,
+`/community/:id.json`, `.../files.json`) are shared too, but with
+`public, max-age=60` and no stale-while-revalidate: an owner can unpublish or
+make a package private and nothing purges shared caches, so a stale public
+response is bounded to one minute. They are shared only when the document is a
+`200` (a `401` or `404` to a stranger stays `no-store` so making a package
+public takes effect at once) and, for JSON, when the request has no session
+cookie and the payload carries no viewer state. JSON companions are not stored
+in the Cache API (the store is HTML-only). Anonymous `/onboarding.json` uses the
+marketing policy. `/guides/:slug.json` is publicly cacheable without a cookie
+vary (the payload is identical for every visitor). The response stays `no-store`
+when the request carries a `kody_session` cookie, `loadSessionInfo` resolves a
+session, or the response sets a cookie. Auth, OAuth, account, and every other
+HTML path stay `no-store`.
 
 ## Request context
 
