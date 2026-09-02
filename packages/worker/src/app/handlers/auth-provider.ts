@@ -749,6 +749,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				username = await getAvailableUsernameFromBase(
 					env.APP_DB,
 					profile.username ?? usernameFromEmail(email),
+					env,
 				)
 				stableUserId = await createStableUserIdFromEmail(email)
 				const createdAt = new Date().toISOString()

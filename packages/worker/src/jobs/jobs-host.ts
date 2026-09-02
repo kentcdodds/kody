@@ -7,6 +7,7 @@ import {
 import { type ScheduledLaneMessage } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import { runScheduledLaneWithFailureIsolation } from '#worker/scheduled/scheduled-lanes.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { runDueJobsForUser, runJobNow } from './service.ts'
 import { type JobRepoCheckPolicy } from './types.ts'
 
@@ -26,7 +27,10 @@ export class JobsHost
 	async runDueJobsForUser(input: {
 		userId: string
 	}): Promise<RunDueJobsResult> {
-		return runDueJobsForUser({ env: this.env, userId: input.userId })
+		return runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await runDueJobsForUser({ env: this.env, userId: input.userId }),
+		)
 	}
 
 	async runJobNow(input: {
@@ -35,18 +39,27 @@ export class JobsHost
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	}): Promise<RunJobNowResult> {
-		return runJobNow({
-			env: this.env,
-			userId: input.userId,
-			jobId: input.jobId,
-			callerContext: input.callerContext ?? null,
-			repoCheckPolicyOverride: input.repoCheckPolicyOverride ?? null,
-		})
+		return runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await runJobNow({
+					env: this.env,
+					userId: input.userId,
+					jobId: input.jobId,
+					callerContext: input.callerContext ?? null,
+					repoCheckPolicyOverride: input.repoCheckPolicyOverride ?? null,
+				}),
+		)
 	}
 
 	async runScheduledLane(
 		message: ScheduledLaneMessage,
 	): Promise<'completed' | 'd1_lock_contention' | 'failed'> {
-		return runScheduledLaneWithFailureIsolation({ env: this.env, message })
+		return runWithDynamicWorkerEvaluationBudget(
+			async () =>
+				await runScheduledLaneWithFailureIsolation({
+					env: this.env,
+					message,
+				}),
+		)
 	}
 }

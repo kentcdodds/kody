@@ -313,10 +313,54 @@ function scheduleSubscriptionEmit(
  * and persist a last-failure snapshot for Waiting / Integrations. Provider
  * HTTP 5xx and timeouts persist `provider_unavailable` without emitting
  * failed or inventing a Waiting row. Successful refreshes clear the snapshot
- * and emit `integration.auth.succeeded`. The platform does not coalesce
- * repeats; notifier packages edge-detect working ↔ failed.
+ * and emit `integration.auth.succeeded`. Sequential attempts each emit;
+ * notifier packages edge-detect working ↔ failed. Concurrent in-flight
+ * refreshes of the same connection share one provider POST, persist, and
+ * event so a 401 stampede cannot rotate the refresh token out from under
+ * itself.
  */
+const inFlightIntegrationTokenRefreshes = new Map<
+	string,
+	Promise<IntegrationTokenRefreshResult>
+>()
+
+function integrationTokenRefreshDedupeKey(userId: string, name: string) {
+	return `${userId}\0${name}`
+}
+
 export async function refreshIntegrationTokens(input: {
+	env: Env
+	userId: string
+	userEmail?: string | undefined
+	name: string
+	baseUrl?: string
+	packageId?: string | null
+	packageKodyId?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<IntegrationTokenRefreshResult> {
+	const key = integrationTokenRefreshDedupeKey(input.userId, input.name)
+	const existing = inFlightIntegrationTokenRefreshes.get(key)
+	if (existing) return existing
+	let resolvePending!: (value: IntegrationTokenRefreshResult) => void
+	let rejectPending!: (reason: unknown) => void
+	const pending = new Promise<IntegrationTokenRefreshResult>(
+		(resolve, reject) => {
+			resolvePending = resolve
+			rejectPending = reject
+		},
+	)
+	inFlightIntegrationTokenRefreshes.set(key, pending)
+	void refreshIntegrationTokensAttempt(input)
+		.then(resolvePending, rejectPending)
+		.finally(() => {
+			if (inFlightIntegrationTokenRefreshes.get(key) === pending) {
+				inFlightIntegrationTokenRefreshes.delete(key)
+			}
+		})
+	return pending
+}
+
+async function refreshIntegrationTokensAttempt(input: {
 	env: Env
 	userId: string
 	userEmail?: string | undefined

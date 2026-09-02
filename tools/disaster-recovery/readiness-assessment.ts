@@ -279,7 +279,7 @@ function artifactMatchesEnvelope(
 		content.expiresAt === artifact.expiresAt
 	if (!metadataMatches) return false
 	if (
-		resourceId === 'APP_DB' &&
+		(resourceId === 'APP_DB' || resourceId === 'JOBS_DB') &&
 		(content.kind === 'source-credential-check' ||
 			content.kind === 'destination-credential-check')
 	) {
@@ -348,7 +348,7 @@ export function assessCanonicalReadiness(
 					)
 				}
 			}
-			if (contract.id === 'APP_DB') {
+			if (contract.id === 'APP_DB' || contract.id === 'JOBS_DB') {
 				const restoreArtifact = evidence.artifacts.find(
 					(artifact) => artifact.kind === 'd1-restore-drill',
 				)
@@ -382,7 +382,7 @@ export function assessCanonicalReadiness(
 					)
 					if (!trustedSource) {
 						failures.push(
-							'APP_DB: signed source identity/name is not a checked production source',
+							`${contract.id}: signed source identity/name is not a checked production source`,
 						)
 					}
 					const provenanceKeys = [
@@ -399,7 +399,7 @@ export function assessCanonicalReadiness(
 					for (const key of provenanceKeys) {
 						if (restoreDetails[key] !== sizeDetails[key]) {
 							failures.push(
-								`APP_DB: signed restore ${key} does not match source evidence`,
+								`${contract.id}: signed restore ${key} does not match source evidence`,
 							)
 						}
 					}
@@ -425,7 +425,7 @@ export function assessCanonicalReadiness(
 							restoreDetails.isolationBaselineSha256
 					) {
 						failures.push(
-							'APP_DB: signed restore baseline provenance is not checked or does not match',
+							`${contract.id}: signed restore baseline provenance is not checked or does not match`,
 						)
 					}
 				}

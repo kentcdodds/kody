@@ -14,6 +14,10 @@ import {
 	createAdminInvitesHandler,
 } from '#app/handlers/admin-invites.ts'
 import {
+	createAdminReservedUsernamesApiHandler,
+	createAdminReservedUsernamesHandler,
+} from '#app/handlers/admin-reserved-usernames.ts'
+import {
 	createAdminFeatureFlagsApiHandler,
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
@@ -414,6 +418,10 @@ export function createAppRouter(env: Env) {
 			adminInvites: createAdminInvitesHandler(env),
 			adminInvitesApi: createAdminInvitesApiHandler(env),
 			adminInvitesApiPost: createAdminInvitesApiHandler(env),
+			adminReservedUsernames: createAdminReservedUsernamesHandler(env),
+			adminReservedUsernamesApi: createAdminReservedUsernamesApiHandler(env),
+			adminReservedUsernamesApiPost:
+				createAdminReservedUsernamesApiHandler(env),
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),

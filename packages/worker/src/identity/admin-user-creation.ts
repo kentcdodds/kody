@@ -10,7 +10,7 @@ import {
 	userExistsByUsername,
 } from '#worker/identity/generated-username.ts'
 import {
-	getUsernameValidationError,
+	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -46,15 +46,19 @@ export type AdminCreatedUser = {
 
 async function resolveUsername(input: {
 	db: D1Database
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 	email: string
 	username?: string | null
 }) {
 	const explicitUsername = normalizeUsername(input.username)
 	if (!explicitUsername) {
-		return getAvailableGeneratedUsername(input.db, input.email)
+		return getAvailableGeneratedUsername(input.db, input.email, input.env)
 	}
 
-	const usernameError = getUsernameValidationError(explicitUsername)
+	const usernameError = await getEffectiveUsernameValidationError(
+		explicitUsername,
+		input.env,
+	)
 	if (usernameError) {
 		throw new AdminCreateUserError('invalid_username', usernameError)
 	}
@@ -83,6 +87,7 @@ function buildSetupLink(input: { origin: string; token: string }) {
 
 export async function adminCreateUserWithPasswordSetup(input: {
 	db: D1Database
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 	email: string
 	username?: string | null
 	setupLinkOrigin: string | URL
@@ -103,6 +108,7 @@ export async function adminCreateUserWithPasswordSetup(input: {
 
 	const username = await resolveUsername({
 		db: input.db,
+		env: input.env,
 		email,
 		username: input.username,
 	})

@@ -1,12 +1,19 @@
 import { expect, test, vi } from 'vitest'
-import { readArtifactFileAtCommit } from './artifact-file.ts'
+import {
+	readArtifactFileAtCommit,
+	readArtifactTreeAtCommit,
+} from './artifact-file.ts'
 
 const mocks = vi.hoisted(() => ({
 	addRemote: vi.fn(),
 	fetch: vi.fn(),
 	init: vi.fn(),
 	readBlob: vi.fn(),
+	walk: vi.fn(),
+	TREE: vi.fn((input: { ref: string }) => input),
 	resolveExistingArtifactSourceRepo: vi.fn(),
+	isLoopbackArtifactsRemote: vi.fn(() => false),
+	readArtifactSourceSnapshot: vi.fn(),
 }))
 
 vi.mock('isomorphic-git', () => ({
@@ -15,6 +22,8 @@ vi.mock('isomorphic-git', () => ({
 		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
 		init: (...args: Array<unknown>) => mocks.init(...args),
 		readBlob: (...args: Array<unknown>) => mocks.readBlob(...args),
+		walk: (...args: Array<unknown>) => mocks.walk(...args),
+		TREE: (...args: Array<unknown>) => mocks.TREE(...args),
 	},
 }))
 
@@ -23,11 +32,17 @@ vi.mock('./artifacts.ts', () => {
 		buildArtifactsGitAuth: () => ({ username: 'x', password: 'token' }),
 		buildAuthenticatedArtifactsRemote: ({ remote }: { remote: string }) =>
 			remote,
-		isLoopbackArtifactsRemote: () => false,
+		isLoopbackArtifactsRemote: (...args: Array<unknown>) =>
+			mocks.isLoopbackArtifactsRemote(...args),
 		resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 			mocks.resolveExistingArtifactSourceRepo(...args),
 	}
 })
+
+vi.mock('./artifact-source-snapshot.ts', () => ({
+	readArtifactSourceSnapshot: (...args: Array<unknown>) =>
+		mocks.readArtifactSourceSnapshot(...args),
+}))
 
 test('reads binary artifact files from an exact pinned commit', async () => {
 	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
@@ -170,4 +185,115 @@ test('retries packfile corruption on readBlob after fetch and does not retry mis
 
 	expect(mocks.fetch).toHaveBeenCalledTimes(1)
 	expect(mocks.readBlob).toHaveBeenCalledTimes(1)
+})
+
+test('readArtifactTreeAtCommit walks the fetched commit tree', async () => {
+	mocks.isLoopbackArtifactsRemote.mockReturnValue(false)
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote: 'https://artifacts.example.test/package.git',
+			defaultBranch: 'main',
+		})),
+		createToken: vi.fn(async () => ({
+			plaintext: 'token',
+		})),
+	})
+	mocks.fetch.mockReset()
+	mocks.fetch.mockResolvedValue(undefined)
+	mocks.walk.mockImplementation(
+		async (input: {
+			map: (
+				filepath: string,
+				entries: Array<{
+					type: () => Promise<string>
+					content: () => Promise<Uint8Array>
+				} | null>,
+			) => Promise<void>
+		}) => {
+			await input.map('.', [null])
+			await input.map('src', [
+				{
+					type: async () => 'tree',
+					content: async () => new Uint8Array(),
+				},
+			])
+			await input.map('README.md', [
+				{
+					type: async () => 'blob',
+					content: async () => new TextEncoder().encode('# Hello\n'),
+				},
+			])
+			await input.map('__proto__', [
+				{
+					type: async () => 'blob',
+					content: async () => new TextEncoder().encode('not proto\n'),
+				},
+			])
+			await input.map('community-icon.png', [
+				{
+					type: async () => 'blob',
+					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+				},
+			])
+			await input.map('other-icon.png', [
+				{
+					type: async () => 'blob',
+					content: async () => Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 2]),
+				},
+			])
+		},
+	)
+
+	const tree = await readArtifactTreeAtCommit({
+		env: {} as Env,
+		repoId: 'package-1',
+		commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+	})
+	expect(tree?.['README.md']).toBe('# Hello\n')
+	expect(Object.hasOwn(tree ?? {}, '__proto__')).toBe(true)
+	expect(tree?.['__proto__']).toBe('not proto\n')
+	expect(tree?.['community-icon.png']).not.toBe(tree?.['other-icon.png'])
+	expect(tree?.['community-icon.png']).toBe(
+		new TextDecoder('latin1').decode(
+			Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0, 1]),
+		),
+	)
+	expect(tree?.['community-icon.png']).toContain('\0')
+	expect(mocks.TREE).toHaveBeenCalledWith({
+		ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+	})
+	expect(mocks.fetch).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+			depth: 1,
+		}),
+	)
+})
+
+test('readArtifactTreeAtCommit returns null when a loopback snapshot is missing', async () => {
+	mocks.isLoopbackArtifactsRemote.mockReturnValue(true)
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote: 'http://127.0.0.1/package.git',
+			defaultBranch: 'main',
+		})),
+	})
+	mocks.readArtifactSourceSnapshot.mockResolvedValueOnce(null)
+	await expect(
+		readArtifactTreeAtCommit({
+			env: {} as Env,
+			repoId: 'package-1',
+			commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		}),
+	).resolves.toBeNull()
+
+	mocks.readArtifactSourceSnapshot.mockResolvedValueOnce({ files: {} })
+	await expect(
+		readArtifactTreeAtCommit({
+			env: {} as Env,
+			repoId: 'package-1',
+			commit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		}),
+	).resolves.toEqual({})
+	mocks.isLoopbackArtifactsRemote.mockReturnValue(false)
 })

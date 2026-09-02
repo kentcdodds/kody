@@ -22,7 +22,9 @@ import {
 	getPackageTreeHref,
 } from '#universal/package-files.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import { routes } from '#universal/routes.ts'
 import { colors } from '#universal/styles/tokens.ts'
+import { buildPackagePublishApprovalPath } from '#worker/package-registry/package-publish-lock.ts'
 
 /**
  * Server-rendered package head (the `community-detail` frame): GitHub-style
@@ -41,6 +43,7 @@ export type CommunityDetailContentProps = {
 	viewerIsOwner: boolean
 	returnTo: string
 	treeRef?: string
+	publishCompareHref?: string | null
 }
 
 export function CommunityDetailContent(
@@ -57,6 +60,7 @@ export function CommunityDetailContent(
 		viewerIsOwner,
 		returnTo,
 		treeRef,
+		publishCompareHref,
 	} = handle.props
 
 	const filesHref = getPackageTreeHref({
@@ -84,13 +88,24 @@ export function CommunityDetailContent(
 					<CommunityListingIcon listing={listing} size="detail" />
 					<div mix={css(listingBadgeGroupCss)}>
 						{listing.sourceAhead ? (
-							<span
-								data-testid="community-detail-source-ahead-badge"
-								title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
-								mix={css(badgeCss)}
-							>
-								HEAD ahead of published
-							</span>
+							publishCompareHref ? (
+								<a
+									href={publishCompareHref}
+									data-testid="community-detail-source-ahead-badge"
+									title="Review the unpublished HEAD changes, then publish them."
+									mix={css(badgeLinkCss)}
+								>
+									HEAD ahead of published
+								</a>
+							) : (
+								<span
+									data-testid="community-detail-source-ahead-badge"
+									title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
+									mix={css(badgeCss)}
+								>
+									HEAD ahead of published
+								</span>
+							)
 						) : null}
 						{listing.featured ? (
 							<span
@@ -228,6 +243,31 @@ const badgeCss = {
 	backgroundColor: colors.surface,
 	border: `1px solid ${colors.border}`,
 	color: colors.textMuted,
+}
+
+const badgeLinkCss = {
+	...badgeCss,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+		borderColor: colors.textMuted,
+	},
+}
+
+export function buildSourceAheadPublishHref(input: {
+	packageId: string | null | undefined
+	headCommit: string | null | undefined
+}) {
+	if (!input.packageId) return null
+	if (input.headCommit) {
+		return buildPackagePublishApprovalPath({
+			packageId: input.packageId,
+			commit: input.headCommit,
+		})
+	}
+	return routes.accountPackageApprovePublish.href({
+		packageId: input.packageId,
+	})
 }
 
 const filesLinkRowCss = {

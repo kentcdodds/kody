@@ -1,4 +1,7 @@
-import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import {
+	normalizeUsername,
+	platformAccountUsername,
+} from '#worker/identity/username.ts'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	type PackageCodemod,
@@ -44,9 +47,9 @@ const supportedOptionKeys = new Set([
 	'topic',
 ])
 const platformForkDocumentationPackages = new Set([
-	'@kody/notify',
-	'@kody/personal-capture',
-	'@kody/stash',
+	`@${platformAccountUsername}/notify`,
+	`@${platformAccountUsername}/personal-capture`,
+	`@${platformAccountUsername}/stash`,
 ])
 
 type AstNode = ModuleAstNode & {
@@ -122,7 +125,7 @@ function readPackageScope(files: Record<string, string>): string | null {
 }
 
 function isPlatformPackageScope(scope: string) {
-	return isReservedUsername(scope.replace(/^@/, '').toLowerCase())
+	return normalizeUsername(scope.replace(/^@/, '')) === platformAccountUsername
 }
 
 function isPackagesInvokeCall(node: AstNode) {

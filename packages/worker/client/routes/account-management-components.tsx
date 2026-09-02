@@ -287,6 +287,11 @@ const adminNavItems = [
 	{ href: '/admin/insights', label: 'Insights', paths: ['/admin/insights'] },
 	{ href: '/admin/invites', label: 'Invites', paths: ['/admin/invites'] },
 	{
+		href: '/admin/reserved-usernames',
+		label: 'Reserved usernames',
+		paths: ['/admin/reserved-usernames'],
+	},
+	{
 		href: '/admin/feature-flags',
 		label: 'Feature flags',
 		paths: ['/admin/feature-flags'],

@@ -1,7 +1,7 @@
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { isEffectivelyReservedUsername } from '#worker/identity/reserved-username-settings.ts'
 import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
@@ -42,6 +42,7 @@ export type CreatedPlatformAccount = {
  */
 export async function createPlatformAccount(input: {
 	db: D1Database
+	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 	email: string
 	username: string
 	now?: Date
@@ -56,7 +57,7 @@ export async function createPlatformAccount(input: {
 	if (formatError) {
 		throw new PlatformAccountCreateError('invalid_username', formatError)
 	}
-	if (!isReservedUsername(username)) {
+	if (!(await isEffectivelyReservedUsername(username, input.env))) {
 		throw new PlatformAccountCreateError(
 			'invalid_username',
 			'Platform accounts may only claim reserved usernames.',

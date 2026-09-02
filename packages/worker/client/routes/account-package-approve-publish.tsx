@@ -183,8 +183,16 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
-					title="Approve package publish"
-					description="Review the commit, then promote it to the live published pointer. The package stays locked."
+					title={
+						payload?.package.lockedAt
+							? 'Approve package publish'
+							: 'Publish HEAD'
+					}
+					description={
+						payload?.package.lockedAt
+							? 'Review the files that changed since the last publish, then promote this commit. The package stays locked.'
+							: 'Review the files that changed since the last publish, then publish default-branch HEAD. Runtime keeps using the published commit until you do.'
+					}
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -242,7 +250,9 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 									),
 								},
 								{
-									label: 'Commit to promote',
+									label: payload.package.lockedAt
+										? 'Commit to promote'
+										: 'HEAD to publish',
 									value: payload.pendingCommit ? (
 										<IdValue
 											value={payload.pendingCommit}
@@ -284,8 +294,12 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 										]}
 									>
 										{status === 'promoting'
-											? 'Promoting…'
-											: 'Promote this commit'}
+											? payload.package.lockedAt
+												? 'Promoting…'
+												: 'Publishing…'
+											: payload.package.lockedAt
+												? 'Promote this commit'
+												: 'Publish HEAD'}
 									</button>
 									<a
 										href={payload.packageHref}
@@ -310,9 +324,92 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 								Browse published files
 							</a>
 						</div>
+						<section
+							data-testid="package-publish-diff"
+							mix={css({ display: 'grid', gap: spacing.sm })}
+						>
+							<h3
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.base,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								})}
+							>
+								{payload.alreadyPublished
+									? 'No unpublished changes'
+									: payload.diff.files.length === 0
+										? 'Could not load a file diff for these commits'
+										: `${payload.diff.files.length} file${payload.diff.files.length === 1 ? '' : 's'} changed`}
+							</h3>
+							{payload.diff.omittedCount > 0 ? (
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									{payload.diff.omittedCount} more file
+									{payload.diff.omittedCount === 1 ? '' : 's'} omitted.
+								</p>
+							) : null}
+							{payload.diff.files.map((file) => (
+								<details
+									key={file.path}
+									data-testid="package-publish-diff-file"
+									data-status={file.status}
+									mix={css(diffFileCss)}
+								>
+									<summary mix={css(diffSummaryCss)}>
+										<span mix={css(diffStatusCss)}>{file.status}</span>
+										<code>{file.path}</code>
+									</summary>
+									{file.patch ? (
+										<pre mix={css(diffPatchCss)}>{file.patch}</pre>
+									) : (
+										<p mix={css({ margin: 0, color: colors.textMuted })}>
+											Preview unavailable for this file.
+										</p>
+									)}
+								</details>
+							))}
+						</section>
 					</section>
 				) : null}
 			</AccountManagementShell>
 		)
 	}
+}
+
+const diffFileCss = {
+	margin: 0,
+	borderRadius: '0.55rem',
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+}
+
+const diffSummaryCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+	padding: `${spacing.xs} ${spacing.sm}`,
+	cursor: 'pointer',
+	color: colors.text,
+	'& code': {
+		font: `500 0.85rem/1.3 ${typography.fontFamilyMono}`,
+	},
+}
+
+const diffStatusCss = {
+	flexShrink: 0,
+	fontSize: typography.fontSize.xs,
+	fontWeight: typography.fontWeight.semibold,
+	textTransform: 'uppercase' as const,
+	letterSpacing: '0.04em',
+	color: colors.textMuted,
+}
+
+const diffPatchCss = {
+	margin: 0,
+	padding: spacing.sm,
+	overflowX: 'auto' as const,
+	borderTop: `1px solid ${colors.border}`,
+	font: `400 0.78rem/1.45 ${typography.fontFamilyMono}`,
+	whiteSpace: 'pre-wrap' as const,
+	color: colors.text,
 }

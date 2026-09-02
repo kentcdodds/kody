@@ -25,7 +25,12 @@ import {
 	putSqlStatsFixture,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
-import { BackupError, backupPayload } from './backup-policy.ts'
+import {
+	BackupError,
+	backupPayload,
+	bindSourceDatabase,
+	objectKeyForBookmark,
+} from './backup-policy.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
 import { readFullManifest, sealFullBackupDay } from './seal-full-backup.ts'
 
@@ -205,6 +210,15 @@ test('sealFullBackupDay seals a complete day and is idempotent', async () => {
 			`daily/full/${day}/mailbox/${encodeURIComponent('user-owner-1')}.ndjson`,
 		),
 	)
+	assert.equal(sealed?.payload.d1Sources?.length, 1)
+	assert.equal(
+		sealed?.payload.d1Sources?.[0]?.databaseId,
+		env.SOURCE_DATABASE_ID,
+	)
+	assert.equal(
+		sealed?.payload.d1Sources?.[0]?.manifestKey,
+		backupPayload(env, new Date(`${day}T12:00:00.000Z`)).manifestKey,
+	)
 
 	const second = await sealFullBackupDay(
 		env,
@@ -367,9 +381,10 @@ test('sealFullBackupDay refuses missing or unrestorable SQL stats before sealing
 			new Date(`${sealedDay.day}T04:01:00.000Z`),
 		),
 		{
-			kind: 'incomplete',
+			kind: 'sealed',
 			day: sealedDay.day,
-			reason: 'backup-unrestorable-statements',
+			manifestKey: sealedFullManifestKey(sealedDay.day),
+			alreadySealed: true,
 		},
 	)
 })
@@ -417,4 +432,152 @@ test('sealFullBackupDay is incomplete when the 501st referenced blob is missing'
 		reason: 'blob-missing',
 	})
 	assert.equal(await bucket.head(sealedFullManifestKey(day)), null)
+})
+
+test('sealFullBackupDay requires a restorable manifest for every SOURCE_DATABASES entry', async () => {
+	const consoleError = vi.spyOn(console, 'error')
+	consoleError.mockImplementation(() => undefined)
+	const bucket = new MemoryBucket()
+	const seeded = await seedCompleteDay(bucket)
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	seeded.env.SOURCE_DATABASES = JSON.stringify([
+		{
+			id: seeded.env.SOURCE_DATABASE_ID,
+			name: seeded.env.SOURCE_DATABASE_NAME,
+		},
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	seeded.env.ALLOWED_SOURCE_DATABASE_IDS = `${seeded.env.SOURCE_DATABASE_ID},${jobsId}`
+	const result = await sealFullBackupDay(
+		seeded.env,
+		seeded.day,
+		new Date(`${seeded.day}T04:00:00.000Z`),
+	)
+	assert.deepEqual(result, {
+		kind: 'incomplete',
+		day: seeded.day,
+		reason: 'd1-manifest-missing',
+	})
+	assert.equal(await bucket.head(sealedFullManifestKey(seeded.day)), null)
+	assert.equal(consoleError.mock.calls.length, 1)
+})
+
+test('sealFullBackupDay short-circuits already-sealed days before checking sources', async () => {
+	const bucket = new MemoryBucket()
+	const seeded = await seedCompleteDay(bucket)
+	const first = await sealFullBackupDay(
+		seeded.env,
+		seeded.day,
+		new Date(`${seeded.day}T04:00:00.000Z`),
+	)
+	assert.equal(first.kind, 'sealed')
+	if (first.kind !== 'sealed') return
+	assert.equal(first.alreadySealed, false)
+
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	seeded.env.SOURCE_DATABASES = JSON.stringify([
+		{
+			id: seeded.env.SOURCE_DATABASE_ID,
+			name: seeded.env.SOURCE_DATABASE_NAME,
+		},
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	seeded.env.ALLOWED_SOURCE_DATABASE_IDS = `${seeded.env.SOURCE_DATABASE_ID},${jobsId}`
+	const second = await sealFullBackupDay(
+		seeded.env,
+		seeded.day,
+		new Date(`${seeded.day}T04:01:00.000Z`),
+	)
+	assert.deepEqual(second, {
+		kind: 'sealed',
+		day: seeded.day,
+		manifestKey: sealedFullManifestKey(seeded.day),
+		alreadySealed: true,
+	})
+})
+
+test('sealFullBackupDay records every configured source when sealing a new day', async () => {
+	const bucket = new MemoryBucket()
+	const seeded = await seedCompleteDay(bucket)
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	seeded.env.SOURCE_DATABASES = JSON.stringify([
+		{
+			id: seeded.env.SOURCE_DATABASE_ID,
+			name: seeded.env.SOURCE_DATABASE_NAME,
+		},
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	seeded.env.ALLOWED_SOURCE_DATABASE_IDS = `${seeded.env.SOURCE_DATABASE_ID},${jobsId}`
+	const jobsEnv = bindSourceDatabase(seeded.env, {
+		id: jobsId,
+		name: 'kody-jobs',
+	})
+	const jobsPayload = backupPayload(
+		jobsEnv,
+		new Date(`${seeded.day}T12:00:00.000Z`),
+	)
+	const jobsSql = 'CREATE TABLE jobs(id INTEGER);\n'
+	const jobsSqlKey = objectKeyForBookmark(
+		jobsPayload.objectPrefix,
+		'bookmark-1',
+	)
+	await bucket.put(jobsSqlKey, jobsSql)
+	const template = manifest({
+		bytes: jobsSql.length,
+		sha256: sha256Text(jobsSql),
+		r2Etag: createHash('md5').update(jobsSql).digest('hex'),
+	})
+	await putImmutableManifest(
+		bucket as unknown as R2Bucket,
+		jobsPayload.manifestKey,
+		signedManifest({
+			...template.payload,
+			source: {
+				...template.payload.source,
+				databaseId: jobsId,
+				databaseName: 'kody-jobs',
+			},
+			export: {
+				...template.payload.export,
+				scheduledAt: `${seeded.day}T02:15:00.000Z`,
+				startedAt: `${seeded.day}T02:15:01.000Z`,
+				completedAt: `${seeded.day}T02:16:00.000Z`,
+			},
+			sql: { ...template.payload.sql, objectKey: jobsSqlKey },
+		}),
+	)
+	const result = await sealFullBackupDay(
+		seeded.env,
+		seeded.day,
+		new Date(`${seeded.day}T04:00:00.000Z`),
+	)
+	assert.equal(result.kind, 'sealed')
+	if (result.kind !== 'sealed') return
+	assert.equal(result.alreadySealed, false)
+	const sealed = await readFullManifest(
+		bucket as unknown as R2Bucket,
+		sealedFullManifestKey(seeded.day),
+	)
+	assert.deepEqual(
+		sealed?.payload.d1Sources?.map((source) => ({
+			databaseId: source.databaseId,
+			databaseName: source.databaseName,
+			manifestKey: source.manifestKey,
+		})),
+		[
+			{
+				databaseId: seeded.env.SOURCE_DATABASE_ID,
+				databaseName: seeded.env.SOURCE_DATABASE_NAME,
+				manifestKey: backupPayload(
+					seeded.env,
+					new Date(`${seeded.day}T12:00:00.000Z`),
+				).manifestKey,
+			},
+			{
+				databaseId: jobsId,
+				databaseName: 'kody-jobs',
+				manifestKey: jobsPayload.manifestKey,
+			},
+		],
+	)
 })

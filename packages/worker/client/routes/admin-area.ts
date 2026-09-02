@@ -6,6 +6,10 @@ export { AdminInsightsRoute } from './admin-insights.tsx'
 export { adminInsightsRouteLoader } from './admin-insights-shared.ts'
 export { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
 export {
+	AdminReservedUsernamesRoute,
+	adminReservedUsernamesRouteLoader,
+} from './admin-reserved-usernames.tsx'
+export {
 	AdminFeatureFlagsRoute,
 	adminFeatureFlagsRouteLoader,
 } from './admin-feature-flags.tsx'

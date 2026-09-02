@@ -368,6 +368,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-retriever-index-entry:v1:user-aaa:search:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
+		'platform-settings:v1:reserved-usernames',
 		'platform-settings:v1:signup-mode',
 		'public-code-runs:v2',
 	]
@@ -794,6 +795,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(deletedKvKeys).not.toContain(
 		`package-codemod-revert:${userBbb}:item-other`,
 	)
+	expect(deletedKvKeys).not.toContain('platform-settings:v1:reserved-usernames')
 	expect(deletedKvKeys).not.toContain('platform-settings:v1:signup-mode')
 	expect(deletedKvKeys).not.toContain('public-code-runs:v2')
 

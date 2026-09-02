@@ -368,7 +368,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   the Cloudflare Email sender. User Cloudflare API calls from authored package
   modules use saved secrets and secret-aware `fetch` (see
   `docs/contributing/packages-and-manifests.md`). Local `npm run dev` sets this
-  to the Cloudflare mock token unless `SKIP_CLOUDFLARE_MOCK=1`.
+  to the Cloudflare mock token unless `SKIP_CLOUDFLARE_MOCK=1`. Production
+  workers do not share one value: `kody-runtime` receives the narrower
+  `CLOUDFLARE_RUNTIME_API_TOKEN` GitHub secret (Email Sending + Artifacts only)
+  via
+  `--set-from-env-optional CLOUDFLARE_API_TOKEN=CLOUDFLARE_RUNTIME_API_TOKEN` in
+  `.github/workflows/deploy.yml`; see `docs/contributing/setup-manifest.md` for
+  the permission list.
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This
   is a Worker var (not a secret) and should match the account behind
@@ -460,7 +466,14 @@ Non-secret vars:
 - `ENABLE_PRODUCTION_D1_BACKUPS` / `BACKUP_BENCHMARK_APPROVED` — both must be
   exactly `"true"` or schedules stay inert.
 - `SOURCE_ACCOUNT_ID` / `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME` plus
-  `ALLOWED_SOURCE_ACCOUNT_IDS` / `ALLOWED_SOURCE_DATABASE_IDS`.
+  `SOURCE_DATABASES` (JSON array of `{ id, name }` objects; the nightly path
+  exports every entry) and `ALLOWED_SOURCE_ACCOUNT_IDS` /
+  `ALLOWED_SOURCE_DATABASE_IDS`. `SOURCE_DATABASE_ID` / `SOURCE_DATABASE_NAME`
+  are the primary APP_DB (`kody`) identity and the single-database fallback when
+  `SOURCE_DATABASES` is unset. Every listed id must appear in
+  `ALLOWED_SOURCE_DATABASE_IDS`. Production `kody-jobs` UUID is the live D1
+  named `kody-jobs`; deploy resolves it by name in
+  `tools/ci/jobs-worker-resources.ts` (`jobs_d1_database_id`).
 - `BACKUP_MANIFEST_SIGNING_KEY_ID`,
   `BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64`,
   `TRUSTED_RESTORE_BASELINE_ID`, `TRUSTED_RESTORE_BASELINE_SHA256`.

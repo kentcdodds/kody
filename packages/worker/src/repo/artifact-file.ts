@@ -128,6 +128,99 @@ export async function readFirstArtifactFileAtCommit(input: {
 	}
 }
 
+/**
+ * Whole-tree read of one Artifacts commit. Production has no KV snapshot for
+ * unpublished HEAD, so approve-publish uses this shallow fetch + walk.
+ */
+export async function readArtifactTreeAtCommit(input: {
+	env: Env
+	repoId: string
+	commit: string
+}): Promise<Record<string, string> | null> {
+	const repo = await resolveExistingArtifactSourceRepo(input.env, input.repoId)
+	if (!repo) {
+		throw new Error(`Artifact repo "${input.repoId}" was not found.`)
+	}
+	const info = await repo.info()
+	if (!info?.remote) {
+		throw new Error('Artifact repo remote URL is unavailable.')
+	}
+
+	if (isLoopbackArtifactsRemote(info.remote)) {
+		const snapshot = await readArtifactSourceSnapshot({
+			env: input.env,
+			repoId: input.repoId,
+			commit: input.commit,
+		})
+		return snapshot?.files ?? null
+	}
+
+	const token = await repo.createToken('read', 300)
+	const remote = buildAuthenticatedArtifactsRemote({
+		remote: info.remote,
+		token: token.plaintext,
+	})
+	const auth = buildArtifactsGitAuth({ token: token.plaintext })
+	const { git, http } = await loadIsomorphicGit()
+	try {
+		return await runArtifactsGitWithRetry(async () => {
+			const workspace = createEphemeralGitWorkspace()
+			await git.init({
+				fs: workspace.fs,
+				dir: workspace.dir,
+			})
+			await git.addRemote({
+				fs: workspace.fs,
+				dir: workspace.dir,
+				remote: 'origin',
+				url: remote,
+			})
+			await git.fetch({
+				fs: workspace.fs,
+				http,
+				dir: workspace.dir,
+				remote: 'origin',
+				ref: input.commit,
+				depth: 1,
+				singleBranch: true,
+				tags: false,
+				onAuth() {
+					return auth
+				},
+			})
+			const files = Object.create(null) as Record<string, string>
+			await git.walk({
+				fs: workspace.fs,
+				dir: workspace.dir,
+				trees: [git.TREE({ ref: input.commit })],
+				map: async (filepath, [entry]) => {
+					if (!entry || filepath === '.') return
+					if ((await entry.type()) !== 'blob') return
+					const content = await entry.content()
+					if (content == null) return
+					files[filepath] = decodeArtifactBlob(content)
+				},
+			})
+			return files
+		})
+	} catch (error) {
+		throw wrapArtifactsGitHttpError({
+			operation: 'git fetch',
+			remote: info.remote,
+			error,
+		})
+	}
+}
+
+function decodeArtifactBlob(content: Uint8Array | string) {
+	if (typeof content === 'string') return content
+	// Null-byte blobs stay byte-for-byte (latin1) so two binaries remain
+	// distinguishable. The publish diff still skips a text patch when the
+	// decoded string includes `\0`.
+	if (content.includes(0)) return new TextDecoder('latin1').decode(content)
+	return new TextDecoder().decode(content)
+}
+
 function isMissingArtifactFileError(error: unknown) {
 	if (
 		error instanceof Error &&

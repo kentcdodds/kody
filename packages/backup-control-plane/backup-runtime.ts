@@ -20,10 +20,14 @@ import {
 import {
 	BackupError,
 	backupPayload,
+	bindSourceDatabase,
 	errorCode,
 	isBackupEnabled,
 	objectKeyForPayload,
+	retentionTier,
 	safeLog,
+	sourceDatabaseFromObjectPrefix,
+	utcDay,
 } from './backup-policy.ts'
 import {
 	type BackupEnvironment,
@@ -218,6 +222,26 @@ function matchesExpectedPayload(
 	)
 }
 
+function expectedPayloadForRecord(
+	env: BackupEnvironment,
+	payload: Record<string, unknown>,
+): BackupPayload {
+	const scheduledAt = canonicalScheduledDate(payload.scheduledAt)
+	const day = utcDay(scheduledAt)
+	const tier = retentionTier(day)
+	if (typeof payload.objectPrefix !== 'string') {
+		throw new BackupError(
+			'invalid-workflow-payload',
+			'workflow payload did not match deterministic backup keys',
+		)
+	}
+	return backupPayload(
+		env,
+		scheduledAt,
+		sourceDatabaseFromObjectPrefix(env, payload.objectPrefix, day, tier),
+	)
+}
+
 function validatePayload(
 	env: BackupEnvironment,
 	payload: unknown,
@@ -235,10 +259,7 @@ function validatePayload(
 				'legacy workflow payload did not have exact scheduled fields',
 			)
 		}
-		const expected = backupPayload(
-			env,
-			canonicalScheduledDate(payload.scheduledAt),
-		)
+		const expected = expectedPayloadForRecord(env, payload)
 		const legacyExpected: LegacyScheduledBackupPayload = {
 			scheduledAt: expected.scheduledAt,
 			day: expected.day,
@@ -269,10 +290,7 @@ function validatePayload(
 			'scheduled workflow payload did not have exact fields',
 		)
 	}
-	const expected = backupPayload(
-		env,
-		canonicalScheduledDate(payload.scheduledAt),
-	)
+	const expected = expectedPayloadForRecord(env, payload)
 	if (!matchesExpectedPayload(payload, expected)) {
 		throw new BackupError(
 			'invalid-workflow-payload',
@@ -303,12 +321,19 @@ export async function runBackupRuntime(
 		}
 		const checkedPayload = validatePayload(env, event.payload)
 		payload = checkedPayload
+		const source = sourceDatabaseFromObjectPrefix(
+			env,
+			checkedPayload.objectPrefix,
+			checkedPayload.day,
+			checkedPayload.retentionTier,
+		)
+		const sourceEnv = bindSourceDatabase(env, source)
 		await step.do(
 			'verify-source-identity',
 			{ retries: { limit: 0, delay: '1 second' }, timeout: '1 minute' },
-			async () => verifySourceDatabaseIdentity(env, options.api),
+			async () => verifySourceDatabaseIdentity(sourceEnv, options.api),
 		)
-		const exported = await runDurableExport(env, step, {
+		const exported = await runDurableExport(sourceEnv, step, {
 			api: options.api,
 		})
 		const stored = await step.do(
@@ -321,7 +346,7 @@ export async function runBackupRuntime(
 				// Refresh may restart the export when the short-lived poll result
 				// has expired; the returned bookmark defines the immutable object key.
 				const refreshed = await refreshCompletedD1Export(
-					env,
+					sourceEnv,
 					exported.bookmark,
 					options.api,
 				)
@@ -360,9 +385,9 @@ export async function runBackupRuntime(
 		)
 		const unsignedManifest = {
 			source: {
-				accountId: env.SOURCE_ACCOUNT_ID,
-				databaseId: env.SOURCE_DATABASE_ID,
-				databaseName: env.SOURCE_DATABASE_NAME,
+				accountId: sourceEnv.SOURCE_ACCOUNT_ID,
+				databaseId: sourceEnv.SOURCE_DATABASE_ID,
+				databaseName: sourceEnv.SOURCE_DATABASE_NAME,
 			},
 			export: {
 				bookmark: stored.bookmark,
@@ -412,6 +437,8 @@ export async function runBackupRuntime(
 			status: 'success',
 			day: checkedPayload.day,
 			instanceId: event.instanceId,
+			databaseId: source.id,
+			databaseName: source.name,
 			objectKey: stored.objectKey,
 			manifestKey: checkedPayload.manifestKey,
 			bytes: stored.bytes,

@@ -2,158 +2,271 @@
  * Static denylist for usernames that must not be claimed by end users.
  * Covers brand/product identity, support/trust surfaces, infrastructure and
  * route-like names, and RFC 5321 mailbox locals commonly used for system mail.
+ * Keep this array sorted, unique, and lowercase so diffs stay reviewable.
  */
-const reservedUsernameList = [
-	// Brand / product
-	'kody',
-	'kodybot',
-	'kody-bot',
-	'kodyassistant',
-	'kody-assistant',
-	'kodyapp',
-	'kody-app',
-	'kodyplatform',
-	'kody-platform',
-	'kodyruntime',
-	'kody-runtime',
-	'kodyjobs',
-	'kody-jobs',
-	'kodyhq',
-	'kody-hq',
-	'kodyai',
-	'kody-ai',
-
-	// Support / trust / safety
-	'support',
-	'help',
-	'helpdesk',
-	'help-desk',
-	'trust',
-	'safety',
-	'security',
+export const builtInReservedUsernameList = [
 	'abuse',
-	'report',
-	'feedback',
-	'contact',
-	'info',
-	'psl',
-
-	// Staff / elevated roles
+	'account',
+	'accounts',
+	'acme',
+	'acme-challenge',
 	'admin',
 	'administrator',
-	'root',
-	'system',
-	'sysadmin',
-	'superuser',
-	'sudo',
-	'owner',
-	'staff',
-	'team',
-	'moderator',
-	'mod',
-	'ops',
-	'devops',
-
-	// Infrastructure / web / routing
+	'agent',
+	'agents',
+	'alpha',
+	'anonymous',
+	'anthropic',
 	'api',
-	'www',
-	'mail',
-	'email',
-	'smtp',
-	'imap',
-	'pop',
-	'pop3',
-	'dns',
-	'ftp',
-	'ssh',
-	'ssl',
-	'tls',
-	'cdn',
-	'static',
+	'apis',
+	'app',
+	'apple',
+	'apps',
 	'assets',
-	'status',
-	'health',
-	'ping',
-	'monitor',
-	'metrics',
-	'logs',
-	'webhook',
-	'webhooks',
+	'auth',
+	'autoconfig',
+	'autodiscover',
+	'beta',
+	'billing',
+	'blog',
+	'bot',
+	'bots',
+	'bounce',
+	'broadcasthost',
 	'callback',
 	'callbacks',
-	'oauth',
-	'auth',
-	'login',
-	'logout',
-	'signup',
-	'register',
-	'account',
-	'profile',
-	'settings',
-	'billing',
-	'payments',
-	'subscribe',
-	'unsubscribe',
+	'canary',
+	'careers',
+	'cdn',
+	'ceo',
+	'checkout',
+	'cloudflare',
 	'community',
-	'mcp',
 	'connect',
 	'connector',
 	'connectors',
-	'package',
-	'packages',
-	'session',
-	'sessions',
-	'verify',
-	'reset',
-	'password',
-	'privacy',
-	'faq',
-	'terms',
-	'legal',
-	'dmca',
+	'console',
+	'contact',
 	'copyright',
-	'trademark',
-
-	// Email mailbox locals (RFC 5321 / common system addresses)
-	'postmaster',
-	'hostmaster',
-	'webmaster',
-	'noreply',
-	'no-reply',
-	'donotreply',
+	'daemon',
+	'dashboard',
+	'demo',
+	'dev',
+	'dev-null',
+	'devops',
+	'discord',
+	'dmca',
+	'dns',
 	'do-not-reply',
-	'bounce',
+	'doc',
+	'docs',
+	'documentation',
+	'donotreply',
+	'download',
+	'downloads',
+	'email',
+	'epic',
+	'epicweb',
+	'example',
+	'external',
+	'facebook',
+	'false',
+	'faq',
+	'feedback',
+	'files',
+	'ftp',
+	'gateway',
+	'github',
+	'google',
+	'group',
+	'groups',
+	'guest',
+	'health',
+	'hello',
+	'help',
+	'help-desk',
+	'helpdesk',
+	'hostmaster',
+	'identity',
+	'images',
+	'imap',
+	'img',
+	'info',
+	'internal',
+	'invoice',
+	'isatap',
+	'jobs',
+	'kent',
+	'kentcdodds',
+	'kody',
+	'kody-ai',
+	'kody-app',
+	'kody-assistant',
+	'kody-bot',
+	'kody-hq',
+	'kody-jobs',
+	'kody-platform',
+	'kody-runtime',
+	'kodyai',
+	'kodyapp',
+	'kodyassistant',
+	'kodybot',
+	'kodyhq',
+	'kodyjobs',
+	'kodyplatform',
+	'kodyruntime',
+	'legal',
+	'linkedin',
+	'local',
+	'localhost',
+	'login',
+	'logout',
+	'logs',
+	'mail',
+	'mailer_daemon',
 	'mailer-daemon',
 	'mailerdaemon',
-	'mailer_daemon',
-
-	// Ambiguous / environment / placeholder
+	'marketing',
+	'mcp',
+	'media',
+	'member',
+	'members',
+	'meta',
+	'metrics',
+	'microsoft',
+	'mobile',
+	'mod',
+	'moderator',
+	'monitor',
+	'monitoring',
+	'mta-sts',
+	'mx1',
+	'mx2',
+	'news',
+	'no-reply',
+	'nobody',
+	'noreply',
+	'ns1',
+	'ns2',
+	'ns3',
 	'null',
-	'undefined',
-	'anonymous',
-	'guest',
-	'public',
+	'oauth',
+	'oauth2',
+	'official',
+	'openai',
+	'ops',
+	'org',
+	'orgs',
+	'owner',
+	'package',
+	'packages',
+	'panel',
+	'password',
+	'passwords',
+	'pay',
+	'payments',
+	'ping',
+	'policy',
+	'pop',
+	'pop3',
+	'portal',
+	'postmaster',
+	'press',
+	'preview',
+	'privacy',
 	'private',
-	'internal',
-	'external',
-	'localhost',
-	'local',
-	'dev',
-	'staging',
-	'stage',
 	'prod',
 	'production',
-	'test',
-	'preview',
-	'demo',
-	'sandbox',
-	'example',
+	'profile',
+	'proxy',
+	'psl',
+	'public',
+	'register',
+	'report',
+	'reset',
+	'root',
+	'router',
+	'safety',
+	'sales',
 	'sample',
-	'official',
+	'sandbox',
+	'security',
+	'session',
+	'sessions',
+	'settings',
+	'sftp',
+	'signin',
+	'signup',
+	'slack',
+	'smtp',
+	'ssh',
+	'ssl',
+	'sso',
+	'staff',
+	'stage',
+	'staging',
+	'static',
+	'status',
+	'stripe',
+	'subscribe',
+	'sudo',
+	'superuser',
+	'support',
+	'sys',
+	'sysadmin',
+	'system',
+	'team',
+	'teams',
+	'terms',
+	'test',
+	'testing',
+	'tls',
+	'token',
+	'tokens',
+	'tos',
+	'trademark',
+	'true',
+	'trust',
+	'twitter',
+	'undefined',
+	'unsubscribe',
+	'user',
+	'users',
 	'verified',
+	'verify',
+	'void',
+	'vpn',
+	'web',
+	'webhook',
+	'webhooks',
+	'webmail',
+	'webmaster',
+	'wpad',
+	'www',
+	'youtube',
 ] as const
 
-const reservedUsernames = new Set<string>(reservedUsernameList)
+const reservedUsernames = new Set<string>(builtInReservedUsernameList)
+
+/**
+ * Platform system-email locals that must never be unreserved. Mirrors
+ * `systemEmailLocals` without importing `#worker/email/*` (that graph already
+ * imports this module).
+ */
+export const permanentlyReservedSystemLocals = [
+	'kody',
+	'support',
+	'abuse',
+	'dmca',
+	'postmaster',
+	'security',
+	'admin',
+	'psl',
+] as const
+
+const permanentlyReservedSystemLocalSet = new Set<string>(
+	permanentlyReservedSystemLocals,
+)
 
 /**
  * Local parts shaped like the legacy inbound reply-token aliases
@@ -162,12 +275,31 @@ const reservedUsernames = new Set<string>(reservedUsernameList)
  */
 const reservedUsernamePrefixPattern = /^kody-r-/
 
-export function isReservedUsername(username: string) {
-	const normalized = username.trim().toLowerCase()
+export function normalizeReservedUsername(username: string) {
+	return username.trim().toLowerCase()
+}
+
+export function isBuiltInReservedUsername(username: string) {
+	const normalized = normalizeReservedUsername(username)
 	return (
 		reservedUsernames.has(normalized) ||
 		reservedUsernamePrefixPattern.test(normalized)
 	)
+}
+
+export function isReservedUsername(username: string) {
+	return isBuiltInReservedUsername(username)
+}
+
+export function isPermanentlyReservedUsername(username: string) {
+	const normalized = normalizeReservedUsername(username)
+	if (permanentlyReservedSystemLocalSet.has(normalized)) {
+		return true
+	}
+	if (reservedUsernamePrefixPattern.test(normalized)) {
+		return true
+	}
+	return reservedUsernames.has(normalized) && normalized.startsWith('kody')
 }
 
 export function getReservedUsernameError(username: string) {
@@ -175,4 +307,49 @@ export function getReservedUsernameError(username: string) {
 		return 'This username is reserved.'
 	}
 	return null
+}
+
+export function isUsernameEffectivelyReserved(
+	username: string,
+	overrides: {
+		added?: Iterable<string>
+		removed?: Iterable<string>
+	} = {},
+) {
+	const normalized = normalizeReservedUsername(username)
+	if (!normalized) return false
+	if (isPermanentlyReservedUsername(normalized)) return true
+	const removed = toNormalizedSet(overrides.removed)
+	if (removed.has(normalized)) return false
+	if (isBuiltInReservedUsername(normalized)) return true
+	return toNormalizedSet(overrides.added).has(normalized)
+}
+
+export function computeEffectiveReservedUsernames(input: {
+	added?: Iterable<string>
+	removed?: Iterable<string>
+}) {
+	const removed = toNormalizedSet(input.removed)
+	const effective = new Set<string>()
+	for (const name of builtInReservedUsernameList) {
+		if (isUsernameEffectivelyReserved(name, input)) {
+			effective.add(name)
+		}
+	}
+	for (const name of toNormalizedSet(input.added)) {
+		if (!removed.has(name) || isPermanentlyReservedUsername(name)) {
+			effective.add(name)
+		}
+	}
+	return effective
+}
+
+function toNormalizedSet(names: Iterable<string> | undefined) {
+	const result = new Set<string>()
+	if (!names) return result
+	for (const name of names) {
+		const normalized = normalizeReservedUsername(name)
+		if (normalized) result.add(normalized)
+	}
+	return result
 }

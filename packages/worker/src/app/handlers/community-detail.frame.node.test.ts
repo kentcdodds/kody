@@ -13,6 +13,7 @@ const mockModule = vi.hoisted(() => ({
 	resolveArtifactSourceHead: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
+	getSavedPackageByKodyId: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 }))
 
@@ -56,6 +57,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.listSavedPackagesByKodyIds(...args),
 	listSavedPackagesByIds: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByIds(...args),
+	getSavedPackageByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
 }))
 
 vi.mock('#worker/package-registry/user-scope.ts', () => ({
@@ -99,6 +102,7 @@ const env = {} as Env
 // in-isolate listing cache must not carry one test's answer into the next.
 beforeEach(() => {
 	resetDataCacheForTests()
+	mockModule.getSavedPackageByKodyId.mockReset()
 })
 
 test('community detail handler returns bare detail frame HTML for target header', async () => {
@@ -222,4 +226,86 @@ test('community detail browse-files uses the looked-up default branch', async ()
 	expect(html).toContain('href="/@kentcdodds/github-triage/tree/release"')
 	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
 	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
+})
+
+test('owner source-ahead badge links to the published-vs-HEAD approve-publish page', async () => {
+	const headCommit = 'ffffffffffffffffffffffffffffffffffffffff'
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: headCommit,
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
+		roles: [],
+	})
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getSavedPackageByKodyId.mockResolvedValue({ id: 'pkg-1' })
+	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+
+	const handler = createCommunityDetailHandler(env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const html = await response.text()
+	expect(html).toContain(
+		`href="/account/packages/pkg-1/approve-publish?commit=${headCommit}"`,
+	)
+	expect(html).toMatch(
+		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
+	)
+	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+		undefined,
+		expect.objectContaining({
+			userId: 'owner-mcp-id',
+			kodyId: 'github-triage',
+		}),
+	)
+})
+
+test('visitor source-ahead badge is not a publish link', async () => {
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'ffffffffffffffffffffffffffffffffffffffff',
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+
+	const handler = createCommunityDetailHandler(env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const html = await response.text()
+	expect(html).toContain('data-testid="community-detail-source-ahead-badge"')
+	expect(html).toMatch(
+		/<span[^>]*data-testid="community-detail-source-ahead-badge"/,
+	)
+	expect(html).not.toContain('approve-publish')
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })

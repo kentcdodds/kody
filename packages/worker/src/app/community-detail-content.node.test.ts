@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { renderCommunityDetailContentHtml } from '#app/community-detail-content.tsx'
+import {
+	buildSourceAheadPublishHref,
+	renderCommunityDetailContentHtml,
+} from '#app/community-detail-content.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
 
 const sampleListing = {
@@ -78,6 +81,28 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	})
 	expect(sourceAheadHtml).toContain(
 		'data-testid="community-detail-source-ahead-badge"',
+	)
+	expect(sourceAheadHtml).toMatch(
+		/<span[^>]*data-testid="community-detail-source-ahead-badge"/,
+	)
+	expect(sourceAheadHtml).not.toContain('approve-publish')
+
+	const ownerAheadHref =
+		'/account/packages/pkg-1/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+	const ownerAheadHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: {
+			...sampleListing,
+			sourceAhead: true,
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		},
+		viewerIsOwner: true,
+		loggedIn: true,
+		publishCompareHref: ownerAheadHref,
+	})
+	expect(ownerAheadHtml).toContain(`href="${ownerAheadHref}"`)
+	expect(ownerAheadHtml).toMatch(
+		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
 
 	const ownInstalledHtml = await renderCommunityDetailContentHtml({
@@ -179,4 +204,27 @@ test('package chrome is shared for public listings and private owner packages', 
 	expect(privateHtml).not.toContain('data-testid="community-detail-forks"')
 	expect(privateHtml).not.toContain('data-testid="community-listing-category"')
 	expect(privateHtml).toContain('Local notes.')
+})
+
+test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
+	expect(
+		buildSourceAheadPublishHref({
+			packageId: 'pkg-1',
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		}),
+	).toBe(
+		'/account/packages/pkg-1/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+	)
+	expect(
+		buildSourceAheadPublishHref({
+			packageId: 'pkg-1',
+			headCommit: null,
+		}),
+	).toBe('/account/packages/pkg-1/approve-publish')
+	expect(
+		buildSourceAheadPublishHref({
+			packageId: '',
+			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		}),
+	).toBeNull()
 })

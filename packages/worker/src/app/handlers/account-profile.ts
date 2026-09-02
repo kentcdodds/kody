@@ -14,7 +14,7 @@ import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 import {
-	getUsernameValidationError,
+	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -107,7 +107,10 @@ export function createAccountProfileApiHandler(env: Env) {
 			const usernameChanged = hasUsername && username !== previousUsername
 
 			if (usernameChanged) {
-				const usernameError = getUsernameValidationError(username)
+				const usernameError = await getEffectiveUsernameValidationError(
+					username,
+					env,
+				)
 				if (usernameError) {
 					return jsonResponse({ ok: false, error: usernameError }, 400)
 				}
