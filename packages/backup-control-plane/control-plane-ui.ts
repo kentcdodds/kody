@@ -541,6 +541,8 @@ export function renderRestoreStatusPage(input: {
 	status: string
 	progress?: ProductionRestoreProgress | null
 }): string {
+	const notes = input.progress?.notes ?? []
+	const warnings = input.progress?.warnings ?? []
 	const details = input.progress
 		? JSON.stringify(input.progress, null, 2)
 		: 'No progress payload yet.'
@@ -551,6 +553,16 @@ export function renderRestoreStatusPage(input: {
 </header>
 <section class="panel danger">
 	<div class="kv"><span>Status</span><strong>${escapeHtml(input.status)}</strong></div>
+	${
+		notes.length > 0
+			? `<div class="kv"><span>Not in this backup day</span><span>${escapeHtml(notes.join('; '))}</span></div>`
+			: ''
+	}
+	${
+		warnings.length > 0
+			? `<div class="kv"><span>Warnings</span><span class="bad">${escapeHtml(warnings.join('; '))}</span></div>`
+			: ''
+	}
 	<pre>${escapeHtml(details)}</pre>
 	<p>
 		<a class="button" href="/restore-status?id=${encodeURIComponent(input.instanceId)}">Refresh</a>

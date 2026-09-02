@@ -13,7 +13,11 @@ import {
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
 import { backupPayload, objectKeyForBookmark } from './backup-policy.ts'
-import { collectDayStatuses, renderDashboard } from './control-plane-ui.ts'
+import {
+	collectDayStatuses,
+	renderDashboard,
+	renderRestoreStatusPage,
+} from './control-plane-ui.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
 
 test('dashboard renders oversized D1 SQL as not restorable with a warning', async () => {
@@ -142,4 +146,23 @@ test('dashboard warns when a configured D1 source is missing and marks the day u
 	assert.match(html, /kody-jobs: D1 manifest missing/)
 	assert.match(html, /<td class="bad">unverified<\/td>/)
 	assert.match(html, /<td class="bad">no<\/td>/)
+})
+
+test('restore status lists undeclared databases as notes, not warnings', () => {
+	const html = renderRestoreStatusPage({
+		instanceId: 'dr-restore-2026-07-22-demo',
+		status: 'complete',
+		progress: {
+			day: '2026-07-22',
+			phase: 'complete',
+			d1ImportComplete: true,
+			storeRestoreComplete: true,
+			storeIterations: 1,
+			warnings: [],
+			notes: ['JOBS_DB: not present in this backup day'],
+		},
+	})
+	assert.match(html, /Not in this backup day/)
+	assert.match(html, /JOBS_DB: not present in this backup day/)
+	assert.doesNotMatch(html, /<span>Warnings<\/span>/)
 })

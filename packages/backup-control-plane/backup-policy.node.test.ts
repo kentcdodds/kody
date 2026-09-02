@@ -5,7 +5,7 @@ import { test } from 'vitest'
 
 import {
 	BackupError,
-	absentConfiguredSourceWarning,
+	absentConfiguredSourceNote,
 	assertConfiguredIdentity,
 	assertRemoteDatabaseIdentity,
 	backupPayload,
@@ -243,7 +243,7 @@ test('committed control-plane allowlist includes production kody-jobs', async ()
 	)
 })
 
-test('declaredSourceDatabases uses the sealed day list and warns for absent configured DBs', () => {
+test('declaredSourceDatabases uses the sealed day list and notes absent configured DBs', () => {
 	const env = multiDatabaseEnv()
 	assert.deepEqual(declaredSourceDatabases(env), [primarySourceDatabase(env)])
 	assert.deepEqual(declaredSourceDatabases(env, []), [
@@ -278,7 +278,7 @@ test('declaredSourceDatabases uses the sealed day list and warns for absent conf
 		],
 	)
 	assert.equal(
-		absentConfiguredSourceWarning({
+		absentConfiguredSourceNote({
 			id: JOBS_DATABASE_ID,
 			name: 'kody-jobs',
 		}),

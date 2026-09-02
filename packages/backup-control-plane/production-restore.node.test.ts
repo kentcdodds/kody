@@ -24,7 +24,10 @@ import {
 import { d1ImportForeignKeysOffPrefix } from './d1-import-api.ts'
 import { signBackupFullManifest } from './full-manifest-signing.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
-import { runProductionRestore } from './production-restore.ts'
+import {
+	runProductionRestore,
+	restoreProgressFailsWorkflow,
+} from './production-restore.ts'
 
 function sha256Text(value: string): string {
 	return createHash('sha256').update(value).digest('hex')
@@ -272,7 +275,7 @@ async function putJobsRestoreManifest(
 	}
 }
 
-test('production restore of a single-database sealed day restores APP_DB only', async () => {
+test('production restore of a historical single-database day completes the workflow without failure', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
@@ -348,9 +351,9 @@ test('production restore of a single-database sealed day restores APP_DB only', 
 	assert.equal(progress.phase, 'complete')
 	assert.deepEqual(importedDatabaseIds, [DATABASE_ID])
 	assert.equal(exportCalls, 2)
-	assert.deepEqual(progress.warnings, [
-		'JOBS_DB: not present in this backup day',
-	])
+	assert.deepEqual(progress.warnings, [])
+	assert.deepEqual(progress.notes, ['JOBS_DB: not present in this backup day'])
+	assert.equal(restoreProgressFailsWorkflow(progress), false)
 	assert.equal(progress.safetyExports?.length, 1)
 	assert.equal(progress.safetyExports?.[0]?.databaseId, DATABASE_ID)
 })

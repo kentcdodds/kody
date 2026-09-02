@@ -439,12 +439,13 @@ import init/ingest etag. Without that prelude, drills fail with errors like
 2. **Execute** — operator types the exact primary production database name
    (`SOURCE_DATABASE_NAME`, APP_DB `kody`); Workflow
    `kody-production-dr-restore` restores the databases that sealed day's
-   manifest declares. Days without `d1Sources` restore APP_DB only and report
-   `JOBS_DB: not present in this backup day`. Days that list `d1Sources` restore
-   every listed database. Before any production write, restore HEAD/GET-verifies
-   every required SQL object (existence, size, sha256). It then safety-exports
-   each target and imports JOBS_DB (when listed) before APP_DB via the
-   Cloudflare API, then loops chunked
+   manifest declares. Days without `d1Sources` restore APP_DB only and record
+   `JOBS_DB: not present in this backup day` as a restore note, not a warning,
+   so the Workflow instance completes. Days that list `d1Sources` restore every
+   listed database. Before any production write, restore HEAD/GET-verifies every
+   required SQL object (existence, size, sha256). It then safety-exports each
+   target and imports JOBS_DB (when listed) before APP_DB via the Cloudflare
+   API, then loops chunked
    `POST {PRIMARY_WORKER_ORIGIN}/__maintenance/dr-restore` with
    `Authorization: Bearer {DR_RESTORE_SECRET}` until the production worker
    reports `done` (StorageRunner replace, R2 put, published snapshot KV put).

@@ -174,7 +174,7 @@ export function declaredSourceDatabases(
 	return sources
 }
 
-export function absentConfiguredSourceWarning(source: SourceDatabase): string {
+export function absentConfiguredSourceNote(source: SourceDatabase): string {
 	if (source.name === 'kody-jobs') {
 		return 'JOBS_DB: not present in this backup day'
 	}

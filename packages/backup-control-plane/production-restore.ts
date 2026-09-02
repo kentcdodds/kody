@@ -2,7 +2,7 @@ import { sealedFullManifestKey } from '@kody-internal/shared/backup-staging.ts'
 
 import {
 	BackupError,
-	absentConfiguredSourceWarning,
+	absentConfiguredSourceNote,
 	backupPayload,
 	bindSourceDatabase,
 	configuredSourceDatabases,
@@ -58,6 +58,7 @@ export type ProductionRestoreProgress = {
 	storeRestoreComplete: boolean
 	storeIterations: number
 	warnings: Array<string>
+	notes: Array<string>
 	safetyExportKey?: string
 	safetyExportBytes?: number
 	safetyExports?: Array<{
@@ -210,7 +211,7 @@ async function verifyRequiredSqlObjects(
 	return verified
 }
 
-function appendAbsentConfiguredSourceWarnings(
+function appendAbsentConfiguredSourceNotes(
 	env: BackupEnvironment,
 	declared: Array<SourceDatabase>,
 	progress: ProductionRestoreProgress,
@@ -218,9 +219,15 @@ function appendAbsentConfiguredSourceWarnings(
 	const declaredIds = new Set(declared.map((source) => source.id.toLowerCase()))
 	for (const source of configuredSourceDatabases(env)) {
 		if (!declaredIds.has(source.id.toLowerCase())) {
-			progress.warnings.push(absentConfiguredSourceWarning(source))
+			progress.notes.push(absentConfiguredSourceNote(source))
 		}
 	}
+}
+
+export function restoreProgressFailsWorkflow(
+	progress: ProductionRestoreProgress,
+): boolean {
+	return progress.phase === 'failed' || progress.warnings.length > 0
 }
 
 export async function validateSealedDayForRestore(
@@ -535,6 +542,7 @@ export async function runProductionRestore(
 		storeRestoreComplete: false,
 		storeIterations: 0,
 		warnings: [],
+		notes: [],
 	}
 	const publish = async () => {
 		await options.onProgress?.(progress)
@@ -636,7 +644,7 @@ export async function runProductionRestore(
 					progress.phase = 'failed'
 					progress.errorCode = 'dr-restore-warnings'
 					progress.errorMessage = `dr-restore completed with ${String(progress.warnings.length)} warning(s)`
-					appendAbsentConfiguredSourceWarnings(
+					appendAbsentConfiguredSourceNotes(
 						env,
 						validated.declaredSources.map((entry) => entry.source),
 						progress,
@@ -650,7 +658,7 @@ export async function runProductionRestore(
 					})
 					return progress
 				}
-				appendAbsentConfiguredSourceWarnings(
+				appendAbsentConfiguredSourceNotes(
 					env,
 					validated.declaredSources.map((entry) => entry.source),
 					progress,
