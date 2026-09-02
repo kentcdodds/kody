@@ -232,12 +232,21 @@ export async function pruneUnverifiedAccounts(input: {
 			result.purged += 1
 		} catch (error) {
 			if (claim.created && isPreCleanupDeletionFailure(error)) {
-				await abortAccountDeleting({
-					db: input.env.APP_DB,
-					dbUserId: account.id,
-					env: input.env,
-					expectedDeletingAt: claim.deletingAt,
-				})
+				// A failed release leaves the fence in place; the retry backoff
+				// restamps it later, so it must not abort the rest of the batch.
+				try {
+					await abortAccountDeleting({
+						db: input.env.APP_DB,
+						dbUserId: account.id,
+						env: input.env,
+						expectedDeletingAt: claim.deletingAt,
+					})
+				} catch (releaseError) {
+					console.warn('unverified_account_purge_release_failed', {
+						userId: account.stable_user_id,
+						error: releaseError,
+					})
+				}
 			}
 			result.failed += 1
 			console.warn('unverified_account_purge_failed', {

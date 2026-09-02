@@ -12,6 +12,7 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import * as AuditLog from '#worker/audit-log.ts'
 import * as AccountDeletion from './account-deletion.ts'
+import * as DeletionState from '#worker/account/deletion-state.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
@@ -398,6 +399,48 @@ test('a failed deletion is recorded and does not stop the rest of the batch', as
 		timeBudgetExhausted: false,
 	})
 	expect(usernames(sqlite)).toEqual([])
+})
+
+test('a failed fence release is logged and does not stop the rest of the batch', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	const abortAccountDeleting = vi.spyOn(DeletionState, 'abortAccountDeleting')
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const stuck = await seedUser(db, {
+		username: 'stuck-fence',
+		email: 'stuck@example.com',
+		createdAt: daysAgo(12),
+	})
+	await seedUser(db, {
+		username: 'purged-after-stuck',
+		email: 'after-stuck@example.com',
+		createdAt: daysAgo(11),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new AccountDeletionInventoryError(['simulated inventory'])
+	})
+	abortAccountDeleting.mockImplementationOnce(async () => {
+		throw new Error('simulated release failure')
+	})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	expect(result).toEqual({
+		scanned: 2,
+		purged: 1,
+		failed: 1,
+		timeBudgetExhausted: false,
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'unverified_account_purge_release_failed',
+		{ userId: stuck.stableUserId, error: expect.any(Error) },
+	)
+	expect(usernames(sqlite)).toEqual(['stuck-fence'])
+	expect(deletingAt(sqlite, 'stuck-fence')).not.toBeNull()
 })
 
 test('a pre-existing fence is left in place when a restamped deletion fails', async () => {
