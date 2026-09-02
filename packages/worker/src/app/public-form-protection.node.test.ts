@@ -5,6 +5,7 @@ import {
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
 	expect(getSignupMode({} as Pick<Env, 'SIGNUP_MODE'>)).toBe('invite')
@@ -55,9 +56,17 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 		expect(init.method).toBe('POST')
 		const body = new URLSearchParams(String(init.body))
 		expect(body.get('secret')).toBe('secret-key')
-		expect(body.get('response')).toBe('valid-token')
+		expect(['valid-token', 'foreign-host-token']).toContain(
+			body.get('response'),
+		)
 		expect(body.get('remoteip')).toBe('203.0.113.11')
-		return Response.json({ success: true })
+		return Response.json({
+			success: true,
+			hostname:
+				body.get('response') === 'foreign-host-token'
+					? 'kody-pr-99.kody-a99.workers.dev'
+					: 'example.com',
+		})
 	})
 	vi.stubGlobal('fetch', fetchSpy)
 	try {
@@ -91,6 +100,24 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 			}),
 		).resolves.toEqual({ ok: true })
 		expect(fetchSpy).toHaveBeenCalledOnce()
+
+		fetchSpy.mockClear()
+		consoleWarn.mockImplementation(() => {})
+		const foreign = await verifyPublicFormProtection({
+			env,
+			request: turnstileRequest,
+			body: { turnstileToken: 'foreign-host-token' },
+		})
+		expect(foreign.ok).toBe(false)
+		if (foreign.ok) throw new Error('Expected foreign-hostname rejection.')
+		expect(foreign.response.status).toBe(400)
+		expect(await foreign.response.json()).toEqual({
+			error: 'Human verification failed. Please try again.',
+		})
+		expect(consoleWarn).toHaveBeenCalledWith('turnstile-hostname-mismatch', {
+			expected: 'example.com',
+			received: 'kody-pr-99.kody-a99.workers.dev',
+		})
 	} finally {
 		vi.unstubAllGlobals()
 	}
