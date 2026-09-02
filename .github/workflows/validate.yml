@@ -102,6 +102,26 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run platform:build
 
+      - name: 🖍️ Highlight build
+        if: ${{ !cancelled() }}
+        run: npm run highlight:build
+
+      - name: 📦 Worker startup bundles
+        if: ${{ !cancelled() }}
+        run: npm run worker-startup-bundles:check
+
+      - name: 🚚 Origin production exports
+        if: ${{ !cancelled() }}
+        run: npm run origin-production-exports:check
+
+      - name: 🧽 Slop ratchet
+        if: ${{ !cancelled() }}
+        run: npm run slop-ratchet:check
+
+      - name: 🪓 Knip
+        if: ${{ !cancelled() }}
+        run: npm run knip
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check

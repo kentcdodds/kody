@@ -3,6 +3,9 @@ name: DR secret escrow
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   seal-escrow:
     name: Seal SECRET_STORE_KEY into DR backup bucket
