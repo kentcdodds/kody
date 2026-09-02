@@ -122,10 +122,16 @@ function createMigratedDb() {
 
 async function seedUser(
 	sqlite: DatabaseSync,
-	input: { id: number; email: string; username: string },
+	input: {
+		id: number
+		email: string
+		username: string
+		stableUserId?: string
+	},
 ) {
 	const passwordHash = await createPasswordHash('test-password')
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId =
+		input.stableUserId ?? (await createStableUserIdFromEmail(input.email))
 	sqlite.exec(`
 		INSERT INTO users (id, username, email, stable_user_id, password_hash)
 		VALUES (
@@ -1387,6 +1393,54 @@ test('OAuth signup persists first-touch UTMs from the start URL through login st
 				utmCampaign: 'bwk-2026-08-27',
 				landingPath: '/signup',
 			}),
+		}),
+	)
+})
+
+test('OAuth signup returns a controlled error when stable_user_id already exists and releases the invite', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const victimEmail = 'victim-oauth@example.com'
+	await seedUser(sqlite, {
+		id: 1,
+		email: 'attacker-oauth@example.com',
+		username: 'attacker-oauth',
+		stableUserId: await createStableUserIdFromEmail(victimEmail),
+	})
+	seedInvite(sqlite, 'OAUTH-STABLE-ID')
+	const env = createAppEnv(db, { SIGNUP_MODE: 'invite' })
+	mockGithubProfileExchange(victimEmail)
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github?inviteCode=oauth-stable-id',
+	)
+	const callback = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callback.status).toBe(302)
+	expect(callback.headers.get('Location')).toBe(
+		'/login?oauthError=email-unavailable',
+	)
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 1,
+	})
+	expect(
+		sqlite
+			.prepare(`SELECT use_count FROM invites WHERE code = ?`)
+			.get('OAUTH-STABLE-ID') as { use_count: number },
+	).toEqual({ use_count: 0 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_login',
+			result: 'failure',
+			reason: 'stable_user_id_exists',
 		}),
 	)
 })

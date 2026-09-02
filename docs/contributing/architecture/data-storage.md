@@ -271,7 +271,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, with a NOT NULL unique index in
   `0001-squashed-init.sql`; initially SHA-256 of the normalized email at signup
-  via `createStableUserIdFromEmail`, then preserved across email changes).
+  via `createStableUserIdFromEmail`, then preserved across email changes). Email
+  change requires a verified current address (`users.email_verified_at` is
+  non-null). A `stable_user_id` unique collision at signup is a controlled 409;
+  operators inspect collisions with `adminUserStableIdConflict` (returns stable
+  user id, username, `created_at`, and email-verified state — never content).
   Optional community profile fields are `display_name`, `bio`, and
   `profile_visibility` (default `public`). `account_type` (`'person'` default or
   `'platform'`) distinguishes normal signups from operator-provisioned platform

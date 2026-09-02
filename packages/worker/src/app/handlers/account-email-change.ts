@@ -87,6 +87,26 @@ export function createAccountEmailChangeHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
 
+			if (!userRecord.email_verified_at) {
+				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
+					category: 'account',
+					action: 'email_change_request',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'email_unverified',
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						error: 'Verify your current email address before changing it.',
+					},
+					403,
+				)
+			}
+
 			const rateLimitKey = `email-change:user:${user.userId}`
 			const rateLimit = await checkRateLimit(
 				env.APP_DB,

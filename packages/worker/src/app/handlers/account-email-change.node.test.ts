@@ -11,6 +11,10 @@ import { hashVerificationToken } from '#app/email-verification.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createAccountEmailChangeHandler } from './account-email-change.ts'
@@ -270,6 +274,50 @@ test('email change requests require the current password and create a pending ve
 	})
 	expect(pendingRows[0]?.token_hash).not.toBe(firstPendingToken)
 	expect(consoleWarn).toHaveBeenCalledWith('email-change-send-skipped', 1)
+})
+
+test('unverified accounts cannot start an email change', async () => {
+	const { sqlite, db } = createMigratedDb()
+	await seedUser(sqlite, {
+		id: 1,
+		email: 'unverified@example.com',
+		username: 'unverified-user',
+		password: 'correct-password',
+		verified: false,
+	})
+	const handler = createAccountEmailChangeHandler(createAppEnv(db))
+
+	const response = await runHandler(
+		handler,
+		await createRequest({
+			session: {
+				stableUserId: testStableUserIdFromEmail('unverified@example.com'),
+				email: 'unverified@example.com',
+				rememberMe: false,
+			},
+			email: 'new@example.com',
+			password: 'correct-password',
+		}),
+	)
+	expect(response.status).toBe(403)
+	expect(await response.json()).toEqual({
+		ok: false,
+		error: 'Verify your current email address before changing it.',
+	})
+	expect(
+		sqlite
+			.prepare(`SELECT COUNT(*) AS count FROM pending_email_changes`)
+			.get() as { count: number },
+	).toEqual({ count: 0 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'account',
+			action: 'email_change_request',
+			result: 'failure',
+			reason: 'email_unverified',
+		}),
+	)
+	expect(auditEventSummaries()).toEqual(['email_change_request:failure'])
 })
 
 test('email change requests reject emails already owned by another account', async () => {

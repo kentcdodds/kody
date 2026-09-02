@@ -670,7 +670,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				newUser = { id: createdUser.id, stable_user_id: stableUserId, email }
 			} catch (error) {
 				await releaseConsumedInvite()
-				if (getUniqueConstraintField(error)) {
+				const uniqueField = getUniqueConstraintField(error)
+				if (uniqueField === 'stable_user_id') {
+					return fail('email-unavailable', 'stable_user_id_exists')
+				}
+				if (uniqueField) {
 					return fail('account-error', 'user_create_conflict')
 				}
 				throw error
