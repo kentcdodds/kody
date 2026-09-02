@@ -33,6 +33,7 @@ import { recordServerTiming } from '#worker/request-context.ts'
 import {
 	getCommunityCategoryCounts,
 	getCommunityListingWithAggregates,
+	getCommunityListingsByIds,
 	listCommunityIndexOverview,
 	listCommunityListingsWithAggregates,
 	listFeaturedCommunityListingsWithAggregates,
@@ -245,18 +246,10 @@ export async function loadOnboardingMcpChooserListings(
 			request,
 			buildCommunityOnboardingMcpPackagesCacheKey(),
 			async () => {
-				const rows = await Promise.all(
-					listingIds.map((listingId) =>
-						getCommunityListingWithAggregates({
-							env,
-							listingId,
-							includeDelisted: false,
-						}),
-					),
-				)
-				return rows
-					.filter((row) => row != null)
-					.map(toOnboardingFeaturedListing)
+				const rows = await getCommunityListingsByIds(env.APP_DB, listingIds, {
+					includeDelisted: false,
+				})
+				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
 		const user = await readOptionalAuthenticatedViewer(request, env)

@@ -59,6 +59,7 @@ import {
 	getCommunityForkByListingAndUser,
 	getActiveCommunityListingWithPublisherUsername,
 	getCommunityListingById,
+	getCommunityListingsByIds as getCommunityListingsByIdsFromDb,
 	getCommunityListingByOwnerAndKodyId,
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
@@ -830,6 +831,22 @@ export async function getCommunityListingWithAggregates(input: {
 	})
 	if (!listing) return null
 	return await attachListingAggregates(input.env.APP_DB, listing)
+}
+
+/**
+ * Public listing cards for a fixed id set (onboarding chooser). One listing
+ * `IN (...)` plus the two aggregate batch queries, then ordered by `ids`.
+ */
+export async function getCommunityListingsByIds(
+	db: D1Database,
+	ids: Array<string>,
+	options: { includeDelisted: boolean },
+): Promise<Array<CommunityListingWithAggregates>> {
+	const listings = await getCommunityListingsByIdsFromDb(db, {
+		listingIds: ids,
+		includeDelisted: options.includeDelisted,
+	})
+	return await attachListingAggregatesBatch(db, listings)
 }
 
 export async function listCommunityListingsWithAggregates(input: {

@@ -21,6 +21,7 @@ const mockModule = vi.hoisted(() => ({
 	searchCommunityListings: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
+	getCommunityListingsByIds: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
@@ -48,6 +49,8 @@ vi.mock('#worker/community/service.ts', () => ({
 		mockModule.listFeaturedCommunityListingsWithAggregates(...args),
 	getCommunityListingWithAggregates: (...args: Array<unknown>) =>
 		mockModule.getCommunityListingWithAggregates(...args),
+	getCommunityListingsByIds: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingsByIds(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
@@ -178,19 +181,16 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 test('onboarding MCP chooser listings load official packages by pinned id', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.getCommunityListingWithAggregates.mockImplementation(
-		async (input: { listingId: string }) => {
-			if (input.listingId !== onboardingFeaturedMcpServers[0].listingId) {
-				return null
-			}
-			return {
-				...sampleListing,
-				id: input.listingId,
-				kodyId: 'notion-mcp',
-				name: '@kody/notion-mcp',
-			}
-		},
+	const pinnedIds = onboardingFeaturedMcpServers.map(
+		(server) => server.listingId,
 	)
+	const visibleListing = {
+		...sampleListing,
+		id: onboardingFeaturedMcpServers[0].listingId,
+		kodyId: 'notion-mcp',
+		name: '@kody/notion-mcp',
+	}
+	mockModule.getCommunityListingsByIds.mockResolvedValue([visibleListing])
 
 	const listings = await loadOnboardingMcpChooserListings(
 		{} as Env,
@@ -203,7 +203,19 @@ test('onboarding MCP chooser listings load official packages by pinned id', asyn
 			name: '@kody/notion-mcp',
 		}),
 	])
-	expect(mockModule.getCommunityListingWithAggregates).toHaveBeenCalledTimes(6)
+	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledTimes(1)
+	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledWith(
+		undefined,
+		pinnedIds,
+		{ includeDelisted: false },
+	)
+
+	const cached = await loadOnboardingMcpChooserListings(
+		{} as Env,
+		new Request('https://example.com/onboarding'),
+	)
+	expect(cached).toEqual(listings)
+	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledTimes(1)
 })
 
 test('onboarding featured listings overlay inert forks as adaptation_required', async () => {
