@@ -9,6 +9,8 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  *   origin also imports those types)
  * - Jobs worker or shared jobs modules → jobs (plus origin when origin also
  *   imports those modules)
+ * - Fleet-shared helpers (`d1-retry`, `chat` context types) → origin +
+ *   platform + runtime + jobs; platform MCP imports those too
  * - Backup/DR control plane, contributing docs, and usage docs → no app
  *   workers (the backup plane has its own workflow job)
  * - Shared backup modules → origin (origin parses full backup manifests)
@@ -60,7 +62,10 @@ const highlightSharedPathPrefixes = [
 const jobsWorkerPathPrefix = 'packages/jobs-worker/'
 const jobsWorkerResourcesPathPrefix = 'tools/ci/jobs-worker-resources'
 const jobsSharedPathPrefix = 'packages/shared/src/jobs/'
-const jobsSharedExactPaths = new Set([
+
+// Shared helpers imported by origin, platform MCP, runtime, and jobs.
+// Classifying these as jobs-only would skip platform on a retry/context fix.
+const fleetSharedExactPaths = new Set([
 	'packages/shared/src/d1-retry.ts',
 	'packages/shared/src/chat.ts',
 ])
@@ -156,7 +161,11 @@ export function isJobsWorkerPath(path: string) {
 }
 
 export function isJobsSharedPath(path: string) {
-	return path.startsWith(jobsSharedPathPrefix) || jobsSharedExactPaths.has(path)
+	return path.startsWith(jobsSharedPathPrefix)
+}
+
+export function isFleetSharedPath(path: string) {
+	return fleetSharedExactPaths.has(path)
 }
 
 export function isPlatformPath(path: string) {
@@ -179,20 +188,29 @@ function classifyPath(path: string): PathClass {
 	if (isHighlightWorkerPath(path) || isHighlightSharedPath(path)) {
 		scripts.add('highlight')
 	}
-	if (isJobsWorkerPath(path) || isJobsSharedPath(path)) {
+	if (
+		isJobsWorkerPath(path) ||
+		isJobsSharedPath(path) ||
+		isFleetSharedPath(path)
+	) {
 		scripts.add('jobs')
 	}
-	if (isPlatformPath(path) || isOriginAndPlatformPath(path)) {
+	if (
+		isPlatformPath(path) ||
+		isOriginAndPlatformPath(path) ||
+		isFleetSharedPath(path)
+	) {
 		scripts.add('platform')
 	}
-	if (isRuntimePath(path)) {
+	if (isRuntimePath(path) || isFleetSharedPath(path)) {
 		scripts.add('runtime')
 	}
 	if (
 		isOriginOnlyPath(path) ||
 		isOriginAndPlatformPath(path) ||
 		isHighlightSharedPath(path) ||
-		isJobsSharedPath(path)
+		isJobsSharedPath(path) ||
+		isFleetSharedPath(path)
 	) {
 		scripts.add('origin')
 	}

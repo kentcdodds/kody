@@ -239,6 +239,24 @@ test('production deploy path filter selects worker scripts only when their sourc
 		deployHighlight: false,
 	})
 	expect(
+		classifyProductionDeployPaths(['packages/shared/src/d1-retry.ts']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: true,
+		deployJobs: true,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths(['packages/shared/src/chat.ts']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: true,
+		deployJobs: true,
+		deployHighlight: false,
+	})
+	expect(
 		classifyProductionDeployPaths([
 			'packages/worker/universal/highlighted-code.ts',
 		]),
