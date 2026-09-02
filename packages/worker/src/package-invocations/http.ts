@@ -241,7 +241,7 @@ export async function handlePackageInvocationApiRequest(
 	const bearerToken = readBearerToken(request)
 	if (!bearerToken) {
 		logPackageInvocationAudit(ctx, {
-			db: auditDatabaseFromEnv(env),
+			db: preAuthenticationAuditSink,
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -257,7 +257,7 @@ export async function handlePackageInvocationApiRequest(
 	})
 	if (!routeUser) {
 		logPackageInvocationAudit(ctx, {
-			db: auditDatabaseFromEnv(env),
+			db: preAuthenticationAuditSink,
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -273,7 +273,7 @@ export async function handlePackageInvocationApiRequest(
 	})
 	if (!savedPackage) {
 		logPackageInvocationAudit(ctx, {
-			db: auditDatabaseFromEnv(env),
+			db: preAuthenticationAuditSink,
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -309,7 +309,7 @@ export async function handlePackageInvocationApiRequest(
 	}
 	if (!tokenScope) {
 		logPackageInvocationAudit(ctx, {
-			db: auditDatabaseFromEnv(env),
+			db: preAuthenticationAuditSink,
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
@@ -437,6 +437,12 @@ export async function handlePackageInvocationApiRequest(
 }
 
 type PackageInvocationAuditEvent = Parameters<typeof logAuditEvent>[0]
+
+// Failures before a token scope resolves are reachable by any anonymous
+// request and this route has no rate limiter, so they stay console-only like
+// pre-grant MCP rejections (see docs/contributing/security.md). Persisting
+// them would let a stranger drive unbounded AUDIT_DB writes.
+const preAuthenticationAuditSink = undefined
 
 function logPackageInvocationAudit(
 	ctx: ExecutionContext | undefined,
