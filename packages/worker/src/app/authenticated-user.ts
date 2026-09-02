@@ -1,5 +1,6 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
+import { prefetchRequestFeatureFlagsForHtmlPage } from '#app/request-feature-flags-cache.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
@@ -31,7 +32,7 @@ async function readAuthenticatedAppUserInternal(
 	// session, so every consumer of this helper fails closed.
 	if (resolved.user.accountSuspended) return null
 
-	return {
+	const user = {
 		sessionUserId: resolved.sessionUserId,
 		userId: resolved.user.userId,
 		username: resolved.user.username,
@@ -44,6 +45,13 @@ async function readAuthenticatedAppUserInternal(
 		artifactOwnerIds: resolved.user.artifactOwnerIds,
 		mcpUser: resolved.user.mcpUser,
 	} satisfies AuthenticatedAppUser
+	if (!allowDeleting) {
+		prefetchRequestFeatureFlagsForHtmlPage(request, env, {
+			userId: user.userId,
+			stableUserId: user.mcpUser.userId,
+		})
+	}
+	return user
 }
 
 export async function readAuthenticatedAppUser(request: Request, env: Env) {
