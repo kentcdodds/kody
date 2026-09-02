@@ -157,6 +157,40 @@ function withDeletingAtAfterWritableCheck(
 	} as D1Database
 }
 
+function withDeletingAtBeforeOauthConnectionInsert(
+	db: D1Database,
+	deletingAt: string,
+): D1Database {
+	const originalPrepare = db.prepare.bind(db)
+	return {
+		...db,
+		prepare(query: string) {
+			const statement = originalPrepare(query)
+			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
+			if (!normalized.includes('insert into oauth_connections')) {
+				return statement
+			}
+			return {
+				...statement,
+				bind(...params: Array<unknown>) {
+					const bound = statement.bind(...params)
+					return {
+						...bound,
+						async run() {
+							await originalPrepare(
+								`UPDATE users SET deleting_at = ? WHERE deleting_at IS NULL`,
+							)
+								.bind(deletingAt)
+								.run()
+							return bound.run()
+						},
+					}
+				},
+			}
+		},
+	} as D1Database
+}
+
 function createMigratedDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyMigrations(sqlite)
@@ -828,6 +862,84 @@ test('google sign-in does not reclaim when a purge claim lands between the writa
 		sqlite
 			.prepare(
 				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 10`,
+			)
+			.get(),
+	).toEqual({ count: 0 })
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'oauth_login',
+			result: 'failure',
+			reason: 'account_deleting',
+		}),
+	)
+})
+
+test('google sign-in does not reclaim when a purge claim lands before the oauth connection insert', async () => {
+	const { sqlite, db: rawDb } = createMigratedDb()
+	const db = withDeletingAtBeforeOauthConnectionInsert(
+		rawDb,
+		'2026-09-02 12:00:00',
+	)
+	const env = createAppEnv(db, {
+		OAUTH_PROVIDER: {
+			listUserGrants: async () => ({ items: [] }),
+			revokeGrant: async () => undefined,
+		},
+	})
+	await seedUser(sqlite, {
+		id: 13,
+		email: 'race-insert-squat@example.com',
+		username: 'race-insert-squat',
+		emailVerified: false,
+	})
+
+	msw.use(
+		http.post('https://oauth2.googleapis.com/token', () =>
+			HttpResponse.json({ access_token: 'google-access-token' }),
+		),
+		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
+			HttpResponse.json({
+				sub: 'google-race-insert-sub',
+				email: 'race-insert-squat@example.com',
+				email_verified: true,
+				name: 'Real Owner',
+			}),
+		),
+	)
+
+	const start = await startProviderFlow(
+		env,
+		'google',
+		'http://example.com/auth/google',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'google' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/login?oauthError=email-unavailable',
+	)
+	expect(
+		callbackResponse.headers
+			.getSetCookie()
+			.some((cookie) => cookie.startsWith('kody_session=')),
+	).toBe(false)
+
+	const user = sqlite
+		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 13`)
+		.get() as { email_verified_at: string | null; deleting_at: string | null }
+	expect(user.email_verified_at).toBeNull()
+	expect(user.deleting_at).toBe('2026-09-02 12:00:00')
+	expect(
+		sqlite
+			.prepare(
+				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 13`,
 			)
 			.get(),
 	).toEqual({ count: 0 })

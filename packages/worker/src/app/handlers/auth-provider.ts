@@ -316,13 +316,24 @@ export function createAuthProviderCallbackHandler(env: Env) {
 		profile: OauthProfile
 		userId: number
 	}) {
-		await db.create(oauthConnectionsTable, {
-			provider_name: input.provider,
-			provider_id: input.profile.providerUserId,
-			user_id: input.userId,
-			provider_display_name:
-				input.profile.username ?? input.profile.displayName ?? undefined,
-		})
+		const inserted = await env.APP_DB.prepare(
+			`INSERT INTO oauth_connections (
+				provider_name, provider_id, user_id, provider_display_name
+			)
+			 SELECT ?, ?, id, ?
+			 FROM users
+			 WHERE id = ? AND deleting_at IS NULL`,
+		)
+			.bind(
+				input.provider,
+				input.profile.providerUserId,
+				input.profile.username ?? input.profile.displayName ?? null,
+				input.userId,
+			)
+			.run()
+		if ((inserted.meta.changes ?? 0) !== 1) {
+			throw new AccountDeletionInProgressError()
+		}
 	}
 
 	async function completeDiscordGuildLogin(input: {
@@ -534,6 +545,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						userId: currentUser.id,
 					})
 				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
 					if (getUniqueConstraintField(error)) {
 						return fail('connection-conflict', 'connection_conflict')
 					}
@@ -650,6 +664,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						userId: existingUser.id,
 					})
 				} catch (error) {
+					if (error instanceof AccountDeletionInProgressError) {
+						return fail('email-unavailable', 'account_deleting')
+					}
 					if (getUniqueConstraintField(error)) {
 						return fail('connection-conflict', 'connection_conflict')
 					}
@@ -666,6 +683,12 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						.bind(new Date().toISOString(), existingUser.id)
 						.run()
 					if ((stamped.meta.changes ?? 0) !== 1) {
+						await env.APP_DB.prepare(
+							`DELETE FROM oauth_connections
+							 WHERE user_id = ? AND provider_name = ? AND provider_id = ?`,
+						)
+							.bind(existingUser.id, provider, profile.providerUserId)
+							.run()
 						return fail('email-unavailable', 'account_deleting')
 					}
 				}
