@@ -468,6 +468,7 @@ async function restoreCommunityListingAfterPublishFailure(input: {
 				searchText: input.existingListing.searchText,
 				readmeContent: input.existingListing.readmeContent,
 				license: input.existingListing.license,
+				packageVersion: input.existingListing.version ?? null,
 				pinnedCommit: input.existingListing.pinnedCommit,
 				publishedAt: input.existingListing.publishedAt,
 			})
@@ -848,15 +849,23 @@ async function withSnapshotPackageVersion(
 	listing: CommunityListingRecord,
 ): Promise<CommunityListingRecord> {
 	if (listing.version || !env.BUNDLE_ARTIFACTS_KV) return listing
-	const snapshot = await readCommunitySnapshot(
-		env.BUNDLE_ARTIFACTS_KV,
-		listing.id,
-	)
-	const version = resolveListingPackageVersion({
-		stored: listing.version,
-		packageJson: snapshot?.files['package.json'],
-	})
-	return version ? { ...listing, version } : listing
+	try {
+		const snapshot = await readCommunitySnapshot(
+			env.BUNDLE_ARTIFACTS_KV,
+			listing.id,
+		)
+		const version = resolveListingPackageVersion({
+			stored: listing.version,
+			packageJson: snapshot?.files['package.json'],
+		})
+		return version ? { ...listing, version } : listing
+	} catch (error) {
+		console.error(
+			'Failed to read community snapshot for listing package version:',
+			error,
+		)
+		return listing
+	}
 }
 
 /**

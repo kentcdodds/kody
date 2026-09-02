@@ -401,7 +401,7 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 		}),
 	)
 
-	const existingListing = sampleListing()
+	const existingListing = sampleListing({ version: '1.0.3' })
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
 		existingListing,
 	)
@@ -422,6 +422,7 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 		expect.anything(),
 		expect.objectContaining({
 			listingId: existingListing.id,
+			packageVersion: '1.0.3',
 			pinnedCommit: existingListing.pinnedCommit,
 			publishedAt: existingListing.publishedAt,
 		}),
