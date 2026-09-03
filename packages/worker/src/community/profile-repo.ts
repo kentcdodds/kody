@@ -1,3 +1,4 @@
+import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -338,7 +339,7 @@ export async function listPublicProfilePackages(
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
 		const tokenClauses = tokens.map((token) => {
-			const pattern = `%${token}%`
+			const pattern = d1ContainsLikePattern(token, { escape: false })
 			const columnClauses = publicPackageSearchColumns.map((column) => {
 				bindings.push(pattern)
 				return `${column} LIKE ?`

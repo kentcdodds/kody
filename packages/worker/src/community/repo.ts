@@ -1,3 +1,4 @@
+import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
@@ -611,7 +612,7 @@ export async function listCommunityListingCandidates(
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
 		const tokenClauses = tokens.map((token) => {
-			const pattern = `%${token}%`
+			const pattern = d1ContainsLikePattern(token, { escape: false })
 			const columnClauses = communityListingSearchTextColumns.map((column) => {
 				bindings.push(pattern)
 				return `community_listings.${column} LIKE ?`

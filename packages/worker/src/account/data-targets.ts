@@ -640,11 +640,14 @@ export function buildUserScopedTargetMatch(input: {
 		case 'replace_user_id_in_json_column': {
 			const quotedUserId = `"${input.mcpUserId}"`
 			const quotedReplacement = `"${target.value}"`
+			// D1 caps LIKE/GLOB patterns at 50 bytes ("LIKE or GLOB pattern too
+			// complex"); a quoted 64-hex stable user id is 66. instr() has no
+			// such limit and matches the same substring.
 			return {
 				table,
-				whereSql: `${target.column} LIKE ?`,
-				qualifiedWhereSql: `${table}.${target.column} LIKE ?`,
-				params: [`%${quotedUserId}%`],
+				whereSql: `instr(${target.column}, ?) > 0`,
+				qualifiedWhereSql: `instr(${table}.${target.column}, ?) > 0`,
+				params: [quotedUserId],
 				mutation: {
 					kind: 'replace_json_string',
 					column: target.column,

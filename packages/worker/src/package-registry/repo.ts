@@ -1,3 +1,4 @@
+import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
@@ -502,10 +503,6 @@ export async function listSavedPackageCommunityProvenanceByIds(
 export type SavedPackageSearchSort = 'updated' | 'created' | 'name'
 
 /** Escape LIKE wildcards so user queries match literally. */
-function escapeLikePattern(value: string) {
-	return value.replaceAll(/[\\%_]/g, (character) => `\\${character}`)
-}
-
 function savedPackageSearchOrderBy(sort: SavedPackageSearchSort) {
 	switch (sort) {
 		case 'updated':
@@ -540,7 +537,7 @@ export async function searchSavedPackagesByUserId(
 	const params: Array<unknown> = [input.userId]
 	const query = input.query?.trim() ?? ''
 	if (query) {
-		const pattern = `%${escapeLikePattern(query.toLowerCase())}%`
+		const pattern = d1ContainsLikePattern(query.toLowerCase())
 		conditions.push(
 			`(LOWER(name) LIKE ? ESCAPE '\\'
 				OR LOWER(kody_id) LIKE ? ESCAPE '\\'

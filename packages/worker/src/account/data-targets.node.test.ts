@@ -132,9 +132,9 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 	const replaceJsonMatch = matchFor(samples[6]!)
 	expect(replaceJsonMatch).toEqual({
 		table: 'package_codemod_runs',
-		whereSql: 'filters_json LIKE ?',
-		qualifiedWhereSql: 'package_codemod_runs.filters_json LIKE ?',
-		params: ['%"user-aaa"%'],
+		whereSql: 'instr(filters_json, ?) > 0',
+		qualifiedWhereSql: 'instr(package_codemod_runs.filters_json, ?) > 0',
+		params: ['"user-aaa"'],
 		mutation: {
 			kind: 'replace_json_string',
 			column: 'filters_json',
@@ -145,8 +145,8 @@ test('shared user-scoped target match SQL is identical for deletion and export s
 	expect(buildUserScopedDeleteOrUpdateSql(replaceJsonMatch)).toEqual({
 		sql: `UPDATE package_codemod_runs
 						SET filters_json = REPLACE(filters_json, ?, ?)
-						WHERE filters_json LIKE ?`,
-		params: ['"user-aaa"', '"deleted-user"', '%"user-aaa"%'],
+						WHERE instr(filters_json, ?) > 0`,
+		params: ['"user-aaa"', '"deleted-user"', '"user-aaa"'],
 	})
 
 	expect(matchFor(samples[7]!).qualifiedWhereSql).toBe(
@@ -257,6 +257,27 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 			),
 		),
 	)
+})
+
+test('account deletion statements never bind a LIKE or GLOB pattern (D1 caps patterns at 50 bytes)', () => {
+	// A stable user id is 64 hex chars; wrapped in quotes and wildcards it is
+	// 68 bytes, which D1 rejects with "LIKE or GLOB pattern too complex". The
+	// production purge lane failed on exactly this until the JSON-column
+	// target switched to instr().
+	const stableUserId = 'f'.repeat(64)
+	for (const target of accountUserDataTargets) {
+		const match = buildUserScopedTargetMatch({
+			target,
+			mcpUserId: stableUserId,
+			dbUserId: 1,
+		})
+		const { sql, params } = buildUserScopedDeleteOrUpdateSql(match)
+		expect(sql).not.toMatch(/\b(LIKE|GLOB)\b/iu)
+		for (const param of params) {
+			if (typeof param !== 'string') continue
+			expect(param.startsWith('%') || param.endsWith('%')).toBe(false)
+		}
+	}
 })
 
 test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
