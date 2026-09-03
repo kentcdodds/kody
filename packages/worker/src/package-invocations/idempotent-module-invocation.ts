@@ -84,6 +84,7 @@ export async function invokeSavedPackageModule(input: {
 	params?: Record<string, unknown>
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	idempotencyHashParams?: Record<string, unknown>
 	source: string | null
 	topic: string | null
 	notFoundCode: 'export_not_found' | 'subscription_not_found'
@@ -104,7 +105,10 @@ export async function invokeSavedPackageModule(input: {
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,
-		params: input.idempotencyParamsHash === 'ignore' ? undefined : input.params,
+		params:
+			input.idempotencyParamsHash === 'ignore'
+				? undefined
+				: (input.idempotencyHashParams ?? input.params),
 		source: input.source,
 		topic: input.topic,
 	})

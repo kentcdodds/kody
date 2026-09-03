@@ -274,6 +274,8 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 			exportName: './handle-sentry-webhook',
 			description: null,
 			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
 			verification: {
 				type: 'hmac-sha256',
 				header: 'sentry-hook-signature',
@@ -364,6 +366,84 @@ test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports
 			manifestPath: 'package.json',
 		}),
 	).toThrow(/header/)
+
+	const trusted = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/discord',
+			exports: {
+				'./dispatch-message-created': './src/dispatch-message-created.ts',
+			},
+			kody: {
+				id: 'discord',
+				description: 'Discord gateway proxy',
+				webhooks: [
+					{
+						name: 'message-created',
+						export: './dispatch-message-created',
+						responseMode: 'sync',
+						inputMode: 'params',
+						rateLimitPerMinute: 600,
+					},
+				],
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	expect(buildPackageSearchProjection(trusted).webhooks).toEqual([
+		{
+			name: 'message-created',
+			exportName: './dispatch-message-created',
+			description: null,
+			responseMode: 'sync',
+			inputMode: 'params',
+			rateLimitPerMinute: 600,
+			verification: null,
+			replay: null,
+		},
+	])
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/discord',
+				exports: {
+					'./dispatch-message-created': './src/dispatch-message-created.ts',
+				},
+				kody: {
+					id: 'discord',
+					description: 'Discord gateway proxy',
+					webhooks: [
+						{
+							name: 'message-created',
+							export: './dispatch-message-created',
+							rateLimitPerMinute: 601,
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/rateLimitPerMinute/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/raycast',
+				exports: { './search': './src/search.ts' },
+				kody: {
+					id: 'raycast',
+					description: 'Raycast',
+					webhooks: [
+						{
+							name: 'star',
+							export: '*',
+						},
+					],
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/export "\*"/)
 })
 
 test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown timestampFormat', () => {
@@ -404,6 +484,8 @@ test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown
 			exportName: './handle-stripe-webhook',
 			description: null,
 			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
 			verification: {
 				type: 'hmac-sha256',
 				header: 'Stripe-Signature',

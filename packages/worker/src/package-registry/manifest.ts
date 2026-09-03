@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
 	authoredPackageJsonSchema,
+	webhookDefaultRateLimitPerMinute,
 	type AuthoredPackageJson,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
@@ -266,6 +267,8 @@ export type PackageWebhookManifestEntry = {
 	exportName: string
 	description: string | null
 	responseMode: 'ack' | 'sync'
+	inputMode: 'request' | 'params'
+	rateLimitPerMinute: number
 	verification: {
 		type: 'hmac-sha256' | 'hmac-sha1'
 		header: string
@@ -295,6 +298,9 @@ export function listPackageWebhooks(
 			exportName: normalizePackageExportKey(webhook.export),
 			description: webhook.description?.trim() || null,
 			responseMode: webhook.responseMode ?? 'ack',
+			inputMode: webhook.inputMode ?? 'request',
+			rateLimitPerMinute:
+				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
 			verification: webhook.verification
 				? {
 						type: webhook.verification.type,
@@ -1456,6 +1462,10 @@ export function buildPackageSearchDocument(
 			webhook.exportName,
 			webhook.description ?? '',
 			webhook.responseMode,
+			webhook.inputMode === 'params' ? 'input:params' : '',
+			webhook.rateLimitPerMinute !== webhookDefaultRateLimitPerMinute
+				? `rate:${webhook.rateLimitPerMinute}`
+				: '',
 			webhook.verification ? `verify:${webhook.verification.header}` : '',
 			webhook.verification?.signedPayload
 				? `signed:${webhook.verification.signedPayload}`

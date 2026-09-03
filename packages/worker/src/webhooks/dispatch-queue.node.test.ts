@@ -187,8 +187,59 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 		idempotencyParamsHash: 'ignore' as const,
 	}
 	expect(parseWebhookDispatchQueueMessage(withIgnore)).toEqual(withIgnore)
+	const withParamsMode = {
+		...message,
+		inputMode: 'params' as const,
+	}
+	expect(parseWebhookDispatchQueueMessage(withParamsMode)).toEqual(
+		withParamsMode,
+	)
+	expect(
+		parseWebhookDispatchQueueMessage({
+			...message,
+			inputMode: 'request',
+		}),
+	).toBeNull()
 	expect(getWebhookDispatchQueueMessageBytes(message)).toBeLessThan(
 		webhookDispatchQueueMessageMaxBytes,
+	)
+})
+
+test('queue dispatch unwraps params-mode first args and hashes request-mode caller keys', async () => {
+	mocks.dispatchWebhookInvocation.mockReset()
+	mocks.recordWebhookDelivery.mockReset()
+	mocks.dispatchWebhookInvocation.mockResolvedValue({
+		status: 200,
+		body: { ok: true, result: { handled: true } },
+	})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+
+	const paramsMode = {
+		...createMessage(),
+		inputMode: 'params' as const,
+	}
+	paramsMode.params.request.json = {
+		params: { messageId: 'm-1' },
+		idempotencyKey: 'evt-1',
+	}
+	await expect(processWebhookDispatch(paramsMode, {} as Env)).resolves.toBe(
+		'terminal',
+	)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			params: { messageId: 'm-1' },
+		}),
+	)
+
+	const requestMode = createMessage()
+	await expect(processWebhookDispatch(requestMode, {} as Env)).resolves.toBe(
+		'terminal',
+	)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			params: requestMode.params,
+			idempotencyHashParams: { event: 'error' },
+		}),
 	)
 })
 

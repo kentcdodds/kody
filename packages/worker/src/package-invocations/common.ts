@@ -43,6 +43,12 @@ export type PackageInvocationRequest = {
 	 * delivery cannot reuse another event's acknowledgement.
 	 */
 	idempotencyParamsHash?: 'ignore'
+	/**
+	 * When set, the ledger hashes this object instead of `params`. Webhook
+	 * request-mode caller keys use it so `receivedAt` (and other volatile
+	 * envelope fields) do not turn a retry into `idempotency_mismatch`.
+	 */
+	idempotencyHashParams?: Record<string, unknown>
 	source?: string | null
 	topic?: string | null
 }

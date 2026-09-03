@@ -1,4 +1,11 @@
+import {
+	webhookDefaultRateLimitPerMinute as defaultRateLimitPerMinute,
+	webhookMaxRateLimitPerMinute as maxRateLimitPerMinute,
+} from '#worker/package-registry/types.ts'
+
 export type WebhookResponseMode = 'ack' | 'sync'
+
+export type WebhookInputMode = 'request' | 'params'
 
 export type WebhookHmacAlgorithm = 'hmac-sha256' | 'hmac-sha1'
 
@@ -74,9 +81,20 @@ export type WebhookExportParams = {
 
 export const webhookMaxPayloadBytes = 1 * 1024 * 1024
 export const webhookDeliveriesRetainedPerEndpoint = 50
+export const webhookDefaultRateLimitPerMinute = defaultRateLimitPerMinute
+export const webhookMaxRateLimitPerMinute = maxRateLimitPerMinute
+export const webhookRateLimitWindowSeconds = 60
 export const webhookRateLimitConfig = {
-	maxRequests: 60,
-	windowSeconds: 60,
+	maxRequests: webhookDefaultRateLimitPerMinute,
+	windowSeconds: webhookRateLimitWindowSeconds,
 } as const
+export const webhookIdempotencyKeyHeader = 'Idempotency-Key'
+
+export function webhookRateLimitConfigFor(perMinute?: number) {
+	return {
+		maxRequests: perMinute ?? webhookDefaultRateLimitPerMinute,
+		windowSeconds: webhookRateLimitWindowSeconds,
+	}
+}
 export const webhookSyncInvocationTimeoutMs = 30_000
 export const webhookDeliveryErrorMaxLength = 500

@@ -100,6 +100,9 @@ smoke does not prove MCP execute health.
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
+- [Invocation-token retirement runbook](./invocation-token-retirement-runbook.md):
+  drain HTTP invocation tokens after inbound webhooks cover first-party callers
+  ([ADR 0048](../decisions/0048-webhooks-replace-invocation-tokens.md)).
 - [Cleanup after migrations](../cleanup-after-migrations.md): drop leftovers in
   the same change when safe; otherwise open a GitHub issue.
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
@@ -112,7 +115,8 @@ smoke does not prove MCP execute health.
   with `npm run primitives:check`.
 - [Inbound webhooks](./webhooks.md): user-owned `POST /@:username/webhooks/...`
   ingress that dispatches to a bound saved-package export (HMAC verification,
-  ack/sync modes, delivery history via run records).
+  ack/sync or params input, caller Idempotency-Key, delivery history via run
+  records).
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
   `kody.mcp[...]` capability synthesis). Local-network systems reach Kody the

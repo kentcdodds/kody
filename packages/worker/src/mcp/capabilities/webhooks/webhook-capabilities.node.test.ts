@@ -70,6 +70,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			exportName: './handle-sentry-webhook',
 			description: null,
 			responseMode: 'ack',
+			inputMode: 'request',
+			rateLimitPerMinute: 60,
 			verification: {
 				type: 'hmac-sha256',
 				header: 'sentry-hook-signature',

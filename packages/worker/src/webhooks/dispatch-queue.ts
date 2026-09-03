@@ -12,6 +12,10 @@ import {
 	parseWebhookDispatchQueueMessage,
 	type WebhookDispatchQueueMessage,
 } from './dispatch-queue-producer.ts'
+import {
+	buildWebhookCallerIdempotencyHashParams,
+	resolveWebhookParamsModeFirstArg,
+} from './params.ts'
 
 const webhookDispatchRetryDelaySeconds = 30
 const retryableInvocationErrorCodes = new Set([
@@ -19,6 +23,36 @@ const retryableInvocationErrorCodes = new Set([
 	'idempotency_persistence_failed',
 	'invocation_in_progress',
 ])
+
+function resolveWebhookDispatchInvocation(
+	message: WebhookDispatchQueueMessage,
+):
+	| {
+			ok: true
+			params: Record<string, unknown>
+			idempotencyHashParams?: Record<string, unknown>
+	  }
+	| { ok: false; code: 'invalid_params' } {
+	if (message.inputMode === 'params') {
+		const resolved = resolveWebhookParamsModeFirstArg(
+			message.params.request.json,
+		)
+		if (!resolved.ok) return resolved
+		return { ok: true, params: resolved.params }
+	}
+	return {
+		ok: true,
+		params: message.params,
+		...(message.idempotencyParamsHash === 'ignore'
+			? {}
+			: {
+					idempotencyHashParams: buildWebhookCallerIdempotencyHashParams({
+						json: message.params.request.json,
+						bodyText: message.params.request.body,
+					}),
+				}),
+	}
+}
 
 function readInvocationErrorCode(body: unknown): string | null {
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
@@ -32,15 +66,34 @@ export async function processWebhookDispatch(
 	message: WebhookDispatchQueueMessage,
 	env: Env,
 ): Promise<'terminal' | 'retry'> {
+	const resolved = resolveWebhookDispatchInvocation(message)
+	if (!resolved.ok) {
+		await recordWebhookDelivery({
+			env,
+			endpoint: message.endpoint,
+			kodyId: message.packageKodyId,
+			outcome: 'failed',
+			httpStatus: 400,
+			error: resolved.code,
+			payloadBytes: message.payloadBytes,
+			invocationId: message.deliveryId,
+			startedAt: message.receivedAt,
+			requirePersistence: true,
+		})
+		return 'terminal'
+	}
 	const response = await dispatchWebhookInvocation({
 		env,
 		endpoint: message.endpoint,
 		packageKodyId: message.packageKodyId,
 		exportName: message.exportName,
-		params: message.params,
+		params: resolved.params,
 		idempotencyKey: message.idempotencyKey,
 		...(message.idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
+			: {}),
+		...(resolved.idempotencyHashParams
+			? { idempotencyHashParams: resolved.idempotencyHashParams }
 			: {}),
 	})
 	const errorCode = readInvocationErrorCode(response.body)

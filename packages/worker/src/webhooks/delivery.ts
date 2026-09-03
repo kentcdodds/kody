@@ -4,7 +4,6 @@ import { recordRunRecord } from '#worker/run-records/service.ts'
 import {
 	type WebhookDeliveryOutcome,
 	type WebhookEndpointRecord,
-	type WebhookExportParams,
 } from './types.ts'
 
 export async function recordWebhookDelivery(input: {
@@ -68,9 +67,10 @@ export async function dispatchWebhookInvocation(input: {
 	>
 	packageKodyId: string
 	exportName: string
-	params: WebhookExportParams
+	params: Record<string, unknown>
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	idempotencyHashParams?: Record<string, unknown>
 }) {
 	return await invokePackageExport({
 		env: input.env,
@@ -88,6 +88,9 @@ export async function dispatchWebhookInvocation(input: {
 			idempotencyKey: input.idempotencyKey,
 			...(input.idempotencyParamsHash === 'ignore'
 				? { idempotencyParamsHash: 'ignore' as const }
+				: {}),
+			...(input.idempotencyHashParams
+				? { idempotencyHashParams: input.idempotencyHashParams }
 				: {}),
 			source: 'webhook',
 			topic: `webhook:${input.packageKodyId}:${input.endpoint.webhookName}`,

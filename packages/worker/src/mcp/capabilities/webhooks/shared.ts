@@ -43,6 +43,8 @@ export const listedWebhookSchema = z.object({
 	export_name: z.string(),
 	description: z.string().nullable(),
 	response_mode: z.enum(['ack', 'sync']),
+	input_mode: z.enum(['request', 'params']),
+	rate_limit_per_minute: z.number().int(),
 	verification: webhookVerificationPublicSchema,
 	replay: webhookReplayPublicSchema,
 	minted: z
@@ -103,6 +105,8 @@ export function toListedWebhookCapability(webhook: {
 	exportName: string
 	description: string | null
 	responseMode: 'ack' | 'sync'
+	inputMode: 'request' | 'params'
+	rateLimitPerMinute: number
 	verification: z.infer<typeof webhookVerificationPublicSchema>
 	replay?: z.infer<typeof webhookReplayPublicSchema>
 	minted: boolean
@@ -118,6 +122,8 @@ export function toListedWebhookCapability(webhook: {
 		export_name: webhook.exportName,
 		description: webhook.description,
 		response_mode: webhook.responseMode,
+		input_mode: webhook.inputMode,
+		rate_limit_per_minute: webhook.rateLimitPerMinute,
 		verification: webhook.verification,
 		replay: webhook.replay ?? null,
 		minted: webhook.minted,

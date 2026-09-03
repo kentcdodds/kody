@@ -26,6 +26,8 @@ export type ListedWebhook = {
 	exportName: string
 	description: string | null
 	responseMode: 'ack' | 'sync'
+	inputMode: 'request' | 'params'
+	rateLimitPerMinute: number
 	verification: PackageWebhookManifestEntry['verification']
 	replay: PackageWebhookManifestEntry['replay']
 	minted: boolean
@@ -161,6 +163,8 @@ export async function listWebhooksForUser(input: {
 				exportName: webhook.exportName,
 				description: webhook.description,
 				responseMode: webhook.responseMode,
+				inputMode: webhook.inputMode,
+				rateLimitPerMinute: webhook.rateLimitPerMinute,
 				verification: webhook.verification,
 				replay: webhook.replay,
 				minted: mint !== undefined,

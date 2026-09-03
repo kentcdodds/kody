@@ -19,6 +19,7 @@ export type WebhookDispatchQueueMessage = {
 	packageKodyId: string
 	exportName: string
 	params: WebhookExportParams
+	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
 	deliveryId: string
@@ -39,6 +40,7 @@ export function createWebhookDispatchQueueMessage(input: {
 	packageKodyId: string
 	exportName: string
 	params: WebhookExportParams
+	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
 	deliveryId: string
@@ -56,6 +58,7 @@ export function createWebhookDispatchQueueMessage(input: {
 				json: null,
 			},
 		},
+		...(input.inputMode === 'params' ? { inputMode: 'params' as const } : {}),
 		idempotencyKey: input.idempotencyKey,
 		...(input.idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
@@ -148,6 +151,10 @@ export function parseWebhookDispatchQueueMessage(
 	) {
 		return null
 	}
+	const inputMode = message['inputMode']
+	if (inputMode !== undefined && inputMode !== 'params') {
+		return null
+	}
 	return {
 		endpoint: {
 			id,
@@ -158,6 +165,7 @@ export function parseWebhookDispatchQueueMessage(
 		packageKodyId,
 		exportName,
 		params: params as WebhookExportParams,
+		...(inputMode === 'params' ? { inputMode: 'params' as const } : {}),
 		idempotencyKey,
 		...(idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }

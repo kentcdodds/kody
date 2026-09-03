@@ -36,12 +36,18 @@ import {
 	storeWebhookDispatchPayload,
 } from './dispatch-payload-store.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
-import { buildWebhookExportParams } from './params.ts'
+import {
+	buildWebhookCallerIdempotencyHashParams,
+	buildWebhookExportParams,
+	readWebhookCallerIdempotencyKey,
+	resolveWebhookParamsModeFirstArg,
+} from './params.ts'
 import { getWebhookEndpointByKey } from './repo.ts'
 import {
 	webhookDefaultReplayToleranceSeconds,
+	webhookIdempotencyKeyHeader,
 	webhookMaxPayloadBytes,
-	webhookRateLimitConfig,
+	webhookRateLimitConfigFor,
 	webhookSyncInvocationTimeoutMs,
 } from './types.ts'
 
@@ -136,6 +142,20 @@ function rateLimitedResponse(retryAfterSeconds: number) {
 				'Retry-After': String(retryAfterSeconds),
 			},
 		},
+	)
+}
+
+function invalidParamsResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'invalid_params',
+				message:
+					'inputMode "params" requires a JSON object body. When the body has a params object, that object is the export argument.',
+			},
+		},
+		{ status: 400 },
 	)
 }
 
@@ -296,15 +316,6 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
-	const rateLimit = await checkRateLimit(
-		env.APP_DB,
-		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
-		webhookRateLimitConfig,
-	)
-	if (!rateLimit.allowed) {
-		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
-	}
-
 	const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 	let declared
 	try {
@@ -361,6 +372,15 @@ export async function handleWebhookIngressRequest(
 			},
 			{ status: 409 },
 		)
+	}
+
+	const rateLimit = await checkRateLimit(
+		env.APP_DB,
+		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
+		webhookRateLimitConfigFor(declared.rateLimitPerMinute),
+	)
+	if (!rateLimit.allowed) {
+		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
 	}
 
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
@@ -503,9 +523,10 @@ export async function handleWebhookIngressRequest(
 		...(declared.replay?.deliveryIdHeader
 			? [declared.replay.deliveryIdHeader]
 			: []),
+		webhookIdempotencyKeyHeader,
 	]
 	const safeHeaders = collectSafeWebhookHeaders(request, extraAllowedHeaders)
-	const params = buildWebhookExportParams({
+	const requestParams = buildWebhookExportParams({
 		packageKodyId: savedPackage.kodyId,
 		webhookName: route.webhookName,
 		request,
@@ -513,18 +534,45 @@ export async function handleWebhookIngressRequest(
 		receivedAt,
 		headers: safeHeaders,
 	})
+	const paramsMode =
+		declared.inputMode === 'params'
+			? resolveWebhookParamsModeFirstArg(requestParams.request.json)
+			: null
+	if (paramsMode && !paramsMode.ok) {
+		await recordWebhookDelivery({
+			env,
+			endpoint,
+			kodyId: savedPackage.kodyId,
+			outcome: 'rejected',
+			httpStatus: 400,
+			error: 'invalid_params',
+			payloadBytes: bodyBytes.byteLength,
+			startedAt: receivedAt,
+			waitUntil,
+		})
+		return invalidParamsResponse()
+	}
+	const exportParams = paramsMode?.ok ? paramsMode.params : requestParams
 	const deliveryId = crypto.randomUUID()
-	const providerDeliveryId = declared.replay?.deliveryIdHeader
-		? request.headers.get(declared.replay.deliveryIdHeader)?.trim()
-		: undefined
-	const idempotencyKey = providerDeliveryId
-		? await buildWebhookDeliveryIdempotencyKey({
-				userId: endpoint.userId,
-				packageId: endpoint.packageId,
-				webhookName: endpoint.webhookName,
-				deliveryId: providerDeliveryId,
-			})
-		: `webhook:${endpoint.id}:${deliveryId}`
+	const callerIdempotencyKey = readWebhookCallerIdempotencyKey({
+		request,
+		json: requestParams.request.json,
+		allowBodyKey: declared.inputMode === 'params',
+	})
+	const providerDeliveryId =
+		!callerIdempotencyKey && declared.replay?.deliveryIdHeader
+			? request.headers.get(declared.replay.deliveryIdHeader)?.trim()
+			: undefined
+	const idempotencyKey = callerIdempotencyKey
+		? callerIdempotencyKey
+		: providerDeliveryId
+			? await buildWebhookDeliveryIdempotencyKey({
+					userId: endpoint.userId,
+					packageId: endpoint.packageId,
+					webhookName: endpoint.webhookName,
+					deliveryId: providerDeliveryId,
+				})
+			: `webhook:${endpoint.id}:${deliveryId}`
 	// Delivery-id keys identify the event, not the HTTP attempt. Provider
 	// retries change `receivedAt` and often headers; the same delivery id is
 	// still that event even when body bytes differ. Matching the ledger by
@@ -532,9 +580,21 @@ export async function handleWebhookIngressRequest(
 	// acknowledgement instead of hashing those volatile fields. A different
 	// delivery id cannot reuse another event's ack because the key already
 	// binds userId + packageId + webhookName + deliveryId.
+	//
+	// Caller Idempotency-Key (and params-mode JSON idempotencyKey) use the
+	// standard include-hash ledger: same key + same payload replays; a
+	// different payload is 409. Request-mode caller keys hash the JSON body
+	// (not the envelope) so receivedAt does not break retries.
 	const idempotencyParamsHash = providerDeliveryId
 		? ('ignore' as const)
 		: undefined
+	const idempotencyHashParams =
+		callerIdempotencyKey && declared.inputMode !== 'params'
+			? buildWebhookCallerIdempotencyHashParams({
+					json: requestParams.request.json,
+					bodyText,
+				})
+			: undefined
 
 	if (declared.responseMode === 'ack') {
 		let message = createWebhookDispatchQueueMessage({
@@ -546,7 +606,10 @@ export async function handleWebhookIngressRequest(
 			},
 			packageKodyId: savedPackage.kodyId,
 			exportName: declared.exportName,
-			params,
+			params: requestParams,
+			...(declared.inputMode === 'params'
+				? { inputMode: 'params' as const }
+				: {}),
 			idempotencyKey,
 			...(idempotencyParamsHash ? { idempotencyParamsHash } : {}),
 			deliveryId,
@@ -636,12 +699,29 @@ export async function handleWebhookIngressRequest(
 				endpoint,
 				packageKodyId: savedPackage.kodyId,
 				exportName: declared.exportName,
-				params,
+				params: exportParams,
 				idempotencyKey,
 				...(idempotencyParamsHash ? { idempotencyParamsHash } : {}),
+				...(idempotencyHashParams ? { idempotencyHashParams } : {}),
 			}),
 			webhookSyncInvocationTimeoutMs,
 		)
+		if (response.status === 409) {
+			await recordWebhookDelivery({
+				env,
+				endpoint,
+				kodyId: savedPackage.kodyId,
+				outcome: 'rejected',
+				httpStatus: 409,
+				error: `invocation_status_409`,
+				payloadBytes: bodyBytes.byteLength,
+				invocationId: deliveryId,
+				result: readWebhookInvocationResult(response.body),
+				startedAt: receivedAt,
+				waitUntil,
+			})
+			return jsonResponse(response.body, { status: 409 })
+		}
 		const ok = response.status >= 200 && response.status < 300
 		await recordWebhookDelivery({
 			env,
