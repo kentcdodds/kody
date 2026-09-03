@@ -47,6 +47,21 @@ test('search structured content passes advertised schema for all return paths', 
 			error: 'All entity lookups failed.',
 		},
 		{ conversationId: 'c1', timing, error: 'Provide "query".' },
+		{
+			conversationId: 'c1',
+			timing,
+			error: 'Plan limit reached.',
+			entitlement: {
+				code: 'entitlement_limit_exceeded',
+				resource: 'execute_calls_per_day',
+				plan: 'free',
+				limit: 100,
+				current: 100,
+				used: 100,
+				remaining: 0,
+				upgradeHint: 'upgrade your plan at /account/billing.',
+			},
+		},
 	]
 	for (const payload of payloads) {
 		const parsed = await searchSchema.safeParseAsync(payload)
@@ -81,6 +96,23 @@ test('execute structured content passes advertised schema for all return paths',
 			returnedBytes: 0,
 			error: 'ReferenceError: foo is not defined',
 			errorDetails: { phase: 'sandbox' },
+			logs: [],
+		},
+		{
+			conversationId: 'c1',
+			timing,
+			returnedBytes: 0,
+			error:
+				'Plan limit reached: your "free" plan allows at most 10 saved packages and you currently have 10.',
+			errorDetails: { kind: 'entitlement_limit_exceeded' },
+			entitlement: {
+				code: 'entitlement_limit_exceeded',
+				resource: 'saved_packages',
+				plan: 'free',
+				limit: 10,
+				current: 10,
+				upgradeHint: 'upgrade your plan at /account/billing.',
+			},
 			logs: [],
 		},
 		{

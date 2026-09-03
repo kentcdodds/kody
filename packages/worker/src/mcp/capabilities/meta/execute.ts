@@ -5,6 +5,7 @@ import {
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 } from '#mcp/executor.ts'
+import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
@@ -40,6 +41,7 @@ const executeOutputSchema = z.object({
 	result: z.unknown().optional(),
 	error: z.string().optional(),
 	errorDetails: z.unknown().optional(),
+	entitlement: z.unknown().optional(),
 	logs: z.array(z.unknown()),
 	serverTiming: z
 		.array(
@@ -268,6 +270,7 @@ export const executeCapability = defineDomainCapability(
 					...(claimedRunHandle ? { runId: claimedRunHandle.id } : {}),
 					error: getErrorMessage(cause),
 					errorDetails: getExecutionErrorDetails(cause),
+					...entitlementStructuredContent(cause),
 					logs: [],
 				}
 			}
@@ -288,6 +291,7 @@ export const executeCapability = defineDomainCapability(
 					...(runId ? { runId } : {}),
 					error: getErrorMessage(result.error),
 					errorDetails: getExecutionErrorDetails(result.error),
+					...entitlementStructuredContent(result.error),
 					logs,
 					...(serverTiming ? { serverTiming } : {}),
 				}

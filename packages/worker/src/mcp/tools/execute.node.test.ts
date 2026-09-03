@@ -1,5 +1,14 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test, vi } from 'vitest'
+import { planLimits } from '#universal/plans.ts'
+import {
+	EntitlementLimitError,
+	buildEntitlementLimitMessage,
+	buildEntitlementUpgradeHint,
+	entitlementLimitErrorCode,
+} from '#worker/entitlements/errors.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	defaultMcpContentLimitBytes,
 	maxMcpContentBlockCount,
@@ -184,6 +193,17 @@ async function getExecuteHandler(
 			result: unknown
 			logs: Array<unknown>
 			error?: string
+			errorDetails?: unknown
+			entitlement?: {
+				code: string
+				resource: string
+				plan: string
+				limit?: number
+				current?: number
+				upgradeHint: string
+				used?: number
+				remaining?: number
+			}
 		}
 		isError: boolean
 	}>
@@ -874,5 +894,104 @@ test('execute tool threads a progress reporter when the client sends progressTok
 			progress: 1,
 			message: 'bundle time',
 		},
+	})
+})
+
+test('execute tool attaches entitlement metadata on denials and quota, not on success', async () => {
+	const successHandler = await getExecuteHandler()
+	mockPerformanceSequence(1, 2)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const success = await successHandler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-entitlement-success',
+	})
+	expect(success.isError).toBe(false)
+	expect(success.structuredContent).toEqual({
+		conversationId: 'conv-entitlement-success',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 1,
+		},
+		returnedBytes: expect.any(Number),
+		result: { ok: true },
+		logs: [],
+	})
+	expect(success.structuredContent).not.toHaveProperty('entitlement')
+
+	const stockLimit = planLimits.free.maxSavedPackages
+	const stockHint = buildEntitlementUpgradeHint('saved_packages')
+	const stockDenial = new EntitlementLimitError({
+		resource: 'saved_packages',
+		plan: 'free',
+		limit: stockLimit,
+		current: stockLimit,
+		upgradeHint: stockHint,
+	})
+	mockPerformanceSequence(3, 4)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		error: stockDenial,
+		logs: [],
+	})
+	const denied = await successHandler({
+		code: 'export default async () => { throw stockDenial }',
+		conversationId: 'conv-entitlement-stock',
+	})
+	expect(denied.isError).toBe(true)
+	expect(denied.structuredContent.error).toBe(stockDenial.message)
+	expect(denied.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'saved_packages',
+		plan: 'free',
+		limit: stockLimit,
+		current: stockLimit,
+		upgradeHint: stockHint,
+	})
+	expect(denied.structuredContent.entitlement).not.toHaveProperty('used')
+	expect(denied.structuredContent.entitlement).not.toHaveProperty('remaining')
+
+	const quotaEmail = 'quota-metadata@example.com'
+	const quotaUserId = await createStableUserIdFromEmail(quotaEmail)
+	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	await userMeter.seed({
+		userId: quotaUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(new Date()),
+		count: quotaLimit,
+	})
+	const quotaHandler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: { userId: quotaUserId, email: quotaEmail },
+	})
+	mockPerformanceSequence(5, 6)
+	const quotaDenied = await quotaHandler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		conversationId: 'conv-entitlement-quota',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(quotaDenied.isError).toBe(true)
+	expect(quotaDenied.structuredContent.error).toBe(
+		buildEntitlementLimitMessage({
+			code: entitlementLimitErrorCode,
+			resource: 'execute_calls_per_day',
+			plan: 'free',
+			limit: quotaLimit,
+			current: quotaLimit,
+			upgradeHint: quotaHint,
+		}),
+	)
+	expect(quotaDenied.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+		used: quotaLimit,
+		remaining: 0,
 	})
 })

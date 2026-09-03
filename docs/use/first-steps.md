@@ -13,6 +13,11 @@ guides load with `search({ entity: "{id}:guide" })` — not execute.
 - **Read `timing` when tool latency matters.** `search` and `execute` return
   timing metadata with `startedAt`, `endedAt`, and `durationMs` in structured
   responses.
+- **Read `entitlement` only on plan-limit or quota denials.** Those error
+  results keep the existing error text and `isError` flag, and add a focused
+  machine-readable `entitlement` object (resource, current plan, limit, current
+  usage, upgrade hint; daily quotas also include `used` / `remaining`). Ordinary
+  successful tool returns omit `entitlement`.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories as compact subject and
   summary one-liners. `search` also retrieves from the query string.

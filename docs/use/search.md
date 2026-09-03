@@ -92,6 +92,11 @@ stay off this block. At most three items, then “N more” pointing at
 and empty/broad discovery do not inject it. Matching integration hits also carry
 the reconnect `nextStep` when the last refresh was reconnectable.
 
+Plan-limit or quota denials keep the existing error text and `isError` flag and
+add a focused `entitlement` object on structured content. Ordinary successful
+search results omit `entitlement`. Search itself has no daily quota; the field
+is for the shared MCP error envelope.
+
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
 how long the ranked lookup or entity lookup took.
