@@ -26,8 +26,43 @@ import {
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
+import { isExecutedDirectly } from '../node-runtime.ts'
 
 type Command = 'ensure' | 'cleanup'
+
+export type PreviewResourceKind = 'worker' | 'd1' | 'kv' | 'r2' | 'queue'
+
+/**
+ * Every preview resource name derives from the worker name the preview
+ * workflow resolves (`kody-pr-<number>` for pull requests, `kody-branch-<slug>`
+ * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
+ * `-platform`, `-jobs`, `-highlight`, `-mock-<service>`, `-db`, `-audit-db`,
+ * `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
+ * `-repo-session-blobs`, `-webhook-dispatch`, `-webhook-dispatch-dlq`
+ * (`truncateWithSuffix` may shorten the base but keeps this shape). Production
+ * names (`kody`, `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`,
+ * `kody-oauth`, `kody-webhook-dispatch`, ...) and the shared preview-env names
+ * (`kody-preview*`) never carry a `-pr-<number>` or `-branch-<slug>` segment.
+ */
+export const previewResourceNamePattern =
+	/^kody-(?:pr-\d+|branch-[a-z0-9]+)(?:-[a-z0-9]+)*$/
+
+/**
+ * Hard guard for every destructive operation in this script. Cleanup runs
+ * automatically when a PR closes, so a bug or a mis-set env var (for example
+ * an empty PR number) must never be able to compute a production resource
+ * name and delete it. Call this immediately before each delete.
+ */
+export function assertPreviewResourceName(
+	name: string,
+	kind: PreviewResourceKind,
+) {
+	if (!previewResourceNamePattern.test(name)) {
+		throw new Error(
+			`Refusing to delete ${kind} "${name}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}. Preview cleanup only deletes kody-pr-<number>* and kody-branch-<slug>* resources.`,
+		)
+	}
+}
 
 type CliOptions = {
 	workerName: string
@@ -103,7 +138,7 @@ function parseArgs(argv: Array<string>): {
 	return { command, options }
 }
 
-function buildPreviewResourceNames(workerName: string) {
+export function buildPreviewResourceNames(workerName: string) {
 	const maxLen = 63
 	const d1Suffix = '-db'
 	const auditD1Suffix = '-audit-db'
@@ -204,7 +239,14 @@ function ensureD1Database({
 	return { name, id: created.uuid }
 }
 
-function deleteD1Database({ name, dryRun }: { name: string; dryRun: boolean }) {
+export function deletePreviewD1Database({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	assertPreviewResourceName(name, 'd1')
 	if (dryRun) {
 		console.error(`[dry-run] delete D1 database: ${name}`)
 		return
@@ -260,13 +302,14 @@ function ensureKvNamespace({
 	return { title, id: created.id }
 }
 
-function deleteKvNamespace({
+export function deletePreviewKvNamespace({
 	title,
 	dryRun,
 }: {
 	title: string
 	dryRun: boolean
 }) {
+	assertPreviewResourceName(title, 'kv')
 	if (dryRun) {
 		console.error(`[dry-run] delete KV namespace: ${title}`)
 		return
@@ -293,6 +336,40 @@ function deleteKvNamespace({
 		fail(`Failed to delete KV namespace: ${title}`)
 	}
 	console.error(`Deleted KV namespace: ${title} (${existing.id})`)
+}
+
+export function deletePreviewWorkerScript({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	assertPreviewResourceName(name, 'worker')
+	deleteWorkerScript({ name, dryRun })
+}
+
+export function deletePreviewR2Bucket({
+	name,
+	dryRun,
+}: {
+	name: string
+	dryRun: boolean
+}) {
+	assertPreviewResourceName(name, 'r2')
+	deleteR2Bucket({ name, dryRun })
+}
+
+type PreviewQueueInput = Parameters<typeof deleteCloudflareQueue>[0]
+
+export async function removePreviewQueueConsumers(input: PreviewQueueInput) {
+	assertPreviewResourceName(input.name, 'queue')
+	await removeCloudflareQueueConsumers(input)
+}
+
+export async function deletePreviewQueue(input: PreviewQueueInput) {
+	assertPreviewResourceName(input.name, 'queue')
+	await deleteCloudflareQueue(input)
 }
 
 async function ensurePreviewResources(options: CliOptions) {
@@ -483,20 +560,22 @@ function listMockServerNames() {
 function deletePreviewWorkers(workerName: string, dryRun: boolean) {
 	// Runtime and platform bind each other's Durable Object classes, so
 	// delete those scripts before the origin worker.
-	deleteWorkerScript({ name: `${workerName}-runtime`, dryRun })
-	deleteWorkerScript({ name: `${workerName}-platform`, dryRun })
-	deleteWorkerScript({ name: workerName, dryRun })
-	deleteWorkerScript({ name: `${workerName}-jobs`, dryRun })
-	deleteWorkerScript({ name: `${workerName}-highlight`, dryRun })
+	deletePreviewWorkerScript({ name: `${workerName}-runtime`, dryRun })
+	deletePreviewWorkerScript({ name: `${workerName}-platform`, dryRun })
+	deletePreviewWorkerScript({ name: workerName, dryRun })
+	deletePreviewWorkerScript({ name: `${workerName}-jobs`, dryRun })
+	deletePreviewWorkerScript({ name: `${workerName}-highlight`, dryRun })
 	for (const service of listMockServerNames()) {
-		deleteWorkerScript({
+		deletePreviewWorkerScript({
 			name: `${workerName}-mock-${service}`,
 			dryRun,
 		})
 	}
 }
 
-async function cleanupPreviewResources(options: CliOptions) {
+export type PreviewCleanupOptions = Pick<CliOptions, 'workerName' | 'dryRun'>
+
+export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 	const {
 		d1DatabaseName,
 		auditD1DatabaseName,
@@ -524,30 +603,42 @@ async function cleanupPreviewResources(options: CliOptions) {
 	// registered as a queue consumer (code 10064), and a queue cannot be
 	// deleted while a Worker still binds it as a producer (400 "still
 	// referenced by a binding in a Worker"). So: consumers → Workers → queues.
-	await removeCloudflareQueueConsumers({
+	await removePreviewQueueConsumers({
 		...queueClient,
 		name: webhookDispatchQueueName,
 	})
-	await removeCloudflareQueueConsumers({
+	await removePreviewQueueConsumers({
 		...queueClient,
 		name: webhookDispatchDeadLetterQueueName,
 	})
 	deletePreviewWorkers(options.workerName, options.dryRun)
-	await deleteCloudflareQueue({
+	await deletePreviewQueue({
 		...queueClient,
 		name: webhookDispatchQueueName,
 	})
-	await deleteCloudflareQueue({
+	await deletePreviewQueue({
 		...queueClient,
 		name: webhookDispatchDeadLetterQueueName,
 	})
-	deleteR2Bucket({ name: communityAssetsBucketName, dryRun: options.dryRun })
-	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
-	deleteR2Bucket({ name: repoSessionBlobsBucketName, dryRun: options.dryRun })
-	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
-	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
-	deleteD1Database({ name: auditD1DatabaseName, dryRun: options.dryRun })
-	deleteD1Database({ name: d1DatabaseName, dryRun: options.dryRun })
+	deletePreviewR2Bucket({
+		name: communityAssetsBucketName,
+		dryRun: options.dryRun,
+	})
+	deletePreviewR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
+	deletePreviewR2Bucket({
+		name: repoSessionBlobsBucketName,
+		dryRun: options.dryRun,
+	})
+	deletePreviewKvNamespace({
+		title: bundleArtifactsKvTitle,
+		dryRun: options.dryRun,
+	})
+	deletePreviewKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
+	deletePreviewD1Database({
+		name: auditD1DatabaseName,
+		dryRun: options.dryRun,
+	})
+	deletePreviewD1Database({ name: d1DatabaseName, dryRun: options.dryRun })
 }
 
 async function main() {
@@ -567,4 +658,6 @@ async function main() {
 	await cleanupPreviewResources(options)
 }
 
-await main()
+if (isExecutedDirectly(import.meta.url)) {
+	await main()
+}
