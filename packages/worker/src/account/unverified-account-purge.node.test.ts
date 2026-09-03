@@ -10,14 +10,20 @@ import { createSuccessfulDeletionEnv } from '#worker/test-support/account-deleti
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import * as AuditLog from '#worker/audit-log.ts'
-import * as AccountDeletion from './account-deletion.ts'
+import * as AccountDeletion from '#app/account-deletion.ts'
 import * as DeletionState from '#worker/account/deletion-state.ts'
+import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
 import {
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	type AccountDeletionResult,
-} from './account-deletion.ts'
-import { pruneUnverifiedAccounts } from './unverified-account-purge.ts'
+} from '#app/account-deletion.ts'
+import {
+	listUnverifiedAccountPurgeCandidates,
+	pruneUnverifiedAccounts,
+	redactEmailAddresses,
+	unverifiedAccountPurgeFailureReasonMaxLength,
+} from './unverified-account-purge.ts'
 
 const now = new Date('2026-09-02T12:00:00.000Z')
 const millisecondsPerDay = 24 * 60 * 60 * 1000
@@ -235,6 +241,9 @@ test('purge deletes only aged unverified person accounts through full account de
 		purged: 1,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: eligible.stableUserId, ageDays: 8, outcome: 'purged' },
+		],
 	})
 	expect(deleteUserAccount).toHaveBeenCalledTimes(1)
 	expect(deleteUserAccount).toHaveBeenCalledWith({
@@ -296,6 +305,10 @@ test('purge walks oldest-first keyset pages and stops at the bounded batch size'
 		purged: 2,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: oldest.stableUserId, ageDays: 11, outcome: 'purged' },
+			{ stableUserId: second.stableUserId, ageDays: 10, outcome: 'purged' },
+		],
 	})
 	expect(deleteUserAccount.mock.calls.map((call) => call[0].mcpUserId)).toEqual(
 		[oldest.stableUserId, second.stableUserId],
@@ -316,7 +329,7 @@ test('purge walks oldest-first keyset pages and stops at the bounded batch size'
 	expect(auditActions(audit.sqlite)).toHaveLength(4)
 })
 
-test('a failed deletion is recorded and does not stop the rest of the batch', async () => {
+test('a failed deletion is audited with a bounded reason, reported per account, and does not stop the rest of the batch', async () => {
 	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
 	consoleWarn.mockImplementation(() => {})
 	const { sqlite, db } = createAppDb()
@@ -331,13 +344,16 @@ test('a failed deletion is recorded and does not stop the rest of the batch', as
 		email: 'after@example.com',
 		createdAt: daysAgo(11),
 	})
-	await seedUser(db, {
+	const last = await seedUser(db, {
 		username: 'purged-last',
 		email: 'last@example.com',
 		createdAt: daysAgo(10),
 	})
 	deleteUserAccount.mockImplementationOnce(async () => {
-		throw new AccountDeletionInventoryError(['simulated inventory'])
+		throw new AccountDeletionInventoryError([
+			'simulated inventory',
+			'second inventory warning',
+		])
 	})
 
 	const result = await pruneUnverifiedAccounts({
@@ -350,15 +366,34 @@ test('a failed deletion is recorded and does not stop the rest of the batch', as
 		purged: 2,
 		failed: 1,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: failing.stableUserId,
+				ageDays: 12,
+				outcome: 'failed',
+				error: 'AccountDeletionInventoryError: simulated inventory',
+				warnings: ['simulated inventory', 'second inventory warning'],
+			},
+			{ stableUserId: surviving.stableUserId, ageDays: 11, outcome: 'purged' },
+			{ stableUserId: last.stableUserId, ageDays: 10, outcome: 'purged' },
+		],
 	})
+	expect(JSON.stringify(result)).not.toContain('@example.com')
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: failing.stableUserId,
-		warnings: ['simulated inventory'],
-		error: expect.any(AccountDeletionInventoryError),
+		warnings: ['simulated inventory', 'second inventory warning'],
+		error: 'AccountDeletionInventoryError: simulated inventory',
 	})
 	expect(usernames(sqlite)).toEqual(['failing'])
 	expect(auditActions(audit.sqlite)).toEqual([
+		{
+			category: 'account',
+			action: 'unverified_account_purge_failed',
+			result: 'failure',
+			email_hash: emailHash(failing.email),
+			reason: 'AccountDeletionInventoryError: simulated inventory',
+		},
 		expect.objectContaining({
 			action: 'unverified_account_purged',
 			email_hash: emailHash(surviving.email),
@@ -380,8 +415,161 @@ test('a failed deletion is recorded and does not stop the rest of the batch', as
 		purged: 1,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: failing.stableUserId, ageDays: 12, outcome: 'purged' },
+		],
 	})
 	expect(usernames(sqlite)).toEqual([])
+})
+
+test('the failure audit reason falls back to the error message and is truncated', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const failing = await seedUser(db, {
+		username: 'long-failure',
+		email: 'long-failure@example.com',
+		createdAt: daysAgo(9),
+	})
+	const other = await seedUser(db, {
+		username: 'writers-active',
+		email: 'writers-active@example.com',
+		createdAt: daysAgo(8),
+	})
+	deleteUserAccount
+		.mockImplementationOnce(async () => {
+			throw new Error(`d1 timeout\n${'x'.repeat(400)}`)
+		})
+		.mockImplementationOnce(async () => {
+			throw new AccountDeletionWritersActiveError(2)
+		})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	const [truncated, writersActive] = result.outcomes
+	expect(truncated).toMatchObject({
+		stableUserId: failing.stableUserId,
+		outcome: 'failed',
+		warnings: [],
+	})
+	expect(truncated?.error).toHaveLength(
+		unverifiedAccountPurgeFailureReasonMaxLength,
+	)
+	expect(truncated?.error).toMatch(/^Error: d1 timeout x+$/)
+	expect(writersActive).toEqual({
+		stableUserId: other.stableUserId,
+		ageDays: 8,
+		outcome: 'failed',
+		error:
+			'AccountDeletionWritersActiveError: Account deletion is waiting for 2 active user write(s) to finish.',
+		warnings: [],
+	})
+	expect(auditActions(audit.sqlite)).toEqual([
+		expect.objectContaining({
+			action: 'unverified_account_purge_failed',
+			result: 'failure',
+			email_hash: emailHash(failing.email),
+			reason: truncated?.error,
+		}),
+		expect.objectContaining({
+			action: 'unverified_account_purge_failed',
+			result: 'failure',
+			email_hash: emailHash(other.email),
+			reason: writersActive?.error,
+		}),
+	])
+	expect(deletingAt(sqlite, 'writers-active')).toBeNull()
+})
+
+test('failure details redact email addresses before they reach outcomes, audit rows, or logs', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	consoleWarn.mockImplementation(() => {})
+	const { db } = createAppDb()
+	const audit = createAuditDb()
+	const leaky = await seedUser(db, {
+		username: 'leaky',
+		email: 'leaky.person+tag@example.com',
+		createdAt: daysAgo(9),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new AccountDeletionInventoryError([
+			`Failed to enumerate Stripe customer id: no customer for ${leaky.email}`,
+			`Failed to enumerate MCP servers: owner ${leaky.email} unreachable`,
+		])
+	})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	const [outcome] = result.outcomes
+	expect(outcome).toEqual({
+		stableUserId: leaky.stableUserId,
+		ageDays: 9,
+		outcome: 'failed',
+		error:
+			'AccountDeletionInventoryError: Failed to enumerate Stripe customer id: no customer for <email>',
+		warnings: [
+			'Failed to enumerate Stripe customer id: no customer for <email>',
+			'Failed to enumerate MCP servers: owner <email> unreachable',
+		],
+	})
+	expect(JSON.stringify(result)).not.toContain('@example.com')
+	const [auditRow] = auditActions(audit.sqlite)
+	expect(auditRow).toMatchObject({
+		action: 'unverified_account_purge_failed',
+		reason: outcome?.error,
+	})
+	expect(JSON.stringify(auditRow)).not.toContain('@example.com')
+	expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('@example.com')
+	expect(redactEmailAddresses('call kody@kody.codes or a@b.co now')).toBe(
+		'call <email> or <email> now',
+	)
+})
+
+test('a failed failure-audit write is logged and does not stop the rest of the batch', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	const logAuditEvent = vi.spyOn(AuditLog, 'logAuditEvent')
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const failing = await seedUser(db, {
+		username: 'failing-audit-down',
+		email: 'failing-audit-down@example.com',
+		createdAt: daysAgo(12),
+	})
+	const purged = await seedUser(db, {
+		username: 'purged-after-audit-down',
+		email: 'purged-after-audit-down@example.com',
+		createdAt: daysAgo(11),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new AccountDeletionInventoryError(['simulated inventory'])
+	})
+	logAuditEvent.mockRejectedValueOnce(new Error('audit db down'))
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	expect(result).toMatchObject({ scanned: 2, purged: 1, failed: 1 })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'unverified_account_purge_audit_failed',
+		{ userId: failing.stableUserId, error: expect.any(Error) },
+	)
+	expect(usernames(sqlite)).toEqual(['failing-audit-down'])
+	expect(auditActions(audit.sqlite)).toEqual([
+		expect.objectContaining({
+			action: 'unverified_account_purged',
+			email_hash: emailHash(purged.email),
+		}),
+	])
 })
 
 test('a failed fence release is logged and does not stop the rest of the batch', async () => {
@@ -395,7 +583,7 @@ test('a failed fence release is logged and does not stop the rest of the batch',
 		email: 'stuck@example.com',
 		createdAt: daysAgo(12),
 	})
-	await seedUser(db, {
+	const afterStuck = await seedUser(db, {
 		username: 'purged-after-stuck',
 		email: 'after-stuck@example.com',
 		createdAt: daysAgo(11),
@@ -417,6 +605,16 @@ test('a failed fence release is logged and does not stop the rest of the batch',
 		purged: 1,
 		failed: 1,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: stuck.stableUserId,
+				ageDays: 12,
+				outcome: 'failed',
+				error: 'AccountDeletionInventoryError: simulated inventory',
+				warnings: ['simulated inventory'],
+			},
+			{ stableUserId: afterStuck.stableUserId, ageDays: 11, outcome: 'purged' },
+		],
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'unverified_account_purge_release_failed',
@@ -451,15 +649,31 @@ test('a pre-existing fence is left in place when a restamped deletion fails', as
 		purged: 0,
 		failed: 1,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: fenced.stableUserId,
+				ageDays: 12,
+				outcome: 'failed',
+				error: 'Error: simulated restamped deletion failure',
+				warnings: [],
+			},
+		],
 	})
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: fenced.stableUserId,
 		warnings: [],
-		error: expect.any(Error),
+		error: 'Error: simulated restamped deletion failure',
 	})
 	expect(usernames(sqlite)).toEqual(['restamp-fail'])
 	expect(deletingAt(sqlite, 'restamp-fail')).not.toBeNull()
-	expect(auditActions(audit.sqlite)).toEqual([])
+	expect(auditActions(audit.sqlite)).toEqual([
+		expect.objectContaining({
+			action: 'unverified_account_purge_failed',
+			result: 'failure',
+			email_hash: emailHash(fenced.email),
+			reason: 'Error: simulated restamped deletion failure',
+		}),
+	])
 })
 
 test('a cleanup error keeps a claim-created fence so the damaged account retries', async () => {
@@ -489,15 +703,31 @@ test('a cleanup error keeps a claim-created fence so the damaged account retries
 		purged: 0,
 		failed: 1,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: damaged.stableUserId,
+				ageDays: 8,
+				outcome: 'failed',
+				error: 'AccountDeletionCleanupError: simulated cleanup',
+				warnings: ['simulated cleanup'],
+			},
+		],
 	})
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: damaged.stableUserId,
 		warnings: ['simulated cleanup'],
-		error: expect.any(AccountDeletionCleanupError),
+		error: 'AccountDeletionCleanupError: simulated cleanup',
 	})
 	expect(usernames(sqlite)).toEqual(['cleanup-fail'])
 	expect(deletingAt(sqlite, 'cleanup-fail')).not.toBeNull()
-	expect(auditActions(audit.sqlite)).toEqual([])
+	expect(auditActions(audit.sqlite)).toEqual([
+		expect.objectContaining({
+			action: 'unverified_account_purge_failed',
+			result: 'failure',
+			email_hash: emailHash(damaged.email),
+			reason: 'AccountDeletionCleanupError: simulated cleanup',
+		}),
+	])
 
 	deleteUserAccount.mockClear()
 	const retry = await pruneUnverifiedAccounts({
@@ -509,6 +739,7 @@ test('a cleanup error keeps a claim-created fence so the damaged account retries
 		purged: 0,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [],
 	})
 	expect(deleteUserAccount).not.toHaveBeenCalled()
 	expect(usernames(sqlite)).toEqual(['cleanup-fail'])
@@ -542,6 +773,10 @@ test('an audit failure after a successful delete does not stop the batch or rele
 		purged: 2,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: first.stableUserId, ageDays: 10, outcome: 'purged' },
+			{ stableUserId: second.stableUserId, ageDays: 9, outcome: 'purged' },
+		],
 	})
 	expect(deleteUserAccount).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith(
@@ -581,6 +816,13 @@ test('a claim that loses the race to verification keeps the account and writes n
 		purged: 0,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: raced.stableUserId,
+				ageDays: 8,
+				outcome: 'skipped_claim',
+			},
+		],
 	})
 	expect(deleteUserAccount).not.toHaveBeenCalled()
 	expect(usernames(sqlite)).toEqual(['verified-during-select'])
@@ -628,6 +870,9 @@ test('never-attempted accounts are purged before stale fences; in-backoff fences
 		purged: 1,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: fresh.stableUserId, ageDays: 8, outcome: 'purged' },
+		],
 	})
 	expect(deleteUserAccount.mock.calls.map((call) => call[0].mcpUserId)).toEqual(
 		[fresh.stableUserId],
@@ -645,6 +890,9 @@ test('never-attempted accounts are purged before stale fences; in-backoff fences
 		purged: 1,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [
+			{ stableUserId: staleFence.stableUserId, ageDays: 30, outcome: 'purged' },
+		],
 	})
 	expect(deleteUserAccount.mock.calls.map((call) => call[0].mcpUserId)).toEqual(
 		[staleFence.stableUserId],
@@ -675,9 +923,66 @@ test('a zero time budget deletes nothing', async () => {
 		purged: 0,
 		failed: 0,
 		timeBudgetExhausted: true,
+		outcomes: [],
 	})
 	expect(deleteUserAccount).not.toHaveBeenCalled()
 	expect(usernames(sqlite)).toEqual(['would-purge'])
 	expect(deletingAt(sqlite, 'would-purge')).toBeNull()
 	expect(auditActions(audit.sqlite)).toEqual([])
+})
+
+test('listUnverifiedAccountPurgeCandidates previews the claim page without claiming, deleting, or auditing', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const staleFence = await seedUser(db, {
+		username: 'preview-stale-fence',
+		email: 'preview-stale-fence@example.com',
+		createdAt: daysAgo(30),
+		deletingAt: daysAgo(1),
+	})
+	const fresh = await seedUser(db, {
+		username: 'preview-fresh',
+		email: 'preview-fresh@example.com',
+		createdAt: daysAgo(9),
+	})
+	await seedUser(db, {
+		username: 'preview-young',
+		email: 'preview-young@example.com',
+		createdAt: daysAgo(2),
+	})
+	await seedUser(db, {
+		username: 'preview-recent-fence',
+		email: 'preview-recent-fence@example.com',
+		createdAt: daysAgo(20),
+		deletingAt: minutesAgo(5),
+	})
+
+	const preview = await listUnverifiedAccountPurgeCandidates({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	expect(preview).toEqual({
+		scanned: 2,
+		candidates: [
+			{ stableUserId: fresh.stableUserId, ageDays: 9 },
+			{ stableUserId: staleFence.stableUserId, ageDays: 30 },
+		],
+	})
+	expect(JSON.stringify(preview)).not.toContain('@example.com')
+	expect(deleteUserAccount).not.toHaveBeenCalled()
+	expect(deletingAt(sqlite, 'preview-fresh')).toBeNull()
+	expect(deletingAt(sqlite, 'preview-stale-fence')).toBe(daysAgo(1))
+	expect(auditActions(audit.sqlite)).toEqual([])
+	expect(
+		await listUnverifiedAccountPurgeCandidates({
+			env: createPurgeEnv(db, audit.db),
+			now,
+			batchSize: 1,
+		}),
+	).toEqual({
+		scanned: 1,
+		candidates: [{ stableUserId: fresh.stableUserId, ageDays: 9 }],
+	})
 })

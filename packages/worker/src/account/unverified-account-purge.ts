@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
@@ -28,6 +29,11 @@ export const unverifiedAccountPurgeRunTimeBudgetMs = 20_000
  * every hourly tick or never.
  */
 export const unverifiedAccountPurgeRetryBackoffMs = 6 * 60 * 60 * 1000
+/**
+ * Upper bound for the compact failure reason written to the audit row and
+ * returned in per-account outcomes: `<ErrorName>: <first warning or message>`.
+ */
+export const unverifiedAccountPurgeFailureReasonMaxLength = 200
 
 const millisecondsPerDay = 24 * 60 * 60 * 1000
 
@@ -57,15 +63,45 @@ type UnverifiedAccountClaim =
 	| { claimed: false }
 	| { claimed: true; created: boolean; deletingAt: string }
 
+export type UnverifiedAccountPurgeOutcomeKind =
+	| 'purged'
+	| 'failed'
+	| 'skipped_claim'
+
+/**
+ * Per-account result of one purge pass. Identifies the account by stable id
+ * only; emails and usernames never leave the lane.
+ */
+export type UnverifiedAccountPurgeOutcome = {
+	stableUserId: string
+	ageDays: number
+	outcome: UnverifiedAccountPurgeOutcomeKind
+	error?: string
+	warnings?: Array<string>
+}
+
 export type UnverifiedAccountPurgeResult = {
 	scanned: number
 	purged: number
 	failed: number
 	timeBudgetExhausted: boolean
+	outcomes: Array<UnverifiedAccountPurgeOutcome>
+}
+
+export type UnverifiedAccountPurgeCandidate = {
+	stableUserId: string
+	ageDays: number
 }
 
 function cutoffIso(now: Date, millisecondsAgo: number) {
 	return new Date(now.getTime() - millisecondsAgo).toISOString()
+}
+
+function purgeCutoffs(now: Date) {
+	return {
+		ageCutoff: cutoffIso(now, unverifiedAccountPurgeDays * millisecondsPerDay),
+		retryBackoffCutoff: cutoffIso(now, unverifiedAccountPurgeRetryBackoffMs),
+	}
 }
 
 function unverifiedAccountSqlConditions() {
@@ -76,14 +112,93 @@ function unverifiedAccountSqlConditions() {
 	] as const
 }
 
+const emailAddressPattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+
+/**
+ * Deletion errors bubble up provider and D1 messages that can quote the
+ * account's email. Everything that leaves this module (audit reasons, admin
+ * outcomes, logs, Sentry) passes through here first.
+ */
+export function redactEmailAddresses(text: string) {
+	return text.replace(emailAddressPattern, '<email>')
+}
+
 function deletionFailureWarnings(error: unknown) {
 	if (error instanceof AccountDeletionCleanupError) {
-		return error.cleanupErrors
+		return error.cleanupErrors.map(redactEmailAddresses)
 	}
 	if (error instanceof AccountDeletionInventoryError) {
-		return error.inventoryErrors
+		return error.inventoryErrors.map(redactEmailAddresses)
 	}
 	return []
+}
+
+function errorConstructorName(error: unknown) {
+	if (typeof error === 'object' && error !== null) {
+		const name = error.constructor?.name
+		if (typeof name === 'string' && name.length > 0) return name
+	}
+	return 'UnknownError'
+}
+
+/**
+ * Compact, bounded description of why a deletion failed. Shape is
+ * `<ErrorClassName>: <first inventory/cleanup warning, else error.message>`
+ * truncated to `unverifiedAccountPurgeFailureReasonMaxLength` characters.
+ */
+function unverifiedAccountPurgeFailureReason(
+	error: unknown,
+	warnings: ReadonlyArray<string>,
+) {
+	const detail =
+		warnings[0] ??
+		(error instanceof Error && error.message.length > 0
+			? error.message
+			: String(error))
+	return redactEmailAddresses(`${errorConstructorName(error)}: ${detail}`)
+		.replace(/\s+/g, ' ')
+		.slice(0, unverifiedAccountPurgeFailureReasonMaxLength)
+}
+
+/**
+ * Same class name and stack as the original so Sentry groups it, but with the
+ * message (which may quote provider responses) redacted.
+ */
+function redactedErrorForReporting(error: unknown) {
+	if (!(error instanceof Error)) {
+		return new Error(redactEmailAddresses(String(error)))
+	}
+	const redacted = new Error(redactEmailAddresses(error.message))
+	redacted.name = error.name
+	redacted.stack = error.stack ? redactEmailAddresses(error.stack) : undefined
+	return redacted
+}
+
+function reportPurgeFailureToSentry(input: {
+	error: unknown
+	userId: string
+	warnings: ReadonlyArray<string>
+}) {
+	try {
+		if (!Sentry.isInitialized()) return
+		const client = Sentry.getClient()
+		if (!client?.getOptions().dsn) return
+		Sentry.withScope((scope) => {
+			scope.setLevel('error')
+			scope.setTag('scheduled.lane', 'unverified_account_purge')
+			// Stable id only: sendDefaultPii is false and emails stay out of Sentry.
+			scope.setContext('unverified_account_purge', {
+				userId: input.userId,
+				warnings: [...input.warnings],
+			})
+			Sentry.captureException(redactedErrorForReporting(input.error))
+		})
+	} catch (sentryError) {
+		console.warn('unverified_account_purge_sentry_failed', {
+			userId: input.userId,
+			error: sentryError,
+		})
+	}
 }
 
 function isPreCleanupDeletionFailure(error: unknown) {
@@ -164,6 +279,33 @@ async function claimUnverifiedAccountForPurge(input: {
 	return { claimed: false }
 }
 
+/**
+ * Read-only preview of the next purge page: the accounts one run would try
+ * to claim right now, in claim order. Performs no claims and no deletes.
+ */
+export async function listUnverifiedAccountPurgeCandidates(input: {
+	env: Env
+	now?: Date
+	batchSize?: number
+}): Promise<{
+	scanned: number
+	candidates: Array<UnverifiedAccountPurgeCandidate>
+}> {
+	const now = input.now ?? new Date()
+	const page = await listUnverifiedAccountsPage({
+		db: input.env.APP_DB,
+		...purgeCutoffs(now),
+		batchSize: input.batchSize ?? unverifiedAccountPurgeBatchSize,
+	})
+	return {
+		scanned: page.length,
+		candidates: page.map((account) => ({
+			stableUserId: account.stable_user_id,
+			ageDays: ageDays(account.created_at, now),
+		})),
+	}
+}
+
 export async function pruneUnverifiedAccounts(input: {
 	env: Env
 	now?: Date
@@ -175,19 +317,13 @@ export async function pruneUnverifiedAccounts(input: {
 	const timeBudgetMs =
 		input.timeBudgetMs ?? unverifiedAccountPurgeRunTimeBudgetMs
 	const batchSize = input.batchSize ?? unverifiedAccountPurgeBatchSize
-	const ageCutoff = cutoffIso(
-		now,
-		unverifiedAccountPurgeDays * millisecondsPerDay,
-	)
-	const retryBackoffCutoff = cutoffIso(
-		now,
-		unverifiedAccountPurgeRetryBackoffMs,
-	)
+	const { ageCutoff, retryBackoffCutoff } = purgeCutoffs(now)
 	const result: UnverifiedAccountPurgeResult = {
 		scanned: 0,
 		purged: 0,
 		failed: 0,
 		timeBudgetExhausted: false,
+		outcomes: [],
 	}
 	const page = await listUnverifiedAccountsPage({
 		db: input.env.APP_DB,
@@ -201,13 +337,21 @@ export async function pruneUnverifiedAccounts(input: {
 			result.timeBudgetExhausted = true
 			break
 		}
+		const accountAgeDays = ageDays(account.created_at, now)
 		const claim = await claimUnverifiedAccountForPurge({
 			db: input.env.APP_DB,
 			dbUserId: account.id,
 			now,
 			retryBackoffCutoff,
 		})
-		if (!claim.claimed) continue
+		if (!claim.claimed) {
+			result.outcomes.push({
+				stableUserId: account.stable_user_id,
+				ageDays: accountAgeDays,
+				outcome: 'skipped_claim',
+			})
+			continue
+		}
 		try {
 			await deleteUserAccount({
 				env: input.env,
@@ -221,7 +365,7 @@ export async function pruneUnverifiedAccounts(input: {
 					action: 'unverified_account_purged',
 					result: 'success',
 					email: account.email,
-					reason: `unverified_for_${ageDays(account.created_at, now)}_days`,
+					reason: `unverified_for_${accountAgeDays}_days`,
 				})
 			} catch (error) {
 				console.warn('unverified_account_purge_audit_failed', {
@@ -230,6 +374,11 @@ export async function pruneUnverifiedAccounts(input: {
 				})
 			}
 			result.purged += 1
+			result.outcomes.push({
+				stableUserId: account.stable_user_id,
+				ageDays: accountAgeDays,
+				outcome: 'purged',
+			})
 		} catch (error) {
 			if (claim.created && isPreCleanupDeletionFailure(error)) {
 				// A failed release leaves the fence in place; the retry backoff
@@ -249,10 +398,42 @@ export async function pruneUnverifiedAccounts(input: {
 				}
 			}
 			result.failed += 1
+			const warnings = deletionFailureWarnings(error)
+			const reason = unverifiedAccountPurgeFailureReason(error, warnings)
+			result.outcomes.push({
+				stableUserId: account.stable_user_id,
+				ageDays: accountAgeDays,
+				outcome: 'failed',
+				error: reason,
+				warnings: [...warnings],
+			})
 			console.warn('unverified_account_purge_failed', {
 				userId: account.stable_user_id,
-				warnings: deletionFailureWarnings(error),
+				warnings,
+				error: reason,
+			})
+			// Workers Logs sampling drops most of the warn above; the audit row
+			// and Sentry event are the best-effort durable record of why the
+			// purge failed (each is skipped, not fatal, when its sink is down).
+			try {
+				await logAuditEvent({
+					db: auditDatabaseFromEnv(input.env),
+					category: 'account',
+					action: 'unverified_account_purge_failed',
+					result: 'failure',
+					email: account.email,
+					reason,
+				})
+			} catch (auditError) {
+				console.warn('unverified_account_purge_audit_failed', {
+					userId: account.stable_user_id,
+					error: auditError,
+				})
+			}
+			reportPurgeFailureToSentry({
 				error,
+				userId: account.stable_user_id,
+				warnings,
 			})
 		}
 	}

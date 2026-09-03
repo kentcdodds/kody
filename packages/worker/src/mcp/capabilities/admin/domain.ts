@@ -46,6 +46,7 @@ import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.t
 import { adminReservedUsernameAddCapability } from './admin-reserved-username-add.ts'
 import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
 import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
+import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-account-purge-run.ts'
 
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
@@ -82,6 +83,7 @@ export const adminDomain = defineDomain({
 		'mailbox',
 		'maintenance',
 		'retention',
+		'unverified account purge',
 		'reserved username',
 	],
 	capabilities: [
@@ -97,6 +99,7 @@ export const adminDomain = defineDomain({
 		adminAccountWriteLeaseListCapability,
 		adminAccountWriteLeaseRepairCapability,
 		adminAccountDeletionAbortCapability,
+		adminUnverifiedAccountPurgeRunCapability,
 		adminPlatformAccountCreateCapability,
 		adminPlatformOauthAppSaveCapability,
 		adminPlatformOauthAppListCapability,

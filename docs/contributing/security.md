@@ -104,10 +104,19 @@ package-app surfaces:
     fenced row. A claim-created fence is released only on pre-cleanup failures
     (active writers or inventory); a partial-cleanup failure leaves the fence
     for retry. Never-attempted rows are processed before retries. Deletion uses
-    the inventory-driven account-deletion path. Password signups are the only
-    unverified path; social-login accounts are verified at creation. Signed-in
-    linking of a provider to a password account also requires that live verified
-    email.
+    the inventory-driven account-deletion path. Each purge writes an
+    `unverified_account_purged` audit row; each failed deletion writes an
+    `unverified_account_purge_failed` audit row (hashed email, reason
+    `<ErrorClassName>: <first inventory/cleanup warning or message>` with email
+    addresses redacted and bounded to 200 characters) and a Sentry event tagged
+    `scheduled.lane`, so a lane that fails every hour is visible without Workers
+    Logs. Both are best-effort: an `AUDIT_DB` or Sentry outage is logged and
+    skipped, not fatal. Operators run one pass interactively with the admin-only
+    `adminUnverifiedAccountPurgeRun` MCP capability (`dryRun` previews the next
+    claim page; results carry stable user ids, never emails or usernames).
+    Password signups are the only unverified path; social-login accounts are
+    verified at creation. Signed-in linking of a provider to a password account
+    also requires that live verified email.
 14. **Password-reset confirmation clears second factors and linked providers.**
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.

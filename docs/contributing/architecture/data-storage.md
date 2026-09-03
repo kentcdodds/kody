@@ -1600,8 +1600,18 @@ Current retention policies:
   `deleting_at` only while eligibility still holds). Once claimed, verify-email
   and social-login reclaim refuse the fenced account. A claim-created fence is
   released only on pre-cleanup failures; a partial-cleanup failure leaves the
-  fence for retry. Social-login accounts are verified at creation and are not in
-  this set.
+  fence for retry. Outcomes are recorded best-effort: a purge writes an
+  `unverified_account_purged` audit row and a failed deletion writes an
+  `unverified_account_purge_failed` audit row (reason
+  `<ErrorClassName>: <first inventory/cleanup warning or message>`, email
+  addresses redacted, at most 200 characters) plus a Sentry event when Sentry is
+  configured. Either sink being unavailable is logged and skipped rather than
+  failing the batch, so the durable record can have gaps when `AUDIT_DB` is
+  down; the on-demand capability below is the authoritative read. The admin-only
+  `adminUnverifiedAccountPurgeRun` capability runs one bounded pass on demand
+  (or previews the claim page with `dryRun`) and returns per-account outcomes
+  keyed by stable user id. Social-login accounts are verified at creation and
+  are not in this set.
 
 The squashed baseline defines the global time-column indexes these prunes order
 by (`created_at` / `day` / `month` / `started_at` across users); per-user
