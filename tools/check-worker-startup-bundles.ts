@@ -61,6 +61,21 @@ const workerBundlerGeneratedModuleRelativePath = path.join(
 	'.kody-generated',
 	'worker-bundler.mjs',
 )
+/**
+ * `#worker/oauth-helpers.ts` loads the OAuth provider from this generated
+ * module when `OAUTH_PROVIDER` is absent. Origin imports the library
+ * statically for its `fetch` wrapper; platform and runtime must not, so the
+ * package source is a forbidden main-module source there.
+ */
+const oauthProviderGeneratedModuleSourcePath =
+	'/packages/worker/.generated/oauth-provider.mjs'
+const oauthProviderGeneratedModuleRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'oauth-provider.mjs',
+)
+const oauthProviderPackageSourcePath =
+	'/node_modules/@cloudflare/workers-oauth-provider/'
 const workerBundlerWasmRelativePath = path.join(
 	'node_modules',
 	'.kody-generated',
@@ -84,7 +99,10 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		packageDir: 'packages/platform-worker',
 		entryFile: 'platform-worker.js',
 		maxEntryBytes: 4_975_000,
-		forbiddenSources: sharedDeferredGuideSources,
+		forbiddenSources: [
+			...sharedDeferredGuideSources,
+			oauthProviderPackageSourcePath,
+		],
 	},
 	{
 		name: 'runtime',
@@ -94,6 +112,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
 			'/packages/worker/src/repo/repo-session-do.ts',
+			oauthProviderPackageSourcePath,
 		],
 	},
 ]
@@ -183,6 +202,22 @@ async function inspectStartupBundle(
 	} catch {
 		throw new Error(
 			`${definition.name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(oauthProviderGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated OAuth provider (${oauthProviderGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	try {
+		await stat(path.join(outputDir, oauthProviderGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${definition.name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
 		)
 	}
 	if (size > definition.maxEntryBytes) {

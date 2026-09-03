@@ -7,9 +7,8 @@ export default mergeConfig(
 	defineProject({
 		ssr: {
 			// Inline so the `cloudflare:workers` alias below applies inside these
-			// packages; the OAuth provider is loaded lazily by
-			// `#worker/oauth-helpers.ts` and imports `WorkerEntrypoint` at module
-			// top.
+			// packages; the OAuth provider (aliased below from its generated
+			// deferred module) imports `WorkerEntrypoint` at module top.
 			noExternal: [
 				'@cloudflare/codemode',
 				'@cloudflare/workers-oauth-provider',
@@ -72,6 +71,15 @@ export default mergeConfig(
 						rootDir,
 						'packages/worker/src/test-support/cloudflare-workers-stub.ts',
 					),
+				},
+				// The generated deferred module lives under a `node_modules/`
+				// path, which vite-node would externalize (so the
+				// `cloudflare:workers` alias above would not reach it). Point node
+				// tests at the installed package instead; `ssr.noExternal` inlines
+				// it so the alias applies.
+				{
+					find: './node_modules/.kody-generated/oauth-provider.mjs',
+					replacement: '@cloudflare/workers-oauth-provider',
 				},
 			],
 		},

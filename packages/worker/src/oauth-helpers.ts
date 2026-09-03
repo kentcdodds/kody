@@ -25,8 +25,12 @@ const inertHandler = {
  * (`JobsHost.runScheduledLane`), and capabilities served from the sessionful
  * `MCP` Durable Object on kody-platform run outside it, so they build the same
  * `OAuthHelpersImpl` through the library's `getOAuthApi` with the shared
- * options. The library is imported lazily: it is not on the platform/runtime
- * startup path and only loads when a non-fetch caller actually needs it.
+ * options. The library loads lazily from the pre-bundled additional module
+ * (`tools/build-worker-bundler-modules.ts`): wrangler inlines a plain dynamic
+ * `import('@cloudflare/workers-oauth-provider')` into the main module, which
+ * would put it on the platform/runtime startup path, whereas the
+ * `find_additional_modules` lane uploads it separately so it is only fetched
+ * and evaluated when a non-fetch caller actually needs it.
  *
  * Returns `undefined` only when `OAUTH_KV` itself is missing. Callers type
  * `OAUTH_PROVIDER` as the subset of `OAuthHelpers` they consume; the full
@@ -37,7 +41,8 @@ export async function resolveOAuthHelpers<Helpers extends object>(
 ): Promise<Helpers | OAuthHelpers | undefined> {
 	if (env.OAUTH_PROVIDER) return env.OAUTH_PROVIDER
 	if (!env.OAUTH_KV) return undefined
-	const { getOAuthApi } = await import('@cloudflare/workers-oauth-provider')
+	const { getOAuthApi } =
+		await import('./node_modules/.kody-generated/oauth-provider.mjs')
 	return getOAuthApi<Env>(
 		{
 			...sharedOAuthProviderOptions,
