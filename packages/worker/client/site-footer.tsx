@@ -49,6 +49,10 @@ const footerCss = {
 	viewTransitionName: 'site-footer',
 }
 
+const footerLinkColumnMin = '7.5rem'
+/* Stay stacked until the 5-column nav fits beside brand + tagline. */
+const footerStackMq = '@media (max-width: 900px)'
+
 const footerInnerCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
@@ -60,7 +64,7 @@ const footerInnerCss = {
 	gap: '1.2rem 2rem',
 	fontSize: '0.92rem',
 	color: colors.textMuted,
-	'@media (max-width: 720px)': {
+	[footerStackMq]: {
 		gridTemplateColumns: '1fr',
 		justifyItems: 'center',
 	},
@@ -85,8 +89,6 @@ const taglineCss = {
 	fontOpticalSizing: 'auto' as const,
 }
 
-const footerLinkColumnMin = '7.5rem'
-
 const footerNavCss = {
 	/* Wide footer: a two-row, five-column row-major grid, not flex-wrap.
 	   Wrapping left the first few links on one row and stacked the rest. */
@@ -107,7 +109,7 @@ const footerNavCss = {
 	/* Stacked footer: wrap into as many columns as the inner measure holds
 	   instead of one 10-row ladder or a nowrap row that clips. auto-fit with
 	   min(100%, …) collapses to a single column before it overflows. */
-	'@media (max-width: 720px)': {
+	[footerStackMq]: {
 		display: 'grid',
 		width: '100%',
 		gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${footerLinkColumnMin}), max-content))`,

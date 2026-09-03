@@ -18,7 +18,8 @@ test('site footer nav uses a two-row five-column grid, then stacked auto-fit', a
 	expect(html).toContain(
 		'repeat(auto-fit, minmax(min(100%, 7.5rem), max-content))',
 	)
-	expect(html).toContain('@media (max-width: 720px)')
+	expect(html).toContain('@media (max-width: 900px)')
+	expect(html).not.toContain('@media (max-width: 720px)')
 	expect(html).not.toContain('flex-shrink: 0')
 	expect(html).not.toContain('flex-direction: column')
 	expect(html).not.toContain('@media (max-width: 560px)')
