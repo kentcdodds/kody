@@ -408,3 +408,73 @@ test('destructured kody.mcp tools resolve against the calling run', async () => 
 		})
 	})
 })
+
+test('kody.mcp.home.sonos_list_players stays callable when the current run throws on get', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+
+		const unavailableMessage =
+			'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.'
+		const throwingHome = new Proxy(
+			{},
+			{
+				get(_target, property) {
+					if (property === 'sonos_list_players') {
+						throw new Error(unavailableMessage)
+					}
+					return undefined
+				},
+				getOwnPropertyDescriptor(_target, property) {
+					if (property === 'sonos_list_players') {
+						throw new Error(unavailableMessage)
+					}
+					return undefined
+				},
+			},
+		)
+
+		await expect(
+			sharedStorage.run(
+				{ kody: { mcp: { home: throwingHome } } },
+				async () => await mod.kody.mcp.home.sonos_list_players({}),
+			),
+		).rejects.toThrow(unavailableMessage)
+
+		const captured = await sharedStorage.run(
+			{ kody: { mcp: { home: throwingHome } } },
+			async () => mod.kody.mcp.home.sonos_list_players,
+		)
+
+		const result = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async sonos_list_players() {
+								return { players: ['Kitchen'] }
+							},
+						},
+					},
+				},
+			},
+			async () => ({
+				viaPath: await mod.kody.mcp.home.sonos_list_players({}),
+				viaCaptured: await captured({}),
+			}),
+		)
+
+		expect(result).toEqual({
+			viaPath: { players: ['Kitchen'] },
+			viaCaptured: { players: ['Kitchen'] },
+		})
+	})
+})

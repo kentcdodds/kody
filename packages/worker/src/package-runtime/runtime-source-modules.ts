@@ -131,18 +131,31 @@ function __kodyReadRuntimeNestedValue(exportName, path) {
 	return current;
 }
 
+function __kodyApplyRuntimeNestedValue(exportName, path, args) {
+	const nestedExportName = exportName + '.' + path.map(String).join('.');
+	const parentPath = path.slice(0, -1);
+	const property = path[path.length - 1];
+	const currentParent =
+		parentPath.length === 0
+			? __kodyReadRuntimeExport(exportName)
+			: __kodyReadRuntimeNestedValue(exportName, parentPath);
+	const currentValue = currentParent?.[property];
+	if (typeof currentValue !== 'function') {
+		throw new Error(
+			\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
+		);
+	}
+	return currentValue.apply(currentParent, args);
+}
+
 function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
-	const nestedExportName = exportName + '.' + [...path, property].map(String).join('.');
 	if (typeof value === 'function') {
 		return function (...args) {
-			const currentParent = __kodyReadRuntimeNestedValue(exportName, path);
-			const currentValue = currentParent?.[property];
-			if (typeof currentValue !== 'function') {
-				throw new Error(
-					\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
-				);
-			}
-			return currentValue.apply(currentParent, args);
+			return __kodyApplyRuntimeNestedValue(
+				exportName,
+				[...path, property],
+				args,
+			);
 		};
 	}
 	if (value != null && typeof value === 'object') {
@@ -155,6 +168,9 @@ function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
 // current run's mcp proxy omits home (or throws on [[Get]]), bind a
 // late-bound nested proxy instead of undefined so a later run can still
 // resolve home.bond_shade_set_position against that run's kody.mcp.
+// Placeholders must also be callable: a disconnected/empty catalog throws
+// on tool [[Get]], and returning a plain object made
+// \`kody.mcp.home.sonos_list_players(...)\` fail as "is not a function".
 function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
 	return {
 		configurable: true,
@@ -164,9 +180,20 @@ function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
 	};
 }
 
+function __kodyReadRuntimeNestedParent(exportName, path) {
+	try {
+		return __kodyReadRuntimeNestedValue(exportName, path);
+	} catch {
+		return undefined;
+	}
+}
+
 function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 	const nestedExportName = exportName + '.' + path.map(String).join('.');
-	return new Proxy({}, {
+	const applyCurrent = function (...args) {
+		return __kodyApplyRuntimeNestedValue(exportName, path, args);
+	};
+	return new Proxy(applyCurrent, {
 		get(_target, property) {
 			const inspectionValue = __kodyRuntimeProxyInspectionValue(
 				nestedExportName,
@@ -175,7 +202,7 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 			if (inspectionValue !== undefined || __kodyIsRuntimeProxyInspectionProperty(property)) {
 				return inspectionValue;
 			}
-			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			const parent = __kodyReadRuntimeNestedParent(exportName, path);
 			if (parent == null) {
 				return __kodyCreateRuntimeNestedObjectProxy(
 					exportName,
@@ -208,13 +235,13 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
 			const currentRuntime = __kodyRuntimeStorage.getStore();
 			if (currentRuntime?.[exportName] == null) return false;
-			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			const parent = __kodyReadRuntimeNestedParent(exportName, path);
 			return parent != null && property in parent;
 		},
 		ownKeys() {
 			const currentRuntime = __kodyRuntimeStorage.getStore();
 			if (currentRuntime?.[exportName] == null) return [];
-			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			const parent = __kodyReadRuntimeNestedParent(exportName, path);
 			return parent == null ? [] : Reflect.ownKeys(parent);
 		},
 		getOwnPropertyDescriptor(_target, property) {
@@ -227,7 +254,7 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 					property,
 				);
 			}
-			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			const parent = __kodyReadRuntimeNestedParent(exportName, path);
 			if (parent == null) {
 				return __kodyLateBoundNestedPropertyDescriptor(
 					exportName,
@@ -278,6 +305,9 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 					value,
 				),
 			};
+		},
+		apply(_target, _thisArg, args) {
+			return applyCurrent(...args);
 		},
 	});
 }
