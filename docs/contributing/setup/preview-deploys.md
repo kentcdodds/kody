@@ -55,6 +55,16 @@ access, so the repo must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions
 secret with a token that has that permission. Cleanup intentionally fails when
 that secret is missing or under-scoped so permission regressions are visible.
 
+Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV,
+R2, Queues and their consumers) first passes through
+`assertPreviewResourceName(name, kind)`, which throws unless the name matches
+`^kody-(pr-<number>|branch-<slug>)(-<segment>)*$`. Production names (`kody`,
+`kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...) and the shared
+`kody-preview*` names never match, so a bug or an empty PR number cannot compute
+a production name and delete it. `npm run deploy-guardrails:check` fails if a
+destructive call in that script is not preceded by the guard in the same
+function.
+
 The production deploy workflow can also be started manually from GitHub Actions
 via **Run workflow** on `main`. The manual path verifies that the selected
 commit is the current `origin/main` HEAD before it deploys.
