@@ -170,11 +170,6 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			mainConfigPath,
 			JSON.stringify(buildMainGeneratedConfig('preview')),
 		)
-		const bootstrapPath = path.join(tempDir, 'main-bootstrap.generated.json')
-		await writeFile(
-			bootstrapPath,
-			JSON.stringify(buildMainGeneratedConfig('preview')),
-		)
 		const outConfigPath = path.join(tempDir, 'platform.generated.json')
 		const platformBootstrapPath = path.join(
 			tempDir,
@@ -190,7 +185,6 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			baseConfigPath: platformBaseConfigPath,
 			outConfigPath,
 			outPlatformBootstrapConfigPath: platformBootstrapPath,
-			mainBootstrapConfigPath: bootstrapPath,
 		})
 
 		const platformConfig = parseJsonc<{
@@ -205,6 +199,7 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 					queues?: { producers?: Array<Record<string, unknown>> }
 					vars?: Record<string, unknown>
 					workflows?: Array<Record<string, unknown>>
+					services?: Array<Record<string, unknown>>
 				}
 			}
 		}>(await readFile(outConfigPath, 'utf8'))
@@ -255,31 +250,35 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			)?.script_name,
 		).toBe('kody-pr-7-platform')
 
+		// The bootstrap variant deploys before the runtime script exists, so
+		// it carries no binding that resolves to it; platform-owned classes
+		// and every other binding stay intact.
 		const platformBootstrap = parseJsonc<{
 			env?: {
 				preview?: {
 					durable_objects?: { bindings?: Array<Record<string, unknown>> }
+					workflows?: Array<Record<string, unknown>>
+					services?: Array<Record<string, unknown>>
 				}
 			}
 		}>(await readFile(platformBootstrapPath, 'utf8'))
+		const bootstrapBindings =
+			platformBootstrap.env?.preview?.durable_objects?.bindings ?? []
 		expect(
-			platformBootstrap.env?.preview?.durable_objects?.bindings?.find(
-				(binding) => binding.name === 'STORAGE_RUNNER',
-			)?.script_name,
-		).toBe('kody-pr-7')
-
-		const bootstrap = parseJsonc<{
-			env?: {
-				preview?: {
-					durable_objects?: { bindings?: Array<Record<string, unknown>> }
-				}
-			}
-		}>(await readFile(bootstrapPath, 'utf8'))
-		expect(
-			bootstrap.env?.preview?.durable_objects?.bindings?.find(
-				(binding) => binding.name === 'MCP_OBJECT',
-			)?.script_name,
-		).toBeUndefined()
+			bootstrapBindings.filter(
+				(binding) => binding.script_name === 'kody-pr-7-runtime',
+			),
+		).toEqual([])
+		expect(bootstrapBindings.map((binding) => binding.name)).toEqual(
+			expect.arrayContaining(['MCP_OBJECT', 'USER_METER', 'REPO_SESSION']),
+		)
+		expect(bootstrapBindings).not.toContainEqual(
+			expect.objectContaining({ name: 'STORAGE_RUNNER' }),
+		)
+		expect(platformBootstrap.env?.preview?.workflows).toEqual([])
+		expect(platformBootstrap.env?.preview?.services).toEqual(
+			previewEnv?.services,
+		)
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

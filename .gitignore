@@ -43,4 +43,3 @@ packages/runtime-worker/wrangler-local-dev.generated.json
 packages/runtime-worker/wrangler-*.generated.json
 packages/platform-worker/wrangler-local-dev.generated.json
 packages/platform-worker/wrangler-*.generated.json
-packages/worker/wrangler-preview-bootstrap.generated.json

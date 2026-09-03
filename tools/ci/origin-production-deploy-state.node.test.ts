@@ -9,8 +9,10 @@ import {
 	isCloudflareNotFoundError,
 	isCloudflareOkNonJsonError,
 	originBootstrapConfigPath,
+	planOriginPreviewDeploy,
 	planOriginProductionDeploy,
 	platformOwnedClassNames,
+	previewFleetScriptNames,
 	productionOriginScriptName,
 	productionOriginBootstrapWorkflowName,
 	productionPlatformScriptName,
@@ -18,6 +20,7 @@ import {
 	runtimeOwnedClassNames,
 	stripOriginBindingsForLocallyOwnedClasses,
 	stripOriginCrossScriptClassBindings,
+	stripOriginDurableObjectMigrations,
 	writeOriginBootstrapWranglerConfig,
 	type DurableObjectNamespaceOwnership,
 } from './origin-production-deploy-state.ts'
@@ -129,6 +132,135 @@ test('an unknown origin-script probe is never fresh or steady', () => {
 	})
 	expect(state.mode).toBe('ambiguous')
 	expect(planOriginProductionDeploy(state).runOriginBootstrap).toBe(false)
+})
+
+test('previewFleetScriptNames derives the per-PR platform and runtime names', () => {
+	expect(previewFleetScriptNames('kody-pr-7')).toEqual({
+		origin: 'kody-pr-7',
+		platform: 'kody-pr-7-platform',
+		runtime: 'kody-pr-7-runtime',
+	})
+})
+
+test('classifies a preview fleet by its own script names, not production names', () => {
+	const scriptNames = previewFleetScriptNames('kody-pr-7')
+	// Production-named ownership must be invisible to a preview probe.
+	const productionOwnership = [
+		...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
+		...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
+	]
+	expect(
+		classifyOriginProductionScriptState({
+			originScriptExists: false,
+			namespaces: productionOwnership,
+			scriptNames,
+		}).mode,
+	).toBe('fresh')
+	expect(
+		classifyOriginProductionScriptState({
+			originScriptExists: true,
+			namespaces: [
+				...productionOwnership,
+				...transferredOn(scriptNames.platform, platformOwnedClassNames),
+				...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
+			],
+			scriptNames,
+		}).mode,
+	).toBe('steady')
+})
+
+test('a fresh preview origin uploads the slim entry without bootstrapping', () => {
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: false,
+		namespaces: [],
+		scriptNames: previewFleetScriptNames('kody-pr-7'),
+	})
+	expect(state.mode).toBe('fresh')
+	expect(planOriginPreviewDeploy(state)).toMatchObject({
+		mode: 'fresh',
+		originEntry: 'slim',
+	})
+})
+
+test('a retried preview run (platform/runtime deployed, origin missing) still uploads the slim entry', () => {
+	const scriptNames = previewFleetScriptNames('kody-pr-7')
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: false,
+		namespaces: [
+			...transferredOn(scriptNames.platform, platformOwnedClassNames),
+			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
+		],
+		scriptNames,
+	})
+	expect(state.mode).toBe('ambiguous')
+	// Production would keep the full entry here; preview never owns a class
+	// on origin, so ambiguity about the destinations does not change the
+	// origin upload.
+	expect(planOriginProductionDeploy(state).originEntry).toBe('full')
+	expect(planOriginPreviewDeploy(state).originEntry).toBe('slim')
+})
+
+test('a steady preview fleet uploads the slim entry', () => {
+	const scriptNames = previewFleetScriptNames('kody-pr-7')
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: true,
+		namespaces: [
+			...transferredOn(scriptNames.platform, platformOwnedClassNames),
+			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
+			ownership(scriptNames.origin, 'JobsHost'),
+		],
+		scriptNames,
+	})
+	expect(state.mode).toBe('steady')
+	expect(planOriginPreviewDeploy(state).originEntry).toBe('slim')
+})
+
+test('a legacy preview origin that still owns transferred classes falls back to the full entry', () => {
+	const scriptNames = previewFleetScriptNames('kody-pr-7')
+	// Pre-slim previews bootstrapped every class on origin and also created
+	// them on platform/runtime, so all three scripts own namespaces.
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: true,
+		namespaces: [
+			...transferredOn(scriptNames.origin, platformOwnedClassNames),
+			...transferredOn(scriptNames.origin, runtimeOwnedClassNames),
+			...transferredOn(scriptNames.platform, platformOwnedClassNames),
+			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
+		],
+		scriptNames,
+	})
+	expect(state.mode).toBe('ambiguous')
+	const plan = planOriginPreviewDeploy(state)
+	expect(plan.originEntry).toBe('full')
+	expect(plan.reason).toContain('Origin still owns')
+	expect(plan.reason).toContain('MCP')
+})
+
+test('stripOriginDurableObjectMigrations removes top-level and env migrations only', () => {
+	const config: Record<string, unknown> = {
+		main: './src/production-worker.ts',
+		migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+		durable_objects: { bindings: [] },
+		env: {
+			preview: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+				vars: { APP_ENV: 'preview' },
+			},
+			production: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+			},
+		},
+	}
+	expect(stripOriginDurableObjectMigrations(config, 'preview')).toEqual({
+		main: './src/production-worker.ts',
+		durable_objects: { bindings: [] },
+		env: {
+			preview: { vars: { APP_ENV: 'preview' } },
+			production: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+			},
+		},
+	})
 })
 
 test('falls back to script existence only when namespace listing is unavailable', () => {

@@ -1,6 +1,15 @@
 import { readdirSync, statSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
+import {
+	inspectOriginProductionScriptState,
+	planOriginPreviewDeploy,
+	previewFleetScriptNames,
+	stripOriginDurableObjectMigrations,
+	type OriginProductionScriptState,
+} from './origin-production-deploy-state.ts'
 import {
 	deleteCloudflareQueue,
 	deleteR2Bucket,
@@ -11,6 +20,7 @@ import {
 	listD1Databases,
 	listCloudflareQueues,
 	listKvNamespaces,
+	parseJsonc,
 	removeCloudflareQueueConsumers,
 	runWrangler,
 	truncateWithSuffix,
@@ -353,11 +363,39 @@ async function ensurePreviewResources(options: CliOptions) {
 		existingQueues,
 	})
 
+	// Same classifier as production (tools/ci/production-resources.ts), run
+	// against this preview's three script names. A dry run has no live fleet
+	// to probe and nothing to protect, so it plans as a fresh preview.
+	const deployState: OriginProductionScriptState =
+		options.dryRun || !accountId || !apiToken
+			? {
+					mode: 'fresh',
+					reason: 'Dry run; plan as a fresh preview fleet.',
+					originOwnedTransferredClassNames: [],
+				}
+			: await inspectOriginProductionScriptState({
+					accountId,
+					apiToken,
+					scriptNames: previewFleetScriptNames(options.workerName),
+				})
+	const deployPlan = planOriginPreviewDeploy(deployState)
+	console.error(
+		`Origin preview deploy state: ${deployPlan.mode} (${deployPlan.originEntry} entry). ${deployPlan.reason}`,
+	)
+
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
 		outConfigPath: options.outConfigPath,
 		envName: 'preview',
 		workerName: options.workerName,
+		// Preview uploads the same slim origin entry as steady-state
+		// production: platform and runtime own every Durable Object class, so
+		// the origin never needs the full `index.ts` bootstrap. The full entry
+		// is only the fallback for a legacy preview script that still owns
+		// transferred classes (see planOriginPreviewDeploy).
+		...(deployPlan.originEntry === 'slim'
+			? { mainEntryPath: defaultProductionEntryPath }
+			: {}),
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		auditD1DatabaseName: auditD1.name,
@@ -389,8 +427,20 @@ async function ensurePreviewResources(options: CliOptions) {
 		],
 	})
 
+	const generatedConfig = parseJsonc<Record<string, unknown>>(
+		await readFile(generatedConfigPath, 'utf8'),
+	)
+	stripOriginDurableObjectMigrations(generatedConfig, 'preview')
+	await writeFile(
+		generatedConfigPath,
+		`${JSON.stringify(generatedConfig, null, '\t')}\n`,
+		'utf8',
+	)
+
 	// Emit GitHub Actions-friendly outputs (stdout only).
 	console.log(`wrangler_config=${generatedConfigPath}`)
+	console.log(`origin_deploy_mode=${deployPlan.mode}`)
+	console.log(`origin_entry=${deployPlan.originEntry}`)
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
 	console.log(`audit_d1_database_name=${auditD1.name}`)
