@@ -249,6 +249,16 @@ export const builtInReservedUsernameList = [
 const reservedUsernames = new Set<string>(builtInReservedUsernameList)
 
 /**
+ * Username charset separators already present on reserved tokens or DNS-safe
+ * labels. Hyphen is the only claimable separator; underscore appears on a few
+ * legacy mailbox locals in this list. Do not add other strip rules.
+ */
+const reservedUsernameSeparators = /[-_]/g
+
+/** Substring match only for compact reserved tokens this long or longer. */
+const reservedUsernameSubstringMinLength = 4
+
+/**
  * Platform system-email locals that must never be unreserved. Mirrors
  * `systemEmailLocals` without importing `#worker/email/*` (that graph already
  * imports this module).
@@ -279,6 +289,13 @@ export function normalizeReservedUsername(username: string) {
 	return username.trim().toLowerCase()
 }
 
+function compactReservedUsername(username: string) {
+	return normalizeReservedUsername(username).replace(
+		reservedUsernameSeparators,
+		'',
+	)
+}
+
 export function isBuiltInReservedUsername(username: string) {
 	const normalized = normalizeReservedUsername(username)
 	return (
@@ -287,8 +304,43 @@ export function isBuiltInReservedUsername(username: string) {
 	)
 }
 
+/**
+ * True when `username` may not be newly claimed against `reservedNames`.
+ * Existing holders keep their username; this is only for signup, rename,
+ * generated usernames, and admin conflict listing.
+ *
+ * Matching: lowercase trim; exact token match; hyphen/underscore-stripped
+ * equality; then substring only when the compact reserved token is at least
+ * four characters (so `ass` does not block `assistant`).
+ */
+export function usernameCollidesWithReservedNames(
+	username: string,
+	reservedNames: Iterable<string>,
+) {
+	const normalized = normalizeReservedUsername(username)
+	if (!normalized) return false
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	const compact = compactReservedUsername(normalized)
+	if (!compact) return false
+	for (const reserved of reservedNames) {
+		const normalizedReserved = normalizeReservedUsername(reserved)
+		if (!normalizedReserved) continue
+		if (normalized === normalizedReserved) return true
+		const compactReserved = compactReservedUsername(normalizedReserved)
+		if (!compactReserved) continue
+		if (compact === compactReserved) return true
+		if (
+			compactReserved.length >= reservedUsernameSubstringMinLength &&
+			compact.includes(compactReserved)
+		) {
+			return true
+		}
+	}
+	return false
+}
+
 export function isReservedUsername(username: string) {
-	return isBuiltInReservedUsername(username)
+	return usernameCollidesWithReservedNames(username, reservedUsernames)
 }
 
 export function isPermanentlyReservedUsername(username: string) {
@@ -309,6 +361,19 @@ export function getReservedUsernameError(username: string) {
 	return null
 }
 
+export function isReservedUsernameToken(
+	username: string,
+	overrides: {
+		added?: Iterable<string>
+		removed?: Iterable<string>
+	} = {},
+) {
+	const normalized = normalizeReservedUsername(username)
+	if (!normalized) return false
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	return computeEffectiveReservedUsernames(overrides).has(normalized)
+}
+
 export function isUsernameEffectivelyReserved(
 	username: string,
 	overrides: {
@@ -318,11 +383,11 @@ export function isUsernameEffectivelyReserved(
 ) {
 	const normalized = normalizeReservedUsername(username)
 	if (!normalized) return false
-	if (isPermanentlyReservedUsername(normalized)) return true
-	const removed = toNormalizedSet(overrides.removed)
-	if (removed.has(normalized)) return false
-	if (isBuiltInReservedUsername(normalized)) return true
-	return toNormalizedSet(overrides.added).has(normalized)
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	return usernameCollidesWithReservedNames(
+		normalized,
+		computeEffectiveReservedUsernames(overrides),
+	)
 }
 
 export function computeEffectiveReservedUsernames(input: {
@@ -332,7 +397,7 @@ export function computeEffectiveReservedUsernames(input: {
 	const removed = toNormalizedSet(input.removed)
 	const effective = new Set<string>()
 	for (const name of builtInReservedUsernameList) {
-		if (isUsernameEffectivelyReserved(name, input)) {
+		if (isPermanentlyReservedUsername(name) || !removed.has(name)) {
 			effective.add(name)
 		}
 	}

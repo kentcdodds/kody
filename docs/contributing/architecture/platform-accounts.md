@@ -22,10 +22,12 @@ defines:
   Primary key `(scope_owner_user_id, grantee_user_id)`. A row means the grantee
   person may act inside the scope owner's package namespace.
 
-Platform account usernames must come from the reserved-username denylist in
-`packages/worker/src/identity/reserved-usernames.ts` (for example `kody`,
-`support`, `admin`). That list blocks end-user signup from claiming those names,
-so platform scopes never collide with real accounts.
+Platform account usernames must be an exact token from the reserved-username
+denylist in `packages/worker/src/identity/reserved-usernames.ts` (for example
+`kody`, `support`, `admin`). Person signup and username changes also reject
+compact-equal and long-token substring collisions against that same effective
+set (see [Security](../security.md)), so platform scopes never collide with real
+accounts.
 
 Platform accounts use a sentinel password hash that never verifies, the same
 pattern as admin-created person accounts awaiting password setup.

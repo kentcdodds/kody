@@ -209,9 +209,17 @@ cannot become package-app subdomains or inbound mailboxes. Operators add or
 unreserve names at runtime through `platform-settings:v1:reserved-usernames`
 without a deploy; system-email locals and `kody`-prefixed built-in names stay
 permanently locked. Signup, username change, admin user creation, and social
-username generation consult the effective set (built-in plus KV). Operators run
-`adminReservedUsernameList` against production when expanding the built-in list
-so `conflicts` shows registered collisions.
+username generation consult the effective set (built-in plus KV).
+
+A new claim fails when the lowercase-trimmed username is an exact reserved
+token, when the hyphen/underscore-stripped form equals a reserved token, or when
+a reserved token of length 4 or more is a substring of that compact form.
+Three-letter tokens still block exact and compact-equal claims (`f-aq` matches
+`faq`) but do not substring-match (`assistant` is allowed even if `ass` is added
+in KV). The user-facing error is `This username is reserved.` Accounts that
+already hold a colliding username keep it; `adminReservedUsernameList`
+`conflicts` lists those holders so operators can see them. Platform accounts
+still claim an exact token from the denylist, not a substring collision.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
