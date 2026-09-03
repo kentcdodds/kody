@@ -646,8 +646,9 @@ test('non-empty preview R2 buckets are emptied then deleted', async () => {
 		bucketDeletes.filter((name) => name === 'kody-pr-42-email-blobs'),
 	).toEqual(['kody-pr-42-email-blobs', 'kody-pr-42-email-blobs'])
 	expect(
-		deletedObjectUrls.some((url) => url.includes('seeded%2Fblob.bin')),
+		deletedObjectUrls.some((url) => url.includes('/objects/seeded/blob.bin')),
 	).toBe(true)
+	expect(deletedObjectUrls.some((url) => url.includes('%2F'))).toBe(false)
 	expect(
 		consoleError.mock.calls.some(([message]) =>
 			String(message).includes(

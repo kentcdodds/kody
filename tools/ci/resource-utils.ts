@@ -455,6 +455,16 @@ function readR2ObjectKey(entry: R2ObjectListEntry) {
 	return null
 }
 
+/**
+ * Cloudflare R2 Delete Object requires slashes in the key to stay literal.
+ * `encodeURIComponent` on the whole key turns `/` into `%2F` and nested
+ * preview objects then fail to delete, leaving a non-empty bucket leftover.
+ * Other reserved characters are still percent-encoded per segment.
+ */
+export function encodeR2ObjectKey(key: string) {
+	return key.split('/').map(encodeURIComponent).join('/')
+}
+
 export async function listR2BucketObjects(input: {
 	accountId: string
 	apiToken: string
@@ -536,7 +546,7 @@ export async function emptyR2Bucket(input: {
 			deadlineMs: input.deadlineMs,
 			now: input.now,
 			maxAttempts: input.maxAttempts,
-			pathname: `/r2/buckets/${encodeURIComponent(input.name)}/objects/${encodeURIComponent(key)}`,
+			pathname: `/r2/buckets/${encodeURIComponent(input.name)}/objects/${encodeR2ObjectKey(key)}`,
 			method: 'DELETE',
 		})
 		console.error(`Deleted R2 object: ${input.name}/${key}`)

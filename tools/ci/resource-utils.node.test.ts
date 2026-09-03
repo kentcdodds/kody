@@ -9,6 +9,8 @@ import {
 	cloudflareApiRequest,
 	deleteCloudflareQueue,
 	emailSendingEventTypes,
+	emptyR2Bucket,
+	encodeR2ObjectKey,
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
@@ -925,6 +927,47 @@ test('Cloudflare API requests retry gateway HTML/text blips then succeed', async
 	expect(isR2BucketNotEmptyOutput('Authentication error [code: 10000]')).toBe(
 		false,
 	)
+})
+
+test('emptyR2Bucket deletes nested keys with literal slashes', async () => {
+	consoleError.mockImplementation(() => {})
+	const deletedUrls: Array<string> = []
+	const fetcher = vi
+		.fn<typeof fetch>()
+		.mockImplementation(async (input, init) => {
+			const url = String(input)
+			if ((init?.method ?? 'GET') === 'DELETE') {
+				deletedUrls.push(url)
+				return Response.json({ success: true, result: { key: 'ok' } })
+			}
+			return Response.json({
+				success: true,
+				result: [{ key: 'seeded/blob.bin' }, { key: 'path/to/weird name.bin' }],
+				result_info: { total_pages: 1 },
+			})
+		})
+
+	await emptyR2Bucket({
+		accountId: 'test-account',
+		apiToken: 'test-token',
+		name: 'kody-pr-42-email-blobs',
+		fetcher,
+	})
+
+	expect(deletedUrls).toEqual([
+		expect.stringContaining(
+			'/r2/buckets/kody-pr-42-email-blobs/objects/seeded/blob.bin',
+		),
+		expect.stringContaining(
+			'/r2/buckets/kody-pr-42-email-blobs/objects/path/to/weird%20name.bin',
+		),
+	])
+	expect(deletedUrls.some((url) => url.includes('%2F'))).toBe(false)
+	expect(encodeR2ObjectKey('seeded/blob.bin')).toBe('seeded/blob.bin')
+	expect(encodeR2ObjectKey('path/to/weird name.bin')).toBe(
+		'path/to/weird%20name.bin',
+	)
+	expect(encodeR2ObjectKey('a//b')).toBe('a//b')
 })
 
 test('Cloudflare API requests retry a 429 then succeed and do not retry 403', async () => {
