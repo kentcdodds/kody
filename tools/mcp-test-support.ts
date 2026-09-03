@@ -60,7 +60,7 @@ export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
 		email: primaryUserEmail,
-		username: 'mcp-test-user',
+		username: 'willow',
 		password: testUserPassword,
 	} satisfies TestUser
 

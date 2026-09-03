@@ -10,7 +10,7 @@ import {
 	pageTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
-import { legalLastUpdated } from './legal-last-updated.ts'
+import { termsLastUpdated } from './legal-last-updated.ts'
 
 export function TermsRoute(_handle: Handle) {
 	return () => (
@@ -22,7 +22,7 @@ export function TermsRoute(_handle: Handle) {
 				</p>
 				<p mix={css(lastUpdatedCss)}>
 					Last updated:{' '}
-					<time datetime={legalLastUpdated}>{legalLastUpdated}</time>
+					<time datetime={termsLastUpdated}>{termsLastUpdated}</time>
 				</p>
 			</header>
 

@@ -220,14 +220,15 @@ tokens still block exact and compact-equal claims (`f-aq` matches `faq`) but do
 not substring-match (`assistant` is allowed even if `ass` is added in KV). The
 user-facing error is `This username is reserved.` Accounts that already hold a
 colliding username keep it at signup; `adminReservedUsernameList` `conflicts`
-lists those holders so operators can see them. Operators may still change an
-existing username at their discretion when a handle is abusive, reserved,
-impersonating, or otherwise a problem — that policy is stated on
-[`/terms`](https://kody.codes/terms). Platform accounts still claim an exact
-token from the denylist, not a substring collision. Generated usernames keep
-numeric suffixes only when the preferred base is claimable but taken; a reserved
-base skips to a random compact candidate because `support-2` still contains
-`support`.
+lists those holders when invoked. Resolve conflicts before expanding the
+built-in list; do not treat `conflicts` as a mandatory post-expansion run.
+Operators may still change an existing username at their discretion when a
+handle is abusive, reserved, impersonating, or otherwise a problem — that policy
+is stated on [`/terms`](https://kody.codes/terms). Platform accounts still claim
+an exact token from the effective reserved set (built-in plus KV-added, minus
+removed), not a substring collision. Generated usernames keep numeric suffixes
+only when the preferred base is claimable but taken; a reserved base skips to a
+random compact candidate because `support-2` still contains `support`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
