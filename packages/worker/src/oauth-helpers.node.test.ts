@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { createKvOAuthHelpers } from './oauth-kv-helpers.ts'
+import { resolveOAuthHelpers } from './oauth-helpers.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 
 function grantRecord(input: {
@@ -74,34 +74,45 @@ function seedProviderKv() {
 	})
 }
 
-test('listUserGrants returns only the user’s grants in provider summary shape and pages with cursors', async () => {
+async function libraryHelpersFor(kv: KVNamespace) {
+	const helpers = await resolveOAuthHelpers({ OAUTH_KV: kv } as Env)
+	if (!helpers) throw new Error('expected library-backed OAuth helpers')
+	return helpers
+}
+
+test('resolveOAuthHelpers prefers the injected provider helpers and needs OAUTH_KV otherwise', async () => {
+	const injected = { listUserGrants: async () => ({ items: [] }) }
+	await expect(
+		resolveOAuthHelpers({ OAUTH_PROVIDER: injected } as Env & {
+			OAUTH_PROVIDER: typeof injected
+		}),
+	).resolves.toBe(injected)
+	await expect(resolveOAuthHelpers({} as Env)).resolves.toBeUndefined()
+})
+
+test('library-backed listUserGrants returns only the user’s grants in summary shape and pages with cursors', async () => {
 	const { kv } = seedProviderKv()
-	const helpers = createKvOAuthHelpers(kv)
+	const helpers = await libraryHelpersFor(kv)
 
 	const all = await helpers.listUserGrants('user-aaa')
 	expect(all.cursor).toBeUndefined()
 	expect(all.items).toEqual([
-		{
+		expect.objectContaining({
 			id: 'grant-1',
 			clientId: 'client-a',
 			userId: 'user-aaa',
 			scope: ['mcp', 'profile'],
 			metadata: { label: 'grant-1' },
 			createdAt: 1_700_000_000,
-			expiresAt: undefined,
-			redirectUri: undefined,
-		},
-		{
+		}),
+		expect.objectContaining({
 			id: 'grant-2',
 			clientId: 'client-b',
 			userId: 'user-aaa',
 			scope: ['mcp'],
-			metadata: { label: 'grant-2' },
-			createdAt: 1_700_000_000,
-			expiresAt: undefined,
-			redirectUri: undefined,
-		},
+		}),
 	])
+	expect(JSON.stringify(all.items)).not.toMatch(/opaque|encryptedProps/)
 
 	const firstPage = await helpers.listUserGrants('user-aaa', { limit: 1 })
 	expect(firstPage.items.map((grant) => grant.id)).toEqual(['grant-1'])
@@ -116,9 +127,9 @@ test('listUserGrants returns only the user’s grants in provider summary shape 
 	expect((await helpers.listUserGrants('user-none')).items).toEqual([])
 })
 
-test('revokeGrant deletes the grant and every token under it and nothing of another user', async () => {
+test('library-backed revokeGrant deletes the grant and every token under it and nothing of another user', async () => {
 	const { kv, store } = seedProviderKv()
-	const helpers = createKvOAuthHelpers(kv)
+	const helpers = await libraryHelpersFor(kv)
 
 	await helpers.revokeGrant('grant-1', 'user-aaa')
 
@@ -136,7 +147,7 @@ test('revokeGrant deletes the grant and every token under it and nothing of anot
 	).resolves.toBeUndefined()
 })
 
-test('revokeGrant pages through more tokens than one list call returns', async () => {
+test('library-backed revokeGrant pages through more tokens than one list call returns', async () => {
 	const { kv, store } = createMemoryKvNamespace({
 		'grant:user-aaa:grant-1': grantRecord({
 			id: 'grant-1',
@@ -155,14 +166,14 @@ test('revokeGrant pages through more tokens than one list call returns', async (
 		)
 	}
 
-	await createKvOAuthHelpers(kv).revokeGrant('grant-1', 'user-aaa')
+	await (await libraryHelpersFor(kv)).revokeGrant('grant-1', 'user-aaa')
 
 	expect(store.size).toBe(0)
 })
 
-test('deleteClient revokes every grant issued to the client across users and removes the client key', async () => {
+test('library-backed deleteClient revokes every grant issued to the client across users and removes the client key', async () => {
 	const { kv, store } = seedProviderKv()
-	const helpers = createKvOAuthHelpers(kv)
+	const helpers = await libraryHelpersFor(kv)
 
 	await helpers.deleteClient('client-a')
 

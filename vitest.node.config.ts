@@ -6,7 +6,14 @@ export default mergeConfig(
 	sharedProjectConfig,
 	defineProject({
 		ssr: {
-			noExternal: ['@cloudflare/codemode'],
+			// Inline so the `cloudflare:workers` alias below applies inside these
+			// packages; the OAuth provider is loaded lazily by
+			// `#worker/oauth-helpers.ts` and imports `WorkerEntrypoint` at module
+			// top.
+			noExternal: [
+				'@cloudflare/codemode',
+				'@cloudflare/workers-oauth-provider',
+			],
 		},
 		resolve: {
 			alias: [
@@ -80,6 +87,10 @@ export default mergeConfig(
 			// audit-log sink through a shared spy; see test-support/audit-log-spy.ts.
 			setupFiles: [
 				resolve(rootDir, 'packages/worker/src/test-support/audit-log-spy.ts'),
+				resolve(
+					rootDir,
+					'packages/worker/src/test-support/cloudflare-global-stub.ts',
+				),
 			],
 		},
 	}),

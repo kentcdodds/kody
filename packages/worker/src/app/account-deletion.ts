@@ -3,7 +3,7 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsBestEffort,
 } from '#worker/oauth-grants.ts'
-import { createKvOAuthHelpers } from '#worker/oauth-kv-helpers.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import {
 	cancelSubscription,
 	deleteCustomer,
@@ -81,31 +81,14 @@ import {
 	summarizeDiscordGuildRoleSync,
 } from '#worker/discord/guild-role.ts'
 
-// Imported manually instead of via `@cloudflare/workers-oauth-provider` so
-// node-only unit tests can require this module without dragging in
-// `cloudflare:workers` (the OAuth provider package re-exports through that
-// runtime symbol). The shape mirrors the subset of OAuthHelpers we use.
+// The subset of the provider's OAuthHelpers that deletion consumes, kept
+// structural so node tests can pass small stubs as `OAUTH_PROVIDER`.
 type OAuthHelpersShape = OAuthGrantHelpers & {
 	deleteClient?(clientId: string): Promise<unknown>
 }
 
 type AccountDeletionEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpersShape
-}
-
-/**
- * `OAUTH_PROVIDER` exists only inside the provider's `fetch` wrapper
- * (self-service `POST /account/delete`). The hourly unverified-account purge
- * (`JobsHost.runScheduledLane` RPC) and the admin MCP capability on the
- * platform/runtime lane run outside it, so they revoke through the same
- * `OAUTH_KV` key layout instead.
- */
-function resolveOAuthHelpers(
-	env: AccountDeletionEnv,
-): OAuthHelpersShape | undefined {
-	if (env.OAUTH_PROVIDER) return env.OAUTH_PROVIDER
-	if (!env.OAUTH_KV) return undefined
-	return createKvOAuthHelpers(env.OAUTH_KV)
 }
 
 export type AccountDeletionResult = {
@@ -1315,10 +1298,17 @@ export async function deleteUserAccount(input: {
 		}
 	}
 
-	const helpers = resolveOAuthHelpers(input.env)
+	// Outside the provider's fetch wrapper (hourly unverified-account purge via
+	// `JobsHost.runScheduledLane`, admin MCP capability on kody-platform) this
+	// builds the same helpers through the library's `getOAuthApi`.
+	const helpers: OAuthHelpersShape | undefined = await resolveOAuthHelpers(
+		input.env,
+	)
 	if (helpers) {
 		if (helpers.deleteClient) {
-			const deleteClient = helpers.deleteClient
+			// The provider's OAuthHelpersImpl methods read `this.env`; a detached
+			// reference throws "Cannot read properties of undefined (reading 'env')".
+			const deleteClient = helpers.deleteClient.bind(helpers)
 			await deleteOwnedMcpOauthClients({
 				db: input.env.APP_DB,
 				helpers: {

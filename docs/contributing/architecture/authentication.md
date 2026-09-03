@@ -385,17 +385,21 @@ Both are opt-in and adapted from the Epic Stack.
   inside its own `fetch` wrapper, so it exists for `POST /account/delete` but
   not for the hourly unverified-account purge (`JobsHost.runScheduledLane` RPC
   on origin) or for `adminUnverifiedAccountPurgeRun` when served from the
-  sessionful `MCP` Durable Object on kody-platform. Those paths fall back to
-  `packages/worker/src/oauth-kv-helpers.ts`, which implements `listUserGrants`,
-  `revokeGrant`, and `deleteClient` directly over `OAUTH_KV` with the provider's
-  key layout (`grant:{userId}:{grantId}`, `token:{userId}:{grantId}:{tokenId}`,
-  `client:{clientId}`) and deletion order, so the KV result is identical to a
-  fetch-context revoke. Deletion only reports "OAuth grants were not revoked"
-  when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account export's
-  `oauth_grants` section (`packages/worker/src/account/export.ts`) uses the same
-  reader for `listUserGrants`, so `accountExportManifest` /
-  `accountExportSection` served from the platform `MCP` Durable Object include
-  grant metadata too.
+  sessionful `MCP` Durable Object on kody-platform. Those paths call
+  `resolveOAuthHelpers` (`packages/worker/src/oauth-helpers.ts`), which returns
+  `env.OAUTH_PROVIDER` when present and otherwise builds the same
+  `OAuthHelpersImpl` through the library's `getOAuthApi(options, env)` over
+  `OAUTH_KV`. The non-handler provider options (endpoints, scopes, TTLs, CIMD,
+  `onError`) live in `packages/worker/src/oauth-provider-options.ts` and are
+  spread into both the origin `OAuthProvider` and the fallback, so storage
+  semantics cannot drift; the fallback supplies inert 404 handlers because the
+  helpers API never routes a request. The library is imported dynamically there
+  so it stays off the platform/runtime startup path. Deletion only reports
+  "OAuth grants were not revoked" when both `OAUTH_PROVIDER` and `OAUTH_KV` are
+  missing. Account export's `oauth_grants` section
+  (`packages/worker/src/account/export.ts`) uses the same reader for
+  `listUserGrants`, so `accountExportManifest` / `accountExportSection` served
+  from the platform `MCP` Durable Object include grant metadata too.
 - After the user row is gone, origin clears the UserMeter deletion tombstone
   `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
   a later account with that email reuses the same Durable Object id and must not

@@ -9,8 +9,8 @@ import {
 	handleAuthorizeInfo,
 	handleOAuthCallback,
 	oauthPaths,
-	oauthScopes,
 } from './oauth-handlers.ts'
+import { sharedOAuthProviderOptions } from '#worker/oauth-provider-options.ts'
 import {
 	handleMcpRequest,
 	handleProtectedResourceMetadata,
@@ -400,8 +400,11 @@ const appHandler = withCors({
 	},
 })
 
+// Endpoints, scopes, TTLs, CIMD, and onError live in
+// `#worker/oauth-provider-options.ts` so the handler-less `getOAuthApi`
+// fallback (`#worker/oauth-helpers.ts`) is configured identically.
 const oauthProvider = new OAuthProvider({
-	apiRoute: oauthPaths.apiPrefix,
+	...sharedOAuthProviderOptions,
 	apiHandler,
 	defaultHandler: {
 		fetch(request, env, ctx) {
@@ -409,50 +412,6 @@ const oauthProvider = new OAuthProvider({
 			return appHandler(request, env, ctx)
 		},
 	},
-	authorizeEndpoint: oauthPaths.authorize,
-	tokenEndpoint: oauthPaths.token,
-	clientRegistrationEndpoint: oauthPaths.register,
-	scopesSupported: oauthScopes,
-	// Client ID Metadata Documents (MCP 2025-11-25 SEP-991): clients may use
-	// an HTTPS URL as their client_id instead of registering via DCR. The
-	// 2026-07-28 revision deprecates RFC 7591 DCR in favor of CIMD, so both
-	// stay enabled: CIMD clients present their URL client_id with no
-	// registration step, and clients that do not use CIMD register via
-	// /oauth/register. A failed CIMD metadata fetch throws CimdFetchError;
-	// authorize maps that to an unknown-client page, and the token endpoint
-	// still returns generic invalid_client. Whether a client then registers
-	// via DCR is the client's own recovery.
-	// Requires the global_fetch_strictly_public compatibility flag (set in
-	// wrangler.jsonc) so metadata fetches are SSRF-safe; the provider only
-	// advertises CIMD support when both are on.
-	clientIdMetadataDocumentEnabled: true,
-	// Provider defaults are 30-day refresh tokens and 90-day DCR clients.
-	// Explicit `undefined` disables those expiries (omitting the option keeps
-	// the defaults). Access tokens stay at the 1-hour default.
-	refreshTokenTTL: undefined,
-	clientRegistrationTTL: undefined,
-	// Do not pin resourceMetadata.resource: preview, local, and production
-	// origins all serve MCP. Unconfigured 0.10 inherits an explicit RFC 8707
-	// resource (ChatGPT sends `/mcp`) and Kody's authorize handler defaults
-	// omitted resources to `/mcp` (Gemini). Custom PRM below advertises
-	// `<origin>/mcp` so discovery matches that audience.
-	// Provider default onError logs every structured OAuth error via console.warn.
-	// Keep those responses on the wire without duplicating them into worker logs /
-	// test console guards. CIMD fetch failures stay generic on the wire and are
-	// reported here for Sentry; unexpected throws still reach fetch catch + Sentry.
-	onError: (error) => {
-		if (error.internal?.category === 'client-id-metadata-document') {
-			Sentry.captureException(
-				new Error(
-					`CIMD metadata resolution failed (${error.internal.reason}): ${error.description}`,
-				),
-			)
-		}
-	},
-	// 0.10+ defaults allowPlainPKCE to false (S256-only) while still allowing
-	// confidential clients to omit PKCE. Do not set allowPlainPKCE: true. App
-	// layer getPkceValidationError remains defense in depth. See
-	// docs/contributing/security.md.
 })
 
 /**

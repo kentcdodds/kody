@@ -7,7 +7,7 @@ import { listSecrets } from '#mcp/secrets/service.ts'
 import { getCachedMcpClientHubServers } from '#worker/mcp-client/hub-client.ts'
 import { type McpClientHubSnapshot } from '#worker/mcp-client/types.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
-import { createKvOAuthHelpers } from '#worker/oauth-kv-helpers.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
@@ -148,15 +148,13 @@ export async function collectWaitingSignals(input: {
 /**
  * `OAUTH_PROVIDER` is injected only inside the provider's `fetch` wrapper on
  * origin. The `waitingSummary` capability and search-tool waiting hints also
- * run in the sessionful `MCP` Durable Object on kody-platform, so they read
- * the same grants through `OAUTH_KV` there.
+ * run in the sessionful `MCP` Durable Object on kody-platform, where
+ * `resolveOAuthHelpers` builds the same helpers through the library.
  */
 async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: string) {
-	const helpers =
-		env.OAUTH_PROVIDER ??
-		(env.OAUTH_KV ? createKvOAuthHelpers(env.OAUTH_KV) : undefined)
-	if (!helpers) return false
 	try {
+		const helpers = await resolveOAuthHelpers(env)
+		if (!helpers) return false
 		const page = await helpers.listUserGrants(stableUserId)
 		return page.items.length > 0
 	} catch {

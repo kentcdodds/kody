@@ -21,7 +21,7 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
-import { createKvOAuthHelpers } from '#worker/oauth-kv-helpers.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	exportRunRecords,
@@ -96,15 +96,13 @@ const oauthSurfaceUnavailableWarning =
 /**
  * `OAUTH_PROVIDER` exists only inside the provider's `fetch` wrapper, so
  * `accountExportManifest` / `accountExportSection` served from the sessionful
- * `MCP` Durable Object on kody-platform read grant metadata straight from
- * `OAUTH_KV` with the same key layout.
+ * `MCP` Durable Object on kody-platform get the library-built helpers from
+ * `resolveOAuthHelpers` instead.
  */
 function resolveOAuthGrantReader(
 	env: AccountExportEnv,
-): OAuthHelpersShape | undefined {
-	if (env.OAUTH_PROVIDER) return env.OAUTH_PROVIDER
-	if (!env.OAUTH_KV) return undefined
-	return createKvOAuthHelpers(env.OAUTH_KV)
+): Promise<OAuthHelpersShape | undefined> {
+	return resolveOAuthHelpers(env)
 }
 
 type UserSourceSnapshot = {
@@ -998,7 +996,7 @@ async function countOAuthGrants(input: {
 	userId: string
 	warnings: Array<string>
 }) {
-	const helpers = resolveOAuthGrantReader(input.env)
+	const helpers = await resolveOAuthGrantReader(input.env)
 	if (!helpers) {
 		input.warnings.push(oauthSurfaceUnavailableWarning)
 		return 0
@@ -1259,7 +1257,7 @@ async function listOAuthGrants(input: {
 	userId: string
 	warnings: Array<string>
 }) {
-	const helpers = resolveOAuthGrantReader(input.env)
+	const helpers = await resolveOAuthGrantReader(input.env)
 	if (!helpers) {
 		input.warnings.push(oauthSurfaceUnavailableWarning)
 		return [] as Array<{ id: string; clientId: string }>
