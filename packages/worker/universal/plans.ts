@@ -118,11 +118,11 @@ export type PlanLimits = {
 	/** Maximum stored email messages (Mailbox DO email_messages rows). */
 	maxStoredEmailMessages: number
 	/**
-	 * Maximum raw MIME bytes for a single stored email message. Hard
-	 * platform bound: raw MIME lives in EMAIL_BLOBS, but extracted text/html
-	 * bodies are still stored on the Mailbox email_messages row (worst case
-	 * ~2x raw), and SQLite rows cap at 2 MB — so keep this well under ~1 MB
-	 * regardless of plan.
+	 * Maximum raw MIME bytes persisted for a single email message. Inbound
+	 * mail above this is reduced (text kept, oversized parts omitted) up to
+	 * the 25 MiB Email Routing survive ceiling. Extracted text/html still
+	 * live on the Mailbox email_messages row and are truncated for restore
+	 * safety. This persist bound stays well under ~1 MB regardless of plan.
 	 */
 	maxEmailMessageBytes: number
 	/** Maximum stored secret entries across non-expired buckets. */
@@ -200,8 +200,9 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
  * for other max ceilings), but they dominate every other plan's email
  * limits so granting `max` never reduces a user's email capacity.
  * `email_message_bytes` is pinned to standard/pro parity because the
- * per-message ceiling is a platform bound (see the PlanLimits field doc),
- * not a scalable quota.
+ * per-message persist ceiling is a platform bound (see the PlanLimits
+ * field doc), not a scalable quota. Larger inbound mail is reduced to
+ * this size instead of raising the stored-MIME ceiling.
  */
 export const maxPlanEmailLimits = {
 	email_sends_per_day: 10_000,

@@ -1,9 +1,14 @@
-import { maxPlanEmailLimits } from '#universal/plans.ts'
 import PostalMime, {
 	type Address as PostalAddress,
 	type Attachment as PostalAttachment,
 } from 'postal-mime'
 import { normalizeEmailAddress, parseHeaderAddressList } from './address.ts'
+import {
+	maxKeptInboundRawBytes,
+	maxSurvivableInboundRawBytes,
+	prepareInboundRawMime,
+	type PreparedInboundRawMime,
+} from './skinny-inbound-mime.ts'
 import {
 	type EmailAttachmentMetadata,
 	type EmailMailbox,
@@ -11,11 +16,12 @@ import {
 } from './types.ts'
 
 /**
- * Platform inbound MIME ceiling. Same bound as paid/max
- * `email_message_bytes` so accepted mail is read and stored instead of
- * thrown as a retryable read failure.
+ * Maximum raw MIME persisted after inbound reduction. Same bound as
+ * paid/max `email_message_bytes`. Larger mail is accepted up to
+ * `maxSurvivableInboundRawBytes` and reduced to this size.
  */
-export const maxRawMimeBytes = maxPlanEmailLimits.email_message_bytes
+export const maxRawMimeBytes = maxKeptInboundRawBytes
+export { maxKeptInboundRawBytes, maxSurvivableInboundRawBytes }
 
 export class InboundRawMimeTooLargeError extends Error {
 	override name = 'InboundRawMimeTooLargeError'
@@ -124,23 +130,51 @@ function dedupeMailboxes(addresses: Array<EmailMailbox>) {
 
 export async function parseForwardableEmailMessage(
 	message: ForwardableEmailMessage,
-	options: { maxRawSize?: number } = {},
+	options: { maxRawSize?: number; maxKeptBytes?: number } = {},
 ): Promise<ParsedInboundEmail> {
-	const maxRawSize = options.maxRawSize ?? maxRawMimeBytes
-	if (message.rawSize > maxRawSize) {
-		throw new InboundRawMimeTooLargeError(message.rawSize, maxRawSize)
+	const prepared = await readAndPrepareForwardableEmailRawMime(message, {
+		maxSurvivableBytes: options.maxRawSize,
+		maxKeptBytes: options.maxKeptBytes,
+	})
+	return mergePreparedInboundParse(
+		await parseForwardableEmailRawMime(message, prepared.rawMime),
+		prepared,
+	)
+}
+
+export async function readAndPrepareForwardableEmailRawMime(
+	message: ForwardableEmailMessage,
+	options: { maxKeptBytes?: number; maxSurvivableBytes?: number } = {},
+): Promise<PreparedInboundRawMime> {
+	const maxSurvivableBytes =
+		options.maxSurvivableBytes ?? maxSurvivableInboundRawBytes
+	const maxKeptBytes = options.maxKeptBytes ?? maxKeptInboundRawBytes
+	if (message.rawSize > maxSurvivableBytes) {
+		throw new InboundRawMimeTooLargeError(message.rawSize, maxSurvivableBytes)
 	}
-	const rawMime = await readForwardableEmailRawMime(message)
-	return await parseForwardableEmailRawMime(message, rawMime)
+	const bytes = new Uint8Array(await new Response(message.raw).arrayBuffer())
+	if (bytes.byteLength > maxSurvivableBytes) {
+		throw new InboundRawMimeTooLargeError(bytes.byteLength, maxSurvivableBytes)
+	}
+	return await prepareInboundRawMime(bytes, { maxKeptBytes })
 }
 
 export async function readForwardableEmailRawMime(
 	message: ForwardableEmailMessage,
 ) {
-	if (message.rawSize > maxRawMimeBytes) {
-		throw new InboundRawMimeTooLargeError(message.rawSize, maxRawMimeBytes)
+	const prepared = await readAndPrepareForwardableEmailRawMime(message)
+	return prepared.rawMime
+}
+
+export function mergePreparedInboundParse(
+	parsed: ParsedInboundEmail,
+	prepared: PreparedInboundRawMime,
+): ParsedInboundEmail {
+	return {
+		...parsed,
+		rawSize: prepared.reduced ? prepared.keptRawSize : parsed.rawSize,
+		attachments: [...parsed.attachments, ...prepared.omittedAttachments],
 	}
-	return await new Response(message.raw).text()
 }
 
 export async function parseForwardableEmailRawMime(

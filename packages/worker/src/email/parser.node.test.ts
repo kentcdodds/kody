@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	InboundRawMimeTooLargeError,
-	maxRawMimeBytes,
+	maxSurvivableInboundRawBytes,
 	parseForwardableEmailMessage,
 	readForwardableEmailRawMime,
 } from './parser.ts'
@@ -34,15 +34,19 @@ function createMessage(
 	} satisfies ForwardableEmailMessage
 }
 
-test('direct raw MIME reads enforce the parser size ceiling', async () => {
+test('direct raw MIME reads reject only unsurvivable messages', async () => {
 	const accepted = createMessage('Subject: At ceiling\r\n\r\nBody')
-	Object.defineProperty(accepted, 'rawSize', { value: maxRawMimeBytes })
+	Object.defineProperty(accepted, 'rawSize', {
+		value: maxSurvivableInboundRawBytes,
+	})
 	await expect(readForwardableEmailRawMime(accepted)).resolves.toContain(
 		'At ceiling',
 	)
 
 	const message = createMessage('Subject: Too large\r\n\r\nBody')
-	Object.defineProperty(message, 'rawSize', { value: maxRawMimeBytes + 1 })
+	Object.defineProperty(message, 'rawSize', {
+		value: maxSurvivableInboundRawBytes + 1,
+	})
 	await expect(readForwardableEmailRawMime(message)).rejects.toBeInstanceOf(
 		InboundRawMimeTooLargeError,
 	)
@@ -93,6 +97,39 @@ test('parseForwardableEmailMessage extracts content and attachments', async () =
 			contentType: 'text/plain',
 			disposition: 'attachment',
 			size: expect.any(Number),
+		}),
+	])
+
+	const oversizedPdf = 'P'.repeat(20_000)
+	const oversized = [
+		'From: Sender <sender@example.com>',
+		'To: Support <support@example.com>',
+		'Subject: Invoice',
+		'Message-ID: <oversize@example.com>',
+		'Content-Type: multipart/mixed; boundary="b"',
+		'',
+		'--b',
+		'Content-Type: text/plain; charset=utf-8',
+		'',
+		'Please see the invoice.',
+		'--b',
+		'Content-Type: application/pdf',
+		'Content-Disposition: attachment; filename="invoice.pdf"',
+		'',
+		oversizedPdf,
+		'--b--',
+		'',
+	].join('\r\n')
+	const reduced = await parseForwardableEmailMessage(createMessage(oversized), {
+		maxKeptBytes: 4_096,
+	})
+	expect(reduced.textBody).toContain('Please see the invoice.')
+	expect(reduced.rawMime).not.toContain(oversizedPdf)
+	expect(reduced.attachments).toEqual([
+		expect.objectContaining({
+			filename: 'invoice.pdf',
+			contentType: 'application/pdf',
+			storageKind: 'unavailable',
 		}),
 	])
 })

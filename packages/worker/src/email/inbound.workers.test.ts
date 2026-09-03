@@ -497,3 +497,92 @@ test('max-plan plus-tag inbox stores a large multipart/related inline PNG', asyn
 		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 }, 60_000)
+
+test('max-plan inbox stores oversized related mail by omitting the large part', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const username = `omit-mime-${crypto.randomUUID().slice(0, 8)}`
+	const email = `${username}@example.com`
+	const userId = await seedAccount({ email, username })
+	const address = `${username}@${platformDomain}`
+	const messageIdHeader = `omit-related-${crypto.randomUUID()}@example.net`
+	const overKeepCapBytes = maxPlanEmailLimits.email_message_bytes + 64 * 1024
+	const message = createLargeMultipartRelatedInlinePngMessage({
+		from: 'sender@example.net',
+		to: address,
+		subject: 'Oversized related budget alert',
+		messageId: messageIdHeader,
+		minRawBytes: overKeepCapBytes,
+	})
+	expect(message.rawSize).toBeGreaterThan(
+		maxPlanEmailLimits.email_message_bytes,
+	)
+
+	await handleInboundEmail(message, {
+		...env,
+		APP_BASE_URL: 'https://kody.example.com',
+	})
+	expect(message.rejectedReason).toBeNull()
+
+	const mailbox = mailboxRpc({ env, userId })
+	const page = await mailbox.listMessages({ direction: 'inbound', limit: 10 })
+	expect(page.messages).toEqual([
+		expect.objectContaining({
+			direction: 'inbound',
+			subject: 'Oversized related budget alert',
+			messageIdHeader: `<${messageIdHeader}>`,
+			processingStatus: 'stored',
+			classification: 'accepted',
+		}),
+	])
+	const stored = page.messages[0]
+	if (!stored) throw new Error('Expected the reduced inbound message.')
+	if (!stored.rawMimeKey) throw new Error('Expected a stored raw MIME key.')
+	expect(stored.htmlBody).toContain('Budget alert')
+	expect(stored.rawSize).toBeLessThanOrEqual(
+		maxPlanEmailLimits.email_message_bytes,
+	)
+	const rawBlob = await env.EMAIL_BLOBS.get(stored.rawMimeKey)
+	if (!rawBlob) throw new Error('Expected the reduced raw MIME blob.')
+	expect(rawBlob.size).toBeLessThanOrEqual(
+		maxPlanEmailLimits.email_message_bytes,
+	)
+	expect(rawBlob.size).toBeLessThan(message.rawSize)
+	const rawText = await rawBlob.text()
+	expect(rawText).toContain('X-Kody-Inbound-Reduced: 1')
+	expect(rawText).toContain(`X-Kody-Original-Size: ${message.rawSize}`)
+
+	const attachments = await mailbox.listAttachmentsForMessage({
+		messageId: stored.id,
+	})
+	expect(attachments).toEqual([
+		expect.objectContaining({
+			messageId: stored.id,
+			filename: inboundInlinePngFilename,
+			contentType: 'image/png',
+			storageKind: 'unavailable',
+		}),
+	])
+	const attachment = attachments[0]
+	if (!attachment) throw new Error('Expected the omitted PNG attachment.')
+	const loaded = await getEmailMessageWithAttachmentsById({
+		env,
+		db: env.APP_DB,
+		userId,
+		messageId: stored.id,
+	})
+	if (!loaded) throw new Error('Expected message metadata for attachment load.')
+	const content = await loadEmailAttachmentContent({
+		blobs: env.EMAIL_BLOBS,
+		attachment,
+		message: loaded.message,
+	})
+	expect(content.content).toBeNull()
+	expect(content.contentBase64).toBeNull()
+	expect(
+		await userMeterRpc({ env, userId }).read({
+			resource: 'email_receives_per_day',
+			day: (stored.receivedAt ?? stored.createdAt).slice(0, 10),
+		}),
+	).toMatchObject({ outcome: 'ready', count: 1 })
+}, 60_000)

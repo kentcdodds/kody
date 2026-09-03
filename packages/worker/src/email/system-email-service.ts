@@ -143,7 +143,7 @@ export async function storeIdempotentSystemInboundEmail(input: {
 				contentId: attachment.contentId,
 				disposition: attachment.disposition,
 				size: attachment.size,
-				storageKind: 'raw-mime',
+				storageKind: attachment.storageKind ?? 'raw-mime',
 				storageKey: null,
 			})),
 		})

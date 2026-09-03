@@ -85,18 +85,20 @@ Use the MCP `email` domain:
 
 Inbound storage is quota-gated per user:
 
-- A per-message raw-size cap (`email_message_bytes`), a daily receive limit
+- A per-message persist cap (`email_message_bytes`), a daily receive limit
   (`email_receives_per_day`), and a stored-message cap (`stored_email_messages`)
-  apply at storage time. Mail over any of these is rejected at the routing layer
-  with a generic "over quota" response to the sender, and the detailed reason is
-  recorded as a `rejected` delivery event. Oversize mail is rejected before it
-  consumes any daily receive quota, and mail to unverified accounts (which can
-  never receive) is rejected without consuming any quota at all. The MIME reader
-  uses the same platform ceiling as paid/max `email_message_bytes` (768 KiB), so
-  a message under the owner's plan cap — including a `multipart/related` body
-  with an embedded image — is stored. Transient storage failures (for example an
-  R2 outage while saving raw MIME) do not keep the daily receive charge — the
-  attempt is refunded so delivery retries are not blocked by quota.
+  apply at storage time. Mail over the daily or stored-message caps is rejected
+  at the routing layer with a generic "over quota" response to the sender, and
+  the detailed reason is recorded as a `rejected` delivery event. Wire size
+  above 25 MiB (Cloudflare Email Routing's inbound ceiling) is rejected before
+  it consumes any daily receive quota. Mail to unverified accounts (which can
+  never receive) is rejected without consuming any quota at all. Messages at or
+  under the owner's persist cap — including a `multipart/related` body with an
+  embedded image — are stored as-is. Larger accepted mail is stored with the
+  text kept and oversized parts omitted (`emailAttachmentGet` returns no bytes).
+  Transient storage failures (for example an R2 outage while saving raw MIME) do
+  not keep the daily receive charge — the attempt is refunded so delivery
+  retries are not blocked by quota.
 - Plan users get their plan's limits. New accounts start on the `free` plan
   unless an invite assigns another tier. The operator-only `max` plan uses
   finite email caps (10,000 sends/day, 20,000 receives/day, 100,000 stored
@@ -170,11 +172,12 @@ Inbound storage is quota-gated per user:
   `import { email }` from `kody:runtime` is available as a convenience helper
   for message lookup, attachment lookup, and replies.
 - Attachments are metadata-first by default. Accepted inbound raw MIME is stored
-  in R2 up to the owner's plan `email_message_bytes` cap, and the MIME reader
-  additionally refuses anything above the 768 KiB platform ceiling
-  (`maxRawMimeBytes`, the paid/max `email_message_bytes` bound). That includes
-  `multipart/related` messages with inline images. On-demand attachment lookup
-  reconstructs bytes from that stored raw MIME.
+  in R2 at or under the owner's plan `email_message_bytes` persist cap
+  (`maxRawMimeBytes` / `maxKeptInboundRawBytes`, 256 KiB free and 768 KiB
+  paid/max). The reader accepts wire size up to 25 MiB and reduces anything
+  above the persist cap: text and HTML stay, oversized parts are recorded as
+  `unavailable` attachments. On-demand attachment lookup reconstructs bytes from
+  the stored raw MIME when the part was kept; omitted parts return no bytes.
 - Cloudflare Email Routing already rejects mail that fails both SPF and DKIM and
   honors sender DMARC policy before Kody sees the message. Kody's own spam
   controls (below) run on mail that still reaches storage.

@@ -202,7 +202,7 @@ export async function storeIdempotentInboundEmail(input: {
 		contentId: attachment.contentId,
 		disposition: attachment.disposition,
 		size: attachment.size,
-		storageKind: 'raw-mime' as const,
+		storageKind: attachment.storageKind ?? 'raw-mime',
 		storageKey: null,
 		createdAt: input.now,
 	}))
