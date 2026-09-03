@@ -304,6 +304,64 @@ export function filterDurableObjectIsolateResetSentryEvent(event: ErrorEvent) {
 }
 
 /**
+ * Cloudflare Durable Object queue saturation when a single instance cannot keep
+ * up with incoming RPC/fetch work. Four exact platform phrasings (see DO
+ * troubleshooting docs). Not an application defect — the DO input gate is
+ * saturated. Same Sentry-drop class as D1 queue overload blips; unlike isolate
+ * resets, Cloudflare marks these `.overloaded` and recommends not retrying into
+ * a hot queue. Match only these bare platform strings (optional `Error:`
+ * prefix / trailing period) so wrapped recovery messages stay visible.
+ */
+export const durableObjectOverloadedRequestsQueuedTooLongMessage =
+	'Durable Object is overloaded. Requests queued for too long.'
+
+export const durableObjectOverloadedTooManyRequestsQueuedMessage =
+	'Durable Object is overloaded. Too many requests queued.'
+
+export const durableObjectOverloadedTooMuchDataQueuedMessage =
+	'Durable Object is overloaded. Too much data queued.'
+
+export const durableObjectOverloadedTooManyRequestsTenSecondWindowMessage =
+	'Durable Object is overloaded. Too many requests for the same object within a 10 second window.'
+
+const durableObjectOverloadedMessages = [
+	durableObjectOverloadedRequestsQueuedTooLongMessage,
+	durableObjectOverloadedTooManyRequestsQueuedMessage,
+	durableObjectOverloadedTooMuchDataQueuedMessage,
+	durableObjectOverloadedTooManyRequestsTenSecondWindowMessage,
+] as const
+
+function normalizeDurableObjectOverloadedMessage(message: string) {
+	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
+	return withoutErrorPrefix.endsWith('.')
+		? withoutErrorPrefix
+		: `${withoutErrorPrefix}.`
+}
+
+export function isDurableObjectOverloadedMessage(message: string) {
+	const normalized = normalizeDurableObjectOverloadedMessage(message)
+	return durableObjectOverloadedMessages.some(
+		(expected) => normalized === expected,
+	)
+}
+
+export function isDurableObjectOverloadedSentryEvent(event: ErrorEvent) {
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isDurableObjectOverloadedMessage(message))
+	)
+}
+
+export function filterDurableObjectOverloadedSentryEvent(event: ErrorEvent) {
+	if (!isDurableObjectOverloadedSentryEvent(event)) return event
+	return null
+}
+
+/**
  * Bare Cloudflare platform "internal error" with no support reference and no
  * app context. Observed on `repoOpenSession` when Durable Object / Artifacts
  * infrastructure fails opaquely (KODY-CLOUDFLARE-4H). Distinct from D1/DO
@@ -432,6 +490,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterIntegrationTokenRefreshCallerSentryEvent(event) === null)
 		return null
 	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
+	if (filterDurableObjectOverloadedSentryEvent(event) === null) return null
 	if (filterCloudflareOpaqueInternalErrorSentryEvent(event) === null)
 		return null
 	if (filterArtifactsGitTransientHttpErrorSentryEvent(event) === null)
@@ -484,7 +543,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// SQLITE_NOMEM, deploy-time code updates, blockConcurrencyWhile
 		// timeouts, DO storage operation timeouts, and DO storage object-reset
 		// with a support reference) are dropped the same way — see
-		// filterDurableObjectIsolateResetSentryEvent.
+		// filterDurableObjectIsolateResetSentryEvent. Bare Durable Object queue
+		// saturation strings ("… overloaded. Requests queued for too long", etc.)
+		// are dropped the same way — see filterDurableObjectOverloadedSentryEvent.
 		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts
 		// INTERNAL_ERROR wording) with no support reference are dropped the
 		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
