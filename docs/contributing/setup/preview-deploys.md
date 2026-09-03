@@ -13,13 +13,25 @@ setup pages.
 - Highlight worker: `<preview-worker-name>-highlight`
 - App D1 database: `<preview-worker-name>-db`
 - Audit D1 database: `<preview-worker-name>-audit-db`
-- Jobs D1 database: ensured by `jobs-worker-resources.ts` for
-  `<preview-worker-name>-jobs`
+- Jobs D1 database: shared `kody-preview-jobs` (ensured by
+  `jobs-worker-resources.ts`; not per-PR)
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
 When a PR is closed, the cleanup job deletes the preview
-app/platform/runtime/jobs Workers, mock Workers, and these resources as well.
+app/platform/runtime/jobs Workers, mock Workers, Queues, per-preview D1/KV/R2,
+and these per-PR resources. It does not delete shared names such as
+`kody-preview-jobs` or any production name.
+
+Cleanup is bounded, retry-safe, and idempotent. Transient Cloudflare 429 and 5xx
+responses (including wrangler 504 Gateway Timeout) retry with backoff inside the
+four-minute job budget. Permanent 401/403 failures are not retried. A failure on
+one resource does not skip later independent resources: the sweep finishes, then
+fails once with every leftover name. Already-missing resources count as success.
+Queue consumers are removed before Workers, and Workers before Queues, because
+those deletes depend on each other. Non-empty preview R2 buckets are emptied
+(objects deleted) before the bucket delete; leftover objects surface in the same
+aggregate failure instead of a warning.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds
