@@ -30,6 +30,13 @@ export const landingTestimonials = [
 		photo: '/images/testimonials/justin-elias.webp',
 		href: 'https://www.linkedin.com/in/justin-elias',
 	},
+	{
+		quote:
+			'Kody means peace of mind for me when working with agents. All of my tools, whether through MCP or a package I created on the fly, and my skills are always with me, no matter what agent harness I use.',
+		name: 'Cameron Pak',
+		photo: '/images/testimonials/cameron-pak.webp',
+		href: 'https://cameronpak.com',
+	},
 ] as const satisfies ReadonlyArray<LandingTestimonial>
 
 export type LandingTestimonialEntry = (typeof landingTestimonials)[number]

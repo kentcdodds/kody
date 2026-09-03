@@ -6,14 +6,7 @@ import {
 } from '#universal/landing-testimonials.ts'
 
 test('shuffleTestimonials can grow to six entries and randomizes with the provided RNG', () => {
-	const six = [
-		...landingTestimonials,
-		{
-			quote: 'three',
-			name: 'Three',
-			photo: null,
-			href: 'https://example.com/3',
-		},
+	const fillers = [
 		{
 			quote: 'four',
 			name: 'Four',
@@ -33,6 +26,7 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 			href: 'https://example.com/6',
 		},
 	]
+	const six = [...landingTestimonials, ...fillers].slice(0, 6)
 
 	const draws = [0.9, 0.1, 0.5, 0.2, 0.8]
 	let draw = 0
@@ -47,11 +41,24 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 		shuffleTestimonials(landingTestimonials, () => 0).map(
 			(entry) => entry.name,
 		),
-	).toEqual(['Justin Elias', 'Maciek Sitkowski'])
+	).toEqual(['Justin Elias', 'Cameron Pak', 'Maciek Sitkowski'])
+})
+
+test('landingTestimonials publishes Cameron Pak with a hosted photo and personal-site link', () => {
+	expect(landingTestimonials.length).toBeLessThanOrEqual(6)
+	const cameron = landingTestimonials.find(
+		(entry) => entry.name === 'Cameron Pak',
+	)
+	expect(cameron).toMatchObject({
+		photo: '/images/testimonials/cameron-pak.webp',
+		href: 'https://cameronpak.com',
+	})
+	expect(cameron).not.toHaveProperty('title')
 })
 
 test('testimonialInitials falls back to two letters from the public name', () => {
 	expect(testimonialInitials('Maciek Sitkowski')).toBe('MS')
 	expect(testimonialInitials('Justin Elias')).toBe('JE')
+	expect(testimonialInitials('Cameron Pak')).toBe('CP')
 	expect(testimonialInitials('Ada')).toBe('A')
 })
