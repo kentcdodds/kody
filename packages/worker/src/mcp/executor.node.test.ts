@@ -7,7 +7,10 @@ import {
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
-import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
+import {
+	EntitlementLimitError,
+	JobIntervalFloorError,
+} from '#worker/entitlements/errors.ts'
 import { createUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
@@ -1516,6 +1519,29 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			limit: 3,
 			current: 3,
 			upgradeHint: 'Remove an old package or upgrade your plan.',
+		},
+	})
+
+	const intervalError = new JobIntervalFloorError({
+		plan: 'free',
+		minIntervalMs: 15 * 60 * 1000,
+	})
+	expect(getExecutionErrorDetails(intervalError)).toMatchObject({
+		kind: 'job_interval_floor',
+		nextStep: intervalError.details.upgradeHint,
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: 'scheduled_jobs',
+		},
+	})
+	expect(
+		getExecutionErrorDetails(new Error(intervalError.message)),
+	).toMatchObject({
+		kind: 'job_interval_floor',
+		nextStep: intervalError.details.upgradeHint,
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: 'scheduled_jobs',
 		},
 	})
 

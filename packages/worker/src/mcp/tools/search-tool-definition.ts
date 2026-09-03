@@ -114,6 +114,12 @@ export const searchToolOutputSchema = {
 		.string()
 		.optional()
 		.describe('Error summary when the search failed (isError is set).'),
+	entitlement: z
+		.unknown()
+		.optional()
+		.describe(
+			'Focused plan-limit or quota fields when a call is denied. Omitted from ordinary successes.',
+		),
 }
 
 export type SearchToolArgs = {

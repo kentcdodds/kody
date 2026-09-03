@@ -545,6 +545,12 @@ Rules:
   if a surface must detect it). MCP execute results and UI handlers serialize
   `error.message`, so the message carries the full context even across Durable
   Object / RPC boundaries.
+- MCP `search` / `execute` tool errors that are entitlement or plan-limit
+  denials also attach a focused `structuredContent.entitlement` object built
+  from those same `details` (plus compact `used` / `remaining` on daily quota
+  resources). Ordinary successful tool returns omit `entitlement`. The object
+  never includes secrets, raw billing records, prices, or unrelated
+  entitlements. See `packages/worker/src/mcp/entitlement-metadata.ts`.
 
 ## Counting strategy
 

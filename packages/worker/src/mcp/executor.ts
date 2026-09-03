@@ -41,6 +41,7 @@ import {
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 	parseEntitlementLimitMessage,
+	parseJobIntervalFloorMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import { buildIntegrationReconnectHref } from '#universal/connection-trouble.ts'
@@ -1288,6 +1289,19 @@ export function getExecutionErrorDetails(
 	const entitlementDetails = parseEntitlementLimitMessage(message)
 	if (entitlementDetails) {
 		return toEntitlementExecutionErrorDetails(message, entitlementDetails)
+	}
+
+	const intervalDetails = parseJobIntervalFloorMessage(message)
+	if (intervalDetails) {
+		return {
+			kind: 'job_interval_floor',
+			message,
+			nextStep: intervalDetails.upgradeHint,
+			suggestedAction: {
+				type: 'review_plan_limit',
+				resource: 'scheduled_jobs',
+			},
+		}
 	}
 
 	const causeMessages = getErrorCauseChain(error).map(getErrorMessage)

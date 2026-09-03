@@ -13,6 +13,7 @@ import {
 	formatExecutionOutput,
 	getExecutionErrorDetails,
 } from '#mcp/executor.ts'
+import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import {
 	defaultMcpContentLimitBytes,
 	extractMcpPassthrough,
@@ -138,6 +139,12 @@ export const executeToolOutputSchema = {
 		.unknown()
 		.optional()
 		.describe('Structured details for sandbox errors.'),
+	entitlement: z
+		.unknown()
+		.optional()
+		.describe(
+			'Focused plan-limit or quota fields when a call is denied. Omitted from ordinary successes.',
+		),
 	logs: z
 		.array(z.unknown())
 		.optional()
@@ -255,6 +262,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const timing = finishToolTiming(timingStart)
 				const error = cause instanceof Error ? cause : new Error(String(cause))
 				const { errorName, errorMessage } = errorFields(error)
+				const errorDetails = getExecutionErrorDetails(error)
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'execute',
@@ -275,6 +283,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						conversationId: resolvedConversationId,
 						timing,
 						error: error.message,
+						...(errorDetails ? { errorDetails } : {}),
+						...entitlementStructuredContent(error),
 					},
 					isError: true,
 				}
@@ -488,6 +498,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							returnedBytes: 0,
 							error: errorMessage,
 							errorDetails,
+							...entitlementStructuredContent(result.error),
 							logs: result.logs ?? [],
 							...(rawFetchHostNudges.length > 0
 								? { warnings: rawFetchHostNudges }
@@ -709,6 +720,8 @@ function buildKeyedExecuteLookupResponse(input: {
 	if (input.run.status === 'error') {
 		const errorMessage =
 			input.run.errorMessage ?? 'Execute failed (replayed from run record).'
+		const replayedError = new Error(errorMessage)
+		if (input.run.errorName) replayedError.name = input.run.errorName
 		return {
 			content: prependToolMetadataContent(input.conversationId, [
 				{
@@ -724,6 +737,7 @@ function buildKeyedExecuteLookupResponse(input: {
 				returnedBytes: 0,
 				error: errorMessage,
 				...(input.run.errorName ? { errorName: input.run.errorName } : {}),
+				...entitlementStructuredContent(replayedError),
 				...(retainedResult !== undefined ? { result: retainedResult } : {}),
 				logs: [] as Array<unknown>,
 			},

@@ -1,5 +1,16 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test, vi } from 'vitest'
+import { planLimits } from '#universal/plans.ts'
+import {
+	EntitlementLimitError,
+	JobIntervalFloorError,
+	buildEntitlementLimitMessage,
+	buildEntitlementUpgradeHint,
+	entitlementLimitErrorCode,
+	jobIntervalFloorErrorCode,
+} from '#worker/entitlements/errors.ts'
+import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	defaultMcpContentLimitBytes,
 	maxMcpContentBlockCount,
@@ -184,6 +195,17 @@ async function getExecuteHandler(
 			result: unknown
 			logs: Array<unknown>
 			error?: string
+			errorDetails?: unknown
+			entitlement?: {
+				code: string
+				resource: string
+				plan: string
+				limit?: number
+				current?: number
+				upgradeHint: string
+				used?: number
+				remaining?: number
+			}
 		}
 		isError: boolean
 	}>
@@ -760,6 +782,72 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		inProgress: true,
 		status: 'running',
 	})
+
+	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaMessage = buildEntitlementLimitMessage({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+	})
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+		...finishedRun,
+		id: 'run-quota-replay-1',
+		status: 'error',
+		errorName: 'EntitlementLimitError',
+		errorMessage: quotaMessage,
+		metadata: {},
+	})
+	mockPerformanceSequence(5, 6)
+	const quotaReplayed = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-quota-replay',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(quotaReplayed.isError).toBe(true)
+	expect(quotaReplayed.structuredContent.error).toBe(quotaMessage)
+	expect(quotaReplayed.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+		used: quotaLimit,
+		remaining: 0,
+	})
+
+	const intervalDenial = new JobIntervalFloorError({
+		plan: 'free',
+		minIntervalMs: planLimits.free.minJobIntervalMs,
+	})
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+		...finishedRun,
+		id: 'run-interval-replay-1',
+		status: 'error',
+		errorName: 'JobIntervalFloorError',
+		errorMessage: intervalDenial.message,
+		metadata: {},
+	})
+	mockPerformanceSequence(7, 8)
+	const intervalReplayed = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-interval-replay',
+	})
+	expect(intervalReplayed.isError).toBe(true)
+	expect(intervalReplayed.structuredContent.error).toBe(intervalDenial.message)
+	expect(intervalReplayed.structuredContent.entitlement).toEqual({
+		code: jobIntervalFloorErrorCode,
+		resource: 'scheduled_jobs',
+		plan: 'free',
+		upgradeHint: intervalDenial.details.upgradeHint,
+		minIntervalMs: planLimits.free.minJobIntervalMs,
+	})
 })
 
 test('execute tool claims a keyed run, passes the handle, and returns runId', async () => {
@@ -874,5 +962,104 @@ test('execute tool threads a progress reporter when the client sends progressTok
 			progress: 1,
 			message: 'bundle time',
 		},
+	})
+})
+
+test('execute tool attaches entitlement metadata on denials and quota, not on success', async () => {
+	const successHandler = await getExecuteHandler()
+	mockPerformanceSequence(1, 2)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const success = await successHandler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-entitlement-success',
+	})
+	expect(success.isError).toBe(false)
+	expect(success.structuredContent).toEqual({
+		conversationId: 'conv-entitlement-success',
+		timing: {
+			startedAt: expect.any(String),
+			endedAt: expect.any(String),
+			durationMs: 1,
+		},
+		returnedBytes: expect.any(Number),
+		result: { ok: true },
+		logs: [],
+	})
+	expect(success.structuredContent).not.toHaveProperty('entitlement')
+
+	const stockLimit = planLimits.free.maxSavedPackages
+	const stockHint = buildEntitlementUpgradeHint('saved_packages')
+	const stockDenial = new EntitlementLimitError({
+		resource: 'saved_packages',
+		plan: 'free',
+		limit: stockLimit,
+		current: stockLimit,
+		upgradeHint: stockHint,
+	})
+	mockPerformanceSequence(3, 4)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		error: stockDenial,
+		logs: [],
+	})
+	const denied = await successHandler({
+		code: 'export default async () => { throw stockDenial }',
+		conversationId: 'conv-entitlement-stock',
+	})
+	expect(denied.isError).toBe(true)
+	expect(denied.structuredContent.error).toBe(stockDenial.message)
+	expect(denied.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'saved_packages',
+		plan: 'free',
+		limit: stockLimit,
+		current: stockLimit,
+		upgradeHint: stockHint,
+	})
+	expect(denied.structuredContent.entitlement).not.toHaveProperty('used')
+	expect(denied.structuredContent.entitlement).not.toHaveProperty('remaining')
+
+	const quotaEmail = 'quota-metadata@example.com'
+	const quotaUserId = await createStableUserIdFromEmail(quotaEmail)
+	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	await userMeter.seed({
+		userId: quotaUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(new Date()),
+		count: quotaLimit,
+	})
+	const quotaHandler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: { userId: quotaUserId, email: quotaEmail },
+	})
+	mockPerformanceSequence(5, 6)
+	const quotaDenied = await quotaHandler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		conversationId: 'conv-entitlement-quota',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(quotaDenied.isError).toBe(true)
+	expect(quotaDenied.structuredContent.error).toBe(
+		buildEntitlementLimitMessage({
+			code: entitlementLimitErrorCode,
+			resource: 'execute_calls_per_day',
+			plan: 'free',
+			limit: quotaLimit,
+			current: quotaLimit,
+			upgradeHint: quotaHint,
+		}),
+	)
+	expect(quotaDenied.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+		used: quotaLimit,
+		remaining: 0,
 	})
 })

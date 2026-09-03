@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/cloudflare'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
+import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import {
 	callerContextFields,
@@ -623,6 +624,7 @@ export async function runSearchTool(input: {
 				conversationId,
 				timing,
 				error: error.message,
+				...entitlementStructuredContent(error),
 			},
 			isError: true,
 		}

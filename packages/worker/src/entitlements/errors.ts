@@ -114,6 +114,51 @@ export function buildJobIntervalFloorMessage(
 	return `Your "${details.plan}" plan cannot run jobs more often than every ${interval}. ${details.upgradeHint}`
 }
 
+export function parseJobIntervalFloorMessage(
+	message: string,
+): JobIntervalFloorErrorDetails | null {
+	const match =
+		/^Your "([^"]+)" plan cannot run jobs more often than every (.*?)\. (.*)$/.exec(
+			message,
+		)
+	if (!match) return null
+	const plan = parsePlanName(match[1])
+	if (!plan) return null
+	const minIntervalMs = parseFormattedMinJobInterval(match[2] ?? '')
+	if (minIntervalMs === null) return null
+	return {
+		code: jobIntervalFloorErrorCode,
+		plan,
+		minIntervalMs,
+		upgradeHint: match[3] ?? '',
+	}
+}
+
+function parseFormattedMinJobInterval(interval: string) {
+	if (interval === 'None') return 0
+	if (interval === '1 hour') return 60 * 60 * 1000
+	if (interval === '1 minute') return 60 * 1000
+	const hours = /^(\d+) hours$/.exec(interval)
+	if (hours) {
+		const value = Number(hours[1])
+		if (!Number.isSafeInteger(value) || value < 1) return null
+		return value * 60 * 60 * 1000
+	}
+	const minutes = /^(\d+) minutes$/.exec(interval)
+	if (minutes) {
+		const value = Number(minutes[1])
+		if (!Number.isSafeInteger(value) || value < 1) return null
+		return value * 60 * 1000
+	}
+	const milliseconds = /^(\d+) ms$/.exec(interval)
+	if (milliseconds) {
+		const value = Number(milliseconds[1])
+		if (!Number.isSafeInteger(value) || value < 1) return null
+		return value
+	}
+	return null
+}
+
 export class JobIntervalFloorError extends Error {
 	readonly details: JobIntervalFloorErrorDetails
 
