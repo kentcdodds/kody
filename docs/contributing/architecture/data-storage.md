@@ -1371,12 +1371,15 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `platform-settings:v1:reserved-usernames` — platform-owned runtime reserved
   username override (`{ added, removed, updatedAt, updatedBy }`, where
   `updatedBy` is a stable user id). Not scoped by user id; account deletion must
-  not remove it. The effective reserved set is `(builtIn ∪ added) − removed`.
-  `removed` cannot unreserve system-email locals or `kody`-prefixed built-in
-  names. When the key is missing or unreadable, signup-facing checks fail closed
-  to the code-defined built-in list. Admins manage it from
-  `/admin/reserved-usernames` and the `adminReservedUsernameList` /
-  `adminReservedUsernameAdd` / `adminReservedUsernameRemove` capabilities.
+  not remove it. The effective reserved token set is
+  `(builtIn ∪ added) − removed`. `removed` cannot unreserve system-email locals
+  or `kody`-prefixed built-in names. New username claims match that set
+  case-insensitively by exact token or hyphen/underscore-stripped equality;
+  compact substrings apply only to KV-added tokens and built-in brand/system
+  roots (see [Security](../security.md)). When the key is missing or unreadable,
+  signup-facing checks fail closed to the code-defined built-in list. Admins
+  manage it from `/admin/reserved-usernames` and the `adminReservedUsernameList`
+  / `adminReservedUsernameAdd` / `adminReservedUsernameRemove` capabilities.
 - `platform-settings:v1:signup-mode` — platform-owned runtime signup gating
   override (`{ mode, updatedAt, updatedBy }`, where `mode` is `invite`, `open`,
   or `waitlist` and `updatedBy` is a stable user id). Not scoped by user id;

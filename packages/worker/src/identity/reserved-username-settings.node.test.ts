@@ -17,7 +17,11 @@ import {
 	reservedUsernamesKvKey,
 	reservedUsernamesKvReadFailedLogKey,
 } from './reserved-username-settings.ts'
-import { getEffectiveUsernameValidationError } from './username.ts'
+import {
+	getEffectiveUsernameValidationError,
+	normalizeUsername,
+	usernameRequirements,
+} from './username.ts'
 
 function createMemoryKv(initial?: Record<string, string>) {
 	const store = new Map<string, string>(Object.entries(initial ?? {}))
@@ -66,9 +70,15 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	expect(await isEffectivelyReservedUsername('brandnew', envWithOverride)).toBe(
 		true,
 	)
+	expect(
+		await isEffectivelyReservedUsername('super-brandnew', envWithOverride),
+	).toBe(true)
 	expect(await isEffectivelyReservedUsername('faq', envWithOverride)).toBe(
 		false,
 	)
+	expect(
+		await isEffectivelyReservedUsername('super-faq', envWithOverride),
+	).toBe(false)
 	expect(await isEffectivelyReservedUsername('kody', envWithOverride)).toBe(
 		true,
 	)
@@ -84,6 +94,52 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	expect(
 		await getEffectiveUsernameValidationError('faq', envWithOverride),
 	).toBe(null)
+
+	clearReservedUsernameSettingsCacheForTests()
+	const swearKv = createMemoryKv({
+		[reservedUsernamesKvKey]: JSON.stringify({
+			added: ['fuck'],
+			removed: [],
+			updatedAt: '2026-09-02T00:00:00.000Z',
+			updatedBy: 'admin-stable-id',
+		}),
+	})
+	const swearEnv = createEnv(swearKv)
+	expect(await getEffectiveUsernameValidationError('fuckyou', swearEnv)).toBe(
+		'This username is reserved.',
+	)
+	expect(await getEffectiveUsernameValidationError('FuckYou', swearEnv)).toBe(
+		usernameRequirements,
+	)
+	expect(
+		await getEffectiveUsernameValidationError(
+			normalizeUsername('FuckYou'),
+			swearEnv,
+		),
+	).toBe('This username is reserved.')
+	expect(
+		await getEffectiveUsernameValidationError(
+			normalizeUsername('SUPERFUCK'),
+			swearEnv,
+		),
+	).toBe('This username is reserved.')
+	expect(await isEffectivelyReservedUsername('fuck_you', swearEnv)).toBe(true)
+	expect(await isEffectivelyReservedUsername('super_fuck', swearEnv)).toBe(true)
+	expect(await getEffectiveUsernameValidationError('fuck_you', swearEnv)).toBe(
+		usernameRequirements,
+	)
+	expect(
+		await getEffectiveUsernameValidationError('super-fuck', swearEnv),
+	).toBe('This username is reserved.')
+	expect(await getEffectiveUsernameValidationError('fu-ck', swearEnv)).toBe(
+		'This username is reserved.',
+	)
+	expect(await getEffectiveUsernameValidationError('assistant', swearEnv)).toBe(
+		null,
+	)
+	expect(await getEffectiveUsernameValidationError('analytics', swearEnv)).toBe(
+		null,
+	)
 
 	clearReservedUsernameSettingsCacheForTests()
 	consoleWarn.mockImplementation(() => {})
@@ -175,11 +231,24 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 			'oauth_created_no_usable_password'
 		);
 	`)
+	const collideEmail = 'collide@example.com'
+	const collideStableId = await createStableUserIdFromEmail(collideEmail)
+	sqlite.exec(`
+		INSERT INTO users (username, email, stable_user_id, password_hash)
+		VALUES (
+			'fuckyou',
+			${quoteSqlString(collideEmail)},
+			${quoteSqlString(collideStableId)},
+			'oauth_created_no_usable_password'
+		);
+	`)
 	const conflicts = await findReservedUsernameConflicts(
 		db,
-		new Set(['brandnew', 'faq']),
+		new Set(['brandnew', 'faq', 'fuck']),
+		['fuck'],
 	)
 	expect(conflicts).toEqual([
 		{ username: 'brandnew', stableUserId: conflictStableId },
+		{ username: 'fuckyou', stableUserId: collideStableId },
 	])
 })

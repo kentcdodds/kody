@@ -4,8 +4,10 @@ import {
 	computeEffectiveReservedUsernames,
 	isBuiltInReservedUsername,
 	isPermanentlyReservedUsername,
+	isReservedUsername,
 	isUsernameEffectivelyReserved,
 	normalizeReservedUsername,
+	usernameCollidesWithReservedNames,
 } from '#worker/identity/reserved-usernames.ts'
 
 export const reservedUsernamesKvKey = 'platform-settings:v1:reserved-usernames'
@@ -136,7 +138,7 @@ export async function isEffectivelyReservedUsername(
 	username: string,
 	env?: ReservedUsernamesEnv,
 ) {
-	if (!env) return isBuiltInReservedUsername(username)
+	if (!env) return isReservedUsername(username)
 	const record = await loadReservedUsernameRecord(env)
 	return isUsernameEffectivelyReserved(username, record)
 }
@@ -287,59 +289,53 @@ export async function removeReservedUsernames(input: {
 	})
 }
 
-const conflictQueryChunkSize = 40
+const conflictQueryPageSize = 200
 
 export async function findReservedUsernameConflicts(
 	db: D1Database,
 	effectiveUsernames: ReadonlySet<string>,
+	added?: Iterable<string>,
 ) {
-	const names = [...effectiveUsernames]
 	const conflicts: Array<ReservedUsernameConflict> = []
-	for (let index = 0; index < names.length; index += conflictQueryChunkSize) {
-		const chunk = names.slice(index, index + conflictQueryChunkSize)
-		if (chunk.length === 0) continue
-		const placeholders = chunk.map(() => '?').join(', ')
+	let offset = 0
+	for (;;) {
 		const result = await db
 			.prepare(
 				`SELECT username, stable_user_id
 				 FROM users
-				 WHERE username IN (${placeholders})
-				 ORDER BY username ASC`,
+				 ORDER BY username ASC
+				 LIMIT ? OFFSET ?`,
 			)
-			.bind(...chunk)
+			.bind(conflictQueryPageSize, offset)
 			.all<{ username: string; stable_user_id: string }>()
-		for (const row of result.results ?? []) {
+		const rows = result.results ?? []
+		for (const row of rows) {
+			if (
+				!usernameCollidesWithReservedNames(row.username, effectiveUsernames, {
+					added,
+				})
+			) {
+				continue
+			}
 			conflicts.push({
 				username: row.username,
 				stableUserId: row.stable_user_id,
 			})
 		}
+		if (rows.length < conflictQueryPageSize) break
+		offset += conflictQueryPageSize
 	}
-	const prefixRows = await db
-		.prepare(
-			`SELECT username, stable_user_id
-			 FROM users
-			 WHERE username LIKE 'kody-r-%'
-			 ORDER BY username ASC`,
-		)
-		.all<{ username: string; stable_user_id: string }>()
-	for (const row of prefixRows.results ?? []) {
-		if (conflicts.some((conflict) => conflict.username === row.username)) {
-			continue
-		}
-		conflicts.push({
-			username: row.username,
-			stableUserId: row.stable_user_id,
-		})
-	}
-	conflicts.sort((left, right) => left.username.localeCompare(right.username))
 	return conflicts
 }
 
 export async function loadReservedUsernameAdminSnapshot(env: Env) {
 	const record = await loadReservedUsernameRecord(env)
 	const effective = computeEffectiveReservedUsernames(record)
-	const conflicts = await findReservedUsernameConflicts(env.APP_DB, effective)
+	const conflicts = await findReservedUsernameConflicts(
+		env.APP_DB,
+		effective,
+		record.added,
+	)
 	return {
 		builtIn: [...builtInReservedUsernameList],
 		added: record.added,

@@ -101,7 +101,7 @@ test('auth handler persists signup failure and login success to AUDIT_DB', async
 
 	const signupFailure = await postAuth(handler, {
 		email: 'weak@example.com',
-		username: 'weak-user',
+		username: 'weak-jane',
 		password: 'short',
 		mode: 'signup',
 	})

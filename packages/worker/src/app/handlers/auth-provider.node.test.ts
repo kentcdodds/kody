@@ -33,6 +33,7 @@ import {
 } from '#worker/test-support/audit-log-spy.ts'
 import { emptyPublicFormProtection } from '#universal/public-form-protection.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
+import { getUsernameValidationError } from '#worker/identity/username.ts'
 import {
 	createAppEnv,
 	createMemoryKv,
@@ -509,9 +510,9 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 			)
 			return HttpResponse.json({
 				id: '333333333333333333',
-				username: 'kody-fan',
+				username: 'koala-fan',
 				global_name: 'Kody Fan',
-				email: 'kody-fan@example.com',
+				email: 'koala-fan@example.com',
 				verified: true,
 			})
 		}),
@@ -558,9 +559,9 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	)
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
-		.get('kody-fan@example.com') as Record<string, unknown>
+		.get('koala-fan@example.com') as Record<string, unknown>
 	expect(user).toBeTruthy()
-	expect(user.username).toBe('kody-fan')
+	expect(user.username).toBe('koala-fan')
 	expect(user.email_verified_at).toBeTruthy()
 	const connection = sqlite
 		.prepare(
@@ -1182,7 +1183,7 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('mock-github-user@example.com') as Record<string, unknown>
 	expect(user).toBeTruthy()
-	expect(user.username).toBe('mock-github-user')
+	expect(user.username).toBe('mock-octo')
 })
 
 function seedInvite(sqlite: DatabaseSync, code: string, maxUses = 1) {
@@ -1507,7 +1508,9 @@ test('github signup skips a KV-reserved provider handle', async () => {
 	const user = sqlite
 		.prepare(`SELECT username FROM users WHERE email = ?`)
 		.get('octo-reserved@example.com') as { username: string }
-	expect(user.username).toBe('octo-cat-2')
+	expect(user.username).not.toBe('octo-cat')
+	expect(user.username.includes('octocat')).toBe(false)
+	expect(getUsernameValidationError(user.username)).toBeNull()
 })
 
 test('OAuth signup honors KV signup-mode override over the env default', async () => {

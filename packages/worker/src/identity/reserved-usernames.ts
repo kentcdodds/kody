@@ -249,6 +249,16 @@ export const builtInReservedUsernameList = [
 const reservedUsernames = new Set<string>(builtInReservedUsernameList)
 
 /**
+ * Username charset separators already present on reserved tokens or DNS-safe
+ * labels. Hyphen is the only claimable separator; underscore appears on a few
+ * legacy mailbox locals in this list. Do not add other strip rules.
+ */
+const reservedUsernameSeparators = /[-_]/g
+
+/** Substring match only for compact reserved tokens this long or longer. */
+const reservedUsernameSubstringMinLength = 4
+
+/**
  * Platform system-email locals that must never be unreserved. Mirrors
  * `systemEmailLocals` without importing `#worker/email/*` (that graph already
  * imports this module).
@@ -269,6 +279,34 @@ const permanentlyReservedSystemLocalSet = new Set<string>(
 )
 
 /**
+ * Built-in denylist tokens that also block compact substrings (brand, system
+ * mail, and `kody`-prefixed names). Infrastructure labels such as `user`,
+ * `test`, and `help` stay exact/compact-equal only; abuse and impersonation
+ * lean on KV-added terms plus operator discretion.
+ */
+const builtInReservedUsernameSubstringRoots = new Set<string>([
+	'kent',
+	'kentcdodds',
+	...permanentlyReservedSystemLocals,
+])
+
+function isBuiltInSubstringEligibleToken(normalizedReserved: string) {
+	if (builtInReservedUsernameSubstringRoots.has(normalizedReserved)) {
+		return true
+	}
+	return normalizedReserved.startsWith('kody')
+}
+
+function isSubstringEligibleReservedToken(
+	normalizedReserved: string,
+	kvAdded: ReadonlySet<string>,
+) {
+	if (kvAdded.has(normalizedReserved)) return true
+	if (!reservedUsernames.has(normalizedReserved)) return false
+	return isBuiltInSubstringEligibleToken(normalizedReserved)
+}
+
+/**
  * Local parts shaped like the legacy inbound reply-token aliases
  * (`kody-r-<hex>`). Reserved so a user can never register a username that
  * collides with that address space.
@@ -279,6 +317,13 @@ export function normalizeReservedUsername(username: string) {
 	return username.trim().toLowerCase()
 }
 
+function compactReservedUsername(username: string) {
+	return normalizeReservedUsername(username).replace(
+		reservedUsernameSeparators,
+		'',
+	)
+}
+
 export function isBuiltInReservedUsername(username: string) {
 	const normalized = normalizeReservedUsername(username)
 	return (
@@ -287,8 +332,50 @@ export function isBuiltInReservedUsername(username: string) {
 	)
 }
 
+/**
+ * True when `username` may not be newly claimed against `reservedNames`.
+ * Existing holders keep their username; this is only for signup, rename,
+ * generated usernames, and admin conflict listing.
+ *
+ * Matching is case-insensitive (lowercase + trim). Hyphens and underscores
+ * are stripped before equality checks, including on input that is not a valid
+ * stored username. Every effective token blocks exact and compact-equal claims.
+ * Substring matching applies only to KV-added tokens and built-in brand/system
+ * roots (`kody`, `kent`, permanent system locals, and other `kody`-prefixed
+ * built-ins). When substring applies, the compact reserved token must be at
+ * least four characters (so KV `ass` does not block `assistant`).
+ */
+export function usernameCollidesWithReservedNames(
+	username: string,
+	reservedNames: Iterable<string>,
+	options: { added?: Iterable<string> } = {},
+) {
+	const normalized = normalizeReservedUsername(username)
+	if (!normalized) return false
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	const compact = compactReservedUsername(normalized)
+	if (!compact) return false
+	const kvAdded = toNormalizedSet(options.added)
+	for (const reserved of reservedNames) {
+		const normalizedReserved = normalizeReservedUsername(reserved)
+		if (!normalizedReserved) continue
+		if (normalized === normalizedReserved) return true
+		const compactReserved = compactReservedUsername(normalizedReserved)
+		if (!compactReserved) continue
+		if (compact === compactReserved) return true
+		if (
+			isSubstringEligibleReservedToken(normalizedReserved, kvAdded) &&
+			compactReserved.length >= reservedUsernameSubstringMinLength &&
+			compact.includes(compactReserved)
+		) {
+			return true
+		}
+	}
+	return false
+}
+
 export function isReservedUsername(username: string) {
-	return isBuiltInReservedUsername(username)
+	return usernameCollidesWithReservedNames(username, reservedUsernames)
 }
 
 export function isPermanentlyReservedUsername(username: string) {
@@ -309,6 +396,19 @@ export function getReservedUsernameError(username: string) {
 	return null
 }
 
+export function isReservedUsernameToken(
+	username: string,
+	overrides: {
+		added?: Iterable<string>
+		removed?: Iterable<string>
+	} = {},
+) {
+	const normalized = normalizeReservedUsername(username)
+	if (!normalized) return false
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	return computeEffectiveReservedUsernames(overrides).has(normalized)
+}
+
 export function isUsernameEffectivelyReserved(
 	username: string,
 	overrides: {
@@ -318,11 +418,12 @@ export function isUsernameEffectivelyReserved(
 ) {
 	const normalized = normalizeReservedUsername(username)
 	if (!normalized) return false
-	if (isPermanentlyReservedUsername(normalized)) return true
-	const removed = toNormalizedSet(overrides.removed)
-	if (removed.has(normalized)) return false
-	if (isBuiltInReservedUsername(normalized)) return true
-	return toNormalizedSet(overrides.added).has(normalized)
+	if (reservedUsernamePrefixPattern.test(normalized)) return true
+	return usernameCollidesWithReservedNames(
+		normalized,
+		computeEffectiveReservedUsernames(overrides),
+		{ added: overrides.added },
+	)
 }
 
 export function computeEffectiveReservedUsernames(input: {
@@ -332,7 +433,7 @@ export function computeEffectiveReservedUsernames(input: {
 	const removed = toNormalizedSet(input.removed)
 	const effective = new Set<string>()
 	for (const name of builtInReservedUsernameList) {
-		if (isUsernameEffectivelyReserved(name, input)) {
+		if (isPermanentlyReservedUsername(name) || !removed.has(name)) {
 			effective.add(name)
 		}
 	}

@@ -1,7 +1,8 @@
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { isEffectivelyReservedUsername } from '#worker/identity/reserved-username-settings.ts'
+import { loadReservedUsernameRecord } from '#worker/identity/reserved-username-settings.ts'
+import { isReservedUsernameToken } from '#worker/identity/reserved-usernames.ts'
 import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
@@ -57,7 +58,10 @@ export async function createPlatformAccount(input: {
 	if (formatError) {
 		throw new PlatformAccountCreateError('invalid_username', formatError)
 	}
-	if (!(await isEffectivelyReservedUsername(username, input.env))) {
+	const reservedOverrides = input.env
+		? await loadReservedUsernameRecord(input.env)
+		: undefined
+	if (!isReservedUsernameToken(username, reservedOverrides)) {
 		throw new PlatformAccountCreateError(
 			'invalid_username',
 			'Platform accounts may only claim reserved usernames.',

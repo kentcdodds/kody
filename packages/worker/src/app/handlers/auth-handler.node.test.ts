@@ -482,7 +482,7 @@ test('auth handler login and signup workflow', async () => {
 
 	const blockedSignupResponse = await productionContext.request({
 		email: 'new@example.com',
-		username: 'new-user',
+		username: 'newcomer',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -528,7 +528,7 @@ test('auth handler login and signup workflow', async () => {
 
 	const invitedSignupResponse = await productionContext.request({
 		email: 'invited@example.com',
-		username: 'invited-user',
+		username: 'invited-jane',
 		password: 'password123',
 		mode: 'signup',
 		inviteCode: 'prod-invite',
@@ -563,7 +563,7 @@ test('auth handler login and signup workflow', async () => {
 		inviteCode: 'PROD-INVITE',
 		user: {
 			id: await createStableUserIdFromEmail('invited@example.com'),
-			username: 'invited-user',
+			username: 'invited-jane',
 			email: 'invited@example.com',
 		},
 		attribution: {
@@ -579,7 +579,7 @@ test('auth handler login and signup workflow', async () => {
 
 	const weakPasswordSignupResponse = await signupContext.request({
 		email: 'weak@example.com',
-		username: 'weak-user',
+		username: 'weak-jane',
 		password: 'short',
 		mode: 'signup',
 	})
@@ -591,7 +591,7 @@ test('auth handler login and signup workflow', async () => {
 
 	const allowedSignupResponse = await signupContext.request({
 		email: 'allowed@example.com',
-		username: 'allowed-user',
+		username: 'allowed-jane',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -607,7 +607,7 @@ test('auth handler login and signup workflow', async () => {
 		'free',
 	)
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
-		'allowed-user',
+		'allowed-jane',
 	)
 	// The signup context has no email sender configured, so the skipped
 	// verification send logs at info level in the non-production runtime.
@@ -619,7 +619,7 @@ test('auth handler login and signup workflow', async () => {
 	await signupContext.testDb.addUser(
 		'existing@example.com',
 		'secret',
-		'existing-user',
+		'existing-jane',
 	)
 
 	const missingUsernameResponse = await signupContext.request({
@@ -661,7 +661,7 @@ test('auth handler login and signup workflow', async () => {
 
 	const duplicateUsernameResponse = await signupContext.request({
 		email: 'duplicate@example.com',
-		username: 'Existing-User',
+		username: 'Existing-Jane',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -842,7 +842,7 @@ test('signup fails when the default user role cannot be assigned', async () => {
 
 	const response = await context.request({
 		email: 'roleless@example.com',
-		username: 'roleless-user',
+		username: 'roleless-jane',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -872,7 +872,7 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 
 	const response = await context.request({
 		email: 'undeliverable@example.com',
-		username: 'undeliverable-user',
+		username: 'undeliverable-jane',
 		password: 'password123',
 		mode: 'signup',
 	})
@@ -904,7 +904,7 @@ test('production signup fails closed when no verification email sender is config
 
 	const response = await context.request({
 		email: 'no-sender@example.com',
-		username: 'no-sender-user',
+		username: 'no-sender-jane',
 		password: 'password123',
 		mode: 'signup',
 		inviteCode: 'prod-no-email',
@@ -935,7 +935,7 @@ test('signup consuming a plan invite sets users.plan', async () => {
 
 	const response = await context.request({
 		email: 'planned@example.com',
-		username: 'planned-user',
+		username: 'planned-jane',
 		password: 'password123',
 		mode: 'signup',
 		inviteCode: 'plan-pro',
@@ -959,7 +959,7 @@ test('signup consuming a max invite writes users.plan max', async () => {
 
 	const response = await context.request({
 		email: 'max-invite@example.com',
-		username: 'max-invite-user',
+		username: 'max-invite-jane',
 		password: 'password123',
 		mode: 'signup',
 		inviteCode: 'max-invite',
@@ -985,7 +985,7 @@ test('signup stops when an invite has an invalid stored plan', async () => {
 	await expect(
 		context.request({
 			email: 'unknown-plan-invite@example.com',
-			username: 'unknown-plan-invite-user',
+			username: 'unknown-plan-invite-jane',
 			password: 'password123',
 			mode: 'signup',
 			inviteCode: 'plan-unknown',

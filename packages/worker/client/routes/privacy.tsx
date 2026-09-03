@@ -11,7 +11,7 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
-import { legalLastUpdated } from './legal-last-updated.ts'
+import { privacyLastUpdated } from './legal-last-updated.ts'
 
 export function PrivacyRoute(_handle: Handle) {
 	return () => (
@@ -23,7 +23,7 @@ export function PrivacyRoute(_handle: Handle) {
 				</p>
 				<p mix={css(lastUpdatedCss)}>
 					Last updated:{' '}
-					<time datetime={legalLastUpdated}>{legalLastUpdated}</time>
+					<time datetime={privacyLastUpdated}>{privacyLastUpdated}</time>
 				</p>
 			</header>
 

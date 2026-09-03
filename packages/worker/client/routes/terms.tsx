@@ -10,7 +10,7 @@ import {
 	pageTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
-import { legalLastUpdated } from './legal-last-updated.ts'
+import { termsLastUpdated } from './legal-last-updated.ts'
 
 export function TermsRoute(_handle: Handle) {
 	return () => (
@@ -22,7 +22,7 @@ export function TermsRoute(_handle: Handle) {
 				</p>
 				<p mix={css(lastUpdatedCss)}>
 					Last updated:{' '}
-					<time datetime={legalLastUpdated}>{legalLastUpdated}</time>
+					<time datetime={termsLastUpdated}>{termsLastUpdated}</time>
 				</p>
 			</header>
 
@@ -46,6 +46,11 @@ export function TermsRoute(_handle: Handle) {
 					Give us accurate account information, and tell us promptly if you
 					think someone else has access. You may export or delete your account
 					data from Account settings.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Kody may change your username at the operator&apos;s discretion if it
+					is abusive, reserved, impersonating, or otherwise a problem — even if
+					it was allowed when you signed up.
 				</p>
 				<p mix={css(descriptionCss)}>
 					You must be at least 13 and legally able to agree to these terms. If
