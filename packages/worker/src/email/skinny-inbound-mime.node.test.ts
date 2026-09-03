@@ -108,4 +108,63 @@ test('prepareInboundRawMime keeps small messages and reduces oversized attachmen
 	expect(underPlatformCap.keptRawSize).toBeLessThanOrEqual(
 		maxKeptInboundRawBytes,
 	)
+
+	const hugeText = 'Keep this invoice note. '.repeat(2_000)
+	const huge = [
+		'From: Sender <sender@example.net>',
+		'To: user@example.com',
+		'Subject: Huge text',
+		'Message-ID: <huge@example.net>',
+		'Content-Type: text/plain; charset=utf-8',
+		'',
+		hugeText,
+	].join('\r\n')
+	const hugeReduced = await prepareInboundRawMime(textEncoder.encode(huge), {
+		maxKeptBytes: 4_096,
+	})
+	expect(hugeReduced.reduced).toBe(true)
+	expect(hugeReduced.keptRawSize).toBeLessThanOrEqual(4_096)
+	expect(hugeReduced.rawMime).toContain('Keep this invoice note.')
+	expect(hugeReduced.rawMime).toContain('[truncated]')
+
+	const encodedHtml = Buffer.from('<p>Hidden encoded html</p>').toString(
+		'base64',
+	)
+	const encoded = [
+		'From: Sender <sender@example.net>',
+		'To: user@example.com',
+		'Subject: Encoded',
+		'Message-ID: <encoded@example.net>',
+		'Content-Type: multipart/mixed; boundary="b"',
+		'',
+		'--b',
+		'Content-Type: text/plain; charset=utf-8',
+		'',
+		'Visible plain body.',
+		'--b',
+		'Content-Type: text/html; charset=utf-8',
+		'Content-Transfer-Encoding: base64',
+		'',
+		encodedHtml,
+		'--b',
+		'Content-Type: application/pdf',
+		'Content-Disposition: attachment; filename="bin.pdf"',
+		'',
+		'P'.repeat(8_000),
+		'--b--',
+		'',
+	].join('\r\n')
+	const encodedReduced = await prepareInboundRawMime(
+		textEncoder.encode(encoded),
+		{ maxKeptBytes: 4_096 },
+	)
+	expect(encodedReduced.keptRawSize).toBeLessThanOrEqual(4_096)
+	expect(encodedReduced.rawMime).toContain('Visible plain body.')
+	expect(encodedReduced.rawMime).not.toContain('Hidden encoded html')
+	expect(encodedReduced.omittedAttachments).toEqual([
+		expect.objectContaining({
+			filename: 'bin.pdf',
+			storageKind: 'unavailable',
+		}),
+	])
 })

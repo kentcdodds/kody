@@ -17,6 +17,8 @@ const textDecoder = new TextDecoder()
 const crlf = textEncoder.encode('\r\n')
 const crlfCrlf = textEncoder.encode('\r\n\r\n')
 const lfLf = textEncoder.encode('\n\n')
+/** Space reserved so X-Kody reduction headers cannot blow the persist cap. */
+const reductionHeaderReserveBytes = 256
 
 export type PreparedInboundRawMime = {
 	rawMime: string
@@ -70,10 +72,18 @@ export async function prepareInboundRawMime(
 	)
 	const omittedAttachments: Array<EmailAttachmentMetadata> = []
 	const root = parseMimeNode(raw) ?? fallbackLeaf(raw)
-	const rebuilt = keepTextOnly(root, maxKeptBytes, omittedAttachments)
+	const rebuilt = keepTextOnly(
+		root,
+		Math.max(maxKeptBytes - reductionHeaderReserveBytes, 0),
+		omittedAttachments,
+	)
 	const notice = omissionNotice(omittedAttachments)
 	const withNotice = notice
-		? ensureOmissionNotice(rebuilt, notice, maxKeptBytes)
+		? ensureOmissionNotice(
+				rebuilt,
+				notice,
+				Math.max(maxKeptBytes - reductionHeaderReserveBytes, 0),
+			)
 		: rebuilt
 	const reducedHeaders = appendReductionHeaders(withNotice.headers, {
 		originalRawSize,
@@ -81,7 +91,13 @@ export async function prepareInboundRawMime(
 	})
 	let rawMime = serializeNode({ ...withNotice, headers: reducedHeaders })
 	if (utf8ByteLength(rawMime) > maxKeptBytes) {
-		rawMime = truncateToUtf8Bytes(rawMime, maxKeptBytes)
+		rawMime = serializeGuaranteedPlainMessage({
+			headers: root.headers,
+			omittedAttachments,
+			originalRawSize,
+			originalSha256,
+			maxKeptBytes,
+		})
 	}
 	return {
 		rawMime,
@@ -145,7 +161,11 @@ function keepTextOnly(
 	omitted: Array<EmailAttachmentMetadata>,
 ): MimeNode {
 	if (node.kind === 'leaf') {
-		if (isTextPart(node)) return truncateTextLeaf(node, budget)
+		if (isTextPart(node)) {
+			const kept = keepTextLeaf(node, budget)
+			if (kept) return kept
+			return textMessageLeaf(node.headers, fallbackOmissionBody(omitted))
+		}
 		omitLeaf(node, omitted)
 		return textMessageLeaf(node.headers, fallbackOmissionBody(omitted))
 	}
@@ -159,13 +179,25 @@ function keepTextOnly(
 			continue
 		}
 		const delimiterCost = utf8ByteLength(`\r\n--${node.boundary}\r\n`)
-		const rebuilt = keepTextOnly(
-			child,
-			Math.max(remaining - delimiterCost, 0),
-			omitted,
-		)
+		const childBudget = Math.max(remaining - delimiterCost, 0)
+		const rebuilt =
+			child.kind === 'leaf'
+				? keepTextLeaf(child, childBudget)
+				: keepTextOnly(child, childBudget, omitted)
+		if (!rebuilt) continue
 		const used = utf8ByteLength(serializeNode(rebuilt))
-		if (used + delimiterCost > remaining) continue
+		if (used + delimiterCost > remaining) {
+			const fallback = textMessageLeaf(
+				child.kind === 'leaf' ? child.headers : node.headers,
+				fallbackOmissionBody(omitted),
+			)
+			const fallbackUsed = utf8ByteLength(serializeNode(fallback))
+			if (fallbackUsed + delimiterCost <= remaining) {
+				keptChildren.push(fallback)
+				remaining -= fallbackUsed + delimiterCost
+			}
+			continue
+		}
 		keptChildren.push(rebuilt)
 		remaining -= used + delimiterCost
 	}
@@ -178,12 +210,23 @@ function keepTextOnly(
 	}
 }
 
-function truncateTextLeaf(node: MimeLeaf, budget: number): MimeLeaf {
-	const headerCost = utf8ByteLength(`${node.headers}\r\n\r\n`)
-	const available = Math.max(budget - headerCost, 0)
-	if (node.body.byteLength <= available) return node
+function keepTextLeaf(node: MimeLeaf, budget: number): MimeLeaf | null {
+	const cte = contentTransferEncoding(node.headers)
+	if (cte !== '7bit' && cte !== '8bit') return null
+	if (utf8ByteLength(serializeNode(node)) <= budget) return node
 	const notice = '\n[truncated]'
-	const keep = Math.max(available - utf8ByteLength(notice), 0)
+	const rewritten = rewrittenUtf8TextLeaf(node, notice)
+	const headerCost = utf8ByteLength(`${rewritten.headers}\r\n\r\n`)
+	const bodyBudget = Math.max(budget - headerCost - utf8ByteLength(notice), 0)
+	const truncated = rewrittenUtf8TextLeaf(
+		node,
+		`${truncateToUtf8Bytes(textDecoder.decode(node.body), bodyBudget)}${notice}`,
+	)
+	if (utf8ByteLength(serializeNode(truncated)) <= budget) return truncated
+	return null
+}
+
+function rewrittenUtf8TextLeaf(node: MimeLeaf, body: string): MimeLeaf {
 	return {
 		...node,
 		headers: replaceHeader(
@@ -193,10 +236,14 @@ function truncateTextLeaf(node: MimeLeaf, budget: number): MimeLeaf {
 				? 'text/html; charset=utf-8'
 				: 'text/plain; charset=utf-8',
 		),
-		body: textEncoder.encode(
-			`${textDecoder.decode(node.body.subarray(0, keep))}${notice}`,
-		),
+		body: textEncoder.encode(body),
 	}
+}
+
+function contentTransferEncoding(headers: string) {
+	return (
+		getMimeHeader(headers, 'content-transfer-encoding') ?? '7bit'
+	).toLowerCase()
 }
 
 function omitLeaf(node: MimeLeaf, omitted: Array<EmailAttachmentMetadata>) {
@@ -240,6 +287,27 @@ function textMessageLeaf(headers: string, body: string): MimeLeaf {
 
 function fallbackOmissionBody(omitted: Array<EmailAttachmentMetadata>) {
 	return omissionNotice(omitted) ?? '[Kody omitted oversized content]'
+}
+
+function serializeGuaranteedPlainMessage(input: {
+	headers: string
+	omittedAttachments: Array<EmailAttachmentMetadata>
+	originalRawSize: number
+	originalSha256: string
+	maxKeptBytes: number
+}) {
+	const leaf = textMessageLeaf(
+		input.headers,
+		fallbackOmissionBody(input.omittedAttachments),
+	)
+	const headers = appendReductionHeaders(leaf.headers, {
+		originalRawSize: input.originalRawSize,
+		originalSha256: input.originalSha256,
+	})
+	const headerCost = utf8ByteLength(`${headers}\r\n\r\n`)
+	const bodyBudget = Math.max(input.maxKeptBytes - headerCost, 0)
+	const body = truncateToUtf8Bytes(textDecoder.decode(leaf.body), bodyBudget)
+	return `${normalizeHeaderBlock(headers)}\r\n\r\n${body}`
 }
 
 function ensureOmissionNotice(
@@ -492,7 +560,13 @@ function utf8ByteLength(value: string) {
 function truncateToUtf8Bytes(value: string, maxBytes: number) {
 	const encoded = textEncoder.encode(value)
 	if (encoded.byteLength <= maxBytes) return value
-	return textDecoder.decode(encoded.subarray(0, maxBytes))
+	let end = maxBytes
+	while (end > 0) {
+		const byte = encoded[end]
+		if (byte === undefined || (byte & 0xc0) !== 0x80) break
+		end -= 1
+	}
+	return textDecoder.decode(encoded.subarray(0, end))
 }
 
 function indexOfBytes(haystack: Uint8Array, needle: Uint8Array, start = 0) {
