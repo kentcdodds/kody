@@ -132,17 +132,9 @@ function __kodyReadRuntimeNestedValue(exportName, path) {
 }
 
 function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
-	const nestedExportName = exportName + '.' + [...path, property].map(String).join('.');
 	if (typeof value === 'function') {
 		return function (...args) {
-			const currentParent = __kodyReadRuntimeNestedValue(exportName, path);
-			const currentValue = currentParent?.[property];
-			if (typeof currentValue !== 'function') {
-				throw new Error(
-					\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
-				);
-			}
-			return currentValue.apply(currentParent, args);
+			return __kodyApplyRuntimeNestedValue(exportName, [...path, property], args);
 		};
 	}
 	if (value != null && typeof value === 'object') {
@@ -151,10 +143,38 @@ function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
 	return value;
 }
 
+function __kodyApplyRuntimeNestedValue(exportName, path, args) {
+	const nestedExportName = exportName + '.' + path.map(String).join('.');
+	const parentPath = path.slice(0, -1);
+	const property = path[path.length - 1];
+	const parent =
+		parentPath.length === 0
+			? __kodyReadRuntimeExport(exportName)
+			: __kodyReadRuntimeNestedValue(exportName, parentPath);
+	if (parent == null) {
+		throw new Error(
+			\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
+		);
+	}
+	// Do not swallow Get throws: createKodyRemoteProxy raises the OAuth /
+	// disconnected message when a 0-tool server is accessed. Re-reading here
+	// surfaces that instead of TypeError "is not a function".
+	const currentValue = parent[property];
+	if (typeof currentValue !== 'function') {
+		throw new Error(
+			\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
+		);
+	}
+	return currentValue.apply(parent, args);
+}
+
 // Bundler \`const { home } = kody.mcp\` uses [[GetOwnProperty]]. If the
 // current run's mcp proxy omits home (or throws on [[Get]]), bind a
 // late-bound nested proxy instead of undefined so a later run can still
 // resolve home.bond_shade_set_position against that run's kody.mcp.
+// The stand-in is callable: a same-run call re-reads the current mcp
+// proxy and surfaces its throw (OAuth waiting, unknown tool) instead of
+// TypeError "kody.mcp.home.tool is not a function".
 function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
 	return {
 		configurable: true,
@@ -166,7 +186,10 @@ function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
 
 function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 	const nestedExportName = exportName + '.' + path.map(String).join('.');
-	return new Proxy({}, {
+	return new Proxy(function () {}, {
+		apply(_target, _thisArg, args) {
+			return __kodyApplyRuntimeNestedValue(exportName, path, args);
+		},
 		get(_target, property) {
 			const inspectionValue = __kodyRuntimeProxyInspectionValue(
 				nestedExportName,

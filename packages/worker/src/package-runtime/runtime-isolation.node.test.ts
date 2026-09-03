@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { expect, test } from 'vitest'
+import { createKodyRemoteProxy } from '#mcp/executor.ts'
 import { createRuntimeModuleSource } from './module-graph.ts'
 
 // The kody:runtime virtual module captures its named exports statically
@@ -405,6 +406,102 @@ test('destructured kody.mcp tools resolve against the calling run', async () => 
 		expect(result).toEqual({
 			viaHome: { run: 'second' },
 			viaTool: { run: 'second' },
+		})
+	})
+})
+
+test('kody.mcp tool calls stay callable when the current run throws on Get', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+		const oauthWaitingMessage =
+			'The MCP server "home" is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers. Check mcpServerList for connection status.'
+
+		function authenticatingHomeRuntime() {
+			return {
+				kody: {
+					mcp: createKodyRemoteProxy({
+						entries: [
+							{
+								name: 'home',
+								status: {
+									state: 'authenticating',
+									connected: false,
+									toolCount: 0,
+									message:
+										'The MCP server "home" is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers.',
+									unavailableMessage: oauthWaitingMessage,
+								},
+								capabilities: [],
+							},
+						],
+						async callTool() {
+							throw new Error('authenticating servers must not dispatch')
+						},
+					}),
+				},
+			}
+		}
+
+		await sharedStorage.run(authenticatingHomeRuntime(), async () => {
+			// createKodyRemoteProxy throws on Get; the isolate stand-in is
+			// callable and rethrows that same message on the call, not as a
+			// TypeError "is not a function".
+			expect(() => mod.kody.mcp.home.venstar_get_thermostat_info({})).toThrow(
+				oauthWaitingMessage,
+			)
+			expect(() => mod.kody.mcp.home.sonos_list_players({})).toThrow(
+				oauthWaitingMessage,
+			)
+
+			const { home } = mod.kody.mcp
+			const { venstar_get_thermostat_info } = home
+			expect(typeof venstar_get_thermostat_info).toBe('function')
+			expect(() => venstar_get_thermostat_info({})).toThrow(oauthWaitingMessage)
+		})
+
+		const captured = await sharedStorage.run(
+			authenticatingHomeRuntime(),
+			async () => {
+				const { home } = mod.kody.mcp
+				const { venstar_get_thermostat_info } = home
+				return { home, venstar_get_thermostat_info }
+			},
+		)
+
+		const result = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async venstar_get_thermostat_info(args: unknown) {
+								return { ok: true, args }
+							},
+						},
+					},
+				},
+			},
+			async () => ({
+				viaHome: await captured.home.venstar_get_thermostat_info({
+					thermostat: 'office',
+				}),
+				viaTool: await captured.venstar_get_thermostat_info({
+					thermostat: 'office',
+				}),
+			}),
+		)
+
+		expect(result).toEqual({
+			viaHome: { ok: true, args: { thermostat: 'office' } },
+			viaTool: { ok: true, args: { thermostat: 'office' } },
 		})
 	})
 })
