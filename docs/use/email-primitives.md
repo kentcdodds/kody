@@ -91,10 +91,12 @@ Inbound storage is quota-gated per user:
   with a generic "over quota" response to the sender, and the detailed reason is
   recorded as a `rejected` delivery event. Oversize mail is rejected before it
   consumes any daily receive quota, and mail to unverified accounts (which can
-  never receive) is rejected without consuming any quota at all. Transient
-  storage failures (for example an R2 outage while saving raw MIME) do not keep
-  the daily receive charge — the attempt is refunded so delivery retries are not
-  blocked by quota.
+  never receive) is rejected without consuming any quota at all. The MIME reader
+  uses the same platform ceiling as paid/max `email_message_bytes` (768 KiB), so
+  a message under the owner's plan cap — including a `multipart/related` body
+  with an embedded image — is stored. Transient storage failures (for example an
+  R2 outage while saving raw MIME) do not keep the daily receive charge — the
+  attempt is refunded so delivery retries are not blocked by quota.
 - Plan users get their plan's limits. New accounts start on the `free` plan
   unless an invite assigns another tier. The operator-only `max` plan uses
   finite email caps (10,000 sends/day, 20,000 receives/day, 100,000 stored
@@ -167,8 +169,11 @@ Inbound storage is quota-gated per user:
   approval rules. For `email.message.received` and `email.message.quarantined`,
   `import { email }` from `kody:runtime` is available as a convenience helper
   for message lookup, attachment lookup, and replies.
-- Attachments are metadata-first by default; raw MIME for small messages is
-  stored so on-demand attachment lookup can reconstruct bytes locally.
+- Attachments are metadata-first by default. Accepted inbound raw MIME is stored
+  in R2 up to the plan's `email_message_bytes` cap — the same platform ceiling
+  the MIME reader uses — including `multipart/related` messages with inline
+  images. On-demand attachment lookup reconstructs bytes from that stored raw
+  MIME.
 - Cloudflare Email Routing already rejects mail that fails both SPF and DKIM and
   honors sender DMARC policy before Kody sees the message. Kody's own spam
   controls (below) run on mail that still reaches storage.

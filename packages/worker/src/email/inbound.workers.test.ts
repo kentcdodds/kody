@@ -2,17 +2,30 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { planLimits } from '#universal/plans.ts'
+import { maxPlanEmailLimits, planLimits } from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
-import { buildInboundDelivery } from './inbound-delivery.ts'
+import {
+	buildInboundDelivery,
+	userInboundQuotaDay,
+} from './inbound-delivery.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
-import { RetryableInboundStorageError } from './service.ts'
-import { createForwardableEmailMessage } from './test-fixtures.ts'
+import {
+	getEmailMessageWithAttachmentsById,
+	loadEmailAttachmentContent,
+	RetryableInboundStorageError,
+} from './service.ts'
+import { listSystemEmailMessages } from './system-email-graph-store.ts'
+import {
+	createForwardableEmailMessage,
+	createLargeMultipartRelatedInlinePngMessage,
+	inboundInlinePngContentId,
+	inboundInlinePngFilename,
+} from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
 const platformDomain = 'inbox.kody.example.com'
@@ -377,3 +390,118 @@ test('account deletion fence blocks the complete USER inbound write boundary', a
 		await env.EMAIL_BLOBS.list({ prefix: `email-raw:v1:${userId}/` }),
 	).toMatchObject({ objects: [] })
 }, 30_000)
+
+test('max-plan plus-tag inbox stores a large multipart/related inline PNG', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const username = `large-mime-${crypto.randomUUID().slice(0, 8)}`
+	const email = `${username}@example.com`
+	const userId = await seedAccount({ email, username })
+	const taggedAddress = `${username}+kody@${platformDomain}`
+	const messageIdHeader = `large-related-${crypto.randomUUID()}@example.net`
+	const formerParserCeilingBytes = 512 * 1024
+	const representativeRawBytes = 575 * 1024
+	const message = createLargeMultipartRelatedInlinePngMessage({
+		from: 'sender@example.net',
+		to: taggedAddress,
+		subject: 'Large related budget alert',
+		messageId: messageIdHeader,
+		minRawBytes: representativeRawBytes,
+	})
+	expect(message.rawSize).toBeGreaterThan(formerParserCeilingBytes)
+	expect(message.rawSize).toBeLessThanOrEqual(
+		maxPlanEmailLimits.email_message_bytes,
+	)
+
+	await handleInboundEmail(message, {
+		...env,
+		APP_BASE_URL: 'https://kody.example.com',
+	})
+	expect(message.rejectedReason).toBeNull()
+
+	const mailbox = mailboxRpc({ env, userId })
+	const page = await mailbox.listMessages({ direction: 'inbound', limit: 10 })
+	expect(page.messages).toEqual([
+		expect.objectContaining({
+			direction: 'inbound',
+			subject: 'Large related budget alert',
+			messageIdHeader: `<${messageIdHeader}>`,
+			toAddresses: [taggedAddress],
+			processingStatus: 'stored',
+			classification: 'accepted',
+			rawSize: message.rawSize,
+		}),
+	])
+	const stored = page.messages[0]
+	if (!stored) throw new Error('Expected the large inbound message.')
+	if (!stored.inboxId) throw new Error('Expected the default inbox id.')
+	if (!stored.rawMimeKey) throw new Error('Expected a stored raw MIME key.')
+	expect(stored.htmlBody).toContain(`cid:${inboundInlinePngContentId}`)
+	const rawBlob = await env.EMAIL_BLOBS.get(stored.rawMimeKey)
+	if (!rawBlob) throw new Error('Expected the raw MIME blob in EMAIL_BLOBS.')
+	expect(rawBlob.size).toBe(message.rawSize)
+
+	const attachments = await mailbox.listAttachmentsForMessage({
+		messageId: stored.id,
+	})
+	expect(attachments).toEqual([
+		expect.objectContaining({
+			messageId: stored.id,
+			filename: inboundInlinePngFilename,
+			contentType: 'image/png',
+			contentId: `<${inboundInlinePngContentId}>`,
+			disposition: 'inline',
+			storageKind: 'raw-mime',
+		}),
+	])
+	const attachment = attachments[0]
+	if (!attachment) throw new Error('Expected the inline PNG attachment.')
+	const loaded = await getEmailMessageWithAttachmentsById({
+		env,
+		db: env.APP_DB,
+		userId,
+		messageId: stored.id,
+	})
+	if (!loaded) throw new Error('Expected message metadata for attachment load.')
+	const content = await loadEmailAttachmentContent({
+		blobs: env.EMAIL_BLOBS,
+		attachment,
+		message: loaded.message,
+	})
+	expect(content.content).not.toBeNull()
+	expect(content.contentBase64?.startsWith('iVBORw0KGgo')).toBe(true)
+	expect(content.size).toBeGreaterThan(0)
+
+	const quotaNow = new Date()
+	const expectedDelivery = await buildInboundDelivery({
+		userId,
+		inboxId: stored.inboxId,
+		recipient: taggedAddress,
+		envelopeFrom: 'sender@example.net',
+		rawMime: await rawBlob.text(),
+		quotaDay: userInboundQuotaDay(quotaNow),
+		now: quotaNow,
+	})
+	const ledger = await createUserInboundDeliveryAuthority({
+		env,
+		userId,
+	}).get(expectedDelivery.deliveryId)
+	expect(ledger).toMatchObject({
+		state: 'received',
+		messageId: stored.id,
+		subscriptionEffectState: 'complete',
+	})
+
+	expect(
+		await listSystemEmailMessages({
+			db: env.APP_DB,
+			limit: 10,
+		}),
+	).toEqual([])
+	expect(
+		await userMeterRpc({ env, userId }).read({
+			resource: 'email_receives_per_day',
+			day: quotaNow.toISOString().slice(0, 10),
+		}),
+	).toMatchObject({ outcome: 'ready', count: 1 })
+}, 60_000)

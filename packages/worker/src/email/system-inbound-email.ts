@@ -10,6 +10,7 @@ import {
 import { scheduleInboundDeliveryEffects } from './inbound-effect-scheduler.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
+	InboundRawMimeTooLargeError,
 	parseForwardableEmailRawMime,
 	readForwardableEmailRawMime,
 } from './parser.ts'
@@ -154,6 +155,20 @@ export async function handleSystemInboundEmail(input: {
 	try {
 		rawMime = await readForwardableEmailRawMime(input.message)
 	} catch (error) {
+		if (error instanceof InboundRawMimeTooLargeError) {
+			input.message.setReject('Recipient mailbox is over quota.')
+			await recordBoundedEmailRejectionEvent({
+				env: input.env,
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				inboxId: inbox.id,
+				recipient: input.recipient,
+				reason: error.message,
+				phase: 'size',
+			}).catch(warnRejectionAuditWriteFailed)
+			await recordReceiveUsage({ outcome: 'error' })
+			return
+		}
 		throw new RetryableInboundStorageError(
 			'Failed to read inbound raw MIME; delivery should be retried.',
 			error,

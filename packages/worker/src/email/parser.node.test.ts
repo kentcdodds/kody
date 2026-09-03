@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	InboundRawMimeTooLargeError,
 	maxRawMimeBytes,
 	parseForwardableEmailMessage,
 	readForwardableEmailRawMime,
@@ -34,11 +35,22 @@ function createMessage(
 }
 
 test('direct raw MIME reads enforce the parser size ceiling', async () => {
+	const accepted = createMessage('Subject: At ceiling\r\n\r\nBody')
+	Object.defineProperty(accepted, 'rawSize', { value: maxRawMimeBytes })
+	await expect(readForwardableEmailRawMime(accepted)).resolves.toContain(
+		'At ceiling',
+	)
+
 	const message = createMessage('Subject: Too large\r\n\r\nBody')
 	Object.defineProperty(message, 'rawSize', { value: maxRawMimeBytes + 1 })
-	await expect(readForwardableEmailRawMime(message)).rejects.toThrow(
-		'raw MIME is too large',
+	await expect(readForwardableEmailRawMime(message)).rejects.toBeInstanceOf(
+		InboundRawMimeTooLargeError,
 	)
+	await expect(
+		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {
+			maxRawSize: 5,
+		}),
+	).rejects.toBeInstanceOf(InboundRawMimeTooLargeError)
 })
 
 test('parseForwardableEmailMessage extracts content and attachments', async () => {
@@ -83,10 +95,4 @@ test('parseForwardableEmailMessage extracts content and attachments', async () =
 			size: expect.any(Number),
 		}),
 	])
-
-	await expect(
-		parseForwardableEmailMessage(createMessage('Subject: Oversized\n\nbody'), {
-			maxRawSize: 5,
-		}),
-	).rejects.toThrow(/too large/)
 })

@@ -1,3 +1,4 @@
+import { maxPlanEmailLimits } from '#universal/plans.ts'
 import PostalMime, {
 	type Address as PostalAddress,
 	type Attachment as PostalAttachment,
@@ -9,7 +10,25 @@ import {
 	type ParsedInboundEmail,
 } from './types.ts'
 
-export const maxRawMimeBytes = 512 * 1024
+/**
+ * Platform inbound MIME ceiling. Same bound as paid/max
+ * `email_message_bytes` so accepted mail is read and stored instead of
+ * thrown as a retryable read failure.
+ */
+export const maxRawMimeBytes = maxPlanEmailLimits.email_message_bytes
+
+export class InboundRawMimeTooLargeError extends Error {
+	override name = 'InboundRawMimeTooLargeError'
+	readonly rawSize: number
+	readonly maxRawSize: number
+	constructor(rawSize: number, maxRawSize: number) {
+		super(
+			`Inbound email raw MIME is too large (${rawSize} bytes, max ${maxRawSize}).`,
+		)
+		this.rawSize = rawSize
+		this.maxRawSize = maxRawSize
+	}
+}
 
 function flattenPostalAddresses(
 	addresses: PostalAddress | Array<PostalAddress> | undefined,
@@ -109,9 +128,7 @@ export async function parseForwardableEmailMessage(
 ): Promise<ParsedInboundEmail> {
 	const maxRawSize = options.maxRawSize ?? maxRawMimeBytes
 	if (message.rawSize > maxRawSize) {
-		throw new Error(
-			`Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxRawSize}).`,
-		)
+		throw new InboundRawMimeTooLargeError(message.rawSize, maxRawSize)
 	}
 	const rawMime = await readForwardableEmailRawMime(message)
 	return await parseForwardableEmailRawMime(message, rawMime)
@@ -121,9 +138,7 @@ export async function readForwardableEmailRawMime(
 	message: ForwardableEmailMessage,
 ) {
 	if (message.rawSize > maxRawMimeBytes) {
-		throw new Error(
-			`Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxRawMimeBytes}).`,
-		)
+		throw new InboundRawMimeTooLargeError(message.rawSize, maxRawMimeBytes)
 	}
 	return await new Response(message.raw).text()
 }

@@ -16,6 +16,7 @@ import { normalizeEmailAddress, normalizeSubject } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
+	InboundRawMimeTooLargeError,
 	parseForwardableEmailRawMime,
 	readForwardableEmailRawMime,
 } from './parser.ts'
@@ -407,6 +408,23 @@ export async function handleInboundEmail(
 			try {
 				rawMime = await readForwardableEmailRawMime(message)
 			} catch (error) {
+				// Oversize is permanent. Reject like the entitlement size
+				// gate instead of asking Email Routing to retry a read that
+				// can never succeed.
+				if (error instanceof InboundRawMimeTooLargeError) {
+					message.setReject('Recipient mailbox is over quota.')
+					await recordBoundedEmailRejectionEvent({
+						env,
+						db: env.APP_DB,
+						userId,
+						inboxId: inbox.id,
+						recipient,
+						reason: error.message,
+						phase: 'size',
+					}).catch(warnRejectionAuditWriteFailed)
+					await recordReceiveUsage({ outcome: 'error' })
+					return
+				}
 				throw new RetryableInboundStorageError(
 					'Failed to read inbound raw MIME; delivery should be retried.',
 					error,
