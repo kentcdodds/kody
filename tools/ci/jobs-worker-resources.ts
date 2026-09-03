@@ -234,6 +234,10 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 
 	let workerName = baseConfig.name as string
 	if (options.envName === 'preview') {
+		// Preview JOBS_DB stays the shared `kody-preview-jobs` database from
+		// wrangler.jsonc — it is not per-PR. Preview cleanup deletes the
+		// per-preview jobs Worker (`kody-pr-<n>-jobs`) and must never delete
+		// `kody-preview-jobs` or `kody-jobs`.
 		// Per-preview jobs workers are brand new scripts: they cannot run the
 		// production script-transfer migration (from_script "kody-production"),
 		// so the

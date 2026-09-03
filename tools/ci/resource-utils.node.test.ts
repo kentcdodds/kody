@@ -14,8 +14,11 @@ import {
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
 	ensureR2BucketLifecycle,
+	isPermanentCloudflareAuthFailure,
 	isR2BucketAlreadyExistsOutput,
+	isR2BucketNotEmptyOutput,
 	isRetryableCloudflareApiError,
+	isRetryableCloudflareFailure,
 	isWranglerNotFoundOutput,
 	parseJsonc,
 	removeCloudflareQueueConsumers,
@@ -897,6 +900,89 @@ test('Cloudflare API requests retry gateway HTML/text blips then succeed', async
 			),
 		),
 	).toBe(false)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error('Cloudflare API request failed (429): Rate limited'),
+		),
+	).toBe(true)
+	expect(isRetryableCloudflareFailure('Gateway Timeout [code: 504]')).toBe(true)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error('Cloudflare API request failed (403): Authentication error'),
+		),
+	).toBe(false)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error('Cloudflare API request failed (401): unauthorized'),
+		),
+	).toBe(false)
+	expect(
+		isPermanentCloudflareAuthFailure('Authentication error [code: 10000]'),
+	).toBe(true)
+	expect(
+		isR2BucketNotEmptyOutput('The bucket you tried to delete is not empty'),
+	).toBe(true)
+	expect(isR2BucketNotEmptyOutput('Authentication error [code: 10000]')).toBe(
+		false,
+	)
+})
+
+test('Cloudflare API requests retry a 429 then succeed and do not retry 403', async () => {
+	consoleError.mockImplementation(() => {})
+	const rateLimitedThenOk = vi
+		.fn<typeof fetch>()
+		.mockResolvedValueOnce(
+			Response.json(
+				{
+					success: false,
+					errors: [{ code: 10000, message: 'Rate limited' }],
+				},
+				{ status: 429 },
+			),
+		)
+		.mockResolvedValueOnce(
+			Response.json({
+				success: true,
+				result: {
+					queue_id: 'queue-429',
+					queue_name: 'kody-pr-1-webhook-dispatch',
+				},
+			}),
+		)
+	const payload = await cloudflareApiRequest({
+		accountId: 'account-1',
+		apiToken: 'token-1',
+		pathname: '/queues',
+		method: 'POST',
+		body: { queue_name: 'kody-pr-1-webhook-dispatch' },
+		fetcher: rateLimitedThenOk,
+		sleep: async () => {},
+	})
+	expect(payload.result).toEqual({
+		queue_id: 'queue-429',
+		queue_name: 'kody-pr-1-webhook-dispatch',
+	})
+	expect(rateLimitedThenOk).toHaveBeenCalledTimes(2)
+
+	const forbidden = vi.fn<typeof fetch>().mockResolvedValue(
+		Response.json(
+			{
+				success: false,
+				errors: [{ code: 10000, message: 'Authentication error' }],
+			},
+			{ status: 403 },
+		),
+	)
+	await expect(
+		cloudflareApiRequest({
+			accountId: 'account-1',
+			apiToken: 'token-1',
+			pathname: '/queues?page=1&per_page=100',
+			fetcher: forbidden,
+			sleep: async () => {},
+		}),
+	).rejects.toThrow('Cloudflare API request failed (403): Authentication error')
+	expect(forbidden).toHaveBeenCalledTimes(1)
 })
 
 test('ensureArtifactsAccountEventSubscription creates account-level lifecycle subscription', async () => {

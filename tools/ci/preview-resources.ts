@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
+import { isExecutedDirectly } from '../node-runtime.ts'
 import {
 	inspectOriginProductionScriptState,
 	planOriginPreviewDeploy,
@@ -11,6 +12,7 @@ import {
 	type OriginProductionScriptState,
 } from './origin-production-deploy-state.ts'
 import {
+	CloudflareResourceError,
 	deleteCloudflareQueue,
 	deleteR2Bucket,
 	deleteWorkerScript,
@@ -23,10 +25,10 @@ import {
 	parseJsonc,
 	removeCloudflareQueueConsumers,
 	runWrangler,
+	runWranglerWithRetry,
 	truncateWithSuffix,
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
-import { isExecutedDirectly } from '../node-runtime.ts'
 
 type Command = 'ensure' | 'cleanup'
 
@@ -42,7 +44,8 @@ export type PreviewResourceKind = 'worker' | 'd1' | 'kv' | 'r2' | 'queue'
  * (`truncateWithSuffix` may shorten the base but keeps this shape). Production
  * names (`kody`, `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`,
  * `kody-oauth`, `kody-webhook-dispatch`, ...) and the shared preview-env names
- * (`kody-preview*`) never carry a `-pr-<number>` or `-branch-<slug>` segment.
+ * (`kody-preview*`, including `kody-preview-jobs`) never carry a `-pr-<number>`
+ * or `-branch-<slug>` segment.
  */
 export const previewResourceNamePattern =
 	/^kody-(?:pr-\d+|branch-[a-z0-9]+)(?:-[a-z0-9]+)*$/
@@ -63,6 +66,9 @@ export function assertPreviewResourceName(
 		)
 	}
 }
+
+/** Default wall-clock budget for Cloudflare cleanup inside the 4-minute job. */
+export const previewCleanupBudgetMsDefault = 150_000
 
 type CliOptions = {
 	workerName: string
@@ -239,12 +245,20 @@ function ensureD1Database({
 	return { name, id: created.uuid }
 }
 
-export function deletePreviewD1Database({
+export async function deletePreviewD1Database({
 	name,
 	dryRun,
+	sleep,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	name: string
 	dryRun: boolean
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	assertPreviewResourceName(name, 'd1')
 	if (dryRun) {
@@ -258,11 +272,18 @@ export function deletePreviewD1Database({
 		return
 	}
 
-	const result = runWrangler(['d1', 'delete', name, '--skip-confirmation'], {
-		quiet: true,
-	})
+	const result = await runWranglerWithRetry(
+		['d1', 'delete', name, '--skip-confirmation'],
+		{ quiet: true, sleep, maxAttempts, deadlineMs, now },
+	)
 	if (result.status !== 0) {
-		fail(`Failed to delete D1 database: ${name}`)
+		const output =
+			`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
+		throw new CloudflareResourceError(
+			'd1',
+			name,
+			`Failed to delete D1 database: ${name}${output ? `: ${output}` : ''}`,
+		)
 	}
 	console.error(`Deleted D1 database: ${name}`)
 }
@@ -302,12 +323,20 @@ function ensureKvNamespace({
 	return { title, id: created.id }
 }
 
-export function deletePreviewKvNamespace({
+export async function deletePreviewKvNamespace({
 	title,
 	dryRun,
+	sleep,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	title: string
 	dryRun: boolean
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	assertPreviewResourceName(title, 'kv')
 	if (dryRun) {
@@ -321,7 +350,7 @@ export function deletePreviewKvNamespace({
 		return
 	}
 
-	const result = runWrangler(
+	const result = await runWranglerWithRetry(
 		[
 			'kv',
 			'namespace',
@@ -330,34 +359,80 @@ export function deletePreviewKvNamespace({
 			existing.id,
 			'--skip-confirmation',
 		],
-		{ quiet: true },
+		{ quiet: true, sleep, maxAttempts, deadlineMs, now },
 	)
 	if (result.status !== 0) {
-		fail(`Failed to delete KV namespace: ${title}`)
+		const output =
+			`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
+		throw new CloudflareResourceError(
+			'kv',
+			title,
+			`Failed to delete KV namespace: ${title}${output ? `: ${output}` : ''}`,
+		)
 	}
 	console.error(`Deleted KV namespace: ${title} (${existing.id})`)
 }
 
-export function deletePreviewWorkerScript({
+export async function deletePreviewWorkerScript({
 	name,
 	dryRun,
+	sleep,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	name: string
 	dryRun: boolean
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	assertPreviewResourceName(name, 'worker')
-	deleteWorkerScript({ name, dryRun })
+	await deleteWorkerScript({
+		name,
+		dryRun,
+		sleep,
+		maxAttempts,
+		deadlineMs,
+		now,
+	})
 }
 
-export function deletePreviewR2Bucket({
+export async function deletePreviewR2Bucket({
 	name,
 	dryRun,
+	accountId,
+	apiToken,
+	fetcher,
+	sleep,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	name: string
 	dryRun: boolean
+	accountId?: string
+	apiToken?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	assertPreviewResourceName(name, 'r2')
-	deleteR2Bucket({ name, dryRun })
+	await deleteR2Bucket({
+		name,
+		dryRun,
+		emptyIfNonEmpty: true,
+		accountId,
+		apiToken,
+		fetcher,
+		sleep,
+		maxAttempts,
+		deadlineMs,
+		now,
+	})
 }
 
 type PreviewQueueInput = Parameters<typeof deleteCloudflareQueue>[0]
@@ -557,23 +632,48 @@ function listMockServerNames() {
 	})
 }
 
-function deletePreviewWorkers(workerName: string, dryRun: boolean) {
-	// Runtime and platform bind each other's Durable Object classes, so
-	// delete those scripts before the origin worker.
-	deletePreviewWorkerScript({ name: `${workerName}-runtime`, dryRun })
-	deletePreviewWorkerScript({ name: `${workerName}-platform`, dryRun })
-	deletePreviewWorkerScript({ name: workerName, dryRun })
-	deletePreviewWorkerScript({ name: `${workerName}-jobs`, dryRun })
-	deletePreviewWorkerScript({ name: `${workerName}-highlight`, dryRun })
-	for (const service of listMockServerNames()) {
-		deletePreviewWorkerScript({
-			name: `${workerName}-mock-${service}`,
-			dryRun,
-		})
-	}
+export function listPreviewWorkerNames(workerName: string) {
+	return [
+		`${workerName}-runtime`,
+		`${workerName}-platform`,
+		workerName,
+		`${workerName}-jobs`,
+		`${workerName}-highlight`,
+		...listMockServerNames().map((service) => `${workerName}-mock-${service}`),
+	]
 }
 
-export type PreviewCleanupOptions = Pick<CliOptions, 'workerName' | 'dryRun'>
+export type PreviewCleanupFailure = {
+	resource: string
+	message: string
+}
+
+export type PreviewCleanupOptions = {
+	workerName: string
+	dryRun: boolean
+	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	fetcher?: typeof fetch
+	accountId?: string
+	apiToken?: string
+}
+
+export function formatPreviewCleanupFailure(
+	workerName: string,
+	failures: ReadonlyArray<PreviewCleanupFailure>,
+) {
+	const lines = failures.map(
+		(failure) => `  - ${failure.resource}: ${failure.message}`,
+	)
+	return [
+		`Preview cleanup failed for ${String(failures.length)} resource(s) of ${workerName}. Already-missing resources were treated as success. Re-run:`,
+		`  node tools/ci/preview-resources.ts cleanup --worker-name ${workerName}`,
+		'or the preview workflow_dispatch cleanup action targeting this PR.',
+		'Failed resources:',
+		...lines,
+	].join('\n')
+}
 
 export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 	const {
@@ -587,58 +687,137 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 	} = buildPreviewResourceNames(options.workerName)
-	const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
-	const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim()
+	const workerNames = listPreviewWorkerNames(options.workerName)
+	for (const [name, kind] of [
+		...workerNames.map((name) => [name, 'worker'] as const),
+		[d1DatabaseName, 'd1'] as const,
+		[auditD1DatabaseName, 'd1'] as const,
+		[oauthKvTitle, 'kv'] as const,
+		[bundleArtifactsKvTitle, 'kv'] as const,
+		[communityAssetsBucketName, 'r2'] as const,
+		[emailBlobsBucketName, 'r2'] as const,
+		[repoSessionBlobsBucketName, 'r2'] as const,
+		[webhookDispatchQueueName, 'queue'] as const,
+		[webhookDispatchDeadLetterQueueName, 'queue'] as const,
+	]) {
+		assertPreviewResourceName(name, kind)
+	}
+
+	const accountId =
+		options.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = options.apiToken ?? process.env.CLOUDFLARE_API_TOKEN?.trim()
 	if ((!accountId || !apiToken) && !options.dryRun) {
 		fail(
 			'Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN for Queue cleanup.',
 		)
 	}
+	const now = options.now ?? Date.now
+	const deadlineMs = options.deadlineMs ?? now() + previewCleanupBudgetMsDefault
+	const retry = {
+		sleep: options.sleep,
+		deadlineMs,
+		now,
+	}
 	const queueClient = {
 		accountId: accountId ?? 'dry-run-account',
 		apiToken: apiToken ?? 'dry-run-token',
 		dryRun: options.dryRun,
+		fetcher: options.fetcher,
+		...retry,
 	}
+	const failures: Array<PreviewCleanupFailure> = []
+
+	async function attempt(resource: string, operation: () => Promise<void>) {
+		try {
+			await operation()
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error)
+			console.error(`Cleanup failed for ${resource}: ${message}`)
+			failures.push({ resource, message })
+		}
+	}
+
 	// Order matters, both directions: a Worker cannot be deleted while it is
 	// registered as a queue consumer (code 10064), and a queue cannot be
 	// deleted while a Worker still binds it as a producer (400 "still
 	// referenced by a binding in a Worker"). So: consumers → Workers → queues.
-	await removePreviewQueueConsumers({
-		...queueClient,
-		name: webhookDispatchQueueName,
+	// Independent leftovers (R2 / KV / D1) run after that chain so a Worker
+	// 504 cannot strand them. Permanent failures are recorded and the rest
+	// of the sweep continues.
+	await attempt(`queue consumers ${webhookDispatchQueueName}`, async () => {
+		await removePreviewQueueConsumers({
+			...queueClient,
+			name: webhookDispatchQueueName,
+		})
 	})
-	await removePreviewQueueConsumers({
-		...queueClient,
-		name: webhookDispatchDeadLetterQueueName,
+	await attempt(
+		`queue consumers ${webhookDispatchDeadLetterQueueName}`,
+		async () => {
+			await removePreviewQueueConsumers({
+				...queueClient,
+				name: webhookDispatchDeadLetterQueueName,
+			})
+		},
+	)
+	for (const workerName of workerNames) {
+		await attempt(`worker ${workerName}`, async () => {
+			await deletePreviewWorkerScript({
+				name: workerName,
+				dryRun: options.dryRun,
+				...retry,
+			})
+		})
+	}
+	await attempt(`queue ${webhookDispatchQueueName}`, async () => {
+		await deletePreviewQueue({
+			...queueClient,
+			name: webhookDispatchQueueName,
+		})
 	})
-	deletePreviewWorkers(options.workerName, options.dryRun)
-	await deletePreviewQueue({
-		...queueClient,
-		name: webhookDispatchQueueName,
+	await attempt(`queue ${webhookDispatchDeadLetterQueueName}`, async () => {
+		await deletePreviewQueue({
+			...queueClient,
+			name: webhookDispatchDeadLetterQueueName,
+		})
 	})
-	await deletePreviewQueue({
-		...queueClient,
-		name: webhookDispatchDeadLetterQueueName,
-	})
-	deletePreviewR2Bucket({
-		name: communityAssetsBucketName,
-		dryRun: options.dryRun,
-	})
-	deletePreviewR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
-	deletePreviewR2Bucket({
-		name: repoSessionBlobsBucketName,
-		dryRun: options.dryRun,
-	})
-	deletePreviewKvNamespace({
-		title: bundleArtifactsKvTitle,
-		dryRun: options.dryRun,
-	})
-	deletePreviewKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
-	deletePreviewD1Database({
-		name: auditD1DatabaseName,
-		dryRun: options.dryRun,
-	})
-	deletePreviewD1Database({ name: d1DatabaseName, dryRun: options.dryRun })
+	for (const name of [
+		communityAssetsBucketName,
+		emailBlobsBucketName,
+		repoSessionBlobsBucketName,
+	]) {
+		await attempt(`r2 ${name}`, async () => {
+			await deletePreviewR2Bucket({
+				name,
+				dryRun: options.dryRun,
+				accountId,
+				apiToken,
+				fetcher: options.fetcher,
+				...retry,
+			})
+		})
+	}
+	for (const title of [bundleArtifactsKvTitle, oauthKvTitle]) {
+		await attempt(`kv ${title}`, async () => {
+			await deletePreviewKvNamespace({
+				title,
+				dryRun: options.dryRun,
+				...retry,
+			})
+		})
+	}
+	for (const name of [auditD1DatabaseName, d1DatabaseName]) {
+		await attempt(`d1 ${name}`, async () => {
+			await deletePreviewD1Database({
+				name,
+				dryRun: options.dryRun,
+				...retry,
+			})
+		})
+	}
+
+	if (failures.length > 0) {
+		throw new Error(formatPreviewCleanupFailure(options.workerName, failures))
+	}
 }
 
 async function main() {
@@ -659,5 +838,9 @@ async function main() {
 }
 
 if (isExecutedDirectly(import.meta.url)) {
-	await main()
+	try {
+		await main()
+	} catch (error) {
+		fail(error instanceof Error ? error.message : String(error))
+	}
 }
