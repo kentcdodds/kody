@@ -135,7 +135,7 @@ function errorConstructorName(error: unknown) {
  * `<ErrorClassName>: <first inventory/cleanup warning, else error.message>`
  * truncated to `unverifiedAccountPurgeFailureReasonMaxLength` characters.
  */
-export function unverifiedAccountPurgeFailureReason(
+function unverifiedAccountPurgeFailureReason(
 	error: unknown,
 	warnings: ReadonlyArray<string>,
 ) {
