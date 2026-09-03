@@ -393,13 +393,17 @@ Both are opt-in and adapted from the Epic Stack.
   `onError`) live in `packages/worker/src/oauth-provider-options.ts` and are
   spread into both the origin `OAuthProvider` and the fallback, so storage
   semantics cannot drift; the fallback supplies inert 404 handlers because the
-  helpers API never routes a request. The library is imported dynamically there
-  so it stays off the platform/runtime startup path. Deletion only reports
-  "OAuth grants were not revoked" when both `OAUTH_PROVIDER` and `OAUTH_KV` are
-  missing. Account export's `oauth_grants` section
-  (`packages/worker/src/account/export.ts`) uses the same reader for
-  `listUserGrants`, so `accountExportManifest` / `accountExportSection` served
-  from the platform `MCP` Durable Object include grant metadata too.
+  helpers API never routes a request. The fallback loads the library from the
+  pre-bundled `oauth-provider.mjs` additional module
+  (`tools/build-worker-bundler-modules.ts`, `find_additional_modules`) because
+  wrangler inlines plain dynamic imports into the main module; the startup
+  bundle check forbids the provider package in the platform/runtime entries so
+  it stays off their startup path. Deletion only reports "OAuth grants were not
+  revoked" when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account
+  export's `oauth_grants` section (`packages/worker/src/account/export.ts`) uses
+  the same reader for `listUserGrants`, so `accountExportManifest` /
+  `accountExportSection` served from the platform `MCP` Durable Object include
+  grant metadata too.
 - After the user row is gone, origin clears the UserMeter deletion tombstone
   `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
   a later account with that email reuses the same Durable Object id and must not
