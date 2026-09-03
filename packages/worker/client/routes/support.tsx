@@ -17,8 +17,13 @@ export function SupportRoute(_handle: Handle) {
 					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
 						support@kody.codes
 					</a>
-					. Operators of other deployments use <code>support@&lt;apex&gt;</code>
 					.
+				</p>
+				<p mix={css(pageDescriptionCss)}>
+					A lot of what you experience as Kody is the agent you connected —
+					ChatGPT, Claude, Cursor, Codex, or another host. If something feels
+					off, try the same request with a better model before writing in.
+					Stronger models usually get more out of search, packages, and memory.
 				</p>
 			</header>
 
