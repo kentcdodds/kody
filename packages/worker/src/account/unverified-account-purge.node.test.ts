@@ -14,6 +14,7 @@ import * as AccountDeletion from '#app/account-deletion.ts'
 import * as DeletionState from '#worker/account/deletion-state.ts'
 import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
 import {
+	AccountDeletionBillingError,
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	type AccountDeletionResult,
@@ -530,6 +531,57 @@ test('failure details redact email addresses before they reach outcomes, audit r
 	expect(redactEmailAddresses('call kody@kody.codes or a@b.co now')).toBe(
 		'call <email> or <email> now',
 	)
+})
+
+test('a Stripe cancellation failure is a pre-cleanup failure: fence released, account retained, retried next run', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	consoleWarn.mockImplementation(() => {})
+	const { sqlite, db } = createAppDb()
+	const audit = createAuditDb()
+	const billing = await seedUser(db, {
+		username: 'billing-failure',
+		email: 'billing-failure@example.com',
+		createdAt: daysAgo(12),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new AccountDeletionBillingError([
+			'Stripe subscription sub_1 could not be canceled: Stripe API request failed with HTTP 503.',
+		])
+	})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	expect(result).toEqual({
+		scanned: 1,
+		purged: 0,
+		failed: 1,
+		timeBudgetExhausted: false,
+		outcomes: [
+			{
+				stableUserId: billing.stableUserId,
+				ageDays: 12,
+				outcome: 'failed',
+				error:
+					'AccountDeletionBillingError: Stripe subscription sub_1 could not be canceled: Stripe API request failed with HTTP 503.',
+				warnings: [
+					'Stripe subscription sub_1 could not be canceled: Stripe API request failed with HTTP 503.',
+				],
+			},
+		],
+	})
+	expect(usernames(sqlite)).toEqual(['billing-failure'])
+	expect(deletingAt(sqlite, 'billing-failure')).toBeNull()
+
+	deleteUserAccount.mockClear()
+	const retry = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+	expect(retry).toMatchObject({ scanned: 1, purged: 1, failed: 0 })
+	expect(usernames(sqlite)).toEqual([])
 })
 
 test('a failed failure-audit write is logged and does not stop the rest of the batch', async () => {

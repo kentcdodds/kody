@@ -19,9 +19,20 @@ export type UserOwnedDurableObjectSurface = {
 	notes?: string
 }
 
+/**
+ * Where the D1 rows that own a vector surface live. `app_db` surfaces are
+ * enumerated with `SELECT id FROM {table} WHERE user_id = ?` against APP_DB;
+ * `jobs_rpc` rows live in the jobs worker's dedicated D1 (ADR 0016) and are
+ * enumerated through the JOBS service binding (`listJobIdsForUser`). APP_DB
+ * has no `jobs` table since migration 0010.
+ */
+export type UserOwnedVectorizeSource =
+	| { kind: 'app_db'; table: 'mcp_memories' | 'saved_packages' }
+	| { kind: 'jobs_rpc' }
+
 export type UserOwnedVectorizeSurface = {
 	id: 'memory' | 'job' | 'saved_package'
-	sourceTable: 'mcp_memories' | 'jobs' | 'saved_packages'
+	source: UserOwnedVectorizeSource
 	/** Exported as derivedData.vectorize note; never exported as vectors */
 	export: 'rebuild_from_d1'
 }
@@ -166,13 +177,13 @@ export const accountUserOwnedVectorizeSurfaces: ReadonlyArray<UserOwnedVectorize
 	[
 		{
 			id: 'memory',
-			sourceTable: 'mcp_memories',
+			source: { kind: 'app_db', table: 'mcp_memories' },
 			export: 'rebuild_from_d1',
 		},
-		{ id: 'job', sourceTable: 'jobs', export: 'rebuild_from_d1' },
+		{ id: 'job', source: { kind: 'jobs_rpc' }, export: 'rebuild_from_d1' },
 		{
 			id: 'saved_package',
-			sourceTable: 'saved_packages',
+			source: { kind: 'app_db', table: 'saved_packages' },
 			export: 'rebuild_from_d1',
 		},
 	] as const

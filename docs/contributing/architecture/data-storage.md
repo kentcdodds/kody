@@ -47,15 +47,22 @@ Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
 and is intentionally inventory driven. Before inventory it durably sets
 `users.deleting_at`; browser, MCP, package-invocation, and job mutation
 boundaries then reject writes, while the deletion route can still authenticate
-the marked account for retry. The operation performs idempotent out-of-band and
-OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the
-user row for retry. Only after cleanup succeeds does one atomic D1 batch delete
-or clear all user rows and the `users` row. Each step records deleted counts,
-updated counts for cleared references, and warnings so the HTTP response states
-what was removed and what needs operator attention. Re-running the operation is
-safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
-and already-cleared Durable Objects are treated as successful no-ops or
-warning-only failures.
+the marked account for retry. Before any destructive step it cancels every
+Stripe subscription that can still bill (active, trialing, past_due, unpaid,
+paused, or incomplete); if Stripe cannot confirm cancellation the deletion fails
+with `AccountDeletionBillingError`, the marker is released, and the account is
+retained (like an inventory failure) so the customer is never billed for an
+account that no longer exists. Already-canceled or missing subscriptions count
+as canceled, so retries are idempotent. Stripe customer deletion stays a
+best-effort warning after cleanup. The operation then performs idempotent
+out-of-band and OAuth cleanup. Any critical cleanup failure preserves D1, the
+marker, and the user row for retry. Only after cleanup succeeds does one atomic
+D1 batch delete or clear all user rows and the `users` row. Each step records
+deleted counts, updated counts for cleared references, and warnings so the HTTP
+response states what was removed and what needs operator attention. Re-running
+the operation is safe: missing rows, missing KV keys, missing vectors, deleted
+Artifacts repos, and already-cleared Durable Objects are treated as successful
+no-ops or warning-only failures.
 
 All four dedicated `system_email_*` graph tables are intentionally excluded from
 account deletion. They are operator-owned mail for reserved platform addresses,
@@ -91,9 +98,14 @@ Deletion must cover these user-owned surfaces:
   conversation state, raw-fetch state, and transport storage before revoking
   OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
-  rows and removed with `deleteByIds`. Matching `vector_embed_fingerprints` rows
-  are deleted by `vector_id` on those writes; account deletion clears remaining
-  rows for that `user_id`.
+  rows and removed with `deleteByIds`. Each surface in
+  `accountUserOwnedVectorizeSurfaces` declares its row source: memory and
+  saved-package ids come from `APP_DB` tables, while job ids come from the jobs
+  worker over the `JOBS` binding (`listJobIdsForUser`, live plus archived job
+  ids) because `APP_DB` has no `jobs` table (ADR 0016). Inventory fails rather
+  than skipping when `JOBS` is unbound. Matching `vector_embed_fingerprints`
+  rows are deleted by `vector_id` on those writes; account deletion clears
+  remaining rows for that `user_id`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
   inventoried by `Mailbox.listBlobReferences`; the Mailbox store derives raw
   keys from owner/message ids and emits only canonical external-attachment keys.

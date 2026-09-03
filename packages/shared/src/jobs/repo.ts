@@ -766,6 +766,17 @@ export async function sumJobRowsStorageBytesForUser(
 	return Number(row?.count ?? 0)
 }
 
+export async function listJobIdRowsForUser(
+	db: D1Database,
+	userId: string,
+): Promise<Array<string>> {
+	const { results } = await db
+		.prepare(`SELECT id FROM jobs WHERE user_id = ? ORDER BY id ASC`)
+		.bind(userId)
+		.all<{ id: string }>()
+	return (results ?? []).map((row) => row.id)
+}
+
 export async function listJobStorageIdRowsForUser(
 	db: D1Database,
 	userId: string,

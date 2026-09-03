@@ -21,11 +21,26 @@ const defaultStripeApiBaseUrl = 'https://api.stripe.com'
 
 export class StripeApiError extends Error {
 	readonly status: number
-	constructor(message: string, options: { status: number; cause?: unknown }) {
+	/** Stripe `error.code` (for example `resource_missing`) when the body had one. */
+	readonly code: string | null
+	constructor(
+		message: string,
+		options: { status: number; code?: string | null; cause?: unknown },
+	) {
 		super(message, { cause: options.cause })
 		this.name = 'StripeApiError'
 		this.status = options.status
+		this.code = options.code ?? null
 	}
+}
+
+const stripeErrorBodySchema = object({
+	error: object({ code: optional(string()) }),
+})
+
+function readStripeErrorCode(body: unknown): string | null {
+	const parsed = parseSafe(stripeErrorBodySchema, body)
+	return parsed.success ? (parsed.value.error.code ?? null) : null
 }
 
 export class BillingNotConfiguredError extends Error {
@@ -167,7 +182,7 @@ async function stripeRequest(
 		})
 		throw new StripeApiError(
 			`Stripe API request failed with HTTP ${response.status}.`,
-			{ status: response.status },
+			{ status: response.status, code: readStripeErrorCode(body) },
 		)
 	}
 
@@ -331,6 +346,10 @@ export async function listSubscriptions(
  * Immediately cancels a subscription. Account deletion intentionally does not
  * use cancel_at_period_end because the user is relinquishing portal access and
  * all account state.
+ *
+ * Idempotent: a subscription Stripe no longer knows (`resource_missing`) is
+ * treated as canceled so a retried account deletion does not fail on a
+ * subscription an earlier attempt already removed.
  */
 export async function cancelSubscription(
 	env: StripeEnv,
@@ -340,10 +359,18 @@ export async function cancelSubscription(
 	if (!trimmed) {
 		throw new StripeApiError('Subscription id is required.', { status: 400 })
 	}
-	const body = await stripeRequest(env, {
-		method: 'DELETE',
-		path: `/v1/subscriptions/${encodeURIComponent(trimmed)}`,
-	})
+	let body: unknown
+	try {
+		body = await stripeRequest(env, {
+			method: 'DELETE',
+			path: `/v1/subscriptions/${encodeURIComponent(trimmed)}`,
+		})
+	} catch (error) {
+		if (error instanceof StripeApiError && error.code === 'resource_missing') {
+			return
+		}
+		throw error
+	}
 	const parsed = parseSafe(canceledSubscriptionSchema, body)
 	if (!parsed.success || parsed.value.status !== 'canceled') {
 		throw new StripeApiError('Unexpected Stripe canceled subscription shape.', {

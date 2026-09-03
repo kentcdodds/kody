@@ -9,6 +9,7 @@ import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { isAccountDeletionConfirmation } from '#universal/account-deletion-confirmation.ts'
 import { type routes } from '#universal/routes.ts'
 import {
+	AccountDeletionBillingError,
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	deleteUserAccount,
@@ -29,6 +30,31 @@ function readDeleteRequestFields(body: unknown) {
 			typeof record.confirmation === 'string' ? record.confirmation : null,
 		password: typeof record.password === 'string' ? record.password : null,
 	}
+}
+
+type AccountDeletionFailure =
+	| AccountDeletionInventoryError
+	| AccountDeletionBillingError
+	| AccountDeletionCleanupError
+	| AccountDeletionWritersActiveError
+
+function accountDeletionFailureReason(error: AccountDeletionFailure) {
+	if (error instanceof AccountDeletionWritersActiveError)
+		return 'writers_active'
+	if (error instanceof AccountDeletionInventoryError) {
+		return 'inventory_incomplete'
+	}
+	if (error instanceof AccountDeletionBillingError) {
+		return 'billing_cancel_failed'
+	}
+	return 'cleanup_incomplete'
+}
+
+function accountDeletionFailureMessage(error: AccountDeletionFailure) {
+	if (error instanceof AccountDeletionBillingError) {
+		return 'We could not cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.'
+	}
+	return 'Account deletion could not complete safely. Try again later.'
 }
 
 export function createAccountDeleteHandler(env: Env) {
@@ -125,6 +151,7 @@ export function createAccountDeleteHandler(env: Env) {
 				if (
 					!(
 						error instanceof AccountDeletionInventoryError ||
+						error instanceof AccountDeletionBillingError ||
 						error instanceof AccountDeletionCleanupError ||
 						error instanceof AccountDeletionWritersActiveError
 					)
@@ -139,18 +166,10 @@ export function createAccountDeleteHandler(env: Env) {
 					email: user.email,
 					ip: requestIp,
 					path: url.pathname,
-					reason:
-						error instanceof AccountDeletionWritersActiveError
-							? 'writers_active'
-							: error instanceof AccountDeletionInventoryError
-								? 'inventory_incomplete'
-								: 'cleanup_incomplete',
+					reason: accountDeletionFailureReason(error),
 				})
 				return Response.json(
-					{
-						error:
-							'Account deletion could not complete safely. Try again later.',
-					},
+					{ error: accountDeletionFailureMessage(error) },
 					{ status: 503 },
 				)
 			}

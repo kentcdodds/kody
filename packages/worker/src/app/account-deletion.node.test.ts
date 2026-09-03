@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import * as stripeClient from '#worker/billing/stripe-client.ts'
 import {
+	AccountDeletionBillingError,
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	deleteUserAccount,
@@ -19,11 +20,146 @@ import {
 	listRepoSessionsByUser,
 } from '#worker/repo/repo-sessions.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { accountUserOwnedVectorizeSurfaces } from '#worker/account/user-owned-surfaces.ts'
 import {
 	createTestDb,
 	createJobsBindingStub,
 	createSuccessfulDeletionEnv,
 } from '#worker/test-support/account-deletion.ts'
+
+const appMigrationsDir = new URL('../../migrations/', import.meta.url)
+
+function listSqliteTables(db: DatabaseSync) {
+	return (
+		db
+			.prepare(
+				`SELECT name
+				FROM sqlite_schema
+				WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+				ORDER BY name`,
+			)
+			.all() as Array<{ name: string }>
+	).map((row) => row.name)
+}
+
+test('vectorize surface sources match the migrated APP_DB schema', () => {
+	const db = new DatabaseSync(':memory:')
+	applyAllMigrations(db, appMigrationsDir)
+	const tables = new Set(listSqliteTables(db))
+
+	// Jobs moved to the jobs worker's D1 (migration 0010 dropped the APP_DB
+	// copies), so the job surface must be sourced over the JOBS binding rather
+	// than an APP_DB table scan.
+	expect(tables.has('jobs')).toBe(false)
+	for (const surface of accountUserOwnedVectorizeSurfaces) {
+		switch (surface.source.kind) {
+			case 'app_db': {
+				expect(
+					tables.has(surface.source.table),
+					`vectorize surface ${surface.id} reads APP_DB table ${surface.source.table}, which the migrated schema does not define`,
+				).toBe(true)
+				break
+			}
+			case 'jobs_rpc': {
+				expect(surface.id).toBe('job')
+				break
+			}
+			default: {
+				const unknownSource: never = surface.source
+				throw new Error(
+					`Unknown vectorize source: ${JSON.stringify(unknownSource)}`,
+				)
+			}
+		}
+	}
+})
+
+test('deleteUserAccount enumerates job vectors through JOBS against the real post-0010 APP_DB schema', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, appMigrationsDir)
+	expect(listSqliteTables(sqlite)).not.toContain('jobs')
+	const db = createD1FromSqlite(sqlite)
+	const userId = 'user-post-0010'
+	const inserted = await db
+		.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, stable_user_id,
+				email_verified_at, account_type, created_at
+			) VALUES ('post0010', 'post0010@example.com', 'hash', ?, ?, 'person', ?)`,
+		)
+		.bind(userId, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')
+		.run()
+	const dbUserId = Number(inserted.meta.last_row_id)
+	await db
+		.prepare(
+			`INSERT INTO mcp_memories (id, user_id, subject, summary)
+			VALUES ('mem-post-0010', ?, 'subject', 'summary')`,
+		)
+		.bind(userId)
+		.run()
+
+	const deleteVectorsMock = vi.fn(async () => undefined)
+	const listJobIdsForUser = vi.fn(async (_input: { userId: string }) => [
+		'job-live-1',
+		'job-live-2',
+	])
+	const purgeJobsUser = vi.fn(async (input: { userId: string }) => ({
+		ok: true as const,
+		userId: input.userId,
+		purged: true,
+	}))
+	const env = createSuccessfulDeletionEnv(db, {
+		CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectorsMock },
+		JOBS: {
+			listJobIdsForUser,
+			listJobStorageIdsForUser: async () => [] as Array<string>,
+			purgeUser: purgeJobsUser,
+		},
+	} as unknown as Partial<Env>)
+
+	const result = await deleteUserAccount({ env, dbUserId, mcpUserId: userId })
+
+	expect(listJobIdsForUser).toHaveBeenCalledWith({ userId })
+	expect(deleteVectorsMock).toHaveBeenCalledWith([
+		'memory_mem-post-0010',
+		jobVectorId('job-live-1'),
+		jobVectorId('job-live-2'),
+	])
+	expect(result.deletedVectors).toBe(3)
+	expect(purgeJobsUser).toHaveBeenCalledWith({ userId })
+	expect(result.warnings).toEqual([])
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 0,
+	})
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM mcp_memories`).get(),
+	).toEqual({ count: 0 })
+})
+
+test('deleteUserAccount fails inventory loudly when JOBS is unbound instead of scanning APP_DB for jobs', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+	})
+	const env = createSuccessfulDeletionEnv(db, {
+		JOBS: undefined,
+	} as unknown as Partial<Env>)
+
+	await expect(
+		deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' }),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof AccountDeletionInventoryError &&
+			error.inventoryErrors.some((message) =>
+				message.includes(
+					'JOBS service binding is required to enumerate job vector ids',
+				),
+			),
+	)
+	expect(rows.users).toEqual([
+		expect.objectContaining({ id: 1, deleting_at: null }),
+	])
+})
 
 test('account deletion D1 coverage includes every live user-owned schema column', () => {
 	const migrationsDir = new URL('../../migrations/', import.meta.url)
@@ -961,42 +1097,58 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	expect(purgeAfterUnrelatedFailure).not.toHaveBeenCalled()
 })
 
-test('account deletion cancels Stripe billing and remains non-blocking on Stripe failures', async () => {
+function stripeSubscription(id: string, status: string) {
+	return {
+		id,
+		status,
+		cancel_at: null,
+		items: { data: [{ price: { id: 'price_pro' } }] },
+	}
+}
+
+function createStripeUserDb(input: {
+	id: number
+	stableUserId: string
+	customerId: string | null
+}) {
+	return createTestDb({
+		users: [
+			{
+				id: input.id,
+				email: `${input.stableUserId}@example.com`,
+				stable_user_id: input.stableUserId,
+				stripe_customer_id: input.customerId,
+			},
+		],
+		mcp_memories: [
+			{ id: `mem-${input.stableUserId}`, user_id: input.stableUserId },
+		],
+	})
+}
+
+test('account deletion cancels Stripe billing before cleanup and keeps customer deletion best-effort', async () => {
 	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
 	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
 	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
 	try {
 		listSubscriptions.mockResolvedValue([
-			{
-				id: 'sub_active',
-				status: 'active',
-				cancel_at: null,
-				items: { data: [{ price: { id: 'price_pro' } }] },
-			},
-			{
-				id: 'sub_trialing',
-				status: 'trialing',
-				cancel_at: null,
-				items: { data: [{ price: { id: 'price_pro' } }] },
-			},
-			{
-				id: 'sub_canceled',
-				status: 'canceled',
-				cancel_at: null,
-				items: { data: [{ price: { id: 'price_pro' } }] },
-			},
+			stripeSubscription('sub_active', 'active'),
+			stripeSubscription('sub_trialing', 'trialing'),
+			// Dunning and paused states can still invoice or resume, so they
+			// must be canceled too; only terminal states are skipped.
+			stripeSubscription('sub_past_due', 'past_due'),
+			stripeSubscription('sub_unpaid', 'unpaid'),
+			stripeSubscription('sub_paused', 'paused'),
+			stripeSubscription('sub_incomplete', 'incomplete'),
+			stripeSubscription('sub_canceled', 'canceled'),
+			stripeSubscription('sub_expired', 'incomplete_expired'),
 		])
 		cancelSubscription.mockResolvedValue(undefined)
 		deleteCustomer.mockResolvedValue(undefined)
-		const { db, rows } = createTestDb({
-			users: [
-				{
-					id: 1,
-					email: 'pro@example.com',
-					stable_user_id: 'user-pro',
-					stripe_customer_id: 'cus_pro',
-				},
-			],
+		const { db, rows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-pro',
+			customerId: 'cus_pro',
 		})
 
 		const result = await deleteUserAccount({
@@ -1005,75 +1157,74 @@ test('account deletion cancels Stripe billing and remains non-blocking on Stripe
 			mcpUserId: 'user-pro',
 		})
 
+		expect(listSubscriptions).toHaveBeenCalledTimes(1)
 		expect(listSubscriptions).toHaveBeenCalledWith(
 			expect.any(Object),
 			'cus_pro',
 		)
-		expect(cancelSubscription).toHaveBeenCalledTimes(2)
-		expect(cancelSubscription).toHaveBeenCalledWith(
-			expect.any(Object),
+		expect(cancelSubscription).toHaveBeenCalledTimes(6)
+		expect(
+			cancelSubscription.mock.calls.map(([, subscriptionId]) => subscriptionId),
+		).toEqual([
 			'sub_active',
-		)
-		expect(cancelSubscription).toHaveBeenCalledWith(
-			expect.any(Object),
 			'sub_trialing',
-		)
+			'sub_past_due',
+			'sub_unpaid',
+			'sub_paused',
+			'sub_incomplete',
+		])
 		expect(deleteCustomer).toHaveBeenCalledWith(expect.any(Object), 'cus_pro')
 		expect(rows.users).toEqual([])
 		expect(result.warnings).toEqual([])
 
-		listSubscriptions.mockRejectedValue(
-			new Error('Stripe subscriptions unavailable'),
-		)
+		// Customer deletion after a successful cancel stays warning-only: nothing
+		// bills a customer with no billable subscription.
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_active', 'active'),
+		])
 		deleteCustomer.mockRejectedValue(new Error('Stripe customer unavailable'))
 		cancelSubscription.mockClear()
 		consoleError.mockImplementation(() => {})
-		const { db: failureDb, rows: failureRows } = createTestDb({
-			users: [
-				{
-					id: 2,
-					email: 'failure@example.com',
-					stable_user_id: 'user-stripe-failure',
-					stripe_customer_id: 'cus_failure',
-				},
-			],
-		})
+		const { db: customerFailureDb, rows: customerFailureRows } =
+			createStripeUserDb({
+				id: 2,
+				stableUserId: 'user-customer-failure',
+				customerId: 'cus_failure',
+			})
 
-		const failureResult = await deleteUserAccount({
-			env: createSuccessfulDeletionEnv(failureDb),
+		const customerFailureResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(customerFailureDb),
 			dbUserId: 2,
-			mcpUserId: 'user-stripe-failure',
+			mcpUserId: 'user-customer-failure',
 		})
 
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_active',
+		)
 		expect(deleteCustomer).toHaveBeenLastCalledWith(
 			expect.any(Object),
 			'cus_failure',
 		)
-		expect(cancelSubscription).not.toHaveBeenCalled()
-		expect(failureRows.users).toEqual([])
-		expect(failureResult.warnings).toEqual([
+		expect(customerFailureRows.users).toEqual([])
+		expect(customerFailureResult.warnings).toEqual([
 			expect.stringContaining('Stripe customer cleanup failed'),
 		])
 		expect(consoleError).toHaveBeenCalledOnce()
 		expect(consoleError).toHaveBeenCalledWith(
 			'account_deletion_stripe_cleanup_failed',
 			expect.objectContaining({
-				userId: 'user-stripe-failure',
-				error: expect.any(AggregateError),
+				userId: 'user-customer-failure',
+				error: expect.any(Error),
 			}),
 		)
 
 		listSubscriptions.mockClear()
 		deleteCustomer.mockClear()
-		const { db: freeDb, rows: freeRows } = createTestDb({
-			users: [
-				{
-					id: 3,
-					email: 'free@example.com',
-					stable_user_id: 'user-free',
-					stripe_customer_id: null,
-				},
-			],
+		const { db: freeDb, rows: freeRows } = createStripeUserDb({
+			id: 3,
+			stableUserId: 'user-free',
+			customerId: null,
 		})
 		await deleteUserAccount({
 			env: createSuccessfulDeletionEnv(freeDb),
@@ -1088,6 +1239,170 @@ test('account deletion cancels Stripe billing and remains non-blocking on Stripe
 		cancelSubscription.mockRestore()
 		deleteCustomer.mockRestore()
 		consoleError.mockReset()
+	}
+})
+
+test('a failed Stripe cancellation retains the account, releases the fence, and touches nothing else', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	consoleError.mockImplementation(() => {})
+	try {
+		const cases: Array<{
+			name: string
+			stableUserId: string
+			arrange: () => void
+			expectedBillingErrors: Array<string>
+		}> = [
+			{
+				name: 'listing fails',
+				stableUserId: 'user-list-fails',
+				arrange: () => {
+					listSubscriptions.mockRejectedValue(
+						new Error('Stripe subscriptions unavailable'),
+					)
+				},
+				expectedBillingErrors: [
+					'Stripe subscriptions could not be listed: Stripe subscriptions unavailable',
+				],
+			},
+			{
+				name: 'cancel is rejected and the subscription stays active',
+				stableUserId: 'user-cancel-fails',
+				arrange: () => {
+					listSubscriptions.mockResolvedValue([
+						stripeSubscription('sub_active', 'active'),
+					])
+					cancelSubscription.mockRejectedValue(
+						new Error('Stripe cancel rejected'),
+					)
+				},
+				expectedBillingErrors: [
+					'Stripe subscription sub_active could not be canceled: Stripe cancel rejected',
+				],
+			},
+		]
+		for (const testCase of cases) {
+			listSubscriptions.mockReset()
+			cancelSubscription.mockReset()
+			deleteCustomer.mockReset()
+			deleteCustomer.mockResolvedValue(undefined)
+			testCase.arrange()
+			const deleteVectorsMock = vi.fn(async () => undefined)
+			const { db, rows } = createStripeUserDb({
+				id: 1,
+				stableUserId: testCase.stableUserId,
+				customerId: 'cus_billing',
+			})
+			const env = createSuccessfulDeletionEnv(db, {
+				CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectorsMock },
+			} as unknown as Partial<Env>)
+			const meter = userMeterRpc({ env, userId: testCase.stableUserId })
+
+			await expect(
+				deleteUserAccount({
+					env,
+					dbUserId: 1,
+					mcpUserId: testCase.stableUserId,
+				}),
+				testCase.name,
+			).rejects.toSatisfy(
+				(error: unknown) =>
+					error instanceof AccountDeletionBillingError &&
+					JSON.stringify(error.billingErrors) ===
+						JSON.stringify(testCase.expectedBillingErrors),
+			)
+
+			// Nothing destructive ran and the account is usable again.
+			expect(deleteVectorsMock, testCase.name).not.toHaveBeenCalled()
+			expect(deleteCustomer, testCase.name).not.toHaveBeenCalled()
+			expect(rows.users, testCase.name).toEqual([
+				expect.objectContaining({
+					id: 1,
+					stable_user_id: testCase.stableUserId,
+					stripe_customer_id: 'cus_billing',
+					deleting_at: null,
+				}),
+			])
+			expect(rows.mcp_memories, testCase.name).toEqual([
+				{ id: `mem-${testCase.stableUserId}`, user_id: testCase.stableUserId },
+			])
+			expect(await meter.readDeletionState(), testCase.name).toEqual({
+				deletingAt: null,
+			})
+			expect(consoleError).toHaveBeenCalledWith(
+				'account_deletion_billing_cancel_failed',
+				{
+					userId: testCase.stableUserId,
+					billingErrors: testCase.expectedBillingErrors,
+				},
+			)
+		}
+	} finally {
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
+		consoleError.mockReset()
+	}
+})
+
+test('a subscription that is already canceled counts as canceled so retried deletions proceed', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	try {
+		deleteCustomer.mockResolvedValue(undefined)
+
+		// Retry after an earlier attempt already canceled everything: Stripe
+		// lists the subscription as canceled, so nothing is canceled again.
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_old', 'canceled'),
+		])
+		const { db: retryDb, rows: retryRows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-retry',
+			customerId: 'cus_retry',
+		})
+		const retryResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(retryDb),
+			dbUserId: 1,
+			mcpUserId: 'user-retry',
+		})
+		expect(cancelSubscription).not.toHaveBeenCalled()
+		expect(retryRows.users).toEqual([])
+		expect(retryResult.warnings).toEqual([])
+
+		// The cancel call errors (for example Stripe raced the cancellation) but
+		// a fresh listing shows the subscription is no longer billable.
+		listSubscriptions
+			.mockReset()
+			.mockResolvedValueOnce([stripeSubscription('sub_racing', 'active')])
+			.mockResolvedValueOnce([stripeSubscription('sub_racing', 'canceled')])
+		cancelSubscription.mockRejectedValue(
+			new Error('Stripe API request failed with HTTP 400.'),
+		)
+		const { db: raceDb, rows: raceRows } = createStripeUserDb({
+			id: 2,
+			stableUserId: 'user-race',
+			customerId: 'cus_race',
+		})
+		const raceResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(raceDb),
+			dbUserId: 2,
+			mcpUserId: 'user-race',
+		})
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_racing',
+		)
+		expect(listSubscriptions).toHaveBeenCalledTimes(2)
+		expect(raceRows.users).toEqual([])
+		expect(raceResult.warnings).toEqual([])
+		expect(deleteCustomer).toHaveBeenCalledWith(expect.any(Object), 'cus_race')
+	} finally {
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
 	}
 })
 

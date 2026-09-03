@@ -161,6 +161,10 @@ export class JobsService
 		return jobsStore(this.env).sumJobsStorageBytesForUser(input)
 	}
 
+	async listJobIdsForUser(input: { userId: string }): Promise<Array<string>> {
+		return jobsStore(this.env).listJobIdsForUser(input)
+	}
+
 	async listJobStorageIdsForUser(input: {
 		userId: string
 	}): Promise<Array<string>> {

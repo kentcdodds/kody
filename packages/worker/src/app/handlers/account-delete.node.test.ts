@@ -3,7 +3,10 @@ import { RequestContext } from 'remix/router'
 import type * as AccountDeletion from '#app/account-deletion.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
-import { auditEventSummaries } from '#worker/test-support/audit-log-spy.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUserForDeletion: vi.fn(),
@@ -45,6 +48,7 @@ vi.mock('@kody-internal/shared/password-hash.ts', () => ({
 }))
 
 const { createAccountDeleteHandler } = await import('./account-delete.ts')
+const { AccountDeletionBillingError } = await import('#app/account-deletion.ts')
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -170,4 +174,37 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 		'account_delete:success',
 		'account_delete:success',
 	])
+})
+
+test('a Stripe cancellation failure keeps the session and tells the user the subscription was not canceled', async () => {
+	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
+	mocks.findOne.mockResolvedValue({
+		id: 7,
+		password_hash: 'oauth_created_no_usable_password',
+	})
+	mocks.deleteUserAccount.mockClear()
+	mocks.scheduleUserDeletedEvent.mockClear()
+	mocks.deleteUserAccount.mockRejectedValueOnce(
+		new AccountDeletionBillingError([
+			'Stripe subscription sub_1 could not be canceled: HTTP 503',
+		]),
+	)
+
+	const response = await requestDelete({
+		confirmation: accountDeletionConfirmationPhrase,
+	})
+
+	expect(response.status).toBe(503)
+	expect(await response.json()).toEqual({
+		error:
+			'We could not cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.',
+	})
+	expect(response.headers.get('Set-Cookie')).toBeNull()
+	expect(mocks.scheduleUserDeletedEvent).not.toHaveBeenCalled()
+	expect(auditEventSummaries()).toEqual(['account_delete:failure'])
+	expect(logAuditEventSpy.mock.calls.at(-1)?.[0]).toMatchObject({
+		action: 'account_delete',
+		result: 'failure',
+		reason: 'billing_cancel_failed',
+	})
 })

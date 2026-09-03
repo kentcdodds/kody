@@ -18,6 +18,7 @@ import {
 	insertJobRow,
 	listAllJobStorageOwnerRows,
 	listDueJobRows,
+	listJobIdRowsForUser,
 	listJobRetentionCandidateRows,
 	listJobRowsByUserId,
 	listJobRowsPage,
@@ -119,6 +120,14 @@ export type JobsStore = {
 	 * (mirrors the main worker's per-table storage byte formula).
 	 */
 	sumJobsStorageBytesForUser(input: { userId: string }): Promise<number>
+	/**
+	 * Job ids owned by the user, for deriving job vector ids during account
+	 * deletion. Vectors are only written for live `jobs` rows; archived
+	 * artifact `job_id`s are included as an idempotent superset so a vector
+	 * whose row was already deleted (but whose vector delete failed) is still
+	 * swept.
+	 */
+	listJobIdsForUser(input: { userId: string }): Promise<Array<string>>
 	/** Storage ids referenced by the user's jobs and archived artifacts. */
 	listJobStorageIdsForUser(input: { userId: string }): Promise<Array<string>>
 	listArchivedJobArtifactsForUser(input: {
@@ -178,6 +187,15 @@ export function createD1JobsStore(db: D1Database): JobsStore {
 		countJobsForUser: (input) => countJobRowsForUser(db, input.userId),
 		sumJobsStorageBytesForUser: (input) =>
 			sumJobRowsStorageBytesForUser(db, input.userId),
+		listJobIdsForUser: async (input) => {
+			const [jobIds, archived] = await Promise.all([
+				listJobIdRowsForUser(db, input.userId),
+				listArchivedJobArtifactsForUser(db, input.userId),
+			])
+			return Array.from(
+				new Set([...jobIds, ...archived.map((artifact) => artifact.jobId)]),
+			)
+		},
 		listJobStorageIdsForUser: async (input) => {
 			const [jobIds, archived] = await Promise.all([
 				listJobStorageIdRowsForUser(db, input.userId),

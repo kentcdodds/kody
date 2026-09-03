@@ -459,8 +459,9 @@ export function createTestDb(
 	return { db, rows }
 }
 
-// Mimics the jobs worker's JobsService against the test db: storage-id
-// listing and purgeUser both operate on the fixture's jobs tables.
+// Mimics the jobs worker's JobsService against the test db: job-id and
+// storage-id listing and purgeUser all operate on the fixture's jobs tables
+// (which stand in for the jobs worker's own D1; production APP_DB has none).
 export function createJobsBindingStub(
 	db: D1Database,
 	overrides: Record<string, unknown> = {},
@@ -475,6 +476,13 @@ export function createJobsBindingStub(
 		return (results ?? []).map((row) => row.storage_id)
 	}
 	return {
+		listJobIdsForUser: async (input: { userId: string }) => {
+			const { results } = await db
+				.prepare(`SELECT id FROM jobs WHERE user_id = ?`)
+				.bind(input.userId)
+				.all<{ id: string }>()
+			return (results ?? []).map((row) => row.id)
+		},
 		listJobStorageIdsForUser: async (input: { userId: string }) => [
 			...(await listStorageIds('jobs', input.userId)),
 			...(await listStorageIds('archived_job_artifacts', input.userId)),
