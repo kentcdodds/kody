@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test } from 'vitest'
 import {
 	checkDeployGuardrails,
 	checkDurableObjectConfig,
+	checkPreviewCleanupSource,
 	checkWorkflowSource,
+	defaultPreviewResourcesScriptPath,
 	type DurableObjectBaseline,
 	type DurableObjectDeletionAllowlist,
 } from './check-deploy-guardrails.ts'
@@ -383,6 +386,179 @@ jobs:
 	expect(
 		checkWorkflowSource('bypassable.yml', bypassableMixedWorkflow),
 	).toEqual([expect.stringContaining('outside a job explicitly restricted')])
+})
+
+const guardedCleanupScript = `import {
+	deleteWorkerScript,
+	removeCloudflareQueueConsumers,
+	runWrangler,
+} from './resource-utils.ts'
+
+export function assertPreviewResourceName(name: string, kind: string) {
+	if (!/^kody-pr-\\d+(?:-[a-z0-9]+)*$/.test(name)) {
+		throw new Error(\`Refusing to delete \${kind} "\${name}"\`)
+	}
+}
+
+function deletePreviewWorkerScript(name: string) {
+	assertPreviewResourceName(name, 'worker')
+	deleteWorkerScript({ name, dryRun: false })
+}
+
+async function removePreviewQueueConsumers(name: string) {
+	// Comments mentioning 'delete' or --force are not call sites.
+	assertPreviewResourceName(name, 'queue')
+	await removeCloudflareQueueConsumers({ name })
+}
+
+function deletePreviewD1Database(name: string) {
+	assertPreviewResourceName(name, 'd1')
+	const exists = runWrangler(['d1', 'list', '--json'])
+	if (!exists) return
+	runWrangler(['d1', 'delete', name, '--skip-confirmation'])
+}
+
+async function deletePreviewQueue(queueId: string, name: string) {
+	assertPreviewResourceName(name, 'queue')
+	await cloudflareApiRequest({
+		pathname: \`/queues/\${queueId}\`,
+		method: 'DELETE',
+	})
+}
+`
+
+test('preview cleanup guard accepts a script whose deletes all follow the name guard', () => {
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', guardedCleanupScript),
+	).toEqual([])
+})
+
+test('preview cleanup guard flags each delete call site that is not preceded by the guard', () => {
+	const unguardedWorkerDelete = guardedCleanupScript.replace(
+		"\tassertPreviewResourceName(name, 'worker')\n",
+		'',
+	)
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', unguardedWorkerDelete),
+	).toEqual([
+		expect.stringMatching(
+			/preview-resources\.ts:14 performs a destructive Cloudflare operation without a preceding assertPreviewResourceName\(name, kind\) call in the same function: deleteWorkerScript\(/,
+		),
+	])
+
+	const unguardedWranglerDelete = guardedCleanupScript.replace(
+		"\tassertPreviewResourceName(name, 'd1')\n",
+		'',
+	)
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', unguardedWranglerDelete),
+	).toEqual([
+		expect.stringContaining(
+			"runWrangler(['d1', 'delete', name, '--skip-confirmation'])",
+		),
+	])
+
+	const unguardedRestDelete = guardedCleanupScript.replace(
+		"\tassertPreviewResourceName(name, 'queue')\n\tawait cloudflareApiRequest",
+		'\tawait cloudflareApiRequest',
+	)
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', unguardedRestDelete),
+	).toEqual([expect.stringContaining("method: 'DELETE'")])
+
+	// A guard in a different function does not cover this one.
+	const guardMovedToCaller = guardedCleanupScript.replace(
+		"async function removePreviewQueueConsumers(name: string) {\n\t// Comments mentioning 'delete' or --force are not call sites.\n\tassertPreviewResourceName(name, 'queue')\n",
+		"function checkFirst(name: string) {\n\tassertPreviewResourceName(name, 'queue')\n}\n\nasync function removePreviewQueueConsumers(name: string) {\n\tcheckFirst(name)\n",
+	)
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', guardMovedToCaller),
+	).toEqual([expect.stringContaining('removeCloudflareQueueConsumers(')])
+
+	// A newly imported destructive helper is covered without editing the check.
+	const newDestructiveImport = guardedCleanupScript
+		.replace(
+			'\tdeleteWorkerScript,\n',
+			'\tdeleteWorkerScript,\n\tpurgeCache as purgeEverything,\n',
+		)
+		.replace(
+			'function deletePreviewWorkerScript(name: string) {\n',
+			'function purgeAll(name: string) {\n\tpurgeEverything({ name })\n}\n\nfunction deletePreviewWorkerScript(name: string) {\n',
+		)
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', newDestructiveImport),
+	).toEqual([expect.stringContaining('purgeEverything({ name })')])
+
+	// Deleting at module top level has no enclosing function to guard it.
+	const topLevelDelete = `${guardedCleanupScript}\ndeleteWorkerScript({ name: 'kody', dryRun: false })\n`
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', topLevelDelete),
+	).toEqual([expect.stringContaining('outside any function')])
+})
+
+test('preview cleanup guard fails closed when the guard or the deletes disappear', () => {
+	expect(
+		checkPreviewCleanupSource(
+			'preview-resources.ts',
+			"import { deleteWorkerScript } from './resource-utils.ts'\n\nfunction cleanup() {\n\tdeleteWorkerScript({ name: 'kody-pr-1', dryRun: false })\n}\n",
+		),
+	).toEqual([
+		expect.stringContaining('does not define assertPreviewResourceName()'),
+	])
+
+	const noDeletes = `export function assertPreviewResourceName(name: string) {
+	if (!name) throw new Error('bad')
+}
+
+function cleanup(name: string) {
+	assertPreviewResourceName(name)
+}
+`
+	expect(checkPreviewCleanupSource('preview-resources.ts', noDeletes)).toEqual([
+		expect.stringContaining('found no destructive Cloudflare operations'),
+	])
+
+	const definedButNeverCalled = `import { deleteWorkerScript } from './resource-utils.ts'
+
+export function assertPreviewResourceName(name: string) {
+	if (!name) throw new Error('bad')
+}
+
+function cleanup() {
+	deleteWorkerScript({ name: 'kody-pr-1', dryRun: false })
+}
+`
+	expect(
+		checkPreviewCleanupSource('preview-resources.ts', definedButNeverCalled),
+	).toEqual([
+		expect.stringContaining('without a preceding assertPreviewResourceName'),
+		expect.stringContaining('never calls assertPreviewResourceName()'),
+	])
+})
+
+test('the committed preview cleanup script routes every delete through the name guard', async () => {
+	const source = await readFile(defaultPreviewResourcesScriptPath, 'utf8')
+	expect(
+		checkPreviewCleanupSource(defaultPreviewResourcesScriptPath, source),
+	).toEqual([])
+	// Removing any single guard call must be caught, so no delete depends on
+	// a guard placed elsewhere.
+	const guardCalls = [
+		...source.matchAll(/^\tassertPreviewResourceName\(.*\)\n/gm),
+	]
+	expect(guardCalls.length).toBeGreaterThanOrEqual(6)
+	for (const guardCall of guardCalls) {
+		const withoutGuard =
+			source.slice(0, guardCall.index) +
+			source.slice(guardCall.index + guardCall[0].length)
+		expect(
+			checkPreviewCleanupSource(
+				defaultPreviewResourcesScriptPath,
+				withoutGuard,
+			),
+			`removing ${guardCall[0].trim()} went unnoticed`,
+		).not.toEqual([])
+	}
 })
 
 test('current repository deploy configuration passes the guardrails', async () => {

@@ -14,6 +14,12 @@ export const defaultDurableObjectDeletionAllowlistPath = path.join(
 	'do-deletion-allowlist.json',
 )
 export const defaultWorkflowDirectory = path.join('.github', 'workflows')
+export const defaultPreviewResourcesScriptPath = path.join(
+	'tools',
+	'ci',
+	'preview-resources.ts',
+)
+export const previewResourceGuardName = 'assertPreviewResourceName'
 
 type ProtectedMigration = {
 	tag: string
@@ -502,10 +508,157 @@ export function checkWorkflowSource(
 	return errors
 }
 
+/**
+ * Markers that a source line performs (or spells out the arguments of) a
+ * destructive Cloudflare operation: a `wrangler ... delete` argument, the
+ * confirmation-skipping flags, or a REST `DELETE`.
+ */
+const destructiveScriptLinePattern =
+	/'delete'|"delete"|'DELETE'|"DELETE"|--force\b|--skip-confirmation\b/
+
+const destructiveImportedIdentifierPattern =
+	/^(?:delete|remove|destroy|purge|drop)[A-Z]/
+
+const topLevelFunctionStartPattern =
+	/^(?:export\s+)?(?:(?:async\s+)?function\s*\*?\s*[A-Za-z_$][\w$]*|const\s+[A-Za-z_$][\w$]*\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>)/
+
+/**
+ * Names imported from other modules that look destructive
+ * (`deleteWorkerScript`, `removeCloudflareQueueConsumers`, ...). Derived from
+ * the import statements so a newly imported delete helper is covered without
+ * touching this checker.
+ */
+function collectDestructiveImportedIdentifiers(source: string): Array<string> {
+	const identifiers = new Set<string>()
+	for (const match of source.matchAll(
+		/import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g,
+	)) {
+		for (const specifier of (match[1] ?? '').split(',')) {
+			const trimmed = specifier.trim().replace(/^type\s+/, '')
+			if (!trimmed) continue
+			const localName =
+				trimmed
+					.split(/\s+as\s+/)
+					.at(-1)
+					?.trim() ?? ''
+			if (destructiveImportedIdentifierPattern.test(localName)) {
+				identifiers.add(localName)
+			}
+		}
+	}
+	return [...identifiers]
+}
+
+function isDestructiveScriptLine(
+	code: string,
+	destructiveIdentifiers: ReadonlyArray<string>,
+): boolean {
+	if (destructiveScriptLinePattern.test(code)) return true
+	return destructiveIdentifiers.some((identifier) =>
+		new RegExp(`\\b${identifier}\\s*\\(`).test(code),
+	)
+}
+
+function stripLineComment(line: string): string {
+	const trimmed = line.trim()
+	if (trimmed.startsWith('//') || trimmed.startsWith('*')) return ''
+	return line
+}
+
+/**
+ * Every destructive Cloudflare operation in the preview cleanup script must be
+ * preceded, inside the same top-level function, by a call to the preview name
+ * guard. Cleanup runs automatically when a PR closes, so this is the code
+ * review gate that keeps a new delete code path from bypassing the guard.
+ */
+export function checkPreviewCleanupSource(
+	scriptPath: string,
+	source: string,
+): Array<string> {
+	const errors: Array<string> = []
+	const lines = source.split('\n')
+	const guardDefinitionPattern = new RegExp(
+		`function\\s+${previewResourceGuardName}\\s*\\(`,
+	)
+	const guardCallPattern = new RegExp(`\\b${previewResourceGuardName}\\s*\\(`)
+	const destructiveIdentifiers = collectDestructiveImportedIdentifiers(source)
+
+	if (!lines.some((line) => guardDefinitionPattern.test(line))) {
+		errors.push(
+			`${scriptPath}: does not define ${previewResourceGuardName}(); the preview cleanup name guard must live in this script and wrap every delete.`,
+		)
+		return errors
+	}
+
+	let insideImport = false
+	let destructiveSiteCount = 0
+	let guardCallCount = 0
+	let enclosingFunctionStart: number | null = null
+	let guardSeenInEnclosingFunction = false
+
+	for (const [lineIndex, rawLine] of lines.entries()) {
+		if (insideImport) {
+			if (/\bfrom\s*['"][^'"]+['"]/.test(rawLine)) insideImport = false
+			continue
+		}
+		if (/^import\b/.test(rawLine) && !/\bfrom\s*['"][^'"]+['"]/.test(rawLine)) {
+			insideImport = true
+			continue
+		}
+		if (/^import\b/.test(rawLine)) continue
+
+		if (topLevelFunctionStartPattern.test(rawLine)) {
+			enclosingFunctionStart = lineIndex
+			guardSeenInEnclosingFunction = false
+		} else if (/^\}\s*$/.test(rawLine)) {
+			// A bare column-0 closer ends the current top-level function (the
+			// formatter indents nested closers, and a destructured parameter
+			// list continues with `}: {` or `}) {`).
+			enclosingFunctionStart = null
+			guardSeenInEnclosingFunction = false
+		}
+
+		const code = stripLineComment(rawLine)
+		if (!code) continue
+
+		if (guardCallPattern.test(code) && !guardDefinitionPattern.test(code)) {
+			guardCallCount += 1
+			guardSeenInEnclosingFunction = true
+		}
+
+		if (!isDestructiveScriptLine(code, destructiveIdentifiers)) continue
+		destructiveSiteCount += 1
+		if (enclosingFunctionStart === null) {
+			errors.push(
+				`${scriptPath}:${String(lineIndex + 1)} performs a destructive Cloudflare operation outside any function: ${code.trim()}. Wrap it in a function that calls ${previewResourceGuardName}(name, kind) first.`,
+			)
+			continue
+		}
+		if (!guardSeenInEnclosingFunction) {
+			errors.push(
+				`${scriptPath}:${String(lineIndex + 1)} performs a destructive Cloudflare operation without a preceding ${previewResourceGuardName}(name, kind) call in the same function: ${code.trim()}. Every preview cleanup delete must validate the resource name against the preview naming scheme first.`,
+			)
+		}
+	}
+
+	if (destructiveSiteCount === 0) {
+		errors.push(
+			`${scriptPath}: found no destructive Cloudflare operations; the preview cleanup guard check no longer recognizes this script's delete calls and must be updated.`,
+		)
+	}
+	if (guardCallCount === 0) {
+		errors.push(
+			`${scriptPath}: never calls ${previewResourceGuardName}(); every preview cleanup delete must route through the name guard.`,
+		)
+	}
+	return errors
+}
+
 export async function checkDeployGuardrails(
 	baselinePath = defaultDurableObjectBaselinePath,
 	allowlistPath = defaultDurableObjectDeletionAllowlistPath,
 	workflowDirectory = defaultWorkflowDirectory,
+	previewResourcesScriptPath = defaultPreviewResourcesScriptPath,
 ): Promise<DeployGuardrailCheckResult> {
 	const baseline = JSON.parse(
 		await readFile(baselinePath, 'utf8'),
@@ -541,6 +694,13 @@ export async function checkDeployGuardrails(
 		)
 	}
 
+	errors.push(
+		...checkPreviewCleanupSource(
+			previewResourcesScriptPath,
+			await readFile(previewResourcesScriptPath, 'utf8'),
+		),
+	)
+
 	return { ok: errors.length === 0, errors }
 }
 
@@ -555,7 +715,7 @@ export async function main(): Promise<void> {
 		return
 	}
 	console.log(
-		'Deploy guardrails ok: Durable Object history/bindings and workflow deletion policy are protected.',
+		'Deploy guardrails ok: Durable Object history/bindings, workflow deletion policy, and preview cleanup name guard are protected.',
 	)
 }
 
