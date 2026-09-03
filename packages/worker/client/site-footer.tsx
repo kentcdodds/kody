@@ -88,11 +88,14 @@ const taglineCss = {
 const footerLinkColumnMin = '7.5rem'
 
 const footerNavCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: '0.5rem 1.4rem',
+	/* Wide footer: a two-row, five-column row-major grid, not flex-wrap.
+	   Wrapping left the first few links on one row and stacked the rest. */
+	display: 'grid',
+	gridTemplateColumns: 'repeat(5, max-content)',
+	columnGap: '1.4rem',
+	rowGap: '0.35rem',
 	justifySelf: 'end',
-	justifyContent: 'flex-end',
+	justifyContent: 'end',
 	'& a': {
 		color: colors.textMuted,
 		textDecoration: 'none',
