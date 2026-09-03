@@ -245,6 +245,7 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	const conflicts = await findReservedUsernameConflicts(
 		db,
 		new Set(['brandnew', 'faq', 'fuck']),
+		['fuck'],
 	)
 	expect(conflicts).toEqual([
 		{ username: 'brandnew', stableUserId: conflictStableId },

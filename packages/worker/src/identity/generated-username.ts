@@ -15,9 +15,9 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 /**
  * Find an available username starting from a preferred base (for example a
  * provider handle or an email local part). Numeric suffixes are used only when
- * the base itself is claimable but taken — a reserved base still collides
- * after `-2` because reserved tokens of length 4+ match as substrings.
- * Otherwise a random compact candidate is drawn until one is claimable.
+ * the base itself is claimable but taken — a reserved base with substring
+ * eligibility still collides after `-2`. Otherwise a random compact candidate
+ * is drawn until one is claimable.
  */
 export async function getAvailableUsernameFromBase(
 	db: D1Database,

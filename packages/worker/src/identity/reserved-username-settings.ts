@@ -294,6 +294,7 @@ const conflictQueryPageSize = 200
 export async function findReservedUsernameConflicts(
 	db: D1Database,
 	effectiveUsernames: ReadonlySet<string>,
+	added?: Iterable<string>,
 ) {
 	const conflicts: Array<ReservedUsernameConflict> = []
 	let offset = 0
@@ -310,7 +311,9 @@ export async function findReservedUsernameConflicts(
 		const rows = result.results ?? []
 		for (const row of rows) {
 			if (
-				!usernameCollidesWithReservedNames(row.username, effectiveUsernames)
+				!usernameCollidesWithReservedNames(row.username, effectiveUsernames, {
+					added,
+				})
 			) {
 				continue
 			}
@@ -328,7 +331,11 @@ export async function findReservedUsernameConflicts(
 export async function loadReservedUsernameAdminSnapshot(env: Env) {
 	const record = await loadReservedUsernameRecord(env)
 	const effective = computeEffectiveReservedUsernames(record)
-	const conflicts = await findReservedUsernameConflicts(env.APP_DB, effective)
+	const conflicts = await findReservedUsernameConflicts(
+		env.APP_DB,
+		effective,
+		record.added,
+	)
 	return {
 		builtIn: [...builtInReservedUsernameList],
 		added: record.added,

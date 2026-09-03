@@ -75,13 +75,16 @@ test('reserved username validation rejects brand, support, and infrastructure na
 	).toBe(false)
 })
 
-test('reserved username claims match compact equality and long-token substrings', () => {
+test('reserved username claims match compact equality and targeted substrings', () => {
 	expect(isReservedUsername('devnull')).toBe(true)
 	expect(isReservedUsername('acmechallenge')).toBe(true)
 	expect(isReservedUsername('robot')).toBe(false)
 	expect(isReservedUsername('developer')).toBe(false)
 	expect(isReservedUsername('assistant')).toBe(false)
 	expect(isReservedUsername('analytics')).toBe(false)
+	expect(isReservedUsername('user-me')).toBe(false)
+	expect(isReservedUsername('super-help')).toBe(false)
+	expect(isReservedUsername('mcp-test-user')).toBe(false)
 	expect(getReservedUsernameError('devnull')).toBe('This username is reserved.')
 
 	const addedSwears = { added: ['fuck', 'ass'] }
@@ -108,7 +111,7 @@ test('reserved username claims match compact equality and long-token substrings'
 
 	expect(isUsernameEffectivelyReserved('super-faq')).toBe(false)
 	expect(isUsernameEffectivelyReserved('f-aq')).toBe(true)
-	expect(isUsernameEffectivelyReserved('super-help')).toBe(true)
+	expect(isUsernameEffectivelyReserved('super-help')).toBe(false)
 	expect(
 		isUsernameEffectivelyReserved('super-help', { removed: ['help'] }),
 	).toBe(false)

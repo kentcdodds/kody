@@ -279,6 +279,34 @@ const permanentlyReservedSystemLocalSet = new Set<string>(
 )
 
 /**
+ * Built-in denylist tokens that also block compact substrings (brand, system
+ * mail, and `kody`-prefixed names). Infrastructure labels such as `user`,
+ * `test`, and `help` stay exact/compact-equal only; abuse and impersonation
+ * lean on KV-added terms plus operator discretion.
+ */
+const builtInReservedUsernameSubstringRoots = new Set<string>([
+	'kent',
+	'kentcdodds',
+	...permanentlyReservedSystemLocals,
+])
+
+function isBuiltInSubstringEligibleToken(normalizedReserved: string) {
+	if (builtInReservedUsernameSubstringRoots.has(normalizedReserved)) {
+		return true
+	}
+	return normalizedReserved.startsWith('kody')
+}
+
+function isSubstringEligibleReservedToken(
+	normalizedReserved: string,
+	kvAdded: ReadonlySet<string>,
+) {
+	if (kvAdded.has(normalizedReserved)) return true
+	if (!reservedUsernames.has(normalizedReserved)) return false
+	return isBuiltInSubstringEligibleToken(normalizedReserved)
+}
+
+/**
  * Local parts shaped like the legacy inbound reply-token aliases
  * (`kody-r-<hex>`). Reserved so a user can never register a username that
  * collides with that address space.
@@ -310,20 +338,24 @@ export function isBuiltInReservedUsername(username: string) {
  * generated usernames, and admin conflict listing.
  *
  * Matching is case-insensitive (lowercase + trim). Hyphens and underscores
- * are stripped before equality and substring checks, including on input that
- * is not a valid stored username. Then substring only when the compact
- * reserved token is at least four characters (so `ass` does not block
- * `assistant`).
+ * are stripped before equality checks, including on input that is not a valid
+ * stored username. Every effective token blocks exact and compact-equal claims.
+ * Substring matching applies only to KV-added tokens and built-in brand/system
+ * roots (`kody`, `kent`, permanent system locals, and other `kody`-prefixed
+ * built-ins). When substring applies, the compact reserved token must be at
+ * least four characters (so KV `ass` does not block `assistant`).
  */
 export function usernameCollidesWithReservedNames(
 	username: string,
 	reservedNames: Iterable<string>,
+	options: { added?: Iterable<string> } = {},
 ) {
 	const normalized = normalizeReservedUsername(username)
 	if (!normalized) return false
 	if (reservedUsernamePrefixPattern.test(normalized)) return true
 	const compact = compactReservedUsername(normalized)
 	if (!compact) return false
+	const kvAdded = toNormalizedSet(options.added)
 	for (const reserved of reservedNames) {
 		const normalizedReserved = normalizeReservedUsername(reserved)
 		if (!normalizedReserved) continue
@@ -332,6 +364,7 @@ export function usernameCollidesWithReservedNames(
 		if (!compactReserved) continue
 		if (compact === compactReserved) return true
 		if (
+			isSubstringEligibleReservedToken(normalizedReserved, kvAdded) &&
 			compactReserved.length >= reservedUsernameSubstringMinLength &&
 			compact.includes(compactReserved)
 		) {
@@ -389,6 +422,7 @@ export function isUsernameEffectivelyReserved(
 	return usernameCollidesWithReservedNames(
 		normalized,
 		computeEffectiveReservedUsernames(overrides),
+		{ added: overrides.added },
 	)
 }
 

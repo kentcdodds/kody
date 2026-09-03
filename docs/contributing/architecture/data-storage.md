@@ -1374,9 +1374,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   not remove it. The effective reserved token set is
   `(builtIn ∪ added) − removed`. `removed` cannot unreserve system-email locals
   or `kody`-prefixed built-in names. New username claims match that set
-  case-insensitively by exact token, hyphen/underscore-stripped equality, or
-  substring of a compact token of length 4 or more (see
-  [Security](../security.md)). When the key is missing or unreadable,
+  case-insensitively by exact token or hyphen/underscore-stripped equality;
+  compact substrings apply only to KV-added tokens and built-in brand/system
+  roots (see [Security](../security.md)). When the key is missing or unreadable,
   signup-facing checks fail closed to the code-defined built-in list. Admins
   manage it from `/admin/reserved-usernames` and the `adminReservedUsernameList`
   / `adminReservedUsernameAdd` / `adminReservedUsernameRemove` capabilities.

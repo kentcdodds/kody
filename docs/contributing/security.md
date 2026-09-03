@@ -212,23 +212,29 @@ permanently locked. Signup, username change, admin user creation, and social
 username generation consult the effective set (built-in plus KV).
 
 A new claim fails when the case-insensitive (lowercase-trimmed) username is an
-exact reserved token, when the hyphen/underscore-stripped form equals a reserved
-token, or when a reserved token of length 4 or more is a substring of that
-compact form. Underscores are stripped for matching only; stored handles still
-allow letters, digits, and hyphens (3–32, alphanumeric edges). Three-letter
-tokens still block exact and compact-equal claims (`f-aq` matches `faq`) but do
-not substring-match (`assistant` is allowed even if `ass` is added in KV). The
-user-facing error is `This username is reserved.` Accounts that already hold a
-colliding username keep it at signup; `adminReservedUsernameList` `conflicts`
-lists those holders when invoked. Resolve conflicts before expanding the
-built-in list; do not treat `conflicts` as a mandatory post-expansion run.
-Operators may still change an existing username at their discretion when a
-handle is abusive, reserved, impersonating, or otherwise a problem — that policy
-is stated on [`/terms`](https://kody.codes/terms). Platform accounts still claim
-an exact token from the effective reserved set (built-in plus KV-added, minus
-removed), not a substring collision. Generated usernames keep numeric suffixes
-only when the preferred base is claimable but taken; a reserved base skips to a
-random compact candidate because `support-2` still contains `support`.
+exact reserved token or when the hyphen/underscore-stripped form equals a
+reserved token. Substring matching is narrower: only KV-added tokens and
+built-in brand/system roots (`kody`, `kent`, permanent system-email locals, and
+other `kody`-prefixed built-ins) block compact substrings, and only when the
+compact token is length 4 or more. Infrastructure labels such as `user`, `test`,
+and `help` stay exact/compact-equal only; abuse and impersonation also lean on
+KV-added terms and operator discretion on [`/terms`](https://kody.codes/terms).
+Underscores are stripped for matching only; stored handles still allow letters,
+digits, and hyphens (3–32, alphanumeric edges). Three-letter tokens still block
+exact and compact-equal claims (`f-aq` matches `faq`) but do not substring-match
+(`assistant` is allowed even if `ass` is added in KV). The user-facing error is
+`This username is reserved.` Accounts that already hold a colliding username
+keep it at signup; `adminReservedUsernameList` `conflicts` lists those holders
+when invoked. Resolve conflicts before expanding the built-in list; do not treat
+`conflicts` as a mandatory post-expansion run. Operators may still change an
+existing username at their discretion when a handle is abusive, reserved,
+impersonating, or otherwise a problem — that policy is stated on
+[`/terms`](https://kody.codes/terms). Platform accounts still claim an exact
+token from the effective reserved set (built-in plus KV-added, minus removed),
+not a substring collision. Generated usernames keep numeric suffixes only when
+the preferred base is claimable but taken; a substring-eligible reserved base
+skips to a random compact candidate because `support-2` still contains
+`support`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:
