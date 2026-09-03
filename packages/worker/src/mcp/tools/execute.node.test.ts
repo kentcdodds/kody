@@ -780,6 +780,44 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		inProgress: true,
 		status: 'running',
 	})
+
+	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaMessage = buildEntitlementLimitMessage({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+	})
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+		...finishedRun,
+		id: 'run-quota-replay-1',
+		status: 'error',
+		errorName: 'EntitlementLimitError',
+		errorMessage: quotaMessage,
+		metadata: {},
+	})
+	mockPerformanceSequence(5, 6)
+	const quotaReplayed = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-quota-replay',
+	})
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(quotaReplayed.isError).toBe(true)
+	expect(quotaReplayed.structuredContent.error).toBe(quotaMessage)
+	expect(quotaReplayed.structuredContent.entitlement).toEqual({
+		code: entitlementLimitErrorCode,
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: quotaLimit,
+		current: quotaLimit,
+		upgradeHint: quotaHint,
+		used: quotaLimit,
+		remaining: 0,
+	})
 })
 
 test('execute tool claims a keyed run, passes the handle, and returns runId', async () => {

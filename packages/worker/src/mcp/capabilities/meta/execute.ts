@@ -140,9 +140,7 @@ export const executeCapability = defineDomainCapability(
 							runId: existing.id,
 							replayed: true,
 							status: 'error' as const,
-							error:
-								existing.errorMessage ??
-								'Execute failed (replayed from run record).',
+							...replayedExecuteError(existing.errorMessage),
 							...(retained !== undefined ? { result: retained } : {}),
 							logs: [],
 						}
@@ -200,9 +198,7 @@ export const executeCapability = defineDomainCapability(
 							runId: claim.run.id,
 							replayed: true,
 							status: 'error' as const,
-							error:
-								claim.run.errorMessage ??
-								'Execute failed (replayed from run record).',
+							...replayedExecuteError(claim.run.errorMessage),
 							...(retained !== undefined ? { result: retained } : {}),
 							logs: [],
 						}
@@ -319,3 +315,11 @@ export const executeCapability = defineDomainCapability(
 		},
 	},
 )
+
+function replayedExecuteError(errorMessage: string | null | undefined) {
+	const error = errorMessage ?? 'Execute failed (replayed from run record).'
+	return {
+		error,
+		...entitlementStructuredContent(error),
+	}
+}
