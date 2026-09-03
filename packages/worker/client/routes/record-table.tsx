@@ -29,7 +29,9 @@ export {
  * 434px right half of a split, and `mode` chooses where it renders rather
  * than which component the screen composes. Rows stay real anchors built
  * from `createListDetailRoute`, so the selected record stays in the URL and
- * scroll-preserving navigation continues to work.
+ * scroll-preserving navigation continues to work. The selected row (or the
+ * off-window pane) carries `data-record-focus` so a deep link can scroll to
+ * it instead of leaving the reader at the top of the list.
  *
  * Sizing is answered by container queries, not viewport breakpoints: these
  * tables live inside a 200px-railed shell, so the viewport says very little
@@ -319,6 +321,9 @@ const rowCss = {
 		backgroundColor: colors.primarySoftest,
 		boxShadow: `inset 3px 0 0 ${colors.primary}`,
 	},
+	// Same offset as `accountSectionCss`: clear the sticky site header when
+	// scroll restoration lands on this row.
+	'&[data-record-focus]': { scrollMarginTop: '5.5rem' },
 	[hoverMq]: {
 		'&:not([data-selected]):hover': { backgroundColor: colors.background },
 	},
@@ -415,6 +420,12 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		const orphanedRecord = Boolean(
 			mode === 'expand' && handle.props.record && !expandedInTable,
 		)
+		const focusPending = Boolean(
+			selectable &&
+			selectedId != null &&
+			!handle.props.record &&
+			handle.props.busy,
+		)
 
 		const table = (
 			<table aria-label={handle.props.ariaLabel} mix={css(tableCss)}>
@@ -446,6 +457,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 							<tr
 								key={row.id}
 								data-selected={selected ? 'true' : undefined}
+								data-record-focus={selected ? 'true' : undefined}
 								mix={css(rowCss)}
 							>
 								{columns.map((column) => {
@@ -529,6 +541,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 			<section
 				aria-label={handle.props.ariaLabel}
 				aria-busy={handle.props.busy ? 'true' : undefined}
+				data-record-focus-pending={focusPending ? 'true' : undefined}
 				mix={css(shellCss)}
 			>
 				<div mix={[css(paneCss), css(cardFallbackCss)]}>
@@ -578,7 +591,12 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 					) : null}
 				</div>
 				{(mode === 'pane' || orphanedRecord) && handle.props.record ? (
-					<div mix={css(paneCss)}>{handle.props.record}</div>
+					<div
+						data-record-focus={orphanedRecord ? 'true' : undefined}
+						mix={css({ ...paneCss, scrollMarginTop: '5.5rem' })}
+					>
+						{handle.props.record}
+					</div>
 				) : null}
 			</section>
 		)

@@ -1,6 +1,9 @@
 import { addEventListeners, type Handle } from 'remix/ui'
 import {
+	isRecordFocusInViewport,
 	parseSavedScrollPositions,
+	recordFocusPendingSelector,
+	recordFocusSelector,
 	scrollRestorationStorageKey,
 	serializeSavedScrollPositions,
 } from '#universal/router-scroll-restoration.ts'
@@ -146,6 +149,34 @@ function applyWindowScroll(
 			// before falling back.
 			if (!isFinalAttempt) return false
 			if (detail.preventScrollReset) return true
+			window.scrollTo({ left: 0, top: 0, behavior: 'instant' })
+			return true
+		}
+		case 'record-focus': {
+			const element = document.querySelector(recordFocusSelector)
+			if (element) {
+				const viewportHeight =
+					window.innerHeight || document.documentElement.clientHeight
+				if (
+					!isRecordFocusInViewport(
+						element.getBoundingClientRect(),
+						viewportHeight,
+					)
+				) {
+					element.scrollIntoView({ behavior: 'instant', block: 'start' })
+				}
+				return true
+			}
+			// A selected record can land after the first paint (JSON list, or
+			// the detail payload arriving after the row). Retry only while the
+			// table says that selection is still loading — not on every page.
+			if (
+				!isFinalAttempt &&
+				document.querySelector(recordFocusPendingSelector)
+			) {
+				return false
+			}
+			if (detail.historyAction === 'load') return true
 			window.scrollTo({ left: 0, top: 0, behavior: 'instant' })
 			return true
 		}

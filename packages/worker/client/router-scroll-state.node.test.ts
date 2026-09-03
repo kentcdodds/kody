@@ -22,7 +22,7 @@ test('scroll restoration history state and navigation targets follow push, pop, 
 			historyAction: 'push',
 			location: '/account/secrets',
 		}),
-	).toEqual({ type: 'top' })
+	).toEqual({ type: 'record-focus' })
 	expect(
 		getScrollRestorationTarget({
 			historyAction: 'push',
@@ -49,7 +49,7 @@ test('scroll restoration history state and navigation targets follow push, pop, 
 			historyAction: 'pop',
 			location: '/community',
 		}),
-	).toEqual({ type: 'top' })
+	).toEqual({ type: 'record-focus' })
 	expect(
 		getScrollRestorationTarget({
 			historyAction: 'load',
@@ -62,13 +62,19 @@ test('scroll restoration history state and navigation targets follow push, pop, 
 			historyAction: 'load',
 			location: '/',
 		}),
-	).toEqual({ type: 'preserve' })
+	).toEqual({ type: 'record-focus' })
 	expect(
 		getScrollRestorationTarget({
 			historyAction: 'load',
 			location: '/#invite',
 		}),
 	).toEqual({ type: 'hash', id: 'invite' })
+	expect(
+		getScrollRestorationTarget({
+			historyAction: 'load',
+			location: '/admin/users/abc',
+		}),
+	).toEqual({ type: 'record-focus' })
 })
 
 test('a clamped scroll does not replace a saved Y the document cannot reach yet', () => {
