@@ -1,11 +1,11 @@
 # Public marketing pages
 
-Logged-out landing, pricing, FAQ, legal, guides, blog, Discord invite.
+Logged-out landing, pricing, FAQ, support, legal, guides, blog, Discord invite.
 
 ## How to get there
 
-`/`, `/pricing`, `/faq`, `/privacy`, `/terms`, `/guides`, `/guides/:slug`,
-`/guides/connect`, `/blog`, `/blog/:slug`, `/discord`.
+`/`, `/pricing`, `/faq`, `/support`, `/privacy`, `/terms`, `/guides`,
+`/guides/:slug`, `/guides/connect`, `/blog`, `/blog/:slug`, `/discord`.
 
 ## Drive it
 

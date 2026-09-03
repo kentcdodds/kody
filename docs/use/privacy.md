@@ -273,6 +273,8 @@ cleanup periods:
 - Stripe webhook event records: 30 days
 - Non-current published bundle artifacts: at least 30 days, then eligible for
   removal when no active source or repo session needs them
+- Unverified person accounts: seven days after signup when the email is still
+  unverified and no sign-in provider is linked
 
 Deletion from a subprocessor's backups or logs follows that subprocessor's own
 retention cycle. Records may be kept longer when required by law, needed to

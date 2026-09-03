@@ -33,10 +33,8 @@ Session cookie behavior is implemented in
   age
 - the browser `Max-Age` and `resolveRequestAuth` both enforce that absolute
   lifetime: a cookie whose `issuedAt` plus TTL is in the past is treated as
-  signed out and the cookie is cleared. There is no schema-introduction
-  timestamp, so a legacy v2 cookie that omits `issuedAt` is also rejected (those
-  cookies are already rare; password-change lockout already fails them closed
-  once `users.password_changed_at` is set)
+  signed out and the cookie is cleared. A cookie that omits `issuedAt` is
+  rejected the same way.
 
 The cookie payload stores:
 

@@ -26,3 +26,7 @@ node tools/control-kody.ts request GET /signup --origin http://localhost:3742 --
   change is the signup path itself.
 - Signup copy: "By creating an account you agree to the Terms of Service and
   acknowledge the Privacy Policy" (`/terms`, `/privacy`).
+- Signup gating is `invite` / `open` / `waitlist` from `/admin/invites`
+  (`SIGNUP_MODE` is the default when no override is set). Production defaults to
+  invite.
+- Person accounts that stay unverified for seven days are deleted.

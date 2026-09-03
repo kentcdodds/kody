@@ -72,7 +72,7 @@ Read in order for a full tour, or jump to a topic.
 - [Privacy](./privacy.md) — what Kody stores, how connected accounts work, and
   what deployment admins can see (Terms and Acceptable Use are in-app at
   [`/terms`](https://kody.codes/terms))
-- [Troubleshooting](./troubleshooting.md)
+- [Troubleshooting](./troubleshooting.md) — `/support` and common MCP issues
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial
   integrations and community-built tools

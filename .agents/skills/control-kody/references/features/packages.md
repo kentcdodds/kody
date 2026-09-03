@@ -38,3 +38,6 @@ assert the empty state.
   production.
 - Unlocking a locked package is website-only.
 - Making a package public or private requires typing the slug.
+- When default-branch HEAD is newer than the last publish, the Code tab shows
+  **HEAD ahead of published**. Owners click that badge to review the diff and
+  publish HEAD on `/account/packages/:packageId/approve-publish`.

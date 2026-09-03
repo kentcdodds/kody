@@ -583,16 +583,15 @@ change to these decisions here so future agents do not relitigate them.
   timestamp (missing `issuedAt` fails closed once a password change exists) and
   also rejects cookies whose `issuedAt` plus the cookie TTL (7 days, or 30 with
   remember-me) is in the past, clearing the cookie the same way as a
-  password-change revocation. There is no schema-introduction timestamp, so a
-  legacy v2 cookie that omits `issuedAt` is treated as already expired. Package-
-  app sessions already expire server-side via `expiresAt` (12 hour fallback from
-  `issuedAt` when the field is missing). `/mcp` applies the password-change
-  timestamp to the access token `createdAt` (Unix seconds) so already-issued
-  bearers fail closed as `invalid_token`; MCP bearer lifetime stays the OAuth
-  provider TTLs. A signed-in password change re-issues the current browser
-  cookie so that tab stays signed in; every other session still dies. Reclaiming
-  an unverified account on a provider-verified social match uses the same
-  `password_changed_at` lockout.
+  password-change revocation. A cookie that omits `issuedAt` is treated as
+  already expired. Package-app sessions expire server-side via `expiresAt` (12
+  hour fallback from `issuedAt` when the field is missing). `/mcp` applies the
+  password-change timestamp to the access token `createdAt` (Unix seconds) so
+  already-issued bearers fail closed as `invalid_token`; MCP bearer lifetime
+  stays the OAuth provider TTLs. A signed-in password change re-issues the
+  current browser cookie so that tab stays signed in; every other session still
+  dies. Reclaiming an unverified account on a provider-verified social match
+  uses the same `password_changed_at` lockout.
 - **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
   mismatched DCR client for **their** grants only. `deleteClient` runs only when
   `user_mcp_oauth_clients` shows they own that registration. Shared host clients
