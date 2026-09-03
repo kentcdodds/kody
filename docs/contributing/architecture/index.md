@@ -148,9 +148,10 @@ metadata. See [OAuth integrations](./integrations.md).
 
 ## Source of truth in code
 
-- Origin entrypoint: `packages/worker/src/index.ts` (dev/test/preview and
-  fresh/ambiguous production). Steady-state production uses
-  `packages/worker/src/production-worker.ts` from the generated deploy config.
+- Origin entrypoint: `packages/worker/src/index.ts` (dev/test and
+  fresh/ambiguous production). Steady-state production and every preview origin
+  use `packages/worker/src/production-worker.ts` from the generated deploy
+  config (`tools/ci/production-resources.ts`, `tools/ci/preview-resources.ts`).
 - Platform entrypoint: `packages/worker/src/platform-worker.ts`
 - Runtime entrypoint: `packages/worker/src/runtime-worker.ts`
 - Jobs entrypoint: `packages/jobs-worker/src/index.ts`

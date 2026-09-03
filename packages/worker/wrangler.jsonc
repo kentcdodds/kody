@@ -31,11 +31,13 @@
 	"limits": {
 		"subrequests": 100000,
 	},
-	// Dev/test/preview entry. Production's slim `production-worker.ts` is
-	// deploy-generated only (`tools/ci/production-resources.ts`) after the
-	// live origin script is classified as already transferred. Do not set
-	// env.production.main here — local production-mode and preview inherit
-	// this full entry so historical Durable Object migrations can replay.
+	// Dev/test entry. The slim `production-worker.ts` is deploy-generated only:
+	// production (`tools/ci/production-resources.ts`) after the live origin
+	// script is classified as already transferred, preview
+	// (`tools/ci/preview-resources.ts`) always, since a per-PR origin never
+	// owns a Durable Object class. Do not set env.production.main or
+	// env.preview.main here — local production-mode dev inherits this full
+	// entry so historical Durable Object migrations can replay.
 	"main": "./src/index.ts",
 	"minify": true,
 	"upload_source_maps": true,
@@ -593,8 +595,11 @@
 			},
 		},
 		"preview": {
-			// Fresh preview scripts replay the whole migration chain, so it must
-			// not create JobManager/JobRunner: the class is not exported here
+			// Deployed preview origins upload the slim entry and own no Durable
+			// Object class, so `tools/ci/preview-resources.ts` strips this block
+			// from the generated deploy config. It only replays for the full
+			// `index.ts` entry (local `--env preview` runs), and so must not
+			// create JobManager/JobRunner: the class is not exported here
 			// anymore (it lives in the jobs worker, ADR 0016). Same chain as the
 			// top level minus the v6/v9 JobManager+JobRunner pair.
 			"migrations": [

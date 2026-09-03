@@ -16,24 +16,25 @@ import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { originWorkerHandler } from './origin-handler.ts'
 
 /**
- * Dev/test/preview origin entry. `env.test` (local dev, workers-unit,
- * Playwright) and `env.preview` both inherit this top-level `main`:
+ * Dev/test origin entry. `env.test` (local dev, workers-unit, Playwright)
+ * inherits this top-level `main`: it has no separate platform/runtime/jobs
+ * scripts, so this single script owns every Durable Object and
+ * `ctx.exports` WorkerEntrypoint locally (no `script_name` on any binding).
  *
- * - `env.test` has no separate platform/runtime/jobs scripts, so this single
- *   script owns every Durable Object and `ctx.exports` WorkerEntrypoint
- *   locally (no `script_name` on any binding).
- * - `env.preview`'s fresh-per-PR bootstrap deploy briefly owns the
- *   platform/runtime classes too, before the platform and runtime preview
- *   scripts exist to hand them off to (see
- *   docs/contributing/architecture/platform-worker-migration-runbook.md and
- *   the runtime-worker counterpart).
+ * Deployed environments use the slimmer `production-worker.ts` entry from a
+ * deploy-generated Wrangler config:
  *
- * Production uses the slimmer `production-worker.ts` entry from a
- * deploy-generated Wrangler config (`tools/ci/production-resources.ts`)
- * only when the origin script is already in steady state (platform/runtime
- * own the transferred classes). A fresh production script still deploys
- * this full entry first so `new_sqlite_classes` can replay. See
- * `tools/ci/origin-production-deploy-state.ts`.
+ * - Production (`tools/ci/production-resources.ts`) only when the origin
+ *   script is already in steady state (platform/runtime own the transferred
+ *   classes). A fresh production script still deploys this full entry first
+ *   so `new_sqlite_classes` can replay before the transfer.
+ * - Preview (`tools/ci/preview-resources.ts`) always: the per-PR platform
+ *   and runtime scripts create their own classes, so the preview origin
+ *   never owns one and never bootstraps. This full entry is only the
+ *   fallback for a preview origin created before that topology that still
+ *   owns transferred classes.
+ *
+ * See `tools/ci/origin-production-deploy-state.ts`.
  */
 export {
 	RepoSession,
