@@ -1,6 +1,9 @@
 import { type Handle, css } from 'remix/ui'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
-import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
+import {
+	layoutMaxWidths,
+	pageGutter,
+} from '#universal/styles/style-primitives.ts'
 
 export type SiteFooterProps = {
 	loggedIn: boolean
@@ -49,7 +52,8 @@ const footerCss = {
 const footerInnerCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
-	padding: '2.2rem clamp(1.25rem, 4vw, 2.5rem)',
+	paddingBlock: '2.2rem',
+	paddingInline: pageGutter,
 	display: 'grid',
 	gridTemplateColumns: '1fr auto 1fr',
 	alignItems: 'center',
@@ -81,38 +85,39 @@ const taglineCss = {
 	fontOpticalSizing: 'auto' as const,
 }
 
+const footerLinkColumnMin = '7.5rem'
+
 const footerNavCss = {
 	display: 'flex',
-	gap: '1.4rem',
+	flexWrap: 'wrap' as const,
+	gap: '0.5rem 1.4rem',
 	justifySelf: 'end',
-	'@media (max-width: 720px)': {
-		justifySelf: 'center',
-	},
+	justifyContent: 'flex-end',
 	'& a': {
 		color: colors.textMuted,
 		textDecoration: 'none',
 		whiteSpace: 'nowrap' as const,
-		flexShrink: 0,
 		// Same fast color ease as the header nav — one voice for nav links.
 		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
-	/* Stacked on phones: the links in a row sit close enough to mis-tap, and
-	   the column gives each one a comfortable target without the 44px minimum
-	   the header menu needs (these are the last thing on the page, not the
-	   primary nav). Centred to match the rest of the stacked footer. */
-	'@media (max-width: 560px)': {
-		flexDirection: 'column' as const,
-		alignItems: 'center',
-		gap: '0.2rem',
+	/* Stacked footer: wrap into as many columns as the inner measure holds
+	   instead of one 10-row ladder or a nowrap row that clips. auto-fit with
+	   min(100%, …) collapses to a single column before it overflows. */
+	'@media (max-width: 720px)': {
+		display: 'grid',
+		width: '100%',
+		gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${footerLinkColumnMin}), max-content))`,
+		justifySelf: 'center',
+		justifyContent: 'center',
+		columnGap: '1.25rem',
+		rowGap: '0.15rem',
 		'& a': {
 			display: 'flex',
 			alignItems: 'center',
+			justifyContent: 'center',
 			minHeight: '40px',
 			paddingInline: '0.75rem',
-			color: colors.textMuted,
-			textDecoration: 'none',
-			transition: `color ${transitions.fast}`,
 		},
 	},
 }
