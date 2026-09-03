@@ -85,6 +85,13 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		current: stockLimit,
 		upgradeHint: stockHint,
 	})
+	expect(toMcpEntitlementMetadata(new Error(intervalDenial.message))).toEqual({
+		code: jobIntervalFloorErrorCode,
+		resource: 'scheduled_jobs',
+		plan: 'free',
+		upgradeHint: buildJobIntervalFloorUpgradeHint(),
+		minIntervalMs: intervalMs,
+	})
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()
 	expect(entitlementStructuredContent(new Error('Boom'))).toEqual({})
 })

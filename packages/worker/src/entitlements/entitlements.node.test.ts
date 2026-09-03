@@ -4,7 +4,10 @@ import {
 	EntitlementLimitError,
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
+	buildJobIntervalFloorMessage,
+	jobIntervalFloorErrorCode,
 	parseEntitlementLimitMessage,
+	parseJobIntervalFloorMessage,
 } from './errors.ts'
 import { parseStripePlanName, planLimits } from '#universal/plans.ts'
 import {
@@ -210,6 +213,28 @@ test('entitlement limit messages always identify a known plan name', () => {
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: your "enterprise" plan allows at most 100 concurrent workflows and you currently have 100. hint',
+		),
+	).toBeNull()
+})
+
+test('job interval floor messages parse back to known plan and interval', () => {
+	const details = {
+		code: jobIntervalFloorErrorCode,
+		plan: 'free' as const,
+		minIntervalMs: planLimits.free.minJobIntervalMs,
+		upgradeHint: 'Space this job out, or upgrade at /account/billing.',
+	}
+	expect(
+		parseJobIntervalFloorMessage(buildJobIntervalFloorMessage(details)),
+	).toEqual(details)
+	expect(
+		parseJobIntervalFloorMessage(
+			'Your "enterprise" plan cannot run jobs more often than every 15 minutes. hint',
+		),
+	).toBeNull()
+	expect(
+		parseJobIntervalFloorMessage(
+			'Your "free" plan cannot run jobs more often than every often. hint',
 		),
 	).toBeNull()
 })

@@ -5,6 +5,7 @@ import {
 	isJobIntervalFloorError,
 	jobIntervalFloorErrorCode,
 	parseEntitlementLimitMessage,
+	parseJobIntervalFloorMessage,
 	type EntitlementLimitErrorDetails,
 	type JobIntervalFloorErrorDetails,
 } from '#worker/entitlements/errors.ts'
@@ -41,17 +42,14 @@ export function toMcpEntitlementMetadata(
 		return toEntitlementLimitMetadata(error.details)
 	}
 	if (isJobIntervalFloorError(error)) {
-		return {
-			code: jobIntervalFloorErrorCode,
-			resource: 'scheduled_jobs',
-			plan: error.details.plan,
-			upgradeHint: error.details.upgradeHint,
-			minIntervalMs: error.details.minIntervalMs,
-		}
+		return toJobIntervalMetadata(error.details)
 	}
 
-	const parsed = parseEntitlementLimitMessage(getErrorMessage(error))
-	if (parsed) return toEntitlementLimitMetadata(parsed)
+	const message = getErrorMessage(error)
+	const entitlementDetails = parseEntitlementLimitMessage(message)
+	if (entitlementDetails) return toEntitlementLimitMetadata(entitlementDetails)
+	const intervalDetails = parseJobIntervalFloorMessage(message)
+	if (intervalDetails) return toJobIntervalMetadata(intervalDetails)
 	return undefined
 }
 
@@ -81,5 +79,17 @@ function toEntitlementLimitMetadata(
 		...metadata,
 		used: details.current,
 		remaining: Math.max(0, details.limit - details.current),
+	}
+}
+
+function toJobIntervalMetadata(
+	details: JobIntervalFloorErrorDetails,
+): McpEntitlementMetadata {
+	return {
+		code: jobIntervalFloorErrorCode,
+		resource: 'scheduled_jobs',
+		plan: details.plan,
+		upgradeHint: details.upgradeHint,
+		minIntervalMs: details.minIntervalMs,
 	}
 }

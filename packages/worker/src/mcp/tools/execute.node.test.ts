@@ -4,9 +4,11 @@ import { expect, test, vi } from 'vitest'
 import { planLimits } from '#universal/plans.ts'
 import {
 	EntitlementLimitError,
+	JobIntervalFloorError,
 	buildEntitlementLimitMessage,
 	buildEntitlementUpgradeHint,
 	entitlementLimitErrorCode,
+	jobIntervalFloorErrorCode,
 } from '#worker/entitlements/errors.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
@@ -817,6 +819,34 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		upgradeHint: quotaHint,
 		used: quotaLimit,
 		remaining: 0,
+	})
+
+	const intervalDenial = new JobIntervalFloorError({
+		plan: 'free',
+		minIntervalMs: planLimits.free.minJobIntervalMs,
+	})
+	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+		...finishedRun,
+		id: 'run-interval-replay-1',
+		status: 'error',
+		errorName: 'JobIntervalFloorError',
+		errorMessage: intervalDenial.message,
+		metadata: {},
+	})
+	mockPerformanceSequence(7, 8)
+	const intervalReplayed = await handler({
+		code: 'export default async () => ({ shouldNotRun: true })',
+		idempotencyKey: 'spawn-agent-1',
+		conversationId: 'conv-interval-replay',
+	})
+	expect(intervalReplayed.isError).toBe(true)
+	expect(intervalReplayed.structuredContent.error).toBe(intervalDenial.message)
+	expect(intervalReplayed.structuredContent.entitlement).toEqual({
+		code: jobIntervalFloorErrorCode,
+		resource: 'scheduled_jobs',
+		plan: 'free',
+		upgradeHint: intervalDenial.details.upgradeHint,
+		minIntervalMs: planLimits.free.minJobIntervalMs,
 	})
 })
 
