@@ -248,10 +248,21 @@ export async function createCheckoutSession(
 		client_reference_id: clientReferenceId,
 		success_url: successUrl,
 		cancel_url: cancelUrl,
+		// Stripe Tax is active on the account; with no registrations it computes
+		// 0 and tracks thresholds, and once a registration exists Checkout starts
+		// collecting without a code change. Tax IDs let business customers apply
+		// reverse charge. Promotion codes cost nothing to allow.
+		'automatic_tax[enabled]': 'true',
+		'tax_id_collection[enabled]': 'true',
+		allow_promotion_codes: 'true',
 	}
 	// Stripe accepts either `customer` or `customer_email`, never both.
 	if (customerId) {
 		form.customer = customerId
+		// Automatic tax and tax-id collection on an existing customer require
+		// Checkout to be allowed to save the address and name it collects.
+		form['customer_update[address]'] = 'auto'
+		form['customer_update[name]'] = 'auto'
 	} else if (customerEmail) {
 		form.customer_email = customerEmail
 	}

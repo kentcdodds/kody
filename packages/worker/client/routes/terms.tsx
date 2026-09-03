@@ -131,8 +131,11 @@ export function TermsRoute(_handle: Handle) {
 					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
 						support@kody.codes
 					</a>
-					. Refund requests are considered case by case. Taxes and payment
-					processor terms may also apply.
+					. Refund requests are considered case by case. Deleting your account
+					cancels any subscription immediately; unused time in the current
+					billing period is not refunded automatically. Where required by law we
+					collect sales tax or VAT at checkout, and business customers can enter
+					a tax ID there. Payment processor terms may also apply.
 				</p>
 			</section>
 
