@@ -59,5 +59,7 @@ These are not covered by the rule yet:
   each other's building blocks. The job vector id and embed-text helpers should
   move to a neutral module the way `#worker/vectorize/*` did.
 - Several non-MCP subsystems (`#worker/community/*`, `#worker/email/*`,
-  `#worker/webhooks/*`) still import `#app/*` data modules. Extending the rule
-  to all of `#worker/*` would need those extracted first.
+  `#worker/webhooks/*`, `#worker/scheduled/*`, and
+  `#worker/account/unverified-account-purge.ts`, which wraps
+  `#app/account-deletion.ts`) still import `#app/*` data modules. Extending the
+  rule to all of `#worker/*` would need those extracted first.

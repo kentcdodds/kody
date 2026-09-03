@@ -125,7 +125,7 @@ primitives:
       - packages/worker/src/jobs/job-retention-cleanup.ts
       - packages/worker/src/repo/repo-session-cleanup.ts
       - packages/worker/src/app/retention.ts
-      - packages/worker/src/app/unverified-account-purge.ts
+      - packages/worker/src/account/unverified-account-purge.ts
       - packages/worker/src/app/auth-denial-alerts.ts
       - packages/worker/src/usage/aggregate-rollups.ts
     docs:

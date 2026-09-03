@@ -228,6 +228,7 @@ rule.
 - `adminAccountWriteLeaseList`
 - `adminAccountWriteLeaseRepair`
 - `adminAccountDeletionAbort`
+- `adminUnverifiedAccountPurgeRun`
 - `adminPlatformAccountCreate`
 - `adminPackageScopeGrantCreate`
 - `adminPackageScopeGrantRevoke`

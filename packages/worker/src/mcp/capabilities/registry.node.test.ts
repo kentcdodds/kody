@@ -99,6 +99,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(adminRegistry.capabilityMap.adminUserStableIdConflict).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminUserMeterParity).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminAccountDeletionAbort).toBeTruthy()
+	expect(
+		adminRegistry.capabilityMap.adminUnverifiedAccountPurgeRun,
+	).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminMailboxMaintenance).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminSignupModeGet).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminSignupModeSet).toBeTruthy()
@@ -115,6 +118,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(regularRegistry.capabilityMap.adminUserMeterParity).toBeUndefined()
 	expect(
 		regularRegistry.capabilityMap.adminAccountDeletionAbort,
+	).toBeUndefined()
+	expect(
+		regularRegistry.capabilityMap.adminUnverifiedAccountPurgeRun,
 	).toBeUndefined()
 	expect(
 		regularRegistry.capabilityMap.adminUserMeterStorageReconcile,
