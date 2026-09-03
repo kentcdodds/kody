@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { resolveOAuthHelpers } from './oauth-helpers.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
+import { readMainWorkerWranglerCompatibility } from '#worker/test-support/wrangler-compatibility.ts'
 
 function grantRecord(input: {
 	id: string
@@ -79,6 +80,18 @@ async function libraryHelpersFor(kv: KVNamespace) {
 	if (!helpers) throw new Error('expected library-backed OAuth helpers')
 	return helpers
 }
+
+test('the node-unit Cloudflare global stub mirrors the deployed CIMD compatibility flag', () => {
+	// test-support/cloudflare-global-stub.ts hardcodes the flag (it must stay
+	// import-free); this keeps it honest against wrangler.jsonc.
+	expect(readMainWorkerWranglerCompatibility().compatibilityFlags).toContain(
+		'global_fetch_strictly_public',
+	)
+	expect(
+		(globalThis as { Cloudflare?: { compatibilityFlags?: unknown } }).Cloudflare
+			?.compatibilityFlags,
+	).toEqual({ global_fetch_strictly_public: true })
+})
 
 test('resolveOAuthHelpers prefers the injected provider helpers and needs OAUTH_KV otherwise', async () => {
 	const injected = { listUserGrants: async () => ({ items: [] }) }
