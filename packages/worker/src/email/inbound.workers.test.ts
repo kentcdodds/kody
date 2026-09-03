@@ -8,10 +8,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
-import {
-	buildInboundDelivery,
-	userInboundQuotaDay,
-} from './inbound-delivery.ts'
+import { buildInboundDelivery } from './inbound-delivery.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import {
@@ -472,20 +469,15 @@ test('max-plan plus-tag inbox stores a large multipart/related inline PNG', asyn
 	expect(content.contentBase64?.startsWith('iVBORw0KGgo')).toBe(true)
 	expect(content.size).toBeGreaterThan(0)
 
-	const quotaNow = new Date()
-	const expectedDelivery = await buildInboundDelivery({
-		userId,
-		inboxId: stored.inboxId,
-		recipient: taggedAddress,
-		envelopeFrom: 'sender@example.net',
-		rawMime: await rawBlob.text(),
-		quotaDay: userInboundQuotaDay(quotaNow),
-		now: quotaNow,
-	})
+	const inboundMessagePrefix = 'email-inbound-message:'
+	if (!stored.id.startsWith(inboundMessagePrefix)) {
+		throw new Error('Expected a user inbound message id.')
+	}
+	const deliveryId = `email-inbound-delivery:${stored.id.slice(inboundMessagePrefix.length)}`
 	const ledger = await createUserInboundDeliveryAuthority({
 		env,
 		userId,
-	}).get(expectedDelivery.deliveryId)
+	}).get(deliveryId)
 	expect(ledger).toMatchObject({
 		state: 'received',
 		messageId: stored.id,
@@ -501,7 +493,7 @@ test('max-plan plus-tag inbox stores a large multipart/related inline PNG', asyn
 	expect(
 		await userMeterRpc({ env, userId }).read({
 			resource: 'email_receives_per_day',
-			day: quotaNow.toISOString().slice(0, 10),
+			day: (stored.receivedAt ?? stored.createdAt).slice(0, 10),
 		}),
 	).toMatchObject({ outcome: 'ready', count: 1 })
 }, 60_000)

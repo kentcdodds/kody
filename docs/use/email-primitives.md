@@ -170,10 +170,11 @@ Inbound storage is quota-gated per user:
   `import { email }` from `kody:runtime` is available as a convenience helper
   for message lookup, attachment lookup, and replies.
 - Attachments are metadata-first by default. Accepted inbound raw MIME is stored
-  in R2 up to the plan's `email_message_bytes` cap — the same platform ceiling
-  the MIME reader uses — including `multipart/related` messages with inline
-  images. On-demand attachment lookup reconstructs bytes from that stored raw
-  MIME.
+  in R2 up to the owner's plan `email_message_bytes` cap, and the MIME reader
+  additionally refuses anything above the 768 KiB platform ceiling
+  (`maxRawMimeBytes`, the paid/max `email_message_bytes` bound). That includes
+  `multipart/related` messages with inline images. On-demand attachment lookup
+  reconstructs bytes from that stored raw MIME.
 - Cloudflare Email Routing already rejects mail that fails both SPF and DKIM and
   honors sender DMARC policy before Kody sees the message. Kody's own spam
   controls (below) run on mail that still reaches storage.
