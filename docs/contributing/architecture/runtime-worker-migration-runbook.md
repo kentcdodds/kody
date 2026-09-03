@@ -43,7 +43,10 @@ deploy can publish" — that first publish already happened.
   `tools/ci/runtime-worker-config.ts` to the deployed main script name
   (`kody-production`) at deploy time.
 - Preview worker sets are created fresh with `new_sqlite_classes`. Preview
-  cannot rehearse a `transferred_classes` migration.
+  cannot rehearse a `transferred_classes` migration, and the preview origin
+  never bootstraps: it uploads the slim entry after runtime and platform exist
+  (see the
+  [platform runbook](./platform-worker-migration-runbook.md#invariants)).
 - `DynamicCallableWorkflow` is a **new** Cloudflare Workflow on `kody-runtime`
   (`kody-runtime-dynamic-callable-workflows`). Workflows cannot be transferred
   between scripts. Do not try to move that workflow back onto origin.

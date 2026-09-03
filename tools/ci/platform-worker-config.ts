@@ -15,24 +15,19 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * `kody-platform` are rewritten to the actual worker names, which lets
  * preview deploys use per-PR names.
  *
- * For preview it also writes a *bootstrap* variant of this Worker that
- * points runtime-owned Durable Object bindings at the origin Worker. Fresh
- * preview sets have a circular reference (platform binds runtime's Durable
- * Objects, runtime binds platform's), so the deploy order is: origin
- * (bootstrap, self-contained) → platform (bootstrap, runtime DOs on origin)
- * → runtime → platform (full) → origin (full).
+ * For preview it also writes a *bootstrap* variant of this Worker with every
+ * runtime-worker reference removed. Fresh preview sets have a circular
+ * reference (platform binds runtime's Durable Objects and workflow, runtime
+ * binds platform's Durable Objects), and the origin Worker owns no class it
+ * could stand in with (ADR 0034), so the deploy order is callee-first:
+ * platform (bootstrap, no runtime references) → runtime → platform (full) →
+ * origin (slim entry, cross-script bindings only).
  */
 
 const defaultBaseConfigPath = 'packages/platform-worker/wrangler.jsonc'
 const committedPlatformName = 'kody-platform'
 const committedRuntimeName = 'kody-runtime'
 const committedMainName = 'kody'
-
-const runtimeOwnedBindingNames = new Set([
-	'STORAGE_RUNNER',
-	'RUN_LOG',
-	'PACKAGE_REALTIME_SESSION',
-])
 
 type JsonRecord = Record<string, unknown>
 
@@ -195,44 +190,45 @@ function copyResourceIdentifiers(input: {
 	platformEnv.vars = { ...mainVars, ...platformVars }
 }
 
-function retargetRuntimeBindingsToMain(
+/**
+ * The runtime script does not exist yet when a fresh platform script first
+ * deploys, so the bootstrap upload carries no binding that resolves to it.
+ * Nothing calls the platform Worker in the window before its full redeploy
+ * (origin deploys last), so the missing bindings are never dereferenced.
+ */
+function removeRuntimeReferencesFromPlatformEnv(
 	platformEnv: JsonRecord,
-	mainWorkerName: string,
+	runtimeWorkerName: string,
 ) {
+	const referencesRuntime = (entry: unknown) =>
+		Boolean(
+			entry &&
+			typeof entry === 'object' &&
+			(entry as JsonRecord).script_name === runtimeWorkerName,
+		)
 	const durableObjects = platformEnv.durable_objects
-	if (!durableObjects || typeof durableObjects !== 'object') return
-	const bindings = (durableObjects as JsonRecord).bindings
-	if (!Array.isArray(bindings)) return
-	for (const entry of bindings) {
-		if (!entry || typeof entry !== 'object') continue
-		const record = entry as JsonRecord
-		if (
-			typeof record.name === 'string' &&
-			runtimeOwnedBindingNames.has(record.name)
-		) {
-			record.script_name = mainWorkerName
-		}
-	}
-}
-
-function stripPlatformScriptNameFromMainEnv(
-	mainEnv: JsonRecord,
-	platformWorkerName: string,
-) {
-	const durableObjects = mainEnv.durable_objects
 	if (durableObjects && typeof durableObjects === 'object') {
 		const bindings = (durableObjects as JsonRecord).bindings
 		if (Array.isArray(bindings)) {
-			for (const entry of bindings) {
-				if (
+			;(durableObjects as JsonRecord).bindings = bindings.filter(
+				(entry) => !referencesRuntime(entry),
+			)
+		}
+	}
+	if (Array.isArray(platformEnv.workflows)) {
+		platformEnv.workflows = platformEnv.workflows.filter(
+			(entry) => !referencesRuntime(entry),
+		)
+	}
+	if (Array.isArray(platformEnv.services)) {
+		platformEnv.services = platformEnv.services.filter(
+			(entry) =>
+				!(
 					entry &&
 					typeof entry === 'object' &&
-					(entry as JsonRecord).script_name === platformWorkerName
-				) {
-					delete (entry as JsonRecord).script_name
-				}
-			}
-		}
+					(entry as JsonRecord).service === runtimeWorkerName
+				),
+		)
 	}
 }
 
@@ -263,7 +259,6 @@ export type CliOptions = {
 	baseConfigPath: string
 	outConfigPath: string
 	outPlatformBootstrapConfigPath?: string
-	mainBootstrapConfigPath?: string
 }
 
 function parseArgs(argv: Array<string>): CliOptions {
@@ -291,7 +286,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 		!outConfigPath
 	) {
 		fail(
-			'Usage: node tools/ci/platform-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <platform worker name> --runtime-worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--out-platform-bootstrap-config <path>] [--main-bootstrap-config <path>]',
+			'Usage: node tools/ci/platform-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <platform worker name> --runtime-worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--out-platform-bootstrap-config <path>]',
 		)
 	}
 	return {
@@ -303,7 +298,6 @@ function parseArgs(argv: Array<string>): CliOptions {
 		baseConfigPath: options['base-config'] ?? defaultBaseConfigPath,
 		outConfigPath,
 		outPlatformBootstrapConfigPath: options['out-platform-bootstrap-config'],
-		mainBootstrapConfigPath: options['main-bootstrap-config'],
 	}
 }
 
@@ -370,33 +364,16 @@ export async function generate(options: CliOptions) {
 			options.envName,
 			`platform bootstrap config`,
 		)
-		retargetRuntimeBindingsToMain(bootstrapEnv, options.mainWorkerName)
+		removeRuntimeReferencesFromPlatformEnv(
+			bootstrapEnv,
+			options.runtimeWorkerName,
+		)
 		await writeFile(
 			options.outPlatformBootstrapConfigPath,
 			`${JSON.stringify(bootstrapConfig, null, '\t')}\n`,
 		)
 		console.error(
 			`Wrote platform worker bootstrap config: ${options.outPlatformBootstrapConfigPath}`,
-		)
-	}
-
-	if (options.mainBootstrapConfigPath) {
-		const bootstrapConfig = parseJsonc<JsonRecord>(
-			await readFile(options.mainBootstrapConfigPath, 'utf8'),
-		)
-		const bootstrapEnv = getEnvSection(
-			bootstrapConfig,
-			options.envName,
-			`main bootstrap config "${options.mainBootstrapConfigPath}"`,
-		)
-		rewriteWorkerNameReferences(bootstrapConfig, names)
-		stripPlatformScriptNameFromMainEnv(bootstrapEnv, options.platformWorkerName)
-		await writeFile(
-			options.mainBootstrapConfigPath,
-			`${JSON.stringify(bootstrapConfig, null, '\t')}\n`,
-		)
-		console.error(
-			`Patched main worker bootstrap config: ${options.mainBootstrapConfigPath}`,
 		)
 	}
 

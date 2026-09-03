@@ -3,22 +3,27 @@ import { JobsHost } from './jobs/jobs-host.ts'
 import { originWorkerHandler } from './origin-handler.ts'
 
 /**
- * Production origin Worker entrypoint (script `kody-production`).
+ * Slim origin Worker entrypoint: production (script `kody-production`) and
+ * preview (`kody-pr-<n>`).
  *
- * The committed `packages/worker/wrangler.jsonc` never points
- * `env.production.main` here. `tools/ci/production-resources.ts` overrides
+ * The committed `packages/worker/wrangler.jsonc` never points any
+ * environment's `main` here. `tools/ci/production-resources.ts` overrides
  * the generated config's top-level `main` only after
  * `tools/ci/origin-production-deploy-state.ts` classifies the live origin
  * script as steady-state (platform and runtime already own every
- * transferred class). Fresh scripts keep `index.ts` so historical
+ * transferred class). Fresh production scripts keep `index.ts` so historical
  * `new_sqlite_classes` can replay. Ambiguous Cloudflare state also keeps
- * `index.ts` (fail closed).
+ * `index.ts` (fail closed). `tools/ci/preview-resources.ts` uses this entry
+ * for every preview origin that owns no transferred class (a fresh per-PR
+ * fleet has no storage to transfer, so it never bootstraps) and strips the
+ * origin's Durable Object migrations from the generated preview config.
  *
- * ADR 0034: origin owns zero Durable Object classes in production. Every
- * env.production `durable_objects` binding sets `script_name` (kody-platform
- * or kody-runtime) and the `workflows` binding does too, so none of those
- * classes need a local export here — only `index.ts` (dev/test/preview, and
- * fresh/ambiguous production) does.
+ * ADR 0034: origin owns zero Durable Object classes in production and
+ * preview. Every env.production and env.preview `durable_objects` binding
+ * sets `script_name` (kody-platform or kody-runtime) and the `workflows`
+ * binding does too, so none of those classes need a local export here — only
+ * `index.ts` (dev/test, fresh/ambiguous production, and legacy preview
+ * origins) does.
  *
  * The two exports kept here are `ctx.exports` WorkerEntrypoint contracts
  * production genuinely calls on this script:

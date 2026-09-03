@@ -38,7 +38,14 @@ Official guide markdown uploads origin and platform.
   production at a second source script.
 - Preview worker sets (`kody-pr-<n>-platform`) are created fresh with
   `new_sqlite_classes`. Preview cannot rehearse a `transferred_classes`
-  migration.
+  migration. Because platform and runtime create their own classes, the preview
+  origin (`kody-pr-<n>`) never owns one: `tools/ci/preview-resources.ts` runs
+  the same classifier as production against the per-PR script names, uploads the
+  slim `production-worker.ts` entry, and strips the origin's Durable Object
+  migrations from the generated config. Deploy order is platform (bootstrap
+  without runtime references, skipped on a steady fleet) → runtime → platform →
+  origin. Only a preview origin created before this topology that still owns
+  transferred classes falls back to the full `index.ts` entry.
 - Cloudflare rules that made the original transfer valid still apply to any
   future class move: the source script must still exist and still contain the
   migration history that created the class; the destination must export the `to`

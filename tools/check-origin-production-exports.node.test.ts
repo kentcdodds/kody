@@ -152,7 +152,32 @@ export default originWorkerHandler
 	])
 })
 
-test('rejects a dev entry missing a class only env.preview binds (preview-bootstrap candidate)', () => {
+test('rejects a preview Durable Object binding without script_name', () => {
+	// Preview uploads the same slim entry as production
+	// (tools/ci/preview-resources.ts), so a locally-owned preview binding
+	// would need a class the slim entry does not export.
+	const result = checkOriginProductionExports({
+		configPath,
+		config: createConfig({
+			previewDurableObjects: [
+				{ name: 'STORAGE_RUNNER', class_name: 'StorageRunner' },
+			],
+		}),
+		devEntrySource: `
+export { Mailbox, StorageRunner, KodyFetchGateway, JobsHost }
+export default originWorkerHandler
+`,
+		productionEntrySource,
+	})
+	expect(result.ok).toBe(false)
+	expect(result.errors).toEqual([
+		expect.stringContaining(
+			'env.preview binds "StorageRunner" without a script_name',
+		),
+	])
+})
+
+test('does not require the dev entry to export a class env.preview only binds cross-script', () => {
 	const result = checkOriginProductionExports({
 		configPath,
 		config: createConfig({
@@ -167,37 +192,6 @@ test('rejects a dev entry missing a class only env.preview binds (preview-bootst
 		}),
 		devEntrySource: `
 export { KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`,
-		productionEntrySource,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringMatching(
-			/does not export "StorageRunner".*env\.test or env\.preview binds it/,
-		),
-	])
-})
-
-test('accepts env.preview binding a class with script_name as long as the dev entry still exports it', () => {
-	// Preview keeps script_name at steady state, but its bootstrap deploy
-	// strips it (tools/ci/platform-worker-config.ts /
-	// runtime-worker-config.ts), so the dev entry must cover the class
-	// regardless of whether the committed config currently cross-scripts it.
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({
-			testDurableObjects: [],
-			previewDurableObjects: [
-				{
-					name: 'STORAGE_RUNNER',
-					class_name: 'StorageRunner',
-					script_name: 'kody-runtime',
-				},
-			],
-		}),
-		devEntrySource: `
-export { KodyFetchGateway, JobsHost, StorageRunner }
 export default originWorkerHandler
 `,
 		productionEntrySource,

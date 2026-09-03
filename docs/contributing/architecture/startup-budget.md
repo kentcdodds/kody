@@ -14,8 +14,11 @@ that keep it low, and the CI tripwire that stops regressions.
 
 Module evaluation of the startup entry
 (`packages/worker/src/production-worker.ts`, `platform-worker.ts`,
-`runtime-worker.ts`) and everything it imports statically. The expensive items
-on an eager startup path are, in order:
+`runtime-worker.ts`) and everything it imports statically. Production and
+preview deploy the same slim origin entry; the full `index.ts` entry (dev/test)
+also evaluates every Durable Object class and reads roughly 1.8× the slim entry,
+which is why preview uploads flaked while they still used it. The expensive
+items on an eager startup path are, in order:
 
 - Zod schema construction at module scope. Every capability definition builds
   its input and output schemas when its module evaluates; the MCP server SDK

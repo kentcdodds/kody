@@ -31,6 +31,33 @@ const transferredClassNames = [
 	...runtimeOwnedClassNames,
 ] as const
 
+/**
+ * The three scripts one origin/platform/runtime fleet is made of. Production
+ * uses the fixed names above; preview substitutes the per-PR names
+ * (`kody-pr-<n>`, `kody-pr-<n>-platform`, `kody-pr-<n>-runtime`).
+ */
+export type OriginFleetScriptNames = {
+	origin: string
+	platform: string
+	runtime: string
+}
+
+export const productionFleetScriptNames: OriginFleetScriptNames = {
+	origin: productionOriginScriptName,
+	platform: productionPlatformScriptName,
+	runtime: productionRuntimeScriptName,
+}
+
+export function previewFleetScriptNames(
+	originWorkerName: string,
+): OriginFleetScriptNames {
+	return {
+		origin: originWorkerName,
+		platform: `${originWorkerName}-platform`,
+		runtime: `${originWorkerName}-runtime`,
+	}
+}
+
 export type OriginProductionDeployMode = 'fresh' | 'steady' | 'ambiguous'
 
 export type DurableObjectNamespaceOwnership = {
@@ -97,6 +124,41 @@ export function planOriginProductionDeploy(
 	}
 }
 
+export type OriginPreviewDeployPlan = {
+	mode: OriginProductionDeployMode
+	originEntry: 'full' | 'slim'
+	reason: string
+}
+
+/**
+ * Preview variant of `planOriginProductionDeploy`. A preview fleet is created
+ * fresh per PR and its platform/runtime scripts create their own classes with
+ * `new_sqlite_classes`, so there is never storage to transfer off the origin
+ * script: a preview origin never bootstraps, and uploads the same slim entry
+ * steady-state production does.
+ *
+ * Unlike production, `ambiguous` does not force the full entry. A retried
+ * preview run (platform/runtime already deployed, origin not yet) classifies
+ * as ambiguous, and the origin's bindings are cross-script in every mode, so
+ * the slim entry is always the correct upload. The one thing Cloudflare
+ * rejects (error 10064) is a slim upload to a script that still owns a
+ * Durable Object class, so the full entry stays only as the fallback for a
+ * preview origin created before the slim topology that still owns
+ * transferred classes.
+ */
+export function planOriginPreviewDeploy(
+	state: OriginProductionScriptState,
+): OriginPreviewDeployPlan {
+	if (state.originOwnedTransferredClassNames.length > 0) {
+		return {
+			mode: state.mode,
+			originEntry: 'full',
+			reason: `Origin still owns ${state.originOwnedTransferredClassNames.join(', ')}; a slim upload would be rejected. ${state.reason}`,
+		}
+	}
+	return { mode: state.mode, originEntry: 'slim', reason: state.reason }
+}
+
 function classesOnScript(
 	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership>,
 	script: string,
@@ -152,7 +214,9 @@ export function classifyOriginProductionScriptState(input: {
 	platformScriptExists?: boolean | null
 	runtimeScriptExists?: boolean | null
 	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership> | null
+	scriptNames?: OriginFleetScriptNames
 }): OriginProductionScriptState {
+	const scriptNames = input.scriptNames ?? productionFleetScriptNames
 	if (input.originScriptExists === null) {
 		return scriptState(
 			'ambiguous',
@@ -163,26 +227,23 @@ export function classifyOriginProductionScriptState(input: {
 	if (input.namespaces) {
 		const originOwnedTransferredClassNames = transferredClassesOnScript(
 			input.namespaces,
-			productionOriginScriptName,
+			scriptNames.origin,
 		)
 		const destinationsOwnTransferred =
 			everyClassOnScript(
 				input.namespaces,
-				productionPlatformScriptName,
+				scriptNames.platform,
 				platformOwnedClassNames,
 			) &&
 			everyClassOnScript(
 				input.namespaces,
-				productionRuntimeScriptName,
+				scriptNames.runtime,
 				runtimeOwnedClassNames,
 			)
 		const originOwnsTransferred = originOwnedTransferredClassNames.length > 0
 		const destinationsOwnAnyTransferred =
-			anyTransferredClassOnScript(
-				input.namespaces,
-				productionPlatformScriptName,
-			) ||
-			anyTransferredClassOnScript(input.namespaces, productionRuntimeScriptName)
+			anyTransferredClassOnScript(input.namespaces, scriptNames.platform) ||
+			anyTransferredClassOnScript(input.namespaces, scriptNames.runtime)
 
 		if (
 			!input.originScriptExists &&
@@ -350,26 +411,28 @@ export async function inspectOriginProductionScriptState(input: {
 	apiToken: string
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
+	scriptNames?: OriginFleetScriptNames
 }): Promise<OriginProductionScriptState> {
+	const { scriptNames = productionFleetScriptNames, ...client } = input
 	try {
 		const [originScriptExists, platformScriptExists, runtimeScriptExists] =
 			await Promise.all([
 				getCloudflareWorkerScriptExists({
-					...input,
-					scriptName: productionOriginScriptName,
+					...client,
+					scriptName: scriptNames.origin,
 				}),
 				getCloudflareWorkerScriptExists({
-					...input,
-					scriptName: productionPlatformScriptName,
+					...client,
+					scriptName: scriptNames.platform,
 				}),
 				getCloudflareWorkerScriptExists({
-					...input,
-					scriptName: productionRuntimeScriptName,
+					...client,
+					scriptName: scriptNames.runtime,
 				}),
 			])
 		let namespaces: Array<DurableObjectNamespaceOwnership> | null = null
 		try {
-			namespaces = await listCloudflareDurableObjectNamespaces(input)
+			namespaces = await listCloudflareDurableObjectNamespaces(client)
 		} catch (error) {
 			console.error(
 				`Durable Object namespace listing failed; classifying from script existence only. ${error instanceof Error ? error.message : String(error)}`,
@@ -380,6 +443,7 @@ export async function inspectOriginProductionScriptState(input: {
 			platformScriptExists,
 			runtimeScriptExists,
 			namespaces,
+			scriptNames,
 		})
 	} catch (error) {
 		return scriptState(
@@ -508,6 +572,27 @@ export function stripOriginBindingsForLocallyOwnedClasses(
 		}
 	}
 
+	return config
+}
+
+/**
+ * Preview origin scripts never own a Durable Object class: platform and
+ * runtime create every class themselves (`new_sqlite_classes` in their
+ * preview envs), so the origin's committed migration history must not
+ * replay on the preview script. A fresh script would otherwise create
+ * namespaces for classes the slim entry does not export (Cloudflare rejects
+ * the upload), and a legacy full-entry preview would keep re-owning them.
+ * Wrangler uploads no migration steps when the config declares none, which
+ * leaves any already-created namespaces on a legacy script untouched.
+ */
+export function stripOriginDurableObjectMigrations(
+	config: Record<string, unknown>,
+	envName: string,
+) {
+	delete config.migrations
+	const env = asRecord(config.env)
+	const targetEnv = env ? asRecord(env[envName]) : null
+	if (targetEnv) delete targetEnv.migrations
 	return config
 }
 

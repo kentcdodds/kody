@@ -163,7 +163,7 @@ function buildMainGeneratedConfig(envName: string) {
 	return { name: 'kody', env: { [envName]: env } }
 }
 
-test('generate rewrites worker names, copies resource ids, and writes a bootstrap config', async () => {
+test('generate rewrites worker names, copies resource ids, and patches the main config', async () => {
 	consoleError.mockImplementation(() => {})
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-config-'))
 	try {
@@ -173,7 +173,6 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			JSON.stringify(buildMainGeneratedConfig('preview')),
 		)
 		const outConfigPath = path.join(tempDir, 'runtime.generated.json')
-		const bootstrapPath = path.join(tempDir, 'main-bootstrap.generated.json')
 
 		await generate({
 			envName: 'preview',
@@ -183,7 +182,6 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			mainWorkerName: 'kody-pr-7',
 			baseConfigPath: runtimeBaseConfigPath,
 			outConfigPath,
-			outMainBootstrapConfigPath: bootstrapPath,
 		})
 
 		const runtimeConfig = parseJsonc<{
@@ -253,41 +251,24 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 				preview?: {
 					services?: Array<Record<string, unknown>>
 					durable_objects?: { bindings?: Array<Record<string, unknown>> }
+					workflows?: Array<Record<string, unknown>>
 				}
 			}
 		}>(await readFile(mainConfigPath, 'utf8'))
 		expect(patchedMain.env?.preview?.services?.[0]?.service).toBe(
 			'kody-pr-7-runtime',
 		)
-
-		// The bootstrap config has no runtime references: the service binding
-		// is dropped and cross-script Durable Objects become local.
-		const bootstrap = parseJsonc<{
-			env?: {
-				preview?: {
-					services?: Array<Record<string, unknown>>
-					durable_objects?: { bindings?: Array<Record<string, unknown>> }
-					workflows?: Array<Record<string, unknown>>
-				}
-			}
-		}>(await readFile(bootstrapPath, 'utf8'))
-		expect(bootstrap.env?.preview?.services).toEqual([
-			{ binding: 'JOBS', service: 'kody-pr-7-jobs', entrypoint: 'JobsService' },
-		])
-		const bootstrapStorageRunner =
-			bootstrap.env?.preview?.durable_objects?.bindings?.find(
+		// The main config keeps every cross-script reference: the origin never
+		// owns these classes in preview, so there is no bootstrap variant.
+		expect(
+			patchedMain.env?.preview?.durable_objects?.bindings?.find(
 				(binding) => binding.name === 'STORAGE_RUNNER',
-			)
-		expect(bootstrapStorageRunner?.script_name).toBeUndefined()
-		const bootstrapUserMeter =
-			bootstrap.env?.preview?.durable_objects?.bindings?.find(
-				(binding) => binding.name === 'USER_METER',
-			)
-		expect(bootstrapUserMeter?.script_name).toBeUndefined()
-		expect(bootstrap.env?.preview?.workflows?.[0]).toMatchObject({
-			name: 'kody-pr-7-bootstrap-dynamic-callable-workflows',
+			)?.script_name,
+		).toBe('kody-pr-7-runtime')
+		expect(patchedMain.env?.preview?.workflows?.[0]).toMatchObject({
+			name: 'kody-pr-7-runtime-dynamic-callable-workflows',
+			script_name: 'kody-pr-7-runtime',
 		})
-		expect(bootstrap.env?.preview?.workflows?.[0]?.script_name).toBeUndefined()
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}

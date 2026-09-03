@@ -20,11 +20,10 @@ import { isExecutedDirectly } from '../node-runtime.ts'
  * `service`) committed as `kody`/`kody-runtime` are rewritten to the actual
  * worker names, which lets preview deploys use per-PR names.
  *
- * For preview it also writes a *bootstrap* variant of the main Worker config
- * with every runtime-worker reference removed. Fresh preview worker pairs
- * have a circular reference (main binds runtime's Durable Objects, runtime
- * binds main's), so the deploy order is: main (bootstrap, self-contained) →
- * runtime → main (full config).
+ * The runtime Worker never binds the main Worker, so it deploys before the
+ * main Worker in every environment (callee-first). Its only circular edge is
+ * with the platform Worker; `tools/ci/platform-worker-config.ts` breaks that
+ * with a platform bootstrap config.
  */
 
 const defaultBaseConfigPath = 'packages/runtime-worker/wrangler.jsonc'
@@ -296,57 +295,6 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	runtimeEnv.workers_dev = true
 }
 
-function removeRuntimeReferencesFromMainEnv(
-	mainEnv: JsonRecord,
-	runtimeWorkerName: string,
-	platformWorkerName: string,
-	mainWorkerName: string,
-) {
-	if (Array.isArray(mainEnv.services)) {
-		mainEnv.services = mainEnv.services.filter(
-			(entry) =>
-				!(
-					entry &&
-					typeof entry === 'object' &&
-					(entry as JsonRecord).service === runtimeWorkerName
-				),
-		)
-	}
-	const durableObjects = mainEnv.durable_objects
-	if (durableObjects && typeof durableObjects === 'object') {
-		const bindings = (durableObjects as JsonRecord).bindings
-		if (Array.isArray(bindings)) {
-			for (const entry of bindings) {
-				if (
-					entry &&
-					typeof entry === 'object' &&
-					((entry as JsonRecord).script_name === runtimeWorkerName ||
-						(entry as JsonRecord).script_name === platformWorkerName)
-				) {
-					// Bind locally during bootstrap; the main Worker still exports
-					// these classes and its migration history still creates them.
-					delete (entry as JsonRecord).script_name
-				}
-			}
-		}
-	}
-	if (Array.isArray(mainEnv.workflows)) {
-		for (const entry of mainEnv.workflows) {
-			if (
-				entry &&
-				typeof entry === 'object' &&
-				(entry as JsonRecord).script_name === runtimeWorkerName
-			) {
-				delete (entry as JsonRecord).script_name
-				// A bootstrap-owned workflow needs its own name; the runtime
-				// Worker claims the cross-script name once it deploys.
-				;(entry as JsonRecord).name =
-					`${mainWorkerName}-bootstrap-dynamic-callable-workflows`
-			}
-		}
-	}
-}
-
 export type CliOptions = {
 	envName: string
 	mainConfigPath: string
@@ -355,7 +303,6 @@ export type CliOptions = {
 	mainWorkerName: string
 	baseConfigPath: string
 	outConfigPath: string
-	outMainBootstrapConfigPath?: string
 }
 
 function parseArgs(argv: Array<string>): CliOptions {
@@ -381,7 +328,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 		!outConfigPath
 	) {
 		fail(
-			'Usage: node tools/ci/runtime-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--platform-worker-name <platform worker name>] [--out-main-bootstrap-config <path>]',
+			'Usage: node tools/ci/runtime-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--platform-worker-name <platform worker name>]',
 		)
 	}
 	return {
@@ -393,7 +340,6 @@ function parseArgs(argv: Array<string>): CliOptions {
 		mainWorkerName,
 		baseConfigPath: options['base-config'] ?? defaultBaseConfigPath,
 		outConfigPath,
-		outMainBootstrapConfigPath: options['out-main-bootstrap-config'],
 	}
 }
 
@@ -485,34 +431,7 @@ export async function generate(options: CliOptions) {
 		`Patched main worker config in place: ${options.mainConfigPath}`,
 	)
 
-	if (options.outMainBootstrapConfigPath) {
-		const bootstrapConfig = parseJsonc<JsonRecord>(JSON.stringify(mainConfig))
-		const bootstrapEnv = getEnvSection(
-			bootstrapConfig,
-			options.envName,
-			`main bootstrap config`,
-		)
-		removeRuntimeReferencesFromMainEnv(
-			bootstrapEnv,
-			options.runtimeWorkerName,
-			options.platformWorkerName,
-			options.mainWorkerName,
-		)
-		await writeFile(
-			options.outMainBootstrapConfigPath,
-			`${JSON.stringify(bootstrapConfig, null, '\t')}\n`,
-		)
-		console.error(
-			`Wrote main worker bootstrap config: ${options.outMainBootstrapConfigPath}`,
-		)
-	}
-
 	console.log(`runtime_wrangler_config=${options.outConfigPath}`)
-	if (options.outMainBootstrapConfigPath) {
-		console.log(
-			`main_bootstrap_wrangler_config=${options.outMainBootstrapConfigPath}`,
-		)
-	}
 }
 
 export async function main() {

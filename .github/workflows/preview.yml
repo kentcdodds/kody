@@ -143,6 +143,12 @@ jobs:
           echo "preview_id=$PREVIEW_ID" >> "$GITHUB_OUTPUT"
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
+      # Also classifies the live preview origin script (same planner as
+      # production, tools/ci/origin-production-deploy-state.ts) and emits
+      # origin_deploy_mode / origin_entry. A fresh or slim-topology preview
+      # uploads the slim production-worker.ts entry with cross-script Durable
+      # Object bindings; only a legacy preview whose origin still owns
+      # transferred classes falls back to the full index.ts entry.
       - name: 🧱 Ensure preview resources (D1 + KV)
         id: resources
         env:
@@ -155,10 +161,11 @@ jobs:
 
       # Package runtime worker (ADR 0016) and platform Durable Object worker
       # (ADR 0034). Share the preview data plane, so configs derive resource
-      # ids from the main generated config. Fresh preview sets have circular
-      # Durable Object bindings: deploy order is main (bootstrap) → platform
-      # (bootstrap, runtime DOs on main) → runtime → platform (full) → main
-      # (full).
+      # ids from the main generated config. The origin owns no Durable Object
+      # class (same topology as steady-state production), so it deploys last;
+      # platform and runtime bind each other, so a fresh set deploys platform
+      # (bootstrap, no runtime references) → runtime → platform (full) →
+      # origin.
       - name: 🧩 Generate runtime worker preview config
         id: runtime_config
         env:
@@ -172,8 +179,7 @@ jobs:
             --worker-name "${APP_WORKER_NAME}-runtime" \
             --platform-worker-name "${APP_WORKER_NAME}-platform" \
             --main-worker-name "$APP_WORKER_NAME" \
-            --out-config packages/runtime-worker/wrangler-preview.generated.json \
-            --out-main-bootstrap-config packages/worker/wrangler-preview-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
+            --out-config packages/runtime-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
           echo "runtime_worker_name=${APP_WORKER_NAME}-runtime" >> "$GITHUB_OUTPUT"
 
       - name: 🧩 Generate platform worker preview config
@@ -190,8 +196,7 @@ jobs:
             --runtime-worker-name "${APP_WORKER_NAME}-runtime" \
             --main-worker-name "$APP_WORKER_NAME" \
             --out-config packages/platform-worker/wrangler-preview.generated.json \
-            --out-platform-bootstrap-config packages/platform-worker/wrangler-preview-bootstrap.generated.json \
-            --main-bootstrap-config packages/worker/wrangler-preview-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
+            --out-platform-bootstrap-config packages/platform-worker/wrangler-preview-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
           echo "platform_worker_name=${APP_WORKER_NAME}-platform" >> "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (preview)
@@ -348,22 +353,14 @@ jobs:
           # worker's JOBS service binding.
           node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
-      - name:
-          ☁️ Bootstrap preview app Worker (no runtime or platform references)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ENV: preview
-          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
-          WRANGLER_CONFIG:
-            ${{ steps.runtime_config.outputs.main_bootstrap_wrangler_config }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
-          APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
-        run: |
-          set -euo pipefail
-          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}"
-
-      - name: ☁️ Bootstrap preview platform Worker (runtime DOs on main)
+      # Platform and runtime bind each other's Durable Objects, and the
+      # Cloudflare API rejects a binding to a script that does not exist yet.
+      # Until the runtime script exists, upload the platform Worker without
+      # its runtime references; the full platform deploy below restores them
+      # once runtime is live. A steady preview (both scripts already own
+      # their classes) skips straight to the full deploys.
+      - name: ☁️ Bootstrap preview platform Worker (no runtime references)
+        if: steps.resources.outputs.origin_deploy_mode != 'steady'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -430,11 +427,14 @@ jobs:
           CLOUDFLARE_ENV: preview
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
+          ORIGIN_DEPLOY_MODE: ${{ steps.resources.outputs.origin_deploy_mode }}
+          ORIGIN_ENTRY: ${{ steps.resources.outputs.origin_entry }}
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
           APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
         run: |
           set -euo pipefail
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
+          echo "Origin deploy: ${ORIGIN_ENTRY} entry (${ORIGIN_DEPLOY_MODE} preview fleet)"
 
           npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
 
