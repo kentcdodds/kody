@@ -21,6 +21,7 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
+import { createKvOAuthHelpers } from '#worker/oauth-kv-helpers.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
 	exportRunRecords,
@@ -75,7 +76,7 @@ export type AccountExportSectionName =
 
 type OAuthGrantPage = {
 	items: Array<{ id: string; clientId: string }>
-	cursor: string | undefined
+	cursor?: string
 }
 
 type OAuthHelpersShape = {
@@ -87,6 +88,23 @@ type OAuthHelpersShape = {
 
 type AccountExportEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpersShape
+}
+
+const oauthSurfaceUnavailableWarning =
+	'OAuth provider binding and OAUTH_KV were unavailable; OAuth grant metadata was not exported.'
+
+/**
+ * `OAUTH_PROVIDER` exists only inside the provider's `fetch` wrapper, so
+ * `accountExportManifest` / `accountExportSection` served from the sessionful
+ * `MCP` Durable Object on kody-platform read grant metadata straight from
+ * `OAUTH_KV` with the same key layout.
+ */
+function resolveOAuthGrantReader(
+	env: AccountExportEnv,
+): OAuthHelpersShape | undefined {
+	if (env.OAUTH_PROVIDER) return env.OAUTH_PROVIDER
+	if (!env.OAUTH_KV) return undefined
+	return createKvOAuthHelpers(env.OAUTH_KV)
 }
 
 type UserSourceSnapshot = {
@@ -980,11 +998,9 @@ async function countOAuthGrants(input: {
 	userId: string
 	warnings: Array<string>
 }) {
-	const helpers = input.env.OAUTH_PROVIDER
+	const helpers = resolveOAuthGrantReader(input.env)
 	if (!helpers) {
-		input.warnings.push(
-			'OAuth provider binding was unavailable; OAuth grant metadata was not exported.',
-		)
+		input.warnings.push(oauthSurfaceUnavailableWarning)
 		return 0
 	}
 	let count = 0
@@ -1243,11 +1259,9 @@ async function listOAuthGrants(input: {
 	userId: string
 	warnings: Array<string>
 }) {
-	const helpers = input.env.OAUTH_PROVIDER
+	const helpers = resolveOAuthGrantReader(input.env)
 	if (!helpers) {
-		input.warnings.push(
-			'OAuth provider binding was unavailable; OAuth grant metadata was not exported.',
-		)
+		input.warnings.push(oauthSurfaceUnavailableWarning)
 		return [] as Array<{ id: string; clientId: string }>
 	}
 	const grants: Array<{ id: string; clientId: string }> = []

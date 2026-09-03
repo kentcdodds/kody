@@ -12,6 +12,7 @@ import {
 	createMigratedDb,
 	createMailboxBinding,
 } from '#worker/test-support/account-export.ts'
+import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 
 test('account export D1 coverage includes every live user-owned schema column', () => {
 	const db = new DatabaseSync(':memory:')
@@ -715,4 +716,116 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 	expect(
 		queries.some((query) => query.includes('__account_export_rowid')),
 	).toBe(false)
+})
+
+test('account export reads OAuth grant metadata from OAUTH_KV when the provider helpers are absent', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (
+			id, username, email, password_hash, created_at, updated_at,
+			email_verified_at, stable_user_id
+		)
+		VALUES (
+			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
+			'2026-07-05', '2026-07-05', 'user-aaa'
+		);
+	`)
+	const storedGrant = (userId: string, grantId: string) =>
+		JSON.stringify({
+			id: grantId,
+			clientId: 'host-client',
+			userId,
+			scope: ['mcp'],
+			metadata: { label: grantId },
+			createdAt: 1_700_000_000,
+			redirectUri: 'https://host.example/callback',
+			encryptedProps: 'ciphertext',
+			refreshTokenId: 'refresh-secret',
+			refreshTokenWrappedKey: 'wrapped-key',
+			previousRefreshTokenId: 'previous-refresh-secret',
+			previousRefreshTokenWrappedKey: 'previous-wrapped-key',
+			authCodeId: 'auth-code-secret',
+			authCodeWrappedKey: 'auth-code-wrapped-key',
+			codeChallenge: 'challenge',
+			codeChallengeMethod: 'S256',
+		})
+	const { kv } = createMemoryKvNamespace({
+		'grant:user-aaa:grant-1': storedGrant('user-aaa', 'grant-1'),
+		'grant:user-aaa:grant-2': storedGrant('user-aaa', 'grant-2'),
+		'grant:user-bbb:grant-9': storedGrant('user-bbb', 'grant-9'),
+		'token:user-aaa:grant-1:tok-1': JSON.stringify({
+			id: 'tok-1',
+			grantId: 'grant-1',
+			userId: 'user-aaa',
+			wrappedEncryptionKey: 'token-wrapped-key',
+		}),
+	})
+	const env = {
+		APP_DB: db,
+		MAILBOX: createMailboxBinding(),
+		OAUTH_KV: kv,
+	} as Env
+	const expectedGrants = ['grant-1', 'grant-2'].map((id) => ({
+		id,
+		clientId: 'host-client',
+		userId: 'user-aaa',
+		scope: ['mcp'],
+		metadata: { label: id },
+		createdAt: 1_700_000_000,
+		expiresAt: undefined,
+		redirectUri: 'https://host.example/callback',
+	}))
+
+	const accountExport = await createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+	expect(accountExport.oauthGrants).toEqual(expectedGrants)
+	expect(accountExport.manifest.sections.oauth_grants?.count).toBe(2)
+	expect(accountExport.manifest.warnings).not.toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('OAuth grant metadata was not exported'),
+		]),
+	)
+	expect(JSON.stringify(accountExport.oauthGrants)).not.toMatch(
+		/ciphertext|refresh-secret|wrapped-key|auth-code-secret|challenge/,
+	)
+
+	const manifest = await createAccountExportManifest({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(manifest.sections.oauth_grants?.count).toBe(2)
+	expect(manifest.warnings).not.toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('OAuth grant metadata was not exported'),
+		]),
+	)
+
+	const section = await readAccountExportSection({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		section: 'oauth_grants',
+	})
+	expect(section.items).toEqual(expectedGrants)
+	expect(section.warnings).not.toEqual(
+		expect.arrayContaining([
+			expect.stringContaining('OAuth grant metadata was not exported'),
+		]),
+	)
+
+	const withoutOAuthSurface = await createAccountExport({
+		env: { APP_DB: db, MAILBOX: createMailboxBinding() } as Env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+		generatedAt: '2026-07-05T00:00:00.000Z',
+	})
+	expect(withoutOAuthSurface.oauthGrants).toEqual([])
+	expect(withoutOAuthSurface.manifest.warnings).toContain(
+		'OAuth provider binding and OAUTH_KV were unavailable; OAuth grant metadata was not exported.',
+	)
 })

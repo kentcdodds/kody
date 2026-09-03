@@ -391,7 +391,11 @@ Both are opt-in and adapted from the Epic Stack.
   key layout (`grant:{userId}:{grantId}`, `token:{userId}:{grantId}:{tokenId}`,
   `client:{clientId}`) and deletion order, so the KV result is identical to a
   fetch-context revoke. Deletion only reports "OAuth grants were not revoked"
-  when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing.
+  when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account export's
+  `oauth_grants` section (`packages/worker/src/account/export.ts`) uses the same
+  reader for `listUserGrants`, so `accountExportManifest` /
+  `accountExportSection` served from the platform `MCP` Durable Object include
+  grant metadata too.
 - After the user row is gone, origin clears the UserMeter deletion tombstone
   `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
   a later account with that email reuses the same Durable Object id and must not
