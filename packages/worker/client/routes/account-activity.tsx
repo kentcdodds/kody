@@ -395,6 +395,7 @@ export function AccountActivityRoute(handle: Handle) {
 							mode="expand"
 							ariaLabel="Activity runs"
 							selectedId={selection.selectedId}
+							recordLoading={waitingForDetail}
 							onNavigate={() => setMessage(null)}
 							emptyLabel={emptyLabel}
 							toolbar={

@@ -29,7 +29,9 @@ export {
  * 434px right half of a split, and `mode` chooses where it renders rather
  * than which component the screen composes. Rows stay real anchors built
  * from `createListDetailRoute`, so the selected record stays in the URL and
- * scroll-preserving navigation continues to work.
+ * scroll-preserving navigation continues to work. The selected row (or the
+ * off-window pane) carries `data-record-focus` so a deep link can scroll to
+ * it instead of leaving the reader at the top of the list.
  *
  * Sizing is answered by container queries, not viewport breakpoints: these
  * tables live inside a 200px-railed shell, so the viewport says very little
@@ -156,6 +158,12 @@ type RecordTableProps = {
 	 * everything below it on every keystroke of a search that refetches.
 	 */
 	busy?: boolean
+	/**
+	 * The selected record is still being fetched. Off-window selections have
+	 * no row to mark, so this keeps `data-record-focus-pending` until the
+	 * pane exists. Not-found results must pass false (or omit it).
+	 */
+	recordLoading?: boolean
 	emptyLabel?: string
 	/** Below the table, inside its pane: the infinite-list "Load more" control. */
 	footer?: Slot
@@ -319,6 +327,9 @@ const rowCss = {
 		backgroundColor: colors.primarySoftest,
 		boxShadow: `inset 3px 0 0 ${colors.primary}`,
 	},
+	// Same offset as `accountSectionCss`: clear the sticky site header when
+	// scroll restoration lands on this row.
+	'&[data-record-focus]': { scrollMarginTop: '5.5rem' },
 	[hoverMq]: {
 		'&:not([data-selected]):hover': { backgroundColor: colors.background },
 	},
@@ -402,18 +413,27 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		// fight to read. `pane` and `none` keep the cap, which is what keeps
 		// the record below reachable without a long scroll first.
 		const capped = mode !== 'expand'
+		const selectedRowVisible =
+			selectedId != null && rows.some((row) => row.id === selectedId)
 		// `expand` puts the record inside the row it belongs to, which only works
 		// while that row is on screen. A deep link, a filter, paging, or a
 		// not-found selection leaves a loaded record with no row to unfold under
 		// — so it falls back to a pane below the table rather than disappearing.
 		const expandedInTable = Boolean(
-			mode === 'expand' &&
-			handle.props.record &&
-			selectedId != null &&
-			rows.some((row) => row.id === selectedId),
+			mode === 'expand' && handle.props.record && selectedRowVisible,
 		)
 		const orphanedRecord = Boolean(
 			mode === 'expand' && handle.props.record && !expandedInTable,
+		)
+		// Retry scroll restoration only while an off-window selection is still
+		// loading. An in-list row already carries `data-record-focus`; a
+		// not-found id must not keep the restorer spinning.
+		const focusPending = Boolean(
+			selectable &&
+			selectedId != null &&
+			!handle.props.record &&
+			!selectedRowVisible &&
+			(handle.props.recordLoading || handle.props.busy),
 		)
 
 		const table = (
@@ -446,6 +466,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 							<tr
 								key={row.id}
 								data-selected={selected ? 'true' : undefined}
+								data-record-focus={selected ? 'true' : undefined}
 								mix={css(rowCss)}
 							>
 								{columns.map((column) => {
@@ -529,6 +550,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 			<section
 				aria-label={handle.props.ariaLabel}
 				aria-busy={handle.props.busy ? 'true' : undefined}
+				data-record-focus-pending={focusPending ? 'true' : undefined}
 				mix={css(shellCss)}
 			>
 				<div mix={[css(paneCss), css(cardFallbackCss)]}>
@@ -578,7 +600,12 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 					) : null}
 				</div>
 				{(mode === 'pane' || orphanedRecord) && handle.props.record ? (
-					<div mix={css(paneCss)}>{handle.props.record}</div>
+					<div
+						data-record-focus={orphanedRecord ? 'true' : undefined}
+						mix={css({ ...paneCss, scrollMarginTop: '5.5rem' })}
+					>
+						{handle.props.record}
+					</div>
 				) : null}
 			</section>
 		)

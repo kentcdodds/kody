@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	getScrollRestorationInlineScript,
 	getStoredScrollY,
+	isRecordFocusInViewport,
 	parseSavedScrollPositions,
 	scrollRestorationInlineScriptCspHash,
 	serializeSavedScrollPositions,
@@ -38,8 +39,13 @@ test('sessionStorage scroll positions restore the saved Y for the current histor
 		state: { key: 'scroll-key-1' },
 		replaceState: vi.fn(),
 	}
+	const querySelector = vi.fn()
 	runInNewContext(restoreScript, {
-		window: { history, scrollTo },
+		window: { history, scrollTo, innerHeight: 800 },
+		document: {
+			querySelector,
+			documentElement: { clientHeight: 800 },
+		},
 		sessionStorage: {
 			getItem: () => stored,
 			removeItem: vi.fn(),
@@ -50,4 +56,65 @@ test('sessionStorage scroll positions restore the saved Y for the current histor
 	expect(history.scrollRestoration).toBe('manual')
 	expect(scrollTo).toHaveBeenCalledWith(0, 2000)
 	expect(history.replaceState).not.toHaveBeenCalled()
+	expect(querySelector).not.toHaveBeenCalled()
+})
+
+test('pre-hydration restore scrolls an off-screen list/detail record when no Y is saved', () => {
+	const restoreScript = getScrollRestorationInlineScript()
+	expect(restoreScript).toContain('[data-record-focus]')
+
+	const scrollTo = vi.fn()
+	const scrollIntoView = vi.fn()
+	const history = {
+		scrollRestoration: 'auto',
+		state: { key: 'scroll-key-1' },
+		replaceState: vi.fn(),
+	}
+	runInNewContext(restoreScript, {
+		window: { history, scrollTo, innerHeight: 800 },
+		document: {
+			querySelector: (selector: string) => {
+				expect(selector).toBe('[data-record-focus]')
+				return {
+					getBoundingClientRect: () => ({ top: 2400, bottom: 2480 }),
+					scrollIntoView,
+				}
+			},
+			documentElement: { clientHeight: 800 },
+		},
+		sessionStorage: {
+			getItem: () => '{}',
+			removeItem: vi.fn(),
+		},
+		console,
+		Math,
+	})
+	expect(scrollTo).not.toHaveBeenCalled()
+	expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+	scrollIntoView.mockClear()
+	runInNewContext(restoreScript, {
+		window: { history, scrollTo, innerHeight: 800 },
+		document: {
+			querySelector: () => ({
+				getBoundingClientRect: () => ({ top: 120, bottom: 160 }),
+				scrollIntoView,
+			}),
+			documentElement: { clientHeight: 800 },
+		},
+		sessionStorage: {
+			getItem: () => '{}',
+			removeItem: vi.fn(),
+		},
+		console,
+		Math,
+	})
+	expect(scrollIntoView).not.toHaveBeenCalled()
+})
+
+test('record focus is in the viewport only when it intersects the window', () => {
+	expect(isRecordFocusInViewport({ top: 40, bottom: 80 }, 800)).toBe(true)
+	expect(isRecordFocusInViewport({ top: -20, bottom: 40 }, 800)).toBe(true)
+	expect(isRecordFocusInViewport({ top: 2400, bottom: 2480 }, 800)).toBe(false)
+	expect(isRecordFocusInViewport({ top: -80, bottom: 0 }, 800)).toBe(false)
 })

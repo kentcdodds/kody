@@ -289,8 +289,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				</div>
 				{/* Blocking classic script (not type=module): restores the
 				    saved window.scrollY from sessionStorage before first paint
-				    and before hydration. CSP allows this exact script via its
-				    sha256 hash — do not add `'unsafe-inline'`. */}
+				    and before hydration, or scrolls `[data-record-focus]` into
+				    view on a list/detail deep link. CSP allows this exact
+				    script via its sha256 hash — do not add `'unsafe-inline'`. */}
 				<script innerHTML={scrollRestorationInlineScript}></script>
 				<script type="module" src={clientEntryHref}></script>
 			</body>

@@ -405,6 +405,12 @@ export function AccountMcpServersRoute(handle: Handle) {
 						mode="expand"
 						ariaLabel="Connected MCP servers"
 						selectedId={selection.selectedId}
+						recordLoading={Boolean(
+							selection.selectedId &&
+							!selection.isCreating &&
+							!server &&
+							!showServerNotFound,
+						)}
 						onNavigate={() => {
 							deleteServerCheck.reset()
 							setMessage(null)

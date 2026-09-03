@@ -25,6 +25,7 @@ export type ScrollRestorationTarget =
 	| { type: 'hash'; id: string }
 	| { type: 'position'; position: ScrollPosition }
 	| { type: 'preserve' }
+	| { type: 'record-focus' }
 	| { type: 'top' }
 
 let scrollRestorationKeyCount = 0
@@ -95,10 +96,14 @@ export function getScrollRestorationTarget(input: {
 	const hash = getScrollRestorationHash(input.location)
 	if (hash) return { type: 'hash', id: hash }
 
-	if (input.preventScrollReset || input.historyAction === 'load') {
+	if (input.preventScrollReset) {
 		return { type: 'preserve' }
 	}
-	return { type: 'top' }
+
+	// Fresh load and navigations that would otherwise jump to the top: prefer
+	// the expanded list/detail record so a deep link lands on the focused
+	// row. Apply falls back to preserve (load) or top (push/replace/pop).
+	return { type: 'record-focus' }
 }
 
 /**

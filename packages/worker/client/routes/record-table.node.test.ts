@@ -53,6 +53,7 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 	expect(noneWithSelection).not.toContain('data-selected="true"')
 	expect(noneWithSelection).not.toContain('should not render')
+	expect(noneWithSelection).not.toContain('data-record-focus="true"')
 
 	const expandHtml = await renderToString(
 		jsx(RecordTable, {
@@ -71,12 +72,16 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(expandHtml).toContain('data-prevent-scroll-reset')
 	expect(expandHtml).toContain('aria-expanded="true"')
 	expect(expandHtml).toContain('aria-expanded="false"')
+	expect(expandHtml).toContain('data-record-focus="true"')
+	expect(expandHtml).toContain('scroll-margin-top: 5.5rem')
 	const controls = /aria-controls="([^"]+)"/.exec(expandHtml)?.[1]
 	expect(controls).toBeTruthy()
 	expect(expandHtml).toContain(`id="${controls}"`)
 	expect(expandHtml).toContain('Beta record')
 	expect(expandHtml.match(/data-selected="true"/g)).toHaveLength(1)
 	expect(expandHtml.match(/data-record-row="true"/g)).toHaveLength(1)
+	expect(expandHtml.match(/data-record-focus="true"/g)).toHaveLength(1)
+	expect(expandHtml).not.toContain('data-record-focus-pending')
 
 	// Selected without a loaded record must not point assistive tech at a
 	// missing expanded region.
@@ -122,9 +127,64 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 	expect(orphanHtml).toContain('Orphan record')
 	expect(orphanHtml).not.toContain('data-record-row="true"')
+	expect(orphanHtml).toContain('data-record-focus="true"')
 	expect(orphanHtml.indexOf('Orphan record')).toBeGreaterThan(
 		orphanHtml.indexOf('</table>'),
 	)
+	expect(orphanHtml.indexOf('data-record-focus="true"')).toBeGreaterThan(
+		orphanHtml.indexOf('</table>'),
+	)
+
+	// Off-window selection still loading: keep retrying scroll restoration
+	// until the pane exists. List `busy` and detail `recordLoading` both
+	// count. A not-found selection is not pending. An in-list row already
+	// has `data-record-focus`, so it does not need the pending marker.
+	const pendingBusyHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Users',
+			columns,
+			rows,
+			selectedId: 'not-in-this-window',
+			busy: true,
+		}),
+	)
+	expect(pendingBusyHtml).toContain('data-record-focus-pending="true"')
+	expect(pendingBusyHtml).not.toContain('data-record-focus="true"')
+	const pendingRecordHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Memories',
+			columns,
+			rows,
+			selectedId: 'not-in-this-window',
+			recordLoading: true,
+		}),
+	)
+	expect(pendingRecordHtml).toContain('data-record-focus-pending="true"')
+	expect(pendingRecordHtml).not.toContain('data-record-focus="true"')
+	const inListBusyHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Users',
+			columns,
+			rows,
+			selectedId: 'b',
+			busy: true,
+		}),
+	)
+	expect(inListBusyHtml).toContain('data-record-focus="true"')
+	expect(inListBusyHtml).not.toContain('data-record-focus-pending')
+	const notFoundHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Users',
+			columns,
+			rows,
+			selectedId: 'not-in-this-window',
+		}),
+	)
+	expect(notFoundHtml).not.toContain('data-record-focus-pending')
 
 	// A not-found record has no selected row. It must still render, not vanish.
 	const missingHtml = await renderToString(

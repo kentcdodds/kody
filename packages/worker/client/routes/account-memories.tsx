@@ -380,6 +380,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 							mode="expand"
 							ariaLabel="Saved memories"
 							selectedId={selection.selectedId}
+							recordLoading={waitingForDetail}
 							onNavigate={() => {
 								deleteMode = null
 								setMessage(null)

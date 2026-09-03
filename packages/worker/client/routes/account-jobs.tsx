@@ -440,6 +440,7 @@ export function AccountJobsRoute(handle: Handle) {
 						mode="expand"
 						ariaLabel="Scheduled jobs"
 						selectedId={selection.selectedId}
+						recordLoading={waitingForDetail}
 						onNavigate={() => {
 							deleteJobCheck.reset()
 							setMessage(null)
