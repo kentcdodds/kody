@@ -382,7 +382,7 @@ function splitMultipartParts(body: Uint8Array, boundary: string) {
 function getMimeHeader(headers: string, name: string) {
 	const unfolded = headers.replace(/\r?\n[ \t]+/gu, ' ')
 	const pattern = new RegExp(`^${escapeRegExp(name)}:\\s*(.*)$`, 'im')
-	const match = pattern.exec(unfolded)
+	const match = unfolded.match(pattern)
 	return match?.[1]?.trim() || null
 }
 
