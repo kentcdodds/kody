@@ -1,4 +1,3 @@
-import { isPermanentlyReservedUsername } from '#worker/identity/reserved-usernames.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -13,11 +12,7 @@ import {
 	estimateEntitlementStorageEntryBytes,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
-import {
-	normalizeEmailAddress,
-	normalizeSubject,
-	splitEmailLocalPart,
-} from './address.ts'
+import { normalizeEmailAddress, normalizeSubject } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
@@ -50,6 +45,7 @@ import {
 	scheduleInboundRejectedTerminalWork,
 	type InboundMailboxEnv,
 } from './inbound-mailbox.ts'
+import { resolveInboundMailboxRoute } from './inbound-mailbox-route.ts'
 import {
 	countInternalUserEmailMessages,
 	getInternalEmailMessageById,
@@ -64,7 +60,6 @@ import {
 	storeIdempotentInboundEmail,
 } from './service.ts'
 import { handleSystemInboundEmail } from './system-inbound-email.ts'
-import { isSystemEmailLocal } from './system-email.ts'
 
 /**
  * Rejection audit writes are best-effort (the SMTP reject already happened),
@@ -171,63 +166,45 @@ export async function handleInboundEmail(
 		InboundMailboxEnv,
 	ctx?: ExecutionContext,
 ) {
-	const recipient = normalizeEmailAddress(message.to)
-	if (!recipient) {
-		message.setReject('Invalid recipient address.')
-		return
-	}
-
 	// Inbound accepts the canonical domains plus any LEGACY_*_EMAIL_DOMAINS;
 	// mail on those addresses resolves to the same inboxes. Outbound
 	// (senders, alert lanes) always uses the canonical domains only.
 	const acceptedUserDomains = getAcceptedUserEmailDomains(inputEnv)
 	const acceptedSystemDomains = getAcceptedSystemEmailDomains(inputEnv)
 	const systemDomain = getSystemEmailDomain(inputEnv)
-	if (acceptedUserDomains.length === 0 && acceptedSystemDomains.length === 0) {
-		message.setReject('Email routing is not configured.')
-		return
+	const route = resolveInboundMailboxRoute({
+		envelopeTo: message.to,
+		acceptedUserDomains,
+		acceptedSystemDomains,
+		systemDomain,
+	})
+	switch (route.kind) {
+		case 'reject':
+			message.setReject(route.reason)
+			return
+		case 'system':
+			await handleSystemInboundEmail({
+				message,
+				env: inputEnv,
+				recipient: route.recipient,
+				localPart: route.localBase,
+				// Replies and threading always use the canonical system domain,
+				// even when the message arrived on a legacy one.
+				systemDomain: route.systemDomain,
+				ctx,
+			})
+			return
+		case 'user':
+			break
+		default: {
+			const exhaustive: never = route
+			throw new Error(
+				`Unsupported inbound mailbox route: ${String(exhaustive)}`,
+			)
+		}
 	}
-
-	const atIndex = recipient.lastIndexOf('@')
-	const localPart = recipient.slice(0, atIndex)
-	const recipientDomain = recipient.slice(atIndex + 1)
-	// RFC 5233 subaddressing: `user+tag@...` routes like `user@...`. The
-	// full tagged address stays visible in the stored message's
-	// to_addresses, so automations (for example email.message.received
-	// package handlers) can dispatch on the tag.
-	const { base: localBase } = splitEmailLocalPart(localPart)
-	// Operator-owned system inboxes live on the apex domain, next to the
-	// kody@<apex> transactional sender whose replies they receive. User mail
-	// lives exclusively on the user subdomain; all other apex mail rejects.
-	if (
-		systemDomain &&
-		acceptedSystemDomains.includes(recipientDomain) &&
-		isSystemEmailLocal(localBase)
-	) {
-		await handleSystemInboundEmail({
-			message,
-			env: inputEnv,
-			recipient,
-			localPart: localBase,
-			// Replies and threading always use the canonical system domain,
-			// even when the message arrived on a legacy one.
-			systemDomain,
-			ctx,
-		})
-		return
-	}
-	if (!acceptedUserDomains.includes(recipientDomain)) {
-		message.setReject('Unknown Kody email address.')
-		return
-	}
-	// Permanently reserved locals (system inboxes, kody-prefixed names,
-	// reply-token aliases) are never user mail, even on the user subdomain.
-	// Other reserved names may be unreserved and claimed; delivery follows
-	// live account ownership below.
-	if (isPermanentlyReservedUsername(localBase)) {
-		message.setReject('This address is reserved for system mail.')
-		return
-	}
+	const recipient = route.recipient
+	const localBase = route.username
 	// Provisioning always records the canonical address (first accepted
 	// domain), even when the message arrived on a legacy domain.
 	const platformDomain = acceptedUserDomains[0]

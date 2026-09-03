@@ -291,11 +291,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   UserMeter `storage_bytes_state` (schema v4) drives storage-byte enforcement;
   see [Entitlements](./entitlements.md#usermeter). Inbound email routing does
   not reverse-resolve stable ids — it uses the indexed username lookup
-  (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
-  with one indexed point read on `users.stable_user_id` (for example
-  `findUserAccountByStableUserId`). Person accounts that stay unverified for
-  seven days (`email_verified_at` is null, no `oauth_connections` row) are
-  deleted by the hourly `unverified_account_purge` lane through the
+  (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
+  (`resolveInboundMailboxRoute`). Plus-tags on user inbox hosts are aliases for
+  that username, including tags that spell a reserved system local. Contextless
+  paths resolve stable ids with one indexed point read on `users.stable_user_id`
+  (for example `findUserAccountByStableUserId`). Person accounts that stay
+  unverified for seven days (`email_verified_at` is null, no `oauth_connections`
+  row) are deleted by the hourly `unverified_account_purge` lane through the
   inventory-driven account-deletion path, which releases the username,
   `{username}.kody.run` subdomain, `{username}@` mail local, and
   `stable_user_id`. Each candidate is claimed with an atomic `UPDATE` that

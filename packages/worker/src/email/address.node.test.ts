@@ -28,6 +28,13 @@ test('email address helpers normalize mailbox strings', () => {
 		base: 'kentcdodds',
 		subaddress: 'billing',
 	})
+	expect(normalizeEmailAddress('kentcdodds+kody@inbox.kody.codes')).toBe(
+		'kentcdodds+kody@inbox.kody.codes',
+	)
+	expect(splitEmailLocalPart('kentcdodds+kody')).toEqual({
+		base: 'kentcdodds',
+		subaddress: 'kody',
+	})
 	expect(splitEmailLocalPart('kentcdodds+a+b')).toEqual({
 		base: 'kentcdodds',
 		subaddress: 'a+b',
