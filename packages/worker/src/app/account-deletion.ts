@@ -143,9 +143,19 @@ type UserDeletionInventory = {
 	communityListings: Array<AccountCommunityListingSnapshot>
 }
 
+/**
+ * Every Stripe status that can still produce an invoice or resume billing.
+ * Only `canceled` and `incomplete_expired` are terminal; `past_due`, `unpaid`,
+ * and `paused` keep dunning or can be resumed, and `incomplete` can still
+ * activate when the first payment succeeds.
+ */
 const stripeSubscriptionStatusesCanceledOnAccountDeletion = new Set([
 	'active',
 	'trialing',
+	'past_due',
+	'unpaid',
+	'paused',
+	'incomplete',
 ])
 
 export class AccountDeletionInventoryError extends Error {
@@ -468,7 +478,8 @@ function isStripeSubscriptionBillable(subscription: StripeSubscription) {
 }
 
 /**
- * Cancels every active/trialing subscription and throws
+ * Cancels every subscription that can still bill (see
+ * `stripeSubscriptionStatusesCanceledOnAccountDeletion`) and throws
  * {@link AccountDeletionBillingError} when any is still billable afterwards.
  * Runs before any destructive cleanup so a Stripe outage retains the account
  * instead of leaving a paying customer with no account or portal access.

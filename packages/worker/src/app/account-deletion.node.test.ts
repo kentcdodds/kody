@@ -1134,7 +1134,14 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 		listSubscriptions.mockResolvedValue([
 			stripeSubscription('sub_active', 'active'),
 			stripeSubscription('sub_trialing', 'trialing'),
+			// Dunning and paused states can still invoice or resume, so they
+			// must be canceled too; only terminal states are skipped.
+			stripeSubscription('sub_past_due', 'past_due'),
+			stripeSubscription('sub_unpaid', 'unpaid'),
+			stripeSubscription('sub_paused', 'paused'),
+			stripeSubscription('sub_incomplete', 'incomplete'),
 			stripeSubscription('sub_canceled', 'canceled'),
+			stripeSubscription('sub_expired', 'incomplete_expired'),
 		])
 		cancelSubscription.mockResolvedValue(undefined)
 		deleteCustomer.mockResolvedValue(undefined)
@@ -1155,15 +1162,17 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 			expect.any(Object),
 			'cus_pro',
 		)
-		expect(cancelSubscription).toHaveBeenCalledTimes(2)
-		expect(cancelSubscription).toHaveBeenCalledWith(
-			expect.any(Object),
+		expect(cancelSubscription).toHaveBeenCalledTimes(6)
+		expect(
+			cancelSubscription.mock.calls.map(([, subscriptionId]) => subscriptionId),
+		).toEqual([
 			'sub_active',
-		)
-		expect(cancelSubscription).toHaveBeenCalledWith(
-			expect.any(Object),
 			'sub_trialing',
-		)
+			'sub_past_due',
+			'sub_unpaid',
+			'sub_paused',
+			'sub_incomplete',
+		])
 		expect(deleteCustomer).toHaveBeenCalledWith(expect.any(Object), 'cus_pro')
 		expect(rows.users).toEqual([])
 		expect(result.warnings).toEqual([])
