@@ -55,8 +55,8 @@ access, so the repo must define a `PREVIEW_ENVIRONMENT_ADMIN_TOKEN` Actions
 secret with a token that has that permission. Cleanup intentionally fails when
 that secret is missing or under-scoped so permission regressions are visible.
 
-Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV,
-R2, Queues and their consumers) first passes through
+Every Cloudflare delete in `tools/ci/preview-resources.ts` (Workers, D1, KV, R2,
+Queues and their consumers) first passes through
 `assertPreviewResourceName(name, kind)`, which throws unless the name matches
 `^kody-(pr-<number>|branch-<slug>)(-<segment>)*$`. Production names (`kody`,
 `kody-platform`, `kody-audit`, `kody-webhook-dispatch`, ...) and the shared
