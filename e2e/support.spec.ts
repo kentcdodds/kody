@@ -9,6 +9,10 @@ test('public support page works logged out', async ({ page }) => {
 	await expect(
 		page.getByRole('link', { name: 'support@kody.codes', exact: true }),
 	).toHaveAttribute('href', 'mailto:support@kody.codes')
+	await expect(
+		page.getByText(/try the same request with a better model/i),
+	).toBeVisible()
+	await expect(page.getByText(/other deployments/i)).not.toBeVisible()
 
 	await expect(
 		page.getByRole('navigation', { name: 'Footer' }).getByRole('link', {
