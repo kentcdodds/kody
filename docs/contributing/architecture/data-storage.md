@@ -91,9 +91,14 @@ Deletion must cover these user-owned surfaces:
   conversation state, raw-fetch state, and transport storage before revoking
   OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
-  rows and removed with `deleteByIds`. Matching `vector_embed_fingerprints` rows
-  are deleted by `vector_id` on those writes; account deletion clears remaining
-  rows for that `user_id`.
+  rows and removed with `deleteByIds`. Each surface in
+  `accountUserOwnedVectorizeSurfaces` declares its row source: memory and
+  saved-package ids come from `APP_DB` tables, while job ids come from the jobs
+  worker over the `JOBS` binding (`listJobIdsForUser`, live plus archived job
+  ids) because `APP_DB` has no `jobs` table (ADR 0016). Inventory fails rather
+  than skipping when `JOBS` is unbound. Matching `vector_embed_fingerprints`
+  rows are deleted by `vector_id` on those writes; account deletion clears
+  remaining rows for that `user_id`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
   inventoried by `Mailbox.listBlobReferences`; the Mailbox store derives raw
   keys from owner/message ids and emits only canonical external-attachment keys.
