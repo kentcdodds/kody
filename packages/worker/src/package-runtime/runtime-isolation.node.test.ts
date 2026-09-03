@@ -455,6 +455,8 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 			// createKodyRemoteProxy throws on Get; the isolate stand-in is
 			// callable and rethrows that same message on the call, not as a
 			// TypeError "is not a function".
+			expect(Object.keys(mod.kody.mcp)).toEqual(['home'])
+			expect(Object.keys(mod.kody.mcp.home)).toEqual([])
 			expect(() => mod.kody.mcp.home.venstar_get_thermostat_info({})).toThrow(
 				oauthWaitingMessage,
 			)
@@ -490,6 +492,8 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 				},
 			},
 			async () => ({
+				serverNames: Object.keys(mod.kody.mcp),
+				toolNames: Object.keys(mod.kody.mcp.home),
 				viaHome: await captured.home.venstar_get_thermostat_info({
 					thermostat: 'office',
 				}),
@@ -500,6 +504,8 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 		)
 
 		expect(result).toEqual({
+			serverNames: ['home'],
+			toolNames: ['venstar_get_thermostat_info'],
 			viaHome: { ok: true, args: { thermostat: 'office' } },
 			viaTool: { ok: true, args: { thermostat: 'office' } },
 		})

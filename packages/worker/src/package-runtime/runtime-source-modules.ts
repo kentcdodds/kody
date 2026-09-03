@@ -186,7 +186,10 @@ function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
 
 function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 	const nestedExportName = exportName + '.' + path.map(String).join('.');
-	return new Proxy(function () {}, {
+	// Arrow target: a normal function's non-configurable prototype must
+	// appear in [[OwnPropertyKeys]], so ownKeys that forwards only the
+	// runtime parent keys would throw on Object.keys(kody.mcp).
+	return new Proxy(() => {}, {
 		apply(_target, _thisArg, args) {
 			return __kodyApplyRuntimeNestedValue(exportName, path, args);
 		},
