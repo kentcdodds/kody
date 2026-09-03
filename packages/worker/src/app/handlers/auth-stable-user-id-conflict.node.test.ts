@@ -98,7 +98,7 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 
 	const openResponse = await signup(openHandler, {
 		email: victimEmail,
-		username: 'victim-user',
+		username: 'victim-jane',
 		password: 'password123',
 		mode: 'signup',
 	})

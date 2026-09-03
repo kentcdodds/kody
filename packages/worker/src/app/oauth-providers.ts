@@ -159,7 +159,7 @@ export function getMockOauthProfile(provider: OauthProviderId): OauthProfile {
 				providerUserId: 'mock-github-user-1',
 				email: 'mock-github-user@example.com',
 				emailVerified: true,
-				username: 'mock-github-user',
+				username: 'mock-octo',
 				displayName: 'Mock GitHub User',
 			}
 		case 'google':

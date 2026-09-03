@@ -220,6 +220,9 @@ in KV). The user-facing error is `This username is reserved.` Accounts that
 already hold a colliding username keep it; `adminReservedUsernameList`
 `conflicts` lists those holders so operators can see them. Platform accounts
 still claim an exact token from the denylist, not a substring collision.
+Generated usernames keep numeric suffixes only when the preferred base is
+claimable but taken; a reserved base skips to a random compact candidate because
+`support-2` still contains `support`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:

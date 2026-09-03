@@ -14,8 +14,10 @@ export async function userExistsByUsername(db: D1Database, username: string) {
 
 /**
  * Find an available username starting from a preferred base (for example a
- * provider handle or an email local part), falling back to numeric suffixes
- * and finally a random suffix.
+ * provider handle or an email local part). Numeric suffixes are used only when
+ * the base itself is claimable but taken — a reserved base still collides
+ * after `-2` because reserved tokens of length 4+ match as substrings.
+ * Otherwise a random compact candidate is drawn until one is claimable.
  */
 export async function getAvailableUsernameFromBase(
 	db: D1Database,
@@ -29,18 +31,40 @@ export async function getAvailableUsernameFromBase(
 		.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
 		.slice(0, 32)
 		.replace(/[^a-z0-9]+$/g, '')
+
+	const baseError = normalizedBase
+		? await getEffectiveUsernameValidationError(normalizedBase, env)
+		: 'Username is required.'
 	if (
 		normalizedBase &&
-		!(await getEffectiveUsernameValidationError(normalizedBase, env)) &&
+		!baseError &&
 		!(await userExistsByUsername(db, normalizedBase))
 	) {
 		return normalizedBase
 	}
 
-	const prefix =
-		(normalizedBase || 'user').slice(0, 27).replace(/-+$/g, '') || 'user'
-	for (let suffix = 2; suffix <= 100; suffix += 1) {
-		const candidate = `${prefix}-${suffix}`
+	if (normalizedBase && !baseError) {
+		const prefix = normalizedBase.slice(0, 27).replace(/-+$/g, '') || 'n'
+		for (let suffix = 2; suffix <= 100; suffix += 1) {
+			const candidate = `${prefix}-${suffix}`
+			if (
+				!(await getEffectiveUsernameValidationError(candidate, env)) &&
+				!(await userExistsByUsername(db, candidate))
+			) {
+				return candidate
+			}
+		}
+	}
+
+	for (let attempt = 0; attempt < 32; attempt += 1) {
+		const bytes = new Uint8Array(6)
+		crypto.getRandomValues(bytes)
+		const random = Array.from(bytes, (byte) =>
+			byte.toString(16).padStart(2, '0'),
+		)
+			.join('')
+			.toLowerCase()
+		const candidate = `n${random}`
 		if (
 			!(await getEffectiveUsernameValidationError(candidate, env)) &&
 			!(await userExistsByUsername(db, candidate))
@@ -49,12 +73,7 @@ export async function getAvailableUsernameFromBase(
 		}
 	}
 
-	const bytes = new Uint8Array(3)
-	crypto.getRandomValues(bytes)
-	const random = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'))
-		.join('')
-		.toLowerCase()
-	return `user-${random}`
+	throw new Error('Unable to generate an available username.')
 }
 
 export async function getAvailableGeneratedUsername(

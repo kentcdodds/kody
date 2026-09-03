@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { adminCreateUserWithPasswordSetup } from './admin-user-creation.ts'
 import { adminPasswordSetupTokenExpiryMs } from './password-reset-tokens.ts'
+import { getUsernameValidationError } from './username.ts'
 
 type TestUser = {
 	id: number
@@ -203,8 +204,8 @@ test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and s
 	})
 	expect(explicit.users.size).toBe(0)
 
-	// A generated username derived from a reserved email local part must fall
-	// through to a non-reserved suffixed candidate.
+	// A generated username derived from a reserved email local part must not
+	// keep that token (`support-2` still contains `support`).
 	const generated = createAdminUserCreationTestDb()
 	const created = await adminCreateUserWithPasswordSetup({
 		db: generated.db,
@@ -212,5 +213,7 @@ test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and s
 		username: null,
 		setupLinkOrigin: 'https://kody.example/admin/invites',
 	})
-	expect(created.username).toBe('support-2')
+	expect(created.username).not.toBe('support')
+	expect(created.username.includes('support')).toBe(false)
+	expect(getUsernameValidationError(created.username)).toBeNull()
 })

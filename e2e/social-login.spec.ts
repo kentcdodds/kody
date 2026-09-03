@@ -41,7 +41,7 @@ test('social login signs in via mock GitHub and manages connections', async ({
 		name: 'Connected accounts',
 	})
 	await expect(
-		connectionsCard.getByText('Connected as mock-github-user'),
+		connectionsCard.getByText('Connected as mock-octo'),
 	).toBeVisible()
 
 	clearAuthRateLimitsInE2eDatabase()

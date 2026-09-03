@@ -284,7 +284,7 @@ test('account profile API updates username for the signed-in user', async () => 
 				packageId: 'pkg-1',
 				kodyId: 'demo',
 				previousName: '@current-user/demo',
-				nextName: '@next-user/demo',
+				nextName: '@next-jane/demo',
 				publishedCommit: 'abc',
 				changedPaths: ['package.json'],
 				shouldRepublishCommunityListing: true,
@@ -306,7 +306,7 @@ test('account profile API updates username for the signed-in user', async () => 
 				rememberMe: false,
 			},
 			method: 'POST',
-			body: { username: 'Next-User' },
+			body: { username: 'Next-Jane' },
 		}),
 	)
 
@@ -314,20 +314,20 @@ test('account profile API updates username for the signed-in user', async () => 
 	expect(await response.json()).toMatchObject({
 		ok: true,
 		email: 'current-user@example.com',
-		username: 'next-user',
-		displayName: 'next-user',
+		username: 'next-jane',
+		displayName: 'next-jane',
 		bio: null,
 		profileVisibility: 'public',
 		packagesUpdated: 1,
 		communityListingsRepublished: 1,
-		packageUpdateMessage: 'Updated 1 package to the new @next-user scope.',
+		packageUpdateMessage: 'Updated 1 package to the new @next-jane scope.',
 	})
-	expect(testDb.users.get(1)?.username).toBe('next-user')
+	expect(testDb.users.get(1)?.username).toBe('next-jane')
 	expect(mockModule.updateCommunityProfile).not.toHaveBeenCalled()
 	expect(mocks.updatePackagesForUsernameChange).toHaveBeenCalledWith(
 		expect.objectContaining({
 			previousUsername: 'current-user',
-			nextUsername: 'next-user',
+			nextUsername: 'next-jane',
 		}),
 	)
 	expect(
@@ -399,7 +399,7 @@ test('account profile API rejects username changes when package updates fail', a
 				rememberMe: false,
 			},
 			method: 'POST',
-			body: { username: 'next-user' },
+			body: { username: 'next-jane' },
 		}),
 	)
 
@@ -423,7 +423,7 @@ test('account profile API rejects username changes when package updates fail', a
 test('account profile API rejects invalid or duplicate usernames', async () => {
 	const testDb = createProfileTestDb([
 		createUser(1, 'current-user'),
-		createUser(2, 'taken-user'),
+		createUser(2, 'taken-jane'),
 	])
 	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
 	const session = {
@@ -461,7 +461,7 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 		await createRequest({
 			session,
 			method: 'POST',
-			body: { username: 'Taken-User' },
+			body: { username: 'Taken-Jane' },
 		}),
 	)
 	expect(duplicateResponse.status).toBe(409)
