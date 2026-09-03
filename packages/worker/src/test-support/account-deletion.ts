@@ -333,15 +333,14 @@ export function createTestDb(
 								return { meta: { changes: changed } }
 							}
 							const replaceJsonMatch = lower.match(
-								/^update (\w+) set (\w+) = replace\(\2, \?, \?\) where \2 like \?$/,
+								/^update (\w+) set (\w+) = replace\(\2, \?, \?\) where instr\(\2, \?\) > 0$/,
 							)
 							if (replaceJsonMatch) {
 								const table = replaceJsonMatch[1] as string
 								const column = replaceJsonMatch[2] as string
 								const search = String(params[0])
 								const replacement = String(params[1])
-								const likePattern = String(params[2])
-								const needle = likePattern.replace(/^%/, '').replace(/%$/, '')
+								const needle = String(params[2])
 								let changed = 0
 								for (const row of rows[table] ?? []) {
 									const current = row[column]
