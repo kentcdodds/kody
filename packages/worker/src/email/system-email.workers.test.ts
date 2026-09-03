@@ -290,6 +290,100 @@ test('user-subdomain mail delivers to a live unreserved built-in username and re
 	})
 })
 
+test('user-inbox plus-tags including reserved system locals store to the user mailbox', async () => {
+	await ensureEmailTestSchema(env.APP_DB)
+	await ensureUsageRollupsTestSchema(env.APP_DB)
+	const username = `plustag-${crypto.randomUUID().slice(0, 8)}`
+	const email = `${username}@example.com`
+	const userId = await createStableUserIdFromEmail(email)
+	await seedVerifiedAccount({ email, username })
+
+	const kodyTagged = buildInboundMessage({
+		to: `${username}+kody@${userDomain}`,
+		subject: 'User plus-tag kody',
+	})
+	await handleInboundEmail(kodyTagged, createInboundEnv())
+	expect(kodyTagged.rejectedReason).toBeNull()
+
+	const patchTagged = buildInboundMessage({
+		to: `${username}+patch@${userDomain}`,
+		subject: 'User plus-tag patch',
+	})
+	await handleInboundEmail(patchTagged, createInboundEnv())
+	expect(patchTagged.rejectedReason).toBeNull()
+
+	const supportTagged = buildInboundMessage({
+		to: `${username}+support@${userDomain}`,
+		subject: 'User plus-tag support',
+	})
+	await handleInboundEmail(supportTagged, createInboundEnv())
+	expect(supportTagged.rejectedReason).toBeNull()
+
+	const stored = await mailboxRpc({ env, userId }).listMessages({
+		direction: 'inbound',
+		limit: 10,
+	})
+	expect(stored.messages).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				subject: 'User plus-tag kody',
+				toAddresses: [`${username}+kody@${userDomain}`],
+				direction: 'inbound',
+				processingStatus: 'stored',
+			}),
+			expect.objectContaining({
+				subject: 'User plus-tag patch',
+				toAddresses: [`${username}+patch@${userDomain}`],
+				direction: 'inbound',
+				processingStatus: 'stored',
+			}),
+			expect.objectContaining({
+				subject: 'User plus-tag support',
+				toAddresses: [`${username}+support@${userDomain}`],
+				direction: 'inbound',
+				processingStatus: 'stored',
+			}),
+		]),
+	)
+	expect(stored.messages).toHaveLength(3)
+	expect(
+		await listSystemEmailMessages({
+			db: env.APP_DB,
+			limit: 10,
+		}),
+	).toEqual([])
+
+	const apexSystem = buildInboundMessage({
+		to: `kody@${systemDomain}`,
+		subject: 'Apex system still works',
+	})
+	await handleInboundEmail(apexSystem, createInboundEnv())
+	expect(apexSystem.rejectedReason).toBeNull()
+	expect(
+		await listSystemEmailMessages({
+			db: env.APP_DB,
+			limit: 10,
+		}),
+	).toEqual([
+		expect.objectContaining({
+			subject: 'Apex system still works',
+			toAddresses: [`kody@${systemDomain}`],
+		}),
+	])
+	expect(
+		(await mailboxRpc({ env, userId }).listMessages({ limit: 10 })).messages,
+	).toHaveLength(3)
+
+	const reservedUsername = buildInboundMessage({
+		to: `kody@${userDomain}`,
+		subject: 'Reserved username is not a user claim',
+	})
+	await handleInboundEmail(reservedUsername, createInboundEnv())
+	expect(reservedUsername.rejectedReason).toBe(
+		'This address is reserved for system mail.',
+	)
+})
+
 async function readSystemDailyReceiveCount(localPart: string) {
 	const row = await env.APP_DB.prepare(
 		`SELECT count FROM system_email_daily_counters

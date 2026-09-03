@@ -18,9 +18,15 @@ platform-assigned sender address.
   `{username}+{tag}@<platform domain>` routes to `{username}`'s inbox (and
   `support+{tag}@<apex>` to the corresponding system inbox). The base local part
   — everything before the first `+` — is what routes, so a tag can never bypass
-  the reserved or unknown-username checks. The full tagged address is preserved
-  in the stored message's `to_addresses`, so a package subscribing to
-  `email.message.received` can dispatch on the tag (for example, only handle
+  the reserved or unknown-username checks. Plus-tags on the user inbox host
+  (`inbox.kody.codes`, `inbox.heykody.*`, and any `getAcceptedUserEmailDomains`
+  host) are user-inbox aliases, not reserved system locals: `you+kody@inbox…`,
+  `you+support@inbox…`, and `you+admin@inbox…` deliver to `you` the same way
+  `you+patch@inbox…` does. `kody@inbox…` with no plus (the username itself is
+  the reserved local) still rejects. System inboxes stay on the apex only
+  (`kody@kody.codes` and the other `systemEmailLocals`). The full tagged address
+  is preserved in the stored message's `to_addresses`, so a package subscribing
+  to `email.message.received` can dispatch on the tag (for example, only handle
   mail addressed to `{username}+invoices@...`).
 - Mail to unknown usernames is rejected, and the app's apex domain is never a
   user inbox: user mail lives exclusively on the configured platform domain (the
