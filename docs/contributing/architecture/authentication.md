@@ -378,8 +378,24 @@ Both are opt-in and adapted from the Epic Stack.
     `archived_job_artifacts`,
   - the user's `StorageRunner` Durable Objects via the user-scoped
     `storageRunnerRpc` stub,
-  - all OAuth grants for the user via the bound OAuth provider,
+  - all OAuth grants for the user (and the provider clients the user minted) via
+    the bound OAuth provider,
   - the user row itself last so a partial failure can be retried.
+- `env.OAUTH_PROVIDER` is injected by `@cloudflare/workers-oauth-provider` only
+  inside its own `fetch` wrapper, so it exists for `POST /account/delete` but
+  not for the hourly unverified-account purge (`JobsHost.runScheduledLane` RPC
+  on origin) or for `adminUnverifiedAccountPurgeRun` when served from the
+  sessionful `MCP` Durable Object on kody-platform. Those paths fall back to
+  `packages/worker/src/oauth-kv-helpers.ts`, which implements `listUserGrants`,
+  `revokeGrant`, and `deleteClient` directly over `OAUTH_KV` with the provider's
+  key layout (`grant:{userId}:{grantId}`, `token:{userId}:{grantId}:{tokenId}`,
+  `client:{clientId}`) and deletion order, so the KV result is identical to a
+  fetch-context revoke. Deletion only reports "OAuth grants were not revoked"
+  when both `OAUTH_PROVIDER` and `OAUTH_KV` are missing. Account export's
+  `oauth_grants` section (`packages/worker/src/account/export.ts`) uses the same
+  reader for `listUserGrants`, so `accountExportManifest` /
+  `accountExportSection` served from the platform `MCP` Durable Object include
+  grant metadata too.
 - After the user row is gone, origin clears the UserMeter deletion tombstone
   `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
   a later account with that email reuses the same Durable Object id and must not

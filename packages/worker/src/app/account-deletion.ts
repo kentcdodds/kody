@@ -3,6 +3,7 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsBestEffort,
 } from '#worker/oauth-grants.ts'
+import { createKvOAuthHelpers } from '#worker/oauth-kv-helpers.ts'
 import {
 	cancelSubscription,
 	deleteCustomer,
@@ -90,6 +91,21 @@ type OAuthHelpersShape = OAuthGrantHelpers & {
 
 type AccountDeletionEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpersShape
+}
+
+/**
+ * `OAUTH_PROVIDER` exists only inside the provider's `fetch` wrapper
+ * (self-service `POST /account/delete`). The hourly unverified-account purge
+ * (`JobsHost.runScheduledLane` RPC) and the admin MCP capability on the
+ * platform/runtime lane run outside it, so they revoke through the same
+ * `OAUTH_KV` key layout instead.
+ */
+function resolveOAuthHelpers(
+	env: AccountDeletionEnv,
+): OAuthHelpersShape | undefined {
+	if (env.OAUTH_PROVIDER) return env.OAUTH_PROVIDER
+	if (!env.OAUTH_KV) return undefined
+	return createKvOAuthHelpers(env.OAUTH_KV)
 }
 
 export type AccountDeletionResult = {
@@ -1299,7 +1315,7 @@ export async function deleteUserAccount(input: {
 		}
 	}
 
-	const helpers = input.env.OAUTH_PROVIDER
+	const helpers = resolveOAuthHelpers(input.env)
 	if (helpers) {
 		if (helpers.deleteClient) {
 			const deleteClient = helpers.deleteClient
@@ -1336,7 +1352,7 @@ export async function deleteUserAccount(input: {
 		}
 	} else {
 		warnings.push(
-			'OAuth provider binding was unavailable; OAuth grants were not revoked.',
+			'OAuth provider binding and OAUTH_KV were unavailable; OAuth grants were not revoked.',
 		)
 	}
 

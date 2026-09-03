@@ -15,6 +15,7 @@ import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 import {
 	insertRepoSession,
 	listRepoSessionsByUser,
@@ -1516,4 +1517,136 @@ test('deleteUserAccount keeps an existing fence when writers are still active', 
 	expect(await meter.readDeletionState()).toEqual({
 		deletingAt: '2026-08-31 15:22:12',
 	})
+})
+
+test('deleteUserAccount revokes OAuth grants through OAUTH_KV when the provider helpers are absent', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+		user_mcp_oauth_clients: [
+			{
+				id: 'row-1',
+				user_id: 1,
+				client_id: 'owned-client',
+				revoked_at: null,
+			},
+		],
+	})
+	const providerGrant = (userId: string, grantId: string, clientId: string) =>
+		JSON.stringify({ id: grantId, userId, clientId, scope: ['mcp'] })
+	const providerToken = (userId: string, grantId: string, tokenId: string) =>
+		JSON.stringify({ id: tokenId, userId, grantId })
+	const { kv, store } = createMemoryKvNamespace({
+		'client:owned-client': JSON.stringify({ clientId: 'owned-client' }),
+		'client:host-client': JSON.stringify({ clientId: 'host-client' }),
+		'grant:user-aaa:grant-1': providerGrant(
+			'user-aaa',
+			'grant-1',
+			'host-client',
+		),
+		'grant:user-aaa:grant-2': providerGrant(
+			'user-aaa',
+			'grant-2',
+			'host-client',
+		),
+		'token:user-aaa:grant-1:tok-1': providerToken(
+			'user-aaa',
+			'grant-1',
+			'tok-1',
+		),
+		'token:user-aaa:grant-1:tok-2': providerToken(
+			'user-aaa',
+			'grant-1',
+			'tok-2',
+		),
+		'token:user-aaa:grant-2:tok-3': providerToken(
+			'user-aaa',
+			'grant-2',
+			'tok-3',
+		),
+		'grant:user-bbb:grant-9': providerGrant(
+			'user-bbb',
+			'grant-9',
+			'host-client',
+		),
+		'token:user-bbb:grant-9:tok-9': providerToken(
+			'user-bbb',
+			'grant-9',
+			'tok-9',
+		),
+	})
+	const env = createSuccessfulDeletionEnv(db, {
+		OAUTH_PROVIDER: undefined,
+		OAUTH_KV: kv,
+	})
+
+	const result = await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	expect(result.warnings).toEqual([])
+	expect(result.revokedOAuthGrants).toBe(2)
+	expect(rows.users).toEqual([])
+	expect([...store.keys()].sort()).toEqual([
+		'client:host-client',
+		'grant:user-bbb:grant-9',
+		'token:user-bbb:grant-9:tok-9',
+	])
+})
+
+test('deleteUserAccount prefers the fetch-context provider helpers over OAUTH_KV', async () => {
+	const { db } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	const { kv, store } = createMemoryKvNamespace({
+		'grant:user-aaa:grant-1': JSON.stringify({
+			id: 'grant-1',
+			userId: 'user-aaa',
+			clientId: 'host-client',
+		}),
+	})
+	const revokeGrant = vi.fn(async () => undefined)
+	const result = await deleteUserAccount({
+		env: createSuccessfulDeletionEnv(db, {
+			OAUTH_KV: kv,
+			OAUTH_PROVIDER: {
+				async listUserGrants() {
+					return {
+						items: [{ id: 'provider-grant', clientId: 'host-client' }],
+						cursor: undefined,
+					}
+				},
+				revokeGrant,
+			},
+		}),
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	expect(result.warnings).toEqual([])
+	expect(result.revokedOAuthGrants).toBe(1)
+	expect(revokeGrant).toHaveBeenCalledWith('provider-grant', 'user-aaa')
+	expect([...store.keys()]).toEqual(['grant:user-aaa:grant-1'])
+})
+
+test('deleteUserAccount reports the missing OAuth surfaces when neither provider helpers nor OAUTH_KV exist', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, { OAUTH_PROVIDER: undefined }),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toMatchObject({
+		name: 'AccountDeletionCleanupError',
+		cleanupErrors: [
+			'OAuth provider binding and OAUTH_KV were unavailable; OAuth grants were not revoked.',
+		],
+	})
+	expect(rows.users).toEqual([
+		expect.objectContaining({ id: 1, deleting_at: expect.any(String) }),
+	])
 })
