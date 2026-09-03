@@ -56,9 +56,12 @@ const footerInnerCss = {
 	gap: '1.2rem 2rem',
 	fontSize: '0.92rem',
 	color: colors.textMuted,
-	'@media (max-width: 720px)': {
+	/* Stack before the inline nav would crowd the brand/tagline row — same idea
+	   as the header's nav breakpoint, tuned for footer link count. */
+	'@media (max-width: 960px)': {
 		gridTemplateColumns: '1fr',
 		justifyItems: 'center',
+		textAlign: 'center',
 	},
 }
 
@@ -82,37 +85,34 @@ const taglineCss = {
 }
 
 const footerNavCss = {
-	display: 'flex',
-	gap: '1.4rem',
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fill, minmax(6.5rem, auto))',
+	gap: '0.45rem 1.4rem',
+	justifyContent: 'end',
 	justifySelf: 'end',
-	'@media (max-width: 720px)': {
-		justifySelf: 'center',
-	},
+	maxWidth: '34rem',
 	'& a': {
 		color: colors.textMuted,
 		textDecoration: 'none',
-		whiteSpace: 'nowrap' as const,
-		flexShrink: 0,
+		textAlign: 'center' as const,
 		// Same fast color ease as the header nav — one voice for nav links.
 		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
-	/* Stacked on phones: the links in a row sit close enough to mis-tap, and
-	   the column gives each one a comfortable target without the 44px minimum
-	   the header menu needs (these are the last thing on the page, not the
-	   primary nav). Centred to match the rest of the stacked footer. */
-	'@media (max-width: 560px)': {
-		flexDirection: 'column' as const,
-		alignItems: 'center',
-		gap: '0.2rem',
+	'@media (max-width: 960px)': {
+		justifySelf: 'center',
+		justifyContent: 'center',
+		width: 'min(100%, 28rem)',
+		gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 		'& a': {
 			display: 'flex',
 			alignItems: 'center',
+			justifyContent: 'center',
 			minHeight: '40px',
-			paddingInline: '0.75rem',
-			color: colors.textMuted,
-			textDecoration: 'none',
-			transition: `color ${transitions.fast}`,
 		},
+	},
+	'@media (max-width: 480px)': {
+		width: 'min(100%, 18rem)',
+		gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 	},
 }
