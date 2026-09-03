@@ -401,6 +401,7 @@ export function AccountValuesRoute(handle: Handle) {
 						mode="expand"
 						ariaLabel="Saved values"
 						selectedId={selection.selectedId}
+						recordLoading={isLoadingSelection}
 						onNavigate={resetSelectionState}
 						countLabel={`${filteredValues.length} of ${values.length} shown`}
 						emptyLabel={

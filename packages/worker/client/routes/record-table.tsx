@@ -158,6 +158,12 @@ type RecordTableProps = {
 	 * everything below it on every keystroke of a search that refetches.
 	 */
 	busy?: boolean
+	/**
+	 * The selected record is still being fetched. Off-window selections have
+	 * no row to mark, so this keeps `data-record-focus-pending` until the
+	 * pane exists. Not-found results must pass false (or omit it).
+	 */
+	recordLoading?: boolean
 	emptyLabel?: string
 	/** Below the table, inside its pane: the infinite-list "Load more" control. */
 	footer?: Slot
@@ -407,24 +413,27 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		// fight to read. `pane` and `none` keep the cap, which is what keeps
 		// the record below reachable without a long scroll first.
 		const capped = mode !== 'expand'
+		const selectedRowVisible =
+			selectedId != null && rows.some((row) => row.id === selectedId)
 		// `expand` puts the record inside the row it belongs to, which only works
 		// while that row is on screen. A deep link, a filter, paging, or a
 		// not-found selection leaves a loaded record with no row to unfold under
 		// — so it falls back to a pane below the table rather than disappearing.
 		const expandedInTable = Boolean(
-			mode === 'expand' &&
-			handle.props.record &&
-			selectedId != null &&
-			rows.some((row) => row.id === selectedId),
+			mode === 'expand' && handle.props.record && selectedRowVisible,
 		)
 		const orphanedRecord = Boolean(
 			mode === 'expand' && handle.props.record && !expandedInTable,
 		)
+		// Retry scroll restoration only while an off-window selection is still
+		// loading. An in-list row already carries `data-record-focus`; a
+		// not-found id must not keep the restorer spinning.
 		const focusPending = Boolean(
 			selectable &&
 			selectedId != null &&
 			!handle.props.record &&
-			handle.props.busy,
+			!selectedRowVisible &&
+			(handle.props.recordLoading || handle.props.busy),
 		)
 
 		const table = (

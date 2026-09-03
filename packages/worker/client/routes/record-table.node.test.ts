@@ -136,8 +136,10 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 
 	// Off-window selection still loading: keep retrying scroll restoration
-	// until the pane exists. A not-found selection is not pending.
-	const pendingHtml = await renderToString(
+	// until the pane exists. List `busy` and detail `recordLoading` both
+	// count. A not-found selection is not pending. An in-list row already
+	// has `data-record-focus`, so it does not need the pending marker.
+	const pendingBusyHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'expand',
 			ariaLabel: 'Users',
@@ -147,8 +149,32 @@ test('record table keeps container drops, row links, and expand/pane selection c
 			busy: true,
 		}),
 	)
-	expect(pendingHtml).toContain('data-record-focus-pending="true"')
-	expect(pendingHtml).not.toContain('data-record-focus="true"')
+	expect(pendingBusyHtml).toContain('data-record-focus-pending="true"')
+	expect(pendingBusyHtml).not.toContain('data-record-focus="true"')
+	const pendingRecordHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Memories',
+			columns,
+			rows,
+			selectedId: 'not-in-this-window',
+			recordLoading: true,
+		}),
+	)
+	expect(pendingRecordHtml).toContain('data-record-focus-pending="true"')
+	expect(pendingRecordHtml).not.toContain('data-record-focus="true"')
+	const inListBusyHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Users',
+			columns,
+			rows,
+			selectedId: 'b',
+			busy: true,
+		}),
+	)
+	expect(inListBusyHtml).toContain('data-record-focus="true"')
+	expect(inListBusyHtml).not.toContain('data-record-focus-pending')
 	const notFoundHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'expand',

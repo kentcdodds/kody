@@ -441,6 +441,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 						mode="expand"
 						ariaLabel="Workflow runs"
 						selectedId={selection.selectedId}
+						recordLoading={waitingForDetail}
 						onNavigate={() => {
 							cancelWorkflowCheck.reset()
 							setMessage(null)

@@ -487,6 +487,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 							mode="expand"
 							ariaLabel="Integrations"
 							selectedId={selectedApp ? integrationListId(selectedApp) : null}
+							recordLoading={Boolean(
+								missingKind &&
+								!showIntegrationNotFound &&
+								!showConnectionNotFound,
+							)}
 							countLabel={`${filteredApps.length} of ${apps.length} integrations`}
 							emptyLabel={
 								apps.length === 0

@@ -631,6 +631,12 @@ export function AccountSecretsRoute(handle: Handle) {
 					mode="expand"
 					ariaLabel="Saved secrets"
 					selectedId={activeSecretId}
+					recordLoading={Boolean(
+						selection.selectedId &&
+						!selection.isCreating &&
+						selectedSecret == null &&
+						(status === 'loading' || isRefreshingForLocationChange),
+					)}
 					countLabel={
 						status === 'ready'
 							? `${filteredSecrets.length} of ${secrets.length} shown`
