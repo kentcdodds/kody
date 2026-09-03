@@ -25,6 +25,12 @@ test('long queries are trimmed to fit the D1 pattern limit', () => {
 	expect(byteLength(emoji)).toBeLessThanOrEqual(d1MaxLikePatternBytes)
 	// Never split a multi-byte character.
 	expect(emoji).toMatch(/^%(🙂)*%$/u)
+
+	// A 45-byte ASCII prefix followed by a supplementary character: the trim
+	// lands inside the surrogate pair and must drop the whole code point.
+	const surrogateEdge = d1ContainsLikePattern(`${'a'.repeat(45)}🙂🙂`)
+	expect(surrogateEdge).toBe(`%${'a'.repeat(45)}%`)
+	expect(surrogateEdge.isWellFormed()).toBe(true)
 })
 
 test('trimming never leaves a dangling escape before the closing wildcard', () => {

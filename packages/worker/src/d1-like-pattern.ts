@@ -26,9 +26,14 @@ function utf8ByteLength(value: string) {
  * never splitting a multi-byte character.
  */
 function fitEscapedValue(value: string, budgetBytes: number) {
+	// Trim whole code points: slicing UTF-16 units can leave an unpaired
+	// surrogate, which TextEncoder counts as a 3-byte replacement and the
+	// resulting pattern would never match.
+	const codePoints = Array.from(value)
 	let result = value
-	while (result.length > 0 && utf8ByteLength(result) > budgetBytes) {
-		result = result.slice(0, -1)
+	while (codePoints.length > 0 && utf8ByteLength(result) > budgetBytes) {
+		codePoints.pop()
+		result = codePoints.join('')
 	}
 	// Dropping the character after a backslash would leave an escape that
 	// swallows the closing `%`; drop the backslash as well.
