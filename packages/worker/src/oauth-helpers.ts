@@ -11,11 +11,11 @@ type OAuthHelpers = WorkersOAuthProvider.OAuthHelpers
  * constructor insists on request handlers even though the helpers API never
  * routes a request. These stubs satisfy that contract and nothing else.
  */
-const inertHandler: ExportedHandler<Env> = {
+const inertHandler = {
 	fetch() {
 		return Promise.resolve(new Response('Not Found', { status: 404 }))
 	},
-}
+} satisfies ExportedHandler<Env>
 
 /**
  * Resolve the provider's `OAuthHelpers` for the current execution context.
