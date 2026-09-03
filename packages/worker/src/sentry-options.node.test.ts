@@ -8,6 +8,8 @@ import {
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectInstanceInactiveCloseMessage,
 	durableObjectIsolateMemoryResetMessage,
+	durableObjectOverloadedRequestsQueuedTooLongMessage,
+	durableObjectOverloadedTooManyRequestsQueuedMessage,
 	durableObjectSqliteOutOfMemoryMessage,
 	durableObjectStorageOperationTimeoutResetMessage,
 	executorSandboxTimeoutMessage,
@@ -592,4 +594,38 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(unrelatedDoFailure)).toBe(unrelatedDoFailure)
+
+	// Bare Cloudflare DO queue saturation (KODY-6J). One representative form
+	// per family, plus an `Error:`-prefixed variant and a missing trailing
+	// period. Wrapped recovery failures must stay visible.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{ value: durableObjectOverloadedRequestsQueuedTooLongMessage },
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: `Error: ${durableObjectOverloadedTooManyRequestsQueuedMessage.replace(/\.$/, '')}`,
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	const wrappedDoOverload = {
+		exception: {
+			values: [
+				{
+					value: `serveMcp could not recover after retries: ${durableObjectOverloadedRequestsQueuedTooLongMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedDoOverload)).toBe(wrappedDoOverload)
 })
