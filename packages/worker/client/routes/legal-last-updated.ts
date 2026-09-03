@@ -1,1 +1,1 @@
-export const legalLastUpdated = '2026-09-02'
+export const legalLastUpdated = '2026-09-03'

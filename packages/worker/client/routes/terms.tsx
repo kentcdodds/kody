@@ -48,6 +48,11 @@ export function TermsRoute(_handle: Handle) {
 					data from Account settings.
 				</p>
 				<p mix={css(descriptionCss)}>
+					Kody may change your username at the operator&apos;s discretion if it
+					is abusive, reserved, impersonating, or otherwise a problem — even if
+					it was allowed when you signed up.
+				</p>
+				<p mix={css(descriptionCss)}>
 					You must be at least 13 and legally able to agree to these terms. If
 					local law requires parental consent, you must have it.
 				</p>

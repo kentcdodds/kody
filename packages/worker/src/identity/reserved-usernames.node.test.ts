@@ -91,13 +91,19 @@ test('reserved username claims match compact equality and long-token substrings'
 		'super-fuck',
 		'fu-ck',
 		'FUCKYOU',
+		'FuckYou',
+		'SUPERFUCK',
+		'fuck_you',
+		'super_fuck',
 	]) {
 		expect(isUsernameEffectivelyReserved(reserved, addedSwears)).toBe(true)
 		expect(getReservedUsernameError(reserved)).toBeNull()
 	}
 	expect(isUsernameEffectivelyReserved('assistant', addedSwears)).toBe(false)
+	expect(isUsernameEffectivelyReserved('AssIstant', addedSwears)).toBe(false)
 	expect(isUsernameEffectivelyReserved('analytics', addedSwears)).toBe(false)
 	expect(isUsernameEffectivelyReserved('a-ss', addedSwears)).toBe(true)
+	expect(isUsernameEffectivelyReserved('a_ss', addedSwears)).toBe(true)
 	expect(isUsernameEffectivelyReserved('ass', addedSwears)).toBe(true)
 
 	expect(isUsernameEffectivelyReserved('super-faq')).toBe(false)

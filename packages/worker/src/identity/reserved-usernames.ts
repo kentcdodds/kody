@@ -309,9 +309,11 @@ export function isBuiltInReservedUsername(username: string) {
  * Existing holders keep their username; this is only for signup, rename,
  * generated usernames, and admin conflict listing.
  *
- * Matching: lowercase trim; exact token match; hyphen/underscore-stripped
- * equality; then substring only when the compact reserved token is at least
- * four characters (so `ass` does not block `assistant`).
+ * Matching is case-insensitive (lowercase + trim). Hyphens and underscores
+ * are stripped before equality and substring checks, including on input that
+ * is not a valid stored username. Then substring only when the compact
+ * reserved token is at least four characters (so `ass` does not block
+ * `assistant`).
  */
 export function usernameCollidesWithReservedNames(
 	username: string,
