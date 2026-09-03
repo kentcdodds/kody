@@ -1,4 +1,4 @@
-import { type DatabaseSync } from 'node:sqlite'
+import { type DatabaseSync, type SQLInputValue } from 'node:sqlite'
 
 export type CreateD1FromSqliteOptions = {
 	/**
@@ -42,7 +42,9 @@ export function createD1FromSqlite(
 	function createPreparedStatement(query: string) {
 		return {
 			query,
-			bind(...params: Array<unknown>) {
+			// D1's `bind` accepts `unknown`; callers in tests pass SQLite-compatible
+			// scalars, so narrow once here for `node:sqlite`'s typed statements.
+			bind(...params: Array<SQLInputValue>) {
 				assertBindingCount(params)
 				return {
 					query,
