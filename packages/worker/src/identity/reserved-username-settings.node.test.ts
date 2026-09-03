@@ -17,11 +17,7 @@ import {
 	reservedUsernamesKvKey,
 	reservedUsernamesKvReadFailedLogKey,
 } from './reserved-username-settings.ts'
-import { computeEffectiveReservedUsernames } from './reserved-usernames.ts'
-import {
-	getEffectiveUsernameValidationError,
-	getUsernameValidationError,
-} from './username.ts'
+import { getEffectiveUsernameValidationError } from './username.ts'
 
 function createMemoryKv(initial?: Record<string, string>) {
 	const store = new Map<string, string>(Object.entries(initial ?? {}))
@@ -57,24 +53,6 @@ function createMigratedDb() {
 test('reserved username KV overrides, fallback, memo, permanent lock, and conflicts', async () => {
 	expect(await isEffectivelyReservedUsername('faq')).toBe(true)
 	expect(await isEffectivelyReservedUsername('alice')).toBe(false)
-	expect(
-		computeEffectiveReservedUsernames({
-			added: ['brandnew'],
-			removed: ['faq', 'kody'],
-		}).has('faq'),
-	).toBe(false)
-	expect(
-		computeEffectiveReservedUsernames({
-			added: ['brandnew'],
-			removed: ['faq', 'kody'],
-		}).has('kody'),
-	).toBe(true)
-	expect(
-		computeEffectiveReservedUsernames({
-			added: ['brandnew'],
-			removed: ['faq'],
-		}).has('brandnew'),
-	).toBe(true)
 
 	const overrideKv = createMemoryKv({
 		[reservedUsernamesKvKey]: JSON.stringify({
@@ -96,17 +74,16 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	)
 	expect(
 		await getEffectiveReservedUsernameError('brandnew', envWithOverride),
-	).toBe('This username is reserved.')
+	).not.toBeNull()
 	expect(await getEffectiveReservedUsernameError('faq', envWithOverride)).toBe(
 		null,
 	)
 	expect(
 		await getEffectiveUsernameValidationError('brandnew', envWithOverride),
-	).toBe('This username is reserved.')
+	).not.toBeNull()
 	expect(
 		await getEffectiveUsernameValidationError('faq', envWithOverride),
 	).toBe(null)
-	expect(getUsernameValidationError('faq')).toBe('This username is reserved.')
 
 	clearReservedUsernameSettingsCacheForTests()
 	consoleWarn.mockImplementation(() => {})

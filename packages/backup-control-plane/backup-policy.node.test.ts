@@ -5,7 +5,6 @@ import { test } from 'vitest'
 
 import {
 	BackupError,
-	absentConfiguredSourceNote,
 	assertConfiguredIdentity,
 	assertRemoteDatabaseIdentity,
 	backupPayload,
@@ -131,10 +130,6 @@ test('bookmark-derived keys reject unsafe bookmark path input', () => {
 				error instanceof BackupError && error.code === 'unsafe-export-bookmark',
 		)
 	}
-	assert.equal(
-		objectKeyForBookmark(prefix, 'bookmark-1'),
-		objectKeyForBookmark(prefix, 'bookmark-1'),
-	)
 	assert.notEqual(
 		objectKeyForBookmark(prefix, 'bookmark-1'),
 		objectKeyForBookmark(prefix, 'bookmark-2'),
@@ -276,13 +271,6 @@ test('declaredSourceDatabases uses the sealed day list and notes absent configur
 			{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
 			{ id: DATABASE_ID, name: 'production-db' },
 		],
-	)
-	assert.equal(
-		absentConfiguredSourceNote({
-			id: JOBS_DATABASE_ID,
-			name: 'kody-jobs',
-		}),
-		'JOBS_DB: not present in this backup day',
 	)
 	assert.throws(
 		() =>

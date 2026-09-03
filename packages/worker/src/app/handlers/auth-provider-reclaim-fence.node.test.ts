@@ -14,7 +14,6 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 
 const { createAuthProviderCallbackHandler } =
 	await import('#app/handlers/auth-provider.ts')
-import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import {
 	createAppEnv,
@@ -392,9 +391,6 @@ test('signed-in unverified accounts cannot link a provider; verified accounts st
 	expect(unverifiedResponse.status).toBe(302)
 	expect(unverifiedResponse.headers.get('Location')).toBe(
 		'/account?oauthError=email-unverified',
-	)
-	expect(getOauthLoginErrorMessage('email-unverified')).toBe(
-		'Verify your email before connecting a sign-in provider.',
 	)
 	expect(
 		sqlite

@@ -945,7 +945,7 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 	expect(firstCall?.request.idempotencyKey).toBe(
 		secondCall?.request.idempotencyKey,
 	)
-	expect(firstCall?.request.idempotencyKey).not.toMatch(/^webhook:/)
+	expect(firstCall?.request.idempotencyKey).toMatch(/^[0-9a-f]{64}$/)
 	expect(firstCall?.request.idempotencyParamsHash).toBe('ignore')
 	expect(secondCall?.request.idempotencyParamsHash).toBe('ignore')
 	expect(firstCall?.request.params.webhook.receivedAt).not.toBe(

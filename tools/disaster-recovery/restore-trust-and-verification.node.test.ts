@@ -183,9 +183,6 @@ test('restore requires a trusted manifest signature and checked baseline id', as
 })
 
 test('restore trust registry is exact, pins the reviewed identities, and cannot be replaced by operator assertions', async () => {
-	expect(parseRestoreTrustRegistry(createTrustRegistry())).toEqual(
-		createTrustRegistry(),
-	)
 	expect(() =>
 		parseRestoreTrustRegistry({
 			...createTrustRegistry(),

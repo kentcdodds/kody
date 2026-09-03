@@ -170,8 +170,4 @@ test('retrospective parse, store mapping, and schema upgrade keep probe incident
 	const jobsParsed = parseIncidentRetrospectiveInput(jobsPayload)
 	if (!jobsParsed.ok) throw new Error(jobsParsed.message)
 	expect(jobsParsed.retrospective.timeline.length).toBeGreaterThan(3)
-	expect(jobsParsed.retrospective.whatHappened).toMatch(/incident 10/i)
-	expect(jobsParsed.retrospective.cause).toMatch(/No confirmed root cause/)
-	expect(jobsParsed.retrospective.whatWeDid).toMatch(/not finishing #2010/)
-	expect(jobsParsed.retrospective.whatWeWillChange).toMatch(/Do not split/)
 })

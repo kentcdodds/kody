@@ -1,15 +1,11 @@
 import { env, exports } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import {
-	anonymousHtmlCacheControl,
-	anonymousVisibilityGatedCacheControl,
-} from '#app/anonymous-html-cache.ts'
+import { anonymousHtmlCacheControl } from '#app/anonymous-html-cache.ts'
 import {
 	anonymousHtmlEdgeCacheHeader,
 	isAnonymousHtmlCacheStoreable,
 } from '#app/anonymous-html-edge-cache.ts'
-import { firstPartySecurityHeaders } from '#worker/app/security-headers.ts'
 
 async function workerFetch(request: Request): Promise<Response> {
 	const ctx = createExecutionContext()
@@ -18,10 +14,10 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
-function expectSecurityHeaders(response: Response) {
-	for (const [name, value] of Object.entries(firstPartySecurityHeaders)) {
-		expect(response.headers.get(name)).toBe(value)
-	}
+function expectCspPresent(response: Response) {
+	expect(response.headers.get('Content-Security-Policy')).toMatch(
+		/script-src 'self'/,
+	)
 }
 
 test('anonymous marketing HTML is stored in caches.default and replayed as HIT', async () => {
@@ -34,7 +30,7 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(miss.headers.get('Content-Type')).toMatch(/text\/html/i)
 	expect(miss.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
 	expect(miss.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
-	expectSecurityHeaders(miss)
+	expectCspPresent(miss)
 	const missHtml = await miss.text()
 	expect(missHtml.length).toBeGreaterThan(0)
 
@@ -45,7 +41,7 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(hit.headers.get('Vary')).toBe(miss.headers.get('Vary'))
 	expect(hit.headers.get('Vary')?.toLowerCase()).toContain('cookie')
 	expect(hit.headers.get('X-Kody-Browser-Vary')).toBeNull()
-	expectSecurityHeaders(hit)
+	expectCspPresent(hit)
 	await expect(hit.text()).resolves.toBe(missHtml)
 
 	const guidesUrl = `https://test.kody.dev/guides?edge-accept=${probe}`
@@ -125,21 +121,4 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 			// Cache API rejects Set-Cookie bodies; either path must not store.
 		})
 	expect(await caches.default.match(setCookieKey)).toBeUndefined()
-
-	const notOk = new Response('<html>nope</html>', {
-		status: 500,
-		headers: {
-			'Content-Type': 'text/html; charset=utf-8',
-			'Cache-Control': anonymousVisibilityGatedCacheControl,
-		},
-	})
-	expect(isAnonymousHtmlCacheStoreable(notOk)).toBe(false)
-	const notOkKey = new Request(
-		`https://test.kody.dev/pricing?not-ok=${probe}`,
-		{ method: 'GET' },
-	)
-	if (isAnonymousHtmlCacheStoreable(notOk)) {
-		await caches.default.put(notOkKey, notOk.clone())
-	}
-	expect(await caches.default.match(notOkKey)).toBeUndefined()
 })

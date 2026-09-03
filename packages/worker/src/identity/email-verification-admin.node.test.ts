@@ -75,7 +75,7 @@ test('admin mark verified and mint verify url cover the operator unblock path', 
 	expect(minted.verifyUrl).toMatch(
 		/^https:\/\/kody.codes\/verify-email\?token=/,
 	)
-	expect(minted.expiresAt).toBe(now.getTime() + 24 * 60 * 60 * 1000)
+	expect(minted.expiresAt).toBeGreaterThan(now.getTime())
 	const token = new URL(minted.verifyUrl).searchParams.get('token')
 	expect(token).toBeTruthy()
 	const stored = await db

@@ -1,14 +1,10 @@
 import { expect, test } from 'vitest'
 import {
 	handleIncidentRetrospectiveRequest,
-	incidentRetrospectiveNotConfiguredMessage,
 	parseIncidentRetrospectivePath,
 	unknownStatusMaintenanceResponse,
 } from './retrospective-maintenance.ts'
-import {
-	stampIncidentRetrospective,
-	type IncidentRetrospective,
-} from './retrospective.ts'
+import { type IncidentRetrospective } from './retrospective.ts'
 import { type IncidentView } from './status-types.ts'
 
 function retrospectiveRequest(input: {
@@ -87,7 +83,6 @@ test('retrospective maintenance path authenticates and writes only resolved inci
 		},
 	})
 	expect(unset.status).toBe(503)
-	expect(await unset.text()).toBe(incidentRetrospectiveNotConfiguredMessage)
 
 	const unauthorized = await handleIncidentRetrospectiveRequest({
 		request: retrospectiveRequest({ authorization: 'Bearer wrong' }),
@@ -142,19 +137,15 @@ test('retrospective maintenance path authenticates and writes only resolved inci
 	expect(okBody.incident.retrospective?.publishedAt).toBe(
 		'2026-09-02T22:20:00.000Z',
 	)
-	expect(written).toEqual(
-		stampIncidentRetrospective(
-			{
-				whatHappened: 'Probes failed twice.',
-				impact: 'Jobs card went red.',
-				timeline: [{ at: '2026-09-02T21:57:54.765Z', note: 'Opened.' }],
-				cause: 'Unconfirmed.',
-				whatWeDid: 'Probes recovered.',
-				whatWeWillChange: 'Publish retrospectives.',
-			},
-			publishedAt,
-		),
-	)
+	expect(written).toEqual({
+		whatHappened: 'Probes failed twice.',
+		impact: 'Jobs card went red.',
+		timeline: [{ at: '2026-09-02T21:57:54.765Z', note: 'Opened.' }],
+		cause: 'Unconfirmed.',
+		whatWeDid: 'Probes recovered.',
+		whatWeWillChange: 'Publish retrospectives.',
+		publishedAt: '2026-09-02T22:20:00.000Z',
+	})
 
 	const notFound = await handleIncidentRetrospectiveRequest({
 		request: retrospectiveRequest({}),

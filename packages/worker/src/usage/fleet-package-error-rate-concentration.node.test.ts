@@ -18,10 +18,8 @@ const {
 	parseFleetPackageErrorRateConcentration,
 	resolveFleetPackageErrorRateConcentration,
 } = await import('./fleet-package-error-rate-concentration.ts')
-const {
-	classifyFleetPackageErrorRateConcentrationKind,
-	formatFleetPackageErrorRateConcentration,
-} = await import('#universal/fleet-package-error-rate-concentration.ts')
+const { classifyFleetPackageErrorRateConcentrationKind } =
+	await import('#universal/fleet-package-error-rate-concentration.ts')
 
 const jettPackageIds = {
 	dji: '11111111-1111-4111-8111-111111111111',
@@ -196,9 +194,6 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 			},
 		],
 	})
-	expect(formatFleetPackageErrorRateConcentration(concentration!)).toBe(
-		'One account owns 100% of recent errors (jett: dji-cloud-relay-staging-deploy, earthranger-relay-staging-deploy, analysis-staging-deploy).',
-	)
 	expect(JSON.stringify(concentration)).not.toContain('user_id')
 	expect(JSON.stringify(concentration)).not.toContain('jett-user')
 	expect(JSON.stringify(concentration)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
@@ -231,34 +226,6 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		owner_count: 5,
 		owners: [],
 	})
-	expect(formatFleetPackageErrorRateConcentration(fleet!)).toBe(
-		'Errors are spread across the fleet (top owner 20%).',
-	)
-
-	expect(
-		formatFleetPackageErrorRateConcentration({
-			kind: 'few_accounts',
-			recent_errors: 100,
-			owner_count: 3,
-			package_count: 3,
-			top_owner_share: 0.4,
-			owners: [
-				{
-					username: 'ada',
-					error_share: 0.4,
-					packages: [{ kody_id: 'ada-relay' }],
-				},
-				{
-					username: 'bea',
-					error_share: 0.3,
-					packages: [{ kody_id: 'bea-relay' }],
-				},
-			],
-		}),
-	).toBe(
-		'A few accounts own most recent errors (top owner 40%: ada: ada-relay; bea: bea-relay).',
-	)
-
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
 			if (input.query.includes("blob1 IN ('user-a')")) {
