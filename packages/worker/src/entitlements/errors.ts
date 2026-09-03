@@ -118,7 +118,7 @@ export function parseJobIntervalFloorMessage(
 	message: string,
 ): JobIntervalFloorErrorDetails | null {
 	const match =
-		/^Your "([^"]+)" plan cannot run jobs more often than every (.+)\. (.+)$/.exec(
+		/^Your "([^"]+)" plan cannot run jobs more often than every (.*?)\. (.*)$/.exec(
 			message,
 		)
 	if (!match) return null

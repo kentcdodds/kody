@@ -237,6 +237,28 @@ test('job interval floor messages parse back to known plan and interval', () => 
 			'Your "free" plan cannot run jobs more often than every often. hint',
 		),
 	).toBeNull()
+	expect(
+		parseJobIntervalFloorMessage(
+			buildJobIntervalFloorMessage({
+				...details,
+				upgradeHint: '',
+			}),
+		),
+	).toEqual({
+		...details,
+		upgradeHint: '',
+	})
+	expect(
+		parseJobIntervalFloorMessage(
+			buildJobIntervalFloorMessage({
+				...details,
+				upgradeHint: 'Space this job out. Then upgrade at /account/billing.',
+			}),
+		),
+	).toEqual({
+		...details,
+		upgradeHint: 'Space this job out. Then upgrade at /account/billing.',
+	})
 })
 
 test('storage byte entry estimates support net-positive upsert deltas', () => {
