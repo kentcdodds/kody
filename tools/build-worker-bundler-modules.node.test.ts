@@ -30,6 +30,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 	for (const name of [
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
+		'oauth-provider.mjs',
 		'esbuild.wasm',
 		'worker-bundler.stamp.json',
 	] as const) {
@@ -40,6 +41,7 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 	for (const name of [
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
+		'oauth-provider.mjs',
 		'esbuild.wasm',
 	] as const) {
 		expect(await pathExists(path.join(workerBundlerWranglerDir, name))).toBe(
@@ -54,6 +56,15 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 		path.join(workerBundlerWranglerDir, 'esbuild.wasm'),
 	)
 	expect(generatedWasm.equals(wranglerWasm)).toBe(true)
+
+	// The deferred OAuth provider module leaves the workerd builtin to the
+	// runtime instead of bundling a stub for it.
+	const oauthProviderModule = await readFile(
+		path.join(workerBundlerWranglerDir, 'oauth-provider.mjs'),
+		'utf8',
+	)
+	expect(oauthProviderModule).toMatch(/from\s*"cloudflare:workers"/)
+	expect(oauthProviderModule).toContain('getOAuthApi')
 })
 
 test('ensureWorkerBundlerModules removes leftover src/generated bundler artifacts', async () => {

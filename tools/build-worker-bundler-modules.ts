@@ -15,15 +15,20 @@ import { build, type Plugin } from 'esbuild'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
- * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry) into
- * standalone ES modules under `packages/worker/.generated/`.
+ * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry) and
+ * `@cloudflare/workers-oauth-provider` into standalone ES modules under
+ * `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
  * module, so the ~3.6 MB runtime bundler/TypeScript compiler was parsed and
  * evaluated on every isolate cold start even though only repo checks use it.
  * With `find_additional_modules` enabled in `wrangler.jsonc`, these generated
  * `.mjs` files upload as separate external modules that only load when the
- * repo-check paths actually import them.
+ * repo-check paths actually import them. The OAuth provider rides the same
+ * lane: origin's `fetch` wrapper imports it statically, but
+ * `#worker/oauth-helpers.ts` needs it only when `OAUTH_PROVIDER` is absent
+ * (scheduled purge lane, the `MCP` Durable Object on kody-platform), and the
+ * platform/runtime startup entries must not carry it.
  *
  * Wrangler discovers additional ES modules by walking the entry directory
  * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
@@ -63,6 +68,7 @@ export const leftoverSrcGeneratedBundlerNames = [
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
+	'oauth-provider.mjs',
 	'esbuild.wasm',
 ] as const
 const leftoverWranglerVisibleNames = [
@@ -100,13 +106,18 @@ const nodeBuiltins = new Set([
 
 /**
  * Keeps `./esbuild.wasm` imports external verbatim (wrangler uploads the wasm
- * as a sibling CompiledWasm module) and normalizes Node builtins to their
- * `node:`-prefixed form so `nodejs_compat` resolves them at runtime.
+ * as a sibling CompiledWasm module), leaves `cloudflare:*` runtime modules to
+ * workerd, and normalizes Node builtins to their `node:`-prefixed form so
+ * `nodejs_compat` resolves them at runtime.
  */
 const externalsPlugin: Plugin = {
 	name: 'worker-bundler-externals',
 	setup(pluginBuild) {
 		pluginBuild.onResolve({ filter: /\.wasm$/ }, (args) => ({
+			path: args.path,
+			external: true,
+		}))
+		pluginBuild.onResolve({ filter: /^cloudflare:/ }, (args) => ({
 			path: args.path,
 			external: true,
 		}))
@@ -136,9 +147,25 @@ function resolveWorkerBundlerDistDir() {
 	return path.join(repoRoot, 'node_modules', '@cloudflare', 'worker-bundler')
 }
 
-async function buildStampContent(bundlerPackageDir: string) {
+function resolveOAuthProviderPackageDir() {
+	return path.join(
+		repoRoot,
+		'node_modules',
+		'@cloudflare',
+		'workers-oauth-provider',
+	)
+}
+
+async function buildStampContent(
+	bundlerPackageDir: string,
+	oauthProviderPackageDir: string,
+) {
 	const bundlerPackageJson = await readFile(
 		path.join(bundlerPackageDir, 'package.json'),
+		'utf8',
+	)
+	const oauthProviderPackageJson = await readFile(
+		path.join(oauthProviderPackageDir, 'package.json'),
 		'utf8',
 	)
 	const generatorSource = await readFile(fileURLToPath(import.meta.url), 'utf8')
@@ -152,6 +179,7 @@ async function buildStampContent(bundlerPackageDir: string) {
 	).version
 	const hash = createHash('sha256')
 		.update(bundlerPackageJson)
+		.update(oauthProviderPackageJson)
 		.update(esbuildVersion)
 		.update(generatorSource)
 		.digest('hex')
@@ -205,7 +233,11 @@ async function materializeWranglerVisibleModules() {
 /** Idempotent: skips the esbuild work when the stamp is already current. */
 export async function ensureWorkerBundlerModules() {
 	const bundlerPackageDir = resolveWorkerBundlerDistDir()
-	const stampContent = await buildStampContent(bundlerPackageDir)
+	const oauthProviderPackageDir = resolveOAuthProviderPackageDir()
+	const stampContent = await buildStampContent(
+		bundlerPackageDir,
+		oauthProviderPackageDir,
+	)
 	await removeLeftoverSrcGeneratedBundlerArtifacts()
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
 		force: true,
@@ -224,6 +256,10 @@ export async function ensureWorkerBundlerModules() {
 			'worker-bundler-typescript': path.join(
 				bundlerPackageDir,
 				'dist/typescript.js',
+			),
+			'oauth-provider': path.join(
+				oauthProviderPackageDir,
+				'dist/oauth-provider.js',
 			),
 		},
 		bundle: true,
