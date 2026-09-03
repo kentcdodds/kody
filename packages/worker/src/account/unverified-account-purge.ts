@@ -112,12 +112,23 @@ function unverifiedAccountSqlConditions() {
 	] as const
 }
 
+const emailAddressPattern = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g
+
+/**
+ * Deletion errors bubble up provider and D1 messages that can quote the
+ * account's email. Everything that leaves this module (audit reasons, admin
+ * outcomes, logs, Sentry) passes through here first.
+ */
+export function redactEmailAddresses(text: string) {
+	return text.replace(emailAddressPattern, '<email>')
+}
+
 function deletionFailureWarnings(error: unknown) {
 	if (error instanceof AccountDeletionCleanupError) {
-		return error.cleanupErrors
+		return error.cleanupErrors.map(redactEmailAddresses)
 	}
 	if (error instanceof AccountDeletionInventoryError) {
-		return error.inventoryErrors
+		return error.inventoryErrors.map(redactEmailAddresses)
 	}
 	return []
 }
@@ -144,9 +155,23 @@ function unverifiedAccountPurgeFailureReason(
 		(error instanceof Error && error.message.length > 0
 			? error.message
 			: String(error))
-	return `${errorConstructorName(error)}: ${detail}`
+	return redactEmailAddresses(`${errorConstructorName(error)}: ${detail}`)
 		.replace(/\s+/g, ' ')
 		.slice(0, unverifiedAccountPurgeFailureReasonMaxLength)
+}
+
+/**
+ * Same class name and stack as the original so Sentry groups it, but with the
+ * message (which may quote provider responses) redacted.
+ */
+function redactedErrorForReporting(error: unknown) {
+	if (!(error instanceof Error)) {
+		return new Error(redactEmailAddresses(String(error)))
+	}
+	const redacted = new Error(redactEmailAddresses(error.message))
+	redacted.name = error.name
+	redacted.stack = error.stack ? redactEmailAddresses(error.stack) : undefined
+	return redacted
 }
 
 function reportPurgeFailureToSentry(input: {
@@ -166,7 +191,7 @@ function reportPurgeFailureToSentry(input: {
 				userId: input.userId,
 				warnings: [...input.warnings],
 			})
-			Sentry.captureException(input.error)
+			Sentry.captureException(redactedErrorForReporting(input.error))
 		})
 	} catch (sentryError) {
 		console.warn('unverified_account_purge_sentry_failed', {
@@ -385,10 +410,11 @@ export async function pruneUnverifiedAccounts(input: {
 			console.warn('unverified_account_purge_failed', {
 				userId: account.stable_user_id,
 				warnings,
-				error,
+				error: reason,
 			})
 			// Workers Logs sampling drops most of the warn above; the audit row
-			// and Sentry event are the durable record of why the purge failed.
+			// and Sentry event are the best-effort durable record of why the
+			// purge failed (each is skipped, not fatal, when its sink is down).
 			try {
 				await logAuditEvent({
 					db: auditDatabaseFromEnv(input.env),

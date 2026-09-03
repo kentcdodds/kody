@@ -21,6 +21,7 @@ import {
 import {
 	listUnverifiedAccountPurgeCandidates,
 	pruneUnverifiedAccounts,
+	redactEmailAddresses,
 	unverifiedAccountPurgeFailureReasonMaxLength,
 } from './unverified-account-purge.ts'
 
@@ -382,7 +383,7 @@ test('a failed deletion is audited with a bounded reason, reported per account, 
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: failing.stableUserId,
 		warnings: ['simulated inventory', 'second inventory warning'],
-		error: expect.any(AccountDeletionInventoryError),
+		error: 'AccountDeletionInventoryError: simulated inventory',
 	})
 	expect(usernames(sqlite)).toEqual(['failing'])
 	expect(auditActions(audit.sqlite)).toEqual([
@@ -482,6 +483,53 @@ test('the failure audit reason falls back to the error message and is truncated'
 		}),
 	])
 	expect(deletingAt(sqlite, 'writers-active')).toBeNull()
+})
+
+test('failure details redact email addresses before they reach outcomes, audit rows, or logs', async () => {
+	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')
+	consoleWarn.mockImplementation(() => {})
+	const { db } = createAppDb()
+	const audit = createAuditDb()
+	const leaky = await seedUser(db, {
+		username: 'leaky',
+		email: 'leaky.person+tag@example.com',
+		createdAt: daysAgo(9),
+	})
+	deleteUserAccount.mockImplementationOnce(async () => {
+		throw new AccountDeletionInventoryError([
+			`Failed to enumerate Stripe customer id: no customer for ${leaky.email}`,
+			`Failed to enumerate MCP servers: owner ${leaky.email} unreachable`,
+		])
+	})
+
+	const result = await pruneUnverifiedAccounts({
+		env: createPurgeEnv(db, audit.db),
+		now,
+	})
+
+	const [outcome] = result.outcomes
+	expect(outcome).toEqual({
+		stableUserId: leaky.stableUserId,
+		ageDays: 9,
+		outcome: 'failed',
+		error:
+			'AccountDeletionInventoryError: Failed to enumerate Stripe customer id: no customer for <email>',
+		warnings: [
+			'Failed to enumerate Stripe customer id: no customer for <email>',
+			'Failed to enumerate MCP servers: owner <email> unreachable',
+		],
+	})
+	expect(JSON.stringify(result)).not.toContain('@example.com')
+	const [auditRow] = auditActions(audit.sqlite)
+	expect(auditRow).toMatchObject({
+		action: 'unverified_account_purge_failed',
+		reason: outcome?.error,
+	})
+	expect(JSON.stringify(auditRow)).not.toContain('@example.com')
+	expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('@example.com')
+	expect(redactEmailAddresses('call kody@kody.codes or a@b.co now')).toBe(
+		'call <email> or <email> now',
+	)
 })
 
 test('a failed failure-audit write is logged and does not stop the rest of the batch', async () => {
@@ -614,7 +662,7 @@ test('a pre-existing fence is left in place when a restamped deletion fails', as
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: fenced.stableUserId,
 		warnings: [],
-		error: expect.any(Error),
+		error: 'Error: simulated restamped deletion failure',
 	})
 	expect(usernames(sqlite)).toEqual(['restamp-fail'])
 	expect(deletingAt(sqlite, 'restamp-fail')).not.toBeNull()
@@ -668,7 +716,7 @@ test('a cleanup error keeps a claim-created fence so the damaged account retries
 	expect(consoleWarn).toHaveBeenCalledWith('unverified_account_purge_failed', {
 		userId: damaged.stableUserId,
 		warnings: ['simulated cleanup'],
-		error: expect.any(AccountDeletionCleanupError),
+		error: 'AccountDeletionCleanupError: simulated cleanup',
 	})
 	expect(usernames(sqlite)).toEqual(['cleanup-fail'])
 	expect(deletingAt(sqlite, 'cleanup-fail')).not.toBeNull()
