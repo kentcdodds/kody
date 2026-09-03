@@ -102,6 +102,11 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		)
 		expect(body.get('customer_email')).toBe('user@example.com')
 		expect(body.get('customer')).toBeNull()
+		expect(body.get('automatic_tax[enabled]')).toBe('true')
+		expect(body.get('tax_id_collection[enabled]')).toBe('true')
+		expect(body.get('allow_promotion_codes')).toBe('true')
+		expect(body.get('customer_update[address]')).toBeNull()
+		expect(body.get('customer_update[name]')).toBeNull()
 	} finally {
 		vi.unstubAllGlobals()
 	}
@@ -132,6 +137,9 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		)
 		expect(body.get('customer')).toBe('cus_existing')
 		expect(body.get('customer_email')).toBeNull()
+		expect(body.get('customer_update[address]')).toBe('auto')
+		expect(body.get('customer_update[name]')).toBe('auto')
+		expect(body.get('automatic_tax[enabled]')).toBe('true')
 	} finally {
 		vi.unstubAllGlobals()
 	}

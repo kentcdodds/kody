@@ -761,13 +761,18 @@ Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body
 `{ plan: "standard" | "pro", interval?: "month" | "year" }` defaulting to
 `month`, `mode=subscription`, with a signed `client_reference_id` and
-`metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
-requires a signed-in session so unauthenticated card-testing is not possible.
-`GET /account/billing/success` verifies `client_reference_id` before linking
-`users.stripe_customer_id`, then refreshes `users.stripe_plan` and renders a
-thank-you page (Discord invite; connect-your-agent when `needsOnboarding`). A
-successful `stripe_plan` write also best-effort re-syncs official Kody Discord
-Standard/Pro roles when the user has a Discord social-login connection (see
+`metadata.kody_stable_user_id`). Sessions enable Stripe automatic tax
+(`automatic_tax[enabled]`; Stripe Tax is active on the account and computes 0
+until a registration exists), tax-ID collection for business customers, and
+promotion codes; when an existing `customer` is passed, `customer_update`
+address/name are `auto` so Checkout can store what tax needs. There is no public
+Payment Link path — checkout requires a signed-in session so unauthenticated
+card-testing is not possible. `GET /account/billing/success` verifies
+`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
+`users.stripe_plan` and renders a thank-you page (Discord invite;
+connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
+also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
+has a Discord social-login connection (see
 [`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
 the Stripe customer portal for linked customers.
 
