@@ -47,15 +47,21 @@ Account deletion is implemented in `packages/worker/src/app/account-deletion.ts`
 and is intentionally inventory driven. Before inventory it durably sets
 `users.deleting_at`; browser, MCP, package-invocation, and job mutation
 boundaries then reject writes, while the deletion route can still authenticate
-the marked account for retry. The operation performs idempotent out-of-band and
-OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the
-user row for retry. Only after cleanup succeeds does one atomic D1 batch delete
-or clear all user rows and the `users` row. Each step records deleted counts,
-updated counts for cleared references, and warnings so the HTTP response states
-what was removed and what needs operator attention. Re-running the operation is
-safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
-and already-cleared Durable Objects are treated as successful no-ops or
-warning-only failures.
+the marked account for retry. Before any destructive step it cancels every
+active or trialing Stripe subscription; if Stripe cannot confirm cancellation
+the deletion fails with `AccountDeletionBillingError`, the marker is released,
+and the account is retained (like an inventory failure) so the customer is never
+billed for an account that no longer exists. Already-canceled or missing
+subscriptions count as canceled, so retries are idempotent. Stripe customer
+deletion stays a best-effort warning after cleanup. The operation then performs
+idempotent out-of-band and OAuth cleanup. Any critical cleanup failure preserves
+D1, the marker, and the user row for retry. Only after cleanup succeeds does one
+atomic D1 batch delete or clear all user rows and the `users` row. Each step
+records deleted counts, updated counts for cleared references, and warnings so
+the HTTP response states what was removed and what needs operator attention.
+Re-running the operation is safe: missing rows, missing KV keys, missing
+vectors, deleted Artifacts repos, and already-cleared Durable Objects are
+treated as successful no-ops or warning-only failures.
 
 All four dedicated `system_email_*` graph tables are intentionally excluded from
 account deletion. They are operator-owned mail for reserved platform addresses,

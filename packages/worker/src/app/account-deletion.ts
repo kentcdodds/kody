@@ -7,6 +7,7 @@ import {
 	cancelSubscription,
 	deleteCustomer,
 	listSubscriptions,
+	type StripeSubscription,
 } from '#worker/billing/stripe-client.ts'
 import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
@@ -154,6 +155,22 @@ export class AccountDeletionInventoryError extends Error {
 		super('Account deletion inventory could not be collected safely.')
 		this.name = 'AccountDeletionInventoryError'
 		this.inventoryErrors = [...inventoryErrors]
+	}
+}
+
+/**
+ * Active Stripe subscriptions could not be canceled. Raised before any
+ * destructive cleanup, like {@link AccountDeletionInventoryError}: the
+ * deletion fence is released and the account is retained so the user keeps
+ * billing-portal access and can retry.
+ */
+export class AccountDeletionBillingError extends Error {
+	readonly billingErrors: ReadonlyArray<string>
+
+	constructor(billingErrors: ReadonlyArray<string>) {
+		super('Account deletion could not cancel the active Stripe subscription.')
+		this.name = 'AccountDeletionBillingError'
+		this.billingErrors = [...billingErrors]
 	}
 }
 
@@ -444,45 +461,90 @@ async function collectUserDeletionInventory(input: {
 	}
 }
 
-async function cancelSubscriptionsAndDeleteStripeCustomer(input: {
+function isStripeSubscriptionBillable(subscription: StripeSubscription) {
+	return stripeSubscriptionStatusesCanceledOnAccountDeletion.has(
+		subscription.status,
+	)
+}
+
+/**
+ * Cancels every active/trialing subscription and throws
+ * {@link AccountDeletionBillingError} when any is still billable afterwards.
+ * Runs before any destructive cleanup so a Stripe outage retains the account
+ * instead of leaving a paying customer with no account or portal access.
+ *
+ * Idempotent across retries: subscriptions Stripe already reports as
+ * `canceled` are skipped, `cancelSubscription` treats `resource_missing` as
+ * canceled, and a cancel that errors is re-verified against a fresh listing
+ * (a subscription that flipped to canceled in between counts as success).
+ */
+async function cancelActiveStripeSubscriptions(input: {
 	env: Env
 	customerId: string
-}) {
-	const failures: Array<unknown> = []
+}): Promise<number> {
+	let subscriptions: Array<StripeSubscription>
 	try {
-		const subscriptions = await listSubscriptions(input.env, input.customerId)
-		for (const subscription of subscriptions) {
-			if (
-				!stripeSubscriptionStatusesCanceledOnAccountDeletion.has(
-					subscription.status,
-				)
-			) {
-				continue
-			}
-			try {
-				await cancelSubscription(input.env, subscription.id)
-			} catch (error) {
-				failures.push(error)
-			}
-		}
+		subscriptions = await listSubscriptions(input.env, input.customerId)
 	} catch (error) {
-		failures.push(error)
+		throw new AccountDeletionBillingError([
+			`Stripe subscriptions could not be listed: ${getErrorMessage(error)}`,
+		])
 	}
+	const billable = subscriptions.filter(isStripeSubscriptionBillable)
+	if (billable.length === 0) return 0
 
-	// Customer deletion is still attempted when listing or canceling a
-	// subscription fails. Stripe customer deletion also cancels active
-	// subscriptions, so this is the most important final cleanup attempt.
+	const failures: Array<string> = []
+	let canceled = 0
+	for (const subscription of billable) {
+		try {
+			await cancelSubscription(input.env, subscription.id)
+			canceled += 1
+		} catch (error) {
+			failures.push(
+				`Stripe subscription ${subscription.id} could not be canceled: ${getErrorMessage(error)}`,
+			)
+		}
+	}
+	if (failures.length === 0) return canceled
+
+	let stillBillable: Array<StripeSubscription>
+	try {
+		stillBillable = (
+			await listSubscriptions(input.env, input.customerId)
+		).filter(isStripeSubscriptionBillable)
+	} catch (error) {
+		throw new AccountDeletionBillingError([
+			...failures,
+			`Stripe subscriptions could not be re-verified: ${getErrorMessage(error)}`,
+		])
+	}
+	if (stillBillable.length > 0) {
+		throw new AccountDeletionBillingError(failures)
+	}
+	return billable.length
+}
+
+/**
+ * Best-effort Stripe customer deletion after every subscription is already
+ * canceled (see {@link cancelActiveStripeSubscriptions}). Failure here is a
+ * warning only: nothing bills a customer with no billable subscription, and a
+ * deleted Kody account has no path back to this customer id.
+ */
+async function deleteStripeCustomer(input: {
+	env: Env
+	customerId: string
+	userId: string
+	warnings: Array<string>
+}) {
 	try {
 		await deleteCustomer(input.env, input.customerId)
 	} catch (error) {
-		failures.push(error)
-	}
-
-	if (failures.length > 0) {
-		throw new AggregateError(
-			failures,
-			`Stripe account cleanup encountered ${failures.length} failure(s).`,
-		)
+		const warning = `Stripe customer cleanup failed during account deletion: ${getErrorMessage(error)}`
+		input.warnings.push(warning)
+		console.error('account_deletion_stripe_cleanup_failed', {
+			userId: input.userId,
+			error,
+		})
 	}
 }
 
@@ -973,11 +1035,13 @@ async function deleteUserScopedRowsAndUser(input: {
  * The cleanup ordering is:
  *   1. Pre-collect identifiers we need (vector ids, storage ids, KV keys,
  *      repo/session/package ids) while their owning rows still exist.
- *   2. Idempotent cleanup of out-of-band stores and OAuth grants.
- *   3. Abort while preserving D1 inventory and the user row if any critical
+ *   2. Cancel active Stripe subscriptions. Like inventory, a failure here
+ *      releases the deletion fence and retains the account untouched.
+ *   3. Idempotent cleanup of out-of-band stores and OAuth grants.
+ *   4. Abort while preserving D1 inventory and the user row if any critical
  *      cleanup failed. The five-minute usage-rollup derived cache is the sole
  *      TTL-owned omission and does not participate in this gate.
- *   4. Atomically delete user-scoped D1 rows and the user row in one batch.
+ *   5. Atomically delete user-scoped D1 rows and the user row in one batch.
  */
 export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
@@ -1036,6 +1100,35 @@ export async function deleteUserAccount(input: {
 			})
 		}
 		throw error
+	}
+
+	// Billing is a precondition of deletion, checked before anything
+	// destructive: if Stripe cannot confirm every subscription is canceled the
+	// account (and its portal access) must survive so the customer is not
+	// billed for an account that no longer exists.
+	if (inventory.stripeCustomerId) {
+		try {
+			await cancelActiveStripeSubscriptions({
+				env: input.env,
+				customerId: inventory.stripeCustomerId,
+			})
+		} catch (error) {
+			if (error instanceof AccountDeletionBillingError) {
+				console.error('account_deletion_billing_cancel_failed', {
+					userId: input.mcpUserId,
+					billingErrors: error.billingErrors,
+				})
+				if (marked.created) {
+					await abortAccountDeleting({
+						db: input.env.APP_DB,
+						dbUserId: input.dbUserId,
+						env: input.env,
+						expectedDeletingAt: marked.deletingAt,
+					})
+				}
+			}
+			throw error
+		}
 	}
 
 	result.deletedVectors = await deleteVectorsByIds({
@@ -1266,19 +1359,12 @@ export async function deleteUserAccount(input: {
 	}
 
 	if (inventory.stripeCustomerId) {
-		try {
-			await cancelSubscriptionsAndDeleteStripeCustomer({
-				env: input.env,
-				customerId: inventory.stripeCustomerId,
-			})
-		} catch (error) {
-			const warning = `Stripe customer cleanup failed during account deletion: ${getErrorMessage(error)}`
-			warnings.push(warning)
-			console.error('account_deletion_stripe_cleanup_failed', {
-				userId: input.mcpUserId,
-				error,
-			})
-		}
+		await deleteStripeCustomer({
+			env: input.env,
+			customerId: inventory.stripeCustomerId,
+			userId: input.mcpUserId,
+			warnings,
+		})
 	}
 
 	try {

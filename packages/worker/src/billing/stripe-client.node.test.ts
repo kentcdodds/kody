@@ -243,6 +243,32 @@ test('stripe client immediately cancels subscriptions and deletes customers', as
 		expect(JSON.stringify(consoleError.mock.calls)).not.toContain(
 			'cus_sensitive_identifier',
 		)
+
+		// Canceling a subscription Stripe no longer knows is idempotent success;
+		// any other API failure still surfaces with its Stripe error code.
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(
+				{
+					error: {
+						code: 'resource_missing',
+						message: 'No such subscription: sub_gone',
+					},
+				},
+				404,
+			),
+		)
+		await expect(cancelSubscription(env, 'sub_gone')).resolves.toBeUndefined()
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse(
+				{ error: { code: 'rate_limit', message: 'Too many requests' } },
+				429,
+			),
+		)
+		await expect(cancelSubscription(env, 'sub_busy')).rejects.toMatchObject({
+			name: 'StripeApiError',
+			status: 429,
+			code: 'rate_limit',
+		})
 	} finally {
 		vi.unstubAllGlobals()
 		consoleError.mockReset()

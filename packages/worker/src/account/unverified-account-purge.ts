@@ -8,6 +8,7 @@ import {
 	abortAccountDeleting,
 } from '#worker/account/deletion-state.ts'
 import {
+	AccountDeletionBillingError,
 	AccountDeletionCleanupError,
 	AccountDeletionInventoryError,
 	deleteUserAccount,
@@ -130,6 +131,9 @@ function deletionFailureWarnings(error: unknown) {
 	if (error instanceof AccountDeletionInventoryError) {
 		return error.inventoryErrors.map(redactEmailAddresses)
 	}
+	if (error instanceof AccountDeletionBillingError) {
+		return error.billingErrors.map(redactEmailAddresses)
+	}
 	return []
 }
 
@@ -204,6 +208,7 @@ function reportPurgeFailureToSentry(input: {
 function isPreCleanupDeletionFailure(error: unknown) {
 	return (
 		error instanceof AccountDeletionInventoryError ||
+		error instanceof AccountDeletionBillingError ||
 		error instanceof AccountDeletionWritersActiveError
 	)
 }
