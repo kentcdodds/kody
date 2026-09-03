@@ -176,7 +176,6 @@ test('runProductionRestore returns failed progress when dr-restore emits warning
 		`pre-restore/${day}/${DATABASE_ID}/${day}T12:00:00.000Z.sql`,
 	)
 	assert.equal(progress.safetyExportBytes, sql.length)
-	assert.ok(safetyExportKey)
 	assert.ok(await bucket.head(safetyExportKey))
 })
 

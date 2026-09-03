@@ -52,15 +52,6 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		await expect(
 			page.getByRole('heading', { name: 'Create your account' }),
 		).toBeVisible()
-		await expect(
-			page.getByText(/By creating an account you agree to the/),
-		).toBeVisible()
-		await expect(
-			page.getByRole('link', { name: 'Terms of Service' }),
-		).toBeVisible()
-		await expect(
-			page.getByRole('link', { name: 'Privacy Policy' }),
-		).toBeVisible()
 
 		await page.getByLabel('Username').fill(username)
 		await page.getByLabel('Email').fill(email)

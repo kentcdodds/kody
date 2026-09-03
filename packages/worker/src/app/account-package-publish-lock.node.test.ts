@@ -265,7 +265,9 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 	})
 })
 
-test('approve-publish loads unpublished HEAD from Artifacts when KV has no snapshot', async () => {
+test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {
+	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
@@ -273,13 +275,13 @@ test('approve-publish loads unpublished HEAD from Artifacts when KV has no snaps
 		entity_kind: 'package',
 		entity_id: 'pkg-1',
 		repo_id: 'repo-1',
-		published_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		published_commit: publishedCommit,
 		manifest_path: 'package.json',
 		source_root: '/',
 	})
 	mockModule.loadPublicTreeFiles.mockImplementation(
 		async (input: { commit: string | null }) => {
-			if (input.commit === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+			if (input.commit === publishedCommit) {
 				return {
 					files: { 'README.md': '# published\n' },
 					fromListingSnapshot: false,
@@ -290,28 +292,28 @@ test('approve-publish loads unpublished HEAD from Artifacts when KV has no snaps
 	)
 	mockModule.readArtifactTreeAtCommit.mockImplementation(
 		async (input: { commit: string }) => {
-			if (input.commit === 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') {
+			if (input.commit === pendingCommit) {
 				return { 'README.md': '# head\n' }
 			}
 			return {}
 		},
 	)
 
-	const loaded = await loadAccountPackageApprovePublishData({
+	const fromArtifacts = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			'https://example.com/account/packages/pkg-1/approve-publish?commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
 	})
-	expect(loaded).toMatchObject({
+	expect(fromArtifacts).toMatchObject({
 		ok: true,
-		publishedCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		pendingCommit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+		publishedCommit,
+		pendingCommit,
 	})
-	if (!loaded.ok) throw new Error('expected loader success')
-	expect(loaded.diff.files).toEqual([
+	if (!fromArtifacts.ok) throw new Error('expected loader success')
+	expect(fromArtifacts.diff.files).toEqual([
 		{
 			path: 'README.md',
 			status: 'modified',
@@ -321,7 +323,7 @@ test('approve-publish loads unpublished HEAD from Artifacts when KV has no snaps
 	expect(mockModule.readArtifactTreeAtCommit).toHaveBeenCalledWith(
 		expect.objectContaining({
 			repoId: 'repo-1',
-			commit: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			commit: pendingCommit,
 		}),
 	)
 
@@ -331,68 +333,42 @@ test('approve-publish loads unpublished HEAD from Artifacts when KV has no snaps
 	const failedPending = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			'https://example.com/account/packages/pkg-1/approve-publish?commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
 	})
 	if (!failedPending.ok) throw new Error('expected loader success')
 	expect(failedPending.diff).toEqual({ files: [], omittedCount: 0 })
-})
 
-test('approve-publish does not treat pending files as added when the published tree is unresolved', async () => {
-	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'pkg-1',
-		repo_id: 'repo-1',
-		published_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		manifest_path: 'package.json',
-		source_root: '/',
-	})
-	mockModule.loadPublicTreeFiles.mockResolvedValue({
-		files: {},
-		fromListingSnapshot: false,
-	})
+	mockModule.readArtifactTreeAtCommit.mockReset()
 	mockModule.readArtifactTreeAtCommit.mockImplementation(
 		async (input: { commit: string }) => {
-			if (input.commit === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+			if (input.commit === publishedCommit) {
 				throw new Error('published fetch failed')
 			}
 			return { 'README.md': '# head\n' }
 		},
 	)
-
-	const loaded = await loadAccountPackageApprovePublishData({
+	mockModule.loadPublicTreeFiles.mockResolvedValue({
+		files: {},
+		fromListingSnapshot: false,
+	})
+	const unresolvedPublished = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			'https://example.com/account/packages/pkg-1/approve-publish?commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
 	})
-	if (!loaded.ok) throw new Error('expected loader success')
-	expect(loaded.diff).toEqual({ files: [], omittedCount: 0 })
-})
+	if (!unresolvedPublished.ok) throw new Error('expected loader success')
+	expect(unresolvedPublished.diff).toEqual({ files: [], omittedCount: 0 })
 
-test('approve-publish does not treat published files as removed when HEAD is missing', async () => {
-	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'pkg-1',
-		repo_id: 'repo-1',
-		published_commit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		manifest_path: 'package.json',
-		source_root: '/',
-	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({ commit: null })
 	mockModule.loadPublicTreeFiles.mockImplementation(
 		async (input: { commit: string | null }) => {
-			if (input.commit === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
+			if (input.commit === publishedCommit) {
 				return {
 					files: { 'README.md': '# published\n' },
 					fromListingSnapshot: false,
@@ -401,8 +377,7 @@ test('approve-publish does not treat published files as removed when HEAD is mis
 			return { files: {}, fromListingSnapshot: false }
 		},
 	)
-
-	const loaded = await loadAccountPackageApprovePublishData({
+	const missingHead = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
 			'https://example.com/account/packages/pkg-1/approve-publish',
@@ -410,7 +385,7 @@ test('approve-publish does not treat published files as removed when HEAD is mis
 		user: user as never,
 		packageId: 'pkg-1',
 	})
-	if (!loaded.ok) throw new Error('expected loader success')
-	expect(loaded.pendingCommit).toBeNull()
-	expect(loaded.diff).toEqual({ files: [], omittedCount: 0 })
+	if (!missingHead.ok) throw new Error('expected loader success')
+	expect(missingHead.pendingCommit).toBeNull()
+	expect(missingHead.diff).toEqual({ files: [], omittedCount: 0 })
 })

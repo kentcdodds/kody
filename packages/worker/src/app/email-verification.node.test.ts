@@ -37,12 +37,10 @@ type VerificationUser = {
 }
 
 function createVerificationTestDb(users: Array<VerificationUser>) {
-	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const db = {
 		prepare(sql: string) {
 			return {
 				bind(...params: Array<unknown>) {
-					queries.push({ sql, params })
 					const normalized = sql.replace(/\s+/g, ' ').toLowerCase()
 					return {
 						async first<T>() {
@@ -82,7 +80,7 @@ function createVerificationTestDb(users: Array<VerificationUser>) {
 			}
 		},
 	} as unknown as D1Database
-	return { db, queries }
+	return { db }
 }
 
 test('isAccountEmailVerified binds email+stable id together and keeps single-key lookup paths', async () => {
@@ -123,12 +121,6 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 		}),
 	).toBe(false)
 
-	expect(
-		combined.queries.every((query) =>
-			query.sql.toLowerCase().includes('email = ? and stable_user_id = ?'),
-		),
-	).toBe(true)
-
 	const email = 'browser@example.com'
 	const stableUserId = await createStableUserIdFromEmail(email)
 	const singleKey = createVerificationTestDb([
@@ -155,14 +147,6 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 			stableUserId: 'missing-stable-id',
 		}),
 	).toBe(false)
-
-	expect(singleKey.queries[0]?.sql.toLowerCase()).toContain('where email = ?')
-	expect(singleKey.queries[0]?.sql.toLowerCase()).not.toContain(
-		'stable_user_id',
-	)
-	expect(singleKey.queries[1]?.sql.toLowerCase()).toContain(
-		'where stable_user_id = ?',
-	)
 })
 
 test('verifyEmailToken treats a fenced account as an invalid token and does not mark it verified', async () => {

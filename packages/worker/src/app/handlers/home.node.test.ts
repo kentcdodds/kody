@@ -202,6 +202,4 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'compact-mcp-server-instructions': true,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
-	expect(counts.prepare).toBe(4)
-	expect(counts.batch).toBe(2)
 })

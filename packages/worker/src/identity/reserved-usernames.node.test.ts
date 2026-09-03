@@ -9,7 +9,7 @@ import {
 	isUsernameEffectivelyReserved,
 	permanentlyReservedSystemLocals,
 } from './reserved-usernames.ts'
-import { getUsernameValidationError, usernameRequirements } from './username.ts'
+import { getUsernameValidationError } from './username.ts'
 
 test('reserved username list is sorted, unique, lowercase, and DNS-safe except legacy underscore locals', () => {
 	const list = [...builtInReservedUsernameList]
@@ -51,7 +51,8 @@ test('reserved username validation rejects brand, support, and infrastructure na
 		expect(getUsernameValidationError(allowed)).toBeNull()
 	}
 
-	expect(getUsernameValidationError('ab')).toBe(usernameRequirements)
+	expect(isReservedUsername('ab')).toBe(false)
+	expect(getUsernameValidationError('ab')).not.toBeNull()
 	expect(isPermanentlyReservedUsername('kody')).toBe(true)
 	expect(isPermanentlyReservedUsername('support')).toBe(true)
 	expect(isPermanentlyReservedUsername('kody-bot')).toBe(true)

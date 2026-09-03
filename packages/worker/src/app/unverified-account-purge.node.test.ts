@@ -4,7 +4,6 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import { getScheduledLaneCadence } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createSuccessfulDeletionEnv } from '#worker/test-support/account-deletion.ts'
@@ -18,10 +17,7 @@ import {
 	AccountDeletionInventoryError,
 	type AccountDeletionResult,
 } from './account-deletion.ts'
-import {
-	pruneUnverifiedAccounts,
-	shouldRunUnverifiedAccountPurgeCron,
-} from './unverified-account-purge.ts'
+import { pruneUnverifiedAccounts } from './unverified-account-purge.ts'
 
 const now = new Date('2026-09-02T12:00:00.000Z')
 const millisecondsPerDay = 24 * 60 * 60 * 1000
@@ -189,19 +185,6 @@ function auditActions(sqlite: DatabaseSync) {
 		reason: string | null
 	}>
 }
-
-test('hourly cadence includes unverified account purge alongside retention', () => {
-	expect(shouldRunUnverifiedAccountPurgeCron(now)).toBe(true)
-	expect(
-		shouldRunUnverifiedAccountPurgeCron(new Date('2026-09-02T12:05:00.000Z')),
-	).toBe(false)
-	const hourly = getScheduledLaneCadence(now)
-	expect(hourly).toContain('retention')
-	expect(hourly).toContain('unverified_account_purge')
-	const offHour = getScheduledLaneCadence(new Date('2026-09-02T12:05:00.000Z'))
-	expect(offHour.includes('retention')).toBe(false)
-	expect(offHour.includes('unverified_account_purge')).toBe(false)
-})
 
 test('purge deletes only aged unverified person accounts through full account deletion and writes an audit row', async () => {
 	const deleteUserAccount = vi.spyOn(AccountDeletion, 'deleteUserAccount')

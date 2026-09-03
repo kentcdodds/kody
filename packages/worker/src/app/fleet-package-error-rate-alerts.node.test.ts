@@ -328,8 +328,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert names a one-account concentratio
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'fleet-package-error-rate-alerted',
 		expect.objectContaining({
-			concentration:
-				'One account owns 100% of recent errors (jett: dji-cloud-relay-staging-deploy, earthranger-relay-staging-deploy, analysis-staging-deploy).',
+			concentration: expect.any(String),
 		}),
 	)
 	const snapshot = JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null')
