@@ -1,5 +1,3 @@
-import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
-
 /**
  * Subset of the provider's `GrantSummary` that Kody reads. Same field names as
  * `@cloudflare/workers-oauth-provider` so callers written against the fetch
@@ -16,7 +14,12 @@ export type KvOAuthGrantSummary = {
 	redirectUri: string | undefined
 }
 
-export type KvOAuthHelpers = OAuthGrantHelpers & {
+/**
+ * Structurally satisfies `OAuthGrantHelpers` (`#worker/oauth-grants.ts`) plus
+ * the `deleteClient` that account deletion uses, so it can stand in for
+ * `env.OAUTH_PROVIDER` wherever those are consumed.
+ */
+export type KvOAuthHelpers = {
 	listUserGrants(
 		userId: string,
 		options?: { cursor?: string; limit?: number },
