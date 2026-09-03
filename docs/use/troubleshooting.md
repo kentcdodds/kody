@@ -2,7 +2,8 @@
 
 ## Contact support
 
-For help with the hosted Kody service at `kody.codes`, email
+For help with the hosted Kody service at `kody.codes`, open
+[`/support`](https://kody.codes/support) or email
 [`support@kody.codes`](mailto:support@kody.codes). Operators of other Kody
 deployments receive support mail at `support@<apex>`, where `<apex>` is the
 deployment's `APP_BASE_URL` hostname.

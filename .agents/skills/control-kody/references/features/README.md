@@ -41,7 +41,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. See the
 - [billing](./billing.md) — `/account/billing`
 - [admin](./admin.md) — `/admin` (seed user is 403)
 - [community](./community.md) — `/community`
-- [marketing](./marketing.md) — `/`, `/guides`, `/blog`
+- [marketing](./marketing.md) — `/`, `/guides`, `/blog`, `/support`
 
 ## Seed users
 

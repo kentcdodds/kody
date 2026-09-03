@@ -339,6 +339,10 @@ export function PrivacyRoute(_handle: Handle) {
 						eligible for removal when no active source or repo session needs
 						them
 					</li>
+					<li>
+						Unverified person accounts: seven days after signup when the email
+						is still unverified and no sign-in provider is linked
+					</li>
 				</ul>
 				<p mix={css(descriptionCss)}>
 					Deletion from a subprocessor&apos;s backups or logs follows that
