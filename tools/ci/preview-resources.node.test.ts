@@ -454,6 +454,84 @@ test('cleanup retries a wrangler 429 then succeeds', async () => {
 	vi.unstubAllEnvs()
 })
 
+test('D1 and KV deletes treat a post-retry not-found as success', async () => {
+	consoleError.mockImplementation(() => {})
+	installCleanupEnv()
+	const fetchMock = vi
+		.fn<typeof fetch>()
+		.mockImplementation(async () => emptyQueueListResponse())
+	vi.stubGlobal('fetch', fetchMock)
+	let d1DeleteAttempts = 0
+	let kvDeleteAttempts = 0
+	spawnSync.mockImplementation((_command, args) => {
+		const argv = args as Array<string>
+		const joined = argv.join(' ')
+		if (joined.includes('d1 list')) {
+			return {
+				status: 0,
+				stdout: `${JSON.stringify([{ uuid: 'db-1', name: 'kody-pr-11-db' }])}\n`,
+				stderr: '',
+			}
+		}
+		if (joined.includes('kv namespace list')) {
+			return {
+				status: 0,
+				stdout: `${JSON.stringify([{ id: 'kv-1', title: 'kody-pr-11-oauth-kv' }])}\n`,
+				stderr: '',
+			}
+		}
+		if (joined.includes('d1 delete')) {
+			d1DeleteAttempts += 1
+			if (d1DeleteAttempts === 1) {
+				return {
+					status: 1,
+					stdout: '',
+					stderr: 'Gateway Timeout [code: 504]\n',
+				}
+			}
+			return {
+				status: 1,
+				stdout: '',
+				stderr: 'The database you tried to delete does not exist\n',
+			}
+		}
+		if (joined.includes('kv namespace delete')) {
+			kvDeleteAttempts += 1
+			if (kvDeleteAttempts === 1) {
+				return {
+					status: 1,
+					stdout: '',
+					stderr: 'Gateway Timeout [code: 504]\n',
+				}
+			}
+			return {
+				status: 1,
+				stdout: '',
+				stderr: 'The requested resource does not exist\n',
+			}
+		}
+		return alreadyMissingWrangler(argv)
+	})
+
+	await cleanupPreviewResources({
+		workerName: 'kody-pr-11',
+		dryRun: false,
+		sleep: async () => {},
+	})
+
+	expect(d1DeleteAttempts).toBe(2)
+	expect(kvDeleteAttempts).toBe(2)
+	const logged = consoleError.mock.calls.map(([message]) => String(message))
+	expect(logged).toEqual(
+		expect.arrayContaining([
+			'D1 database already deleted: kody-pr-11-db',
+			'KV namespace already deleted: kody-pr-11-oauth-kv',
+		]),
+	)
+	vi.unstubAllGlobals()
+	vi.unstubAllEnvs()
+})
+
 test('permanent queue auth failure still attempts later independent resources and aggregates leftovers', async () => {
 	consoleError.mockImplementation(() => {})
 	installCleanupEnv()

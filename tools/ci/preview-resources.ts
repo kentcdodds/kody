@@ -19,6 +19,7 @@ import {
 	ensureCloudflareQueue,
 	ensureR2Bucket,
 	fail,
+	isWranglerNotFoundOutput,
 	listD1Databases,
 	listCloudflareQueues,
 	listKvNamespaces,
@@ -279,6 +280,10 @@ export async function deletePreviewD1Database({
 	if (result.status !== 0) {
 		const output =
 			`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
+		if (isWranglerNotFoundOutput(output)) {
+			console.error(`D1 database already deleted: ${name}`)
+			return
+		}
 		throw new CloudflareResourceError(
 			'd1',
 			name,
@@ -364,6 +369,10 @@ export async function deletePreviewKvNamespace({
 	if (result.status !== 0) {
 		const output =
 			`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
+		if (isWranglerNotFoundOutput(output)) {
+			console.error(`KV namespace already deleted: ${title}`)
+			return
+		}
 		throw new CloudflareResourceError(
 			'kv',
 			title,
