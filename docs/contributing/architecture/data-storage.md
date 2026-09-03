@@ -505,7 +505,12 @@ reserved-username override, and the platform-owned
   checked-in config).
 - `OAUTH_KV` supports OAuth client and token flows without custom storage code
   in the app handlers; account deletion revokes all provider grants for the
-  user.
+  user. Outside the provider's `fetch` wrapper (scheduled purge lane, RPC
+  entrypoints, the `MCP` Durable Object on kody-platform) `env.OAUTH_PROVIDER`
+  is undefined, so `packages/worker/src/oauth-kv-helpers.ts` performs the same
+  grant, token, and client deletes directly against `OAUTH_KV` using the
+  provider's key layout. `packages/worker/src/oauth-purge.ts` models that layout
+  for the orphan/expiry sweep for the same reason.
 - `BUNDLE_ARTIFACTS_KV` keys are deleted from account deletion using D1-derived
   source ids, published commits, bundle artifact rows, community listing ids,
   and package ids.
