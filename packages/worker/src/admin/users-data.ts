@@ -1,3 +1,4 @@
+import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { readPagination } from '#worker/query-params.ts'
 // Type-only: the admin payload envelopes are the app/client wire contract and
@@ -172,10 +173,6 @@ function readAdminUserListFilters(url: URL): AdminUserListFilters {
 	}
 }
 
-function escapeLikePattern(value: string) {
-	return value.replace(/[\\%_]/g, (char) => `\\${char}`)
-}
-
 /**
  * Build the WHERE clause shared by the page query and its COUNT so the
  * reported total always matches the filtered result set.
@@ -187,7 +184,7 @@ function buildAdminUserListWhereClause(
 	const conditions: Array<string> = []
 	const params: Array<string> = []
 	if (filters.query) {
-		const pattern = `%${escapeLikePattern(filters.query)}%`
+		const pattern = d1ContainsLikePattern(filters.query)
 		conditions.push(`(username LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')`)
 		params.push(pattern, pattern)
 	}

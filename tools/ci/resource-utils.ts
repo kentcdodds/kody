@@ -47,21 +47,58 @@ function sleep(ms: number) {
 	return new Promise<void>((resolve) => setTimeout(resolve, ms))
 }
 
-export function isRetryableCloudflareApiError(error: unknown) {
-	if (!(error instanceof Error)) return false
-	if (error.name === 'AbortError') return true
-	const message = error.message
+export class CloudflareResourceError extends Error {
+	readonly kind: string
+	readonly resource: string
+
+	constructor(
+		kind: string,
+		resource: string,
+		message: string,
+		options?: { cause?: unknown },
+	) {
+		super(message, options)
+		this.name = 'CloudflareResourceError'
+		this.kind = kind
+		this.resource = resource
+	}
+}
+
+/**
+ * Permanent Cloudflare auth failures must not be retried. 401/403 and
+ * wrangler "Authentication error [code: 10000]" stay in this set so a bad
+ * token cannot burn the preview cleanup budget.
+ */
+export function isPermanentCloudflareAuthFailure(message: string) {
+	return (
+		/Cloudflare API request failed \(401\)/.test(message) ||
+		/Cloudflare API request failed \(403\)/.test(message) ||
+		/authentication error/i.test(message) ||
+		/\[code:\s*10000\]/.test(message)
+	)
+}
+
+export function isRetryableCloudflareFailure(message: string) {
+	if (isPermanentCloudflareAuthFailure(message)) return false
 	return (
 		(message.includes('Malformed Cloudflare response') &&
 			!/Malformed Cloudflare response \(200\).*--/u.test(message)) ||
 		message.includes('upstream connect error') ||
 		message.includes('Cloudflare API request failed (429)') ||
 		/Cloudflare API request failed \(5\d\d\)/.test(message) ||
+		/504 Gateway Timeout/i.test(message) ||
+		/Gateway Timeout/i.test(message) ||
 		message.includes('fetch failed') ||
 		message.includes('ECONNRESET') ||
 		message.includes('ETIMEDOUT') ||
 		message.includes('socket hang up')
 	)
+}
+
+export function isRetryableCloudflareApiError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	if (error.name === 'AbortError') return true
+	return isRetryableCloudflareFailure(error.message)
 }
 
 type CloudflareEventSubscription = {
@@ -104,7 +141,7 @@ function renderArg(value: string) {
 
 export function runWrangler(
 	args: Array<string>,
-	options?: { input?: string; quiet?: boolean },
+	options?: { input?: string; quiet?: boolean; timeoutMs?: number },
 ) {
 	const wranglerBin = resolveLocalBinary('wrangler')
 	const result = spawnSync(wranglerBin, args, {
@@ -112,11 +149,18 @@ export function runWrangler(
 		stdio: 'pipe',
 		input: options?.input,
 		env: process.env,
+		timeout: options?.timeoutMs,
+		killSignal: 'SIGTERM',
 	})
 
 	const status = result.status ?? 1
 	const stdout = result.stdout ?? ''
 	const stderr = result.stderr ?? ''
+	const timeoutMessage =
+		result.error?.message ??
+		(result.signal === 'SIGTERM' && options?.timeoutMs
+			? `wrangler timed out after ${String(options.timeoutMs)}ms`
+			: '')
 
 	if (!options?.quiet) {
 		const rendered = args.map(renderArg).join(' ')
@@ -132,9 +176,64 @@ export function runWrangler(
 		if (output) {
 			console.error(output)
 		}
+		if (timeoutMessage && !output.includes(timeoutMessage)) {
+			console.error(timeoutMessage)
+		}
 	}
 
-	return { status, stdout, stderr }
+	return { status, stdout, stderr, errorMessage: timeoutMessage }
+}
+
+type WranglerRetryInput = {
+	input?: string
+	quiet?: boolean
+	timeoutMs?: number
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
+}
+
+export async function runWranglerWithRetry(
+	args: Array<string>,
+	options?: WranglerRetryInput,
+) {
+	const maxAttempts = options?.maxAttempts ?? cloudflareApiRetryMaxAttempts
+	const wait = options?.sleep ?? sleep
+	const now = options?.now ?? Date.now
+	const timeoutMs = options?.timeoutMs ?? 30_000
+	let lastResult = runWrangler(args, {
+		input: options?.input,
+		quiet: options?.quiet,
+		timeoutMs,
+	})
+	for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
+		if (lastResult.status === 0) return lastResult
+		const output =
+			`${lastResult.stdout}${lastResult.stderr} ${lastResult.errorMessage}`.trim()
+		const timeLeft =
+			options?.deadlineMs === undefined
+				? Number.POSITIVE_INFINITY
+				: options.deadlineMs - now()
+		if (
+			!isRetryableCloudflareFailure(output) ||
+			timeLeft < cloudflareApiRetryBaseDelayMs
+		) {
+			return lastResult
+		}
+		console.error(
+			`Retrying wrangler ${args.map(renderArg).join(' ')} (attempt ${attempt + 1}/${maxAttempts})`,
+		)
+		await wait(
+			Math.min(cloudflareApiRetryBaseDelayMs * 2 ** (attempt - 1), timeLeft),
+		)
+		lastResult = runWrangler(args, {
+			input: options?.input,
+			quiet: options?.quiet,
+			timeoutMs,
+		})
+	}
+	return lastResult
 }
 
 export function truncateWithSuffix(
@@ -153,24 +252,28 @@ export function truncateWithSuffix(
 export function listD1Databases(): Array<D1DatabaseListEntry> {
 	const result = runWrangler(['d1', 'list', '--json'], { quiet: true })
 	if (result.status !== 0) {
-		fail('Failed to list D1 databases (wrangler d1 list --json).')
+		throw new Error('Failed to list D1 databases (wrangler d1 list --json).')
 	}
 	try {
 		return JSON.parse(result.stdout) as Array<D1DatabaseListEntry>
 	} catch {
-		fail('Could not parse JSON output from wrangler d1 list --json.')
+		throw new Error('Could not parse JSON output from wrangler d1 list --json.')
 	}
 }
 
 export function listKvNamespaces(): Array<KvNamespaceListEntry> {
 	const result = runWrangler(['kv', 'namespace', 'list'], { quiet: true })
 	if (result.status !== 0) {
-		fail('Failed to list KV namespaces (wrangler kv namespace list).')
+		throw new Error(
+			'Failed to list KV namespaces (wrangler kv namespace list).',
+		)
 	}
 	try {
 		return JSON.parse(result.stdout) as Array<KvNamespaceListEntry>
 	} catch {
-		fail('Failed to parse JSON output from wrangler kv namespace list.')
+		throw new Error(
+			'Failed to parse JSON output from wrangler kv namespace list.',
+		)
 	}
 }
 
@@ -183,12 +286,20 @@ export function isWranglerNotFoundOutput(output: string) {
 	)
 }
 
-export function deleteWorkerScript({
+export async function deleteWorkerScript({
 	name,
 	dryRun,
+	sleep: wait,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	name: string
 	dryRun: boolean
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	if (dryRun) {
 		console.error(`[dry-run] delete Worker script: ${name}`)
@@ -198,8 +309,15 @@ export function deleteWorkerScript({
 	// Delete by script name only. Passing --config/--env makes Wrangler resolve
 	// bindings from wrangler.jsonc (including KV namespaces without ids) and
 	// can fail even when the token can delete the Worker and preview resources.
-	const result = runWrangler(['delete', name, '--force'], { quiet: true })
-	const output = `${result.stdout}${result.stderr}`.trim()
+	const result = await runWranglerWithRetry(['delete', name, '--force'], {
+		quiet: true,
+		sleep: wait,
+		maxAttempts,
+		deadlineMs,
+		now,
+	})
+	const output =
+		`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
 
 	if (result.status === 0) {
 		if (output) {
@@ -214,10 +332,11 @@ export function deleteWorkerScript({
 		return
 	}
 
-	if (output) {
-		console.error(output)
-	}
-	fail(`Failed to delete Worker script: ${name}`)
+	throw new CloudflareResourceError(
+		'worker',
+		name,
+		`Failed to delete Worker script: ${name}${output ? `: ${output}` : ''}`,
+	)
 }
 
 /**
@@ -315,35 +434,226 @@ export function ensureR2BucketLifecycle({
 	}
 }
 
-export function deleteR2Bucket({
+export function isR2BucketNotEmptyOutput(output: string) {
+	const lower = output.toLowerCase()
+	return (
+		lower.includes('not empty') ||
+		lower.includes('must be empty') ||
+		output.includes('[code: 10008]') ||
+		output.includes('[code: 10014]')
+	)
+}
+
+type R2ObjectListEntry = {
+	key?: string
+	name?: string
+}
+
+function readR2ObjectKey(entry: R2ObjectListEntry) {
+	if (typeof entry.key === 'string' && entry.key.length > 0) return entry.key
+	if (typeof entry.name === 'string' && entry.name.length > 0) return entry.name
+	return null
+}
+
+/**
+ * Cloudflare R2 Delete Object requires slashes in the key to stay literal.
+ * `encodeURIComponent` on the whole key turns `/` into `%2F` and nested
+ * preview objects then fail to delete, leaving a non-empty bucket leftover.
+ * Other reserved characters are still percent-encoded per segment.
+ */
+export function encodeR2ObjectKey(key: string) {
+	return key.split('/').map(encodeURIComponent).join('/')
+}
+
+export async function listR2BucketObjects(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
+}) {
+	const objects: Array<string> = []
+	let cursor: string | undefined
+	let previousCursor: string | undefined
+	for (let page = 0; page < 50; page += 1) {
+		const search = new URLSearchParams({ per_page: '1000' })
+		if (cursor) search.set('cursor', cursor)
+		const payload = await cloudflareApiRequest<
+			Array<R2ObjectListEntry> | { objects?: Array<R2ObjectListEntry> }
+		>({
+			accountId: input.accountId,
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			deadlineMs: input.deadlineMs,
+			now: input.now,
+			maxAttempts: input.maxAttempts,
+			pathname: `/r2/buckets/${encodeURIComponent(input.name)}/objects?${search.toString()}`,
+		})
+		const listed = Array.isArray(payload.result)
+			? payload.result
+			: (payload.result?.objects ?? [])
+		for (const entry of listed) {
+			const key = readR2ObjectKey(entry)
+			if (key) objects.push(key)
+		}
+		previousCursor = cursor
+		cursor = payload.result_info?.cursor
+		if (!cursor || cursor === previousCursor) break
+	}
+	return objects
+}
+
+/**
+ * Delete every object in an R2 bucket. Callers must already have proven the
+ * bucket is preview-only (or otherwise safe to empty). Production and shared
+ * buckets are never emptied from this helper's call sites.
+ */
+export async function emptyR2Bucket(input: {
+	accountId: string
+	apiToken: string
+	name: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
+}) {
+	let objects: Array<string>
+	try {
+		objects = await listR2BucketObjects(input)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		if (isWranglerNotFoundOutput(message) || /\(404\)/.test(message)) {
+			console.error(`R2 bucket already deleted: ${input.name}`)
+			return 0
+		}
+		throw error
+	}
+	for (const key of objects) {
+		await cloudflareApiRequest({
+			accountId: input.accountId,
+			apiToken: input.apiToken,
+			apiBaseUrl: input.apiBaseUrl,
+			fetcher: input.fetcher,
+			sleep: input.sleep,
+			deadlineMs: input.deadlineMs,
+			now: input.now,
+			maxAttempts: input.maxAttempts,
+			pathname: `/r2/buckets/${encodeURIComponent(input.name)}/objects/${encodeR2ObjectKey(key)}`,
+			method: 'DELETE',
+		})
+		console.error(`Deleted R2 object: ${input.name}/${key}`)
+	}
+	return objects.length
+}
+
+export async function deleteR2Bucket({
 	name,
 	dryRun,
+	emptyIfNonEmpty,
+	accountId,
+	apiToken,
+	apiBaseUrl,
+	fetcher,
+	sleep: wait,
+	maxAttempts,
+	deadlineMs,
+	now,
 }: {
 	name: string
 	dryRun: boolean
+	emptyIfNonEmpty?: boolean
+	accountId?: string
+	apiToken?: string
+	apiBaseUrl?: string
+	fetcher?: typeof fetch
+	sleep?: (ms: number) => Promise<void>
+	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }) {
 	if (dryRun) {
 		console.error(`[dry-run] delete R2 bucket: ${name}`)
 		return
 	}
 
-	const result = runWrangler(['r2', 'bucket', 'delete', name], { quiet: true })
+	const retryOptions = {
+		quiet: true,
+		sleep: wait,
+		maxAttempts,
+		deadlineMs,
+		now,
+	} as const
+	const result = await runWranglerWithRetry(
+		['r2', 'bucket', 'delete', name],
+		retryOptions,
+	)
 	if (result.status === 0) {
 		console.error(`Deleted R2 bucket: ${name}`)
 		return
 	}
 
-	const output = `${result.stdout}${result.stderr}`.trim()
+	const output =
+		`${result.stdout}${result.stderr} ${result.errorMessage}`.trim()
 	if (isWranglerNotFoundOutput(output)) {
 		console.error(`R2 bucket already deleted: ${name}`)
 		return
 	}
 
-	// R2 refuses to delete non-empty buckets and wrangler has no purge
-	// command; a leftover preview bucket is preferable to a failed
-	// cleanup run, so warn instead of failing the workflow.
-	console.error(
-		`Warning: failed to delete R2 bucket ${name} (it may not be empty); it must be cleaned up manually.`,
+	if (emptyIfNonEmpty && isR2BucketNotEmptyOutput(output)) {
+		const resolvedAccountId = accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID
+		const resolvedApiToken = apiToken ?? process.env.CLOUDFLARE_API_TOKEN
+		if (!resolvedAccountId || !resolvedApiToken) {
+			throw new CloudflareResourceError(
+				'r2',
+				name,
+				`Failed to empty R2 bucket ${name}: missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN.`,
+			)
+		}
+		console.error(`R2 bucket ${name} is not empty; deleting objects first.`)
+		await emptyR2Bucket({
+			accountId: resolvedAccountId,
+			apiToken: resolvedApiToken,
+			name,
+			apiBaseUrl,
+			fetcher,
+			sleep: wait,
+			maxAttempts,
+			deadlineMs,
+			now,
+		})
+		const emptied = await runWranglerWithRetry(
+			['r2', 'bucket', 'delete', name],
+			retryOptions,
+		)
+		if (emptied.status === 0) {
+			console.error(`Deleted R2 bucket: ${name}`)
+			return
+		}
+		const emptiedOutput =
+			`${emptied.stdout}${emptied.stderr} ${emptied.errorMessage}`.trim()
+		if (isWranglerNotFoundOutput(emptiedOutput)) {
+			console.error(`R2 bucket already deleted: ${name}`)
+			return
+		}
+		throw new CloudflareResourceError(
+			'r2',
+			name,
+			`Failed to delete R2 bucket ${name} after emptying${emptiedOutput ? `: ${emptiedOutput}` : ''}`,
+		)
+	}
+
+	throw new CloudflareResourceError(
+		'r2',
+		name,
+		`Failed to delete R2 bucket ${name}${output ? `: ${output}` : ''}`,
 	)
 }
 
@@ -357,6 +667,8 @@ type CloudflareApiRequestInput = {
 	fetcher?: typeof fetch
 	sleep?: (ms: number) => Promise<void>
 	maxAttempts?: number
+	deadlineMs?: number
+	now?: () => number
 }
 
 async function cloudflareApiRequestOnce<T>(input: CloudflareApiRequestInput) {
@@ -416,19 +728,30 @@ export async function cloudflareApiRequest<T>(
 ) {
 	const maxAttempts = input.maxAttempts ?? cloudflareApiRetryMaxAttempts
 	const wait = input.sleep ?? sleep
+	const now = input.now ?? Date.now
 	let lastError: unknown
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 		try {
 			return await cloudflareApiRequestOnce<T>(input)
 		} catch (error) {
 			lastError = error
-			if (!isRetryableCloudflareApiError(error) || attempt === maxAttempts) {
+			const timeLeft =
+				input.deadlineMs === undefined
+					? Number.POSITIVE_INFINITY
+					: input.deadlineMs - now()
+			if (
+				!isRetryableCloudflareApiError(error) ||
+				attempt === maxAttempts ||
+				timeLeft < cloudflareApiRetryBaseDelayMs
+			) {
 				throw error
 			}
 			console.error(
 				`Retrying Cloudflare API ${input.method ?? 'GET'} ${input.pathname} (attempt ${attempt + 1}/${maxAttempts})`,
 			)
-			await wait(cloudflareApiRetryBaseDelayMs * 2 ** (attempt - 1))
+			await wait(
+				Math.min(cloudflareApiRetryBaseDelayMs * 2 ** (attempt - 1), timeLeft),
+			)
 		}
 	}
 	throw lastError
@@ -739,6 +1062,9 @@ export async function listCloudflareQueues(input: {
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
 	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
 }) {
 	const queues: Array<CloudflareQueue> = []
 	let page = 1
@@ -830,6 +1156,9 @@ export async function removeCloudflareQueueConsumers(input: {
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
 	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
 }) {
 	if (input.dryRun) {
 		console.error(`[dry-run] remove Queue consumers: ${input.name}`)
@@ -889,6 +1218,9 @@ export async function deleteCloudflareQueue(input: {
 	apiBaseUrl?: string
 	fetcher?: typeof fetch
 	sleep?: (ms: number) => Promise<void>
+	deadlineMs?: number
+	now?: () => number
+	maxAttempts?: number
 }) {
 	if (input.dryRun) {
 		console.error(`[dry-run] delete Queue: ${input.name}`)
@@ -902,6 +1234,7 @@ export async function deleteCloudflareQueue(input: {
 		return
 	}
 	const wait = input.sleep ?? sleep
+	const now = input.now ?? Date.now
 	for (let attempt = 1; ; attempt += 1) {
 		try {
 			await cloudflareApiRequest({
@@ -911,16 +1244,23 @@ export async function deleteCloudflareQueue(input: {
 			})
 			break
 		} catch (error) {
+			const timeLeft =
+				input.deadlineMs === undefined
+					? Number.POSITIVE_INFINITY
+					: input.deadlineMs - now()
 			if (
 				!isQueueStillReferencedError(error) ||
-				attempt === queueBindingReleaseMaxAttempts
+				attempt === queueBindingReleaseMaxAttempts ||
+				timeLeft < queueBindingReleaseBaseDelayMs
 			) {
 				throw error
 			}
 			console.error(
 				`Queue ${input.name} is still bound to a Worker; waiting for the binding release (attempt ${attempt + 1}/${queueBindingReleaseMaxAttempts})`,
 			)
-			await wait(queueBindingReleaseBaseDelayMs * 2 ** (attempt - 1))
+			await wait(
+				Math.min(queueBindingReleaseBaseDelayMs * 2 ** (attempt - 1), timeLeft),
+			)
 		}
 	}
 	console.error(`Deleted Queue: ${input.name} (${queue.queue_id})`)
