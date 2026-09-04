@@ -9,9 +9,10 @@ webhooks cover the invoke jobs (ADR
 
 Webhooks accept caller `Idempotency-Key`, `inputMode: "params"`, and a
 per-declaration `rateLimitPerMinute` (default 60, max 600). Token UI, MCP
-`packageGet.tokens`, token setup URLs, and the
-`POST /@:user/api/package-invocations/…` path still exist. Do not send fleet
-email from this runbook.
+guides, `packageGet.tokens`, and setup URLs are unadvertised. The
+`POST /@:user/api/package-invocations/…` path and `POST /account/packages.json`
+token actions stay as an unadvertised drain. Do not send fleet email from this
+runbook.
 
 This change does **not** drop token tables. Tracker:
 [Cleanup #2038](https://github.com/kentcdodds/kody/issues/2038).
@@ -38,14 +39,11 @@ change):
 ## Remaining work
 
 1. Migrate the live invoke-token callers above to minted webhook URLs.
-2. Unadvertise tokens: remove token UI, MCP guides, `packageGet.tokens`, and
-   setup URLs after the soak (follow-up PR).
-3. Keep the HTTP token path as an unadvertised drain until leftover rows are 0.
-4. Drop `package_invocation_tokens` (and related columns) only after the count
+2. Keep the HTTP token path as an unadvertised drain until leftover rows are 0.
+3. Drop `package_invocation_tokens` (and related columns) only after the count
    below is 0. Do not drop tables in the same deploy that first hides the UI.
 
-Re-query leftover counts before the unadvertise PR and again before the
-table-drop PR:
+Re-query leftover counts before the table-drop PR:
 
 ```sql
 SELECT

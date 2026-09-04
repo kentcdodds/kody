@@ -217,10 +217,10 @@ Person-owned packages must not import a platform scope; `communityFork` first.
 **caller-owned** packages.
 
 There is no author-facing `packages.invoke`. External trusted clients that must
-call a named export over HTTP use package invocation tokens. Before sending a
-user to create one, open
-`search({ entity: "package_invocation_token_setup:guide" })` and construct a
-prefilled `/@{username}/{kodyId}?newToken=1` URL without raw token material.
+call a named export over HTTP use inbound webhooks: declare one webhook per
+export, mint a URL with `webhookUrlMint`, and POST JSON (`inputMode: "params"`
+and `Idempotency-Key` for first-party clients). See
+[Inbound webhooks](./webhooks.md).
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
@@ -341,8 +341,7 @@ Treat package apps like Worker-style modules:
 Enabled MCP servers from `/account/mcp-servers` are available as
 `kody.mcp["name"]` in execute and in package runtimes that build caller context:
 package apps (when capabilities or nested package imports need them), package
-subscription handlers, package-owned jobs, workflows, HTTP invocation tokens,
-and webhook delivery.
+subscription handlers, package-owned jobs, workflows, and webhook delivery.
 
 ## Package subscriptions
 

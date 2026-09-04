@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listPackageInvocationTokensByPackageId: vi.fn(),
@@ -165,4 +166,18 @@ test('package invocation token capabilities return package-scoped metadata witho
 			context,
 		),
 	).rejects.toThrow(/not found/i)
+})
+
+test('invocation token capabilities stay on the map as an unadvertised drain', async () => {
+	const registry = await getStaticRegistry()
+	expect(
+		registry.capabilityDomains.some(
+			(domain) => domain.name === 'invocationTokens',
+		),
+	).toBe(false)
+	expect(registry.capabilitySpecs.packageInvocationTokenList).toBeUndefined()
+	expect(registry.capabilitySpecs.packageInvocationTokenGet).toBeUndefined()
+	expect(registry.capabilityMap.packageInvocationTokenList).toBeTruthy()
+	expect(registry.capabilityMap.packageInvocationTokenGet).toBeTruthy()
+	expect(registry.capabilitySpecs.packageGet).toBeTruthy()
 })

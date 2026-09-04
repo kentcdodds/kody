@@ -52,6 +52,11 @@ test('guides API and markdown lead with Work with Kody, not the provider dump', 
 		true,
 	)
 	expect(payload.guides.some((guide) => guide.id === 'values')).toBe(false)
+	expect(
+		payload.guides.some(
+			(guide) => guide.id === 'package_invocation_token_setup',
+		),
+	).toBe(false)
 	expect(payload.guides.some((guide) => guide.slug === 'github')).toBe(false)
 	// Bodies stay out of the index payload.
 	expect(JSON.stringify(payload)).not.toContain('## ')
@@ -85,7 +90,13 @@ test('guides API and markdown lead with Work with Kody, not the provider dump', 
 	expect(indexBody).not.toContain('https://kody.example/guides/github.md')
 	expect(indexBody).not.toContain('https://kody.example/guides/discord.md')
 	expect(indexBody).not.toContain('https://kody.example/guides/values.md')
+	expect(indexBody).not.toContain(
+		'https://kody.example/guides/account-package-invocation-token-setup.md',
+	)
 	expect(getGuideBySlug('values')?.unadvertised).toBe(true)
+	expect(
+		getGuideBySlug('account-package-invocation-token-setup')?.unadvertised,
+	).toBe(true)
 })
 
 test('guides connect index serves HTML twins, JSON, and markdown without colliding with guide slugs', async () => {

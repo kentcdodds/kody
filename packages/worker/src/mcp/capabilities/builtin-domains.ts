@@ -29,6 +29,10 @@ const builtinDomainLoaders: ReadonlyArray<() => Promise<DomainSpec>> = [
 	() => import('./coding/domain.ts').then((m) => m.codingDomain),
 	() => import('./email/domain.ts').then((m) => m.emailDomain),
 	() => import('./integrations/domain.ts').then((m) => m.integrationsDomain),
+	() =>
+		import('./invocation-tokens/domain.ts').then(
+			(m) => m.invocationTokensDomain,
+		),
 	() => import('./jobs/domain.ts').then((m) => m.jobsDomain),
 	() => import('./mcp-servers/domain.ts').then((m) => m.mcpServersDomain),
 	() => import('./meta/domain.ts').then((m) => m.metaDomain),

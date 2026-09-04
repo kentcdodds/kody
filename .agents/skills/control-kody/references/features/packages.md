@@ -6,7 +6,7 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 `/account/packages` lists your packages. Each package lives at
 `/@username/:kodyId` (README), `/@username/:kodyId/tree/:ref` (files), and
-`/@username/:kodyId/settings` (tokens, lock, visibility, delete). Leftover
+`/@username/:kodyId/settings` (lock, visibility, delete). Leftover
 `/account/packages/:packageId` and `/account/packages/:packageId/files` redirect
 to those URLs.
 
@@ -38,6 +38,8 @@ assert the empty state.
   production.
 - Unlocking a locked package is website-only.
 - Making a package public or private requires typing the slug.
+- Invocation-token JSON actions on `POST /account/packages.json` remain as an
+  unadvertised operator drain. Settings does not show token forms.
 - When default-branch HEAD is newer than the last publish, the Code tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/account/packages/:packageId/approve-publish`.

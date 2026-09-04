@@ -35,7 +35,6 @@ export function PackageSettingsRoute(handle: Handle) {
 	let kodyId = ''
 	let isPrivate = false
 	let ownerProfilePublic = true
-	let invocationUrlOrigin = ''
 	let ownerDetailsMessage: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' | 'missing' = 'loading'
 	let shellLoadRequestId = 0
@@ -140,7 +139,6 @@ export function PackageSettingsRoute(handle: Handle) {
 			kodyId = payload.kodyId || payload.ownerPackage.kodyId
 			isPrivate = payload.isPrivate ?? payload.ownerPackage.isPrivate
 			ownerProfilePublic = payload.ownerProfilePublic
-			invocationUrlOrigin = payload.invocationUrlOrigin
 			ownerDetailsMessage = null
 			shellUnauthorized = false
 			shellLoadedForPathname = ref.pathname
@@ -174,7 +172,6 @@ export function PackageSettingsRoute(handle: Handle) {
 		username = routeData.username
 		kodyId = routeData.kodyId || routeData.ownerPackage.kodyId
 		isPrivate = routeData.isPrivate
-		invocationUrlOrigin = routeData.invocationUrlOrigin
 		ownerDetailsMessage = null
 		shellUnauthorized = false
 		shellLoadedForPathname = pathname
@@ -265,9 +262,6 @@ export function PackageSettingsRoute(handle: Handle) {
 				{showReady && ownerPackage
 					? renderOwnerPackageSection({
 							ownerPackage,
-							username: chromeUsername,
-							invocationUrlOrigin,
-							currentHref,
 							lockInFlight: lockInFlight.has(ownerPackage.id),
 							ownerDetailsMessage,
 							onToggleLock: () => void togglePackageLock(),

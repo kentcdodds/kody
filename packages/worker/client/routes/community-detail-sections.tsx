@@ -69,9 +69,6 @@ export function renderShellStatus(shellStatusMessage: string) {
 
 export type OwnerPackageSectionProps = {
 	ownerPackage: AccountPackageDetail
-	username: string
-	invocationUrlOrigin: string
-	currentHref: string
 	lockInFlight: boolean
 	ownerDetailsMessage: string | null
 	onToggleLock: () => void
@@ -92,9 +89,6 @@ export function renderOwnerPackageSection(props: OwnerPackageSectionProps) {
 			) : null}
 			<AccountPackageOwnerDetails
 				packageDetail={props.ownerPackage}
-				username={props.username}
-				invocationUrlOrigin={props.invocationUrlOrigin}
-				currentHref={props.currentHref}
 				lockInFlight={props.lockInFlight}
 				onToggleLock={props.onToggleLock}
 				onPackagesPayload={props.onPackagesPayload}

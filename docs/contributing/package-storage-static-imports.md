@@ -4,8 +4,8 @@ How `packageStorage()` identity and grants work under
 [0036](./decisions/0036-platform-packages-fork-only.md) (person accounts fork
 `@kody/*` before running it) and
 [0037](./decisions/0037-no-author-packages-invoke.md) (authors compose with
-static import / `import(specifier)` / workflows; external clients use HTTP
-invocation tokens).
+static import / `import(specifier)` / workflows; external clients use inbound
+webhooks).
 
 Related: [0014](./decisions/0014-platform-live-packages.md) (grant exclusion for
 platform-owned static deps),
@@ -44,8 +44,8 @@ Caller-owned static imports already receive `packageStorage()` grants.
 
 `packageContext` on a static import from execute stays `null`. Code that needs
 `packageContext` (hosted URL, app paths, `kody.secretMounts`) must run as that
-package: HTTP invocation tokens for external clients, or a job / subscription /
-app surface. Authors do not get a `packages.invoke` composition helper (0037).
+package: inbound webhooks for external clients, or a job / subscription / app
+surface. Authors do not get a `packages.invoke` composition helper (0037).
 
 #1691 is secrets only: user-scope `{{secret}}` placeholders resolve at the fetch
 gateway for the calling user. That path never goes through
