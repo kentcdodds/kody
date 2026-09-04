@@ -210,6 +210,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									{profileHref ? (
 										<a
 											href={profileHref}
+											aria-label={`@${handle.props.username}`}
 											aria-current={profileAriaCurrent}
 											data-testid="site-header-profile-menu"
 											mix={css(menuProfileLinkCss)}
