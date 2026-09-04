@@ -100,6 +100,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0047 — One Vectorize index with per-user namespaces until 5,000 users](./0047-vectorize-per-user-namespaces-until-5k-users.md)
   — no sharding or metadata-only filtering before 5k accounts; the shard shape
   is pre-decided for when it is needed
+- [0049 — Do not move the origin website to Pitlane Vite](./0049-no-pitlane-vite-origin.md)
+  — keep esbuild + `wrangler-env.ts`; local-dev friction is Wrangler, not the
+  client bundler
 
 ## Historical / UI / implementation
 
