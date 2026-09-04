@@ -585,11 +585,11 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `KODY_PACKAGE_INVOCATION_TOKEN` (optional GitHub **secret**; weekly site-perf
   workflow only. When a `needs-fix` verdict is recorded,
   [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)
-  uses it to `POST`
+  uses it to `POST` the unadvertised invocation-token drain at
   `https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`.
-  Create a token scoped to `weekly-site-perf` / `.` / source `weekly-site-perf`
-  on that package's details page. Not a Worker secret; the weekly job skips
-  invoke when this is unset.)
+  Existing secret continues to work until that package migrates to a minted
+  webhook URL. Not a Worker secret; the weekly job skips invoke when this is
+  unset.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
@@ -681,12 +681,11 @@ How to get/set each value:
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
 - `KODY_PACKAGE_INVOCATION_TOKEN` (optional)
-  - In Kody: open
-    `/@kentcdodds/weekly-site-perf?newToken=1&name=Weekly%20site%20perf&exportNames=.`,
-    generate a raw token in the browser, and store that value as the repository
-    secret `KODY_PACKAGE_INVOCATION_TOKEN`. Scope it to the `weekly-site-perf`
-    package. The weekly workflow uses it only to invoke that package; it is not
-    synced to the Worker.
+  - Existing repository secret for the weekly site-perf soak drain. New callers
+    mint a webhook URL on `@kentcdodds/weekly-site-perf` instead of creating a
+    bearer token. Rotate the leftover token with `POST /account/packages.json`
+    (`action: "update-token"`). The weekly workflow uses this secret only to
+    invoke that package; it is not synced to the Worker.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with

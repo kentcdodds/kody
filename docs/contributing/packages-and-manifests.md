@@ -190,7 +190,7 @@ The author-facing package-reuse contract is two rules (decision 0037):
    staleness only affects package-to-package static dependencies.
 2. **Name is data → `import(specifier)`** of a caller-owned or forked module.
    Exactly-once work uses [workflows](../use/workflows.md). External trusted
-   clients use HTTP invocation tokens, not author composition.
+   clients use inbound webhooks, not author composition.
 
 ```ts
 import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
@@ -211,7 +211,7 @@ remain unresolvable. Platform-account packages may compose with each other.
 
 Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
-work uses workflows. HTTP invocation tokens stay for external clients.
+work uses workflows. External HTTP callers use inbound webhooks.
 
 Publish checks reject object-only `packages.invoke`, `packages.invokeChecked`,
 `packages.check`, and literal dynamic `import("kody:@...")`. Codemods `0002`,

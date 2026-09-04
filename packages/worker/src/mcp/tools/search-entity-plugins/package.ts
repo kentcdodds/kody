@@ -526,8 +526,8 @@ export const packageSearchEntityPlugin = {
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
 		const followUp = listingAhead
-			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
-			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, external invocation, and maintenance workflows.`
+			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
+			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',

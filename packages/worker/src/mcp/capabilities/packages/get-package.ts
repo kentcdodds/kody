@@ -3,42 +3,27 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
-import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { listPackageInvocationTokensByPackageId } from '#worker/package-invocations/repo.ts'
 import { getSavedPackageWithCommunityProvenanceById } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import {
-	packageDetailSchema,
-	toPackageInvocationTokenMetadata,
-} from './shared.ts'
+import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageGet',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, invocation token metadata, and canonical owner-scoped external invocation URLs for each export.',
-		keywords: [
-			'package',
-			'get',
-			'read',
-			'metadata',
-			'exports',
-			'imports',
-			'invocation url',
-			'package invocation token',
-		],
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, and callable export contracts.',
+		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -77,11 +62,6 @@ export const getPackageCapability = defineDomainCapability(
 				}
 				throw new McpCallerError('Saved package not found for this user.')
 			}
-			const username = await resolvePublicUsername({
-				db: ctx.env.APP_DB,
-				username: owner.ownerScope,
-				email: owner.ownerEmail,
-			})
 			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -92,11 +72,6 @@ export const getPackageCapability = defineDomainCapability(
 				loaded.manifest,
 				loaded.files,
 			)
-			const tokens = await listPackageInvocationTokensByPackageId({
-				db: ctx.env.APP_DB,
-				userId: owner.ownerUserId,
-				packageId: saved.id,
-			})
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
@@ -142,30 +117,7 @@ export const getPackageCapability = defineDomainCapability(
 							definition: referencedType.definition,
 						}),
 					),
-					external_invocation: username
-						? (() => {
-								const descriptor = buildExternalPackageInvocationDescriptor({
-									baseUrl: ctx.callerContext.baseUrl,
-									ownerUsername: username,
-									packageId: saved.id,
-									kodyId: saved.kodyId,
-									exportName: exportDetail.subpath,
-								})
-								return {
-									method: descriptor.method,
-									url: descriptor.url,
-									path: descriptor.path,
-									owner_username: descriptor.ownerUsername,
-									kody_id: descriptor.kodyId,
-									route_export_name: descriptor.routeExportName,
-									normalized_export_name: descriptor.normalizedExportName,
-									token_setup_url: descriptor.tokenSetupUrl,
-									source_guidance: descriptor.sourceGuidance,
-								}
-							})()
-						: null,
 				})),
-				tokens: tokens.map(toPackageInvocationTokenMetadata),
 			}
 		},
 	},

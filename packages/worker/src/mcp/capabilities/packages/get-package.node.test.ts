@@ -2,7 +2,6 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageWithCommunityProvenanceById: vi.fn(),
-	listPackageInvocationTokensByPackageId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 }))
@@ -10,11 +9,6 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
-}))
-
-vi.mock('#worker/package-invocations/repo.ts', () => ({
-	listPackageInvocationTokensByPackageId: (...args: Array<unknown>) =>
-		mockModule.listPackageInvocationTokensByPackageId(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -40,7 +34,6 @@ function createCallerContext(input?: {
 	const userId = 'user-1'
 	const ownerUserId = input?.ownerUserId ?? userId
 	const ownerScope = input?.ownerScope ?? input?.username ?? 'kody'
-	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([])
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
 		ownerUserId,
 		ownerScope,
@@ -119,9 +112,7 @@ function stubSavedPackage(input?: {
 
 test('getPackageCapability returns export metadata for owner and delegated package scopes', async () => {
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
-	mockModule.listPackageInvocationTokensByPackageId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
-	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([])
 	stubSavedPackage()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: { id: 'source-1' },
@@ -166,45 +157,22 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		listing_ahead: false,
 		created_at: '2026-04-25T00:00:00.000Z',
 		updated_at: '2026-04-26T00:00:00.000Z',
-		tokens: [],
 		exports: [
 			{
 				subpath: '.',
 				import_specifier: 'kody:@kentcdodds/discord-gateway',
 				runtime_target: 'src/index.ts',
-				external_invocation: {
-					method: 'POST',
-					url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/__root__',
-					path: '/@kody/api/package-invocations/discord-gateway/__root__',
-					owner_username: 'kody',
-					kody_id: 'discord-gateway',
-					route_export_name: '__root__',
-					normalized_export_name: '.',
-					token_setup_url:
-						'https://heykody.dev/@kody/discord-gateway?newToken=1&exportNames=.',
-					source_guidance: expect.any(String),
-				},
 			},
 			{
 				subpath: './post-message',
 				import_specifier: 'kody:@kentcdodds/discord-gateway/post-message',
 				runtime_target: 'src/post-message.ts',
 				types_path: 'src/post-message.ts',
-				external_invocation: {
-					method: 'POST',
-					url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/post-message',
-					path: '/@kody/api/package-invocations/discord-gateway/post-message',
-					owner_username: 'kody',
-					kody_id: 'discord-gateway',
-					route_export_name: 'post-message',
-					normalized_export_name: './post-message',
-					token_setup_url:
-						'https://heykody.dev/@kody/discord-gateway?newToken=1&exportNames=post-message',
-					source_guidance: expect.any(String),
-				},
 			},
 		],
 	})
+	expect(withUsername).not.toHaveProperty('tokens')
+	expect(withUsername.exports[0]).not.toHaveProperty('external_invocation')
 	expect(
 		mockModule.getSavedPackageWithCommunityProvenanceById,
 	).toHaveBeenCalledWith(
@@ -218,7 +186,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		sourceId: 'source-1',
 	})
 
-	// Delegated package_scope loads and builds invocation URLs for the owner.
+	// Delegated package_scope loads the owner's package metadata.
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.resolvePackageOwnerContext.mockClear()
@@ -272,10 +240,12 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'platform-owner' }),
 	)
-	expect(delegated.exports[0]?.external_invocation).toMatchObject({
-		owner_username: 'kody',
-		url: 'https://heykody.dev/@kody/api/package-invocations/discord-gateway/post-message',
+	expect(delegated.exports[0]).toMatchObject({
+		subpath: './post-message',
+		import_specifier: 'kody:@kody/discord-gateway/post-message',
 	})
+	expect(delegated).not.toHaveProperty('tokens')
+	expect(delegated.exports[0]).not.toHaveProperty('external_invocation')
 })
 
 test('getPackageCapability projects export contracts from source and leaves them empty without projectable text', async () => {

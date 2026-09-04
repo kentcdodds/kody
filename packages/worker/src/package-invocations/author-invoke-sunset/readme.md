@@ -3,9 +3,10 @@
 Quarantine for the `kody:runtime` `packages.invoke` helper (decision
 [0037](../../../../../docs/contributing/decisions/0037-no-author-packages-invoke.md)).
 
-**Do not add new author-facing call sites.** HTTP invocation tokens, jobs,
+**Do not add new author-facing call sites.** Inbound webhooks, jobs,
 subscriptions, and apps use host `invokePackageExport` / `runSavedPackageModule`
-in the parent folder. Those stay.
+in the parent folder. Those stay. HTTP invocation tokens remain an unadvertised
+drain.
 
 Tracker: [#1750](https://github.com/kentcdodds/kody/issues/1750).
 

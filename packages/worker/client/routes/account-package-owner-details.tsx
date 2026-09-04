@@ -23,7 +23,6 @@ import {
 } from './account-management-components.tsx'
 import { RecordChips, recordBodyCss } from './record-table.tsx'
 import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
-import { AccountPackageTokens } from './account-package-tokens.tsx'
 import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
@@ -36,9 +35,6 @@ export function isPackageLocked(lockedAt: string | null | undefined) {
 export function AccountPackageOwnerDetails(
 	handle: Handle<{
 		packageDetail: AccountPackageDetail
-		username: string
-		invocationUrlOrigin: string
-		currentHref: string
 		lockInFlight: boolean
 		onToggleLock: () => void
 		onPackagesPayload: (payload: AccountPackagesLoaderData) => void
@@ -103,15 +99,7 @@ export function AccountPackageOwnerDetails(
 	}
 
 	return () => {
-		const {
-			packageDetail,
-			username,
-			invocationUrlOrigin,
-			currentHref,
-			lockInFlight,
-			onToggleLock,
-			onPackagesPayload,
-		} = handle.props
+		const { packageDetail, lockInFlight, onToggleLock } = handle.props
 
 		return (
 			<div mix={css(recordBodyCss)} data-testid="package-owner-details">
@@ -336,13 +324,6 @@ export function AccountPackageOwnerDetails(
 						</div>
 					) : null}
 				</div>
-				<AccountPackageTokens
-					packageDetail={packageDetail}
-					currentHref={currentHref}
-					username={username}
-					invocationUrlOrigin={invocationUrlOrigin}
-					onPackagesPayload={onPackagesPayload}
-				/>
 				<AccountPackageDeleteDialog packageDetail={packageDetail} />
 				{packageDetail.searchText ? (
 					<details mix={css(accountDisclosureCss)}>

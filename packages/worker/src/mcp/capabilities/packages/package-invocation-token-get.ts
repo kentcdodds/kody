@@ -10,11 +10,11 @@ import {
 } from './shared.ts'
 
 export const packageInvocationTokenGetCapability = defineDomainCapability(
-	capabilityDomainNames.packages,
+	capabilityDomainNames.invocationTokens,
 	{
 		name: 'packageInvocationTokenGet',
 		description:
-			'Get metadata for one package invocation token record owned by the signed-in user, including the owning package, export scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
+			'Unadvertised leftover-token drain. Get metadata for one package invocation token record owned by the signed-in user, including the owning package, export scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
 		keywords: [
 			'package invocation token',
 			'invocation token',

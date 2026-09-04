@@ -47,12 +47,14 @@ package. The agent implements an obvious local fix when it can, follows
 [`.agents/skills/ship-pr/SKILL.md`](../../.agents/skills/ship-pr/SKILL.md), or
 leaves the tracking issue open when a human should decide.
 
-Create a scoped invocation token on the `weekly-site-perf` package details page
-(`exportNames=.`) at
-`https://kody.codes/@kentcdodds/weekly-site-perf?newToken=1&name=Weekly%20site%20perf&exportNames=.`
-and store the raw value as the repository (or org) secret
-`KODY_PACKAGE_INVOCATION_TOKEN`. Do not put the raw token in the URL. See
-[setup manifest](./setup-manifest.md).
+The live Action still uses the unadvertised invocation-token drain until
+`@kentcdodds/weekly-site-perf` migrates to a minted webhook URL. Store the
+existing raw bearer as the repository (or org) secret
+`KODY_PACKAGE_INVOCATION_TOKEN`. Rotate it with `POST /account/packages.json`
+(`action: "update-token"`). New first-party callers mint a webhook
+(`inputMode: "params"`, `Idempotency-Key`). See
+[setup manifest](./setup-manifest.md) and
+[inbound webhooks](../use/webhooks.md).
 
 If the secret is unset, the workflow still measures and upserts the issue. It
 skips the invoke so the weekly job stays green.

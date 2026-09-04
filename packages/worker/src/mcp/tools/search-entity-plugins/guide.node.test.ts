@@ -24,6 +24,11 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	expect(descriptors.some((descriptor) => descriptor.id === 'values')).toBe(
 		false,
 	)
+	expect(
+		descriptors.some(
+			(descriptor) => descriptor.id === 'package_invocation_token_setup',
+		),
+	).toBe(false)
 
 	const authoringCandidates = await guideSearchEntityPlugin.buildCandidates!({
 		env: {} as Env,
@@ -42,6 +47,11 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	).toBe(true)
 	expect(
 		authoringCandidates.some((candidate) => candidate.id === 'values'),
+	).toBe(false)
+	expect(
+		authoringCandidates.some(
+			(candidate) => candidate.id === 'package_invocation_token_setup',
+		),
 	).toBe(false)
 
 	const emailScoped = await guideSearchEntityPlugin.buildCandidates!({
