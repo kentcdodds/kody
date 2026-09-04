@@ -1,7 +1,7 @@
 # Account hub
 
-Signed-in home: profile, export, delete, and links to the other account
-surfaces.
+Signed-in home: profile, export, logout, delete, and links to the other account
+surfaces. Logout lives at the bottom of this page, not in the site header.
 
 ## How to get there
 

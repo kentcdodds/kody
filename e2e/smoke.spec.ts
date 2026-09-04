@@ -55,11 +55,20 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(page.getByText('Failed to fetch')).not.toBeVisible()
 
-	// Log out through the top nav. The router intercepts the form POST and
-	// SPA-navigates to /login, so the shell must refresh its session state
-	// without a full document reload (regression: the throttled refresh kept
-	// the username and Log out button visible after logging out).
-	await page.getByRole('button', { name: 'Log out' }).click()
+	// Log out from the account overview. The router intercepts the form POST
+	// and SPA-navigates to /login, so the shell must refresh its session
+	// state without a full document reload (regression: the throttled refresh
+	// kept the username and Log out button visible after logging out).
+	await page.goto('/account')
+	await expect(page).toHaveURL(/\/account$/)
+	await expect(
+		page.getByRole('navigation', { name: 'Main' }).getByRole('button', {
+			name: 'Log out',
+		}),
+	).toHaveCount(0)
+	const session = page.getByRole('region', { name: 'Session', exact: true })
+	await expect(session).toBeVisible()
+	await session.getByRole('button', { name: 'Log out' }).click()
 	await expect(page).toHaveURL(/\/login$/)
 	// The redesigned login screen renders without the site header, so the
 	// logged-out state shows the auth card instead of a header "Log in" link.

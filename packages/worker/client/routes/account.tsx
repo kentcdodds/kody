@@ -30,6 +30,7 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
+import { renderAccountLogoutPanel } from '#client/routes/account-logout-panel.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -729,6 +730,8 @@ export function AccountRoute(handle: Handle) {
 						</AccountManagementPanel>
 					</>
 				) : null}
+
+				{renderAccountLogoutPanel()}
 
 				<AccountAvatarEditor
 					file={editorFile}
