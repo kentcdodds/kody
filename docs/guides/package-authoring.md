@@ -4,8 +4,9 @@ title: Package authoring guide
 summary:
   START HERE when creating or materially changing a Kody package: package
   shape, README.md Intent section, per-export JSDoc (search Purpose),
-  secret-using package approval checklist, and scope-update guidance
-  without adding new primitives.
+  personal-details hygiene before going public, secret-using package
+  approval checklist, and scope-update guidance without adding new
+  primitives.
 category: platform
 ---
 
@@ -206,7 +207,31 @@ New packages are always **private**. Visibility is a repo setting
   package appears on `/community`.
 - Private is owner-only. Going private 404s public URLs; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
-- There are no MIT, logo, or README Intent gates to become public.
+- There are no MIT, logo, or README Intent **platform** gates to become public.
+  Agents still run a personal-details hygiene pass before flipping public
+  (below). The Worker does not scan or block on that review.
+
+### Personal-details hygiene before going public
+
+Before calling `packageUpdate` with `changes.visibility: "public"` or
+`communityPublish`, review source, README, Intent, description, tags, examples,
+and hardcoded identifiers for overly personal material.
+
+Treat as personal or too household-specific:
+
+- home addresses, private emails, phone numbers, family names
+- personal Discord or channel IDs
+- private calendar habits
+- one-off personal automation that only makes sense for one household
+- secrets, tokens, and internal-only URLs
+
+If the package is clean, proceed.
+
+If anything looks personal or hyper-specific to one person or household, **do
+not publish yet**. Tell the user what you found. Suggest how to generalize:
+parameterize identifiers, use secrets or integrations instead of hardcoded
+credentials, rename examples, strip PII, and keep a private fork for personal
+wiring. Wait for explicit go-ahead before flipping public.
 
 ## Work that does not fit a Worker isolate
 

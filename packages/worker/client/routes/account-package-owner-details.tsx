@@ -190,7 +190,7 @@ export function AccountPackageOwnerDetails(
 				>
 					<p mix={css({ margin: 0, color: colors.textMuted })}>
 						{packageDetail.isPrivate
-							? 'Making this package public lists it on /community. Anyone can read and fork the default branch. Type the slug to confirm.'
+							? 'Making this package public lists it on /community. Anyone can read and fork the default branch. Skim source, README, and examples for personal details first, then type the slug to confirm.'
 							: 'Making this package private unlists it from /community and 404s public URLs. Existing forks keep their copies. Type the slug to confirm.'}
 					</p>
 					<label mix={css({ display: 'grid', gap: spacing.xs })}>
