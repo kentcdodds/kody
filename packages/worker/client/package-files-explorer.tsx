@@ -814,10 +814,9 @@ const markdownCss = {
 	'& > :first-child': {
 		marginTop: 0,
 	},
-	// `proseCss` styles no tables. A README table sized to the column would
-	// wrap every cell to a few characters, so it sizes to its content
-	// (`max-content`) and scrolls inside its own box instead — the block
-	// display is what lets a table overflow at all.
+	// Guide/blog `proseCss` tables keep real column layout. README files
+	// sit in a narrower explorer column, so this view still sizes to
+	// `max-content` and scrolls instead of wrapping every cell.
 	'& table': {
 		display: 'block',
 		width: 'max-content',

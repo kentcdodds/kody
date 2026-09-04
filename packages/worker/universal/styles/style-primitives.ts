@@ -457,6 +457,48 @@ export function getLanternGlowCss(options: { maxWidth: string }) {
 	}
 }
 
+/**
+ * Markdown table layout for prose (guides, blog) and README views.
+ *
+ * The prose root uses `overflow-wrap: anywhere` so long tokens in lists can
+ * shrink. That also collapses table min-content to a character, so auto
+ * layout gives leftover space to the long first column and the last column
+ * wraps "An integration" onto two lines. Reset wrap on the table, keep the
+ * last column at content width, and scroll overflow on a wrapper — not on
+ * `display: block` tables, which skip column layout.
+ *
+ * Wrap each `<table>` in `[data-markdown-table]` (see `markdown-view.tsx`).
+ */
+export const markdownTableCss = {
+	'& [data-markdown-table]': {
+		margin: '1.15rem 0 0',
+		maxWidth: '100%',
+		overflowX: 'auto' as const,
+	},
+	'& table': {
+		display: 'table' as const,
+		width: '100%',
+		borderCollapse: 'collapse' as const,
+		overflowWrap: 'normal' as const,
+	},
+	'& th, & td': {
+		border: `1px solid ${colors.border}`,
+		padding: `${spacing.sm} ${spacing.md}`,
+		textAlign: 'left' as const,
+		verticalAlign: 'top' as const,
+		overflowWrap: 'break-word' as const,
+	},
+	'& th': {
+		fontWeight: typography.fontWeight.semibold,
+		backgroundColor: colors.surface,
+		whiteSpace: 'nowrap' as const,
+	},
+	'& th:last-child, & td:last-child': {
+		width: 'max-content',
+		whiteSpace: 'nowrap' as const,
+	},
+}
+
 export const proseCss = {
 	marginTop: 'clamp(1.8rem, 4vw, 2.5rem)',
 	minWidth: 0,
@@ -465,6 +507,7 @@ export const proseCss = {
 	// `body { overflow-x: clip }` would otherwise hide the overflow with no
 	// scrollbar. Interactive walkthroughs do not use this object.
 	overflowWrap: 'anywhere' as const,
+	...markdownTableCss,
 	'& a': {
 		color: colors.primaryText,
 		textDecorationThickness: '1.5px',
