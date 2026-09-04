@@ -1572,6 +1572,17 @@ test('worker entrypoint returns id_token when openid scope is granted', async ()
 		const code = new URL(approvalPayload.redirectTo).searchParams.get('code')
 		expect(code).toBeTruthy()
 
+		// Authorize (default handler) injects `env.OAUTH_PROVIDER` onto the
+		// shared isolate env. Production token requests are a fresh isolate
+		// and the token path never injects helpers — hide the leftover so
+		// enrichment must use `resolveOAuthHelpers` over OAUTH_KV.
+		const tokenEnv = new Proxy(env, {
+			get(target, prop, receiver) {
+				if (prop === 'OAUTH_PROVIDER') return undefined
+				return Reflect.get(target, prop, receiver)
+			},
+		}) as Env
+
 		const tokenResponse = await workerFetch(
 			new Request('https://heykody.dev/oauth/token', {
 				method: 'POST',
@@ -1585,15 +1596,32 @@ test('worker entrypoint returns id_token when openid scope is granted', async ()
 					resource: 'https://heykody.dev/mcp',
 				}),
 			}),
+			tokenEnv,
 		)
 		expect(tokenResponse.status).toBe(200)
 		const tokenPayload = (await tokenResponse.json()) as {
+			access_token?: string
 			id_token?: string
 			scope?: string
 		}
 		expect(tokenPayload.scope).toContain('openid')
 		expect(typeof tokenPayload.id_token).toBe('string')
 		expect(tokenPayload.id_token?.split('.')).toHaveLength(3)
+		expect(typeof tokenPayload.access_token).toBe('string')
+
+		const userinfoResponse = await workerFetch(
+			new Request('https://heykody.dev/oauth/userinfo', {
+				headers: {
+					Authorization: `Bearer ${tokenPayload.access_token ?? ''}`,
+				},
+			}),
+			tokenEnv,
+		)
+		expect(userinfoResponse.status).toBe(200)
+		await expect(userinfoResponse.json()).resolves.toMatchObject({
+			email,
+			email_verified: true,
+		})
 	} finally {
 		globalThis.fetch = originalFetch
 	}

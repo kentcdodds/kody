@@ -1,7 +1,4 @@
-import {
-	type ClientInfo,
-	type OAuthHelpers,
-} from '@cloudflare/workers-oauth-provider'
+import { type ClientInfo } from '@cloudflare/workers-oauth-provider'
 import {
 	destroyAuthCookie,
 	isSecureRequest,
@@ -10,9 +7,14 @@ import {
 import { getEnv } from '#app/env.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
+
+type LogoutOAuthHelpers = {
+	lookupClient: (clientId: string) => Promise<ClientInfo | null>
+}
 
 type OAuthEnv = Env & {
-	OAUTH_PROVIDER: OAuthHelpers
+	OAUTH_PROVIDER?: LogoutOAuthHelpers
 }
 
 type LogoutParams = {
@@ -20,14 +22,6 @@ type LogoutParams = {
 	state: string | null
 	idTokenHint: string | null
 	clientId: string | null
-}
-
-function getOAuthHelpers(env: Env) {
-	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-	if (!helpers) {
-		throw new Error('OAuth provider helpers are not available.')
-	}
-	return helpers
 }
 
 function readRegisteredRedirectUris(client: ClientInfo) {
@@ -120,9 +114,11 @@ export async function handleOidcLogoutRequest(request: Request, env: Env) {
 	if (params.postLogoutRedirectUri) {
 		let allowed = false
 		if (clientId) {
-			const helpers = getOAuthHelpers(env)
+			const helpers = await resolveOAuthHelpers<LogoutOAuthHelpers>(
+				env as OAuthEnv,
+			)
 			try {
-				const client = await helpers.lookupClient(clientId)
+				const client = helpers ? await helpers.lookupClient(clientId) : null
 				if (client) {
 					allowed = isAllowedPostLogoutRedirectUri(
 						params.postLogoutRedirectUri,

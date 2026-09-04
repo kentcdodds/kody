@@ -1,16 +1,17 @@
-import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { mintIdToken, type OidcGrantProps } from '#worker/oidc/id-token.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 
-type OAuthEnv = Env & {
-	OAUTH_PROVIDER: OAuthHelpers
-}
-
-function getOAuthHelpers(env: Env) {
-	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-	if (!helpers) {
-		throw new Error('OAuth provider helpers are not available.')
-	}
-	return helpers
+type TokenEnrichmentHelpers = {
+	unwrapToken: <T = OidcGrantProps>(
+		token: string,
+	) => Promise<{
+		scope: Array<string>
+		grant: {
+			clientId: string
+			scope: Array<string>
+			props: T
+		}
+	} | null>
 }
 
 function scopeIncludesOpenid(scope: unknown) {
@@ -52,7 +53,12 @@ export async function enrichOAuthTokenResponse(
 		return response
 	}
 
-	const helpers = getOAuthHelpers(env)
+	// The provider handles `/oauth/token` internally and never injects
+	// `env.OAUTH_PROVIDER` on that path. A later authorize request in the
+	// same isolate can leave helpers on `env` (local tests), but a fresh
+	// production token request must build them through `resolveOAuthHelpers`.
+	const helpers = await resolveOAuthHelpers<TokenEnrichmentHelpers>(env)
+	if (!helpers) return response
 	const tokenSummary = await helpers.unwrapToken<OidcGrantProps>(
 		body.access_token,
 	)

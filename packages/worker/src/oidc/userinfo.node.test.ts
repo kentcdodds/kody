@@ -106,3 +106,16 @@ test('userinfo requires openid scope', async () => {
 		error: 'insufficient_scope',
 	})
 })
+
+test('userinfo returns 401 when OAuth helpers are unavailable', async () => {
+	const response = await handleOidcUserinfoRequest(
+		new Request('https://heykody.dev/oauth/userinfo', {
+			headers: { Authorization: 'Bearer demo-token' },
+		}),
+		createOidcEnv({ OAUTH_PROVIDER: undefined } as Partial<Env>),
+	)
+	expect(response.status).toBe(401)
+	await expect(response.json()).resolves.toMatchObject({
+		error: 'invalid_token',
+	})
+})

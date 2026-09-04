@@ -21,11 +21,14 @@ const inertHandler = {
  * Resolve the provider's `OAuthHelpers` for the current execution context.
  *
  * `@cloudflare/workers-oauth-provider` injects `env.OAUTH_PROVIDER` only
- * inside its own `fetch` wrapper on origin. Scheduled lanes, RPC entrypoints
- * (`JobsHost.runScheduledLane`), and capabilities served from the sessionful
- * `MCP` Durable Object on kody-platform run outside it, so they build the same
- * `OAuthHelpersImpl` through the library's `getOAuthApi` with the shared
- * options. The library loads lazily from the pre-bundled additional module
+ * inside its own `fetch` wrapper on origin, and only for the default handler
+ * and API routes — `/oauth/token` is handled internally and never gets the
+ * injection. Scheduled lanes, RPC entrypoints (`JobsHost.runScheduledLane`),
+ * OIDC UserInfo/logout (served before `oauthProvider.fetch`), token-response
+ * `id_token` enrichment (runs after that fetch returns), and capabilities
+ * served from the sessionful `MCP` Durable Object on kody-platform therefore
+ * build the same `OAuthHelpersImpl` through the library's `getOAuthApi` with
+ * the shared options. The library loads lazily from the pre-bundled additional module
  * (`tools/build-worker-bundler-modules.ts`): wrangler inlines a plain dynamic
  * `import('@cloudflare/workers-oauth-provider')` into the main module, which
  * would put it on the platform/runtime startup path, whereas the
