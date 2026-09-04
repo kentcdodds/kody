@@ -60,7 +60,7 @@ export function inferOriginDeployWorkerName(input: {
 
 export function isSlimOriginEntry(main: unknown) {
 	if (typeof main !== 'string') return false
-	return main.replaceAll('\\', '/').endsWith('production-worker.ts')
+	return main.replaceAll('\\', '/').split('/').pop() === 'production-worker.ts'
 }
 
 export function finalizeOriginViteWranglerConfig(
