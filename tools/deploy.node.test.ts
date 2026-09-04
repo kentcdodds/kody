@@ -108,6 +108,7 @@ test('infers the production origin script name and preserves explicit names', ()
 test('detects the slim origin entry used for Vite production/preview uploads', () => {
 	expect(isSlimOriginEntry('./src/production-worker.ts')).toBe(true)
 	expect(isSlimOriginEntry('src\\production-worker.ts')).toBe(true)
+	expect(isSlimOriginEntry('./src/not-production-worker.ts')).toBe(false)
 	expect(isSlimOriginEntry('./src/index.ts')).toBe(false)
 	expect(isSlimOriginEntry(undefined)).toBe(false)
 })
