@@ -152,6 +152,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run docs:check-decisions
 
+      - name: 🧜 Mermaid
+        if: ${{ !cancelled() }}
+        run: npm run mermaid:check
+
   node:
     runs-on: ubuntu-latest
     name: 🧪 Node

@@ -174,6 +174,11 @@ Format rules:
     a neighbor only when this PR actually calls through them.
   - Use `Note over` / `Note right of` for new or changed data, guards, or status
     — not as a substitute for a labeled message.
+  - Do not put `;` in sequence notes or messages: mermaid ends the statement
+    there, and GitHub then fails on leftover tokens (often `+`). Rephrase
+    (`and`, a comma) instead of quoting. `npm run mermaid:check` and
+    `upsert-recap-block.mjs` parse every fenced mermaid block the way GitHub
+    does.
   - Keep the happy path first. Use `alt` / `opt` only for a branch this PR
     introduces or changes.
 - **System map** (optional): a PR-scoped **topology** view — how touched
@@ -224,9 +229,9 @@ Format rules:
    node .agents/skills/visual-recap/scripts/upsert-recap-block.mjs <pr-number> <block-file>
    ```
 
-   The script replaces the content between the markers, or appends the block to
-   the end of the description on first run. It never touches text outside the
-   markers.
+   The script rejects mermaid GitHub cannot parse, then replaces the content
+   between the markers, or appends the block to the end of the description on
+   first run. It never touches text outside the markers.
 
 6. Re-run steps 2-5 after pushing significant new commits to the PR.
 

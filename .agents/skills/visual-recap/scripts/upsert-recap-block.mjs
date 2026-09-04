@@ -4,11 +4,14 @@
 //   node upsert-recap-block.mjs <pr-number> <block-file>
 // The block file must start with the start marker and end with the end
 // marker. Requires the `gh` CLI to be authenticated.
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const startMarker = '<!-- system-recap:start -->'
 const endMarker = '<!-- system-recap:end -->'
+const repoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 
 const [prNumber, blockFile] = process.argv.slice(2)
 if (!prNumber || !blockFile) {
@@ -22,6 +25,22 @@ if (!block.startsWith(startMarker) || !block.endsWith(endMarker)) {
 		`block file must start with "${startMarker}" and end with "${endMarker}"`,
 	)
 	process.exit(1)
+}
+
+const mermaidCheck = spawnSync(
+	process.execPath,
+	[
+		path.join(repoRoot, 'tools/check-mermaid-syntax.ts'),
+		'--stdin',
+		'--label',
+		blockFile,
+	],
+	{ input: block, encoding: 'utf8', cwd: repoRoot },
+)
+if (mermaidCheck.status !== 0) {
+	process.stderr.write(mermaidCheck.stdout)
+	process.stderr.write(mermaidCheck.stderr)
+	process.exit(mermaidCheck.status === null ? 1 : mermaidCheck.status)
 }
 
 const body = execFileSync(
