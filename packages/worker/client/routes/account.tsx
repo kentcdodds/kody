@@ -12,7 +12,6 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
-import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -31,6 +30,7 @@ import {
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
+import { renderAccountLogoutPanel } from '#client/routes/account-logout-panel.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -731,20 +731,7 @@ export function AccountRoute(handle: Handle) {
 					</>
 				) : null}
 
-				<AccountManagementPanel
-					title="Session"
-					description="Sign out of this browser. Your account and data stay intact."
-				>
-					<form
-						method="post"
-						action={routes.logout.href()}
-						mix={css({ margin: 0 })}
-					>
-						<button type="submit" mix={css(compactGhostButtonCss)}>
-							Log out
-						</button>
-					</form>
-				</AccountManagementPanel>
+				{renderAccountLogoutPanel()}
 
 				<AccountAvatarEditor
 					file={editorFile}
