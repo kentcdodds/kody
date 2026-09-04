@@ -38,7 +38,7 @@ assert the empty state.
   production.
 - Unlocking a locked package is website-only.
 - Making a package public or private requires typing the slug.
-- Invocation-token JSON actions on `POST /account/packages.json` remain as an
+- Invocation-token JSON actions on `POST /account/packages.json` are an
   unadvertised operator drain. Settings does not show token forms.
 - When default-branch HEAD is newer than the last publish, the Code tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and

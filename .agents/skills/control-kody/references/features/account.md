@@ -22,6 +22,7 @@ node tools/control-kody.ts request GET /account/profile.json
 - `GET /account/export.json`
 - `POST /account/delete`
 - `GET|POST /account/connections.json`
+- `POST /logout` (form at the bottom of this page)
 
 ## Gotchas
 

@@ -47,12 +47,11 @@ package. The agent implements an obvious local fix when it can, follows
 [`.agents/skills/ship-pr/SKILL.md`](../../.agents/skills/ship-pr/SKILL.md), or
 leaves the tracking issue open when a human should decide.
 
-The live Action still uses the unadvertised invocation-token drain until
-`@kentcdodds/weekly-site-perf` migrates to a minted webhook URL. Store the
-existing raw bearer as the repository (or org) secret
-`KODY_PACKAGE_INVOCATION_TOKEN`. Rotate it with `POST /account/packages.json`
-(`action: "update-token"`). New first-party callers mint a webhook
-(`inputMode: "params"`, `Idempotency-Key`). See
+The live Action uses the unadvertised invocation-token drain for
+`@kentcdodds/weekly-site-perf`. Store the raw bearer as the repository (or org)
+secret `KODY_PACKAGE_INVOCATION_TOKEN`. Rotate it with
+`POST /account/packages.json` (`action: "update-token"`). New first-party
+callers mint a webhook (`inputMode: "params"`, `Idempotency-Key`). See
 [setup manifest](./setup-manifest.md) and
 [inbound webhooks](../use/webhooks.md).
 

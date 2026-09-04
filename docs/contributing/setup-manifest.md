@@ -587,9 +587,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)
   uses it to `POST` the unadvertised invocation-token drain at
   `https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`.
-  Existing secret continues to work until that package migrates to a minted
-  webhook URL. Not a Worker secret; the weekly job skips invoke when this is
-  unset.)
+  Not a Worker secret; the weekly job skips invoke when this is unset. New
+  first-party callers mint a webhook URL.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
