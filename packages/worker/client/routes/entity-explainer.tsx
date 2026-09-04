@@ -1,4 +1,5 @@
 import { css, type Handle } from 'remix/ui'
+import { isProfilePathname } from '#universal/profile-path.ts'
 import { routes } from '#universal/routes.ts'
 import { nativeDisclosureCss } from '#universal/styles/style-primitives.ts'
 
@@ -192,6 +193,25 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'Browse and search without an account. Installing creates a fork you own — you can change it, schedule it, and publish your own version. Prefer a close public package before creating one from scratch.',
 		],
 		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
+				label: 'What is Kody?',
+			},
+		],
+	},
+	{
+		id: 'profile',
+		question: 'What is a profile?',
+		match: isProfilePathname,
+		paragraphs: [
+			"A profile is this person's catalog: who they are, and which packages you can take. It is not Account (settings, billing, logout) and not Waiting (reconnects, expired secrets).",
+			'Strangers see the public list. When you look at yourself, you also see private and unpublished packages — that is how the new front door stays useful before you publish. Edit your name, bio, avatar, and visibility from Account.',
+		],
+		learnMore: [
+			{
+				href: routes.community.href(),
+				label: 'Browse community',
+			},
 			{
 				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
 				label: 'What is Kody?',

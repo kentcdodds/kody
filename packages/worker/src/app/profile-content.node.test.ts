@@ -85,8 +85,10 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		query: null,
 		isSelf: false,
 	})
-	expect(guestEmptyHtml).toContain('No public packages yet.')
-	expect(guestEmptyHtml).toMatch(/<p[^>]*data-testid="profile-username"/)
+	expect(guestEmptyHtml).toContain('No public packages to take yet.')
+	expect(guestEmptyHtml).toContain('data-testid="profile-packages-empty"')
+	expect(guestEmptyHtml).not.toContain('data-testid="profile-username"')
+	expect(guestEmptyHtml).not.toContain('data-testid="profile-display-name"')
 
 	const ownHtml = await renderProfileContentHtml({
 		profile,
@@ -125,6 +127,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		query: null,
 		isSelf: true,
 	})
-	expect(ownEmptyHtml).toContain('No packages yet.')
-	expect(ownEmptyHtml).not.toContain('No public packages yet.')
+	expect(ownEmptyHtml).toContain('You have no packages yet.')
+	expect(ownEmptyHtml).not.toContain('No public packages to take yet.')
 })

@@ -23,6 +23,7 @@ import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
+import { ProfileRoute, profileRouteLoader } from './profile.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.home)]: homeRouteLoader,
@@ -290,10 +291,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		packageFilesArea,
 		(m) => m.packageFilesRouteLoader,
 	),
-	[routePattern(routes.profile)]: lazyRouteLoader(
-		communityArea,
-		(m) => m.profileRouteLoader,
-	),
+	[routePattern(routes.profile)]: profileRouteLoader,
 	[routePattern(routes.login)]: lazyRouteLoader(
 		authArea,
 		(m) => m.authProvidersRouteLoader,
@@ -548,9 +546,7 @@ export const clientRoutes = {
 	[routePattern(routes.communityPackageTree)]: (
 		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
 	),
-	[routePattern(routes.profile)]: (
-		<LazyCommunityRoute render={(m) => <m.ProfileRoute />} />
-	),
+	[routePattern(routes.profile)]: <ProfileRoute />,
 	[routePattern(routes.login)]: (
 		<LazyAuthRoute render={(m) => <m.LoginRoute />} />
 	),

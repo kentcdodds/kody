@@ -28,9 +28,6 @@ import {
 	descriptionCss,
 	hoverMq,
 	mutedLinkCss,
-	pageDescriptionCss,
-	pageHeaderCss,
-	pageTitleCss,
 } from '#universal/styles/style-primitives.ts'
 
 export type ProfileContentProps = {
@@ -88,56 +85,14 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 
 	return () => (
 		<div data-testid="profile-frame">
-			<header mix={css(pageHeaderCss)}>
-				<div mix={css(profileHeadingCss)}>
-					<UserAvatar
-						displayName={profile.displayName}
-						avatarUrl={profile.avatarUrl}
-						size={80}
-						testId="profile-avatar"
-					/>
-					<div>
-						<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
-							{profile.displayName}
-						</h1>
-						<p mix={css(profileUsernameLineCss)} data-testid="profile-username">
-							@{profile.username}
-						</p>
-					</div>
-				</div>
-				{profile.bio ? (
-					<p mix={css(descriptionCss)} data-testid="profile-bio">
-						{profile.bio}
-					</p>
-				) : null}
-				{isSelf && profile.visibility === 'private' ? (
-					<p
-						mix={css(privateNoticeCss)}
-						data-testid="profile-private-notice"
-						role="status"
-					>
-						Your profile is private
-					</p>
-				) : null}
-				<dl mix={css(statsCss)}>
-					<div>
-						<dt>Joined</dt>
-						<dd data-testid="profile-joined">
-							{formatCommunityPublishedDate(profile.joinedAt)}
-						</dd>
-					</div>
-				</dl>
-			</header>
-
 			<section mix={css(sectionCss)} data-testid="profile-packages">
-				<h2 mix={css(sectionTitleCss)}>Packages</h2>
 				{packages.length === 0 ? (
-					<p mix={css(descriptionCss)}>
+					<p mix={css(emptyCss)} data-testid="profile-packages-empty">
 						{query
 							? 'No packages matched your search.'
 							: isSelf
-								? 'No packages yet.'
-								: 'No public packages yet.'}
+								? 'You have no packages yet.'
+								: 'No public packages to take yet.'}
 					</p>
 				) : (
 					<ul mix={css(packageListCss)}>
@@ -207,7 +162,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 				)}
 			</section>
 
-			<section mix={css(sectionCss)} data-testid="profile-activity">
+			<section mix={css(activitySectionCss)} data-testid="profile-activity">
 				<h2 mix={css(sectionTitleCss)}>Recent activity</h2>
 				<p mix={css(mutedCss)} data-testid="profile-activity-hint">
 					Community publishes and forks. Editing a package without republishing
@@ -262,20 +217,6 @@ export async function renderProfileContentHtml(props: ProfileContentProps) {
 	return renderToString(<ProfileContent {...props} />)
 }
 
-const profileHeadingCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: spacing.md,
-}
-
-const profileUsernameLineCss = {
-	...pageDescriptionCss,
-	display: 'inline-flex',
-	alignItems: 'center',
-	flexWrap: 'nowrap' as const,
-	gap: '0.45rem',
-}
-
 const activityActorCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
@@ -285,7 +226,18 @@ const activityActorCss = {
 const sectionCss = {
 	display: 'grid',
 	gap: spacing.md,
+}
+
+const activitySectionCss = {
+	...sectionCss,
 	marginTop: spacing.xl,
+}
+
+const emptyCss = {
+	margin: 0,
+	color: colors.textMuted,
+	maxWidth: '42ch',
+	textWrap: 'pretty' as const,
 }
 
 const sectionTitleCss = {
@@ -293,34 +245,6 @@ const sectionTitleCss = {
 	fontSize: typography.fontSize.lg,
 	fontWeight: typography.fontWeight.semibold,
 	color: colors.text,
-}
-
-const statsCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(8rem, 1fr))',
-	gap: spacing.md,
-	margin: 0,
-	fontSize: typography.fontSize.sm,
-	'& dt': {
-		margin: 0,
-		color: colors.textMuted,
-		fontWeight: typography.fontWeight.medium,
-	},
-	'& dd': {
-		margin: `${spacing.xs} 0 0`,
-		color: colors.text,
-	},
-}
-
-const privateNoticeCss = {
-	margin: 0,
-	padding: `${spacing.xs} ${spacing.sm}`,
-	borderRadius: radius.md,
-	backgroundColor: colors.primarySoftest,
-	color: colors.primaryText,
-	fontSize: typography.fontSize.sm,
-	fontWeight: typography.fontWeight.medium,
-	width: 'fit-content',
 }
 
 const packageListCss = {

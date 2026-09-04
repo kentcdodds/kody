@@ -19,6 +19,14 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	).toBe('packages')
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
 	expect(resolveEntityExplainer(routes.community.href())?.id).toBe('community')
+	expect(
+		resolveEntityExplainer(routes.profile.href({ username: 'jane' }))?.id,
+	).toBe('profile')
+	expect(
+		resolveEntityExplainer(
+			routes.communityPackage.href({ username: 'jane', kodyId: 'helper' }),
+		),
+	).toBeNull()
 
 	expect(resolveEntityExplainer(routes.account.href())).toBeNull()
 	expect(resolveEntityExplainer(routes.accountBilling.href())).toBeNull()
