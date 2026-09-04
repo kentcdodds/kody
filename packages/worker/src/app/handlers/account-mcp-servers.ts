@@ -186,16 +186,13 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			const returnToOnboarding =
 				readMcpOAuthReturnCookie(request.headers.get('Cookie')) != null
 			const target = returnToOnboarding
-				? new URL(routes.onboarding.href(), request.url)
+				? new URL(routes.onboardingStep2.href(), request.url)
 				: serverId
 					? new URL(
 							routes.accountMcpServerDetail.href({ serverId }),
 							request.url,
 						)
 					: new URL(routes.accountMcpServers.href(), request.url)
-			if (returnToOnboarding) {
-				target.hash = 'connect-mcp'
-			}
 			if (authorizationNeeded) {
 				target.searchParams.set('auth', serverId ? 'required' : 'retry')
 			} else if (authSuccess) {

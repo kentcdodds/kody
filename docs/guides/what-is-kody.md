@@ -156,5 +156,4 @@ the same conversation.
 
 > I'm deciding whether Kody (https://kody.codes) would be useful for me. Read
 > https://kody.codes/guides/what-is-kody and then interview me to find out what
-> Kody could do for me. Don't set anything up yet — this works before I have an
-> account.
+> Kody could do for me.

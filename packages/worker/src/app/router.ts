@@ -315,6 +315,11 @@ export function createAppRouter(env: Env) {
 			discord: createDiscordHandler(env),
 			discordApi: createDiscordApiHandler(env),
 			onboarding: createOnboardingHandler(env),
+			onboardingStep1: createOnboardingHandler(env),
+			onboardingStep1Agent: createOnboardingHandler(env),
+			onboardingStep2: createOnboardingHandler(env),
+			onboardingStep2Service: createOnboardingHandler(env),
+			onboardingStep3: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),
 			onboardingChecklistDismissPost:
 				createOnboardingChecklistDismissHandler(env),

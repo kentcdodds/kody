@@ -350,6 +350,11 @@ registerPreloadPatterns(
 registerPreloadPatterns(
 	[
 		routePattern(routes.onboarding),
+		routePattern(routes.onboardingStep1),
+		routePattern(routes.onboardingStep1Agent),
+		routePattern(routes.onboardingStep2),
+		routePattern(routes.onboardingStep2Service),
+		routePattern(routes.onboardingStep3),
 		routePattern(routes.connectOauth),
 		oauthPaths.authorize,
 	],

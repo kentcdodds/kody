@@ -126,13 +126,12 @@ easily.
 
 ## Give Kody Access, then persist a first build
 
-After the connection works, Get started Step 2 is **Give Kody Access**: official
-one-click login for Notion, Linear, Atlassian, Stripe, Sentry, and Canva.
-Connect authorizes the service and copies the matching official helper into your
+After the connection works, Get started Step 2 is **Give Kody access**: pick
+Notion, Linear, Atlassian, Stripe, Sentry, or Canva, then connect it. Connect
+authorizes the service and copies the matching official helper into your
 account. You run that owned copy — official `@kody/*` listings are a catalog,
-not something a person account invokes live. You can also add a custom server,
-follow an Advanced provider guide ([GitHub](/guides/github),
-[Google](/guides/google)), try a zero-auth example, or skip.
+not something a person account invokes live. Not listed is for anything else
+with an API.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
 persist that working code as a package you own. If nothing fits, use **Choose

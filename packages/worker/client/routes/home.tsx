@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
@@ -24,6 +24,7 @@ import {
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
+import { LandingByokDemo } from './landing-byok-demo.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WaitlistForm } from './landing-waitlist-form.tsx'
@@ -39,8 +40,7 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * Positioning (public door): Kody is the home your agents share — for the
  * agents you use today and the ones you'll use tomorrow. The hero stage
  * (Kody with the host agents tethered around it) names the agents; the H1
- * matches the OG card. The Ogygia beat names the guest trap (work locked in
- * one agent's chat). Factory / npm / packages stay below the fold. The
+ * matches the OG card. Factory / npm / packages stay below the fold. The
  * factory closer is the ritual: ask once, save it, trigger it.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
@@ -50,20 +50,31 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 const factoryBeats = [
 	{
 		trigger: 'Cron',
-		title: 'Shipping digest',
-		copy: 'Yesterday’s releases and new public repos, mailed only when the list is not empty.',
+		title: 'Flake Hunter',
+		icon: 'target',
+		copy: 'Nightly scan of yesterday’s CI. Obvious flakes trigger an agent to look into it.',
 	},
 	{
 		trigger: 'Webhook',
-		title: 'Issue triage',
-		copy: 'A new issue hits the webhook and your triage package kicks off a cloud agent. No manual trigger.',
+		title: 'Sentry Issues',
+		icon: 'alert',
+		copy: 'A Sentry issue hits the webhook. Your package fingerprints repeats and triggers an agent to triage.',
 	},
 	{
-		trigger: 'Invoke',
-		title: 'Livestream archive',
-		copy: 'A Worker posts to the invoke URL. The export locks the VOD and files it. No model in the loop.',
+		trigger: 'Email',
+		title: 'Agent inbox',
+		icon: 'envelope',
+		copy: 'you@inbox.kody.codes. You send an email and your package saves it, routes it to an agent, or triggers anything else.',
+	},
+	{
+		trigger: 'Event',
+		title: 'Purchase thanks',
+		icon: 'gift',
+		copy: 'A purchase lands. Your package wakes an agent to look up past conversations with them and draft a contextual thank-you note.',
 	},
 ] as const
+
+type FactoryBeatIcon = (typeof factoryBeats)[number]['icon']
 
 const honestRows = [
 	{
@@ -91,7 +102,7 @@ const worldBrands = [
 	{ label: 'Kit', icon: 'kit' },
 	{ label: 'Cal.com', icon: 'caldotcom' },
 	{ label: 'PayPal', icon: 'paypal' },
-	{ label: 'X', icon: 'x' },
+	{ label: 'x.com', icon: 'x' },
 	{ label: 'Bluesky', icon: 'bluesky' },
 	{ label: 'Twitch', icon: 'twitch' },
 	{ label: 'Sentry', icon: 'sentry' },
@@ -286,25 +297,6 @@ export function HomeRoute(handle: Handle) {
 					) : null}
 				</section>
 
-				<section
-					aria-labelledby="villain-title"
-					class="landing-pitch landing-villain"
-				>
-					<h2 id="villain-title" class="landing-pitch-title">
-						Leave <em>Ogygia</em>
-					</h2>
-					<div class="landing-pitch-copy">
-						<p class="landing-pitch-lead">
-							Calypso keeps a lovely guest. She does not send you home.
-						</p>
-						<p class="landing-pitch-body">
-							Claude, ChatGPT, Cursor — each one is a beautiful island. The work
-							stays in that chat, and tomorrow&apos;s agent cannot find the
-							door.
-						</p>
-					</div>
-				</section>
-
 				<section aria-labelledby="pitch-title" class="landing-pitch">
 					<h2 id="pitch-title" class="landing-pitch-title">
 						<em>Nothing</em> new <br />
@@ -329,8 +321,9 @@ export function HomeRoute(handle: Handle) {
 					</h2>
 					<p class="landing-factory-lead">
 						Stop burning your tokens on the same thing over and over again. Turn
-						any process into durable software you can trigger on a schedule,
-						notification, or anything else without expensive inference.
+						any process into <strong>durable software</strong> you can trigger
+						on a schedule, notification, or anything else{' '}
+						<strong>without expensive inference</strong>.
 					</p>
 					<img
 						{...landingArtAttrs('kody-compounding-capabilities')}
@@ -349,12 +342,18 @@ export function HomeRoute(handle: Handle) {
 								mix={reveal(index * 90)}
 							>
 								<p class="landing-factory-beat-trigger">{beat.trigger}</p>
-								<h3>{beat.title}</h3>
+								<h3 class="landing-factory-beat-title">
+									{renderFactoryBeatIcon(beat.icon)}
+									{beat.title}
+								</h3>
 								<p>{beat.copy}</p>
 							</article>
 						))}
 					</div>
-					<p class="landing-factory-ritual">Ask once. Save it. Trigger it.</p>
+					<p class="landing-factory-ritual">
+						<span>Ask once.</span> <span>Save it.</span>{' '}
+						<span>Trigger it.</span>
+					</p>
 					<p class="landing-factory-close">
 						Kody has the primitives for your agent to build you{' '}
 						<strong>pretty much anything</strong>. What will{' '}
@@ -457,14 +456,15 @@ export function HomeRoute(handle: Handle) {
 						class="landing-byok-art"
 						mix={reveal()}
 					/>
-					<div>
+					<div class="landing-byok-copy">
 						<h2 id="byok-title" class="landing-section-heading">
-							Bring your own keys
+							A <em>secure</em> vault for your <em>secrets</em>.
 						</h2>
+						<LandingByokDemo hosts={walkthroughHosts ?? undefined} />
 						<p class="landing-split-copy">
-							<strong>Keys the agent never sees.</strong> You create the
-							connection yourself, with your agent walking you through it: your
-							app, your scopes, revocable anytime. Secrets never enter the
+							<strong>Encrypted keys the agent never sees.</strong> You create
+							the connection yourself, with your agent walking you through it:
+							your app, your scopes, revocable anytime. Secrets never enter the
 							prompt (as opposed to the .env file your agent happily reads).
 						</p>
 						<p class="landing-split-copy">
@@ -538,7 +538,7 @@ export function HomeRoute(handle: Handle) {
 						id="invite-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						Make it permanent
+						Give your agents a home
 					</h2>
 					{isSignedIn ? (
 						<div>
@@ -580,5 +580,64 @@ export function HomeRoute(handle: Handle) {
 				</section>
 			</div>
 		)
+	}
+}
+
+function factoryBeatIconSvg(paths: RemixNode) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="22"
+			height="22"
+			aria-hidden="true"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			{paths}
+		</svg>
+	)
+}
+
+function renderFactoryBeatIcon(icon: FactoryBeatIcon) {
+	switch (icon) {
+		case 'target':
+			return factoryBeatIconSvg(
+				<>
+					<circle cx="12" cy="12" r="8" />
+					<circle cx="12" cy="12" r="3.25" />
+					<path d="M12 2.5v2.75M12 18.75V21.5M2.5 12h2.75M18.75 12H21.5" />
+				</>,
+			)
+		case 'alert':
+			return factoryBeatIconSvg(
+				<>
+					<path d="M12 4 21 19.5H3L12 4Z" />
+					<path d="M12 10v4.25" />
+					<circle cx="12" cy="16.75" r="0.75" fill="currentColor" />
+				</>,
+			)
+		case 'envelope':
+			return factoryBeatIconSvg(
+				<>
+					<rect x="3.5" y="6" width="17" height="12" rx="2" />
+					<path d="m4.2 7.6 7.8 5.2 7.8-5.2" />
+				</>,
+			)
+		case 'gift':
+			return factoryBeatIconSvg(
+				<>
+					<rect x="3.5" y="8" width="17" height="4" rx="1" />
+					<rect x="5" y="12" width="14" height="8.5" rx="1" />
+					<path d="M12 8v12.5" />
+					<path d="M12 8c-2.4-3.4-6-2.4-6 0 0 1.4 1.9 2.4 6 2.8 4.1-.4 6-1.4 6-2.8 0-2.4-3.6-3.4-6 0" />
+				</>,
+			)
+		default: {
+			const exhaustive: never = icon
+			return exhaustive
+		}
 	}
 }

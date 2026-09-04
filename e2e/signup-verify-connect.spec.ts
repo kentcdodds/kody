@@ -136,24 +136,22 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		).toBeVisible()
 
 		const stepsNav = page.getByRole('navigation', { name: 'Onboarding steps' })
-		await stepsNav.getByRole('link', { name: '3 Try it, then persist' }).click()
-		await expect(page.getByTestId('onboarding-first-build')).toBeVisible()
-		const checklist = page.getByRole('region', { name: 'Onboarding checklist' })
-		await expect(checklist).toBeVisible()
-		const verifyItem = checklist.getByRole('listitem').filter({
-			hasText: 'Verify your email',
-		})
-		await expect(verifyItem).toHaveAttribute('data-done', 'true')
+		await stepsNav.getByRole('link', { name: '2 Give Kody Access' }).click()
+		await expect(page.getByTestId('onboarding-connect-mcp')).toBeVisible()
+		await expect(
+			page.getByTestId('onboarding-unconnected-prompt'),
+		).toBeVisible()
+		await expect(
+			page.getByText('Your agent cannot do anything in Kody yet.'),
+		).toBeVisible()
 
 		await stepsNav.getByRole('link', { name: '1 Connect your agent' }).click()
 		await expect(page.getByTestId('onboarding-agent-picker')).toBeVisible()
 		await page
-			.locator(
-				'[data-testid="onboarding-agent-picker"] ul[data-surface="desktop"]',
-			)
+			.getByTestId('onboarding-agent-picker')
 			.getByRole('link', { name: 'Claude Code', exact: true })
 			.click()
-		await expect(page).toHaveURL(/[?&]agent=claude-code/)
+		await expect(page).toHaveURL(/\/onboarding\/step-1\/claude-code/)
 		const mcpUrl = `${origin}/mcp`
 		await expect(
 			page.getByTestId('onboarding-agent-instructions'),

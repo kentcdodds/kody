@@ -185,8 +185,8 @@ export function App(handle: Handle<AppProps>) {
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
 		// Redesigned pages own their own layout (gutters, measures, max-width
 		// container), so `<main>` must not add its generic padding on top. The
-		// landing page also owns its own waitlist close (the "Make it permanent"
-		// section), so the compact strip would double up there.
+		// landing page also owns its own waitlist close (the "Give your agents
+		// a home" section), so the compact strip would double up there.
 		const isRedesignedMarketingPath =
 			currentPathname === '/' ||
 			currentPathname === '/pricing' ||
@@ -194,6 +194,7 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/blog' ||
 			currentPathname === '/community' ||
 			currentPathname === '/onboarding' ||
+			currentPathname.startsWith('/onboarding/step-') ||
 			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null
 		// The redesigned auth screens (login/signup) are a standalone

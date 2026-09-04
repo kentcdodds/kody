@@ -64,6 +64,26 @@ export async function stampFirstMcpConnected(
 	}
 }
 
+export async function userHasFirstExecute(
+	db: D1Database,
+	userId: string,
+): Promise<boolean> {
+	try {
+		const row = await db
+			.prepare(
+				`SELECT first_execute_at
+				 FROM users
+				 WHERE stable_user_id = ?
+				 LIMIT 1`,
+			)
+			.bind(userId)
+			.first<{ first_execute_at: string | null }>()
+		return Boolean(row?.first_execute_at)
+	} catch {
+		return false
+	}
+}
+
 export async function stampFirstExecute(
 	db: D1Database,
 	input: { stableUserId: string; at?: string },

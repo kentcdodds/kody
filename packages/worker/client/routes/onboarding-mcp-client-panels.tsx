@@ -29,6 +29,7 @@ import {
 	AppIconCard,
 	ClientWarning,
 	CopyCard,
+	CopyCardDetails,
 	InstallDeepLink,
 	PluginPrimaryInstall,
 	PrimaryActionLink,
@@ -90,11 +91,10 @@ export function renderPanelContent(
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<p>
-						Or merge this into <code>~/.codex/config.toml</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into"
+						summaryCode="~/.codex/config.toml"
 						label="config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
@@ -142,11 +142,10 @@ export function renderPanelContent(
 						variant="pill"
 						lang="sh"
 					/>
-					<p>
-						Or merge this into <code>~/.grok/config.toml</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into"
+						summaryCode="~/.grok/config.toml"
 						label="~/.grok/config.toml"
 						value={grokCliToml}
 						copyLabel="Copy TOML"
@@ -198,11 +197,10 @@ export function renderPanelContent(
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<p>
-						Or merge this into a project <code>.mcp.json</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into a project"
+						summaryCode=".mcp.json"
 						label=".mcp.json"
 						value={claudeCodeJson}
 						copyLabel="Copy JSON"
@@ -223,11 +221,10 @@ export function renderPanelContent(
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<p>
-						Or add this to <code>opencode.json</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or add this to"
+						summaryCode="opencode.json"
 						label="opencode.json"
 						value={openCodeJson}
 						copyLabel="Copy JSON"
@@ -255,11 +252,10 @@ export function renderPanelContent(
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<p>
-						Or merge this into <code>~/.openclaw/openclaw.json</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into"
+						summaryCode="~/.openclaw/openclaw.json"
 						label="~/.openclaw/openclaw.json"
 						value={openClawJson}
 						copyLabel="Copy JSON"
@@ -294,21 +290,19 @@ export function renderPanelContent(
 						copyLabel="Copy command"
 						lang="sh"
 					/>
-					<p>
-						Or merge this into <code>.vscode/mcp.json</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into"
+						summaryCode=".vscode/mcp.json"
 						label=".vscode/mcp.json"
 						value={vsCodeJson}
 						copyLabel="Copy JSON"
 						lang="json"
 					/>
-					<p>
-						Or merge this into <code>~/.copilot/mcp-config.json</code>:
-					</p>
-					<CopyCard
+					<CopyCardDetails
 						highlights={highlights}
+						summaryLead="Or merge this into"
+						summaryCode="~/.copilot/mcp-config.json"
 						label="~/.copilot/mcp-config.json"
 						value={copilotCliJson}
 						copyLabel="Copy JSON"
@@ -347,11 +341,10 @@ export function renderPanelContent(
 					/>
 					{surface === 'mobile' ? null : (
 						<>
-							<p>
-								Or merge this into <code>~/.copilot/mcp-config.json</code>:
-							</p>
-							<CopyCard
+							<CopyCardDetails
 								highlights={highlights}
+								summaryLead="Or merge this into"
+								summaryCode="~/.copilot/mcp-config.json"
 								label="~/.copilot/mcp-config.json"
 								value={copilotCliJson}
 								copyLabel="Copy JSON"
@@ -445,11 +438,6 @@ export function renderPanelWarning(
 				</ClientWarning>
 			) : null
 		case 'copilot':
-			return surface === 'mobile' ? null : (
-				<ClientWarning>
-					The GitHub Copilot app has its own picker entry (Copilot App).
-				</ClientWarning>
-			)
 		case 'copilot-app':
 		case 'devin':
 		case 'gemini':

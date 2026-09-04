@@ -177,6 +177,36 @@ test('view transitions skip shell tab switches, including when from-path was nev
 	// Same pathname+search (hash-only / same-URL refresh) never animates.
 	expect(animate({ from: '/account/usage', to: '/account/usage' })).toBe(false)
 
+	// Onboarding subroutes share heading, stepper, and picker chrome. A
+	// page view-transition would fade those in place; only the incoming
+	// panel may move.
+	expect(
+		animate({
+			from: '/onboarding/step-1',
+			to: '/onboarding/step-1/cursor',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/onboarding/step-1/cursor',
+			to: '/onboarding/step-1/not-listed',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/onboarding/step-2',
+			to: '/onboarding/step-2/notion',
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: null,
+			to: '/onboarding/step-1/cursor',
+		}),
+	).toBe(false)
+	expect(animate({ from: '/pricing', to: '/onboarding/step-1' })).toBe(true)
+	expect(animate({ from: '/onboarding/step-1', to: '/pricing' })).toBe(true)
+
 	const withRail = {
 		querySelector: (selector: string) =>
 			selector === persistentShellNavSelector ? ({} as Element) : null,

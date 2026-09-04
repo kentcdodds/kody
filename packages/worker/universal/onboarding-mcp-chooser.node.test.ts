@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	attachOnboardingMcpPackageListings,
@@ -5,6 +7,7 @@ import {
 	formatOnboardingFeaturedMcpAddHint,
 	formatOnboardingFeaturedMcpChoice,
 	customOnboardingMcpFingerprint,
+	onboardingServiceLabel,
 	hasConnectedOnboardingCustomMcpServer,
 	hasConnectedOnboardingFeaturedMcpServer,
 	firstConnectedOnboardingWorkspaceLabel,
@@ -16,24 +19,57 @@ import {
 	listOnboardingFeaturedMcpListingIds,
 	matchOnboardingFeaturedMcpServer,
 	normalizeOnboardingMcpServerUrl,
+	canonicalOnboardingServiceChooser,
+	isValidOnboardingServiceChooserPick,
 	onboardingFeaturedMcpServers,
+	onboardingFeaturedMcpServerIds,
+	onboardingFeaturedMcpSlotCount,
+	onboardingNotListedPromptServices,
+	onboardingServiceImageIconSrc,
+	pickOnboardingServiceChooser,
 	overlayOnboardingFeaturedMcpServers,
 	resolveOnboardingMcpOAuthBanner,
 } from './onboarding-mcp-chooser.ts'
 
 test('featured MCP chooser overlays OAuth state and package listings', () => {
-	expect(onboardingFeaturedMcpServers.length).toBeGreaterThan(0)
+	expect(onboardingFeaturedMcpServers.map((server) => server.id)).toEqual([
+		...onboardingFeaturedMcpServerIds,
+	])
+	expect(onboardingFeaturedMcpServers.length).toBeGreaterThan(
+		onboardingFeaturedMcpSlotCount,
+	)
+	expect(onboardingFeaturedMcpServerIds).toContain('github')
+	expect(onboardingFeaturedMcpServerIds).toContain('workos')
+	expect(onboardingFeaturedMcpServerIds).toContain('resend')
+	expect(onboardingFeaturedMcpServerIds).not.toContain('box')
+	expect(
+		onboardingNotListedPromptServices.every(
+			(service) =>
+				!(onboardingFeaturedMcpServerIds as ReadonlyArray<string>).includes(
+					service.id,
+				),
+		),
+	).toBe(true)
 	expect(
 		onboardingFeaturedMcpServers.every(
 			(server) =>
 				server.packageKodyId === `${server.id}-mcp` &&
-				server.listingId.length > 0 &&
 				server.url.startsWith('https://'),
 		),
 	).toBe(true)
-	expect(listOnboardingFeaturedMcpListingIds()).toEqual(
-		onboardingFeaturedMcpServers.map((server) => server.listingId),
+	expect(
+		listOnboardingFeaturedMcpListingIds().every((id) => id.length > 0),
+	).toBe(true)
+	expect(listOnboardingFeaturedMcpListingIds()).toContain(
+		onboardingFeaturedMcpServers[0].listingId,
 	)
+	const shuffled = pickOnboardingServiceChooser(() => 0)
+	const identity = pickOnboardingServiceChooser((max) => max - 1)
+	expect(isValidOnboardingServiceChooserPick(shuffled)).toBe(true)
+	expect(shuffled.featured).toHaveLength(onboardingFeaturedMcpSlotCount)
+	expect(shuffled.featured).not.toEqual(identity.featured)
+	expect(canonicalOnboardingServiceChooser().overflow).toContain('github')
+	expect(canonicalOnboardingServiceChooser().featured).not.toContain('github')
 	expect(formatOnboardingFeaturedMcpChoice().length).toBeGreaterThan(0)
 	expect(formatOnboardingFeaturedMcpAddHint().length).toBeGreaterThan(0)
 
@@ -60,7 +96,7 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 	).toBe(false)
 
 	const disconnected = listDisconnectedOnboardingFeaturedMcpServers()
-	expect(disconnected).toHaveLength(6)
+	expect(disconnected).toHaveLength(onboardingFeaturedMcpServers.length)
 	expect(hasConnectedOnboardingFeaturedMcpServer(disconnected)).toBe(false)
 	expect(hasPendingOnboardingFeaturedMcpAuth(disconnected)).toBe(false)
 	expect(disconnected.every((server) => server.packageListing == null)).toBe(
@@ -289,4 +325,31 @@ test('onboarding OAuth banner prefers a later success over leftover URL error', 
 			urlError: 'access_denied',
 		}),
 	).toBe('Supported sites required.')
+})
+
+test('step 2 service labels stay stable', () => {
+	expect(onboardingServiceLabel('notion')).toBe('Notion')
+	expect(onboardingServiceLabel('github')).toBe('GitHub')
+	expect(onboardingServiceLabel('x')).toBe('x.com')
+	expect(onboardingServiceLabel('not-listed')).toBe('Not listed')
+})
+
+test('every featured MCP chip that is not a ProviderIcon has a repo SVG', () => {
+	const providerIconIds = new Set([
+		'notion',
+		'linear',
+		'atlassian',
+		'stripe',
+		'sentry',
+		'canva',
+		'github',
+	])
+	const iconsDirectory = join(import.meta.dirname, '../public/images/icons')
+	for (const id of onboardingFeaturedMcpServerIds) {
+		if (providerIconIds.has(id)) continue
+		expect(onboardingServiceImageIconSrc(id), id).toBe(
+			`/images/icons/${id}.svg`,
+		)
+		expect(existsSync(join(iconsDirectory, `${id}.svg`)), id).toBe(true)
+	}
 })

@@ -158,6 +158,19 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 			),
 		}),
 	).toEqual({ 'Cache-Control': 'no-store' })
+
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/onboarding/step-1',
+			session: null,
+			request: request('https://example.com/onboarding/step-1'),
+			responseSetsCookie: false,
+		}),
+	).toEqual({
+		cacheControl: anonymousHtmlCacheControl,
+		vary: 'Cookie',
+	})
+	expect(isCacheableAnonymousPath('/onboarding/step-2/notion')).toBe(true)
 })
 
 test('anonymous package pages are cacheable, but only successful documents', () => {

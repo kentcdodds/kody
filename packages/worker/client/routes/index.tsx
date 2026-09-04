@@ -310,6 +310,26 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.onboardingRouteLoader,
 	),
+	[routePattern(routes.onboardingStep1)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.onboardingRouteLoader,
+	),
+	[routePattern(routes.onboardingStep1Agent)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.onboardingRouteLoader,
+	),
+	[routePattern(routes.onboardingStep2)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.onboardingRouteLoader,
+	),
+	[routePattern(routes.onboardingStep2Service)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.onboardingRouteLoader,
+	),
+	[routePattern(routes.onboardingStep3)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.onboardingRouteLoader,
+	),
 	[routePattern(routes.connectOauth)]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.connectOauthRouteLoader,
@@ -535,6 +555,21 @@ export const clientRoutes = {
 		<LazyAuthRoute render={(m) => <m.LoginRoute />} />
 	),
 	[routePattern(routes.onboarding)]: (
+		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
+	),
+	[routePattern(routes.onboardingStep1)]: (
+		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
+	),
+	[routePattern(routes.onboardingStep1Agent)]: (
+		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
+	),
+	[routePattern(routes.onboardingStep2)]: (
+		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
+	),
+	[routePattern(routes.onboardingStep2Service)]: (
+		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
+	),
+	[routePattern(routes.onboardingStep3)]: (
 		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
 	),
 	[routePattern(routes.pendingVerification)]: (

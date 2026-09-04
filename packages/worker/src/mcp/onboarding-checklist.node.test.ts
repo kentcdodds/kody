@@ -138,7 +138,7 @@ test('checklist connect-integration completes from a saved MCP server without OA
 	expect(doneById['install-starter']).toBe(false)
 })
 
-test('search onboarding notice does not write dismissal when the checklist is complete', async () => {
+test('search onboarding notice lists leftover session milestones without writing dismissal', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
 	await env.APP_DB.prepare(
@@ -180,13 +180,15 @@ test('search onboarding notice does not write dismissal when the checklist is co
 		)
 		.run()
 
-	expect(
-		await buildOnboardingSearchNotice({
-			env,
-			userId,
-			baseUrl: 'https://kody.example',
-		}),
-	).toBe(null)
+	const notice = await buildOnboardingSearchNotice({
+		env,
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(notice).toContain('Onboarding:')
+	expect(notice).toContain('Run your first execute')
+	expect(notice).toContain('Create a secret')
+	expect(notice).not.toContain('Connect an integration or MCP server')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
 })
@@ -203,6 +205,9 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 	expect(typeof notice).toBe('string')
 	expect(notice!.length).toBeGreaterThan(0)
 	expect(notice).toContain('/onboarding')
+	expect(notice).toContain('Run your first execute')
+	expect(notice).toContain('Connect an integration or MCP server')
+	expect(notice).toContain('Set up a scheduled job')
 
 	await dismissOnboardingChecklist({ env, userId })
 	expect(

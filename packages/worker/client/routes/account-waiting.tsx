@@ -128,7 +128,7 @@ export function AccountWaitingRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Waiting"
-					description="Things that need you. Not a history — items leave when you clear the gate."
+					description="Things that need you."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (

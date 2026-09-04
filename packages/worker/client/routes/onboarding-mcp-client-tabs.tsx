@@ -3,18 +3,20 @@ import {
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
 	type OnboardingAgentSurface,
-	buildOnboardingAgentHref,
+	type OnboardingAgentViewport,
 	canonicalOnboardingAgentChooser,
 	codexMcpLoginCommand,
 	onboardingAgentHelp,
 	onboardingAgentIconName,
 	onboardingAgentLabel,
-	onboardingFeaturedIdsFromChooser,
-	onboardingMobileAgentMq,
-	onboardingMoreIdsFromChooser,
+	onboardingAgentViewport,
+	onboardingNotListedAgentIds,
+	onboardingPickerAgentIds,
+	onboardingViewportCss,
 	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
+import { onboardingAgentHref } from '#universal/onboarding-process.ts'
 import {
 	colors,
 	radius,
@@ -26,77 +28,94 @@ import {
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { ChatGptDeveloperModeWarning } from './onboarding-mcp-client-cards.tsx'
 import {
 	renderPanelContent,
 	renderPanelWarning,
 } from './onboarding-mcp-client-panels.tsx'
 
-type OnboardingAgentLocation = {
-	pathname: string
-	search: string
-	hash: string
-}
-
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
 	highlights?: Record<string, HighlightedCode>
 	selectedAgent?: McpClientKind | null
-	surface?: OnboardingAgentSurface
 	chooser?: OnboardingAgentChooserPick | null
-	agentLocation?: OnboardingAgentLocation
 }
 
-function pickerLabel(id: McpClientKind, surface: OnboardingAgentSurface) {
-	return onboardingAgentLabel(id, surface)
+function AgentMarkIcon(handle: Handle<{ icon: string | null }>) {
+	return () => {
+		if (!handle.props.icon) {
+			return (
+				<svg
+					viewBox="0 0 24 24"
+					width="22"
+					height="22"
+					fill="currentColor"
+					aria-hidden="true"
+				>
+					<circle cx="6" cy="12" r="1.6" />
+					<circle cx="12" cy="12" r="1.6" />
+					<circle cx="18" cy="12" r="1.6" />
+				</svg>
+			)
+		}
+		return (
+			<img
+				src={`/images/icons/${handle.props.icon}.svg`}
+				alt=""
+				width={28}
+				height={28}
+				mix={css(pickerIconImgCss)}
+			/>
+		)
+	}
 }
 
 export function AgentPickerMark(
 	handle: Handle<{
 		agent: McpClientKind
-		surface: OnboardingAgentSurface
 		testId?: string
 	}>,
 ) {
 	return () => {
-		const icon = onboardingAgentIconName(
-			handle.props.agent,
-			handle.props.surface,
-		)
-		if (!icon) {
-			return (
-				<span
-					mix={css(pickerMarkCss)}
-					aria-hidden="true"
-					data-testid={handle.props.testId}
-				>
-					<svg
-						viewBox="0 0 24 24"
-						width="22"
-						height="22"
-						fill="currentColor"
-						aria-hidden="true"
-					>
-						<circle cx="6" cy="12" r="1.6" />
-						<circle cx="12" cy="12" r="1.6" />
-						<circle cx="18" cy="12" r="1.6" />
-					</svg>
-				</span>
-			)
-		}
+		const desktopIcon = onboardingAgentIconName(handle.props.agent, 'desktop')
+		const mobileIcon = onboardingAgentIconName(handle.props.agent, 'mobile')
 		return (
 			<span
 				mix={css(pickerMarkCss)}
 				aria-hidden="true"
 				data-testid={handle.props.testId}
 			>
-				<img
-					src={`/images/icons/${icon}.svg`}
-					alt=""
-					width={28}
-					height={28}
-					mix={css(pickerIconImgCss)}
-				/>
+				{desktopIcon === mobileIcon ? (
+					<AgentMarkIcon icon={desktopIcon} />
+				) : (
+					<>
+						<span mix={css(onboardingViewportCss('desktop-only', 'grid'))}>
+							<AgentMarkIcon icon={desktopIcon} />
+						</span>
+						<span mix={css(onboardingViewportCss('mobile-only', 'grid'))}>
+							<AgentMarkIcon icon={mobileIcon} />
+						</span>
+					</>
+				)}
 			</span>
+		)
+	}
+}
+
+function AgentSurfaceLabel(handle: Handle<{ agent: McpClientKind }>) {
+	return () => {
+		const desktop = onboardingAgentLabel(handle.props.agent, 'desktop')
+		const mobile = onboardingAgentLabel(handle.props.agent, 'mobile')
+		if (desktop === mobile) return desktop
+		return (
+			<>
+				<span mix={css(onboardingViewportCss('desktop-only', 'inline'))}>
+					{desktop}
+				</span>
+				<span mix={css(onboardingViewportCss('mobile-only', 'inline'))}>
+					{mobile}
+				</span>
+			</>
 		)
 	}
 }
@@ -104,6 +123,11 @@ export function AgentPickerMark(
 function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
 	return () => {
 		const help = onboardingAgentHelp(handle.props.agent)
+		if (handle.props.agent === 'chatgpt') {
+			return (
+				<ChatGptDeveloperModeWarning href={help.href} linkLabel={help.label} />
+			)
+		}
 		return (
 			<p mix={css(agentHelpCss)}>
 				<a
@@ -264,12 +288,7 @@ export function OnboardingMcpClientTabs(
 	return () => {
 		const { mcpServerUrl, highlights } = handle.props
 		const selectedAgent = handle.props.selectedAgent ?? null
-		const surface = handle.props.surface ?? 'desktop'
-		const location = handle.props.agentLocation ?? {
-			pathname: '/onboarding',
-			search: '',
-			hash: '',
-		}
+		const chooser = handle.props.chooser ?? canonicalOnboardingAgentChooser()
 
 		if (!selectedAgent) {
 			return (
@@ -279,15 +298,40 @@ export function OnboardingMcpClientTabs(
 						later.
 					</p>
 					<AgentPickerGrid
-						surface="desktop"
-						chooser={handle.props.chooser}
-						location={location}
+						ids={[...onboardingPickerAgentIds(chooser), 'other']}
+						labelledBy="onboarding-agent-picker-label"
 					/>
+				</div>
+			)
+		}
+
+		if (selectedAgent === 'other') {
+			return (
+				<div
+					data-testid="onboarding-agent-not-listed"
+					mix={css(installLayoutCss)}
+				>
+					<p mix={css(pickerLedeCss)} id="onboarding-agent-not-listed-label">
+						Any of these what you're looking for?
+					</p>
 					<AgentPickerGrid
-						surface="mobile"
-						chooser={handle.props.chooser}
-						location={location}
+						ids={onboardingNotListedAgentIds(chooser)}
+						labelledBy="onboarding-agent-not-listed-label"
 					/>
+					<p mix={css(pickerLedeCss)} id="onboarding-agent-not-listed-generic">
+						Or, connect any agent that speaks MCP
+					</p>
+					<div
+						data-testid="onboarding-agent-instructions"
+						data-agent="other"
+						mix={css(installLayoutCss)}
+					>
+						<AgentSurfaceInstructions
+							agent="other"
+							mcpServerUrl={mcpServerUrl}
+							highlights={highlights}
+						/>
+					</div>
 				</div>
 			)
 		}
@@ -296,92 +340,98 @@ export function OnboardingMcpClientTabs(
 			<div
 				data-testid="onboarding-agent-instructions"
 				data-agent={selectedAgent}
-				data-surface={surface}
 				mix={css(installLayoutCss)}
 			>
-				<div mix={css(selectedPanelCss)}>
-					{renderPanelContent(selectedAgent, mcpServerUrl, highlights, surface)}
-					<AgentHelpLink agent={selectedAgent} />
-					{renderPanelWarning(selectedAgent, surface)}
-				</div>
-				{selectedAgent === 'other' ? (
-					<div mix={css(moreAgentsCss)}>
-						<p mix={css(pickerLedeCss)} id="onboarding-more-agents-label">
-							These hosts have their own steps:
-						</p>
-						<ul
-							aria-labelledby="onboarding-more-agents-label"
-							mix={css(moreAgentListCss)}
-						>
-							{onboardingMoreIdsFromChooser(
-								handle.props.chooser ?? canonicalOnboardingAgentChooser(),
-								surface,
-							).map((id) => (
-								<li key={id}>
-									<a
-										href={buildOnboardingAgentHref({
-											...location,
-											agent: id,
-											surface,
-										})}
-										data-testid={`onboarding-agent-${id}`}
-										data-prevent-scroll-reset=""
-										mix={css(moreAgentChipCss)}
-									>
-										{pickerLabel(id, surface)}
-									</a>
-								</li>
-							))}
-						</ul>
-					</div>
-				) : null}
-				<AgentAuthCallout agent={selectedAgent} surface={surface} />
+				<AgentSurfaceInstructions
+					agent={selectedAgent}
+					mcpServerUrl={mcpServerUrl}
+					highlights={highlights}
+				/>
 			</div>
 		)
 	}
 }
 
-function AgentPickerGrid(
+function AgentSurfaceInstructions(
 	handle: Handle<{
-		surface: OnboardingAgentSurface
-		chooser?: OnboardingAgentChooserPick | null
-		location: OnboardingAgentLocation
+		agent: McpClientKind
+		mcpServerUrl: string
+		highlights?: Record<string, HighlightedCode>
 	}>,
 ) {
-	return () => {
-		const { surface, location } = handle.props
-		const ids = onboardingFeaturedIdsFromChooser(
-			handle.props.chooser ?? canonicalOnboardingAgentChooser(),
-			surface,
-		)
-		return (
-			<ul
-				aria-labelledby="onboarding-agent-picker-label"
-				data-surface={surface}
-				mix={css(
-					surface === 'mobile' ? pickerGridMobileCss : pickerGridDesktopCss,
-				)}
+	return () => (
+		<>
+			<div
+				data-surface="desktop"
+				mix={css(onboardingViewportCss('desktop-only', 'grid'))}
 			>
-				{[...ids, 'other' as const].map((id) => (
-					<li key={id}>
+				<div mix={css(selectedPanelCss)}>
+					{renderPanelContent(
+						handle.props.agent,
+						handle.props.mcpServerUrl,
+						handle.props.highlights,
+						'desktop',
+					)}
+					<AgentHelpLink agent={handle.props.agent} />
+					{renderPanelWarning(handle.props.agent, 'desktop')}
+				</div>
+				<AgentAuthCallout agent={handle.props.agent} surface="desktop" />
+			</div>
+			<div
+				data-surface="mobile"
+				mix={css(onboardingViewportCss('mobile-only', 'grid'))}
+			>
+				<div mix={css(selectedPanelCss)}>
+					{renderPanelContent(
+						handle.props.agent,
+						handle.props.mcpServerUrl,
+						handle.props.highlights,
+						'mobile',
+					)}
+					<AgentHelpLink agent={handle.props.agent} />
+					{renderPanelWarning(handle.props.agent, 'mobile')}
+				</div>
+				<AgentAuthCallout agent={handle.props.agent} surface="mobile" />
+			</div>
+		</>
+	)
+}
+
+function AgentPickerGrid(
+	handle: Handle<{
+		ids:
+			| Array<McpClientKind>
+			| Array<{ id: McpClientKind; viewport: OnboardingAgentViewport }>
+		labelledBy: string
+	}>,
+) {
+	return () => (
+		<ul aria-labelledby={handle.props.labelledBy} mix={css(pickerGridCss)}>
+			{handle.props.ids.map((entry) => {
+				const id = typeof entry === 'string' ? entry : entry.id
+				const viewport =
+					typeof entry === 'string'
+						? onboardingAgentViewport(id)
+						: entry.viewport
+				const shown = viewport === 'none' ? 'both' : viewport
+				return (
+					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
 						<a
-							href={buildOnboardingAgentHref({
-								...location,
-								agent: id,
-								surface,
-							})}
+							href={onboardingAgentHref(id)}
 							data-testid={`onboarding-agent-${id}`}
 							data-prevent-scroll-reset=""
 							mix={css(pickerCardCss)}
 						>
-							<AgentPickerMark agent={id} surface={surface} />
-							<strong>{pickerLabel(id, surface)}</strong>
+							<AgentPickerMark agent={id} />
+							<strong>
+								<AgentSurfaceLabel agent={id} />
+							</strong>
 						</a>
 					</li>
-				))}
-			</ul>
-		)
-	}
+				)
+			})}
+		</ul>
+	)
 }
 
 const installLayoutCss = {
@@ -400,30 +450,18 @@ const pickerGridCss = {
 	margin: 0,
 	padding: 0,
 	display: 'grid',
+	alignItems: 'stretch',
 	gridTemplateColumns: 'repeat(auto-fill, minmax(min(10.5rem, 100%), 1fr))',
 	gap: '0.75rem',
-}
-
-const pickerGridDesktopCss = {
-	...pickerGridCss,
-	[onboardingMobileAgentMq]: {
-		display: 'none',
-	},
-}
-
-const pickerGridMobileCss = {
-	...pickerGridCss,
-	display: 'none',
-	[onboardingMobileAgentMq]: {
-		display: 'grid',
-	},
 }
 
 const pickerCardCss = {
 	display: 'grid',
 	justifyItems: 'center',
+	alignContent: 'center',
 	gap: '0.55rem',
 	width: '100%',
+	height: '100%',
 	minWidth: 0,
 	padding: '1.05rem 0.85rem',
 	backgroundColor: colors.background,
@@ -454,6 +492,8 @@ const pickerMarkCss = {
 	display: 'grid',
 	placeItems: 'center',
 	flex: 'none',
+	width: '1.75rem',
+	height: '1.75rem',
 	color: colors.text,
 }
 
@@ -506,40 +546,12 @@ const selectedPanelCss = {
 }
 
 const agentHelpCss = {
-	fontSize: typography.fontSize.sm,
-}
-
-const moreAgentsCss = {
-	display: 'grid',
-	gap: '0.6rem',
-}
-
-const moreAgentListCss = {
-	listStyle: 'none',
-	margin: 0,
-	padding: 0,
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: '0.5rem',
-}
-
-const moreAgentChipCss = {
-	width: 'auto',
-	padding: '0.5rem 0.9rem',
-	backgroundColor: colors.background,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: radius.full,
-	color: colors.text,
-	cursor: 'pointer',
-	textDecoration: 'none',
-	font: `550 0.95rem/1 ${typography.fontFamilyBody}`,
-	transition: `border-color 160ms ${transitions.easeOut}, color 160ms ${transitions.easeOut}`,
-	[hoverMq]: {
-		'&:hover': {
-			borderColor: colors.primary,
-			color: colors.primaryText,
-		},
+	// Beat `selectedPanelCss` `& > p { margin: 0 }` so this sits off the
+	// authenticate banner.
+	'&&': {
+		margin: '0 0 1rem',
 	},
+	fontSize: typography.fontSize.sm,
 }
 
 const authNoteCss = {

@@ -2,7 +2,7 @@
 id: quick_example
 title: First build — ad hoc execute, then persist
 summary:
-  Agent playbook for onboarding Step 3: run one useful ad hoc execute against
+  Agent playbook after Give Kody Access: run one useful ad hoc execute against
   something they gave Kody access to (or whatever they ask for if they
   skipped), show the result, persist that working code as a package they own,
   and offer optional triggers without recommending one.
@@ -12,12 +12,11 @@ category: platform
 # First build — ad hoc execute, then persist
 
 <!--
-Agent notes — for AI agents driving onboarding Step 3 from this page:
+Agent notes — for AI agents driving the first build from this page:
 
-- The person already gave Kody access on /onboarding Step 2 (featured official
-  remotes, or a custom server), installed a Just-try-Kody zero-auth example, or
-  skipped so they could try an ad hoc request first. Connect copies the matching
-  official helper into their account — they run that owned copy, not kody:@kody/*.
+- The person already gave Kody access on /onboarding Step 2 (official MCP
+  remotes, or Show more / ask-your-agent), or skipped so they could try an ad
+  hoc request first. They run an owned copy, not kody:@kody/*.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.
 - Keep messages short — under roughly 120 words.
@@ -39,17 +38,18 @@ This guide is the playbook for a Kody account's first build: run one useful ad
 hoc request, then save that working code as a package the person owns — after
 they give Kody access, or after they skip that step.
 
-The person may have arrived from `/onboarding` Step 3 ("Try it, then persist")
-on the same origin this guide was fetched from. They can paste a prompt into
-their agent as soon as they reach that step.
+The person may have arrived from `/onboarding` Step 2 ("Give Kody Access") on
+the same origin this guide was fetched from. They can paste a prompt into their
+agent as soon as they reach that step.
 
 ## Before you start
 
-The account needs a verified email and an authorized MCP host. If they gave Kody
-access on `/onboarding` Step 2 (featured or custom), confirm the server is ready
-with `mcpServerList` before calling its tools. If they installed a Just-try-Kody
-example, invoke that owned package. If they skipped, ask what they want to try
-and use whatever tools are already available.
+The account needs a verified email and an authorized MCP host
+(`/onboarding/step-1`). If they gave Kody access on `/onboarding` Step 2
+(featured or custom), confirm the server is ready with `mcpServerList` before
+calling its tools. If they installed a Just-try-Kody example, invoke that owned
+package. If they skipped, ask what they want to try and use whatever tools are
+already available.
 
 ## Step 1 — Confirm the connection
 
@@ -106,6 +106,6 @@ for now. List the options. If they skip, they are done with Get started.
   message; one retry.
 - **No connected tools** — they skipped Step 2, or the server name is not one of
   the Step 2 cards. Ask what they want, or send them back to
-  `/onboarding#connect-mcp`.
+  `/onboarding/step-2`.
 - **`packageSave` rejected** — the ad hoc module is incomplete. Keep the execute
   evidence, fix the package files, and save again. Do not invent extra packages.

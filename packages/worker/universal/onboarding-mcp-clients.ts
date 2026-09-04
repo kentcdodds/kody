@@ -75,17 +75,16 @@ export const onboardingDesktopFeaturedAgentIds = [
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
- * Phone chooser: hosts you can start from a pocket. Codex and Claude Code
- * use the ChatGPT / Claude apps. Replit is not a Kody connect path yet, so
- * Grok Bot fills the seventh seat.
+ * Phone chooser: only hosts with a real mobile app. Desktop-only CLIs and
+ * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Cursor)
+ * stay off this list and appear under Not listed on a phone.
  */
 export const onboardingMobileFeaturedAgentIds = [
 	'chatgpt',
 	'claude-desktop',
-	'devin',
-	'cursor',
 	'copilot-app',
 	'gemini',
+	'grok',
 	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
@@ -131,10 +130,10 @@ export function randomOnboardingInt(maxExclusive: number): number {
 	return bytes[0]! % maxExclusive
 }
 
-export function shuffleOnboardingAgentIds(
-	ids: ReadonlyArray<McpClientKind>,
+export function shuffleOnboardingAgentIds<T>(
+	ids: ReadonlyArray<T>,
 	randomInt: OnboardingRandomInt = randomOnboardingInt,
-): Array<McpClientKind> {
+): Array<T> {
 	const next = [...ids]
 	for (let index = next.length - 1; index > 0; index--) {
 		const span = index + 1
@@ -210,6 +209,63 @@ export function onboardingFeaturedIdsFromChooser(
 	return surface === 'mobile' ? chooser.mobileFeatured : chooser.desktopFeatured
 }
 
+export type OnboardingAgentViewport = 'desktop-only' | 'mobile-only' | 'both'
+
+export function onboardingAgentViewport(
+	id: McpClientKind,
+): OnboardingAgentViewport | 'none' {
+	if (id === 'other') return 'both'
+	const desktop = (
+		onboardingDesktopFeaturedAgentIds as ReadonlyArray<McpClientKind>
+	).includes(id)
+	const mobile = (
+		onboardingMobileFeaturedAgentIds as ReadonlyArray<McpClientKind>
+	).includes(id)
+	if (desktop && mobile) return 'both'
+	if (desktop) return 'desktop-only'
+	if (mobile) return 'mobile-only'
+	return 'none'
+}
+
+export function onboardingPickerAgentIds(
+	chooser: OnboardingAgentChooserPick,
+): Array<McpClientKind> {
+	const seen = new Set<McpClientKind>(chooser.desktopFeatured)
+	const mobileOnly = chooser.mobileFeatured.filter((id) => !seen.has(id))
+	return [...chooser.desktopFeatured, ...mobileOnly]
+}
+
+export function onboardingNotListedAgentIds(
+	chooser: OnboardingAgentChooserPick,
+): Array<{ id: McpClientKind; viewport: OnboardingAgentViewport }> {
+	const desktopSet = new Set<McpClientKind>(chooser.desktopFeatured)
+	const mobileSet = new Set<McpClientKind>(chooser.mobileFeatured)
+	const desktopOnly = chooser.desktopFeatured
+		.filter((id) => !mobileSet.has(id))
+		.map((id) => ({ id, viewport: 'mobile-only' as const }))
+	const mobileOnly = chooser.mobileFeatured
+		.filter((id) => !desktopSet.has(id))
+		.map((id) => ({ id, viewport: 'desktop-only' as const }))
+	return [...desktopOnly, ...mobileOnly]
+}
+
+export function onboardingViewportCss(
+	viewport: OnboardingAgentViewport,
+	shownDisplay: string,
+) {
+	if (viewport === 'both') return { display: shownDisplay }
+	if (viewport === 'desktop-only') {
+		return {
+			display: shownDisplay,
+			[onboardingMobileAgentMq]: { display: 'none' },
+		}
+	}
+	return {
+		display: 'none',
+		[onboardingMobileAgentMq]: { display: shownDisplay },
+	}
+}
+
 export function onboardingMoreIdsFromChooser(
 	chooser: OnboardingAgentChooserPick,
 	surface: OnboardingAgentSurface,
@@ -225,9 +281,9 @@ export function onboardingAgentLabel(
 	if (surface === 'mobile') {
 		switch (id) {
 			case 'chatgpt':
-				return 'Codex'
+				return 'ChatGPT'
 			case 'claude-desktop':
-				return 'Claude Code'
+				return 'Claude'
 			case 'copilot-app':
 				return 'Copilot'
 			case 'grok':
@@ -241,12 +297,8 @@ export function onboardingAgentLabel(
 
 export function onboardingAgentIconName(
 	id: McpClientKind,
-	surface: OnboardingAgentSurface = 'desktop',
+	_surface: OnboardingAgentSurface = 'desktop',
 ): string | null {
-	if (surface === 'mobile') {
-		if (id === 'chatgpt') return 'codex'
-		if (id === 'claude-desktop') return 'claudecode'
-	}
 	switch (id) {
 		case 'cursor':
 			return 'cursor'
@@ -283,19 +335,10 @@ export function onboardingAgentIconName(
 	}
 }
 
-export const onboardingAgentSearchParam = 'agent'
-export const onboardingSurfaceSearchParam = 'surface'
-
 export function isMcpClientKind(
 	value: string | null | undefined,
 ): value is McpClientKind {
 	return mcpClientTabs.some((tab) => tab.id === value)
-}
-
-export function isOnboardingAgentSurface(
-	value: string | null | undefined,
-): value is OnboardingAgentSurface {
-	return value === 'desktop' || value === 'mobile'
 }
 
 export function mcpClientById(id: McpClientKind): McpClientTab {
@@ -306,63 +349,15 @@ export function mcpClientById(id: McpClientKind): McpClientTab {
 	return tab
 }
 
-export function readOnboardingAgentParam(search: string): McpClientKind | null {
-	const params = new URLSearchParams(
-		search.startsWith('?') ? search.slice(1) : search,
-	)
-	const value = params.get(onboardingAgentSearchParam)
-	return isMcpClientKind(value) ? value : null
-}
-
-export function readOnboardingSurfaceParam(
-	search: string,
-): OnboardingAgentSurface | null {
-	const params = new URLSearchParams(
-		search.startsWith('?') ? search.slice(1) : search,
-	)
-	const value = params.get(onboardingSurfaceSearchParam)
-	return isOnboardingAgentSurface(value) ? value : null
-}
-
-export function writeOnboardingAgentSearch(
-	search: string,
-	agent: McpClientKind | null,
-	surface?: OnboardingAgentSurface | null,
-): string {
-	const params = new URLSearchParams(
-		search.startsWith('?') ? search.slice(1) : search,
-	)
-	if (agent) {
-		params.set(onboardingAgentSearchParam, agent)
-		if (surface) params.set(onboardingSurfaceSearchParam, surface)
-		else params.delete(onboardingSurfaceSearchParam)
-	} else {
-		params.delete(onboardingAgentSearchParam)
-		params.delete(onboardingSurfaceSearchParam)
-	}
-	const next = params.toString()
-	return next ? `?${next}` : ''
-}
-
-export function buildOnboardingAgentHref(input: {
-	pathname: string
-	search: string
-	hash?: string
-	agent: McpClientKind | null
-	surface?: OnboardingAgentSurface | null
-}): string {
-	return `${input.pathname}${writeOnboardingAgentSearch(
-		input.search,
-		input.agent,
-		input.surface,
-	)}${input.hash ?? ''}`
-}
-
-/** Drop picker and step-hash state so those are not a new data load. */
+/** Collapse every wizard URL onto one payload key so picker navigations reuse data. */
 export function onboardingDataHref(href: string): string {
 	const url = new URL(href, 'https://kody.local')
-	url.searchParams.delete(onboardingAgentSearchParam)
-	url.searchParams.delete(onboardingSurfaceSearchParam)
+	if (
+		url.pathname === '/onboarding' ||
+		url.pathname.startsWith('/onboarding/step-')
+	) {
+		url.pathname = '/onboarding'
+	}
 	url.hash = ''
 	return `${url.pathname}${url.search}`
 }
@@ -427,7 +422,7 @@ export function onboardingAgentHelp(id: McpClientKind): {
 		case 'chatgpt':
 			return {
 				href: chatGptDeveloperModeGuideUrl,
-				label: 'ChatGPT developer mode help',
+				label: 'developer mode help',
 			}
 		case 'codex':
 			return { href: kodyConnectYourAgentUrl, label: 'Connect your agent help' }

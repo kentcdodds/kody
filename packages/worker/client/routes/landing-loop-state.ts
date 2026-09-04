@@ -240,6 +240,11 @@ export function createLandingLoopPlayer(input: {
 			reasons.delete('ended')
 			emit()
 		},
+		skipToEnd() {
+			revealedCount = input.beatCount
+			clearPlayableReasons()
+			setReason('ended', true)
+		},
 		advance(): LandingLoopAdvance {
 			if (isPaused() || input.beatCount === 0) {
 				return { didAdvance: false, ended: reasons.has('ended') }

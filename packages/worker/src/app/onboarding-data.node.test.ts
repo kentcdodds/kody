@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
+import { emptyOnboardingSessionMilestones } from '#universal/onboarding-process.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
@@ -26,6 +27,12 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://preview.example/onboarding',
 		}),
 	).toContain('https://preview.example')
+	expect(
+		buildDiscoveryPrompt({
+			env: {},
+			requestUrl: 'https://preview.example/onboarding',
+		}),
+	).not.toContain('set anything up yet')
 	expect(
 		buildFirstWinPrompt({
 			env: {},
@@ -59,6 +66,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		milestones: emptyOnboardingSessionMilestones,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -94,6 +102,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		milestones: emptyOnboardingSessionMilestones,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
