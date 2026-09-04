@@ -3,10 +3,24 @@
 import { type Handle, css } from 'remix/ui'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 
+/**
+ * Single pixel size, or a pair that this component owns in its own `css()`
+ * layer. Caller descendant rules cannot shrink the face — every `css()` class
+ * gets `@layer rmx.<class>`, and this component registers after its caller.
+ */
+export type UserAvatarSize =
+	| number
+	| {
+			narrow: number
+			wide: number
+			/** Default 821 matches the site-header hamburger / profile stack. */
+			wideMinWidth?: number
+	  }
+
 export type UserAvatarProps = {
 	displayName: string
 	avatarUrl: string | null
-	size: number
+	size: UserAvatarSize
 	testId?: string
 	/**
 	 * `well` is the redesign's avatar well — page surface behind a hairline
@@ -19,6 +33,37 @@ export type UserAvatarProps = {
 	variant?: 'plain' | 'well'
 }
 
+export function intrinsicUserAvatarSize(size: UserAvatarSize) {
+	return typeof size === 'number' ? size : size.wide
+}
+
+function avatarFaceSizeCss(input: { size: UserAvatarSize; well: boolean }) {
+	const fontFactor = input.well ? 0.36 : 0.4
+	const minFont = input.well ? 11 : 12
+	const fontPx = (px: number) =>
+		`${Math.max(minFont, Math.round(px * fontFactor))}px`
+
+	if (typeof input.size === 'number') {
+		return {
+			width: `${input.size}px`,
+			height: `${input.size}px`,
+			fontSize: fontPx(input.size),
+		}
+	}
+
+	const minWidth = input.size.wideMinWidth ?? 821
+	return {
+		width: `${input.size.narrow}px`,
+		height: `${input.size.narrow}px`,
+		fontSize: fontPx(input.size.narrow),
+		[`@media (min-width: ${minWidth}px)`]: {
+			width: `${input.size.wide}px`,
+			height: `${input.size.wide}px`,
+			fontSize: fontPx(input.size.wide),
+		},
+	}
+}
+
 export function UserAvatar(handle: Handle<UserAvatarProps>) {
 	// Props must be read inside the render function so updates (for example
 	// the account page swapping the avatar after an upload) re-render.
@@ -26,9 +71,9 @@ export function UserAvatar(handle: Handle<UserAvatarProps>) {
 		const { displayName, avatarUrl, size, testId, variant } = handle.props
 		const initial = displayName.trim().charAt(0).toUpperCase() || '?'
 		const well = variant === 'well'
+		const intrinsic = intrinsicUserAvatarSize(size)
 		const sizeStyle = {
-			width: `${size}px`,
-			height: `${size}px`,
+			...avatarFaceSizeCss({ size, well }),
 			borderRadius: radius.full,
 			flexShrink: '0',
 			boxSizing: 'border-box' as const,
@@ -40,8 +85,8 @@ export function UserAvatar(handle: Handle<UserAvatarProps>) {
 			<img
 				src={avatarUrl}
 				alt=""
-				width={size}
-				height={size}
+				width={intrinsic}
+				height={intrinsic}
 				data-testid={testId}
 				mix={css({
 					...sizeStyle,
@@ -62,7 +107,6 @@ export function UserAvatar(handle: Handle<UserAvatarProps>) {
 					backgroundColor: fill,
 					color: well ? colors.primaryText : colors.textMuted,
 					fontFamily: well ? typography.fontFamilyDisplay : undefined,
-					fontSize: `${Math.max(well ? 11 : 12, Math.round(size * (well ? 0.36 : 0.4)))}px`,
 					fontWeight: well ? 700 : typography.fontWeight.semibold,
 					lineHeight: 1,
 					userSelect: 'none',

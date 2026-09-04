@@ -30,7 +30,7 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 				<UserAvatar
 					displayName={shell.displayName}
 					avatarUrl={shell.avatarUrl}
-					size={160}
+					size={{ narrow: 72, wide: 160 }}
 					variant="well"
 					testId="profile-avatar"
 				/>
@@ -107,21 +107,8 @@ const identityCss = {
 }
 
 const avatarWrapCss = {
-	width: '4.5rem',
-	height: '4.5rem',
 	lineHeight: 0,
-	'& img, & span': {
-		width: '4.5rem',
-		height: '4.5rem',
-	},
-	'@media (min-width: 821px)': {
-		width: '10rem',
-		height: '10rem',
-		'& img, & span': {
-			width: '10rem',
-			height: '10rem',
-		},
-	},
+	width: 'fit-content',
 }
 
 const identityCopyCss = {
