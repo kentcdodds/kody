@@ -44,6 +44,17 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		ogImage: '/images/kody-gmail-drafts-lock-og.jpg',
 	})
 
+	expect(getGuideById('packages_integrations_mcp')).toMatchObject({
+		slug: 'packages-integrations-mcp',
+		category: 'platform',
+		unadvertised: false,
+	})
+	expect(
+		listPlatformGuides().some(
+			(guide) => guide.id === 'packages_integrations_mcp',
+		),
+	).toBe(true)
+
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
 	expect(getGuideById('package_invocation_token_setup')?.unadvertised).toBe(

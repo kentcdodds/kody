@@ -9,6 +9,10 @@ A saved package is a repo-backed module rooted at `package.json`. Standard
 package fields describe the package surface, and `package.json#kody` holds the
 Kody-specific metadata.
 
+Packages are not integrations or MCP servers. See
+[Packages, integrations, and MCP servers](../guides/packages-integrations-mcp.md)
+when those three look interchangeable.
+
 ## Mental model
 
 Think in terms of:

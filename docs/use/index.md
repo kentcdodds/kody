@@ -27,6 +27,8 @@ Read in order for a full tour, or jump to a topic.
   daily email only when something shipped
 - [The Kody factory map](../guides/kody-factory.md) — the primitives your
   assistant gets and the boundary around local files and processes
+- [Packages, integrations, and MCP servers](../guides/packages-integrations-mcp.md)
+  — when those three look interchangeable
 - [Gmail drafts without send](../guides/locked-gmail-drafts.md) — lock a
   drafts-only package when Google cannot issue a drafts-only token
 - [Lock an MCP server to a package](../guides/locked-mcp-server.md) — keep

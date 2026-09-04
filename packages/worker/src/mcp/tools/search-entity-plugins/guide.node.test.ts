@@ -213,6 +213,20 @@ test('guide search entities rank advertised docs and open full markdown on entit
 		),
 	).toBe(true)
 
+	const packagesIntegrationsMcp = await searchUnified({
+		env: {} as Env,
+		query: 'packages integrations mcp',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(
+		packagesIntegrationsMcp.matches.some(
+			(match) =>
+				match.type === 'guide' && match.id === 'packages_integrations_mcp',
+		),
+	).toBe(true)
+
 	const stopwordInId = await searchUnified({
 		env: {} as Env,
 		query: 'what is kody',

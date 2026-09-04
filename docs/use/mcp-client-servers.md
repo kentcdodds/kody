@@ -1,7 +1,10 @@
 # Connect remote MCP servers to Kody
 
 Kody can act as an **MCP client**: you add a remote MCP server, and its tools
-become callable as `kody.mcp["server-name"].tool_name(...)`.
+become callable as `kody.mcp["server-name"].tool_name(...)`. That is connection
+wiring, not package runtime. See
+[Packages, integrations, and MCP servers](../guides/packages-integrations-mcp.md)
+when those three look interchangeable.
 
 This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 (where Kody is the MCP _server_).
