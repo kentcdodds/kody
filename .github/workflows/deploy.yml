@@ -637,6 +637,7 @@ jobs:
         if: steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ENV: production
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           WRANGLER_CONFIG:
             ${{ steps.resources.outputs.origin_bootstrap_wrangler_config }}
@@ -656,7 +657,7 @@ jobs:
           for attempt in $(seq 1 "$deploy_attempts"); do
             echo "Origin bootstrap deploy attempt $attempt/$deploy_attempts"
             set +e
-            npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-origin-bootstrap.log
+            npm run deploy -- --name kody-production --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-origin-bootstrap.log
             deploy_status="${PIPESTATUS[0]}"
             set -e
 
@@ -812,13 +813,19 @@ jobs:
           steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ENV: production
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
           set -euo pipefail
-          DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}")
+          # Explicit --name: Vite emits a flattened wrangler.json whose
+          # `name` is still top-level `kody`. Without this (and without
+          # wrangler-env.ts adding --env production) Wrangler uploads a
+          # new `kody` script and replays origin Durable Object migrations
+          # the slim entry does not export.
+          DEPLOY_ARGS=(--name kody-production --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}")
 
           is_retryable_deploy_failure() {
             node tools/ci/is-retryable-deploy-failure.ts deploy.log

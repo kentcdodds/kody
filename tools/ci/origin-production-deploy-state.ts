@@ -576,14 +576,20 @@ export function stripOriginBindingsForLocallyOwnedClasses(
 }
 
 /**
- * Preview origin scripts never own a Durable Object class: platform and
+ * Slim origin scripts never own a Durable Object class: platform and
  * runtime create every class themselves (`new_sqlite_classes` in their
- * preview envs), so the origin's committed migration history must not
- * replay on the preview script. A fresh script would otherwise create
- * namespaces for classes the slim entry does not export (Cloudflare rejects
- * the upload), and a legacy full-entry preview would keep re-owning them.
- * Wrangler uploads no migration steps when the config declares none, which
- * leaves any already-created namespaces on a legacy script untouched.
+ * own envs), so the origin's committed migration history must not
+ * replay on the slim upload. A fresh script — or a Vite-flattened
+ * `dist/ssr/wrangler.json` that Wrangler treats as first apply — would
+ * otherwise create namespaces for classes the slim entry does not export
+ * (Cloudflare rejects the upload with 10070), and a legacy full-entry
+ * script would keep re-owning them. Wrangler uploads no migration steps
+ * when the config declares none, which leaves any already-created
+ * namespaces on a legacy script untouched.
+ *
+ * Preview always strips. Steady-state and fresh production slim uploads
+ * strip too; the full-entry bootstrap config keeps the history so
+ * `new_sqlite_classes` can create classes before transfer.
  */
 export function stripOriginDurableObjectMigrations(
 	config: Record<string, unknown>,
