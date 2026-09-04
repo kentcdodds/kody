@@ -896,6 +896,12 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	const anonymousHtml = await readResponseText(anonymousResponse)
 	expect(anonymousHtml).not.toContain('OAuth authorization failed')
 	expect(anonymousHtml).not.toContain('href="/images/hero/kody-base.webp"')
+	expect(anonymousHtml).not.toContain('Requested scopes')
+	expect(anonymousHtml).not.toContain('No scopes requested.')
+	expect(anonymousHtml).toContain('data-testid="oauth-authorize-grant"')
+	expect(anonymousHtml).toContain('data-testid="oauth-authorize-oidc-scopes"')
+	expect(anonymousHtml).toContain('<code>profile</code>')
+	expect(anonymousHtml).toContain('<code>email</code>')
 
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
