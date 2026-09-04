@@ -144,23 +144,19 @@ function renderOauthAuthorizeGrant(input: {
 					mix={css(nativeDisclosureCss)}
 				>
 					<summary>Identity claims on the token</summary>
-					<p mix={css(descriptionCss)}>
-						These OAuth scopes are identity claims. They do not limit what the
-						assistant can do.
-					</p>
-					<p
-						mix={css({
-							...descriptionCss,
-							display: 'flex',
-							flexWrap: 'wrap',
-							gap: `${spacing.xs} ${spacing.sm}`,
-						})}
-					>
-						{input.scopes.flatMap((scope, index) => [
-							index > 0 ? ' ' : null,
-							<code key={scope}>{scope}</code>,
-						])}
-					</p>
+					{/* nativeDisclosureCss grids each direct details child. */}
+					<div>
+						<p mix={css(descriptionCss)}>
+							These OAuth scopes are identity claims. They do not limit what the
+							assistant can do.
+						</p>
+						<p mix={css(descriptionCss)}>
+							{input.scopes.flatMap((scope, index) => [
+								index > 0 ? ' ' : null,
+								<code key={scope}>{scope}</code>,
+							])}
+						</p>
+					</div>
 				</details>
 			) : null}
 		</section>
