@@ -140,11 +140,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 									Demo
 								</span>
 							) : null}
-							<form method="post" action="/logout" mix={css({ margin: 0 })}>
-								<button type="submit" mix={css(logOutButtonCss)}>
-									Log out
-								</button>
-							</form>
 						</>
 					) : (
 						<a href={handle.props.loginHref} mix={css(navLoginCss)}>
@@ -216,15 +211,6 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 										variant="well"
 									/>
 								</a>
-								<form
-									method="post"
-									action="/logout"
-									mix={css({ margin: 0, display: 'grid' })}
-								>
-									<button type="submit" mix={css(menuLogOutCss)}>
-										Log out
-									</button>
-								</form>
 							</>
 						) : (
 							<a href={handle.props.loginHref}>Log in</a>
@@ -442,24 +428,6 @@ const menuGroupCss = {
 	},
 }
 
-const menuLogOutCss = {
-	appearance: 'none' as const,
-	minHeight: '44px',
-	padding: '0 0.85rem',
-	borderRadius: '12px',
-	border: 'none',
-	background: 'transparent',
-	textAlign: 'left' as const,
-	font: `550 1rem/1 ${typography.fontFamilyBody}`,
-	color: colors.text,
-	cursor: 'pointer',
-	transition: `background-color ${transitions.fast}`,
-	'&:active': { backgroundColor: colors.primarySoftest },
-	[hoverMq]: {
-		'&:hover': { backgroundColor: colors.primarySoftest },
-	},
-}
-
 const navLoginCss = {
 	fontWeight: 550,
 	fontSize: '0.98rem',
@@ -486,23 +454,6 @@ const menuWaitingAvatarCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	width: 'fit-content',
-}
-
-/**
- * Logging out has to be a form POST, but the prototype's session corner is
- * two quiet text links (`.nav-user` then `.nav-login`) — a bordered pill here
- * reads as the page's main action, which logging out is not. So: the nav-link
- * treatment, with the button chrome stripped off.
- */
-const logOutButtonCss = {
-	...navLoginCss,
-	appearance: 'none' as const,
-	border: 'none',
-	background: 'transparent',
-	cursor: 'pointer',
-	// A button does not inherit the page font.
-	font: `550 0.98rem/1 ${typography.fontFamilyBody}`,
-	transition: `color ${transitions.fast}`,
 }
 
 const demoIndicatorCss = {

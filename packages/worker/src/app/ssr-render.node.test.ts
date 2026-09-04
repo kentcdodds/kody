@@ -399,6 +399,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		checklist: null,
 	})
 	expect(accountHtml).toContain('/pending-verification')
+	expect(accountHtml).toContain('action="/logout"')
+	expect(accountHtml).toContain('Log out')
 
 	// Two-factor and passkeys embed the same payload their .json endpoints
 	// serve, so the page server-renders its real state instead of a loading
@@ -415,6 +417,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		enabled: false,
 	})
+	expect(twoFactorHtml).not.toContain('action="/logout"')
 
 	const passkeysResponse = await runHtmlHandler(
 		createAccountPasskeysHandler(env),

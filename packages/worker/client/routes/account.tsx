@@ -12,6 +12,7 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -729,6 +730,21 @@ export function AccountRoute(handle: Handle) {
 						</AccountManagementPanel>
 					</>
 				) : null}
+
+				<AccountManagementPanel
+					title="Session"
+					description="Sign out of this browser. Your account and data stay intact."
+				>
+					<form
+						method="post"
+						action={routes.logout.href()}
+						mix={css({ margin: 0 })}
+					>
+						<button type="submit" mix={css(compactGhostButtonCss)}>
+							Log out
+						</button>
+					</form>
+				</AccountManagementPanel>
 
 				<AccountAvatarEditor
 					file={editorFile}
