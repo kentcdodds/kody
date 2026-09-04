@@ -116,13 +116,11 @@ test('narrow swipe moves the leading card off the origin instead of pinning it',
 	const leading = swiped.filter((placement) => placement.itemIndex === 0)
 	expect(leading).toContainEqual({ itemIndex: 0, x: -80, seam: false })
 	expect(leading.some((placement) => placement.x === 0)).toBe(false)
-	expect(largestVisibleHole(swiped, viewportWidth, cardWidth)).toBeLessThanOrEqual(
-		stride - cardWidth,
-	)
-
 	expect(
-		canPauseOnHover(() => ({ matches: false })),
-	).toBe(false)
+		largestVisibleHole(swiped, viewportWidth, cardWidth),
+	).toBeLessThanOrEqual(stride - cardWidth)
+
+	expect(canPauseOnHover(() => ({ matches: false }))).toBe(false)
 	expect(
 		canPauseOnHover((query) => ({
 			matches: query === '(hover: hover) and (pointer: fine)',
