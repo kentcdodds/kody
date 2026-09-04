@@ -157,7 +157,9 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			page.getByTestId('onboarding-agent-instructions'),
 		).toContainText(mcpUrl)
 		await expect(
-			page.getByTestId('onboarding-authenticate-callout'),
+			page
+				.locator('[data-surface="desktop"]')
+				.getByTestId('onboarding-authenticate-callout'),
 		).toBeVisible()
 
 		const mcpAfterVerify = await postUnauthenticatedMcpInitialize(origin)

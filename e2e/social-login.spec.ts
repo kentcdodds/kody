@@ -21,7 +21,7 @@ test('social login signs in via mock GitHub and manages connections', async ({
 
 	// A brand-new social account lands on onboarding rather than the account
 	// page, matching where password signups go after verification.
-	await expect(page).toHaveURL(/\/onboarding\?accountCreated=1$/)
+	await expect(page).toHaveURL(/\/onboarding\/step-1\?accountCreated=1$/)
 	await expect(
 		page.getByRole('heading', { name: /Get started with\s*Kody/i }),
 	).toBeVisible()

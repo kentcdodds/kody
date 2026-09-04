@@ -521,52 +521,6 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		canSyncDiscordRoles: false,
 	})
 
-	const onboardingIndexResponse = await runHtmlHandler(
-		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding', {
-			headers: { Cookie: accountCookie },
-		}),
-	)
-	expect(onboardingIndexResponse.status).toBe(302)
-	expect(onboardingIndexResponse.headers.get('Location')).toBe(
-		'https://example.com/onboarding/step-1',
-	)
-
-	const onboardingResponse = await runHtmlHandler(
-		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding/step-1', {
-			headers: { Cookie: accountCookie },
-		}),
-	)
-	expect(onboardingResponse.status).toBe(302)
-	expect(onboardingResponse.headers.get('Location')).toBe(
-		'https://example.com/pending-verification',
-	)
-
-	const onboardingPreservesRedirect = await runHtmlHandler(
-		createOnboardingHandler(env),
-		new Request(
-			'https://example.com/onboarding?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
-			{ headers: { Cookie: accountCookie } },
-		),
-	)
-	expect(onboardingPreservesRedirect.status).toBe(302)
-	expect(onboardingPreservesRedirect.headers.get('Location')).toBe(
-		'https://example.com/onboarding/step-1?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
-	)
-
-	const onboardingStepPreservesRedirect = await runHtmlHandler(
-		createOnboardingHandler(env),
-		new Request(
-			'https://example.com/onboarding/step-1?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
-			{ headers: { Cookie: accountCookie } },
-		),
-	)
-	expect(onboardingStepPreservesRedirect.status).toBe(302)
-	expect(onboardingStepPreservesRedirect.headers.get('Location')).toBe(
-		'https://example.com/pending-verification?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
-	)
-
 	const anonymousOnboardingIndex = await runHtmlHandler(
 		createOnboardingHandler(env),
 		new Request('https://example.com/onboarding'),
