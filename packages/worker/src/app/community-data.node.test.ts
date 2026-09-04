@@ -25,6 +25,7 @@ const mockModule = vi.hoisted(() => ({
 	listCommunityForksByListingIdsAndUser: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
+	resolveCachedArtifactSourceHead: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
@@ -63,6 +64,11 @@ vi.mock('#worker/community/repo.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+}))
+
+vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
+	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
+		mockModule.resolveCachedArtifactSourceHead(...args),
 }))
 
 vi.mock('#worker/community/profile-repo.ts', () => ({
@@ -345,6 +351,54 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	expect(ahead?.viewerInstall?.listingAheadPrompt?.length ?? 0).toBeGreaterThan(
 		0,
 	)
+})
+
+test('sourceAhead compares HEAD to the runtime pin, not the community catalog snapshot', async () => {
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
+	const runtimePin = 'cccccccccccccccccccccccccccccccccccccccc'
+	const unpublishedHead = 'dddddddddddddddddddddddddddddddddddddddd'
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: runtimePin,
+	})
+	mockModule.resolveCachedArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: runtimePin,
+	})
+
+	const published = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github-published'),
+		'listing-github',
+	)
+	expect(published?.listing.sourceAhead).toBeUndefined()
+	expect(published?.listing.headCommit).toBeUndefined()
+	expect(published?.listing.pinnedCommit).toBe(sampleListing.pinnedCommit)
+	expect(published?.listing.pinnedCommit).not.toBe(runtimePin)
+
+	resetDataCacheForTests()
+	mockModule.resolveCachedArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: unpublishedHead,
+	})
+	const aheadOfRuntime = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github-runtime-ahead'),
+		'listing-github',
+	)
+	expect(aheadOfRuntime?.listing.sourceAhead).toBe(true)
+	expect(aheadOfRuntime?.listing.headCommit).toBe(unpublishedHead)
 })
 
 test('community index is memoized per request and forwards newest sort to loaders', async () => {

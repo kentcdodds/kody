@@ -232,7 +232,10 @@ test('owner source-ahead badge links to the published-vs-HEAD approve-publish pa
 	const headCommit = 'ffffffffffffffffffffffffffffffffffffffff'
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: sampleListing.pinnedCommit,
+	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: headCommit,
@@ -278,7 +281,10 @@ test('owner source-ahead badge links to the published-vs-HEAD approve-publish pa
 test('visitor source-ahead badge is not a publish link', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
-	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: sampleListing.pinnedCommit,
+	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'ffffffffffffffffffffffffffffffffffffffff',
@@ -305,6 +311,49 @@ test('visitor source-ahead badge is not a publish link', async () => {
 	expect(html).toContain('data-testid="community-detail-source-ahead-badge"')
 	expect(html).toMatch(
 		/<span[^>]*data-testid="community-detail-source-ahead-badge"/,
+	)
+	expect(html).not.toContain('approve-publish')
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+})
+
+test('source-ahead badge stays off when HEAD matches the runtime pin but not the catalog snapshot', async () => {
+	const runtimePin = 'cccccccccccccccccccccccccccccccccccccccc'
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: runtimePin,
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: runtimePin,
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
+		roles: [],
+	})
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+	mockModule.getSavedPackageByKodyId.mockResolvedValue({ id: 'pkg-1' })
+	mockModule.getMcpUserPackageScope.mockResolvedValue('kentcdodds')
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+
+	const handler = createCommunityDetailHandler(env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/community/listing-1', {
+			headers: { 'x-remix-target': 'community-detail' },
+		}),
+		params: { listingId: 'listing-1' },
+		url: new URL('https://example.com/community/listing-1'),
+	} as never)
+	const html = await response.text()
+	expect(sampleListing.pinnedCommit).not.toBe(runtimePin)
+	expect(html).not.toContain(
+		'data-testid="community-detail-source-ahead-badge"',
 	)
 	expect(html).not.toContain('approve-publish')
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
