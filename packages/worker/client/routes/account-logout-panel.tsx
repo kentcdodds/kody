@@ -10,6 +10,7 @@ export function renderAccountLogoutPanel() {
 		<AccountManagementPanel
 			title="Session"
 			description="Sign out of this browser. Your account and data stay intact."
+			ariaLabel="Session"
 		>
 			<form
 				method="post"

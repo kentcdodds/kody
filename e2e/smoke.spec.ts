@@ -61,7 +61,14 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// kept the username and Log out button visible after logging out).
 	await page.goto('/account')
 	await expect(page).toHaveURL(/\/account$/)
-	await page.getByRole('button', { name: 'Log out' }).click()
+	await expect(
+		page.getByRole('navigation', { name: 'Main' }).getByRole('button', {
+			name: 'Log out',
+		}),
+	).toHaveCount(0)
+	const session = page.getByRole('region', { name: 'Session', exact: true })
+	await expect(session).toBeVisible()
+	await session.getByRole('button', { name: 'Log out' }).click()
 	await expect(page).toHaveURL(/\/login$/)
 	// The redesigned login screen renders without the site header, so the
 	// logged-out state shows the auth card instead of a header "Log in" link.
