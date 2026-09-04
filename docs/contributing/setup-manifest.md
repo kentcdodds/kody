@@ -492,6 +492,11 @@ automatically:
   `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $480/year
   `pro` plan.) Each price id is independent; an unset value only disables
   checkout for that tier and interval.
+- `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` (optional public Wrangler var
+  committed in `packages/worker/wrangler.jsonc` for production; Stripe Billing
+  Portal configuration `bpc_...` used for Manage subscription and the prorated
+  `subscription_update` flow that existing subscribers use to switch plans.
+  Preview and test leave it unset so Stripe uses the account default.)
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.

@@ -780,7 +780,29 @@ connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
 also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
 has a Discord social-login connection (see
 [`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
-the Stripe customer portal for linked customers.
+the Stripe customer portal for linked customers, pinned to
+`STRIPE_BILLING_PORTAL_CONFIGURATION_ID` when set.
+
+**Plan changes for existing subscribers never create a second subscription.**
+When the checkout handler finds a linked `stripe_customer_id`, it lists the
+customer's subscriptions and keeps the plan-retaining ones (`active` /
+`trialing` / `past_due`, the same set `resolveSubscriptionPlan` grants from).
+With exactly one, it creates a Billing Portal session with
+`flow_data[type]=subscription_update` for that subscription (Kody's portal
+configuration allows only the Standard/Pro prices and prorates with
+`always_invoice`) and returns `{ ok: true, url, mode: 'portal_update' }`; Stripe
+redirects back to `/account/billing?billing=updated` after the customer confirms
+the prorated change. Requesting the price the subscription already has returns
+`409 { error: 'You are already on that plan.' }`. More than one plan-retaining
+subscription (legacy double subscriptions) returns the plain portal with
+`mode: 'portal'` so the customer chooses which to keep. Only customers with no
+plan-retaining subscription (or no customer at all) get a Checkout Session
+(`mode: 'checkout'`). The billing page labels these buttons "Switch to …
+(prorated)", and `loadAccountBillingData` reports `stripeInterval` (from the
+configured monthly/yearly price ids) so the current tier can offer the other
+interval. The `?billing=updated` page view runs the usual on-view refresh and
+arms the `StripePlanRefresh` backstop; `customer.subscription.updated` webhooks
+refresh the plan independently.
 
 ### Webhooks (primary sync)
 
