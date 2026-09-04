@@ -20,6 +20,7 @@ import {
 	createStorageKodyTools,
 	createExecuteStorageId,
 	emptyStorageRunnerEstimatedBytes,
+	readOnlyStorageSqlDeniedMessage,
 	StorageRunner,
 	storageRunnerRpc,
 } from './storage-runner.ts'
@@ -412,8 +413,7 @@ test('storage runner enforces read-only SQL policy for mutations, multi-statemen
 		userId: 'user-123',
 		storageId,
 	})
-	const readOnlyError =
-		'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
+	const readOnlyError = readOnlyStorageSqlDeniedMessage
 	// Rejections that cross the test RPC stub surface twice inside workerd and
 	// print `uncaught exception` noise, so run the intentionally failing
 	// queries inside the Durable Object instead.

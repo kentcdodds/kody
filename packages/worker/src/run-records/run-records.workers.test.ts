@@ -671,14 +671,22 @@ test('bulk triage rolls back earlier chunks when a later chunk fails', async () 
 		)
 	})
 
+	// SQL abort inside the DO is the behavior under test. Call the method
+	// in-isolate so workerd does not log the expected rejection as an
+	// uncaught RPC exception.
 	await expect(
-		bulkUpdateRunErrorTriage({
-			env,
-			userId,
-			filter: { jobId },
-			errorTriage: 'resolved',
-			limit: 100,
-		}),
+		runInDurableObject(stub, async (instance: RunLog) =>
+			instance.bulkUpdateRunErrorTriage({
+				runIds: null,
+				filter: { jobId },
+				errorTriage: 'resolved',
+				preserveTriageNote: true,
+				triageNote: null,
+				triagedBy: userId,
+				limit: 100,
+				dryRun: false,
+			}),
+		),
 	).rejects.toThrow(/forced second chunk failure/)
 
 	const triagedCount = await runInDurableObject(

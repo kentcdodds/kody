@@ -137,6 +137,13 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     (`packages/worker/src/test-support/incidental-runtime-warnings.ts`) for the
     bundler/registry-runtime noise set. Anything outside the allowlist still
     fails the test.
+  - Workerd logs Durable Object / WorkerEntrypoint RPC rejections as
+    `uncaught exception` even when the caller catches them. Do not filter those
+    dumps — a real isolate crash must stay visible. Prevent the RPC throw
+    instead: fail closed in the sandbox or host tool before the gateway/DO call
+    (retriever `fetch`, read-only `storage.sql`), and when a test must exercise
+    an in-object abort, call the method inside `runInDurableObject` rather than
+    across the test RPC stub.
 
   Keep test output free of stray logging.
 

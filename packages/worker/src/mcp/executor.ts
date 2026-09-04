@@ -540,6 +540,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				shadowGlobalThis: Object.keys(modules).length === 0,
 				timeoutMs: input.timeout,
 				excludedHostname,
+				allowOutboundFetch: input.gatewayProps.allowOutboundFetch !== false,
 			})
 			const workerOptions = {
 				...createDynamicWorkerCompatibilityOptions(),
@@ -711,12 +712,47 @@ function validateProviders(providers: Array<ResolvedProvider>) {
 	return null
 }
 
+function createSandboxRunFetchSource(allowOutboundFetch: boolean) {
+	if (!allowOutboundFetch) {
+		return [
+			'    const __kodyRunFetch = () => {',
+			`      throw new Error(${JSON.stringify(retrieverOutboundFetchDeniedMessage)});`,
+			'    };',
+		]
+	}
+	return [
+		'    const __kodyRunFetch = (input, init) => {',
+		'      try {',
+		'        let url = "";',
+		'        if (typeof input === "string") url = input;',
+		'        else if (input instanceof URL) url = input.toString();',
+		'        else if (input && typeof input.url === "string") url = input.url;',
+		'        const hostname = new URL(url).hostname.trim().toLowerCase();',
+		'        if (hostname && hostname !== __kodyExcludedFetchHost) {',
+		'          __kodyRawFetchHosts.push(hostname);',
+		'        }',
+		'      } catch {',
+		'        // Ignore unparseable / relative URLs; only literal hosts count.',
+		'      }',
+		'      return (async () => {',
+		`        if (__dispatchers.${hostSideEffectProviderName}) {`,
+		`          const resJson = await __dispatchers.${hostSideEffectProviderName}.call("recordFetch", "[]");`,
+		'          const data = JSON.parse(resJson);',
+		'          if (data.error) throw new Error(data.error);',
+		'        }',
+		'        return globalThis[__kodyNativeFetchSymbol](input, init);',
+		'      })();',
+		'    };',
+	]
+}
+
 function createExecutorModule(input: {
 	code: string
 	providers: Array<ResolvedProvider>
 	shadowGlobalThis: boolean
 	timeoutMs: number
 	excludedHostname?: string
+	allowOutboundFetch?: boolean
 }) {
 	const normalized = normalizeCode(input.code)
 	const excludedHostname = JSON.stringify(input.excludedHostname ?? '')
@@ -770,28 +806,7 @@ function createExecutorModule(input: {
 		'    const __logs = [];',
 		'    const __kodyRawFetchHosts = [];',
 		`    const __kodyExcludedFetchHost = ${excludedHostname};`,
-		'    const __kodyRunFetch = (input, init) => {',
-		'      try {',
-		'        let url = "";',
-		'        if (typeof input === "string") url = input;',
-		'        else if (input instanceof URL) url = input.toString();',
-		'        else if (input && typeof input.url === "string") url = input.url;',
-		'        const hostname = new URL(url).hostname.trim().toLowerCase();',
-		'        if (hostname && hostname !== __kodyExcludedFetchHost) {',
-		'          __kodyRawFetchHosts.push(hostname);',
-		'        }',
-		'      } catch {',
-		'        // Ignore unparseable / relative URLs; only literal hosts count.',
-		'      }',
-		'      return (async () => {',
-		`        if (__dispatchers.${hostSideEffectProviderName}) {`,
-		`          const resJson = await __dispatchers.${hostSideEffectProviderName}.call("recordFetch", "[]");`,
-		'          const data = JSON.parse(resJson);',
-		'          if (data.error) throw new Error(data.error);',
-		'        }',
-		'        return globalThis[__kodyNativeFetchSymbol](input, init);',
-		'      })();',
-		'    };',
+		...createSandboxRunFetchSource(input.allowOutboundFetch !== false),
 		'    return __kodyEvaluateFetchStorage.run({ fetch: __kodyRunFetch }, async () => {',
 		'    const __kodyNativeConsole = globalThis.console;',
 		'    globalThis.console = {',
@@ -836,6 +851,7 @@ export function createExecutorModuleSource(input: {
 	shadowGlobalThis: boolean
 	timeoutMs: number
 	excludedHostname?: string
+	allowOutboundFetch?: boolean
 }) {
 	return createExecutorModule(input)
 }

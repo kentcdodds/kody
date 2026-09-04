@@ -397,16 +397,20 @@ export function isReadOnlyStorageSqlQuery(query: string) {
 	)
 }
 
-function assertSqlAllowed(query: string, writable: boolean | undefined) {
+export const readOnlyStorageSqlDeniedMessage =
+	'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.'
+
+export function assertStorageSqlAllowed(
+	query: string,
+	writable: boolean | undefined,
+) {
 	const trimmed = query.trim()
 	if (!trimmed) {
 		throw new Error('storage.sql requires a non-empty query.')
 	}
 	if (writable) return trimmed
 	if (!isReadOnlyStorageSqlQuery(trimmed)) {
-		throw new Error(
-			'Read-only storage.sql only allows a single SELECT, EXPLAIN, or schema PRAGMA statement. Pass writable: true to allow multi-statement or mutating queries.',
-		)
+		throw new Error(readOnlyStorageSqlDeniedMessage)
 	}
 	return trimmed
 }
@@ -571,7 +575,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 		params?: Array<unknown>
 		writable?: boolean
 	}): Promise<StorageSqlResult> {
-		const query = assertSqlAllowed(input.query, input.writable)
+		const query = assertStorageSqlAllowed(input.query, input.writable)
 		const params = normalizeSqlParams(input.params)
 		const cursor = this.ctx.storage.sql.exec<Record<string, StorageSqlValue>>(
 			query,
@@ -1120,7 +1124,10 @@ export function createStorageKodyTools(input: {
 					? true
 					: Boolean(payload.writable)
 				: false
-			const query = typeof payload.query === 'string' ? payload.query : ''
+			const query = assertStorageSqlAllowed(
+				typeof payload.query === 'string' ? payload.query : '',
+				writable,
+			)
 			const params = Array.isArray(payload.params) ? payload.params : undefined
 			// packageStorage()/writable helpers always pass writable:true so
 			// CREATE/INSERT are allowed, but pure reads must not pay the
