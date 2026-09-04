@@ -36,10 +36,10 @@ that issue (and the older `actionable` / `human review` titles).
 
 ## Kody package invoke
 
-When the verdict is `needs-fix` and `KODY_PACKAGE_INVOCATION_TOKEN` is set, the
-same job `POST`s
-`https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`
-with the report. See [package invocation API](./package-invocation-api.md).
+When the verdict is `needs-fix` and `KODY_WEBHOOK_URL_RUN` is set, the same job
+`POST`s that minted webhook URL with a params-mode JSON body and an
+`Idempotency-Key` header. There is no `Authorization` header; the URL is the
+credential. See [inbound webhooks](../use/webhooks.md).
 
 The `weekly-site-perf` package owns the agent prompt and calls `createAgent`
 from `@kentcdodds/cursor`. The Cursor API key stays a Kody secret on that Cursor
@@ -47,20 +47,23 @@ package. The agent implements an obvious local fix when it can, follows
 [`.agents/skills/ship-pr/SKILL.md`](../../.agents/skills/ship-pr/SKILL.md), or
 leaves the tracking issue open when a human should decide.
 
-The live Action uses the unadvertised invocation-token drain for
-`@kentcdodds/weekly-site-perf`. Store the raw bearer as the repository (or org)
-secret `KODY_PACKAGE_INVOCATION_TOKEN`. Rotate it with
-`POST /account/packages.json` (`action: "update-token"`). New first-party
-callers mint a webhook (`inputMode: "params"`, `Idempotency-Key`). See
-[setup manifest](./setup-manifest.md) and
-[inbound webhooks](../use/webhooks.md).
+`@kentcdodds/weekly-site-perf` declares webhook `run` (`inputMode: "params"`,
+`responseMode: "sync"`) on the root `.` export. The live Action reads the minted
+URL from the repository (or org) secret `KODY_WEBHOOK_URL_RUN`. Kent copies that
+value from the Kody user secret `weeklySitePerfWebhookRun` at
+https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun. Agents never
+paste the URL. Rotate with `webhookUrlRotate`, then update both the Kody user
+secret and the GitHub secret. See [setup manifest](./setup-manifest.md).
 
 If the secret is unset, the workflow still measures and upserts the issue. It
 skips the invoke so the weekly job stays green.
 
 Retries of the same GitHub run reuse
-`idempotencyKey: weekly-site-perf:<GITHUB_RUN_ID>`. A successful invoke that
-returns an agent URL comments it on the open needs-fix issue.
+`Idempotency-Key: weekly-site-perf:<GITHUB_RUN_ID>` (and the same
+`idempotencyKey` in the JSON body). A successful sync invoke that returns an
+agent URL comments it on the open needs-fix issue. `409 invocation_in_progress`
+counts as launched; `409 idempotency_mismatch` and other non-2xx responses fail
+the step.
 
 ## What the homepage already does
 

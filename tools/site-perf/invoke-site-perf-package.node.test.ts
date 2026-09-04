@@ -2,8 +2,6 @@ import { expect, test } from 'vitest'
 import { type SitePerfReport } from './collect.ts'
 import {
 	buildInvokeBody,
-	defaultInvokeSource,
-	defaultInvokeUrl,
 	invokeSitePerfPackage,
 	shouldInvokeSitePerfPackage,
 } from './invoke-site-perf-package.ts'
@@ -28,7 +26,9 @@ const needsFixReport: SitePerfReport = {
 	verdict: 'needs-fix',
 }
 
-test('invoke gates on needs-fix and a token, and builds an idempotent body', async () => {
+const exampleWebhookUrl = 'https://example.test/webhooks/weekly-site-perf/run'
+
+test('invoke gates on needs-fix and a webhook URL, and builds a params body', async () => {
 	expect(
 		shouldInvokeSitePerfPackage({ ...needsFixReport, verdict: 'ok' }),
 	).toBe(false)
@@ -47,7 +47,6 @@ test('invoke gates on needs-fix and a token, and builds an idempotent body', asy
 			startingRef: 'main',
 		},
 		idempotencyKey: 'weekly-site-perf:99',
-		source: defaultInvokeSource,
 	})
 
 	const fetchImpl = async () => {
@@ -56,7 +55,7 @@ test('invoke gates on needs-fix and a token, and builds an idempotent body', asy
 	expect(
 		await invokeSitePerfPackage({
 			report: { ...needsFixReport, verdict: 'ok' },
-			token: 'token',
+			webhookUrl: exampleWebhookUrl,
 			repository: 'kentcdodds/kody',
 			startingRef: 'main',
 			runId: '1',
@@ -66,21 +65,38 @@ test('invoke gates on needs-fix and a token, and builds an idempotent body', asy
 	expect(
 		await invokeSitePerfPackage({
 			report: needsFixReport,
-			token: undefined,
+			webhookUrl: undefined,
 			repository: 'kentcdodds/kody',
 			startingRef: 'main',
 			runId: '1',
 			fetchImpl,
 		}),
-	).toEqual({ skipped: 'missing-token' })
+	).toEqual({ skipped: 'missing-webhook-url' })
+	expect(
+		await invokeSitePerfPackage({
+			report: needsFixReport,
+			webhookUrl: '',
+			repository: 'kentcdodds/kody',
+			startingRef: 'main',
+			runId: '1',
+			fetchImpl,
+		}),
+	).toEqual({ skipped: 'missing-webhook-url' })
 })
 
-test('invoke posts the report, treats replay/in-progress as launched, and surfaces API errors', async () => {
-	const calls: Array<{ url: string; auth: string | null; body: unknown }> = []
+test('invoke posts params to the webhook URL, treats replay/in-progress as launched, and surfaces API errors', async () => {
+	const calls: Array<{
+		url: string
+		auth: string | null
+		idempotencyKey: string | null
+		body: unknown
+	}> = []
 	const fetchImpl: typeof fetch = async (url, init) => {
+		const headers = new Headers(init?.headers)
 		calls.push({
 			url: String(url),
-			auth: new Headers(init?.headers).get('Authorization'),
+			auth: headers.get('Authorization'),
+			idempotencyKey: headers.get('Idempotency-Key'),
 			body: JSON.parse(String(init?.body)),
 		})
 		return new Response(
@@ -100,7 +116,7 @@ test('invoke posts the report, treats replay/in-progress as launched, and surfac
 
 	const invoked = await invokeSitePerfPackage({
 		report: needsFixReport,
-		token: 'kody_test',
+		webhookUrl: exampleWebhookUrl,
 		repository: 'kentcdodds/kody',
 		startingRef: 'main',
 		runId: '77',
@@ -108,14 +124,17 @@ test('invoke posts the report, treats replay/in-progress as launched, and surfac
 	})
 	expect(calls).toEqual([
 		{
-			url: defaultInvokeUrl,
-			auth: 'Bearer kody_test',
-			body: buildInvokeBody({
-				report: needsFixReport,
-				repository: 'kentcdodds/kody',
-				startingRef: 'main',
-				runId: '77',
-			}),
+			url: exampleWebhookUrl,
+			auth: null,
+			idempotencyKey: 'weekly-site-perf:77',
+			body: {
+				params: {
+					report: needsFixReport,
+					repository: 'kentcdodds/kody',
+					startingRef: 'main',
+				},
+				idempotencyKey: 'weekly-site-perf:77',
+			},
 		},
 	])
 	expect(invoked).toEqual({
@@ -132,7 +151,7 @@ test('invoke posts the report, treats replay/in-progress as launched, and surfac
 
 	const replayed = await invokeSitePerfPackage({
 		report: needsFixReport,
-		token: 'kody_test',
+		webhookUrl: exampleWebhookUrl,
 		repository: 'kentcdodds/kody',
 		startingRef: 'main',
 		runId: '77',
@@ -150,7 +169,7 @@ test('invoke posts the report, treats replay/in-progress as launched, and surfac
 
 	const inProgress = await invokeSitePerfPackage({
 		report: needsFixReport,
-		token: 'kody_test',
+		webhookUrl: exampleWebhookUrl,
 		repository: 'kentcdodds/kody',
 		startingRef: 'main',
 		runId: '77',
@@ -168,12 +187,30 @@ test('invoke posts the report, treats replay/in-progress as launched, and surfac
 	await expect(
 		invokeSitePerfPackage({
 			report: needsFixReport,
-			token: 'kody_test',
+			webhookUrl: exampleWebhookUrl,
+			repository: 'kentcdodds/kody',
+			startingRef: 'main',
+			runId: '88',
+			fetchImpl: async () =>
+				new Response(
+					JSON.stringify({
+						ok: false,
+						error: { code: 'idempotency_mismatch' },
+					}),
+					{ status: 409 },
+				),
+		}),
+	).rejects.toThrow(/Kody webhook idempotency mismatch/)
+
+	await expect(
+		invokeSitePerfPackage({
+			report: needsFixReport,
+			webhookUrl: exampleWebhookUrl,
 			repository: 'kentcdodds/kody',
 			startingRef: 'main',
 			runId: '88',
 			fetchImpl: async () =>
 				new Response('upstream unavailable', { status: 503 }),
 		}),
-	).rejects.toThrow(/Kody package invocation 503/)
+	).rejects.toThrow(/Kody webhook 503/)
 })

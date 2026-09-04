@@ -33,7 +33,6 @@ change):
   `./dispatch-message-reaction-add`
 - `@kentcdodds/youtube-livestream-vod-manager` — `./process-video`
 - `@kentcdodds/bluesky` and `@kentcdodds/linkedin` — create/delete/get exports
-- `@kentcdodds/weekly-site-perf` — root `.` export
 - `@kentcdodds/raycast` — one webhook per export the extension calls (not `*`)
 
 ## Remaining work

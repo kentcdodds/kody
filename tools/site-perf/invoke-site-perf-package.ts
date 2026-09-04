@@ -4,11 +4,6 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 import { type SitePerfReport } from './collect.ts'
 import { needsFixTitle } from './upsert-github-issue.ts'
 
-export const defaultInvokeUrl =
-	'https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__'
-
-export const defaultInvokeSource = 'weekly-site-perf'
-
 export function shouldInvokeSitePerfPackage(report: SitePerfReport) {
 	return report.verdict === 'needs-fix'
 }
@@ -18,7 +13,6 @@ export function buildInvokeBody(input: {
 	repository: string
 	startingRef: string
 	runId: string
-	source?: string
 }) {
 	return {
 		params: {
@@ -27,12 +21,11 @@ export function buildInvokeBody(input: {
 			startingRef: input.startingRef,
 		},
 		idempotencyKey: `weekly-site-perf:${input.runId}`,
-		source: input.source ?? defaultInvokeSource,
 	}
 }
 
 export type InvokeSitePerfPackageResult =
-	| { skipped: 'ok' | 'missing-token' }
+	| { skipped: 'ok' | 'missing-webhook-url' }
 	| {
 			invoked: true
 			replayed?: true
@@ -57,33 +50,28 @@ function agentUrlFromResult(result: unknown): string | undefined {
 
 export async function invokeSitePerfPackage(input: {
 	report: SitePerfReport
-	token: string | undefined
+	webhookUrl: string | undefined
 	repository: string
 	startingRef: string
 	runId: string
-	invokeUrl?: string
-	source?: string
 	fetchImpl?: typeof fetch
 }): Promise<InvokeSitePerfPackageResult> {
 	if (!shouldInvokeSitePerfPackage(input.report)) {
 		return { skipped: 'ok' }
 	}
-	if (!input.token) {
-		return { skipped: 'missing-token' }
+	if (!input.webhookUrl) {
+		return { skipped: 'missing-webhook-url' }
 	}
 
 	const body = buildInvokeBody(input)
-	const response = await (input.fetchImpl ?? fetch)(
-		input.invokeUrl ?? defaultInvokeUrl,
-		{
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${input.token}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
+	const response = await (input.fetchImpl ?? fetch)(input.webhookUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'Idempotency-Key': body.idempotencyKey,
 		},
-	)
+		body: JSON.stringify(body),
+	})
 
 	const detail = await response.text()
 	let payload: {
@@ -108,15 +96,13 @@ export async function invokeSitePerfPackage(input: {
 		}
 		if (payload.error?.code === 'idempotency_mismatch') {
 			throw new Error(
-				`Kody package invocation idempotency mismatch: ${detail.slice(0, 2000)}`,
+				`Kody webhook idempotency mismatch: ${detail.slice(0, 2000)}`,
 			)
 		}
 	}
 
 	if (!response.ok) {
-		throw new Error(
-			`Kody package invocation ${response.status}: ${detail.slice(0, 2000)}`,
-		)
+		throw new Error(`Kody webhook ${response.status}: ${detail.slice(0, 2000)}`)
 	}
 
 	return {
@@ -169,12 +155,10 @@ export async function main(argv = process.argv.slice(2)) {
 	) as SitePerfReport
 	const result = await invokeSitePerfPackage({
 		report,
-		token: process.env.KODY_PACKAGE_INVOCATION_TOKEN,
+		webhookUrl: process.env.KODY_WEBHOOK_URL_RUN,
 		repository: process.env.GITHUB_REPOSITORY ?? 'kentcdodds/kody',
 		startingRef: process.env.SITE_PERF_STARTING_REF ?? 'main',
 		runId: process.env.GITHUB_RUN_ID ?? 'local',
-		invokeUrl: process.env.KODY_PACKAGE_INVOKE_URL,
-		source: process.env.KODY_PACKAGE_INVOKE_SOURCE,
 	})
 	process.stdout.write(`${JSON.stringify(result)}\n`)
 	if (
