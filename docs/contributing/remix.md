@@ -46,7 +46,9 @@ template:
   workers in `vite dev` and separate Wrangler deploys in production.
 - Static files are served through the Workers Assets binding rather than
   `remix/assets` or `remix/middleware/static`. Hydration uses
-  `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports.
+  `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports. SSR
+  `renderToStream` must pass `resolveClientEntry` so `#rmx-data` points at the
+  Vite hashed entry (`/assets/entry-*.js`), not the deleted `/client-entry.js`.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
   `packages/worker/src/app/ssr-render.tsx`. The browser resolver is
   `(src, options)` and returns the `Response`. SSR `resolveFrame` is

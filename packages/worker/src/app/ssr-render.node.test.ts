@@ -22,7 +22,7 @@ import { createSupportHandler } from '#app/handlers/support.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
-import { renderAppPage } from '#app/ssr-render.tsx'
+import { renderAppPage, resolveOriginClientEntry } from '#app/ssr-render.tsx'
 import {
 	getReadNextBlogPost,
 	listBlogPosts,
@@ -242,6 +242,8 @@ function parseRmxData(html: string) {
 		h: Record<
 			string,
 			{
+				exportName?: string
+				moduleUrl?: string
 				props: {
 					url: string
 					session: unknown
@@ -272,6 +274,31 @@ async function runHtmlHandler(
 		params: {},
 	} as never)
 }
+
+test('resolveOriginClientEntry maps Remix entry IDs onto the Vite client href', () => {
+	expect(
+		resolveOriginClientEntry({
+			entryId: '/client-entry.js#AppRoot',
+			href: '/assets/entry-DU-pHDbL.js',
+			preloads: ['/assets/auth-area-BZaLSnX1.js'],
+		}),
+	).toEqual({
+		href: '/assets/entry-DU-pHDbL.js',
+		exportName: 'AppRoot',
+		preloads: ['/assets/auth-area-BZaLSnX1.js'],
+	})
+	expect(
+		resolveOriginClientEntry({
+			entryId: 'file:///app/app-root.tsx',
+			href: '/assets/entry-DU-pHDbL.js',
+			preloads: [],
+		}),
+	).toEqual({
+		href: '/assets/entry-DU-pHDbL.js',
+		exportName: 'AppRoot',
+		preloads: [],
+	})
+})
 
 test('SSR HTML routes render page content and embedded loader data', async () => {
 	resetDataCacheForTests()
@@ -323,6 +350,10 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityHtml).toContain('data-rmx-target="community-listings"')
 	expect(communityHtml).toContain('data-rmx-history="push"')
 	expect(communityHtml).toContain('<!-- rmx:h:')
+	const communityRmx = parseRmxData(communityHtml)
+	const communityEntry = Object.values(communityRmx.h)[0]
+	expect(communityEntry?.exportName).toBe('AppRoot')
+	expect(communityEntry?.moduleUrl).toBe('/client-entry.js')
 	const communityProps = readAppRootProps(communityHtml)
 	expect(communityProps.loaderData?.community).toBeUndefined()
 	expect(communityMockModule.listCommunityIndexOverview).toHaveBeenCalledTimes(

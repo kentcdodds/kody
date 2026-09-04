@@ -28,6 +28,17 @@ const clientRegistry: Record<string, typeof AppRoot> = {
 	AppRoot,
 }
 
+function isBootModuleUrl(moduleUrl: string) {
+	if (moduleUrl === import.meta.url) return true
+	try {
+		const requested = new URL(moduleUrl, 'https://kody.local').pathname
+		const boot = new URL(import.meta.url, 'https://kody.local').pathname
+		return requested === boot || requested === '/client-entry.js'
+	} catch {
+		return moduleUrl === '/client-entry.js'
+	}
+}
+
 function requireClientExport(exportName: string, value: unknown) {
 	if (typeof value !== 'function') {
 		throw new Error(`Unknown client export: ${exportName}`)
@@ -71,7 +82,7 @@ async function boot() {
 
 	const app = run({
 		async loadModule(moduleUrl, exportName) {
-			if (moduleUrl === import.meta.url) {
+			if (isBootModuleUrl(moduleUrl)) {
 				return requireClientExport(exportName, clientRegistry[exportName])
 			}
 			const mod = (await import(/* @vite-ignore */ moduleUrl)) as Record<

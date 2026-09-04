@@ -61,6 +61,26 @@ function prependDoctype(stream: ReadableStream<Uint8Array>) {
 	return readable
 }
 
+/**
+ * Maps a Remix `clientEntry` id onto the public Vite client module.
+ * Production SSR often leaves `import.meta.url` empty, so the entry id is
+ * `/client-entry.js#AppRoot` while the script tag is `/assets/entry-*.js`.
+ * Without this hook, `#rmx-data` tells the browser to import the deleted
+ * esbuild path and hydration 404s.
+ */
+export function resolveOriginClientEntry({
+	entryId,
+	href,
+	preloads,
+}: {
+	entryId: string
+	href: string
+	preloads: Array<string>
+}) {
+	const exportName = entryId.split('#')[1]?.trim() || 'AppRoot'
+	return { href, exportName, preloads }
+}
+
 export type RenderAppPageInput = {
 	request: Request
 	env: Env
@@ -157,6 +177,13 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			) as RemixNode,
 			{
 				frameSrc: request.url,
+				resolveClientEntry(entryId) {
+					return resolveOriginClientEntry({
+						entryId,
+						href: clientEntryHref,
+						preloads: modulePreloadHrefs,
+					})
+				},
 				resolveFrame(src, target, context) {
 					return resolveRegisteredFrameHtml({
 						src,
