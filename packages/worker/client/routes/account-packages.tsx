@@ -320,7 +320,7 @@ export function AccountPackagesRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Packages"
-					description="Browse your saved packages. Open a row to see details, change visibility, or delete the package."
+					description="Browse your saved packages. Open a row to manage visibility, publish lock, and deletion on the package page."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' && lastLoadedDataKey === '' ? (

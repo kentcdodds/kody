@@ -307,7 +307,7 @@ export function AccountActivityRoute(handle: Handle) {
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading activity...
+						Loading activity…
 					</p>
 				) : null}
 				{message ? (

@@ -387,7 +387,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading MCP servers...
+						Loading MCP servers…
 					</p>
 				) : null}
 				{message ? (

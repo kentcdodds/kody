@@ -131,6 +131,11 @@ export function AccountWaitingRoute(handle: Handle) {
 					description="Things that need you. Not a history — items leave when you clear the gate."
 					currentHref={currentHref}
 				/>
+				{status === 'loading' ? (
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>
+						Loading waiting items…
+					</p>
+				) : null}
 				{status === 'error' && message ? (
 					<AccountManagementMessage tone="error">
 						{message}

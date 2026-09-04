@@ -359,6 +359,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	const accountHtml = await readResponseText(accountResponse)
 	expect(accountHtml).toContain('aria-label="Account sections"')
 	expect(accountHtml).toContain('data-testid="site-header-waiting"')
+	expect(accountHtml).toContain('data-testid="site-header-account-menu"')
 	expect(accountHtml).toContain('href="/account/waiting"')
 	expect(accountHtml).toContain('Waiting — account-user')
 	const accountProps = readAppRootProps(accountHtml)
@@ -1454,8 +1455,9 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		},
 	})
 	const emptyHtml = await readResponseText(emptyResponse)
+	expect(emptyHtml).toContain('No integrations yet.')
 	expect(emptyHtml).toContain(
-		'No integrations yet. Copy a setup prompt below to get started.',
+		'Pick a service and copy its prompt into your agent',
 	)
 
 	const approvalResponse = await renderAppPage({

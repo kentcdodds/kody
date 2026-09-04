@@ -351,7 +351,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading memories...
+						Loading memories…
 					</p>
 				) : null}
 				{message ? (

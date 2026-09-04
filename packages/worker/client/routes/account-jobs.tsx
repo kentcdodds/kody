@@ -287,9 +287,7 @@ export function AccountJobsRoute(handle: Handle) {
 				/>
 
 				{status === 'loading' ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading jobs...
-					</p>
+					<p mix={css({ color: colors.textMuted, margin: 0 })}>Loading jobs…</p>
 				) : null}
 				{message ? (
 					<AccountManagementMessage
@@ -538,7 +536,7 @@ export function AccountJobsRoute(handle: Handle) {
 								: waitingForDetail
 									? renderJobDetailPlaceholder(
 											listMatch?.name ?? 'Loading job',
-											'Loading job details...',
+											'Loading job details…',
 										)
 									: showJobNotFound
 										? renderJobDetailPlaceholder(

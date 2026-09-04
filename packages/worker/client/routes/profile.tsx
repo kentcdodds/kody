@@ -17,6 +17,7 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { on } from '#client/event-mixin.ts'
 import { readProfileSearchQueryFromHref } from '#client/routes/profile-search.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -231,6 +232,27 @@ export function ProfileRoute(handle: Handle) {
 			)
 		}
 
+		if (shellStatus === 'error') {
+			return (
+				<section mix={css(pageCss)} data-testid="profile-load-error">
+					<p mix={css(pageDescriptionCss)} role="status">
+						Unable to load this profile.
+					</p>
+					<button
+						type="button"
+						mix={[
+							css({ ...getPrimaryButtonCss(), width: 'fit-content' }),
+							on('click', () => {
+								window.location.reload()
+							}),
+						]}
+					>
+						Try again
+					</button>
+				</section>
+			)
+		}
+
 		return (
 			<section mix={css(pageCss)}>
 				{readyShell?.isSelf ? (
@@ -246,11 +268,6 @@ export function ProfileRoute(handle: Handle) {
 
 				{shellStatus === 'loading' ? (
 					<p mix={css(pageDescriptionCss)}>Loading profile…</p>
-				) : null}
-				{shellStatus === 'error' ? (
-					<p mix={css(pageDescriptionCss)} role="status">
-						Unable to load this profile.
-					</p>
 				) : null}
 
 				<form

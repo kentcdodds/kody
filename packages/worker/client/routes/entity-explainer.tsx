@@ -35,7 +35,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountPackages.href()),
 		paragraphs: [
 			'A package is reusable saved code your agent writes and improves over time. Unlike a one-off execute, it lives in a repo with a package.json and can expose exports, scheduled jobs, inbound webhooks, and even a small web app.',
-			'Use a package when work should stay invokable after the conversation ends — a daily digest, a GitHub helper, or a UI your agent hosts for you. Browse metadata here; create and edit packages through your connected agent.',
+			'Use a package when work should stay invokable after the conversation ends — a daily digest, a GitHub helper, or a UI your agent hosts for you. Browse the list here; open a package to change visibility, publish lock, or delete it. Create and edit package code through your connected agent.',
 			'Trusted clients that cannot use MCP call a package over HTTP through an inbound webhook. Declare one webhook per export, mint a URL, and POST JSON — one name binds one export.',
 			'A package is behavior, not a Slack login and not an MCP connection.',
 		],

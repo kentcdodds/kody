@@ -525,7 +525,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					</div>
 				) : null}
 				{status === 'loading' ? (
-					<p mix={css(descriptionCss)}>Loading authorization details...</p>
+					<p mix={css(descriptionCss)}>Loading authorization details…</p>
 				) : null}
 				{message ? (
 					<p
