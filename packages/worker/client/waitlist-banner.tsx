@@ -203,7 +203,10 @@ export function WaitlistBanner(handle: Handle) {
 								 * CLS the strip when it arrives. `null` means it is off.
 								 */}
 								{turnstileSiteKey !== null ? (
-									<div class={turnstileWidgetClassName}></div>
+									<div
+										class={turnstileWidgetClassName}
+										mix={css(bannerTurnstileCss)}
+									></div>
 								) : null}
 							</form>
 							{/*
@@ -243,7 +246,7 @@ const pillPadding = '0.25rem'
 const stackMq = '@media (max-width: 720px)'
 
 const bannerPaddingY = '0.55rem'
-const bannerStackPaddingY = '0.7rem'
+const bannerStackPaddingY = '0.85rem'
 
 const bannerCss = {
 	width: '100%',
@@ -298,6 +301,13 @@ const promptCss = {
 	},
 }
 
+const bannerTurnstileCss = {
+	flex: '0 0 auto',
+	[stackMq]: {
+		alignSelf: 'center',
+	},
+}
+
 const formCss = {
 	display: 'flex',
 	alignItems: 'center',
@@ -307,7 +317,11 @@ const formCss = {
 	margin: 0,
 	minWidth: 0,
 	[stackMq]: {
+		/* Phone: the 300px widget must not sit beside the pill. Column plus a
+		   full-width pill puts Turnstile on its own centered row. */
 		width: '100%',
+		flexDirection: 'column' as const,
+		alignItems: 'center',
 	},
 }
 
@@ -315,7 +329,11 @@ const pillCss = {
 	display: 'grid',
 	gridTemplateColumns: 'minmax(0, 8.5rem) minmax(0, 12rem) auto',
 	alignItems: 'stretch',
-	width: '100%',
+	/* Never shrink beside the 300px widget: wrap to the next flex line
+	   instead of truncating placeholders to "First n". */
+	flex: '1 0 auto',
+	width: 'auto',
+	maxWidth: '100%',
 	backgroundColor: colors.surface,
 	border: `1.5px solid ${colors.fieldBorder}`,
 	borderRadius: pillRadius,
@@ -329,6 +347,9 @@ const pillCss = {
 	[stackMq]: {
 		/* Two fields across, the button spanning beneath them: keeps the strip to
 		   two rows instead of three while every placeholder stays readable. */
+		alignSelf: 'stretch',
+		flex: '1 0 auto',
+		width: '100%',
 		gridTemplateColumns: '1fr 1fr',
 		borderRadius: pillStackRadius,
 		gap: pillPadding,
