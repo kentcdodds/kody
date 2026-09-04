@@ -14,6 +14,7 @@ import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
+import { workerWholeGraphReload } from './tools/vite-worker-whole-graph-reload.ts'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
@@ -110,6 +111,7 @@ export default defineConfig(async ({ command }) => {
 				remoteBindings: false,
 				auxiliaryWorkers,
 			}),
+			workerWholeGraphReload(),
 		],
 		resolve: {
 			alias: [
