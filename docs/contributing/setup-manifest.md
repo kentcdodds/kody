@@ -582,13 +582,15 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
   signing secret (`whsec_...`) for platform billing webhooks at
   `POST /webhooks/stripe`. Production deploy syncs it when set.)
-- `KODY_PACKAGE_INVOCATION_TOKEN` (optional GitHub **secret**; weekly site-perf
-  workflow only. When a `needs-fix` verdict is recorded,
+- `KODY_WEBHOOK_URL_RUN` (optional GitHub **secret**; weekly site-perf workflow
+  only. When a `needs-fix` verdict is recorded,
   [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)
-  uses it to `POST` the unadvertised invocation-token drain at
-  `https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`.
-  Not a Worker secret; the weekly job skips invoke when this is unset. New
-  first-party callers mint a webhook URL.)
+  `POST`s this minted inbound webhook URL for `@kentcdodds/weekly-site-perf`
+  webhook `run` (`inputMode: "params"`, `responseMode: "sync"`). The value is
+  the Kody user secret `weeklySitePerfWebhookRun`
+  (https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun); Kent
+  copies it into GitHub. Agents never paste the URL. Not a Worker secret; the
+  weekly job skips invoke when this is unset.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
@@ -679,12 +681,15 @@ How to get/set each value:
     ID.
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
-- `KODY_PACKAGE_INVOCATION_TOKEN` (optional)
-  - Existing repository secret for the weekly site-perf soak drain. New callers
-    mint a webhook URL on `@kentcdodds/weekly-site-perf` instead of creating a
-    bearer token. Rotate the leftover token with `POST /account/packages.json`
-    (`action: "update-token"`). The weekly workflow uses this secret only to
-    invoke that package; it is not synced to the Worker.
+- `KODY_WEBHOOK_URL_RUN` (optional)
+  - Minted inbound webhook URL for `@kentcdodds/weekly-site-perf` webhook `run`.
+  - Kent copies the value from the Kody user secret `weeklySitePerfWebhookRun`
+    at https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun into the
+    GitHub Actions repository secret `KODY_WEBHOOK_URL_RUN`. Agents never paste
+    the URL.
+  - The weekly workflow uses this secret only to invoke that package; it is not
+    synced to the Worker. Rotate with `webhookUrlRotate`, then update both the
+    Kody user secret and this GitHub secret.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with

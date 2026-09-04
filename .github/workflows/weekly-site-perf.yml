@@ -43,8 +43,7 @@ jobs:
 
       - name: 🚀 Invoke weekly-site-perf package
         env:
-          KODY_PACKAGE_INVOCATION_TOKEN:
-            ${{ secrets.KODY_PACKAGE_INVOCATION_TOKEN }}
+          KODY_WEBHOOK_URL_RUN: ${{ secrets.KODY_WEBHOOK_URL_RUN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run:
           node tools/site-perf/invoke-site-perf-package.ts site-perf-report.json
