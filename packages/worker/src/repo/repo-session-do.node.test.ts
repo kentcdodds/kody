@@ -719,6 +719,22 @@ test('applyEdits rejects batches mixing structural and content edits on the same
 			],
 		}),
 	).rejects.toThrow(/cannot combine a delete\/move/)
+
+	// in-workspace `..` aliases must collide after normalization.
+	await expect(
+		repoSession.applyEdits({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			edits: [
+				{
+					kind: 'write',
+					path: 'src/../exports/a.ts',
+					content: 'export const a = 2\n',
+				},
+				{ kind: 'delete', path: 'exports/a.ts' },
+			],
+		}),
+	).rejects.toThrow(/cannot combine a delete\/move/)
 	expect(mockModule.workspaceRm).not.toHaveBeenCalled()
 })
 
