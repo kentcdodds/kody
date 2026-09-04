@@ -52,6 +52,7 @@ export default mergeConfig(
 				resolve(rootDir, 'tools/vitest-global-setup-guide-catalog-modules.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-jobs-test-service.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-highlight-test-service.ts'),
+				resolve(rootDir, 'tools/vitest-workerd-uncaught-exception-filter.ts'),
 			],
 		},
 	}),

@@ -137,6 +137,13 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     (`packages/worker/src/test-support/incidental-runtime-warnings.ts`) for the
     bundler/registry-runtime noise set. Anything outside the allowlist still
     fails the test.
+  - Workerd also prints Durable Object / WorkerEntrypoint RPC rejections as
+    `uncaught exception` even when the caller catches them. Those dumps go
+    through Node `process.stderr`, so console spies cannot see them.
+    Workers-unit `globalSetup` filters only the known incidental dumps in
+    `tools/vitest-workerd-uncaught-exception-filter.ts`. Add a needle there when
+    a new expected-failure suite starts leaking; do not swallow unrelated
+    isolate errors.
 
   Keep test output free of stray logging.
 
