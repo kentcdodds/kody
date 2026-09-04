@@ -129,12 +129,16 @@ function renderOauthAuthorizeGrant(input: {
 						These OAuth scopes are identity claims. They do not limit what the
 						assistant can do.
 					</p>
-					<p mix={css(descriptionCss)}>
-						{input.scopes.map((scope, index) => (
-							<span key={scope}>
-								{index > 0 ? ', ' : null}
-								<code>{scope}</code>
-							</span>
+					<p
+						mix={css({
+							...descriptionCss,
+							display: 'flex',
+							flexWrap: 'wrap',
+							gap: `${spacing.xs} ${spacing.sm}`,
+						})}
+					>
+						{input.scopes.map((scope) => (
+							<code key={scope}>{scope}</code>
 						))}
 					</p>
 				</details>
@@ -503,7 +507,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						{clientLabel} wants to access your kody account.
 					</p>
 				</header>
-				{renderOauthAuthorizeGrant({ clientLabel, scopes })}
+				{status === 'ready'
+					? renderOauthAuthorizeGrant({ clientLabel, scopes })
+					: null}
 				{isLoggedIn ? (
 					<section mix={css(insetCardCss)}>
 						<p

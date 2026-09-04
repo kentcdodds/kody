@@ -902,6 +902,7 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	expect(anonymousHtml).toContain('data-testid="oauth-authorize-oidc-scopes"')
 	expect(anonymousHtml).toContain('<code>profile</code>')
 	expect(anonymousHtml).toContain('<code>email</code>')
+	expect(anonymousHtml).not.toContain(', <code>email</code>')
 
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
