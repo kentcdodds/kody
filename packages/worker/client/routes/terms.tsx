@@ -127,15 +127,17 @@ export function TermsRoute(_handle: Handle) {
 					material reductions when practical.
 				</p>
 				<p mix={css(descriptionCss)}>
-					There are no automatic refunds. If something went wrong, email{' '}
+					Apart from account deletion, there are no automatic refunds. If
+					something went wrong, email{' '}
 					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
 						support@kody.codes
 					</a>
 					. Refund requests are considered case by case. Deleting your account
-					cancels any subscription immediately; unused time in the current
-					billing period is not refunded automatically. Where required by law we
-					collect sales tax or VAT at checkout, and business customers can enter
-					a tax ID there. Payment processor terms may also apply.
+					cancels any subscription immediately and automatically refunds the
+					unused portion of any billing period you have already paid for, to
+					your original payment method. Where required by law we collect sales
+					tax or VAT at checkout, and business customers can enter a tax ID
+					there. Payment processor terms may also apply.
 				</p>
 			</section>
 

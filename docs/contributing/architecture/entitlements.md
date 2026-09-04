@@ -804,6 +804,52 @@ interval. The `?billing=updated` page view runs the usual on-view refresh and
 arms the `StripePlanRefresh` backstop; `customer.subscription.updated` webhooks
 refresh the plan independently.
 
+### Account deletion refunds
+
+Account deletion is the one automatic refund path (the Terms of Service say so).
+Before the destructive steps, `deleteUserAccount` refunds the unused remainder
+of the current period for each `active` or `trialing` subscription and then
+cancels it immediately; dunning, paused, and incomplete subscriptions are
+canceled without a refund. The client helpers are
+`listPaidInvoicesForSubscription`
+(`GET /v1/invoices?subscription=… &status=paid&limit=10`, walked newest first to
+the invoice that still covers the period), `listCreditNotesForInvoice` (retry
+idempotency, keyed on the `kody_account_deletion=1` metadata marker),
+`listCreditNotesForCustomer` (so the deletion report includes notes from earlier
+attempts), and `createProratedRefundCreditNote`, which previews then creates one
+credit note with a `lines[n][type]=invoice_line_item` / `lines[n][amount]` entry
+per eligible invoice line and `refund_amount` equal to the previewed total. Line
+amounts are gross (pre-discount, tax-exclusive) like the invoice line's own
+`amount`; Stripe prorates each line's discounts and tax into the credit note and
+refunds that total to the original payment method. The prorated amount per line
+is `floor(lineAmount * (period.end - now) / (period.end - period.start))`. The
+refund is hard-capped at
+`maxRefundMinor = invoice.amount_paid − Σ total of every issued credit note on the invoice (any issuer)`:
+a mid-cycle upgrade invoice (portal upgrades bill with `always_invoice`) has a
+positive new-plan line plus a negative unused-time credit for the old plan, so
+`amount_paid` is the net and the positive line's unused fraction alone can
+exceed it. Both credit note listings follow `has_more` / `starting_after` to the
+end (up to `creditNoteListMaxPages` = 20 pages of 100); a listing still
+reporting more after that throws `StripeCreditNoteListIncompleteError`, which
+the refund path treats as an unknown remainder and therefore a cap of zero. A
+cap of zero or less means nothing to refund; while the preview exceeds the cap
+every line is scaled by `cap / previewedTotal` (floored, integer arithmetic —
+the gross lines and the net, tax-inclusive preview only ever meet as a ratio)
+and previewed again, up to `creditNoteCapFitAttempts` = 6 times. If it still
+does not fit, `createProratedRefundCreditNote` returns `unfittable` and the
+deletion logs `account_deletion_refund_unfittable`, audits
+`account_deletion_refund_skipped`, and cancels without refunding that invoice (a
+missing refund on a rounding edge is a support ticket; a blocked deletion is a
+broken promise). Any other refund failure is a billing failure
+(`AccountDeletionBillingError`): the account is retained for retry, exactly like
+a failed cancel; only a preview that totals zero or a charge Stripe reports as
+already fully refunded is treated as "nothing to refund". A rejected create is
+logged as `account_deletion_refund_rejected` with the subscription and invoice
+ids, the amount paid, the cap, and the requested amount (no PII). The full
+sequence, skip conditions, audit action, and result shape are documented with
+the rest of the deletion flow in
+[`data-storage.md`](./data-storage.md#account-deletion-inventory).
+
 ### Webhooks (primary sync)
 
 `POST /webhooks/stripe` is the primary path for linking customers and refreshing
