@@ -1,10 +1,13 @@
 import { expect, test } from 'vitest'
 import {
 	createBillingLinkReference,
+	getBillingPortalConfigurationId,
 	getPriceIdForPlan,
 	getPurchasablePlans,
 	parseBillingInterval,
 	resolveSubscriptionPlan,
+	selectPlanRetainingSubscriptions,
+	subscriptionHasPrice,
 } from './billing-config.ts'
 import { type StripeSubscription } from './stripe-client.ts'
 
@@ -66,6 +69,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: null,
+		stripeInterval: null,
 		cancelAt: null,
 		subscriptionStatus: 'incomplete',
 	})
@@ -82,6 +86,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'standard',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -98,6 +103,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -114,6 +120,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'trialing',
 	})
@@ -131,6 +138,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: null,
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -149,6 +157,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'standard',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -165,6 +174,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: null,
+		stripeInterval: null,
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -194,6 +204,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'month',
 		cancelAt: new Date(sooner * 1000).toISOString(),
 		subscriptionStatus: 'active',
 	})
@@ -214,6 +225,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'past_due',
 	})
@@ -230,6 +242,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: null,
+		stripeInterval: null,
 		cancelAt: null,
 		subscriptionStatus: 'unpaid',
 	})
@@ -246,6 +259,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'standard',
+		stripeInterval: 'year',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -262,6 +276,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		),
 	).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'year',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -282,12 +297,83 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	expect(getPriceIdForPlan({}, 'standard', 'year')).toBeNull()
 })
 
+test('resolveSubscriptionPlan reports the interval of the subscription that granted the plan', () => {
+	const env = {
+		STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
+		STRIPE_PRO_PRICE_ID: 'price_pro',
+		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
+	}
+
+	// Legacy double subscription: the higher plan's interval wins, and a
+	// lower-ranked sibling does not overwrite it.
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({ status: 'active', priceIds: ['price_standard'] }),
+				subscription({ status: 'active', priceIds: ['price_pro_yearly'] }),
+			],
+			env,
+		),
+	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'year' })
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({ status: 'active', priceIds: ['price_pro_yearly'] }),
+				subscription({ status: 'active', priceIds: ['price_standard'] }),
+			],
+			env,
+		),
+	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'year' })
+})
+
+test('selectPlanRetainingSubscriptions and subscriptionHasPrice drive the checkout guard', () => {
+	const active = subscription({
+		id: 'sub_active',
+		status: 'active',
+		priceIds: ['price_standard'],
+	})
+	const pastDue = subscription({
+		id: 'sub_past_due',
+		status: 'past_due',
+		priceIds: ['price_pro'],
+	})
+	const trialing = subscription({ id: 'sub_trial', status: 'trialing' })
+	expect(
+		selectPlanRetainingSubscriptions([
+			subscription({ id: 'sub_canceled', status: 'canceled' }),
+			active,
+			subscription({ id: 'sub_unpaid', status: 'unpaid' }),
+			pastDue,
+			subscription({ id: 'sub_incomplete', status: 'incomplete' }),
+			trialing,
+		]).map((entry) => entry.id),
+	).toEqual(['sub_active', 'sub_past_due', 'sub_trial'])
+
+	expect(subscriptionHasPrice(active, 'price_standard')).toBe(true)
+	expect(subscriptionHasPrice(active, 'price_standard_yearly')).toBe(false)
+	expect(subscriptionHasPrice(trialing, 'price_standard')).toBe(false)
+
+	expect(getBillingPortalConfigurationId({})).toBeNull()
+	expect(
+		getBillingPortalConfigurationId({
+			STRIPE_BILLING_PORTAL_CONFIGURATION_ID: '  ',
+		}),
+	).toBeNull()
+	expect(
+		getBillingPortalConfigurationId({
+			STRIPE_BILLING_PORTAL_CONFIGURATION_ID: ' bpc_kody ',
+		}),
+	).toBe('bpc_kody')
+})
+
 test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids rotate', () => {
 	const env = {
 		STRIPE_PRO_PRICE_ID: 'price_pro_current',
 		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly_current',
 	}
 
+	// Retired prices resolve the plan but not a configured interval.
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -297,8 +383,8 @@ test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids ro
 				}),
 			],
 			env,
-		).stripePlan,
-	).toBe('pro')
+		),
+	).toMatchObject({ stripePlan: 'pro', stripeInterval: null })
 	expect(
 		resolveSubscriptionPlan(
 			[

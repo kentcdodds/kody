@@ -176,6 +176,7 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 	})
 	expect(result).toEqual({
 		stripePlan: 'pro',
+		stripeInterval: 'month',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})

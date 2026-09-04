@@ -12,6 +12,7 @@ type BillingEnv = {
 	STRIPE_STANDARD_YEARLY_PRICE_ID?: string
 	STRIPE_PRO_PRICE_ID?: string
 	STRIPE_PRO_YEARLY_PRICE_ID?: string
+	STRIPE_BILLING_PORTAL_CONFIGURATION_ID?: string
 }
 
 export type BillingInterval = 'month' | 'year'
@@ -28,6 +29,26 @@ const planRetainingSubscriptionStatuses = new Set([
 	'trialing',
 	'past_due',
 ])
+
+/**
+ * Subscriptions that currently grant a paid plan. Checkout must not create a
+ * second subscription for a customer who already has one of these; plan
+ * changes go through the Stripe portal's subscription-update flow instead.
+ */
+export function selectPlanRetainingSubscriptions(
+	subscriptions: ReadonlyArray<StripeSubscription>,
+): Array<StripeSubscription> {
+	return subscriptions.filter((subscription) =>
+		planRetainingSubscriptionStatuses.has(subscription.status),
+	)
+}
+
+export function subscriptionHasPrice(
+	subscription: StripeSubscription,
+	priceId: string,
+): boolean {
+	return subscription.items.data.some((item) => item.price.id === priceId)
+}
 
 /**
  * Retired production prices that still have live subscribers.
@@ -56,12 +77,28 @@ const subscriptionStatusSignalRank: Record<string, number> = {
 
 export type ResolvedSubscriptionPlan = {
 	stripePlan: PlanName | null
+	/**
+	 * Billing interval of the subscription that granted `stripePlan`, when its
+	 * price is one of the configured monthly/yearly ids. Null for retired
+	 * prices or metadata-only matches, so the UI cannot offer an interval
+	 * switch it cannot describe.
+	 */
+	stripeInterval: BillingInterval | null
 	cancelAt: string | null
 	subscriptionStatus: string | null
 }
 
 export function isBillingConfigured(env: BillingEnv) {
 	return Boolean(env.STRIPE_SECRET_KEY?.trim())
+}
+
+/**
+ * Stripe Billing Portal configuration (`bpc_...`) whose subscription-update
+ * flow lists Kody's Standard/Pro prices with `always_invoice` proration.
+ * Unset deployments use the Stripe account's default portal configuration.
+ */
+export function getBillingPortalConfigurationId(env: BillingEnv) {
+	return env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID?.trim() || null
 }
 
 export function getStandardPriceId(env: BillingEnv) {
@@ -228,6 +265,23 @@ function planFromSubscription(
 	return parseStripePlanName(metadataPlan)
 }
 
+function intervalFromSubscription(
+	subscription: StripeSubscription,
+	env: BillingEnv,
+): BillingInterval | null {
+	const monthlyPriceIds = new Set(
+		collectPriceIds([getStandardPriceId(env), getProPriceId(env)]),
+	)
+	const yearlyPriceIds = new Set(
+		collectPriceIds([getStandardYearlyPriceId(env), getProYearlyPriceId(env)]),
+	)
+	for (const item of subscription.items.data) {
+		if (yearlyPriceIds.has(item.price.id)) return 'year'
+		if (monthlyPriceIds.has(item.price.id)) return 'month'
+	}
+	return null
+}
+
 function pickSubscriptionStatus(
 	subscriptions: ReadonlyArray<StripeSubscription>,
 ): string | null {
@@ -274,14 +328,20 @@ export function resolveSubscriptionPlan(
 	const standardPriceIds = getMatchingPriceIdsForPlan(env, 'standard')
 	const proPriceIds = getMatchingPriceIdsForPlan(env, 'pro')
 	let stripePlan: PlanName | null = null
+	let stripeInterval: BillingInterval | null = null
 	let soonestCancelAt: number | null = null
 
-	for (const subscription of subscriptions) {
-		if (!planRetainingSubscriptionStatuses.has(subscription.status)) continue
-		stripePlan = pickHigherPlan(
-			stripePlan,
-			planFromSubscription(subscription, standardPriceIds, proPriceIds),
+	for (const subscription of selectPlanRetainingSubscriptions(subscriptions)) {
+		const subscriptionPlan = planFromSubscription(
+			subscription,
+			standardPriceIds,
+			proPriceIds,
 		)
+		const nextPlan = pickHigherPlan(stripePlan, subscriptionPlan)
+		if (subscriptionPlan && nextPlan !== stripePlan) {
+			stripeInterval = intervalFromSubscription(subscription, env)
+		}
+		stripePlan = nextPlan
 		if (
 			typeof subscription.cancel_at === 'number' &&
 			Number.isFinite(subscription.cancel_at) &&
@@ -293,6 +353,7 @@ export function resolveSubscriptionPlan(
 
 	return {
 		stripePlan,
+		stripeInterval,
 		cancelAt:
 			soonestCancelAt == null
 				? null

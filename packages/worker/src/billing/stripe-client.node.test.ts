@@ -211,6 +211,75 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		const body = new URLSearchParams(String(portalInit?.body))
 		expect(body.get('customer')).toBe('cus_portal')
 		expect(body.get('return_url')).toBe('https://app.example.com/account')
+		// Plain portal: no configuration pin and no deep-link flow.
+		expect(body.get('configuration')).toBeNull()
+		expect(body.get('flow_data[type]')).toBeNull()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
+	// Plan changes for existing subscribers open the portal directly on the
+	// subscription_update step with the Kody portal configuration.
+	const portalFlowFetch = vi.fn(async () =>
+		jsonResponse({ url: 'https://billing.stripe.com/session/flow' }),
+	)
+	vi.stubGlobal('fetch', portalFlowFetch)
+	try {
+		const result = await createBillingPortalSession(
+			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
+			{
+				customerId: 'cus_portal',
+				returnUrl: 'https://app.example.com/account/billing',
+				configuration: ' bpc_kody ',
+				flowData: {
+					type: 'subscription_update',
+					subscriptionId: 'sub_current',
+					afterCompletionRedirectUrl:
+						'https://app.example.com/account/billing?billing=updated',
+				},
+			},
+		)
+		expect(result).toEqual({
+			url: 'https://billing.stripe.com/session/flow',
+		})
+		const body = new URLSearchParams(
+			String(portalFlowFetch.mock.calls[0]?.[1]?.body),
+		)
+		expect(body.get('customer')).toBe('cus_portal')
+		expect(body.get('return_url')).toBe(
+			'https://app.example.com/account/billing',
+		)
+		expect(body.get('configuration')).toBe('bpc_kody')
+		expect(body.get('flow_data[type]')).toBe('subscription_update')
+		expect(body.get('flow_data[subscription_update][subscription]')).toBe(
+			'sub_current',
+		)
+		expect(body.get('flow_data[after_completion][type]')).toBe('redirect')
+		expect(body.get('flow_data[after_completion][redirect][return_url]')).toBe(
+			'https://app.example.com/account/billing?billing=updated',
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
+	const noFlowFetch = vi.fn()
+	vi.stubGlobal('fetch', noFlowFetch)
+	try {
+		await expect(
+			createBillingPortalSession(
+				{ STRIPE_SECRET_KEY: 'sk_test_secret' },
+				{
+					customerId: 'cus_portal',
+					returnUrl: 'https://app.example.com/account/billing',
+					flowData: {
+						type: 'subscription_update',
+						subscriptionId: '   ',
+						afterCompletionRedirectUrl: 'https://app.example.com/account',
+					},
+				},
+			),
+		).rejects.toMatchObject({ name: 'StripeApiError', status: 400 })
+		expect(noFlowFetch).not.toHaveBeenCalled()
 	} finally {
 		vi.unstubAllGlobals()
 	}

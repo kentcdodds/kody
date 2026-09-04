@@ -327,6 +327,10 @@ export const EnvSchema = object({
 	STRIPE_STANDARD_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
+	// Stripe Billing Portal configuration (`bpc_...`) used for Manage
+	// subscription and the prorated plan-change flow. Unset → Stripe account
+	// default configuration.
+	STRIPE_BILLING_PORTAL_CONFIGURATION_ID: optionalNonEmptyStringSchema,
 	// OIDC ID token signing (RS256). Production must use a dedicated RSA key pair;
 	// local dev and tests use the committed example/test key in `.env.example`.
 	OIDC_SIGNING_PRIVATE_KEY_PEM: string().refine(

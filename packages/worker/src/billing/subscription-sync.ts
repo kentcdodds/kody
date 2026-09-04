@@ -392,7 +392,12 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 				userId: input.user.id,
 				error: error instanceof Error ? error.message : String(error),
 			})
-			return { stripePlan: null, cancelAt: null, subscriptionStatus: null }
+			return {
+				stripePlan: null,
+				stripeInterval: null,
+				cancelAt: null,
+				subscriptionStatus: null,
+			}
 		}
 		throw error
 	}
