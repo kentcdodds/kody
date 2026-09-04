@@ -122,12 +122,25 @@ export const packageWebhookReplaySchema = z
 
 export type PackageWebhookReplay = z.infer<typeof packageWebhookReplaySchema>
 
+export const webhookInputModeValues = ['request', 'params'] as const
+export type WebhookInputMode = (typeof webhookInputModeValues)[number]
+
+export const webhookDefaultRateLimitPerMinute = 60
+export const webhookMaxRateLimitPerMinute = 600
+
 export const packageWebhookDefinitionSchema = z
 	.object({
 		name: z.string().regex(kodyPackageIdPattern),
 		export: z.string().min(1),
 		description: z.string().min(1).optional(),
 		responseMode: z.enum(['ack', 'sync']).optional(),
+		inputMode: z.enum(webhookInputModeValues).optional(),
+		rateLimitPerMinute: z
+			.number()
+			.int()
+			.min(1)
+			.max(webhookMaxRateLimitPerMinute)
+			.optional(),
 		verification: packageWebhookVerificationSchema.optional(),
 		replay: packageWebhookReplaySchema.optional(),
 	})

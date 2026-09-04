@@ -57,7 +57,11 @@ Open these before proposing a new primitive, surface, or storage home.
   — supersedes 0035 and the remaining execute-live half of 0014; fork, then use
   the copy
 - [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
-  — static import, `import(specifier)`, or workflows; HTTP tokens stay
+  — static import, `import(specifier)`, or workflows; HTTP-token ingress is
+  [0048](./0048-webhooks-replace-invocation-tokens.md)
+- [0048 — Inbound HTTP is webhooks; invocation tokens drain](./0048-webhooks-replace-invocation-tokens.md)
+  — no `*` webhook URLs; token surfaces unadvertise after the soak; the HTTP
+  token path drains until leftover rows are 0
 - [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)

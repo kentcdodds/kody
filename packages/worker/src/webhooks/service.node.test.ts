@@ -138,6 +138,8 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(listedBefore).toHaveLength(1)
 	expect(listedBefore[0]?.minted).toBe(false)
 	expect(listedBefore[0]?.verification?.secretName).toBe('sentryWebhookSecret')
+	expect(listedBefore[0]?.inputMode).toBe('request')
+	expect(listedBefore[0]?.rateLimitPerMinute).toBe(60)
 
 	const minted = await mintWebhookUrlForUser({
 		env,

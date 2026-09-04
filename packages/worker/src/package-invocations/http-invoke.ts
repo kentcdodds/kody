@@ -295,5 +295,8 @@ export async function invokePackageExportWithToolFactories(input: {
 		...(input.request.idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
 			: {}),
+		...(input.request.idempotencyHashParams
+			? { idempotencyHashParams: input.request.idempotencyHashParams }
+			: {}),
 	})
 }

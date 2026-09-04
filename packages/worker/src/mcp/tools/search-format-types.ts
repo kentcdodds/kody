@@ -332,6 +332,8 @@ export type SearchEntityDetailStructured =
 				name: string
 				exportName: string
 				responseMode: 'ack' | 'sync'
+				inputMode: 'request' | 'params'
+				rateLimitPerMinute: number
 				replay: {
 					timestampHeader?: string
 					timestampFormat?:

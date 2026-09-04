@@ -5,9 +5,13 @@ Kody inbound webhooks are **package-centered**: you declare them in
 provider (Sentry, GitHub, Stripe, or any generic sender) at that URL. Each
 delivery invokes the bound package export.
 
-This is the HTTP sibling of [email primitives](./email-primitives.md). Unlike
-[package invocation bearer tokens](../contributing/package-invocation-api.md),
-webhook URLs work with providers that cannot set custom `Authorization` headers.
+This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
+are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
+first-party trusted clients (gateway proxies, CLIs) both POST to a minted URL.
+[Package invocation bearer tokens](../contributing/package-invocation-api.md)
+remain as an unadvertised drain; new callers use webhooks.
+
+There is no `*` / multi-export URL. One declared webhook name binds one export.
 
 Treat every minted URL as a **credential**. The URL secret is returned only on
 mint/rotate and is never stored in plaintext.
@@ -44,17 +48,24 @@ Rules:
 
 - `name` is a slug unique within the package.
 - `export` must reference a declared `package.json#exports` entry (validated at
-  save/publish).
+  save/publish). One webhook name ↔ one export. There is no wildcard export.
 - `responseMode` is `ack` (default) or `sync`.
+- `inputMode` is `request` (default) or `params`. Vendor handlers stay on
+  `request`. First-party trusted clients that send invoke-shaped JSON use
+  `params` (see [Trusted clients](#trusted-clients)).
+- `rateLimitPerMinute` is optional. Default **60**. Maximum **600** (gateway
+  fan-in). A leaked URL is still bounded; there is no unlimited setting.
 - `verification.secretName` references a **named secret in your secret store** —
   never an inline secret value. The platform resolves it at delivery time; if
-  the secret is missing, the delivery is rejected and logged.
+  the secret is missing, the delivery is rejected and logged. First-party
+  trusted clients omit `verification` and rely on the URL secret.
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
 - `replay` is optional. Without it, body-only HMAC is **replayable**: anyone who
   observes one legitimate signed delivery can POST it again. Opt in per webhook
-  with a timestamp window and/or a unique delivery id.
+  with a timestamp window and/or a unique delivery id. Trusted clients send
+  `Idempotency-Key` instead of `replay.deliveryIdHeader`.
 
 Declaring a webhook does **not** open ingress by itself.
 
@@ -81,7 +92,8 @@ delivery history also appears under [Activity](./activity.md)
 - Unknown / unminted / disabled / renamed-away / wrong secret → **404** (no
   distinction).
 - Payload > **1 MB** → **413**.
-- About **60 requests/minute** per minted webhook → **429**.
+- Rate limit per minted webhook → **429**. Default **60**/min; override with
+  `rateLimitPerMinute` up to **600**.
 - `ack`: **202** `{ "ok": true }` after Kody durably queues the delivery; the
   export runs in the background. Bodies use the same **1 MB** cap as sync;
   oversized queue messages spill to ephemeral storage until the consumer runs. A
@@ -197,6 +209,51 @@ window:
 `stripe-signature` reads `t=<unix>` from the header. Deliveries whose timestamp
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
+
+## Trusted clients
+
+A first-party caller (Discord gateway proxy, YouTube WebSub worker, Raycast
+extension, social-launch client) mints a webhook URL and POSTs JSON. No
+`Authorization: Bearer`. One webhook per export they actually call.
+
+```json
+{
+	"name": "message-created",
+	"export": "./dispatch-message-created",
+	"responseMode": "sync",
+	"inputMode": "params",
+	"rateLimitPerMinute": 600
+}
+```
+
+Use `sync` when the caller needs the export JSON (or a **409** idempotency
+conflict). Use `ack` when the caller only needs acceptance; the queue consumer
+applies the same idempotency ledger.
+
+`inputMode: "params"` passes a JSON object as the export's **first argument**,
+matching invocation-token `params`. If the body is the invoke envelope
+(`{ "params": { … }, "idempotencyKey": "…" }`), the platform unwraps `params`. A
+top-level JSON object without a `params` object is the first argument as-is.
+Arrays and non-objects are **400** `invalid_params`. Default
+`inputMode: "request"` is unchanged: the export still receives
+`{ webhook, request }`.
+
+Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
+`idempotencyKey` is accepted when the header is absent. Same key + same payload
+replays the stored result. On `sync`, a different payload is **409**
+`idempotency_mismatch` and an in-progress key is **409**
+`invocation_in_progress`. `ack` still returns **202** after enqueue; the
+consumer records the ledger outcome. This works without HMAC — the URL secret is
+the credential.
+
+Caller keys use the same package-invocation idempotency ledger as
+`replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor
+retries change `receivedAt`). Caller keys hash the payload: in `params` mode
+that is the export first argument; in `request` mode it is the JSON body so
+`receivedAt` does not break retries.
+
+Do not declare a `*` webhook. A client that calls several exports gets one
+webhook declaration per export.
 
 ## Lifecycle
 

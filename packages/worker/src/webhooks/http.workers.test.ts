@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
+import { checkRateLimit } from '#app/rate-limit.ts'
 import { type PackageInvocationRequest } from '#worker/package-invocations/common.ts'
 import {
 	createRequestHash,
@@ -18,6 +19,7 @@ import {
 } from './crypto.ts'
 import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { handleWebhookIngressRequest } from './http.ts'
+import { webhookRateLimitConfig } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
 	enqueueWebhookDispatch: vi.fn(),
@@ -215,6 +217,8 @@ async function mintWebhook(input: {
 function declareWebhook(input: {
 	name: string
 	responseMode?: 'ack' | 'sync'
+	inputMode?: 'request' | 'params'
+	rateLimitPerMinute?: number
 	verification?: {
 		type: 'hmac-sha256'
 		header: string
@@ -248,6 +252,10 @@ function declareWebhook(input: {
 						name: input.name,
 						export: './handle-sentry-webhook',
 						responseMode: input.responseMode ?? 'ack',
+						...(input.inputMode ? { inputMode: input.inputMode } : {}),
+						...(input.rateLimitPerMinute !== undefined
+							? { rateLimitPerMinute: input.rateLimitPerMinute }
+							: {}),
 						...(input.verification ? { verification: input.verification } : {}),
 						...(input.replay ? { replay: input.replay } : {}),
 					},
@@ -983,4 +991,265 @@ test('opt-in webhook replay protection rejects stale timestamps and dedupes deli
 	})
 	expect(missingDeliveryId.status).toBe(401)
 	expect(exportMock.exportInvocations).toBe(1)
+})
+
+test('first-party trusted webhooks accept Idempotency-Key, params mode, and a higher rate limit', async () => {
+	silenceExpectedConsoleWarns(['activation-run-record-failed'])
+	await ensureSchema(env.APP_DB)
+	await env.APP_DB.prepare(`DELETE FROM webhook_endpoints`).run()
+	await env.APP_DB.prepare(`DELETE FROM saved_packages`).run()
+	await env.APP_DB.prepare(`DELETE FROM users`).run()
+
+	const userId = await seedOwner()
+	await clearRunRecords({ env, userId })
+	const urlSecret = 'trusted-url-secret'
+	await mintWebhook({
+		userId,
+		webhookName: 'message-created',
+		urlSecret,
+		id: 'mint-params',
+	})
+	await mintWebhook({
+		userId,
+		webhookName: 'burst',
+		urlSecret,
+		id: 'mint-burst',
+	})
+	await mintWebhook({
+		userId,
+		webhookName: 'vendor',
+		urlSecret,
+		id: 'mint-vendor',
+	})
+
+	declareWebhook({
+		name: 'message-created',
+		responseMode: 'sync',
+		inputMode: 'params',
+	})
+	const exportMock = createHashedIdempotencyExportMock()
+	mocks.invokePackageExport.mockReset()
+	mocks.invokePackageExport.mockImplementation(exportMock.implementation)
+
+	const envelopeBody = JSON.stringify({
+		params: { messageId: 'm-1', content: 'hello' },
+		idempotencyKey: 'evt-discord-1',
+	})
+	const first = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: envelopeBody,
+	})
+	expect(first.status).toBe(200)
+	expect(await first.json()).toEqual({ ok: true, result: { handled: true } })
+	expect(exportMock.exportInvocations).toBe(1)
+	const firstCall = mocks.invokePackageExport.mock.calls[0]?.[0] as {
+		request: {
+			params: Record<string, unknown>
+			idempotencyKey: string
+			idempotencyParamsHash?: 'ignore'
+			idempotencyHashParams?: Record<string, unknown>
+		}
+	}
+	expect(firstCall.request.params).toEqual({
+		messageId: 'm-1',
+		content: 'hello',
+	})
+	expect(firstCall.request.idempotencyKey).toBe('evt-discord-1')
+	expect(firstCall.request.idempotencyParamsHash).toBeUndefined()
+	expect(firstCall.request.idempotencyHashParams).toBeUndefined()
+
+	const replay = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: envelopeBody,
+		headers: { 'Idempotency-Key': 'evt-discord-1' },
+	})
+	expect(replay.status).toBe(200)
+	expect(await replay.json()).toMatchObject({
+		ok: true,
+		result: { handled: true },
+		idempotency: { replayed: true },
+	})
+	expect(exportMock.exportInvocations).toBe(1)
+
+	const mismatch = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: JSON.stringify({
+			params: { messageId: 'm-1', content: 'different' },
+			idempotencyKey: 'evt-discord-1',
+		}),
+	})
+	expect(mismatch.status).toBe(409)
+	expect(await mismatch.json()).toMatchObject({
+		ok: false,
+		error: { code: 'idempotency_mismatch' },
+	})
+	expect(exportMock.exportInvocations).toBe(1)
+
+	mocks.invokePackageExport.mockImplementationOnce(async () => ({
+		status: 409,
+		body: {
+			ok: false,
+			error: { code: 'invocation_in_progress' },
+		},
+	}))
+	const inProgress = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: JSON.stringify({
+			params: { messageId: 'm-9' },
+			idempotencyKey: 'evt-in-progress',
+		}),
+	})
+	expect(inProgress.status).toBe(409)
+	expect(await inProgress.json()).toMatchObject({
+		ok: false,
+		error: { code: 'invocation_in_progress' },
+	})
+
+	const directBody = JSON.stringify({ videoId: 'v-1' })
+	const direct = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: directBody,
+		headers: { 'Idempotency-Key': 'evt-direct-1' },
+	})
+	expect(direct.status).toBe(200)
+	const directCall = mocks.invokePackageExport.mock.calls.at(-1)?.[0] as {
+		request: { params: Record<string, unknown>; idempotencyKey: string }
+	}
+	expect(directCall.request.params).toEqual({ videoId: 'v-1' })
+	expect(directCall.request.idempotencyKey).toBe('evt-direct-1')
+
+	const invalidParams = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'message-created',
+		urlSecret,
+		body: JSON.stringify(['not', 'an', 'object']),
+	})
+	expect(invalidParams.status).toBe(400)
+	expect(await invalidParams.json()).toMatchObject({
+		ok: false,
+		error: { code: 'invalid_params' },
+	})
+
+	declareWebhook({
+		name: 'burst',
+		responseMode: 'ack',
+		inputMode: 'params',
+		rateLimitPerMinute: 2,
+	})
+	mocks.enqueueWebhookDispatch.mockReset()
+	mocks.enqueueWebhookDispatch.mockResolvedValue(undefined)
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'burst',
+				urlSecret,
+				body: JSON.stringify({ n: 1 }),
+				headers: { 'Idempotency-Key': 'burst-1' },
+			})
+		).status,
+	).toBe(202)
+	expect(
+		(
+			await postWebhook({
+				packageKodyId: 'sentry-bridge',
+				webhookName: 'burst',
+				urlSecret,
+				body: JSON.stringify({ n: 2 }),
+				headers: { 'Idempotency-Key': 'burst-2' },
+			})
+		).status,
+	).toBe(202)
+	const limited = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'burst',
+		urlSecret,
+		body: JSON.stringify({ n: 3 }),
+		headers: { 'Idempotency-Key': 'burst-3' },
+	})
+	expect(limited.status).toBe(429)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const burstEnqueue = mocks.enqueueWebhookDispatch.mock.calls[0]?.[0] as {
+		message: { callerIdempotency?: true }
+	}
+	expect(burstEnqueue.message.callerIdempotency).toBe(true)
+
+	await mintWebhook({
+		userId,
+		webhookName: 'retired',
+		urlSecret,
+		id: 'mint-retired',
+	})
+	const retiredKey = `webhook:user:${userId}:endpoint:mint-retired`
+	await checkRateLimit(env.APP_DB, retiredKey, webhookRateLimitConfig)
+	const now = Math.floor(Date.now() / 1000)
+	await env.APP_DB.batch(
+		Array.from({ length: webhookRateLimitConfig.maxRequests - 1 }, () =>
+			env.APP_DB.prepare(
+				`INSERT INTO _rate_limits (key, ts) VALUES (?, ?)`,
+			).bind(retiredKey, now),
+		),
+	)
+	const retiredLimited = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'retired',
+		urlSecret,
+		body: JSON.stringify({ n: 1 }),
+	})
+	expect(retiredLimited.status).toBe(429)
+	expect(await listDeliveries(userId, 'retired')).toEqual([])
+
+	declareWebhook({
+		name: 'vendor',
+		responseMode: 'sync',
+		verification: {
+			type: 'hmac-sha256',
+			header: 'x-hub-signature-256',
+			secretName: 'githubWebhookSecret',
+			encoding: 'hex',
+			prefix: 'sha256=',
+		},
+	})
+	mocks.resolveSecret.mockResolvedValue({
+		found: true,
+		value: 'hmac-shared-secret',
+		scope: 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+	const vendorBody = JSON.stringify({ ref: 'refs/heads/main' })
+	const vendorSignature = await computeWebhookHmacSignature({
+		algorithm: 'hmac-sha256',
+		secret: 'hmac-shared-secret',
+		body: encodeBody(vendorBody),
+		encoding: 'hex',
+		prefix: 'sha256=',
+	})
+	const vendor = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'vendor',
+		urlSecret,
+		body: vendorBody,
+		headers: { 'x-hub-signature-256': vendorSignature },
+	})
+	expect(vendor.status).toBe(200)
+	const vendorCall = mocks.invokePackageExport.mock.calls.at(-1)?.[0] as {
+		request: {
+			params: { webhook: { name: string }; request: { json: unknown } }
+		}
+	}
+	expect(vendorCall.request.params.webhook.name).toBe('vendor')
+	expect(vendorCall.request.params.request.json).toEqual({
+		ref: 'refs/heads/main',
+	})
 })

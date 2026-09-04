@@ -1,4 +1,7 @@
-import { type WebhookExportParams } from './types.ts'
+import {
+	webhookIdempotencyKeyHeader,
+	type WebhookExportParams,
+} from './types.ts'
 
 export function parseWebhookJsonBody(text: string): unknown | null {
 	const trimmed = text.trim()
@@ -8,6 +11,55 @@ export function parseWebhookJsonBody(text: string): unknown | null {
 	} catch {
 		return null
 	}
+}
+
+export function isWebhookJsonObject(
+	value: unknown,
+): value is Record<string, unknown> {
+	return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+export type WebhookParamsModeResolution =
+	| { ok: true; params: Record<string, unknown> }
+	| { ok: false; code: 'invalid_params' }
+
+/**
+ * `inputMode: "params"` first argument. The parsed JSON object is the export
+ * argument. When that object has a `params` property that is itself a JSON
+ * object, the platform unwraps it so invoke-token callers can POST the same
+ * `{ params, idempotencyKey }` envelope.
+ */
+export function resolveWebhookParamsModeFirstArg(
+	json: unknown,
+): WebhookParamsModeResolution {
+	if (!isWebhookJsonObject(json)) {
+		return { ok: false, code: 'invalid_params' }
+	}
+	const nested = json['params']
+	if (isWebhookJsonObject(nested)) {
+		return { ok: true, params: nested }
+	}
+	return { ok: true, params: json }
+}
+
+export function readWebhookCallerIdempotencyKey(input: {
+	request: Request
+	json: unknown
+	allowBodyKey: boolean
+}): string | null {
+	const header = input.request.headers.get(webhookIdempotencyKeyHeader)?.trim()
+	if (header) return header
+	if (!input.allowBodyKey || !isWebhookJsonObject(input.json)) return null
+	const key = input.json['idempotencyKey']
+	return typeof key === 'string' && key.trim() ? key.trim() : null
+}
+
+export function buildWebhookCallerIdempotencyHashParams(input: {
+	json: unknown
+	bodyText: string
+}): Record<string, unknown> {
+	if (isWebhookJsonObject(input.json)) return input.json
+	return { body: input.bodyText }
 }
 
 export function buildWebhookExportParams(input: {

@@ -3,6 +3,10 @@
 Use this API when a trusted external service should invoke a saved package
 export inside Kody without going through the interactive MCP transport.
 
+New first-party callers should use [inbound webhooks](../use/webhooks.md)
+(`inputMode: "params"`, `Idempotency-Key`, minted URL, no Bearer). This page
+documents the invocation-token drain that still works.
+
 A stable webhook proxy is a representative caller:
 
 1. the external proxy owns the provider-specific connection or webhook ingress

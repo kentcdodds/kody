@@ -20,6 +20,7 @@ import {
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import { buildPackageReadmeIntent } from '#worker/package-registry/package-readme.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
+import { webhookDefaultRateLimitPerMinute } from '#worker/package-registry/types.ts'
 
 import { maxFusedPackageCandidates } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
@@ -511,6 +512,9 @@ export const packageSearchEntityPlugin = {
 			name: webhook.name,
 			exportName: webhook.export,
 			responseMode: webhook.responseMode ?? 'ack',
+			inputMode: webhook.inputMode ?? 'request',
+			rateLimitPerMinute:
+				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
 			replay: webhook.replay ?? null,
 			signedPayload: webhook.verification?.signedPayload ?? null,
 		}))
@@ -585,7 +589,14 @@ export const packageSearchEntityPlugin = {
 					].filter((value): value is string => value != null)
 					const replaySuffix =
 						replayParts.length > 0 ? ` (${replayParts.join(', ')})` : ''
-					return `- ${formatMarkdownInlineCode(webhook.name)} → ${formatMarkdownInlineCode(webhook.exportName)} (${webhook.responseMode}${replaySuffix})`
+					const modeParts = [
+						webhook.responseMode,
+						webhook.inputMode === 'params' ? 'params' : null,
+						webhook.rateLimitPerMinute !== webhookDefaultRateLimitPerMinute
+							? `${webhook.rateLimitPerMinute}/min`
+							: null,
+					].filter((value): value is string => value != null)
+					return `- ${formatMarkdownInlineCode(webhook.name)} → ${formatMarkdownInlineCode(webhook.exportName)} (${modeParts.join(', ')}${replaySuffix})`
 				}),
 			)
 		}

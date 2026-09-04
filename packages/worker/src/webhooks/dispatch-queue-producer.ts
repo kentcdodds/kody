@@ -19,8 +19,11 @@ export type WebhookDispatchQueueMessage = {
 	packageKodyId: string
 	exportName: string
 	params: WebhookExportParams
+	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	/** Request-mode caller Idempotency-Key: hash the JSON body, not the envelope. */
+	callerIdempotency?: true
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -39,8 +42,10 @@ export function createWebhookDispatchQueueMessage(input: {
 	packageKodyId: string
 	exportName: string
 	params: WebhookExportParams
+	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	callerIdempotency?: true
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -56,10 +61,12 @@ export function createWebhookDispatchQueueMessage(input: {
 				json: null,
 			},
 		},
+		...(input.inputMode === 'params' ? { inputMode: 'params' as const } : {}),
 		idempotencyKey: input.idempotencyKey,
 		...(input.idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
 			: {}),
+		...(input.callerIdempotency ? { callerIdempotency: true as const } : {}),
 		deliveryId: input.deliveryId,
 		payloadBytes: input.payloadBytes,
 		receivedAt: input.receivedAt,
@@ -148,6 +155,14 @@ export function parseWebhookDispatchQueueMessage(
 	) {
 		return null
 	}
+	const inputMode = message['inputMode']
+	if (inputMode !== undefined && inputMode !== 'params') {
+		return null
+	}
+	const callerIdempotency = message['callerIdempotency']
+	if (callerIdempotency !== undefined && callerIdempotency !== true) {
+		return null
+	}
 	return {
 		endpoint: {
 			id,
@@ -158,10 +173,12 @@ export function parseWebhookDispatchQueueMessage(
 		packageKodyId,
 		exportName,
 		params: params as WebhookExportParams,
+		...(inputMode === 'params' ? { inputMode: 'params' as const } : {}),
 		idempotencyKey,
 		...(idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
 			: {}),
+		...(callerIdempotency === true ? { callerIdempotency: true as const } : {}),
 		deliveryId,
 		payloadBytes,
 		receivedAt,
