@@ -88,13 +88,14 @@ export function ServicePickerMark(
 function ServicePickerCardLink(
 	handle: Handle<{
 		id: OnboardingServiceChoice
+		search: string
 	}>,
 ) {
 	return () => {
 		const label = onboardingServiceLabel(handle.props.id)
 		return (
 			<a
-				href={onboardingServiceHref(handle.props.id)}
+				href={onboardingServiceHref(handle.props.id, handle.props.search)}
 				data-testid={`onboarding-service-${handle.props.id}`}
 				data-prevent-scroll-reset=""
 				mix={css(pickerCardCss)}
@@ -115,10 +116,12 @@ export function OnboardingServicePicker(
 	handle: Handle<{
 		featuredIds: ReadonlyArray<OnboardingFeaturedMcpServerId>
 		overflowIds: ReadonlyArray<OnboardingFeaturedMcpServerId>
+		search?: string
 	}>,
 ) {
 	return () => {
 		const { featuredIds, overflowIds } = handle.props
+		const search = handle.props.search ?? ''
 		const overflowChips = overflowIds.flatMap((id) => {
 			const server = onboardingFeaturedMcpServerById(id)
 			if (!server) return []
@@ -132,7 +135,7 @@ export function OnboardingServicePicker(
 				>
 					{featuredIds.map((id) => (
 						<li key={id}>
-							<ServicePickerCardLink id={id} />
+							<ServicePickerCardLink id={id} search={search} />
 						</li>
 					))}
 				</ul>
@@ -149,16 +152,19 @@ export function OnboardingServicePicker(
 						>
 							{overflowChips.map((server) => (
 								<li key={server.id}>
-									<ServicePickerCardLink id={server.id} />
+									<ServicePickerCardLink id={server.id} search={search} />
 								</li>
 							))}
 							{onboardingNotListedPromptServices.map((service) => (
 								<li key={service.id}>
-									<ServicePickerCardLink id={service.id} />
+									<ServicePickerCardLink id={service.id} search={search} />
 								</li>
 							))}
 							<li key={onboardingNotListedServiceId}>
-								<ServicePickerCardLink id={onboardingNotListedServiceId} />
+								<ServicePickerCardLink
+									id={onboardingNotListedServiceId}
+									search={search}
+								/>
 							</li>
 						</ul>
 					</div>

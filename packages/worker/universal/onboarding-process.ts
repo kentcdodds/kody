@@ -184,6 +184,15 @@ export function onboardingSessionMilestonesComplete(
 	return onboardingSessionMilestones.every((item) => milestones[item.id])
 }
 
+export function onboardingSessionMilestonesEqual(
+	left: OnboardingSessionMilestoneState,
+	right: OnboardingSessionMilestoneState,
+) {
+	return onboardingSessionMilestones.every(
+		(item) => left[item.id] === right[item.id],
+	)
+}
+
 export function onboardingMilestonesHeading(agentLabel: string | null) {
 	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
 	return `Here are the tasks for ${name}.`

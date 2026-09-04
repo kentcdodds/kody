@@ -25,6 +25,7 @@ import {
 	onboardingConnectedPrompt,
 	onboardingNotListedAnything,
 	onboardingSessionMilestones,
+	onboardingSessionMilestonesEqual,
 	onboardingUnconnectedNotice,
 	onboardingIntegrationsShFollowUp,
 	onboardingUseKodyPrompt,
@@ -152,11 +153,23 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	])
 	expect(onboardingAgentHref('cursor')).toBe('/onboarding/step-1/cursor')
 	expect(onboardingAgentHref('other')).toBe('/onboarding/step-1/not-listed')
+	expect(onboardingAgentHref('cursor', '?redirectTo=%2F')).toBe(
+		'/onboarding/step-1/cursor?redirectTo=%2F',
+	)
+	expect(onboardingAgentHref(null, '?redirectTo=%2F')).toBe(
+		'/onboarding/step-1?redirectTo=%2F',
+	)
 	expect(onboardingServiceHref('notion')).toBe('/onboarding/step-2/notion')
 	expect(onboardingServiceHref('not-listed')).toBe(
 		'/onboarding/step-2/not-listed',
 	)
 	expect(onboardingServiceHref('x')).toBe('/onboarding/step-2/x')
+	expect(onboardingServiceHref('notion', '?redirectTo=%2F')).toBe(
+		'/onboarding/step-2/notion?redirectTo=%2F',
+	)
+	expect(onboardingServiceHref(null, '?redirectTo=%2F')).toBe(
+		'/onboarding/step-2?redirectTo=%2F',
+	)
 	expect(parseOnboardingPathname('/onboarding/step-2/not-listed')).toEqual({
 		step: 2,
 		agent: null,
@@ -359,6 +372,42 @@ test('session milestone copy and search notice share leftover task labels', () =
 		'Receive an email',
 		'Set up a scheduled job',
 	])
+	expect(
+		onboardingSessionMilestonesEqual(
+			emptyOnboardingSessionMilestones,
+			emptyOnboardingSessionMilestones,
+		),
+	).toBe(true)
+	expect(
+		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
+			...emptyOnboardingSessionMilestones,
+			execute: true,
+		}),
+	).toBe(false)
+	expect(
+		onboardingSessionMilestonesEqual(
+			{ ...emptyOnboardingSessionMilestones, execute: true, secret: true },
+			{ ...emptyOnboardingSessionMilestones, execute: true, secret: true },
+		),
+	).toBe(true)
+	expect(
+		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
+			...emptyOnboardingSessionMilestones,
+			'email-send': true,
+		}),
+	).toBe(false)
+	expect(
+		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
+			...emptyOnboardingSessionMilestones,
+			'email-receive': true,
+		}),
+	).toBe(false)
+	expect(
+		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
+			...emptyOnboardingSessionMilestones,
+			job: true,
+		}),
+	).toBe(false)
 	expect(
 		formatOnboardingSearchNotice(
 			['Run your first execute', 'Create a secret'],

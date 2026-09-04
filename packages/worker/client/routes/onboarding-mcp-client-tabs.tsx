@@ -39,6 +39,7 @@ type OnboardingMcpClientTabsProps = {
 	highlights?: Record<string, HighlightedCode>
 	selectedAgent?: McpClientKind | null
 	chooser?: OnboardingAgentChooserPick | null
+	search?: string
 }
 
 function AgentMarkIcon(handle: Handle<{ icon: string | null }>) {
@@ -289,6 +290,7 @@ export function OnboardingMcpClientTabs(
 		const { mcpServerUrl, highlights } = handle.props
 		const selectedAgent = handle.props.selectedAgent ?? null
 		const chooser = handle.props.chooser ?? canonicalOnboardingAgentChooser()
+		const search = handle.props.search ?? ''
 
 		if (!selectedAgent) {
 			return (
@@ -300,6 +302,7 @@ export function OnboardingMcpClientTabs(
 					<AgentPickerGrid
 						ids={[...onboardingPickerAgentIds(chooser), 'other']}
 						labelledBy="onboarding-agent-picker-label"
+						search={search}
 					/>
 				</div>
 			)
@@ -317,6 +320,7 @@ export function OnboardingMcpClientTabs(
 					<AgentPickerGrid
 						ids={onboardingNotListedAgentIds(chooser)}
 						labelledBy="onboarding-agent-not-listed-label"
+						search={search}
 					/>
 					<p mix={css(pickerLedeCss)} id="onboarding-agent-not-listed-generic">
 						Or, connect any agent that speaks MCP
@@ -403,6 +407,7 @@ function AgentPickerGrid(
 			| Array<McpClientKind>
 			| Array<{ id: McpClientKind; viewport: OnboardingAgentViewport }>
 		labelledBy: string
+		search: string
 	}>,
 ) {
 	return () => (
@@ -417,7 +422,7 @@ function AgentPickerGrid(
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
 						<a
-							href={onboardingAgentHref(id)}
+							href={onboardingAgentHref(id, handle.props.search)}
 							data-testid={`onboarding-agent-${id}`}
 							data-prevent-scroll-reset=""
 							mix={css(pickerCardCss)}

@@ -34,6 +34,18 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).toContain('href="/onboarding/step-1/cursor"')
 	expect(picker).toContain('data-testid="onboarding-agent-other"')
 	expect(picker).toContain('href="/onboarding/step-1/not-listed"')
+	const pickerRedirect = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			search: '?redirectTo=%2F',
+		}),
+	)
+	expect(pickerRedirect).toContain(
+		'href="/onboarding/step-1/cursor?redirectTo=%2F"',
+	)
+	expect(pickerRedirect).toContain(
+		'href="/onboarding/step-1/not-listed?redirectTo=%2F"',
+	)
 	expect(picker).toContain('data-testid="onboarding-agent-grok-bot"')
 	expect(picker).toContain('data-testid="onboarding-agent-openclaw"')
 	expect(picker).toContain('href="/onboarding/step-1/openclaw"')

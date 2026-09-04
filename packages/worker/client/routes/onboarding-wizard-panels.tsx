@@ -53,6 +53,7 @@ import {
 type StepNavigationProps = {
 	activeStep: OnboardingWizardStepNumber
 	onSelectStep: (step: OnboardingWizardStepNumber) => void
+	search?: string
 }
 
 export function renderConnectAgentPanel(
@@ -98,7 +99,7 @@ export function renderConnectAgentPanel(
 						<div mix={css(changeSelectionSlotCss)}>
 							{props.selectedAgent ? (
 								<a
-									href={onboardingAgentHref(null)}
+									href={onboardingAgentHref(null, props.search ?? '')}
 									data-testid="onboarding-agent-change"
 									data-prevent-scroll-reset=""
 									mix={css(changeSelectionCss)}
@@ -126,6 +127,7 @@ export function renderConnectAgentPanel(
 				highlights={props.mcpHighlights}
 				selectedAgent={props.selectedAgent}
 				chooser={props.agentChooser ?? canonicalOnboardingAgentChooser()}
+				search={props.search ?? ''}
 			/>
 			<WizardNavigation
 				activeStep={props.activeStep}
@@ -141,6 +143,7 @@ function renderConnectAgentStatus(props: {
 	hasMcpClient: boolean
 	selectedAgent: McpClientKind | null
 	selectedAgentLabel: string | null
+	search?: string
 }) {
 	if (props.hasMcpClient) {
 		return (
@@ -162,7 +165,10 @@ function renderConnectAgentStatus(props: {
 	}
 	if (!props.selectedAgent) return null
 	if (!props.loggedIn) {
-		const resumeHref = onboardingAgentHref(props.selectedAgent)
+		const resumeHref = onboardingAgentHref(
+			props.selectedAgent,
+			props.search ?? '',
+		)
 		return (
 			<a
 				href={buildAuthLink(routes.login.href(), resumeHref)}
@@ -257,7 +263,7 @@ export function renderAccessPanel(props: AccessPanelProps) {
 						<div mix={css(changeSelectionSlotCss)}>
 							{selectedService ? (
 								<a
-									href={onboardingServiceHref(null)}
+									href={onboardingServiceHref(null, props.search ?? '')}
 									data-testid="onboarding-service-change"
 									data-prevent-scroll-reset=""
 									mix={css(changeSelectionCss)}
@@ -307,6 +313,7 @@ export function renderAccessPanel(props: AccessPanelProps) {
 					<OnboardingServicePicker
 						featuredIds={chooser.featured}
 						overflowIds={chooser.overflow}
+						search={props.search ?? ''}
 					/>
 				)
 			) : (

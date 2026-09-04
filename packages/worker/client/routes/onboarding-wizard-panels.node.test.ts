@@ -28,6 +28,7 @@ function connectPanel(selected: {
 	label: string | null
 	loggedIn?: boolean
 	hasMcpClient?: boolean
+	search?: string
 }) {
 	return renderConnectAgentPanel({
 		entrance: css({}),
@@ -40,6 +41,7 @@ function connectPanel(selected: {
 		agentChooser: null,
 		mcpServerUrl: defaultKodyMcpUrl,
 		mcpHighlights: {},
+		search: selected.search,
 	})
 }
 
@@ -51,6 +53,7 @@ function accessPanel(selected: {
 	customServiceName?: string
 	discoveryPrompt?: string
 	milestones?: typeof emptyOnboardingSessionMilestones
+	search?: string
 }) {
 	return renderAccessPanel({
 		entrance: css({}),
@@ -63,6 +66,7 @@ function accessPanel(selected: {
 		serviceChooser: null,
 		selectedAgentLabel: selected.selectedAgentLabel ?? null,
 		customServiceName: selected.customServiceName,
+		search: selected.search,
 	})
 }
 
@@ -108,6 +112,16 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	)
 	expect(connected).toContain('Cursor is connected')
 	expect(connected).not.toContain('data-testid="onboarding-agent-login"')
+
+	const withRedirect = await renderToString(
+		connectPanel({
+			agent: 'cursor',
+			label: 'Cursor',
+			search: '?redirectTo=%2F',
+		}),
+	)
+	expect(withRedirect).toContain('href="/onboarding/step-1?redirectTo=%2F"')
+	expect(withRedirect).toContain('step-1%2Fcursor%3FredirectTo%3D%252F')
 })
 
 test('step 2 skip-unconnected shows the homepage discovery prompt', async () => {
@@ -194,6 +208,20 @@ test('step 2 connected index is picker plus Show more, without milestones', asyn
 	expect(connected).not.toContain('You can leave this page whenever you want.')
 	expect(connected).not.toContain(onboardingUnconnectedNotice)
 	expect(connected).not.toContain('data-testid="onboarding-unconnected-prompt"')
+
+	const withRedirect = await renderToString(
+		accessPanel({
+			service: null,
+			hasMcpClient: true,
+			search: '?redirectTo=%2F',
+		}),
+	)
+	expect(withRedirect).toContain(
+		'href="/onboarding/step-2/notion?redirectTo=%2F"',
+	)
+	expect(withRedirect).toContain(
+		'href="/onboarding/step-2/not-listed?redirectTo=%2F"',
+	)
 })
 
 test('step 2 selected service is a prompt well and milestones, without the grid', async () => {
@@ -218,6 +246,14 @@ test('step 2 selected service is a prompt well and milestones, without the grid'
 	expect(notion).toContain('data-testid="onboarding-service-change"')
 	expect(notion).toContain('href="/onboarding/step-2"')
 	expect(notion).toContain('Change selection')
+	const notionRedirect = await renderToString(
+		accessPanel({
+			service: 'notion',
+			hasMcpClient: true,
+			search: '?redirectTo=%2F',
+		}),
+	)
+	expect(notionRedirect).toContain('href="/onboarding/step-2?redirectTo=%2F"')
 	expect(notion).toContain('data-testid="onboarding-service-difficulty"')
 	expect(notion).toContain('data-level="easy"')
 	expect(notion).toContain('Easiest setup: easy')

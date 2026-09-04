@@ -22,6 +22,7 @@ import {
 	isOnboardingPagePath,
 	onboardingIndexRedirectHref,
 	onboardingSessionMilestonesComplete,
+	onboardingSessionMilestonesEqual,
 	onboardingStepPaths,
 	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
@@ -318,9 +319,7 @@ export function OnboardingRoute(handle: Handle) {
 				payload.milestones ?? emptyOnboardingSessionMilestones
 			if (
 				payload.hasMcpClient === hasMcpClient &&
-				nextMilestones.execute === milestones.execute &&
-				nextMilestones.access === milestones.access &&
-				nextMilestones.secret === milestones.secret
+				onboardingSessionMilestonesEqual(nextMilestones, milestones)
 			) {
 				return
 			}
@@ -470,6 +469,7 @@ export function OnboardingRoute(handle: Handle) {
 									agentChooser,
 									mcpServerUrl,
 									mcpHighlights: mcpHighlights ?? {},
+									search: readRouterSearch(handle),
 								})
 							: null}
 
@@ -484,6 +484,7 @@ export function OnboardingRoute(handle: Handle) {
 								selectedService={selectedService}
 								serviceChooser={serviceChooser}
 								selectedAgentLabel={connectedAgentLabel}
+								search={readRouterSearch(handle)}
 							/>
 						) : null}
 					</>
