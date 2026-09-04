@@ -107,8 +107,9 @@ Requests are handled in this order:
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to
    `kody-runtime` via `RUNTIME_WORKER`; webhook ingress stays on origin:
-   - `POST /@{username}/api/package-invocations/:kodyId/:exportName` — bearer
-     token package invocations
+   - `POST /@{username}/api/package-invocations/:kodyId/:exportName` —
+     unadvertised bearer-token drain (see
+     [package invocation API](../package-invocation-api.md))
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
    - Retired `/@{username}/connectors/...` paths return `404`. Use outbound MCP

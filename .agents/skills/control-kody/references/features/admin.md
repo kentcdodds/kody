@@ -20,7 +20,9 @@ node tools/control-kody.ts request GET /admin 403
 use it unless the change is an admin surface. The users list accepts
 `verification=stalled` for unverified person accounts whose latest signup/verify
 send is still `accepted` after 60 minutes. `/admin/invites` also sets signup
-mode (`invite` / `open` / `waitlist`).
+mode (`invite` / `open` / `waitlist`). Operators run one bounded
+unverified-account purge pass with `adminUnverifiedAccountPurgeRun` (`dryRun`
+previews the next claim page; results carry stable user ids).
 
 ## APIs
 

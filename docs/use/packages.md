@@ -24,8 +24,9 @@ Think in terms of:
 Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting. Browse files at `/@username/:name/tree/:ref` — the same URL whether the
 package is public or private. Visibility, not a separate account files path, is
-what keeps private source off the public web. Owner controls (tokens, lock,
-visibility, delete) live at `/@username/:name/settings`.
+what keeps private source off the public web. Owner controls (lock, visibility,
+delete) live at `/@username/:name/settings`. Inbound HTTP uses
+[webhooks](./webhooks.md).
 
 ## Package state model
 
