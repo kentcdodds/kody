@@ -295,7 +295,11 @@ export function OnboardingMcpClientTabs(
 		const chooser = handle.props.chooser ?? canonicalOnboardingAgentChooser()
 		const search = handle.props.search ?? ''
 		handle.queueTask(() => {
-			const hrefs = onboardingAgentPickerPrefetchHrefs(selectedAgent, chooser)
+			const hrefs = onboardingAgentPickerPrefetchHrefs(
+				selectedAgent,
+				chooser,
+				search,
+			)
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return
 			warmedKey = key

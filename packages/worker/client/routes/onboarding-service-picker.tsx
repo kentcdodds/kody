@@ -129,6 +129,7 @@ export function OnboardingServicePicker(
 			const hrefs = onboardingServicePickerPrefetchHrefs(
 				featuredIds,
 				overflowIds,
+				search,
 			)
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return

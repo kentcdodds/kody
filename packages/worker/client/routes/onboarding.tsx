@@ -204,7 +204,9 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function refreshOnboardingAfterInstall() {
 		try {
-			const payload = await fetchOnboardingPayload(handle.signal)
+			const payload = await fetchOnboardingPayload(handle.signal, {
+				fresh: true,
+			})
 			if (handle.signal.aborted || !payload) return
 			applyPayload(payload)
 			flushPendingAdvanceToAccess(false)
@@ -299,7 +301,9 @@ export function OnboardingRoute(handle: Handle) {
 		if (!isOnboardingPath(readCurrentRouterHref(handle))) return
 		pollInFlight = true
 		try {
-			const payload = await fetchOnboardingPayload(handle.signal)
+			const payload = await fetchOnboardingPayload(handle.signal, {
+				fresh: true,
+			})
 			if (handle.signal.aborted || !payload) return
 			const nextMilestones =
 				payload.milestones ?? emptyOnboardingSessionMilestones

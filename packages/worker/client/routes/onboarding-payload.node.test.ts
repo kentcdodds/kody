@@ -59,3 +59,87 @@ test('onboarding payload fetch coalesces in flight and reuses the warm cache', a
 		clearOnboardingPayloadCache()
 	}
 })
+
+test('fresh fetch skips the warm cache so progress polls see live milestones', async () => {
+	clearOnboardingPayloadCache()
+	const originalFetch = globalThis.fetch
+	const calls: Array<string> = []
+	const stale = { ...payload, hasMcpClient: false }
+	const live = { ...payload, hasMcpClient: true }
+	const bodies = [stale, live]
+	globalThis.fetch = ((input: RequestInfo | URL) => {
+		calls.push(String(input))
+		const body = bodies.shift() ?? live
+		return Promise.resolve(Response.json(body))
+	}) as typeof fetch
+
+	try {
+		await expect(fetchOnboardingPayload()).resolves.toEqual(stale)
+		await expect(fetchOnboardingPayload()).resolves.toEqual(stale)
+		expect(calls).toHaveLength(1)
+		await expect(
+			fetchOnboardingPayload(undefined, { fresh: true }),
+		).resolves.toEqual(live)
+		expect(calls).toHaveLength(2)
+	} finally {
+		globalThis.fetch = originalFetch
+		clearOnboardingPayloadCache()
+	}
+})
+
+test('clearing the cache aborts the in-flight request so it cannot rewrite progress', async () => {
+	clearOnboardingPayloadCache()
+	const originalFetch = globalThis.fetch
+	const calls: Array<string> = []
+	const controllers: Array<AbortController> = []
+	let resolveStale!: (value: Response) => void
+	let resolveFresh!: (value: Response) => void
+	const stale = { ...payload, hasMcpClient: false }
+	const live = { ...payload, hasMcpClient: true }
+	globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+		calls.push(String(input))
+		if (init?.signal instanceof AbortSignal) {
+			const controller = new AbortController()
+			init.signal.addEventListener(
+				'abort',
+				() => {
+					controller.abort()
+				},
+				{ once: true },
+			)
+			controllers.push(controller)
+		}
+		return new Promise<Response>((resolve, reject) => {
+			if (calls.length === 1) {
+				resolveStale = resolve
+				controllers.at(-1)?.signal.addEventListener(
+					'abort',
+					() => {
+						reject(new DOMException('Aborted', 'AbortError'))
+					},
+					{ once: true },
+				)
+				return
+			}
+			resolveFresh = resolve
+		})
+	}) as typeof fetch
+
+	try {
+		const first = fetchOnboardingPayload()
+		expect(calls).toHaveLength(1)
+		clearOnboardingPayloadCache()
+		await expect(first).rejects.toMatchObject({ name: 'AbortError' })
+
+		const second = fetchOnboardingPayload()
+		expect(calls).toHaveLength(2)
+		resolveStale(Response.json(stale))
+		resolveFresh(Response.json(live))
+		await expect(second).resolves.toEqual(live)
+		await expect(fetchOnboardingPayload()).resolves.toEqual(live)
+		expect(calls).toHaveLength(2)
+	} finally {
+		globalThis.fetch = originalFetch
+		clearOnboardingPayloadCache()
+	}
+})

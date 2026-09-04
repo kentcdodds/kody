@@ -67,3 +67,39 @@ test('step 1 and step 2 pickers prefetch every rendered chip and never community
 	expect(serviceHrefs).not.toContain('/community')
 	expect(serviceHtml).not.toContain('href="/community"')
 })
+
+test('picker prefetch hrefs keep the rendered search so redirectTo clicks stay warm', async () => {
+	const search = '?redirectTo=%2Faccount'
+	const chooser = canonicalOnboardingAgentChooser()
+	const agentHrefs = onboardingAgentPickerPrefetchHrefs(null, chooser, search)
+	const agentHtml = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			search,
+		}),
+	)
+	expect(chipHrefsFromHtml(agentHtml, 'onboarding-agent-')).toEqual(agentHrefs)
+	expect(agentHrefs).toContain(`/onboarding/step-1/cursor${search}`)
+	expect(
+		onboardingAgentPickerPrefetchHrefs('other', chooser, search)[0],
+	).toMatch(/\?redirectTo=%2Faccount$/)
+
+	const featuredIds = ['notion'] as const
+	const overflowIds = ['github'] as const
+	const serviceHrefs = onboardingServicePickerPrefetchHrefs(
+		featuredIds,
+		overflowIds,
+		search,
+	)
+	const serviceHtml = await renderToString(
+		jsx(OnboardingServicePicker, {
+			featuredIds,
+			overflowIds,
+			search,
+		}),
+	)
+	expect(chipHrefsFromHtml(serviceHtml, 'onboarding-service-')).toEqual(
+		serviceHrefs,
+	)
+	expect(serviceHrefs[0]).toBe(`/onboarding/step-2/notion${search}`)
+})

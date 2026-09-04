@@ -25,17 +25,18 @@ import {
 export function onboardingAgentPickerPrefetchHrefs(
 	selectedAgent: McpClientKind | null,
 	chooser: OnboardingAgentChooserPick = canonicalOnboardingAgentChooser(),
+	search = '',
 ): Array<string> {
 	if (!selectedAgent) {
 		const ids: Array<McpClientKind> = [
 			...onboardingPickerAgentIds(chooser),
 			'other',
 		]
-		return ids.map((id) => onboardingAgentHref(id))
+		return ids.map((id) => onboardingAgentHref(id, search))
 	}
 	if (selectedAgent === 'other') {
 		return onboardingNotListedAgentIds(chooser).map((entry) =>
-			onboardingAgentHref(entry.id),
+			onboardingAgentHref(entry.id, search),
 		)
 	}
 	return []
@@ -49,6 +50,7 @@ export function onboardingAgentPickerPrefetchHrefs(
 export function onboardingServicePickerPrefetchHrefs(
 	featuredIds: ReadonlyArray<OnboardingFeaturedMcpServerId>,
 	overflowIds: ReadonlyArray<OnboardingFeaturedMcpServerId>,
+	search = '',
 ): Array<string> {
 	const overflowChoices = overflowIds.flatMap((id) => {
 		const server = onboardingFeaturedMcpServerById(id)
@@ -61,5 +63,5 @@ export function onboardingServicePickerPrefetchHrefs(
 		...onboardingNotListedPromptServices.map((service) => service.id),
 		onboardingNotListedServiceId,
 	]
-	return ids.map((id) => onboardingServiceHref(id))
+	return ids.map((id) => onboardingServiceHref(id, search))
 }
