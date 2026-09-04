@@ -84,10 +84,11 @@ Deferred one-shot work uses `workflows.create({ runAt })` from `execute` or
 package runtime. See [Workflows](../use/workflows.md).
 
 Use `guide: "package_authoring"` for package shape, README `## Intent`,
-per-export JSDoc (search Purpose), visibility guidance, and the secret-using
-package approval checklist (`pending_secret_package_approvals` is non-null only
-for unadopted community-forked packages; prefer `communityForkAdopt` after
-review, or bulk approval URLs when present).
+per-export JSDoc (search Purpose), visibility guidance (personal-details hygiene
+before going public), and the secret-using package approval checklist
+(`pending_secret_package_approvals` is non-null only for unadopted
+community-forked packages; prefer `communityForkAdopt` after review, or bulk
+approval URLs when present).
 
 When the OAuth token is coarser than the intended export — Gmail can send
 whenever it can create a draft — publish a thin package that only performs the
