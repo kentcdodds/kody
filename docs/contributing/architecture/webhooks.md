@@ -55,10 +55,11 @@ export's first argument is the parsed JSON object. When that object has a
 `params` property that is itself a JSON object, the platform unwraps it
 (invoke-token envelope). `Idempotency-Key` (or JSON `idempotencyKey` in params
 mode) maps to the same package-invocation ledger with payload hashing
-(`include`): same key + same first argument replays; mismatch and in-progress
-are **409**. Request-mode caller keys hash the JSON body so `receivedAt` does
-not break retries. Delivery-id keys stay `ignore`. HMAC stays optional; the URL
-secret is enough for a trusted client.
+(`include`): same key + same first argument replays. On `sync`, mismatch and
+in-progress are **409**. `ack` returns **202** after enqueue; the queue consumer
+applies the same ledger asynchronously. Request-mode caller keys hash the JSON
+body so `receivedAt` does not break retries. Delivery-id keys stay `ignore`.
+HMAC stays optional; the URL secret is enough for a trusted client.
 
 `rateLimitPerMinute` overrides the default 60/min ceiling per minted endpoint.
 600/min is the documented maximum for gateway fan-in. The limiter still bounds a
@@ -80,9 +81,11 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    **not** record delivery history (avoids log-flush DoS and rate-limit side
    channels).
 4. Constant-time compare the URL secret against `url_secret_hash` (SHA-256).
-5. After a matching URL secret and a live declaration, enforce per-webhook rate
-   limit (declared `rateLimitPerMinute`, default 60, max 600) → **429** (no
-   delivery history on the limited path); payload cap 1 MB → **413**.
+5. After a matching URL secret, enforce per-webhook rate limit (declared
+   `rateLimitPerMinute` when the name is still live, otherwise the default 60,
+   max 600) → **429** (no delivery history on the limited path). Missing
+   declaration after republish rename/remove still **404**s and records a
+   rejected delivery, but only after that limit. Payload cap 1 MB → **413**.
 6. When verification is declared, resolve `secretName` from the owner's secret
    store (user/package scope via package storage context). Missing secret or
    HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
@@ -110,7 +113,10 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 Ack messages carry the accepted delivery id, idempotency key, scoped endpoint
 identity, export name, and already-authenticated payload (inline `body`, or a
 user-scoped KV key when the body was spilled). Queue retries reuse that exact
-idempotency key. Transient ledger lookup/terminal-persistence failures and
+idempotency key. Request-mode caller `Idempotency-Key` messages set
+`callerIdempotency` so the consumer hashes the JSON body (same as sync).
+Unique-key ack claims omit that flag and hash the `{ webhook, request }`
+envelope. Transient ledger lookup/terminal-persistence failures and
 still-in-progress replays are retried; terminal package errors are recorded and
 acknowledged. A missing spilled body is a terminal failure
 (`ack_queue_payload_missing`). The package export sandbox retains its normal

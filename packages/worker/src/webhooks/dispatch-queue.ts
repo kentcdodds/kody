@@ -43,14 +43,14 @@ function resolveWebhookDispatchInvocation(
 	return {
 		ok: true,
 		params: message.params,
-		...(message.idempotencyParamsHash === 'ignore'
-			? {}
-			: {
+		...(message.callerIdempotency
+			? {
 					idempotencyHashParams: buildWebhookCallerIdempotencyHashParams({
 						json: message.params.request.json,
 						bodyText: message.params.request.body,
 					}),
-				}),
+				}
+			: {}),
 	}
 }
 
@@ -72,7 +72,7 @@ export async function processWebhookDispatch(
 			env,
 			endpoint: message.endpoint,
 			kodyId: message.packageKodyId,
-			outcome: 'failed',
+			outcome: 'rejected',
 			httpStatus: 400,
 			error: resolved.code,
 			payloadBytes: message.payloadBytes,

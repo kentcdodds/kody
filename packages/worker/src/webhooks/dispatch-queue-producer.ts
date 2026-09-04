@@ -22,6 +22,8 @@ export type WebhookDispatchQueueMessage = {
 	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	/** Request-mode caller Idempotency-Key: hash the JSON body, not the envelope. */
+	callerIdempotency?: true
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -43,6 +45,7 @@ export function createWebhookDispatchQueueMessage(input: {
 	inputMode?: 'params'
 	idempotencyKey: string
 	idempotencyParamsHash?: 'ignore'
+	callerIdempotency?: true
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
@@ -63,6 +66,7 @@ export function createWebhookDispatchQueueMessage(input: {
 		...(input.idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
 			: {}),
+		...(input.callerIdempotency ? { callerIdempotency: true as const } : {}),
 		deliveryId: input.deliveryId,
 		payloadBytes: input.payloadBytes,
 		receivedAt: input.receivedAt,
@@ -155,6 +159,10 @@ export function parseWebhookDispatchQueueMessage(
 	if (inputMode !== undefined && inputMode !== 'params') {
 		return null
 	}
+	const callerIdempotency = message['callerIdempotency']
+	if (callerIdempotency !== undefined && callerIdempotency !== true) {
+		return null
+	}
 	return {
 		endpoint: {
 			id,
@@ -170,6 +178,7 @@ export function parseWebhookDispatchQueueMessage(
 		...(idempotencyParamsHash === 'ignore'
 			? { idempotencyParamsHash: 'ignore' as const }
 			: {}),
+		...(callerIdempotency === true ? { callerIdempotency: true as const } : {}),
 		deliveryId,
 		payloadBytes,
 		receivedAt,

@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
+import { checkRateLimit } from '#app/rate-limit.ts'
 import { type PackageInvocationRequest } from '#worker/package-invocations/common.ts'
 import {
 	createRequestHash,
@@ -18,6 +19,7 @@ import {
 } from './crypto.ts'
 import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { handleWebhookIngressRequest } from './http.ts'
+import { webhookRateLimitConfig } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
 	enqueueWebhookDispatch: vi.fn(),
@@ -1177,6 +1179,35 @@ test('first-party trusted webhooks accept Idempotency-Key, params mode, and a hi
 	})
 	expect(limited.status).toBe(429)
 	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const burstEnqueue = mocks.enqueueWebhookDispatch.mock.calls[0]?.[0] as {
+		message: { callerIdempotency?: true }
+	}
+	expect(burstEnqueue.message.callerIdempotency).toBe(true)
+
+	await mintWebhook({
+		userId,
+		webhookName: 'retired',
+		urlSecret,
+		id: 'mint-retired',
+	})
+	const retiredKey = `webhook:user:${userId}:endpoint:mint-retired`
+	await checkRateLimit(env.APP_DB, retiredKey, webhookRateLimitConfig)
+	const now = Math.floor(Date.now() / 1000)
+	await env.APP_DB.batch(
+		Array.from({ length: webhookRateLimitConfig.maxRequests - 1 }, () =>
+			env.APP_DB.prepare(
+				`INSERT INTO _rate_limits (key, ts) VALUES (?, ?)`,
+			).bind(retiredKey, now),
+		),
+	)
+	const retiredLimited = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'retired',
+		urlSecret,
+		body: JSON.stringify({ n: 1 }),
+	})
+	expect(retiredLimited.status).toBe(429)
+	expect(await listDeliveries(userId, 'retired')).toEqual([])
 
 	declareWebhook({
 		name: 'vendor',

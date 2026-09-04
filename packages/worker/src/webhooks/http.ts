@@ -331,7 +331,19 @@ export async function handleWebhookIngressRequest(
 	} catch {
 		declared = undefined
 	}
+
+	const rateLimit = await checkRateLimit(
+		env.APP_DB,
+		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
+		webhookRateLimitConfigFor(declared?.rateLimitPerMinute),
+	)
+	if (!rateLimit.allowed) {
+		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
+	}
+
 	// Republished package removed/renamed the webhook → deactivate ingress.
+	// Rate-limit first so a minted-but-undeclared URL cannot flush delivery
+	// history without bound.
 	if (!declared) {
 		await recordWebhookDelivery({
 			env,
@@ -372,15 +384,6 @@ export async function handleWebhookIngressRequest(
 			},
 			{ status: 409 },
 		)
-	}
-
-	const rateLimit = await checkRateLimit(
-		env.APP_DB,
-		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
-		webhookRateLimitConfigFor(declared.rateLimitPerMinute),
-	)
-	if (!rateLimit.allowed) {
-		return rateLimitedResponse(rateLimit.retryAfterSeconds ?? 60)
 	}
 
 	const bodyResult = await readBodyWithCap(request, webhookMaxPayloadBytes)
@@ -612,6 +615,7 @@ export async function handleWebhookIngressRequest(
 				: {}),
 			idempotencyKey,
 			...(idempotencyParamsHash ? { idempotencyParamsHash } : {}),
+			...(callerIdempotencyKey ? { callerIdempotency: true as const } : {}),
 			deliveryId,
 			payloadBytes: bodyBytes.byteLength,
 			receivedAt,

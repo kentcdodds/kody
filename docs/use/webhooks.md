@@ -240,9 +240,11 @@ Arrays and non-objects are **400** `invalid_params`. Default
 
 Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 `idempotencyKey` is accepted when the header is absent. Same key + same payload
-replays the stored result; a different payload is **409**
-`idempotency_mismatch`; an in-progress key is **409** `invocation_in_progress`.
-This works without HMAC — the URL secret is the credential.
+replays the stored result. On `sync`, a different payload is **409**
+`idempotency_mismatch` and an in-progress key is **409**
+`invocation_in_progress`. `ack` still returns **202** after enqueue; the
+consumer records the ledger outcome. This works without HMAC — the URL secret is
+the credential.
 
 Caller keys use the same package-invocation idempotency ledger as
 `replay.deliveryIdHeader`. Delivery-id keys still match by id alone (vendor

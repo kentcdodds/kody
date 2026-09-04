@@ -23,9 +23,9 @@ Authors do not get `packages.invoke`.
   until that helper is deleted
   ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 - Exactly-once → workflows. Do not keep a keyed invoke beside them.
-- External callers → HTTP invocation tokens
-  (`POST /@:user/api/package-invocations/…`). That path stays. It is not
-  `packages.invoke`. The ingress half is revisited by
+- External callers → inbound webhooks. HTTP invocation tokens
+  (`POST /@:user/api/package-invocations/…`) remain only as an unadvertised
+  drain. That path is not `packages.invoke`. See
   [0048](./0048-webhooks-replace-invocation-tokens.md).
 
 The `kody:runtime` helper stays quarantined for a soak so already-published
