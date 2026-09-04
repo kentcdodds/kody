@@ -9,7 +9,7 @@ import {
 	captureClientException,
 	initSentryClient,
 } from '#client/sentry-client.ts'
-import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
+import { AppRoot } from './app-root.tsx'
 import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
 import { ensureNavigationApi } from './ensure-navigation-api.ts'
@@ -26,6 +26,24 @@ initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
 	AppRoot,
+}
+
+function isBootModuleUrl(moduleUrl: string) {
+	if (moduleUrl === import.meta.url) return true
+	try {
+		const requested = new URL(moduleUrl, 'https://kody.local').pathname
+		const boot = new URL(import.meta.url, 'https://kody.local').pathname
+		return requested === boot || requested === '/client-entry.js'
+	} catch {
+		return moduleUrl === '/client-entry.js'
+	}
+}
+
+function requireClientExport(exportName: string, value: unknown) {
+	if (typeof value !== 'function') {
+		throw new Error(`Unknown client export: ${exportName}`)
+	}
+	return value
 }
 
 const bootChunkReloadFlag = 'kody:boot-chunk-reload'
@@ -63,16 +81,15 @@ async function boot() {
 	}
 
 	const app = run({
-		loadModule(moduleUrl, exportName) {
-			const expectedHref = APP_ROOT_ENTRY_ID.split('#')[0]
-			if (moduleUrl !== expectedHref) {
-				throw new Error(`Unknown client module URL: ${moduleUrl}`)
+		async loadModule(moduleUrl, exportName) {
+			if (isBootModuleUrl(moduleUrl)) {
+				return requireClientExport(exportName, clientRegistry[exportName])
 			}
-			const component = clientRegistry[exportName]
-			if (!component) {
-				throw new Error(`Unknown client export: ${exportName}`)
-			}
-			return component
+			const mod = (await import(/* @vite-ignore */ moduleUrl)) as Record<
+				string,
+				unknown
+			>
+			return requireClientExport(exportName, mod[exportName])
 		},
 		async resolveFrame(src, options) {
 			const target = options?.target

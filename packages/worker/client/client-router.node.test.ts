@@ -229,7 +229,7 @@ test('same-origin hash links are intercepted so scroll restoration can reach the
 
 		const remixFrameAnchor = {
 			target: '',
-			hasAttribute: (name: string) => name === 'rmx-target',
+			hasAttribute: (name: string) => name === 'data-rmx-target',
 			getAttribute: (name: string) => (name === 'href' ? '/community' : null),
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, remixFrameAnchor)).toBe(false)
@@ -301,7 +301,7 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 
 		const documentAnchor = {
 			target: '',
-			hasAttribute: (name: string) => name === 'rmx-document',
+			hasAttribute: (name: string) => name === 'data-rmx-document',
 			getAttribute: (name: string) =>
 				name === 'href' ? '/guides/oauth.md' : null,
 		} as unknown as HTMLAnchorElement
@@ -309,7 +309,7 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 
 		const rssAnchor = {
 			target: '',
-			hasAttribute: (name: string) => name === 'rmx-document',
+			hasAttribute: (name: string) => name === 'data-rmx-document',
 			getAttribute: (name: string) =>
 				name === 'href' ? routes.blogRss.href() : null,
 		} as unknown as HTMLAnchorElement

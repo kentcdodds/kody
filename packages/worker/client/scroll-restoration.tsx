@@ -1,4 +1,4 @@
-import { addEventListeners, type Handle } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 import {
 	isRecordFocusInViewport,
 	parseSavedScrollPositions,
@@ -276,13 +276,17 @@ export function ScrollRestoration(handle: Handle) {
 			window.history.scrollRestoration = 'manual'
 		}
 
-		addEventListeners(routerEvents, handle.signal, {
-			navigationstart: handleNavigationStart,
-			navigationend(event: Event) {
+		routerEvents.addEventListener('navigationstart', handleNavigationStart, {
+			signal: handle.signal,
+		})
+		routerEvents.addEventListener(
+			'navigationend',
+			(event: Event) => {
 				if (!isRouterNavigationEvent(event)) return
 				restoreWindowScroll(event.detail, handle.signal)
 			},
-		})
+			{ signal: handle.signal },
+		)
 		restoreWindowScroll(
 			{
 				location: `${window.location.pathname}${window.location.search}${window.location.hash}`,
@@ -291,10 +295,14 @@ export function ScrollRestoration(handle: Handle) {
 			},
 			handle.signal,
 		)
-		addEventListeners(window, handle.signal, {
-			scroll: persistWindowScrollPosition,
-			pagehide: persistWindowScrollPosition,
-			beforeunload: persistWindowScrollPosition,
+		window.addEventListener('scroll', persistWindowScrollPosition, {
+			signal: handle.signal,
+		})
+		window.addEventListener('pagehide', persistWindowScrollPosition, {
+			signal: handle.signal,
+		})
+		window.addEventListener('beforeunload', persistWindowScrollPosition, {
+			signal: handle.signal,
 		})
 		handle.signal.addEventListener('abort', () => {
 			persistSavedScrollPositions()

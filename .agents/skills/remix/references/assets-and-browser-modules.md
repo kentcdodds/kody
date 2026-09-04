@@ -5,8 +5,8 @@
 How to serve browser scripts and styles from source. Read this when the task
 involves:
 
-- Configuring `createAssetServer` (`fileMap`, `allow`, `deny`, fingerprinting,
-  compiler options)
+- Configuring `createAssetServer` (`mounts`, `allowFiles`, `denyFiles`,
+  fingerprinting, compiler options)
 - Choosing between `staticFiles()` for already-built files and
   `createAssetServer()` for source assets that need import rewriting, preloads,
   or fingerprinted URLs
@@ -37,12 +37,12 @@ import { createRouter } from 'remix/router'
 
 let assetServer = createAssetServer({
 	rootDir: path.resolve(import.meta.dirname, '..'),
-	fileMap: {
-		'/assets/app/*path': 'app/*path',
-		'/assets/packages/*path': '../packages/*path',
+	mounts: {
+		app: 'app',
+		packages: '../packages',
 	},
-	allow: ['app/assets/**', '../packages/**'],
-	deny: ['app/**/*.server.*'],
+	allowFiles: ['app/assets/**', '../packages/**'],
+	denyFiles: ['app/**/*.server.*'],
 	target: { es: '2020', chrome: '109', safari: '16.4' },
 	sourceMaps: process.env.NODE_ENV === 'development' ? 'external' : undefined,
 	minify: process.env.NODE_ENV === 'production',
@@ -64,16 +64,17 @@ router.get('/assets/*path', ({ request }) => {
 
 ## Rules
 
-- Treat `allow` and `deny` as the security boundary for browser-reachable source
-  files.
-- Add a `deny` list for server-only modules such as `*.server.*`, private
+- Treat `allowFiles` and `denyFiles` as the security boundary for
+  browser-reachable source files.
+- Add a `denyFiles` list for server-only modules such as `*.server.*`, private
   config, or other files that should never be exposed.
 - Set `rootDir` explicitly in monorepos so relative paths resolve from the
   intended project root.
-- `fileMap` keys are public URL patterns and values are root-relative file path
-  patterns. They use `route-pattern` syntax on both sides.
-- Keep the same wildcard params on both sides of a `fileMap` entry so import
-  rewriting can map source files back to public URLs.
+- `mounts` maps a public URL directory to a filesystem directory and preserves
+  the path beneath each root. Omit it to use
+  `{ app: 'app', npm: 'node_modules' }`.
+- Kody's origin website does not use `createAssetServer`. Hydration URLs come
+  from Pitlane `?assets=` imports under Vite.
 - CSS files are compiled and served alongside scripts. Local CSS `@import` rules
   are rewritten and fingerprinted with the same asset server routing rules.
 

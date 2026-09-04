@@ -4,8 +4,6 @@ import { RouterLocationProvider } from './router-location.tsx'
 import { type SessionInfo } from './session.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 
-export const APP_ROOT_ENTRY_ID = '/client-entry.js#AppRoot'
-
 export type AppRootProps = {
 	url: string
 	session: SessionInfo | null
@@ -14,8 +12,12 @@ export type AppRootProps = {
 	unauthorized?: boolean
 }
 
+// Remix rc.1 throws when the entry ID is empty. Vite and Node keep the
+// source `import.meta.url`; Wrangler/workerd (MCP e2e) leaves it blank.
+const appRootEntryId = import.meta.url || '/client-entry.js#AppRoot'
+
 export const AppRoot: EntryComponent<AppRootProps> = clientEntry(
-	APP_ROOT_ENTRY_ID,
+	appRootEntryId,
 	function AppRoot(handle: Handle<AppRootProps>) {
 		return () => (
 			<RouterLocationProvider url={handle.props.url}>

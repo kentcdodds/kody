@@ -62,7 +62,7 @@ module variables.
 ## Client typed routes
 
 Client code imports `routes` from `#universal/routes.ts`. The route table is
-plain data from `remix/routes`; esbuild bundles it via the root `package.json`
+plain data from `remix/routes`; Vite resolves it via the root `package.json`
 `imports` map.
 
 Example (`client/routes/community.tsx`):
@@ -81,11 +81,12 @@ the server-side `registerFrame` call in `frames/community-listings.ts`.
 ## Progressive enhancement
 
 Ordinary same-origin clicks and submits stay on Kody's client router. Forms and
-anchors that opt into Remix frame navigation use `rmx-target`, `rmx-src`, or
-`rmx-document`. The client router leaves those alone so Remix can reload a named
-frame (or force a full document submit) through `resolveFrame`.
+anchors that opt into Remix frame navigation use `data-rmx-target`,
+`data-rmx-src`, or `data-rmx-document`. The client router leaves those alone so
+Remix can reload a named frame (or force a full document submit) through
+`resolveFrame`.
 
 The community search form is the first opted-in surface: it is a GET form to
-`routes.community` with `rmx-target={COMMUNITY_LISTINGS_TARGET}` and
-`rmx-history="push"`. Login, billing, OAuth, and passkey forms stay on the
+`routes.community` with `data-rmx-target={COMMUNITY_LISTINGS_TARGET}` and
+`data-rmx-history="push"`. Login, billing, OAuth, and passkey forms stay on the
 client router.

@@ -156,7 +156,9 @@ await app.ready()
 - **`resolveFrame(src, options?)`** (optional) — called when a `<Frame>` loads
   or reloads content. `options` may include `target`, `formData`, `method`,
   `encType`, and `signal`. Returning the `Response` lets Remix read redirects
-  and body encoding.
+  and body encoding. When omitted, Remix fetches the frame source as HTML. Kody
+  keeps a custom resolver so frame requests go through the registered frame
+  handlers and the same auth as the parent page.
 
 ### `app` methods
 
@@ -274,6 +276,14 @@ import { renderToString } from 'remix/ui/server'
 let html = await renderToString(<App />)
 ```
 
+### Script elements in SSR
+
+Remix rc.1 requires a single string child for server-rendered `<script>`
+content. Non-string children render empty and report an error. Pass the source
+as a string (Kody's scroll-restoration inline script) or keep the element empty
+and set `src`. Script-tag sequences that could terminate the element stay
+escaped.
+
 ### CSS in SSR
 
 Components using the `css` mixin have styles collected during rendering and
@@ -294,11 +304,15 @@ navigate('/dashboard', { history: 'replace' })
 
 Options: `src`, `target`, `history` (`'push' | 'replace'`), `resetScroll`.
 
-Attributes understood by the runtime: `rmx-target`, `rmx-src`, `rmx-document`,
-`rmx-history`, `rmx-preserve-dom`. Use `rmx-target` on a form or anchor to
-reload a named frame; use `rmx-history="push|replace"` to control history.
-Kody's client router intercepts ordinary same-origin clicks and submits, so
-leave `rmx-*` off until a form is opted into Remix frame navigation.
+Attributes understood by the runtime: `data-rmx-target`, `data-rmx-src`,
+`data-rmx-document`, `data-rmx-history`, `data-rmx-preserve-dom`,
+`data-rmx-reset-scroll`, `data-rmx-key`. Use `data-rmx-target` on a form or
+anchor to reload a named frame; use `data-rmx-history="push|replace"` to control
+history; use `data-rmx-reset-scroll="false"` to keep the current scroll
+position; use `data-rmx-key` with `data-rmx-preserve-dom` so a matched element
+keeps its live DOM across frame reloads. Kody's client router intercepts
+ordinary same-origin clicks and submits, so leave `data-rmx-*` off until a form
+is opted into Remix frame navigation.
 
 ## Head Management
 

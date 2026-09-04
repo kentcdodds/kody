@@ -144,7 +144,9 @@ directly in the handler or the queued task.
 
 ### `handle.signal`
 
-An `AbortSignal` aborted when the component disconnects. Use for cleanup:
+An `AbortSignal` aborted when the component disconnects. Use for cleanup. Listen
+with native `target.addEventListener(type, listener, { signal })` —
+`addEventListeners()` was removed in Remix 3.0.0-rc.1.
 
 ```tsx
 function Clock(handle: Handle) {
@@ -233,7 +235,7 @@ For granular updates without re-rendering the full subtree, use
 `TypedEventTarget`:
 
 ```tsx
-import { TypedEventTarget, addEventListeners } from 'remix/ui'
+import { TypedEventTarget } from 'remix/ui'
 
 class Theme extends TypedEventTarget<{ change: Event }> {
 	#value: 'light' | 'dark' = 'light'
@@ -266,32 +268,36 @@ function ThemeProvider(handle: Handle<{ children?: RemixNode }, Theme>) {
 
 function ThemedContent(handle: Handle) {
 	let theme = handle.context.get(ThemeProvider)
-	addEventListeners(theme, handle.signal, {
-		change() {
+	theme.addEventListener(
+		'change',
+		() => {
 			handle.update()
 		},
-	})
+		{ signal: handle.signal },
+	)
 	return () => <div>Theme: {theme.value}</div>
 }
 ```
 
 ## Global Events
 
-Use `addEventListeners(target, handle.signal, listeners)` to listen to global
-targets with automatic cleanup when the component disconnects:
+Use native `addEventListener` with `{ signal: handle.signal }` so listeners
+clean up when the component disconnects:
 
 ```tsx
-import { addEventListeners, type Handle } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 
 function ResizeTracker(handle: Handle) {
 	let width = window.innerWidth
 
-	addEventListeners(window, handle.signal, {
-		resize() {
+	window.addEventListener(
+		'resize',
+		() => {
 			width = window.innerWidth
 			handle.update()
 		},
-	})
+		{ signal: handle.signal },
+	)
 
 	return () => <div>{width}</div>
 }

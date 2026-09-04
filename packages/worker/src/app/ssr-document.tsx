@@ -1,6 +1,7 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle } from 'remix/ui'
+import { HMR } from '#app/hmr.ts'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
 import {
 	buildClientEntryHref,
@@ -278,6 +279,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				)}
 			</head>
 			<body>
+				<HMR />
 				<div id="root">
 					<AppRoot
 						url={handle.props.url}
@@ -292,7 +294,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				    and before hydration, or scrolls `[data-record-focus]` into
 				    view on a list/detail deep link. CSP allows this exact
 				    script via its sha256 hash — do not add `'unsafe-inline'`. */}
-				<script innerHTML={scrollRestorationInlineScript}></script>
+				<script>{scrollRestorationInlineScript}</script>
 				<script type="module" src={clientEntryHref}></script>
 			</body>
 		</html>

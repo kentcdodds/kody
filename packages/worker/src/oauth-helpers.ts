@@ -28,12 +28,14 @@ const inertHandler = {
  * `id_token` enrichment (runs after that fetch returns), and capabilities
  * served from the sessionful `MCP` Durable Object on kody-platform therefore
  * build the same `OAuthHelpersImpl` through the library's `getOAuthApi` with
- * the shared options. The library loads lazily from the pre-bundled additional module
- * (`tools/build-worker-bundler-modules.ts`): wrangler inlines a plain dynamic
- * `import('@cloudflare/workers-oauth-provider')` into the main module, which
- * would put it on the platform/runtime startup path, whereas the
- * `find_additional_modules` lane uploads it separately so it is only fetched
- * and evaluated when a non-fetch caller actually needs it.
+ * the shared options. The library loads lazily from the pre-bundled module
+ * (`tools/build-worker-bundler-modules.ts`): a plain dynamic
+ * `import('@cloudflare/workers-oauth-provider')` is inlined into Wrangler's
+ * main module, which would put it on the platform/runtime startup path.
+ * The generated specifier stays behind `import()`, so Vite origin emits a
+ * hashed chunk and Wrangler siblings still upload it via
+ * `find_additional_modules`. It is only fetched and evaluated when a
+ * non-fetch caller actually needs it.
  *
  * Returns `undefined` only when `OAUTH_KV` itself is missing. Callers type
  * `OAUTH_PROVIDER` as the subset of `OAuthHelpers` they consume; the full

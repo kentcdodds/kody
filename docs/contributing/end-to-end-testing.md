@@ -59,12 +59,12 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 
 ## Server and routing
 
-- The test server is started via Playwright `webServer` using Wrangler.
+- The test server is started via Playwright `webServer` using Vite.
 - `playwright.config.ts` starts the E2E server with
   `npm run e2e:web-server -- --port 3847` (D1 migrations + the local Cloudflare
-  API mock + Wrangler) and waits on `/health`. Nx `test-e2e` already ran
-  `build-client` and `prepare-e2e-env`, so the webServer does not rebuild
-  `public/` into wrangler's assets watcher.
+  API mock + Vite with `CLOUDFLARE_ENV=test`) and waits on `/health`. The test
+  env keeps jobs and highlight as Vite auxiliary workers; platform/runtime
+  auxiliary workers are skipped.
 - `tools/e2e-web-server.ts` starts `packages/mock-servers/cloudflare` and points
   the origin worker's `CLOUDFLARE_API_BASE_URL` / `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID` at it so signup and other transactional mail go
@@ -73,9 +73,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   `GET /__mocks/messages` (Bearer token or `?token=`) using the origin and token
   written to `.wrangler/state/e2e/cloudflare-mock.json`. Do not pull
   verification tokens out of D1 as the primary path; that skips the email leg.
-- `preview:e2e` is the manual path: it prepares `packages/worker/.env`, rebuilds
-  the client bundles, applies local D1 migrations, and starts Wrangler against
-  `.wrangler/state/e2e`.
+- `preview:e2e` is the manual path: it prepares `packages/worker/.env`, applies
+  local D1 migrations, and starts Vite against `.wrangler/state/e2e`.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts (`tools/ensure-playwright-browser.ts`). The Validate E2E job
   restores `~/.cache/ms-playwright` from Actions cache and calls the same ensure
@@ -85,7 +84,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
   values for local secrets. That test env is a **single script**: Durable Object
   classes run on `kody-test` with no `script_name`. Production and `npm run dev`
-  attach origin, platform, runtime, and jobs as siblings.
+  attach origin, platform, runtime, jobs, and highlight as siblings. The test
+  env still starts jobs and highlight as auxiliary workers.
 - Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
   before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
   exited mid-suite (avoids burning retries on `ECONNREFUSED`). That error names

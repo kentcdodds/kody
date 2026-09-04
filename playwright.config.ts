@@ -30,11 +30,10 @@ export default defineConfig({
 	webServer: {
 		command: webServerCommand,
 		url: `${baseURL}/health`,
-		// Nx `test-e2e` already built the client. The web server only migrates
-		// and starts Wrangler so a second `build-client` does not write
-		// `public/` into wrangler's assets watcher. Startup still competes
-		// with parallel unit workers during `validate`, and the default 60s
-		// budget times out on 4-core CI runners.
+		// The web server starts Vite (`CLOUDFLARE_ENV=test`) after D1
+		// migrations. Startup still competes with parallel unit workers
+		// during `validate`, and the default 60s budget times out on 4-core
+		// CI runners.
 		timeout: process.env.CI ? 180_000 : 90_000,
 		reuseExistingServer: hasExplicitBaseUrl,
 		env: {

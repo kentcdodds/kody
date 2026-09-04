@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
-import { ensureE2eClientBuilt } from './ensure-e2e-client.ts'
 import {
 	e2eCloudflareMockAccountId,
 	writeE2eCloudflareMockState,
@@ -20,7 +19,6 @@ function runSetup(command: string, args: Array<string>) {
 
 async function startE2eWebServer() {
 	runSetup(process.execPath, ['tools/prepare-e2e-env.ts'])
-	ensureE2eClientBuilt()
 	runSetup(resolveNpmCommand(), ['run', 'migrate:e2e'])
 
 	const mock = await startCloudflareMock(`e2e-cloudflare-${randomUUID()}`)
@@ -40,19 +38,9 @@ async function startE2eWebServer() {
 		process.execPath,
 		[
 			'--env-file=packages/worker/.env',
-			'./wrangler-env.ts',
-			'dev',
-			'--local',
-			'--persist-to',
-			'.wrangler/state/e2e',
-			'--var',
-			`CLOUDFLARE_API_BASE_URL:${mock.origin}`,
-			'--var',
-			`CLOUDFLARE_API_TOKEN:${mock.token}`,
-			'--var',
-			`CLOUDFLARE_ACCOUNT_ID:${e2eCloudflareMockAccountId}`,
-			'--var',
-			'CLOUDFLARE_API_SOURCE_SNAPSHOTS:true',
+			'node_modules/vite/bin/vite.js',
+			'--host',
+			'127.0.0.1',
 			...extraArgs,
 		],
 		{
@@ -63,6 +51,9 @@ async function startE2eWebServer() {
 				CLOUDFLARE_API_TOKEN: mock.token,
 				CLOUDFLARE_ACCOUNT_ID: e2eCloudflareMockAccountId,
 				CLOUDFLARE_API_SOURCE_SNAPSHOTS: 'true',
+				WRANGLER_IS_LOCAL_DEV: 'true',
+				WRANGLER_PERSIST_TO: '.wrangler/state/e2e',
+				X_LOCAL_EXPLORER: 'false',
 			},
 		},
 	)

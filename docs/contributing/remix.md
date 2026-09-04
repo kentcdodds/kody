@@ -40,10 +40,15 @@ template:
   apply.
 - Production ships four product scripts via GitHub Actions. `npm run deploy`
   uploads origin only; there is no long-running `npm start` process.
-- Development uses the esbuild watcher plus `wrangler dev`. Production client
-  assets use the same esbuild pipeline with minification enabled.
+- Development uses Vite (`@pitlane/dev` + `@cloudflare/vite-plugin`) so origin
+  SSR runs in workerd with HMR. Production client and origin worker assets come
+  from `vite build`. Platform, runtime, jobs, and highlight stay auxiliary
+  workers in `vite dev` and separate Wrangler deploys in production.
 - Static files are served through the Workers Assets binding rather than
-  `remix/assets` or `remix/middleware/static`.
+  `remix/assets` or `remix/middleware/static`. Hydration uses
+  `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports. SSR
+  `renderToStream` must pass `resolveClientEntry` so `#rmx-data` points at the
+  Vite hashed entry (`/assets/entry-*.js`), not the deleted `/client-entry.js`.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
   `packages/worker/src/app/ssr-render.tsx`. The browser resolver is
   `(src, options)` and returns the `Response`. SSR `resolveFrame` is

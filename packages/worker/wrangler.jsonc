@@ -41,14 +41,12 @@
 	"main": "./src/index.ts",
 	"minify": true,
 	"upload_source_maps": true,
-	// `find_additional_modules` uploads files matching `rules` (below `base_dir`,
-	// which defaults to `./src`) as separate external modules instead of inlining
-	// them into the main module. The pre-bundled worker-bundler modules
-	// (`src/node_modules/.kody-generated/`, built by
-	// `tools/build-worker-bundler-modules.ts`) and the guide catalog
-	// (`src/generated/`) rely on this so their payloads only load when those
-	// paths dynamically import them, instead of being parsed and evaluated on
-	// every isolate cold start.
+	// Origin local/prod go through Vite (`tools/deploy.ts`, `vite.config.ts`).
+	// `@cloudflare/vite-plugin` ignores `find_additional_modules` / `rules` and
+	// emits those dynamic `import()` targets as hashed SSR chunks instead.
+	// The rules stay so Wrangler sibling workers and any direct `wrangler
+	// deploy --dry-run` against this file still keep worker-bundler, the
+	// guide catalog, and oauth-provider off the main module.
 	"find_additional_modules": true,
 	"rules": [
 		{
@@ -285,6 +283,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
@@ -759,6 +760,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
@@ -1061,6 +1065,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [

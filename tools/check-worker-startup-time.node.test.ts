@@ -4,6 +4,8 @@ import {
 	formatStartupTimeResult,
 	parseStartupProfileSummary,
 	readStartupBudget,
+	resolveStartupTimeCwd,
+	resolveStartupTimeTarget,
 	startupTimeTargets,
 } from './check-worker-startup-time.ts'
 
@@ -28,6 +30,32 @@ test('parses the wrangler check startup summary block', () => {
 
 test('returns null when the summary block is missing', () => {
 	expect(parseStartupProfileSummary('wrangler exploded')).toBeNull()
+})
+
+test('origin startup profile runs from the Vite snapshot, not the workspace root', () => {
+	const origin = startupTimeTargets.find((target) => target.name === 'origin')
+	expect(origin).toBeDefined()
+	const resolved = resolveStartupTimeTarget(
+		origin!,
+		'/tmp/kody-startup-time/origin-vite/ssr/wrangler.json',
+	)
+	expect(resolved.packageDir).toBe('/tmp/kody-startup-time/origin-vite/ssr')
+	expect(resolved.args).toEqual(['--config', 'wrangler.json'])
+	expect(resolveStartupTimeCwd(resolved.packageDir)).toBe(
+		'/tmp/kody-startup-time/origin-vite/ssr',
+	)
+	expect(resolveStartupTimeCwd('packages/platform-worker')).toMatch(
+		/packages\/platform-worker$/,
+	)
+})
+
+test('sibling startup profiles pass an explicit Wrangler config', () => {
+	expect(
+		startupTimeTargets.find((target) => target.name === 'platform')?.args,
+	).toEqual(['--config', 'wrangler.jsonc'])
+	expect(
+		startupTimeTargets.find((target) => target.name === 'runtime')?.args,
+	).toEqual(['--config', 'wrangler.jsonc'])
 })
 
 test('budget file names every profiled worker with a positive ceiling', async () => {

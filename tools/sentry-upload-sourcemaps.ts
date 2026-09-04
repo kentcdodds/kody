@@ -5,15 +5,15 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-// Wrangler resolves `--outdir .wrangler/sentry-bundle` against the config
-// file's directory, so with the generated production config the bundle lands
-// under packages/worker/. The repo-root path is kept as a fallback for local
-// runs where wrangler is invoked with a root-relative config.
+// Origin production maps come from `vite build` (`dist/ssr`). The Wrangler
+// `--outdir .wrangler/sentry-bundle` paths stay as fallbacks for sibling
+// scripts and older deploy logs.
 const workerBundleCandidates = [
+	join(root, 'dist', 'ssr'),
 	join(root, 'packages', 'worker', '.wrangler', 'sentry-bundle'),
 	join(root, '.wrangler', 'sentry-bundle'),
 ]
-const clientAssetsDir = join(root, 'packages', 'worker', 'public')
+const clientAssetsDir = join(root, 'dist', 'client')
 
 const release =
 	process.env.SENTRY_RELEASE?.trim() ||
@@ -86,7 +86,7 @@ const workerBundleDir = workerBundleCandidates.find((dir) => hasSourceMaps(dir))
 // silent no-op hid a path mismatch for weeks.)
 if (!workerBundleDir) {
 	console.error(
-		`sentry-upload-sourcemaps: no worker bundle with source maps found (checked: ${workerBundleCandidates.join(', ')}). Run deploy with --outdir .wrangler/sentry-bundle --upload-source-maps.`,
+		`sentry-upload-sourcemaps: no worker bundle with source maps found (checked: ${workerBundleCandidates.join(', ')}). Origin maps come from \`vite build\` (\`dist/ssr\`); sibling deploys still use \`--outdir .wrangler/sentry-bundle --upload-source-maps\`.`,
 	)
 	process.exit(1)
 }
@@ -98,7 +98,7 @@ if (hasSourceMaps(clientAssetsDir)) {
 	upload(clientAssetsDir, 'client assets')
 } else {
 	console.error(
-		'sentry-upload-sourcemaps: no client source maps in packages/worker/public (expected from build:client:web --sourcemap).',
+		'sentry-upload-sourcemaps: no client source maps in dist/client (expected from vite build).',
 	)
 	process.exit(1)
 }

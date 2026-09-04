@@ -21,6 +21,13 @@ export const sharedProjectConfig = {
 	resolve: {
 		alias: [
 			{
+				find: /^pitlane:dev$/,
+				replacement: resolve(
+					rootDir,
+					'packages/worker/src/app/ssr-stubs/pitlane-dev.ts',
+				),
+			},
+			{
 				find: /^#app\//,
 				replacement: `${resolve(rootDir, 'packages/worker/src/app')}/`,
 			},

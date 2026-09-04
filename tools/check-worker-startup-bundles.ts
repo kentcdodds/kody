@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
+import {
+	buildOriginProductionViteBundle,
+	findOriginViteDeferredAssets,
+} from './origin-vite-startup-build.ts'
 
 const execFileAsync = promisify(execFile)
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -18,16 +22,17 @@ type StartupBundleDefinition = {
 	maxEntryBytes: number
 	forbiddenSources: ReadonlyArray<string>
 	/**
+	 * How the production entry is built for this check. Origin ships through
+	 * Vite (`tools/deploy.ts`); platform and runtime still use Wrangler.
+	 * Origin's slim `production-worker.ts` is deploy-generated only — the
+	 * committed `packages/worker/wrangler.jsonc` never points `env.production`
+	 * at it — so the Vite path writes a temporary config with that `main`.
+	 */
+	bundler: 'vite' | 'wrangler'
+	/**
 	 * Positional entry-point override passed to `wrangler deploy`, relative
-	 * to `packageDir`. Only origin needs this: the slim production entry
-	 * (`production-worker.ts`) is reached through a deploy-generated
-	 * Wrangler config's top-level `main` override
-	 * (`tools/ci/production-resources.ts`) — the committed
-	 * `packages/worker/wrangler.jsonc` never points `env.production` at it
-	 * directly, so a dry-run against the committed config alone would
-	 * resolve the dev/test/preview entry (`index.ts`) instead of the entry
-	 * this check exists to guard. Platform and runtime already commit their
-	 * own top-level `main`, so they need no override.
+	 * to `packageDir`. Platform and runtime already commit their own
+	 * top-level `main`, so they need no override.
 	 */
 	entryOverride?: string
 }
@@ -86,8 +91,8 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 	{
 		name: 'origin',
 		packageDir: 'packages/worker',
-		entryFile: 'production-worker.js',
-		entryOverride: './src/production-worker.ts',
+		entryFile: 'index.js',
+		bundler: 'vite',
 		maxEntryBytes: 7_750_000,
 		forbiddenSources: [
 			'/packages/worker/src/index.ts',
@@ -98,6 +103,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		name: 'platform',
 		packageDir: 'packages/platform-worker',
 		entryFile: 'platform-worker.js',
+		bundler: 'wrangler',
 		maxEntryBytes: 4_975_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
@@ -108,6 +114,7 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 		name: 'runtime',
 		packageDir: 'packages/runtime-worker',
 		entryFile: 'runtime-worker.js',
+		bundler: 'wrangler',
 		maxEntryBytes: 3_620_000,
 		forbiddenSources: [
 			...sharedDeferredGuideSources,
@@ -121,7 +128,141 @@ function normalizeSourcePath(source: string) {
 	return source.replaceAll('\\', '/')
 }
 
-async function inspectStartupBundle(
+function readSourceMapSources(sourceMapText: string, name: string) {
+	const sourceMap = JSON.parse(sourceMapText) as { sources?: unknown }
+	if (
+		!Array.isArray(sourceMap.sources) ||
+		!sourceMap.sources.every((source) => typeof source === 'string')
+	) {
+		throw new Error(`${name} startup bundle emitted a malformed source map.`)
+	}
+	return sourceMap.sources.map(normalizeSourcePath)
+}
+
+function assertDeferredSourcesStayOutOfMain(
+	definition: StartupBundleDefinition,
+	sources: ReadonlyArray<string>,
+) {
+	const violations = definition.forbiddenSources.filter((forbiddenSource) =>
+		sources.some((source) => source.includes(forbiddenSource)),
+	)
+	if (violations.length > 0) {
+		throw new Error(
+			`${definition.name} startup bundle includes deferred-only source(s): ${violations.join(', ')}`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(guideCatalogGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated guide catalog (${guideCatalogGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(workerBundlerGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated worker bundler (${workerBundlerGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(oauthProviderGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated OAuth provider (${oauthProviderGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+}
+
+async function assertWranglerAdditionalModules(
+	outputDir: string,
+	name: string,
+) {
+	try {
+		await stat(path.join(outputDir, guideCatalogGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${name} startup bundle did not emit ${guideCatalogGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
+		)
+	}
+	try {
+		await stat(path.join(outputDir, workerBundlerGeneratedModuleRelativePath))
+		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
+	} catch {
+		throw new Error(
+			`${name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
+		)
+	}
+	try {
+		await stat(path.join(outputDir, oauthProviderGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
+		)
+	}
+}
+
+function assertOriginViteDeferredChunks(
+	assetNames: ReadonlyArray<string>,
+	name: string,
+) {
+	const assets = findOriginViteDeferredAssets(assetNames)
+	if (assets.guideCatalog.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate guide-catalog chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.oauthProvider.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate oauth-provider chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.workerBundler.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate worker-bundler chunk (dynamic import() regression?).`,
+		)
+	}
+	if (assets.esbuildWasm.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit esbuild.wasm as a separate asset (dynamic import() regression?).`,
+		)
+	}
+}
+
+async function inspectViteOriginStartupBundle(
+	definition: StartupBundleDefinition,
+	outputRoot: string,
+) {
+	const build = await buildOriginProductionViteBundle(
+		path.join(outputRoot, definition.name),
+	)
+	const [{ size }, sourceMapText, assetNames] = await Promise.all([
+		stat(build.entryPath),
+		readFile(build.sourceMapPath, 'utf8'),
+		readdir(build.assetsDir),
+	])
+	const sources = readSourceMapSources(sourceMapText, definition.name)
+	assertDeferredSourcesStayOutOfMain(definition, sources)
+	assertOriginViteDeferredChunks(assetNames, definition.name)
+	if (size > definition.maxEntryBytes) {
+		throw new Error(
+			`${definition.name} startup entry is ${String(size)} bytes, exceeding its ${String(definition.maxEntryBytes)}-byte reviewed budget.`,
+		)
+	}
+	return {
+		name: definition.name,
+		size,
+		maxEntryBytes: definition.maxEntryBytes,
+	}
+}
+
+async function inspectWranglerStartupBundle(
 	definition: StartupBundleDefinition,
 	outputRoot: string,
 	wranglerBinary: string,
@@ -153,73 +294,9 @@ async function inspectStartupBundle(
 		stat(entryPath),
 		readFile(sourceMapPath, 'utf8'),
 	])
-	const sourceMap = JSON.parse(sourceMapText) as { sources?: unknown }
-	if (
-		!Array.isArray(sourceMap.sources) ||
-		!sourceMap.sources.every((source) => typeof source === 'string')
-	) {
-		throw new Error(
-			`${definition.name} startup bundle emitted a malformed source map.`,
-		)
-	}
-	const sources = sourceMap.sources.map(normalizeSourcePath)
-	const violations = definition.forbiddenSources.filter((forbiddenSource) =>
-		sources.some((source) => source.includes(forbiddenSource)),
-	)
-	if (violations.length > 0) {
-		throw new Error(
-			`${definition.name} startup bundle includes deferred-only source(s): ${violations.join(', ')}`,
-		)
-	}
-	if (
-		sources.some((source) =>
-			source.includes(guideCatalogGeneratedModuleSourcePath),
-		)
-	) {
-		throw new Error(
-			`${definition.name} startup bundle inlines the generated guide catalog (${guideCatalogGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, guideCatalogGeneratedModuleRelativePath))
-	} catch {
-		throw new Error(
-			`${definition.name} startup bundle did not emit ${guideCatalogGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
-		)
-	}
-	if (
-		sources.some((source) =>
-			source.includes(workerBundlerGeneratedModuleSourcePath),
-		)
-	) {
-		throw new Error(
-			`${definition.name} startup bundle inlines the generated worker bundler (${workerBundlerGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, workerBundlerGeneratedModuleRelativePath))
-		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
-	} catch {
-		throw new Error(
-			`${definition.name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
-		)
-	}
-	if (
-		sources.some((source) =>
-			source.includes(oauthProviderGeneratedModuleSourcePath),
-		)
-	) {
-		throw new Error(
-			`${definition.name} startup bundle inlines the generated OAuth provider (${oauthProviderGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
-		)
-	}
-	try {
-		await stat(path.join(outputDir, oauthProviderGeneratedModuleRelativePath))
-	} catch {
-		throw new Error(
-			`${definition.name} startup bundle did not emit ${oauthProviderGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
-		)
-	}
+	const sources = readSourceMapSources(sourceMapText, definition.name)
+	assertDeferredSourcesStayOutOfMain(definition, sources)
+	await assertWranglerAdditionalModules(outputDir, definition.name)
 	if (size > definition.maxEntryBytes) {
 		throw new Error(
 			`${definition.name} startup entry is ${String(size)} bytes, exceeding its ${String(definition.maxEntryBytes)}-byte reviewed budget.`,
@@ -230,6 +307,27 @@ async function inspectStartupBundle(
 		name: definition.name,
 		size,
 		maxEntryBytes: definition.maxEntryBytes,
+	}
+}
+
+async function inspectStartupBundle(
+	definition: StartupBundleDefinition,
+	outputRoot: string,
+	wranglerBinary: string,
+) {
+	switch (definition.bundler) {
+		case 'vite':
+			return inspectViteOriginStartupBundle(definition, outputRoot)
+		case 'wrangler':
+			return inspectWranglerStartupBundle(
+				definition,
+				outputRoot,
+				wranglerBinary,
+			)
+		default: {
+			const exhaustive: never = definition.bundler
+			throw new Error(`Unhandled startup bundler: ${String(exhaustive)}`)
+		}
 	}
 }
 

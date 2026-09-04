@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
+import { buildOriginProductionViteBundle } from './origin-vite-startup-build.ts'
 
 const execFileAsync = promisify(execFile)
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -25,19 +26,48 @@ export type StartupTimeTarget = {
 }
 
 /**
- * Same three production entries as `check-worker-startup-bundles.ts`. The
- * origin entry override mirrors the deploy-generated config that points
- * `env.production` at `production-worker.ts`.
+ * Same three production entries as `check-worker-startup-bundles.ts`.
+ * Origin profiles the Vite-built slim entry (the artifact `tools/deploy.ts`
+ * uploads). Platform and runtime still profile Wrangler's own bundle.
  */
 export const startupTimeTargets: ReadonlyArray<StartupTimeTarget> = [
 	{
 		name: 'origin',
-		packageDir: 'packages/worker',
-		args: ['--env', 'production', '--args', './src/production-worker.ts'],
+		// Replaced at profile time with the Vite snapshot directory. Wrangler
+		// 4.129 refuses `check startup` when cwd is a workspace root, even
+		// with `--config` pointing at the generated snapshot.
+		packageDir: '.',
+		args: [],
 	},
-	{ name: 'platform', packageDir: 'packages/platform-worker', args: [] },
-	{ name: 'runtime', packageDir: 'packages/runtime-worker', args: [] },
+	{
+		name: 'platform',
+		packageDir: 'packages/platform-worker',
+		args: ['--config', 'wrangler.jsonc'],
+	},
+	{
+		name: 'runtime',
+		packageDir: 'packages/runtime-worker',
+		args: ['--config', 'wrangler.jsonc'],
+	},
 ]
+
+export function resolveStartupTimeTarget(
+	target: StartupTimeTarget,
+	originWranglerConfigPath: string,
+): StartupTimeTarget {
+	if (target.name !== 'origin') return target
+	return {
+		...target,
+		packageDir: path.dirname(originWranglerConfigPath),
+		args: ['--config', path.basename(originWranglerConfigPath)],
+	}
+}
+
+export function resolveStartupTimeCwd(packageDir: string) {
+	return path.isAbsolute(packageDir)
+		? packageDir
+		: path.join(repoRoot, packageDir)
+}
 
 export type StartupBudget = {
 	/** Reviewed ceiling for the best-of-N active CPU sample, in milliseconds. */
@@ -101,7 +131,7 @@ async function profileStartupOnce(
 		wranglerBinary,
 		['check', 'startup', '--outfile', outfile, ...target.args],
 		{
-			cwd: path.join(repoRoot, target.packageDir),
+			cwd: resolveStartupTimeCwd(target.packageDir),
 			env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
 			maxBuffer: 64 * 1024 * 1024,
 		},
@@ -151,13 +181,25 @@ export async function checkWorkerStartupTime() {
 	const wranglerBinary = resolveLocalBinary('wrangler')
 	const results: Array<StartupTimeResult> = []
 	try {
+		const originBuild = await buildOriginProductionViteBundle(
+			path.join(outputRoot, 'origin-vite'),
+		)
 		// Sequential on purpose: concurrent workerd instances would contend for
 		// CPU and inflate each other's samples.
 		for (const target of startupTimeTargets) {
+			const resolvedTarget = resolveStartupTimeTarget(
+				target,
+				originBuild.wranglerConfigPath,
+			)
 			const samples: Array<StartupProfileSummary> = []
 			for (let run = 0; run < budget.runs; run++) {
 				samples.push(
-					await profileStartupOnce(target, outputRoot, wranglerBinary, run),
+					await profileStartupOnce(
+						resolvedTarget,
+						outputRoot,
+						wranglerBinary,
+						run,
+					),
 				)
 			}
 			results.push({

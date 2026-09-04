@@ -13,11 +13,6 @@ import {
 	type ProcessOutputMode,
 } from './tools/dev-process-output.ts'
 import {
-	defaultClientEntryPath,
-	defaultClientReadyTimeoutMs,
-	waitForClientEntryReady,
-} from './tools/dev-client-ready.ts'
-import {
 	defaultHealthTimeoutMs,
 	defaultWorkerPort,
 	isWorkerHealthOk,
@@ -27,7 +22,7 @@ import { resolveNpmCommand } from './tools/node-runtime.ts'
 const defaultMockPort = 8788
 const mockReadyTimeoutMs = 10_000
 const mockReadyPollMs = 200
-const workerReadyTimeoutMs = 15_000
+const workerReadyTimeoutMs = 90_000
 const workerReadyPollMs = 250
 
 const ansiReset = '\x1b[0m'
@@ -101,7 +96,7 @@ async function startDev() {
 function resolveWorkerOrigin(port: number) {
 	const envOrigin = process.env.WORKER_DEV_ORIGIN
 	if (envOrigin) return envOrigin.trim()
-	return `http://localhost:${port}`
+	return `http://127.0.0.1:${port}`
 }
 
 function runNpmScript(
@@ -290,56 +285,29 @@ async function restartDev(
 	clearLockedPorts()
 	const workerPort = await getPort({ port: portRange })
 	workerOrigin = resolveWorkerOrigin(workerPort)
-	const clientStartedAt = Date.now()
-	const client = runNpmScript(
-		'dev:client',
-		[],
-		{},
-		{
-			filterKey: 'client',
-			label: 'dev:client',
-			mode: 'buffer-on-error',
-		},
-	)
-	const clientDidBuild = await waitForClientEntryReady({
-		sinceMs: clientStartedAt,
-		timeoutMs: defaultClientReadyTimeoutMs,
-		isCancelled: () => client.killed || client.exitCode !== null,
-	})
-	if (!clientDidBuild) {
-		console.warn(
-			`dev:client did not write ${defaultClientEntryPath} within ${defaultClientReadyTimeoutMs}ms; ` +
-				`wrangler may reload when the bundle lands in public/.`,
-		)
-	}
-	const workerVarEnv = {
-		...mockEnv,
-	}
-	const workerVarArgs = Object.entries(workerVarEnv).flatMap(([key, value]) => [
-		'--var',
-		`${key}:${value}`,
-	])
 	const worker = runNpmScript(
-		'dev:worker',
-		[...extraArgs, ...workerVarArgs],
+		'dev:vite',
+		['--host', '127.0.0.1', '--port', String(workerPort), ...extraArgs],
 		{
 			PORT: String(workerPort),
+			WRANGLER_IS_LOCAL_DEV: 'true',
+			X_LOCAL_EXPLORER: process.env.X_LOCAL_EXPLORER ?? 'false',
 			...mockEnv,
 		},
 		{
 			filterKey: 'worker',
-			label: 'dev:worker',
+			label: 'vite',
 			mode: 'live',
 		},
 	)
 	const workerDidStart = await waitForWorkerReady(workerOrigin, worker)
 	if (!workerDidStart) {
 		console.warn(
-			`Main worker did not become ready within ${workerReadyTimeoutMs}ms; ` +
-				`check the dev:worker output above before using ${workerOrigin}.`,
+			`Vite origin did not become ready within ${workerReadyTimeoutMs}ms; ` +
+				`check the vite output above before using ${workerOrigin}.`,
 		)
 	}
-	devChildren = [client, worker]
+	devChildren = [worker]
 
 	if (announce) {
 		console.log(dim('\nRestarted dev servers.'))

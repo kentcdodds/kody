@@ -1,4 +1,4 @@
-import { addEventListeners, type Handle } from 'remix/ui'
+import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { applyDocumentHead } from './document-head.ts'
@@ -343,9 +343,9 @@ export function matchRoute(
  */
 export function hasRemixFrameNavigationAttribute(element: Element) {
 	return (
-		element.hasAttribute('rmx-target') ||
-		element.hasAttribute('rmx-src') ||
-		element.hasAttribute('rmx-document')
+		element.hasAttribute('data-rmx-target') ||
+		element.hasAttribute('data-rmx-src') ||
+		element.hasAttribute('data-rmx-document')
 	)
 }
 
@@ -976,8 +976,8 @@ export function listenToRouterNavigation(
 ) {
 	if (typeof document === 'undefined') return
 	ensureRouter()
-	addEventListeners(routerEvents, handle.signal, {
-		navigate: () => listener(),
+	routerEvents.addEventListener('navigate', () => listener(), {
+		signal: handle.signal,
 	})
 }
 
@@ -987,11 +987,13 @@ export function listenToRouterNavigationEnd(
 ) {
 	if (typeof document === 'undefined') return
 	ensureRouter()
-	addEventListeners(routerEvents, handle.signal, {
-		navigationend: (event) => {
+	routerEvents.addEventListener(
+		'navigationend',
+		(event) => {
 			listener((event as CustomEvent<RouterNavigationEventDetail>).detail)
 		},
-	})
+		{ signal: handle.signal },
+	)
 }
 
 /**
@@ -1006,8 +1008,8 @@ export function listenToRouterMutations(
 ) {
 	if (typeof document === 'undefined') return
 	ensureRouter()
-	addEventListeners(routerEvents, handle.signal, {
-		mutation: () => listener(),
+	routerEvents.addEventListener('mutation', () => listener(), {
+		signal: handle.signal,
 	})
 }
 

@@ -7,6 +7,14 @@ import {
 } from './wrangler-filter-kody-generated-watch.ts'
 import { readFile } from 'node:fs/promises'
 
+const wrangler4129WatchBlock = `if (props.findAdditionalModules) {
+              watchFiles = foundModulePaths;
+              const root = path25__namespace.default.resolve(props.entry.moduleRoot);
+              for await (const dir2 of findAdditionalModuleWatchDirs(root)) {
+                watchDirs.push(dir2);
+              }
+            }`
+
 const wrangler4127WatchBlock = `if (props.findAdditionalModules) {
               watchFiles = foundModulePaths;
               const root = path31__namespace.default.resolve(props.entry.moduleRoot);
@@ -25,6 +33,7 @@ const wrangler4120WatchBlock = `if (props.findAdditionalModules) {
 
 test('the additional-module watch filter is idempotent and marked', () => {
 	for (const upstreamWatchBlock of [
+		wrangler4129WatchBlock,
 		wrangler4127WatchBlock,
 		wrangler4120WatchBlock,
 	]) {

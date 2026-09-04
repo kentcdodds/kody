@@ -2,11 +2,8 @@
 /** @jsxRuntime automatic */
 import { renderToStream } from 'remix/ui/server'
 import { type RemixNode } from 'remix/ui'
-import {
-	buildClientEntryHref,
-	buildStylesheetHref,
-	getClientBuildId,
-} from '#app/client-build-id.ts'
+import { buildStylesheetHref, getClientBuildId } from '#app/client-build-id.ts'
+import { getClientEntryAssets } from '#app/client-entry-assets.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
@@ -19,7 +16,6 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import { getClientModulePreloadHrefs } from '#app/client-preload-manifest.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
@@ -65,6 +61,26 @@ function prependDoctype(stream: ReadableStream<Uint8Array>) {
 	return readable
 }
 
+/**
+ * Maps a Remix `clientEntry` id onto the public Vite client module.
+ * Production SSR often leaves `import.meta.url` empty, so the entry id is
+ * `/client-entry.js#AppRoot` while the script tag is `/assets/entry-*.js`.
+ * Without this hook, `#rmx-data` tells the browser to import the deleted
+ * esbuild path and hydration 404s.
+ */
+export function resolveOriginClientEntry({
+	entryId,
+	href,
+	preloads,
+}: {
+	entryId: string
+	href: string
+	preloads: Array<string>
+}) {
+	const exportName = entryId.split('#')[1]?.trim() || 'AppRoot'
+	return { href, exportName, preloads }
+}
+
 export type RenderAppPageInput = {
 	request: Request
 	env: Env
@@ -101,7 +117,8 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	)
 	const requestUrl = new URL(request.url)
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
-	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
+	const clientAssets = getClientEntryAssets(requestUrl.pathname)
+	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
 	// Canonical/OG head URLs use the configured canonical origin so pages
 	// dual-served from a legacy host still point crawlers at the canonical
@@ -130,18 +147,14 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		// Warm lazy route chunks before streaming so SSR HTML includes the real
 		// route tree (dynamic import resolves in the worker bundle), and resolve
 		// the modulepreload hints and inline stylesheet in parallel.
-		const [, modulePreloadHrefs, inlineStylesheet] = await Promise.all([
+		const [, inlineStylesheet] = await Promise.all([
 			preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
-			getClientModulePreloadHrefs({
-				assets: env.ASSETS,
-				buildId: getClientBuildId(parsedEnv),
-				pathname: requestUrl.pathname,
-			}),
 			getInlineStylesheet({
 				assets: env.ASSETS,
 				buildId: getClientBuildId(parsedEnv),
 			}),
 		])
+		const modulePreloadHrefs = clientAssets.js.map((asset) => asset.href)
 
 		const stream = renderToStream(
 			// Remix server components accept props via handle.props; JSX typing is loose here.
@@ -164,6 +177,13 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			) as RemixNode,
 			{
 				frameSrc: request.url,
+				resolveClientEntry(entryId) {
+					return resolveOriginClientEntry({
+						entryId,
+						href: clientEntryHref,
+						preloads: modulePreloadHrefs,
+					})
+				},
 				resolveFrame(src, target, context) {
 					return resolveRegisteredFrameHtml({
 						src,

@@ -37,7 +37,9 @@ Profile a worker with Wrangler's built-in startup profiler from the package
 directory that owns its config:
 
 ```bash
-cd packages/worker && npx wrangler check startup --env production --args ./src/production-worker.ts
+# Origin: profile the Vite-built slim entry (same artifact production uploads).
+KODY_WRANGLER_CONFIG=packages/worker/wrangler.jsonc npx vite build
+npx wrangler check startup --config dist/ssr/wrangler.json
 cd packages/platform-worker && npx wrangler check startup
 cd packages/runtime-worker && npx wrangler check startup
 ```
@@ -47,10 +49,10 @@ garbage collection) and writes a `.cpuprofile` that Chrome DevTools or VS Code
 can open as a flamegraph. Absolute numbers are machine-specific; compare before
 and after on the same machine.
 
-To attribute time to source files, build the same entry with
-`wrangler deploy --dry-run --outdir <dir>` and map profile frames through the
-emitted source map. A frame with no ancestor in `packages/` is third-party
-module initialisation hoisted to the bundle's top level; walk to the nearest
+To attribute time to source files, inspect the Vite origin source map at
+`dist/ssr/index.js.map` (or a Wrangler `--dry-run --outdir` map for platform and
+runtime). A frame with no ancestor in `packages/` is third-party module
+initialisation hoisted to the bundle's top level; walk to the nearest
 non-library caller to find which of our modules imported it.
 
 ## Rules
@@ -58,10 +60,12 @@ non-library caller to find which of our modules imported it.
 1. **Capability domains load lazily.**
    `packages/worker/src/mcp/capabilities/builtin-domains.ts` loads each
    `{domain}/domain.ts` through dynamic `import()` and `getStaticRegistry()` is
-   async. esbuild keeps the code in the same bundle but wraps those modules so
-   they evaluate on the first request that needs the registry. Never import a
-   `*/domain.ts` or a capability definition module statically from anything on
-   the startup path; one static edge makes esbuild evaluate the module eagerly
+   async. Direct Wrangler/esbuild worker builds keep that code in the same
+   bundle and wrap those modules so they evaluate on the first request that
+   needs the registry. Origin Vite builds emit those `import()` targets as
+   hashed SSR chunks under `dist/ssr`. Never import a `*/domain.ts` or a
+   capability definition module statically from anything on the startup path;
+   one static edge makes the Wrangler/esbuild path evaluate the module eagerly
    again. Shared helpers (`{domain}/shared.ts`) are the supported static entry
    points, so keep them light: helpers, not schema catalogs.
 2. **Heavy libraries load on first use.** `isomorphic-git` goes through

@@ -16,11 +16,12 @@ import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
  * gets bundled into the single main worker script by Wrangler, so V8 must
  * parse and link that extra code on every isolate cold start even though its
  * *execution* stays deferred until the `import()` call runs. The generated
- * `./generated/guide-catalog.mjs` file instead matches the `generated/*.mjs`
- * `find_additional_modules` rule in `wrangler.jsonc`, so Wrangler uploads it
- * as a separate external module: it is excluded from the main script
- * entirely and only fetched, parsed, and evaluated when a request actually
- * opens a `{id}:guide` entity or calls the `codingGuideGet` handler.
+ * `./generated/guide-catalog.mjs` file stays behind `import()`, so Vite
+ * origin emits it as a hashed SSR chunk and Wrangler sibling workers still
+ * match the `generated/*.mjs` `find_additional_modules` rule. Either way it
+ * is excluded from the main script and only fetched, parsed, and evaluated
+ * when a request actually opens a `{id}:guide` entity or calls the
+ * `codingGuideGet` handler.
  * Merely ranking guide metadata does not add catalog parse/link cost to
  * the main module's cold start.
  */

@@ -24,33 +24,22 @@
 		},
 		"build-client-web": {
 			"executor": "nx:run-commands",
-			"outputs": [
-				"{workspaceRoot}/packages/worker/public/client-entry.js",
-				"{workspaceRoot}/packages/worker/public/client-entry.js.map",
-				"{workspaceRoot}/packages/worker/public/assets",
-				"{workspaceRoot}/packages/worker/public/client-manifest.json"
-			],
+			"outputs": ["{workspaceRoot}/dist"],
 			"options": {
 				"command": "npm run build:client:web"
 			}
 		},
 		"build-client": {
 			"executor": "nx:run-commands",
-			"outputs": [
-				"{workspaceRoot}/packages/worker/public/client-entry.js",
-				"{workspaceRoot}/packages/worker/public/client-entry.js.map",
-				"{workspaceRoot}/packages/worker/public/assets",
-				"{workspaceRoot}/packages/worker/public/client-manifest.json"
-			],
+			"outputs": ["{workspaceRoot}/dist"],
 			"options": {
 				"command": "npm run build:client"
 			}
 		},
 		"build": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-client"],
 			"options": {
-				"command": "node --env-file=packages/worker/.env ./wrangler-env.ts build"
+				"command": "npm run build"
 			}
 		},
 		"typecheck": {
@@ -105,7 +94,7 @@
 		},
 		"test-e2e": {
 			"executor": "nx:run-commands",
-			"dependsOn": ["build-client", "prepare-e2e-env", "prepare-playwright"],
+			"dependsOn": ["prepare-e2e-env", "prepare-playwright"],
 			"inputs": [
 				{ "env": "CI" },
 				"{workspaceRoot}/e2e/**/*",

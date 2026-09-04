@@ -15,5 +15,4 @@ export type AppRootProps = {
 	unauthorized?: boolean
 }
 
-export const APP_ROOT_ENTRY_ID = '/client-entry.js#AppRoot'
 export const AppRoot = null as unknown as EntryComponent<AppRootProps>

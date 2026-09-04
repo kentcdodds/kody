@@ -1,4 +1,4 @@
-import { addEventListeners, type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/ui'
 import { routerEvents } from './client-router.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 
@@ -141,9 +141,11 @@ export function NavigationProgress(handle: Handle) {
 	}
 
 	if (typeof document !== 'undefined') {
-		addEventListeners(routerEvents, handle.signal, {
-			navigationstart: onNavigationStart,
-			navigationend: onNavigationEnd,
+		routerEvents.addEventListener('navigationstart', onNavigationStart, {
+			signal: handle.signal,
+		})
+		routerEvents.addEventListener('navigationend', onNavigationEnd, {
+			signal: handle.signal,
 		})
 	}
 
