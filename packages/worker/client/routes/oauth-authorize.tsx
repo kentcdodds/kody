@@ -41,6 +41,7 @@ import {
 	insetCardCss,
 	inputCss,
 	mutedLinkCss,
+	nativeDisclosureCss,
 	pageDescriptionCss,
 	pageEyebrowCss,
 	pageHeaderCss,
@@ -59,6 +60,25 @@ type OAuthAuthorizeInfo = {
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
+
+function oauthAuthorizeAccessLead(
+	status: OAuthAuthorizeStatus,
+	clientLabel: string,
+) {
+	switch (status) {
+		case 'ready':
+			return `${clientLabel} wants to access your kody account.`
+		case 'idle':
+		case 'loading':
+			return 'Loading authorization details…'
+		case 'error':
+			return null
+		default: {
+			const exhaustive: never = status
+			return exhaustive
+		}
+	}
+}
 
 function getSearchParams(handle: Handle) {
 	return new URLSearchParams(readRouterSearch(handle))
@@ -104,6 +124,51 @@ export async function oauthAuthorizeRouteLoader(
 			requireCredentials: payload.requireCredentials === true,
 		},
 	}
+}
+
+function renderOauthAuthorizeGrant(input: {
+	clientLabel: string
+	scopes: ReadonlyArray<string>
+}) {
+	return (
+		<section data-testid="oauth-authorize-grant" mix={css(cardCss)}>
+			<h2 mix={css(sectionTitleCss)}>This agent gets full access</h2>
+			<p mix={css(descriptionCss)}>
+				Approving lets {input.clientLabel} use everything in this Kody account:
+				packages, memories, secrets, email, connected services, and anything
+				else your assistant can do.
+			</p>
+			{input.scopes.length > 0 ? (
+				<details
+					data-testid="oauth-authorize-oidc-scopes"
+					mix={css(nativeDisclosureCss)}
+				>
+					<summary>Identity claims on the token</summary>
+					{/* nativeDisclosureCss grids each direct details child. */}
+					<div>
+						<p mix={css(descriptionCss)}>
+							These OAuth scopes are identity claims. They do not limit what the
+							assistant can do.
+						</p>
+						<p
+							mix={css({
+								...descriptionCss,
+								display: 'flex',
+								flexWrap: 'wrap',
+								columnGap: spacing.md,
+								rowGap: spacing.xs,
+								alignItems: 'baseline',
+							})}
+						>
+							{input.scopes.map((scope) => (
+								<code key={scope}>{scope}</code>
+							))}
+						</p>
+					</div>
+				</details>
+			) : null}
+		</section>
+	)
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -423,8 +488,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 		const clientLabel = info?.client?.name ?? 'Unknown client'
 		const scopes = info?.scopes ?? []
-		const scopeLabel =
-			scopes.length > 0 ? scopes.join(', ') : 'No scopes requested.'
 		const sessionEmail = session?.email ?? ''
 		const sessionDisplayName = getSessionDisplayName(session)
 		const isSessionReady = sessionStatus === 'ready'
@@ -449,6 +512,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const resetClientDisabled =
 			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
 		const formReady = status === 'ready' && !isSessionLoading
+		const accessLead = oauthAuthorizeAccessLead(status, clientLabel)
 		const authorizeLabel = submittingDecision
 			? 'Submitting...'
 			: isLoggedIn
@@ -464,14 +528,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
 					<h1 mix={css(pageTitleCss)}>Authorize access</h1>
-					<p mix={css(pageDescriptionCss)}>
-						{clientLabel} wants to access your kody account.
-					</p>
+					{accessLead ? (
+						<p mix={css(pageDescriptionCss)}>{accessLead}</p>
+					) : null}
 				</header>
-				<section mix={css(cardCss)}>
-					<p mix={css(sectionTitleCss)}>Requested scopes</p>
-					<p mix={css(descriptionCss)}>{scopeLabel}</p>
-				</section>
+				{status === 'ready'
+					? renderOauthAuthorizeGrant({ clientLabel, scopes })
+					: null}
 				{isLoggedIn ? (
 					<section mix={css(insetCardCss)}>
 						<p
@@ -523,9 +586,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							Deny
 						</button>
 					</div>
-				) : null}
-				{status === 'loading' ? (
-					<p mix={css(descriptionCss)}>Loading authorization details…</p>
 				) : null}
 				{message ? (
 					<p

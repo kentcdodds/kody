@@ -693,7 +693,11 @@ routed from `packages/worker/src/index.ts`.
   `http://127.0.0.1:43742/callback` so the CLI can use SEP-991 instead of
   deprecated DCR.
 - Supported scopes: `openid`, `profile`, `email` (additive; `openid` enables ID
-  tokens and the UserInfo endpoint)
+  tokens and the UserInfo endpoint). These are OIDC identity claims, not a
+  permission menu. MCP access is one grant: a valid token for this origin's
+  `/mcp` audience receives the full assistant. `/oauth/authorize` describes that
+  grant in plain language and keeps the OIDC names in a technical disclosure.
+  See [0049](../decisions/0049-no-mcp-capability-oauth-scopes.md).
 - Kody's MCP authorization server is an **OAuth 2.1 + OpenID Connect
   Authorization Code** provider with CIMD and RFC 9728 resource metadata. Issuer
   is the app origin (`getAppBaseUrl`). `sub` is the account `stable_user_id`. ID
@@ -739,6 +743,9 @@ Token lifetimes are set on the `OAuthProvider` in
 - Requires `Authorization: Bearer <token>`
 - Token is validated via OAuth provider helpers (`unwrapToken`)
 - Audience must match the app origin or `<origin>/mcp`
+- Token OIDC scopes are not checked for MCP capability access. Audience,
+  identity, email verification, suspension, and password-change gates apply; the
+  token is then the full assistant
 - Requests without a Bearer token return `401` with `WWW-Authenticate` carrying
   RFC 9728 `resource_metadata` (and scopes). RFC 6750 omits `error` when
   credentials are absent

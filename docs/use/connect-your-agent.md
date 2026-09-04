@@ -23,7 +23,8 @@ agent — you do not need every host on day one.
    local origins use that deployment's MCP URL (`https://<this-host>/mcp`). On
    [kody.codes](https://kody.codes) the MCP URL is `https://kody.codes/mcp`.
 4. Complete the OAuth flow when the host opens it. Sign in to Kody if needed,
-   then approve access.
+   then approve access. Approving gives that agent full access to this Kody
+   account — not a limited permission set.
 
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from
