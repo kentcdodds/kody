@@ -120,6 +120,11 @@ const deletedCustomerSchema = object({
 	deleted: boolean(),
 })
 
+// `amount` is the line's gross amount before discounts and before exclusive
+// tax; `discount_amounts` is only parsed so callers can see it exists. A
+// credit note issued against the line credits those discounts and taxes
+// proportionally, so the refundable value is whatever Stripe previews, never
+// this raw number.
 const invoiceLineItemSchema = object({
 	id: string(),
 	amount: number(),
@@ -127,6 +132,7 @@ const invoiceLineItemSchema = object({
 		start: number(),
 		end: number(),
 	}),
+	discount_amounts: optional(array(object({ amount: number() }))),
 })
 
 const paidInvoiceSchema = object({
@@ -144,10 +150,10 @@ const paidInvoiceListSchema = object({
 
 const creditNoteSchema = object({
 	id: string(),
+	invoice: string(),
 	total: number(),
 	currency: string(),
 	status: string(),
-	memo: nullable(string()),
 	metadata: optional(record(string(), string())),
 })
 
@@ -165,35 +171,49 @@ const creditNotePreviewSchema = object({
 export type StripeCheckoutSession = InferOutput<typeof checkoutSessionSchema>
 export type StripeSubscription = InferOutput<typeof subscriptionSchema>
 export type StripePaidInvoice = InferOutput<typeof paidInvoiceSchema>
+export type StripeInvoiceLineItem = InferOutput<typeof invoiceLineItemSchema>
 export type StripeCreditNote = InferOutput<typeof creditNoteSchema>
 
 /**
  * Marks credit notes Kody issues during account deletion so a retried
- * deletion can find the earlier one instead of refunding twice.
+ * deletion can find the earlier one instead of refunding twice, and so the
+ * deletion report can list every note Kody issued for the customer.
+ * `accountDeletionCreditNoteSubscriptionMetadataKey` records which
+ * subscription the note refunded, since Stripe credit notes only reference the
+ * invoice.
  */
 export const accountDeletionCreditNoteMetadataKey = 'kody_account_deletion'
+export const accountDeletionCreditNoteSubscriptionMetadataKey =
+	'kody_subscription_id'
 export const accountDeletionCreditNoteMemo =
 	'Prorated refund for unused time after account deletion'
 
+/**
+ * Only the metadata marker counts. The memo is customer-facing text that a
+ * support agent could reuse on a manual credit note, so it is never treated
+ * as proof that Kody issued the note.
+ */
 export function isAccountDeletionCreditNote(creditNote: StripeCreditNote) {
 	return (
 		creditNote.status === 'issued' &&
-		(creditNote.metadata?.[accountDeletionCreditNoteMetadataKey] === '1' ||
-			creditNote.memo === accountDeletionCreditNoteMemo)
+		creditNote.metadata?.[accountDeletionCreditNoteMetadataKey] === '1'
 	)
 }
 
 /**
- * Stripe rejects a credit note that would credit more than the invoice still
- * allows (an earlier refund or credit note already consumed it) with a bare
- * `invalid_request_error`; only the `charge_already_refunded` case carries a
- * code. Account deletion treats both as "nothing left to refund".
+ * Stripe reports an invoice whose charge was already refunded in full (for
+ * example by support, outside a credit note) either with the
+ * `charge_already_refunded` code or as a bare `invalid_request_error` whose
+ * message says so. Account deletion treats that as "nothing left to refund".
+ * Any other rejection — including an amount that merely exceeds what is
+ * creditable, which means Kody's math disagrees with Stripe — is a billing
+ * failure that must retain the account.
  */
 export function isStripeNothingToRefundError(error: unknown) {
 	if (!(error instanceof StripeApiError)) return false
 	if (error.code === 'charge_already_refunded') return true
 	if (error.status !== 400 || !error.stripeMessage) return false
-	return /exceed|already (?:been )?(?:fully )?refunded|no (?:remaining|creditable|refundable)/i.test(
+	return /(?:already|fully) (?:been )?(?:fully )?(?:refunded|credited)/i.test(
 		error.stripeMessage,
 	)
 }
@@ -480,16 +500,17 @@ export async function cancelSubscription(
 }
 
 /**
- * Returns the most recent paid invoice for a subscription (Stripe lists
- * newest first) or null when nothing has been paid yet, for example a trial
- * that has not converted. Only the fields the prorated-refund math needs are
- * parsed: `amount_paid`, `currency`, and each line's `amount` and service
- * `period`.
+ * Lists the most recent paid invoices for a subscription (Stripe orders
+ * newest first), or an empty list when nothing has been paid yet, for example
+ * a trial that has not converted. Several are fetched because the newest paid
+ * invoice can be a $0 proration invoice (a downgrade) whose lines carry no
+ * refundable value; callers walk back to the invoice that still covers the
+ * current period. Only the fields the prorated-refund math needs are parsed.
  */
-export async function getLatestPaidInvoiceForSubscription(
+export async function listPaidInvoicesForSubscription(
 	env: StripeEnv,
 	subscriptionId: string,
-): Promise<StripePaidInvoice | null> {
+): Promise<Array<StripePaidInvoice>> {
 	const trimmed = subscriptionId.trim()
 	if (!trimmed) {
 		throw new StripeApiError('Subscription id is required.', { status: 400 })
@@ -500,7 +521,7 @@ export async function getLatestPaidInvoiceForSubscription(
 		query: {
 			subscription: trimmed,
 			status: 'paid',
-			limit: '1',
+			limit: '10',
 		},
 	})
 	const parsed = parseSafe(paidInvoiceListSchema, body)
@@ -509,29 +530,17 @@ export async function getLatestPaidInvoiceForSubscription(
 			status: 502,
 		})
 	}
-	return parsed.value.data[0] ?? null
+	return parsed.value.data
 }
 
-/**
- * Lists the credit notes already issued against an invoice so a retried
- * account deletion can recognise its own earlier refund (see
- * {@link isAccountDeletionCreditNote}).
- */
-export async function listCreditNotesForInvoice(
+async function listCreditNotes(
 	env: StripeEnv,
-	invoiceId: string,
+	query: Record<string, string>,
 ): Promise<Array<StripeCreditNote>> {
-	const trimmed = invoiceId.trim()
-	if (!trimmed) {
-		throw new StripeApiError('Invoice id is required.', { status: 400 })
-	}
 	const body = await stripeRequest(env, {
 		method: 'GET',
 		path: '/v1/credit_notes',
-		query: {
-			invoice: trimmed,
-			limit: '100',
-		},
+		query: { ...query, limit: '100' },
 	})
 	const parsed = parseSafe(creditNoteListSchema, body)
 	if (!parsed.success) {
@@ -542,92 +551,142 @@ export async function listCreditNotesForInvoice(
 	return parsed.value.data
 }
 
-function buildCreditNoteLineForm(input: {
-	invoiceId: string
-	invoiceLineItemId: string
-	amount: number
-}): Record<string, string> {
-	return {
-		invoice: input.invoiceId,
-		'lines[0][type]': 'invoice_line_item',
-		'lines[0][invoice_line_item]': input.invoiceLineItemId,
-		'lines[0][amount]': String(input.amount),
+/**
+ * Lists the credit notes already issued against an invoice so a retried
+ * account deletion can recognise its own earlier refund (see
+ * {@link isAccountDeletionCreditNote}) before issuing another.
+ */
+export async function listCreditNotesForInvoice(
+	env: StripeEnv,
+	invoiceId: string,
+): Promise<Array<StripeCreditNote>> {
+	const trimmed = invoiceId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Invoice id is required.', { status: 400 })
 	}
+	return listCreditNotes(env, { invoice: trimmed })
 }
 
 /**
- * Issues a credit note that refunds part of one invoice line item to the
- * original payment method. A credit note (rather than a raw refund) reverses
- * the line's tax proportionally and leaves the customer a document that
- * matches the invoice.
+ * Lists every credit note issued to a customer so a retried account deletion
+ * can report refunds an earlier attempt already issued for subscriptions that
+ * are no longer billable.
+ */
+export async function listCreditNotesForCustomer(
+	env: StripeEnv,
+	customerId: string,
+): Promise<Array<StripeCreditNote>> {
+	const trimmed = customerId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	return listCreditNotes(env, { customer: trimmed })
+}
+
+export type CreditNoteLineInput = {
+	invoiceLineItemId: string
+	/** Gross (pre-discount, tax-exclusive) amount to credit on this line. */
+	amount: number
+}
+
+function buildCreditNoteLinesForm(input: {
+	invoiceId: string
+	lines: ReadonlyArray<CreditNoteLineInput>
+}): Record<string, string> {
+	const form: Record<string, string> = { invoice: input.invoiceId }
+	input.lines.forEach((line, index) => {
+		form[`lines[${index}][type]`] = 'invoice_line_item'
+		form[`lines[${index}][invoice_line_item]`] = line.invoiceLineItemId
+		form[`lines[${index}][amount]`] = String(line.amount)
+	})
+	return form
+}
+
+/**
+ * Issues a credit note that refunds part of one or more invoice line items to
+ * the original payment method. A credit note (rather than a raw refund)
+ * reverses each line's discounts and tax proportionally and leaves the
+ * customer a document that matches the invoice.
  *
- * `amount` is the tax-exclusive line amount to credit, in the smallest
- * currency unit. Stripe requires the refund to equal the credit note total
- * (line amount plus its share of tax), which is only known after Stripe
- * computes it, so the note is previewed first and the refund is set to that
- * total. The returned `total` is what the customer actually gets back.
+ * Each line `amount` is the gross line amount to credit — the same basis as
+ * the invoice line's `amount`, before discounts and exclusive tax. Stripe
+ * prorates that line's discounts and tax into the credit note and requires
+ * the refund to equal the resulting total, which is only known after Stripe
+ * computes it, so the note is previewed first and `refund_amount` is set to
+ * that total. The returned `total` is what the customer actually gets back.
+ *
+ * Returns null when the preview totals zero (for example a 100% discounted
+ * line): there is nothing to refund and no note is created.
  */
 export async function createProratedRefundCreditNote(
 	env: StripeEnv,
 	input: {
 		invoiceId: string
-		invoiceLineItemId: string
-		amount: number
+		subscriptionId: string
+		lines: ReadonlyArray<CreditNoteLineInput>
 		reason:
 			| 'duplicate'
 			| 'fraudulent'
 			| 'order_change'
 			| 'product_unsatisfactory'
 	},
-): Promise<{ id: string; total: number; currency: string }> {
+): Promise<{ id: string; total: number; currency: string } | null> {
 	const invoiceId = input.invoiceId.trim()
-	const invoiceLineItemId = input.invoiceLineItemId.trim()
+	const subscriptionId = input.subscriptionId.trim()
 	if (!invoiceId) {
 		throw new StripeApiError('Invoice id is required.', { status: 400 })
 	}
-	if (!invoiceLineItemId) {
-		throw new StripeApiError('Invoice line item id is required.', {
+	if (!subscriptionId) {
+		throw new StripeApiError('Subscription id is required.', { status: 400 })
+	}
+	const lines = input.lines.map((line) => ({
+		invoiceLineItemId: line.invoiceLineItemId.trim(),
+		amount: line.amount,
+	}))
+	if (lines.length === 0) {
+		throw new StripeApiError('At least one credit note line is required.', {
 			status: 400,
 		})
 	}
-	if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
-		throw new StripeApiError('Credit note amount must be a positive integer.', {
-			status: 400,
-		})
+	for (const line of lines) {
+		if (!line.invoiceLineItemId) {
+			throw new StripeApiError('Invoice line item id is required.', {
+				status: 400,
+			})
+		}
+		if (!Number.isSafeInteger(line.amount) || line.amount <= 0) {
+			throw new StripeApiError(
+				'Credit note line amount must be a positive integer.',
+				{ status: 400 },
+			)
+		}
 	}
-	const lineForm = buildCreditNoteLineForm({
-		invoiceId,
-		invoiceLineItemId,
-		amount: input.amount,
-	})
+	const linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
 
 	const previewBody = await stripeRequest(env, {
 		method: 'GET',
 		path: '/v1/credit_notes/preview',
-		query: lineForm,
+		query: linesForm,
 	})
 	const preview = parseSafe(creditNotePreviewSchema, previewBody)
-	if (!preview.success) {
+	if (!preview.success || !Number.isSafeInteger(preview.value.total)) {
 		throw new StripeApiError('Unexpected Stripe credit note preview shape.', {
 			status: 502,
 		})
 	}
-	if (!Number.isSafeInteger(preview.value.total) || preview.value.total <= 0) {
-		throw new StripeApiError(
-			'Stripe credit note preview did not produce a refundable total.',
-			{ status: 502 },
-		)
-	}
+	if (preview.value.total <= 0) return null
 
 	const body = await stripeRequest(env, {
 		method: 'POST',
 		path: '/v1/credit_notes',
 		form: {
-			...lineForm,
+			...linesForm,
 			refund_amount: String(preview.value.total),
 			reason: input.reason,
 			memo: accountDeletionCreditNoteMemo,
 			[`metadata[${accountDeletionCreditNoteMetadataKey}]`]: '1',
+			[`metadata[${accountDeletionCreditNoteSubscriptionMetadataKey}]`]:
+				subscriptionId,
 		},
 	})
 	const parsed = parseSafe(creditNoteSchema, body)

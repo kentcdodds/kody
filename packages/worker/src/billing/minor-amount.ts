@@ -8,10 +8,12 @@ const stripeTwoDecimalOverrides = new Set(['HUF', 'ISK', 'TWD', 'UGX'])
 function resolveMinorUnitDigits(currency: string) {
 	if (stripeTwoDecimalOverrides.has(currency)) return 2
 	try {
-		return new Intl.NumberFormat('en-US', {
-			style: 'currency',
-			currency,
-		}).resolvedOptions().maximumFractionDigits
+		return (
+			new Intl.NumberFormat('en-US', {
+				style: 'currency',
+				currency,
+			}).resolvedOptions().maximumFractionDigits ?? 2
+		)
 	} catch {
 		return 2
 	}

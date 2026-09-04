@@ -12,10 +12,11 @@ import {
 	createProratedRefundCreditNote,
 	deleteCustomer,
 	getCheckoutSession,
-	getLatestPaidInvoiceForSubscription,
 	isAccountDeletionCreditNote,
 	isStripeNothingToRefundError,
+	listCreditNotesForCustomer,
 	listCreditNotesForInvoice,
+	listPaidInvoicesForSubscription,
 	listSubscriptions,
 	StripeApiError,
 } from './stripe-client.ts'
@@ -289,7 +290,7 @@ test('stripe client immediately cancels subscriptions and deletes customers', as
 	}
 })
 
-test('stripe client reads the latest paid invoice and its credit notes for a subscription', async () => {
+test('stripe client reads recent paid invoices and credit notes for a subscription and customer', async () => {
 	const fetchMock = vi
 		.fn()
 		.mockResolvedValueOnce(
@@ -299,8 +300,8 @@ test('stripe client reads the latest paid invoice and its credit notes for a sub
 					{
 						id: 'in_latest',
 						object: 'invoice',
-						amount_paid: 1200,
-						amount_due: 1200,
+						amount_paid: 600,
+						amount_due: 600,
 						currency: 'usd',
 						lines: {
 							object: 'list',
@@ -310,6 +311,7 @@ test('stripe client reads the latest paid invoice and its credit notes for a sub
 									object: 'line_item',
 									amount: 1200,
 									description: 'Pro (monthly)',
+									discount_amounts: [{ amount: 600, discount: 'di_promo' }],
 									period: { start: 1_756_684_800, end: 1_759_276_800 },
 								},
 							],
@@ -326,52 +328,65 @@ test('stripe client reads the latest paid invoice and its credit notes for a sub
 					{
 						id: 'cn_kody',
 						object: 'credit_note',
-						total: 600,
+						invoice: 'in_latest',
+						total: 300,
 						currency: 'usd',
 						status: 'issued',
 						memo: accountDeletionCreditNoteMemo,
-						metadata: { kody_account_deletion: '1' },
+						metadata: {
+							kody_account_deletion: '1',
+							kody_subscription_id: 'sub_paid',
+						},
 					},
 				],
 			}),
 		)
+		.mockResolvedValueOnce(jsonResponse({ object: 'list', data: [] }))
 	vi.stubGlobal('fetch', fetchMock)
 	try {
 		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
-		const invoice = await getLatestPaidInvoiceForSubscription(env, 'sub_paid')
-		expect(invoice).toEqual({
-			id: 'in_latest',
-			amount_paid: 1200,
-			currency: 'usd',
-			lines: {
-				data: [
-					{
-						id: 'il_latest',
-						amount: 1200,
-						period: { start: 1_756_684_800, end: 1_759_276_800 },
-					},
-				],
+		const invoices = await listPaidInvoicesForSubscription(env, 'sub_paid')
+		// The gross line amount and its discounts are both visible; the
+		// customer paid 600 for a 1200 line.
+		expect(invoices).toEqual([
+			{
+				id: 'in_latest',
+				amount_paid: 600,
+				currency: 'usd',
+				lines: {
+					data: [
+						{
+							id: 'il_latest',
+							amount: 1200,
+							discount_amounts: [{ amount: 600 }],
+							period: { start: 1_756_684_800, end: 1_759_276_800 },
+						},
+					],
+				},
 			},
-		})
+		])
 		expect(fetchMock.mock.calls[0]).toEqual([
-			'https://api.stripe.com/v1/invoices?subscription=sub_paid&status=paid&limit=1',
+			'https://api.stripe.com/v1/invoices?subscription=sub_paid&status=paid&limit=10',
 			expect.objectContaining({ method: 'GET' }),
 		])
 
 		// A trial that has not converted has no paid invoice at all.
 		await expect(
-			getLatestPaidInvoiceForSubscription(env, 'sub_trial'),
-		).resolves.toBeNull()
+			listPaidInvoicesForSubscription(env, 'sub_trial'),
+		).resolves.toEqual([])
 
 		const creditNotes = await listCreditNotesForInvoice(env, 'in_latest')
 		expect(creditNotes).toEqual([
 			{
 				id: 'cn_kody',
-				total: 600,
+				invoice: 'in_latest',
+				total: 300,
 				currency: 'usd',
 				status: 'issued',
-				memo: accountDeletionCreditNoteMemo,
-				metadata: { kody_account_deletion: '1' },
+				metadata: {
+					kody_account_deletion: '1',
+					kody_subscription_id: 'sub_paid',
+				},
 			},
 		])
 		expect(fetchMock.mock.calls[2]).toEqual([
@@ -379,23 +394,35 @@ test('stripe client reads the latest paid invoice and its credit notes for a sub
 			expect.objectContaining({ method: 'GET' }),
 		])
 		expect(creditNotes.every(isAccountDeletionCreditNote)).toBe(true)
+
+		await expect(listCreditNotesForCustomer(env, 'cus_paid')).resolves.toEqual(
+			[],
+		)
+		expect(fetchMock.mock.calls[3]).toEqual([
+			'https://api.stripe.com/v1/credit_notes?customer=cus_paid&limit=100',
+			expect.objectContaining({ method: 'GET' }),
+		])
+
+		// Only an issued note carrying the metadata marker is Kody's; the memo
+		// alone proves nothing because support can reuse the same text.
 		expect(
 			isAccountDeletionCreditNote({
 				id: 'cn_void',
+				invoice: 'in_latest',
 				total: 600,
 				currency: 'usd',
 				status: 'void',
-				memo: accountDeletionCreditNoteMemo,
 				metadata: { kody_account_deletion: '1' },
 			}),
 		).toBe(false)
 		expect(
 			isAccountDeletionCreditNote({
-				id: 'cn_manual',
-				total: 100,
+				id: 'cn_memo_only',
+				invoice: 'in_latest',
+				total: 600,
 				currency: 'usd',
 				status: 'issued',
-				memo: 'Goodwill',
+				metadata: {},
 			}),
 		).toBe(false)
 	} finally {
@@ -409,7 +436,6 @@ test('stripe client previews then issues a prorated credit note that refunds the
 		.mockResolvedValueOnce(
 			jsonResponse({
 				object: 'credit_note',
-				id: null,
 				total: 654,
 				currency: 'usd',
 				status: 'issued',
@@ -420,11 +446,12 @@ test('stripe client previews then issues a prorated credit note that refunds the
 			jsonResponse({
 				id: 'cn_created',
 				object: 'credit_note',
+				invoice: 'in_latest',
 				total: 654,
 				currency: 'usd',
 				status: 'issued',
 				memo: accountDeletionCreditNoteMemo,
-				metadata: { kody_account_deletion: '1' },
+				metadata: { kody_account_deletion: '1', kody_subscription_id: 'sub_1' },
 			}),
 		)
 	vi.stubGlobal('fetch', fetchMock)
@@ -432,8 +459,11 @@ test('stripe client previews then issues a prorated credit note that refunds the
 		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
 		const creditNote = await createProratedRefundCreditNote(env, {
 			invoiceId: 'in_latest',
-			invoiceLineItemId: 'il_latest',
-			amount: 600,
+			subscriptionId: 'sub_1',
+			lines: [
+				{ invoiceLineItemId: 'il_plan', amount: 600 },
+				{ invoiceLineItemId: 'il_addon', amount: 250 },
+			],
 			reason: 'order_change',
 		})
 		expect(creditNote).toEqual({
@@ -445,14 +475,18 @@ test('stripe client previews then issues a prorated credit note that refunds the
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 		const [previewUrl, previewInit] = fetchMock.mock.calls[0]!
 		expect(previewInit).toMatchObject({ method: 'GET' })
-		expect(
-			Object.fromEntries(new URL(previewUrl as string).searchParams),
-		).toEqual({
+		const expectedLines = {
 			invoice: 'in_latest',
 			'lines[0][type]': 'invoice_line_item',
-			'lines[0][invoice_line_item]': 'il_latest',
+			'lines[0][invoice_line_item]': 'il_plan',
 			'lines[0][amount]': '600',
-		})
+			'lines[1][type]': 'invoice_line_item',
+			'lines[1][invoice_line_item]': 'il_addon',
+			'lines[1][amount]': '250',
+		}
+		expect(
+			Object.fromEntries(new URL(previewUrl as string).searchParams),
+		).toEqual(expectedLines)
 		expect(new URL(previewUrl as string).pathname).toBe(
 			'/v1/credit_notes/preview',
 		)
@@ -465,47 +499,65 @@ test('stripe client previews then issues a prorated credit note that refunds the
 				'content-type': 'application/x-www-form-urlencoded',
 			}),
 		})
-		// The refund must equal the credit note total (line share plus its tax),
-		// which only the preview knows; the tax-exclusive line amount is what
-		// Stripe prorates tax from.
+		// The refund must equal the credit note total (line shares minus their
+		// discounts plus their tax), which only the preview knows; the gross
+		// line amounts are what Stripe prorates discounts and tax from.
 		expect(
 			Object.fromEntries(
 				new URLSearchParams((createInit as RequestInit).body as string),
 			),
 		).toEqual({
-			invoice: 'in_latest',
-			'lines[0][type]': 'invoice_line_item',
-			'lines[0][invoice_line_item]': 'il_latest',
-			'lines[0][amount]': '600',
+			...expectedLines,
 			refund_amount: '654',
 			reason: 'order_change',
 			memo: accountDeletionCreditNoteMemo,
 			'metadata[kody_account_deletion]': '1',
+			'metadata[kody_subscription_id]': 'sub_1',
 		})
+
+		// A preview that totals zero (a fully discounted line) creates nothing.
+		fetchMock.mockClear()
+		fetchMock.mockResolvedValueOnce(
+			jsonResponse({ object: 'credit_note', total: 0, currency: 'usd' }),
+		)
+		await expect(
+			createProratedRefundCreditNote(env, {
+				invoiceId: 'in_free',
+				subscriptionId: 'sub_1',
+				lines: [{ invoiceLineItemId: 'il_free', amount: 600 }],
+				reason: 'order_change',
+			}),
+		).resolves.toBeNull()
+		expect(fetchMock).toHaveBeenCalledOnce()
 
 		// Guard rails that never reach Stripe.
 		fetchMock.mockClear()
-		await expect(
-			createProratedRefundCreditNote(env, {
+		for (const input of [
+			{
 				invoiceId: 'in_latest',
-				invoiceLineItemId: 'il_latest',
-				amount: 0,
-				reason: 'order_change',
-			}),
-		).rejects.toMatchObject({ name: 'StripeApiError', status: 400 })
-		await expect(
-			createProratedRefundCreditNote(env, {
-				invoiceId: ' ',
-				invoiceLineItemId: 'il_latest',
-				amount: 600,
-				reason: 'order_change',
-			}),
-		).rejects.toMatchObject({ name: 'StripeApiError', status: 400 })
+				lines: [{ invoiceLineItemId: 'il_1', amount: 0 }],
+			},
+			{ invoiceId: ' ', lines: [{ invoiceLineItemId: 'il_1', amount: 600 }] },
+			{
+				invoiceId: 'in_latest',
+				lines: [{ invoiceLineItemId: ' ', amount: 600 }],
+			},
+			{ invoiceId: 'in_latest', lines: [] },
+		]) {
+			await expect(
+				createProratedRefundCreditNote(env, {
+					...input,
+					subscriptionId: 'sub_1',
+					reason: 'order_change',
+				}),
+			).rejects.toMatchObject({ name: 'StripeApiError', status: 400 })
+		}
 		expect(fetchMock).not.toHaveBeenCalled()
 
-		// Stripe's "nothing left to credit" validation comes back as a bare 400
-		// with only a message; it must be classifiable without leaking that
-		// message (which can embed ids) into logs.
+		// Stripe's validation failures come back as a bare 400 with only a
+		// message; they must be classifiable without leaking that message (which
+		// can embed ids) into logs. Only an already-refunded charge counts as
+		// "nothing to refund"; an amount mismatch is a real failure.
 		consoleError.mockImplementation(() => {})
 		fetchMock.mockResolvedValueOnce(
 			jsonResponse(
@@ -513,23 +565,23 @@ test('stripe client previews then issues a prorated credit note that refunds the
 					error: {
 						type: 'invalid_request_error',
 						message:
-							'The credit note amount exceeds the remaining creditable amount of in_latest.',
+							'The charge for in_latest has already been fully refunded.',
 					},
 				},
 				400,
 			),
 		)
-		const exhausted = await createProratedRefundCreditNote(env, {
+		const alreadyRefunded = await createProratedRefundCreditNote(env, {
 			invoiceId: 'in_latest',
-			invoiceLineItemId: 'il_latest',
-			amount: 600,
+			subscriptionId: 'sub_1',
+			lines: [{ invoiceLineItemId: 'il_plan', amount: 600 }],
 			reason: 'order_change',
 		}).then(
 			() => null,
 			(thrown: unknown) => thrown,
 		)
-		expect(exhausted).toBeInstanceOf(StripeApiError)
-		expect(isStripeNothingToRefundError(exhausted)).toBe(true)
+		expect(alreadyRefunded).toBeInstanceOf(StripeApiError)
+		expect(isStripeNothingToRefundError(alreadyRefunded)).toBe(true)
 		expect(consoleError).toHaveBeenCalledWith('stripe_api_error', {
 			status: 400,
 			path: '/v1/credit_notes/preview',
@@ -548,6 +600,15 @@ test('stripe client previews then issues a prorated credit note that refunds the
 			isStripeNothingToRefundError(
 				new StripeApiError('Stripe API request failed with HTTP 400.', {
 					status: 400,
+					stripeMessage:
+						'The credit note amount exceeds the maximum creditable amount for this invoice.',
+				}),
+			),
+		).toBe(false)
+		expect(
+			isStripeNothingToRefundError(
+				new StripeApiError('Stripe API request failed with HTTP 400.', {
+					status: 400,
 					stripeMessage: 'Invalid integer: abc',
 				}),
 			),
@@ -556,11 +617,13 @@ test('stripe client previews then issues a prorated credit note that refunds the
 			isStripeNothingToRefundError(
 				new StripeApiError('Stripe API request failed with HTTP 503.', {
 					status: 503,
-					stripeMessage: 'exceeds',
+					stripeMessage: 'already refunded',
 				}),
 			),
 		).toBe(false)
-		expect(isStripeNothingToRefundError(new Error('exceeds'))).toBe(false)
+		expect(isStripeNothingToRefundError(new Error('already refunded'))).toBe(
+			false,
+		)
 	} finally {
 		vi.unstubAllGlobals()
 		consoleError.mockReset()

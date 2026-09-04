@@ -5,14 +5,18 @@ import {
 } from '#worker/oauth-grants.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import {
+	accountDeletionCreditNoteSubscriptionMetadataKey,
 	cancelSubscription,
 	createProratedRefundCreditNote,
 	deleteCustomer,
-	getLatestPaidInvoiceForSubscription,
 	isAccountDeletionCreditNote,
 	isStripeNothingToRefundError,
+	listCreditNotesForCustomer,
 	listCreditNotesForInvoice,
+	listPaidInvoicesForSubscription,
 	listSubscriptions,
+	type StripeCreditNote,
+	type StripeInvoiceLineItem,
 	type StripePaidInvoice,
 	type StripeSubscription,
 } from '#worker/billing/stripe-client.ts'
@@ -104,7 +108,8 @@ type AccountDeletionEnv = Env & {
  * credit note total in the smallest unit of `currency`, tax included.
  */
 export type AccountDeletionStripeRefund = {
-	subscriptionId: string
+	/** Null for a credit note from an earlier attempt that predates the marker. */
+	subscriptionId: string | null
 	amountMinor: number
 	currency: string
 	invoiceId: string
@@ -525,6 +530,11 @@ function isStripeSubscriptionRefundable(subscription: StripeSubscription) {
  * Unused-time refund for one invoice line, in the smallest currency unit:
  * `floor(lineAmount * (periodEnd - now) / (periodEnd - periodStart))`. Zero
  * when the period has already ended, has no length, or the line was free.
+ *
+ * `lineAmount` is the line's gross amount (before discounts and exclusive
+ * tax), so this is the gross amount to credit, not what the customer gets
+ * back: Stripe prorates the line's discounts and tax into the credit note and
+ * the previewed total is what is refunded.
  */
 function computeProratedRefundMinor(input: {
 	lineAmount: number
@@ -540,94 +550,159 @@ function computeProratedRefundMinor(input: {
 }
 
 /**
- * Picks the invoice line whose service period is still running. A plain
- * renewal invoice has exactly one; a mid-cycle upgrade invoice also carries a
- * negative proration credit for the old price, which cannot be refunded, so
- * only positive lines qualify and the largest wins.
+ * Every positive invoice line whose service period covers `now`. A mid-cycle
+ * upgrade invoice also carries a negative proration credit for the old price,
+ * which cannot be credited again; lines for periods that already ended (or
+ * have not started) have no unused time.
  */
-function selectRefundableInvoiceLine(
+function selectRefundableInvoiceLines(
 	invoice: StripePaidInvoice,
 	nowSeconds: number,
+): Array<StripeInvoiceLineItem> {
+	return invoice.lines.data.filter(
+		(line) =>
+			line.amount > 0 &&
+			line.period.start <= nowSeconds &&
+			line.period.end > nowSeconds,
+	)
+}
+
+/**
+ * Walks the subscription's recent paid invoices, newest first, to the first
+ * one that both took money and still has a line covering `now`. The newest
+ * paid invoice is often a $0 proration invoice (a downgrade) with nothing to
+ * give back; the real payment for the running period sits behind it.
+ */
+function selectRefundableInvoice(
+	invoices: ReadonlyArray<StripePaidInvoice>,
+	nowSeconds: number,
 ) {
-	let selected: StripePaidInvoice['lines']['data'][number] | null = null
-	for (const line of invoice.lines.data) {
-		if (line.amount <= 0) continue
-		if (line.period.end <= nowSeconds) continue
-		if (line.period.end <= line.period.start) continue
-		if (!selected || line.amount > selected.amount) selected = line
+	for (const invoice of invoices) {
+		if (invoice.amount_paid <= 0) continue
+		const lines = selectRefundableInvoiceLines(invoice, nowSeconds)
+		if (lines.length > 0) return { invoice, lines }
 	}
-	return selected
+	return null
+}
+
+function creditNoteToRefund(
+	creditNote: StripeCreditNote,
+	fallbackSubscriptionId: string | null,
+): AccountDeletionStripeRefund {
+	return {
+		subscriptionId:
+			creditNote.metadata?.[accountDeletionCreditNoteSubscriptionMetadataKey] ??
+			fallbackSubscriptionId,
+		amountMinor: creditNote.total,
+		currency: creditNote.currency,
+		invoiceId: creditNote.invoice,
+		creditNoteId: creditNote.id,
+	}
 }
 
 /**
  * Refunds the unused remainder of the current billing period for one
  * subscription that is about to be canceled. Returns null when there is
- * nothing to refund (no paid invoice yet, a free or ended period, an amount
- * that floors to zero, or Stripe reporting the invoice already fully
- * credited). Returns the earlier Kody credit note instead of issuing another
- * when a previous deletion attempt already refunded this invoice.
+ * nothing to refund (no paid invoice covering the period, only free or
+ * finished lines, every amount floors to zero, a credit note that previews to
+ * zero, or Stripe reporting the invoice's charge already refunded in full).
+ * Returns the earlier Kody credit note instead of issuing another when a
+ * previous deletion attempt already refunded this invoice.
  */
 async function refundUnusedSubscriptionTime(input: {
 	env: Env
 	subscriptionId: string
 	nowSeconds: number
 }): Promise<{ refund: AccountDeletionStripeRefund; created: boolean } | null> {
-	const invoice = await getLatestPaidInvoiceForSubscription(
+	const invoices = await listPaidInvoicesForSubscription(
 		input.env,
 		input.subscriptionId,
 	)
-	if (!invoice || invoice.amount_paid <= 0) return null
-	const line = selectRefundableInvoiceLine(invoice, input.nowSeconds)
-	if (!line) return null
-	const amount = computeProratedRefundMinor({
-		lineAmount: line.amount,
-		periodStart: line.period.start,
-		periodEnd: line.period.end,
-		nowSeconds: input.nowSeconds,
-	})
-	if (amount <= 0) return null
+	const selected = selectRefundableInvoice(invoices, input.nowSeconds)
+	if (!selected) return null
+	const lines = selected.lines
+		.map((line) => ({
+			invoiceLineItemId: line.id,
+			amount: computeProratedRefundMinor({
+				lineAmount: line.amount,
+				periodStart: line.period.start,
+				periodEnd: line.period.end,
+				nowSeconds: input.nowSeconds,
+			}),
+		}))
+		.filter((line) => line.amount > 0)
+	if (lines.length === 0) return null
 
 	const existing = (
-		await listCreditNotesForInvoice(input.env, invoice.id)
+		await listCreditNotesForInvoice(input.env, selected.invoice.id)
 	).find(isAccountDeletionCreditNote)
 	if (existing) {
 		return {
 			created: false,
-			refund: {
-				subscriptionId: input.subscriptionId,
-				amountMinor: existing.total,
-				currency: existing.currency,
-				invoiceId: invoice.id,
-				creditNoteId: existing.id,
-			},
+			refund: creditNoteToRefund(existing, input.subscriptionId),
 		}
 	}
 
 	try {
 		const creditNote = await createProratedRefundCreditNote(input.env, {
-			invoiceId: invoice.id,
-			invoiceLineItemId: line.id,
-			amount,
+			invoiceId: selected.invoice.id,
+			subscriptionId: input.subscriptionId,
+			lines,
 			reason: 'order_change',
 		})
+		if (!creditNote) {
+			console.info('account_deletion_refund_previewed_zero', {
+				subscriptionId: input.subscriptionId,
+			})
+			return null
+		}
 		return {
 			created: true,
 			refund: {
 				subscriptionId: input.subscriptionId,
 				amountMinor: creditNote.total,
 				currency: creditNote.currency,
-				invoiceId: invoice.id,
+				invoiceId: selected.invoice.id,
 				creditNoteId: creditNote.id,
 			},
 		}
 	} catch (error) {
 		if (isStripeNothingToRefundError(error)) {
-			console.info('account_deletion_refund_nothing_remaining', {
+			console.info('account_deletion_refund_already_refunded', {
 				subscriptionId: input.subscriptionId,
 			})
 			return null
 		}
 		throw error
+	}
+}
+
+/**
+ * Adds every issued Kody deletion credit note for the customer that this run
+ * did not already record, so a retry after a partial earlier attempt still
+ * reports refunds for subscriptions that are no longer billable. Reporting
+ * only: a listing failure never blocks the deletion.
+ */
+async function appendEarlierAccountDeletionRefunds(input: {
+	env: Env
+	customerId: string
+	refunds: Array<AccountDeletionStripeRefund>
+}) {
+	let creditNotes: Array<StripeCreditNote>
+	try {
+		creditNotes = await listCreditNotesForCustomer(input.env, input.customerId)
+	} catch (error) {
+		console.warn('account_deletion_refund_report_incomplete', {
+			error: getErrorMessage(error),
+		})
+		return
+	}
+	const known = new Set(input.refunds.map((refund) => refund.creditNoteId))
+	for (const creditNote of creditNotes) {
+		if (!isAccountDeletionCreditNote(creditNote)) continue
+		if (known.has(creditNote.id)) continue
+		known.add(creditNote.id)
+		input.refunds.push(creditNoteToRefund(creditNote, null))
 	}
 }
 
@@ -641,14 +716,17 @@ async function refundUnusedSubscriptionTime(input: {
  *
  * Only `active` and `trialing` subscriptions are refunded, and the refund is
  * issued before the cancel so the invoice line's service period is still
- * intact when Stripe prorates the tax. A refund failure aborts before the
- * cancel, so the retry sees the same subscription and can try again.
+ * intact when Stripe prorates discounts and tax. A refund failure aborts
+ * before the cancel, so the retry sees the same subscription and can try
+ * again.
  *
  * Idempotent across retries: subscriptions Stripe already reports as
  * `canceled` are skipped, an invoice that already carries a Kody credit note
  * is not refunded twice, `cancelSubscription` treats `resource_missing` as
  * canceled, and a cancel that errors is re-verified against a fresh listing
  * (a subscription that flipped to canceled in between counts as success).
+ * The returned refunds also include Kody credit notes from earlier attempts
+ * so the report covers everything refunded for this deletion.
  */
 async function cancelActiveStripeSubscriptions(input: {
 	env: Env
@@ -665,7 +743,6 @@ async function cancelActiveStripeSubscriptions(input: {
 	}
 	const billable = subscriptions.filter(isStripeSubscriptionBillable)
 	const refunds: Array<AccountDeletionStripeRefund> = []
-	if (billable.length === 0) return { canceled: 0, refunds }
 
 	const nowSeconds = Math.floor(Date.now() / 1000)
 	const failures: Array<string> = []
@@ -708,23 +785,31 @@ async function cancelActiveStripeSubscriptions(input: {
 			)
 		}
 	}
-	if (failures.length === 0) return { canceled, refunds }
 
-	let stillBillable: Array<StripeSubscription>
-	try {
-		stillBillable = (
-			await listSubscriptions(input.env, input.customerId)
-		).filter(isStripeSubscriptionBillable)
-	} catch (error) {
-		throw new AccountDeletionBillingError([
-			...failures,
-			`Stripe subscriptions could not be re-verified: ${getErrorMessage(error)}`,
-		])
+	if (failures.length > 0) {
+		let stillBillable: Array<StripeSubscription>
+		try {
+			stillBillable = (
+				await listSubscriptions(input.env, input.customerId)
+			).filter(isStripeSubscriptionBillable)
+		} catch (error) {
+			throw new AccountDeletionBillingError([
+				...failures,
+				`Stripe subscriptions could not be re-verified: ${getErrorMessage(error)}`,
+			])
+		}
+		if (stillBillable.length > 0) {
+			throw new AccountDeletionBillingError(failures)
+		}
+		canceled = billable.length
 	}
-	if (stillBillable.length > 0) {
-		throw new AccountDeletionBillingError(failures)
-	}
-	return { canceled: billable.length, refunds }
+
+	await appendEarlierAccountDeletionRefunds({
+		env: input.env,
+		customerId: input.customerId,
+		refunds,
+	})
+	return { canceled, refunds }
 }
 
 /**
