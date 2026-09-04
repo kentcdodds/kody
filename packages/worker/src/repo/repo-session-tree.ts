@@ -1,3 +1,4 @@
+import { buildRepoDisallowedPathMessage } from './repo-session-caller-error.ts'
 import {
 	type EntitySourceRow,
 	type RepoSessionInfoResult,
@@ -35,6 +36,37 @@ function normalizeUnknownTreeChild(
 	}
 }
 
+type ResolvedWorkspaceSegments =
+	| { ok: true; segments: Array<string> }
+	| { ok: false; reason: 'escape' | 'git' }
+
+function resolveWorkspaceRelativeSegments(
+	path: string,
+	workspacePrefix: string,
+): ResolvedWorkspaceSegments {
+	const relative =
+		path === workspacePrefix
+			? ''
+			: path.startsWith(`${workspacePrefix}/`)
+				? path.slice(workspacePrefix.length + 1)
+				: null
+	if (relative === null) {
+		return { ok: false, reason: 'escape' }
+	}
+	const resolved: Array<string> = []
+	for (const segment of relative.split('/')) {
+		if (segment === '' || segment === '.') continue
+		if (segment === '..') {
+			if (resolved.length === 0) return { ok: false, reason: 'escape' }
+			resolved.pop()
+			continue
+		}
+		if (segment === '.git') return { ok: false, reason: 'git' }
+		resolved.push(segment)
+	}
+	return { ok: true, segments: resolved }
+}
+
 export function resolveRepoWorkspacePath(
 	path: string,
 	workspacePrefix: string,
@@ -44,21 +76,20 @@ export function resolveRepoWorkspacePath(
 		throw new Error('A non-empty repo path is required.')
 	}
 	// User-supplied paths must stay inside the session workspace and out of
-	// git internals: `..` segments escape the prefix and `.git` writes corrupt
-	// the session repository.
-	const segments = trimmed.split('/')
-	if (segments.includes('..') || segments.includes('.git')) {
-		throw new Error(
-			`Repo path "${trimmed}" is not allowed: paths cannot contain ".." or ".git" segments.`,
-		)
+	// git internals. Resolve `.` / `..` first so in-workspace forms such as
+	// `src/../exports/self-test.ts` work, then reject anything that leaves the
+	// prefix or names a `.git` segment.
+	const joined =
+		trimmed === workspacePrefix || trimmed.startsWith(`${workspacePrefix}/`)
+			? trimmed
+			: `${workspacePrefix}/${trimmed.replace(/^\/+/, '')}`
+	const resolved = resolveWorkspaceRelativeSegments(joined, workspacePrefix)
+	if (!resolved.ok) {
+		throw new Error(buildRepoDisallowedPathMessage(trimmed, resolved.reason))
 	}
-	if (
-		trimmed === workspacePrefix ||
-		trimmed.startsWith(`${workspacePrefix}/`)
-	) {
-		return trimmed
-	}
-	return `${workspacePrefix}/${trimmed.replace(/^\/+/, '')}`
+	return resolved.segments.length === 0
+		? workspacePrefix
+		: `${workspacePrefix}/${resolved.segments.join('/')}`
 }
 
 export function toExternalRepoPath(path: string, workspacePrefix: string) {
