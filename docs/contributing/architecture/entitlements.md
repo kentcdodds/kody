@@ -800,12 +800,23 @@ per eligible invoice line and `refund_amount` equal to the previewed total. Line
 amounts are gross (pre-discount, tax-exclusive) like the invoice line's own
 `amount`; Stripe prorates each line's discounts and tax into the credit note and
 refunds that total to the original payment method. The prorated amount per line
-is `floor(lineAmount * (period.end - now) / (period.end - period.start))`. A
-refund failure is a billing failure (`AccountDeletionBillingError`): the account
-is retained for retry, exactly like a failed cancel; only a preview that totals
-zero or a charge Stripe reports as already fully refunded is treated as "nothing
-to refund". The full sequence, skip conditions, audit action, and result shape
-are documented with the rest of the deletion flow in
+is `floor(lineAmount * (period.end - now) / (period.end - period.start))`. The
+refund is hard-capped at
+`maxRefundMinor = invoice.amount_paid − Σ total of every issued credit note on the invoice (any issuer)`:
+a mid-cycle upgrade invoice (portal upgrades bill with `always_invoice`) has a
+positive new-plan line plus a negative unused-time credit for the old plan, so
+`amount_paid` is the net and the positive line's unused fraction alone can
+exceed it. A cap of zero or less means nothing to refund; when the preview
+exceeds the cap every line is scaled by `cap / total` (floored, integer
+arithmetic) and previewed again, and if rounding still leaves it above the cap
+the largest line absorbs the difference before a final preview. A refund failure
+is a billing failure (`AccountDeletionBillingError`): the account is retained
+for retry, exactly like a failed cancel; only a preview that totals zero or a
+charge Stripe reports as already fully refunded is treated as "nothing to
+refund". A rejected create is logged as `account_deletion_refund_rejected` with
+the subscription and invoice ids, the amount paid, the cap, and the requested
+amount (no PII). The full sequence, skip conditions, audit action, and result
+shape are documented with the rest of the deletion flow in
 [`data-storage.md`](./data-storage.md#account-deletion-inventory).
 
 ### Webhooks (primary sync)

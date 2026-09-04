@@ -381,6 +381,7 @@ test('account deletion refunds unused time with a credit note before canceling e
 				invoiceId: 'in_active',
 				subscriptionId: 'sub_active',
 				lines: [{ invoiceLineItemId: 'il_in_active', amount: 600 }],
+				maxRefundMinor: 1201,
 				reason: 'order_change',
 			},
 		)
@@ -671,6 +672,7 @@ test('every recurring line covering the period is credited on one credit note', 
 					{ invoiceLineItemId: 'il_plan', amount: 500 },
 					{ invoiceLineItemId: 'il_addon', amount: 250 },
 				],
+				maxRefundMinor: 1500,
 				reason: 'order_change',
 			},
 		)
@@ -683,9 +685,231 @@ test('every recurring line covering the period is credited on one credit note', 
 	}
 })
 
+/**
+ * A tax-free Stripe stand-in for the credit-note endpoints: a preview totals
+ * the requested line amounts and a create echoes `refund_amount`. Lets the
+ * real `createProratedRefundCreditNote` run against the cap logic.
+ */
+function stubStripeCreditNoteEndpoints() {
+	const previews: Array<Record<string, string>> = []
+	const creates: Array<Record<string, string>> = []
+	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+		const parsed = new URL(url)
+		if (parsed.pathname === '/v1/credit_notes/preview') {
+			const query = Object.fromEntries(parsed.searchParams)
+			previews.push(query)
+			const total = Object.entries(query)
+				.filter(([key]) => /^lines\[\d+\]\[amount\]$/.test(key))
+				.reduce((sum, [, value]) => sum + Number(value), 0)
+			return new Response(
+				JSON.stringify({ object: 'credit_note', total, currency: 'usd' }),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			)
+		}
+		if (parsed.pathname === '/v1/credit_notes' && init?.method === 'POST') {
+			const form = Object.fromEntries(new URLSearchParams(init.body as string))
+			creates.push(form)
+			return new Response(
+				JSON.stringify({
+					id: `cn_${creates.length}`,
+					object: 'credit_note',
+					invoice: form.invoice,
+					total: Number(form.refund_amount),
+					currency: 'usd',
+					status: 'issued',
+					metadata: {
+						kody_account_deletion: '1',
+						kody_subscription_id: form['metadata[kody_subscription_id]'],
+					},
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			)
+		}
+		throw new Error(`Unexpected Stripe request: ${init?.method} ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	return { previews, creates }
+}
+
+function upgradeInvoice() {
+	// Portal upgrades bill with `always_invoice`: the new plan for the rest of
+	// the period plus a negative unused-time credit for the old plan, so the
+	// customer paid the 1700 net rather than the 2900 line.
+	return paidInvoice({
+		id: 'in_upgrade',
+		amountPaid: 1700,
+		lines: [
+			{ id: 'il_pro', amount: 2900 },
+			{ id: 'il_standard_credit', amount: -1200 },
+		],
+	})
+}
+
+test('an invoice never refunds more than it was paid net of earlier credit notes', async () => {
+	const stripe = spyOnStripeBillingClient()
+	stripe.createProratedRefundCreditNote.mockRestore()
+	const stripeHttp = stubStripeCreditNoteEndpoints()
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		stripe.listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_capped', 'active'),
+		])
+		const cases: Array<{
+			name: string
+			stableUserId: string
+			nowMs: number
+			invoice: ReturnType<typeof paidInvoice>
+			creditNotes: Array<ReturnType<typeof kodyCreditNote>>
+			expectedPreviews: Array<Record<string, string>>
+			expectedRefund: number | null
+		}> = [
+			{
+				// (a) floor(2900 * 15d / 30d) = 1450 fits under the 1700 net.
+				name: 'upgrade invoice, half the period remaining',
+				stableUserId: 'user-cap-fits',
+				nowMs: refundPeriodMidpointMs,
+				invoice: upgradeInvoice(),
+				creditNotes: [],
+				expectedPreviews: [{ 'lines[0][amount]': '1450' }],
+				expectedRefund: 1450,
+			},
+			{
+				// (b) floor(2900 * 27d / 30d) = 2610 exceeds the 1700 net, so the
+				// line is scaled by 1700 / 2610 and previewed again.
+				name: 'upgrade invoice, 90% of the period remaining',
+				stableUserId: 'user-cap-scaled',
+				nowMs: (refundPeriodStart + thirtyDaysSeconds * 0.1) * 1000,
+				invoice: upgradeInvoice(),
+				creditNotes: [],
+				expectedPreviews: [
+					{ 'lines[0][amount]': '2610' },
+					{ 'lines[0][amount]': '1700' },
+				],
+				expectedRefund: 1700,
+			},
+			{
+				// (c) Support already credited 1000 of the 1200 paid, by any
+				// issuer, so only 200 is left to give back.
+				name: 'prior third-party credit note',
+				stableUserId: 'user-cap-prior-note',
+				nowMs: refundPeriodMidpointMs,
+				invoice: paidInvoice({ id: 'in_prior', amountPaid: 1200 }),
+				creditNotes: [
+					kodyCreditNote({
+						id: 'cn_support',
+						invoice: 'in_prior',
+						total: 1000,
+						marker: false,
+					}),
+				],
+				expectedPreviews: [
+					{ 'lines[0][amount]': '600' },
+					{ 'lines[0][amount]': '200' },
+				],
+				expectedRefund: 200,
+			},
+			{
+				// (d) Earlier notes already consumed everything paid; a voided note
+				// does not count against the cap.
+				name: 'prior credit notes cover the payment',
+				stableUserId: 'user-cap-exhausted',
+				nowMs: refundPeriodMidpointMs,
+				invoice: paidInvoice({ id: 'in_exhausted', amountPaid: 1200 }),
+				creditNotes: [
+					kodyCreditNote({
+						id: 'cn_support_a',
+						invoice: 'in_exhausted',
+						total: 700,
+						marker: false,
+					}),
+					kodyCreditNote({
+						id: 'cn_support_b',
+						invoice: 'in_exhausted',
+						total: 500,
+						marker: false,
+					}),
+					kodyCreditNote({
+						id: 'cn_voided',
+						invoice: 'in_exhausted',
+						total: 300,
+						status: 'void',
+						marker: false,
+					}),
+				],
+				expectedPreviews: [],
+				expectedRefund: null,
+			},
+		]
+		for (const testCase of cases) {
+			vi.setSystemTime(new Date(testCase.nowMs))
+			stripe.listPaidInvoicesForSubscription.mockResolvedValue([
+				testCase.invoice,
+			])
+			stripe.listCreditNotesForInvoice.mockResolvedValue(testCase.creditNotes)
+			stripe.cancelSubscription.mockClear()
+			stripeHttp.previews.length = 0
+			stripeHttp.creates.length = 0
+			const { db, rows } = createStripeUserDb({
+				id: 1,
+				stableUserId: testCase.stableUserId,
+				customerId: 'cus_capped',
+			})
+
+			const result = await deleteUserAccount({
+				env: createSuccessfulDeletionEnv(db, {
+					STRIPE_SECRET_KEY: 'sk_test_secret',
+				}),
+				dbUserId: 1,
+				mcpUserId: testCase.stableUserId,
+			})
+
+			expect(
+				stripeHttp.previews.map((preview) => ({
+					'lines[0][amount]': preview['lines[0][amount]']!,
+				})),
+				testCase.name,
+			).toEqual(testCase.expectedPreviews)
+			if (testCase.expectedRefund === null) {
+				expect(stripeHttp.creates, testCase.name).toEqual([])
+				expect(result.stripeRefunds, testCase.name).toEqual([])
+			} else {
+				expect(stripeHttp.creates, testCase.name).toEqual([
+					expect.objectContaining({
+						invoice: testCase.invoice.id,
+						'lines[0][invoice_line_item]': testCase.invoice.lines.data[0]!.id,
+						'lines[0][amount]': String(testCase.expectedRefund),
+						refund_amount: String(testCase.expectedRefund),
+					}),
+				])
+				// Only the positive line is ever credited.
+				expect(stripeHttp.creates[0], testCase.name).not.toHaveProperty(
+					'lines[1][amount]',
+				)
+				expect(result.stripeRefunds, testCase.name).toEqual([
+					expect.objectContaining({
+						invoiceId: testCase.invoice.id,
+						amountMinor: testCase.expectedRefund,
+					}),
+				])
+			}
+			expect(stripe.cancelSubscription, testCase.name).toHaveBeenCalledWith(
+				expect.any(Object),
+				'sub_capped',
+			)
+			expect(rows.users, testCase.name).toEqual([])
+			expect(result.warnings, testCase.name).toEqual([])
+		}
+	} finally {
+		vi.useRealTimers()
+		vi.unstubAllGlobals()
+		stripe.restore()
+	}
+})
+
 test('a failed credit note retains the account, releases the fence, and cancels nothing', async () => {
 	const stripe = spyOnStripeBillingClient()
 	consoleError.mockImplementation(() => {})
+	consoleWarn.mockImplementation(() => {})
 	vi.useFakeTimers({ toFake: ['Date'] })
 	try {
 		vi.setSystemTime(new Date(refundPeriodMidpointMs))
@@ -783,11 +1007,25 @@ test('a failed credit note retains the account, releases the fence, and cancels 
 					billingErrors: expectedBillingErrors,
 				},
 			)
+			// The rejection is logged with ids and amounts only, so a repeat can
+			// be reconciled against the Stripe dashboard.
+			expect(consoleWarn).toHaveBeenCalledWith(
+				'account_deletion_refund_rejected',
+				{
+					subscriptionId: 'sub_active',
+					invoiceId: 'in_active',
+					amountPaid: 1200,
+					maxRefundMinor: 1200,
+					requestedMinor: 600,
+					error: testCase.expectedMessage,
+				},
+			)
 		}
 	} finally {
 		vi.useRealTimers()
 		stripe.restore()
 		consoleError.mockReset()
+		consoleWarn.mockReset()
 	}
 })
 

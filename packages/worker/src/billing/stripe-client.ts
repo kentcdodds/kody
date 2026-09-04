@@ -602,6 +602,54 @@ function buildCreditNoteLinesForm(input: {
 	return form
 }
 
+async function previewCreditNoteTotal(
+	env: StripeEnv,
+	linesForm: Record<string, string>,
+): Promise<number> {
+	const previewBody = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/credit_notes/preview',
+		query: linesForm,
+	})
+	const preview = parseSafe(creditNotePreviewSchema, previewBody)
+	if (!preview.success || !Number.isSafeInteger(preview.value.total)) {
+		throw new StripeApiError('Unexpected Stripe credit note preview shape.', {
+			status: 502,
+		})
+	}
+	return preview.value.total
+}
+
+// Integer arithmetic on purpose: `amount * (cap / total)` can land a hair
+// under an exact integer and floor one unit too low.
+function scaleCreditNoteLines(
+	lines: ReadonlyArray<CreditNoteLineInput>,
+	cap: number,
+	total: number,
+) {
+	return lines
+		.map((line) => ({
+			...line,
+			amount: Math.floor((line.amount * cap) / total),
+		}))
+		.filter((line) => line.amount > 0)
+}
+
+function reduceLargestCreditNoteLine(
+	lines: ReadonlyArray<CreditNoteLineInput>,
+	by: number,
+) {
+	let largestIndex = 0
+	lines.forEach((line, index) => {
+		if (line.amount > lines[largestIndex]!.amount) largestIndex = index
+	})
+	return lines
+		.map((line, index) =>
+			index === largestIndex ? { ...line, amount: line.amount - by } : line,
+		)
+		.filter((line) => line.amount > 0)
+}
+
 /**
  * Issues a credit note that refunds part of one or more invoice line items to
  * the original payment method. A credit note (rather than a raw refund)
@@ -615,8 +663,16 @@ function buildCreditNoteLinesForm(input: {
  * computes it, so the note is previewed first and `refund_amount` is set to
  * that total. The returned `total` is what the customer actually gets back.
  *
+ * `maxRefundMinor` is the hard ceiling (what the invoice was paid minus what
+ * was already credited). When the preview exceeds it, every line is scaled by
+ * `maxRefundMinor / total` (floored) and previewed again; if rounding still
+ * leaves the total above the cap, the largest line is reduced by the
+ * difference and previewed once more. The note is never issued for more than
+ * the cap.
+ *
  * Returns null when the preview totals zero (for example a 100% discounted
- * line): there is nothing to refund and no note is created.
+ * line) or every line scales away: there is nothing to refund and no note is
+ * created.
  */
 export async function createProratedRefundCreditNote(
 	env: StripeEnv,
@@ -624,6 +680,7 @@ export async function createProratedRefundCreditNote(
 		invoiceId: string
 		subscriptionId: string
 		lines: ReadonlyArray<CreditNoteLineInput>
+		maxRefundMinor: number
 		reason:
 			| 'duplicate'
 			| 'fraudulent'
@@ -639,7 +696,15 @@ export async function createProratedRefundCreditNote(
 	if (!subscriptionId) {
 		throw new StripeApiError('Subscription id is required.', { status: 400 })
 	}
-	const lines = input.lines.map((line) => ({
+	if (
+		!Number.isSafeInteger(input.maxRefundMinor) ||
+		input.maxRefundMinor <= 0
+	) {
+		throw new StripeApiError('Refund cap must be a positive integer.', {
+			status: 400,
+		})
+	}
+	let lines: ReadonlyArray<CreditNoteLineInput> = input.lines.map((line) => ({
 		invoiceLineItemId: line.invoiceLineItemId.trim(),
 		amount: line.amount,
 	}))
@@ -661,34 +726,63 @@ export async function createProratedRefundCreditNote(
 			)
 		}
 	}
-	const linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
+	const cap = input.maxRefundMinor
 
-	const previewBody = await stripeRequest(env, {
-		method: 'GET',
-		path: '/v1/credit_notes/preview',
-		query: linesForm,
-	})
-	const preview = parseSafe(creditNotePreviewSchema, previewBody)
-	if (!preview.success || !Number.isSafeInteger(preview.value.total)) {
-		throw new StripeApiError('Unexpected Stripe credit note preview shape.', {
-			status: 502,
-		})
+	let linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
+	let total = await previewCreditNoteTotal(env, linesForm)
+	if (total <= 0) return null
+	if (total > cap) {
+		lines = scaleCreditNoteLines(lines, cap, total)
+		if (lines.length === 0) return null
+		linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
+		total = await previewCreditNoteTotal(env, linesForm)
+		if (total <= 0) return null
 	}
-	if (preview.value.total <= 0) return null
+	if (total > cap) {
+		lines = reduceLargestCreditNoteLine(lines, total - cap)
+		if (lines.length === 0) return null
+		linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
+		total = await previewCreditNoteTotal(env, linesForm)
+		if (total <= 0) return null
+	}
+	if (total > cap) {
+		throw new StripeApiError(
+			`Stripe credit note for ${invoiceId} still previews above the refund cap after adjustment (previewed ${total}, cap ${cap}).`,
+			{ status: 502 },
+		)
+	}
 
-	const body = await stripeRequest(env, {
-		method: 'POST',
-		path: '/v1/credit_notes',
-		form: {
-			...linesForm,
-			refund_amount: String(preview.value.total),
-			reason: input.reason,
-			memo: accountDeletionCreditNoteMemo,
-			[`metadata[${accountDeletionCreditNoteMetadataKey}]`]: '1',
-			[`metadata[${accountDeletionCreditNoteSubscriptionMetadataKey}]`]:
-				subscriptionId,
-		},
-	})
+	let body: unknown
+	try {
+		body = await stripeRequest(env, {
+			method: 'POST',
+			path: '/v1/credit_notes',
+			form: {
+				...linesForm,
+				refund_amount: String(total),
+				reason: input.reason,
+				memo: accountDeletionCreditNoteMemo,
+				[`metadata[${accountDeletionCreditNoteMetadataKey}]`]: '1',
+				[`metadata[${accountDeletionCreditNoteSubscriptionMetadataKey}]`]:
+					subscriptionId,
+			},
+		})
+	} catch (error) {
+		// Stripe's own message can embed ids and is never logged; the invoice
+		// id and the amounts involved make a repeat diagnosable without it.
+		if (error instanceof StripeApiError) {
+			throw new StripeApiError(
+				`Stripe rejected the credit note for ${invoiceId} (previewed ${total}, cap ${cap}, HTTP ${error.status}).`,
+				{
+					status: error.status,
+					code: error.code,
+					stripeMessage: error.stripeMessage,
+					cause: error,
+				},
+			)
+		}
+		throw error
+	}
 	const parsed = parseSafe(creditNoteSchema, body)
 	if (!parsed.success) {
 		throw new StripeApiError('Unexpected Stripe credit note shape.', {

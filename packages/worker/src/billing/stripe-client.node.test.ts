@@ -464,6 +464,7 @@ test('stripe client previews then issues a prorated credit note that refunds the
 				{ invoiceLineItemId: 'il_plan', amount: 600 },
 				{ invoiceLineItemId: 'il_addon', amount: 250 },
 			],
+			maxRefundMinor: 1500,
 			reason: 'order_change',
 		})
 		expect(creditNote).toEqual({
@@ -525,6 +526,7 @@ test('stripe client previews then issues a prorated credit note that refunds the
 				invoiceId: 'in_free',
 				subscriptionId: 'sub_1',
 				lines: [{ invoiceLineItemId: 'il_free', amount: 600 }],
+				maxRefundMinor: 1200,
 				reason: 'order_change',
 			}),
 		).resolves.toBeNull()
@@ -543,9 +545,15 @@ test('stripe client previews then issues a prorated credit note that refunds the
 				lines: [{ invoiceLineItemId: ' ', amount: 600 }],
 			},
 			{ invoiceId: 'in_latest', lines: [] },
+			{
+				invoiceId: 'in_latest',
+				lines: [{ invoiceLineItemId: 'il_1', amount: 600 }],
+				maxRefundMinor: 0,
+			},
 		]) {
 			await expect(
 				createProratedRefundCreditNote(env, {
+					maxRefundMinor: 1200,
 					...input,
 					subscriptionId: 'sub_1',
 					reason: 'order_change',
@@ -575,6 +583,7 @@ test('stripe client previews then issues a prorated credit note that refunds the
 			invoiceId: 'in_latest',
 			subscriptionId: 'sub_1',
 			lines: [{ invoiceLineItemId: 'il_plan', amount: 600 }],
+			maxRefundMinor: 1200,
 			reason: 'order_change',
 		}).then(
 			() => null,
@@ -624,6 +633,182 @@ test('stripe client previews then issues a prorated credit note that refunds the
 		expect(isStripeNothingToRefundError(new Error('already refunded'))).toBe(
 			false,
 		)
+	} finally {
+		vi.unstubAllGlobals()
+		consoleError.mockReset()
+	}
+})
+
+function previewTotalling(total: number) {
+	return jsonResponse({ object: 'credit_note', total, currency: 'usd' })
+}
+
+function lineAmountsOf(url: unknown) {
+	const params = new URL(url as string).searchParams
+	return [...params.entries()]
+		.filter(([key]) => /^lines\[\d+\]\[amount\]$/.test(key))
+		.map(([, value]) => Number(value))
+}
+
+test('stripe client scales a credit note down to the refund cap before issuing it', async () => {
+	const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
+	const issued = (refundAmount: number) =>
+		jsonResponse({
+			id: 'cn_capped',
+			object: 'credit_note',
+			invoice: 'in_upgrade',
+			total: refundAmount,
+			currency: 'usd',
+			status: 'issued',
+			metadata: { kody_account_deletion: '1' },
+		})
+
+	// Preview exceeds the cap: every line is scaled by cap / total (floored)
+	// and previewed again before the note is created for the second total.
+	let fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce(previewTotalling(2610))
+		.mockResolvedValueOnce(previewTotalling(1699))
+		.mockResolvedValueOnce(issued(1699))
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(
+			createProratedRefundCreditNote(env, {
+				invoiceId: 'in_upgrade',
+				subscriptionId: 'sub_1',
+				lines: [
+					{ invoiceLineItemId: 'il_pro', amount: 2000 },
+					{ invoiceLineItemId: 'il_addon', amount: 610 },
+				],
+				maxRefundMinor: 1700,
+				reason: 'order_change',
+			}),
+		).resolves.toEqual({ id: 'cn_capped', total: 1699, currency: 'usd' })
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+		expect(lineAmountsOf(fetchMock.mock.calls[0]![0])).toEqual([2000, 610])
+		// floor(2000 * 1700 / 2610) = 1302, floor(610 * 1700 / 2610) = 397
+		expect(lineAmountsOf(fetchMock.mock.calls[1]![0])).toEqual([1302, 397])
+		const createForm = Object.fromEntries(
+			new URLSearchParams(
+				(fetchMock.mock.calls[2]![1] as RequestInit).body as string,
+			),
+		)
+		expect(createForm).toMatchObject({
+			'lines[0][amount]': '1302',
+			'lines[1][amount]': '397',
+			refund_amount: '1699',
+		})
+
+		// Rounding in Stripe's own tax math can leave the scaled preview a hair
+		// above the cap; the largest line absorbs the difference.
+		fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(previewTotalling(2610))
+			.mockResolvedValueOnce(previewTotalling(1702))
+			.mockResolvedValueOnce(previewTotalling(1700))
+			.mockResolvedValueOnce(issued(1700))
+		vi.stubGlobal('fetch', fetchMock)
+		await expect(
+			createProratedRefundCreditNote(env, {
+				invoiceId: 'in_upgrade',
+				subscriptionId: 'sub_1',
+				lines: [
+					{ invoiceLineItemId: 'il_pro', amount: 2000 },
+					{ invoiceLineItemId: 'il_addon', amount: 610 },
+				],
+				maxRefundMinor: 1700,
+				reason: 'order_change',
+			}),
+		).resolves.toEqual({ id: 'cn_capped', total: 1700, currency: 'usd' })
+		expect(lineAmountsOf(fetchMock.mock.calls[2]![0])).toEqual([1300, 397])
+		expect(
+			Object.fromEntries(
+				new URLSearchParams(
+					(fetchMock.mock.calls[3]![1] as RequestInit).body as string,
+				),
+			),
+		).toMatchObject({ refund_amount: '1700' })
+
+		// A cap so small every line floors to zero means nothing to refund.
+		fetchMock = vi.fn().mockResolvedValueOnce(previewTotalling(2610))
+		vi.stubGlobal('fetch', fetchMock)
+		await expect(
+			createProratedRefundCreditNote(env, {
+				invoiceId: 'in_upgrade',
+				subscriptionId: 'sub_1',
+				lines: [
+					{ invoiceLineItemId: 'il_pro', amount: 1305 },
+					{ invoiceLineItemId: 'il_addon', amount: 1305 },
+				],
+				maxRefundMinor: 1,
+				reason: 'order_change',
+			}),
+		).resolves.toBeNull()
+		expect(fetchMock).toHaveBeenCalledOnce()
+
+		// If even the third preview is above the cap the note is not issued.
+		fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(previewTotalling(2610))
+			.mockResolvedValueOnce(previewTotalling(1710))
+			.mockResolvedValueOnce(previewTotalling(1705))
+		vi.stubGlobal('fetch', fetchMock)
+		await expect(
+			createProratedRefundCreditNote(env, {
+				invoiceId: 'in_upgrade',
+				subscriptionId: 'sub_1',
+				lines: [{ invoiceLineItemId: 'il_pro', amount: 2610 }],
+				maxRefundMinor: 1700,
+				reason: 'order_change',
+			}),
+		).rejects.toMatchObject({
+			name: 'StripeApiError',
+			status: 502,
+			message: expect.stringContaining('previewed 1705, cap 1700'),
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+
+		// A rejected create names the invoice and the amounts involved (never
+		// Stripe's message, which can embed other ids) so it is diagnosable.
+		consoleError.mockImplementation(() => {})
+		fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(previewTotalling(1450))
+			.mockResolvedValueOnce(
+				jsonResponse(
+					{
+						error: {
+							type: 'invalid_request_error',
+							message:
+								'Credit note amount for in_upgrade exceeds the remaining creditable amount.',
+						},
+					},
+					400,
+				),
+			)
+		vi.stubGlobal('fetch', fetchMock)
+		const rejected = await createProratedRefundCreditNote(env, {
+			invoiceId: 'in_upgrade',
+			subscriptionId: 'sub_1',
+			lines: [{ invoiceLineItemId: 'il_pro', amount: 1450 }],
+			maxRefundMinor: 1700,
+			reason: 'order_change',
+		}).then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+		expect(rejected).toMatchObject({
+			name: 'StripeApiError',
+			status: 400,
+			message:
+				'Stripe rejected the credit note for in_upgrade (previewed 1450, cap 1700, HTTP 400).',
+			stripeMessage: expect.stringContaining('exceeds'),
+		})
+		expect(isStripeNothingToRefundError(rejected)).toBe(false)
+		expect(consoleError).toHaveBeenCalledWith('stripe_api_error', {
+			status: 400,
+			path: '/v1/credit_notes',
+		})
 	} finally {
 		vi.unstubAllGlobals()
 		consoleError.mockReset()

@@ -65,10 +65,14 @@ total, `reason=order_change`, the memo
 invoice line's `amount` is gross (before promotion-code discounts and exclusive
 tax), and Stripe prorates each line's discounts and tax into the credit note, so
 the previewed total — not the raw fraction — is what the customer gets back.
-Nothing is refunded when no paid invoice covers the period (an unconverted
-trial, or only past periods), every amount floors to zero, the preview totals
-zero (a fully discounted line), or Stripe reports the invoice's charge already
-refunded in full. Any other Stripe rejection — including a credit amount Stripe
+The refund is capped at `amount_paid` minus every issued credit note already on
+the invoice (any issuer), because an upgrade invoice nets a positive new-plan
+line against a negative old-plan credit; a preview above the cap is scaled down
+(see [`entitlements.md`](./entitlements.md#account-deletion-refunds)). Nothing
+is refunded when no paid invoice covers the period (an unconverted trial, or
+only past periods), every amount floors to zero, the cap is zero or less, the
+preview totals zero (a fully discounted line), or Stripe reports the invoice's
+charge already refunded in full. Any other Stripe rejection — including a credit amount Stripe
 says exceeds what is creditable, which means Kody's math disagrees with the
 invoice — raises `AccountDeletionBillingError` like a failed cancel: the marker
 is released and the account is retained (like an inventory failure) so the

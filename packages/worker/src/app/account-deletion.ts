@@ -601,13 +601,32 @@ function creditNoteToRefund(
 }
 
 /**
+ * The most an invoice can still give back: what was actually paid minus every
+ * credit note already issued against it, by anyone. A mid-cycle upgrade
+ * invoice (portal upgrades use `always_invoice`) carries a positive new-plan
+ * line plus a negative unused-time credit for the old plan, so `amount_paid`
+ * is the net and the unused fraction of the positive line alone can exceed
+ * it; Stripe would reject that credit note.
+ */
+function computeMaxRefundMinor(
+	invoice: StripePaidInvoice,
+	creditNotes: ReadonlyArray<StripeCreditNote>,
+) {
+	const credited = creditNotes
+		.filter((creditNote) => creditNote.status === 'issued')
+		.reduce((sum, creditNote) => sum + creditNote.total, 0)
+	return invoice.amount_paid - credited
+}
+
+/**
  * Refunds the unused remainder of the current billing period for one
  * subscription that is about to be canceled. Returns null when there is
  * nothing to refund (no paid invoice covering the period, only free or
- * finished lines, every amount floors to zero, a credit note that previews to
- * zero, or Stripe reporting the invoice's charge already refunded in full).
- * Returns the earlier Kody credit note instead of issuing another when a
- * previous deletion attempt already refunded this invoice.
+ * finished lines, every amount floors to zero, earlier credit notes already
+ * consumed what was paid, a credit note that previews to zero, or Stripe
+ * reporting the invoice's charge already refunded in full). Returns the
+ * earlier Kody credit note instead of issuing another when a previous deletion
+ * attempt already refunded this invoice.
  */
 async function refundUnusedSubscriptionTime(input: {
 	env: Env
@@ -633,14 +652,25 @@ async function refundUnusedSubscriptionTime(input: {
 		.filter((line) => line.amount > 0)
 	if (lines.length === 0) return null
 
-	const existing = (
-		await listCreditNotesForInvoice(input.env, selected.invoice.id)
-	).find(isAccountDeletionCreditNote)
+	const creditNotes = await listCreditNotesForInvoice(
+		input.env,
+		selected.invoice.id,
+	)
+	const existing = creditNotes.find(isAccountDeletionCreditNote)
 	if (existing) {
 		return {
 			created: false,
 			refund: creditNoteToRefund(existing, input.subscriptionId),
 		}
+	}
+	const maxRefundMinor = computeMaxRefundMinor(selected.invoice, creditNotes)
+	if (maxRefundMinor <= 0) {
+		console.info('account_deletion_refund_nothing_creditable', {
+			subscriptionId: input.subscriptionId,
+			invoiceId: selected.invoice.id,
+			amountPaid: selected.invoice.amount_paid,
+		})
+		return null
 	}
 
 	try {
@@ -648,6 +678,7 @@ async function refundUnusedSubscriptionTime(input: {
 			invoiceId: selected.invoice.id,
 			subscriptionId: input.subscriptionId,
 			lines,
+			maxRefundMinor,
 			reason: 'order_change',
 		})
 		if (!creditNote) {
@@ -673,6 +704,16 @@ async function refundUnusedSubscriptionTime(input: {
 			})
 			return null
 		}
+		// Ids and amounts only (no PII): enough to reconcile against the Stripe
+		// dashboard when a rejection repeats.
+		console.warn('account_deletion_refund_rejected', {
+			subscriptionId: input.subscriptionId,
+			invoiceId: selected.invoice.id,
+			amountPaid: selected.invoice.amount_paid,
+			maxRefundMinor,
+			requestedMinor: lines.reduce((sum, line) => sum + line.amount, 0),
+			error: getErrorMessage(error),
+		})
 		throw error
 	}
 }
