@@ -7,6 +7,7 @@ import {
 	navigate,
 	navigationTimeoutMs,
 	persistentShellNavSelector,
+	prefetchRouteHrefs,
 	registerClientRoutes,
 	registerRouteLoaders,
 	Router,
@@ -15,6 +16,10 @@ import {
 	shouldUseViewTransition,
 	type RouteLoader,
 } from './client-router.tsx'
+import {
+	abortIntentPrefetch,
+	takePrefetchedRouteResult,
+} from './intent-prefetch.ts'
 import { communityArea } from './lazy-route.tsx'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
@@ -416,6 +421,59 @@ test('a navigation that exceeds the timeout falls back to a full document naviga
 		registerRouteLoaders({})
 		vi.clearAllTimers()
 		vi.useRealTimers()
+		globalThis.window = previousWindow
+	}
+})
+
+test('prefetchRouteHrefs warms every registered destination so click skips a cold loader', async () => {
+	abortIntentPrefetch()
+	const previousWindow = globalThis.window
+	globalThis.window = {
+		location: {
+			href: 'https://kody.local/onboarding/step-2',
+			origin: 'https://kody.local',
+			pathname: '/onboarding/step-2',
+			search: '',
+			hash: '',
+		},
+	} as unknown as Window & typeof globalThis
+
+	const calls: Array<string> = []
+	const payload = { onboarding: { ok: true } as never }
+	const loader: RouteLoader = async (url) => {
+		calls.push(`${url.pathname}${url.search}`)
+		return payload
+	}
+	registerRouteLoaders({
+		[routePattern(routes.onboardingStep2Service)]: loader,
+		[routePattern(routes.onboardingStep1Agent)]: loader,
+	})
+
+	try {
+		prefetchRouteHrefs([
+			'/onboarding/step-2',
+			'/onboarding/step-2/notion',
+			'/onboarding/step-2/linear',
+			'/onboarding/step-1/cursor',
+			'/community',
+		])
+		expect(calls).toEqual(['/onboarding/step-2/notion'])
+		await Promise.resolve()
+
+		const notion = takePrefetchedRouteResult('/onboarding/step-2/notion')
+		expect(notion).not.toBeNull()
+		await expect(notion).resolves.toEqual(payload)
+		expect(
+			takePrefetchedRouteResult('/onboarding/step-2/linear'),
+		).not.toBeNull()
+		expect(
+			takePrefetchedRouteResult('/onboarding/step-1/cursor'),
+		).not.toBeNull()
+		expect(takePrefetchedRouteResult('/community')).toBeNull()
+		expect(calls).toHaveLength(1)
+	} finally {
+		abortIntentPrefetch()
+		registerRouteLoaders({})
 		globalThis.window = previousWindow
 	}
 })

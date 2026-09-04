@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { prefetchRouteHrefs } from '#client/client-router.tsx'
 import { isKnownProviderIconId, ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	type OnboardingFeaturedMcpServerId,
@@ -20,6 +21,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
+import { onboardingServicePickerPrefetchHrefs } from './onboarding-picker-prefetch.ts'
 
 export function ServicePickerMark(
 	handle: Handle<{
@@ -119,9 +121,20 @@ export function OnboardingServicePicker(
 		search?: string
 	}>,
 ) {
+	let warmedKey = ''
 	return () => {
 		const { featuredIds, overflowIds } = handle.props
 		const search = handle.props.search ?? ''
+		handle.queueTask(() => {
+			const hrefs = onboardingServicePickerPrefetchHrefs(
+				featuredIds,
+				overflowIds,
+			)
+			const key = hrefs.join('\0')
+			if (key === warmedKey) return
+			warmedKey = key
+			prefetchRouteHrefs(hrefs)
+		})
 		const overflowChips = overflowIds.flatMap((id) => {
 			const server = onboardingFeaturedMcpServerById(id)
 			if (!server) return []
