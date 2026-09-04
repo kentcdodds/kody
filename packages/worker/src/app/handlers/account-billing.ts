@@ -14,14 +14,18 @@ import { type routes } from '#universal/routes.ts'
 import {
 	createBillingPortalSession,
 	createCheckoutSession,
+	listSubscriptions,
 	BillingNotConfiguredError,
 	StripeApiError,
 } from '#worker/billing/stripe-client.ts'
 import {
 	createBillingLinkReference,
+	getBillingPortalConfigurationId,
 	getPriceIdForPlan,
 	isBillingConfigured,
 	parseBillingInterval,
+	selectPlanRetainingSubscriptions,
+	subscriptionHasPrice,
 } from '#worker/billing/billing-config.ts'
 import {
 	BillingLinkError,
@@ -46,11 +50,12 @@ export function createAccountBillingHandler(env: Env) {
 				return user
 			}
 
-			const errorCode = new URL(request.url).searchParams.get('error')
+			const searchParams = new URL(request.url).searchParams
 			const accountBilling = await loadAccountBillingData({
 				env,
 				userId: user.userId,
-				errorCode,
+				errorCode: searchParams.get('error'),
+				noticeCode: searchParams.get('billing'),
 			})
 			return renderAppPage({
 				request,
@@ -75,11 +80,12 @@ export function createAccountBillingApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
-			const errorCode = new URL(request.url).searchParams.get('error')
+			const searchParams = new URL(request.url).searchParams
 			const accountBilling = await loadAccountBillingData({
 				env,
 				userId: user.userId,
-				errorCode,
+				errorCode: searchParams.get('error'),
+				noticeCode: searchParams.get('billing'),
 			})
 			return jsonResponse(accountBilling)
 		},
@@ -135,20 +141,81 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				.bind(user.userId)
 				.first<{ stripe_customer_id: string | null }>()
 			const customerId = row?.stripe_customer_id?.trim() || undefined
-			const clientReferenceId = await createBillingLinkReference(
-				env,
-				user.mcpUser.userId,
-			)
-			const successUrl = `${new URL('/account/billing/success', request.url).toString()}?session_id={CHECKOUT_SESSION_ID}`
-			const cancelUrl = new URL('/account/billing', request.url).toString()
+			const billingUrl = new URL('/account/billing', request.url).toString()
 			const requestIp = getRequestIp(request) ?? undefined
+			const requestPath = new URL(request.url).pathname
 
 			try {
+				if (customerId) {
+					// An existing subscriber must change plans on their current
+					// subscription. A second Checkout Session would create a second
+					// subscription that bills alongside the first (the plan resolver
+					// grants the higher tier across all of them), so route plan
+					// switches through the portal's prorated update flow instead.
+					const planRetaining = selectPlanRetainingSubscriptions(
+						await listSubscriptions(env, customerId),
+					)
+					if (planRetaining.length === 1) {
+						const subscription = planRetaining[0]!
+						if (subscriptionHasPrice(subscription, priceId)) {
+							return jsonResponse(
+								{ ok: false, error: 'You are already on that plan.' },
+								409,
+							)
+						}
+						const updatedUrl = new URL(billingUrl)
+						updatedUrl.searchParams.set('billing', 'updated')
+						const portal = await createBillingPortalSession(env, {
+							customerId,
+							returnUrl: billingUrl,
+							configuration: getBillingPortalConfigurationId(env),
+							flowData: {
+								type: 'subscription_update',
+								subscriptionId: subscription.id,
+								afterCompletionRedirectUrl: updatedUrl.toString(),
+							},
+						})
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'account',
+							action: 'billing_plan_change_started',
+							result: 'success',
+							email: user.email,
+							ip: requestIp,
+							path: requestPath,
+						})
+						return jsonResponse({
+							ok: true,
+							url: portal.url,
+							mode: 'portal_update',
+						})
+					}
+					if (planRetaining.length > 1) {
+						// Legacy double subscriptions: the portal update flow targets
+						// one subscription, so let the customer sort out which to keep.
+						const portal = await createBillingPortalSession(env, {
+							customerId,
+							returnUrl: billingUrl,
+							configuration: getBillingPortalConfigurationId(env),
+						})
+						return jsonResponse({
+							ok: true,
+							url: portal.url,
+							mode: 'portal',
+						})
+					}
+				}
+
+				const clientReferenceId = await createBillingLinkReference(
+					env,
+					user.mcpUser.userId,
+				)
+				const successUrl = `${new URL('/account/billing/success', request.url).toString()}?session_id={CHECKOUT_SESSION_ID}`
 				const session = await createCheckoutSession(env, {
 					priceId,
 					clientReferenceId,
 					successUrl,
-					cancelUrl,
+					cancelUrl: billingUrl,
 					...(customerId ? { customerId } : { customerEmail: user.email }),
 					// Lets the Stripe webhook resolve the user without reversing
 					// the HMAC client_reference_id (still verified on link).
@@ -161,9 +228,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					result: 'success',
 					email: user.email,
 					ip: requestIp,
-					path: new URL(request.url).pathname,
+					path: requestPath,
 				})
-				return jsonResponse({ ok: true, url: session.url })
+				return jsonResponse({ ok: true, url: session.url, mode: 'checkout' })
 			} catch (error) {
 				if (error instanceof StripeApiError) {
 					console.error('billing_checkout_failed', {
@@ -363,6 +430,7 @@ export function createAccountBillingPortalHandler(env: Env) {
 				const portal = await createBillingPortalSession(env, {
 					customerId,
 					returnUrl,
+					configuration: getBillingPortalConfigurationId(env),
 				})
 				// Trust assumption: portal.url comes from the Stripe API host,
 				// which is operator-controlled deployment config

@@ -404,25 +404,71 @@ export async function deleteCustomer(
 	}
 }
 
+export type BillingPortalFlowData = {
+	type: 'subscription_update'
+	/** Subscription the portal opens directly on its price-change step. */
+	subscriptionId: string
+	/** Where Stripe sends the customer once the update is confirmed. */
+	afterCompletionRedirectUrl: string
+}
+
+/**
+ * Creates a Stripe Billing Portal session. Without `flowData` the portal
+ * opens on its overview page. With a `subscription_update` flow it opens
+ * directly on the price picker for one subscription, so plan changes for
+ * existing subscribers are prorated updates instead of second subscriptions.
+ * `configuration` pins the portal configuration (which prices are offered,
+ * proration behavior); unset uses the Stripe account default.
+ */
 export async function createBillingPortalSession(
 	env: StripeEnv,
-	input: { customerId: string; returnUrl: string },
+	input: {
+		customerId: string
+		returnUrl: string
+		configuration?: string | null
+		flowData?: BillingPortalFlowData | null
+	},
 ): Promise<{ url: string }> {
 	const customerId = input.customerId.trim()
 	const returnUrl = input.returnUrl.trim()
+	const configuration = input.configuration?.trim() || undefined
 	if (!customerId) {
 		throw new StripeApiError('Customer id is required.', { status: 400 })
 	}
 	if (!returnUrl) {
 		throw new StripeApiError('Return URL is required.', { status: 400 })
 	}
+	const form: Record<string, string> = {
+		customer: customerId,
+		return_url: returnUrl,
+	}
+	if (configuration) {
+		form.configuration = configuration
+	}
+	if (input.flowData) {
+		const subscriptionId = input.flowData.subscriptionId.trim()
+		const afterCompletionRedirectUrl =
+			input.flowData.afterCompletionRedirectUrl.trim()
+		if (!subscriptionId) {
+			throw new StripeApiError('Subscription id is required.', {
+				status: 400,
+			})
+		}
+		if (!afterCompletionRedirectUrl) {
+			throw new StripeApiError('After-completion redirect URL is required.', {
+				status: 400,
+			})
+		}
+		form['flow_data[type]'] = input.flowData.type
+		form['flow_data[subscription_update][subscription]'] = subscriptionId
+		form['flow_data[after_completion][type]'] = 'redirect'
+		form['flow_data[after_completion][redirect][return_url]'] =
+			afterCompletionRedirectUrl
+	}
 	const body = await stripeRequest(env, {
 		method: 'POST',
 		path: '/v1/billing_portal/sessions',
-		form: {
-			customer: customerId,
-			return_url: returnUrl,
-		},
+		form,
 	})
 	const parsed = parseSafe(billingPortalSessionSchema, body)
 	if (!parsed.success) {

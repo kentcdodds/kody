@@ -2,6 +2,7 @@ import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
 import {
 	getPurchasablePlans,
 	isBillingConfigured,
+	type BillingInterval,
 } from '#worker/billing/billing-config.ts'
 import { scheduleStripePlanRefreshBackstop } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
@@ -37,6 +38,23 @@ export function resolveBillingErrorMessage(
 	return billingErrorMessages[trimmed] ?? trimmed
 }
 
+/**
+ * `?billing=<code>` success notices. The Stripe portal's subscription-update
+ * flow redirects back with `billing=updated`; unknown codes render nothing
+ * (unlike error codes, which fall back to the raw code).
+ */
+const billingNoticeMessages: Record<string, string> = {
+	updated: 'Your plan change is complete. Limits update within a minute.',
+}
+
+export function resolveBillingNoticeMessage(
+	noticeCode: string | null | undefined,
+): string | undefined {
+	const trimmed = noticeCode?.trim()
+	if (!trimmed) return undefined
+	return billingNoticeMessages[trimmed]
+}
+
 type BillingUserRow = {
 	plan: string
 	stripe_plan: string | null
@@ -49,11 +67,13 @@ export async function loadAccountBillingData(input: {
 	env: Env
 	userId: number
 	errorCode?: string | null
+	noticeCode?: string | null
 	now?: Date
 }): Promise<AccountBillingLoaderData> {
 	const now = input.now ?? new Date()
 	const configured = isBillingConfigured(input.env)
 	const error = resolveBillingErrorMessage(input.errorCode)
+	const notice = resolveBillingNoticeMessage(input.noticeCode)
 
 	const row = await input.env.APP_DB.prepare(
 		`SELECT plan, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
@@ -66,6 +86,7 @@ export async function loadAccountBillingData(input: {
 
 	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'max'
 	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
+	let stripeInterval: BillingInterval | null = null
 	let cancelAt: string | null = null
 	let subscriptionStatus: string | null = null
 	const customerId = row?.stripe_customer_id?.trim() || null
@@ -92,6 +113,7 @@ export async function loadAccountBillingData(input: {
 				now,
 			})
 			stripePlan = refreshed.stripePlan
+			stripeInterval = refreshed.stripeInterval
 			cancelAt = refreshed.cancelAt
 			subscriptionStatus = refreshed.subscriptionStatus
 		} catch (refreshError) {
@@ -112,6 +134,7 @@ export async function loadAccountBillingData(input: {
 		configured,
 		manualPlan,
 		stripePlan,
+		stripeInterval,
 		effectivePlan: resolveEffectivePlan(manualPlan, stripePlan),
 		hasStripeCustomer,
 		cancelAt,
@@ -119,5 +142,6 @@ export async function loadAccountBillingData(input: {
 		purchasablePlans,
 		usageHref: '/account/usage',
 		...(error ? { error } : {}),
+		...(notice ? { notice } : {}),
 	}
 }

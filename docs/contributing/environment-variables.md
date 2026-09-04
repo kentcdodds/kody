@@ -266,13 +266,22 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
 - `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the
   $480/year `pro` plan
   ($40/month billed annually).
+- `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal
+  configuration id (`bpc_...`) passed as `configuration` when creating portal
+  sessions for Manage subscription and for plan changes by existing subscribers.
+  The production configuration enables `subscription_update` with
+  `proration_behavior=always_invoice`, allows price switches among the Kody
+  Standard / Kody Pro prices above, cancel at period end, payment method and
+  customer updates, and invoice history. When unset (preview, test, local),
+  Stripe uses the account's default portal configuration.
 
 Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
-only that interval unavailable for purchase. Price ids are public (non-secret)
-values committed as production Wrangler vars in
-`packages/worker/wrangler.jsonc`, not Worker secrets. Historical $5/$20 monthly
-price ids remain in Stripe and match so existing subscribers keep their plan.
+only that interval unavailable for purchase. Price ids and the portal
+configuration id are public (non-secret) values committed as production Wrangler
+vars in `packages/worker/wrangler.jsonc`, not Worker secrets. Historical $5/$20
+monthly price ids remain in Stripe and match so existing subscribers keep their
+plan.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

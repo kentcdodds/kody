@@ -582,6 +582,14 @@
 				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
 				"STRIPE_PRO_PRICE_ID": "price_1U3sg6LAQpAnsYszlVpEIFGx",
 				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1U3sg7LAQpAnsYszpozAEFUi",
+				// Stripe Billing Portal configuration used by Manage
+				// subscription and by plan changes for existing subscribers
+				// (subscription_update flow, always_invoice proration, price
+				// switches limited to the Kody Standard / Kody Pro products
+				// above, cancel at period end, payment method and invoice
+				// history). Preview and test leave it unset so Stripe uses
+				// the account default configuration.
+				"STRIPE_BILLING_PORTAL_CONFIGURATION_ID": "bpc_1UBzc8LAQpAnsYszyBkO2N3F",
 				// Disaster-recovery exporter → locked R2 bucket in the KCD
 				// (DR) account. The companion S3 credentials are Worker
 				// secrets set out-of-band via the Cloudflare API.

@@ -24,8 +24,14 @@ import {
 	MetadataGrid,
 } from '#client/routes/account-management-components.tsx'
 import {
+	type BillingInterval,
+	type CheckoutPending,
+	type PaidTier,
+	renderAccountBillingPlans,
+	resolveActiveStripePlan,
+} from '#client/routes/account-billing-plans.tsx'
+import {
 	colors,
-	mq,
 	radius,
 	spacing,
 	typography,
@@ -51,61 +57,12 @@ const billingCancellationFeedbackApiPath =
 const billingPath = '/account/billing'
 const billingPortalPath = '/account/billing/portal'
 
-type PaidTier = 'standard' | 'pro'
-type PlanTier = 'free' | PaidTier
-type BillingInterval = 'month' | 'year'
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
-type CheckoutPending = { plan: PaidTier; interval: BillingInterval } | null
+/** Where `POST /account/billing/checkout.json` sends the browser next. */
+type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
 
-const planTiers: Array<{
-	id: PlanTier
-	name: string
-	price: string
-	annualPrice?: string
-	description: string
-}> = [
-	{
-		id: 'free',
-		name: 'Free',
-		price: '$0',
-		description:
-			'Room to build real automations. Capped on daily volume, not on how much you build.',
-	},
-	{
-		id: 'standard',
-		name: 'Standard',
-		price: '$12/month',
-		annualPrice: '$10/mo billed annually',
-		description:
-			'Higher daily volume and more room for scheduled jobs and workflows.',
-	},
-	{
-		id: 'pro',
-		name: 'Pro',
-		price: '$49/month',
-		annualPrice: '$40/mo billed annually',
-		description:
-			'For heavy daily automation — more room for storage, jobs, workflows, and daily volume.',
-	},
-]
-
-/** Mirrors server rank: free < standard < pro < max. */
-function getPlanRank(plan: AdminPlanName): number {
-	switch (plan) {
-		case 'free':
-			return 0
-		case 'standard':
-			return 1
-		case 'pro':
-			return 2
-		case 'max':
-			return 3
-		default: {
-			const exhaustive: never = plan
-			throw new Error(`Unknown plan: ${String(exhaustive)}`)
-		}
-	}
-}
+const multipleSubscriptionsMessage =
+	'You have more than one active Stripe subscription, so plan changes are handled in the Stripe portal. Opening Stripe…'
 
 function isBillingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === billingPath
@@ -125,10 +82,6 @@ function formatCancelDate(value: string) {
 		value.includes('T') ? value : `${value.replace(' ', 'T')}Z`,
 	)
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
-}
-
-function planCoversTier(effectivePlan: AdminPlanName, tier: PlanTier): boolean {
-	return getPlanRank(effectivePlan) >= getPlanRank(tier)
 }
 
 function describeSubscriptionStatus(status: string): {
@@ -225,10 +178,12 @@ function subscriptionStatusBadgeCss(tone: SubscriptionStatusTone) {
 }
 
 export async function accountBillingRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(billingApiPath, {
+	// `?error=` and `?billing=` carry Stripe redirect outcomes; forward them so
+	// the JSON API maps them to the same messages the SSR page renders.
+	const response = await fetch(`${billingApiPath}${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
@@ -262,14 +217,12 @@ export function AccountBillingRoute(handle: Handle) {
 	function applyPayload(payload: AccountBillingLoaderData) {
 		data = payload
 		status = 'ready'
-		message = payload.error ?? null
+		message = payload.error ?? payload.notice ?? null
 		messageTone = payload.error ? 'error' : 'info'
 	}
 
-	async function startCheckout(plan: PlanTier) {
-		if (plan === 'free') return
+	async function startCheckout(plan: PaidTier, interval: BillingInterval) {
 		if (checkoutPending) return
-		const interval = selectedIntervalByPlan[plan]
 		checkoutPending = { plan, interval }
 		message = null
 		handle.update()
@@ -283,9 +236,17 @@ export function AccountBillingRoute(handle: Handle) {
 			const payload = await readJson<{
 				ok?: boolean
 				url?: string
+				mode?: CheckoutMode
 				error?: string
 			}>(response)
 			if (response.ok && payload?.ok && typeof payload.url === 'string') {
+				if (payload.mode === 'portal') {
+					// More than one active subscription: the portal update flow
+					// cannot pick one, so the customer manages them in Stripe.
+					message = multipleSubscriptionsMessage
+					messageTone = 'info'
+					handle.update()
+				}
 				window.location.assign(payload.url)
 				return
 			}
@@ -401,6 +362,7 @@ export function AccountBillingRoute(handle: Handle) {
 			: null
 		const paymentActionNeeded =
 			subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
+		const activeStripePlan = resolveActiveStripePlan(billing)
 		const showManageCta = Boolean(
 			billing?.configured && billing.hasStripeCustomer,
 		)
@@ -608,179 +570,19 @@ export function AccountBillingRoute(handle: Handle) {
 							</AccountManagementPanel>
 						) : null}
 
-						<AccountManagementPanel
-							title="Plans"
-							description="Choose a plan that fits how you use Kody."
-						>
-							<div
-								mix={css({
-									display: 'grid',
-									gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-									gap: spacing.md,
-									[mq.mobile]: {
-										gridTemplateColumns: '1fr',
-									},
-								})}
-							>
-								{planTiers.map((tier) => {
-									const isCurrent = billing.effectivePlan === tier.id
-									const isIncluded =
-										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
-									const paidTier: PaidTier | null =
-										tier.id === 'free' ? null : tier.id
-									const showSubscribe =
-										paidTier != null &&
-										!isCurrent &&
-										!isIncluded &&
-										billing.purchasablePlans.includes(paidTier) &&
-										!paymentActionNeeded
-
-									return (
-										<div
-											key={tier.id}
-											mix={css({
-												display: 'grid',
-												gap: spacing.sm,
-												alignContent: 'start',
-												padding: spacing.md,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.border}`,
-												backgroundColor: colors.background,
-											})}
-										>
-											<strong
-												mix={css({
-													fontSize: typography.fontSize.base,
-													fontWeight: typography.fontWeight.semibold,
-													color: colors.text,
-												})}
-											>
-												{tier.name}
-											</strong>
-											<span
-												mix={css({
-													fontSize: typography.fontSize.lg,
-													fontWeight: typography.fontWeight.semibold,
-													color: colors.text,
-												})}
-											>
-												{tier.price}
-											</span>
-											{tier.annualPrice ? (
-												<span
-													mix={css({
-														fontSize: typography.fontSize.sm,
-														color: colors.textMuted,
-													})}
-												>
-													{tier.annualPrice}
-												</span>
-											) : null}
-											<p mix={css(descriptionCss)}>{tier.description}</p>
-											<p mix={css({ margin: 0 })}>
-												<a href="/account/usage" mix={css(primaryLinkCss)}>
-													See your current usage
-												</a>
-											</p>
-											{isCurrent || isIncluded ? (
-												<div>
-													<button
-														type="button"
-														disabled
-														mix={css(secondaryButtonCss)}
-													>
-														{isCurrent
-															? 'Current plan'
-															: 'Included in your plan'}
-													</button>
-												</div>
-											) : showSubscribe && paidTier ? (
-												<div
-													mix={css({
-														display: 'grid',
-														gap: spacing.sm,
-													})}
-												>
-													<fieldset
-														mix={css({
-															margin: 0,
-															padding: 0,
-															border: 'none',
-															display: 'grid',
-															gap: spacing.xs,
-														})}
-													>
-														<legend mix={css(visuallyHiddenCss)}>
-															{tier.name} billing interval
-														</legend>
-														<label
-															mix={css({
-																display: 'flex',
-																gap: spacing.sm,
-																alignItems: 'center',
-															})}
-														>
-															<input
-																type="radio"
-																name={`${paidTier}-interval`}
-																checked={
-																	selectedIntervalByPlan[paidTier] === 'month'
-																}
-																mix={[
-																	on('change', () => {
-																		selectedIntervalByPlan[paidTier] = 'month'
-																		handle.update()
-																	}),
-																]}
-															/>
-															<span>Monthly</span>
-														</label>
-														<label
-															mix={css({
-																display: 'flex',
-																gap: spacing.sm,
-																alignItems: 'center',
-															})}
-														>
-															<input
-																type="radio"
-																name={`${paidTier}-interval`}
-																checked={
-																	selectedIntervalByPlan[paidTier] === 'year'
-																}
-																mix={[
-																	on('change', () => {
-																		selectedIntervalByPlan[paidTier] = 'year'
-																		handle.update()
-																	}),
-																]}
-															/>
-															<span>Annual</span>
-														</label>
-													</fieldset>
-													<div>
-														<button
-															type="button"
-															disabled={checkoutPending !== null}
-															mix={[
-																on('click', () => void startCheckout(paidTier)),
-																css(primaryButtonCss),
-															]}
-														>
-															{checkoutPending?.plan === paidTier
-																? 'Starting checkout…'
-																: selectedIntervalByPlan[paidTier] === 'year'
-																	? 'Subscribe annually'
-																	: 'Subscribe monthly'}
-														</button>
-													</div>
-												</div>
-											) : null}
-										</div>
-									)
-								})}
-							</div>
-						</AccountManagementPanel>
+						{renderAccountBillingPlans({
+							billing,
+							activeStripePlan,
+							paymentActionNeeded,
+							checkoutPending,
+							selectedIntervalByPlan,
+							onIntervalChange: (plan, interval) => {
+								selectedIntervalByPlan[plan] = interval
+								handle.update()
+							},
+							onStartCheckout: (plan, interval) =>
+								void startCheckout(plan, interval),
+						})}
 					</>
 				) : null}
 
