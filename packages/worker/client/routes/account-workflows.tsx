@@ -88,7 +88,9 @@ function emptyWorkflowsMessage(input: {
 	view: AccountWorkflowsViewFilter
 	search: string
 }) {
-	if (input.totalCount === 0) return 'No workflow runs yet.'
+	if (input.totalCount === 0) {
+		return 'No workflow runs yet. Ask Kody to create a deferred or long-running run.'
+	}
 	if (input.filteredCount > 0) return null
 	if (input.search || input.view === 'all') {
 		return 'No workflows match the current filters.'
@@ -423,7 +425,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading workflows...
+						Loading workflows…
 					</p>
 				) : null}
 				{message ? (
@@ -684,7 +686,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 										{listMatch?.workflowName ?? 'Loading workflow'}
 									</h2>
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Loading workflow details...
+										Loading workflow details…
 									</p>
 								</div>
 							) : showWorkflowNotFound ? (

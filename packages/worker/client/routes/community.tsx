@@ -97,8 +97,8 @@ export function CommunityRoute(handle: Handle) {
 							built. <em>Make it yours.</em>
 						</h1>
 						<p data-rise style={{ '--rise': '1' }} mix={css(headSubCss)}>
-							Browse packages shared by Kody users. Fork with your agent, adapt
-							them to your goals, and rate your experience.
+							Browse packages shared by Kody users. Fork with your agent and
+							adapt them to your goals.
 						</p>
 						{explainer ? (
 							<EntityExplainer copy={explainer} marginTop="1.15rem" />

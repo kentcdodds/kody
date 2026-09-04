@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import {
 	type GuidesLoaderData,
 	type GuideSummaryLoaderData,
@@ -157,7 +158,18 @@ export function GuidesRoute(handle: Handle) {
 					<p mix={css(listStatusCss)}>Loading guides…</p>
 				) : null}
 				{status === 'error' ? (
-					<p mix={css(listStatusCss)}>Unable to load guides.</p>
+					<div mix={css(listStatusCss)}>
+						<p mix={css({ margin: 0 })}>Unable to load guides.</p>
+						<button
+							type="button"
+							mix={[
+								css(retryButtonCss),
+								on('click', () => window.location.reload()),
+							]}
+						>
+							Try again
+						</button>
+					</div>
 				) : null}
 				{status === 'ready' ? (
 					<>
@@ -274,6 +286,18 @@ export const listStatusCss = {
 	margin: 'clamp(1.8rem, 4vw, 2.5rem) 0 0',
 	color: colors.textMuted,
 	fontSize: '0.98rem',
+}
+
+const retryButtonCss = {
+	marginTop: '0.75rem',
+	padding: 0,
+	border: 0,
+	background: 'none',
+	color: colors.primaryText,
+	font: 'inherit',
+	cursor: 'pointer',
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.15em',
 }
 
 export const guideListCss = {

@@ -202,7 +202,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 										'/account/waiting',
 									)}
 									data-testid="site-header-waiting-menu"
-									mix={css(menuWaitingAvatarCss)}
+									mix={css(menuWaitingLinkCss)}
 								>
 									<UserAvatar
 										displayName={handle.props.displayName}
@@ -210,6 +210,18 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 										size={32}
 										variant="well"
 									/>
+									Waiting
+								</a>
+								<a
+									href="/account"
+									aria-current={
+										handle.props.currentPathname === '/account'
+											? 'page'
+											: undefined
+									}
+									data-testid="site-header-account-menu"
+								>
+									Account
 								</a>
 							</>
 						) : (
@@ -450,10 +462,8 @@ const navUserAvatarCss = {
 	'&:hover': { color: colors.text },
 }
 
-const menuWaitingAvatarCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	width: 'fit-content',
+const menuWaitingLinkCss = {
+	gap: '0.65rem',
 }
 
 const demoIndicatorCss = {

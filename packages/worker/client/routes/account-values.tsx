@@ -377,13 +377,13 @@ export function AccountValuesRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Values"
-					description="Operator drain for leftover named rows. This route is not listed in account navigation."
+					description="Leftover named rows from an older storage model. New work uses secrets and package storage."
 					currentHref={currentHref}
 				/>
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading values...
+						Loading values…
 					</p>
 				) : null}
 				{message ? (
@@ -454,7 +454,7 @@ export function AccountValuesRoute(handle: Handle) {
 						record={
 							isLoadingSelection ? (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Loading value...
+									Loading value…
 								</p>
 							) : showEditor ? (
 								<div mix={css(recordBodyCss)}>

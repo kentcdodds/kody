@@ -271,7 +271,7 @@ function renderPaidPlanCta(isSignedIn: boolean) {
 	if (isSignedIn) {
 		return (
 			<a href="/account/billing" mix={css(planGhostButtonCss)}>
-				Upgrade in settings
+				Upgrade in billing
 			</a>
 		)
 	}

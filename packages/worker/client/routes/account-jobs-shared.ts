@@ -52,7 +52,9 @@ export function emptyJobsMessage(input: {
 	view: AccountJobsViewFilter
 	search: string
 }) {
-	if (input.totalCount === 0) return 'No scheduled jobs yet.'
+	if (input.totalCount === 0) {
+		return 'No scheduled jobs yet. Ask Kody to add one on a saved package.'
+	}
 	if (input.filteredCount > 0) return null
 	if (input.search || input.view === 'all') {
 		return 'No jobs match the current filters.'

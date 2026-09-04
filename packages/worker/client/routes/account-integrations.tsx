@@ -462,7 +462,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Loading integrations...
+						Loading integrations…
 					</p>
 				) : null}
 				{message ? (
@@ -495,7 +495,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 							countLabel={`${filteredApps.length} of ${apps.length} integrations`}
 							emptyLabel={
 								apps.length === 0
-									? 'No integrations yet. Copy a setup prompt below to get started.'
+									? 'No integrations yet.'
 									: 'No integrations match the current filters.'
 							}
 							toolbar={

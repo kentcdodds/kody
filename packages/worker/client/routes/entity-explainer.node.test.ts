@@ -37,6 +37,9 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	const copy = resolveEntityExplainer(routes.accountPackages.href())
 	expect(copy).not.toBeNull()
 	if (!copy) throw new Error('expected packages explainer')
+	expect(copy.paragraphs.join(' ')).toContain(
+		'open a package to change visibility, publish lock, or delete it',
+	)
 	expect(copy.learnMore?.map((link) => link.href)).toEqual([
 		comparisonHref,
 		routes.guideDetail.href({ slug: 'package-lifecycle' }),

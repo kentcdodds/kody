@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { on } from '#client/event-mixin.ts'
 import {
 	BLOG_AUTHOR_NAME,
 	formatBlogPostDate,
@@ -147,13 +148,27 @@ export function BlogRoute(handle: Handle) {
 					<p mix={css(listStatusCss)}>Loading posts…</p>
 				) : null}
 				{status === 'error' ? (
-					<p mix={css(listStatusCss)}>Unable to load blog posts.</p>
+					<div mix={css(listStatusCss)}>
+						<p mix={css({ margin: 0 })}>Unable to load blog posts.</p>
+						<button
+							type="button"
+							mix={[
+								css(retryButtonCss),
+								on('click', () => window.location.reload()),
+							]}
+						>
+							Try again
+						</button>
+					</div>
 				) : null}
 				{status === 'ready' && featuredPost ? (
 					<ul mix={css(postListCss)}>
 						{renderFeaturedPostItem(featuredPost)}
 						{listPosts.map((post, index) => renderPostItem(post, index + 1))}
 					</ul>
+				) : null}
+				{status === 'ready' && !featuredPost ? (
+					<p mix={css(listStatusCss)}>No posts yet.</p>
 				) : null}
 			</section>
 		)
@@ -255,6 +270,18 @@ const listStatusCss = {
 	margin: 'clamp(2rem, 5vw, 3rem) 0 0',
 	color: colors.textMuted,
 	fontSize: '0.98rem',
+}
+
+const retryButtonCss = {
+	marginTop: '0.75rem',
+	padding: 0,
+	border: 0,
+	background: 'none',
+	color: colors.primaryText,
+	font: 'inherit',
+	cursor: 'pointer',
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.15em',
 }
 
 const postListCss = {

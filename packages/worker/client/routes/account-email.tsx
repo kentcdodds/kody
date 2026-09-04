@@ -1,9 +1,11 @@
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementMessage,
@@ -11,16 +13,17 @@ import {
 	AccountPageHeader,
 } from '#client/routes/account-management-components.tsx'
 import {
+	renderEmailVerificationPrompt,
+	requestResendVerification,
+} from '#client/routes/email-verification-prompt.tsx'
+import {
 	RecordTable,
 	RecordTableSearch,
 	RecordTableSelect,
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
-import {
-	cardCss,
-	getGhostButtonCss,
-} from '#universal/styles/style-primitives.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	type AccountEmailLoaderData,
 	type AccountEmailMessageDetail,
@@ -55,6 +58,10 @@ export function AccountEmailRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
 	let classifyState: ClassifyState = 'idle'
+	let resendStatus: 'idle' | 'sending' = 'idle'
+	let resendMessage: string | null = null
+	let resendTone: 'error' | 'info' = 'info'
+	let resendAccepted = false
 	let loadRequestId = 0
 	let lastLoadedDataKey = ''
 	let loadingDataKey: string | null = null
@@ -96,18 +103,40 @@ export function AccountEmailRoute(handle: Handle) {
 	function applyPayload(payload: AccountEmailLoaderData, href: string) {
 		data = payload
 		const selectedId = emailRoute.getSelection(href).selectedId
-		message = !payload.emailVerified
-			? payload.verificationMessage
-			: selectedId && !payload.selectedMessage
+		message =
+			payload.emailVerified && selectedId && !payload.selectedMessage
 				? 'Message not found.'
 				: null
-		messageTone =
-			!payload.emailVerified || (selectedId && !payload.selectedMessage)
-				? 'error'
-				: 'info'
+		messageTone = selectedId && !payload.selectedMessage ? 'error' : 'info'
 		status = 'ready'
 		lastLoadedDataKey = getDataKey(href)
 		lastFailedDataKey = null
+	}
+
+	async function handleResendVerification() {
+		resendStatus = 'sending'
+		resendMessage = null
+		resendTone = 'info'
+		handle.update()
+
+		try {
+			const result = await requestResendVerification()
+			if (!result.ok && result.unauthorized) {
+				window.location.assign('/login')
+				return
+			}
+			resendTone = result.ok ? 'info' : 'error'
+			resendMessage = result.message
+			if (result.ok) {
+				resendAccepted = true
+			}
+		} catch {
+			resendTone = 'error'
+			resendMessage = 'Unable to send the verification email.'
+		} finally {
+			resendStatus = 'idle'
+			handle.update()
+		}
 	}
 
 	async function classifySelectedMessage(
@@ -469,17 +498,31 @@ export function AccountEmailRoute(handle: Handle) {
 					</>
 				) : null}
 				{data && showUnverified ? (
-					<div mix={css({ ...cardCss, gap: spacing.sm })}>
+					<>
 						{data.inboxAddress ? (
 							<p mix={css({ margin: 0 })}>
 								Your inbox address will be <code>{data.inboxAddress}</code>{' '}
 								after verification.
 							</p>
 						) : null}
-						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Verify your account email to browse stored messages.
-						</p>
-					</div>
+						{renderEmailVerificationPrompt({
+							email: data.email,
+							description:
+								'Verify your account email to browse stored messages. MCP access and email features stay locked until this account email is verified.',
+							delivery: resendAccepted
+								? acceptedEmailVerificationDelivery()
+								: (readAppSession(handle)?.session?.emailVerificationDelivery ??
+									null),
+							resendStatus,
+							resendMessage,
+							resendTone,
+							onResend: () => {
+								void handleResendVerification()
+							},
+							secondaryHref: '/pending-verification',
+							secondaryLabel: 'Verification page',
+						})}
+					</>
 				) : null}
 			</AccountManagementShell>
 		)
