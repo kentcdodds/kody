@@ -1,11 +1,17 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import {
+	productionOriginScriptName,
+	stripOriginDurableObjectMigrations,
+} from './ci/origin-production-deploy-state.ts'
+import { parseJsonc } from './ci/resource-utils.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
 import {
 	isOriginWorkerConfigPath,
 	omitConfigFlag,
 	readConfigFlag,
+	readNameFlag,
 } from './origin-worker-config.ts'
 
 function run(
@@ -35,13 +41,52 @@ function resolveWranglerCommand() {
 
 export const originViteWranglerConfigPath = 'dist/ssr/wrangler.json'
 
-export function originViteDeployArgs(args: ReadonlyArray<string>) {
-	return [
+export function inferOriginDeployCloudflareEnv(configPath: string | undefined) {
+	const fileName =
+		(configPath ?? '').replaceAll('\\', '/').split('/').pop() ?? ''
+	if (fileName.includes('preview')) return 'preview'
+	if (fileName.includes('production')) return 'production'
+	return undefined
+}
+
+export function inferOriginDeployWorkerName(input: {
+	cloudflareEnv: string | undefined
+	existingName?: string
+}) {
+	if (input.existingName) return input.existingName
+	if (input.cloudflareEnv === 'production') return productionOriginScriptName
+	return undefined
+}
+
+export function isSlimOriginEntry(main: unknown) {
+	if (typeof main !== 'string') return false
+	return main.replaceAll('\\', '/').endsWith('production-worker.ts')
+}
+
+export function finalizeOriginViteWranglerConfig(
+	config: Record<string, unknown>,
+	input: { stripMigrations: boolean; envName: string },
+) {
+	if (input.stripMigrations) {
+		stripOriginDurableObjectMigrations(config, input.envName)
+	}
+	return config
+}
+
+export function originViteDeployArgs(
+	args: ReadonlyArray<string>,
+	workerName?: string,
+) {
+	const next = [
 		'deploy',
 		'--config',
 		originViteWranglerConfigPath,
 		...omitConfigFlag(args),
 	]
+	if (workerName && !readNameFlag(args)) {
+		next.push('--name', workerName)
+	}
+	return next
 }
 
 export async function deploy(args: ReadonlyArray<string>) {
@@ -52,9 +97,20 @@ export async function deploy(args: ReadonlyArray<string>) {
 	}
 
 	const wranglerConfigPath = configPath ?? 'packages/worker/wrangler.jsonc'
+	const cloudflareEnv =
+		process.env.CLOUDFLARE_ENV ??
+		inferOriginDeployCloudflareEnv(wranglerConfigPath)
+	const inputConfig = parseJsonc<Record<string, unknown>>(
+		readFileSync(wranglerConfigPath, 'utf8'),
+	)
+	const workerName = inferOriginDeployWorkerName({
+		cloudflareEnv,
+		existingName: readNameFlag(args),
+	})
 	run(resolveLocalBinary('vite'), ['build'], {
 		...process.env,
 		KODY_WRANGLER_CONFIG: wranglerConfigPath,
+		...(cloudflareEnv ? { CLOUDFLARE_ENV: cloudflareEnv } : {}),
 	})
 	if (!existsSync(originViteWranglerConfigPath)) {
 		console.error(
@@ -62,7 +118,21 @@ export async function deploy(args: ReadonlyArray<string>) {
 		)
 		process.exit(1)
 	}
-	run(resolveWranglerCommand(), originViteDeployArgs(args), process.env)
+	const emittedConfig = parseJsonc<Record<string, unknown>>(
+		readFileSync(originViteWranglerConfigPath, 'utf8'),
+	)
+	finalizeOriginViteWranglerConfig(emittedConfig, {
+		stripMigrations: isSlimOriginEntry(inputConfig.main),
+		envName: cloudflareEnv ?? 'production',
+	})
+	writeFileSync(
+		originViteWranglerConfigPath,
+		`${JSON.stringify(emittedConfig, null, '\t')}\n`,
+	)
+	run(resolveWranglerCommand(), originViteDeployArgs(args, workerName), {
+		...process.env,
+		...(cloudflareEnv ? { CLOUDFLARE_ENV: cloudflareEnv } : {}),
+	})
 }
 
 if (isExecutedDirectly(import.meta.url)) {

@@ -23,6 +23,7 @@ import {
 	originBootstrapConfigPath,
 	planOriginProductionDeploy,
 	stripOriginBindingsForLocallyOwnedClasses,
+	stripOriginDurableObjectMigrations,
 	writeOriginBootstrapWranglerConfig,
 	type OriginProductionScriptState,
 } from './origin-production-deploy-state.ts'
@@ -791,6 +792,21 @@ async function ensureProductionResources(options: CliOptions) {
 			generatedConfig,
 			deployState.originOwnedTransferredClassNames,
 		)
+		await writeFile(
+			generatedConfigPath,
+			`${JSON.stringify(generatedConfig, null, '\t')}\n`,
+			'utf8',
+		)
+	}
+
+	// After the full-entry bootstrap clone is written. Fresh production
+	// still needs historical `new_sqlite_classes` on that bootstrap file;
+	// the slim upload that follows must not replay them.
+	if (deployPlan.originEntry === 'slim') {
+		const generatedConfig = parseJsonc<Record<string, unknown>>(
+			await readFile(generatedConfigPath, 'utf8'),
+		)
+		stripOriginDurableObjectMigrations(generatedConfig, 'production')
 		await writeFile(
 			generatedConfigPath,
 			`${JSON.stringify(generatedConfig, null, '\t')}\n`,

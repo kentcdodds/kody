@@ -243,7 +243,9 @@ test('stripOriginDurableObjectMigrations removes top-level and env migrations on
 			},
 		},
 	}
-	expect(stripOriginDurableObjectMigrations(config, 'preview')).toEqual({
+	expect(
+		stripOriginDurableObjectMigrations(structuredClone(config), 'preview'),
+	).toEqual({
 		main: './src/production-worker.ts',
 		durable_objects: { bindings: [] },
 		env: {
@@ -251,6 +253,19 @@ test('stripOriginDurableObjectMigrations removes top-level and env migrations on
 			production: {
 				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
 			},
+		},
+	})
+	expect(
+		stripOriginDurableObjectMigrations(structuredClone(config), 'production'),
+	).toEqual({
+		main: './src/production-worker.ts',
+		durable_objects: { bindings: [] },
+		env: {
+			preview: {
+				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+				vars: { APP_ENV: 'preview' },
+			},
+			production: {},
 		},
 	})
 })

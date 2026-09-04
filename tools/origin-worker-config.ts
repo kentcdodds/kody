@@ -14,30 +14,52 @@ export function isOriginWorkerConfigPath(configPath: string | undefined) {
 	)
 }
 
-export function omitConfigFlag(args: ReadonlyArray<string>) {
+function omitNamedFlag(
+	args: ReadonlyArray<string>,
+	flag: '--config' | '--name',
+) {
 	const next: Array<string> = []
 	for (let index = 0; index < args.length; index += 1) {
 		const arg = args[index]
-		if (arg === '--config') {
+		if (arg === flag) {
 			index += 1
 			continue
 		}
-		if (arg.startsWith('--config=')) continue
+		if (arg.startsWith(`${flag}=`)) continue
 		next.push(arg)
 	}
 	return next
 }
 
-export function readConfigFlag(args: ReadonlyArray<string>) {
-	const inline = args.find((arg) => arg.startsWith('--config='))
+function readNamedFlag(
+	args: ReadonlyArray<string>,
+	flag: '--config' | '--name',
+) {
+	const inline = args.find((arg) => arg.startsWith(`${flag}=`))
 	if (inline) {
-		const value = inline.slice('--config='.length)
+		const value = inline.slice(`${flag}=`.length)
 		return value || undefined
 	}
-	const flagIndex = args.findIndex((arg) => arg === '--config')
+	const flagIndex = args.findIndex((arg) => arg === flag)
 	if (flagIndex >= 0) {
 		const value = args[flagIndex + 1]
 		return value || undefined
 	}
 	return undefined
+}
+
+export function omitConfigFlag(args: ReadonlyArray<string>) {
+	return omitNamedFlag(args, '--config')
+}
+
+export function readConfigFlag(args: ReadonlyArray<string>) {
+	return readNamedFlag(args, '--config')
+}
+
+export function omitNameFlag(args: ReadonlyArray<string>) {
+	return omitNamedFlag(args, '--name')
+}
+
+export function readNameFlag(args: ReadonlyArray<string>) {
+	return readNamedFlag(args, '--name')
 }

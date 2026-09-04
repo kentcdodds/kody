@@ -2,7 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	isOriginWorkerConfigPath,
 	omitConfigFlag,
+	omitNameFlag,
 	readConfigFlag,
+	readNameFlag,
 } from './origin-worker-config.ts'
 
 test('treats the committed worker config and generated origin configs as origin', () => {
@@ -63,4 +65,14 @@ test('reads and strips --config flags', () => {
 			'--upload-source-maps',
 		]),
 	).toEqual(['--upload-source-maps'])
+})
+
+test('reads and strips --name flags', () => {
+	expect(
+		readNameFlag(['--name', 'kody-production', '--var', 'APP_COMMIT_SHA:abc']),
+	).toBe('kody-production')
+	expect(readNameFlag(['--name=kody-pr-2055'])).toBe('kody-pr-2055')
+	expect(
+		omitNameFlag(['--name', 'kody-production', '--var', 'APP_COMMIT_SHA:abc']),
+	).toEqual(['--var', 'APP_COMMIT_SHA:abc'])
 })
