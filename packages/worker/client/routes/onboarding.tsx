@@ -4,7 +4,7 @@ import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { readRouterSearch, readRouterUrl } from '#client/router-location.tsx'
+import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -13,116 +13,83 @@ import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
 import {
 	closeOnboardingMcpOAuthPopupIfOpened,
 	listenForOnboardingMcpOAuthDone,
 } from '#client/mcp-oauth-popup.ts'
-import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	isOnboardingPagePath,
+	onboardingIndexRedirectHref,
+	onboardingSessionMilestonesComplete,
+	onboardingSessionMilestonesEqual,
+	onboardingStepPaths,
 	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
-	onboardingWizardSteps,
-	readLegacyOnboardingStep,
+	parseOnboardingPathname,
+	emptyOnboardingSessionMilestones,
+	type OnboardingSessionMilestoneState,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
-import {
-	hasInstalledOnboardingExample,
-	onboardingExampleInstallFingerprint,
-	selectOnboardingExampleListings,
-	selectOnboardingServiceStarterListings,
-} from '#universal/onboarding-examples.ts'
-import {
-	customOnboardingMcpFingerprint,
-	featuredOnboardingMcpFingerprint,
-	hasConnectedOnboardingWorkspaceMcp,
-	hasPendingOnboardingCustomMcpAuth,
-	hasPendingOnboardingFeaturedMcpAuth,
-} from '#universal/onboarding-mcp-chooser.ts'
 import {
 	fetchOnboardingPayload,
 	onboardingApiPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
-import { isOnboardingChecklistItemDone } from '#client/routes/onboarding-checklist.tsx'
 import {
 	type OnboardingAgentChooserPick,
-	type OnboardingAgentSurface,
 	onboardingAgentLabel,
 	onboardingDataHref,
-	onboardingMobileAgentMediaQuery,
-	pickOnboardingAgentChooser,
-	readOnboardingAgentParam,
-	readOnboardingSurfaceParam,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import {
-	renderAccessPanel,
+	rememberOnboardingAgentChooser,
+	resolveOnboardingAgentChooser,
+} from '#client/routes/onboarding-agent-chooser-session.ts'
+import {
+	rememberOnboardingServiceChooser,
+	resolveOnboardingServiceChooser,
+} from '#client/routes/onboarding-service-chooser-session.ts'
+import {
+	readRememberedOnboardingSelectedAgent,
+	rememberOnboardingSelectedAgent,
+} from '#client/routes/onboarding-selected-agent-session.ts'
+import { type OnboardingServiceChooserPick } from '#universal/onboarding-mcp-chooser.ts'
+import {
+	OnboardingAccessPanel,
 	renderConnectAgentPanel,
-	renderPersistPanel,
 } from '#client/routes/onboarding-wizard-panels.tsx'
 import { renderWizardStepsNav } from '#client/routes/onboarding-wizard-chrome.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
-import {
-	onboardingPath,
-	resolveOnboardingPendingVerificationPath,
-} from '#client/routes/onboarding-redirect.ts'
+import { resolveOnboardingPendingVerificationPath } from '#client/routes/onboarding-redirect.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 /**
- * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
- * agent · Give Kody Access · Try it, then persist), one surface panel at a
- * time with hand-tilted mascot art. Step 1 picks one agent, then shows only
- * that host. Server state (prompts, MCP URL, featured MCP servers,
- * hasMcpClient / OAuth polling) stays in the route state.
+ * Onboarding wizard: shirt-pattern head, two-step stepper (Connect your
+ * agent · Give Kody Access), one surface panel at a time with hand-tilted
+ * mascot art. Step 1 picks one agent, then shows only that host.
  *
- * Step 2 is "give Kody access to your stuff." Official remote MCP is the
- * easy login path; Connect also forks the matching `@kody/*-mcp` helper
- * into the person's account. Official `@kody/*` listings are catalog and
- * fork source — person accounts run the owned copy, not the platform
- * package. Ranked exits: featured official MCP, custom MCP, Advanced
- * (provider guides + BYOK), Just-try-Kody, then skip. Step 3 is the
- * permanence lesson: one ad hoc execute, then persist that working code.
+ * Step 2 is prompt-first. The first row is official MCP remotes plus Not
+ * listed. Picking a chip flavors a short copyable prompt. Not listed is
+ * "ask your agent" plus optional logos that only update that prompt.
+ * Hosted OAuth is not the path. Live milestones observe account activity.
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
 
-const onboardingSteps = onboardingWizardSteps
-
 function isOnboardingPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === onboardingPath
+	return isOnboardingPagePath(new URL(href, 'http://localhost').pathname)
 }
 
-function readOwnedExampleKodyId(
-	listings: Array<OnboardingFeaturedListing>,
-): string {
-	const owned = listings.find((listing) => listing.viewerInstall != null)
-	if (!owned?.viewerInstall) return 'my-package'
-	const separatorIndex = owned.viewerInstall.targetName.lastIndexOf('/')
-	return separatorIndex >= 0
-		? owned.viewerInstall.targetName.slice(separatorIndex + 1)
-		: owned.kodyId
-}
-
-function readStepFromHref(href: string): OnboardingStep | null {
-	const hash = new URL(href, 'http://localhost').hash.slice(1)
-	return (
-		onboardingSteps.find((candidate) => candidate.hash === hash)?.number ??
-		readLegacyOnboardingStep(hash)
-	)
+function readOnboardingLocation(href: string) {
+	const url = new URL(href, 'http://localhost')
+	return parseOnboardingPathname(url.pathname)
 }
 
 function readOnboardingRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(
 		new URLSearchParams(readRouterSearch(handle)).get('redirectTo'),
 	)
-}
-
-function readOnboardingMcpOAuthError(handle: Handle) {
-	const params = new URLSearchParams(readRouterSearch(handle))
-	if (params.get('auth') !== 'error') return null
-	return params.get('reason')
 }
 
 export async function onboardingRouteLoader(
@@ -144,9 +111,19 @@ export async function onboardingRouteLoader(
 			resolveOnboardingPendingVerificationPath(redirectTo),
 		)
 	}
+	if (url.pathname === onboardingStepPaths.index) {
+		return routeLoaderRedirect(onboardingIndexRedirectHref(url.search))
+	}
+	const location = parseOnboardingPathname(url.pathname)
+	if (location && !location.valid) {
+		return routeLoaderRedirect(
+			onboardingWizardStepHref(location.step, url.search),
+		)
+	}
 	return {
 		onboarding: payload,
-		onboardingAgentChooser: pickOnboardingAgentChooser(),
+		onboardingAgentChooser: resolveOnboardingAgentChooser(),
+		onboardingServiceChooser: resolveOnboardingServiceChooser(),
 	}
 }
 
@@ -154,27 +131,14 @@ export function OnboardingRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let message: string | null = null
 	let loggedIn = false
-	let username: string | null = null
 	let mcpServerUrl = ''
 	let mcpHighlights: OnboardingPayload['mcpHighlights'] = {}
-	let setupPrompt = ''
-	let persistPrompt = ''
+	let discoveryPrompt = ''
 	let hasMcpClient = false
-	let hasStep2Win = false
-	let hasPersistedPackage = false
-	let persistedPackageKodyId: string | null = null
-	let featuredListings: Array<OnboardingFeaturedListing> = []
-	let exampleListings: Array<OnboardingFeaturedListing> = []
-	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
-	let featuredMcpServers: OnboardingPayload['featuredMcpServers'] = []
-	let customMcpServers: OnboardingPayload['customMcpServers'] = []
-	let checklist: OnboardingChecklistLoaderData | null = null
-	let checklistHidden = false
+	let milestones: OnboardingSessionMilestoneState =
+		emptyOnboardingSessionMilestones
 	let initializedStep = false
 	let pendingAdvanceToAccess = false
-	let awaitingMcpConnection = false
-	let oauthReturnError: string | null = null
-	let oauthReturnSucceeded = false
 	// Panel entrances only play for real step changes, never on the first
 	// paint — the page-open choreography belongs to the head's data-rise.
 	let panelAnimationArmed = false
@@ -183,65 +147,21 @@ export function OnboardingRoute(handle: Handle) {
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
 		loggedIn = payload.loggedIn
-		username = payload.username
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
-		setupPrompt = payload.setupPrompt
-		persistPrompt = payload.persistPrompt
+		discoveryPrompt = payload.discoveryPrompt
+		milestones = payload.milestones ?? emptyOnboardingSessionMilestones
 		hasMcpClient = payload.hasMcpClient
-		featuredListings = payload.featuredListings ?? []
-		exampleListings = selectOnboardingExampleListings(featuredListings)
-		serviceStarterListings =
-			selectOnboardingServiceStarterListings(featuredListings)
-		featuredMcpServers = payload.featuredMcpServers ?? []
-		customMcpServers = payload.customMcpServers ?? []
-		const workspaceConnected = hasConnectedOnboardingWorkspaceMcp({
-			featuredMcpServers,
-			customMcpServers,
-		})
-		hasStep2Win =
-			workspaceConnected || hasInstalledOnboardingExample(exampleListings)
-		if (workspaceConnected) {
-			awaitingMcpConnection = false
-			oauthReturnError = null
-			oauthReturnSucceeded = true
-		}
-		checklist = payload.checklist
-		hasPersistedPackage = isOnboardingChecklistItemDone(
-			payload.checklist,
-			'install-starter',
-		)
-		persistedPackageKodyId = payload.persistedPackageKodyId ?? null
-		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
 			initializedStep = true
 			return
 		}
-		if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
+		if (!wasConnected && payload.hasMcpClient) {
 			panelAnimationArmed = true
-			scrollToNav('onboarding-steps-nav')
 			pendingAdvanceToAccess = true
 		}
-		// Stay on Step 2 when access or an example finishes so the
-		// Connected/Installed state is visible; wizard nav advances.
-	}
-
-	/**
-	 * Advancing (click or auto) scrolls back to the relevant steps nav so
-	 * people always see where they are in the flow.
-	 */
-	function scrollToNav(id: string) {
-		if (typeof document === 'undefined') return
-		requestAnimationFrame(() => {
-			document.getElementById(id)?.scrollIntoView({
-				behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
-					? 'auto'
-					: 'smooth',
-				block: 'start',
-			})
-		})
 	}
 
 	function buildStepHref(
@@ -249,7 +169,7 @@ export function OnboardingRoute(handle: Handle) {
 		href = readCurrentRouterHref(handle),
 	) {
 		const current = new URL(href, 'https://kody.local')
-		return onboardingWizardStepHref(current.pathname, step, current.search)
+		return onboardingWizardStepHref(step, current.search)
 	}
 
 	function goToStep(step: OnboardingStep) {
@@ -266,9 +186,9 @@ export function OnboardingRoute(handle: Handle) {
 			goToStep(2)
 			return
 		}
-		// Hash navigate is synchronous and calls handle.update(). Loader
-		// consumption and its corrective render both run around this paint,
-		// so keep the flag until the queued task actually navigates.
+		// Route navigate is async. Loader consumption and its corrective
+		// render both run around this paint, so keep the flag until the
+		// queued task actually navigates.
 		handle.queueTask((signal) => {
 			if (signal.aborted || !pendingAdvanceToAccess) return
 			pendingAdvanceToAccess = false
@@ -276,32 +196,16 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
-	let viewportSurface: OnboardingAgentSurface = 'desktop'
 	let agentChooser: OnboardingAgentChooserPick | null = null
-
-	handle.queueTask((signal) => {
-		if (typeof matchMedia !== 'function') return
-		const media = matchMedia(onboardingMobileAgentMediaQuery)
-		const sync = () => {
-			const next: OnboardingAgentSurface = media.matches ? 'mobile' : 'desktop'
-			if (next === viewportSurface) return
-			viewportSurface = next
-			handle.update()
-		}
-		sync()
-		media.addEventListener('change', sync, { signal })
-	})
+	let serviceChooser: OnboardingServiceChooserPick | null = null
 
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
-		scrollToNav('onboarding-steps-nav')
 		goToStep(step)
 		handle.queueTask((signal) => {
 			if (signal.aborted) return
-			// The nav scroll owns the viewport position; focus must not yank
-			// it back down to the panel heading.
 			document
-				.getElementById(onboardingWizardStepByNumber(step).hash)
+				.getElementById(onboardingWizardStepByNumber(step).panelId)
 				?.querySelector('h2')
 				?.focus({ preventScroll: true })
 		})
@@ -372,7 +276,8 @@ export function OnboardingRoute(handle: Handle) {
 			}
 			applyPayload(payload)
 			flushPendingAdvanceToAccess(false)
-			if (!agentChooser) agentChooser = pickOnboardingAgentChooser()
+			if (!agentChooser) agentChooser = resolveOnboardingAgentChooser()
+			if (!serviceChooser) serviceChooser = resolveOnboardingServiceChooser()
 			loadLatch.markLoaded(onboardingDataHref(href))
 			handle.update()
 		} catch (error) {
@@ -385,10 +290,9 @@ export function OnboardingRoute(handle: Handle) {
 		}
 	}
 
-	// Users typically keep this page open while their MCP client runs OAuth,
-	// a Step 2 Notion/Linear authorize finishes, or Step 3 persist completes,
-	// so poll the same JSON endpoint until those signals land and collapse
-	// completed steps without a manual refresh.
+	// Users typically keep this page open while their MCP client connects
+	// or first-session milestones land, so poll the same JSON endpoint until
+	// those signals arrive without a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -402,17 +306,7 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function pollOnboardingProgress() {
 		if (pollInFlight || status !== 'ready' || !loggedIn) return
-		// Stop only when the agent is connected, featured MCP auth is idle,
-		// and persist has landed with a kody id. install-starter can flip on
-		// the same tick that loadPersistedPackageKodyId fails open to null,
-		// so keep polling until the id arrives.
-		if (
-			hasMcpClient &&
-			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers) &&
-			!hasPendingOnboardingCustomMcpAuth(customMcpServers) &&
-			hasPersistedPackage &&
-			persistedPackageKodyId != null
-		) {
+		if (hasMcpClient && onboardingSessionMilestonesComplete(milestones)) {
 			return
 		}
 		if (document.hidden) return
@@ -421,23 +315,11 @@ export function OnboardingRoute(handle: Handle) {
 		try {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
-			const nextServers = payload.featuredMcpServers ?? []
-			const nextCustomServers = payload.customMcpServers ?? []
-			const nextListings = payload.featuredListings ?? []
-			const nextHasPersistedPackage = isOnboardingChecklistItemDone(
-				payload.checklist,
-				'install-starter',
-			)
+			const nextMilestones =
+				payload.milestones ?? emptyOnboardingSessionMilestones
 			if (
 				payload.hasMcpClient === hasMcpClient &&
-				featuredOnboardingMcpFingerprint(nextServers) ===
-					featuredOnboardingMcpFingerprint(featuredMcpServers) &&
-				customOnboardingMcpFingerprint(nextCustomServers) ===
-					customOnboardingMcpFingerprint(customMcpServers) &&
-				onboardingExampleInstallFingerprint(nextListings) ===
-					onboardingExampleInstallFingerprint(featuredListings) &&
-				nextHasPersistedPackage === hasPersistedPackage &&
-				payload.persistedPackageKodyId === persistedPackageKodyId
+				onboardingSessionMilestonesEqual(nextMilestones, milestones)
 			) {
 				return
 			}
@@ -460,16 +342,7 @@ export function OnboardingRoute(handle: Handle) {
 			onboardingProgressPollIntervalMs,
 		)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
-		listenForOnboardingMcpOAuthDone((outcome) => {
-			if (outcome.auth === 'error' && outcome.reason) {
-				oauthReturnError = outcome.reason
-				oauthReturnSucceeded = false
-				awaitingMcpConnection = false
-				handle.update()
-			} else if (outcome.auth === 'success') {
-				oauthReturnError = null
-				oauthReturnSucceeded = true
-			}
+		listenForOnboardingMcpOAuthDone(() => {
 			void refreshOnboardingAfterInstall()
 		}, handle.signal)
 	}
@@ -481,7 +354,19 @@ export function OnboardingRoute(handle: Handle) {
 			'onboardingAgentChooser',
 			href,
 		)
-		if (chooserData) agentChooser = chooserData
+		if (chooserData) {
+			rememberOnboardingAgentChooser(chooserData)
+			agentChooser = chooserData
+		}
+		const serviceChooserData = tryConsumeRouteLoaderData(
+			handle,
+			'onboardingServiceChooser',
+			href,
+		)
+		if (serviceChooserData) {
+			rememberOnboardingServiceChooser(serviceChooserData)
+			serviceChooser = serviceChooserData
+		}
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
 		if (routeData.loggedIn && !routeData.emailVerified) {
@@ -512,25 +397,24 @@ export function OnboardingRoute(handle: Handle) {
 			handle.queueTask(loadOnboarding)
 		}
 
-		const inferredStep: OnboardingStep = hasStep2Win ? 3 : hasMcpClient ? 2 : 1
-		const activeStep = readStepFromHref(currentHref) ?? inferredStep
-
-		const routerSearch = readRouterSearch(handle)
-		const selectedAgent = readOnboardingAgentParam(routerSearch)
-		const selectedSurface =
-			readOnboardingSurfaceParam(routerSearch) ?? viewportSurface
+		const location = readOnboardingLocation(currentHref)
+		const activeStep: OnboardingStep = location?.valid
+			? location.step
+			: hasMcpClient
+				? 2
+				: 1
+		const selectedAgent = location?.valid ? location.agent : null
+		const selectedService = location?.valid ? location.service : null
+		if (selectedAgent) rememberOnboardingSelectedAgent(selectedAgent)
 		const selectedAgentLabel = selectedAgent
-			? onboardingAgentLabel(selectedAgent, selectedSurface)
+			? onboardingAgentLabel(selectedAgent)
 			: null
-		const agentLocation = new URL(readRouterUrl(handle), 'https://kody.local')
-
-		const onChanged = () => {
-			void refreshOnboardingAfterInstall()
-		}
-		const onAuthStarted = () => {
-			awaitingMcpConnection = true
-			handle.update()
-		}
+		const rememberedAgent =
+			selectedAgent ?? readRememberedOnboardingSelectedAgent()
+		const connectedAgentLabel =
+			rememberedAgent && rememberedAgent !== 'other'
+				? onboardingAgentLabel(rememberedAgent)
+				: null
 
 		return (
 			<section mix={css(onboardCss)}>
@@ -568,7 +452,8 @@ export function OnboardingRoute(handle: Handle) {
 						{renderWizardStepsNav({
 							activeStep,
 							hasMcpClient,
-							hasStep2Win,
+							milestonesComplete:
+								onboardingSessionMilestonesComplete(milestones),
 							stepHref: (step) => buildStepHref(step, currentHref),
 						})}
 
@@ -581,61 +466,27 @@ export function OnboardingRoute(handle: Handle) {
 									loggedIn,
 									selectedAgent,
 									selectedAgentLabel,
-									selectedSurface,
 									agentChooser,
 									mcpServerUrl,
 									mcpHighlights: mcpHighlights ?? {},
-									agentLocation: {
-										pathname: agentLocation.pathname,
-										search: agentLocation.search,
-										hash: agentLocation.hash,
-									},
+									search: readRouterSearch(handle),
 								})
 							: null}
 
-						{activeStep === 2
-							? renderAccessPanel({
-									entrance: panelEntrance(),
-									activeStep,
-									onSelectStep: selectStep,
-									loggedIn,
-									username,
-									hasStep2Win,
-									awaitingMcpConnection,
-									oauthReturnSucceeded,
-									oauthReturnError,
-									urlOauthError: readOnboardingMcpOAuthError(handle),
-									featuredMcpServers,
-									customMcpServers,
-									exampleListings,
-									onChanged,
-									onAuthStarted,
-								})
-							: null}
-
-						{activeStep === 3
-							? renderPersistPanel({
-									entrance: panelEntrance(),
-									activeStep,
-									onSelectStep: selectStep,
-									loggedIn,
-									setupPrompt,
-									persistPrompt,
-									hasPersistedPackage,
-									persistedPackageKodyId,
-									ownedExampleKodyId: readOwnedExampleKodyId(exampleListings),
-									featuredMcpServers,
-									customMcpServers,
-									exampleListings,
-									serviceStarterListings,
-									checklist,
-									checklistHidden,
-									onChecklistDismissed: () => {
-										checklistHidden = true
-										handle.update()
-									},
-								})
-							: null}
+						{activeStep === 2 ? (
+							<OnboardingAccessPanel
+								entrance={panelEntrance()}
+								activeStep={activeStep}
+								onSelectStep={selectStep}
+								hasMcpClient={hasMcpClient}
+								discoveryPrompt={discoveryPrompt}
+								milestones={milestones}
+								selectedService={selectedService}
+								serviceChooser={serviceChooser}
+								selectedAgentLabel={connectedAgentLabel}
+								search={readRouterSearch(handle)}
+							/>
+						) : null}
 					</>
 				) : null}
 			</section>

@@ -1,6 +1,8 @@
 import { type Handle, css } from 'remix/ui'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
+	onboardingExplorePackagesLabel,
 	onboardingWizardSteps,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
@@ -21,7 +23,7 @@ import {
 export function renderWizardStepsNav(props: {
 	activeStep: OnboardingWizardStepNumber
 	hasMcpClient: boolean
-	hasStep2Win: boolean
+	milestonesComplete: boolean
 	stepHref: (step: OnboardingWizardStepNumber) => string
 }) {
 	return (
@@ -34,7 +36,7 @@ export function renderWizardStepsNav(props: {
 				const isActive = props.activeStep === step.number
 				const isComplete =
 					(step.number === 1 && props.hasMcpClient) ||
-					(step.number === 2 && props.hasStep2Win)
+					(step.number === 2 && props.milestonesComplete)
 				return (
 					<a
 						key={step.number}
@@ -65,7 +67,7 @@ export function renderWizardStepsNav(props: {
 const wizardStepsCss = {
 	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
 	gap: '0.8rem',
 	'@media (max-width: 900px)': {
 		gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
@@ -148,6 +150,14 @@ export function WizardNavigation(
 		confirmUnconnectedNext?: boolean
 		skipLabel?: string
 		onSkip?: () => void
+		/**
+		 * Last wizard step: never render a disabled Next. Primary is Copy when
+		 * a prompt exists; Explore packages is always on.
+		 */
+		lastStep?: {
+			copyPrompt?: { value: string; label: string } | null
+			exploreHref: string
+		}
 	}>,
 ) {
 	const nextConfirmation = createOnboardingNextConfirmation(handle)
@@ -156,17 +166,21 @@ export function WizardNavigation(
 			handle.props.activeStep > 1
 				? ((handle.props.activeStep - 1) as OnboardingWizardStepNumber)
 				: null
+		const lastStepNumber =
+			onboardingWizardSteps[onboardingWizardSteps.length - 1]?.number
 		const nextStep =
-			handle.props.activeStep < 3
+			lastStepNumber != null && handle.props.activeStep < lastStepNumber
 				? ((handle.props.activeStep + 1) as OnboardingWizardStepNumber)
 				: null
-		const { onBack, onNext, onSkip, skipLabel } = handle.props
+		const { onBack, onNext, onSkip, skipLabel, lastStep } = handle.props
 		const requiresConnectionConfirmation =
 			handle.props.confirmUnconnectedNext === true
 		const advance = () => {
 			if (onNext) return onNext()
 			if (nextStep) handle.props.onSelectStep(nextStep)
 		}
+		const copyPrompt = lastStep?.copyPrompt
+		const showCopy = copyPrompt != null && copyPrompt.value.trim().length > 0
 
 		return (
 			<footer mix={css(wizardNavCss)}>
@@ -193,97 +207,48 @@ export function WizardNavigation(
 							{skipLabel}
 						</button>
 					) : null}
-					<button
-						type="button"
-						disabled={!onNext && nextStep == null}
-						mix={[
-							css(wizardNextButtonCss),
-							...nextConfirmation.getButtonMix({
-								confirm: requiresConnectionConfirmation,
-								onNext: advance,
-							}),
-						]}
-						data-testid="onboarding-wizard-next"
-					>
-						{nextConfirmation.getLabel(requiresConnectionConfirmation)}
-					</button>
+					{lastStep ? (
+						<>
+							<a
+								href={lastStep.exploreHref}
+								data-testid="onboarding-wizard-explore-packages"
+								mix={css(wizardExploreLinkCss)}
+							>
+								{onboardingExplorePackagesLabel}
+							</a>
+							{showCopy ? (
+								<div
+									data-testid="onboarding-wizard-copy-prompt"
+									data-copy-value={copyPrompt.value}
+									mix={css(wizardCopyWrapCss)}
+								>
+									<CopyTextButton
+										value={copyPrompt.value}
+										idleLabel={copyPrompt.label}
+										variant="pill"
+									/>
+								</div>
+							) : null}
+						</>
+					) : (
+						<button
+							type="button"
+							disabled={!onNext && nextStep == null}
+							mix={[
+								css(wizardNextButtonCss),
+								...nextConfirmation.getButtonMix({
+									confirm: requiresConnectionConfirmation,
+									onNext: advance,
+								}),
+							]}
+							data-testid="onboarding-wizard-next"
+						>
+							{nextConfirmation.getLabel(requiresConnectionConfirmation)}
+						</button>
+					)}
 				</div>
 			</footer>
 		)
-	}
-}
-
-export function Step2ConnectStatus(
-	handle: Handle<{
-		waiting: boolean
-		connected: boolean
-		exampleInstalled: boolean
-		oauthError: string | null
-		onNext: () => void
-	}>,
-) {
-	return () => {
-		const { waiting, connected, exampleInstalled, oauthError, onNext } =
-			handle.props
-		if (connected) {
-			return (
-				<div
-					mix={css(step2ConnectedRowCss)}
-					data-testid="onboarding-mcp-chooser-done"
-				>
-					<div
-						mix={css(connectStatusCss)}
-						role="status"
-						aria-live="polite"
-						data-connected="true"
-					>
-						{connectStatusContent({
-							connected: true,
-							connectedLabel: 'Connected',
-							waitingLabel: 'Waiting for first connection…',
-						})}
-					</div>
-					<button
-						type="button"
-						mix={[css(wizardNextButtonCss), on('click', onNext)]}
-						data-testid="onboarding-mcp-connected-next"
-					>
-						Next
-					</button>
-				</div>
-			)
-		}
-		if (oauthError) {
-			return (
-				<p mix={css(step2OAuthErrorCss)} role="alert">
-					{oauthError}
-				</p>
-			)
-		}
-		if (waiting) {
-			return (
-				<div
-					mix={css(connectStatusCss)}
-					role="status"
-					aria-live="polite"
-					data-testid="onboarding-mcp-waiting"
-				>
-					{connectStatusContent({
-						connected: false,
-						connectedLabel: 'Connected',
-						waitingLabel: 'Waiting for first connection…',
-					})}
-				</div>
-			)
-		}
-		if (exampleInstalled) {
-			return (
-				<p mix={css(quickExampleDoneCss)} data-testid="onboarding-example-done">
-					Installed — continue to try it and persist a package you own.
-				</p>
-			)
-		}
-		return null
 	}
 }
 
@@ -293,7 +258,7 @@ export function connectStatusContent(input: {
 	waitingLabel: string
 }) {
 	// Return an array (no inter-element whitespace text nodes) so flex height
-	// stays identical across sibling pills in the step-3 grid.
+	// stays identical across sibling pills.
 	if (input.connected) {
 		return [
 			<span key="check" mix={css(connectCheckCss)} aria-hidden="true">
@@ -333,7 +298,7 @@ function connectedCheckIcon() {
 
 /* Connection status pill: dashed while the product polls for the grant,
    solid once the agent lands. Height is locked to the check/spinner so
-   sibling pills in the step-3 grid stay the same size. */
+   sibling pills stay the same size. */
 export const connectStatusCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
@@ -378,29 +343,6 @@ const connectStatusSpinnerCss = {
 	height: '1.5rem',
 }
 
-export const quickExampleDoneCss = {
-	margin: 0,
-	color: colors.primaryText,
-	fontWeight: 600,
-}
-
-const step2ConnectedRowCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	justifyContent: 'center',
-	gap: '0.75rem 1rem',
-	marginTop: '0.35rem',
-}
-
-const step2OAuthErrorCss = {
-	margin: '0.35rem 0 0',
-	color: colors.error,
-	font: `550 0.9rem/1.45 ${typography.fontFamilyBody}`,
-	textAlign: 'center' as const,
-	textWrap: 'pretty' as const,
-}
-
 /* Back / Next: the wizard's only fixed geography, so it never moves. */
 const wizardNavCss = {
 	display: 'flex',
@@ -436,6 +378,19 @@ export const wizardNextButtonCss = {
 	...getPillButtonCss(),
 	minWidth: '6.5rem',
 	...wizardButtonDisabledCss,
+}
+
+const wizardExploreLinkCss = {
+	...getGhostButtonCss(),
+	minWidth: '6.5rem',
+}
+
+const wizardCopyWrapCss = {
+	display: 'grid',
+	minWidth: '6.5rem',
+	'& > button': {
+		minWidth: '6.5rem',
+	},
 }
 
 const wizardBackButtonCss = {

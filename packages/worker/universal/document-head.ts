@@ -342,6 +342,26 @@ const routeDocumentHeads = {
 		'onboarding',
 		'Get started',
 	),
+	[routePattern(routes.onboardingStep1)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
+	[routePattern(routes.onboardingStep1Agent)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
+	[routePattern(routes.onboardingStep2)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
+	[routePattern(routes.onboardingStep2Service)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
+	[routePattern(routes.onboardingStep3)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),

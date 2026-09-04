@@ -55,6 +55,7 @@ export function isVisibilityGatedAnonymousPath(pathname: string) {
 
 export function isCacheableAnonymousPath(pathname: string) {
 	if (cacheableAnonymousExactPaths.has(pathname)) return true
+	if (pathname.startsWith('/onboarding/step-')) return true
 	if (pathname.startsWith('/guides/')) {
 		const rest = pathname.slice('/guides/'.length)
 		return rest.length > 0 && !rest.includes('/')

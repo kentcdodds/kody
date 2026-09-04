@@ -18,6 +18,8 @@ export const colors = {
 	danger: 'var(--color-danger)',
 	dangerHover: 'var(--color-danger-hover)',
 	onDanger: 'var(--color-on-danger)',
+	warning: 'var(--color-warning)',
+	warningText: 'var(--color-warning-text)',
 	error: 'var(--color-danger)',
 	errorHover: 'var(--color-danger-hover)',
 	/**

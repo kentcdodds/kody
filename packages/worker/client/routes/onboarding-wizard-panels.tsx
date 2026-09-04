@@ -1,32 +1,27 @@
-import { css, type MixValue } from 'remix/ui'
+import { type Handle, css, type MixValue } from 'remix/ui'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import {
-	type OnboardingChecklistLoaderData,
-	type OnboardingCustomMcpServer,
-	type OnboardingFeaturedMcpServer,
-} from '#universal/loader-data.ts'
-import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
-import { type OnboardingWizardStepNumber } from '#universal/onboarding-process.ts'
 import {
-	firstInstalledOnboardingExampleName,
-	hasInstalledOnboardingExample,
-} from '#universal/onboarding-examples.ts'
+	onboardingAccessFooterCopyValue,
+	onboardingAccessPickerLede,
+	onboardingAccessSelectedLede,
+	onboardingAgentHref,
+	onboardingCopyRemainingTasksLabel,
+	onboardingExplorePackagesHref,
+	onboardingServiceHref,
+	onboardingUnconnectedNotice,
+	onboardingUseKodyPromptForService,
+	type OnboardingSessionMilestoneState,
+	type OnboardingWizardStepNumber,
+} from '#universal/onboarding-process.ts'
 import {
-	firstConnectedOnboardingWorkspaceLabel,
-	formatOnboardingFeaturedMcpChoice,
-	hasConnectedOnboardingWorkspaceMcp,
-	hasPendingOnboardingCustomMcpAuth,
-	hasPendingOnboardingFeaturedMcpAuth,
-	resolveOnboardingMcpOAuthBanner,
+	type OnboardingServiceChoice,
+	type OnboardingServiceChooserPick,
+	canonicalOnboardingServiceChooser,
+	onboardingNotListedServiceId,
 } from '#universal/onboarding-mcp-chooser.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
-import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
-import {
-	OnboardingChecklistCard,
-	shouldShowOnboardingChecklist,
-} from '#client/routes/onboarding-checklist.tsx'
 import {
 	AgentPickerMark,
 	OnboardingMcpClientTabs,
@@ -34,26 +29,23 @@ import {
 import {
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
-	type OnboardingAgentSurface,
-	buildOnboardingAgentHref,
 	canonicalOnboardingAgentChooser,
 } from '#client/routes/onboarding-mcp-clients.ts'
-import { OnboardingCustomMcpCard } from '#client/routes/onboarding-custom-mcp-card.tsx'
-import { OnboardingMcpChooserCard } from '#client/routes/onboarding-mcp-chooser-card.tsx'
-import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
-import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.tsx'
-import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
-import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
+import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
+import { OnboardingCustomServicePrompt } from '#client/routes/onboarding-custom-service-prompt.tsx'
+import { OnboardingServiceDifficultyMeter } from '#client/routes/onboarding-service-difficulty-meter.tsx'
+import { OnboardingSessionMilestones } from '#client/routes/onboarding-session-milestones.tsx'
 import {
-	Step2ConnectStatus,
+	OnboardingServicePicker,
+	ServicePickerMark,
+} from '#client/routes/onboarding-service-picker.tsx'
+import {
 	WizardNavigation,
 	connectStatusContent,
 	connectStatusCss,
-	quickExampleDoneCss,
 } from '#client/routes/onboarding-wizard-chrome.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
-	getAccentCalloutCss,
 	getPillButtonCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
@@ -61,6 +53,7 @@ import {
 type StepNavigationProps = {
 	activeStep: OnboardingWizardStepNumber
 	onSelectStep: (step: OnboardingWizardStepNumber) => void
+	search?: string
 }
 
 export function renderConnectAgentPanel(
@@ -70,16 +63,14 @@ export function renderConnectAgentPanel(
 		hasMcpClient: boolean
 		selectedAgent: McpClientKind | null
 		selectedAgentLabel: string | null
-		selectedSurface: OnboardingAgentSurface
 		agentChooser: OnboardingAgentChooserPick | null
 		mcpServerUrl: string
 		mcpHighlights: Record<string, HighlightedCode>
-		agentLocation: { pathname: string; search: string; hash: string }
 	},
 ) {
 	return (
 		<section
-			id="connect-agent"
+			id="onboarding-step-1"
 			aria-labelledby="connect-title"
 			data-testid="onboarding-connect-agent"
 			mix={[css(wizardPanelCss), props.entrance]}
@@ -96,24 +87,28 @@ export function renderConnectAgentPanel(
 						{props.selectedAgent ? (
 							<AgentPickerMark
 								agent={props.selectedAgent}
-								surface={props.selectedSurface}
 								testId="onboarding-agent-title-mark"
 							/>
 						) : null}
 					</div>
-					{props.selectedAgent ? (
-						<a
-							href={buildOnboardingAgentHref({
-								...props.agentLocation,
-								agent: null,
-							})}
-							data-testid="onboarding-agent-change"
-							data-prevent-scroll-reset=""
-							mix={css(changeSelectionCss)}
-						>
-							Change selection
-						</a>
-					) : null}
+					<div
+						data-testid="onboarding-agent-selection-meta"
+						mix={css(agentSelectionMetaCss)}
+						aria-hidden={props.selectedAgent ? undefined : 'true'}
+					>
+						<div mix={css(changeSelectionSlotCss)}>
+							{props.selectedAgent ? (
+								<a
+									href={onboardingAgentHref(null, props.search ?? '')}
+									data-testid="onboarding-agent-change"
+									data-prevent-scroll-reset=""
+									mix={css(changeSelectionCss)}
+								>
+									Change selection
+								</a>
+							) : null}
+						</div>
+					</div>
 				</div>
 				<img
 					data-panel-art
@@ -131,9 +126,8 @@ export function renderConnectAgentPanel(
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
 				selectedAgent={props.selectedAgent}
-				surface={props.selectedSurface}
 				chooser={props.agentChooser ?? canonicalOnboardingAgentChooser()}
-				agentLocation={props.agentLocation}
+				search={props.search ?? ''}
 			/>
 			<WizardNavigation
 				activeStep={props.activeStep}
@@ -149,8 +143,7 @@ function renderConnectAgentStatus(props: {
 	hasMcpClient: boolean
 	selectedAgent: McpClientKind | null
 	selectedAgentLabel: string | null
-	selectedSurface: OnboardingAgentSurface
-	agentLocation: { pathname: string; search: string; hash: string }
+	search?: string
 }) {
 	if (props.hasMcpClient) {
 		return (
@@ -172,11 +165,10 @@ function renderConnectAgentStatus(props: {
 	}
 	if (!props.selectedAgent) return null
 	if (!props.loggedIn) {
-		const resumeHref = buildOnboardingAgentHref({
-			...props.agentLocation,
-			agent: props.selectedAgent,
-			surface: props.selectedSurface,
-		})
+		const resumeHref = onboardingAgentHref(
+			props.selectedAgent,
+			props.search ?? '',
+		)
 		return (
 			<a
 				href={buildAuthLink(routes.login.href(), resumeHref)}
@@ -202,26 +194,49 @@ function renderConnectAgentStatus(props: {
 	)
 }
 
-export function renderAccessPanel(
-	props: StepNavigationProps & {
-		entrance: MixValue
-		loggedIn: boolean
-		username: string | null
-		hasStep2Win: boolean
-		awaitingMcpConnection: boolean
-		oauthReturnSucceeded: boolean
-		oauthReturnError: string | null
-		urlOauthError: string | null
-		featuredMcpServers: Array<OnboardingFeaturedMcpServer>
-		customMcpServers: Array<OnboardingCustomMcpServer>
-		exampleListings: Array<OnboardingFeaturedListing>
-		onChanged: () => void
-		onAuthStarted: () => void
-	},
-) {
+type AccessPanelProps = StepNavigationProps & {
+	entrance: MixValue
+	hasMcpClient: boolean
+	discoveryPrompt: string
+	milestones: OnboardingSessionMilestoneState
+	selectedService: OnboardingServiceChoice | null
+	serviceChooser: OnboardingServiceChooserPick | null
+	selectedAgentLabel: string | null
+	customServiceName?: string
+	onCustomServiceNameChange?: (name: string) => void
+}
+
+export function OnboardingAccessPanel(handle: Handle<AccessPanelProps>) {
+	let customServiceName = handle.props.customServiceName ?? ''
+	return () =>
+		renderAccessPanel({
+			...handle.props,
+			customServiceName,
+			onCustomServiceNameChange: (name) => {
+				customServiceName = name
+				handle.props.onCustomServiceNameChange?.(name)
+				handle.update()
+			},
+		})
+}
+
+export function renderAccessPanel(props: AccessPanelProps) {
+	const chooser = props.serviceChooser ?? canonicalOnboardingServiceChooser()
+	const selectedService = props.hasMcpClient ? props.selectedService : null
+	const customServiceName = props.customServiceName ?? ''
+	const connectedPrompt = onboardingUseKodyPromptForService(selectedService)
+	const footerCopyValue = onboardingAccessFooterCopyValue({
+		hasMcpClient: props.hasMcpClient,
+		selectedService,
+		milestones: props.milestones,
+		agentLabel: props.selectedAgentLabel,
+	})
+	const accessLede = selectedService
+		? onboardingAccessSelectedLede(props.selectedAgentLabel)
+		: onboardingAccessPickerLede
 	return (
 		<section
-			id="connect-mcp"
+			id="onboarding-step-2"
 			aria-labelledby="connect-mcp-title"
 			data-testid="onboarding-connect-mcp"
 			mix={[css(wizardPanelCss), props.entrance]}
@@ -229,9 +244,40 @@ export function renderAccessPanel(
 			<div mix={css(panelHeadCss)}>
 				<div>
 					<p mix={css(panelKickerCss)}>Step 2</p>
-					<h2 id="connect-mcp-title" tabIndex={-1} mix={css(panelTitleCss)}>
-						Give Kody Access
-					</h2>
+					<div mix={css(panelTitleRowCss)}>
+						<h2 id="connect-mcp-title" tabIndex={-1} mix={css(panelTitleCss)}>
+							Give Kody access
+						</h2>
+						{selectedService ? (
+							<ServicePickerMark
+								service={selectedService}
+								testId="onboarding-service-title-mark"
+							/>
+						) : null}
+					</div>
+					<div
+						data-testid="onboarding-service-selection-meta"
+						mix={css(serviceSelectionMetaCss)}
+						aria-hidden={selectedService ? undefined : 'true'}
+					>
+						<div mix={css(changeSelectionSlotCss)}>
+							{selectedService ? (
+								<a
+									href={onboardingServiceHref(null, props.search ?? '')}
+									data-testid="onboarding-service-change"
+									data-prevent-scroll-reset=""
+									mix={css(changeSelectionCss)}
+								>
+									Change selection
+								</a>
+							) : null}
+						</div>
+						<div mix={css(difficultySlotCss)}>
+							{selectedService ? (
+								<OnboardingServiceDifficultyMeter service={selectedService} />
+							) : null}
+						</div>
+					</div>
 				</div>
 				<img
 					data-panel-art
@@ -243,259 +289,66 @@ export function renderAccessPanel(
 					mix={css(panelArtCss)}
 				/>
 			</div>
-			<p mix={css(panelLedeCss)}>
-				Give Kody access to your stuff. Official one-click login is the easy
-				path: add {formatOnboardingFeaturedMcpChoice()} and authorize it.
-				Connect also copies the matching official helper into your account. None
-				of these? Add another server, or just try Kody without a third-party
-				login.
+			<p mix={css(panelLedeCss)} data-testid="onboarding-access-lede">
+				{accessLede}
 			</p>
-			<ul mix={css(starterGridCss)} data-testid="onboarding-mcp-chooser">
-				{props.featuredMcpServers.map((server) => (
-					<OnboardingMcpChooserCard
-						key={server.id}
-						server={server}
-						loggedIn={props.loggedIn}
-						onChanged={props.onChanged}
-						onAuthStarted={props.onAuthStarted}
+			{props.hasMcpClient ? (
+				selectedService === onboardingNotListedServiceId ? (
+					<OnboardingCustomServicePrompt
+						serviceName={customServiceName}
+						onServiceNameChange={props.onCustomServiceNameChange}
 					/>
-				))}
-			</ul>
-			<Step2ConnectStatus
-				waiting={
-					props.awaitingMcpConnection ||
-					hasPendingOnboardingFeaturedMcpAuth(props.featuredMcpServers) ||
-					hasPendingOnboardingCustomMcpAuth(props.customMcpServers)
-				}
-				connected={hasConnectedOnboardingWorkspaceMcp({
-					featuredMcpServers: props.featuredMcpServers,
-					customMcpServers: props.customMcpServers,
-				})}
-				exampleInstalled={hasInstalledOnboardingExample(props.exampleListings)}
-				oauthError={resolveOnboardingMcpOAuthBanner({
-					connected: hasConnectedOnboardingWorkspaceMcp({
-						featuredMcpServers: props.featuredMcpServers,
-						customMcpServers: props.customMcpServers,
-					}),
-					returnedSuccess: props.oauthReturnSucceeded,
-					returnedError: props.oauthReturnError,
-					urlError: props.urlOauthError,
-				})}
-				onNext={() => props.onSelectStep(3)}
-			/>
-			<aside
-				aria-label="How it works"
-				mix={css(howItWorksCss)}
-				data-testid="onboarding-how-it-works"
-			>
-				<p mix={css(howItWorksLabelCss)}>How it works</p>
-				<p>
-					Connect adds the official login, copies the matching helper into your
-					account, and opens the provider authorize page. Approve access, then
-					your agent can use those tools. You run the copy in your account —
-					official <em>@kody</em> listings are a catalog, not something a person
-					account invokes live.
-				</p>
-			</aside>
-			<div mix={css(step2ExitCss)} data-testid="onboarding-none-of-these">
-				<p mix={css(step2ExitLabelCss)}>None of these?</p>
-				<p mix={css(step2ExitLedeCss)}>
-					Add any remote MCP server. Same easy authorize path — just not a
-					vendor we featured.
-				</p>
-				<OnboardingCustomMcpCard
-					servers={props.customMcpServers}
-					loggedIn={props.loggedIn}
-					onChanged={props.onChanged}
-					onAuthStarted={props.onAuthStarted}
-				/>
-			</div>
-			<div mix={css(step2ExitCss)} data-testid="onboarding-advanced">
-				<p mix={css(step2ExitLabelCss)}>Advanced</p>
-				<p mix={css(step2ExitLedeCss)}>
-					No one-click login for that service? Follow a provider guide — GitHub
-					and Google are the usual next ones — or bring your own keys after the
-					first build.
-				</p>
-				<p mix={css(step2ExitLedeCss)}>
-					<a href="/guides/github" mix={css(primaryLinkCss)}>
-						Connect GitHub
-					</a>
-					{' · '}
-					<a href="/guides/google" mix={css(primaryLinkCss)}>
-						Connect Google
-					</a>
-					{' · '}
-					<a href="/account/secrets/new" mix={css(primaryLinkCss)}>
-						Account → Secrets
-					</a>
-					{' · '}
-					<a href="/#byok-title" mix={css(primaryLinkCss)}>
-						Why bring your own keys?
-					</a>
-				</p>
-			</div>
-			{props.exampleListings.length > 0 ? (
-				<div mix={css(step2ExitCss)} data-testid="onboarding-just-try">
-					<p mix={css(step2ExitLabelCss)}>Just try Kody</p>
-					<p mix={css(step2ExitLedeCss)}>
-						No third-party login. Install an example, then persist it as a
-						package you own.
-					</p>
-					<ul
-						mix={css(starterGridCss)}
-						data-testid="onboarding-example-packages"
+				) : selectedService ? (
+					<div
+						data-testid="onboarding-connected-prompt"
+						mix={css(promptBlockCss)}
 					>
-						{props.exampleListings.map((listing) => (
-							<OnboardingExampleCard
-								key={listing.id}
-								listing={listing}
-								loggedIn={props.loggedIn}
-								username={props.username}
-								onInstalled={props.onChanged}
-							/>
-						))}
-					</ul>
-				</div>
-			) : null}
-			<WizardNavigation
-				activeStep={props.activeStep}
-				onSelectStep={props.onSelectStep}
-				confirmUnconnectedNext={!props.hasStep2Win}
-				skipLabel="Skip for now"
-				onSkip={() => props.onSelectStep(3)}
-			/>
-		</section>
-	)
-}
-
-export function renderPersistPanel(
-	props: StepNavigationProps & {
-		entrance: MixValue
-		loggedIn: boolean
-		setupPrompt: string
-		persistPrompt: string
-		hasPersistedPackage: boolean
-		persistedPackageKodyId: string | null
-		ownedExampleKodyId: string
-		featuredMcpServers: Array<OnboardingFeaturedMcpServer>
-		customMcpServers: Array<OnboardingCustomMcpServer>
-		exampleListings: Array<OnboardingFeaturedListing>
-		serviceStarterListings: Array<OnboardingFeaturedListing>
-		checklist: OnboardingChecklistLoaderData | null
-		checklistHidden: boolean
-		onChecklistDismissed: () => void
-	},
-) {
-	const workspaceLabel = firstConnectedOnboardingWorkspaceLabel({
-		featuredMcpServers: props.featuredMcpServers,
-		customMcpServers: props.customMcpServers,
-	})
-	const exampleName = firstInstalledOnboardingExampleName(props.exampleListings)
-	const persistTargetLabel = workspaceLabel ?? exampleName
-	return (
-		<section
-			id="first-build"
-			aria-labelledby="first-build-title"
-			data-testid="onboarding-first-build"
-			mix={[css(wizardPanelCss), props.entrance]}
-		>
-			<div mix={css(panelHeadCss)}>
-				<div>
-					<p mix={css(panelKickerCss)}>Step 3</p>
-					<h2 id="first-build-title" tabIndex={-1} mix={css(panelTitleCss)}>
-						Try it, then persist
-					</h2>
-				</div>
-				<img
-					data-panel-art
-					{...landingArtAttrs('kody-greeting')}
-					width={627}
-					height={627}
-					alt="Kody waving beside a warm envelope"
-					style={{ '--tilt': '-1.5deg' }}
-					mix={css(panelArtCss)}
-				/>
-			</div>
-			<p mix={css(panelLedeCss)}>
-				This is the permanence lesson: run one useful ad hoc request
-				{persistTargetLabel ? ` against ${persistTargetLabel}` : ''}, then save
-				that working code as a package you own.
-			</p>
-			<OnboardingPersistCard
-				persistPrompt={props.persistPrompt}
-				connectedServerLabel={workspaceLabel}
-				installedExampleName={exampleName}
-			/>
-			{props.hasPersistedPackage ? (
-				<>
-					<p
-						mix={css(quickExampleDoneCss)}
-						data-testid="onboarding-first-build-done"
-					>
-						Done — you have a package in your account. Keep editing it, or start
-						another.
-					</p>
-					<OnboardingPackageNextSteps
-						kodyId={props.persistedPackageKodyId ?? props.ownedExampleKodyId}
-						source={props.persistedPackageKodyId ? 'persist' : 'fork'}
-					/>
-				</>
-			) : null}
-			<aside
-				aria-label="How it works"
-				mix={css(howItWorksCss)}
-				data-testid="onboarding-persist-how-it-works"
-			>
-				<p mix={css(howItWorksLabelCss)}>How it works</p>
-				<p>
-					Paste the prompt into your connected agent. It runs one{' '}
-					<em>execute</em> call, shows the result, then persists that working
-					code with <em>packageSave</em>. That owned package is the point of
-					Kody.
-				</p>
-			</aside>
-			<div mix={css(advancedSectionCss)}>
-				<p mix={css(advancedLabelCss)}>
-					More ways to connect
-					<span mix={css(advancedBadgeCss)}>Advanced</span>
-				</p>
-				<p mix={css(advancedLedeCss)}>
-					Featured starters stay available after the first build. Prefer your
-					own keys for full control.
-				</p>
-				<ul mix={css(starterListCss)}>
-					{props.serviceStarterListings.map((listing) => (
-						<OnboardingStarterCard
-							key={listing.id}
-							listing={listing}
-							loggedIn={props.loggedIn}
-							variant="row"
+						<CopyCard
+							label="Prompt"
+							value={connectedPrompt}
+							copyLabel="Copy prompt"
 						/>
-					))}
-					<OnboardingDiyCard setupPrompt={props.setupPrompt} variant="row" />
-				</ul>
-				<p mix={css({ margin: '0.2rem 0 0' })}>
-					<a
-						href="/community"
-						target="_blank"
-						rel="noreferrer noopener"
-						mix={css(primaryLinkCss)}
-					>
-						Browse all public packages
-					</a>
-				</p>
-			</div>
-			{shouldShowOnboardingChecklist(props.checklist) &&
-			!props.checklistHidden ? (
-				<OnboardingChecklistCard
-					checklist={props.checklist!}
-					onDismissed={props.onChecklistDismissed}
+					</div>
+				) : (
+					<OnboardingServicePicker
+						featuredIds={chooser.featured}
+						overflowIds={chooser.overflow}
+						search={props.search ?? ''}
+					/>
+				)
+			) : (
+				<div
+					data-testid="onboarding-unconnected-prompt"
+					mix={css(promptBlockCss)}
+				>
+					<p mix={css(unconnectedNoticeCss)}>{onboardingUnconnectedNotice}</p>
+					{props.discoveryPrompt ? (
+						<CopyCard
+							label="Discovery prompt"
+							value={props.discoveryPrompt}
+							copyLabel="Copy the discovery prompt"
+						/>
+					) : null}
+				</div>
+			)}
+			{selectedService ? (
+				<OnboardingSessionMilestones
+					milestones={props.milestones}
+					agentLabel={props.selectedAgentLabel}
 				/>
 			) : null}
 			<WizardNavigation
 				activeStep={props.activeStep}
 				onSelectStep={props.onSelectStep}
+				lastStep={{
+					copyPrompt: footerCopyValue
+						? {
+								value: footerCopyValue,
+								label: onboardingCopyRemainingTasksLabel,
+							}
+						: null,
+					exploreHref: onboardingExplorePackagesHref(),
+				}}
 			/>
 		</section>
 	)
@@ -524,6 +377,7 @@ const panelHeadCss = {
 	justifyContent: 'space-between',
 	alignItems: 'center',
 	gap: '1rem',
+	overflow: 'visible',
 	'@media (max-width: 720px)': {
 		flexDirection: 'column-reverse' as const,
 		alignItems: 'flex-start',
@@ -553,10 +407,35 @@ const panelTitleCss = {
 	lineHeight: 1.15,
 }
 
+const agentSelectionMetaCss = {
+	display: 'grid',
+	justifyItems: 'start',
+	width: 'fit-content',
+	marginTop: '0.35rem',
+	minHeight: '1.25rem',
+}
+
+const serviceSelectionMetaCss = {
+	...agentSelectionMetaCss,
+	gap: '0.4rem',
+	minHeight: '3.35rem',
+}
+
+const changeSelectionSlotCss = {
+	display: 'grid',
+	alignItems: 'center',
+	minHeight: '1.25rem',
+}
+
+const difficultySlotCss = {
+	display: 'grid',
+	alignContent: 'start',
+	minHeight: '1.7rem',
+}
+
 const changeSelectionCss = {
 	...primaryLinkCss,
 	display: 'inline-block',
-	marginTop: '0.35rem',
 	fontSize: typography.fontSize.sm,
 }
 
@@ -585,107 +464,16 @@ const panelLedeCss = {
 	maxWidth: '68ch',
 }
 
-/* The "learn" half lives here, labeled and out of the instructions' way. */
-const howItWorksCss = {
-	...getAccentCalloutCss(),
-	'& p': {
-		margin: 0,
-		color: colors.textMuted,
-		fontSize: '0.92rem',
-		lineHeight: 1.55,
-	},
-	'& em': {
-		fontStyle: 'normal',
-		fontWeight: 650,
-		color: colors.text,
-	},
-}
-
-const howItWorksLabelCss = {
-	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
-	letterSpacing: '0.06em',
-	textTransform: 'uppercase' as const,
-	color: colors.primaryText,
-}
-
-const step2ExitCss = {
+const promptBlockCss = {
 	display: 'grid',
-	gap: '0.45rem',
-	marginTop: '0.35rem',
-	paddingTop: '1rem',
-	borderTop: `1px solid ${colors.border}`,
-}
-
-const step2ExitLabelCss = {
-	margin: 0,
-	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
-	letterSpacing: '0.06em',
-	textTransform: 'uppercase' as const,
-	color: colors.textMuted,
-}
-
-const step2ExitLedeCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.92rem',
-	lineHeight: 1.55,
+	gap: '0.75rem',
+	width: '100%',
 	maxWidth: '68ch',
+	justifyItems: 'stretch',
 }
 
-/* Featured starters demote to Advanced under the persist lead. */
-const advancedSectionCss = {
-	display: 'grid',
-	gap: '0.55rem',
-	marginTop: '0.6rem',
-	paddingTop: '1.1rem',
-	borderTop: `1px solid ${colors.border}`,
-}
-
-const advancedLabelCss = {
+const unconnectedNoticeCss = {
 	margin: 0,
-	display: 'flex',
-	alignItems: 'center',
-	gap: '0.5rem',
-	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
-	letterSpacing: '0.06em',
-	textTransform: 'uppercase' as const,
-	color: colors.textMuted,
-}
-
-const advancedBadgeCss = {
-	display: 'inline-block',
-	padding: '0.18rem 0.5rem',
-	borderRadius: radius.full,
-	border: `1px solid ${colors.border}`,
-	backgroundColor: colors.surface,
-	font: `700 0.68rem/1 ${typography.fontFamilyBody}`,
-	letterSpacing: '0.06em',
-	color: colors.textMuted,
-}
-
-const advancedLedeCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.92rem',
-	lineHeight: 1.55,
-	maxWidth: '68ch',
-}
-
-const starterListCss = {
-	listStyle: 'none',
-	margin: '0.2rem 0 0',
-	padding: 0,
-	display: 'grid',
-	gap: '0.6rem',
-}
-
-/* Starter packages: compact centered cards; the DIY card breaks the grid
-   with a dashed border so "no package" reads as a real option. */
-const starterGridCss = {
-	listStyle: 'none',
-	margin: '0.2rem 0 0',
-	padding: 0,
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fill, minmax(min(12.5rem, 100%), 1fr))',
-	gap: '0.9rem',
+	color: colors.text,
+	fontWeight: 650,
 }

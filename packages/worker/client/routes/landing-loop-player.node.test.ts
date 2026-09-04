@@ -184,6 +184,23 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	expect(finisher.revealedCount).toBe(landingLoopTeaserBeatCount)
 	expect(finisher.advance()).toEqual({ didAdvance: true, ended: false })
 
+	const skipper = createLandingLoopPlayer({
+		beatCount: 5,
+		reducedMotion: false,
+	})
+	skipper.setHover(true)
+	skipper.skipToEnd()
+	expect(skipper.revealedCount).toBe(5)
+	expect(skipper.isEnded()).toBe(true)
+	expect(skipper.isPaused()).toBe(true)
+	expect(skipper.pauseReasons()).toEqual(['ended'])
+	skipper.skipToEnd()
+	expect(skipper.revealedCount).toBe(5)
+	expect(skipper.isEnded()).toBe(true)
+	skipper.restart()
+	expect(skipper.isEnded()).toBe(false)
+	expect(skipper.revealedCount).toBe(landingLoopTeaserBeatCount)
+
 	vi.useFakeTimers()
 	try {
 		const controller = new AbortController()

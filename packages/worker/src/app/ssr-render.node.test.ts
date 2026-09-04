@@ -421,6 +421,14 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		setupPrompt: '',
 		discoveryPrompt: expect.stringContaining('what-is-kody'),
 		persistPrompt: '',
+		milestones: {
+			execute: false,
+			access: false,
+			secret: false,
+			'email-send': false,
+			'email-receive': false,
+			job: false,
+		},
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -513,32 +521,18 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		canSyncDiscordRoles: false,
 	})
 
-	const onboardingResponse = await runHtmlHandler(
+	const anonymousOnboardingIndex = await runHtmlHandler(
 		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding', {
-			headers: { Cookie: accountCookie },
-		}),
+		new Request('https://example.com/onboarding'),
 	)
-	expect(onboardingResponse.status).toBe(302)
-	expect(onboardingResponse.headers.get('Location')).toBe(
-		'https://example.com/pending-verification',
-	)
-
-	const onboardingPreservesRedirect = await runHtmlHandler(
-		createOnboardingHandler(env),
-		new Request(
-			'https://example.com/onboarding?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
-			{ headers: { Cookie: accountCookie } },
-		),
-	)
-	expect(onboardingPreservesRedirect.status).toBe(302)
-	expect(onboardingPreservesRedirect.headers.get('Location')).toBe(
-		'https://example.com/pending-verification?redirectTo=%2Foauth%2Fauthorize%3Fclient_id%3Ddemo',
+	expect(anonymousOnboardingIndex.status).toBe(302)
+	expect(anonymousOnboardingIndex.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-1',
 	)
 
 	const anonymousOnboardingResponse = await runHtmlHandler(
 		createOnboardingHandler(env),
-		new Request('https://example.com/onboarding'),
+		new Request('https://example.com/onboarding/step-1'),
 	)
 	expect(anonymousOnboardingResponse.status).toBe(200)
 	const anonymousOnboardingHtml = await readResponseText(
@@ -551,8 +545,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="onboarding-agent-picker"',
 	)
 	expect(anonymousOnboardingHtml).toContain('data-testid="onboarding-step-2"')
-	expect(anonymousOnboardingHtml).toContain('href="/onboarding#connect-mcp"')
-	expect(anonymousOnboardingHtml).toContain('href="/onboarding#first-build"')
+	expect(anonymousOnboardingHtml).toContain('href="/onboarding/step-2"')
+	expect(anonymousOnboardingHtml).not.toContain('href="/onboarding/step-3"')
 	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
 		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
 	)
@@ -859,6 +853,7 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('class="landing-loop-toggle-slot"')
 	expect(html).toContain('class="landing-loop-toggle"')
 	expect(html).toContain('aria-label="Pause"')
+	expect(html).toContain('aria-label="Skip to the end"')
 	expect(html).toContain('class="landing-loop-status-dot"')
 })
 

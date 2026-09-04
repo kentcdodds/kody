@@ -390,8 +390,8 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	const onboardingLocation = new URL(
 		onboardingReturnResponse.headers.get('Location') ?? '',
 	)
-	expect(onboardingLocation.pathname).toBe('/onboarding')
-	expect(onboardingLocation.hash).toBe('#connect-mcp')
+	expect(onboardingLocation.pathname).toBe('/onboarding/step-2')
+	expect(onboardingLocation.hash).toBe('')
 	expect(onboardingLocation.searchParams.get('auth')).toBe('success')
 	const onboardingSetCookie =
 		onboardingReturnResponse.headers.get('Set-Cookie') ?? ''

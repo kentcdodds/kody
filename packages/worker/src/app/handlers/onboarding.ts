@@ -17,12 +17,14 @@ import {
 } from '#mcp/capabilities/mcp-servers/shared.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { loadOnboardingMilestones } from '#mcp/onboarding-milestones.ts'
 import {
 	attachOnboardingMcpPackageListings,
 	firstConnectedOnboardingWorkspaceLabel,
 	listDisconnectedOnboardingFeaturedMcpServers,
 	listOnboardingCustomMcpServers,
 	overlayOnboardingFeaturedMcpServers,
+	pickOnboardingServiceChooser,
 } from '#universal/onboarding-mcp-chooser.ts'
 import { firstInstalledOnboardingExampleName } from '#universal/onboarding-examples.ts'
 import {
@@ -38,6 +40,12 @@ import {
 import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
+import {
+	onboardingIndexRedirectHref,
+	onboardingStepPaths,
+	onboardingWizardStepHref,
+	parseOnboardingPathname,
+} from '#universal/onboarding-process.ts'
 import {
 	highlightResultsByKey,
 	highlightSnippets,
@@ -73,12 +81,6 @@ export async function loadChecklist(
 	return { items: checklist.items, dismissed }
 }
 
-/**
- * Most recently updated saved-package kody id for Step 3 next-steps after
- * persist. The listing is `ORDER BY updated_at DESC`, so the first row is
- * the package the user just saved. Fails open to null so a D1 blip never
- * breaks the onboarding payload.
- */
 export async function loadPersistedPackageKodyId(
 	env: Pick<Env, 'APP_DB'>,
 	userId: string,
@@ -239,6 +241,21 @@ export function createOnboardingHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
+			const requestUrl = new URL(request.url)
+			if (requestUrl.pathname === onboardingStepPaths.index) {
+				return Response.redirect(
+					new URL(onboardingIndexRedirectHref(requestUrl.search), request.url),
+					302,
+				)
+			}
+			const location = parseOnboardingPathname(requestUrl.pathname)
+			if (location && !location.valid) {
+				const target = new URL(
+					onboardingWizardStepHref(location.step, requestUrl.search),
+					request.url,
+				)
+				return Response.redirect(target, 302)
+			}
 			const serverTiming: Array<ServerTimingEntry> = []
 			const user = await readAuthenticatedAppUser(request, env, {
 				prefetchFeatureFlags: true,
@@ -265,6 +282,7 @@ export function createOnboardingHandler(env: Env) {
 					loaderData: {
 						onboarding,
 						onboardingAgentChooser: pickOnboardingAgentChooser(),
+						onboardingServiceChooser: pickOnboardingServiceChooser(),
 					},
 					serverTiming,
 				})
@@ -285,11 +303,15 @@ export function createOnboardingHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				...chooser,
 			})
-			;[onboarding.checklist, onboarding.persistedPackageKodyId] =
-				await Promise.all([
-					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
-					loadPersistedPackageKodyId(env, user.mcpUser.userId),
-				])
+			;[
+				onboarding.checklist,
+				onboarding.persistedPackageKodyId,
+				onboarding.milestones,
+			] = await Promise.all([
+				loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+				loadPersistedPackageKodyId(env, user.mcpUser.userId),
+				loadOnboardingMilestones(env, user.mcpUser.userId),
+			])
 			return renderAppPage({
 				request,
 				env,
@@ -300,11 +322,19 @@ export function createOnboardingHandler(env: Env) {
 						serverTiming,
 					),
 					onboardingAgentChooser: pickOnboardingAgentChooser(),
+					onboardingServiceChooser: pickOnboardingServiceChooser(),
 				},
 				serverTiming,
 			})
 		},
-	} satisfies Action<typeof routes.onboarding>
+	} satisfies Action<
+		| typeof routes.onboarding
+		| typeof routes.onboardingStep1
+		| typeof routes.onboardingStep1Agent
+		| typeof routes.onboardingStep2
+		| typeof routes.onboardingStep2Service
+		| typeof routes.onboardingStep3
+	>
 }
 
 export function createOnboardingApiHandler(env: Env) {
@@ -361,11 +391,15 @@ export function createOnboardingApiHandler(env: Env) {
 				...chooser,
 			})
 			if (user.emailVerified) {
-				;[onboarding.checklist, onboarding.persistedPackageKodyId] =
-					await Promise.all([
-						loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
-						loadPersistedPackageKodyId(env, user.mcpUser.userId),
-					])
+				;[
+					onboarding.checklist,
+					onboarding.persistedPackageKodyId,
+					onboarding.milestones,
+				] = await Promise.all([
+					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+					loadPersistedPackageKodyId(env, user.mcpUser.userId),
+					loadOnboardingMilestones(env, user.mcpUser.userId),
+				])
 			}
 			return jsonResponse(
 				await withOnboardingHighlights(env, onboarding, serverTiming),

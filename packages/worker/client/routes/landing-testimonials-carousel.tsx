@@ -1,265 +1,507 @@
 import { type Handle, ref } from 'remix/ui'
 import { isElementNearViewport } from '#client/deferred-turnstile.ts'
-import { on } from '#client/event-mixin.ts'
 import { reveal } from '#client/reveal.ts'
 import {
 	landingTestimonials,
-	shuffleTestimonials,
 	testimonialAttribution,
 	testimonialInitials,
 	type LandingTestimonial,
 } from '#universal/landing-testimonials.ts'
+import {
+	TESTIMONIALS_LAP_MS,
+	listLanePlacements,
+	wrapPagerIndex,
+	wrapUnitInterval,
+} from './landing-testimonials-motion.ts'
 
-const AUTO_ADVANCE_MS = 7000
+const USER_NUDGE_RESUME_MS = 500
+const DRAG_THRESHOLD_PX = 8
 
 /**
- * Homepage testimonials carousel. SSR paints the canonical data order; the
- * client shuffles once after mount so each page load randomizes without a
- * hydration mismatch. Auto-advance starts only when the carousel is near the
- * viewport, pauses on hover/focus, and stays off under
- * `prefers-reduced-motion`. Prev/next and dots stay available either way.
+ * Homepage testimonials strip. SSR and the first client render paint the
+ * same canonical order — one DOM node per quote. Motion is enhance-only
+ * (`html.js` + no reduced-motion): each card translates on a circular lane
+ * so a fully exited card is recycled to the other end. A quote that
+ * straddles the wrap gets a second aria-hidden copy so the lane never
+ * shows a hole. Yields to hover,
+ * focus-within, wheel, and pointer-drag. Reduced-motion + JS is a chevron
+ * pager (one card, no rAF). No-JS keeps a stacked static list.
  */
-export function LandingTestimonialsCarousel(handle: Handle) {
-	let items: Array<LandingTestimonial> = [...landingTestimonials]
-	let index = 0
-	let reducedMotion = false
-	let pointerInside = false
-	let focusInside = false
-	let visibleInViewport = false
-	let timer: ReturnType<typeof setTimeout> | null = null
-	let shuffled = false
+export function LandingTestimonialsCarousel(_handle: Handle) {
+	const items: Array<LandingTestimonial> = [...landingTestimonials]
 
-	function isPaused() {
-		return pointerInside || focusInside
-	}
+	return () => (
+		<div
+			class="landing-testimonials-marquee"
+			aria-label="Testimonials"
+			mix={reveal()}
+		>
+			<div class="landing-testimonials-nav">
+				<button
+					type="button"
+					class="landing-testimonials-nav-button"
+					data-direction="prev"
+					aria-label="Previous testimonial"
+				>
+					{renderChevron('prev')}
+				</button>
+				<button
+					type="button"
+					class="landing-testimonials-nav-button"
+					data-direction="next"
+					aria-label="Next testimonial"
+				>
+					{renderChevron('next')}
+				</button>
+			</div>
+			<div
+				class="landing-testimonials-fade"
+				mix={ref((node: Element, signal: AbortSignal) => {
+					armTestimonialsEnhance(node as HTMLElement, signal)
+				})}
+			>
+				<div class="landing-testimonials-track">
+					{items.map((item) => renderTestimonialCard(item))}
+				</div>
+			</div>
+		</div>
+	)
+}
 
-	function clearTimer() {
-		if (timer === null) return
-		clearTimeout(timer)
-		timer = null
-	}
+function armTestimonialsEnhance(fade: HTMLElement, signal: AbortSignal) {
+	const marquee = fade.closest('.landing-testimonials-marquee')
+	const root = marquee instanceof HTMLElement ? marquee : fade
 
-	function scheduleAdvance() {
-		clearTimer()
-		if (reducedMotion || isPaused() || !visibleInViewport || items.length < 2) {
+	if (typeof matchMedia === 'function') {
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			armTestimonialsPager(root, signal)
 			return
 		}
-		timer = setTimeout(() => {
-			timer = null
+	}
+
+	armTestimonialsMotion(fade, signal)
+}
+
+function armTestimonialsPager(root: HTMLElement, signal: AbortSignal) {
+	const cards = [
+		...root.querySelectorAll<HTMLElement>('.landing-testimonial-card'),
+	]
+	if (cards.length === 0) return
+
+	let index = 0
+
+	function show(next: number) {
+		index = wrapPagerIndex(next, cards.length)
+		for (const [cardIndex, card] of cards.entries()) {
+			const active = cardIndex === index
+			card.classList.toggle('is-active', active)
+			card.hidden = !active
+		}
+	}
+
+	function onClick(event: Event) {
+		const target = event.target
+		if (!(target instanceof Element)) return
+		const navButton = target.closest('.landing-testimonials-nav-button')
+		if (!(navButton instanceof HTMLButtonElement)) return
+		const direction = navButton.getAttribute('data-direction')
+		if (direction === 'prev') show(index - 1)
+		else if (direction === 'next') show(index + 1)
+	}
+
+	function onKeydown(event: KeyboardEvent) {
+		if (event.key === 'ArrowLeft') {
+			event.preventDefault()
+			show(index - 1)
+			return
+		}
+		if (event.key === 'ArrowRight') {
+			event.preventDefault()
+			show(index + 1)
+		}
+	}
+
+	show(0)
+	root.addEventListener('click', onClick, { signal })
+	root.addEventListener('keydown', onKeydown, { signal })
+	signal.addEventListener(
+		'abort',
+		() => {
+			for (const card of cards) {
+				card.classList.remove('is-active')
+				card.hidden = false
+			}
+		},
+		{ once: true },
+	)
+}
+
+function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
+	const trackNode = scroller.querySelector('.landing-testimonials-track')
+	if (!(trackNode instanceof HTMLElement)) return
+	const track = trackNode
+
+	let cards: Array<HTMLElement> = []
+	let gap = 0
+	let stride = 0
+	let cardWidth = 0
+	let viewportWidth = 0
+	const seamClones: Array<HTMLElement> = []
+	let inView = isElementNearViewport(scroller, '0px')
+	let hover = false
+	let focus = false
+	let userNudging = false
+	let userNudgeTimer: ReturnType<typeof setTimeout> | null = null
+	let lastTs = 0
+	let raf = 0
+	let offset = 0
+	let pointerId: number | null = null
+	let dragStartX = 0
+	let dragStartY = 0
+	let dragLastX = 0
+	let dragging = false
+
+	function isPaused() {
+		return (
+			!inView ||
+			hover ||
+			focus ||
+			userNudging ||
+			scroller.matches(':hover') ||
+			scroller.matches(':focus-within')
+		)
+	}
+
+	function realCards() {
+		if (cards.length === 0) {
+			cards = [
+				...track.querySelectorAll<HTMLElement>(
+					':scope > .landing-testimonial-card',
+				),
+			].filter((card) => card.dataset.seam !== 'true')
+		}
+		return cards
+	}
+
+	function measure() {
+		const sources = realCards()
+		const first = sources[0]
+		if (!first) return
+		if (!track.classList.contains('is-virtual')) {
+			gap = Number.parseFloat(getComputedStyle(track).gap) || 0
+			cardWidth = first.offsetWidth
+			stride = cardWidth + gap
+			let tallest = 0
+			for (const card of sources) {
+				tallest = Math.max(tallest, card.offsetHeight)
+			}
+			track.style.minHeight = tallest > 0 ? `${tallest}px` : ''
+			track.classList.add('is-virtual')
+		} else {
+			const sample = sources.find((card) => !card.hidden) ?? first
+			cardWidth = sample.getBoundingClientRect().width
+			stride = cardWidth + gap
+		}
+		viewportWidth = scroller.clientWidth
+	}
+
+	function fillSeamClone(
+		node: HTMLElement,
+		source: HTMLElement,
+		itemIndex: number,
+	) {
+		if (node.dataset.index === String(itemIndex)) return
+		node.innerHTML = source.innerHTML
+		node.dataset.index = String(itemIndex)
+		node.dataset.seam = 'true'
+		node.setAttribute('aria-hidden', 'true')
+		for (const link of node.querySelectorAll('a')) {
+			link.setAttribute('tabindex', '-1')
+		}
+	}
+
+	function takeSeamClone(source: HTMLElement, itemIndex: number, slot: number) {
+		const existing = seamClones[slot]
+		if (existing) {
+			fillSeamClone(existing, source, itemIndex)
+			return existing
+		}
+		const node = source.cloneNode(true) as HTMLElement
+		node.dataset.seam = 'true'
+		node.dataset.index = String(itemIndex)
+		node.setAttribute('aria-hidden', 'true')
+		for (const link of node.querySelectorAll('a')) {
+			link.setAttribute('tabindex', '-1')
+		}
+		track.append(node)
+		seamClones[slot] = node
+		return node
+	}
+
+	function apply() {
+		if (stride <= 0) measure()
+		const sources = realCards()
+		const count = sources.length
+		const totalWidth = count * stride
+		offset = wrapUnitInterval(offset, totalWidth)
+		const placements = listLanePlacements({
+			count,
+			stride,
+			cardWidth,
+			offset,
+			viewportWidth,
+		})
+		const used = new Set<HTMLElement>()
+		let seamSlot = 0
+		for (const placement of placements) {
+			const source = sources[placement.itemIndex]
+			if (!source) continue
+			const node = placement.seam
+				? takeSeamClone(source, placement.itemIndex, seamSlot++)
+				: source
+			node.hidden = false
+			node.style.transform = `translate3d(${placement.x}px, 0, 0)`
+			used.add(node)
+		}
+		for (const card of sources) {
+			if (used.has(card)) continue
+			card.hidden = true
+			card.style.transform = ''
+		}
+		for (const [index, clone] of seamClones.entries()) {
+			if (used.has(clone)) continue
+			clone.hidden = true
+			if (index >= seamSlot) clone.style.transform = ''
+		}
+	}
+
+	function markUserNudge() {
+		userNudging = true
+		if (userNudgeTimer != null) clearTimeout(userNudgeTimer)
+		userNudgeTimer = setTimeout(() => {
+			userNudging = false
+			lastTs = 0
+		}, USER_NUDGE_RESUME_MS)
+	}
+
+	function frame(now: number) {
+		if (signal.aborted) return
+		raf = requestAnimationFrame(frame)
+		if (stride <= 0) measure()
+		if (isPaused()) {
+			lastTs = 0
+			return
+		}
+		if (lastTs === 0) lastTs = now
+		const dt = Math.min(now - lastTs, 48)
+		lastTs = now
+		const lapWidth = realCards().length * stride
+		if (lapWidth <= 0) return
+		offset += (lapWidth / TESTIMONIALS_LAP_MS) * dt
+		apply()
+	}
+
+	function onWheel(event: WheelEvent) {
+		const horizontal = event.shiftKey ? event.deltaY : event.deltaX
+		if (horizontal === 0) return
+		if (!event.shiftKey && Math.abs(event.deltaX) < Math.abs(event.deltaY)) {
+			return
+		}
+		event.preventDefault()
+		offset += horizontal
+		markUserNudge()
+		apply()
+	}
+
+	function onPointerDown(event: PointerEvent) {
+		if (event.pointerType === 'mouse' && event.button !== 0) return
+		pointerId = event.pointerId
+		dragStartX = dragLastX = event.clientX
+		dragStartY = event.clientY
+		dragging = false
+	}
+
+	function onPointerMove(event: PointerEvent) {
+		if (pointerId !== event.pointerId) return
+		const dx = event.clientX - dragStartX
+		const dy = event.clientY - dragStartY
+		if (!dragging) {
 			if (
-				handle.signal.aborted ||
-				isPaused() ||
-				reducedMotion ||
-				!visibleInViewport
+				Math.abs(dx) < DRAG_THRESHOLD_PX &&
+				Math.abs(dy) < DRAG_THRESHOLD_PX
 			) {
 				return
 			}
-			index = (index + 1) % items.length
-			handle.update()
-			scheduleAdvance()
-		}, AUTO_ADVANCE_MS)
+			if (Math.abs(dy) >= Math.abs(dx)) {
+				pointerId = null
+				return
+			}
+			dragging = true
+			scroller.setPointerCapture(event.pointerId)
+		}
+		offset += dragLastX - event.clientX
+		dragLastX = event.clientX
+		markUserNudge()
+		apply()
 	}
 
-	function syncPauseFromInteraction() {
-		if (isPaused()) clearTimer()
-		else scheduleAdvance()
+	function onPointerUp(event: PointerEvent) {
+		if (pointerId !== event.pointerId) return
+		if (dragging && scroller.hasPointerCapture(event.pointerId)) {
+			scroller.releasePointerCapture(event.pointerId)
+		}
+		pointerId = null
+		dragging = false
 	}
 
-	function goTo(nextIndex: number) {
-		if (items.length === 0) return
-		index = ((nextIndex % items.length) + items.length) % items.length
-		handle.update()
-		scheduleAdvance()
+	function onFocusIn(event: FocusEvent) {
+		focus = true
+		const target = event.target
+		if (!(target instanceof Element)) return
+		const card = target.closest('.landing-testimonial-card')
+		if (!(card instanceof HTMLElement)) return
+		if (card.dataset.seam === 'true') return
+		apply()
+		const fadeBox = scroller.getBoundingClientRect()
+		const cardBox = card.getBoundingClientRect()
+		const pad = 32
+		if (cardBox.left < fadeBox.left + pad) {
+			offset -= fadeBox.left + pad - cardBox.left
+		} else if (cardBox.right > fadeBox.right - pad) {
+			offset += cardBox.right - (fadeBox.right - pad)
+		}
+		apply()
 	}
 
-	handle.signal.addEventListener('abort', clearTimer)
-
-	handle.queueTask(() => {
-		if (shuffled || handle.signal.aborted) return
-		shuffled = true
-		reducedMotion =
-			typeof matchMedia === 'function' &&
-			matchMedia('(prefers-reduced-motion: reduce)').matches
-		items = shuffleTestimonials(landingTestimonials)
-		index = 0
-		handle.update()
-	})
-
-	return () => {
-		const active = items[index]
-		if (!active) return null
-		const count = items.length
-		const attribution = testimonialAttribution(active)
-
-		return (
-			<div
-				class="landing-testimonials-carousel"
-				aria-roledescription="carousel"
-				aria-label="Testimonials"
-				mix={[
-					reveal(),
-					ref((node: Element, signal: AbortSignal) => {
-						const el = node as HTMLElement
-						const setVisible = (next: boolean) => {
-							if (visibleInViewport === next) {
-								if (next) scheduleAdvance()
-								return
-							}
-							visibleInViewport = next
-							if (!next) clearTimer()
-							else scheduleAdvance()
-						}
-
-						visibleInViewport = isElementNearViewport(el, '0px')
-						const visibilityObserver =
-							typeof IntersectionObserver === 'undefined'
-								? null
-								: new IntersectionObserver(
-										(entries) => {
-											setVisible(entries.some((entry) => entry.isIntersecting))
-										},
-										{ root: null, rootMargin: '0px', threshold: 0 },
-									)
-						if (visibilityObserver) {
-							visibilityObserver.observe(el)
-						} else {
-							setVisible(true)
-						}
-
-						const onEnter = () => {
-							pointerInside = true
-							syncPauseFromInteraction()
-						}
-						const onLeave = () => {
-							pointerInside = false
-							syncPauseFromInteraction()
-						}
-						const onFocusIn = () => {
-							focusInside = true
-							syncPauseFromInteraction()
-						}
-						const onFocusOut = (event: FocusEvent) => {
-							const next = event.relatedTarget
-							if (next instanceof Node && el.contains(next)) return
-							focusInside = false
-							syncPauseFromInteraction()
-						}
-						const onKeyDown = (event: KeyboardEvent) => {
-							if (event.key === 'ArrowLeft') {
-								event.preventDefault()
-								goTo(index - 1)
-							} else if (event.key === 'ArrowRight') {
-								event.preventDefault()
-								goTo(index + 1)
-							}
-						}
-						el.addEventListener('pointerenter', onEnter)
-						el.addEventListener('pointerleave', onLeave)
-						el.addEventListener('focusin', onFocusIn)
-						el.addEventListener('focusout', onFocusOut)
-						el.addEventListener('keydown', onKeyDown)
-						if (visibleInViewport) scheduleAdvance()
-						signal.addEventListener('abort', () => {
-							visibilityObserver?.disconnect()
-							el.removeEventListener('pointerenter', onEnter)
-							el.removeEventListener('pointerleave', onLeave)
-							el.removeEventListener('focusin', onFocusIn)
-							el.removeEventListener('focusout', onFocusOut)
-							el.removeEventListener('keydown', onKeyDown)
-							clearTimer()
-						})
-					}),
-				]}
-			>
-				<div class="landing-testimonials-toolbar">
-					<button
-						type="button"
-						class="landing-testimonials-nav"
-						aria-label="Previous testimonial"
-						mix={on('click', () => goTo(index - 1))}
-					>
-						<span aria-hidden="true">←</span>
-					</button>
-					<p class="landing-testimonials-status" aria-live="polite">
-						{index + 1} of {count}
-					</p>
-					<button
-						type="button"
-						class="landing-testimonials-nav"
-						aria-label="Next testimonial"
-						mix={on('click', () => goTo(index + 1))}
-					>
-						<span aria-hidden="true">→</span>
-					</button>
-				</div>
-
-				<div class="landing-testimonials-viewport">
-					<article
-						key={`${active.name}-${index}`}
-						class="landing-testimonial-card"
-						aria-roledescription="slide"
-						aria-label={`${index + 1} of ${count}`}
-					>
-						<blockquote class="landing-testimonial-quote">
-							<p>{active.quote}</p>
-						</blockquote>
-						<footer class="landing-testimonial-person">
-							<a
-								href={active.href}
-								class="landing-testimonial-link"
-								target="_blank"
-								rel="noopener noreferrer"
-							>
-								{active.photo ? (
-									<img
-										src={active.photo}
-										alt=""
-										width={56}
-										height={56}
-										class="landing-testimonial-photo"
-										decoding="async"
-										loading="lazy"
-									/>
-								) : (
-									<span class="landing-testimonial-initials" aria-hidden="true">
-										{testimonialInitials(active.name)}
-									</span>
-								)}
-								<span class="landing-testimonial-meta">
-									<span class="landing-testimonial-name">{active.name}</span>
-									{attribution ? (
-										<span class="landing-testimonial-title">{attribution}</span>
-									) : null}
-								</span>
-							</a>
-						</footer>
-					</article>
-				</div>
-
-				{count > 1 ? (
-					<div
-						class="landing-testimonials-dots"
-						role="tablist"
-						aria-label="Choose a testimonial"
-					>
-						{items.map((item, dotIndex) => (
-							<button
-								key={item.name}
-								type="button"
-								role="tab"
-								aria-selected={dotIndex === index ? 'true' : 'false'}
-								aria-label={`Show testimonial from ${item.name}`}
-								class={
-									dotIndex === index
-										? 'landing-testimonials-dot is-active'
-										: 'landing-testimonials-dot'
-								}
-								mix={on('click', () => goTo(dotIndex))}
-							/>
-						))}
-					</div>
-				) : null}
-			</div>
-		)
+	function onFocusOut(event: FocusEvent) {
+		const next = event.relatedTarget
+		if (next instanceof Node && scroller.contains(next)) return
+		focus = false
 	}
+
+	function teardownVirtual() {
+		for (const clone of seamClones) clone.remove()
+		seamClones.length = 0
+		for (const card of realCards()) {
+			card.hidden = false
+			card.style.transform = ''
+		}
+		track.classList.remove('is-virtual')
+		track.style.minHeight = ''
+	}
+
+	scroller.addEventListener('wheel', onWheel, { passive: false, signal })
+	scroller.addEventListener('pointerdown', onPointerDown, { signal })
+	scroller.addEventListener('pointermove', onPointerMove, { signal })
+	scroller.addEventListener('pointerup', onPointerUp, { signal })
+	scroller.addEventListener('pointercancel', onPointerUp, { signal })
+	scroller.addEventListener(
+		'pointerenter',
+		() => {
+			hover = true
+		},
+		{ signal },
+	)
+	scroller.addEventListener(
+		'pointerleave',
+		() => {
+			hover = false
+		},
+		{ signal },
+	)
+	scroller.addEventListener('focusin', onFocusIn, { signal })
+	scroller.addEventListener('focusout', onFocusOut, { signal })
+	window.addEventListener(
+		'resize',
+		() => {
+			measure()
+			apply()
+		},
+		{ passive: true, signal },
+	)
+
+	const visibilityObserver =
+		typeof IntersectionObserver === 'undefined'
+			? null
+			: new IntersectionObserver(
+					(entries) => {
+						inView = entries.some((entry) => entry.isIntersecting)
+					},
+					{ root: null, rootMargin: '0px', threshold: 0 },
+				)
+	if (visibilityObserver) visibilityObserver.observe(scroller)
+	else inView = true
+
+	measure()
+	raf = requestAnimationFrame(frame)
+	signal.addEventListener(
+		'abort',
+		() => {
+			cancelAnimationFrame(raf)
+			if (userNudgeTimer != null) clearTimeout(userNudgeTimer)
+			visibilityObserver?.disconnect()
+			teardownVirtual()
+		},
+		{ once: true },
+	)
+}
+
+function renderChevron(direction: 'prev' | 'next') {
+	const path = direction === 'prev' ? 'M15 6 9 12l6 6' : 'M9 6l6 6-6 6'
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2.2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d={path} />
+		</svg>
+	)
+}
+
+function renderTestimonialCard(item: LandingTestimonial) {
+	const attribution = testimonialAttribution(item)
+	return (
+		<article key={item.name} class="landing-testimonial-card">
+			<blockquote class="landing-testimonial-quote">
+				<p>{item.quote}</p>
+			</blockquote>
+			<footer class="landing-testimonial-person">
+				<a
+					href={item.href}
+					class="landing-testimonial-link"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					{item.photo ? (
+						<img
+							src={item.photo}
+							alt=""
+							width={56}
+							height={56}
+							class="landing-testimonial-photo"
+							decoding="async"
+							loading="lazy"
+						/>
+					) : (
+						<span class="landing-testimonial-initials" aria-hidden="true">
+							{testimonialInitials(item.name)}
+						</span>
+					)}
+					<span class="landing-testimonial-meta">
+						<span class="landing-testimonial-name">{item.name}</span>
+						{attribution ? (
+							<span class="landing-testimonial-title">{attribution}</span>
+						) : null}
+					</span>
+				</a>
+			</footer>
+		</article>
+	)
 }

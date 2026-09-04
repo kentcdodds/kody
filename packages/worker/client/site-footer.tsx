@@ -22,7 +22,18 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<img src="/images/kody-mark.png" alt="" width={28} height={28} />
 					<span>Kody</span>
 				</a>
-				<p mix={css(taglineCss)}>Make it portable.</p>
+				<p mix={css(taglineCss)}>
+					{handle.props.loggedIn ? (
+						'You\u2019re home'
+					) : (
+						<>
+							Welcome{' '}
+							<a href="/signup" mix={css(taglineLinkCss)}>
+								home
+							</a>
+						</>
+					)}
+				</p>
 				<nav aria-label="Footer" mix={css(footerNavCss)}>
 					<a href="/community">Community</a>
 					<a href="/discord">Discord</a>
@@ -87,6 +98,14 @@ const taglineCss = {
 	textAlign: 'center' as const,
 	fontFamily: typography.fontFamilyDisplay,
 	fontOpticalSizing: 'auto' as const,
+}
+
+const taglineLinkCss = {
+	color: colors.primaryText,
+	fontWeight: 600,
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+	'&:hover': { color: colors.text },
 }
 
 const footerNavCss = {

@@ -13,6 +13,10 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
+import {
+	emptyOnboardingSessionMilestones,
+	type OnboardingSessionMilestoneState,
+} from '#universal/onboarding-process.ts'
 
 export {
 	buildDiscoveryPrompt,
@@ -72,6 +76,7 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
+		milestones: emptyOnboardingSessionMilestones,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -107,6 +112,8 @@ export async function loadOnboardingData(input: {
 	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
+	/** Live first-session milestones, computed by the handler. */
+	milestones?: OnboardingSessionMilestoneState
 }): Promise<OnboardingLoaderData> {
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
@@ -146,6 +153,7 @@ export async function loadOnboardingData(input: {
 					installedExampleName: input.persistContext?.installedExampleName,
 				})
 			: '',
+		milestones: input.milestones ?? emptyOnboardingSessionMilestones,
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,

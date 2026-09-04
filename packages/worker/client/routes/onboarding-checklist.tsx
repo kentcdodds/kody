@@ -3,7 +3,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	onboardingChecklistItemHref,
 	onboardingChecklistItemLabels,
-	onboardingWizardStepByNumber,
+	onboardingWizardStepHref,
 	type OnboardingChecklistItemId,
 } from '#universal/onboarding-process.ts'
 import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
@@ -19,7 +19,7 @@ import {
 
 export { onboardingChecklistItemLabels }
 
-const connectMcpHref = `${onboardingPath}#${onboardingWizardStepByNumber(2).hash}`
+const connectMcpHref = onboardingWizardStepHref(2)
 
 const integrationGuideProviders = [
 	{ id: 'notion', label: 'Notion', href: connectMcpHref },

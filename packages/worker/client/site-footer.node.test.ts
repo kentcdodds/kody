@@ -9,6 +9,8 @@ test('site footer nav uses a two-row five-column grid, then stacked auto-fit', a
 	)
 
 	expect(html).toContain('aria-label="Footer"')
+	expect(html).toContain('You\u2019re home')
+	expect(html).not.toContain('Welcome')
 	expect(html).toContain('href="/account"')
 	expect(html).toContain('repeat(5, max-content)')
 	expect(html).toContain(
@@ -20,5 +22,9 @@ test('site footer nav uses a two-row five-column grid, then stacked auto-fit', a
 		jsx(SiteFooter, { loggedIn: false, loginHref: '/login?next=%2Fsupport' }),
 	)
 	expect(loggedOut).toContain('href="/login?next=%2Fsupport"')
+	expect(loggedOut).toContain('Welcome')
+	expect(loggedOut).toContain('href="/signup"')
+	expect(loggedOut).toContain('>home</a>')
 	expect(loggedOut).not.toContain('href="/account"')
+	expect(loggedOut).not.toContain('You\u2019re home')
 })

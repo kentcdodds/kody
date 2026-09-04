@@ -53,7 +53,6 @@ export function buildDiscoveryPrompt(input: {
 	return [
 		`I'm deciding whether Kody (${origin}) would be useful for me.`,
 		`Read ${origin}/guides/what-is-kody and then interview me to find out what Kody could do for me.`,
-		"Don't set anything up yet — this works before I have an account.",
 	].join(' ')
 }
 

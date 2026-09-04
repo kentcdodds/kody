@@ -3,8 +3,9 @@ import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getAccentCalloutCss,
-	getGhostButtonCss,
 	getPillButtonCss,
+	mutedLinkCss,
+	nativeDisclosureCss,
 } from '#universal/styles/style-primitives.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
@@ -55,36 +56,57 @@ export function CopyCard(handle: Handle<CopyCardProps>) {
 	)
 }
 
+type CopyCardDetailsProps = CopyCardProps & {
+	summaryLead: string
+	summaryCode?: string
+}
+
+/**
+ * Collapsed manual snippet: the lead sentence is the summary, the copy
+ * well sits inside. Closed unless the caller sets `open` on `<details>`.
+ */
+export function CopyCardDetails(handle: Handle<CopyCardDetailsProps>) {
+	return () => (
+		<details
+			data-testid="onboarding-mcp-manual-json"
+			mix={css(nativeDisclosureCss)}
+		>
+			<summary>
+				{handle.props.summaryLead}
+				{handle.props.summaryCode ? (
+					<>
+						{' '}
+						<code>{handle.props.summaryCode}</code>
+					</>
+				) : null}
+				:
+			</summary>
+			<div>
+				<CopyCard
+					highlights={handle.props.highlights}
+					label={handle.props.label}
+					value={handle.props.value}
+					copyLabel={handle.props.copyLabel}
+					lang={handle.props.lang}
+					variant={handle.props.variant}
+				/>
+			</div>
+		</details>
+	)
+}
+
 type AppIconCardProps = {
 	src: string
 	downloadName: string
 }
 
 /**
- * ChatGPT wants a PNG you can upload, not a URL to copy. Render the icon so
- * right-click / long-press Save as works, and keep a same-origin download
- * plus a quiet URL copy for hosts that still fetch by URL.
+ * ChatGPT wants a PNG you can upload. Render the icon so right-click /
+ * long-press Save as works, and keep a same-origin download link.
  */
 export function AppIconCard(handle: Handle<AppIconCardProps>) {
 	return () => (
 		<div data-testid="onboarding-mcp-app-icon" mix={css(snippetCss)}>
-			<div mix={css(snippetHeadCss)}>
-				<span mix={css(snippetLabelCss)}>App icon</span>
-				<div mix={css(snippetActionCss)}>
-					<a
-						href={handle.props.src}
-						download={handle.props.downloadName}
-						mix={css(appIconDownloadCss)}
-					>
-						Download PNG
-					</a>
-					<CopyTextButton
-						value={handle.props.src}
-						idleLabel="Copy icon URL"
-						variant="ghost"
-					/>
-				</div>
-			</div>
 			<div mix={css(appIconBodyCss)}>
 				<img
 					src={handle.props.src}
@@ -93,6 +115,13 @@ export function AppIconCard(handle: Handle<AppIconCardProps>) {
 					height={256}
 					mix={css(appIconImgCss)}
 				/>
+				<a
+					href={handle.props.src}
+					download={handle.props.downloadName}
+					mix={css(mutedLinkCss)}
+				>
+					Download App Icon
+				</a>
 				<p mix={css(appIconHintCss)}>
 					Right-click the icon and choose Save as (on a phone, long-press), then
 					upload it in ChatGPT. Icons over 10 KB are rejected.
@@ -106,15 +135,43 @@ type ClientWarningProps = {
 	children: string
 }
 
-/** Quiet warning below help — not the green authenticate well. */
+/** Quiet danger note — red accent, not the green authenticate well. */
 export function ClientWarning(handle: Handle<ClientWarningProps>) {
 	return () => (
 		<p
-			mix={css(clientWarningCss)}
+			mix={css(clientDangerCss)}
 			role="note"
 			data-testid="onboarding-agent-warning"
 		>
 			{handle.props.children}
+		</p>
+	)
+}
+
+type ChatGptDeveloperModeWarningProps = {
+	href: string
+	linkLabel: string
+}
+
+/**
+ * Amber caution for ChatGPT: developer mode is required. Same quiet
+ * callout language as {@link ClientWarning}, warning tone instead of danger.
+ */
+export function ChatGptDeveloperModeWarning(
+	handle: Handle<ChatGptDeveloperModeWarningProps>,
+) {
+	return () => (
+		<p mix={css(clientCautionCss)} role="note">
+			ChatGPT developer mode is required. See{' '}
+			<a
+				href={handle.props.href}
+				target="_blank"
+				rel="noreferrer noopener"
+				data-testid="onboarding-agent-help"
+			>
+				{handle.props.linkLabel}
+			</a>
+			.
 		</p>
 	)
 }
@@ -226,6 +283,7 @@ const snippetCss = {
 	backgroundColor: colors.background,
 	overflow: 'hidden' as const,
 	minWidth: 0,
+	width: '100%',
 }
 
 const snippetHeadCss = {
@@ -259,8 +317,6 @@ const snippetActionCss = {
 		padding: '0.5rem 1rem',
 	},
 }
-
-const appIconDownloadCss = getGhostButtonCss()
 
 const appIconBodyCss = {
 	display: 'grid',
@@ -305,12 +361,23 @@ const snippetPreCss = {
 	},
 }
 
-const clientWarningCss = {
-	...getAccentCalloutCss({ accentColor: colors.danger }),
-	margin: 0,
-	padding: '0.55rem 0.85rem',
-	backgroundColor: `oklch(from ${colors.danger} l c h / 0.08)`,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-	maxWidth: '72ch',
+/** Gold/amber already used for caution chrome (fork-outdated copy). */
+const warningAccent = 'oklch(0.72 0.14 85)'
+
+function getClientNoteCss(accentColor: string) {
+	return {
+		...getAccentCalloutCss({ accentColor }),
+		margin: 0,
+		padding: '0.55rem 0.85rem',
+		backgroundColor: `oklch(from ${accentColor} l c h / 0.08)`,
+		color: colors.textMuted,
+		fontSize: typography.fontSize.sm,
+		maxWidth: '72ch',
+		'& a': {
+			color: colors.primaryText,
+		},
+	}
 }
+
+const clientDangerCss = getClientNoteCss(colors.danger)
+const clientCautionCss = getClientNoteCss(warningAccent)

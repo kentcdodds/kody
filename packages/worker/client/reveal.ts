@@ -11,6 +11,16 @@ import { ref } from 'remix/ui'
 
 type RevealKind = 'reveal' | 'reveal-pop' | 'reveal-card'
 
+/** Visible anywhere in the viewport. Used to add `.in` in the same turn
+ *  as `.reveal` so on-screen SSR content does not flash to `opacity: 0`.
+ *  The shared observer keeps `rootMargin` 0 0 -8% for below-fold nodes. */
+export function revealTargetIsInView(
+	rect: { top: number; bottom: number },
+	viewportHeight: number,
+) {
+	return rect.bottom > 0 && rect.top < viewportHeight
+}
+
 let sharedObserver: IntersectionObserver | null = null
 
 function getObserver() {
@@ -37,6 +47,12 @@ function createRevealMixin(kind: RevealKind, delayMs: number) {
 			node.style.setProperty('--reveal-delay', `${delayMs}ms`)
 		}
 		node.classList.add(kind)
+		if (
+			revealTargetIsInView(node.getBoundingClientRect(), window.innerHeight)
+		) {
+			node.classList.add('in')
+			return
+		}
 		const observer = getObserver()
 		observer.observe(node)
 		signal.addEventListener('abort', () => observer.unobserve(node))

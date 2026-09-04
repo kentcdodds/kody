@@ -25,9 +25,11 @@ import {
 	onboardingDesktopFeaturedAgentIds,
 	onboardingMobileFeaturedAgentIds,
 	onboardingMoreAgentIdsFor,
+	onboardingMobileAgentMq,
+	onboardingNotListedAgentIds,
+	onboardingPickerAgentIds,
+	onboardingViewportCss,
 	pickOnboardingAgentChooser,
-	readOnboardingAgentParam,
-	writeOnboardingAgentSearch,
 } from './onboarding-mcp-clients.ts'
 
 const mcpServerUrl = defaultKodyMcpUrl
@@ -41,31 +43,64 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(onboardingMoreAgentIdsFor('mobile')).not.toContain(
 		onboardingMobileFeaturedAgentIds[0],
 	)
-	expect(onboardingAgentLabel('chatgpt', 'mobile')).toBe('Codex')
-	expect(onboardingAgentLabel('claude-desktop', 'mobile')).toBe('Claude Code')
+	expect(onboardingAgentLabel('chatgpt', 'mobile')).toBe('ChatGPT')
+	expect(onboardingAgentLabel('claude-desktop', 'mobile')).toBe('Claude')
 	expect(onboardingAgentLabel('chatgpt', 'desktop')).toBe('ChatGPT.com')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('claude-code')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('devin')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('cursor')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('codex')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('copilot')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('opencode')
+	expect(onboardingMobileFeaturedAgentIds).not.toContain('openclaw')
 	const rotated = pickOnboardingAgentChooser(() => 0)
 	const identity = pickOnboardingAgentChooser((max) => max - 1)
 	expect(isValidOnboardingAgentChooserPick(rotated)).toBe(true)
 	expect(rotated.desktopFeatured).not.toEqual(identity.desktopFeatured)
 	expect(rotated.mobileFeatured).not.toEqual(identity.mobileFeatured)
-	expect(readOnboardingAgentParam('?agent=cursor&redirectTo=%2F')).toBe(
-		'cursor',
+	expect(onboardingDataHref('/onboarding/step-1/cursor?redirectTo=%2F')).toBe(
+		'/onboarding?redirectTo=%2F',
 	)
-	expect(readOnboardingAgentParam('?agent=nope')).toBeNull()
-	expect(writeOnboardingAgentSearch('?redirectTo=%2F', 'claude-code')).toBe(
-		'?redirectTo=%2F&agent=claude-code',
-	)
-	expect(writeOnboardingAgentSearch('?agent=cursor', null)).toBe('')
-	expect(
-		writeOnboardingAgentSearch('?redirectTo=%2F', 'chatgpt', 'mobile'),
-	).toBe('?redirectTo=%2F&agent=chatgpt&surface=mobile')
-	expect(onboardingDataHref('/onboarding?agent=cursor&surface=desktop')).toBe(
+	expect(onboardingDataHref('/onboarding/step-2/notion#unused')).toBe(
 		'/onboarding',
 	)
+	expect(onboardingPickerAgentIds(rotated)).toContain('cursor')
+	expect(onboardingPickerAgentIds(rotated)).toContain('copilot-app')
 	expect(
-		onboardingDataHref('/onboarding?agent=cursor&surface=desktop#connect-mcp'),
-	).toBe('/onboarding')
+		onboardingNotListedAgentIds(rotated).some((entry) => entry.id === 'codex'),
+	).toBe(true)
+	expect(
+		onboardingNotListedAgentIds(rotated).some(
+			(entry) =>
+				entry.id === 'copilot-app' && entry.viewport === 'desktop-only',
+		),
+	).toBe(true)
+	expect(
+		onboardingNotListedAgentIds(rotated).some(
+			(entry) => entry.id === 'codex' && entry.viewport === 'mobile-only',
+		),
+	).toBe(true)
+	expect(
+		onboardingNotListedAgentIds(rotated).some(
+			(entry) => entry.id === 'cursor' && entry.viewport === 'mobile-only',
+		),
+	).toBe(true)
+	expect(
+		onboardingNotListedAgentIds(rotated).some(
+			(entry) => entry.id === 'claude-code' && entry.viewport === 'mobile-only',
+		),
+	).toBe(true)
+	expect(
+		onboardingNotListedAgentIds(rotated).some((entry) => entry.id === 'devin'),
+	).toBe(true)
+	expect(onboardingViewportCss('desktop-only', 'list-item')).toEqual({
+		display: 'list-item',
+		[onboardingMobileAgentMq]: { display: 'none' },
+	})
+	expect(onboardingViewportCss('mobile-only', 'list-item')).toEqual({
+		display: 'none',
+		[onboardingMobileAgentMq]: { display: 'list-item' },
+	})
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual([

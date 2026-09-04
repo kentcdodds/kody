@@ -1,6 +1,7 @@
 import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
+import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
 import { applyDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import {
@@ -127,6 +128,14 @@ export function isSameShellAreaNavigation(from: string | null, to: string) {
 	)
 }
 
+function isSameOnboardingNavigation(from: string | null, to: string) {
+	if (!from) return isOnboardingPagePath(pathnameOf(to))
+	return (
+		isOnboardingPagePath(pathnameOf(from)) &&
+		isOnboardingPagePath(pathnameOf(to))
+	)
+}
+
 export function documentHasPersistentShell(
 	root: {
 		querySelector: (selector: string) => Element | null
@@ -152,6 +161,7 @@ export function shouldUseViewTransition(input: {
 	if (input.prefersReducedMotion) return false
 	if (input.from === input.to) return false
 	if (isSameShellAreaNavigation(input.from, input.to)) return false
+	if (isSameOnboardingNavigation(input.from, input.to)) return false
 	// Full document load never recorded `from`. If the rail is already on
 	// screen and the destination is still a shell page, this is a tab click.
 	if (

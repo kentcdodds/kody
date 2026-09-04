@@ -181,9 +181,9 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 test('onboarding MCP chooser listings load official packages by pinned id', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const pinnedIds = onboardingFeaturedMcpServers.map(
-		(server) => server.listingId,
-	)
+	const pinnedIds = onboardingFeaturedMcpServers
+		.map((server) => server.listingId)
+		.filter((id) => id.length > 0)
 	const visibleListing = {
 		...sampleListing,
 		id: onboardingFeaturedMcpServers[0].listingId,

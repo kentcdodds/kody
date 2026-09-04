@@ -66,8 +66,28 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 	setAuthSessionSecret(testCookieSecret)
 	const env = { COOKIE_SECRET: testCookieSecret } as Env
 
-	const anonymousPageResponse = await createOnboardingHandler(env).handler(
+	const anonymousIndexResponse = await createOnboardingHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding')),
+	)
+	expect(anonymousIndexResponse.status).toBe(302)
+	expect(anonymousIndexResponse.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-1',
+	)
+
+	const anonymousIndexPreservesSearch = await createOnboardingHandler(
+		env,
+	).handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding?redirectTo=%2F'),
+		),
+	)
+	expect(anonymousIndexPreservesSearch.status).toBe(302)
+	expect(anonymousIndexPreservesSearch.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-1?redirectTo=%2F',
+	)
+
+	const anonymousPageResponse = await createOnboardingHandler(env).handler(
+		new RequestContext(new Request('https://example.com/onboarding/step-1')),
 	)
 	expect(anonymousPageResponse.status).toBe(200)
 
@@ -229,6 +249,60 @@ test('onboarding custom MCP servers exclude featured remotes', async () => {
 			error: null,
 		},
 	])
+})
+
+test('invalid onboarding agent or service paths redirect to that step', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	setAuthSessionSecret(testCookieSecret)
+	const env = { COOKIE_SECRET: testCookieSecret } as Env
+	const handler = createOnboardingHandler(env)
+
+	const badAgent = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding/step-1/nope'),
+		),
+	)
+	expect(badAgent.status).toBe(302)
+	expect(
+		new URL(badAgent.headers.get('Location') ?? '', 'https://example.com')
+			.pathname,
+	).toBe('/onboarding/step-1')
+
+	const badService = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding/step-2/nope?redirectTo=%2F'),
+		),
+	)
+	expect(badService.status).toBe(302)
+	expect(
+		new URL(badService.headers.get('Location') ?? '', 'https://example.com')
+			.pathname,
+	).toBe('/onboarding/step-2')
+	expect(
+		new URL(badService.headers.get('Location') ?? '', 'https://example.com')
+			.search,
+	).toBe('?redirectTo=%2F')
+
+	const notListed = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding/step-2/not-listed'),
+		),
+	)
+	expect(notListed.status).toBe(200)
+
+	const step2 = await handler.handler(
+		new RequestContext(new Request('https://example.com/onboarding/step-2')),
+	)
+	expect(step2.status).toBe(200)
+
+	const step3 = await handler.handler(
+		new RequestContext(new Request('https://example.com/onboarding/step-3')),
+	)
+	expect(step3.status).toBe(302)
+	expect(
+		new URL(step3.headers.get('Location') ?? '', 'https://example.com')
+			.pathname,
+	).toBe('/onboarding/step-2')
 })
 
 test('onboarding persist next-steps use the newest saved-package kody id', async () => {

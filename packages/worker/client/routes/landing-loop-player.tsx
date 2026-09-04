@@ -61,6 +61,7 @@ export function LandingLoopPlayer(
 	let heldPause = false
 	let loopEl: HTMLElement | null = null
 	let visibleInViewport = true
+	let pendingSkip = false
 
 	function prefersReducedMotion() {
 		return (
@@ -122,6 +123,18 @@ export function LandingLoopPlayer(
 			})
 			if (heldPause) player.pause()
 			syncVisibility()
+			if (pendingSkip && !reducedMotion) {
+				pendingSkip = false
+				heldPause = false
+				chatUserDriven = false
+				playGeneration += 1
+				player.skipToEnd()
+				handle.update()
+				handle.queueTask(() => {
+					scrollChatToBottom()
+				})
+				return
+			}
 			if (!reducedMotion && !player.isPaused()) startPlayLoop()
 			handle.update()
 		} catch {
@@ -202,6 +215,23 @@ export function LandingLoopPlayer(
 				top: 0,
 				behavior: reducedMotion ? 'auto' : 'smooth',
 			})
+		})
+	}
+
+	function skipToEnd() {
+		if (reducedMotion || player.isEnded()) return
+		if (!beats) {
+			pendingSkip = true
+			armLoad()
+			return
+		}
+		heldPause = false
+		chatUserDriven = false
+		playGeneration += 1
+		player.skipToEnd()
+		handle.update()
+		handle.queueTask(() => {
+			scrollChatToBottom()
 		})
 	}
 
@@ -287,23 +317,34 @@ export function LandingLoopPlayer(
 					</p>
 					<span class="landing-loop-toggle-slot">
 						{toggleLabel ? (
-							<button
-								type="button"
-								class="landing-loop-toggle"
-								aria-label={toggleLabel}
-								mix={on('click', () => {
-									if (player.isEnded()) restartFromStart()
-									else if (player.isPaused() || heldPause) playFromHere()
-									else {
-										heldPause = true
-										player.pause()
-										handle.update()
-									}
-								})}
-							>
-								<span class="landing-loop-status-dot"></span>
-								{renderLoopToggleIcon(toggleLabel)}
-							</button>
+							<>
+								<button
+									type="button"
+									class="landing-loop-toggle"
+									aria-label={toggleLabel}
+									mix={on('click', () => {
+										if (player.isEnded()) restartFromStart()
+										else if (player.isPaused() || heldPause) playFromHere()
+										else {
+											heldPause = true
+											player.pause()
+											handle.update()
+										}
+									})}
+								>
+									<span class="landing-loop-status-dot"></span>
+									{renderLoopToggleIcon(toggleLabel)}
+								</button>
+								<button
+									type="button"
+									class="landing-loop-toggle"
+									aria-label="Skip to the end"
+									title="Skip to the end"
+									mix={on('click', skipToEnd)}
+								>
+									{renderLoopSkipIcon()}
+								</button>
+							</>
 						) : null}
 					</span>
 				</div>
@@ -539,4 +580,23 @@ function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
 			return exhaustive
 		}
 	}
+}
+
+function renderLoopSkipIcon() {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M12 5v14" />
+			<path d="m19 12-7 7-7-7" />
+		</svg>
+	)
 }

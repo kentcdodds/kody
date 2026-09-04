@@ -108,6 +108,10 @@
 	--color-danger: oklch(0.535 0.19 25);
 	--color-danger-hover: oklch(0.5 0.18 25);
 	--color-on-danger: oklch(0.985 0.005 25);
+	/* Amber, not a pale yellow: 0.72 still reads as yellow on the light
+	   canvas, and 0.48 warning-text clears 4.5:1 on --color-background. */
+	--color-warning: oklch(0.72 0.16 85);
+	--color-warning-text: oklch(0.48 0.15 80);
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
 	--lantern-glow: oklch(0.88 0.11 85 / 0.4);
 	--lantern-glow-dark: oklch(0.8 0.13 80 / 0.55);
@@ -129,6 +133,8 @@
 	--color-danger-dark: oklch(0.75 0.16 25);
 	--color-danger-hover-dark: oklch(0.7 0.17 25);
 	--color-on-danger-dark: oklch(0.2 0.05 25);
+	--color-warning-dark: oklch(0.84 0.16 85);
+	--color-warning-text-dark: oklch(0.84 0.15 85);
 
 	/* Tab stops in code and other preformatted text. Browsers default to 8. */
 	tab-size: 2;
@@ -234,6 +240,8 @@
 		--color-danger: var(--color-danger-dark);
 		--color-danger-hover: var(--color-danger-hover-dark);
 		--color-on-danger: var(--color-on-danger-dark);
+		--color-warning: var(--color-warning-dark);
+		--color-warning-text: var(--color-warning-text-dark);
 		--lantern-glow: var(--lantern-glow-dark);
 		--select-chevron: var(--select-chevron-dark);
 		--line-height-body: var(--line-height-body-dark);
@@ -937,22 +945,6 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-/* Mirror the pitch grid so Ogygia is not a clone of the next beat.
-   DOM stays title-then-copy so mobile stacks Leave Ogygia on top. */
-.landing-villain {
-	grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-}
-
-.landing-villain .landing-pitch-title {
-	grid-column: 2;
-	grid-row: 1;
-}
-
-.landing-villain .landing-pitch-copy {
-	grid-column: 1;
-	grid-row: 1;
-}
-
 .landing-pitch-lead {
 	margin: 0;
 	font-size: clamp(1.15rem, 1.8vw, 1.35rem);
@@ -1244,6 +1236,11 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
+.landing-factory-lead strong {
+	font-weight: 700;
+	color: var(--color-text);
+}
+
 .landing-factory-art {
 	width: min(70%, 400px);
 	max-width: 100%;
@@ -1256,7 +1253,7 @@ html.is-settled {
 
 .landing-factory-beats {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: clamp(1.75rem, 4vw, 2.5rem) clamp(1.5rem, 3vw, 2.5rem);
 	margin-top: 1.15rem;
 	text-align: left;
@@ -1276,11 +1273,22 @@ html.is-settled {
 	font-size: 1.15rem;
 }
 
-.landing-factory-beat h3 {
+.landing-factory-beat-title {
+	display: flex;
+	align-items: center;
+	flex-wrap: nowrap;
+	gap: 0.5rem;
 	margin: 0.45rem 0 0;
 	font-size: 1.35rem;
 	font-weight: 700;
 	letter-spacing: -0.015em;
+}
+
+.landing-factory-beat-title svg {
+	flex: 0 0 22px;
+	width: 22px;
+	height: 22px;
+	color: var(--color-primary-text);
 }
 
 .landing-factory-beat p:last-child {
@@ -1298,8 +1306,10 @@ html.is-settled {
 	font-weight: 740;
 	letter-spacing: -0.025em;
 	line-height: 1.2;
-	text-wrap: balance;
-	max-width: 16ch;
+}
+
+.landing-factory-ritual span {
+	white-space: nowrap;
 }
 
 .landing-factory-close {
@@ -1448,12 +1458,13 @@ html.is-settled {
 	flex: none;
 }
 
-/* Same box as the control so reduced-motion can drop the button
+/* Same box as the controls so reduced-motion can drop the buttons
    without shrinking the header. */
 .landing-loop-toggle-slot {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	gap: 0.4rem;
 	min-height: 2.25rem;
 	min-width: 3.5rem;
 	flex: 0 0 auto;
@@ -1609,67 +1620,23 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
-.landing-testimonials-carousel {
-	margin: clamp(1.8rem, 4vw, 2.5rem) auto 0;
+.landing-testimonials-marquee {
+	margin: clamp(1.8rem, 4vw, 2.5rem) 0 0;
 	text-align: left;
 }
 
-.landing-testimonials-toolbar {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.75rem;
-	margin-bottom: 0.85rem;
+.landing-testimonials-fade {
+	overflow: hidden;
 }
 
-.landing-testimonials-status {
-	margin: 0;
-	color: var(--color-text-muted);
-	font-size: 0.82rem;
-	font-weight: 600;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
+.landing-testimonials-track {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
 }
 
 .landing-testimonials-nav {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 2.4rem;
-	height: 2.4rem;
-	margin: 0;
-	padding: 0;
-	border: 1px solid var(--color-border);
-	border-radius: var(--radius-full);
-	background: var(--color-surface);
-	color: var(--color-text);
-	font-size: 1.05rem;
-	line-height: 1;
-	cursor: pointer;
-	transition:
-		background-color var(--transition-fast),
-		border-color var(--transition-fast),
-		color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-	.landing-testimonials-nav:hover {
-		border-color: color-mix(
-			in oklab,
-			var(--color-primary) 45%,
-			var(--color-border)
-		);
-		color: var(--color-primary-text);
-	}
-}
-
-.landing-testimonials-nav:focus-visible {
-	outline: 2px solid var(--color-primary);
-	outline-offset: 2px;
-}
-
-.landing-testimonials-viewport {
-	min-height: 16rem;
+	display: none;
 }
 
 .landing-testimonial-card {
@@ -1686,7 +1653,7 @@ html.is-settled {
 
 .landing-testimonial-quote p {
 	margin: 0;
-	font-size: clamp(1.05rem, 2.2vw, 1.2rem);
+	font-size: clamp(0.79rem, 1.65vw, 0.9rem);
 	line-height: 1.55;
 	text-wrap: pretty;
 }
@@ -1702,6 +1669,7 @@ html.is-settled {
 	min-width: 0;
 	color: inherit;
 	text-decoration: none;
+	border-radius: var(--radius-md);
 }
 
 .landing-testimonial-link:hover .landing-testimonial-name {
@@ -1709,9 +1677,8 @@ html.is-settled {
 }
 
 .landing-testimonial-link:focus-visible {
-	outline: 2px solid var(--color-primary);
+	outline: 2.5px solid var(--color-primary);
 	outline-offset: 3px;
-	border-radius: var(--radius-md);
 }
 
 .landing-testimonial-photo,
@@ -1759,63 +1726,126 @@ html.is-settled {
 	font-size: 0.92rem;
 }
 
-.landing-testimonials-dots {
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	gap: 0.25rem;
-	margin-top: 1.1rem;
-}
-
-.landing-testimonials-dot {
-	box-sizing: border-box;
-	position: relative;
-	width: 24px;
-	height: 24px;
-	margin: 0;
-	padding: 0;
-	border: none;
-	border-radius: 0;
-	background: transparent;
-	cursor: pointer;
-}
-
-.landing-testimonials-dot::after {
-	content: '';
-	position: absolute;
-	top: 50%;
-	left: 50%;
-	width: 0.55rem;
-	height: 0.55rem;
-	transform: translate(-50%, -50%);
-	border-radius: var(--radius-full);
-	/* 70% muted on the page ground clears 3:1 in both themes (WCAG 1.4.11). */
-	background: color-mix(
-		in oklab,
-		var(--color-text-muted) 70%,
-		var(--color-background)
-	);
-}
-
-.landing-testimonials-dot.is-active::after {
-	background: var(--color-primary);
-}
-
-.landing-testimonials-dot:focus-visible {
-	outline: 2px solid var(--color-primary);
-	outline-offset: 2px;
-}
-
 @media (prefers-reduced-motion: no-preference) {
-	.landing-testimonial-card {
-		animation: landing-testimonial-in 320ms var(--ease-out) both;
+	html.js .landing-testimonials-marquee {
+		width: 100vw;
+		max-width: 100vw;
+		margin-inline: calc(50% - 50vw);
 	}
 
-	@keyframes landing-testimonial-in {
-		from {
-			opacity: 0;
-			transform: translateY(0.4rem);
-		}
+	html.js .landing-testimonials-fade {
+		overflow: hidden;
+		padding-block: 0.4rem;
+		touch-action: pan-y;
+		mask-image: linear-gradient(
+			to right,
+			transparent,
+			#000 clamp(1.5rem, 6vw, 4rem),
+			#000 calc(100% - clamp(1.5rem, 6vw, 4rem)),
+			transparent
+		);
+		-webkit-mask-image: linear-gradient(
+			to right,
+			transparent,
+			#000 clamp(1.5rem, 6vw, 4rem),
+			#000 calc(100% - clamp(1.5rem, 6vw, 4rem)),
+			transparent
+		);
+	}
+
+	html.js .landing-testimonials-track {
+		flex-direction: row;
+		align-items: stretch;
+		width: max-content;
+		gap: 1.25rem;
+	}
+
+	html.js .landing-testimonials-track.is-virtual {
+		display: grid;
+		grid-template: 1fr / 1fr;
+		align-items: stretch;
+		width: 100%;
+		gap: 0;
+	}
+
+	html.js .landing-testimonial-card {
+		display: flex;
+		flex-direction: column;
+		flex: 0 0 min(32rem, 82vw);
+		width: min(32rem, 82vw);
+		will-change: transform;
+	}
+
+	html.js .landing-testimonials-track.is-virtual .landing-testimonial-card {
+		grid-area: 1 / 1;
+		justify-self: start;
+		flex: none;
+	}
+
+	html.js .landing-testimonial-person {
+		margin-top: auto;
+		padding-top: 1.35rem;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html.js .landing-testimonials-track {
+		gap: 0;
+	}
+
+	html.js .landing-testimonial-card {
+		display: none;
+	}
+
+	html.js .landing-testimonial-card.is-active,
+	html.js
+		.landing-testimonials-track:not(:has(.landing-testimonial-card.is-active))
+		.landing-testimonial-card:first-child {
+		display: flex;
+		flex-direction: column;
+	}
+
+	html.js .landing-testimonials-nav {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.75rem;
+		margin: 0 0 1rem;
+	}
+
+	html.js .landing-testimonials-nav-button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2.4rem;
+		height: 2.4rem;
+		margin: 0;
+		padding: 0;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		background: var(--color-surface);
+		color: var(--color-text);
+		cursor: pointer;
+	}
+
+	html.js .landing-testimonials-nav-button svg {
+		display: block;
+		width: 1.15rem;
+		height: 1.15rem;
+	}
+
+	html.js .landing-testimonials-nav-button:hover,
+	html.js .landing-testimonials-nav-button:focus-visible {
+		border-color: color-mix(
+			in oklch,
+			var(--color-primary) 45%,
+			var(--color-border)
+		);
+		background: color-mix(
+			in oklch,
+			var(--color-primary) 10%,
+			var(--color-surface)
+		);
 	}
 }
 
@@ -1895,6 +1925,10 @@ html.is-settled {
 
 .landing-byok-art {
 	width: min(100%, 380px);
+}
+
+.landing-byok-copy {
+	max-width: 48ch;
 }
 
 .landing-split-copy {
@@ -2134,16 +2168,6 @@ html.is-settled {
 		padding: 3.25rem 1.25rem 1.75rem;
 	}
 
-	.landing-villain {
-		grid-template-columns: 1fr;
-	}
-
-	.landing-villain .landing-pitch-title,
-	.landing-villain .landing-pitch-copy {
-		grid-column: auto;
-		grid-row: auto;
-	}
-
 	.landing-pitch-title {
 		font-size: 2rem;
 	}
@@ -2184,6 +2208,10 @@ html.is-settled {
 		text-align: center;
 	}
 
+	.landing-factory-beat-title {
+		justify-content: center;
+	}
+
 	.landing-factory-beat p:last-child {
 		font-size: 1rem;
 		max-width: 46ch;
@@ -2196,10 +2224,6 @@ html.is-settled {
 
 	.landing-testimonials {
 		padding: 1.75rem 1.25rem;
-	}
-
-	.landing-testimonials-viewport {
-		min-height: 0;
 	}
 
 	.landing-honest-row {
@@ -2222,6 +2246,11 @@ html.is-settled {
 
 	.landing-byok-art {
 		width: min(60%, 300px);
+	}
+
+	.landing-byok-copy {
+		max-width: 46ch;
+		margin-inline: auto;
 	}
 
 	.landing-split-copy {
@@ -2268,5 +2297,179 @@ html.is-settled {
 		border-left: none;
 		border-top: 1px solid var(--color-border);
 		border-radius: 0;
+	}
+}
+
+@media (max-width: 560px) {
+	.landing-factory-beats {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* BYOK “agent never sees the key” demo. Parked still without JS / after
+   SSR; `html.js` + `.is-playing` (added post-hydrate) start the loop. */
+.landing-byok-demo {
+	display: block;
+	width: fit-content;
+	max-width: 100%;
+	margin-top: 1.15rem;
+	margin-inline: auto;
+	text-align: left;
+	user-select: none;
+}
+
+.landing-byok-stage {
+	position: relative;
+	display: flex;
+	align-items: center;
+	padding: 0.55rem 0.15rem 2.75rem;
+	min-height: 5rem;
+	overflow: visible;
+}
+
+.landing-byok-field {
+	display: flex;
+	align-items: stretch;
+	min-width: 0;
+	background: var(--color-surface);
+	border: 1px solid var(--color-field-border);
+	border-radius: 0.9rem;
+	box-shadow:
+		0 10px 24px oklch(from var(--color-text) l c h / 0.08),
+		inset 0 1px 0 oklch(from var(--color-surface) calc(l + 0.06) c h);
+}
+
+.landing-byok-input {
+	font: 550 1rem/1.2 var(--font-body);
+	letter-spacing: 0.22em;
+	color: var(--color-text);
+	background: transparent;
+	border: none;
+	border-radius: 0.9rem 0 0 0.9rem;
+	padding: 0.72rem 0.7rem 0.72rem 1rem;
+	width: 11.5rem;
+	min-width: 0;
+	pointer-events: none;
+}
+
+.landing-byok-input:focus {
+	outline: none;
+}
+
+.landing-byok-eye {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 2.65rem;
+	color: var(--color-text-muted);
+	background: transparent;
+	border: none;
+	border-left: 1px solid var(--color-border);
+	border-radius: 0 0.9rem 0.9rem 0;
+}
+
+.landing-byok-cursor {
+	position: absolute;
+	left: -3.15rem;
+	top: 50%;
+	z-index: 2;
+	width: 3.2rem;
+	height: 4.2rem;
+	color: var(--color-text);
+	translate: var(--byok-x, 0px) var(--byok-y, 0px);
+	pointer-events: none;
+}
+
+.landing-byok-hotspot {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 1px;
+	height: 1px;
+}
+
+.landing-byok-cursor-shape {
+	display: block;
+	width: 20px;
+	height: 30px;
+	overflow: visible;
+	rotate: -16deg;
+	scale: var(--byok-scale, 1);
+	transform-origin: 0 0;
+	filter: drop-shadow(0 2px 4px oklch(from var(--color-text) l c h / 0.16));
+}
+
+.landing-byok-cursor-mark {
+	position: absolute;
+	left: 0.85rem;
+	top: 1.12rem;
+	display: grid;
+	place-items: center;
+	width: 2.25rem;
+	height: 2.25rem;
+	border-radius: 0.75rem;
+	color: var(--color-text);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	box-shadow:
+		0 10px 24px oklch(from var(--color-text) l c h / 0.1),
+		inset 0 1px 0 oklch(from var(--color-surface) calc(l + 0.06) c h);
+}
+
+.landing-byok-cursor-mark-icon {
+	display: block;
+	width: 1.15rem;
+	height: 1.15rem;
+	object-fit: contain;
+}
+
+@media (prefers-color-scheme: dark) {
+	.landing-byok-cursor-mark-icon {
+		filter: invert(1);
+	}
+}
+
+@keyframes landing-byok-shake {
+	0% {
+		translate: 0;
+	}
+
+	16% {
+		translate: -7px;
+	}
+
+	32% {
+		translate: 7px;
+	}
+
+	48% {
+		translate: -5px;
+	}
+
+	64% {
+		translate: 4px;
+	}
+
+	80% {
+		translate: -2px;
+	}
+
+	100% {
+		translate: 0;
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html.js .landing-byok-demo.is-playing.is-clicking .landing-byok-eye {
+		color: var(--color-primary-text);
+		background: oklch(from var(--color-primary) l c h / 0.12);
+	}
+
+	html.js .landing-byok-demo.is-playing.is-clicking .landing-byok-eye svg {
+		scale: 0.88;
+	}
+
+	html.js .landing-byok-demo.is-playing.is-shaking .landing-byok-input {
+		animation: landing-byok-shake 0.42s linear;
 	}
 }
