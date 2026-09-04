@@ -5,6 +5,7 @@ import { reveal } from '#client/reveal.ts'
 import {
 	landingTestimonials,
 	shuffleTestimonials,
+	testimonialAttribution,
 	testimonialInitials,
 	type LandingTestimonial,
 } from '#universal/landing-testimonials.ts'
@@ -88,6 +89,7 @@ export function LandingTestimonialsCarousel(handle: Handle) {
 		const active = items[index]
 		if (!active) return null
 		const count = items.length
+		const attribution = testimonialAttribution(active)
 
 		return (
 			<div
@@ -225,6 +227,9 @@ export function LandingTestimonialsCarousel(handle: Handle) {
 								)}
 								<span class="landing-testimonial-meta">
 									<span class="landing-testimonial-name">{active.name}</span>
+									{attribution ? (
+										<span class="landing-testimonial-title">{attribution}</span>
+									) : null}
 								</span>
 							</a>
 						</footer>

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	landingTestimonials,
 	shuffleTestimonials,
+	testimonialAttribution,
 	testimonialInitials,
 } from '#universal/landing-testimonials.ts'
 
@@ -41,11 +42,33 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 		shuffleTestimonials(landingTestimonials, () => 0).map(
 			(entry) => entry.name,
 		),
-	).toEqual(['Justin Elias', 'Cameron Pak', 'Maciek Sitkowski'])
+	).toEqual([
+		'Maciek Sitkowski',
+		'Justin Elias',
+		'Cameron Pak',
+		'Bradley Haveman',
+	])
 })
 
 test('testimonialInitials falls back to two letters from the public name', () => {
 	expect(testimonialInitials('Maciek Sitkowski')).toBe('MS')
 	expect(testimonialInitials('Justin Elias')).toBe('JE')
 	expect(testimonialInitials('Ada')).toBe('A')
+})
+
+test('testimonialAttribution joins verified role and employer and omits blanks', () => {
+	expect(
+		testimonialAttribution({
+			title: 'Lead Developer',
+			company: 'Lean Labs',
+		}),
+	).toBe('Lead Developer, Lean Labs')
+	expect(testimonialAttribution({ title: 'Front-end Developer' })).toBe(
+		'Front-end Developer',
+	)
+	expect(testimonialAttribution({ company: 'Heartwood LLC' })).toBe(
+		'Heartwood LLC',
+	)
+	expect(testimonialAttribution({})).toBeNull()
+	expect(testimonialAttribution({ title: '', company: '' })).toBeNull()
 })

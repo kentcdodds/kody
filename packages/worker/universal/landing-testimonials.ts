@@ -11,17 +11,30 @@ export type LandingTestimonial = {
 	photo: string | null
 	/** Personal site or primary public social profile. */
 	href: string
-	/** Short verified public title only — never invent. */
+	/** Verified public occupation or role — omit if unsure. */
 	title?: string
+	/** Verified public employer — omit if unsure. */
+	company?: string
 }
 
 export const landingTestimonials = [
+	{
+		quote:
+			'For me, Kody is unbeatable. Being able to write custom pages from my phone using Claude (or any LLM) is crazy. I recently made a simple API wrapper for a product I\'m working on that exposes a Scalar /api/docs page in about two minutes. Now I can just ask Claude "How many users logged in?" or "Reset user\'s password." It\'s awesome!',
+		name: 'Bradley Haveman',
+		photo: '/images/testimonials/bradley-haveman.webp',
+		href: 'https://haveman.ca/',
+		title: 'Lead Developer',
+		company: 'Lean Labs',
+	},
 	{
 		quote:
 			"Kody gives my agents one entry point with all my context and tools behind it. I've got into the habit of saying hey kody, so whatever agent I'm in knows to reach for it right away. It's changed how I work with agents day to day.",
 		name: 'Maciek Sitkowski',
 		photo: '/images/testimonials/maciek-sitkowski.webp',
 		href: 'https://macieksitkowski.com',
+		title: 'Frontend Developer',
+		company: 'Keto-Mojo',
 	},
 	{
 		quote:
@@ -29,6 +42,8 @@ export const landingTestimonials = [
 		name: 'Justin Elias',
 		photo: '/images/testimonials/justin-elias.webp',
 		href: 'https://www.linkedin.com/in/justin-elias',
+		title: 'Data Engineer',
+		company: 'John Deere',
 	},
 	{
 		quote:
@@ -36,6 +51,8 @@ export const landingTestimonials = [
 		name: 'Cameron Pak',
 		photo: '/images/testimonials/cameron-pak.webp',
 		href: 'https://cameronpak.com',
+		title: 'Software Developer',
+		company: 'Heartwood LLC',
 	},
 ] as const satisfies ReadonlyArray<LandingTestimonial>
 
@@ -59,4 +76,16 @@ export function shuffleTestimonials<T>(
 export function testimonialInitials(name: string): string {
 	const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2)
 	return parts.map((part) => part[0]?.toUpperCase() ?? '').join('')
+}
+
+/** Role and employer for the carousel byline. Omits blank parts. */
+export function testimonialAttribution(entry: {
+	title?: string
+	company?: string
+}): string | null {
+	const parts = [entry.title, entry.company].filter((part): part is string =>
+		Boolean(part),
+	)
+	if (parts.length === 0) return null
+	return parts.join(', ')
 }
