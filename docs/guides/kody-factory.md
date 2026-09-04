@@ -115,5 +115,8 @@ the owner operates the process. See
    preference.
 
 For the full ask-once-to-package loop, continue with
-[How Kody works](./how-kody-works.md). For package implementation details, load
-the [package authoring guide](./package-authoring.md).
+[How Kody works](./how-kody-works.md). When packages, integrations, and MCP
+servers look interchangeable, read
+[Packages, integrations, and MCP servers](./packages-integrations-mcp.md). For
+package implementation details, load the
+[package authoring guide](./package-authoring.md).

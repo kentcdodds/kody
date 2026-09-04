@@ -2,15 +2,22 @@ import { css, type Handle } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { nativeDisclosureCss } from '#universal/styles/style-primitives.ts'
 
+export type EntityExplainerLink = {
+	href: string
+	label: string
+}
+
 export type EntityExplainerCopy = {
 	id: string
 	question: string
 	paragraphs: Array<string>
-	learnMore?: {
-		href: string
-		label: string
-	}
+	learnMore?: Array<EntityExplainerLink>
 }
+
+const packagesIntegrationsMcpGuide = {
+	href: routes.guideDetail.href({ slug: 'packages-integrations-mcp' }),
+	label: 'Packages, integrations, and MCP servers',
+} as const satisfies EntityExplainerLink
 
 type EntityExplainerDefinition = EntityExplainerCopy & {
 	match: (pathname: string) => boolean
@@ -30,11 +37,15 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A package is reusable saved code your agent writes and improves over time. Unlike a one-off execute, it lives in a repo with a package.json and can expose exports, scheduled jobs, inbound webhooks, and even a small web app.',
 			'Use a package when work should stay invokable after the conversation ends — a daily digest, a GitHub helper, or a UI your agent hosts for you. Browse metadata here; create and edit packages through your connected agent.',
 			'Trusted clients that cannot use MCP call a package over HTTP through an inbound webhook. Declare one webhook per export, mint a URL, and POST JSON — one name binds one export.',
+			'A package is behavior, not a Slack login and not an MCP connection.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'package-lifecycle' }),
-			label: 'Package lifecycle guide',
-		},
+		learnMore: [
+			packagesIntegrationsMcpGuide,
+			{
+				href: routes.guideDetail.href({ slug: 'package-lifecycle' }),
+				label: 'Package lifecycle guide',
+			},
+		],
 	},
 	{
 		id: 'email',
@@ -44,10 +55,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			"Every Kody account gets a personal inbox at your username on this deployment's email domain. Inbound mail is stored so automations can react to it, and your agent can send you notify-self messages or reply to stored threads.",
 			'Use the inbox as an automation trigger — invoices to a +tag address, alerts from a job, or a daily digest that stays quiet until something actually happened. Compose and reply through your agent; this page is for browsing, classifying, and inspecting messages.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'how-kody-works' }),
-			label: 'How Kody works',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				label: 'How Kody works',
+			},
+		],
 	},
 	{
 		id: 'jobs',
@@ -57,10 +70,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A job is scheduled work that runs in the cloud on Cloudflare Workers, whether or not your computer is on. Package-owned jobs live with the saved package that declares them.',
 			'Use a job for recurring or interval work that belongs to a package. From here you can inspect schedules, run a job now, and toggle kill switch or Preserve. Deferred one-shots belong on Workflows.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'how-kody-works' }),
-			label: 'How Kody works',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				label: 'How Kody works',
+			},
+		],
 	},
 	{
 		id: 'workflows',
@@ -70,10 +85,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A workflow is a deferred or long-running run created through kody:runtime workflows.create. Inline workflows carry their code; package workflows call a published export. Unlike jobs, workflows are one-shot durable work rather than recurring schedules.',
 			'Use this page to inspect status, run time, and errors, and to cancel a run that has not finished yet.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'how-kody-works' }),
-			label: 'How Kody works',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				label: 'How Kody works',
+			},
+		],
 	},
 	{
 		id: 'secrets',
@@ -83,10 +100,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A secret is a credential Kody stores for you — an API key, personal access token, or OAuth token. Your agent references secrets by name; Kody substitutes them at the network boundary and never returns the raw value to chat.',
 			'Use secrets so your agent can call the services you already use without pasting keys into the conversation. Add API keys here; connect OAuth apps from Integrations.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'account-secret-setup' }),
-			label: 'Secret setup guide',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'account-secret-setup' }),
+				label: 'Secret setup guide',
+			},
+		],
 	},
 	{
 		id: 'integrations',
@@ -95,11 +114,15 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		paragraphs: [
 			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. You register your own OAuth client, and tokens land as your secrets.',
 			'Use an integration when a provider needs a signed-in connection rather than a static API key. Tokens land as your secrets. Scope connections deliberately and revoke unused ones.',
+			'The connection is yours. Packages use it; they do not own it. An integration is not a package and not an MCP server.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'integration-bootstrap' }),
-			label: 'Integration bootstrap guide',
-		},
+		learnMore: [
+			packagesIntegrationsMcpGuide,
+			{
+				href: routes.guideDetail.href({ slug: 'integration-bootstrap' }),
+				label: 'Integration bootstrap guide',
+			},
+		],
 	},
 	{
 		id: 'mcp-servers',
@@ -108,7 +131,9 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		paragraphs: [
 			'Kody can act as an MCP client: you add a remote MCP server, and its tools become callable as kody.mcp["server-name"].tool_name(...). This is the inverse of connecting your agent to Kody.',
 			'Use this when another product already exposes MCP tools you want your Kody-connected agent to reach. Add a URL plus a bearer token, or complete OAuth when the server requires it.',
+			'This is how agents connect, not package runtime. Prefer packages as the surface agents reach through Kody MCP.',
 		],
+		learnMore: [packagesIntegrationsMcpGuide],
 	},
 	{
 		id: 'memories',
@@ -118,10 +143,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A memory is a durable fact or preference Kody keeps about you across conversations — things like a preferred language or how you like to be notified. Agents retrieve a few relevant memories per task and must verify before writing.',
 			'Browse, filter, and delete memories here. Ask your agent to remember something important; do not store secrets or credentials as memories.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'what-is-kody' }),
-			label: 'What is Kody?',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
+				label: 'What is Kody?',
+			},
+		],
 	},
 	{
 		id: 'waiting',
@@ -149,10 +176,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements.',
 			'Check this page when something is quota-gated or you are deciding whether to upgrade. Limits are per signed-in user.',
 		],
-		learnMore: {
-			href: routes.pricing.href(),
-			label: 'Plans and pricing',
-		},
+		learnMore: [
+			{
+				href: routes.pricing.href(),
+				label: 'Plans and pricing',
+			},
+		],
 	},
 	{
 		id: 'community',
@@ -162,10 +191,12 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			"Community is the public catalog of published packages on this deployment. A listing is a pinned snapshot of someone else's package, not a live link to their private copy.",
 			'Browse and search without an account. Installing creates a fork you own — you can change it, schedule it, and publish your own version. Prefer a close public package before creating one from scratch.',
 		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'what-is-kody' }),
-			label: 'What is Kody?',
-		},
+		learnMore: [
+			{
+				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
+				label: 'What is Kody?',
+			},
+		],
 	},
 ]
 
@@ -208,13 +239,11 @@ export function EntityExplainer(handle: Handle<EntityExplainerProps>) {
 				{handle.props.copy.paragraphs.map((paragraph) => (
 					<p key={paragraph}>{paragraph}</p>
 				))}
-				{handle.props.copy.learnMore ? (
-					<p>
-						<a href={handle.props.copy.learnMore.href}>
-							{handle.props.copy.learnMore.label}
-						</a>
+				{handle.props.copy.learnMore?.map((link) => (
+					<p key={link.href}>
+						<a href={link.href}>{link.label}</a>
 					</p>
-				) : null}
+				))}
 			</div>
 		</details>
 	)

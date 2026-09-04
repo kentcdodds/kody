@@ -25,6 +25,7 @@ import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
+import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
@@ -51,6 +52,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
 	{ slug: 'how-kody-works', raw: howKodyWorks },
 	{ slug: 'kody-factory', raw: kodyFactory },
+	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
 	{ slug: 'local-mcp-tunnels', raw: localMcpTunnels },
 	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },
 	{ slug: 'google-oauth', raw: googleOauth },
