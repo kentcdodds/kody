@@ -33,6 +33,9 @@ export type StartupTimeTarget = {
 export const startupTimeTargets: ReadonlyArray<StartupTimeTarget> = [
 	{
 		name: 'origin',
+		// Replaced at profile time with the Vite snapshot directory. Wrangler
+		// 4.129 refuses `check startup` when cwd is a workspace root, even
+		// with `--config` pointing at the generated snapshot.
 		packageDir: '.',
 		args: [],
 	},
@@ -47,6 +50,24 @@ export const startupTimeTargets: ReadonlyArray<StartupTimeTarget> = [
 		args: ['--config', 'wrangler.jsonc'],
 	},
 ]
+
+export function resolveStartupTimeTarget(
+	target: StartupTimeTarget,
+	originWranglerConfigPath: string,
+): StartupTimeTarget {
+	if (target.name !== 'origin') return target
+	return {
+		...target,
+		packageDir: path.dirname(originWranglerConfigPath),
+		args: ['--config', path.basename(originWranglerConfigPath)],
+	}
+}
+
+export function resolveStartupTimeCwd(packageDir: string) {
+	return path.isAbsolute(packageDir)
+		? packageDir
+		: path.join(repoRoot, packageDir)
+}
 
 export type StartupBudget = {
 	/** Reviewed ceiling for the best-of-N active CPU sample, in milliseconds. */
@@ -110,7 +131,7 @@ async function profileStartupOnce(
 		wranglerBinary,
 		['check', 'startup', '--outfile', outfile, ...target.args],
 		{
-			cwd: path.join(repoRoot, target.packageDir),
+			cwd: resolveStartupTimeCwd(target.packageDir),
 			env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
 			maxBuffer: 64 * 1024 * 1024,
 		},
@@ -166,13 +187,10 @@ export async function checkWorkerStartupTime() {
 		// Sequential on purpose: concurrent workerd instances would contend for
 		// CPU and inflate each other's samples.
 		for (const target of startupTimeTargets) {
-			const resolvedTarget =
-				target.name === 'origin'
-					? {
-							...target,
-							args: ['--config', originBuild.wranglerConfigPath],
-						}
-					: target
+			const resolvedTarget = resolveStartupTimeTarget(
+				target,
+				originBuild.wranglerConfigPath,
+			)
 			const samples: Array<StartupProfileSummary> = []
 			for (let run = 0; run < budget.runs; run++) {
 				samples.push(
