@@ -82,6 +82,41 @@ export function isRepoSearchInvalidRegexMessage(message: string) {
 	return message.startsWith(repoSearchInvalidRegexMessagePrefix)
 }
 
+/**
+ * Stable phrase from `resolveRepoWorkspacePath` when a caller path escapes
+ * the session workspace or names a `.git` segment. Subclass identity does
+ * not survive Durable Object RPC. Also match the pre-normalization wording
+ * so in-flight events from the old "reject any `..`" guard stay off Sentry.
+ */
+export const repoDisallowedPathMessagePhrase =
+	'is not allowed for repo session paths'
+
+export const repoLegacyDisallowedPathMessagePhrase =
+	'paths cannot contain ".." or ".git" segments'
+
+export function isRepoDisallowedPathMessage(message: string) {
+	return (
+		message.includes(repoDisallowedPathMessagePhrase) ||
+		message.includes(repoLegacyDisallowedPathMessagePhrase)
+	)
+}
+
+export function buildRepoDisallowedPathMessage(
+	path: string,
+	reason: 'escape' | 'git',
+) {
+	switch (reason) {
+		case 'escape':
+			return `Repo path "${path}" ${repoDisallowedPathMessagePhrase}: resolved path leaves the session workspace.`
+		case 'git':
+			return `Repo path "${path}" ${repoDisallowedPathMessagePhrase}: paths cannot contain ".git" segments.`
+		default: {
+			const exhaustive: never = reason
+			throw new Error(`Unsupported repo path denial: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export function buildRepoSearchInvalidRegexCallerMessage(
 	compileMessage: string,
 ) {

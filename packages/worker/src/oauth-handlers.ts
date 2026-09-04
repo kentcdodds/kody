@@ -1,5 +1,4 @@
 import { jsonResponse } from '#worker/json-response.ts'
-import * as Sentry from '@sentry/cloudflare'
 import {
 	type AuthRequest,
 	CimdFetchError,
@@ -284,7 +283,6 @@ async function resolveAuthRequest(
 		return { authRequest, client }
 	} catch (error) {
 		if (isCimdMetadataResolutionError(error)) {
-			Sentry.captureException(error)
 			return { error: 'Unknown OAuth client.' }
 		}
 		const message =

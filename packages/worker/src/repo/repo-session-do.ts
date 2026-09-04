@@ -964,13 +964,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		// that touches the same path from both sides has ambiguous,
 		// order-dependent results (a write can be silently discarded). Reject
 		// those batches outright: callers split them into separate calls.
-		// Comparison keys strip `./` prefixes and leading slashes so aliased
-		// spellings of one path still collide.
+		// Comparison keys use the resolved workspace path so aliased
+		// spellings (`./src/a.ts`, `src/../exports/a.ts`) still collide.
 		const editConflictKey = (path: string) =>
-			path
-				.trim()
-				.replace(/^(\.\/)+/, '')
-				.replace(/^\/+/, '')
+			resolveRepoWorkspacePath(path, repoSessionWorkspacePrefix)
 		const contentEditConflictKeys = new Set(
 			contentEdits.map((edit) => editConflictKey(edit.path)).filter(Boolean),
 		)

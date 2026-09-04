@@ -1021,6 +1021,9 @@ test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client'
 
 		const authorizeInfoUrl = new URL('https://heykody.dev/oauth/authorize-info')
 		authorizeInfoUrl.search = authorizeUrl.search
+		const captureException = vi
+			.spyOn(Sentry, 'captureException')
+			.mockImplementation(() => undefined)
 		const response = await workerFetch(new Request(authorizeInfoUrl))
 		expect(response.status).toBe(400)
 		await expect(response.json()).resolves.toMatchObject({
@@ -1030,6 +1033,8 @@ test('worker entrypoint treats a failed ChatGPT CIMD fetch as an unknown client'
 		expect(consoleWarn.mock.calls.flat().join(' ')).toContain(
 			'CIMD fetch failed',
 		)
+		expect(captureException).not.toHaveBeenCalled()
+		captureException.mockRestore()
 	} finally {
 		globalThis.fetch = originalFetch
 	}

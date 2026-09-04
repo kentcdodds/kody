@@ -2,6 +2,7 @@ import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
+import { isCimdUnknownClientSentryMessage } from './oauth-cimd-error.ts'
 import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
@@ -479,6 +480,29 @@ export function filterMcpAgentSessionDestroyedAbortSentryEvent(
 	return null
 }
 
+/**
+ * CIMD metadata lookup failures the OAuth provider already maps to
+ * unknown-client / invalid_client (KODY-6K / KODY-6M). Probe traffic,
+ * mistyped client_id URLs, and upstream 404 / timeout are not platform
+ * defects. Match only the bare prefixes emitted by `onError` and
+ * `CimdFetchError` so wrapped recovery messages stay visible.
+ */
+export function isCimdUnknownClientSentryEvent(event: ErrorEvent) {
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isCimdUnknownClientSentryMessage(message))
+	)
+}
+
+export function filterCimdUnknownClientSentryEvent(event: ErrorEvent) {
+	if (!isCimdUnknownClientSentryEvent(event)) return event
+	return null
+}
+
 export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// Marker first: primary mechanism for user-authored failures.
 	if (filterUserCodeErrorSentryEvent(event, hint) === null) return null
@@ -497,6 +521,7 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 		return null
 	if (filterMcpAgentSessionDestroyedAbortSentryEvent(event) === null)
 		return null
+	if (filterCimdUnknownClientSentryEvent(event) === null) return null
 	return event
 }
 
@@ -555,7 +580,10 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// retries — see filterArtifactsGitTransientHttpErrorSentryEvent.
 		// Bare Durable Object abort token `destroyed` from Agents MCP session
 		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see
-		// filterMcpAgentSessionDestroyedAbortSentryEvent.
+		// filterMcpAgentSessionDestroyedAbortSentryEvent. Expected CIMD
+		// unknown-client outcomes (missing document, HTTP 404, metadata fetch
+		// timeout) are dropped the same way — see
+		// filterCimdUnknownClientSentryEvent.
 		beforeSend: filterSentryEvent,
 	}
 }

@@ -10,6 +10,7 @@ import { PackageScopeAccessError } from '#worker/package-registry/package-owner.
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
 	isGitPushNotFastForwardMessage,
+	isRepoDisallowedPathMessage,
 	isRepoSearchInvalidRegexMessage,
 	isRepoSessionInactiveMessage,
 	isRepoSessionNotFoundMessage,
@@ -152,17 +153,19 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	) {
 		return true
 	}
-	// Published / inactive / missing repo sessions and invalid repoSearch
-	// regexes are thrown inside the RepoSession Durable Object as plain Errors.
-	// Match the stable phrases so they stay out of Sentry even when a
-	// capability forgets to re-wrap as McpCallerError.
+	// Published / inactive / missing repo sessions, invalid repoSearch
+	// regexes, and disallowed repo paths are thrown inside the RepoSession
+	// Durable Object as plain Errors. Match the stable phrases so they stay
+	// out of Sentry even when a capability forgets to re-wrap as
+	// McpCallerError.
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error &&
 				(isRepoSessionInactiveMessage(entry.message) ||
 					isRepoSessionNotFoundMessage(entry.message) ||
-					isRepoSearchInvalidRegexMessage(entry.message)),
+					isRepoSearchInvalidRegexMessage(entry.message) ||
+					isRepoDisallowedPathMessage(entry.message)),
 		)
 	) {
 		return true

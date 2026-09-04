@@ -362,9 +362,25 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				'Token refresh was rejected. (integrationTokenRefresh caller state)',
 			),
 		})
+
+		// Disallowed repo path (KODY-6P). Plain Error from DO RPC, including
+		// the pre-normalization wording still in flight.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repoEditFiles',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage:
+				'Repo path "src/../exports/self-test.ts" is not allowed: paths cannot contain ".." or ".git" segments.',
+			cause: new Error(
+				'Repo path "src/../exports/self-test.ts" is not allowed: paths cannot contain ".." or ".git" segments.',
+			),
+		})
 	})
 
-	expect(payloads).toHaveLength(21)
+	expect(payloads).toHaveLength(22)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
