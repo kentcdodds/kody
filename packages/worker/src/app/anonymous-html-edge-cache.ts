@@ -88,7 +88,18 @@ function stripCookieVary(headers: Headers) {
 	else headers.set('Vary', parts.join(', '))
 }
 
-function cloneResponseForAnonymousHtmlCache(response: Response) {
+/**
+ * A streamed SSR document that fails part-way (render error, HMR mid-flight,
+ * client abort) can still end cleanly at whatever bytes were written. Only a
+ * body that reached the closing `</html>` is a document worth sharing; a
+ * shorter one served as a HIT is a blank page for every anonymous visitor
+ * until the entry expires.
+ */
+export function isCompleteHtmlDocument(html: string) {
+	return /<\/html\s*>/i.test(html)
+}
+
+export function buildAnonymousHtmlCacheEntry(response: Response, html: string) {
 	const headers = new Headers(response.headers)
 	headers.delete(anonymousHtmlEdgeCacheHeader)
 	const originalVary = headers.get('Vary')
@@ -96,11 +107,28 @@ function cloneResponseForAnonymousHtmlCache(response: Response) {
 		headers.set(browserVaryStorageHeader, originalVary)
 	}
 	stripCookieVary(headers)
-	return new Response(response.body, {
+	return new Response(html, {
 		status: response.status,
 		statusText: response.statusText,
 		headers,
 	})
+}
+
+async function storeCompleteAnonymousHtml(
+	cache: Cache,
+	cacheKey: Request,
+	response: Response,
+) {
+	// Buffer first: an errored or truncated body must never reach `put`.
+	const html = await response.text()
+	if (!isCompleteHtmlDocument(html)) {
+		console.warn('anonymous-html-cache-skip-incomplete', {
+			url: cacheKey.url,
+			bytes: html.length,
+		})
+		return
+	}
+	await cache.put(cacheKey, buildAnonymousHtmlCacheEntry(response, html))
 }
 
 function withAnonymousHtmlCacheLookup(
@@ -168,11 +196,12 @@ export async function serveAnonymousHtmlFromCache(
 		cache &&
 		isAnonymousHtmlCacheStoreable(withMiss)
 	) {
-		const stored = cloneResponseForAnonymousHtmlCache(withMiss.clone())
 		ctx.waitUntil(
-			cache.put(cacheKey, stored).catch((error: unknown) => {
-				console.debug('anonymous-html-cache-put-failed', error)
-			}),
+			storeCompleteAnonymousHtml(cache, cacheKey, withMiss.clone()).catch(
+				(error: unknown) => {
+					console.debug('anonymous-html-cache-put-failed', error)
+				},
+			),
 		)
 	}
 	return withMiss

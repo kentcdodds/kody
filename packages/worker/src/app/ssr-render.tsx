@@ -18,6 +18,7 @@ import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
+import { openDocumentStream } from '#app/ssr-document-stream.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
 	SENTRY_TUNNEL_PATH,
@@ -31,35 +32,6 @@ import {
 	pushServerTiming,
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
-
-/**
- * The remix/ui stream renderer emits markup starting at `<html>`; without a
- * doctype the browser parses the document in quirks mode.
- */
-function prependDoctype(stream: ReadableStream<Uint8Array>) {
-	const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
-	void (async () => {
-		const writer = writable.getWriter()
-		try {
-			await writer.write(new TextEncoder().encode('<!DOCTYPE html>'))
-			writer.releaseLock()
-			await stream.pipeTo(writable)
-		} catch (error) {
-			// Client disconnects abort the pipe; make sure both ends close.
-			try {
-				await stream.cancel(error)
-			} catch {
-				// Already errored or cancelled.
-			}
-			try {
-				await writable.abort(error)
-			} catch {
-				// Already aborted by pipeTo.
-			}
-		}
-	})()
-	return readable
-}
 
 /**
  * Maps a Remix `clientEntry` id onto the public Vite client module.
@@ -199,6 +171,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				},
 			},
 		)
+		// Throws when the render fails before producing the document; the
+		// handler's catch then answers with a 500 instead of a truncated 200.
+		const body = await openDocumentStream(stream)
 
 		const responseSetsCookie =
 			Boolean(setCookie) || (extraSetCookies?.length ?? 0) > 0
@@ -228,7 +203,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		}
 
 		return applyFirstPartySecurityHeaders(
-			new Response(prependDoctype(stream), {
+			new Response(body, {
 				status: status ?? 200,
 				headers,
 			}),
