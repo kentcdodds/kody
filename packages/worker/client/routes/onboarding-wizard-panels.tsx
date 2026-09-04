@@ -340,7 +340,7 @@ export function renderAccessPanel(props: AccessPanelProps) {
 								label: onboardingCopyRemainingTasksLabel,
 							}
 						: null,
-					exploreHref: onboardingExplorePackagesHref(),
+					exploreHref: selectedService ? onboardingExplorePackagesHref() : null,
 				}}
 			/>
 		</section>

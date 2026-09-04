@@ -152,11 +152,11 @@ export function WizardNavigation(
 		onSkip?: () => void
 		/**
 		 * Last wizard step: never render a disabled Next. Primary is Copy when
-		 * a prompt exists; Explore packages is always on.
+		 * leftover tasks exist. Explore packages only on a selected service.
 		 */
 		lastStep?: {
 			copyPrompt?: { value: string; label: string } | null
-			exploreHref: string
+			exploreHref?: string | null
 		}
 	}>,
 ) {
@@ -209,13 +209,15 @@ export function WizardNavigation(
 					) : null}
 					{lastStep ? (
 						<>
-							<a
-								href={lastStep.exploreHref}
-								data-testid="onboarding-wizard-explore-packages"
-								mix={css(wizardExploreLinkCss)}
-							>
-								{onboardingExplorePackagesLabel}
-							</a>
+							{lastStep.exploreHref ? (
+								<a
+									href={lastStep.exploreHref}
+									data-testid="onboarding-wizard-explore-packages"
+									mix={css(wizardExploreLinkCss)}
+								>
+									{onboardingExplorePackagesLabel}
+								</a>
+							) : null}
 							{showCopy ? (
 								<div
 									data-testid="onboarding-wizard-copy-prompt"

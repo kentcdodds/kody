@@ -331,9 +331,10 @@ test('step 2 footer copies remaining milestone tasks, not the CopyCard', async (
 	const picker = await renderToString(
 		accessPanel({ service: null, hasMcpClient: true }),
 	)
-	expect(picker).toContain('data-testid="onboarding-wizard-explore-packages"')
-	expect(picker).toContain(`href="${onboardingExplorePackagesHref()}"`)
-	expect(picker).toContain('Explore packages')
+	expect(picker).not.toContain(
+		'data-testid="onboarding-wizard-explore-packages"',
+	)
+	expect(picker).not.toContain('Explore packages')
 	expect(picker).not.toContain('data-testid="onboarding-wizard-copy-prompt"')
 	expect(picker).not.toContain('data-testid="onboarding-wizard-next"')
 
@@ -381,6 +382,9 @@ test('step 2 footer copies remaining milestone tasks, not the CopyCard', async (
 	expect(namedCustom).toContain('Help me use Kody with this service')
 	expect(namedCustom).toContain('these remaining steps:')
 	expect(namedCustom).toContain(onboardingCopyRemainingTasksLabel)
+	expect(namedCustom).toContain(
+		'data-testid="onboarding-wizard-explore-packages"',
+	)
 	expect(namedCustom).not.toContain(
 		`data-copy-value="${onboardingUseKodyPromptForCustomName('Todoist')}"`,
 	)
@@ -405,7 +409,7 @@ test('step 2 footer copies remaining milestone tasks, not the CopyCard', async (
 
 	const unconnected = await renderToString(accessPanel({ service: null }))
 	expect(unconnected).toContain(discoveryPrompt)
-	expect(unconnected).toContain(
+	expect(unconnected).not.toContain(
 		'data-testid="onboarding-wizard-explore-packages"',
 	)
 	expect(unconnected).not.toContain(
