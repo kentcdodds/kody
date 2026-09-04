@@ -13,7 +13,8 @@ per-declaration `rateLimitPerMinute` (default 60, max 600). Token UI, MCP
 `POST /@:user/api/package-invocations/…` path still exist. Do not send fleet
 email from this runbook.
 
-This change does **not** drop token tables.
+This change does **not** drop token tables. Tracker:
+[Cleanup #2038](https://github.com/kentcdodds/kody/issues/2038).
 
 ## Destination map
 
