@@ -2,7 +2,6 @@
 // `{ type X }` import would keep a side-effect import of the provider (and its
 // `cloudflare:workers` dependency) on the platform/runtime startup path.
 import type * as WorkersOAuthProvider from '@cloudflare/workers-oauth-provider'
-import * as Sentry from '@sentry/cloudflare'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 
@@ -50,17 +49,10 @@ export const sharedOAuthProviderOptions = {
 	// advertises `<origin>/mcp` so discovery matches that audience.
 	// Provider default onError logs every structured OAuth error via console.warn.
 	// Keep those responses on the wire without duplicating them into worker logs /
-	// test console guards. CIMD fetch failures stay generic on the wire and are
-	// reported here for Sentry; unexpected throws still reach fetch catch + Sentry.
-	onError: (error) => {
-		if (error.internal?.category === 'client-id-metadata-document') {
-			Sentry.captureException(
-				new Error(
-					`CIMD metadata resolution failed (${error.internal.reason}): ${error.description}`,
-				),
-			)
-		}
-	},
+	// test console guards. CIMD lookup failures stay generic on the wire
+	// (unknown-client / invalid_client); they are caller or upstream outcomes,
+	// not platform defects. Unexpected throws still reach fetch catch + Sentry.
+	onError: () => {},
 	// 0.10+ defaults allowPlainPKCE to false (S256-only) while still allowing
 	// confidential clients to omit PKCE. Do not set allowPlainPKCE: true. App
 	// layer getPkceValidationError remains defense in depth. See

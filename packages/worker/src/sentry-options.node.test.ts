@@ -628,4 +628,42 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(wrappedDoOverload)).toBe(wrappedDoOverload)
+
+	// Expected CIMD unknown-client outcomes (KODY-6K / KODY-6M). Bare
+	// prefixes drop; wrapped recovery stays visible.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'CIMD metadata resolution failed (metadata_resolution_failed): Client not found',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'CIMD fetch failed for https://chatgpt.com/oauth/client.json: Failed to fetch client metadata: HTTP 404',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	const wrappedCimdFailure = {
+		exception: {
+			values: [
+				{
+					value:
+						'authorize could not recover after CIMD fetch failed for https://chatgpt.com/oauth/client.json: Failed to fetch client metadata: HTTP 404',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedCimdFailure)).toBe(wrappedCimdFailure)
 })
