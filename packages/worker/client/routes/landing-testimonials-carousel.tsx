@@ -17,6 +17,8 @@ import {
 
 const USER_NUDGE_RESUME_MS = 500
 const DRAG_THRESHOLD_PX = 8
+/** Off-stage park if `[hidden]` loses to `display: flex` (see styles.css). */
+const PARKED_TRANSFORM = 'translate3d(-200vw, 0, 0)'
 
 /**
  * Homepage testimonials strip. SSR and the first client render paint the
@@ -268,14 +270,17 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		}
 		for (const card of sources) {
 			if (used.has(card)) continue
-			card.hidden = true
-			card.style.transform = ''
+			parkCard(card)
 		}
-		for (const [index, clone] of seamClones.entries()) {
+		for (const clone of seamClones) {
 			if (used.has(clone)) continue
-			clone.hidden = true
-			if (index >= seamSlot) clone.style.transform = ''
+			parkCard(clone)
 		}
+	}
+
+	function parkCard(node: HTMLElement) {
+		node.hidden = true
+		node.style.transform = PARKED_TRANSFORM
 	}
 
 	function markUserNudge() {

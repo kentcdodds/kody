@@ -127,3 +127,27 @@ test('narrow swipe moves the leading card off the origin instead of pinning it',
 		})),
 	).toBe(true)
 })
+
+test('an exiting card stays on the negative lane instead of snapping to the origin', () => {
+	const stride = 500
+	const cardWidth = 480
+	const viewportWidth = 1200
+	const offset = Math.round(cardWidth * 0.75)
+
+	const placements = listLanePlacements({
+		count: 4,
+		stride,
+		cardWidth,
+		offset,
+		viewportWidth,
+	})
+	const leading = placements.filter((placement) => placement.itemIndex === 0)
+	expect(leading.some((placement) => placement.x === 0)).toBe(false)
+	expect(leading).toContainEqual({ itemIndex: 0, x: -offset, seam: false })
+	expect(placements.find((placement) => placement.itemIndex === 1)?.x).toBe(
+		stride - offset,
+	)
+	expect(
+		largestVisibleHole(placements, viewportWidth, cardWidth),
+	).toBeLessThanOrEqual(stride - cardWidth)
+})
