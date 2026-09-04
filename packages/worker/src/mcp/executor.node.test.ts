@@ -6,6 +6,7 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
+import { retrieverOutboundFetchDeniedMessage } from '#mcp/fetch-gateway.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import {
 	EntitlementLimitError,
@@ -344,6 +345,38 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(moduleSource).toContain('.call("recordFetch", "[]")')
 	expect(moduleSource).toContain('const __kodyMcp =')
 	expect(moduleSource).toContain('getOwnPropertyDescriptor')
+})
+
+test('closed-world executor module rejects fetch in the sandbox before outbound RPC', () => {
+	const denied = createExecutorModuleSource({
+		code: 'async () => "ok"',
+		providers: [
+			{
+				name: 'kody',
+				fns: {},
+			},
+		],
+		shadowGlobalThis: false,
+		timeoutMs: 1_000,
+		allowOutboundFetch: false,
+	})
+	expect(denied).toContain(retrieverOutboundFetchDeniedMessage)
+	expect(denied).not.toContain('.call("recordFetch", "[]")')
+	expect(denied).not.toContain('__kodyNativeFetchSymbol](input, init)')
+
+	const allowed = createExecutorModuleSource({
+		code: 'async () => "ok"',
+		providers: [
+			{
+				name: 'kody',
+				fns: {},
+			},
+		],
+		shadowGlobalThis: false,
+		timeoutMs: 1_000,
+	})
+	expect(allowed).toContain('.call("recordFetch", "[]")')
+	expect(allowed).not.toContain(retrieverOutboundFetchDeniedMessage)
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {

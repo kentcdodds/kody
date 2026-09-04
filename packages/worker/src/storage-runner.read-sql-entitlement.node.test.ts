@@ -21,6 +21,19 @@ const mockModule = vi.hoisted(() => ({
 	recordStorageBucketEstimate: vi.fn(),
 	maybeRefreshStorageBucketEstimate: vi.fn(),
 	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 64 })),
+	sqlQuery: vi.fn(
+		async (input: {
+			query: string
+			params?: Array<unknown>
+			writable?: boolean
+		}) => ({
+			columns: [],
+			rows: [],
+			rowCount: 0,
+			rowsRead: 0,
+			rowsWritten: input.writable ? 1 : 0,
+		}),
+	),
 }))
 
 vi.mock('#worker/storage-buckets/service.ts', () => ({
@@ -57,6 +70,7 @@ const {
 	createStorageBytesEntitlementRunCache,
 	createStorageKodyTools,
 	isReadOnlyStorageSqlQuery,
+	readOnlyStorageSqlDeniedMessage,
 	storageEstimateReadRetryDelaysMs,
 } = await import('#worker/storage-runner.ts')
 
@@ -71,17 +85,11 @@ function createEstimateEnv() {
 			idFromName: (name: string) => name,
 			get: () => ({
 				getEstimatedBytes: () => mockModule.getEstimatedBytes(),
-				sqlQuery: async (input: {
+				sqlQuery: (input: {
 					query: string
 					params?: Array<unknown>
 					writable?: boolean
-				}) => ({
-					columns: [],
-					rows: [],
-					rowCount: 0,
-					rowsRead: 0,
-					rowsWritten: input.writable ? 1 : 0,
-				}),
+				}) => mockModule.sqlQuery(input),
 				getValue: async ({ key }: { key: string }) => ({
 					key,
 					value: null,
@@ -154,6 +162,21 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(3)
 	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledTimes(3)
 	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledTimes(1)
+
+	mockModule.sqlQuery.mockClear()
+	const readOnlyTools = createStorageKodyTools({
+		env: createEstimateEnv(),
+		userId: 'user-1',
+		email: null,
+		storageId: 'package:skills',
+		writable: false,
+	})
+	await expect(
+		readOnlyTools.storageSql({
+			query: 'create table if not exists notes (name text)',
+		}),
+	).rejects.toThrow(readOnlyStorageSqlDeniedMessage)
+	expect(mockModule.sqlQuery).not.toHaveBeenCalled()
 
 	mockModule.getEstimatedBytes.mockClear()
 	mockModule.listUserStorageBucketEstimates.mockClear()
