@@ -61,6 +61,25 @@ type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
 type OAuthAuthorizeMessage = { type: 'error' | 'info'; text: string }
 type OAuthAuthorizeDecision = 'approve' | 'deny' | 'reset-client'
 
+function oauthAuthorizeAccessLead(
+	status: OAuthAuthorizeStatus,
+	clientLabel: string,
+) {
+	switch (status) {
+		case 'ready':
+			return `${clientLabel} wants to access your kody account.`
+		case 'idle':
+		case 'loading':
+			return 'Loading authorization details…'
+		case 'error':
+			return null
+		default: {
+			const exhaustive: never = status
+			return exhaustive
+		}
+	}
+}
+
 function getSearchParams(handle: Handle) {
 	return new URLSearchParams(readRouterSearch(handle))
 }
@@ -137,9 +156,10 @@ function renderOauthAuthorizeGrant(input: {
 							gap: `${spacing.xs} ${spacing.sm}`,
 						})}
 					>
-						{input.scopes.map((scope) => (
-							<code key={scope}>{scope}</code>
-						))}
+						{input.scopes.flatMap((scope, index) => [
+							index > 0 ? ' ' : null,
+							<code key={scope}>{scope}</code>,
+						])}
 					</p>
 				</details>
 			) : null}
@@ -488,6 +508,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		const resetClientDisabled =
 			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
 		const formReady = status === 'ready' && !isSessionLoading
+		const accessLead = oauthAuthorizeAccessLead(status, clientLabel)
 		const authorizeLabel = submittingDecision
 			? 'Submitting...'
 			: isLoggedIn
@@ -503,9 +524,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				<header mix={css(headerCss)}>
 					<span mix={css(eyebrowCss)}>Kody secure connection</span>
 					<h1 mix={css(pageTitleCss)}>Authorize access</h1>
-					<p mix={css(pageDescriptionCss)}>
-						{clientLabel} wants to access your kody account.
-					</p>
+					{accessLead ? (
+						<p mix={css(pageDescriptionCss)}>{accessLead}</p>
+					) : null}
 				</header>
 				{status === 'ready'
 					? renderOauthAuthorizeGrant({ clientLabel, scopes })
@@ -561,9 +582,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							Deny
 						</button>
 					</div>
-				) : null}
-				{status === 'loading' ? (
-					<p mix={css(descriptionCss)}>Loading authorization details…</p>
 				) : null}
 				{message ? (
 					<p
