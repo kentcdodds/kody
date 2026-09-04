@@ -66,22 +66,19 @@ invoice line's `amount` is gross (before promotion-code discounts and exclusive
 tax), and Stripe prorates each line's discounts and tax into the credit note, so
 the previewed total — not the raw fraction — is what the customer gets back.
 The refund is capped at `amount_paid` minus every issued credit note already on
-the invoice (any issuer), because an upgrade invoice nets a positive new-plan
-line against a negative old-plan credit; a preview above the cap is scaled down
-(see [`entitlements.md`](./entitlements.md#account-deletion-refunds)). Nothing
-is refunded when no paid invoice covers the period (an unconverted trial, or
-only past periods), every amount floors to zero, the cap is zero or less, the
-preview totals zero (a fully discounted line), or Stripe reports the invoice's
-charge already refunded in full. Any other Stripe rejection — including a credit amount Stripe
-says exceeds what is creditable, which means Kody's math disagrees with the
-invoice — raises `AccountDeletionBillingError` like a failed cancel: the marker
-is released and the account is retained (like an inventory failure) so the
-customer is never billed for an account that no longer exists and never loses a
-refund silently. Retries are idempotent: already-canceled or missing
-subscriptions count as canceled, and an invoice that already carries an issued
-credit note with the `kody_account_deletion=1` marker (the memo alone never
-counts) is reported but not refunded again. Each newly issued refund is audited
-as `account` / `account_deletion_refund` with reason `${currency}:${amountMinor}`(hashed email only). The deletion result carries`stripeRefunds` (`subscriptionId`, `amountMinor`, `currency`, `invoiceId`, `creditNoteId`) so the delete route can show the amount to the user; after cancelling, the customer's credit notes are listed and every issued Kody-marked note is added, so a retry still reports refunds an earlier attempt issued for subscriptions that are no longer billable. Stripe customer deletion stays a best-effort warning after cleanup. The operation then performs idempotent out-of-band and OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the user row for retry. Only after cleanup succeeds does one atomic D1 batch delete or clear all user rows and the `users`
+the invoice (any issuer, paginated to the end), because an upgrade invoice nets
+a positive new-plan line against a negative old-plan credit; a preview above the
+cap is scaled down by `cap / previewedTotal` and previewed again, up to six
+times (see [`entitlements.md`](./entitlements.md#account-deletion-refunds)).
+Nothing is refunded when no paid invoice covers the period (an unconverted
+trial, or only past periods), every amount floors to zero, the cap is zero or
+less, the preview totals zero (a fully discounted line), or Stripe reports the
+invoice's charge already refunded in full. Two edge cases skip the refund
+without blocking the deletion, each audited as `account` /
+`account_deletion_refund_skipped` / `failure`: a scaled preview that still
+exceeds the cap after every pass (reason `unfittable:${currency}:${cap}`,
+logged as `account_deletion_refund_unfittable`), and an invoice whose credit
+note listing is too long to trust (reason `credit_notes_incomplete:${invoiceId}`, logged as `account_deletion_refund_credit_notes_incomplete`), since an under-counted listing would over-refund. Any other Stripe rejection — including a credit amount Stripe says exceeds what is creditable, which means Kody's math disagrees with the invoice — raises `AccountDeletionBillingError`like a failed cancel: the marker is released and the account is retained (like an inventory failure) so the customer is never billed for an account that no longer exists and never loses a refund silently. Retries are idempotent: already-canceled or missing subscriptions count as canceled, and an invoice that already carries an issued credit note with the`kody_account_deletion=1`marker (the memo alone never counts) is reported but not refunded again. Each newly issued refund is audited as`account`/`account_deletion_refund`with reason`${currency}:${amountMinor}`(hashed email only). The deletion result carries`stripeRefunds` (`subscriptionId`, `amountMinor`, `currency`, `invoiceId`, `creditNoteId`) so the delete route can show the amount to the user; after cancelling, the customer's credit notes are listed and every issued Kody-marked note is added, so a retry still reports refunds an earlier attempt issued for subscriptions that are no longer billable. Stripe customer deletion stays a best-effort warning after cleanup. The operation then performs idempotent out-of-band and OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the user row for retry. Only after cleanup succeeds does one atomic D1 batch delete or clear all user rows and the `users`
 row. Each step records deleted counts, updated counts for cleared references,
 and warnings so the HTTP response states what was removed and what needs
 operator attention. Re-running the operation is safe: missing rows, missing KV

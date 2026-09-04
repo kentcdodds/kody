@@ -10,6 +10,8 @@ import {
 	createBillingPortalSession,
 	createCheckoutSession,
 	createProratedRefundCreditNote,
+	creditNoteCapFitAttempts,
+	creditNoteListMaxPages,
 	deleteCustomer,
 	getCheckoutSession,
 	isAccountDeletionCreditNote,
@@ -324,6 +326,7 @@ test('stripe client reads recent paid invoices and credit notes for a subscripti
 		.mockResolvedValueOnce(
 			jsonResponse({
 				object: 'list',
+				has_more: false,
 				data: [
 					{
 						id: 'cn_kody',
@@ -341,7 +344,9 @@ test('stripe client reads recent paid invoices and credit notes for a subscripti
 				],
 			}),
 		)
-		.mockResolvedValueOnce(jsonResponse({ object: 'list', data: [] }))
+		.mockResolvedValueOnce(
+			jsonResponse({ object: 'list', has_more: false, data: [] }),
+		)
 	vi.stubGlobal('fetch', fetchMock)
 	try {
 		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
@@ -430,6 +435,127 @@ test('stripe client reads recent paid invoices and credit notes for a subscripti
 	}
 })
 
+function creditNoteFixture(id: string, invoice: string) {
+	return {
+		id,
+		object: 'credit_note',
+		invoice,
+		total: 100,
+		currency: 'usd',
+		status: 'issued',
+		metadata: {},
+	}
+}
+
+function creditNotePage(input: {
+	ids: Array<string>
+	invoice: string
+	hasMore: boolean
+}) {
+	return jsonResponse({
+		object: 'list',
+		has_more: input.hasMore,
+		data: input.ids.map((id) => creditNoteFixture(id, input.invoice)),
+	})
+}
+
+function queryOf(url: unknown) {
+	return Object.fromEntries(new URL(url as string).searchParams)
+}
+
+test('stripe client follows credit note pagination to the end and refuses an endless listing', async () => {
+	const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
+
+	// Per invoice: three pages, each requested from the previous page's last
+	// id, so an invoice with more than 100 credit notes is never under-counted
+	// (that under-count would over-refund).
+	let fetchMock = vi
+		.fn()
+		.mockResolvedValueOnce(
+			creditNotePage({ ids: ['cn_1', 'cn_2'], invoice: 'in_1', hasMore: true }),
+		)
+		.mockResolvedValueOnce(
+			creditNotePage({ ids: ['cn_3', 'cn_4'], invoice: 'in_1', hasMore: true }),
+		)
+		.mockResolvedValueOnce(
+			creditNotePage({ ids: ['cn_5'], invoice: 'in_1', hasMore: false }),
+		)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		const forInvoice = await listCreditNotesForInvoice(env, 'in_1')
+		expect(forInvoice.map((creditNote) => creditNote.id)).toEqual([
+			'cn_1',
+			'cn_2',
+			'cn_3',
+			'cn_4',
+			'cn_5',
+		])
+		expect(fetchMock.mock.calls.map(([url]) => queryOf(url))).toEqual([
+			{ invoice: 'in_1', limit: '100' },
+			{ invoice: 'in_1', limit: '100', starting_after: 'cn_2' },
+			{ invoice: 'in_1', limit: '100', starting_after: 'cn_4' },
+		])
+
+		// Per customer: same cursor walk, so the deletion report includes every
+		// earlier Kody note, not just the first page.
+		fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				creditNotePage({ ids: ['cn_a'], invoice: 'in_a', hasMore: true }),
+			)
+			.mockResolvedValueOnce(
+				creditNotePage({ ids: ['cn_b'], invoice: 'in_b', hasMore: false }),
+			)
+		vi.stubGlobal('fetch', fetchMock)
+		const forCustomer = await listCreditNotesForCustomer(env, 'cus_1')
+		expect(forCustomer.map((creditNote) => creditNote.id)).toEqual([
+			'cn_a',
+			'cn_b',
+		])
+		expect(fetchMock.mock.calls.map(([url]) => queryOf(url))).toEqual([
+			{ customer: 'cus_1', limit: '100' },
+			{ customer: 'cus_1', limit: '100', starting_after: 'cn_a' },
+		])
+
+		// A listing still reporting has_more after the page cap is not trusted
+		// as complete: the caller learns it is incomplete rather than getting a
+		// partial sum it would treat as the whole.
+		fetchMock = vi.fn(async (url: string) => {
+			const page = Number(queryOf(url).starting_after?.slice(3) ?? 0) + 1
+			return creditNotePage({
+				ids: [`cn_${page}`],
+				invoice: 'in_endless',
+				hasMore: true,
+			})
+		})
+		vi.stubGlobal('fetch', fetchMock)
+		await expect(
+			listCreditNotesForInvoice(env, 'in_endless'),
+		).rejects.toMatchObject({
+			name: 'StripeCreditNoteListIncompleteError',
+			status: 502,
+			pages: creditNoteListMaxPages,
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(creditNoteListMaxPages)
+		expect(queryOf(fetchMock.mock.calls.at(-1)![0])).toEqual({
+			invoice: 'in_endless',
+			limit: '100',
+			starting_after: `cn_${creditNoteListMaxPages - 1}`,
+		})
+
+		// A list page without has_more is not a Stripe list.
+		fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ object: 'list', data: [] }))
+		vi.stubGlobal('fetch', fetchMock)
+		await expect(
+			listCreditNotesForCustomer(env, 'cus_1'),
+		).rejects.toMatchObject({ name: 'StripeApiError', status: 502 })
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
 test('stripe client previews then issues a prorated credit note that refunds the previewed total', async () => {
 	const fetchMock = vi
 		.fn()
@@ -468,6 +594,7 @@ test('stripe client previews then issues a prorated credit note that refunds the
 			reason: 'order_change',
 		})
 		expect(creditNote).toEqual({
+			outcome: 'issued',
 			id: 'cn_created',
 			total: 654,
 			currency: 'usd',
@@ -529,7 +656,7 @@ test('stripe client previews then issues a prorated credit note that refunds the
 				maxRefundMinor: 1200,
 				reason: 'order_change',
 			}),
-		).resolves.toBeNull()
+		).resolves.toEqual({ outcome: 'nothing_to_refund' })
 		expect(fetchMock).toHaveBeenCalledOnce()
 
 		// Guard rails that never reach Stripe.
@@ -683,7 +810,12 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 				maxRefundMinor: 1700,
 				reason: 'order_change',
 			}),
-		).resolves.toEqual({ id: 'cn_capped', total: 1699, currency: 'usd' })
+		).resolves.toEqual({
+			outcome: 'issued',
+			id: 'cn_capped',
+			total: 1699,
+			currency: 'usd',
+		})
 		expect(fetchMock).toHaveBeenCalledTimes(3)
 		expect(lineAmountsOf(fetchMock.mock.calls[0]![0])).toEqual([2000, 610])
 		// floor(2000 * 1700 / 2610) = 1302, floor(610 * 1700 / 2610) = 397
@@ -699,12 +831,15 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 			refund_amount: '1699',
 		})
 
-		// Rounding in Stripe's own tax math can leave the scaled preview a hair
-		// above the cap; the largest line absorbs the difference.
+		// Discount and tax rounding can leave the scaled preview a hair above
+		// the cap; the lines are scaled by the new ratio (gross amounts against
+		// the net, tax-inclusive preview only ever meet as a ratio) and
+		// previewed again until the total fits.
 		fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(previewTotalling(2610))
 			.mockResolvedValueOnce(previewTotalling(1702))
+			.mockResolvedValueOnce(previewTotalling(1701))
 			.mockResolvedValueOnce(previewTotalling(1700))
 			.mockResolvedValueOnce(issued(1700))
 		vi.stubGlobal('fetch', fetchMock)
@@ -719,15 +854,28 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 				maxRefundMinor: 1700,
 				reason: 'order_change',
 			}),
-		).resolves.toEqual({ id: 'cn_capped', total: 1700, currency: 'usd' })
-		expect(lineAmountsOf(fetchMock.mock.calls[2]![0])).toEqual([1300, 397])
+		).resolves.toEqual({
+			outcome: 'issued',
+			id: 'cn_capped',
+			total: 1700,
+			currency: 'usd',
+		})
+		expect(fetchMock).toHaveBeenCalledTimes(5)
+		// floor(1302 * 1700 / 1702) = 1300, floor(397 * 1700 / 1702) = 396
+		expect(lineAmountsOf(fetchMock.mock.calls[2]![0])).toEqual([1300, 396])
+		// floor(1300 * 1700 / 1701) = 1299, floor(396 * 1700 / 1701) = 395
+		expect(lineAmountsOf(fetchMock.mock.calls[3]![0])).toEqual([1299, 395])
 		expect(
 			Object.fromEntries(
 				new URLSearchParams(
-					(fetchMock.mock.calls[3]![1] as RequestInit).body as string,
+					(fetchMock.mock.calls[4]![1] as RequestInit).body as string,
 				),
 			),
-		).toMatchObject({ refund_amount: '1700' })
+		).toMatchObject({
+			'lines[0][amount]': '1299',
+			'lines[1][amount]': '395',
+			refund_amount: '1700',
+		})
 
 		// A cap so small every line floors to zero means nothing to refund.
 		fetchMock = vi.fn().mockResolvedValueOnce(previewTotalling(2610))
@@ -743,15 +891,14 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 				maxRefundMinor: 1,
 				reason: 'order_change',
 			}),
-		).resolves.toBeNull()
+		).resolves.toEqual({ outcome: 'nothing_to_refund' })
 		expect(fetchMock).toHaveBeenCalledOnce()
 
-		// If even the third preview is above the cap the note is not issued.
-		fetchMock = vi
-			.fn()
-			.mockResolvedValueOnce(previewTotalling(2610))
-			.mockResolvedValueOnce(previewTotalling(1710))
-			.mockResolvedValueOnce(previewTotalling(1705))
+		// A preview that never drops under the cap however far the lines shrink
+		// stops after the attempt budget and reports unfittable instead of
+		// throwing or issuing a note above the cap; the caller decides what a
+		// missing refund means.
+		fetchMock = vi.fn(async () => previewTotalling(1705))
 		vi.stubGlobal('fetch', fetchMock)
 		await expect(
 			createProratedRefundCreditNote(env, {
@@ -761,12 +908,17 @@ test('stripe client scales a credit note down to the refund cap before issuing i
 				maxRefundMinor: 1700,
 				reason: 'order_change',
 			}),
-		).rejects.toMatchObject({
-			name: 'StripeApiError',
-			status: 502,
-			message: expect.stringContaining('previewed 1705, cap 1700'),
-		})
-		expect(fetchMock).toHaveBeenCalledTimes(3)
+		).resolves.toEqual({ outcome: 'unfittable', lastPreviewMinor: 1705 })
+		expect(fetchMock).toHaveBeenCalledTimes(creditNoteCapFitAttempts + 1)
+		const attemptedAmounts = fetchMock.mock.calls.map(
+			([url]) => lineAmountsOf(url)[0],
+		)
+		// Every pass shrinks the line: floor(2610 * 1700 / 1705) = 2602, ...
+		expect(attemptedAmounts).toEqual([2610, 2602, 2594, 2586, 2578, 2570, 2562])
+		for (const [url, init] of fetchMock.mock.calls) {
+			expect(new URL(url as string).pathname).toBe('/v1/credit_notes/preview')
+			expect(init).toMatchObject({ method: 'GET' })
+		}
 
 		// A rejected create names the invoice and the amounts involved (never
 		// Stripe's message, which can embed other ids) so it is diagnosable.

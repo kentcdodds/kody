@@ -159,6 +159,7 @@ const creditNoteSchema = object({
 
 const creditNoteListSchema = object({
 	data: array(creditNoteSchema),
+	has_more: boolean(),
 })
 
 // A preview is a credit note that was never persisted, so nothing about its
@@ -533,22 +534,66 @@ export async function listPaidInvoicesForSubscription(
 	return parsed.value.data
 }
 
+const creditNoteListPageSize = 100
+/**
+ * 2,000 credit notes on one invoice or customer is far beyond anything Kody
+ * issues; past this the listing is treated as unknowable rather than trusted
+ * as complete, because an under-count would over-refund.
+ */
+export const creditNoteListMaxPages = 20
+
+/**
+ * A credit note listing that was still reporting `has_more` after
+ * {@link creditNoteListMaxPages} pages. Callers that use the listing to bound
+ * a refund must treat the bound as unknown (nothing creditable), never as the
+ * partial sum.
+ */
+export class StripeCreditNoteListIncompleteError extends StripeApiError {
+	readonly pages: number
+
+	constructor(pages: number) {
+		super(
+			`Stripe credit note listing still had more results after ${pages} pages.`,
+			{ status: 502 },
+		)
+		this.name = 'StripeCreditNoteListIncompleteError'
+		this.pages = pages
+	}
+}
+
+/**
+ * Follows `has_more` / `starting_after` to the end of the listing so a
+ * customer or invoice with more than one page of credit notes is never
+ * under-counted.
+ */
 async function listCreditNotes(
 	env: StripeEnv,
 	query: Record<string, string>,
 ): Promise<Array<StripeCreditNote>> {
-	const body = await stripeRequest(env, {
-		method: 'GET',
-		path: '/v1/credit_notes',
-		query: { ...query, limit: '100' },
-	})
-	const parsed = parseSafe(creditNoteListSchema, body)
-	if (!parsed.success) {
-		throw new StripeApiError('Unexpected Stripe credit note list shape.', {
-			status: 502,
+	const creditNotes: Array<StripeCreditNote> = []
+	let startingAfter: string | null = null
+	for (let page = 1; page <= creditNoteListMaxPages; page++) {
+		const body = await stripeRequest(env, {
+			method: 'GET',
+			path: '/v1/credit_notes',
+			query: {
+				...query,
+				limit: String(creditNoteListPageSize),
+				...(startingAfter ? { starting_after: startingAfter } : {}),
+			},
 		})
+		const parsed = parseSafe(creditNoteListSchema, body)
+		if (!parsed.success) {
+			throw new StripeApiError('Unexpected Stripe credit note list shape.', {
+				status: 502,
+			})
+		}
+		creditNotes.push(...parsed.value.data)
+		const last = parsed.value.data.at(-1)
+		if (!parsed.value.has_more || !last) return creditNotes
+		startingAfter = last.id
 	}
-	return parsed.value.data
+	throw new StripeCreditNoteListIncompleteError(creditNoteListMaxPages)
 }
 
 /**
@@ -621,7 +666,8 @@ async function previewCreditNoteTotal(
 }
 
 // Integer arithmetic on purpose: `amount * (cap / total)` can land a hair
-// under an exact integer and floor one unit too low.
+// under an exact integer and floor one unit too low. With cap < total every
+// positive line strictly shrinks, so repeated scaling always makes progress.
 function scaleCreditNoteLines(
 	lines: ReadonlyArray<CreditNoteLineInput>,
 	cap: number,
@@ -635,20 +681,26 @@ function scaleCreditNoteLines(
 		.filter((line) => line.amount > 0)
 }
 
-function reduceLargestCreditNoteLine(
-	lines: ReadonlyArray<CreditNoteLineInput>,
-	by: number,
-) {
-	let largestIndex = 0
-	lines.forEach((line, index) => {
-		if (line.amount > lines[largestIndex]!.amount) largestIndex = index
-	})
-	return lines
-		.map((line, index) =>
-			index === largestIndex ? { ...line, amount: line.amount - by } : line,
-		)
-		.filter((line) => line.amount > 0)
-}
+/**
+ * How many times the lines are scaled down and re-previewed to get under the
+ * refund cap. One pass lands within rounding of the cap; a second absorbs the
+ * rounding. The rest is headroom for tax and discount rounding on many lines.
+ */
+export const creditNoteCapFitAttempts = 6
+
+export type ProratedRefundCreditNoteOutcome =
+	| { outcome: 'issued'; id: string; total: number; currency: string }
+	/**
+	 * The preview totalled zero (for example a 100% discounted line) or every
+	 * line scaled away under the cap; no note was created.
+	 */
+	| { outcome: 'nothing_to_refund' }
+	/**
+	 * Every scaled preview still exceeded the cap after
+	 * {@link creditNoteCapFitAttempts} passes; no note was created.
+	 * `lastPreviewMinor` is the final previewed total.
+	 */
+	| { outcome: 'unfittable'; lastPreviewMinor: number }
 
 /**
  * Issues a credit note that refunds part of one or more invoice line items to
@@ -661,18 +713,16 @@ function reduceLargestCreditNoteLine(
  * prorates that line's discounts and tax into the credit note and requires
  * the refund to equal the resulting total, which is only known after Stripe
  * computes it, so the note is previewed first and `refund_amount` is set to
- * that total. The returned `total` is what the customer actually gets back.
+ * that total. The issued `total` is what the customer actually gets back.
  *
  * `maxRefundMinor` is the hard ceiling (what the invoice was paid minus what
- * was already credited). When the preview exceeds it, every line is scaled by
- * `maxRefundMinor / total` (floored) and previewed again; if rounding still
- * leaves the total above the cap, the largest line is reduced by the
- * difference and previewed once more. The note is never issued for more than
- * the cap.
- *
- * Returns null when the preview totals zero (for example a 100% discounted
- * line) or every line scales away: there is nothing to refund and no note is
- * created.
+ * was already credited). While the preview exceeds it, every line is scaled by
+ * `maxRefundMinor / previewedTotal` (floored, so the gross lines and the
+ * net-of-discount, tax-inclusive preview are only ever compared as a ratio)
+ * and previewed again, up to {@link creditNoteCapFitAttempts} times. The note
+ * is never issued for more than the cap; if the preview still will not fit the
+ * outcome is `unfittable` and nothing is created, so the caller decides
+ * whether that blocks anything.
  */
 export async function createProratedRefundCreditNote(
 	env: StripeEnv,
@@ -687,7 +737,7 @@ export async function createProratedRefundCreditNote(
 			| 'order_change'
 			| 'product_unsatisfactory'
 	},
-): Promise<{ id: string; total: number; currency: string } | null> {
+): Promise<ProratedRefundCreditNoteOutcome> {
 	const invoiceId = input.invoiceId.trim()
 	const subscriptionId = input.subscriptionId.trim()
 	if (!invoiceId) {
@@ -730,27 +780,19 @@ export async function createProratedRefundCreditNote(
 
 	let linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
 	let total = await previewCreditNoteTotal(env, linesForm)
-	if (total <= 0) return null
-	if (total > cap) {
+	if (total <= 0) return { outcome: 'nothing_to_refund' }
+	for (
+		let attempt = 0;
+		total > cap && attempt < creditNoteCapFitAttempts;
+		attempt++
+	) {
 		lines = scaleCreditNoteLines(lines, cap, total)
-		if (lines.length === 0) return null
+		if (lines.length === 0) return { outcome: 'nothing_to_refund' }
 		linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
 		total = await previewCreditNoteTotal(env, linesForm)
-		if (total <= 0) return null
+		if (total <= 0) return { outcome: 'nothing_to_refund' }
 	}
-	if (total > cap) {
-		lines = reduceLargestCreditNoteLine(lines, total - cap)
-		if (lines.length === 0) return null
-		linesForm = buildCreditNoteLinesForm({ invoiceId, lines })
-		total = await previewCreditNoteTotal(env, linesForm)
-		if (total <= 0) return null
-	}
-	if (total > cap) {
-		throw new StripeApiError(
-			`Stripe credit note for ${invoiceId} still previews above the refund cap after adjustment (previewed ${total}, cap ${cap}).`,
-			{ status: 502 },
-		)
-	}
+	if (total > cap) return { outcome: 'unfittable', lastPreviewMinor: total }
 
 	let body: unknown
 	try {
@@ -790,6 +832,7 @@ export async function createProratedRefundCreditNote(
 		})
 	}
 	return {
+		outcome: 'issued',
 		id: parsed.value.id,
 		total: parsed.value.total,
 		currency: parsed.value.currency,

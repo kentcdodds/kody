@@ -356,6 +356,7 @@ test('account deletion refunds unused time with a credit note before canceling e
 			},
 		)
 		stripe.createProratedRefundCreditNote.mockResolvedValue({
+			outcome: 'issued',
 			id: 'cn_active',
 			total: 600,
 			currency: 'usd',
@@ -459,6 +460,7 @@ test('discounts and tax are settled by the credit note preview, not by the gross
 		// Stripe prorates the discount into the credit note: crediting half the
 		// gross line ($6.00) nets $3.00 back to the customer.
 		stripe.createProratedRefundCreditNote.mockResolvedValue({
+			outcome: 'issued',
 			id: 'cn_promo',
 			total: 300,
 			currency: 'usd',
@@ -544,6 +546,7 @@ test('a $0 proration invoice on top does not hide the paid invoice that covers t
 			paidInvoice({ id: 'in_current', amountPaid: 1200 }),
 		])
 		stripe.createProratedRefundCreditNote.mockResolvedValue({
+			outcome: 'issued',
 			id: 'cn_current',
 			total: 600,
 			currency: 'usd',
@@ -646,6 +649,7 @@ test('every recurring line covering the period is credited on one credit note', 
 			}),
 		])
 		stripe.createProratedRefundCreditNote.mockResolvedValue({
+			outcome: 'issued',
 			id: 'cn_multi',
 			total: 750,
 			currency: 'usd',
@@ -690,17 +694,30 @@ test('every recurring line covering the period is credited on one credit note', 
  * the requested line amounts and a create echoes `refund_amount`. Lets the
  * real `createProratedRefundCreditNote` run against the cap logic.
  */
+/** An undiscounted, untaxed invoice: the credit note total is the gross sum. */
+function previewGrossSum(lineAmounts: Array<number>) {
+	return lineAmounts.reduce((sum, amount) => sum + amount, 0)
+}
+
+/**
+ * Stubs the credit note preview and create endpoints. `previewTotal` stands in
+ * for Stripe's prorating of each line's discounts and tax into the note; the
+ * stub is swapped per case through the returned setter.
+ */
 function stubStripeCreditNoteEndpoints() {
 	const previews: Array<Record<string, string>> = []
 	const creates: Array<Record<string, string>> = []
+	let previewTotal = previewGrossSum
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		const parsed = new URL(url)
 		if (parsed.pathname === '/v1/credit_notes/preview') {
 			const query = Object.fromEntries(parsed.searchParams)
 			previews.push(query)
-			const total = Object.entries(query)
-				.filter(([key]) => /^lines\[\d+\]\[amount\]$/.test(key))
-				.reduce((sum, [, value]) => sum + Number(value), 0)
+			const total = previewTotal(
+				Object.entries(query)
+					.filter(([key]) => /^lines\[\d+\]\[amount\]$/.test(key))
+					.map(([, value]) => Number(value)),
+			)
 			return new Response(
 				JSON.stringify({ object: 'credit_note', total, currency: 'usd' }),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
@@ -728,7 +745,26 @@ function stubStripeCreditNoteEndpoints() {
 		throw new Error(`Unexpected Stripe request: ${init?.method} ${url}`)
 	})
 	vi.stubGlobal('fetch', fetchMock)
-	return { previews, creates }
+	return {
+		previews,
+		creates,
+		setPreviewTotal(next: (lineAmounts: Array<number>) => number) {
+			previewTotal = next
+		},
+	}
+}
+
+/**
+ * A 50% promotion code plus 10% exclusive tax, rounded the way per-line
+ * prorating can round: the discount down, the tax up. Scaling the gross line
+ * by `cap / total` then lands the next preview a unit above the cap, which is
+ * what the cap-fitting loop has to absorb.
+ */
+function previewHalfOffPlusTax(lineAmounts: Array<number>) {
+	return lineAmounts.reduce((sum, amount) => {
+		const net = amount - Math.floor(amount * 0.5)
+		return sum + net + Math.ceil(net * 0.1)
+	}, 0)
 }
 
 function upgradeInvoice() {
@@ -760,8 +796,10 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 			nowMs: number
 			invoice: ReturnType<typeof paidInvoice>
 			creditNotes: Array<ReturnType<typeof kodyCreditNote>>
-			expectedPreviews: Array<Record<string, string>>
-			expectedRefund: number | null
+			previewTotal: (lineAmounts: Array<number>) => number
+			/** The `lines[0][amount]` of every preview, in order. */
+			expectedPreviews: Array<number>
+			expectedCreate: { lineAmount: number; refundAmount: number } | null
 		}> = [
 			{
 				// (a) floor(2900 * 15d / 30d) = 1450 fits under the 1700 net.
@@ -770,8 +808,9 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 				nowMs: refundPeriodMidpointMs,
 				invoice: upgradeInvoice(),
 				creditNotes: [],
-				expectedPreviews: [{ 'lines[0][amount]': '1450' }],
-				expectedRefund: 1450,
+				previewTotal: previewGrossSum,
+				expectedPreviews: [1450],
+				expectedCreate: { lineAmount: 1450, refundAmount: 1450 },
 			},
 			{
 				// (b) floor(2900 * 27d / 30d) = 2610 exceeds the 1700 net, so the
@@ -781,11 +820,9 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 				nowMs: (refundPeriodStart + thirtyDaysSeconds * 0.1) * 1000,
 				invoice: upgradeInvoice(),
 				creditNotes: [],
-				expectedPreviews: [
-					{ 'lines[0][amount]': '2610' },
-					{ 'lines[0][amount]': '1700' },
-				],
-				expectedRefund: 1700,
+				previewTotal: previewGrossSum,
+				expectedPreviews: [2610, 1700],
+				expectedCreate: { lineAmount: 1700, refundAmount: 1700 },
 			},
 			{
 				// (c) Support already credited 1000 of the 1200 paid, by any
@@ -802,11 +839,9 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 						marker: false,
 					}),
 				],
-				expectedPreviews: [
-					{ 'lines[0][amount]': '600' },
-					{ 'lines[0][amount]': '200' },
-				],
-				expectedRefund: 200,
+				previewTotal: previewGrossSum,
+				expectedPreviews: [600, 200],
+				expectedCreate: { lineAmount: 200, refundAmount: 200 },
 			},
 			{
 				// (d) Earlier notes already consumed everything paid; a voided note
@@ -836,8 +871,43 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 						marker: false,
 					}),
 				],
+				previewTotal: previewGrossSum,
 				expectedPreviews: [],
-				expectedRefund: null,
+				expectedCreate: null,
+			},
+			{
+				// (e) A 50%-off promotion code with 10% tax: the 2900 line was paid
+				// as (2900 - 1450) * 1.1 = 1595, and support already credited 945,
+				// so the cap is 650. The half-period line (1450) previews at 798;
+				// scaling it by 650 / 798 gives 1181, whose preview rounds to 651 —
+				// one over the cap — so the loop scales by 650 / 651 once more to
+				// 1179, which previews at 649 and is issued. The gross line and the
+				// net, tax-inclusive preview only ever meet as a ratio.
+				name: 'discounted and taxed line, first trim overshoots',
+				stableUserId: 'user-cap-promo-tax',
+				nowMs: refundPeriodMidpointMs,
+				invoice: paidInvoice({
+					id: 'in_promo_tax',
+					amountPaid: 1595,
+					lines: [
+						{
+							id: 'il_pro',
+							amount: 2900,
+							discount_amounts: [{ amount: 1450 }],
+						},
+					],
+				}),
+				creditNotes: [
+					kodyCreditNote({
+						id: 'cn_support_promo',
+						invoice: 'in_promo_tax',
+						total: 945,
+						marker: false,
+					}),
+				],
+				previewTotal: previewHalfOffPlusTax,
+				expectedPreviews: [1450, 1181, 1179],
+				expectedCreate: { lineAmount: 1179, refundAmount: 649 },
 			},
 		]
 		for (const testCase of cases) {
@@ -847,6 +917,7 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 			])
 			stripe.listCreditNotesForInvoice.mockResolvedValue(testCase.creditNotes)
 			stripe.cancelSubscription.mockClear()
+			stripeHttp.setPreviewTotal(testCase.previewTotal)
 			stripeHttp.previews.length = 0
 			stripeHttp.creates.length = 0
 			const { db, rows } = createStripeUserDb({
@@ -864,21 +935,30 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 			})
 
 			expect(
-				stripeHttp.previews.map((preview) => ({
-					'lines[0][amount]': preview['lines[0][amount]']!,
-				})),
+				stripeHttp.previews.map((preview) =>
+					Number(preview['lines[0][amount]']),
+				),
 				testCase.name,
 			).toEqual(testCase.expectedPreviews)
-			if (testCase.expectedRefund === null) {
+			if (testCase.expectedCreate === null) {
 				expect(stripeHttp.creates, testCase.name).toEqual([])
 				expect(result.stripeRefunds, testCase.name).toEqual([])
 			} else {
+				const maxRefundMinor =
+					testCase.invoice.amount_paid -
+					testCase.creditNotes
+						.filter((creditNote) => creditNote.status === 'issued')
+						.reduce((sum, creditNote) => sum + creditNote.total, 0)
+				expect(
+					testCase.expectedCreate.refundAmount,
+					testCase.name,
+				).toBeLessThanOrEqual(maxRefundMinor)
 				expect(stripeHttp.creates, testCase.name).toEqual([
 					expect.objectContaining({
 						invoice: testCase.invoice.id,
 						'lines[0][invoice_line_item]': testCase.invoice.lines.data[0]!.id,
-						'lines[0][amount]': String(testCase.expectedRefund),
-						refund_amount: String(testCase.expectedRefund),
+						'lines[0][amount]': String(testCase.expectedCreate.lineAmount),
+						refund_amount: String(testCase.expectedCreate.refundAmount),
 					}),
 				])
 				// Only the positive line is ever credited.
@@ -888,7 +968,7 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 				expect(result.stripeRefunds, testCase.name).toEqual([
 					expect.objectContaining({
 						invoiceId: testCase.invoice.id,
-						amountMinor: testCase.expectedRefund,
+						amountMinor: testCase.expectedCreate.refundAmount,
 					}),
 				])
 			}
@@ -903,6 +983,160 @@ test('an invoice never refunds more than it was paid net of earlier credit notes
 		vi.useRealTimers()
 		vi.unstubAllGlobals()
 		stripe.restore()
+	}
+})
+
+test('a refund that cannot be bounded is skipped with an audit row and the deletion still completes', async () => {
+	const stripe = spyOnStripeBillingClient()
+	stripe.createProratedRefundCreditNote.mockRestore()
+	const stripeHttp = stubStripeCreditNoteEndpoints()
+	consoleWarn.mockImplementation(() => {})
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		// 90% of the period left on the upgrade invoice: 2610 against a 1700
+		// cap. A preview that stays above the cap however far the line shrinks
+		// (Stripe's minimum, a rounding floor, a stub) must not block deletion:
+		// a missing refund on an edge is a support ticket, a blocked deletion is
+		// a broken promise in the other direction.
+		vi.setSystemTime(
+			new Date((refundPeriodStart + thirtyDaysSeconds * 0.1) * 1000),
+		)
+		stripe.listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_unfittable', 'active'),
+		])
+		stripe.listPaidInvoicesForSubscription.mockResolvedValue([upgradeInvoice()])
+		stripeHttp.setPreviewTotal(() => 1701)
+		const { db, rows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-refund-unfittable',
+			customerId: 'cus_unfittable',
+		})
+
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db, {
+				STRIPE_SECRET_KEY: 'sk_test_secret',
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-refund-unfittable',
+		})
+
+		// Every pass scales the gross line by cap / preview, then gives up
+		// after the attempt budget without issuing anything.
+		expect(
+			stripeHttp.previews.map((preview) => Number(preview['lines[0][amount]'])),
+		).toEqual([2610, 2608, 2606, 2604, 2602, 2600, 2598])
+		expect(stripeHttp.previews).toHaveLength(
+			stripeClient.creditNoteCapFitAttempts + 1,
+		)
+		expect(stripeHttp.creates).toEqual([])
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'account_deletion_refund_unfittable',
+			{
+				invoiceId: 'in_upgrade',
+				amountPaid: 1700,
+				maxRefundMinor: 1700,
+				lastPreviewMinor: 1701,
+			},
+		)
+		expect(auditEventSummaries()).toEqual([
+			'account_deletion_refund_skipped:failure',
+		])
+		expect(logAuditEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: 'account',
+				action: 'account_deletion_refund_skipped',
+				result: 'failure',
+				email: 'user-refund-unfittable@example.com',
+				reason: 'unfittable:usd:1700',
+			}),
+		)
+		// Nothing refunded for that invoice; the cancel and the deletion went
+		// ahead.
+		expect(result.stripeRefunds).toEqual([])
+		expect(stripe.cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_unfittable',
+		)
+		expect(stripe.deleteCustomer).toHaveBeenCalledWith(
+			expect.any(Object),
+			'cus_unfittable',
+		)
+		expect(result.warnings).toEqual([])
+		expect(rows.users).toEqual([])
+		expect(rows.mcp_memories).toEqual([])
+	} finally {
+		vi.useRealTimers()
+		vi.unstubAllGlobals()
+		stripe.restore()
+		consoleWarn.mockReset()
+	}
+})
+
+test('an invoice whose credit notes cannot be listed completely is not refunded and the deletion still completes', async () => {
+	const stripe = spyOnStripeBillingClient()
+	consoleWarn.mockImplementation(() => {})
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		vi.setSystemTime(new Date(refundPeriodMidpointMs))
+		stripe.listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_endless', 'active'),
+		])
+		stripe.listPaidInvoicesForSubscription.mockResolvedValue([
+			paidInvoice({ id: 'in_endless', amountPaid: 1200 }),
+		])
+		// The cap is amount_paid minus what was already credited; when the
+		// listing is too long to trust, the remainder is unknown and the only
+		// safe cap is zero.
+		stripe.listCreditNotesForInvoice.mockRejectedValue(
+			new stripeClient.StripeCreditNoteListIncompleteError(
+				stripeClient.creditNoteListMaxPages,
+			),
+		)
+		const { db, rows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-credit-notes-endless',
+			customerId: 'cus_endless',
+		})
+
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db),
+			dbUserId: 1,
+			mcpUserId: 'user-credit-notes-endless',
+		})
+
+		expect(stripe.createProratedRefundCreditNote).not.toHaveBeenCalled()
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'account_deletion_refund_credit_notes_incomplete',
+			{
+				subscriptionId: 'sub_endless',
+				invoiceId: 'in_endless',
+				amountPaid: 1200,
+				pages: stripeClient.creditNoteListMaxPages,
+			},
+		)
+		expect(auditEventSummaries()).toEqual([
+			'account_deletion_refund_skipped:failure',
+		])
+		expect(logAuditEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: 'account',
+				action: 'account_deletion_refund_skipped',
+				result: 'failure',
+				email: 'user-credit-notes-endless@example.com',
+				reason: 'credit_notes_incomplete:in_endless',
+			}),
+		)
+		expect(result.stripeRefunds).toEqual([])
+		expect(stripe.cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_endless',
+		)
+		expect(result.warnings).toEqual([])
+		expect(rows.users).toEqual([])
+	} finally {
+		vi.useRealTimers()
+		stripe.restore()
+		consoleWarn.mockReset()
 	}
 })
 
@@ -1051,7 +1285,9 @@ test('an invoice with nothing left to refund is canceled without a refund', asyn
 				name: 'credit note previews to zero',
 				stableUserId: 'user-refund-zero',
 				arrange: () => {
-					stripe.createProratedRefundCreditNote.mockResolvedValue(null)
+					stripe.createProratedRefundCreditNote.mockResolvedValue({
+						outcome: 'nothing_to_refund',
+					})
 				},
 			},
 			{
@@ -1170,6 +1406,7 @@ test('a retried deletion reuses its earlier credit note and reports refunds from
 					: [],
 		)
 		stripe.createProratedRefundCreditNote.mockResolvedValue({
+			outcome: 'issued',
 			id: 'cn_new',
 			total: 600,
 			currency: 'usd',

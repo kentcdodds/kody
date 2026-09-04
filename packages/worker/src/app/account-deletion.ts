@@ -15,6 +15,7 @@ import {
 	listCreditNotesForInvoice,
 	listPaidInvoicesForSubscription,
 	listSubscriptions,
+	StripeCreditNoteListIncompleteError,
 	type StripeCreditNote,
 	type StripeInvoiceLineItem,
 	type StripePaidInvoice,
@@ -619,18 +620,43 @@ function computeMaxRefundMinor(
 }
 
 /**
+ * Records that an invoice's unused time was deliberately not refunded because
+ * the refund could not be bounded safely. The cancel still proceeds: a missing
+ * refund on an edge case is a support ticket, a blocked deletion is a broken
+ * promise. `reason` carries only ids and amounts, never PII.
+ */
+async function auditSkippedRefund(input: {
+	env: Env
+	email: string | null
+	reason: string
+}) {
+	await logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
+		category: 'account',
+		action: 'account_deletion_refund_skipped',
+		result: 'failure',
+		email: input.email ?? undefined,
+		reason: input.reason,
+	})
+}
+
+/**
  * Refunds the unused remainder of the current billing period for one
  * subscription that is about to be canceled. Returns null when there is
  * nothing to refund (no paid invoice covering the period, only free or
  * finished lines, every amount floors to zero, earlier credit notes already
  * consumed what was paid, a credit note that previews to zero, or Stripe
- * reporting the invoice's charge already refunded in full). Returns the
- * earlier Kody credit note instead of issuing another when a previous deletion
- * attempt already refunded this invoice.
+ * reporting the invoice's charge already refunded in full), and also — with
+ * an `account_deletion_refund_skipped` audit row — when the refund cannot be
+ * bounded (the credit note listing is too long to trust, or the scaled
+ * preview never fits under the cap). Returns the earlier Kody credit note
+ * instead of issuing another when a previous deletion attempt already
+ * refunded this invoice.
  */
 async function refundUnusedSubscriptionTime(input: {
 	env: Env
 	subscriptionId: string
+	email: string | null
 	nowSeconds: number
 }): Promise<{ refund: AccountDeletionStripeRefund; created: boolean } | null> {
 	const invoices = await listPaidInvoicesForSubscription(
@@ -652,10 +678,29 @@ async function refundUnusedSubscriptionTime(input: {
 		.filter((line) => line.amount > 0)
 	if (lines.length === 0) return null
 
-	const creditNotes = await listCreditNotesForInvoice(
-		input.env,
-		selected.invoice.id,
-	)
+	let creditNotes: Array<StripeCreditNote>
+	try {
+		creditNotes = await listCreditNotesForInvoice(
+			input.env,
+			selected.invoice.id,
+		)
+	} catch (error) {
+		if (!(error instanceof StripeCreditNoteListIncompleteError)) throw error
+		// The cap is amount_paid minus what was already credited; with an
+		// unknown remainder the only safe cap is zero.
+		console.warn('account_deletion_refund_credit_notes_incomplete', {
+			subscriptionId: input.subscriptionId,
+			invoiceId: selected.invoice.id,
+			amountPaid: selected.invoice.amount_paid,
+			pages: error.pages,
+		})
+		await auditSkippedRefund({
+			env: input.env,
+			email: input.email,
+			reason: `credit_notes_incomplete:${selected.invoice.id}`,
+		})
+		return null
+	}
 	const existing = creditNotes.find(isAccountDeletionCreditNote)
 	if (existing) {
 		return {
@@ -681,21 +726,42 @@ async function refundUnusedSubscriptionTime(input: {
 			maxRefundMinor,
 			reason: 'order_change',
 		})
-		if (!creditNote) {
-			console.info('account_deletion_refund_previewed_zero', {
-				subscriptionId: input.subscriptionId,
-			})
-			return null
-		}
-		return {
-			created: true,
-			refund: {
-				subscriptionId: input.subscriptionId,
-				amountMinor: creditNote.total,
-				currency: creditNote.currency,
-				invoiceId: selected.invoice.id,
-				creditNoteId: creditNote.id,
-			},
+		switch (creditNote.outcome) {
+			case 'issued':
+				return {
+					created: true,
+					refund: {
+						subscriptionId: input.subscriptionId,
+						amountMinor: creditNote.total,
+						currency: creditNote.currency,
+						invoiceId: selected.invoice.id,
+						creditNoteId: creditNote.id,
+					},
+				}
+			case 'nothing_to_refund':
+				console.info('account_deletion_refund_previewed_zero', {
+					subscriptionId: input.subscriptionId,
+				})
+				return null
+			case 'unfittable':
+				console.warn('account_deletion_refund_unfittable', {
+					invoiceId: selected.invoice.id,
+					amountPaid: selected.invoice.amount_paid,
+					maxRefundMinor,
+					lastPreviewMinor: creditNote.lastPreviewMinor,
+				})
+				await auditSkippedRefund({
+					env: input.env,
+					email: input.email,
+					reason: `unfittable:${selected.invoice.currency}:${maxRefundMinor}`,
+				})
+				return null
+			default: {
+				const unknownOutcome: never = creditNote
+				throw new Error(
+					`Unknown credit note outcome: ${JSON.stringify(unknownOutcome)}`,
+				)
+			}
 		}
 	} catch (error) {
 		if (isStripeNothingToRefundError(error)) {
@@ -759,7 +825,9 @@ async function appendEarlierAccountDeletionRefunds(input: {
  * issued before the cancel so the invoice line's service period is still
  * intact when Stripe prorates discounts and tax. A refund failure aborts
  * before the cancel, so the retry sees the same subscription and can try
- * again.
+ * again. A refund that cannot be bounded safely (see
+ * {@link refundUnusedSubscriptionTime}) is skipped with an audit row instead,
+ * and the cancel proceeds.
  *
  * Idempotent across retries: subscriptions Stripe already reports as
  * `canceled` are skipped, an invoice that already carries a Kody credit note
@@ -795,6 +863,7 @@ async function cancelActiveStripeSubscriptions(input: {
 				refunded = await refundUnusedSubscriptionTime({
 					env: input.env,
 					subscriptionId: subscription.id,
+					email: input.email,
 					nowSeconds,
 				})
 			} catch (error) {

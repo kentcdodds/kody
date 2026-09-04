@@ -806,17 +806,26 @@ refund is hard-capped at
 a mid-cycle upgrade invoice (portal upgrades bill with `always_invoice`) has a
 positive new-plan line plus a negative unused-time credit for the old plan, so
 `amount_paid` is the net and the positive line's unused fraction alone can
-exceed it. A cap of zero or less means nothing to refund; when the preview
-exceeds the cap every line is scaled by `cap / total` (floored, integer
-arithmetic) and previewed again, and if rounding still leaves it above the cap
-the largest line absorbs the difference before a final preview. A refund failure
-is a billing failure (`AccountDeletionBillingError`): the account is retained
-for retry, exactly like a failed cancel; only a preview that totals zero or a
-charge Stripe reports as already fully refunded is treated as "nothing to
-refund". A rejected create is logged as `account_deletion_refund_rejected` with
-the subscription and invoice ids, the amount paid, the cap, and the requested
-amount (no PII). The full sequence, skip conditions, audit action, and result
-shape are documented with the rest of the deletion flow in
+exceed it. Both credit note listings follow `has_more` / `starting_after` to the
+end (up to `creditNoteListMaxPages` = 20 pages of 100); a listing still
+reporting more after that throws `StripeCreditNoteListIncompleteError`, which
+the refund path treats as an unknown remainder and therefore a cap of zero. A
+cap of zero or less means nothing to refund; while the preview exceeds the cap
+every line is scaled by `cap / previewedTotal` (floored, integer arithmetic —
+the gross lines and the net, tax-inclusive preview only ever meet as a ratio)
+and previewed again, up to `creditNoteCapFitAttempts` = 6 times. If it still
+does not fit, `createProratedRefundCreditNote` returns `unfittable` and the
+deletion logs `account_deletion_refund_unfittable`, audits
+`account_deletion_refund_skipped`, and cancels without refunding that invoice (a
+missing refund on a rounding edge is a support ticket; a blocked deletion is a
+broken promise). Any other refund failure is a billing failure
+(`AccountDeletionBillingError`): the account is retained for retry, exactly like
+a failed cancel; only a preview that totals zero or a charge Stripe reports as
+already fully refunded is treated as "nothing to refund". A rejected create is
+logged as `account_deletion_refund_rejected` with the subscription and invoice
+ids, the amount paid, the cap, and the requested amount (no PII). The full
+sequence, skip conditions, audit action, and result shape are documented with
+the rest of the deletion flow in
 [`data-storage.md`](./data-storage.md#account-deletion-inventory).
 
 ### Webhooks (primary sync)
