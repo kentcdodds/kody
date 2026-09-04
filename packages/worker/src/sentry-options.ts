@@ -488,9 +488,13 @@ export function filterMcpAgentSessionDestroyedAbortSentryEvent(
  * `CimdFetchError` so wrapped recovery messages stay visible.
  */
 export function isCimdUnknownClientSentryEvent(event: ErrorEvent) {
-	return sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' && isCimdUnknownClientSentryMessage(message),
+	const messages = sentryEventMessages(event).filter(
+		(message): message is string =>
+			typeof message === 'string' && message.trim().length > 0,
+	)
+	return (
+		messages.length > 0 &&
+		messages.every((message) => isCimdUnknownClientSentryMessage(message))
 	)
 }
 

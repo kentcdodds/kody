@@ -666,4 +666,18 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(wrappedCimdFailure)).toBe(wrappedCimdFailure)
+	const recoveryWithCimdCause = {
+		exception: {
+			values: [
+				{
+					value: 'authorize could not recover after a CIMD metadata lookup.',
+				},
+				{
+					value:
+						'CIMD fetch failed for https://chatgpt.com/oauth/client.json: Failed to fetch client metadata: HTTP 404',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(recoveryWithCimdCause)).toBe(recoveryWithCimdCause)
 })
