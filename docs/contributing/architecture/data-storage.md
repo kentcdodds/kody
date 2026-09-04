@@ -545,9 +545,17 @@ Raw email MIME payloads live in the `EMAIL_BLOBS` R2 bucket. Mailbox
 (`email-raw:v1:{userId}/{messageId}`). R2 is required for inbound MIME — the
 inbound path stores it before `commitInboundMessageGraph`, which writes the
 thread, message, and attachments in one owner-Mailbox SQLite transaction and
-stores only `raw_mime_key`. R2 or Mailbox commit failures remain retryable;
-UserMeter delivery-id idempotency prevents a second charge, and the Mailbox
-delivery ledger stabilizes retries. Outbound messages pass `rawMime: null`.
+stores only `raw_mime_key`. The MIME reader accepts wire size up to 25 MiB
+(`maxSurvivableInboundRawBytes`, the Email Routing inbound cap). Mail at or
+under the owner's plan `email_message_bytes` persist cap (256 KiB free, 768 KiB
+paid/max; `maxRawMimeBytes` / `maxKeptInboundRawBytes`) is stored as-is,
+including `multipart/related` messages with inline images. Larger accepted mail
+is reduced before parse: text/html is kept, oversized parts are omitted as
+`unavailable` attachments, and the stored raw MIME stays at or under the persist
+cap. R2 or Mailbox commit failures remain retryable; only unsurvivable size
+(above 25 MiB) is a permanent SMTP reject. UserMeter delivery-id idempotency
+prevents a second charge, and the Mailbox delivery ledger stabilizes retries.
+Outbound messages pass `rawMime: null`.
 
 The schema has no inline raw-MIME columns, offload queue, or delete-time claim
 protocol. Sender identities accept only `verified` rows, and

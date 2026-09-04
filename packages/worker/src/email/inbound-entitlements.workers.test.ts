@@ -13,6 +13,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
+import { maxSurvivableInboundRawBytes } from './parser.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { type Mailbox } from './mailbox-do.ts'
 import { stubFor } from './mailbox-test-helpers.ts'
@@ -230,7 +231,7 @@ test('free-plan Mailbox count, storage, and size limits reject before charge whi
 	const sizeAccount = await seedAccount(sizeUsername, 'free')
 	const sizeMessage = messageFor(sizeUsername)
 	Object.defineProperty(sizeMessage, 'rawSize', {
-		value: planLimits.free.maxEmailMessageBytes + 1,
+		value: maxSurvivableInboundRawBytes + 1,
 	})
 	await handleInboundEmail(sizeMessage, inboundEnv)
 	expect(sizeMessage.rejectedReason).toBe('Recipient mailbox is over quota.')

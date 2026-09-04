@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { handleInboundEmail } from './inbound.ts'
+import { maxSurvivableInboundRawBytes } from './parser.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { listEmailInboxesForUser } from './repo.ts'
 import { listSystemEmailMessages } from './system-email-graph-store.ts'
@@ -597,7 +598,7 @@ test('system email size and daily caps reject before storage with bounded events
 
 	const oversize = buildInboundMessage({ to: `abuse@${systemDomain}` })
 	Object.defineProperty(oversize, 'rawSize', {
-		value: systemEmailLimits.maxMessageBytes + 1,
+		value: maxSurvivableInboundRawBytes + 1,
 	})
 	await handleInboundEmail(oversize, createInboundEnv())
 	expect(oversize.rejectedReason).toBe('Recipient mailbox is over quota.')

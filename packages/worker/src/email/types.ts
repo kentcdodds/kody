@@ -53,6 +53,7 @@ export type EmailAttachmentMetadata = {
 	contentId: string | null
 	disposition: string | null
 	size: number
+	storageKind?: 'raw-mime' | 'unavailable'
 }
 
 export type ParsedInboundEmail = {

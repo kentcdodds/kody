@@ -10,8 +10,11 @@ import {
 import { scheduleInboundDeliveryEffects } from './inbound-effect-scheduler.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
+	InboundRawMimeTooLargeError,
+	maxSurvivableInboundRawBytes,
+	mergePreparedInboundParse,
 	parseForwardableEmailRawMime,
-	readForwardableEmailRawMime,
+	readAndPrepareForwardableEmailRawMime,
 } from './parser.ts'
 import {
 	deleteEmptySystemEmailThreads,
@@ -134,7 +137,7 @@ export async function handleSystemInboundEmail(input: {
 		}
 	}
 
-	if (input.message.rawSize > systemEmailLimits.maxMessageBytes) {
+	if (input.message.rawSize > maxSurvivableInboundRawBytes) {
 		input.message.setReject('Recipient mailbox is over quota.')
 		await recordBoundedEmailRejectionEvent({
 			env: input.env,
@@ -142,7 +145,7 @@ export async function handleSystemInboundEmail(input: {
 			userId: systemEmailOwnerId,
 			inboxId: inbox.id,
 			recipient: input.recipient,
-			reason: `Message size ${input.message.rawSize} exceeds system inbox cap ${systemEmailLimits.maxMessageBytes}.`,
+			reason: `Inbound email raw MIME is too large (${input.message.rawSize} bytes, max ${maxSurvivableInboundRawBytes}).`,
 			phase: 'size',
 		}).catch(warnRejectionAuditWriteFailed)
 		await recordReceiveUsage({ outcome: 'error' })
@@ -150,10 +153,26 @@ export async function handleSystemInboundEmail(input: {
 	}
 
 	await cleanupSystemInboundDurability({ env: input.env })
-	let rawMime: string
+	let prepared
 	try {
-		rawMime = await readForwardableEmailRawMime(input.message)
+		prepared = await readAndPrepareForwardableEmailRawMime(input.message, {
+			maxKeptBytes: systemEmailLimits.maxMessageBytes,
+		})
 	} catch (error) {
+		if (error instanceof InboundRawMimeTooLargeError) {
+			input.message.setReject('Recipient mailbox is over quota.')
+			await recordBoundedEmailRejectionEvent({
+				env: input.env,
+				db: input.env.APP_DB,
+				userId: systemEmailOwnerId,
+				inboxId: inbox.id,
+				recipient: input.recipient,
+				reason: error.message,
+				phase: 'size',
+			}).catch(warnRejectionAuditWriteFailed)
+			await recordReceiveUsage({ outcome: 'error' })
+			return
+		}
 		throw new RetryableInboundStorageError(
 			'Failed to read inbound raw MIME; delivery should be retried.',
 			error,
@@ -165,7 +184,7 @@ export async function handleSystemInboundEmail(input: {
 		inboxId: inbox.id,
 		recipient: input.recipient,
 		envelopeFrom: input.message.from,
-		rawMime,
+		rawMime: prepared.rawMime,
 		quotaDay: systemInboundQuotaDay(quotaNow),
 		now: quotaNow,
 	})
@@ -285,7 +304,10 @@ export async function handleSystemInboundEmail(input: {
 	}
 	let parsed
 	try {
-		parsed = await parseForwardableEmailRawMime(input.message, rawMime)
+		parsed = mergePreparedInboundParse(
+			await parseForwardableEmailRawMime(input.message, prepared.rawMime),
+			prepared,
+		)
 	} catch (error) {
 		const reason =
 			error instanceof Error ? error.message : 'Failed to parse inbound email.'

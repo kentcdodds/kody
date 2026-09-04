@@ -16,8 +16,11 @@ import { normalizeEmailAddress, normalizeSubject } from './address.ts'
 import { ensureDefaultEmailInbox } from './default-inbox.ts'
 import { evaluateEmailSenderRules } from './sender-rules.ts'
 import {
+	InboundRawMimeTooLargeError,
+	maxSurvivableInboundRawBytes,
+	mergePreparedInboundParse,
 	parseForwardableEmailRawMime,
-	readForwardableEmailRawMime,
+	readAndPrepareForwardableEmailRawMime,
 } from './parser.ts'
 import {
 	buildInboundDelivery,
@@ -89,9 +92,10 @@ async function rejectClaimedInboundDelivery(input: {
 function estimateInboundEmailStorageBytes(input: {
 	message: ForwardableEmailMessage
 	recipient: string
+	keptRawSize: number
 }) {
 	return (
-		input.message.rawSize * 2 +
+		input.keptRawSize * 2 +
 		estimateEntitlementStorageEntryBytes({
 			value: {
 				from: input.message.from,
@@ -364,24 +368,7 @@ export async function handleInboundEmail(
 				}
 			}
 
-			try {
-				// Size first: an oversize message is rejected without consuming any
-				// of the owner's daily receive quota (griefing resistance) and
-				// without touching the counters.
-				await assertWithinEntitlement({
-					db: env.APP_DB,
-					userId,
-					email: account.email,
-					resource: 'email_message_bytes',
-					requested: 0,
-					getCurrent: async () => message.rawSize,
-				})
-			} catch (error) {
-				if (!isEntitlementLimitError(error)) throw error
-				// The SMTP reject reason goes to the arbitrary sender; keep it
-				// generic and store the detailed entitlement message for the owner.
-				// Rejection rows are bounded per inbox per day because over-quota
-				// traffic is exactly the flood these limits exist to absorb.
+			if (message.rawSize > maxSurvivableInboundRawBytes) {
 				message.setReject('Recipient mailbox is over quota.')
 				await recordBoundedEmailRejectionEvent({
 					env,
@@ -389,11 +376,8 @@ export async function handleInboundEmail(
 					userId,
 					inboxId: inbox.id,
 					recipient,
-					reason: error.message,
-					phase:
-						error.details.resource === 'email_message_bytes'
-							? 'size'
-							: 'entitlement',
+					reason: `Inbound email raw MIME is too large (${message.rawSize} bytes, max ${maxSurvivableInboundRawBytes}).`,
+					phase: 'size',
 				}).catch(warnRejectionAuditWriteFailed)
 				await recordReceiveUsage({ outcome: 'error' })
 				return
@@ -403,14 +387,57 @@ export async function handleInboundEmail(
 				env,
 				userId,
 			})
-			let rawMime: string
+			const keepCap = resolvePlanLimit(account.plan, 'email_message_bytes')
+			let prepared
 			try {
-				rawMime = await readForwardableEmailRawMime(message)
+				prepared = await readAndPrepareForwardableEmailRawMime(message, {
+					maxKeptBytes: keepCap,
+				})
 			} catch (error) {
+				// Unsurvivable size is permanent. Reject instead of asking
+				// Email Routing to retry a read that can never succeed.
+				if (error instanceof InboundRawMimeTooLargeError) {
+					message.setReject('Recipient mailbox is over quota.')
+					await recordBoundedEmailRejectionEvent({
+						env,
+						db: env.APP_DB,
+						userId,
+						inboxId: inbox.id,
+						recipient,
+						reason: error.message,
+						phase: 'size',
+					}).catch(warnRejectionAuditWriteFailed)
+					await recordReceiveUsage({ outcome: 'error' })
+					return
+				}
 				throw new RetryableInboundStorageError(
 					'Failed to read inbound raw MIME; delivery should be retried.',
 					error,
 				)
+			}
+			try {
+				await assertWithinEntitlement({
+					db: env.APP_DB,
+					userId,
+					email: account.email,
+					resource: 'email_message_bytes',
+					requested: 0,
+					getCurrent: async () => prepared.keptRawSize,
+				})
+			} catch (error) {
+				if (!isEntitlementLimitError(error)) throw error
+				message.setReject('Recipient mailbox is over quota.')
+				await recordBoundedEmailRejectionEvent({
+					env,
+					db: env.APP_DB,
+					userId,
+					inboxId: inbox.id,
+					recipient,
+					reason: error.message,
+					phase: 'size',
+				}).catch(warnRejectionAuditWriteFailed)
+				await recordReceiveUsage({ outcome: 'error' })
+				return
 			}
 			const quotaNow = new Date()
 			const candidateDelivery = await buildInboundDelivery({
@@ -418,7 +445,7 @@ export async function handleInboundEmail(
 				inboxId: inbox.id,
 				recipient,
 				envelopeFrom: message.from,
-				rawMime,
+				rawMime: prepared.rawMime,
 				quotaDay: userInboundQuotaDay(quotaNow),
 				now: quotaNow,
 			})
@@ -442,6 +469,7 @@ export async function handleInboundEmail(
 						requested: estimateInboundEmailStorageBytes({
 							message,
 							recipient,
+							keptRawSize: prepared.keptRawSize,
 						}),
 					})
 					await assertWithinEntitlement({
@@ -571,7 +599,10 @@ export async function handleInboundEmail(
 			}
 			let parsed
 			try {
-				parsed = await parseForwardableEmailRawMime(message, rawMime)
+				parsed = mergePreparedInboundParse(
+					await parseForwardableEmailRawMime(message, prepared.rawMime),
+					prepared,
+				)
 			} catch (error) {
 				const reason =
 					error instanceof Error

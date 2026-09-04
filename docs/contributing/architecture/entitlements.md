@@ -74,8 +74,8 @@ deliberately. It is not a public or Stripe-purchasable plan. Email resources use
 sending is an outreach-abuse surface — `resolvePlanLimit` resolves those caps
 like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
-stays at standard/pro parity because the per-message ceiling is a platform
-bound, not a scalable quota). Compute rate limits on `max`
+stays at standard/pro parity because the per-message persist ceiling is a
+platform bound, not a scalable quota). Compute rate limits on `max`
 (`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
 `concurrent_workflows`) are operator runaway caps sized from production usage
 with at least 2× busy-day headroom, and they still dominate every paid plan. All
@@ -743,7 +743,7 @@ workflows via RunLog, and similar).
 | `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                |
 | `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                  |
 | `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                                                                                                                  |
-| `email_message_bytes`      | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                                                                                                              |
+| `email_message_bytes`      | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                     |
 | `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                   |
 | `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                            |
 | `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                     |

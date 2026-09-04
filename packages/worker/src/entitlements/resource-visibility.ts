@@ -84,9 +84,9 @@ export const entitlementResourceVisibility: Record<
 		group: 'limits',
 		kind: 'per_unit_max',
 		whatCounts:
-			'Maximum raw MIME size allowed for a single stored email message.',
+			'Maximum raw MIME persisted for a single email. Larger inbound mail is stored with text kept and oversized parts omitted, up to the 25 MiB Email Routing ceiling.',
 		howToReduce:
-			'Keep attachments and bodies smaller, or upgrade for a higher per-message cap.',
+			'Keep attachments and bodies smaller, or upgrade for a higher persist cap.',
 	},
 	secrets: {
 		group: 'counts',
