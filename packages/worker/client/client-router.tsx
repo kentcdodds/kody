@@ -2,11 +2,13 @@ import { type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
+import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.ts'
 import { applyDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import {
 	abortIntentPrefetch,
 	prefetchRouteOnIntent,
+	prefetchRoutesOnRender,
 	takePrefetchedRouteResult,
 } from './intent-prefetch.ts'
 import {
@@ -455,6 +457,57 @@ function runIntentPrefetch(destination: URL) {
 }
 
 /**
+ * Render prefetch for a list of same-origin hrefs. Destinations that share a
+ * loader share one request. Remix 3 in this repo has no `<Link prefetch>` —
+ * this is the client-router equivalent of `prefetch="render"`.
+ */
+export function prefetchRouteHrefs(hrefs: ReadonlyArray<string>): void {
+	const groups = new Map<RouteLoader, Array<string>>()
+	const seen = new Set<string>()
+	const currentPath = getCurrentPathWithSearchAndHash()
+
+	for (const href of hrefs) {
+		const destination = new URL(href, prefetchBaseHref())
+		if (
+			typeof window !== 'undefined' &&
+			destination.origin !== window.location.origin
+		) {
+			continue
+		}
+		const destinationPath = getPathWithSearchAndHashFromUrl(destination)
+		if (seen.has(destinationPath)) continue
+		seen.add(destinationPath)
+		if (destinationPath === currentPath) continue
+		if (destinationPath === activeNavigationPath) continue
+		void preloadClientRouteModules(
+			`${destination.pathname}${destination.search}`,
+		).catch(() => {
+			// Speculative; navigation handles real failures.
+		})
+		const loader = matchRouteLoader(destination)
+		if (!loader) continue
+		const group = groups.get(loader) ?? []
+		group.push(destinationPath)
+		groups.set(loader, group)
+	}
+
+	for (const [loader, groupHrefs] of groups) {
+		prefetchRoutesOnRender(
+			groupHrefs,
+			loader,
+			(href) => new URL(href, prefetchBaseHref()),
+		)
+	}
+}
+
+function prefetchBaseHref() {
+	if (typeof window !== 'undefined' && window.location?.href) {
+		return window.location.href
+	}
+	return clientRouteOrigin
+}
+
+/**
  * Hovers shorter than this are treated as the mouse passing through, not
  * intent to navigate, so sweeping across a nav list does not fire a
  * speculative request per link crossed.
@@ -839,6 +892,7 @@ async function submitFormThroughRouter(details: FormSubmitDetails) {
 	// navigation — including a hover timer that has not fired yet.
 	cancelHoverIntent()
 	abortIntentPrefetch()
+	clearOnboardingPayloadCache()
 
 	// Participate in the latest-wins navigation chain: a newer navigation
 	// aborts this submission's follow-up redirect navigation so a late

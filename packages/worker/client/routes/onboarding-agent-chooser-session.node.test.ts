@@ -13,7 +13,10 @@ import {
 	type OnboardingAgentChooserPick,
 } from './onboarding-mcp-clients.ts'
 import { emptyOnboardingSessionMilestones } from '#universal/onboarding-process.ts'
-import { type OnboardingPayload } from './onboarding-payload.ts'
+import {
+	clearOnboardingPayloadCache,
+	type OnboardingPayload,
+} from './onboarding-payload.ts'
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
 const originalSessionStorage = Object.getOwnPropertyDescriptor(
@@ -80,6 +83,7 @@ const anonymousOnboardingPayload = {
 
 async function loadSelectionStep(pathname = '/onboarding/step-1') {
 	const originalFetch = globalThis.fetch
+	clearOnboardingPayloadCache()
 	globalThis.fetch = (async () =>
 		Response.json(anonymousOnboardingPayload)) as typeof fetch
 	try {
@@ -89,6 +93,7 @@ async function loadSelectionStep(pathname = '/onboarding/step-1') {
 		)
 	} finally {
 		globalThis.fetch = originalFetch
+		clearOnboardingPayloadCache()
 	}
 }
 

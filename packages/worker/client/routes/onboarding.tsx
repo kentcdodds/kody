@@ -5,10 +5,7 @@ import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import {
-	type AccountStatus,
-	readJson,
-} from '#client/routes/account-approval-shared.ts'
+import { type AccountStatus } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -33,7 +30,6 @@ import {
 } from '#universal/onboarding-process.ts'
 import {
 	fetchOnboardingPayload,
-	onboardingApiPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import {
@@ -97,13 +93,8 @@ export async function onboardingRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
-	const response = await fetch(onboardingApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	const payload = await readJson<OnboardingPayload>(response)
-	if (!response.ok || !payload?.ok) {
+	const payload = await fetchOnboardingPayload(signal)
+	if (!payload) {
 		throw new Error('Unable to load onboarding.')
 	}
 	if (payload.loggedIn && !payload.emailVerified) {
@@ -258,14 +249,9 @@ export function OnboardingRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		const redirectTo = readOnboardingRedirectTo(handle)
 		try {
-			const response = await fetch(onboardingApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
+			const payload = await fetchOnboardingPayload(signal)
 			if (signal.aborted) return
-			const payload = await readJson<OnboardingPayload>(response)
-			if (!response.ok || !payload?.ok) {
+			if (!payload) {
 				throw new Error('Unable to load onboarding.')
 			}
 			if (payload.loggedIn && !payload.emailVerified) {

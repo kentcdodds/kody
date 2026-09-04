@@ -39,13 +39,67 @@ export type OnboardingPayload = {
 
 export const onboardingApiPath = '/onboarding.json'
 
-export async function fetchOnboardingPayload(signal?: AbortSignal) {
+/**
+ * Chip navigations and render prefetch all hit this payload. Keep one
+ * in-flight request and reuse a short-lived result so a picker cannot
+ * stampede `/onboarding.json` on a loaded Vite origin.
+ */
+export const onboardingPayloadCacheTtlMs = 30_000
+
+type OnboardingPayloadCache = {
+	payload: OnboardingPayload
+	at: number
+}
+
+let inFlight: Promise<OnboardingPayload | null> | null = null
+let cache: OnboardingPayloadCache | null = null
+
+function monotonicNow() {
+	return performance.now()
+}
+
+export function clearOnboardingPayloadCache() {
+	cache = null
+}
+
+async function loadOnboardingPayload() {
 	const response = await fetch(onboardingApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
-		signal,
 	})
 	const payload = await readJson<OnboardingPayload>(response)
 	if (!response.ok || !payload?.ok) return null
+	cache = { payload, at: monotonicNow() }
 	return payload
+}
+
+export async function fetchOnboardingPayload(signal?: AbortSignal) {
+	if (cache && monotonicNow() - cache.at <= onboardingPayloadCacheTtlMs) {
+		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+		return cache.payload
+	}
+	if (!inFlight) {
+		inFlight = loadOnboardingPayload().finally(() => {
+			inFlight = null
+		})
+	}
+	const shared = inFlight
+	if (!signal) return shared
+	if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+	return new Promise<OnboardingPayload | null>((resolve, reject) => {
+		const onAbort = () => {
+			reject(new DOMException('Aborted', 'AbortError'))
+		}
+		signal.addEventListener('abort', onAbort, { once: true })
+		void shared.then(
+			(value) => {
+				signal.removeEventListener('abort', onAbort)
+				resolve(value)
+			},
+			(error: unknown) => {
+				signal.removeEventListener('abort', onAbort)
+				reject(error)
+			},
+		)
+	})
 }
