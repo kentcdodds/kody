@@ -1,5 +1,6 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
+import { HMR } from 'pitlane:dev'
 import { type Handle } from 'remix/ui'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
 import {
@@ -278,6 +279,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				)}
 			</head>
 			<body>
+				<HMR />
 				<div id="root">
 					<AppRoot
 						url={handle.props.url}

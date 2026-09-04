@@ -48,7 +48,7 @@ const interactiveGuideRenderers: Readonly<
  * `/account/secrets/new`) and copyable code blocks. Interactive slugs
  * (how-kody-works, google-oauth) swap the prose body for a transcript
  * walkthrough. A quiet foot links the raw markdown twin for agents
- * (`rmx-document` so the SPA does not intercept `/guides/:slug.md`).
+ * (`data-rmx-document` so the SPA does not intercept `/guides/:slug.md`).
  */
 
 export function getGuideSlugFromPathname(pathname: string) {
@@ -311,7 +311,7 @@ export function GuideDetailRoute(handle: Handle) {
 								Working with an agent? This guide is also plain markdown at{' '}
 								<a
 									href={routes.guideDetailMarkdown.href({ slug: guide.slug })}
-									rmx-document
+									data-rmx-document
 								>
 									/guides/{guide.slug}.md
 								</a>

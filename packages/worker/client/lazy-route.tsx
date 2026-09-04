@@ -1,4 +1,4 @@
-import { addEventListeners, css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -224,9 +224,19 @@ export function lazyRouteLoader<TModule>(
 
 const clientRouteOrigin = 'https://kody.local'
 
+export type ClientRouteAreaName =
+	| 'account-area'
+	| 'admin-area'
+	| 'auth-area'
+	| 'blog-area'
+	| 'community-area'
+	| 'marketing-area'
+	| 'onboarding-area'
+	| 'package-files-area'
+
 type PreloadArea = {
 	/** Chunk name of the area barrel (matches the built `assets/<name>-<hash>.js`). */
-	name: string
+	name: ClientRouteAreaName
 	load: () => Promise<unknown>
 	getCached: () => unknown | null
 }
@@ -404,7 +414,7 @@ export function listenToLazyRouteLoads(
 	listener: () => void,
 ) {
 	if (typeof document === 'undefined') return
-	addEventListeners(lazyRouteEvents, handle.signal, { load: listener })
+	lazyRouteEvents.addEventListener('load', listener, { signal: handle.signal })
 }
 
 /**
@@ -428,7 +438,7 @@ export async function preloadClientRouteModules(
  */
 export function clientRouteAreaNameForPath(
 	pathnameWithSearch: string,
-): string | null {
+): ClientRouteAreaName | null {
 	const url = new URL(pathnameWithSearch, clientRouteOrigin)
 	return preloadMatcher.match(url)?.data.name ?? null
 }

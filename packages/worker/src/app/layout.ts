@@ -1,6 +1,6 @@
 import { html, type SafeHtml } from 'remix/html-template'
 
-const defaultEntryScripts: Array<string> = ['/client-entry.js']
+const defaultEntryScripts: Array<string> = []
 const defaultShell = html`<div class="app-shell">
 	<div
 		class="loading-spinner"

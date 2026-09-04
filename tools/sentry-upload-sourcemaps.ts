@@ -13,7 +13,7 @@ const workerBundleCandidates = [
 	join(root, 'packages', 'worker', '.wrangler', 'sentry-bundle'),
 	join(root, '.wrangler', 'sentry-bundle'),
 ]
-const clientAssetsDir = join(root, 'packages', 'worker', 'public')
+const clientAssetsDir = join(root, 'dist', 'client')
 
 const release =
 	process.env.SENTRY_RELEASE?.trim() ||
@@ -98,7 +98,7 @@ if (hasSourceMaps(clientAssetsDir)) {
 	upload(clientAssetsDir, 'client assets')
 } else {
 	console.error(
-		'sentry-upload-sourcemaps: no client source maps in packages/worker/public (expected from build:client:web --sourcemap).',
+		'sentry-upload-sourcemaps: no client source maps in dist/client (expected from vite build).',
 	)
 	process.exit(1)
 }

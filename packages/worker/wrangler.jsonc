@@ -285,6 +285,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
@@ -759,6 +762,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
@@ -1061,6 +1067,9 @@
 				},
 			],
 			"assets": {
+				// Static files in `public/` (styles, favicons). Vite copies this
+				// directory into `dist/client` and the Cloudflare Vite plugin
+				// rewrites the deploy config to that hashed client output.
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [

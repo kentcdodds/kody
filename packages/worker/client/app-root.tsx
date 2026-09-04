@@ -4,8 +4,6 @@ import { RouterLocationProvider } from './router-location.tsx'
 import { type SessionInfo } from './session.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 
-export const APP_ROOT_ENTRY_ID = '/client-entry.js#AppRoot'
-
 export type AppRootProps = {
 	url: string
 	session: SessionInfo | null
@@ -15,7 +13,7 @@ export type AppRootProps = {
 }
 
 export const AppRoot: EntryComponent<AppRootProps> = clientEntry(
-	APP_ROOT_ENTRY_ID,
+	import.meta.url,
 	function AppRoot(handle: Handle<AppRootProps>) {
 		return () => (
 			<RouterLocationProvider url={handle.props.url}>

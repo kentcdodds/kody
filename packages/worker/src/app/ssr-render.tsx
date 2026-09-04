@@ -2,11 +2,8 @@
 /** @jsxRuntime automatic */
 import { renderToStream } from 'remix/ui/server'
 import { type RemixNode } from 'remix/ui'
-import {
-	buildClientEntryHref,
-	buildStylesheetHref,
-	getClientBuildId,
-} from '#app/client-build-id.ts'
+import { buildStylesheetHref, getClientBuildId } from '#app/client-build-id.ts'
+import { getClientEntryAssets } from '#app/client-entry-assets.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
@@ -19,7 +16,6 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import { getClientModulePreloadHrefs } from '#app/client-preload-manifest.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
@@ -101,7 +97,8 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	)
 	const requestUrl = new URL(request.url)
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
-	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
+	const clientAssets = getClientEntryAssets(requestUrl.pathname)
+	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'
 	const stylesheetHref = buildStylesheetHref(getClientBuildId(getEnv(env)))
 	// Canonical/OG head URLs use the configured canonical origin so pages
 	// dual-served from a legacy host still point crawlers at the canonical
@@ -130,18 +127,14 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		// Warm lazy route chunks before streaming so SSR HTML includes the real
 		// route tree (dynamic import resolves in the worker bundle), and resolve
 		// the modulepreload hints and inline stylesheet in parallel.
-		const [, modulePreloadHrefs, inlineStylesheet] = await Promise.all([
+		const [, inlineStylesheet] = await Promise.all([
 			preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
-			getClientModulePreloadHrefs({
-				assets: env.ASSETS,
-				buildId: getClientBuildId(parsedEnv),
-				pathname: requestUrl.pathname,
-			}),
 			getInlineStylesheet({
 				assets: env.ASSETS,
 				buildId: getClientBuildId(parsedEnv),
 			}),
 		])
+		const modulePreloadHrefs = clientAssets.js.map((asset) => asset.href)
 
 		const stream = renderToStream(
 			// Remix server components accept props via handle.props; JSX typing is loose here.

@@ -3,7 +3,12 @@
 	"include": ["files"],
 	"workspaces": {
 		".": {
-			"entry": ["tools/**/*.{ts,js,mjs}", "e2e/**/*.ts", "vitest*.ts"],
+			"entry": [
+				"tools/**/*.{ts,js,mjs}",
+				"e2e/**/*.ts",
+				"vitest*.ts",
+				"vite.config.ts"
+			],
 			"project": ["tools/**/*.{ts,js,mjs}", "*.ts", "e2e/**/*.ts"]
 		},
 		"packages/worker": {

@@ -21,6 +21,13 @@ export const sharedProjectConfig = {
 	resolve: {
 		alias: [
 			{
+				find: /#app\/client-entry-assets\.ts$/,
+				replacement: resolve(
+					rootDir,
+					'packages/worker/src/app/client-entry-assets.stub.ts',
+				),
+			},
+			{
 				find: /^#app\//,
 				replacement: `${resolve(rootDir, 'packages/worker/src/app')}/`,
 			},

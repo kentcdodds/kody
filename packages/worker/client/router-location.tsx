@@ -1,4 +1,4 @@
-import { addEventListeners, type Handle, type RemixNode } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/ui'
 import { routerEvents } from './client-router.tsx'
 
 export type RouterLocationValue = {
@@ -24,15 +24,17 @@ export function RouterLocationProvider(
 			handle.update()
 		})
 
-		addEventListeners(routerEvents, handle.signal, {
-			navigate() {
+		routerEvents.addEventListener(
+			'navigate',
+			() => {
 				const nextUrl = getClientUrl()
 				if (nextUrl === currentUrl) return
 				currentUrl = nextUrl
 				handle.context.set({ url: currentUrl, ssrUrl })
 				handle.update()
 			},
-		})
+			{ signal: handle.signal },
+		)
 	}
 
 	handle.context.set({ url: currentUrl, ssrUrl })

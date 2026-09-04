@@ -278,7 +278,13 @@ full examples.
 - `remix/assets` — browser asset server. Use for `createAssetServer` when
   serving compiled scripts and styles, getting public hrefs, and emitting
   preloads. Shared compiler options such as `target`, `sourceMaps`,
-  `sourceMapSourcePaths`, and `minify` live at the top level
+  `sourceMapSourcePaths`, and `minify` live at the top level. Kody's origin
+  website does not use this: hydration URLs come from Pitlane `?assets=`
+- `remix/middleware/render` — pairs `createAssetServer` with frame rendering for
+  Node apps. Do not use it on the origin Worker; Kody owns `renderToStream` plus
+  Workers Assets
+- `remix/spa` — client-only `run(router)` for apps with no server document. Kody
+  keeps a custom client router on top of server-rendered HTML
 - `remix/headers` — typed header parsers and builders. Use when reading
   `Accept`, `Cookie`, or setting `CacheControl`, `Vary`, etc., instead of
   hand-formatting strings
@@ -340,9 +346,11 @@ full examples.
   non-sensitive preferences where the client is allowed to control the value
   (theme, locale, dismissed banner). For state where tampering matters, prefer
   `remix/session`
-- `remix/auth` — credentials, OAuth, OIDC, and Atmosphere providers. Use to
-  define how identity is verified, start/finish external login, and refresh
-  stored OAuth/OIDC token bundles with `refreshExternalAuth(...)`
+- `remix/auth` — credentials, OAuth, and OIDC providers. Use to define how
+  identity is verified, start/finish external login, and refresh stored
+  OAuth/OIDC token bundles with `refreshExternalAuth(...)`. Use `OAuthTokens`
+  (not the removed `OAuthStandardTokens`). Atmosphere/atproto is no longer a
+  built-in provider.
 - `remix/middleware/auth` — `auth({ schemes })`, `requireAuth`, the `Auth`
   context key. Use to resolve identity into the request context and to gate
   routes
@@ -351,7 +359,12 @@ full examples.
 
 - `remix/ui` — the component runtime: components, core mixins, `clientEntry`,
   `run`, `<Frame>`, navigation helpers, and `createRoot`. Use for app UI
-  behavior
+  behavior. Framework attributes are `data-rmx-*` (`data-rmx-target`,
+  `data-rmx-document`, `data-rmx-history`, …). Listen with native
+  `target.addEventListener(type, listener, { signal })` — `addEventListeners()`
+  was removed in rc.1. Optional `run({ resolveFrame })` defaults to fetching the
+  frame source as HTML; Kody keeps a custom resolver for the frame registry and
+  auth.
 - `remix/ui/server` — server rendering: `renderToStream`, `renderToString`. Use
   in the `render(...)` helper that returns HTML responses
 - `remix/ui/animation` — animation APIs: `animateEntrance`, `animateExit`,

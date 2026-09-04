@@ -25,7 +25,7 @@ import { hoverMq, pageHeadCss } from '#universal/styles/style-primitives.ts'
  * server orders by date desc, then `order` frontmatter) is featured with
  * mascot art; the rest is a flat hairline-divided list. All post content
  * comes from the server's markdown catalog — nothing is hardcoded here.
- * "Subscribe via RSS" uses `rmx-document` so the SPA does not intercept
+ * "Subscribe via RSS" uses `data-rmx-document` so the SPA does not intercept
  * `/blog/rss.xml` (the worker serves that as a raw feed).
  */
 
@@ -137,7 +137,7 @@ export function BlogRoute(handle: Handle) {
 						data-rise
 						style={{ '--rise': '2' }}
 						href={routes.blogRss.href()}
-						rmx-document
+						data-rmx-document
 						mix={css(rssLinkCss)}
 					>
 						Subscribe via RSS

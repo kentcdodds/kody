@@ -11,6 +11,5 @@ export default defineConfig({
 		...(epicOxfmt.ignorePatterns ?? []),
 		// Prefer the worker env example over a generic `!**/.env.example`.
 		'!packages/worker/.env.example',
-		'packages/worker/public/client-entry.js',
 	],
 })

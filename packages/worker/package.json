@@ -29,7 +29,7 @@
     "marked": "^18.0.11",
     "postal-mime": "^3.0.0",
     "qrcode": "^1.5.4",
-    "remix": "3.0.0-beta.10",
+    "remix": "3.0.0-rc.1",
     "satori": "^0.32.0",
     "tldts": "^7.4.11",
     "yaml": "^2.9.0",

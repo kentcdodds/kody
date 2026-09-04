@@ -27,6 +27,7 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 const originOnlyPathPrefixes = [
 	'packages/worker/client/',
 	'packages/worker/public/',
+	'packages/worker/src/app/client-entry-assets',
 	'packages/worker/src/blog/posts/',
 	'packages/worker/src/app/handlers/',
 	'packages/worker/src/app/ssr-stubs/',
@@ -44,6 +45,9 @@ const originOnlyExactPaths = new Set([
 	'packages/worker/src/app/layout.ts',
 	'packages/worker/src/app/ssr-render.tsx',
 	'packages/worker/universal/blog-display.ts',
+	'vite.config.ts',
+	'tools/deploy.ts',
+	'tools/origin-worker-config.ts',
 ])
 
 // Origin still handles package-app origin isolation and inline serving

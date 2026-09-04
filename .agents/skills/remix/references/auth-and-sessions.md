@@ -272,7 +272,7 @@ function logout(context) {
 
 ```typescript
 import {
-	createAtmosphereAuthProvider,
+	createOAuthProvider,
 	createGoogleAuthProvider,
 	createGitHubAuthProvider,
 	startExternalAuth,
@@ -292,23 +292,10 @@ let githubProvider = createGitHubAuthProvider({
 	clientSecret: process.env.GITHUB_CLIENT_SECRET,
 	redirectUri: new URL(routes.auth.github.callback.href(), origin),
 })
-
-let atmosphereSessionSecret = process.env.ATMOSPHERE_SESSION_SECRET
-if (!atmosphereSessionSecret && process.env.NODE_ENV !== 'test') {
-	throw new Error('ATMOSPHERE_SESSION_SECRET is required')
-}
-
-let atmosphereProvider = createAtmosphereAuthProvider({
-	clientId: 'https://app.example.com/oauth/client-metadata.json',
-	redirectUri: new URL(routes.auth.atmosphere.callback.href(), origin),
-	sessionSecret: atmosphereSessionSecret ?? 'test-only-secret',
-})
 ```
 
-For Atmosphere-compatible atproto OAuth, create the provider once, call
-`atmosphereProvider.prepare(handleOrDid)` before `startExternalAuth(...)`, then
-pass the same module-scope provider to `finishExternalAuth(...)` and
-`refreshExternalAuth(...)`.
+Atmosphere/atproto is no longer a built-in Remix auth provider. Use
+`createOAuthProvider()` in a separate package if you need that protocol.
 
 ### OAuth controller
 

@@ -42,28 +42,26 @@ Prerequisites, install, and `npm run dev` notes. See the
   kody/workerd leftover that is listening but not serving before replacing it,
   then starts `npm run dev` and waits until `/health` is ok. Agents should call
   this instead of reconstructing a startup playbook from terminal files.
-- `npm run dev` waits up to 30s for the first client bundle in
-  `packages/worker/public/` before Wrangler starts so that write does not reload
-  the worker after Ready. If the wait expires, Wrangler still starts and may
-  reload when the bundle lands. It then starts mock API servers automatically
-  plus origin, platform, runtime, and jobs in one Miniflare; it sets
-  `CLOUDFLARE_API_BASE_URL`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID`
-  to the local Cloudflare API mock Worker for the internal Cloudflare API
-  client, local email sending, and Artifacts REST repo
-  create/get/list/token/fork calls. Those REST calls do not hit the live
-  Cloudflare Artifacts control plane during normal local development. The mock
-  covers only the REST control plane; repo-session git clone/pull/push flows
-  need a real Git-capable Artifacts remote and are not fully simulated by the
-  local mock. Password reset and email-verification messages send through the
-  same Cloudflare Email API helper. Both send from `kody@<SYSTEM_EMAIL_DOMAIN>`
-  (falling back to the `APP_BASE_URL` hostname) and put that same sending domain
-  on action and asset links when `SYSTEM_EMAIL_DOMAIN` is set, so a stale
-  `APP_BASE_URL` cannot pin a retired hostname into the message. Local
-  `npm run dev` keeps those action and asset links on the request origin so they
-  stay clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
-  entirely. The main worker streams logs live; the client bundle and background
-  mock workers buffer logs and only print them if that child process exits with
-  an error.
+- `npm run dev` starts the Cloudflare API mock, then Vite (`@pitlane/dev` +
+  `@cloudflare/vite-plugin`) so origin SSR runs inside workerd with client HMR.
+  Platform, runtime, jobs, and highlight join as Vite auxiliary workers (skipped
+  when `CLOUDFLARE_ENV=test`). It sets `CLOUDFLARE_API_BASE_URL`,
+  `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_ACCOUNT_ID` to the local Cloudflare
+  API mock Worker for the internal Cloudflare API client, local email sending,
+  and Artifacts REST repo create/get/list/token/fork calls. Those REST calls do
+  not hit the live Cloudflare Artifacts control plane during normal local
+  development. The mock covers only the REST control plane; repo-session git
+  clone/pull/push flows need a real Git-capable Artifacts remote and are not
+  fully simulated by the local mock. Password reset and email-verification
+  messages send through the same Cloudflare Email API helper. Both send from
+  `kody@<SYSTEM_EMAIL_DOMAIN>` (falling back to the `APP_BASE_URL` hostname) and
+  put that same sending domain on action and asset links when
+  `SYSTEM_EMAIL_DOMAIN` is set, so a stale `APP_BASE_URL` cannot pin a retired
+  hostname into the message. Local `npm run dev` keeps those action and asset
+  links on the request origin so they stay clickable. Set
+  `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock entirely. Vite
+  streams origin logs live; the background mock buffers logs and only prints
+  them if that child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
@@ -72,8 +70,7 @@ Prerequisites, install, and `npm run dev` notes. See the
   [`environment-variables.md`](../environment-variables.md).
 - Add new mock API servers by following
   [`mock-api-servers.md`](../mock-api-servers.md).
-- If you only need the client bundle or worker, use:
-  - `npm run dev:client`
-  - `npm run dev:worker`
+- `npm run dev:client`, `npm run dev:vite`, and `npm run dev:worker` all start
+  the same Vite origin (client + worker in one workerd graph).
 - Set `CLOUDFLARE_ENV` to switch Wrangler environments (defaults to
   `production`). Playwright sets this to `test`.

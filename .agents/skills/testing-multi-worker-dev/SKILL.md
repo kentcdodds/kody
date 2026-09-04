@@ -17,17 +17,14 @@ description:
   `/health` on 3742–3751, prints `App running at http://localhost:<port>` and
   exits 0 when a server is already up, waits for a stale kody/workerd leftover
   that is listening but not serving before replacing it, then starts
-  `npm run dev` and waits until `/health` is actually ok. `npm run dev` waits up
-  to 30s for the first client bundle before Wrangler so `public/` does not
-  trigger Reloading after Ready. If that wait expires, Wrangler still starts and
-  may reload when the bundle lands. Do not inventory Cursor terminal files or
-  curl 3742 as a substitute.
+  `npm run dev` and waits until `/health` is actually ok. Do not inventory
+  Cursor terminal files or curl 3742 as a substitute.
 - Run interactive `npm run dev` in tmux when you need the CLI shortcuts; it
-  starts the client watcher, the mock Cloudflare API worker, and
-  `wrangler dev --local` with the origin config, the committed `kody-jobs`
-  config, and generated secondary configs for `kody-runtime` and `kody-platform`
-  in one miniflare. Default port 3742; the CLI picks the next free port if
-  taken.
+  starts the mock Cloudflare API worker, then Vite (`@pitlane/dev` +
+  `@cloudflare/vite-plugin`) so origin SSR and the client hydrate in one workerd
+  graph. Generated platform, runtime, jobs, and highlight configs join as Vite
+  auxiliary workers (skipped when `CLOUDFLARE_ENV=test`). Default port 3742; the
+  CLI picks the next free port if taken.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
