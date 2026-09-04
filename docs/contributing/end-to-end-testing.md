@@ -63,7 +63,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `playwright.config.ts` starts the E2E server with
   `npm run e2e:web-server -- --port 3847` (D1 migrations + the local Cloudflare
   API mock + Vite with `CLOUDFLARE_ENV=test`) and waits on `/health`. The test
-  env is a single origin script; platform/runtime auxiliary workers are skipped.
+  env keeps jobs and highlight as Vite auxiliary workers; platform/runtime
+  auxiliary workers are skipped.
 - `tools/e2e-web-server.ts` starts `packages/mock-servers/cloudflare` and points
   the origin worker's `CLOUDFLARE_API_BASE_URL` / `CLOUDFLARE_API_TOKEN` /
   `CLOUDFLARE_ACCOUNT_ID` at it so signup and other transactional mail go
@@ -83,7 +84,8 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
   values for local secrets. That test env is a **single script**: Durable Object
   classes run on `kody-test` with no `script_name`. Production and `npm run dev`
-  attach origin, platform, runtime, and jobs as siblings.
+  attach origin, platform, runtime, jobs, and highlight as siblings. The test
+  env still starts jobs and highlight as auxiliary workers.
 - Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
   before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
   exited mid-suite (avoids burning retries on `ECONNREFUSED`). That error names

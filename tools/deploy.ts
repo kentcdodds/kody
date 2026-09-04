@@ -33,6 +33,17 @@ function resolveWranglerCommand() {
 		: resolveLocalBinary('wrangler')
 }
 
+export const originViteWranglerConfigPath = 'dist/ssr/wrangler.json'
+
+export function originViteDeployArgs(args: ReadonlyArray<string>) {
+	return [
+		'deploy',
+		'--config',
+		originViteWranglerConfigPath,
+		...omitConfigFlag(args),
+	]
+}
+
 export async function deploy(args: ReadonlyArray<string>) {
 	const configPath = readConfigFlag(args)
 	if (!isOriginWorkerConfigPath(configPath)) {
@@ -45,11 +56,13 @@ export async function deploy(args: ReadonlyArray<string>) {
 		...process.env,
 		KODY_WRANGLER_CONFIG: wranglerConfigPath,
 	})
-	run(
-		resolveWranglerCommand(),
-		['deploy', ...omitConfigFlag(args)],
-		process.env,
-	)
+	if (!existsSync(originViteWranglerConfigPath)) {
+		console.error(
+			`Origin Vite build did not emit ${originViteWranglerConfigPath}; cannot deploy.`,
+		)
+		process.exit(1)
+	}
+	run(resolveWranglerCommand(), originViteDeployArgs(args), process.env)
 }
 
 if (isExecutedDirectly(import.meta.url)) {

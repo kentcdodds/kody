@@ -22,9 +22,13 @@ description:
 - Run interactive `npm run dev` in tmux when you need the CLI shortcuts; it
   starts the mock Cloudflare API worker, then Vite (`@pitlane/dev` +
   `@cloudflare/vite-plugin`) so origin SSR and the client hydrate in one workerd
-  graph. Generated platform, runtime, jobs, and highlight configs join as Vite
-  auxiliary workers (skipped when `CLOUDFLARE_ENV=test`). Default port 3742; the
-  CLI picks the next free port if taken.
+  graph. Vite writes `packages/worker/wrangler-local-dev.generated.json` so
+  origin `env` gets `WRANGLER_IS_LOCAL_DEV` and mock `CLOUDFLARE_API_*` vars
+  (the Cloudflare Vite plugin does not map process env onto Worker bindings).
+  Jobs and highlight join as Vite auxiliary workers in every serve, including
+  `CLOUDFLARE_ENV=test`. Generated platform and runtime configs join only
+  outside the test env. Default port 3742; the CLI picks the next free port if
+  taken.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
@@ -41,8 +45,13 @@ PRIMARY config, registers each worker under `<name>-<env>`, and treats a
 secondary config's `ai` binding as always-remote (dev fails to boot with "Failed
 to start the remote proxy session"; `"remote": false` is NOT enough).
 
-`wrangler-env.ts` therefore never passes the committed runtime or platform
-configs to `wrangler dev` directly: `tools/local-runtime-dev-config.ts` and
+Origin Vite serve uses the same pattern for the primary config:
+`tools/local-origin-dev-config.ts` writes
+`packages/worker/wrangler-local-dev.generated.json` and injects
+`WRANGLER_IS_LOCAL_DEV`, mock `CLOUDFLARE_API_*`, `APP_BASE_URL`,
+`COOKIE_SECRET`, and `SECRET_STORE_KEY` into `vars`. `wrangler-env.ts` still
+never passes the committed runtime or platform configs to `wrangler dev`
+directly: `tools/local-runtime-dev-config.ts` and
 `tools/local-platform-dev-config.ts` generate
 `wrangler-local-dev.generated.json` next to each committed config (gitignored)
 on each dev start. Those files pin the secondary registered names to

@@ -336,9 +336,9 @@ export default {
 
 Use `refreshExternalAuth(provider, tokens)` when an app has stored OAuth/OIDC
 tokens and needs a fresh access token from a refresh token. Built-in OIDC
-providers, X, and Atmosphere support refresh-token exchange. If the provider
-does not rotate the refresh token, the refreshed bundle preserves the current
-one.
+providers and X support refresh-token exchange. Custom `createOAuthProvider()`
+integrations can too. If the provider does not rotate the refresh token, the
+refreshed bundle preserves the current one.
 
 ```typescript
 async function refreshGoogleTokens({ get }) {

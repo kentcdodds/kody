@@ -22,7 +22,7 @@ import { resolveNpmCommand } from './tools/node-runtime.ts'
 const defaultMockPort = 8788
 const mockReadyTimeoutMs = 10_000
 const mockReadyPollMs = 200
-const workerReadyTimeoutMs = 15_000
+const workerReadyTimeoutMs = 90_000
 const workerReadyPollMs = 250
 
 const ansiReset = '\x1b[0m'

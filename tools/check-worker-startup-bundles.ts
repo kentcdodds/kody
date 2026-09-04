@@ -213,6 +213,11 @@ function assertOriginViteDeferredChunks(
 	name: string,
 ) {
 	const assets = findOriginViteDeferredAssets(assetNames)
+	if (assets.guideCatalog.length === 0) {
+		throw new Error(
+			`${name} Vite startup bundle did not emit a separate guide-catalog chunk (dynamic import() regression?).`,
+		)
+	}
 	if (assets.oauthProvider.length === 0) {
 		throw new Error(
 			`${name} Vite startup bundle did not emit a separate oauth-provider chunk (dynamic import() regression?).`,
