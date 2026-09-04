@@ -13,6 +13,19 @@ export function wrapPagerIndex(index: number, count: number) {
 	return ((index % count) + count) % count
 }
 
+/**
+ * Hover/focus pause is desktop-only. Coarse pointers and window-resize
+ * leave `:hover` stuck on the strip, which freezes the lane.
+ */
+export function canPauseOnHover(
+	query: (query: string) => { matches: boolean } = (mediaQuery) =>
+		typeof matchMedia === 'function'
+			? matchMedia(mediaQuery)
+			: { matches: false },
+) {
+	return query('(hover: hover) and (pointer: fine)').matches
+}
+
 export function wrapUnitInterval(value: number, period: number) {
 	if (period <= 0) return 0
 	const next = value % period

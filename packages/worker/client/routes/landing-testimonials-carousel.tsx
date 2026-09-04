@@ -9,6 +9,7 @@ import {
 } from '#universal/landing-testimonials.ts'
 import {
 	TESTIMONIALS_LAP_MS,
+	canPauseOnHover,
 	listLanePlacements,
 	wrapPagerIndex,
 	wrapUnitInterval,
@@ -162,11 +163,13 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	let dragging = false
 
 	function isPaused() {
+		if (!inView || userNudging) return true
+		// Touch and window-resize leave `:hover` / `:focus-within` stuck on
+		// the strip. Only fine pointers get a hover/focus pause.
+		if (!canPauseOnHover()) return false
 		return (
-			!inView ||
 			hover ||
 			focus ||
-			userNudging ||
 			scroller.matches(':hover') ||
 			scroller.matches(':focus-within')
 		)
@@ -397,7 +400,8 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	scroller.addEventListener('pointercancel', onPointerUp, { signal })
 	scroller.addEventListener(
 		'pointerenter',
-		() => {
+		(event) => {
+			if (event.pointerType !== 'mouse') return
 			hover = true
 		},
 		{ signal },

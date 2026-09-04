@@ -1782,6 +1782,15 @@ html.is-settled {
 		flex: none;
 	}
 
+	/* Author `display: flex` above beats the UA `[hidden]` rule. Unused
+	   virtual cards would stay painted at the grid origin — a stuck
+	   leading card while the rest of the lane translates past it. */
+	html.js
+		.landing-testimonials-track.is-virtual
+		.landing-testimonial-card[hidden] {
+		display: none;
+	}
+
 	html.js .landing-testimonial-person {
 		margin-top: auto;
 		padding-top: 1.35rem;
