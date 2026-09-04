@@ -7,6 +7,6 @@
   },
   "dependencies": {
     "@kody-internal/shared": "file:../shared",
-    "@sentry/cloudflare": "^10.69.0"
+    "@sentry/cloudflare": "^10.73.0"
   }
 }
