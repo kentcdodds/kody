@@ -22,6 +22,7 @@ import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
+import { OnboardingRoute, onboardingRouteLoader } from './onboarding.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ProfileRoute, profileRouteLoader } from './profile.tsx'
 
@@ -304,30 +305,12 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.oauthAuthorizeRouteLoader,
 	),
-	[routePattern(routes.onboarding)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
-	[routePattern(routes.onboardingStep1)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
-	[routePattern(routes.onboardingStep1Agent)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
-	[routePattern(routes.onboardingStep2)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
-	[routePattern(routes.onboardingStep2Service)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
-	[routePattern(routes.onboardingStep3)]: lazyRouteLoader(
-		onboardingArea,
-		(m) => m.onboardingRouteLoader,
-	),
+	[routePattern(routes.onboarding)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep1)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep1Agent)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep2)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep2Service)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep3)]: onboardingRouteLoader,
 	[routePattern(routes.connectOauth)]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.connectOauthRouteLoader,
@@ -550,24 +533,12 @@ export const clientRoutes = {
 	[routePattern(routes.login)]: (
 		<LazyAuthRoute render={(m) => <m.LoginRoute />} />
 	),
-	[routePattern(routes.onboarding)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
-	[routePattern(routes.onboardingStep1)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
-	[routePattern(routes.onboardingStep1Agent)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
-	[routePattern(routes.onboardingStep2)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
-	[routePattern(routes.onboardingStep2Service)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
-	[routePattern(routes.onboardingStep3)]: (
-		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
-	),
+	[routePattern(routes.onboarding)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep1)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep1Agent)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep2)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep2Service)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep3)]: <OnboardingRoute />,
 	[routePattern(routes.pendingVerification)]: (
 		<LazyAuthRoute render={(m) => <m.PendingVerificationRoute />} />
 	),
