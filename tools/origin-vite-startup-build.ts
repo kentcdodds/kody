@@ -55,15 +55,57 @@ export type OriginViteStartupBuild = {
 	sourceMapPath: string
 	assetsDir: string
 	wranglerConfigPath: string
+	clientDir: string
 }
+
+/**
+ * Copies the Vite origin `dist/ssr` + `dist/client` trees into `outputRoot`.
+ * The generated `ssr/wrangler.json` points `assets.directory` at `../client`,
+ * so the client tree must sit next to the SSR snapshot.
+ */
+export async function copyOriginViteBuildSnapshot({
+	sourceRoot,
+	outputRoot,
+}: {
+	sourceRoot: string
+	outputRoot: string
+}) {
+	const ssrDir = path.join(outputRoot, 'ssr')
+	const clientDir = path.join(outputRoot, 'client')
+	await cp(path.join(sourceRoot, 'dist', 'ssr'), ssrDir, { recursive: true })
+	await cp(path.join(sourceRoot, 'dist', 'client'), clientDir, {
+		recursive: true,
+	})
+	return { ssrDir, clientDir }
+}
+
+let originViteBuildQueue: Promise<void> = Promise.resolve()
 
 /**
  * Builds the slim origin production entry with the same Vite + Pitlane
  * pipeline production deploy uses. The Cloudflare Vite plugin always writes
- * `dist/ssr` at the repo root; this copies that tree into `outputRoot` so the
- * startup inspectors can keep a stable snapshot.
+ * `dist/ssr` and `dist/client` at the repo root; this snapshots both into
+ * `outputRoot` so `wrangler check startup` can resolve Workers Assets.
+ * Calls are serialized because they share the generated Wrangler config and
+ * those repo-root `dist/` directories.
  */
 export async function buildOriginProductionViteBundle(
+	outputRoot: string,
+): Promise<OriginViteStartupBuild> {
+	const previous = originViteBuildQueue
+	let release!: () => void
+	originViteBuildQueue = new Promise((resolve) => {
+		release = resolve
+	})
+	await previous
+	try {
+		return await buildOriginProductionViteBundleUnlocked(outputRoot)
+	} finally {
+		release()
+	}
+}
+
+async function buildOriginProductionViteBundleUnlocked(
 	outputRoot: string,
 ): Promise<OriginViteStartupBuild> {
 	await mkdir(outputRoot, { recursive: true })
@@ -90,9 +132,10 @@ export async function buildOriginProductionViteBundle(
 		await rm(originStartupWranglerConfigPath, { force: true })
 	}
 
-	const repoSsrDir = path.join(repoRoot, 'dist', 'ssr')
-	const ssrDir = path.join(outputRoot, 'ssr')
-	await cp(repoSsrDir, ssrDir, { recursive: true })
+	const { ssrDir, clientDir } = await copyOriginViteBuildSnapshot({
+		sourceRoot: repoRoot,
+		outputRoot,
+	})
 	const wranglerConfigPath = path.join(ssrDir, 'wrangler.json')
 	const builtWrangler = JSON.parse(
 		await readFile(wranglerConfigPath, 'utf8'),
@@ -105,5 +148,6 @@ export async function buildOriginProductionViteBundle(
 		sourceMapPath: `${entryPath}.map`,
 		assetsDir: path.join(ssrDir, 'assets'),
 		wranglerConfigPath,
+		clientDir,
 	}
 }

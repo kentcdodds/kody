@@ -60,10 +60,12 @@ non-library caller to find which of our modules imported it.
 1. **Capability domains load lazily.**
    `packages/worker/src/mcp/capabilities/builtin-domains.ts` loads each
    `{domain}/domain.ts` through dynamic `import()` and `getStaticRegistry()` is
-   async. esbuild keeps the code in the same bundle but wraps those modules so
-   they evaluate on the first request that needs the registry. Never import a
-   `*/domain.ts` or a capability definition module statically from anything on
-   the startup path; one static edge makes esbuild evaluate the module eagerly
+   async. Direct Wrangler/esbuild worker builds keep that code in the same
+   bundle and wrap those modules so they evaluate on the first request that
+   needs the registry. Origin Vite builds emit those `import()` targets as
+   hashed SSR chunks under `dist/ssr`. Never import a `*/domain.ts` or a
+   capability definition module statically from anything on the startup path;
+   one static edge makes the Wrangler/esbuild path evaluate the module eagerly
    again. Shared helpers (`{domain}/shared.ts`) are the supported static entry
    points, so keep them light: helpers, not schema catalogs.
 2. **Heavy libraries load on first use.** `isomorphic-git` goes through
