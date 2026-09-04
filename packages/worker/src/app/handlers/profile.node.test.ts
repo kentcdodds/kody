@@ -47,7 +47,7 @@ vi.mock('#app/frame-registry.ts', async (importOriginal) => {
 			async (request: Request, _env: Env, _pathname: string) => {
 				if (request.headers.get('x-remix-target') === 'profile') {
 					return actual.createFrameHtmlResponse(
-						'<div data-testid="profile-frame"><span data-testid="profile-display-name">Alice</span></div>',
+						'<div data-testid="profile-frame"><p data-testid="profile-packages-empty">No public packages to take yet.</p></div>',
 					)
 				}
 				return null
@@ -184,6 +184,28 @@ test('profile API and page respect visibility and expose packages/activity', asy
 		}),
 	)
 
+	// Page shell embeds the person so first paint does not wait on the frame.
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	setupPublicProfileMocks()
+	const publicPageResponse = await pageHandler.handler({
+		request: new Request('https://example.com/@alice'),
+		params: { username: 'alice' },
+		url: new URL('https://example.com/@alice'),
+	} as never)
+	const publicPageBody = await publicPageResponse.json()
+	expect(publicPageResponse.status).toBe(200)
+	expect(publicPageBody.loaderData.profileShell).toEqual({
+		ok: true,
+		username: 'alice',
+		displayName: 'Alice',
+		bio: 'Hello',
+		avatarUrl: null,
+		joinedAt: '2026-01-01T00:00:00.000Z',
+		isSelf: false,
+		loggedIn: false,
+		visibility: 'public',
+	})
+
 	// Page shell 404 for unavailable profiles.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
@@ -212,7 +234,6 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(frameResponse.status).toBe(200)
 	expect(frameResponse.headers.get('Cache-Control')).toBe('no-store')
 	expect(html).toContain('data-testid="profile-frame"')
-	expect(html).toContain('data-testid="profile-display-name"')
-	expect(html).toContain('Alice')
+	expect(html).toContain('data-testid="profile-packages-empty"')
 	expect(html).not.toContain('<html')
 })

@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { loadProfileData } from '#app/profile-data.ts'
+import { toProfileShellLoaderData } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
@@ -42,15 +43,7 @@ export function createProfileHandler(env: Env) {
 				request,
 				env,
 				loaderData: {
-					profileShell: {
-						ok: true,
-						username: data.profile.username,
-						displayName: data.profile.displayName,
-						bio: data.profile.bio,
-						isSelf: data.isSelf,
-						loggedIn: data.loggedIn,
-						visibility: data.profile.visibility,
-					},
+					profileShell: toProfileShellLoaderData(data),
 				},
 			})
 		},

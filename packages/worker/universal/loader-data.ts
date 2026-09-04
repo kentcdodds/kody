@@ -229,15 +229,33 @@ export type ProfileLoaderData = {
 	loggedIn: boolean
 }
 
-/** SSR-embedded shell data for client-only regions on the profile page. */
+/** SSR-embedded shell data for the identity header on the profile page. */
 export type ProfileShellLoaderData = {
 	ok: true
 	username: string
 	displayName: string
 	bio: string | null
+	avatarUrl: string | null
+	joinedAt: string
 	isSelf: boolean
 	loggedIn: boolean
 	visibility: ProfileVisibility
+}
+
+export function toProfileShellLoaderData(
+	data: ProfileLoaderData,
+): ProfileShellLoaderData {
+	return {
+		ok: true,
+		username: data.profile.username,
+		displayName: data.profile.displayName,
+		bio: data.profile.bio,
+		avatarUrl: data.profile.avatarUrl,
+		joinedAt: data.profile.joinedAt,
+		isSelf: data.isSelf,
+		loggedIn: data.loggedIn,
+		visibility: data.profile.visibility,
+	}
 }
 
 export type ProfileUnavailableLoaderData = {

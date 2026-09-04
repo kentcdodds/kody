@@ -40,6 +40,7 @@ import { SiteHeader } from './site-header.tsx'
 import { Toaster } from './toaster.tsx'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageFilesPathname } from '#universal/package-files.ts'
+import { isProfilePathname } from '#universal/profile-path.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
@@ -195,6 +196,7 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/community' ||
 			currentPathname === '/onboarding' ||
 			currentPathname.startsWith('/onboarding/step-') ||
+			isProfilePathname(currentPathname) ||
 			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null
 		// The redesigned auth screens (login/signup) are a standalone

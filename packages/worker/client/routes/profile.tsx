@@ -1,12 +1,16 @@
 import { Frame, type Handle, css } from 'remix/ui'
-import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { PROFILE_TARGET } from '#universal/profile-frame-constants.ts'
 import {
+	toProfileShellLoaderData,
 	type ProfileLoaderData,
 	type ProfileShellLoaderData,
 	type ProfileUnavailableLoaderData,
 } from '#universal/loader-data.ts'
+import {
+	getProfileUsernameFromPathname,
+	isProfilePathname,
+} from '#universal/profile-path.ts'
 import {
 	listenToRouterNavigation,
 	readCurrentRouterHref,
@@ -19,6 +23,7 @@ import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
 import { readProfileSearchQueryFromHref } from '#client/routes/profile-search.ts'
+import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	fieldCss,
@@ -26,24 +31,12 @@ import {
 	getPrimaryButtonCss,
 	inputCss,
 	layoutMaxWidths,
-	mutedLinkCss,
 	pageDescriptionCss,
-	stackedPageCss,
+	pageGutter,
 } from '#universal/styles/style-primitives.ts'
 
-const profileMatcher = createMatcher(routes.profile.pattern)
-
-function getUsernameFromPathname(pathname: string) {
-	// Matched against the route rather than parsed off the `/@` prefix: the
-	// `/@owner/…` namespace also holds the canonical package URL, and reading
-	// `kentcdodds/devin` as a username would render a profile page for it.
-	const username = profileMatcher.match(new URL(pathname, 'http://localhost'))
-		?.params.username
-	return username || null
-}
-
 function getCurrentUsername(handle: Handle) {
-	return getUsernameFromPathname(readRouterPathname(handle))
+	return getProfileUsernameFromPathname(readRouterPathname(handle))
 }
 
 function buildProfileFrameSrc(href: string) {
@@ -51,17 +44,11 @@ function buildProfileFrameSrc(href: string) {
 	return `${url.pathname}${url.search}`
 }
 
-function isProfilePath(href: string) {
-	return (
-		getUsernameFromPathname(new URL(href, 'http://localhost').pathname) != null
-	)
-}
-
 export async function profileRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const username = getUsernameFromPathname(url.pathname)
+	const username = getProfileUsernameFromPathname(url.pathname)
 	if (!username) {
 		return {
 			profileShell: { ok: false, unavailable: true },
@@ -94,15 +81,7 @@ export async function profileRouteLoader(
 	await framePrefetchPromise
 
 	return {
-		profileShell: {
-			ok: true,
-			username: payload.profile.username,
-			displayName: payload.profile.displayName,
-			bio: payload.profile.bio,
-			isSelf: payload.isSelf,
-			loggedIn: payload.loggedIn,
-			visibility: payload.profile.visibility,
-		},
+		profileShell: toProfileShellLoaderData(payload),
 	}
 }
 
@@ -145,15 +124,7 @@ export function ProfileRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load profile.')
 			}
-			shell = {
-				ok: true,
-				username: payload.profile.username,
-				displayName: payload.profile.displayName,
-				bio: payload.profile.bio,
-				isSelf: payload.isSelf,
-				loggedIn: payload.loggedIn,
-				visibility: payload.profile.visibility,
-			}
+			shell = toProfileShellLoaderData(payload)
 			shellLoadedForUsername = username
 			shellStatus = 'ready'
 			handle.update()
@@ -167,7 +138,7 @@ export function ProfileRoute(handle: Handle) {
 
 	listenToRouterNavigation(handle, () => {
 		const href = readCurrentRouterHref(handle)
-		if (!isProfilePath(href)) return
+		if (!isProfilePathname(new URL(href, 'http://localhost').pathname)) return
 
 		const frame = handle.frames.get(PROFILE_TARGET)
 		if (!frame) return
@@ -187,7 +158,7 @@ export function ProfileRoute(handle: Handle) {
 		if (!username) {
 			return (
 				<section mix={css(pageCss)}>
-					<h1 mix={css(titleCss)}>This profile isn't available.</h1>
+					<h1 mix={css(unavailableTitleCss)}>This profile isn't available.</h1>
 				</section>
 			)
 		}
@@ -221,13 +192,19 @@ export function ProfileRoute(handle: Handle) {
 
 		const frameSrc = buildProfileFrameSrc(currentHref)
 		const showUnavailable =
-			shellStatus === 'ready' && shell != null && !shell.ok
-		const readyShell = shell != null && shell.ok ? shell : null
+			shellStatus === 'ready' &&
+			shell != null &&
+			!shell.ok &&
+			shellLoadedForUsername === username
+		const readyShell =
+			shell != null && shell.ok && shellLoadedForUsername === username
+				? shell
+				: null
 
 		if (showUnavailable) {
 			return (
 				<section mix={css(pageCss)} data-testid="profile-unavailable">
-					<h1 mix={css(titleCss)}>This profile isn't available.</h1>
+					<h1 mix={css(unavailableTitleCss)}>This profile isn't available.</h1>
 				</section>
 			)
 		}
@@ -254,76 +231,84 @@ export function ProfileRoute(handle: Handle) {
 		}
 
 		return (
-			<section mix={css(pageCss)}>
-				{readyShell?.isSelf ? (
-					<div mix={css(actionsCss)} data-testid="profile-actions">
-						<a href={routes.account.href()} mix={css(mutedLinkCss)}>
-							Edit profile
-						</a>
-						{readyShell.visibility === 'private' ? (
-							<span mix={css(badgeCss)}>Private</span>
-						) : null}
+			<section mix={css(pageCss)} data-testid="profile-page">
+				<div mix={css(layoutCss)}>
+					{readyShell ? renderProfileIdentity(readyShell) : null}
+
+					<div mix={css(mainCss)}>
+						<h2 mix={css(packagesHeadingCss)}>Packages</h2>
+						<form
+							method="get"
+							action={routes.profile.href({ username })}
+							role="search"
+							data-rmx-target={PROFILE_TARGET}
+							data-rmx-history="push"
+							mix={css(searchFormCss)}
+						>
+							<label mix={css(searchFieldCss)}>
+								<span mix={css(fieldLabelCss)}>Search packages</span>
+								<input
+									key={searchQuery}
+									type="search"
+									name="q"
+									defaultValue={searchQuery}
+									placeholder="Search by name, description, or tags"
+									mix={css(inputCss)}
+								/>
+							</label>
+							<button
+								type="submit"
+								mix={css({ ...getPrimaryButtonCss(), alignSelf: 'end' })}
+							>
+								Search
+							</button>
+						</form>
+
+						<Frame name={PROFILE_TARGET} src={frameSrc} />
 					</div>
-				) : null}
-
-				{shellStatus === 'loading' ? (
-					<p mix={css(pageDescriptionCss)}>Loading profile…</p>
-				) : null}
-
-				<form
-					method="get"
-					action={routes.profile.href({ username })}
-					mix={css(searchFormCss)}
-				>
-					<label mix={css(searchFieldCss)}>
-						<span mix={css(fieldLabelCss)}>Search packages</span>
-						<input
-							key={searchQuery}
-							type="search"
-							name="q"
-							defaultValue={searchQuery}
-							placeholder="Search by name, description, or tags"
-							mix={css(inputCss)}
-						/>
-					</label>
-					<button
-						type="submit"
-						mix={css({ ...getPrimaryButtonCss(), alignSelf: 'end' })}
-					>
-						Search
-					</button>
-				</form>
-
-				<Frame name={PROFILE_TARGET} src={frameSrc} />
+				</div>
 			</section>
 		)
 	}
 }
 
 const pageCss = {
-	...stackedPageCss,
 	maxWidth: layoutMaxWidths.extended,
-	margin: '0 auto',
+	marginInline: 'auto',
 	width: '100%',
+	boxSizing: 'border-box' as const,
+	padding: `clamp(2rem, 5vw, 3.5rem) ${pageGutter} clamp(4rem, 8vw, 6.5rem)`,
 }
 
-const titleCss = {
+const layoutCss = {
+	display: 'grid',
+	gap: 'clamp(1.75rem, 4vw, 3rem)',
+	alignItems: 'start',
+	'@media (min-width: 821px)': {
+		gridTemplateColumns: '17.5rem minmax(0, 1fr)',
+		gap: '2.75rem',
+	},
+}
+
+const mainCss = {
+	display: 'grid',
+	gap: spacing.lg,
+	minWidth: 0,
+}
+
+const packagesHeadingCss = {
+	margin: 0,
+	fontFamily: typography.fontFamilyDisplay,
+	fontSize: 'clamp(1.35rem, 2.4vw, 1.7rem)',
+	fontWeight: 720,
+	letterSpacing: '-0.018em',
+	color: colors.text,
+}
+
+const unavailableTitleCss = {
 	margin: 0,
 	fontSize: typography.fontSize['2xl'],
 	fontWeight: typography.fontWeight.semibold,
-}
-
-const actionsCss = {
-	display: 'flex',
-	alignItems: 'center',
-	gap: spacing.md,
-	flexWrap: 'wrap' as const,
-}
-
-const badgeCss = {
-	fontSize: typography.fontSize.sm,
-	color: colors.primaryText,
-	fontWeight: typography.fontWeight.medium,
 }
 
 const searchFormCss = {
