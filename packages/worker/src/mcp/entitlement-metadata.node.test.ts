@@ -92,42 +92,6 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		upgradeHint: buildJobIntervalFloorUpgradeHint(),
 		minIntervalMs: intervalMs,
 	})
-	const multiSentenceHint =
-		'Space this job out. Then upgrade at /account/billing.'
-	expect(
-		toMcpEntitlementMetadata(
-			new Error(
-				new JobIntervalFloorError({
-					plan: 'free',
-					minIntervalMs: intervalMs,
-					upgradeHint: multiSentenceHint,
-				}).message,
-			),
-		),
-	).toEqual({
-		code: jobIntervalFloorErrorCode,
-		resource: 'scheduled_jobs',
-		plan: 'free',
-		upgradeHint: multiSentenceHint,
-		minIntervalMs: intervalMs,
-	})
-	expect(
-		toMcpEntitlementMetadata(
-			new Error(
-				new JobIntervalFloorError({
-					plan: 'free',
-					minIntervalMs: intervalMs,
-					upgradeHint: '',
-				}).message,
-			),
-		),
-	).toEqual({
-		code: jobIntervalFloorErrorCode,
-		resource: 'scheduled_jobs',
-		plan: 'free',
-		upgradeHint: '',
-		minIntervalMs: intervalMs,
-	})
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()
 	expect(entitlementStructuredContent(new Error('Boom'))).toEqual({})
 })

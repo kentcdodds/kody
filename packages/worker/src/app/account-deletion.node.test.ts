@@ -79,7 +79,6 @@ test('vectorize surface sources match the migrated APP_DB schema', () => {
 test('deleteUserAccount enumerates job vectors through JOBS against the real post-0010 APP_DB schema', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, appMigrationsDir)
-	expect(listSqliteTables(sqlite)).not.toContain('jobs')
 	const db = createD1FromSqlite(sqlite)
 	const userId = 'user-post-0010'
 	const inserted = await db

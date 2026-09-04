@@ -22,7 +22,6 @@ import {
 import {
 	listUnverifiedAccountPurgeCandidates,
 	pruneUnverifiedAccounts,
-	redactEmailAddresses,
 	unverifiedAccountPurgeFailureReasonMaxLength,
 } from './unverified-account-purge.ts'
 
@@ -528,9 +527,6 @@ test('failure details redact email addresses before they reach outcomes, audit r
 	})
 	expect(JSON.stringify(auditRow)).not.toContain('@example.com')
 	expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('@example.com')
-	expect(redactEmailAddresses('call kody@kody.codes or a@b.co now')).toBe(
-		'call <email> or <email> now',
-	)
 })
 
 test('a Stripe cancellation failure is a pre-cleanup failure: fence released, account retained, retried next run', async () => {

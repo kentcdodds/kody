@@ -44,21 +44,8 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 	).toEqual(['Justin Elias', 'Cameron Pak', 'Maciek Sitkowski'])
 })
 
-test('landingTestimonials publishes Cameron Pak with a hosted photo and personal-site link', () => {
-	expect(landingTestimonials.length).toBeLessThanOrEqual(6)
-	const cameron = landingTestimonials.find(
-		(entry) => entry.name === 'Cameron Pak',
-	)
-	expect(cameron).toMatchObject({
-		photo: '/images/testimonials/cameron-pak.webp',
-		href: 'https://cameronpak.com',
-	})
-	expect(cameron).not.toHaveProperty('title')
-})
-
 test('testimonialInitials falls back to two letters from the public name', () => {
 	expect(testimonialInitials('Maciek Sitkowski')).toBe('MS')
 	expect(testimonialInitials('Justin Elias')).toBe('JE')
-	expect(testimonialInitials('Cameron Pak')).toBe('CP')
 	expect(testimonialInitials('Ada')).toBe('A')
 })

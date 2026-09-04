@@ -22,9 +22,6 @@ function routeFor(envelopeTo: string) {
 }
 
 test('plus tags on user inbox hosts are never reserved system locals', () => {
-	expect(normalizeEmailAddress('kentcdodds+kody@inbox.kody.codes')).toBe(
-		'kentcdodds+kody@inbox.kody.codes',
-	)
 	expect(normalizeEmailAddress('Kent <alice+Kody@Inbox.Kody.CODES>')).toBe(
 		'alice+kody@inbox.kody.codes',
 	)

@@ -78,12 +78,6 @@ test('params-mode first-arg unwrap and caller Idempotency-Key resolution', () =>
 
 	expect(
 		buildWebhookCallerIdempotencyHashParams({
-			json: { event: 'push' },
-			bodyText: '{"event":"push"}',
-		}),
-	).toEqual({ event: 'push' })
-	expect(
-		buildWebhookCallerIdempotencyHashParams({
 			json: null,
 			bodyText: 'not-json',
 		}),

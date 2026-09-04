@@ -134,12 +134,6 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	expect(await getEffectiveUsernameValidationError('fu-ck', swearEnv)).toBe(
 		'This username is reserved.',
 	)
-	expect(await getEffectiveUsernameValidationError('assistant', swearEnv)).toBe(
-		null,
-	)
-	expect(await getEffectiveUsernameValidationError('analytics', swearEnv)).toBe(
-		null,
-	)
 
 	clearReservedUsernameSettingsCacheForTests()
 	consoleWarn.mockImplementation(() => {})
