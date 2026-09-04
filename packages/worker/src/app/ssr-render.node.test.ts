@@ -544,6 +544,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(anonymousOnboardingHtml).toContain(
 		'data-testid="onboarding-agent-picker"',
 	)
+	expect(anonymousOnboardingHtml).not.toContain('Loading onboarding')
+	expect(anonymousOnboardingHtml).not.toContain('Loading page')
 	expect(anonymousOnboardingHtml).toContain('data-testid="onboarding-step-2"')
 	expect(anonymousOnboardingHtml).toContain('href="/onboarding/step-2"')
 	expect(anonymousOnboardingHtml).not.toContain('href="/onboarding/step-3"')

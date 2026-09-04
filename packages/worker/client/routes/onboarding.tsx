@@ -438,9 +438,6 @@ export function OnboardingRoute(handle: Handle) {
 					</p>
 				</header>
 
-				{status === 'loading' ? (
-					<p mix={css(loadingCss)}>Loading onboarding…</p>
-				) : null}
 				{message ? (
 					<p mix={css(errorMessageCss)} role="alert">
 						{message}
@@ -539,11 +536,6 @@ const onboardHeadCss = {
 		fontSize: '1.08rem',
 		maxWidth: '52ch',
 	},
-}
-
-const loadingCss = {
-	margin: 'clamp(2.2rem, 5vw, 3.2rem) 0 0',
-	color: colors.textMuted,
 }
 
 const errorMessageCss = {
