@@ -424,13 +424,6 @@ export function renderPanelWarning(
 						: 'Grok.com and Grok Bot are separate products. Change selection if you meant one of those instead.'}
 				</ClientWarning>
 			)
-		case 'grok-bot':
-			return (
-				<ClientWarning>
-					Grok.com (xAI web connectors) and Grok CLI are separate products.
-					Change selection if you meant one of those instead.
-				</ClientWarning>
-			)
 		case 'claude-code':
 			return surface === 'mobile' ? (
 				<ClientWarning>
@@ -460,6 +453,7 @@ export function renderPanelWarning(
 		case 'copilot-app':
 		case 'devin':
 		case 'gemini':
+		case 'grok-bot':
 		case 'other':
 			return null
 		default: {

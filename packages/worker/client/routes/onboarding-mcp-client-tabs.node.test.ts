@@ -135,12 +135,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(desktop.indexOf('onboarding-mcp-plugin-primary')).toBeLessThan(
 		desktop.indexOf('Or add Kody from'),
 	)
-	expect(desktop.indexOf('onboarding-agent-help')).toBeLessThan(
-		desktop.indexOf('onboarding-agent-warning'),
-	)
-	expect(desktop).toContain(
-		'Grok.com (xAI web connectors) and Grok CLI are separate products',
-	)
 	expect(desktop).not.toContain('data-surface="mobile"')
 	expect(mobile).toContain('data-surface="mobile"')
 	expect(mobile).toContain(grokBotInstallUrl)
