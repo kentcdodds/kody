@@ -139,8 +139,9 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     fails the test.
   - Workerd also prints Durable Object / WorkerEntrypoint RPC rejections as
     `uncaught exception` even when the caller catches them. Those dumps go
-    through Node `process.stderr`, so console spies cannot see them.
-    Workers-unit `globalSetup` filters only the known incidental dumps in
+    through Node `process.stdout` / `process.stderr` (not JS `console`), so
+    console spies cannot see them. Workers-unit `globalSetup` filters only the
+    known incidental dumps in
     `tools/vitest-workerd-uncaught-exception-filter.ts`. Add a needle there when
     a new expected-failure suite starts leaking; do not swallow unrelated
     isolate errors.

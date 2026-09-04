@@ -8,7 +8,10 @@
  *
  * Wired as workers-unit `globalSetup` (Node-side). Companion to
  * `silenceExpectedConsoleErrors` / `silenceIncidentalRuntimeWarnings`, which
- * cannot see these because they never go through JS `console`.
+ * cannot see these because they never go through JS `console`. Workerd's
+ * structured-log handler writes non-error/warn levels to stdout, so both
+ * streams are wrapped. Incomplete writes that are not uncaught-exception
+ * dumps pass through immediately so Vite's newline-less stdout is not delayed.
  */
 
 export const incidentalWorkerdUncaughtExceptionNeedles = [
@@ -104,7 +107,7 @@ function chunkToString(
 }
 
 export function installWorkerdUncaughtExceptionFilter(
-	streams: Array<NodeJS.WriteStream> = [process.stderr],
+	streams: Array<NodeJS.WriteStream> = [process.stderr, process.stdout],
 ): () => void {
 	const restores: Array<() => void> = []
 	for (const stream of streams) {
