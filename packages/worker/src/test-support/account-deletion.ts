@@ -248,13 +248,15 @@ export function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower === 'select stripe_customer_id from users where id = ?'
+								lower ===
+								'select stripe_customer_id, email from users where id = ?'
 							) {
 								const numericId = Number(params[0])
 								results = (rows.users ?? [])
 									.filter((row) => Number(row['id']) === numericId)
 									.map((row) => ({
 										stripe_customer_id: row['stripe_customer_id'] ?? null,
+										email: row['email'] ?? null,
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}

@@ -782,6 +782,26 @@ has a Discord social-login connection (see
 [`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
 the Stripe customer portal for linked customers.
 
+### Account deletion refunds
+
+Account deletion is the one automatic refund path (the Terms of Service say
+so). Before the destructive steps, `deleteUserAccount` refunds the unused
+remainder of the current period for each `active` or `trialing` subscription
+and then cancels it immediately; dunning, paused, and incomplete subscriptions
+are canceled without a refund. The client helpers are
+`getLatestPaidInvoiceForSubscription` (`GET /v1/invoices?subscription=…
+&status=paid&limit=1`), `listCreditNotesForInvoice` (retry idempotency), and
+`createProratedRefundCreditNote`, which previews then creates a credit note for
+one invoice line (`lines[0][type]=invoice_line_item`, `lines[0][amount]`) with
+`refund_amount` equal to the previewed total so Stripe reverses the line's tax
+proportionally and refunds the original payment method. The prorated line
+amount is `floor(lineAmount * (period.end - now) / (period.end - period.start))`.
+A refund failure is a billing failure (`AccountDeletionBillingError`): the
+account is retained for retry, exactly like a failed cancel. The full sequence,
+skip conditions, audit action, and result shape are documented with the rest of
+the deletion flow in
+[`data-storage.md`](./data-storage.md#account-deletion-inventory).
+
 ### Webhooks (primary sync)
 
 `POST /webhooks/stripe` is the primary path for linking customers and refreshing

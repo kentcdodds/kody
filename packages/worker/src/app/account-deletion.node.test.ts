@@ -14,6 +14,10 @@ import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { accountUserDataExcludedOwnerIds } from '#worker/account/data-targets.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	auditEventSummaries,
+	logAuditEventSpy,
+} from '#worker/test-support/audit-log-spy.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 import {
@@ -1106,6 +1110,60 @@ function stripeSubscription(id: string, status: string) {
 	}
 }
 
+/**
+ * Spies the refund half of the Stripe client with "nothing paid yet" defaults
+ * so cancel-focused tests do not accidentally issue credit notes.
+ */
+function spyOnStripeRefundClient() {
+	const getLatestPaidInvoiceForSubscription = vi
+		.spyOn(stripeClient, 'getLatestPaidInvoiceForSubscription')
+		.mockResolvedValue(null)
+	const listCreditNotesForInvoice = vi
+		.spyOn(stripeClient, 'listCreditNotesForInvoice')
+		.mockResolvedValue([])
+	const createProratedRefundCreditNote = vi
+		.spyOn(stripeClient, 'createProratedRefundCreditNote')
+		.mockRejectedValue(new Error('unexpected credit note'))
+	return {
+		getLatestPaidInvoiceForSubscription,
+		listCreditNotesForInvoice,
+		createProratedRefundCreditNote,
+		restore() {
+			getLatestPaidInvoiceForSubscription.mockRestore()
+			listCreditNotesForInvoice.mockRestore()
+			createProratedRefundCreditNote.mockRestore()
+		},
+	}
+}
+
+const thirtyDaysSeconds = 30 * 24 * 60 * 60
+const refundPeriodStart = Math.floor(
+	new Date('2026-09-01T00:00:00.000Z').getTime() / 1000,
+)
+const refundPeriodEnd = refundPeriodStart + thirtyDaysSeconds
+
+function paidInvoice(input: {
+	id: string
+	amountPaid: number
+	lineAmount?: number
+	lineId?: string
+}) {
+	return {
+		id: input.id,
+		amount_paid: input.amountPaid,
+		currency: 'usd',
+		lines: {
+			data: [
+				{
+					id: input.lineId ?? `il_${input.id}`,
+					amount: input.lineAmount ?? input.amountPaid,
+					period: { start: refundPeriodStart, end: refundPeriodEnd },
+				},
+			],
+		},
+	}
+}
+
 function createStripeUserDb(input: {
 	id: number
 	stableUserId: string
@@ -1130,6 +1188,7 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
 	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
 	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
 	try {
 		listSubscriptions.mockResolvedValue([
 			stripeSubscription('sub_active', 'active'),
@@ -1176,6 +1235,15 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 		expect(deleteCustomer).toHaveBeenCalledWith(expect.any(Object), 'cus_pro')
 		expect(rows.users).toEqual([])
 		expect(result.warnings).toEqual([])
+		// Only subscriptions in good standing are even considered for a refund;
+		// with no paid invoice there is nothing to credit.
+		expect(
+			refundClient.getLatestPaidInvoiceForSubscription.mock.calls.map(
+				([, subscriptionId]) => subscriptionId,
+			),
+		).toEqual(['sub_active', 'sub_trialing'])
+		expect(refundClient.createProratedRefundCreditNote).not.toHaveBeenCalled()
+		expect(result.stripeRefunds).toEqual([])
 
 		// Customer deletion after a successful cancel stays warning-only: nothing
 		// bills a customer with no billable subscription.
@@ -1238,6 +1306,7 @@ test('account deletion cancels Stripe billing before cleanup and keeps customer 
 		listSubscriptions.mockRestore()
 		cancelSubscription.mockRestore()
 		deleteCustomer.mockRestore()
+		refundClient.restore()
 		consoleError.mockReset()
 	}
 })
@@ -1246,6 +1315,7 @@ test('a failed Stripe cancellation retains the account, releases the fence, and 
 	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
 	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
 	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
 	consoleError.mockImplementation(() => {})
 	try {
 		const cases: Array<{
@@ -1342,6 +1412,7 @@ test('a failed Stripe cancellation retains the account, releases the fence, and 
 		listSubscriptions.mockRestore()
 		cancelSubscription.mockRestore()
 		deleteCustomer.mockRestore()
+		refundClient.restore()
 		consoleError.mockReset()
 	}
 })
@@ -1350,6 +1421,7 @@ test('a subscription that is already canceled counts as canceled so retried dele
 	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
 	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
 	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
 	try {
 		deleteCustomer.mockResolvedValue(undefined)
 
@@ -1403,6 +1475,311 @@ test('a subscription that is already canceled counts as canceled so retried dele
 		listSubscriptions.mockRestore()
 		cancelSubscription.mockRestore()
 		deleteCustomer.mockRestore()
+		refundClient.restore()
+	}
+})
+
+test('account deletion refunds unused time with a credit note before canceling each paid subscription', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		// Exactly half of a 30-day period has elapsed.
+		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_active', 'active'),
+			stripeSubscription('sub_trialing', 'trialing'),
+			stripeSubscription('sub_past_due', 'past_due'),
+		])
+		cancelSubscription.mockResolvedValue(undefined)
+		deleteCustomer.mockResolvedValue(undefined)
+		refundClient.getLatestPaidInvoiceForSubscription.mockImplementation(
+			async (_env, subscriptionId) => {
+				if (subscriptionId === 'sub_active') {
+					return paidInvoice({ id: 'in_active', amountPaid: 1201 })
+				}
+				// A trial that has not converted has a $0 paid invoice.
+				return paidInvoice({ id: 'in_trial', amountPaid: 0 })
+			},
+		)
+		refundClient.createProratedRefundCreditNote.mockResolvedValue({
+			id: 'cn_active',
+			total: 600,
+			currency: 'usd',
+		})
+		const { db, rows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-refund',
+			customerId: 'cus_refund',
+		})
+
+		const result = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(db),
+			dbUserId: 1,
+			mcpUserId: 'user-refund',
+		})
+
+		// floor(1201 * 15d / 30d) = 600: the odd cent stays with Kody, never
+		// rounds up against the invoice.
+		expect(refundClient.createProratedRefundCreditNote).toHaveBeenCalledOnce()
+		expect(refundClient.createProratedRefundCreditNote).toHaveBeenCalledWith(
+			expect.any(Object),
+			{
+				invoiceId: 'in_active',
+				invoiceLineItemId: 'il_in_active',
+				amount: 600,
+				reason: 'order_change',
+			},
+		)
+		expect(refundClient.listCreditNotesForInvoice).toHaveBeenCalledWith(
+			expect.any(Object),
+			'in_active',
+		)
+		// Refund precedes the cancel of the same subscription so the invoice
+		// line's service period is still intact when Stripe prorates tax.
+		const creditNoteOrder =
+			refundClient.createProratedRefundCreditNote.mock.invocationCallOrder[0]!
+		const activeCancelIndex = cancelSubscription.mock.calls.findIndex(
+			([, subscriptionId]) => subscriptionId === 'sub_active',
+		)
+		expect(
+			cancelSubscription.mock.invocationCallOrder[activeCancelIndex]!,
+		).toBeGreaterThan(creditNoteOrder)
+		expect(
+			refundClient.getLatestPaidInvoiceForSubscription.mock.calls.map(
+				([, subscriptionId]) => subscriptionId,
+			),
+		).toEqual(['sub_active', 'sub_trialing'])
+		expect(
+			cancelSubscription.mock.calls.map(([, subscriptionId]) => subscriptionId),
+		).toEqual(['sub_active', 'sub_trialing', 'sub_past_due'])
+		expect(result.stripeRefunds).toEqual([
+			{
+				subscriptionId: 'sub_active',
+				amountMinor: 600,
+				currency: 'usd',
+				invoiceId: 'in_active',
+				creditNoteId: 'cn_active',
+			},
+		])
+		expect(rows.users).toEqual([])
+		expect(result.warnings).toEqual([])
+		expect(logAuditEventSpy).toHaveBeenCalledWith({
+			db: null,
+			category: 'account',
+			action: 'account_deletion_refund',
+			result: 'success',
+			email: 'user-refund@example.com',
+			reason: 'usd:600',
+		})
+		expect(auditEventSummaries()).toEqual(['account_deletion_refund:success'])
+	} finally {
+		vi.useRealTimers()
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
+		refundClient.restore()
+	}
+})
+
+test('a failed credit note retains the account, releases the fence, and cancels nothing', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
+	consoleError.mockImplementation(() => {})
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_active', 'active'),
+		])
+		cancelSubscription.mockResolvedValue(undefined)
+		deleteCustomer.mockResolvedValue(undefined)
+		refundClient.getLatestPaidInvoiceForSubscription.mockResolvedValue(
+			paidInvoice({ id: 'in_active', amountPaid: 1200 }),
+		)
+		refundClient.createProratedRefundCreditNote.mockRejectedValue(
+			new Error('Stripe credit note rejected'),
+		)
+		const deleteVectorsMock = vi.fn(async () => undefined)
+		const { db, rows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-refund-fails',
+			customerId: 'cus_refund_fails',
+		})
+		const env = createSuccessfulDeletionEnv(db, {
+			CAPABILITY_VECTOR_INDEX: { deleteByIds: deleteVectorsMock },
+		} as unknown as Partial<Env>)
+		const meter = userMeterRpc({ env, userId: 'user-refund-fails' })
+
+		await expect(
+			deleteUserAccount({
+				env,
+				dbUserId: 1,
+				mcpUserId: 'user-refund-fails',
+			}),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof AccountDeletionBillingError &&
+				JSON.stringify(error.billingErrors) ===
+					JSON.stringify([
+						'Stripe subscription sub_active unused time could not be refunded: Stripe credit note rejected',
+					]),
+		)
+
+		// The subscription stays active so the retry can refund it, and nothing
+		// destructive ran.
+		expect(cancelSubscription).not.toHaveBeenCalled()
+		expect(deleteVectorsMock).not.toHaveBeenCalled()
+		expect(deleteCustomer).not.toHaveBeenCalled()
+		expect(rows.users).toEqual([
+			expect.objectContaining({
+				id: 1,
+				stable_user_id: 'user-refund-fails',
+				stripe_customer_id: 'cus_refund_fails',
+				deleting_at: null,
+			}),
+		])
+		expect(rows.mcp_memories).toEqual([
+			{ id: 'mem-user-refund-fails', user_id: 'user-refund-fails' },
+		])
+		expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
+		expect(auditEventSummaries()).toEqual([])
+		expect(consoleError).toHaveBeenCalledWith(
+			'account_deletion_billing_cancel_failed',
+			{
+				userId: 'user-refund-fails',
+				billingErrors: [
+					'Stripe subscription sub_active unused time could not be refunded: Stripe credit note rejected',
+				],
+			},
+		)
+	} finally {
+		vi.useRealTimers()
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
+		refundClient.restore()
+		consoleError.mockReset()
+	}
+})
+
+test('a retried deletion reuses the earlier Kody credit note and treats an exhausted invoice as nothing to refund', async () => {
+	const listSubscriptions = vi.spyOn(stripeClient, 'listSubscriptions')
+	const cancelSubscription = vi.spyOn(stripeClient, 'cancelSubscription')
+	const deleteCustomer = vi.spyOn(stripeClient, 'deleteCustomer')
+	const refundClient = spyOnStripeRefundClient()
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		cancelSubscription.mockResolvedValue(undefined)
+		deleteCustomer.mockResolvedValue(undefined)
+
+		// Retry: the first attempt issued the credit note but failed later.
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_retry', 'active'),
+		])
+		refundClient.getLatestPaidInvoiceForSubscription.mockResolvedValue(
+			paidInvoice({ id: 'in_retry', amountPaid: 1200 }),
+		)
+		refundClient.listCreditNotesForInvoice.mockResolvedValue([
+			{
+				id: 'cn_voided',
+				total: 600,
+				currency: 'usd',
+				status: 'void',
+				memo: stripeClient.accountDeletionCreditNoteMemo,
+				metadata: { kody_account_deletion: '1' },
+			},
+			{
+				id: 'cn_support',
+				total: 100,
+				currency: 'usd',
+				status: 'issued',
+				memo: 'Goodwill credit from support',
+				metadata: {},
+			},
+			{
+				id: 'cn_earlier',
+				total: 600,
+				currency: 'usd',
+				status: 'issued',
+				memo: null,
+				metadata: { kody_account_deletion: '1' },
+			},
+		])
+		const { db: retryDb, rows: retryRows } = createStripeUserDb({
+			id: 1,
+			stableUserId: 'user-refund-retry',
+			customerId: 'cus_refund_retry',
+		})
+		const retryResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(retryDb),
+			dbUserId: 1,
+			mcpUserId: 'user-refund-retry',
+		})
+		expect(refundClient.createProratedRefundCreditNote).not.toHaveBeenCalled()
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_retry',
+		)
+		expect(retryResult.stripeRefunds).toEqual([
+			{
+				subscriptionId: 'sub_retry',
+				amountMinor: 600,
+				currency: 'usd',
+				invoiceId: 'in_retry',
+				creditNoteId: 'cn_earlier',
+			},
+		])
+		expect(retryRows.users).toEqual([])
+		// The earlier attempt already audited this refund.
+		expect(auditEventSummaries()).toEqual([])
+
+		// Stripe says the invoice has nothing left to credit (for example
+		// support already refunded it by hand): cancel proceeds without a refund.
+		listSubscriptions.mockResolvedValue([
+			stripeSubscription('sub_exhausted', 'active'),
+		])
+		refundClient.listCreditNotesForInvoice.mockResolvedValue([])
+		refundClient.createProratedRefundCreditNote.mockRejectedValue(
+			new stripeClient.StripeApiError(
+				'Stripe API request failed with HTTP 400.',
+				{
+					status: 400,
+					stripeMessage:
+						'The credit note amount exceeds the maximum creditable amount for this invoice.',
+				},
+			),
+		)
+		cancelSubscription.mockClear()
+		const { db: exhaustedDb, rows: exhaustedRows } = createStripeUserDb({
+			id: 2,
+			stableUserId: 'user-refund-exhausted',
+			customerId: 'cus_refund_exhausted',
+		})
+		const exhaustedResult = await deleteUserAccount({
+			env: createSuccessfulDeletionEnv(exhaustedDb),
+			dbUserId: 2,
+			mcpUserId: 'user-refund-exhausted',
+		})
+		expect(refundClient.createProratedRefundCreditNote).toHaveBeenCalledOnce()
+		expect(cancelSubscription).toHaveBeenCalledWith(
+			expect.any(Object),
+			'sub_exhausted',
+		)
+		expect(exhaustedResult.stripeRefunds).toEqual([])
+		expect(exhaustedResult.warnings).toEqual([])
+		expect(exhaustedRows.users).toEqual([])
+	} finally {
+		vi.useRealTimers()
+		listSubscriptions.mockRestore()
+		cancelSubscription.mockRestore()
+		deleteCustomer.mockRestore()
+		refundClient.restore()
 	}
 })
 

@@ -18,6 +18,7 @@ import { AccountDeletionWritersActiveError } from '#worker/account/deletion-stat
 import { createDb, usersTable } from '#worker/db.ts'
 import { scheduleUserDeletedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
+import { formatStripeMinorAmount } from '#worker/billing/minor-amount.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
 function readDeleteRequestFields(body: unknown) {
@@ -52,9 +53,26 @@ function accountDeletionFailureReason(error: AccountDeletionFailure) {
 
 function accountDeletionFailureMessage(error: AccountDeletionFailure) {
 	if (error instanceof AccountDeletionBillingError) {
-		return 'We could not cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.'
+		return 'We could not refund and cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.'
 	}
 	return 'Account deletion could not complete safely. Try again later.'
+}
+
+/**
+ * Display-ready refund summary for the deletion panel. Keeps the raw
+ * `stripeRefunds` entries in the response too for operators; this is the
+ * human-readable line the UI shows.
+ */
+function summarizeRefunds(
+	refunds: Awaited<ReturnType<typeof deleteUserAccount>>['stripeRefunds'],
+) {
+	if (refunds.length === 0) return {}
+	return {
+		refunds: refunds.map((refund) => ({
+			amount: formatStripeMinorAmount(refund.amountMinor, refund.currency),
+			currency: refund.currency.toUpperCase(),
+		})),
+	}
 }
 
 export function createAccountDeleteHandler(env: Env) {
@@ -203,6 +221,7 @@ export function createAccountDeleteHandler(env: Env) {
 				JSON.stringify({
 					ok: true,
 					...result,
+					...summarizeRefunds(result.stripeRefunds ?? []),
 				}),
 				{ status: 200, headers },
 			)

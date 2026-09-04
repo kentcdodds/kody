@@ -197,7 +197,7 @@ test('a Stripe cancellation failure keeps the session and tells the user the sub
 	expect(response.status).toBe(503)
 	expect(await response.json()).toEqual({
 		error:
-			'We could not cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.',
+			'We could not refund and cancel your subscription, so your account was not deleted. Try again in a few minutes or contact support.',
 	})
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	expect(mocks.scheduleUserDeletedEvent).not.toHaveBeenCalled()
@@ -207,4 +207,61 @@ test('a Stripe cancellation failure keeps the session and tells the user the sub
 		result: 'failure',
 		reason: 'billing_cancel_failed',
 	})
+})
+
+test('a successful deletion reports issued refunds as display amounts', async () => {
+	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
+	mocks.findOne.mockResolvedValue({
+		id: 7,
+		password_hash: 'oauth_created_no_usable_password',
+	})
+	mocks.deleteUserAccount.mockClear()
+	mocks.deleteUserAccount.mockResolvedValueOnce({
+		deletedRowCounts: { users: 1 },
+		warnings: [],
+		stripeRefunds: [
+			{
+				subscriptionId: 'sub_1',
+				amountMinor: 1234,
+				currency: 'usd',
+				invoiceId: 'in_1',
+				creditNoteId: 'cn_1',
+			},
+			{
+				subscriptionId: 'sub_2',
+				amountMinor: 500,
+				currency: 'jpy',
+				invoiceId: 'in_2',
+				creditNoteId: 'cn_2',
+			},
+		],
+	})
+
+	const refunded = await requestDelete({
+		confirmation: accountDeletionConfirmationPhrase,
+	})
+	expect(refunded.status).toBe(200)
+	expect(await refunded.json()).toMatchObject({
+		ok: true,
+		stripeRefunds: [
+			expect.objectContaining({ creditNoteId: 'cn_1' }),
+			expect.objectContaining({ creditNoteId: 'cn_2' }),
+		],
+		refunds: [
+			{ amount: '$12.34', currency: 'USD' },
+			{ amount: '¥500', currency: 'JPY' },
+		],
+	})
+
+	// No refund, no summary field: the panel redirects straight home.
+	mocks.deleteUserAccount.mockResolvedValueOnce({
+		deletedRowCounts: { users: 1 },
+		warnings: [],
+		stripeRefunds: [],
+	})
+	const plain = await requestDelete({
+		confirmation: accountDeletionConfirmationPhrase,
+	})
+	expect(plain.status).toBe(200)
+	expect(await plain.json()).not.toHaveProperty('refunds')
 })

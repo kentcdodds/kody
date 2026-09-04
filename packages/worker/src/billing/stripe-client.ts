@@ -23,24 +23,44 @@ export class StripeApiError extends Error {
 	readonly status: number
 	/** Stripe `error.code` (for example `resource_missing`) when the body had one. */
 	readonly code: string | null
+	/**
+	 * Stripe `error.message` when the body had one. Many credit-note and refund
+	 * validation failures come back as a bare `invalid_request_error` with no
+	 * `code`, so callers that need to classify them read this instead. Never
+	 * logged: it can embed object ids.
+	 */
+	readonly stripeMessage: string | null
 	constructor(
 		message: string,
-		options: { status: number; code?: string | null; cause?: unknown },
+		options: {
+			status: number
+			code?: string | null
+			stripeMessage?: string | null
+			cause?: unknown
+		},
 	) {
 		super(message, { cause: options.cause })
 		this.name = 'StripeApiError'
 		this.status = options.status
 		this.code = options.code ?? null
+		this.stripeMessage = options.stripeMessage ?? null
 	}
 }
 
 const stripeErrorBodySchema = object({
-	error: object({ code: optional(string()) }),
+	error: object({ code: optional(string()), message: optional(string()) }),
 })
 
-function readStripeErrorCode(body: unknown): string | null {
+function readStripeErrorBody(body: unknown): {
+	code: string | null
+	message: string | null
+} {
 	const parsed = parseSafe(stripeErrorBodySchema, body)
-	return parsed.success ? (parsed.value.error.code ?? null) : null
+	if (!parsed.success) return { code: null, message: null }
+	return {
+		code: parsed.value.error.code ?? null,
+		message: parsed.value.error.message ?? null,
+	}
 }
 
 export class BillingNotConfiguredError extends Error {
@@ -100,8 +120,83 @@ const deletedCustomerSchema = object({
 	deleted: boolean(),
 })
 
+const invoiceLineItemSchema = object({
+	id: string(),
+	amount: number(),
+	period: object({
+		start: number(),
+		end: number(),
+	}),
+})
+
+const paidInvoiceSchema = object({
+	id: string(),
+	amount_paid: number(),
+	currency: string(),
+	lines: object({
+		data: array(invoiceLineItemSchema),
+	}),
+})
+
+const paidInvoiceListSchema = object({
+	data: array(paidInvoiceSchema),
+})
+
+const creditNoteSchema = object({
+	id: string(),
+	total: number(),
+	currency: string(),
+	status: string(),
+	memo: nullable(string()),
+	metadata: optional(record(string(), string())),
+})
+
+const creditNoteListSchema = object({
+	data: array(creditNoteSchema),
+})
+
+// A preview is a credit note that was never persisted, so nothing about its
+// identity is trusted; only the computed totals matter.
+const creditNotePreviewSchema = object({
+	total: number(),
+	currency: string(),
+})
+
 export type StripeCheckoutSession = InferOutput<typeof checkoutSessionSchema>
 export type StripeSubscription = InferOutput<typeof subscriptionSchema>
+export type StripePaidInvoice = InferOutput<typeof paidInvoiceSchema>
+export type StripeCreditNote = InferOutput<typeof creditNoteSchema>
+
+/**
+ * Marks credit notes Kody issues during account deletion so a retried
+ * deletion can find the earlier one instead of refunding twice.
+ */
+export const accountDeletionCreditNoteMetadataKey = 'kody_account_deletion'
+export const accountDeletionCreditNoteMemo =
+	'Prorated refund for unused time after account deletion'
+
+export function isAccountDeletionCreditNote(creditNote: StripeCreditNote) {
+	return (
+		creditNote.status === 'issued' &&
+		(creditNote.metadata?.[accountDeletionCreditNoteMetadataKey] === '1' ||
+			creditNote.memo === accountDeletionCreditNoteMemo)
+	)
+}
+
+/**
+ * Stripe rejects a credit note that would credit more than the invoice still
+ * allows (an earlier refund or credit note already consumed it) with a bare
+ * `invalid_request_error`; only the `charge_already_refunded` case carries a
+ * code. Account deletion treats both as "nothing left to refund".
+ */
+export function isStripeNothingToRefundError(error: unknown) {
+	if (!(error instanceof StripeApiError)) return false
+	if (error.code === 'charge_already_refunded') return true
+	if (error.status !== 400 || !error.stripeMessage) return false
+	return /exceed|already (?:been )?(?:fully )?refunded|no (?:remaining|creditable|refundable)/i.test(
+		error.stripeMessage,
+	)
+}
 
 function resolveStripeApiBaseUrl(env: StripeEnv) {
 	return (env.STRIPE_API_BASE_URL?.trim() || defaultStripeApiBaseUrl).replace(
@@ -156,7 +251,7 @@ async function stripeRequest(
 	// Resource paths embed customer, subscription, or session ids; keep them
 	// out of logs while preserving the endpoint name for reconciliation.
 	const loggablePath = input.path.replace(
-		/(checkout\/sessions|customers|subscriptions)\/[^/?]+/,
+		/(checkout\/sessions|customers|subscriptions|invoices|credit_notes)\/(?!preview(?:$|[/?]))[^/?]+/,
 		'$1/<redacted>',
 	)
 	let body: unknown = null
@@ -180,9 +275,14 @@ async function stripeRequest(
 			status: response.status,
 			path: loggablePath,
 		})
+		const stripeError = readStripeErrorBody(body)
 		throw new StripeApiError(
 			`Stripe API request failed with HTTP ${response.status}.`,
-			{ status: response.status, code: readStripeErrorCode(body) },
+			{
+				status: response.status,
+				code: stripeError.code,
+				stripeMessage: stripeError.message,
+			},
 		)
 	}
 
@@ -376,6 +476,166 @@ export async function cancelSubscription(
 		throw new StripeApiError('Unexpected Stripe canceled subscription shape.', {
 			status: 502,
 		})
+	}
+}
+
+/**
+ * Returns the most recent paid invoice for a subscription (Stripe lists
+ * newest first) or null when nothing has been paid yet, for example a trial
+ * that has not converted. Only the fields the prorated-refund math needs are
+ * parsed: `amount_paid`, `currency`, and each line's `amount` and service
+ * `period`.
+ */
+export async function getLatestPaidInvoiceForSubscription(
+	env: StripeEnv,
+	subscriptionId: string,
+): Promise<StripePaidInvoice | null> {
+	const trimmed = subscriptionId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Subscription id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/invoices',
+		query: {
+			subscription: trimmed,
+			status: 'paid',
+			limit: '1',
+		},
+	})
+	const parsed = parseSafe(paidInvoiceListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe invoice list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data[0] ?? null
+}
+
+/**
+ * Lists the credit notes already issued against an invoice so a retried
+ * account deletion can recognise its own earlier refund (see
+ * {@link isAccountDeletionCreditNote}).
+ */
+export async function listCreditNotesForInvoice(
+	env: StripeEnv,
+	invoiceId: string,
+): Promise<Array<StripeCreditNote>> {
+	const trimmed = invoiceId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Invoice id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/credit_notes',
+		query: {
+			invoice: trimmed,
+			limit: '100',
+		},
+	})
+	const parsed = parseSafe(creditNoteListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe credit note list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data
+}
+
+function buildCreditNoteLineForm(input: {
+	invoiceId: string
+	invoiceLineItemId: string
+	amount: number
+}): Record<string, string> {
+	return {
+		invoice: input.invoiceId,
+		'lines[0][type]': 'invoice_line_item',
+		'lines[0][invoice_line_item]': input.invoiceLineItemId,
+		'lines[0][amount]': String(input.amount),
+	}
+}
+
+/**
+ * Issues a credit note that refunds part of one invoice line item to the
+ * original payment method. A credit note (rather than a raw refund) reverses
+ * the line's tax proportionally and leaves the customer a document that
+ * matches the invoice.
+ *
+ * `amount` is the tax-exclusive line amount to credit, in the smallest
+ * currency unit. Stripe requires the refund to equal the credit note total
+ * (line amount plus its share of tax), which is only known after Stripe
+ * computes it, so the note is previewed first and the refund is set to that
+ * total. The returned `total` is what the customer actually gets back.
+ */
+export async function createProratedRefundCreditNote(
+	env: StripeEnv,
+	input: {
+		invoiceId: string
+		invoiceLineItemId: string
+		amount: number
+		reason: 'duplicate' | 'fraudulent' | 'order_change' | 'product_unsatisfactory'
+	},
+): Promise<{ id: string; total: number; currency: string }> {
+	const invoiceId = input.invoiceId.trim()
+	const invoiceLineItemId = input.invoiceLineItemId.trim()
+	if (!invoiceId) {
+		throw new StripeApiError('Invoice id is required.', { status: 400 })
+	}
+	if (!invoiceLineItemId) {
+		throw new StripeApiError('Invoice line item id is required.', {
+			status: 400,
+		})
+	}
+	if (!Number.isSafeInteger(input.amount) || input.amount <= 0) {
+		throw new StripeApiError('Credit note amount must be a positive integer.', {
+			status: 400,
+		})
+	}
+	const lineForm = buildCreditNoteLineForm({
+		invoiceId,
+		invoiceLineItemId,
+		amount: input.amount,
+	})
+
+	const previewBody = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/credit_notes/preview',
+		query: lineForm,
+	})
+	const preview = parseSafe(creditNotePreviewSchema, previewBody)
+	if (!preview.success) {
+		throw new StripeApiError('Unexpected Stripe credit note preview shape.', {
+			status: 502,
+		})
+	}
+	if (!Number.isSafeInteger(preview.value.total) || preview.value.total <= 0) {
+		throw new StripeApiError(
+			'Stripe credit note preview did not produce a refundable total.',
+			{ status: 502 },
+		)
+	}
+
+	const body = await stripeRequest(env, {
+		method: 'POST',
+		path: '/v1/credit_notes',
+		form: {
+			...lineForm,
+			refund_amount: String(preview.value.total),
+			reason: input.reason,
+			memo: accountDeletionCreditNoteMemo,
+			[`metadata[${accountDeletionCreditNoteMetadataKey}]`]: '1',
+		},
+	})
+	const parsed = parseSafe(creditNoteSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe credit note shape.', {
+			status: 502,
+		})
+	}
+	return {
+		id: parsed.value.id,
+		total: parsed.value.total,
+		currency: parsed.value.currency,
 	}
 }
 

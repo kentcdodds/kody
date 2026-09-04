@@ -6,10 +6,17 @@ import {
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import {
 	cancelSubscription,
+	createProratedRefundCreditNote,
 	deleteCustomer,
+	getLatestPaidInvoiceForSubscription,
+	isAccountDeletionCreditNote,
+	isStripeNothingToRefundError,
+	listCreditNotesForInvoice,
 	listSubscriptions,
+	type StripePaidInvoice,
 	type StripeSubscription,
 } from '#worker/billing/stripe-client.ts'
+import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
 import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
@@ -91,6 +98,19 @@ type AccountDeletionEnv = Env & {
 	OAUTH_PROVIDER?: OAuthHelpersShape
 }
 
+/**
+ * One prorated refund issued (or, on a retry, found already issued) for a
+ * subscription that was canceled by account deletion. `amountMinor` is the
+ * credit note total in the smallest unit of `currency`, tax included.
+ */
+export type AccountDeletionStripeRefund = {
+	subscriptionId: string
+	amountMinor: number
+	currency: string
+	invoiceId: string
+	creditNoteId: string
+}
+
 export type AccountDeletionResult = {
 	deletedRowCounts: Record<string, number>
 	updatedRowCounts: Record<string, number>
@@ -101,6 +121,7 @@ export type AccountDeletionResult = {
 	revokedOAuthGrants: number
 	clearedDurableObjects: Record<string, number>
 	deletedVectors: number
+	stripeRefunds: Array<AccountDeletionStripeRefund>
 	warnings: Array<string>
 }
 
@@ -130,6 +151,8 @@ type UserMcpServerSnapshot = {
 
 type UserDeletionInventory = {
 	stripeCustomerId: string | null
+	/** Account email, used only to hash into refund audit rows. */
+	email: string | null
 	vectorIds: Array<string>
 	storageIds: Array<string>
 	bundleKvKeys: Array<string>
@@ -157,6 +180,16 @@ const stripeSubscriptionStatusesCanceledOnAccountDeletion = new Set([
 	'incomplete',
 ])
 
+/**
+ * Only subscriptions in good standing get the unused remainder of their
+ * current period refunded. Dunning (`past_due`, `unpaid`), `paused`, and
+ * `incomplete` subscriptions have no paid-for service to give back.
+ */
+const stripeSubscriptionStatusesRefundedOnAccountDeletion = new Set([
+	'active',
+	'trialing',
+])
+
 export class AccountDeletionInventoryError extends Error {
 	readonly inventoryErrors: ReadonlyArray<string>
 
@@ -177,7 +210,9 @@ export class AccountDeletionBillingError extends Error {
 	readonly billingErrors: ReadonlyArray<string>
 
 	constructor(billingErrors: ReadonlyArray<string>) {
-		super('Account deletion could not cancel the active Stripe subscription.')
+		super(
+			'Account deletion could not refund or cancel the active Stripe subscription.',
+		)
 		this.name = 'AccountDeletionBillingError'
 		this.billingErrors = [...billingErrors]
 	}
@@ -258,13 +293,16 @@ async function listUserVectorIds(env: Env, userId: string) {
 	return ids
 }
 
-async function getUserStripeCustomerId(env: Env, dbUserId: number) {
+async function getUserBillingIdentity(env: Env, dbUserId: number) {
 	const row = await env.APP_DB.prepare(
-		`SELECT stripe_customer_id FROM users WHERE id = ?`,
+		`SELECT stripe_customer_id, email FROM users WHERE id = ?`,
 	)
 		.bind(dbUserId)
-		.first<{ stripe_customer_id: string | null }>()
-	return row?.stripe_customer_id?.trim() || null
+		.first<{ stripe_customer_id: string | null; email: string | null }>()
+	return {
+		stripeCustomerId: row?.stripe_customer_id?.trim() || null,
+		email: row?.email?.trim() || null,
+	}
 }
 
 async function listUserStorageIds(env: Env, userId: string) {
@@ -387,7 +425,7 @@ async function collectUserDeletionInventory(input: {
 		inventoryErrors.push(warning)
 	}
 	const [
-		stripeCustomerId,
+		billingIdentity,
 		vectorIds,
 		storageIds,
 		r2Inventory,
@@ -397,9 +435,9 @@ async function collectUserDeletionInventory(input: {
 		mcpServers,
 		mcpAgentSessions,
 	] = await Promise.all([
-		getUserStripeCustomerId(input.env, input.dbUserId).catch((error) => {
+		getUserBillingIdentity(input.env, input.dbUserId).catch((error) => {
 			recordInventoryError('Stripe customer id', error)
-			return null
+			return { stripeCustomerId: null, email: null }
 		}),
 		listUserVectorIds(input.env, input.userId).catch((error) => {
 			recordInventoryError('vector ids', error)
@@ -456,7 +494,8 @@ async function collectUserDeletionInventory(input: {
 		throw new AccountDeletionInventoryError(inventoryErrors)
 	}
 	return {
-		stripeCustomerId,
+		stripeCustomerId: billingIdentity.stripeCustomerId,
+		email: billingIdentity.email,
 		vectorIds,
 		storageIds,
 		bundleKvKeys,
@@ -476,22 +515,146 @@ function isStripeSubscriptionBillable(subscription: StripeSubscription) {
 	)
 }
 
+function isStripeSubscriptionRefundable(subscription: StripeSubscription) {
+	return stripeSubscriptionStatusesRefundedOnAccountDeletion.has(
+		subscription.status,
+	)
+}
+
 /**
- * Cancels every subscription that can still bill (see
- * `stripeSubscriptionStatusesCanceledOnAccountDeletion`) and throws
- * {@link AccountDeletionBillingError} when any is still billable afterwards.
- * Runs before any destructive cleanup so a Stripe outage retains the account
- * instead of leaving a paying customer with no account or portal access.
+ * Unused-time refund for one invoice line, in the smallest currency unit:
+ * `floor(lineAmount * (periodEnd - now) / (periodEnd - periodStart))`. Zero
+ * when the period has already ended, has no length, or the line was free.
+ */
+function computeProratedRefundMinor(input: {
+	lineAmount: number
+	periodStart: number
+	periodEnd: number
+	nowSeconds: number
+}) {
+	const periodLength = input.periodEnd - input.periodStart
+	const remaining = input.periodEnd - input.nowSeconds
+	if (input.lineAmount <= 0 || periodLength <= 0 || remaining <= 0) return 0
+	const unusedFraction = Math.min(1, remaining / periodLength)
+	return Math.floor(input.lineAmount * unusedFraction)
+}
+
+/**
+ * Picks the invoice line whose service period is still running. A plain
+ * renewal invoice has exactly one; a mid-cycle upgrade invoice also carries a
+ * negative proration credit for the old price, which cannot be refunded, so
+ * only positive lines qualify and the largest wins.
+ */
+function selectRefundableInvoiceLine(
+	invoice: StripePaidInvoice,
+	nowSeconds: number,
+) {
+	let selected: StripePaidInvoice['lines']['data'][number] | null = null
+	for (const line of invoice.lines.data) {
+		if (line.amount <= 0) continue
+		if (line.period.end <= nowSeconds) continue
+		if (line.period.end <= line.period.start) continue
+		if (!selected || line.amount > selected.amount) selected = line
+	}
+	return selected
+}
+
+/**
+ * Refunds the unused remainder of the current billing period for one
+ * subscription that is about to be canceled. Returns null when there is
+ * nothing to refund (no paid invoice yet, a free or ended period, an amount
+ * that floors to zero, or Stripe reporting the invoice already fully
+ * credited). Returns the earlier Kody credit note instead of issuing another
+ * when a previous deletion attempt already refunded this invoice.
+ */
+async function refundUnusedSubscriptionTime(input: {
+	env: Env
+	subscriptionId: string
+	nowSeconds: number
+}): Promise<{ refund: AccountDeletionStripeRefund; created: boolean } | null> {
+	const invoice = await getLatestPaidInvoiceForSubscription(
+		input.env,
+		input.subscriptionId,
+	)
+	if (!invoice || invoice.amount_paid <= 0) return null
+	const line = selectRefundableInvoiceLine(invoice, input.nowSeconds)
+	if (!line) return null
+	const amount = computeProratedRefundMinor({
+		lineAmount: line.amount,
+		periodStart: line.period.start,
+		periodEnd: line.period.end,
+		nowSeconds: input.nowSeconds,
+	})
+	if (amount <= 0) return null
+
+	const existing = (
+		await listCreditNotesForInvoice(input.env, invoice.id)
+	).find(isAccountDeletionCreditNote)
+	if (existing) {
+		return {
+			created: false,
+			refund: {
+				subscriptionId: input.subscriptionId,
+				amountMinor: existing.total,
+				currency: existing.currency,
+				invoiceId: invoice.id,
+				creditNoteId: existing.id,
+			},
+		}
+	}
+
+	try {
+		const creditNote = await createProratedRefundCreditNote(input.env, {
+			invoiceId: invoice.id,
+			invoiceLineItemId: line.id,
+			amount,
+			reason: 'order_change',
+		})
+		return {
+			created: true,
+			refund: {
+				subscriptionId: input.subscriptionId,
+				amountMinor: creditNote.total,
+				currency: creditNote.currency,
+				invoiceId: invoice.id,
+				creditNoteId: creditNote.id,
+			},
+		}
+	} catch (error) {
+		if (isStripeNothingToRefundError(error)) {
+			console.info('account_deletion_refund_nothing_remaining', {
+				subscriptionId: input.subscriptionId,
+			})
+			return null
+		}
+		throw error
+	}
+}
+
+/**
+ * Refunds unused time on, then cancels, every subscription that can still
+ * bill (see `stripeSubscriptionStatusesCanceledOnAccountDeletion`) and throws
+ * {@link AccountDeletionBillingError} when any refund fails or any
+ * subscription is still billable afterwards. Runs before any destructive
+ * cleanup so a Stripe outage retains the account instead of leaving a paying
+ * customer with no account, no portal access, and no refund.
+ *
+ * Only `active` and `trialing` subscriptions are refunded, and the refund is
+ * issued before the cancel so the invoice line's service period is still
+ * intact when Stripe prorates the tax. A refund failure aborts before the
+ * cancel, so the retry sees the same subscription and can try again.
  *
  * Idempotent across retries: subscriptions Stripe already reports as
- * `canceled` are skipped, `cancelSubscription` treats `resource_missing` as
+ * `canceled` are skipped, an invoice that already carries a Kody credit note
+ * is not refunded twice, `cancelSubscription` treats `resource_missing` as
  * canceled, and a cancel that errors is re-verified against a fresh listing
  * (a subscription that flipped to canceled in between counts as success).
  */
 async function cancelActiveStripeSubscriptions(input: {
 	env: Env
 	customerId: string
-}): Promise<number> {
+	email: string | null
+}): Promise<{ canceled: number; refunds: Array<AccountDeletionStripeRefund> }> {
 	let subscriptions: Array<StripeSubscription>
 	try {
 		subscriptions = await listSubscriptions(input.env, input.customerId)
@@ -501,11 +664,41 @@ async function cancelActiveStripeSubscriptions(input: {
 		])
 	}
 	const billable = subscriptions.filter(isStripeSubscriptionBillable)
-	if (billable.length === 0) return 0
+	const refunds: Array<AccountDeletionStripeRefund> = []
+	if (billable.length === 0) return { canceled: 0, refunds }
 
+	const nowSeconds = Math.floor(Date.now() / 1000)
 	const failures: Array<string> = []
 	let canceled = 0
 	for (const subscription of billable) {
+		if (isStripeSubscriptionRefundable(subscription)) {
+			let refunded: Awaited<ReturnType<typeof refundUnusedSubscriptionTime>>
+			try {
+				refunded = await refundUnusedSubscriptionTime({
+					env: input.env,
+					subscriptionId: subscription.id,
+					nowSeconds,
+				})
+			} catch (error) {
+				throw new AccountDeletionBillingError([
+					...failures,
+					`Stripe subscription ${subscription.id} unused time could not be refunded: ${getErrorMessage(error)}`,
+				])
+			}
+			if (refunded) {
+				refunds.push(refunded.refund)
+				if (refunded.created) {
+					await logAuditEvent({
+						db: auditDatabaseFromEnv(input.env),
+						category: 'account',
+						action: 'account_deletion_refund',
+						result: 'success',
+						email: input.email ?? undefined,
+						reason: `${refunded.refund.currency}:${refunded.refund.amountMinor}`,
+					})
+				}
+			}
+		}
 		try {
 			await cancelSubscription(input.env, subscription.id)
 			canceled += 1
@@ -515,7 +708,7 @@ async function cancelActiveStripeSubscriptions(input: {
 			)
 		}
 	}
-	if (failures.length === 0) return canceled
+	if (failures.length === 0) return { canceled, refunds }
 
 	let stillBillable: Array<StripeSubscription>
 	try {
@@ -531,7 +724,7 @@ async function cancelActiveStripeSubscriptions(input: {
 	if (stillBillable.length > 0) {
 		throw new AccountDeletionBillingError(failures)
 	}
-	return billable.length
+	return { canceled: billable.length, refunds }
 }
 
 /**
@@ -1089,6 +1282,7 @@ export async function deleteUserAccount(input: {
 		revokedOAuthGrants: 0,
 		clearedDurableObjects,
 		deletedVectors: 0,
+		stripeRefunds: [],
 		warnings,
 	}
 
@@ -1113,15 +1307,17 @@ export async function deleteUserAccount(input: {
 	}
 
 	// Billing is a precondition of deletion, checked before anything
-	// destructive: if Stripe cannot confirm every subscription is canceled the
-	// account (and its portal access) must survive so the customer is not
-	// billed for an account that no longer exists.
+	// destructive: if Stripe cannot refund unused time or confirm every
+	// subscription is canceled the account (and its portal access) must survive
+	// so the customer is not billed for an account that no longer exists.
 	if (inventory.stripeCustomerId) {
 		try {
-			await cancelActiveStripeSubscriptions({
+			const billing = await cancelActiveStripeSubscriptions({
 				env: input.env,
 				customerId: inventory.stripeCustomerId,
+				email: inventory.email,
 			})
+			result.stripeRefunds = billing.refunds
 		} catch (error) {
 			if (error instanceof AccountDeletionBillingError) {
 				console.error('account_deletion_billing_cancel_failed', {
