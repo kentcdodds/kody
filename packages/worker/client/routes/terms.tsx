@@ -134,10 +134,10 @@ export function TermsRoute(_handle: Handle) {
 					</a>
 					. Refund requests are considered case by case. Deleting your account
 					cancels any subscription immediately and automatically refunds the
-					unused portion of your current billing period to your original payment
-					method. Where required by law we collect sales tax or VAT at checkout,
-					and business customers can enter a tax ID there. Payment processor
-					terms may also apply.
+					unused portion of any billing period you have already paid for, to
+					your original payment method. Where required by law we collect sales
+					tax or VAT at checkout, and business customers can enter a tax ID
+					there. Payment processor terms may also apply.
 				</p>
 			</section>
 
