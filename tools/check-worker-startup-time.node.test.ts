@@ -30,6 +30,15 @@ test('returns null when the summary block is missing', () => {
 	expect(parseStartupProfileSummary('wrangler exploded')).toBeNull()
 })
 
+test('sibling startup profiles pass an explicit Wrangler config', () => {
+	expect(
+		startupTimeTargets.find((target) => target.name === 'platform')?.args,
+	).toEqual(['--config', 'wrangler.jsonc'])
+	expect(
+		startupTimeTargets.find((target) => target.name === 'runtime')?.args,
+	).toEqual(['--config', 'wrangler.jsonc'])
+})
+
 test('budget file names every profiled worker with a positive ceiling', async () => {
 	const budget = await readStartupBudget()
 	expect(budget.runs).toBeGreaterThanOrEqual(1)

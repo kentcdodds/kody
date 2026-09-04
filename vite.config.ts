@@ -120,6 +120,13 @@ export default defineConfig(async ({ command }) => {
 						'packages/worker/src/app/hmr.vite.ts',
 					),
 				},
+				{
+					find: /#app\/client-entry-assets\.ts$/,
+					replacement: path.resolve(
+						root,
+						'packages/worker/src/app/client-entry-assets.vite.ts',
+					),
+				},
 				alias('#app', path.resolve(root, 'packages/worker/src/app')),
 				alias('#client', path.resolve(root, 'packages/worker/client')),
 				alias('#universal', path.resolve(root, 'packages/worker/universal')),

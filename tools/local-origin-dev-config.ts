@@ -11,15 +11,14 @@ export const localOriginDevVarKeys = [
 	'CLOUDFLARE_ACCOUNT_ID',
 	'CLOUDFLARE_API_SOURCE_SNAPSHOTS',
 	'APP_BASE_URL',
-	'COOKIE_SECRET',
-	'SECRET_STORE_KEY',
 ] as const
 
 /**
- * Process-env values that used to be wrangler `--var`s on `wrangler-env.ts
- * dev`. Vite's Cloudflare plugin reads Worker bindings from the Wrangler
- * config, not from the Vite process environment, so these must be written
- * into `vars` for local `vite serve`.
+ * Non-secret process-env values that used to be wrangler `--var`s on
+ * `wrangler-env.ts dev`. Vite's Cloudflare plugin reads Worker bindings from
+ * the Wrangler config, not from the Vite process environment, so these must
+ * be written into `vars` for local `vite serve`. Secrets stay in
+ * `packages/worker/.env` / `.dev.vars` next to the generated config.
  */
 export function collectLocalOriginDevVars(
 	env: NodeJS.ProcessEnv,
@@ -31,8 +30,10 @@ export function collectLocalOriginDevVars(
 	if (!env.APP_BASE_URL?.trim() && port) {
 		vars.APP_BASE_URL = `http://localhost:${port}`
 	}
+	const skipLiveCloudflareToken = env.SKIP_CLOUDFLARE_MOCK?.trim() === '1'
 	for (const key of localOriginDevVarKeys) {
 		if (key === 'WRANGLER_IS_LOCAL_DEV') continue
+		if (key === 'CLOUDFLARE_API_TOKEN' && skipLiveCloudflareToken) continue
 		const value = env[key]?.trim()
 		if (value) vars[key] = value
 	}

@@ -48,10 +48,10 @@ to start the remote proxy session"; `"remote": false` is NOT enough).
 Origin Vite serve uses the same pattern for the primary config:
 `tools/local-origin-dev-config.ts` writes
 `packages/worker/wrangler-local-dev.generated.json` and injects
-`WRANGLER_IS_LOCAL_DEV`, mock `CLOUDFLARE_API_*`, `APP_BASE_URL`,
-`COOKIE_SECRET`, and `SECRET_STORE_KEY` into `vars`. `wrangler-env.ts` still
-never passes the committed runtime or platform configs to `wrangler dev`
-directly: `tools/local-runtime-dev-config.ts` and
+`WRANGLER_IS_LOCAL_DEV`, mock `CLOUDFLARE_API_*`, and `APP_BASE_URL` into
+`vars`. Worker secrets stay in `packages/worker/.env` / `.dev.vars`.
+`wrangler-env.ts` still never passes the committed runtime or platform configs
+to `wrangler dev` directly: `tools/local-runtime-dev-config.ts` and
 `tools/local-platform-dev-config.ts` generate
 `wrangler-local-dev.generated.json` next to each committed config (gitignored)
 on each dev start. Those files pin the secondary registered names to

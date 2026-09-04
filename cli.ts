@@ -96,7 +96,7 @@ async function startDev() {
 function resolveWorkerOrigin(port: number) {
 	const envOrigin = process.env.WORKER_DEV_ORIGIN
 	if (envOrigin) return envOrigin.trim()
-	return `http://localhost:${port}`
+	return `http://127.0.0.1:${port}`
 }
 
 function runNpmScript(

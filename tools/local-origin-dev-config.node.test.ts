@@ -19,6 +19,21 @@ test('keeps an explicit APP_BASE_URL and does not invent Cloudflare vars', () =>
 	})
 })
 
+test('does not serialize Worker secrets or a live Cloudflare token', () => {
+	expect(
+		collectLocalOriginDevVars({
+			COOKIE_SECRET: 'cookie-secret',
+			SECRET_STORE_KEY: 'secret-store-key',
+			SKIP_CLOUDFLARE_MOCK: '1',
+			CLOUDFLARE_API_TOKEN: 'live-token',
+			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com',
+		}),
+	).toEqual({
+		WRANGLER_IS_LOCAL_DEV: 'true',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com',
+	})
+})
+
 test('always injects WRANGLER_IS_LOCAL_DEV and copies mock Cloudflare vars', () => {
 	expect(
 		collectLocalOriginDevVars(

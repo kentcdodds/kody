@@ -36,8 +36,16 @@ export const startupTimeTargets: ReadonlyArray<StartupTimeTarget> = [
 		packageDir: '.',
 		args: [],
 	},
-	{ name: 'platform', packageDir: 'packages/platform-worker', args: [] },
-	{ name: 'runtime', packageDir: 'packages/runtime-worker', args: [] },
+	{
+		name: 'platform',
+		packageDir: 'packages/platform-worker',
+		args: ['--config', 'wrangler.jsonc'],
+	},
+	{
+		name: 'runtime',
+		packageDir: 'packages/runtime-worker',
+		args: ['--config', 'wrangler.jsonc'],
+	},
 ]
 
 export type StartupBudget = {

@@ -131,6 +131,12 @@ async function buildOriginProductionViteBundleUnlocked(
 	} finally {
 		await rm(originStartupWranglerConfigPath, { force: true })
 	}
+	// Vite's Cloudflare plugin writes a repo-root deploy redirect. Sibling
+	// `wrangler check startup` runs then see both their wrangler.jsonc and
+	// that redirect and abort.
+	await rm(path.join(repoRoot, '.wrangler', 'deploy', 'config.json'), {
+		force: true,
+	})
 
 	const { ssrDir, clientDir } = await copyOriginViteBuildSnapshot({
 		sourceRoot: repoRoot,

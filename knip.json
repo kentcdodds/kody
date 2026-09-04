@@ -15,6 +15,7 @@
 			"entry": [
 				"client/entry.tsx",
 				"src/app/hmr.vite.ts",
+				"src/app/client-entry-assets.vite.ts",
 				"src/mcp/capabilities/**/*.ts",
 				"src/mcp/instructions/**/*.ts"
 			],
