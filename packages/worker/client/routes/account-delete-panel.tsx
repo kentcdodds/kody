@@ -105,9 +105,9 @@ export function AccountDeletePanel(
 					...(handle.props.hasUsablePassword ? { password } : {}),
 				}),
 			})
-			const payload = (await response.json().catch(
-				() => null,
-			)) as AccountDeletePayload
+			const payload = (await response
+				.json()
+				.catch(() => null)) as AccountDeletePayload
 			if (response.status === 401 && !payload?.error) {
 				window.location.assign('/login')
 				return
@@ -210,89 +210,90 @@ export function AccountDeletePanel(
 							</div>
 						</div>
 					) : (
-					<form
-						method="dialog"
-						mix={[css(deleteDialogFormCss), on('submit', handleDeleteSubmit)]}
-					>
-						<h3 id="delete-account-title" mix={css(deleteDialogTitleCss)}>
-							Delete your Kody account?
-						</h3>
-						<div
-							mix={css(
-								getAccentCalloutCss({
-									accentColor: colors.error,
-								}),
-							)}
+						<form
+							method="dialog"
+							mix={[css(deleteDialogFormCss), on('submit', handleDeleteSubmit)]}
 						>
-							<p mix={css({ margin: 0 })}>
-								This cannot be undone. Type{' '}
-								<strong>{accountDeletionConfirmationPhrase}</strong> to confirm.
-							</p>
-						</div>
-						<label mix={css(accountFieldCss)}>
-							<span mix={css(accountFieldLabelCss)}>
-								Type {accountDeletionConfirmationPhrase}
-							</span>
-							<input
-								type="text"
-								name="confirmation"
-								data-testid="delete-account-confirmation"
-								data-field-ring
-								autocomplete="off"
-								spellcheck={false}
-								required
-								value={confirmation}
-								mix={[css(accountInputCss), on('input', updateConfirmation)]}
-							/>
-						</label>
-						{handle.props.hasUsablePassword ? (
+							<h3 id="delete-account-title" mix={css(deleteDialogTitleCss)}>
+								Delete your Kody account?
+							</h3>
+							<div
+								mix={css(
+									getAccentCalloutCss({
+										accentColor: colors.error,
+									}),
+								)}
+							>
+								<p mix={css({ margin: 0 })}>
+									This cannot be undone. Type{' '}
+									<strong>{accountDeletionConfirmationPhrase}</strong> to
+									confirm.
+								</p>
+							</div>
 							<label mix={css(accountFieldCss)}>
-								<span mix={css(accountFieldLabelCss)}>Current password</span>
+								<span mix={css(accountFieldLabelCss)}>
+									Type {accountDeletionConfirmationPhrase}
+								</span>
 								<input
-									type="password"
-									name="password"
-									data-testid="delete-account-password"
+									type="text"
+									name="confirmation"
+									data-testid="delete-account-confirmation"
 									data-field-ring
+									autocomplete="off"
+									spellcheck={false}
 									required
-									{...passwordManagerIgnoreProps}
-									value={password}
-									mix={[css(accountInputCss), on('input', updatePassword)]}
+									value={confirmation}
+									mix={[css(accountInputCss), on('input', updateConfirmation)]}
 								/>
 							</label>
-						) : null}
-						{error ? (
-							<p
-								role="alert"
-								mix={css({
-									margin: 0,
-									color: colors.error,
-									fontSize: typography.fontSize.sm,
-								})}
-							>
-								{error}
-							</p>
-						) : null}
-						<div mix={css(accountActionsCss)}>
-							<button
-								type="button"
-								disabled={isDeleting}
-								mix={[
-									css(getGhostButtonCss({ size: 'sm' })),
-									on('click', closeDialog),
-								]}
-							>
-								Cancel
-							</button>
-							<button
-								type="submit"
-								disabled={!canSubmit}
-								data-testid="delete-account-confirm"
-								mix={css(getDangerPillCss({ size: 'sm' }))}
-							>
-								{isDeleting ? 'Deleting…' : 'Delete account'}
-							</button>
-						</div>
-					</form>
+							{handle.props.hasUsablePassword ? (
+								<label mix={css(accountFieldCss)}>
+									<span mix={css(accountFieldLabelCss)}>Current password</span>
+									<input
+										type="password"
+										name="password"
+										data-testid="delete-account-password"
+										data-field-ring
+										required
+										{...passwordManagerIgnoreProps}
+										value={password}
+										mix={[css(accountInputCss), on('input', updatePassword)]}
+									/>
+								</label>
+							) : null}
+							{error ? (
+								<p
+									role="alert"
+									mix={css({
+										margin: 0,
+										color: colors.error,
+										fontSize: typography.fontSize.sm,
+									})}
+								>
+									{error}
+								</p>
+							) : null}
+							<div mix={css(accountActionsCss)}>
+								<button
+									type="button"
+									disabled={isDeleting}
+									mix={[
+										css(getGhostButtonCss({ size: 'sm' })),
+										on('click', closeDialog),
+									]}
+								>
+									Cancel
+								</button>
+								<button
+									type="submit"
+									disabled={!canSubmit}
+									data-testid="delete-account-confirm"
+									mix={css(getDangerPillCss({ size: 'sm' }))}
+								>
+									{isDeleting ? 'Deleting…' : 'Delete account'}
+								</button>
+							</div>
+						</form>
 					)}
 				</dialog>
 			</>

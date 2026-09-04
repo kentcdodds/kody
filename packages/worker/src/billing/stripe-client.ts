@@ -573,7 +573,11 @@ export async function createProratedRefundCreditNote(
 		invoiceId: string
 		invoiceLineItemId: string
 		amount: number
-		reason: 'duplicate' | 'fraudulent' | 'order_change' | 'product_unsatisfactory'
+		reason:
+			| 'duplicate'
+			| 'fraudulent'
+			| 'order_change'
+			| 'product_unsatisfactory'
 	},
 ): Promise<{ id: string; total: number; currency: string }> {
 	const invoiceId = input.invoiceId.trim()

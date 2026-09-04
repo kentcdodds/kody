@@ -1487,7 +1487,9 @@ test('account deletion refunds unused time with a credit note before canceling e
 	vi.useFakeTimers({ toFake: ['Date'] })
 	try {
 		// Exactly half of a 30-day period has elapsed.
-		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		vi.setSystemTime(
+			new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000),
+		)
 		listSubscriptions.mockResolvedValue([
 			stripeSubscription('sub_active', 'active'),
 			stripeSubscription('sub_trialing', 'trialing'),
@@ -1592,7 +1594,9 @@ test('a failed credit note retains the account, releases the fence, and cancels 
 	consoleError.mockImplementation(() => {})
 	vi.useFakeTimers({ toFake: ['Date'] })
 	try {
-		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		vi.setSystemTime(
+			new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000),
+		)
 		listSubscriptions.mockResolvedValue([
 			stripeSubscription('sub_active', 'active'),
 		])
@@ -1674,7 +1678,9 @@ test('a retried deletion reuses the earlier Kody credit note and treats an exhau
 	const refundClient = spyOnStripeRefundClient()
 	vi.useFakeTimers({ toFake: ['Date'] })
 	try {
-		vi.setSystemTime(new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000))
+		vi.setSystemTime(
+			new Date((refundPeriodStart + thirtyDaysSeconds / 2) * 1000),
+		)
 		cancelSubscription.mockResolvedValue(undefined)
 		deleteCustomer.mockResolvedValue(undefined)
 
