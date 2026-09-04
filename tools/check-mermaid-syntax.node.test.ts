@@ -258,12 +258,14 @@ test('checkMermaidSyntax scans docs and skills in a temp tree', async () => {
 			'README.md',
 			'docs/contributing/ok.md',
 		])
-		expect(await checkMermaidSyntax(cwd)).toEqual([
+		const expected = [
 			expect.objectContaining({
 				file: '.agents/skills/visual-recap/SKILL.md',
 				message: expect.stringContaining("got '+'"),
 			}),
-		])
+		]
+		expect(await checkMermaidSyntax(cwd)).toEqual(expected)
+		expect(await checkMermaidSyntax(cwd, [])).toEqual(expected)
 	} finally {
 		await rm(cwd, { recursive: true, force: true })
 	}
@@ -271,6 +273,34 @@ test('checkMermaidSyntax scans docs and skills in a temp tree', async () => {
 
 test('repo mermaid fences currently parse', async () => {
 	await expect(checkMermaidSyntax(repoRoot)).resolves.toEqual([])
+})
+
+test('CLI with no paths scans docs and skills', async () => {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), 'mermaid-check-cli-'))
+	try {
+		await Promise.all([
+			mkdir(path.join(cwd, 'docs'), { recursive: true }),
+			mkdir(path.join(cwd, '.agents'), { recursive: true }),
+		])
+		await Promise.all([
+			writeFile(path.join(cwd, 'README.md'), 'No diagram.\n'),
+			writeFile(path.join(cwd, 'AGENTS.md'), 'No diagram.\n'),
+			writeFile(
+				path.join(cwd, 'docs', 'broken.md'),
+				['```mermaid', githubPlusNoteDiagram, '```', ''].join('\n'),
+			),
+		])
+		const result = spawnSync(
+			process.execPath,
+			[path.join(repoRoot, 'tools/check-mermaid-syntax.ts')],
+			{ encoding: 'utf8', cwd },
+		)
+		expect(result.status).toBe(1)
+		expect(result.stderr).toContain('docs/broken.md:')
+		expect(result.stderr).toContain("got '+'")
+	} finally {
+		await rm(cwd, { recursive: true, force: true })
+	}
 })
 
 test('CLI --stdin rejects the GitHub semicolon note diagram', () => {

@@ -302,7 +302,10 @@ export async function checkMermaidSyntax(
 	cwd: string = process.cwd(),
 	relativePaths?: ReadonlyArray<string>,
 ): Promise<Array<MermaidSyntaxIssue>> {
-	const paths = relativePaths ?? (await listMermaidSourcePaths(cwd))
+	const paths =
+		relativePaths !== undefined && relativePaths.length > 0
+			? relativePaths
+			: await listMermaidSourcePaths(cwd)
 	const issues: Array<MermaidSyntaxIssue> = []
 
 	for (const relativePath of paths) {
@@ -419,7 +422,12 @@ export async function main(
 		return
 	}
 
-	reportIssues(await checkMermaidSyntax(cwd, options.files))
+	reportIssues(
+		await checkMermaidSyntax(
+			cwd,
+			options.files.length === 0 ? undefined : options.files,
+		),
+	)
 }
 
 if (isExecutedDirectly(import.meta.url)) {
