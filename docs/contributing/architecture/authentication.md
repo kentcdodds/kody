@@ -703,9 +703,12 @@ routed from `packages/worker/src/index.ts`.
   fail-closed when email is unverified). RP-Initiated Logout: `/oauth/logout`.
   Token responses from `/oauth/token` gain an `id_token` when the granted scope
   includes `openid` (authorization_code and refresh_token grants; refresh omits
-  `nonce`). Implicit and Hybrid response types are not advertised or accepted.
-  Kody is not OpenID Certified. `/api/me` remains the OAuth-protected JSON
-  helper for grant props; it is not the OIDC UserInfo endpoint.
+  `nonce`). The provider handles the token path internally and does not inject
+  `env.OAUTH_PROVIDER` there (or on UserInfo/logout, which run before
+  `oauthProvider.fetch`), so those OIDC helpers come from `resolveOAuthHelpers`
+  over `OAUTH_KV`. Implicit and Hybrid response types are not advertised or
+  accepted. Kody is not OpenID Certified. `/api/me` remains the OAuth-protected
+  JSON helper for grant props; it is not the OIDC UserInfo endpoint.
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
   successful login returns to the original OAuth request. Password signup lands

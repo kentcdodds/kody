@@ -1,6 +1,7 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { type OidcGrantProps } from '#worker/oidc/id-token.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 
 type OidcUserinfoOAuthHelpers = {
 	unwrapToken: <T = OidcGrantProps>(
@@ -16,15 +17,7 @@ type OidcUserinfoOAuthHelpers = {
 }
 
 type OAuthEnv = Env & {
-	OAUTH_PROVIDER: OidcUserinfoOAuthHelpers
-}
-
-function getOAuthHelpers(env: Env): OidcUserinfoOAuthHelpers {
-	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-	if (!helpers) {
-		throw new Error('OAuth provider helpers are not available.')
-	}
-	return helpers
+	OAUTH_PROVIDER?: OidcUserinfoOAuthHelpers
 }
 
 function readBearerToken(request: Request) {
@@ -67,7 +60,20 @@ export async function handleOidcUserinfoRequest(request: Request, env: Env) {
 		)
 	}
 
-	const helpers = getOAuthHelpers(env)
+	// UserInfo is served before `oauthProvider.fetch`, so the library never
+	// injects `env.OAUTH_PROVIDER` here. Build the same helpers over OAUTH_KV.
+	const helpers = await resolveOAuthHelpers<OidcUserinfoOAuthHelpers>(
+		env as OAuthEnv,
+	)
+	if (!helpers) {
+		return jsonResponse(
+			{
+				error: 'invalid_token',
+				error_description: 'Access token is invalid or expired.',
+			},
+			{ status: 401 },
+		)
+	}
 	const tokenSummary = await helpers.unwrapToken<OidcGrantProps>(token)
 	if (!tokenSummary) {
 		return jsonResponse(
