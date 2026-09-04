@@ -7,7 +7,12 @@ import {
 	mergeCss,
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
-import { colors, transitions, typography } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	spacing,
+	transitions,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
@@ -15,6 +20,7 @@ import {
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
+	turnstileWidgetHeightPx,
 } from '#client/public-form-protection.ts'
 import {
 	fieldErrorProps,
@@ -191,7 +197,12 @@ export function WaitlistBanner(handle: Handle) {
 										{isSubmitting ? 'Joining…' : 'Join'}
 									</button>
 								</div>
-								{turnstileSiteKey ? (
+								{/*
+								 * `undefined` means the site key has not loaded yet:
+								 * still paint the empty 300×65 host so Turnstile cannot
+								 * CLS the strip when it arrives. `null` means it is off.
+								 */}
+								{turnstileSiteKey !== null ? (
 									<div class={turnstileWidgetClassName}></div>
 								) : null}
 							</form>
@@ -231,19 +242,27 @@ const pillPadding = '0.25rem'
    without truncating them to nonsense. */
 const stackMq = '@media (max-width: 720px)'
 
+const bannerPaddingY = '0.55rem'
+const bannerStackPaddingY = '0.7rem'
+
 const bannerCss = {
 	width: '100%',
 	margin: 0,
+	/* Floor is the managed Turnstile box plus vertical padding so the
+	   widget can load into a slot that already fits it. Wrapping (prompt
+	   above the pill on a phone) is still allowed to grow the strip. */
+	minHeight: `calc(${turnstileWidgetHeightPx}px + (${bannerPaddingY} * 2))`,
 	/* Deliberately shallow — this sits above the header on secondary pages and
 	   should read as a quiet strip, not a second hero. */
-	padding: `0.55rem ${pageGutter}`,
+	padding: `${bannerPaddingY} ${pageGutter}`,
 	borderBottom: `1px solid ${colors.border}`,
 	/* A whisper of the accent so the strip separates from the header without
 	   competing with it. */
 	backgroundColor: colors.primarySoftest,
 	boxSizing: 'border-box' as const,
 	[stackMq]: {
-		padding: `0.7rem ${pageGutter}`,
+		padding: `${bannerStackPaddingY} ${pageGutter}`,
+		minHeight: `calc(${turnstileWidgetHeightPx}px + (${bannerStackPaddingY} * 2))`,
 	},
 }
 
@@ -281,7 +300,10 @@ const promptCss = {
 
 const formCss = {
 	display: 'flex',
-	alignItems: 'stretch',
+	alignItems: 'center',
+	justifyContent: 'center',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
 	margin: 0,
 	minWidth: 0,
 	[stackMq]: {

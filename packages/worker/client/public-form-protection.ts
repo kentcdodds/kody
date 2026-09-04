@@ -14,6 +14,13 @@ export {
 
 export const turnstileWidgetClassName = 'kody-turnstile'
 
+/**
+ * Cloudflare's managed widget box. Keep `.kody-turnstile` in
+ * `packages/worker/public/styles.css` in sync with these values.
+ */
+export const turnstileWidgetWidthPx = 300
+export const turnstileWidgetHeightPx = 65
+
 type TurnstileApi = {
 	render(
 		container: HTMLElement,
@@ -119,8 +126,7 @@ function ensureTurnstileMount(container: HTMLElement) {
 	if (!root.querySelector('style[data-turnstile-host]')) {
 		const style = document.createElement('style')
 		style.dataset.turnstileHost = ''
-		style.textContent =
-			':host{display:block;min-height:65px;width:min(300px,100%)}[data-turnstile-mount]{min-height:65px}'
+		style.textContent = `:host{display:block;box-sizing:border-box;flex-shrink:0;height:${turnstileWidgetHeightPx}px;min-height:${turnstileWidgetHeightPx}px;width:min(${turnstileWidgetWidthPx}px,100%)}[data-turnstile-mount]{height:${turnstileWidgetHeightPx}px;min-height:${turnstileWidgetHeightPx}px}`
 		root.append(style)
 	}
 	const mount = document.createElement('div')

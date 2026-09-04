@@ -8,4 +8,5 @@ test('waitlist banner idle announcer is a status region without invalid fields',
 	expect(html).toContain('role="status"')
 	expect(html).not.toContain('aria-invalid')
 	expect(html).toContain('-waitlist-status')
+	expect(html).toContain('kody-turnstile')
 })
