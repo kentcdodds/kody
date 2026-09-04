@@ -33,11 +33,11 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
-	// Header avatar is labeled Waiting plus the username so it does not
-	// collide with the "Kody" brand link.
+	// Header avatar links to the public profile and is labeled @username so
+	// it does not collide with the "Kody" brand link.
 	await expect(
 		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
-			name: `Waiting — ${primaryTestUser.username}`,
+			name: `@${primaryTestUser.username}`,
 		}),
 	).toBeVisible()
 	await expect(
@@ -78,7 +78,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await expect(page.getByRole('button', { name: 'Log out' })).not.toBeVisible()
 	await expect(
 		page.getByRole('link', {
-			name: `Waiting — ${primaryTestUser.username}`,
+			name: `@${primaryTestUser.username}`,
 		}),
 	).not.toBeVisible()
 

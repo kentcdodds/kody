@@ -267,6 +267,7 @@ export function App(handle: Handle<AppProps>) {
 							<SiteHeader
 								loggedIn={isLoggedIn}
 								displayName={sessionDisplayName}
+								username={session?.username ?? ''}
 								avatarUrl={session?.avatarUrl ?? null}
 								showAdminLink={showAdminLink}
 								showDemoIndicator={isLoggedIn && showDemoIndicator}
