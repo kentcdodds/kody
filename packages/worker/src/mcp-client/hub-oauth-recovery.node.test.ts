@@ -89,6 +89,27 @@ vi.mock('agents/mcp/do-oauth-client-provider', () => ({
 	},
 }))
 
+vi.mock('agents/lifecycle', () => ({
+	Lifecycle: class {
+		static install() {
+			return new this()
+		}
+
+		private capabilities: Array<{ onStart?: () => Promise<void> }> = []
+
+		use(capability: { onStart?: () => Promise<void> }) {
+			this.capabilities.push(capability)
+			return this
+		}
+
+		async start() {
+			for (const capability of this.capabilities) {
+				await capability.onStart?.()
+			}
+		}
+	},
+}))
+
 vi.mock('agents/mcp/client', () => ({
 	MCPClientManager: class {
 		rows: Array<FakeServerRow> = []
@@ -108,7 +129,7 @@ vi.mock('agents/mcp/client', () => ({
 			mockModule.manager = this
 		}
 
-		async restoreConnectionsFromStorage() {}
+		async onStart() {}
 
 		async waitForConnections() {}
 

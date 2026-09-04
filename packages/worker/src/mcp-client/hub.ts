@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
+import { Lifecycle } from 'agents/lifecycle'
 import { MCPClientManager } from 'agents/mcp/client'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
@@ -71,14 +72,15 @@ export function isRecoverableMcpOAuthStateError(error: string | null) {
  * inside this object's storage.
  */
 class McpClientHubBase extends DurableObject<Env> {
-	private manager: MCPClientManager
+	private readonly manager: MCPClientManager
+	private readonly lifecycle: Lifecycle<Env>
 	private restored: Promise<void> | null = null
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
-		// The MCPClientManager persists registered servers in this table but
-		// only the SDK Agent base class creates it; plain DOs must create it
-		// themselves before constructing the manager.
+		// The manager creates this table during lifecycle start, but
+		// `sanitizeStoredMcpSessions` reads it before start so the table must
+		// exist first.
 		state.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS cf_agents_mcp_servers (
 				id TEXT PRIMARY KEY NOT NULL,
@@ -93,10 +95,12 @@ class McpClientHubBase extends DurableObject<Env> {
 		// createAuthProvider mirrors Agent.addMcpServer so restore + OAuth
 		// callback paths rebuild a DO-storage-backed provider after hibernation.
 		this.manager = new MCPClientManager(mcpClientName, mcpClientVersion, {
-			storage: state.storage,
 			createAuthProvider: (callbackUrl) =>
 				createMcpClientOAuthProvider(state.storage, callbackUrl),
 		})
+		// The manager is a lifecycle capability: it receives DO storage from the
+		// lifecycle and restores persisted connections in its `onStart`.
+		this.lifecycle = Lifecycle.install(this).use(this.manager)
 	}
 
 	private ensureRestored() {
@@ -104,9 +108,13 @@ class McpClientHubBase extends DurableObject<Env> {
 		return this.restored
 	}
 
+	/**
+	 * RPC methods bypass `fetch`, so start the lifecycle explicitly. Stale
+	 * sessions are dropped first because start restores connections.
+	 */
 	private async restoreSanitizedConnections() {
 		sanitizeStoredMcpSessions(this.ctx.storage)
-		await this.manager.restoreConnectionsFromStorage(mcpClientName)
+		await this.lifecycle.start()
 	}
 
 	private clearSessionBeforeConnect(serverId: string) {
