@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	canPauseOnHover,
 	listLanePlacements,
 	wrapPagerIndex,
 	wrapUnitInterval,
@@ -89,4 +90,42 @@ test('lane placements wrap with a seam copy instead of leaving a hole', () => {
 		stride - cardWidth,
 	)
 	expect(wide.length).toBeLessThanOrEqual(count + 2)
+})
+
+test('narrow swipe moves the leading card off the origin instead of pinning it', () => {
+	const stride = 320
+	const cardWidth = 308
+	const viewportWidth = 375
+
+	const atRest = listLanePlacements({
+		count: 4,
+		stride,
+		cardWidth,
+		offset: 0,
+		viewportWidth,
+	})
+	expect(atRest).toContainEqual({ itemIndex: 0, x: 0, seam: false })
+
+	const swiped = listLanePlacements({
+		count: 4,
+		stride,
+		cardWidth,
+		offset: 80,
+		viewportWidth,
+	})
+	const leading = swiped.filter((placement) => placement.itemIndex === 0)
+	expect(leading).toContainEqual({ itemIndex: 0, x: -80, seam: false })
+	expect(leading.some((placement) => placement.x === 0)).toBe(false)
+	expect(largestVisibleHole(swiped, viewportWidth, cardWidth)).toBeLessThanOrEqual(
+		stride - cardWidth,
+	)
+
+	expect(
+		canPauseOnHover(() => ({ matches: false })),
+	).toBe(false)
+	expect(
+		canPauseOnHover((query) => ({
+			matches: query === '(hover: hover) and (pointer: fine)',
+		})),
+	).toBe(true)
 })
