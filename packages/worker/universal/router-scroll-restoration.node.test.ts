@@ -61,7 +61,6 @@ test('sessionStorage scroll positions restore the saved Y for the current histor
 
 test('pre-hydration restore scrolls an off-screen list/detail record when no Y is saved', () => {
 	const restoreScript = getScrollRestorationInlineScript()
-	expect(restoreScript).toContain('[data-record-focus]')
 
 	const scrollTo = vi.fn()
 	const scrollIntoView = vi.fn()

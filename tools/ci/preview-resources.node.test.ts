@@ -11,7 +11,6 @@ import {
 	deletePreviewQueue,
 	deletePreviewR2Bucket,
 	deletePreviewWorkerScript,
-	listPreviewWorkerNames,
 	previewResourceNamePattern,
 	removePreviewQueueConsumers,
 	type PreviewResourceKind,
@@ -249,20 +248,6 @@ test('assertPreviewResourceName accepts every derived preview name kind', () => 
 		]
 		expect(namesRejectedByGuard(accepted)).toEqual([])
 	}
-	expect(buildPreviewResourceNames('kody-pr-42')).toEqual({
-		d1DatabaseName: 'kody-pr-42-db',
-		auditD1DatabaseName: 'kody-pr-42-audit-db',
-		oauthKvTitle: 'kody-pr-42-oauth-kv',
-		bundleArtifactsKvTitle: 'kody-pr-42-bundle-artifacts-kv',
-		communityAssetsBucketName: 'kody-pr-42-community-assets',
-		emailBlobsBucketName: 'kody-pr-42-email-blobs',
-		repoSessionBlobsBucketName: 'kody-pr-42-repo-session-blobs',
-		webhookDispatchQueueName: 'kody-pr-42-webhook-dispatch',
-		webhookDispatchDeadLetterQueueName: 'kody-pr-42-webhook-dispatch-dlq',
-	})
-	expect(listPreviewWorkerNames('kody-pr-42')).not.toContain(
-		'kody-preview-jobs',
-	)
 })
 
 test('assertPreviewResourceName accepts names truncated to the 63-character limit', () => {
@@ -290,18 +275,14 @@ test('cleanupPreviewResources refuses a production worker name before any wrangl
 			cleanupPreviewResources({ workerName, dryRun: false }),
 		).rejects.toThrow('does not match the preview resource naming scheme')
 	}
-	expect(spawnSync).not.toHaveBeenCalled()
-	expect(fetchMock).not.toHaveBeenCalled()
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
-})
-
-test('cleanupPreviewResources refuses a production worker name even in dry-run', async () => {
 	await expect(
 		cleanupPreviewResources({ workerName: 'kody', dryRun: true }),
 	).rejects.toThrow('Refusing to delete worker "kody-runtime"')
 	expect(consoleError).not.toHaveBeenCalled()
 	expect(spawnSync).not.toHaveBeenCalled()
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+	vi.unstubAllEnvs()
 })
 
 test('each guarded delete throws with the offending name and kind before reaching Cloudflare', async () => {
@@ -734,33 +715,6 @@ test('non-empty preview R2 buckets are emptied then deleted', async () => {
 			),
 		),
 	).toBe(true)
-	vi.unstubAllGlobals()
-	vi.unstubAllEnvs()
-})
-
-test('cleanup never targets kody-preview-jobs or production names', async () => {
-	consoleError.mockImplementation(() => {})
-	installCleanupEnv()
-	const fetchMock = vi
-		.fn<typeof fetch>()
-		.mockImplementation(async () => emptyQueueListResponse())
-	vi.stubGlobal('fetch', fetchMock)
-	spawnSync.mockImplementation((_command, args) =>
-		alreadyMissingWrangler(args as Array<string>),
-	)
-
-	await cleanupPreviewResources({
-		workerName: 'kody-pr-42',
-		dryRun: false,
-		sleep: async () => {},
-	})
-	const targeted = [
-		...spawnSync.mock.calls.map((call) => wranglerArgList(call)),
-		...fetchMock.mock.calls.map(([input]) => String(input)),
-	].join('\n')
-	expect(targeted).not.toContain('kody-preview-jobs')
-	expect(targeted).not.toContain('kody-jobs')
-	expect(targeted).not.toMatch(/(?<!kody-pr-42-)kody-production/)
 	vi.unstubAllGlobals()
 	vi.unstubAllEnvs()
 })

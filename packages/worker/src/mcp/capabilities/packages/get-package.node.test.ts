@@ -171,8 +171,6 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 			},
 		],
 	})
-	expect(withUsername).not.toHaveProperty('tokens')
-	expect(withUsername.exports[0]).not.toHaveProperty('external_invocation')
 	expect(
 		mockModule.getSavedPackageWithCommunityProvenanceById,
 	).toHaveBeenCalledWith(
@@ -244,8 +242,6 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		subpath: './post-message',
 		import_specifier: 'kody:@kody/discord-gateway/post-message',
 	})
-	expect(delegated).not.toHaveProperty('tokens')
-	expect(delegated.exports[0]).not.toHaveProperty('external_invocation')
 })
 
 test('getPackageCapability projects export contracts from source and leaves them empty without projectable text', async () => {

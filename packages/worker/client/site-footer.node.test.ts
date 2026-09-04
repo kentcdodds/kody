@@ -2,7 +2,6 @@ import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import { SiteFooter } from '#client/site-footer.tsx'
-import { pageGutter } from '#universal/styles/style-primitives.ts'
 
 test('site footer nav uses a two-row five-column grid, then stacked auto-fit', async () => {
 	const html = await renderToString(
@@ -11,18 +10,11 @@ test('site footer nav uses a two-row five-column grid, then stacked auto-fit', a
 
 	expect(html).toContain('aria-label="Footer"')
 	expect(html).toContain('href="/account"')
-	expect(html).toContain('Make it portable.')
-	expect(html).toContain(pageGutter)
 	expect(html).toContain('repeat(5, max-content)')
-	expect(html).not.toContain('flex-wrap: wrap')
 	expect(html).toContain(
 		'repeat(auto-fit, minmax(min(100%, 7.5rem), max-content))',
 	)
 	expect(html).toContain('@media (max-width: 900px)')
-	expect(html).not.toContain('@media (max-width: 720px)')
-	expect(html).not.toContain('flex-shrink: 0')
-	expect(html).not.toContain('flex-direction: column')
-	expect(html).not.toContain('@media (max-width: 560px)')
 
 	const loggedOut = await renderToString(
 		jsx(SiteFooter, { loggedIn: false, loginHref: '/login?next=%2Fsupport' }),

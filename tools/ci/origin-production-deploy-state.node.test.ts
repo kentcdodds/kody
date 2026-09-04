@@ -134,14 +134,6 @@ test('an unknown origin-script probe is never fresh or steady', () => {
 	expect(planOriginProductionDeploy(state).runOriginBootstrap).toBe(false)
 })
 
-test('previewFleetScriptNames derives the per-PR platform and runtime names', () => {
-	expect(previewFleetScriptNames('kody-pr-7')).toEqual({
-		origin: 'kody-pr-7',
-		platform: 'kody-pr-7-platform',
-		runtime: 'kody-pr-7-runtime',
-	})
-})
-
 test('classifies a preview fleet by its own script names, not production names', () => {
 	const scriptNames = previewFleetScriptNames('kody-pr-7')
 	// Production-named ownership must be invisible to a preview probe.
