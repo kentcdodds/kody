@@ -150,11 +150,19 @@ function renderOauthAuthorizeGrant(input: {
 							These OAuth scopes are identity claims. They do not limit what the
 							assistant can do.
 						</p>
-						<p mix={css(descriptionCss)}>
-							{input.scopes.flatMap((scope, index) => [
-								index > 0 ? ' ' : null,
-								<code key={scope}>{scope}</code>,
-							])}
+						<p
+							mix={css({
+								...descriptionCss,
+								display: 'flex',
+								flexWrap: 'wrap',
+								columnGap: spacing.md,
+								rowGap: spacing.xs,
+								alignItems: 'baseline',
+							})}
+						>
+							{input.scopes.map((scope) => (
+								<code key={scope}>{scope}</code>
+							))}
 						</p>
 					</div>
 				</details>
