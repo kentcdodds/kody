@@ -33,6 +33,7 @@ test('prose tables keep column layout instead of wrapping the last cell to a sli
 	)
 
 	expect(html).toContain('display: table')
+	expect(html).toContain('[data-markdown-table-compact-last]')
 	expect(html).toContain('white-space: nowrap')
 	expect(html).toContain('overflow-wrap: break-word')
 	expect(html).toContain('overflow-x: auto')

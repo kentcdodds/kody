@@ -464,8 +464,10 @@ export function getLanternGlowCss(options: { maxWidth: string }) {
  * shrink. That also collapses table min-content to a character, so auto
  * layout gives leftover space to the long first column and the last column
  * wraps "An integration" onto two lines. Reset wrap on the table, keep the
- * last column at content width, and scroll overflow on a wrapper — not on
- * `display: block` tables, which skip column layout.
+ * last column at content width when every last-column cell is a short
+ * label, and scroll overflow on a wrapper — not on `display: block`
+ * tables, which skip column layout. Long last-column descriptions still
+ * wrap so a chooser table does not force every prose table to scroll.
  *
  * Wrap each `<table>` in `[data-markdown-table]` (see `markdown-view.tsx`).
  */
@@ -493,10 +495,11 @@ export const markdownTableCss = {
 		backgroundColor: colors.surface,
 		whiteSpace: 'nowrap' as const,
 	},
-	'& th:last-child, & td:last-child': {
-		width: 'max-content',
-		whiteSpace: 'nowrap' as const,
-	},
+	'& [data-markdown-table-compact-last] th:last-child, & [data-markdown-table-compact-last] td:last-child':
+		{
+			width: 'max-content',
+			whiteSpace: 'nowrap' as const,
+		},
 }
 
 export const proseCss = {

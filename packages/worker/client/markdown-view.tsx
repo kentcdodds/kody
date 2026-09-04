@@ -257,6 +257,19 @@ function renderTableCell(
 	)
 }
 
+const compactLastColumnMaxChars = 40
+
+function tableLastColumnIsCompact(table: Tokens.Table): boolean {
+	const lastCells = [
+		table.header.at(-1),
+		...table.rows.map((row) => row.at(-1)),
+	]
+	return lastCells.every((cell) => {
+		const text = cell?.text.trim() ?? ''
+		return text.length > 0 && text.length <= compactLastColumnMaxChars
+	})
+}
+
 function renderToken(
 	token: Token,
 	key: number,
@@ -325,8 +338,13 @@ function renderToken(
 			)
 		case 'table': {
 			const tableToken = token as Tokens.Table
+			const compactLast = tableLastColumnIsCompact(tableToken)
 			return (
-				<div key={key} data-markdown-table="">
+				<div
+					key={key}
+					data-markdown-table=""
+					data-markdown-table-compact-last={compactLast ? '' : undefined}
+				>
 					<table>
 						<thead>
 							<tr>
