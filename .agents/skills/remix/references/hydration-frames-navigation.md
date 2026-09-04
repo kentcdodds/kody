@@ -276,6 +276,14 @@ import { renderToString } from 'remix/ui/server'
 let html = await renderToString(<App />)
 ```
 
+### Script elements in SSR
+
+Remix rc.1 requires a single string child for server-rendered `<script>`
+content. Non-string children render empty and report an error. Pass the source
+as a string (Kody's scroll-restoration inline script) or keep the element empty
+and set `src`. Script-tag sequences that could terminate the element stay
+escaped.
+
 ### CSS in SSR
 
 Components using the `css` mixin have styles collected during rendering and

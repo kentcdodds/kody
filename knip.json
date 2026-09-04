@@ -14,6 +14,7 @@
 		"packages/worker": {
 			"entry": [
 				"client/entry.tsx",
+				"src/app/hmr.vite.ts",
 				"src/mcp/capabilities/**/*.ts",
 				"src/mcp/instructions/**/*.ts"
 			],

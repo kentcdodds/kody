@@ -9,6 +9,7 @@ import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.t
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
+import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
@@ -33,25 +34,26 @@ function alias(prefix: string, target: string) {
 	}
 }
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
 	await ensureWorkerBundlerModules()
 	await ensureGuideCatalogModules()
 
 	const auxiliaryWorkers: Array<{
 		configPath: string
 		devOnly: true
-	}> = [
-		{
-			configPath: 'packages/jobs-worker/wrangler.jsonc',
-			devOnly: true,
-		},
-		{
-			configPath: 'packages/highlight-worker/wrangler.jsonc',
-			devOnly: true,
-		},
-	]
+	}> = []
 
-	if (envName !== 'test' && !isOriginDeployBuild) {
+	if (command === 'serve' && envName !== 'test' && !isOriginDeployBuild) {
+		auxiliaryWorkers.push(
+			{
+				configPath: 'packages/jobs-worker/wrangler.jsonc',
+				devOnly: true,
+			},
+			{
+				configPath: 'packages/highlight-worker/wrangler.jsonc',
+				devOnly: true,
+			},
+		)
 		const runtimeDevConfigPath = await writeLocalRuntimeDevConfig({
 			runtimeConfigPath: 'packages/runtime-worker/wrangler.jsonc',
 			envName,
@@ -72,7 +74,12 @@ export default defineConfig(async () => {
 
 	return {
 		publicDir: 'packages/worker/public',
+		build: {
+			sourcemap: true,
+			outDir: process.env.KODY_VITE_OUTDIR ?? 'dist',
+		},
 		plugins: [
+			markdownAsText(),
 			remix({
 				serverHandler: false,
 				clientEntry: 'packages/worker/client/entry.tsx',
@@ -89,6 +96,13 @@ export default defineConfig(async () => {
 		],
 		resolve: {
 			alias: [
+				{
+					find: /#app\/hmr\.ts$/,
+					replacement: path.resolve(
+						root,
+						'packages/worker/src/app/hmr.vite.ts',
+					),
+				},
 				alias('#app', path.resolve(root, 'packages/worker/src/app')),
 				alias('#client', path.resolve(root, 'packages/worker/client')),
 				alias('#universal', path.resolve(root, 'packages/worker/universal')),

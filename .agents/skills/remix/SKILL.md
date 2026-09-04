@@ -362,9 +362,10 @@ full examples.
   behavior. Framework attributes are `data-rmx-*` (`data-rmx-target`,
   `data-rmx-document`, `data-rmx-history`, …). Listen with native
   `target.addEventListener(type, listener, { signal })` — `addEventListeners()`
-  was removed in rc.1. Optional `run({ resolveFrame })` defaults to fetching the
-  frame source as HTML; Kody keeps a custom resolver for the frame registry and
-  auth.
+  was removed in rc.1. Server-rendered `<script>` elements must have a single
+  string child (or stay empty with `src`); non-string children render empty and
+  error. Optional `run({ resolveFrame })` defaults to fetching the frame source
+  as HTML; Kody keeps a custom resolver for the frame registry and auth.
 - `remix/ui/server` — server rendering: `renderToStream`, `renderToString`. Use
   in the `render(...)` helper that returns HTML responses
 - `remix/ui/animation` — animation APIs: `animateEntrance`, `animateExit`,

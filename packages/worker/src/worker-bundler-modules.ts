@@ -10,9 +10,10 @@ import type * as workerBundlerTypescript from '@cloudflare/worker-bundler/typesc
  * Importing `@cloudflare/worker-bundler` directly — even via dynamic
  * `import()` — gets inlined into the single main worker module by wrangler,
  * which put ~3.6 MB of bundler/TypeScript compiler into every isolate cold
- * start. The generated `.mjs` files match a `find_additional_modules` rule in
- * `wrangler.jsonc`, so wrangler uploads them as separate external modules
- * that only load and evaluate when repo checks actually run.
+ * start. The generated `.mjs` files stay behind `import()` so Vite origin
+ * emits them as hashed SSR chunks and Wrangler sibling workers still match
+ * the `find_additional_modules` rule in their `wrangler.jsonc`. Either way
+ * they only load and evaluate when repo checks actually run.
  *
  * The `node_modules/` prefix is load-bearing: wrangler's additional-module
  * walker discovers these files under `src/`, but its directory watcher skips
