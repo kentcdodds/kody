@@ -56,6 +56,26 @@ type PlanTier = 'free' | PaidTier
 type BillingInterval = 'month' | 'year'
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
 type CheckoutPending = { plan: PaidTier; interval: BillingInterval } | null
+/** Where `POST /account/billing/checkout.json` sends the browser next. */
+type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
+
+const multipleSubscriptionsMessage =
+	'You have more than one active Stripe subscription, so plan changes are handled in the Stripe portal. Opening Stripe…'
+const proratedSwitchNote =
+	'Switching plans is prorated: Stripe shows the exact charge or credit and asks you to confirm before anything changes.'
+
+function describePlanSwitch(input: {
+	tier: PaidTier
+	interval: BillingInterval
+	currentPlan: PaidTier | null
+}) {
+	if (input.currentPlan === input.tier) {
+		return input.interval === 'year'
+			? 'Switch to annual (prorated)'
+			: 'Switch to monthly (prorated)'
+	}
+	return `Switch to ${input.tier === 'pro' ? 'Pro' : 'Standard'} (prorated)`
+}
 
 const planTiers: Array<{
 	id: PlanTier
@@ -225,10 +245,12 @@ function subscriptionStatusBadgeCss(tone: SubscriptionStatusTone) {
 }
 
 export async function accountBillingRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(billingApiPath, {
+	// `?error=` and `?billing=` carry Stripe redirect outcomes; forward them so
+	// the JSON API maps them to the same messages the SSR page renders.
+	const response = await fetch(`${billingApiPath}${url.search}`, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
@@ -262,14 +284,12 @@ export function AccountBillingRoute(handle: Handle) {
 	function applyPayload(payload: AccountBillingLoaderData) {
 		data = payload
 		status = 'ready'
-		message = payload.error ?? null
+		message = payload.error ?? payload.notice ?? null
 		messageTone = payload.error ? 'error' : 'info'
 	}
 
-	async function startCheckout(plan: PlanTier) {
-		if (plan === 'free') return
+	async function startCheckout(plan: PaidTier, interval: BillingInterval) {
 		if (checkoutPending) return
-		const interval = selectedIntervalByPlan[plan]
 		checkoutPending = { plan, interval }
 		message = null
 		handle.update()
@@ -283,9 +303,17 @@ export function AccountBillingRoute(handle: Handle) {
 			const payload = await readJson<{
 				ok?: boolean
 				url?: string
+				mode?: CheckoutMode
 				error?: string
 			}>(response)
 			if (response.ok && payload?.ok && typeof payload.url === 'string') {
+				if (payload.mode === 'portal') {
+					// More than one active subscription: the portal update flow
+					// cannot pick one, so the customer manages them in Stripe.
+					message = multipleSubscriptionsMessage
+					messageTone = 'info'
+					handle.update()
+				}
 				window.location.assign(payload.url)
 				return
 			}
@@ -401,6 +429,13 @@ export function AccountBillingRoute(handle: Handle) {
 			: null
 		const paymentActionNeeded =
 			subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid'
+		// A subscriber's plan changes are prorated updates to their existing
+		// Stripe subscription (confirmed in the portal), not new checkouts.
+		const activeStripePlan: PaidTier | null =
+			billing?.hasStripeCustomer &&
+			(billing.stripePlan === 'standard' || billing.stripePlan === 'pro')
+				? billing.stripePlan
+				: null
 		const showManageCta = Boolean(
 			billing?.configured && billing.hasStripeCustomer,
 		)
@@ -628,12 +663,21 @@ export function AccountBillingRoute(handle: Handle) {
 										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
 									const paidTier: PaidTier | null =
 										tier.id === 'free' ? null : tier.id
-									const showSubscribe =
+									const purchasable =
 										paidTier != null &&
-										!isCurrent &&
-										!isIncluded &&
 										billing.purchasablePlans.includes(paidTier) &&
 										!paymentActionNeeded
+									const showSubscribe = purchasable && !isCurrent && !isIncluded
+									// The tier the Stripe subscription is on: offer the other
+									// billing interval when the current one is known.
+									const intervalSwitch: BillingInterval | null =
+										purchasable &&
+										paidTier === activeStripePlan &&
+										billing.stripeInterval != null
+											? billing.stripeInterval === 'month'
+												? 'year'
+												: 'month'
+											: null
 
 									return (
 										<div
@@ -682,7 +726,43 @@ export function AccountBillingRoute(handle: Handle) {
 													See your current usage
 												</a>
 											</p>
-											{isCurrent || isIncluded ? (
+											{intervalSwitch && paidTier ? (
+												<div
+													mix={css({
+														display: 'flex',
+														flexWrap: 'wrap',
+														gap: spacing.sm,
+													})}
+												>
+													<button
+														type="button"
+														disabled
+														mix={css(secondaryButtonCss)}
+													>
+														{isCurrent ? 'Current plan' : 'Your subscription'}
+													</button>
+													<button
+														type="button"
+														disabled={checkoutPending !== null}
+														mix={[
+															on(
+																'click',
+																() =>
+																	void startCheckout(paidTier, intervalSwitch),
+															),
+															css(primaryButtonCss),
+														]}
+													>
+														{checkoutPending?.plan === paidTier
+															? 'Opening Stripe…'
+															: describePlanSwitch({
+																	tier: paidTier,
+																	interval: intervalSwitch,
+																	currentPlan: activeStripePlan,
+																})}
+													</button>
+												</div>
+											) : isCurrent || isIncluded ? (
 												<div>
 													<button
 														type="button"
@@ -763,15 +843,31 @@ export function AccountBillingRoute(handle: Handle) {
 															type="button"
 															disabled={checkoutPending !== null}
 															mix={[
-																on('click', () => void startCheckout(paidTier)),
+																on(
+																	'click',
+																	() =>
+																		void startCheckout(
+																			paidTier,
+																			selectedIntervalByPlan[paidTier],
+																		),
+																),
 																css(primaryButtonCss),
 															]}
 														>
 															{checkoutPending?.plan === paidTier
-																? 'Starting checkout…'
-																: selectedIntervalByPlan[paidTier] === 'year'
-																	? 'Subscribe annually'
-																	: 'Subscribe monthly'}
+																? activeStripePlan
+																	? 'Opening Stripe…'
+																	: 'Starting checkout…'
+																: activeStripePlan
+																	? describePlanSwitch({
+																			tier: paidTier,
+																			interval:
+																				selectedIntervalByPlan[paidTier],
+																			currentPlan: activeStripePlan,
+																		})
+																	: selectedIntervalByPlan[paidTier] === 'year'
+																		? 'Subscribe annually'
+																		: 'Subscribe monthly'}
 														</button>
 													</div>
 												</div>
@@ -780,6 +876,9 @@ export function AccountBillingRoute(handle: Handle) {
 									)
 								})}
 							</div>
+							{activeStripePlan && !paymentActionNeeded ? (
+								<p mix={css(descriptionCss)}>{proratedSwitchNote}</p>
+							) : null}
 						</AccountManagementPanel>
 					</>
 				) : null}

@@ -4,6 +4,7 @@ import { consoleError } from '#worker/test-support/console-spies.ts'
 const refreshStripePlanForUser = vi.hoisted(() =>
 	vi.fn(async () => ({
 		stripePlan: 'pro' as const,
+		stripeInterval: 'month' as 'month' | 'year' | null,
 		cancelAt: null as string | null,
 		subscriptionStatus: 'active' as string | null,
 	})),
@@ -22,6 +23,7 @@ vi.mock('#worker/billing/stripe-plan-refresh-client.ts', () => ({
 import {
 	loadAccountBillingData,
 	resolveBillingErrorMessage,
+	resolveBillingNoticeMessage,
 } from '#app/account-billing-data.ts'
 
 function createBillingTestDb(input: {
@@ -66,9 +68,16 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		'totally_new_code',
 	)
 	expect(resolveBillingErrorMessage(null)).toBeUndefined()
+	expect(resolveBillingNoticeMessage('updated')).toBe(
+		'Your plan change is complete. Limits update within a minute.',
+	)
+	// Unknown notice codes render nothing (they are not user-typed errors).
+	expect(resolveBillingNoticeMessage('made_up')).toBeUndefined()
+	expect(resolveBillingNoticeMessage(null)).toBeUndefined()
 
 	refreshStripePlanForUser.mockResolvedValueOnce({
 		stripePlan: 'pro',
+		stripeInterval: 'year',
 		cancelAt: '2026-08-01T00:00:00.000Z',
 		subscriptionStatus: 'past_due',
 	})
@@ -87,6 +96,7 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	const data = await loadAccountBillingData({
 		env,
 		userId: 9,
+		noticeCode: 'updated',
 		now: new Date('2026-07-25T12:00:00.000Z'),
 	})
 
@@ -94,6 +104,11 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(data.configured).toBe(true)
 	expect(data.hasStripeCustomer).toBe(true)
 	expect(data.stripePlan).toBe('pro')
+	expect(data.stripeInterval).toBe('year')
+	expect(data.notice).toBe(
+		'Your plan change is complete. Limits update within a minute.',
+	)
+	expect(data.error).toBeUndefined()
 	expect(data.effectivePlan).toBe('pro')
 	expect(data.subscriptionStatus).toBe('past_due')
 	expect(data.cancelAt).toBe('2026-08-01T00:00:00.000Z')
@@ -115,8 +130,10 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	refreshStripePlanForUser.mockRejectedValueOnce(new Error('stripe down'))
 	const failed = await loadAccountBillingData({ env, userId: 3 })
 	expect(failed.stripePlan).toBe('pro')
+	expect(failed.stripeInterval).toBeNull()
 	expect(failed.subscriptionStatus).toBeNull()
 	expect(failed.cancelAt).toBeNull()
+	expect(failed.notice).toBeUndefined()
 	expect(consoleError).toHaveBeenCalledWith(
 		'account_billing_refresh_failed',
 		expect.objectContaining({ userId: 3, error: 'stripe down' }),

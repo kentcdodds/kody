@@ -1827,6 +1827,11 @@ export type AccountBillingLoaderData = {
 	configured: boolean
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
+	/**
+	 * Billing interval of the active Stripe subscription when it uses a
+	 * configured price; null when unknown (retired price, no refresh).
+	 */
+	stripeInterval: 'month' | 'year' | null
 	effectivePlan: AdminPlanName
 	hasStripeCustomer: boolean
 	cancelAt: string | null
@@ -1836,6 +1841,8 @@ export type AccountBillingLoaderData = {
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	error?: string
+	/** Success notice mapped from `?billing=<code>` (e.g. a completed plan change). */
+	notice?: string
 }
 
 export type AccountBillingSuccessLoaderData = {
