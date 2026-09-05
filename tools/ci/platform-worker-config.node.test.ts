@@ -153,6 +153,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 				dataset: 'kody_package_invoke_specifier_events_pr',
 			},
+			{
+				binding: 'EXECUTE_INTERPRETABLE_EVENTS',
+				dataset: 'kody_execute_interpretable_events_pr',
+			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
@@ -225,6 +229,14 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		).toEqual({
 			binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 			dataset: 'kody_package_invoke_specifier_events_pr',
+		})
+		expect(
+			previewEnv?.analytics_engine_datasets?.find(
+				(entry) => entry.binding === 'EXECUTE_INTERPRETABLE_EVENTS',
+			),
+		).toEqual({
+			binding: 'EXECUTE_INTERPRETABLE_EVENTS',
+			dataset: 'kody_execute_interpretable_events_pr',
 		})
 		expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 			binding: 'WEBHOOK_DISPATCH_QUEUE',

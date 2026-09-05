@@ -1040,3 +1040,58 @@ export default async function run() {
 		getRegistrySpy.mockRestore()
 	}
 })
+
+test('runModuleWithRegistry records execute interpretable class only on execute-surface runs', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const executeInterpretable = await import('#mcp/execute-interpretable.ts')
+	const recordSpy = vi
+		.spyOn(executeInterpretable, 'recordExecuteInterpretableEvent')
+		.mockImplementation(() => {})
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://app.example.com',
+		user: {
+			userId: 'user-1',
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
+		storageContext: null,
+	})
+	const getRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue({
+			capabilityHandlers: {},
+			capabilityMap: {},
+			toolSets: {},
+			capabilityPreludes: {},
+		} as never)
+	const createExecuteExecutorSpy = vi
+		.spyOn(mcpExecutor, 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return { result: 'ok', logs: [] }
+			},
+		} as never)
+
+	try {
+		const glueCode = `import { kody } from 'kody:runtime'
+export default async function main() { return await kody.capability_id({}) }`
+		await runModuleWithRegistry(env, callerContext, glueCode)
+		expect(recordSpy).toHaveBeenCalledExactlyOnceWith(env, { source: glueCode })
+
+		recordSpy.mockClear()
+		const packageCode = `import whatShipped from 'kody:@you/bot/whatShipped'
+export default async function main() { return await whatShipped({}) }`
+		await runModuleWithRegistry(env, callerContext, packageCode, undefined, {
+			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+		})
+		expect(recordSpy).not.toHaveBeenCalled()
+	} finally {
+		createExecuteExecutorSpy.mockRestore()
+		getRegistrySpy.mockRestore()
+		recordSpy.mockRestore()
+	}
+})

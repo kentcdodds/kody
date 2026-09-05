@@ -516,6 +516,10 @@
 					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
 					"dataset": "kody_package_invoke_specifier_events",
 				},
+				{
+					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
+					"dataset": "kody_execute_interpretable_events",
+				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -924,6 +928,10 @@
 				{
 					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
 					"dataset": "kody_package_invoke_specifier_events_preview",
+				},
+				{
+					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
+					"dataset": "kody_execute_interpretable_events_preview",
 				},
 			],
 			"ai": {
