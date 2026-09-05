@@ -24,3 +24,5 @@ node tools/control-kody.ts preview -- \
 
 - Empty is the common seed state. Create the pending grant or locked package
   through the same JSON APIs the UI uses before asserting copy.
+- The error-rate card counts **open** Activity errors in the last 7 days.
+  Ignored and resolved runs do not keep it on Waiting.

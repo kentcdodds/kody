@@ -98,6 +98,7 @@ export type WaitingSignals = {
 	expiredSecrets: Array<WaitingExpiredSecretSignal>
 	lockedPackages: Array<WaitingLockedPackageSignal>
 	pendingEmailChange: string | null
+	/** Open (untriaged) Activity errors vs runs in the Activity window. */
 	errorRate: { errorCount: number; eventCount: number } | null
 	entitlementCaps: Array<WaitingEntitlementCapSignal>
 }
@@ -250,7 +251,7 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 			id: 'error-rate',
 			kind: 'error-rate',
 			title: 'Error rate is elevated',
-			why: `${signals.errorRate.errorCount} of ${signals.errorRate.eventCount} recent runs failed. Activity is where you triage those errors.`,
+			why: `${signals.errorRate.errorCount} of ${signals.errorRate.eventCount} recent runs failed and still need triage. Activity is where you handle those errors.`,
 			who: 'you',
 			doLabel: 'Open Activity',
 			href: routes.accountActivity.href(),

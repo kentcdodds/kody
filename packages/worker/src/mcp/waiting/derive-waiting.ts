@@ -1,4 +1,3 @@
-import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -13,6 +12,8 @@ import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapsho
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
+import { summarizeRunRecords } from '#worker/run-records/service.ts'
+import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
 import {
 	buildWaitingItems,
 	isUnexpiredEpochMs,
@@ -271,17 +272,19 @@ async function collectPendingEmailChange(env: Env, userId: number, now: Date) {
 
 async function collectErrorRate(env: Env, userId: string, now: Date) {
 	try {
-		const month = utcMonthKey(now)
-		const row = await env.APP_DB.prepare(
-			`SELECT SUM(event_count) AS event_count, SUM(error_count) AS error_count
-			 FROM usage_rollups
-			 WHERE user_id = ? AND month = ?`,
-		)
-			.bind(userId, month)
-			.first<{ event_count: number | null; error_count: number | null }>()
+		// Count open (untriaged) Activity errors in the same 7-day window as
+		// `/account/activity`. Monthly usage_rollups never drop when the user
+		// ignores or resolves a run, so they cannot be the Waiting gate.
+		const summary = await summarizeRunRecords({
+			env,
+			userId,
+			since: new Date(
+				now.getTime() - accountActivitySummaryWindowMs,
+			).toISOString(),
+		})
 		return {
-			errorCount: Number(row?.error_count ?? 0),
-			eventCount: Number(row?.event_count ?? 0),
+			errorCount: summary.errors,
+			eventCount: summary.total,
 		}
 	} catch {
 		return null
