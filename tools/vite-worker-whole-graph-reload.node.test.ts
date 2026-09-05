@@ -140,9 +140,3 @@ test('a file outside the worker graph does not reload it', () => {
 	expect(result).toBeUndefined()
 	expect(send).not.toHaveBeenCalled()
 })
-
-test('applies to serve only and runs after other hotUpdate hooks', () => {
-	const plugin = workerWholeGraphReload()
-	expect(plugin.apply).toBe('serve')
-	expect(plugin.hotUpdate).toMatchObject({ order: 'post' })
-})

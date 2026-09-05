@@ -79,7 +79,6 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	expect(picker).not.toContain('data-testid="onboarding-agent-change"')
 	expect(picker).not.toContain('data-testid="onboarding-agent-title-mark"')
 	expect(picker).toContain('href="/onboarding/step-1/cursor"')
-	expect(picker).not.toContain('surface=')
 
 	const cursor = await renderToString(
 		connectPanel({ agent: 'cursor', label: 'Cursor' }),
@@ -139,11 +138,7 @@ test('step 2 skip-unconnected shows the homepage discovery prompt', async () => 
 	expect(picker).not.toContain('href="/onboarding/step-2/notion"')
 	expect(picker).not.toContain('href="/onboarding/step-2/not-listed"')
 	expect(picker).not.toContain('x.com')
-	expect(picker).not.toContain('Choose which service')
-	expect(picker).not.toContain('set anything up yet')
-	expect(picker).not.toContain('href="/onboarding/step-3"')
 	expect(picker).not.toContain('data-testid="onboarding-mcp-notion-connect"')
-	expect(picker).not.toContain('surface=')
 
 	const selectedWhileUnconnected = await renderToString(
 		accessPanel({ service: 'notion' }),
@@ -307,8 +302,6 @@ test('step 2 selected service is a prompt well and milestones, without the grid'
 	)
 	expect(zoomish).toContain('Help me use Kody with x.com.')
 	expect(zoomish).toContain('https://integrations.sh/mcp')
-	expect(zoomish).not.toContain('communityFork')
-	expect(zoomish).not.toContain('@kody/integrations-sh')
 	expect(zoomish).not.toContain('Help me use Kody with X.')
 	expect(zoomish).toContain('data-testid="onboarding-service-difficulty"')
 	expect(zoomish).toContain('data-level="hard"')

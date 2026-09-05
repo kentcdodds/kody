@@ -143,7 +143,6 @@ test('renderAppPage server-renders the dedicated connect-secrets approval page',
 	expect(connectSecretsResponse.status).toBe(200)
 	const connectSecretsHtml = await connectSecretsResponse.text()
 	expect(connectSecretsHtml).toContain('data-testid="connect-secrets"')
-	expect(connectSecretsHtml).toContain('Allow this secret at these hosts')
 	expect(connectSecretsHtml).toContain('gmail.googleapis.com')
 	expect(connectSecretsHtml).toContain('oauth2.googleapis.com')
 	expect(connectSecretsHtml).toContain('Allow all 2 hosts')

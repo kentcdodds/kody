@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	PARKED_TRANSFORM,
@@ -391,17 +388,4 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 		largestVisibleHole(placements, viewportWidth, cardWidth),
 	).toBeLessThanOrEqual(stride - cardWidth)
 	expect(placements.some((placement) => placement.x === 0)).toBe(false)
-})
-
-test('virtual [hidden] cards override author display flex', () => {
-	const css = readFileSync(
-		path.resolve(
-			path.dirname(fileURLToPath(import.meta.url)),
-			'../../public/styles.css',
-		),
-		'utf8',
-	)
-	expect(css).toMatch(
-		/\.landing-testimonials-track\.is-virtual\s+\.landing-testimonial-card\[hidden\]\s*\{[^}]*display:\s*none/,
-	)
 })

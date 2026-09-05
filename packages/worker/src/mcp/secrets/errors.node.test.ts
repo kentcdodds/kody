@@ -1,8 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	createHostSecretAccessDeniedBatchMessage,
-	createMissingSecretMessage,
-	createSecretScopeUnavailableMessage,
 	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
@@ -11,7 +8,7 @@ import {
 
 test('secret error message helpers parse auth, missing-secret, and approval payloads', () => {
 	expect(
-		parseMissingSecretMessage(createMissingSecretMessage('lutronPassword')),
+		parseMissingSecretMessage('Secret "lutronPassword" was not found.'),
 	).toEqual({
 		secretName: 'lutronPassword',
 	})
@@ -41,7 +38,7 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 	]
 	expect(
 		parseHostApprovalRequiredBatchMessage(
-			createHostSecretAccessDeniedBatchMessage(hostEntries),
+			`Secrets require host approval: ${JSON.stringify({ entries: hostEntries })}`,
 		),
 	).toEqual({
 		entries: hostEntries,
@@ -49,10 +46,11 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 	})
 	expect(
 		parseHostApprovalRequiredBatchMessage(
-			createHostSecretAccessDeniedBatchMessage(hostEntries, {
+			`Secrets require host approval: ${JSON.stringify({
+				entries: hostEntries,
 				bulkApprovalUrl:
 					'https://example.com/connect/secrets?names=cloudflareToken,githubToken&hosts=api.cloudflare.com,api.github.com',
-			}),
+			})}`,
 		),
 	).toEqual({
 		entries: hostEntries,
@@ -60,35 +58,19 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 			'https://example.com/connect/secrets?names=cloudflareToken,githubToken&hosts=api.cloudflare.com,api.github.com',
 	})
 
-	const scopeUnavailableMessage = createSecretScopeUnavailableMessage([
-		{
-			secretName: 'discordBotToken',
-			scope: 'package',
-			packageId: 'pkg-1',
-			packageName: 'discord-gateway',
-			sessionId: null,
-			editorUrl:
-				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-		},
-	])
+	const scopeUnavailableMessage =
+		'Secret "discordBotToken" exists in package scope for package "discord-gateway" and is not visible from this runtime.'
 	expect(parseSecretScopeUnavailableMessage(scopeUnavailableMessage)).toEqual({
 		secretName: 'discordBotToken',
 		scope: 'package',
 		packageName: 'discord-gateway',
 		packageId: null,
 	})
-	const packageIdOnlyMessage = createSecretScopeUnavailableMessage([
-		{
-			secretName: 'discordBotToken',
-			scope: 'package',
-			packageId: 'pkg-1',
-			packageName: null,
-			sessionId: null,
-			editorUrl:
-				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-		},
-	])
-	expect(parseSecretScopeUnavailableMessage(packageIdOnlyMessage)).toEqual({
+	expect(
+		parseSecretScopeUnavailableMessage(
+			'Secret "discordBotToken" exists in package scope for package id "pkg-1" and is not visible from this runtime.',
+		),
+	).toEqual({
 		secretName: 'discordBotToken',
 		scope: 'package',
 		packageName: null,
@@ -97,7 +79,7 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 	expect(parseMissingSecretMessage(scopeUnavailableMessage)).toBeNull()
 	expect(
 		parseSecretScopeUnavailableMessage(
-			createMissingSecretMessage('discordBotToken'),
+			'Secret "discordBotToken" was not found.',
 		),
 	).toBeNull()
 })

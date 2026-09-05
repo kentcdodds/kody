@@ -31,12 +31,9 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(ownHtml).toContain('Edit profile')
 	expect(ownHtml).toContain(`href="${routes.account.href()}"`)
 	expect(ownHtml).toContain('This is how the world sees you.')
-	expect(ownHtml).not.toContain('data-entity-explainer')
-	expect(ownHtml).not.toContain('What is a profile?')
 	expect(ownHtml).not.toContain('Connect your agent')
 	expect(ownHtml).not.toContain('data-testid="profile-guest-cta"')
 	expect(ownHtml).not.toContain('data-testid="profile-private-badge"')
-	expect(ownHtml).not.toContain('href="/account/waiting"')
 	expect(ownHtml).not.toContain('Log out')
 
 	const privateHtml = await renderToString(

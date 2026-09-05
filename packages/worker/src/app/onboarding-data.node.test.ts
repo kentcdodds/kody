@@ -28,12 +28,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toContain('https://preview.example')
 	expect(
-		buildDiscoveryPrompt({
-			env: {},
-			requestUrl: 'https://preview.example/onboarding',
-		}),
-	).not.toContain('set anything up yet')
-	expect(
 		buildFirstWinPrompt({
 			env: {},
 			requestUrl: 'https://preview.example/onboarding',

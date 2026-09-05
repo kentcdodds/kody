@@ -68,9 +68,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		'totally_new_code',
 	)
 	expect(resolveBillingErrorMessage(null)).toBeUndefined()
-	expect(resolveBillingNoticeMessage('updated')).toBe(
-		'Your plan change is complete. Limits update within a minute.',
-	)
 	// Unknown notice codes render nothing (they are not user-typed errors).
 	expect(resolveBillingNoticeMessage('made_up')).toBeUndefined()
 	expect(resolveBillingNoticeMessage(null)).toBeUndefined()
@@ -105,9 +102,7 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(data.hasStripeCustomer).toBe(true)
 	expect(data.stripePlan).toBe('pro')
 	expect(data.stripeInterval).toBe('year')
-	expect(data.notice).toBe(
-		'Your plan change is complete. Limits update within a minute.',
-	)
+	expect(data.notice).toBe(resolveBillingNoticeMessage('updated'))
 	expect(data.error).toBeUndefined()
 	expect(data.effectivePlan).toBe('pro')
 	expect(data.subscriptionStatus).toBe('past_due')

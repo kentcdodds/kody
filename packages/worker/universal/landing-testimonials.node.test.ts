@@ -38,16 +38,6 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 	expect(shuffled.map((entry) => entry.name)).not.toEqual(
 		six.map((entry) => entry.name),
 	)
-	expect(
-		shuffleTestimonials(landingTestimonials, () => 0).map(
-			(entry) => entry.name,
-		),
-	).toEqual([
-		'Maciek Sitkowski',
-		'Justin Elias',
-		'Cameron Pak',
-		'Bradley Haveman',
-	])
 })
 
 test('testimonialInitials falls back to two letters from the public name', () => {

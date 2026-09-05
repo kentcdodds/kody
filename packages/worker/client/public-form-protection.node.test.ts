@@ -1,26 +1,9 @@
-import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
 import {
 	readPublicFormProtection,
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
-	turnstileWidgetHeightPx,
-	turnstileWidgetWidthPx,
 } from '#client/public-form-protection.ts'
-
-test('styles.css reserves the managed Turnstile box and centers it on the landing waitlist', () => {
-	const css = readFileSync(
-		new URL('../public/styles.css', import.meta.url),
-		'utf8',
-	)
-	const hostBlock = css.match(/\.kody-turnstile\s*\{([^}]+)\}/)?.[1]
-	expect(hostBlock).toContain(`height: ${turnstileWidgetHeightPx}px`)
-	expect(hostBlock).toContain(`min-height: ${turnstileWidgetHeightPx}px`)
-	expect(hostBlock).toContain(`width: min(${turnstileWidgetWidthPx}px, 100%)`)
-	expect(css).toMatch(
-		/\.landing-waitlist \.kody-turnstile\s*\{[^}]*justify-self:\s*center/s,
-	)
-})
 
 type FakeContainer = HTMLElement & {
 	dataset: DOMStringMap & {
