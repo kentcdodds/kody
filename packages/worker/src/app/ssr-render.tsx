@@ -39,6 +39,11 @@ import {
  * `/client-entry.js#AppRoot` while the script tag is `/assets/entry-*.js`.
  * Without this hook, `#rmx-data` tells the browser to import the deleted
  * esbuild path and hydration 404s.
+ *
+ * Only the app root lives in that entry bundle. Any other island — Pitlane's
+ * dev `<HMR />`, whose id is its own dev-server URL — must be imported from
+ * the module it names; routed through the entry it fails with "Unknown client
+ * export", the island never hydrates, and server-data revalidation is dead.
  */
 export function resolveOriginClientEntry({
 	entryId,
@@ -49,7 +54,11 @@ export function resolveOriginClientEntry({
 	href: string
 	preloads: Array<string>
 }) {
-	const exportName = entryId.split('#')[1]?.trim() || 'AppRoot'
+	const [moduleUrl = '', rawExportName] = entryId.split('#')
+	const exportName = rawExportName?.trim() || 'AppRoot'
+	if (exportName !== 'AppRoot' && moduleUrl.startsWith('/')) {
+		return { href: moduleUrl, exportName, preloads: [] }
+	}
 	return { href, exportName, preloads }
 }
 
@@ -183,6 +192,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			request,
 			responseSetsCookie,
 			status: status ?? 200,
+			localDev: parsedEnv.WRANGLER_IS_LOCAL_DEV === 'true',
 		})
 		const headers = new Headers({
 			'Cache-Control': pageCache.cacheControl,
