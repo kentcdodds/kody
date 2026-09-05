@@ -71,7 +71,7 @@ If you are trying to understand what this repository is for, start with
 | Session/OAuth   | [Cloudflare KV](https://developers.cloudflare.com/kv/)                                   |
 | MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) on `kody-platform` |
 | E2E Testing     | [Playwright](https://playwright.dev/)                                                    |
-| Bundler         | [esbuild](https://esbuild.github.io/)                                                    |
+| Bundler         | [Vite](https://vite.dev/)                                                                |
 
 ## Scope
 

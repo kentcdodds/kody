@@ -1,10 +1,12 @@
 # Onboarding
 
-First-run checklist after signup.
+Two-step wizard after signup: connect an agent, then give Kody Access.
 
 ## How to get there
 
-Signed-in visit to `/onboarding`. Also linked from account.
+Signed-in visit to `/onboarding`. Step 1 is `/onboarding/step-1` (optional
+`:agent`). Step 2 is `/onboarding/step-2` (optional `:service`). Also linked
+from account.
 
 ## Drive it
 
@@ -24,7 +26,6 @@ node tools/control-kody.ts preview -- \
 ## Gotchas
 
 - `/onboarding` screenshots come from the real origin after
-  `control-kody doctor` and `dev:ensure`. `npm run dev` writes the client bundle
-  before wrangler watches `public/`, and `dev:ensure` waits for a starting
+  `control-kody doctor` and `dev:ensure`. `dev:ensure` waits for a starting
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.

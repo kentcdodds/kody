@@ -14,7 +14,9 @@ node tools/control-kody.ts request GET /account/billing.json
 node tools/control-kody.ts request GET /account/usage.json
 ```
 
-Do not complete a real Stripe checkout from a Cloud Agent.
+Do not complete a real Stripe checkout from a Cloud Agent. Existing subscribers
+change plans through the Stripe portal (proration). Deleting an account refunds
+unused paid subscription time automatically.
 
 ## APIs
 

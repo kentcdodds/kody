@@ -39,9 +39,13 @@ assert the empty state.
 - Stay on the preview origin. Do not follow a package-app handoff into
   production.
 - Unlocking a locked package is website-only.
-- Making a package public or private requires typing the slug.
+- Making a package public or private requires typing the slug. Going public also
+  asks the owner to skim source, README, and examples for personal details
+  first. Agents review that hygiene before `packageUpdate`
+  `changes.visibility: "public"`; they pass `confirm_name` only when going
+  private.
 - Invocation-token JSON actions on `POST /account/packages.json` are an
   unadvertised operator drain. Settings does not show token forms.
 - When default-branch HEAD is newer than the last publish, the Code tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
-  publish HEAD on `/account/packages/:packageId/approve-publish`.
+  publish HEAD on `/@username/:kodyId/approve-publish`.
