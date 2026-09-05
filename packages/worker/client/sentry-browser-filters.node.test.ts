@@ -918,3 +918,111 @@ test('browser Sentry filters drop Turnstile client load and challenge failures (
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop local Vite HMR and loopback frame-resolve 500s (KODY-6Z)', () => {
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Frame resolve failed (500) for http://localhost:3742/',
+						stacktrace: {
+							frames: [
+								{
+									function: 'Object.resolveFrame',
+									filename: '/packages/worker/client/entry.tsx',
+									absPath:
+										'http://localhost:3742/packages/worker/client/entry.tsx',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'url')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'Object.callComponentRenderForHmr',
+									filename:
+										'/node_modules/.vite/deps/remix_ui-hmr_runtime_browser.js',
+									absPath:
+										'http://localhost:3742/node_modules/.vite/deps/remix_ui-hmr_runtime_browser.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'Error', value: 'Client hydration error' }],
+				},
+			},
+			Object.assign(
+				new Error('Frame resolve failed (500) for http://127.0.0.1:3742/'),
+				{
+					stack:
+						'Error: Frame resolve failed (500) for http://127.0.0.1:3742/\n    at Object.resolveFrame (http://127.0.0.1:3742/packages/worker/client/entry.tsx:80:11)',
+				},
+			),
+		),
+	).toBeNull()
+	// Production homepage SSR 500s must stay visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Frame resolve failed (500) for https://kody.codes/',
+						stacktrace: {
+							frames: [
+								{
+									function: 'Object.resolveFrame',
+									filename: '../client/entry.tsx',
+									absPath: 'https://kody.codes/client-entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	// Production readRouterUrl crashes must stay visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'url')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'readRouterUrl',
+									filename: '../client/router-location.tsx',
+									absPath: 'https://kody.codes/assets/entry-abc.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

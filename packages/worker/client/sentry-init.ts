@@ -42,12 +42,13 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// TypeErrors, injected unguarded `meta[property='og:type']` probes
 		// from `global code`, and optional Shiki `syntax-highlight-core`
 		// dynamic import fetch failures, and resolveFrame fetch network
-		// TypeErrors) — see filterBrowserSentryEvent /
+		// TypeErrors, and local Vite / wrangler HMR loopback sessions)
+		// — see filterBrowserSentryEvent /
 		// KODY-CLOUDFLARE-23 / KODY-CLOUDFLARE-3Q / KODY-CLOUDFLARE-3S /
 		// KODY-CLOUDFLARE-3X / KODY-CLOUDFLARE-43 / KODY-CLOUDFLARE-46 /
 		// KODY-CLOUDFLARE-4F / KODY-CLOUDFLARE-5C / KODY-CLOUDFLARE-5K /
 		// KODY-CLOUDFLARE-5W / KODY-CLOUDFLARE-5X / KODY-CLOUDFLARE-5Y /
-		// KODY-CLOUDFLARE-64 /
+		// KODY-CLOUDFLARE-64 / KODY-6Z /
 		// issues 7639685398, 7648833360, 7648833403, 7653117289, 7655189301,
 		// 7658961865, 7659616372, 7660258027, 7662064169, 7677729361,
 		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937.

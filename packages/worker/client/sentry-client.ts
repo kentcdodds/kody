@@ -4,6 +4,7 @@ import {
 	isCloudflareTurnstileClientError,
 	isFirefoxDomPermissionDeniedError,
 	isMetaMaskWalletNoAccountError,
+	isLocalViteDevError,
 	isResolveFrameFetchNetworkError,
 	isSyntaxHighlightCoreDynamicImportFailureError,
 } from '#client/sentry-browser-filters.ts'
@@ -57,6 +58,7 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isMetaMaskWalletNoAccountError(error) ||
 		isSyntaxHighlightCoreDynamicImportFailureError(error) ||
 		isResolveFrameFetchNetworkError(error) ||
+		isLocalViteDevError(error) ||
 		isCloudflareTurnstileClientError(error)
 	)
 }
