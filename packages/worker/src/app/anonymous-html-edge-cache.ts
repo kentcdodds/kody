@@ -30,6 +30,11 @@ export function isAnonymousHtmlCacheRequest(
 	request: Request,
 	env: AnonymousHtmlCacheEnv,
 ) {
+	// Local dev persists caches.default under .wrangler/state and workerd
+	// honors stale-while-revalidate, so a stored document outlives the edit
+	// that changed it by minutes: the browser reload Vite triggers after an
+	// HMR update carries no `no-cache` and would replay the pre-edit page.
+	if (env.WRANGLER_IS_LOCAL_DEV === 'true') return false
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false

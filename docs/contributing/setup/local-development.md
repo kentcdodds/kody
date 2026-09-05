@@ -83,6 +83,8 @@ Prerequisites, install, and `npm run dev` notes. See the
   chain and splits Remix component identities across evaluations. Pure server
   chains (handlers, data loaders) keep the incremental update, so module-level
   registration side effects on that path must be idempotent. See
-  `tools/vite-worker-whole-graph-reload.ts`.
+  `tools/vite-worker-whole-graph-reload.ts`. The anonymous marketing HTML cache
+  (`caches.default`) is bypassed under `WRANGLER_IS_LOCAL_DEV`, so an anonymous
+  tab sees the edit on the next reload instead of a stored page.
 - Set `CLOUDFLARE_ENV` to switch Wrangler environments (defaults to
   `production`). Playwright sets this to `test`.

@@ -180,13 +180,19 @@ whose `Accept` prefers `text/markdown` (`prefersMarkdown`) skip the store. A
 matching HTML request with no `kody_session` cookie and no `Authorization`
 header is served from that store (`X-Kody-Cache: HIT`) without running the app
 handler. A miss runs the handler and, when the response is `200` `text/html`
-with no `Set-Cookie` and already carries that Cache-Control,
-`ctx.waitUntil(caches.default.put)` stores a clone. The stored copy drops
-`Vary: Cookie` because Cloudflare's Cache API does not use `Vary` as a key (the
-lookup already excludes cookie-bearing requests). Hits restore the
-browser-facing `Vary` from the miss (`Cookie`, plus `Accept` on negotiated
-routes). Browser-facing `Cache-Control` is unchanged. `Cache-Control: no-cache`
-on the request skips the lookup so e2e can assert fresh HTML.
+with no `Set-Cookie` and already carries that Cache-Control, `ctx.waitUntil`
+buffers a clone and stores it only once the body has reached `</html>`
+(`isCompleteHtmlDocument`); a streamed document that stopped early (render
+failure, client abort) is never shared. The stored copy drops `Vary: Cookie`
+because Cloudflare's Cache API does not use `Vary` as a key (the lookup already
+excludes cookie-bearing requests). Hits restore the browser-facing `Vary` from
+the miss (`Cookie`, plus `Accept` on negotiated routes). Browser-facing
+`Cache-Control` is unchanged. `Cache-Control: no-cache` on the request skips the
+lookup so e2e can assert fresh HTML. Under `WRANGLER_IS_LOCAL_DEV=true`
+(`npm run dev`, the Playwright web server) the store is bypassed entirely:
+workerd honors `stale-while-revalidate` and persists `caches.default` under
+`.wrangler/state`, so a stored page would keep replaying for minutes after the
+edit that changed it. The `workers-unit` suite still exercises the store.
 
 The public package surfaces (`/@:username/:kodyId`,
 `/@:username/:kodyId/tree/:ref/*`, `/community/:id`, `/community/:id/files/*`)

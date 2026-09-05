@@ -74,7 +74,16 @@ export function resolveAppPageCacheControl(input: {
 	responseSetsCookie: boolean
 	/** Only successful documents are shared; a 404 or 401 must not outlive its cause. */
 	status?: number
+	/**
+	 * `npm run dev`: the browser serves Vite's post-HMR `location.reload()` from
+	 * its HTTP cache when the document is `public, max-age=60`, so an edit
+	 * never shows. Nothing shares anonymous HTML locally anyway.
+	 */
+	localDev?: boolean
 }): { cacheControl: string; vary?: string } {
+	if (input.localDev) {
+		return { cacheControl: 'no-store' }
+	}
 	if (input.session !== null) {
 		return { cacheControl: 'no-store' }
 	}

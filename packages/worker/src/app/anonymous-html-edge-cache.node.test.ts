@@ -124,6 +124,13 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 	expect(
 		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {}),
 	).toBe(true)
+	// `npm run dev` and the Playwright web server: a stored page would hide
+	// the next edit from an anonymous tab for the stale-while-revalidate window.
+	expect(
+		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		}),
+	).toBe(false)
 
 	const htmlKey = buildAnonymousHtmlCacheKey(
 		new Request('https://preview.example.workers.dev/pricing?utm=1', {
