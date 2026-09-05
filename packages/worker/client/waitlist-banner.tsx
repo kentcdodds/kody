@@ -310,11 +310,16 @@ const bannerTurnstileCss = {
 
 const formCss = {
 	display: 'flex',
+	/* Wrap, do not nowrap: the pill refuses to shrink (`flex: 1 0 auto`) and
+	   the widget is a fixed 300px. Without wrap, that row overflows between
+	   the phone column breakpoint and ~800px (iPad portrait). */
+	flexWrap: 'wrap' as const,
 	alignItems: 'center',
 	justifyContent: 'center',
 	gap: spacing.sm,
 	margin: 0,
 	minWidth: 0,
+	maxWidth: '100%',
 	[stackMq]: {
 		/* Phone: the 300px widget must not sit beside the pill. Column plus a
 		   full-width pill puts Turnstile on its own centered row. */
