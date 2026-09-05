@@ -316,8 +316,9 @@ test('sealFullBackupDay resumes a locked partial day without re-getting dump bod
 		[],
 		'resume must not re-get dump bodies already sealed with matching size',
 	)
+	const sealedDumpKeySet = new Set<string>(Object.values(sealedDumpKeys))
 	assert.equal(
-		getKeys.some((key) => Object.values(sealedDumpKeys).includes(key)),
+		getKeys.some((key) => sealedDumpKeySet.has(key)),
 		false,
 		'matching sealed dump sizes must skip putImmutableBytes body compare',
 	)
@@ -325,9 +326,7 @@ test('sealFullBackupDay resumes a locked partial day without re-getting dump bod
 		.slice(putsBeforeSeal)
 		.filter((entry) => entry.key.startsWith(`daily/full/${day}/`))
 	assert.equal(
-		sealedPuts.some((entry) =>
-			Object.values(sealedDumpKeys).includes(entry.key),
-		),
+		sealedPuts.some((entry) => sealedDumpKeySet.has(entry.key)),
 		false,
 		'already-sealed dumps must not be put again under the lock policy',
 	)
