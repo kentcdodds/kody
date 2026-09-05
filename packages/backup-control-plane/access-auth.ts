@@ -250,6 +250,15 @@ export async function verifyAccessJwt(
 		)
 	}
 	if (typeof payload.email !== 'string' || payload.email.trim().length === 0) {
+		// Cloudflare Access service-token JWTs omit email and set common_name.
+		// Accept them for operator automation (seal/drill) when a service-auth
+		// Access policy admitted the request; identity is the allowlisted email.
+		if (
+			typeof payload.common_name === 'string' &&
+			payload.common_name.trim().length > 0
+		) {
+			return { email: allowedEmail }
+		}
 		throw new BackupError(
 			'access-jwt-email-missing',
 			'Access JWT email claim is required',
