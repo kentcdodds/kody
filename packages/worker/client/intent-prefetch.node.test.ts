@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import {
 	abortIntentPrefetch,
+	discardRenderPrefetches,
 	maxPrefetchAgeMs,
 	prefetchRouteOnIntent,
 	prefetchRoutesOnRender,
@@ -173,4 +174,18 @@ test('render prefetch keeps every chip warm so click adopts without a cold loade
 	expect(
 		takePrefetchedRouteResult('/onboarding/step-2/not-listed'),
 	).not.toBeNull()
+})
+
+test('discardRenderPrefetches drops chip snapshots so a later click cannot rewind', async () => {
+	abortIntentPrefetch()
+	const deferred = createDeferredLoader()
+	prefetchRoutesOnRender(
+		['/onboarding/step-2/notion', '/onboarding/step-2/linear'],
+		deferred.loader,
+	)
+	deferred.resolve({ onboarding: { ok: true } as never })
+	await Promise.resolve()
+	discardRenderPrefetches()
+	expect(takePrefetchedRouteResult('/onboarding/step-2/notion')).toBeNull()
+	expect(takePrefetchedRouteResult('/onboarding/step-2/linear')).toBeNull()
 })

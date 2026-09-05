@@ -1,6 +1,7 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { discardRenderPrefetches } from '#client/intent-prefetch.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -18,6 +19,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	isOnboardingPagePath,
 	onboardingIndexRedirectHref,
+	onboardingSessionMilestones,
 	onboardingSessionMilestonesComplete,
 	onboardingSessionMilestonesEqual,
 	onboardingStepPaths,
@@ -75,6 +77,17 @@ type OnboardingStep = OnboardingWizardStepNumber
 
 function isOnboardingPath(href: string) {
 	return isOnboardingPagePath(new URL(href, 'http://localhost').pathname)
+}
+
+function retainOnboardingMilestones(
+	current: OnboardingSessionMilestoneState,
+	incoming: OnboardingSessionMilestoneState,
+): OnboardingSessionMilestoneState {
+	const next = { ...incoming }
+	for (const item of onboardingSessionMilestones) {
+		next[item.id] = current[item.id] || incoming[item.id]
+	}
+	return next
 }
 
 function readOnboardingLocation(href: string) {
@@ -135,21 +148,33 @@ export function OnboardingRoute(handle: Handle) {
 	let panelAnimationArmed = false
 	const loadLatch = createRouteLoadLatch()
 
-	function applyPayload(payload: OnboardingPayload) {
+	function applyPayload(
+		payload: OnboardingPayload,
+		source: 'live' | 'snapshot' = 'snapshot',
+	) {
 		const wasConnected = hasMcpClient
+		const incomingMilestones =
+			payload.milestones ?? emptyOnboardingSessionMilestones
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
 		discoveryPrompt = payload.discoveryPrompt
-		milestones = payload.milestones ?? emptyOnboardingSessionMilestones
-		hasMcpClient = payload.hasMcpClient
+		milestones =
+			source === 'snapshot'
+				? retainOnboardingMilestones(milestones, incomingMilestones)
+				: incomingMilestones
+		hasMcpClient =
+			source === 'snapshot'
+				? hasMcpClient || payload.hasMcpClient
+				: payload.hasMcpClient
 		status = 'ready'
 		message = null
+		if (source === 'live') discardRenderPrefetches()
 		if (!initializedStep) {
 			initializedStep = true
 			return
 		}
-		if (!wasConnected && payload.hasMcpClient) {
+		if (!wasConnected && hasMcpClient) {
 			panelAnimationArmed = true
 			pendingAdvanceToAccess = true
 		}
@@ -208,7 +233,7 @@ export function OnboardingRoute(handle: Handle) {
 				fresh: true,
 			})
 			if (handle.signal.aborted || !payload) return
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
@@ -262,7 +287,7 @@ export function OnboardingRoute(handle: Handle) {
 				)
 				return
 			}
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			if (!agentChooser) agentChooser = resolveOnboardingAgentChooser()
 			if (!serviceChooser) serviceChooser = resolveOnboardingServiceChooser()
@@ -313,7 +338,7 @@ export function OnboardingRoute(handle: Handle) {
 			) {
 				return
 			}
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {

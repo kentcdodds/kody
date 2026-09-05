@@ -193,6 +193,15 @@ export function takePrefetchedRouteResult(
 }
 
 /**
+ * Drop render-prefetch snapshots without aborting in-flight requests.
+ * Live onboarding polls write a fresher `/onboarding.json` into the payload
+ * cache; chip clicks must not adopt the first-paint loader result after that.
+ */
+export function discardRenderPrefetches(): void {
+	renderSlots.clear()
+}
+
+/**
  * Aborts and clears every speculative prefetch (hover-intent and render).
  * Called after form POST mutations so pre-mutation data is never shown, and
  * by tests.
