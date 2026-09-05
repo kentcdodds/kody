@@ -605,7 +605,11 @@ When publish succeeds, `packagePublishExternalPush` decorates the response with
 bundle artifact dependency metadata references the published package.
 `already_published` responses include the same summary when the published commit
 is available. The stale count compares each dependent artifact's captured
-dependency commit to the current published commit.
+dependency commit to the current published commit. Successful `published` and
+`already_published` results also include `phase_timings` (`clone_ms`,
+`checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`, `dependents_ms`,
+`total_ms`). Omitted keys did not run. `dispatched` includes
+`phase_timings.total_ms` as time-to-dispatch.
 
 This summary is visibility only. Do not add automatic fanout republishing to the
 publish path. Agents should inspect and republish dependent packages only when

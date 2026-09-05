@@ -489,6 +489,14 @@ test('publishFromExternalRef checks fast-forward ancestry through ephemeral clon
 	})
 
 	expect(result.status).toBe('published')
+	expect(result).toEqual(
+		expect.objectContaining({
+			status: 'published',
+			phase_timings: expect.objectContaining({
+				clone_ms: expect.any(Number),
+			}),
+		}),
+	)
 	expect(mockModule.workspaceGlob).not.toHaveBeenCalled()
 	expect(isAncestorCommit).toHaveBeenCalledWith({
 		ancestor: 'commit-old',
@@ -1018,6 +1026,9 @@ test('already_published external publish refreshes the snapshot from the in-memo
 		status: 'already_published',
 		published_commit: 'commit-new',
 		force_artifact_rebuild: false,
+		phase_timings: {
+			clone_ms: expect.any(Number),
+		},
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
@@ -1104,6 +1115,9 @@ test('already_published external publish skips snapshot rewrite and force rebuil
 		status: 'already_published',
 		published_commit: 'commit-new',
 		force_artifact_rebuild: false,
+		phase_timings: {
+			clone_ms: expect.any(Number),
+		},
 	})
 	expect(collectFiles).toHaveBeenCalledTimes(1)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
@@ -1184,6 +1198,9 @@ test('already_published external publish invalidates leftovers on snapshot misma
 		status: 'already_published',
 		published_commit: 'commit-new',
 		force_artifact_rebuild: true,
+		phase_timings: {
+			clone_ms: expect.any(Number),
+		},
 	})
 	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(

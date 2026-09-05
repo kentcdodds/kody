@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
+import { type PublishPhaseTimings } from './publish-phase-timing.ts'
 
 export const entityKindValues = ['job', 'package', 'repo'] as const
 export type EntityKind = (typeof entityKindValues)[number]
@@ -344,6 +345,7 @@ export type RepoExternalPublishResult =
 			 * cannot keep serving. Omit / false when the snapshot already matches.
 			 */
 			force_artifact_rebuild?: boolean
+			phase_timings?: PublishPhaseTimings
 	  }
 	| {
 			status: 'not_fast_forward'
@@ -364,6 +366,7 @@ export type RepoExternalPublishResult =
 			published_commit: string
 			manifest: AuthoredPackageJson
 			checks: NonNullable<RepoSessionCheckStatus['results']>
+			phase_timings?: PublishPhaseTimings
 	  }
 	| {
 			status: 'locked'

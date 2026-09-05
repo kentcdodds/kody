@@ -12,6 +12,7 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getEntitySourceById, updateEntitySource } from './entity-sources.ts'
 import { runRepoChecks } from './checks.ts'
+import { type PublishPhaseTimings } from './publish-phase-timing.ts'
 import {
 	type EntitySourceRow,
 	type RepoExternalPublishResult,
@@ -178,6 +179,7 @@ export async function publishFromExternalRef(input: {
 	rebuildPackageArtifacts?: boolean
 	expectedPackageScope?: string
 	allowLockedPublish?: boolean
+	phaseTimings?: PublishPhaseTimings
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -225,6 +227,7 @@ export async function publishFromExternalRef(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		expectedPackageScope: input.expectedPackageScope,
+		phaseTimings: input.phaseTimings,
 	})
 	const runId = input.runId ?? crypto.randomUUID()
 	if (!checks.ok) {
