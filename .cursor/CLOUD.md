@@ -26,13 +26,13 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
 - **Dev server**: `npm run dev:ensure` reuses or starts the origin and prints
   `App running at http://localhost:<port>` once `/health` is ok (default 3742;
   the CLI hops if that port is taken by a non-kody process)
-- `npm run dev` starts the client esbuild watcher and Wrangler worker server and
-  stays attached for an interactive session
+- `npm run dev` starts Vite so origin SSR and the client hydrate in one workerd
+  graph, and stays attached for an interactive session
 
 ## Architecture
 
 - **Server**: Cloudflare Workers (see `packages/worker/src/`)
-- **Client**: Remix 3 components bundled with esbuild (see
+- **Client**: Remix 3 components bundled with Vite (see
   `packages/worker/client/`)
 - **Database**: Cloudflare D1 (SQLite, auto-handled locally by Wrangler)
 - **MCP Server**: Available at `/mcp` endpoint when worker runs

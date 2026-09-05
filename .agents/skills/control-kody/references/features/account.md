@@ -1,7 +1,8 @@
 # Account hub
 
 Signed-in home: profile, export, logout, delete, and links to the other account
-surfaces. Logout lives at the bottom of this page, not in the site header.
+surfaces. Logout lives at the bottom of this page, not in the site header. The
+header avatar goes to the public profile (`/@username`).
 
 ## How to get there
 

@@ -78,12 +78,35 @@ without blocking the deletion, each audited as `account` /
 `account_deletion_refund_skipped` / `failure`: a scaled preview that still
 exceeds the cap after every pass (reason `unfittable:${currency}:${cap}`,
 logged as `account_deletion_refund_unfittable`), and an invoice whose credit
-note listing is too long to trust (reason `credit_notes_incomplete:${invoiceId}`, logged as `account_deletion_refund_credit_notes_incomplete`), since an under-counted listing would over-refund. Any other Stripe rejection — including a credit amount Stripe says exceeds what is creditable, which means Kody's math disagrees with the invoice — raises `AccountDeletionBillingError`like a failed cancel: the marker is released and the account is retained (like an inventory failure) so the customer is never billed for an account that no longer exists and never loses a refund silently. Retries are idempotent: already-canceled or missing subscriptions count as canceled, and an invoice that already carries an issued credit note with the`kody_account_deletion=1`marker (the memo alone never counts) is reported but not refunded again. Each newly issued refund is audited as`account`/`account_deletion_refund`with reason`${currency}:${amountMinor}`(hashed email only). The deletion result carries`stripeRefunds` (`subscriptionId`, `amountMinor`, `currency`, `invoiceId`, `creditNoteId`) so the delete route can show the amount to the user; after cancelling, the customer's credit notes are listed and every issued Kody-marked note is added, so a retry still reports refunds an earlier attempt issued for subscriptions that are no longer billable. Stripe customer deletion stays a best-effort warning after cleanup. The operation then performs idempotent out-of-band and OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the user row for retry. Only after cleanup succeeds does one atomic D1 batch delete or clear all user rows and the `users`
-row. Each step records deleted counts, updated counts for cleared references,
-and warnings so the HTTP response states what was removed and what needs
-operator attention. Re-running the operation is safe: missing rows, missing KV
-keys, missing vectors, deleted Artifacts repos, and already-cleared Durable
-Objects are treated as successful no-ops or warning-only failures.
+note listing is too long to trust. That second skip records reason
+`credit_notes_incomplete:${invoiceId}`. It logs `account_deletion_refund_credit_notes_incomplete`.
+An under-counted listing would over-refund.
+
+Any other Stripe rejection — including a credit amount Stripe says exceeds what
+is creditable, which means Kody's math disagrees with the invoice — raises
+`AccountDeletionBillingError`, matching a failed cancel. The marker is released
+and the account is retained (like an inventory failure) so the customer is never
+billed for an account that no longer exists and never loses a refund silently.
+Retries are idempotent: already-canceled or missing subscriptions count as
+canceled, and an invoice that already carries an issued credit note with the
+`kody_account_deletion=1` metadata marker (the memo alone never counts) is
+reported but not refunded again. Each newly issued refund is audited as
+`account` / `account_deletion_refund` with reason `${currency}:${amountMinor}`
+(hashed email only). The deletion result carries `stripeRefunds`
+(`subscriptionId`, `amountMinor`, `currency`, `invoiceId`, `creditNoteId`) so
+the delete route can show the amount to the user. After cancelling, the
+customer's credit notes are listed and every issued Kody-marked note is added,
+so a retry still reports refunds an earlier attempt issued for subscriptions
+that are no longer billable. Stripe customer deletion stays a best-effort
+warning after cleanup. The operation then performs idempotent out-of-band and
+OAuth cleanup. Any critical cleanup failure preserves D1, the marker, and the
+user row for retry. Only after cleanup succeeds does one atomic D1 batch delete
+or clear all user rows and the `users` row. Each step records deleted counts,
+updated counts for cleared references, and warnings so the HTTP response states
+what was removed and what needs operator attention. Re-running the operation is
+safe: missing rows, missing KV keys, missing vectors, deleted Artifacts repos,
+and already-cleared Durable Objects are treated as successful no-ops or
+warning-only failures.
 
 All four dedicated `system_email_*` graph tables are intentionally excluded from
 account deletion. They are operator-owned mail for reserved platform addresses,

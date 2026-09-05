@@ -41,7 +41,13 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'onboarding',
 		title: 'Onboarding',
 		file: 'onboarding.md',
-		paths: ['/onboarding'],
+		paths: [
+			'/onboarding',
+			'/onboarding/step-1',
+			'/onboarding/step-1/:agent',
+			'/onboarding/step-2',
+			'/onboarding/step-2/:service',
+		],
 		apis: ['/onboarding.json', '/onboarding/checklist-dismiss.json'],
 	},
 	{
