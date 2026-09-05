@@ -1,8 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import {
 	abortIntentPrefetch,
+	discardRenderPrefetches,
 	maxPrefetchAgeMs,
 	prefetchRouteOnIntent,
+	prefetchRoutesOnRender,
 	takePrefetchedRouteResult,
 } from './intent-prefetch.ts'
 import { type RouteLoader, routeLoaderRedirect } from './route-loader.ts'
@@ -124,4 +126,66 @@ test('settled intent prefetches expire and restart on the next intent', async ()
 
 	abortIntentPrefetch()
 	vi.useRealTimers()
+})
+
+test('render prefetch keeps every chip warm so click adopts without a cold loader', async () => {
+	abortIntentPrefetch()
+	const deferred = createDeferredLoader()
+	prefetchRoutesOnRender(
+		[
+			'/onboarding/step-2/notion',
+			'/onboarding/step-2/linear',
+			'/onboarding/step-2/not-listed',
+		],
+		deferred.loader,
+	)
+	expect(deferred.calls).toHaveLength(1)
+
+	prefetchRoutesOnRender(
+		['/onboarding/step-2/notion', '/onboarding/step-2/linear'],
+		deferred.loader,
+	)
+	expect(deferred.calls).toHaveLength(1)
+
+	const payload = { onboarding: { ok: true } as never }
+	deferred.resolve(payload)
+	await Promise.resolve()
+
+	expect(takePrefetchedRouteResult('/onboarding/step-2/github')).toBeNull()
+	expect(deferred.calls).toHaveLength(1)
+
+	const notion = takePrefetchedRouteResult('/onboarding/step-2/notion')
+	expect(notion).not.toBeNull()
+	await expect(notion).resolves.toEqual(payload)
+	expect(takePrefetchedRouteResult('/onboarding/step-2/notion')).toBeNull()
+	expect(deferred.calls).toHaveLength(1)
+
+	const linear = takePrefetchedRouteResult('/onboarding/step-2/linear')
+	expect(linear).not.toBeNull()
+	await expect(linear).resolves.toEqual(payload)
+	expect(deferred.calls).toHaveLength(1)
+
+	prefetchRouteOnIntent(
+		'/onboarding/step-2/not-listed',
+		deferred.loader,
+		new URL('https://kody.local/onboarding/step-2/not-listed'),
+	)
+	expect(deferred.calls).toHaveLength(1)
+	expect(
+		takePrefetchedRouteResult('/onboarding/step-2/not-listed'),
+	).not.toBeNull()
+})
+
+test('discardRenderPrefetches drops chip snapshots so a later click cannot rewind', async () => {
+	abortIntentPrefetch()
+	const deferred = createDeferredLoader()
+	prefetchRoutesOnRender(
+		['/onboarding/step-2/notion', '/onboarding/step-2/linear'],
+		deferred.loader,
+	)
+	deferred.resolve({ onboarding: { ok: true } as never })
+	await Promise.resolve()
+	discardRenderPrefetches()
+	expect(takePrefetchedRouteResult('/onboarding/step-2/notion')).toBeNull()
+	expect(takePrefetchedRouteResult('/onboarding/step-2/linear')).toBeNull()
 })

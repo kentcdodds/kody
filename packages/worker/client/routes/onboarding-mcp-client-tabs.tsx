@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { prefetchRouteHrefs } from '#client/client-router.tsx'
 import {
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
@@ -33,6 +34,7 @@ import {
 	renderPanelContent,
 	renderPanelWarning,
 } from './onboarding-mcp-client-panels.tsx'
+import { onboardingAgentPickerPrefetchHrefs } from './onboarding-picker-prefetch.ts'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
@@ -286,11 +288,23 @@ function renderAgentAuthHint(
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
 ) {
+	let warmedKey = ''
 	return () => {
 		const { mcpServerUrl, highlights } = handle.props
 		const selectedAgent = handle.props.selectedAgent ?? null
 		const chooser = handle.props.chooser ?? canonicalOnboardingAgentChooser()
 		const search = handle.props.search ?? ''
+		handle.queueTask(() => {
+			const hrefs = onboardingAgentPickerPrefetchHrefs(
+				selectedAgent,
+				chooser,
+				search,
+			)
+			const key = hrefs.join('\0')
+			if (key === warmedKey) return
+			warmedKey = key
+			prefetchRouteHrefs(hrefs)
+		})
 
 		if (!selectedAgent) {
 			return (

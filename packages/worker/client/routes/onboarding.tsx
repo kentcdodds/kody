@@ -1,14 +1,12 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { discardRenderPrefetches } from '#client/intent-prefetch.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import {
-	type AccountStatus,
-	readJson,
-} from '#client/routes/account-approval-shared.ts'
+import { type AccountStatus } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -21,6 +19,7 @@ import { routes } from '#universal/routes.ts'
 import {
 	isOnboardingPagePath,
 	onboardingIndexRedirectHref,
+	onboardingSessionMilestones,
 	onboardingSessionMilestonesComplete,
 	onboardingSessionMilestonesEqual,
 	onboardingStepPaths,
@@ -33,7 +32,6 @@ import {
 } from '#universal/onboarding-process.ts'
 import {
 	fetchOnboardingPayload,
-	onboardingApiPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import {
@@ -81,6 +79,17 @@ function isOnboardingPath(href: string) {
 	return isOnboardingPagePath(new URL(href, 'http://localhost').pathname)
 }
 
+function retainOnboardingMilestones(
+	current: OnboardingSessionMilestoneState,
+	incoming: OnboardingSessionMilestoneState,
+): OnboardingSessionMilestoneState {
+	const next = { ...incoming }
+	for (const item of onboardingSessionMilestones) {
+		next[item.id] = current[item.id] || incoming[item.id]
+	}
+	return next
+}
+
 function readOnboardingLocation(href: string) {
 	const url = new URL(href, 'http://localhost')
 	return parseOnboardingPathname(url.pathname)
@@ -97,13 +106,8 @@ export async function onboardingRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
-	const response = await fetch(onboardingApiPath, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	const payload = await readJson<OnboardingPayload>(response)
-	if (!response.ok || !payload?.ok) {
+	const payload = await fetchOnboardingPayload(signal)
+	if (!payload) {
 		throw new Error('Unable to load onboarding.')
 	}
 	if (payload.loggedIn && !payload.emailVerified) {
@@ -144,21 +148,33 @@ export function OnboardingRoute(handle: Handle) {
 	let panelAnimationArmed = false
 	const loadLatch = createRouteLoadLatch()
 
-	function applyPayload(payload: OnboardingPayload) {
+	function applyPayload(
+		payload: OnboardingPayload,
+		source: 'live' | 'snapshot' = 'snapshot',
+	) {
 		const wasConnected = hasMcpClient
+		const incomingMilestones =
+			payload.milestones ?? emptyOnboardingSessionMilestones
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
 		discoveryPrompt = payload.discoveryPrompt
-		milestones = payload.milestones ?? emptyOnboardingSessionMilestones
-		hasMcpClient = payload.hasMcpClient
+		milestones =
+			source === 'snapshot'
+				? retainOnboardingMilestones(milestones, incomingMilestones)
+				: incomingMilestones
+		hasMcpClient =
+			source === 'snapshot'
+				? hasMcpClient || payload.hasMcpClient
+				: payload.hasMcpClient
 		status = 'ready'
 		message = null
+		if (source === 'live') discardRenderPrefetches()
 		if (!initializedStep) {
 			initializedStep = true
 			return
 		}
-		if (!wasConnected && payload.hasMcpClient) {
+		if (!wasConnected && hasMcpClient) {
 			panelAnimationArmed = true
 			pendingAdvanceToAccess = true
 		}
@@ -213,9 +229,11 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function refreshOnboardingAfterInstall() {
 		try {
-			const payload = await fetchOnboardingPayload(handle.signal)
+			const payload = await fetchOnboardingPayload(handle.signal, {
+				fresh: true,
+			})
 			if (handle.signal.aborted || !payload) return
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
@@ -258,14 +276,9 @@ export function OnboardingRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		const redirectTo = readOnboardingRedirectTo(handle)
 		try {
-			const response = await fetch(onboardingApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
+			const payload = await fetchOnboardingPayload(signal)
 			if (signal.aborted) return
-			const payload = await readJson<OnboardingPayload>(response)
-			if (!response.ok || !payload?.ok) {
+			if (!payload) {
 				throw new Error('Unable to load onboarding.')
 			}
 			if (payload.loggedIn && !payload.emailVerified) {
@@ -274,7 +287,7 @@ export function OnboardingRoute(handle: Handle) {
 				)
 				return
 			}
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			if (!agentChooser) agentChooser = resolveOnboardingAgentChooser()
 			if (!serviceChooser) serviceChooser = resolveOnboardingServiceChooser()
@@ -313,7 +326,9 @@ export function OnboardingRoute(handle: Handle) {
 		if (!isOnboardingPath(readCurrentRouterHref(handle))) return
 		pollInFlight = true
 		try {
-			const payload = await fetchOnboardingPayload(handle.signal)
+			const payload = await fetchOnboardingPayload(handle.signal, {
+				fresh: true,
+			})
 			if (handle.signal.aborted || !payload) return
 			const nextMilestones =
 				payload.milestones ?? emptyOnboardingSessionMilestones
@@ -323,7 +338,7 @@ export function OnboardingRoute(handle: Handle) {
 			) {
 				return
 			}
-			applyPayload(payload)
+			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
@@ -438,9 +453,6 @@ export function OnboardingRoute(handle: Handle) {
 					</p>
 				</header>
 
-				{status === 'loading' ? (
-					<p mix={css(loadingCss)}>Loading onboarding…</p>
-				) : null}
 				{message ? (
 					<p mix={css(errorMessageCss)} role="alert">
 						{message}
@@ -539,11 +551,6 @@ const onboardHeadCss = {
 		fontSize: '1.08rem',
 		maxWidth: '52ch',
 	},
-}
-
-const loadingCss = {
-	margin: 'clamp(2.2rem, 5vw, 3.2rem) 0 0',
-	color: colors.textMuted,
 }
 
 const errorMessageCss = {
