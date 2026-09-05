@@ -1417,6 +1417,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `source-snapshot:v1:{sourceId}:{publishedCommit}`.
 - `source-manifest-snapshot:v1:{sourceId}:{publishedCommit}`.
 - `bundle-artifact:v1:{sourceId}:{commit}:{kind}:{artifactName|_}:{entryPoint}`.
+  Publish rebuild copies unchanged targets from the previous commit onto this
+  new key (D1 identity row retargets) so a partial export bump does not leave
+  the new `published_commit` missing artifacts.
 - `community-snapshot:v1:{listingId}`.
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`

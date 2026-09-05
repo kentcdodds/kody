@@ -7,6 +7,7 @@ import {
 	type BundleArtifactDynamicDependency,
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
+	type PublishedSourceSnapshot,
 	buildPublishedBundleArtifactKvKey,
 	deletePublishedBundleArtifact,
 	hasPublishedRuntimeArtifacts,
@@ -29,6 +30,7 @@ import {
 	collectPublishedPackageArtifactTargets,
 	type PublishedPackageArtifactBuildTarget,
 } from './package-artifact-targets.ts'
+import { publishedPackageArtifactTargetInputsChanged } from './published-bundle-artifact-inputs.ts'
 
 type PersistPublishedBundleArtifactInput = {
 	env: Env
@@ -296,6 +298,141 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	return true
 }
 
+export type PublishedPackageArtifactReuseSnapshotCache = Map<
+	string,
+	Promise<PublishedSourceSnapshot | null>
+>
+
+function readPublishedSourceSnapshotCached(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
+}) {
+	const cache = input.snapshotCache
+	if (!cache) {
+		return readPublishedSourceSnapshot({
+			env: input.env,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+		})
+	}
+	const cached = cache.get(input.publishedCommit)
+	if (cached) return cached
+	const pending = readPublishedSourceSnapshot({
+		env: input.env,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+	})
+	cache.set(input.publishedCommit, pending)
+	return pending
+}
+
+/**
+ * Copy a prior-commit artifact onto `publishedCommit` when the target's
+ * bundler inputs are unchanged. Artifacts are keyed by commit, so reuse
+ * writes the same modules under the new commit key and retargets the
+ * identity row. Returns false (rebuild) when prior artifacts or snapshots
+ * are missing, inputs changed, or the copy fails.
+ */
+export async function reusePublishedPackageArtifactIfUnchanged(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	publishedCommit: string
+	target: PublishedPackageArtifactBuildTarget
+	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
+}) {
+	if (!hasPublishedRuntimeArtifacts(input.env)) return false
+	const loaded = await loadPublishedBundleArtifactByIdentity({
+		env: input.env,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		kind: input.target.kind,
+		artifactName: input.target.artifactName,
+		entryPoint: input.target.entryPoint,
+	})
+	if (!loaded?.artifact) return false
+	if (
+		loaded.row.publishedCommit === input.publishedCommit ||
+		loaded.artifact.publishedCommit === input.publishedCommit
+	) {
+		return false
+	}
+	const priorCommit = loaded.artifact.publishedCommit
+	if (loaded.row.publishedCommit !== priorCommit) {
+		return false
+	}
+	const [previousSnapshot, nextSnapshot] = await Promise.all([
+		readPublishedSourceSnapshotCached({
+			env: input.env,
+			sourceId: input.sourceId,
+			publishedCommit: priorCommit,
+			snapshotCache: input.snapshotCache,
+		}),
+		readPublishedSourceSnapshotCached({
+			env: input.env,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			snapshotCache: input.snapshotCache,
+		}),
+	])
+	if (!previousSnapshot?.files || !nextSnapshot?.files) return false
+	if (
+		publishedPackageArtifactTargetInputsChanged({
+			entryPoint: input.target.entryPoint,
+			previousFiles: previousSnapshot.files,
+			nextFiles: nextSnapshot.files,
+		})
+	) {
+		return false
+	}
+	const artifactName = normalizeArtifactName(input.target.artifactName)
+	const entryPoint = normalizeEntryPoint(input.target.entryPoint)
+	const kvKey = buildPublishedBundleArtifactKvKey({
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		kind: input.target.kind,
+		artifactName,
+		entryPoint,
+	})
+	const artifact: PublishedBundleArtifact = {
+		...loaded.artifact,
+		publishedCommit: input.publishedCommit,
+		createdAt: new Date().toISOString(),
+	}
+	const rowInput = toDbRowInput({
+		userId: input.userId,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		kind: input.target.kind,
+		artifactName,
+		entryPoint,
+		kvKey,
+		dependencies: loaded.artifact.dependencies,
+	})
+	try {
+		await writePublishedBundleArtifact({
+			env: input.env,
+			artifact,
+			kvKey,
+		})
+		await updatePublishedBundleArtifactRow(input.env.APP_DB, {
+			id: loaded.row.id,
+			...rowInput,
+		})
+		return true
+	} catch {
+		await deletePublishedBundleArtifact({
+			env: input.env,
+			kvKey,
+		}).catch(() => {
+			// Best effort; fall back to a real rebuild for this target.
+		})
+		return false
+	}
+}
+
 function publishedArtifactCreatedAtIsAtLeast(
 	createdAt: string | undefined,
 	cutoff: string,
@@ -378,10 +515,31 @@ export async function rebuildPublishedPackageArtifacts(
 		manifest: AuthoredPackageJson
 	} & PublishedPackageArtifactBuilders,
 ) {
+	const publishedCommit = input.source.published_commit
+	const snapshotCache: PublishedPackageArtifactReuseSnapshotCache = new Map()
 	await mapWithConcurrency(
 		collectPublishedPackageArtifactTargets(input.manifest),
 		publishedPackageArtifactRebuildConcurrency,
 		async (target) => {
+			if (publishedCommit) {
+				const alreadyBuilt = await isPublishedPackageArtifactBuiltForCommit({
+					env: input.env,
+					userId: input.userId,
+					sourceId: input.source.id,
+					publishedCommit,
+					target,
+				})
+				if (alreadyBuilt) return
+				const reused = await reusePublishedPackageArtifactIfUnchanged({
+					env: input.env,
+					userId: input.userId,
+					sourceId: input.source.id,
+					publishedCommit,
+					target,
+					snapshotCache,
+				})
+				if (reused) return
+			}
 			await persistPublishedPackageArtifactTarget({
 				env: input.env,
 				userId: input.userId,

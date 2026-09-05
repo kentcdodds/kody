@@ -696,7 +696,15 @@ publish checks run.
    `published_commit` unchanged. If checks fail before promotion, it returns
    `checks_failed` with the failed check entries and leaves the underlying
    storage state unchanged. Full check-time esbuild is deferred to the later
-   published artifact rebuild (callable and importable targets stay distinct); a
+   published artifact rebuild (callable and importable targets stay distinct).
+   That rebuild copies unchanged callable, importable, app, job, and
+   subscription artifacts from the previous published commit when the target's
+   entry, reachable source, and bundler root config (`package.json`, wrangler
+   config, vendored `node_modules`) match the new snapshot; a shared-module
+   change dirties every dependent target. Missing prior artifacts or snapshots,
+   first publish, force, and `already_published` snapshot-mismatch repairs still
+   rebuild. A published commit always has a complete target set — reuse writes
+   the prior modules under the new commit key rather than leaving holes. A
    rebuild failure after promotion also returns `checks_failed` with a bundle
    check — re-run the publish capability to repair artifacts. Successful
    `published` responses, and `already_published` responses when the metadata is
