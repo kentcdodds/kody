@@ -53,7 +53,7 @@ vi.mock('#worker/repo/published-source.ts', () => ({
 }))
 
 vi.mock('#mcp/capabilities/durable-escalation.ts', () => ({
-	defaultDurableEscalationBudgetMs: 55_000,
+	defaultDurableEscalationBudgetMs: 35_000,
 	buildCallerScopedIdempotencyKey: (input: {
 		userId: string
 		parts: ReadonlyArray<string>

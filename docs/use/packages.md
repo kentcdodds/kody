@@ -701,7 +701,11 @@ publish checks run.
    this package. Stale entries mean the dependent bundle captured a dependency
    commit that differs from the current published commit. Kody does not
    automatically republish those dependents; inspect and republish only the ones
-   whose static snapshot should reference the current published commit.
+   whose static snapshot should reference the current published commit. When an
+   interactive publish exceeds the inline budget (~35s), the tool returns
+   `status: "dispatched"` with a `workflow_id` instead of hanging until the host
+   times out. Poll `workflowRunList` with that `workflow_id` until the run
+   finishes; do not retry the same publish while the run is active.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package
