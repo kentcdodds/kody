@@ -1,7 +1,13 @@
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
+	PARKED_TRANSFORM,
 	canPauseOnHover,
 	listLanePlacements,
+	parkUnusedLaneCards,
+	placeLaneCard,
 	wrapPagerIndex,
 	wrapUnitInterval,
 } from './landing-testimonials-motion.ts'
@@ -150,4 +156,73 @@ test('an exiting card stays on the negative lane instead of snapping to the orig
 	expect(
 		largestVisibleHole(placements, viewportWidth, cardWidth),
 	).toBeLessThanOrEqual(stride - cardWidth)
+
+	const cards = [0, 1, 2, 3].map(() => ({
+		hidden: false,
+		style: { transform: '' },
+	}))
+	const clone = { hidden: false, style: { transform: '' } }
+	const used = new Set<(typeof cards)[number] | typeof clone>()
+	for (const placement of placements) {
+		const source = cards[placement.itemIndex]
+		if (!source) continue
+		const node = placement.seam ? clone : source
+		placeLaneCard(node, placement.x)
+		used.add(node)
+	}
+	parkUnusedLaneCards(cards, used)
+	parkUnusedLaneCards([clone], used)
+
+	expect(cards[0]?.hidden).toBe(false)
+	expect(cards[0]?.style.transform).toBe(`translate3d(${-offset}px, 0, 0)`)
+	expect(cards[0]?.style.transform).not.toBe('')
+	expect(cards[0]?.style.transform).not.toBe(PARKED_TRANSFORM)
+	for (const card of cards) {
+		if (used.has(card)) continue
+		expect(card.hidden).toBe(true)
+		expect(card.style.transform).toBe(PARKED_TRANSFORM)
+	}
+	if (!used.has(clone)) {
+		expect(clone.hidden).toBe(true)
+		expect(clone.style.transform).toBe(PARKED_TRANSFORM)
+	}
+})
+
+test('unused cards keep a parked transform instead of snapping to the origin', () => {
+	const onStage = {
+		hidden: true,
+		style: { transform: PARKED_TRANSFORM },
+	}
+	const exiting = {
+		hidden: false,
+		style: { transform: 'translate3d(-360px, 0, 0)' },
+	}
+	const clone = {
+		hidden: false,
+		style: { transform: 'translate3d(1640px, 0, 0)' },
+	}
+	placeLaneCard(onStage, 140)
+	parkUnusedLaneCards([onStage, exiting], new Set([onStage]))
+	parkUnusedLaneCards([clone], new Set())
+
+	expect(onStage.hidden).toBe(false)
+	expect(onStage.style.transform).toBe('translate3d(140px, 0, 0)')
+	expect(exiting.hidden).toBe(true)
+	expect(exiting.style.transform).toBe(PARKED_TRANSFORM)
+	expect(exiting.style.transform).not.toBe('')
+	expect(clone.hidden).toBe(true)
+	expect(clone.style.transform).toBe(PARKED_TRANSFORM)
+})
+
+test('virtual [hidden] cards override author display flex', () => {
+	const css = readFileSync(
+		path.resolve(
+			path.dirname(fileURLToPath(import.meta.url)),
+			'../../public/styles.css',
+		),
+		'utf8',
+	)
+	expect(css).toMatch(
+		/\.landing-testimonials-track\.is-virtual\s+\.landing-testimonial-card\[hidden\]\s*\{[^}]*display:\s*none/,
+	)
 })

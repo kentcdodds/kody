@@ -11,14 +11,14 @@ import {
 	TESTIMONIALS_LAP_MS,
 	canPauseOnHover,
 	listLanePlacements,
+	parkUnusedLaneCards,
+	placeLaneCard,
 	wrapPagerIndex,
 	wrapUnitInterval,
 } from './landing-testimonials-motion.ts'
 
 const USER_NUDGE_RESUME_MS = 500
 const DRAG_THRESHOLD_PX = 8
-/** Off-stage park if `[hidden]` loses to `display: flex` (see styles.css). */
-const PARKED_TRANSFORM = 'translate3d(-200vw, 0, 0)'
 
 /**
  * Homepage testimonials strip. SSR and the first client render paint the
@@ -264,23 +264,11 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			const node = placement.seam
 				? takeSeamClone(source, placement.itemIndex, seamSlot++)
 				: source
-			node.hidden = false
-			node.style.transform = `translate3d(${placement.x}px, 0, 0)`
+			placeLaneCard(node, placement.x)
 			used.add(node)
 		}
-		for (const card of sources) {
-			if (used.has(card)) continue
-			parkCard(card)
-		}
-		for (const clone of seamClones) {
-			if (used.has(clone)) continue
-			parkCard(clone)
-		}
-	}
-
-	function parkCard(node: HTMLElement) {
-		node.hidden = true
-		node.style.transform = PARKED_TRANSFORM
+		parkUnusedLaneCards(sources, used)
+		parkUnusedLaneCards(seamClones, used)
 	}
 
 	function markUserNudge() {

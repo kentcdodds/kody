@@ -32,6 +32,35 @@ export function wrapUnitInterval(value: number, period: number) {
 	return next < 0 ? next + period : next
 }
 
+/** Off-stage park if `[hidden]` loses to `display: flex` (see styles.css). */
+export const PARKED_TRANSFORM = 'translate3d(-200vw, 0, 0)'
+
+export type ParkableLaneCard = {
+	hidden: HTMLElement['hidden']
+	style: Pick<CSSStyleDeclaration, 'transform'>
+}
+
+export function placeLaneCard(node: ParkableLaneCard, x: number) {
+	node.hidden = false
+	node.style.transform = `translate3d(${x}px, 0, 0)`
+}
+
+export function parkLaneCard(node: ParkableLaneCard) {
+	node.hidden = true
+	node.style.transform = PARKED_TRANSFORM
+}
+
+/** Hide and park every card that is not in this frame's used set. */
+export function parkUnusedLaneCards<T extends ParkableLaneCard>(
+	nodes: Iterable<T>,
+	used: ReadonlySet<T>,
+) {
+	for (const node of nodes) {
+		if (used.has(node)) continue
+		parkLaneCard(node)
+	}
+}
+
 /**
  * Visible + overscan placements on a circular lane.
  *
