@@ -226,6 +226,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			allowForce: false,
 			rebuildPackageArtifacts: false,
 			expectedPackageScope: 'user',
+			deferBundleCheckToRebuild: true,
 		}),
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
@@ -320,6 +321,51 @@ test('publishExternalPush returns forwarded clone and check timings without coll
 	expect(published.phase_timings.dependents_ms).toBeGreaterThanOrEqual(0)
 	expect(published.phase_timings.total_ms).toBeGreaterThanOrEqual(0)
 	expect(published.phase_timings.checks_bundle_ms).toBe(33)
+
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [
+			{
+				kind: 'bundle',
+				ok: true,
+				message: 'Bundle validation deferred to published artifact rebuild.',
+			},
+		],
+		phase_timings: {
+			clone_ms: 11,
+			checks_typecheck_ms: 22,
+		},
+	})
+	const deferredBundle = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(deferredBundle.status).toBe('published')
+	if (deferredBundle.status !== 'published') {
+		throw new Error('expected published')
+	}
+	expect(deferredBundle.phase_timings).toEqual({
+		clone_ms: 11,
+		checks_typecheck_ms: 22,
+		rebuild_ms: expect.any(Number),
+		dependents_ms: expect.any(Number),
+		total_ms: expect.any(Number),
+	})
+	expect(deferredBundle.phase_timings.checks_bundle_ms).toBeUndefined()
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
+		expect.objectContaining({
+			rebuildPackageArtifacts: false,
+			deferBundleCheckToRebuild: true,
+		}),
+	)
 
 	setupDefaultMocks()
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
@@ -568,12 +614,22 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 	mockModule.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
 		new Error('No matching default export for import "default"'),
 	)
-	await expect(
-		publishExternalPushCapability.handler(
-			{ package_id: 'package-1' },
-			createContext(),
-		),
-	).rejects.toThrow(/bundle artifact rebuild failed/i)
+	const rebuildFailed = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(rebuildFailed).toEqual({
+		status: 'checks_failed',
+		failed_checks: [
+			expect.objectContaining({
+				kind: 'bundle',
+				ok: false,
+				message: expect.stringMatching(/bundle artifact rebuild failed/i),
+			}),
+		],
+		manifest: {},
+		run_id: expect.any(String),
+	})
 })
 
 test('force publish passes destructive confirmation through and refuses without allow_force', async () => {

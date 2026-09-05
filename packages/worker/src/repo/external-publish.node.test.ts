@@ -124,11 +124,15 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
 		phaseTimings,
+		deferBundleCheckToRebuild: true,
 	})
 
 	expect(published.status).toBe('published')
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
-		expect.objectContaining({ phaseTimings }),
+		expect.objectContaining({
+			phaseTimings,
+			deferBundleCheckToRebuild: true,
+		}),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
@@ -500,6 +504,7 @@ test('locked package finishes checks then withholds published_commit unless allo
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
+		deferBundleCheckToRebuild: true,
 	})
 	expect(locked).toMatchObject({
 		status: 'locked',
@@ -510,7 +515,11 @@ test('locked package finishes checks then withholds published_commit unless allo
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
+	expect(
+		mockModule.runRepoChecks.mock.calls[0]?.[0]?.deferBundleCheckToRebuild,
+	).toBeUndefined()
 
+	mockModule.runRepoChecks.mockClear()
 	const published = await publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
@@ -521,7 +530,13 @@ test('locked package finishes checks then withholds published_commit unless allo
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
 		allowLockedPublish: true,
+		deferBundleCheckToRebuild: true,
 	})
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({
+			deferBundleCheckToRebuild: true,
+		}),
+	)
 	expect(published.status).toBe('published')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),

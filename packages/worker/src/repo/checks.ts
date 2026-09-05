@@ -857,6 +857,14 @@ function formatBundleCheckMessage(input: {
 	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }
 
+/**
+ * Bundle-check message when publish will rebuild the same callable /
+ * importable / app targets as published artifacts. Check-time esbuild is
+ * skipped so a multi-export publish does not pay for bundling twice.
+ */
+const deferredBundleCheckMessage =
+	'Bundle validation deferred to published artifact rebuild.'
+
 const lintPlaceholderPassedMessage = 'Lint placeholder passed for this phase.'
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const maxAmbientStorageReportedFiles = 5
@@ -1103,6 +1111,13 @@ export async function runRepoChecks(input: {
 	userId?: string
 	expectedPackageScope?: string
 	phaseTimings?: PublishPhaseTimings
+	/**
+	 * Skip full esbuild validation when the caller is about to rebuild the
+	 * same published artifact targets. Missing entrypoints still fail. The
+	 * `checks/bundle` timer is omitted. Rebuild failure must surface as a
+	 * bundle `checks_failed` result.
+	 */
+	deferBundleCheckToRebuild?: boolean
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -1335,14 +1350,15 @@ export async function runRepoChecks(input: {
 	const wantsLanguageServiceTypecheck =
 		missingCallableTypecheckTargets.length === 0 &&
 		callableTypecheckTargets.length > 0
-	const wantsBundleValidation =
+	const wantsFullBundleValidation =
+		input.deferBundleCheckToRebuild !== true &&
 		bundleContext !== null &&
 		missingBundleTargets.length === 0 &&
 		bundleTargets.length > 0
 	const stagingKey =
 		isolatedRunner &&
 		bundleContext &&
-		(wantsLanguageServiceTypecheck || wantsBundleValidation)
+		(wantsLanguageServiceTypecheck || wantsFullBundleValidation)
 			? await isolatedRunner.stage({
 					userId: bundleContext.userId,
 					sourceFiles,
@@ -1405,30 +1421,52 @@ export async function runRepoChecks(input: {
 			return value
 		}
 
+		const cheapBundleCheckResult = (): {
+			ok: boolean
+			message: string
+		} => {
+			if (missingBundleTargets.length > 0) {
+				return {
+					ok: false,
+					message: formatBundleCheckMessage({
+						missingEntryPoints: missingBundleTargets,
+						targetCount: bundleTargets.length,
+					}),
+				}
+			}
+			if (
+				input.deferBundleCheckToRebuild === true &&
+				bundleTargets.length > 0
+			) {
+				return {
+					ok: true,
+					message: deferredBundleCheckMessage,
+				}
+			}
+			return {
+				ok: true,
+				message: formatBundleCheckMessage({
+					missingEntryPoints: missingBundleTargets,
+					targetCount: bundleTargets.length,
+				}),
+			}
+		}
+
 		const runBundlePhase = async (): Promise<{
 			ok: boolean
 			message: string
 		}> => {
+			if (input.deferBundleCheckToRebuild === true) {
+				return cheapBundleCheckResult()
+			}
 			const { value } = await timePublishExternalPushPhase(
 				{ phase: 'checks/bundle', timings: input.phaseTimings },
 				async () => {
 					if (missingBundleTargets.length > 0) {
-						return {
-							ok: false,
-							message: formatBundleCheckMessage({
-								missingEntryPoints: missingBundleTargets,
-								targetCount: bundleTargets.length,
-							}),
-						}
+						return cheapBundleCheckResult()
 					}
 					if (!bundleContext) {
-						return {
-							ok: true,
-							message: formatBundleCheckMessage({
-								missingEntryPoints: missingBundleTargets,
-								targetCount: bundleTargets.length,
-							}),
-						}
+						return cheapBundleCheckResult()
 					}
 					if (isolatedRunner && stagingKey) {
 						return await runChunkedBundleValidation({
@@ -1453,8 +1491,9 @@ export async function runRepoChecks(input: {
 		// (and overlapping bundle chunks) does not stack DO heap the way the
 		// inline fallback would. Keep the inline path sequential: typecheck
 		// first so its disposable heap never sits on top of resident
-		// esbuild-wasm memory.
-		if (isolatedRunner && stagingKey) {
+		// esbuild-wasm memory. When bundle validation is deferred to rebuild,
+		// do not start bundle-chunk isolates or time checks/bundle.
+		if (isolatedRunner && stagingKey && wantsFullBundleValidation) {
 			const typecheckPromise = runTypecheckPhase()
 			const bundlePromise = runBundlePhase()
 			const [typecheckSettled, bundleSettled] = await Promise.allSettled([

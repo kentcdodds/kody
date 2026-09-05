@@ -180,6 +180,7 @@ export async function publishFromExternalRef(input: {
 	expectedPackageScope?: string
 	allowLockedPublish?: boolean
 	phaseTimings?: PublishPhaseTimings
+	deferBundleCheckToRebuild?: boolean
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -219,6 +220,19 @@ export async function publishFromExternalRef(input: {
 			})
 		}
 	}
+	const lockedPackage =
+		source.entity_kind === 'package' && input.allowLockedPublish !== true
+			? await loadLockedSavedPackage({
+					db: input.env.APP_DB,
+					userId: input.userId,
+					packageId: source.entity_id,
+				})
+			: null
+	// Locked publishes return after checks and never rebuild, so they must
+	// still pay for full callable/importable esbuild. Defer only when rebuild
+	// will run (unlocked, or allowLockedPublish).
+	const deferBundleCheckToRebuild =
+		input.deferBundleCheckToRebuild === true && lockedPackage == null
 	const checks = await runRepoChecks({
 		workspace: input.workspace,
 		manifestPath: input.manifestPath ?? source.manifest_path,
@@ -228,6 +242,7 @@ export async function publishFromExternalRef(input: {
 		userId: input.userId,
 		expectedPackageScope: input.expectedPackageScope,
 		phaseTimings: input.phaseTimings,
+		...(deferBundleCheckToRebuild ? { deferBundleCheckToRebuild: true } : {}),
 	})
 	const runId = input.runId ?? crypto.randomUUID()
 	if (!checks.ok) {
@@ -238,26 +253,19 @@ export async function publishFromExternalRef(input: {
 			run_id: runId,
 		}
 	}
-	if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
-		const lockedPackage = await loadLockedSavedPackage({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			packageId: source.entity_id,
+	if (lockedPackage) {
+		const error = createPackagePublishLockedError({
+			savedPackage: lockedPackage,
+			pendingCommit: input.newCommit,
+			currentPublishedCommit: source.published_commit,
 		})
-		if (lockedPackage) {
-			const error = createPackagePublishLockedError({
-				savedPackage: lockedPackage,
-				pendingCommit: input.newCommit,
-				currentPublishedCommit: source.published_commit,
-			})
-			return {
-				status: 'locked',
-				previous_commit: source.published_commit,
-				pending_commit: input.newCommit,
-				message: error.message,
-				packageId: lockedPackage.id,
-				packageName: lockedPackage.name,
-			}
+		return {
+			status: 'locked',
+			previous_commit: source.published_commit,
+			pending_commit: input.newCommit,
+			message: error.message,
+			packageId: lockedPackage.id,
+			packageName: lockedPackage.name,
 		}
 	}
 	await finalizePublishedEntitySource({

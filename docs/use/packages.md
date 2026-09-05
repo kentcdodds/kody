@@ -693,26 +693,31 @@ publish checks run.
    projections. If the pushed HEAD is already current, the tool returns
    `already_published`. If the package is locked, it returns `locked` with a
    `pending_commit` and `approval_url` after checks pass and leaves
-   `published_commit` unchanged. If checks fail, it returns `checks_failed` with
-   the failed check entries and leaves the underlying storage state unchanged.
-   Successful `published` responses, and `already_published` responses when the
-   metadata is available, include a bounded `static_dependents` summary of
-   direct saved packages whose published bundle artifacts statically reference
-   this package. Stale entries mean the dependent bundle captured a dependency
-   commit that differs from the current published commit. Kody does not
-   automatically republish those dependents; inspect and republish only the ones
-   whose static snapshot should reference the current published commit. Those
-   same success results include `phase_timings` with optional millisecond fields
-   `clone_ms`, `checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`,
-   `dependents_ms`, and `total_ms`. Omitted keys did not run on that attempt.
-   `checks_bundle_ms` is the publish bundle-check; `rebuild_ms` is the later
-   artifact rebuild — they stay separate. Read `phase_timings` on the capability
-   result; it is not available from `runList` or Cloudflare Log Explorer. When
-   an interactive publish exceeds the inline budget (~35s), the tool returns
-   `status: "dispatched"` with a `workflow_id` instead of hanging until the host
-   times out. `dispatched` includes `phase_timings.total_ms` as
-   time-to-dispatch. Poll `workflowRunList` with that `workflow_id` until the
-   run finishes; do not retry the same publish while the run is active.
+   `published_commit` unchanged. If checks fail before promotion, it returns
+   `checks_failed` with the failed check entries and leaves the underlying
+   storage state unchanged. Full check-time esbuild is deferred to the later
+   published artifact rebuild (callable and importable targets stay distinct); a
+   rebuild failure after promotion also returns `checks_failed` with a bundle
+   check — re-run the publish capability to repair artifacts. Successful
+   `published` responses, and `already_published` responses when the metadata is
+   available, include a bounded `static_dependents` summary of direct saved
+   packages whose published bundle artifacts statically reference this package.
+   Stale entries mean the dependent bundle captured a dependency commit that
+   differs from the current published commit. Kody does not automatically
+   republish those dependents; inspect and republish only the ones whose static
+   snapshot should reference the current published commit. Those same success
+   results include `phase_timings` with optional millisecond fields `clone_ms`,
+   `checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`, `dependents_ms`, and
+   `total_ms`. Omitted keys did not run on that attempt. `checks_bundle_ms` is
+   the publish bundle-check and is omitted when that esbuild pass is deferred to
+   rebuild; `rebuild_ms` is the later artifact rebuild — they stay separate.
+   Read `phase_timings` on the capability result; it is not available from
+   `runList` or Cloudflare Log Explorer. When an interactive publish exceeds the
+   inline budget (~35s), the tool returns `status: "dispatched"` with a
+   `workflow_id` instead of hanging until the host times out. `dispatched`
+   includes `phase_timings.total_ms` as time-to-dispatch. Poll `workflowRunList`
+   with that `workflow_id` until the run finishes; do not retry the same publish
+   while the run is active.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package

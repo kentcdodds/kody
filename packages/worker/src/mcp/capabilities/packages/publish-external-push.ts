@@ -83,6 +83,14 @@ function isTransientDurableObjectResetError(error: unknown) {
 	return errorCauseChainIncludes(error, isDurableObjectIsolateResetMessage)
 }
 
+function bundleCheckFailedFromRebuildError(error: unknown) {
+	return {
+		kind: 'bundle' as const,
+		ok: false as const,
+		message: getErrorMessage(error),
+	}
+}
+
 function logExternalPublishRetry(input: {
 	sourceId: string
 	repoId: string
@@ -272,7 +280,7 @@ const publishPhaseTimingsSchema = z
 			.nonnegative()
 			.optional()
 			.describe(
-				'Milliseconds spent in the publish bundle-check phase. Distinct from rebuild_ms. Omitted when bundle check did not run.',
+				'Milliseconds spent in the publish bundle-check phase. Distinct from rebuild_ms. Omitted when bundle check did not run, including when full esbuild validation is deferred to rebuild.',
 			),
 		rebuild_ms: z
 			.number()
@@ -620,6 +628,7 @@ async function runExternalPublishAttempt(input: {
 				baseUrl: input.baseUrl,
 				rebuildPackageArtifacts: false,
 				expectedPackageScope: input.expectedPackageScope,
+				deferBundleCheckToRebuild: true,
 			})
 			const publishMs = Date.now() - publishStartedAt
 			assertNotAborted(input.signal)
@@ -750,23 +759,43 @@ async function runExternalPublishAttempt(input: {
 				total: maxAttempts + 1,
 				message: `Checks passed in ${publishMs}ms — rebuilding published artifacts and indexing dependents…`,
 			})
-			const { durationMs: rebuildMs } = await timePublishExternalPushPhase(
-				{
-					phase: 'rebuild',
-					sourceId: input.source.id,
-					publishedCommit: result.published_commit,
-				},
-				async () => {
-					await rebuildPublishedPackageArtifactsViaRepoSession({
-						env: input.env,
-						rpcSessionId: sessionId,
+			const { durationMs: rebuildMs, value: rebuildOutcome } =
+				await timePublishExternalPushPhase(
+					{
+						phase: 'rebuild',
 						sourceId: input.source.id,
-						userId: input.ownerUserId,
 						publishedCommit: result.published_commit,
-						baseUrl: input.baseUrl,
-					})
-				},
-			)
+					},
+					async () => {
+						try {
+							await rebuildPublishedPackageArtifactsViaRepoSession({
+								env: input.env,
+								rpcSessionId: sessionId,
+								sourceId: input.source.id,
+								userId: input.ownerUserId,
+								publishedCommit: result.published_commit,
+								baseUrl: input.baseUrl,
+							})
+							return { ok: true as const }
+						} catch (error) {
+							if (isTransientDurableObjectResetError(error)) {
+								throw error
+							}
+							return {
+								ok: false as const,
+								failedCheck: bundleCheckFailedFromRebuildError(error),
+							}
+						}
+					},
+				)
+			if (!rebuildOutcome.ok) {
+				return {
+					status: 'checks_failed' as const,
+					failed_checks: [rebuildOutcome.failedCheck],
+					manifest: result.manifest ?? null,
+					run_id: crypto.randomUUID(),
+				}
+			}
 			const { durationMs: dependentsMs, value: publishedExtras } =
 				await timePublishExternalPushPhase(
 					{
@@ -868,7 +897,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 	{
 		name: 'packagePublishExternalPush',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a packageGetGitRemote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Those success results also include phase_timings with optional millisecond fields clone_ms, checks_typecheck_ms, checks_bundle_ms, rebuild_ms, dependents_ms, and total_ms — omitted keys did not run; checks_bundle_ms and rebuild_ms stay separate. Common cases return the full synchronous result. If the publish exceeds the inline budget (~35s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflowRunList instead of hanging until an opaque execute timeout. dispatched includes phase_timings.total_ms as time-to-dispatch.',
+			'Publish the current Artifacts git HEAD for a saved package after a packageGetGitRemote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Full check-time esbuild is deferred to the published artifact rebuild so callable and importable targets are bundled once; a rebuild failure returns checks_failed with a bundle check. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Those success results also include phase_timings with optional millisecond fields clone_ms, checks_typecheck_ms, checks_bundle_ms, rebuild_ms, dependents_ms, and total_ms — omitted keys did not run; checks_bundle_ms is omitted when bundle validation is deferred to rebuild; checks_bundle_ms and rebuild_ms stay separate. Common cases return the full synchronous result. If the publish exceeds the inline budget (~35s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflowRunList instead of hanging until an opaque execute timeout. dispatched includes phase_timings.total_ms as time-to-dispatch.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,

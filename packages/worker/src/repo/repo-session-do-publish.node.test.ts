@@ -486,9 +486,15 @@ test('publishFromExternalRef checks fast-forward ancestry through ephemeral clon
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
+		deferBundleCheckToRebuild: true,
 	})
 
 	expect(result.status).toBe('published')
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({
+			deferBundleCheckToRebuild: true,
+		}),
+	)
 	expect(result).toEqual(
 		expect.objectContaining({
 			status: 'published',
