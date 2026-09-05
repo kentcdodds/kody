@@ -77,9 +77,10 @@ Auth, OAuth, and account pages never use the short CDN cache.
 
 Landing layout CSS lives in `packages/worker/public/styles.css` (`.landing-*`)
 so SSR does not emit a Remix style tag per marketing node. Hero and below-fold
-art ship `srcset` variants. The homepage waitlist loads Turnstile only when the
-form is near the viewport. Login, signup, and verify still load the widget
-immediately.
+art ship `srcset` variants. The homepage waitlist loads the Turnstile script
+only when the form is near the viewport, but the first HTML already reserves the
+300×65 host so that deferred paint cannot shift the invite section. Login,
+signup, and verify still load the widget immediately.
 
 ## Budget
 

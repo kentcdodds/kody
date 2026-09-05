@@ -7,7 +7,12 @@ import {
 	mergeCss,
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
-import { colors, transitions, typography } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	spacing,
+	transitions,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { renderHoneypot } from '#client/honeypot-field.tsx'
 import {
@@ -15,6 +20,8 @@ import {
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
+	turnstileWidgetHeightPx,
+	turnstileWidgetWidthPx,
 } from '#client/public-form-protection.ts'
 import {
 	fieldErrorProps,
@@ -191,8 +198,16 @@ export function WaitlistBanner(handle: Handle) {
 										{isSubmitting ? 'Joining…' : 'Join'}
 									</button>
 								</div>
-								{turnstileSiteKey ? (
-									<div class={turnstileWidgetClassName}></div>
+								{/*
+								 * `undefined` means the site key has not loaded yet:
+								 * still paint the empty 300×65 host so Turnstile cannot
+								 * CLS the strip when it arrives. `null` means it is off.
+								 */}
+								{turnstileSiteKey !== null ? (
+									<div
+										class={turnstileWidgetClassName}
+										mix={css(bannerTurnstileCss)}
+									></div>
 								) : null}
 							</form>
 							{/*
@@ -231,19 +246,27 @@ const pillPadding = '0.25rem'
    without truncating them to nonsense. */
 const stackMq = '@media (max-width: 720px)'
 
+const bannerPaddingY = '0.55rem'
+const bannerStackPaddingY = '0.85rem'
+
 const bannerCss = {
 	width: '100%',
 	margin: 0,
+	/* Floor is the managed Turnstile box plus vertical padding so the
+	   widget can load into a slot that already fits it. Wrapping (prompt
+	   above the pill on a phone) is still allowed to grow the strip. */
+	minHeight: `calc(${turnstileWidgetHeightPx}px + (${bannerPaddingY} * 2))`,
 	/* Deliberately shallow — this sits above the header on secondary pages and
 	   should read as a quiet strip, not a second hero. */
-	padding: `0.55rem ${pageGutter}`,
+	padding: `${bannerPaddingY} ${pageGutter}`,
 	borderBottom: `1px solid ${colors.border}`,
 	/* A whisper of the accent so the strip separates from the header without
 	   competing with it. */
 	backgroundColor: colors.primarySoftest,
 	boxSizing: 'border-box' as const,
 	[stackMq]: {
-		padding: `0.7rem ${pageGutter}`,
+		padding: `${bannerStackPaddingY} ${pageGutter}`,
+		minHeight: `calc(${turnstileWidgetHeightPx}px + (${bannerStackPaddingY} * 2))`,
 	},
 }
 
@@ -279,13 +302,33 @@ const promptCss = {
 	},
 }
 
+const bannerTurnstileCss = {
+	flex: '0 0 auto',
+	[stackMq]: {
+		alignSelf: 'center',
+	},
+}
+
 const formCss = {
 	display: 'flex',
-	alignItems: 'stretch',
+	/* Wrap children when the inner is narrower than pill + 300px widget.
+	   min-width prefers moving this form onto the next banner line over
+	   shrinking beside the prompt and overflowing (or stacking on desktop). */
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	justifyContent: 'center',
+	gap: spacing.sm,
 	margin: 0,
-	minWidth: 0,
+	width: 'max-content',
+	maxWidth: '100%',
+	minWidth: `min(100%, calc(${turnstileWidgetWidthPx}px + 26.5rem))`,
 	[stackMq]: {
+		/* Phone: the 300px widget must not sit beside the pill. Column plus a
+		   full-width pill puts Turnstile on its own centered row. */
 		width: '100%',
+		flexDirection: 'column' as const,
+		alignItems: 'center',
+		gap: spacing.md,
 	},
 }
 
@@ -293,7 +336,12 @@ const pillCss = {
 	display: 'grid',
 	gridTemplateColumns: 'minmax(0, 8.5rem) minmax(0, 12rem) auto',
 	alignItems: 'stretch',
-	width: '100%',
+	/* Do not shrink beside the 300px widget (that truncated "First name")
+	   and do not grow when wrap leaves the pill alone on a line — grow
+	   would dump leftover space into the Join column as a wide slab. */
+	flex: '0 0 auto',
+	width: 'auto',
+	maxWidth: '100%',
 	backgroundColor: colors.surface,
 	border: `1.5px solid ${colors.fieldBorder}`,
 	borderRadius: pillRadius,
@@ -307,6 +355,9 @@ const pillCss = {
 	[stackMq]: {
 		/* Two fields across, the button spanning beneath them: keeps the strip to
 		   two rows instead of three while every placeholder stays readable. */
+		alignSelf: 'stretch',
+		flex: '1 0 auto',
+		width: '100%',
 		gridTemplateColumns: '1fr 1fr',
 		borderRadius: pillStackRadius,
 		gap: pillPadding,

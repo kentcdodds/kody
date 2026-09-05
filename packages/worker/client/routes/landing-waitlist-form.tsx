@@ -244,7 +244,14 @@ export function WaitlistForm(handle: Handle) {
 								</span>
 							</button>
 						</div>
-						{protectionArmed && turnstileSiteKey ? (
+						{/*
+						 * Reserve the managed widget box from first paint, even
+						 * before the form is near the viewport and before the
+						 * site key arrives. The challenge script still loads
+						 * lazily; only the empty 300×65 host is in the HTML.
+						 * `null` means Turnstile is off.
+						 */}
+						{turnstileSiteKey !== null ? (
 							<div class={turnstileWidgetClassName}></div>
 						) : null}
 						{status === 'error' && message ? (
