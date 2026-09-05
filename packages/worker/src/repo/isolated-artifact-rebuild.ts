@@ -9,7 +9,7 @@ import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-messa
  * Object. One large package (for example morning-briefing) could otherwise
  * push the session isolate (workspace + git state + esbuild-wasm) over the
  * Durable Object memory limit and kill the publish (same class of failure as
- * kentcdodds/kody#987 for check phases). Each target rebuild gets a brand-new
+ * kentcdodds/kody#987 for check phases). Each rebuild chunk gets a brand-new
  * DO id, so:
  *
  * - rebuilds never stack their peak memory on top of the session isolate or
@@ -21,25 +21,44 @@ import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-messa
  *
  * Workspace source files are staged once in KV with a short TTL (collected by
  * the session DO) and fetched by each rebuild isolate; the RPC payloads stay
- * small. The orchestrator refreshes that TTL between target chunks so large
+ * small. The orchestrator refreshes that TTL between isolate waves so large
  * packages cannot outlive the initial lease mid-fan-out.
+ *
+ * Targets are chunked per throwaway isolate (same pattern as check-phase
+ * bundle validation) so a multi-export package does not pay one cold
+ * esbuild-wasm boot per export. Chunk size stays small so one isolate does
+ * not stack toward the memory limit that motivated kentcdodds/kody#987;
+ * isolate concurrency stays capped so publish cannot stampede DO capacity.
  */
 
 export const isolatedArtifactRebuildStagingKeyPrefix =
 	'repo-artifact-rebuild-staging:v1:'
 const stagingTtlSeconds = 15 * 60
+/**
+ * Artifact targets rebuilt per throwaway isolate. Matches check-phase bundle
+ * chunking: small enough to stay far from the isolate memory limit, large
+ * enough to keep cold-boot fan-out modest for typical packages.
+ */
+export const isolatedArtifactRebuildChunkSize = 4
+/**
+ * Max throwaway isolates running rebuild chunks at once. Chunk size bounds
+ * work *inside* one isolate; this bounds how many of those isolates a single
+ * publish may start together.
+ */
+export const isolatedArtifactRebuildChunkConcurrency = 2
 
 export type IsolatedArtifactRebuildRequest = {
 	stagingKey: string
 	sourceId: string
 	userId: string
 	publishedCommit: string
-	target: PublishedPackageArtifactBuildTarget
+	targets: Array<PublishedPackageArtifactBuildTarget>
 	baseUrl?: string
 	/**
-	 * Rebuild even when a same-commit artifact already exists. Used by
-	 * `already_published` so a leftover workspace-built bundle cannot keep
-	 * serving after D1 already points at HEAD.
+	 * Rebuild even when a same-commit artifact already exists. Used when
+	 * already_published rewrote a mismatched snapshot. Missing-snapshot
+	 * finalize races do not force: live artifacts stay and skip if they
+	 * already match this commit.
 	 */
 	force?: boolean
 }
@@ -62,12 +81,18 @@ export function isolatedArtifactRebuildStagingKeyBelongsToUser(input: {
 	)
 }
 
-export type IsolatedArtifactRebuildOutcome = {
+export type IsolatedArtifactRebuildTargetResult = {
 	ok: boolean
 	message: string
 	skipped?: boolean
 	kvKey?: string | null
-	target?: PublishedPackageArtifactBuildTarget
+	target: PublishedPackageArtifactBuildTarget
+}
+
+export type IsolatedArtifactRebuildOutcome = {
+	ok: boolean
+	message: string
+	results: Array<IsolatedArtifactRebuildTargetResult>
 }
 
 type IsolatedArtifactRebuildStub = {
@@ -106,6 +131,12 @@ function describeTarget(target: PublishedPackageArtifactBuildTarget) {
 	].join(', ')
 }
 
+function describeTargets(
+	targets: ReadonlyArray<PublishedPackageArtifactBuildTarget>,
+) {
+	return targets.map((target) => `{ ${describeTarget(target)} }`).join(', ')
+}
+
 /**
  * Returns a runner when the env carries the bindings the offload needs;
  * callers fall back to per-target session rebuild otherwise (unit tests and
@@ -130,9 +161,9 @@ export function createIsolatedArtifactRebuildRunner(
 			})
 		},
 		async run(request) {
-			// A fresh, user-namespaced id per target puts every heavy rebuild
-			// in its own isolate. The instance never touches its Durable Object
-			// storage, so nothing persists for the random name.
+			// A fresh, user-namespaced id per chunk puts every heavy rebuild
+			// wave in its own isolate. The instance never touches its Durable
+			// Object storage, so nothing persists for the random name.
 			const stub = namespace.get(
 				namespace.idFromName(
 					`isolated-artifact-rebuild-${request.userId}-${crypto.randomUUID()}`,
@@ -142,13 +173,18 @@ export function createIsolatedArtifactRebuildRunner(
 				return await stub.runIsolatedArtifactRebuild(request)
 			} catch (error) {
 				if (isDurableObjectResourceLimitResetError(error)) {
+					const message =
+						`Artifact rebuild for ${describeTargets(request.targets)} ` +
+						"exceeded the isolated rebuild runner's memory or CPU limits " +
+						`even on its own. ${isolatedRunnerResourceLimitAdvice()}`
 					return {
 						ok: false,
-						message:
-							`Artifact rebuild for { ${describeTarget(request.target)} } ` +
-							"exceeded the isolated rebuild runner's memory or CPU limits " +
-							`even on its own. ${isolatedRunnerResourceLimitAdvice()}`,
-						target: request.target,
+						message,
+						results: request.targets.map((target) => ({
+							ok: false,
+							message,
+							target,
+						})),
 					}
 				}
 				throw error

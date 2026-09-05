@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	publishFromExternalRef: vi.fn(),
 	listPublishedPackageArtifactTargets: vi.fn(),
 	rebuildPublishedPackageArtifact: vi.fn(),
+	isPublishedPackageArtifactBuiltForCommit: vi.fn(),
 	getStaticPackageDependentsSummary: vi.fn(),
 	runWithDurableEscalation: vi.fn(),
 }))
@@ -45,6 +46,17 @@ vi.mock('#worker/package-runtime/static-package-dependents.ts', () => ({
 	getStaticPackageDependentsSummary: (...args: Array<unknown>) =>
 		mockModule.getStaticPackageDependentsSummary(...args),
 }))
+
+vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/package-runtime/published-bundle-artifacts.ts')
+	>('#worker/package-runtime/published-bundle-artifacts.ts')
+	return {
+		...actual,
+		isPublishedPackageArtifactBuiltForCommit: (...args: Array<unknown>) =>
+			mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
+	}
+})
 
 vi.mock('#worker/repo/published-source.ts', () => ({
 	loadPublishedEntitySource: async () => {
@@ -97,6 +109,7 @@ function setupDefaultMocks() {
 			'No published bundle artifacts declare a static dependency on this package.',
 	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({
 		ok: true,
 		target: {
@@ -306,6 +319,63 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		}),
 		pending_secret_package_approvals: null,
 	})
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-old',
+		target: targets[0],
+		baseUrl: 'https://kody.test',
+	})
+	expect(
+		consoleInfo.mock.calls.some((call) =>
+			String(call[0]).includes('"phase":"rebuild"'),
+		),
+	).toBe(true)
+	expect(
+		consoleInfo.mock.calls.some((call) =>
+			String(call[0]).includes('"phase":"dependents"'),
+		),
+	).toBe(true)
+
+	setupDefaultMocks()
+	mockModule.rebuildPublishedPackageArtifact.mockClear()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-old',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'already_published',
+		published_commit: 'commit-old',
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
+
+	const alreadyPublishedSkip = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(alreadyPublishedSkip.status).toBe('already_published')
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+
+	setupDefaultMocks()
+	mockModule.rebuildPublishedPackageArtifact.mockClear()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-old',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'already_published',
+		published_commit: 'commit-old',
+		force_artifact_rebuild: true,
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
+
+	const alreadyPublishedForce = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(alreadyPublishedForce.status).toBe('already_published')
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sourceId: 'source-1',
 		userId: 'user-1',

@@ -30,6 +30,7 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
+import { timePublishExternalPushPhase } from '#worker/repo/publish-phase-timing.ts'
 import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 import {
 	buildPendingPackageSecretApprovalsSummary,
@@ -523,9 +524,10 @@ async function runExternalPublishAttempt(input: {
 				total: maxAttempts + 1,
 				message:
 					attempt === 1
-						? 'Publishing from Artifacts HEAD — running checks and promoting the commit…'
+						? 'Publishing from Artifacts HEAD — cloning, checking, and promoting the commit…'
 						: `Publish attempt ${attempt}/${maxAttempts} — giving the repo another nudge…`,
 			})
+			const publishStartedAt = Date.now()
 			const result = await repoSessionRpc(
 				input.env,
 				sessionId,
@@ -541,64 +543,102 @@ async function runExternalPublishAttempt(input: {
 				rebuildPackageArtifacts: false,
 				expectedPackageScope: input.expectedPackageScope,
 			})
+			const publishMs = Date.now() - publishStartedAt
 			assertNotAborted(input.signal)
 			if (result.status === 'already_published') {
-				if (!result.published_commit) {
+				const publishedCommit = result.published_commit
+				if (!publishedCommit) {
 					throw new Error(
 						`Package "${input.packageId}" is already published, but no published commit is available to rebuild artifacts.`,
 					)
 				}
+				const forceRebuild = result.force_artifact_rebuild === true
 				await reportCapabilityProgress(input.reportProgress, {
 					progress: maxAttempts + 1,
 					total: maxAttempts + 1,
-					message:
-						'Already published — rebuilding artifacts so invoke stays fresh…',
+					message: forceRebuild
+						? `Already published after ${publishMs}ms — snapshot changed, rebuilding artifacts…`
+						: `Already published after ${publishMs}ms — confirming artifacts match this commit…`,
 				})
-				await rebuildPublishedPackageArtifactsViaRepoSession({
-					env: input.env,
-					rpcSessionId: sessionId,
-					sourceId: input.source.id,
-					userId: input.ownerUserId,
-					publishedCommit: result.published_commit,
-					baseUrl: input.baseUrl,
-					force: true,
-				})
-				const testHints = await getPublishedPackageTestHints({
-					env: input.env,
-					userId: input.ownerUserId,
-					sourceId: input.source.id,
-					kodyId: input.kodyId,
-					...(input.testHintPackageScope
-						? { packageScope: input.testHintPackageScope }
-						: {}),
+				const { durationMs: rebuildMs } = await timePublishExternalPushPhase(
+					{
+						phase: 'rebuild',
+						sourceId: input.source.id,
+						publishedCommit,
+					},
+					async () => {
+						await rebuildPublishedPackageArtifactsViaRepoSession({
+							env: input.env,
+							rpcSessionId: sessionId,
+							sourceId: input.source.id,
+							userId: input.ownerUserId,
+							publishedCommit,
+							baseUrl: input.baseUrl,
+							...(forceRebuild ? { force: true } : {}),
+						})
+					},
+				)
+				const { durationMs: dependentsMs, value: alreadyPublishedExtras } =
+					await timePublishExternalPushPhase(
+						{
+							phase: 'dependents',
+							sourceId: input.source.id,
+							publishedCommit,
+						},
+						async () => {
+							const testHints = await getPublishedPackageTestHints({
+								env: input.env,
+								userId: input.ownerUserId,
+								sourceId: input.source.id,
+								kodyId: input.kodyId,
+								...(input.testHintPackageScope
+									? { packageScope: input.testHintPackageScope }
+									: {}),
+							})
+							return {
+								testHints,
+								hosted_app_url: await resolvePublishedHostedAppUrl({
+									env: input.env,
+									baseUrl: input.baseUrl,
+									ownerScope: input.ownerScope,
+									ownerEmail: input.ownerEmail,
+									kodyId: input.kodyId,
+									hasApp: input.hasApp,
+								}),
+								static_dependents: await getPublishStaticDependents({
+									db: input.env.APP_DB,
+									userId: input.ownerUserId,
+									sourceId: input.source.id,
+									publishedCommit,
+								}),
+								pending_secret_package_approvals:
+									await getPendingSecretApprovalsForPublishedPackage({
+										env: input.env,
+										baseUrl: input.baseUrl,
+										userId: input.ownerUserId,
+										packageId: input.packageId,
+										kodyId: input.kodyId,
+										sourceId: input.source.id,
+									}),
+							}
+						},
+					)
+				await reportCapabilityProgress(input.reportProgress, {
+					progress: maxAttempts + 1,
+					total: maxAttempts + 1,
+					message: `Already published wrap-up — rebuild ${rebuildMs}ms, dependents ${dependentsMs}ms.`,
 				})
 				return {
-					...result,
-					hosted_app_url: await resolvePublishedHostedAppUrl({
-						env: input.env,
-						baseUrl: input.baseUrl,
-						ownerScope: input.ownerScope,
-						ownerEmail: input.ownerEmail,
-						kodyId: input.kodyId,
-						hasApp: input.hasApp,
-					}),
-					...(testHints ? { test_hints: testHints } : {}),
-					static_dependents: await getPublishStaticDependents({
-						db: input.env.APP_DB,
-						userId: input.ownerUserId,
-						sourceId: input.source.id,
-						publishedCommit: result.published_commit,
-					}),
+					status: 'already_published' as const,
+					published_commit: publishedCommit,
+					hosted_app_url: alreadyPublishedExtras.hosted_app_url,
+					...(alreadyPublishedExtras.testHints
+						? { test_hints: alreadyPublishedExtras.testHints }
+						: {}),
+					static_dependents: alreadyPublishedExtras.static_dependents,
 					pending_secret_package_approvals:
-						await getPendingSecretApprovalsForPublishedPackage({
-							env: input.env,
-							baseUrl: input.baseUrl,
-							userId: input.ownerUserId,
-							packageId: input.packageId,
-							kodyId: input.kodyId,
-							sourceId: input.source.id,
-						}),
-				} as const
+						alreadyPublishedExtras.pending_secret_package_approvals,
+				}
 			}
 			if (result.status === 'locked') {
 				const approvalUrl = buildPackagePublishApprovalUrl({
@@ -624,50 +664,82 @@ async function runExternalPublishAttempt(input: {
 			await reportCapabilityProgress(input.reportProgress, {
 				progress: maxAttempts + 1,
 				total: maxAttempts + 1,
-				message:
-					'Checks passed — rebuilding published artifacts and indexing dependents…',
+				message: `Checks passed in ${publishMs}ms — rebuilding published artifacts and indexing dependents…`,
 			})
-			await rebuildPublishedPackageArtifactsViaRepoSession({
-				env: input.env,
-				rpcSessionId: sessionId,
-				sourceId: input.source.id,
-				userId: input.ownerUserId,
-				publishedCommit: result.published_commit,
-				baseUrl: input.baseUrl,
-			})
-			const testHints = readPackageTestHintsFromManifest({
-				manifest: result.manifest,
-				kodyId: input.kodyId,
-				...(input.testHintPackageScope
-					? { packageScope: input.testHintPackageScope }
-					: {}),
+			const { durationMs: rebuildMs } = await timePublishExternalPushPhase(
+				{
+					phase: 'rebuild',
+					sourceId: input.source.id,
+					publishedCommit: result.published_commit,
+				},
+				async () => {
+					await rebuildPublishedPackageArtifactsViaRepoSession({
+						env: input.env,
+						rpcSessionId: sessionId,
+						sourceId: input.source.id,
+						userId: input.ownerUserId,
+						publishedCommit: result.published_commit,
+						baseUrl: input.baseUrl,
+					})
+				},
+			)
+			const { durationMs: dependentsMs, value: publishedExtras } =
+				await timePublishExternalPushPhase(
+					{
+						phase: 'dependents',
+						sourceId: input.source.id,
+						publishedCommit: result.published_commit,
+					},
+					async () => {
+						const testHints = readPackageTestHintsFromManifest({
+							manifest: result.manifest,
+							kodyId: input.kodyId,
+							...(input.testHintPackageScope
+								? { packageScope: input.testHintPackageScope }
+								: {}),
+						})
+						return {
+							testHints,
+							hosted_app_url: await resolvePublishedHostedAppUrl({
+								env: input.env,
+								baseUrl: input.baseUrl,
+								ownerScope: input.ownerScope,
+								ownerEmail: input.ownerEmail,
+								kodyId: input.kodyId,
+								hasApp: Boolean(testHints?.app),
+							}),
+							static_dependents: await getPublishStaticDependents({
+								db: input.env.APP_DB,
+								userId: input.ownerUserId,
+								sourceId: input.source.id,
+								publishedCommit: result.published_commit,
+							}),
+							pending_secret_package_approvals:
+								await getPendingSecretApprovalsForPublishedPackage({
+									env: input.env,
+									baseUrl: input.baseUrl,
+									userId: input.ownerUserId,
+									packageId: input.packageId,
+									kodyId: input.kodyId,
+									sourceId: input.source.id,
+								}),
+						}
+					},
+				)
+			await reportCapabilityProgress(input.reportProgress, {
+				progress: maxAttempts + 1,
+				total: maxAttempts + 1,
+				message: `Published wrap-up — rebuild ${rebuildMs}ms, dependents ${dependentsMs}ms.`,
 			})
 			return {
 				...result,
-				hosted_app_url: await resolvePublishedHostedAppUrl({
-					env: input.env,
-					baseUrl: input.baseUrl,
-					ownerScope: input.ownerScope,
-					ownerEmail: input.ownerEmail,
-					kodyId: input.kodyId,
-					hasApp: Boolean(testHints?.app),
-				}),
-				...(testHints ? { test_hints: testHints } : {}),
-				static_dependents: await getPublishStaticDependents({
-					db: input.env.APP_DB,
-					userId: input.ownerUserId,
-					sourceId: input.source.id,
-					publishedCommit: result.published_commit,
-				}),
+				hosted_app_url: publishedExtras.hosted_app_url,
+				...(publishedExtras.testHints
+					? { test_hints: publishedExtras.testHints }
+					: {}),
+				static_dependents: publishedExtras.static_dependents,
 				pending_secret_package_approvals:
-					await getPendingSecretApprovalsForPublishedPackage({
-						env: input.env,
-						baseUrl: input.baseUrl,
-						userId: input.ownerUserId,
-						packageId: input.packageId,
-						kodyId: input.kodyId,
-						sourceId: input.source.id,
-					}),
+					publishedExtras.pending_secret_package_approvals,
 			} as const
 		} catch (error) {
 			assertNotAborted(input.signal)

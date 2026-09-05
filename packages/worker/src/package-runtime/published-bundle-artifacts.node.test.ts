@@ -12,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
 	readPublishedBundleArtifact: vi.fn(),
+	readPublishedSourceSnapshot: vi.fn(),
 	updatePublishedBundleArtifactRow: vi.fn(),
 	writePublishedBundleArtifact: vi.fn(),
 }))
@@ -44,6 +45,8 @@ vi.mock('./published-runtime-artifacts.ts', async () => {
 		...actual,
 		readPublishedBundleArtifact: (...args: Array<unknown>) =>
 			mockModule.readPublishedBundleArtifact(...args),
+		readPublishedSourceSnapshot: (...args: Array<unknown>) =>
+			mockModule.readPublishedSourceSnapshot(...args),
 		writePublishedBundleArtifact: (...args: Array<unknown>) =>
 			mockModule.writePublishedBundleArtifact(...args),
 	}
@@ -147,6 +150,8 @@ test('loadPublishedBundleArtifactByIdentity treats mismatched and malformed KV a
 test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV artifact for the commit', async () => {
 	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
 	mockModule.readPublishedBundleArtifact.mockReset()
+	mockModule.readPublishedSourceSnapshot.mockReset()
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
 
 	const envWithoutKv = { APP_DB: {} } as unknown as Env
 	expect(
@@ -286,7 +291,7 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 		createdAt: '2026-05-13T00:00:00.000Z',
 		updatedAt: '2026-05-13T00:00:00.000Z',
 	})
-	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce({
+	mockModule.readPublishedBundleArtifact.mockResolvedValue({
 		version: 1,
 		kind: 'module',
 		artifactName: '.',
@@ -299,6 +304,46 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 		dynamicDependencies: [],
 		packageContext: null,
 		createdAt: '2026-05-13T00:00:00.000Z',
+	})
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(true)
+
+	mockModule.readPublishedSourceSnapshot.mockResolvedValueOnce({
+		invalidateArtifactsBefore: '2026-09-05T16:00:00.000Z',
+	})
+	expect(
+		await isPublishedPackageArtifactBuiltForCommit({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-1',
+			target,
+		}),
+	).toBe(false)
+
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce({
+		version: 1,
+		kind: 'module',
+		artifactName: '.',
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		entryPoint: 'src/index.ts',
+		mainModule: 'dist/index.js',
+		modules: { 'dist/index.js': 'export default {}' },
+		dependencies: [],
+		dynamicDependencies: [],
+		packageContext: null,
+		createdAt: '2026-09-05T16:00:01.000Z',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValueOnce({
+		invalidateArtifactsBefore: '2026-09-05T16:00:00.000Z',
 	})
 	expect(
 		await isPublishedPackageArtifactBuiltForCommit({

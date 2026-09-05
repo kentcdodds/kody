@@ -7,7 +7,11 @@ import {
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import { isPublishedPackageArtifactBuiltForCommit } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
-import { createIsolatedArtifactRebuildRunner } from '#worker/repo/isolated-artifact-rebuild.ts'
+import {
+	createIsolatedArtifactRebuildRunner,
+	isolatedArtifactRebuildChunkConcurrency,
+	isolatedArtifactRebuildChunkSize,
+} from '#worker/repo/isolated-artifact-rebuild.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 
@@ -15,10 +19,11 @@ import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
  * Same-session rebuild RPCs hit one Durable Object, which serializes
  * execution. Depth 2 pipelines the next RPC while the DO finishes the current
  * one (cuts inter-call worker round-trip idle time) without flooding the DO
- * input gate the way unbounded Promise.all would. The isolated throwaway-DO
- * path uses the same bound so fan-out stays modest.
+ * input gate the way unbounded Promise.all would. Isolated throwaway-DO
+ * rebuilds use the same concurrency cap across target chunks.
  */
-export const publishedPackageArtifactRebuildConcurrency = 2
+export const publishedPackageArtifactRebuildConcurrency =
+	isolatedArtifactRebuildChunkConcurrency
 
 /**
  * Deploy-time DO code resets, other platform isolate resets, and D1
@@ -317,42 +322,66 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	}> = []
 
 	try {
-		const targetChunks = chunkArray(
+		const isolateChunks = chunkArray(
 			remaining,
+			isolatedArtifactRebuildChunkSize,
+		)
+		const waves = chunkArray(
+			isolateChunks,
 			publishedPackageArtifactRebuildConcurrency,
 		)
-		for (const [chunkIndex, targetChunk] of targetChunks.entries()) {
+		for (const [waveIndex, wave] of waves.entries()) {
 			if (failed.length > 0) break
-			if (chunkIndex > 0) {
+			if (waveIndex > 0) {
 				await isolatedRunner.touch(stagingKey)
 			}
 
 			const settled = await Promise.allSettled(
-				targetChunk.map(async (target) => {
+				wave.map(async (targets) => {
 					const outcome = await isolatedRunner.run({
 						stagingKey,
 						sourceId: input.sourceId,
 						userId: input.userId,
 						publishedCommit: input.publishedCommit,
-						target,
+						targets,
 						baseUrl: input.baseUrl,
 						force: input.force,
 					})
-					if (!outcome.ok) {
-						throw new Error(outcome.message)
-					}
-					return target
+					return { targets, outcome }
 				}),
 			)
 
 			for (const [index, result] of settled.entries()) {
-				const target = targetChunk[index]
-				if (!target) continue
-				if (result.status === 'fulfilled') {
-					succeeded.push(target)
+				const targets = wave[index]
+				if (!targets) continue
+				if (result.status === 'rejected') {
+					for (const target of targets) {
+						failed.push({ target, error: result.reason })
+					}
 					continue
 				}
-				failed.push({ target, error: result.reason })
+				const { outcome } = result.value
+				const targetResults = outcome.results ?? []
+				if (targetResults.length > 0) {
+					for (const targetResult of targetResults) {
+						if (targetResult.ok) {
+							succeeded.push(targetResult.target)
+							continue
+						}
+						failed.push({
+							target: targetResult.target,
+							error: new Error(targetResult.message),
+						})
+					}
+					continue
+				}
+				if (outcome.ok) {
+					succeeded.push(...targets)
+					continue
+				}
+				for (const target of targets) {
+					failed.push({ target, error: new Error(outcome.message) })
+				}
 			}
 		}
 	} finally {

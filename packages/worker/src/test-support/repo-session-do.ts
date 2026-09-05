@@ -165,6 +165,7 @@ export const repoSessionMockModule = (() => {
 		})),
 		isPublishedPackageArtifactBuiltForCommit: vi.fn(async () => false),
 		persistPublishedPackageArtifactTarget: vi.fn(async () => 'kv:artifact'),
+		deletePublishedArtifactsForSource: vi.fn(async () => undefined),
 		registerStorageBucketAndWait: vi.fn(async () => undefined),
 		maybeRefreshStorageBucketEstimate: vi.fn(),
 		deleteStorageBucketInventory: vi.fn(async () => true),
@@ -289,6 +290,9 @@ export function restoreRepoSessionMockBaseline() {
 	)
 	repoSessionMockModule.persistPublishedPackageArtifactTarget.mockResolvedValue(
 		'kv:artifact',
+	)
+	repoSessionMockModule.deletePublishedArtifactsForSource.mockResolvedValue(
+		undefined,
 	)
 	repoSessionMockModule.registerStorageBucketAndWait.mockClear()
 	repoSessionMockModule.maybeRefreshStorageBucketEstimate.mockClear()

@@ -65,6 +65,13 @@ export type PublishedSourceSnapshot = {
 	sourceRoot: string
 	files: Record<string, string>
 	createdAt: string
+	/**
+	 * When set, same-commit artifacts older than this timestamp are treated
+	 * as leftovers from a prior snapshot rewrite. Used so an interrupted
+	 * already_published rebuild cannot keep serving stale bundles after the
+	 * snapshot now matches HEAD.
+	 */
+	invalidateArtifactsBefore?: string
 }
 
 export type PublishedSourceManifestSnapshot = {
@@ -212,10 +219,12 @@ export async function writePublishedSourceSnapshot(input: {
 	env: Env
 	source: EntitySourceRow
 	files: Record<string, string>
+	invalidateExistingArtifacts?: boolean
 }) {
 	if (!input.source.published_commit) {
 		return null
 	}
+	const createdAt = new Date().toISOString()
 	const snapshot: PublishedSourceSnapshot = {
 		version: sourceSnapshotVersion,
 		sourceId: input.source.id,
@@ -226,7 +235,10 @@ export async function writePublishedSourceSnapshot(input: {
 		manifestPath: input.source.manifest_path,
 		sourceRoot: input.source.source_root,
 		files: input.files,
-		createdAt: new Date().toISOString(),
+		createdAt,
+		...(input.invalidateExistingArtifacts
+			? { invalidateArtifactsBefore: createdAt }
+			: {}),
 	}
 	const key = buildPublishedSourceSnapshotKvKey({
 		sourceId: input.source.id,
@@ -294,6 +306,25 @@ export async function loadPublishedSourceSnapshot(input: {
 		sourceId: input.source.id,
 		publishedCommit: input.source.published_commit,
 	})
+}
+
+/**
+ * True when the stored snapshot file map is the same set of paths and
+ * contents as `files`. Missing snapshots never match, so callers can decide
+ * whether an already_published refresh must rewrite KV.
+ */
+export function publishedSourceSnapshotFilesMatch(
+	existing: PublishedSourceSnapshot | null | undefined,
+	files: Record<string, string>,
+) {
+	if (!existing?.files) return false
+	const existingKeys = Object.keys(existing.files)
+	const nextKeys = Object.keys(files)
+	if (existingKeys.length !== nextKeys.length) return false
+	for (const key of nextKeys) {
+		if (existing.files[key] !== files[key]) return false
+	}
+	return true
 }
 
 export async function readPublishedSourceManifestSnapshot(input: {
