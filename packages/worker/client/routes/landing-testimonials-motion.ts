@@ -14,8 +14,9 @@ export function wrapPagerIndex(index: number, count: number) {
 }
 
 /**
- * Hover/focus pause is desktop-only. Coarse pointers and window-resize
- * leave `:hover` stuck on the strip, which freezes the lane.
+ * Hover pause is desktop-only. Coarse pointers and window-resize leave
+ * `:hover` stuck on the strip, which freezes the lane. Keyboard `focus`
+ * still pauses on every pointer class.
  */
 export function canPauseOnHover(
 	query: (query: string) => { matches: boolean } = (mediaQuery) =>
@@ -24,6 +25,20 @@ export function canPauseOnHover(
 			: { matches: false },
 ) {
 	return query('(hover: hover) and (pointer: fine)').matches
+}
+
+export function isTestimonialsLanePaused(input: {
+	inView: boolean
+	userNudging: boolean
+	focus: boolean
+	hover: boolean
+	matchesHover: boolean
+	matchesFocusWithin: boolean
+	hoverCapable?: boolean
+}) {
+	if (!input.inView || input.userNudging || input.focus) return true
+	if (!(input.hoverCapable ?? canPauseOnHover())) return false
+	return input.hover || input.matchesHover || input.matchesFocusWithin
 }
 
 export function wrapUnitInterval(value: number, period: number) {

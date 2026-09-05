@@ -9,7 +9,7 @@ import {
 } from '#universal/landing-testimonials.ts'
 import {
 	TESTIMONIALS_LAP_MS,
-	canPauseOnHover,
+	isTestimonialsLanePaused,
 	listLanePlacements,
 	parkUnusedLaneCards,
 	placeLaneCard,
@@ -165,16 +165,14 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	let dragging = false
 
 	function isPaused() {
-		if (!inView || userNudging) return true
-		// Touch and window-resize leave `:hover` / `:focus-within` stuck on
-		// the strip. Only fine pointers get a hover/focus pause.
-		if (!canPauseOnHover()) return false
-		return (
-			hover ||
-			focus ||
-			scroller.matches(':hover') ||
-			scroller.matches(':focus-within')
-		)
+		return isTestimonialsLanePaused({
+			inView,
+			userNudging,
+			focus,
+			hover,
+			matchesHover: scroller.matches(':hover'),
+			matchesFocusWithin: scroller.matches(':focus-within'),
+		})
 	}
 
 	function realCards() {

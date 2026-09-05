@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import {
 	PARKED_TRANSFORM,
 	canPauseOnHover,
+	isTestimonialsLanePaused,
 	listLanePlacements,
 	parkUnusedLaneCards,
 	placeLaneCard,
@@ -131,6 +132,25 @@ test('narrow swipe moves the leading card off the origin instead of pinning it',
 		canPauseOnHover((query) => ({
 			matches: query === '(hover: hover) and (pointer: fine)',
 		})),
+	).toBe(true)
+
+	const idle = {
+		inView: true,
+		userNudging: false,
+		focus: false,
+		hover: false,
+		matchesHover: false,
+		matchesFocusWithin: false,
+		hoverCapable: false,
+	}
+	expect(isTestimonialsLanePaused(idle)).toBe(false)
+	expect(isTestimonialsLanePaused({ ...idle, focus: true })).toBe(true)
+	expect(isTestimonialsLanePaused({ ...idle, hover: true })).toBe(false)
+	expect(isTestimonialsLanePaused({ ...idle, matchesFocusWithin: true })).toBe(
+		false,
+	)
+	expect(
+		isTestimonialsLanePaused({ ...idle, hoverCapable: true, hover: true }),
 	).toBe(true)
 })
 
