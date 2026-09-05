@@ -308,6 +308,30 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 		{ t: 120, x: 40 },
 	])
 
+	const pausedRelease = finishPointerGesture({
+		startX: 200,
+		startY: 20,
+		lastX: 140,
+		endX: 140,
+		endY: 20,
+		endT: 200,
+		samples: [
+			{ t: 0, x: 200 },
+			{ t: 10, x: 140 },
+		],
+		dragging: true,
+	})
+	expect(pausedRelease.coastVelocity).toBe(0)
+	expect(
+		samplesForFlickVelocity(
+			[
+				{ t: 0, x: 200 },
+				{ t: 10, x: 140 },
+			],
+			{ t: 200, x: 140 },
+		),
+	).toEqual([{ t: 200, x: 140 }])
+
 	const vertical = finishPointerGesture({
 		startX: 100,
 		startY: 20,

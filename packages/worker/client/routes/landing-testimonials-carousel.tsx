@@ -367,23 +367,29 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		}
 	}
 
+	function captureScrollerPointer(id: number) {
+		if (!scroller.isConnected || scroller.hasPointerCapture(id)) return
+		scroller.setPointerCapture(id)
+	}
+
+	function releaseCapturedPointer(id: number) {
+		if (!scroller.isConnected || !scroller.hasPointerCapture(id)) return
+		scroller.releasePointerCapture(id)
+	}
+
 	function beginHorizontalDrag(event: PointerEvent) {
 		dragging = true
 		suppressClick = true
 		stopCoast()
 		scroller.style.touchAction = 'none'
-		if (!scroller.hasPointerCapture(event.pointerId)) {
-			scroller.setPointerCapture(event.pointerId)
-		}
+		captureScrollerPointer(event.pointerId)
 	}
 
 	function endPointerGesture(event: PointerEvent) {
 		if (pointerId !== event.pointerId) return
 		pointerId = null
 		pointerHeld = false
-		if (scroller.hasPointerCapture(event.pointerId)) {
-			scroller.releasePointerCapture(event.pointerId)
-		}
+		releaseCapturedPointer(event.pointerId)
 		scroller.style.touchAction = ''
 		const finished = finishPointerGesture({
 			startX: dragStartX,
@@ -423,6 +429,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		stopCoast()
 		flickSamples = []
 		recordPointerSamples(event)
+		captureScrollerPointer(event.pointerId)
 	}
 
 	function onPointerMove(event: PointerEvent) {
@@ -434,9 +441,11 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			const intent = classifyPointerIntent({ dx, dy })
 			if (intent === 'pending') return
 			if (intent === 'scroll') {
+				const id = event.pointerId
 				pointerId = null
 				pointerHeld = false
 				flickSamples = []
+				releaseCapturedPointer(id)
 				return
 			}
 			beginHorizontalDrag(event)
@@ -495,6 +504,8 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	scroller.addEventListener('pointermove', onPointerMove, { signal })
 	scroller.addEventListener('pointerup', endPointerGesture, { signal })
 	scroller.addEventListener('pointercancel', endPointerGesture, { signal })
+	window.addEventListener('pointerup', endPointerGesture, { signal })
+	window.addEventListener('pointercancel', endPointerGesture, { signal })
 	scroller.addEventListener('click', onClickCapture, {
 		capture: true,
 		signal,
