@@ -12,6 +12,7 @@ export const routes = route({
 	securityTxt: '/.well-known/security.txt',
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
+	connectSecrets: '/connect/secrets',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	providerMarkLogo: '/integrations/provider-marks/:slug',
 	accountIntegrations: '/account/integrations',

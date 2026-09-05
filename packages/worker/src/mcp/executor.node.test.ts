@@ -1384,6 +1384,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	)
 	expect(getExecutionErrorDetails(hostBatchError)).toMatchObject({
 		kind: 'host_approval_required_batch',
+		bulkApprovalUrl: null,
 		missingApprovals: [
 			{
 				secretName: 'cloudflareToken',

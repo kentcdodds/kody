@@ -7,10 +7,13 @@ import {
 	parseAccountSecretId,
 } from '@kody-internal/shared/account-secret-route.ts'
 import {
+	getHostApprovalStorageContext,
 	getSecretContextForAccountSecret,
 	listAccountSecrets,
 	loadAccountSecretsData,
 	readAccountSecretsSelectedSecretId,
+	readApprovalHosts,
+	readHostApprovalScope,
 	resolveApprovalRequest,
 	toPackageOptions,
 } from '#app/account-secrets-data.ts'
@@ -866,11 +869,6 @@ function readTokenField(
 	return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-function readApprovalHost(url: URL) {
-	const value = url.searchParams.get('allowed-host')
-	return value?.trim() ? value.trim() : null
-}
-
 function readRequestedPackageId(url: URL) {
 	const value = url.searchParams.get('package_id')
 	return value?.trim() ? value.trim() : null
@@ -896,9 +894,11 @@ async function handleApprovalAction(input: {
 		const url = new URL(input.request.url)
 		const approval = resolveApprovalRequest({
 			secretId: readAccountSecretsSelectedSecretId(input.request.url),
-			requestedHost: readApprovalHost(url),
+			requestedHosts: readApprovalHosts(url),
 			requestedPackageId: readRequestedPackageId(url),
 			requestedSecretNames: readRequestedSecretNames(url),
+			requestedHostScope: readHostApprovalScope(url),
+			requestedHostStorageContext: getHostApprovalStorageContext(url),
 		})
 
 		if (approval.kind === 'package_bulk') {
@@ -1038,6 +1038,55 @@ async function handleApprovalAction(input: {
 				})
 			}
 
+			const payload = await loadAccountSecretsData({
+				request: input.request,
+				env: input.env,
+				user: input.user,
+				selectedSecretId: readAccountSecretsSelectedSecretId(input.request.url),
+			})
+			return jsonResponse(payload)
+		}
+
+		if (approval.kind === 'host_bulk') {
+			if (input.action === 'approve') {
+				const current = await listSecrets({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					scope: approval.scope,
+					storageContext: approval.storageContext,
+					includeIntegrationOwned: true,
+				})
+				const byName = new Map(
+					current
+						.filter((item) => item.scope === approval.scope)
+						.map((item) => [item.name, item]),
+				)
+				const missingNames: Array<string> = []
+				for (const name of approval.names) {
+					const secret = byName.get(name)
+					if (!secret) {
+						missingNames.push(name)
+						continue
+					}
+					await setSecretAllowedHosts({
+						env: input.env,
+						userId: input.user.mcpUser.userId,
+						name,
+						scope: approval.scope,
+						allowedHosts: normalizeAllowedHosts([
+							...secret.allowedHosts,
+							...approval.hosts,
+						]),
+						storageContext: approval.storageContext,
+					})
+				}
+				if (missingNames.length === approval.names.length) {
+					return jsonResponse(
+						{ ok: false, error: 'None of the listed secrets were found.' },
+						404,
+					)
+				}
+			}
 			const payload = await loadAccountSecretsData({
 				request: input.request,
 				env: input.env,

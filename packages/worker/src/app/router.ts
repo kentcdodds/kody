@@ -151,6 +151,7 @@ import {
 	createAuthProvidersApiHandler,
 } from '#app/handlers/auth-provider.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
+import { createConnectSecretsHandler } from '#app/handlers/connect-secrets.ts'
 import {
 	createCommunityApiHandler,
 	createCommunityHandler,
@@ -490,6 +491,7 @@ export function createAppRouter(env: Env) {
 			webhookIngress: createWebhookIngressHandler(env),
 			stripeWebhook: createStripeWebhookHandler(env),
 			connectOauth: createConnectOauthHandler(env),
+			connectSecrets: createConnectSecretsHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),
 			authProviderStart: createAuthProviderStartHandler(env),

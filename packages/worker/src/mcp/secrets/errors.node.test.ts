@@ -43,7 +43,22 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		parseHostApprovalRequiredBatchMessage(
 			createHostSecretAccessDeniedBatchMessage(hostEntries),
 		),
-	).toEqual(hostEntries)
+	).toEqual({
+		entries: hostEntries,
+		bulkApprovalUrl: null,
+	})
+	expect(
+		parseHostApprovalRequiredBatchMessage(
+			createHostSecretAccessDeniedBatchMessage(hostEntries, {
+				bulkApprovalUrl:
+					'https://example.com/connect/secrets?names=cloudflareToken,githubToken&hosts=api.cloudflare.com,api.github.com',
+			}),
+		),
+	).toEqual({
+		entries: hostEntries,
+		bulkApprovalUrl:
+			'https://example.com/connect/secrets?names=cloudflareToken,githubToken&hosts=api.cloudflare.com,api.github.com',
+	})
 
 	const scopeUnavailableMessage = createSecretScopeUnavailableMessage([
 		{

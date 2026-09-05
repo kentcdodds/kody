@@ -1559,6 +1559,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 					names: ['googleAccessToken'],
 					scope: 'user',
 					requestedHost: 'gmail.googleapis.com',
+					requestedHosts: ['gmail.googleapis.com'],
 					requestedPackageId: null,
 					currentAllowedHosts: ['oauth2.googleapis.com'],
 					currentAllowedPackages: [],

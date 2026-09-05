@@ -345,7 +345,11 @@ registerPreloadPatterns(
 )
 
 registerPreloadPatterns(
-	[routePattern(routes.connectOauth), oauthPaths.authorize],
+	[
+		routePattern(routes.connectOauth),
+		routePattern(routes.connectSecrets),
+		oauthPaths.authorize,
+	],
 	{
 		name: 'onboarding-area',
 		load: onboardingArea.load,

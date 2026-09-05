@@ -218,7 +218,8 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/signup' ||
 			currentPathname === '/login' ||
 			currentPathname === '/oauth/authorize' ||
-			currentPathname === '/connect/oauth'
+			currentPathname === '/connect/oauth' ||
+			currentPathname === '/connect/secrets'
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>

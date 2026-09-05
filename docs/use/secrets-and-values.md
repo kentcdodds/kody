@@ -114,10 +114,17 @@ returned strings.
 ## Host approval
 
 If a request fails because a host is not approved for that secret, use the
-approval path the error provides (typically in the web app). Saving a secret
-does not by itself approve new hosts. Self-authored and adopted packages do not
-skip this gate: an empty host allowlist blocks secret-bearing fetch even when
-package read/use is automatic.
+approval path the error provides. Host approval lives on the dedicated
+**`/connect/secrets`** page — the same kind of focused page as
+**`/connect/oauth`**. A link looks like
+`/connect/secrets?name=cloudflareToken&hosts=api.cloudflare.com`. When several
+hosts (or several secrets) need approval together, Kody can send one link with
+comma-separated **`names`** and **`hosts`**. That page lists every host and
+approves them in one click.
+
+Saving a secret does not by itself approve new hosts. Self-authored and adopted
+packages do not skip this gate: an empty host allowlist blocks secret-bearing
+fetch even when package read/use is automatic.
 
 ## Package approval
 

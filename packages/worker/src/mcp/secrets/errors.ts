@@ -85,8 +85,13 @@ export type PackageApprovalEntry = {
 
 export function createHostSecretAccessDeniedBatchMessage(
 	entries: Array<HostApprovalEntry>,
+	options: { bulkApprovalUrl?: string | null } = {},
 ) {
-	const payload = JSON.stringify(entries)
+	const bulkApprovalUrl = options.bulkApprovalUrl?.trim() || null
+	const payload = JSON.stringify({
+		entries,
+		...(bulkApprovalUrl ? { bulkApprovalUrl } : {}),
+	})
 	return `${hostBatchDeniedPrefix} ${payload}`
 }
 
@@ -113,30 +118,52 @@ export function createPackageSecretAccessDeniedBatchMessage(
 	return `${packageBatchDeniedPrefix} ${payload}`
 }
 
-export function parseHostApprovalRequiredBatchMessage(message: string) {
+function parseHostApprovalEntries(value: unknown) {
+	if (!Array.isArray(value)) return []
+	const entries: Array<HostApprovalEntry> = []
+	for (const entry of value) {
+		if (!entry || typeof entry !== 'object') continue
+		if (
+			typeof entry.secretName !== 'string' ||
+			typeof entry.host !== 'string' ||
+			typeof entry.approvalUrl !== 'string'
+		) {
+			continue
+		}
+		entries.push({
+			secretName: entry.secretName,
+			host: entry.host,
+			approvalUrl: entry.approvalUrl,
+		})
+	}
+	return entries
+}
+
+export function parseHostApprovalRequiredBatchMessage(message: string): {
+	entries: Array<HostApprovalEntry>
+	bulkApprovalUrl: string | null
+} | null {
 	if (!message.startsWith(hostBatchDeniedPrefix)) return null
 	const raw = message.slice(hostBatchDeniedPrefix.length).trim()
 	if (!raw) return null
 	try {
 		const parsed = JSON.parse(raw)
-		if (!Array.isArray(parsed)) return null
-		const entries: Array<HostApprovalEntry> = []
-		for (const entry of parsed) {
-			if (!entry || typeof entry !== 'object') continue
-			if (
-				typeof entry.secretName !== 'string' ||
-				typeof entry.host !== 'string' ||
-				typeof entry.approvalUrl !== 'string'
-			) {
-				continue
-			}
-			entries.push({
-				secretName: entry.secretName,
-				host: entry.host,
-				approvalUrl: entry.approvalUrl,
-			})
+		if (Array.isArray(parsed)) {
+			const entries = parseHostApprovalEntries(parsed)
+			return entries.length > 0 ? { entries, bulkApprovalUrl: null } : null
 		}
-		return entries.length > 0 ? entries : null
+		if (!parsed || typeof parsed !== 'object') return null
+		const entries = parseHostApprovalEntries(
+			'entries' in parsed ? parsed.entries : null,
+		)
+		if (entries.length === 0) return null
+		const bulkApprovalUrl =
+			'bulkApprovalUrl' in parsed &&
+			typeof parsed.bulkApprovalUrl === 'string' &&
+			parsed.bulkApprovalUrl.trim()
+				? parsed.bulkApprovalUrl.trim()
+				: null
+		return { entries, bulkApprovalUrl }
 	} catch {
 		return null
 	}

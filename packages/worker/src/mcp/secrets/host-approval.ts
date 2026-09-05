@@ -1,10 +1,14 @@
-import {
-	buildAccountSecretPath,
-	joinOriginAndEncodedPath,
-} from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { normalizeHost } from './allowed-hosts.ts'
+import { normalizeAllowedHosts } from './allowed-hosts.ts'
+import { normalizeBulkPackageSecretApprovalNames } from './package-approval-url.ts'
 import { type SecretScope } from './types.ts'
+
+const connectSecretsPath = '/connect/secrets'
+const maxBulkHostApprovalHosts = 20
+
+export function normalizeBulkHostApprovalHosts(hosts: Array<string>) {
+	return normalizeAllowedHosts(hosts).slice(0, maxBulkHostApprovalHosts)
+}
 
 export function buildSecretHostApprovalUrl(input: {
 	baseUrl: string
@@ -13,13 +17,93 @@ export function buildSecretHostApprovalUrl(input: {
 	requestedHost: string
 	storageContext: StorageContext | null
 }) {
-	const secretPath = buildAccountSecretPath({
-		name: input.name,
+	return buildSecretHostBulkApprovalUrl({
+		baseUrl: input.baseUrl,
+		names: [input.name],
+		hosts: [input.requestedHost],
 		scope: input.scope,
-		packageId: input.storageContext?.packageId ?? null,
-		sessionId: input.storageContext?.sessionId ?? null,
+		storageContext: input.storageContext,
 	})
-	const search = new URLSearchParams()
-	search.set('allowed-host', normalizeHost(input.requestedHost))
-	return `${joinOriginAndEncodedPath(input.baseUrl, secretPath)}?${search}`
+}
+
+export function buildSecretHostBulkApprovalUrl(input: {
+	baseUrl: string
+	names: Array<string>
+	hosts: Array<string>
+	scope?: SecretScope
+	storageContext?: StorageContext | null
+}) {
+	const names = normalizeBulkPackageSecretApprovalNames(input.names)
+	const hosts = normalizeBulkHostApprovalHosts(input.hosts)
+	if (names.length === 0) {
+		throw new Error('At least one secret name is required for host approval.')
+	}
+	if (hosts.length === 0) {
+		throw new Error('At least one host is required for host approval.')
+	}
+	const url = new URL(connectSecretsPath, input.baseUrl)
+	if (names.length === 1) {
+		url.searchParams.set('name', names[0] ?? '')
+	} else {
+		url.searchParams.set('names', names.join(','))
+	}
+	url.searchParams.set('hosts', hosts.join(','))
+	applyHostApprovalScopeParams(url, input.scope ?? 'user', input.storageContext)
+	return url.toString()
+}
+
+export function buildSecretHostBulkApprovalUrlIfNeeded(input: {
+	baseUrl: string
+	names: Array<string>
+	hosts: Array<string>
+	scope?: SecretScope
+	storageContext?: StorageContext | null
+}) {
+	const names = normalizeBulkPackageSecretApprovalNames(input.names)
+	const hosts = normalizeBulkHostApprovalHosts(input.hosts)
+	if (names.length < 2 && hosts.length < 2) return null
+	return buildSecretHostBulkApprovalUrl({
+		baseUrl: input.baseUrl,
+		names,
+		hosts,
+		scope: input.scope,
+		storageContext: input.storageContext,
+	})
+}
+
+function applyHostApprovalScopeParams(
+	url: URL,
+	scope: SecretScope,
+	storageContext: StorageContext | null | undefined,
+) {
+	switch (scope) {
+		case 'user':
+			return
+		case 'package': {
+			const packageId = storageContext?.packageId
+			if (!packageId) {
+				throw new Error(
+					'storageContext.packageId is required for package-scope host approvals.',
+				)
+			}
+			url.searchParams.set('scope', 'package')
+			url.searchParams.set('packageId', packageId)
+			return
+		}
+		case 'session': {
+			const sessionId = storageContext?.sessionId
+			if (!sessionId) {
+				throw new Error(
+					'storageContext.sessionId is required for session-scope host approvals.',
+				)
+			}
+			url.searchParams.set('scope', 'session')
+			url.searchParams.set('sessionId', sessionId)
+			return
+		}
+		default: {
+			const _exhaustive: never = scope
+			throw new Error(`Unsupported host approval scope: ${String(_exhaustive)}`)
+		}
+	}
 }

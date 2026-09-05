@@ -1090,6 +1090,7 @@ export type ExecutionErrorDetails =
 				host: string
 				approvalUrl: string
 			}>
+			bulkApprovalUrl: string | null
 			suggestedAction: {
 				type: 'approve_secret_host'
 			}
@@ -1389,9 +1390,11 @@ export function getExecutionErrorDetails(
 		return {
 			kind: 'host_approval_required_batch',
 			message,
-			nextStep:
-				'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
-			missingApprovals: hostApprovalBatch,
+			nextStep: hostApprovalBatch.bulkApprovalUrl
+				? 'Send the user the bulk secret host approval link, wait for them to approve, then retry.'
+				: 'Ask the user whether they want to approve these hosts for the listed secrets in the account web UI, then retry after approval.',
+			missingApprovals: hostApprovalBatch.entries,
+			bulkApprovalUrl: hostApprovalBatch.bulkApprovalUrl,
 			suggestedAction: {
 				type: 'approve_secret_host',
 			},

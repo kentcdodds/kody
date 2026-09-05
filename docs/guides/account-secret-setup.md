@@ -55,8 +55,8 @@ so the user can paste immediately.
 
 - Saving a secret does **not** approve outbound hosts.
 - The account form prefills the requested hosts and packages for review.
-- Host and package approvals are handled in the authenticated account secrets UI
-  after the secret is saved.
+- Host approval uses the dedicated **`/connect/secrets`** page (`name` / `names`
+  and `hosts`). Package grants use `/account/secrets/approve`.
 
 ## Package approval URLs (after a package exists)
 

@@ -134,10 +134,15 @@ vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#mcp/secrets/host-approval.ts', () => ({
-	buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
-		mockModule.buildSecretHostApprovalUrl(...args),
-}))
+vi.mock('#mcp/secrets/host-approval.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#mcp/secrets/host-approval.ts')>()
+	return {
+		...actual,
+		buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
+			mockModule.buildSecretHostApprovalUrl(...args),
+	}
+})
 
 vi.mock('#mcp/secrets/service.ts', () => ({
 	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
@@ -707,6 +712,70 @@ test('host approval view and approve persist normalized hosts for the selected s
 			scope: 'user',
 			allowedHosts: ['api.cloudflare.com', 'api.github.com'],
 			storageContext: { sessionId: null, appId: null, packageId: null },
+		}),
+	)
+})
+
+test('host bulk approval adds every requested host to each listed secret', async () => {
+	mockModule.setSecretAllowedHosts.mockClear()
+	const secret = {
+		name: 'cloudflareToken',
+		scope: 'user' as const,
+		description: 'Cloudflare token',
+		packageId: null,
+		allowedHosts: ['api.github.com'],
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	}
+	mockModule.listSecrets.mockResolvedValue([secret])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const viewResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+	expect(viewResponse.status).toBe(200)
+	await expect(viewResponse.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			name: 'cloudflareToken',
+			names: ['cloudflareToken'],
+			requestedHost: 'api.cloudflare.com',
+			requestedHosts: ['api.cloudflare.com', 'dash.cloudflare.com'],
+			requestedPackageId: null,
+		},
+	})
+
+	const approveResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(approveResponse.status).toBe(200)
+	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'cloudflareToken',
+			scope: 'user',
+			allowedHosts: [
+				'api.cloudflare.com',
+				'api.github.com',
+				'dash.cloudflare.com',
+			],
 		}),
 	)
 })

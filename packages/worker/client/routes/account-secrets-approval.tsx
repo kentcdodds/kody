@@ -91,13 +91,35 @@ export function renderSecretApprovalCard(props: {
 						) : null}
 					</div>
 				) : (
-					<p mix={css({ margin: 0, color: colors.textMuted })}>
-						Let Kody use this connection at{' '}
-						<strong mix={css({ color: colors.text })}>
-							{approvalCard.requestedHost}
-						</strong>
-						.
-					</p>
+					<div mix={css({ display: 'grid', gap: spacing.xs })}>
+						<p mix={css({ margin: 0, color: colors.textMuted })}>
+							{approvalHosts(approvalCard).length > 1
+								? 'Let Kody use this secret at these hosts.'
+								: 'Let Kody use this connection at '}
+							{approvalHosts(approvalCard).length === 1 ? (
+								<strong mix={css({ color: colors.text })}>
+									{approvalHosts(approvalCard)[0]}
+								</strong>
+							) : null}
+							{approvalHosts(approvalCard).length === 1 ? '.' : null}
+						</p>
+						{approvalHosts(approvalCard).length > 1 ? (
+							<ul
+								mix={css({
+									margin: 0,
+									paddingLeft: spacing.lg,
+									display: 'grid',
+									gap: spacing.xs,
+								})}
+							>
+								{approvalHosts(approvalCard).map((host) => (
+									<li key={host}>
+										<strong mix={css({ color: colors.text })}>{host}</strong>
+									</li>
+								))}
+							</ul>
+						) : null}
+					</div>
 				)}
 				{approvalCard.requestedPackageId ? (
 					approvalCard.names.length > 1 ? null : (
@@ -159,9 +181,11 @@ export function renderSecretApprovalCard(props: {
 				>
 					{approvalCard.requestedPackageId && approvalCard.names.length > 1
 						? `Approve all (${approvalCard.names.length})`
-						: approvalCard.requestedHost && !approvalCard.requestedPackageId
-							? 'Allow access'
-							: 'Approve'}
+						: approvalHosts(approvalCard).length > 1
+							? `Allow all ${approvalHosts(approvalCard).length} hosts`
+							: approvalCard.requestedHost && !approvalCard.requestedPackageId
+								? 'Allow access'
+								: 'Approve'}
 				</button>
 				<button
 					type="button"
@@ -176,6 +200,11 @@ export function renderSecretApprovalCard(props: {
 			</div>
 		</section>
 	)
+}
+
+function approvalHosts(approvalCard: ApprovalView) {
+	if (approvalCard.requestedHosts.length > 0) return approvalCard.requestedHosts
+	return approvalCard.requestedHost ? [approvalCard.requestedHost] : []
 }
 
 export function renderAlreadyAddedNotice(items: Array<string>) {

@@ -9,6 +9,7 @@ export type ApprovalView = {
 	names: Array<string>
 	scope: ApprovalScope
 	requestedHost: string
+	requestedHosts: Array<string>
 	currentAllowedHosts: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
@@ -32,11 +33,15 @@ export function buildHostApprovalRequestUrl(
 	baseUrl = 'http://localhost',
 ) {
 	const approvalPageUrl = new URL(approvalUrl, baseUrl)
+	const requestUrl = new URL(accountSecretsApiPath, baseUrl)
+	if (approvalPageUrl.pathname === '/connect/secrets') {
+		requestUrl.search = approvalPageUrl.search
+		return `${requestUrl.pathname}${requestUrl.search}`
+	}
 	const parsedPath = parseAccountSecretPath(approvalPageUrl.pathname)
 	if (!parsedPath) {
 		throw new Error('Invalid approval link.')
 	}
-	const requestUrl = new URL(accountSecretsApiPath, baseUrl)
 	requestUrl.search = approvalPageUrl.search
 	requestUrl.searchParams.set('selected', parsedPath.id)
 	return `${requestUrl.pathname}${requestUrl.search}`

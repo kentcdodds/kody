@@ -384,6 +384,7 @@ const routeDocumentHeads = {
 		const provider = loaderData?.connectOauth?.provider?.trim()
 		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')
 	},
+	[routePattern(routes.connectSecrets)]: titleOnly('Allow secret hosts'),
 	[oauthPaths.authorize]: titleOnly('Authorize access'),
 	[oauthPaths.callback]: titleOnly('OAuth callback'),
 } as const satisfies Record<string, DocumentHeadResolver>

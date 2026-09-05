@@ -177,15 +177,15 @@ function buildSecretsHref(pathname: string, search: string) {
 	return `${pathname}${search}`
 }
 
-function readRequestedHost(href: string) {
+function readRequestedHosts(href: string) {
 	const url = new URL(href, 'http://localhost')
-	const value = url.searchParams.get('allowed-host')
-	return value?.trim() ? value.trim() : null
-}
-
-function normalizeSingleAllowedHost(host: string | null) {
-	if (!host) return null
-	return normalizeAllowedHosts([host])[0] ?? null
+	const values = [
+		...url.searchParams.getAll('hosts'),
+		...url.searchParams.getAll('host'),
+		...url.searchParams.getAll('allowed-host'),
+		...url.searchParams.getAll('allowedHosts'),
+	]
+	return normalizeAllowedHosts(values.flatMap((value) => value.split(',')))
 }
 
 export function getAlreadyAddedNotice(input: {
@@ -194,9 +194,7 @@ export function getAlreadyAddedNotice(input: {
 	approval: ApprovalView | null
 	formatPackageId: (packageId: string) => string
 }) {
-	const requestedHost = normalizeSingleAllowedHost(
-		readRequestedHost(input.href),
-	)
+	const requestedHosts = readRequestedHosts(input.href)
 	const requestedPackageId =
 		new URL(input.href, 'http://localhost').searchParams
 			.get('package_id')
@@ -224,10 +222,18 @@ export function getAlreadyAddedNotice(input: {
 				).sort((left, right) => left.localeCompare(right))
 			: []
 	const items: Array<string> = []
+	const alreadyAllowedHosts = requestedHosts.filter((host) =>
+		allowedHosts.includes(host),
+	)
 	const hostAlreadyAdded =
-		requestedHost != null && allowedHosts.includes(requestedHost)
+		requestedHosts.length > 0 &&
+		alreadyAllowedHosts.length === requestedHosts.length
 	if (hostAlreadyAdded) {
-		items.push(`Host ${requestedHost} is already in allowed hosts.`)
+		items.push(
+			requestedHosts.length === 1
+				? `Host ${requestedHosts[0]} is already in allowed hosts.`
+				: `Hosts ${requestedHosts.join(', ')} are already in allowed hosts.`,
+		)
 	}
 	const packageAlreadyAdded =
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
@@ -272,7 +278,10 @@ export function buildBaseSecretsHref(search = '') {
 
 export function getDataRefreshKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	const requestedHost = url.searchParams.get('allowed-host') ?? ''
+	const requestedHost = [
+		url.searchParams.get('allowed-host') ?? '',
+		url.searchParams.get('hosts') ?? '',
+	].join(',')
 	const requestedPackageId = url.searchParams.get('package_id') ?? ''
 	const requestedNames = [
 		...url.searchParams.getAll('names'),
