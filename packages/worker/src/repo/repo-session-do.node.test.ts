@@ -194,6 +194,8 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
 			mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
 		persistPublishedPackageArtifactTarget: (...args: Array<unknown>) =>
 			mockModule.persistPublishedPackageArtifactTarget(...args),
+		deletePublishedArtifactsForSource: (...args: Array<unknown>) =>
+			mockModule.deletePublishedArtifactsForSource(...args),
 	}
 })
 

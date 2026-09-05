@@ -39,6 +39,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	collectPublishedPackageArtifactTargets,
+	deletePublishedArtifactsForSource,
 	isPublishedPackageArtifactBuiltForCommit,
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
@@ -3027,6 +3028,16 @@ class RepoSessionBase extends DurableObject<Env> {
 							},
 						})
 						if (!publishedSourceSnapshotFilesMatch(existingSnapshot, files)) {
+							// Drop same-commit leftovers before rewriting the
+							// snapshot. force_artifact_rebuild is only true for this
+							// request; if rebuild is interrupted, the next
+							// already_published must not treat leftover KV rows as
+							// matching HEAD.
+							await deletePublishedArtifactsForSource({
+								env: this.env,
+								userId: input.userId,
+								sourceId: source.id,
+							})
 							await writePublishedSourceSnapshot({
 								env: this.env,
 								source: {

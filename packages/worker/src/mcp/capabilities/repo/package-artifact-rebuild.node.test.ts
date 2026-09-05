@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as IsolatedArtifactRebuildModule from '#worker/repo/isolated-artifact-rebuild.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listPublishedPackageArtifactTargets: vi.fn(),
@@ -21,9 +22,9 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 }))
 
 vi.mock('#worker/repo/isolated-artifact-rebuild.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/repo/isolated-artifact-rebuild.ts')
-	>('#worker/repo/isolated-artifact-rebuild.ts')
+	const actual = await vi.importActual<typeof IsolatedArtifactRebuildModule>(
+		'#worker/repo/isolated-artifact-rebuild.ts',
+	)
 	return {
 		...actual,
 		createIsolatedArtifactRebuildRunner: (...args: Array<unknown>) =>

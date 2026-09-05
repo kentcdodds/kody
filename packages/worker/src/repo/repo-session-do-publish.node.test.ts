@@ -191,6 +191,8 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', async () => {
 			mockModule.isPublishedPackageArtifactBuiltForCommit(...args),
 		persistPublishedPackageArtifactTarget: (...args: Array<unknown>) =>
 			mockModule.persistPublishedPackageArtifactTarget(...args),
+		deletePublishedArtifactsForSource: (...args: Array<unknown>) =>
+			mockModule.deletePublishedArtifactsForSource(...args),
 	}
 })
 
@@ -999,6 +1001,7 @@ test('already_published external publish refreshes the snapshot from the in-memo
 		collectFiles,
 	})
 	mockModule.writePublishedSourceSnapshot.mockClear()
+	mockModule.deletePublishedArtifactsForSource.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
@@ -1020,11 +1023,23 @@ test('already_published external publish refreshes the snapshot from the in-memo
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(collectFiles).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedSourceSnapshot).toHaveBeenCalledTimes(1)
+	expect(mockModule.deletePublishedArtifactsForSource).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			sourceId: 'source-1',
+		}),
+	)
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			source: expect.objectContaining({ published_commit: 'commit-new' }),
 			files: cloneFiles,
 		}),
+	)
+	expect(
+		mockModule.deletePublishedArtifactsForSource.mock.invocationCallOrder[0],
+	).toBeLessThan(
+		mockModule.writePublishedSourceSnapshot.mock.invocationCallOrder[0] ??
+			Number.POSITIVE_INFINITY,
 	)
 })
 
@@ -1082,6 +1097,7 @@ test('already_published external publish skips snapshot rewrite and force rebuil
 		collectFiles,
 	})
 	mockModule.writePublishedSourceSnapshot.mockClear()
+	mockModule.deletePublishedArtifactsForSource.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
@@ -1101,6 +1117,7 @@ test('already_published external publish skips snapshot rewrite and force rebuil
 	})
 	expect(collectFiles).toHaveBeenCalledTimes(1)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
 })
 
 test('already_published external publish fails when snapshot refresh fails', async () => {
@@ -1164,6 +1181,7 @@ test('already_published external publish fails when snapshot refresh fails', asy
 		}),
 	).rejects.toThrow('clone files unreadable')
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'already_published snapshot refresh failed',
 		expect.objectContaining({
