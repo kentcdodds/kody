@@ -214,6 +214,7 @@ test('runWithDurableEscalation returns the inline result when work finishes with
 	expect(run).toHaveBeenCalledTimes(1)
 	expect(run.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal)
 	expect(mockModule.createDynamicCallableWorkflow).not.toHaveBeenCalled()
+	expect(defaultDurableEscalationBudgetMs).toBeLessThanOrEqual(40_000)
 	expect(defaultDurableEscalationBudgetMs).toBeLessThan(90_000)
 })
 

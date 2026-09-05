@@ -9,8 +9,12 @@ import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-s
 import { findWorkflowProjectionByBindingIdempotencyKey } from '#worker/run-records/service.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 
-/** Soft budget under MCP execute's ~90s hard cap, leaving room to dispatch. */
-export const defaultDurableEscalationBudgetMs = 55_000
+/**
+ * Soft budget under Cursor/client ~60s tools/call and MCP execute's ~90s
+ * sandbox, leaving room to return a dispatched handle before the client gives
+ * up. Progress notifications do not reset the client timeout.
+ */
+export const defaultDurableEscalationBudgetMs = 35_000
 
 export type DurableEscalationHandle = {
 	status: 'dispatched'
