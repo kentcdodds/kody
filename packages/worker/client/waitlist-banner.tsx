@@ -312,7 +312,6 @@ const formCss = {
 	display: 'flex',
 	alignItems: 'center',
 	justifyContent: 'center',
-	flexWrap: 'wrap' as const,
 	gap: spacing.sm,
 	margin: 0,
 	minWidth: 0,
@@ -322,6 +321,7 @@ const formCss = {
 		width: '100%',
 		flexDirection: 'column' as const,
 		alignItems: 'center',
+		gap: spacing.md,
 	},
 }
 
