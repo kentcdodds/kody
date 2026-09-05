@@ -13,6 +13,7 @@ import {
 	createExecuteExecutor,
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
+import { recordExecuteInterpretableEvent } from '#mcp/execute-interpretable.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import {
@@ -513,6 +514,15 @@ export async function runModuleWithRegistry(
 	const userId = callerContext.user?.userId ?? ''
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
+	if (
+		!options?.packageContext &&
+		shouldRecordExecuteUsageForRun({
+			surface: options?.runRecord?.surface,
+			hasPackageContext: false,
+		})
+	) {
+		recordExecuteInterpretableEvent(env, { source: code })
+	}
 	await reportExecutePhaseProgress(reportProgress, 'bundle')
 	const bundleStartedAtMs = Date.now()
 	const bundled = await buildKodyModuleBundle({

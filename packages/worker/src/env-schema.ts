@@ -266,6 +266,7 @@ export const EnvSchema = object({
 	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
 	MCP_PROTOCOL_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	PACKAGE_INVOKE_SPECIFIER_EVENTS: optionalAnalyticsEngineDatasetSchema,
+	EXECUTE_INTERPRETABLE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	SENTRY_DSN: optionalUrlStringSchema,
 	SENTRY_ENVIRONMENT: optionalNonEmptyStringSchema,
 	SENTRY_TRACES_SAMPLE_RATE: optionalSentryTracesSampleRateSchema,

@@ -330,6 +330,50 @@ Guarantees and rules:
    `packages/worker/src/usage/test-schema.ts` and assert on `usage_rollups` rows
    instead.
 
+## Execute interpretable share (`q`)
+
+Measurement-only Analytics Engine dataset for the share of MCP execute modules
+that are interpretable pure glue (suitable for a hypothetical fixed-interpreter
+tier). This is **not** a `recordUsage()` event and does not enter
+`usage_rollups`. The classifier and write path live in
+`packages/worker/src/mcp/execute-interpretable.ts`.
+
+A module is the `q` numerator when it is pure orchestration over `kody.*` /
+`kody:runtime` and has none of: `kody:@` package imports, bare npm imports,
+`node:` builtins, ambient `fetch` / `createAuthenticatedFetch` /
+`oauthClientCredentials`, computed `import(expr)`, or any other
+non-`kody:runtime` specifier. Type-only imports are ignored. Unparseable source
+is conservative (not interpretable). This is not an interpreter runtime.
+
+Production dataset `kody_execute_interpretable_events` (preview:
+`kody_execute_interpretable_events_preview`). Binding
+`EXECUTE_INTERPRETABLE_EVENTS` on origin and platform (where MCP execute runs).
+Schema:
+
+| Field     | Value                                                                                                                                                          |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index1`  | `execute_interpretable_q` (shared sampling population)                                                                                                         |
+| `blob1`   | `interpretable` or `non_interpretable`                                                                                                                         |
+| `blob2`   | `glue`, or first disqualifier: `has_package_import`, `has_npm`, `has_node_builtin`, `has_fetch`, `has_dynamic_import`, `has_unsupported_import`, `unparseable` |
+| `double1` | `1`                                                                                                                                                            |
+
+No user, source, run, or request identity. Recording is a no-op without the
+binding. Query with `sum(_sample_interval)`:
+
+```sql
+SELECT
+  blob1 AS class,
+  blob2 AS reason,
+  SUM(_sample_interval) AS executes
+FROM kody_execute_interpretable_events
+WHERE timestamp > NOW() - INTERVAL '7' DAY
+GROUP BY class, reason
+ORDER BY executes DESC
+```
+
+`q = interpretable / total` from that grouping, or
+`sumIf(_sample_interval, blob1 = 'interpretable') / sum(_sample_interval)`.
+
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
