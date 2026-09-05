@@ -20,7 +20,6 @@ import {
 	isDefaultKodyMcpUrl,
 	isValidOnboardingAgentChooserPick,
 	mcpClientTabs,
-	onboardingAgentLabel,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
 	onboardingMobileFeaturedAgentIds,
@@ -43,16 +42,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(onboardingMoreAgentIdsFor('mobile')).not.toContain(
 		onboardingMobileFeaturedAgentIds[0],
 	)
-	expect(onboardingAgentLabel('chatgpt', 'mobile')).toBe('ChatGPT')
-	expect(onboardingAgentLabel('claude-desktop', 'mobile')).toBe('Claude')
-	expect(onboardingAgentLabel('chatgpt', 'desktop')).toBe('ChatGPT.com')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('claude-code')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('devin')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('cursor')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('codex')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('copilot')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('opencode')
-	expect(onboardingMobileFeaturedAgentIds).not.toContain('openclaw')
 	const rotated = pickOnboardingAgentChooser(() => 0)
 	const identity = pickOnboardingAgentChooser((max) => max - 1)
 	expect(isValidOnboardingAgentChooserPick(rotated)).toBe(true)

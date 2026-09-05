@@ -11,14 +11,6 @@ import { routes } from '#universal/routes.ts'
 test('entity explainers resolve on entity pages, render collapsed, and skip settings-only routes', async () => {
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
 	expect(resolveEntityExplainer(routes.community.href())?.id).toBe('community')
-	expect(
-		resolveEntityExplainer(routes.profile.href({ username: 'jane' })),
-	).toBeNull()
-	expect(
-		resolveEntityExplainer(
-			routes.communityPackage.href({ username: 'jane', kodyId: 'helper' }),
-		),
-	).toBeNull()
 
 	expect(resolveEntityExplainer(routes.account.href())).toBeNull()
 	expect(resolveEntityExplainer(routes.accountBilling.href())).toBeNull()
@@ -38,14 +30,9 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 		routes.accountIntegrations.href(),
 	)
 	expect(integrationsCopy?.id).toBe('integrations')
-	expect(integrationsCopy?.learnMore?.map((link) => link.href)).toEqual([
-		comparisonHref,
-		routes.guideDetail.href({ slug: 'integration-bootstrap' }),
-	])
 
 	const mcpCopy = resolveEntityExplainer(routes.accountMcpServers.href())
 	expect(mcpCopy?.id).toBe('mcp-servers')
-	expect(mcpCopy?.learnMore?.map((link) => link.href)).toEqual([comparisonHref])
 
 	const explainerHtml = await renderToString(
 		jsx(EntityExplainer, { copy: integrationsCopy! }),

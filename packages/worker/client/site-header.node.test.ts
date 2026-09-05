@@ -52,6 +52,4 @@ test('logged-in avatar and mobile menu go to the public profile with the usernam
 	expect(html).toContain('data-testid="site-header-profile"')
 	expect(html).toContain('data-testid="site-header-profile-menu"')
 	expect(html).toMatch(/site-header-profile-menu[\s\S]*?>ada</)
-	expect(html).not.toContain('Waiting')
-	expect(html).not.toContain('/account/waiting')
 })

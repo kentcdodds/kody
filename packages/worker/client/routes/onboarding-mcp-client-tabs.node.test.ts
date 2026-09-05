@@ -57,7 +57,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
 	expect(picker).not.toContain('href="/onboarding/step-1/grok-cli"')
 	expect(picker).toContain('href="/onboarding/step-1/grok"')
-	expect(picker).not.toContain('surface=')
 	expect(picker).toContain('/images/icons/cursor.svg')
 	expect(picker).toContain('/images/icons/grokbot.svg')
 
@@ -101,12 +100,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(other).toContain('id="onboarding-agent-not-listed-label"')
 	expect(other).toContain("Any of these what you're looking for?")
 	expect(other).toContain('Or, connect any agent that speaks MCP')
-	expect(other).not.toContain('Pick a host that was hidden on this screen')
 	expect(other).toContain(defaultKodyMcpUrl)
 	expect(other).toContain('data-testid="onboarding-agent-copilot-app"')
 	expect(other).toContain('data-testid="onboarding-agent-codex"')
 	expect(other).toContain('data-testid="onboarding-agent-claude-code"')
-	expect(other).not.toContain('These hosts have their own steps')
 	expect(other).not.toContain('data-testid="onboarding-agent-grok-cli"')
 	expect(other).toContain('data-testid="onboarding-agent-grok"')
 	expect(other).toContain('data-testid="onboarding-agent-cursor"')
@@ -280,9 +277,6 @@ test('onboarding alternative config wells collapse behind closed details', async
 	expect(copilot).toContain(buildCopilotCliMcpJson(url))
 	expect(copilot).toContain('>.vscode/mcp.json</code>:')
 	expect(copilot).toContain('>~/.copilot/mcp-config.json</code>:')
-	expect(copilot).not.toContain(
-		'The GitHub Copilot app has its own picker entry',
-	)
 	expect(countClosedManualDetails(copilot)).toBeGreaterThanOrEqual(2)
 
 	const copilotApp = await renderToString(

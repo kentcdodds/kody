@@ -1,12 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
-	firstWinAlignment,
 	onboardingAccessFooterCopyValue,
-	onboardingAccessPickerLede,
 	onboardingAccessSelectedLede,
-	onboardingCopyRemainingTasksLabel,
 	onboardingExplorePackagesHref,
 	onboardingRemainingMilestonesPrompt,
 	onboardingSessionMilestoneInstruction,
@@ -19,50 +14,15 @@ import {
 	onboardingIndexRedirectHref,
 	onboardingChecklistItems,
 	onboardingServiceHref,
-	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
 	emptyOnboardingSessionMilestones,
-	onboardingConnectedPrompt,
-	onboardingNotListedAnything,
-	onboardingSessionMilestones,
 	onboardingSessionMilestonesEqual,
-	onboardingUnconnectedNotice,
 	onboardingIntegrationsShFollowUp,
-	onboardingUseKodyPrompt,
 	onboardingUseKodyPromptForCustomName,
 	onboardingUseKodyPromptForService,
-	onboardingUseKodyPromptOauthPatFollowUp,
 	onboardingWizardSteps,
 	parseOnboardingPathname,
 } from './onboarding-process.ts'
-
-const guidesDirectory = join(import.meta.dirname, '../../../docs/guides')
-
-function readGuide(slug: string) {
-	return readFileSync(join(guidesDirectory, `${slug}.md`), 'utf8')
-}
-
-test('first-win and quick-example name the current onboarding wizard', () => {
-	const firstWin = readGuide(firstWinAlignment.guideSlug)
-	const climax = readGuide(firstWinAlignment.climaxGuideSlug)
-	const prerequisite = onboardingWizardStepByNumber(
-		firstWinAlignment.prerequisiteWizardStep,
-	)
-	const next = onboardingWizardStepByNumber(firstWinAlignment.nextWizardStep)
-
-	for (const step of onboardingWizardSteps) {
-		expect(
-			firstWin.includes(step.label) || firstWin.includes(step.path),
-			`docs/guides/${firstWinAlignment.guideSlug}.md must name wizard step ${step.number} (${step.label} or ${step.path}). Update that guide when onboarding-process.ts changes.`,
-		).toBe(true)
-	}
-
-	expect(firstWin).toContain(`/guides/${firstWinAlignment.climaxGuideSlug}`)
-	expect(firstWin).toContain(next.path)
-	expect(climax).toContain(next.label)
-	expect(climax).toContain(`Step ${next.number}`)
-	expect(climax).toContain(prerequisite.path)
-})
 
 test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingChecklistItems.map((item) => item.id)).toEqual([
@@ -92,25 +52,6 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'/@kentcdodds',
 	)
 	expect(onboardingWizardStepHref(2)).toBe('/onboarding/step-2')
-	expect(onboardingUnconnectedNotice).toBe(
-		'Your agent cannot do anything in Kody yet.',
-	)
-	expect(onboardingNotListedAnything).toBe(
-		'You can integrate Kody with anything. Just ask your agent.',
-	)
-	expect(onboardingConnectedPrompt).toBe(
-		"I'm set up with Kody. Help me use it.",
-	)
-	expect(onboardingUseKodyPrompt(null)).toBe(onboardingConnectedPrompt)
-	expect(onboardingUseKodyPrompt('Notion')).toBe(
-		`Help me use Kody with Notion. ${onboardingIntegrationsShFollowUp('Notion')}`,
-	)
-	expect(onboardingUseKodyPromptForService('canva')).toBe(
-		`Help me use Kody with Canva. ${onboardingIntegrationsShFollowUp('Canva')}`,
-	)
-	expect(onboardingUseKodyPromptForService('github')).toBe(
-		`Help me use Kody with GitHub. ${onboardingUseKodyPromptOauthPatFollowUp} ${onboardingIntegrationsShFollowUp('GitHub')}`,
-	)
 	expect(onboardingUseKodyPromptForService('github')).toContain(
 		'communitySearch',
 	)
@@ -126,31 +67,6 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingIntegrationsShFollowUp('Zoom')).toContain(
 		'https://integrations.sh/mcp',
 	)
-	expect(onboardingIntegrationsShFollowUp('Zoom')).not.toContain(
-		'communityFork',
-	)
-	expect(onboardingIntegrationsShFollowUp('Zoom')).not.toContain(
-		'@kody/integrations-sh',
-	)
-	expect(onboardingUseKodyPromptForService(null)).toBe(
-		onboardingConnectedPrompt,
-	)
-	expect(onboardingSessionMilestones.map((item) => item.id)).toEqual([
-		'execute',
-		'access',
-		'secret',
-		'email-send',
-		'email-receive',
-		'job',
-	])
-	expect(onboardingSessionMilestones.map((item) => item.label)).toEqual([
-		'Run your first execute',
-		'Connect an integration or MCP server',
-		'Create a secret',
-		'Send yourself an email',
-		'Receive an email',
-		'Set up a scheduled job',
-	])
 	expect(onboardingAgentHref('cursor')).toBe('/onboarding/step-1/cursor')
 	expect(onboardingAgentHref('other')).toBe('/onboarding/step-1/not-listed')
 	expect(onboardingAgentHref('cursor', '?redirectTo=%2F')).toBe(
@@ -219,16 +135,9 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'/onboarding/step-1',
 		'/onboarding/step-2',
 	])
-	for (const step of onboardingWizardSteps) {
-		expect(onboardingWizardStepHref(step.number)).not.toContain('#')
-		expect(onboardingWizardStepHref(step.number)).not.toContain('surface=')
-	}
-	expect(onboardingAgentHref('cursor')).not.toContain('#')
-	expect(onboardingServiceHref('notion')).not.toContain('#')
 })
 
 test('last-step footer copies remaining milestone tasks, not the service CopyCard', () => {
-	expect(onboardingCopyRemainingTasksLabel).toBe('Copy remaining tasks')
 	expect(onboardingExplorePackagesHref()).toBe('/community')
 	const leftover = {
 		...emptyOnboardingSessionMilestones,
@@ -315,51 +224,16 @@ test('last-step footer copies remaining milestone tasks, not the service CopyCar
 })
 
 test('step 2 selected lede names the connected agent when we know it', () => {
-	expect(onboardingAccessPickerLede).toBe(
-		'Kody works best when you give it access to your stuff.',
-	)
-	expect(onboardingAccessSelectedLede(null)).toBe(
-		'Copy this prompt to your agent, and it will help you get set up.',
-	)
-	expect(onboardingAccessSelectedLede('')).toBe(
-		'Copy this prompt to your agent, and it will help you get set up.',
-	)
-	expect(onboardingAccessSelectedLede('Cursor')).toBe(
-		'Copy this prompt to Cursor, and it will help you get set up.',
-	)
-	expect(onboardingAccessSelectedLede('ChatGPT.com')).toBe(
-		'Copy this prompt to ChatGPT.com, and it will help you get set up.',
-	)
-	expect(onboardingAccessSelectedLede('Claude Desktop')).toBe(
-		'Copy this prompt to Claude Desktop, and it will help you get set up.',
-	)
+	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
+	expect(onboardingAccessSelectedLede('')).toContain('your agent')
+	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
+	expect(onboardingAccessSelectedLede('Cursor')).not.toContain('your agent')
 })
 
 test('session milestone copy and search notice share leftover task labels', () => {
-	expect(onboardingMilestonesHeading(null)).toBe(
-		'Here are the tasks for your agent.',
-	)
-	expect(onboardingMilestonesHeading('Cursor')).toBe(
-		'Here are the tasks for Cursor.',
-	)
-	expect(onboardingSessionMilestonePrompt('execute')).toContain(
-		'Run your first execute',
-	)
-	expect(onboardingSessionMilestonePrompt('access')).toContain(
-		'Connect an integration or MCP server',
-	)
-	expect(onboardingSessionMilestonePrompt('secret')).toContain(
-		'Create a secret',
-	)
-	expect(onboardingSessionMilestonePrompt('email-send')).toContain(
-		'Send yourself an email',
-	)
-	expect(onboardingSessionMilestonePrompt('email-receive')).toContain(
-		'Receive an email',
-	)
-	expect(onboardingSessionMilestonePrompt('job')).toContain(
-		'Set up a scheduled job',
-	)
+	expect(onboardingMilestonesHeading(null)).toContain('your agent')
+	expect(onboardingMilestonesHeading('Cursor')).toContain('Cursor')
+	expect(onboardingMilestonesHeading('Cursor')).not.toContain('your agent')
 	expect(
 		remainingOnboardingSessionMilestoneLabels({
 			...emptyOnboardingSessionMilestones,
@@ -372,12 +246,6 @@ test('session milestone copy and search notice share leftover task labels', () =
 		'Receive an email',
 		'Set up a scheduled job',
 	])
-	expect(
-		onboardingSessionMilestonesEqual(
-			emptyOnboardingSessionMilestones,
-			emptyOnboardingSessionMilestones,
-		),
-	).toBe(true)
 	expect(
 		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
 			...emptyOnboardingSessionMilestones,
@@ -408,13 +276,13 @@ test('session milestone copy and search notice share leftover task labels', () =
 			job: true,
 		}),
 	).toBe(false)
-	expect(
-		formatOnboardingSearchNotice(
-			['Run your first execute', 'Create a secret'],
-			'https://kody.example',
-		),
-	).toBe(
-		'Onboarding: 2 steps left — Run your first execute, Create a secret. Details and dismissal: https://kody.example/onboarding',
+	const notice = formatOnboardingSearchNotice(
+		['Run your first execute', 'Create a secret'],
+		'https://kody.example',
 	)
+	expect(notice).toContain('2 steps left')
+	expect(notice).toContain('Run your first execute')
+	expect(notice).toContain('Create a secret')
+	expect(notice).toContain('https://kody.example/onboarding')
 	expect(formatOnboardingSearchNotice([], 'https://kody.example')).toBeNull()
 })

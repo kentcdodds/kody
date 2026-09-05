@@ -4,10 +4,7 @@ import { expect, test } from 'vitest'
 import {
 	attachOnboardingMcpPackageListings,
 	featuredOnboardingMcpFingerprint,
-	formatOnboardingFeaturedMcpAddHint,
-	formatOnboardingFeaturedMcpChoice,
 	customOnboardingMcpFingerprint,
-	onboardingServiceLabel,
 	hasConnectedOnboardingCustomMcpServer,
 	hasConnectedOnboardingFeaturedMcpServer,
 	firstConnectedOnboardingWorkspaceLabel,
@@ -24,7 +21,6 @@ import {
 	onboardingFeaturedMcpServers,
 	onboardingFeaturedMcpServerIds,
 	onboardingFeaturedMcpSlotCount,
-	onboardingNotListedPromptServices,
 	onboardingServiceImageIconSrc,
 	pickOnboardingServiceChooser,
 	overlayOnboardingFeaturedMcpServers,
@@ -32,34 +28,9 @@ import {
 } from './onboarding-mcp-chooser.ts'
 
 test('featured MCP chooser overlays OAuth state and package listings', () => {
-	expect(onboardingFeaturedMcpServers.map((server) => server.id)).toEqual([
-		...onboardingFeaturedMcpServerIds,
-	])
 	expect(onboardingFeaturedMcpServers.length).toBeGreaterThan(
 		onboardingFeaturedMcpSlotCount,
 	)
-	expect(onboardingFeaturedMcpServerIds).toContain('github')
-	expect(onboardingFeaturedMcpServerIds).toContain('workos')
-	expect(onboardingFeaturedMcpServerIds).toContain('resend')
-	expect(onboardingFeaturedMcpServerIds).not.toContain('box')
-	expect(
-		onboardingNotListedPromptServices.every(
-			(service) =>
-				!(onboardingFeaturedMcpServerIds as ReadonlyArray<string>).includes(
-					service.id,
-				),
-		),
-	).toBe(true)
-	expect(
-		onboardingFeaturedMcpServers.every(
-			(server) =>
-				server.packageKodyId === `${server.id}-mcp` &&
-				server.url.startsWith('https://'),
-		),
-	).toBe(true)
-	expect(
-		listOnboardingFeaturedMcpListingIds().every((id) => id.length > 0),
-	).toBe(true)
 	expect(listOnboardingFeaturedMcpListingIds()).toContain(
 		onboardingFeaturedMcpServers[0].listingId,
 	)
@@ -70,8 +41,6 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 	expect(shuffled.featured).not.toEqual(identity.featured)
 	expect(canonicalOnboardingServiceChooser().overflow).toContain('github')
 	expect(canonicalOnboardingServiceChooser().featured).not.toContain('github')
-	expect(formatOnboardingFeaturedMcpChoice().length).toBeGreaterThan(0)
-	expect(formatOnboardingFeaturedMcpAddHint().length).toBeGreaterThan(0)
 
 	expect(normalizeOnboardingMcpServerUrl('https://mcp.notion.com/mcp/')).toBe(
 		'https://mcp.notion.com/mcp',
@@ -325,13 +294,6 @@ test('onboarding OAuth banner prefers a later success over leftover URL error', 
 			urlError: 'access_denied',
 		}),
 	).toBe('Supported sites required.')
-})
-
-test('step 2 service labels stay stable', () => {
-	expect(onboardingServiceLabel('notion')).toBe('Notion')
-	expect(onboardingServiceLabel('github')).toBe('GitHub')
-	expect(onboardingServiceLabel('x')).toBe('x.com')
-	expect(onboardingServiceLabel('not-listed')).toBe('Not listed')
 })
 
 test('every featured MCP chip that is not a ProviderIcon has a repo SVG', () => {

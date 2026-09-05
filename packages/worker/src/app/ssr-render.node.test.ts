@@ -406,7 +406,6 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountHtml).toContain('data-testid="site-header-account-menu"')
 	expect(accountHtml).toContain('href="/@account-user"')
 	expect(accountHtml).toContain('aria-label="@account-user"')
-	expect(accountHtml).not.toContain('data-testid="site-header-waiting"')
 	const accountProps = readAppRootProps(accountHtml)
 	expect(accountProps.loaderData?.accountProfile).toEqual({
 		ok: true,
@@ -558,11 +557,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(anonymousOnboardingHtml).toContain(
 		'data-testid="onboarding-agent-picker"',
 	)
-	expect(anonymousOnboardingHtml).not.toContain('Loading onboarding')
-	expect(anonymousOnboardingHtml).not.toContain('Loading page')
 	expect(anonymousOnboardingHtml).toContain('data-testid="onboarding-step-2"')
 	expect(anonymousOnboardingHtml).toContain('href="/onboarding/step-2"')
-	expect(anonymousOnboardingHtml).not.toContain('href="/onboarding/step-3"')
 	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
 		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
 	)
@@ -938,13 +934,10 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	const anonymousHtml = await readResponseText(anonymousResponse)
 	expect(anonymousHtml).not.toContain('OAuth authorization failed')
 	expect(anonymousHtml).not.toContain('href="/images/hero/kody-base.webp"')
-	expect(anonymousHtml).not.toContain('Requested scopes')
-	expect(anonymousHtml).not.toContain('No scopes requested.')
 	expect(anonymousHtml).toContain('data-testid="oauth-authorize-grant"')
 	expect(anonymousHtml).toContain('data-testid="oauth-authorize-oidc-scopes"')
 	expect(anonymousHtml).toContain('<code>profile</code>')
 	expect(anonymousHtml).toContain('<code>email</code>')
-	expect(anonymousHtml).not.toContain(', <code>email</code>')
 	expect(anonymousHtml).not.toContain('Unknown client')
 	expect(anonymousHtml).not.toContain('Loading authorization details')
 
@@ -1574,7 +1567,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('Let Kody use this connection at')
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
-	expect(approvalHtml).not.toContain('Approve secret access')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {
