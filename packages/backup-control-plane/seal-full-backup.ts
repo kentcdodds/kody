@@ -180,12 +180,45 @@ async function verifyStagingFile(
 	return bytes
 }
 
+async function sealedObjectMatchesExpectedBytes(
+	bucket: R2Bucket,
+	sealedKey: string,
+	expectedBytes: number,
+): Promise<boolean> {
+	const head = await bucket.head(sealedKey)
+	return head !== null && head.size === expectedBytes
+}
+
+/**
+ * When a prior seal attempt already copied this object under the locked
+ * daily/full prefix, skip staging re-download + put/byte-compare. Size match
+ * against the staging summary/index entry is enough for resume; a first-time
+ * seal still verifies sha-256 from staging.
+ */
+async function copyStagingObjectIfNeeded(
+	bucket: R2Bucket,
+	day: string,
+	summary: StagingFileSummary,
+	contentType: string,
+): Promise<void> {
+	const sealedKey = sealedKeyForStagingObject(day, summary.objectKey)
+	if (
+		await sealedObjectMatchesExpectedBytes(bucket, sealedKey, summary.bytes)
+	) {
+		return
+	}
+	const bytes = await verifyStagingFile(bucket, summary)
+	await putImmutableBytes(bucket, sealedKey, bytes, contentType)
+}
+
 async function sealOwnerDumps(input: {
 	bucket: R2Bucket
 	day: string
 	summary: StagingFileSummary
 	kind: 'mailbox' | 'run-log'
 }): Promise<BackupFullFileRef> {
+	// Indexes stay small: always re-read staging so resume can discover dump
+	// entries even when the sealed index already exists.
 	const indexBytes = await verifyStagingFile(input.bucket, input.summary)
 	const index = parseOwnerIndex(
 		JSON.parse(new TextDecoder().decode(indexBytes)),
@@ -193,15 +226,14 @@ async function sealOwnerDumps(input: {
 		input.kind,
 	)
 	for (const entry of index.entries) {
-		const dumpBytes = await verifyStagingFile(input.bucket, {
-			objectKey: entry.objectKey,
-			bytes: entry.bytes,
-			sha256: entry.sha256,
-		})
-		await putImmutableBytes(
+		await copyStagingObjectIfNeeded(
 			input.bucket,
-			sealedKeyForStagingObject(input.day, entry.objectKey),
-			dumpBytes,
+			input.day,
+			{
+				objectKey: entry.objectKey,
+				bytes: entry.bytes,
+				sha256: entry.sha256,
+			},
 			'application/x-ndjson',
 		)
 	}
@@ -221,6 +253,12 @@ async function putImmutableBytes(
 	bytes: Uint8Array,
 	contentType: string,
 ): Promise<void> {
+	// Cheap resume: matching size under a locked key means a prior seal
+	// attempt already wrote this object — skip put and the 10069 full-body
+	// compare that would otherwise re-download every dump.
+	if (await sealedObjectMatchesExpectedBytes(bucket, key, bytes.byteLength)) {
+		return
+	}
 	// A bucket-lock rule rejects puts on existing keys with error 10069
 	// before evaluating the conditional, so a partially sealed day (or a
 	// duplicate index entry) must fall through to byte comparison instead of
@@ -371,6 +409,41 @@ function collectReferencedBlobHashes(input: {
 	return hashes
 }
 
+// 2026-09-04 had 3168 unique referenced blob hashes. Sequential HEAD at
+// ~20ms wall ≈ 63s, which matches the scheduled seal failure (~67s wall,
+// ~227ms CPU, observability "Network connection lost.") — an R2/runtime
+// drop during long sequential binding I/O, not only browser disconnect.
+// Keep this in the 20–50 range; cheap sealed-object skip alone is not enough.
+const referencedBlobHeadConcurrency = 32
+
+async function mapPool<T, R>(
+	items: ReadonlyArray<T>,
+	concurrency: number,
+	mapper: (item: T) => Promise<R>,
+): Promise<Array<R>> {
+	if (items.length === 0) return []
+	const limit = Math.max(1, Math.min(concurrency, items.length))
+	const results: Array<R> = new Array(items.length)
+	let nextIndex = 0
+	let firstError: unknown
+	async function worker() {
+		while (nextIndex < items.length) {
+			const index = nextIndex
+			nextIndex += 1
+			const item = items[index]
+			if (item === undefined) return
+			try {
+				results[index] = await mapper(item)
+			} catch (error) {
+				firstError ??= error
+			}
+		}
+	}
+	await Promise.all(Array.from({ length: limit }, () => worker()))
+	if (firstError !== undefined) throw firstError
+	return results
+}
+
 async function verifyReferencedBlobs(
 	bucket: R2Bucket,
 	hashes: Array<string>,
@@ -378,13 +451,14 @@ async function verifyReferencedBlobs(
 	| { kind: 'ok'; blobsVerified: number }
 	| { kind: 'missing'; reason: 'blob-missing' }
 > {
-	// Hashes are already unique from collectReferencedBlobHashes; HEAD every one.
-	for (const hash of hashes) {
-		const key = backupBlobKey(hash)
-		const head = await bucket.head(key)
-		if (head === null) {
-			return { kind: 'missing', reason: 'blob-missing' }
-		}
+	// Hashes are already unique from collectReferencedBlobHashes.
+	const heads = await mapPool(
+		hashes,
+		referencedBlobHeadConcurrency,
+		async (hash) => bucket.head(backupBlobKey(hash)),
+	)
+	if (heads.some((head) => head === null)) {
+		return { kind: 'missing', reason: 'blob-missing' }
 	}
 	return { kind: 'ok', blobsVerified: hashes.length }
 }
@@ -559,6 +633,7 @@ export async function sealFullBackupDay(
 		throw error
 	}
 
+	// Storage index is small: always re-read staging to discover dump entries.
 	const storageIndexBytes = await verifyStagingFile(
 		env.BACKUP_BUCKET,
 		summary.storageIndex,
@@ -568,15 +643,14 @@ export async function sealFullBackupDay(
 		day,
 	)
 	for (const entry of storageIndex.entries) {
-		const dumpBytes = await verifyStagingFile(env.BACKUP_BUCKET, {
-			objectKey: entry.objectKey,
-			bytes: entry.bytes,
-			sha256: entry.sha256,
-		})
-		await putImmutableBytes(
+		await copyStagingObjectIfNeeded(
 			env.BACKUP_BUCKET,
-			sealedKeyForStagingObject(day, entry.objectKey),
-			dumpBytes,
+			day,
+			{
+				objectKey: entry.objectKey,
+				bytes: entry.bytes,
+				sha256: entry.sha256,
+			},
 			'application/x-ndjson',
 		)
 	}
