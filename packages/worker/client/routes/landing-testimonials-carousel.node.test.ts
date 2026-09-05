@@ -13,6 +13,7 @@ import {
 	listLanePlacements,
 	parkUnusedLaneCards,
 	placeLaneCard,
+	samplesForFlickVelocity,
 	shouldCoastFlick,
 	stepFlickCoast,
 	wrapPagerIndex,
@@ -288,6 +289,24 @@ test('a fast swipe coasts after release instead of freezing on the finger', () =
 	expect(coalescedFlick.dragging).toBe(true)
 	expect(coalescedFlick.offsetDelta).toBe(240)
 	expect(coalescedFlick.coastVelocity).toBeGreaterThan(0)
+
+	const delayedCoalesced = finishPointerGesture({
+		startX: 280,
+		startY: 20,
+		lastX: 280,
+		endX: 40,
+		endY: 28,
+		endT: 120,
+		samples: [{ t: 0, x: 280 }],
+		dragging: false,
+	})
+	expect(delayedCoalesced.coastVelocity).toBeGreaterThan(0)
+	expect(
+		samplesForFlickVelocity([{ t: 0, x: 280 }], { t: 120, x: 40 }),
+	).toEqual([
+		{ t: 0, x: 280 },
+		{ t: 120, x: 40 },
+	])
 
 	const vertical = finishPointerGesture({
 		startX: 100,

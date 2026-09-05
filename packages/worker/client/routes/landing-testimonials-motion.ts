@@ -64,6 +64,23 @@ export function flickVelocityPxPerMs(samples: ReadonlyArray<FlickSample>) {
 	return (first.x - last.x) / dt
 }
 
+/**
+ * Recent samples estimate release speed. A coalesced down/up pair can sit
+ * farther apart than the window, so keep the original start if the window
+ * would leave a single point and zero velocity.
+ */
+export function samplesForFlickVelocity(
+	samples: ReadonlyArray<FlickSample>,
+	end: FlickSample,
+	windowMs = FLICK_SAMPLE_WINDOW_MS,
+): Array<FlickSample> {
+	const windowed = appendFlickSample(samples, end, windowMs)
+	if (windowed.length >= 2) return windowed
+	const first = samples[0]
+	if (first == null) return windowed
+	return [first, end]
+}
+
 export function clampFlickVelocity(
 	velocity: number,
 	maxAbs = FLICK_MAX_VELOCITY_PX_PER_MS,
@@ -129,7 +146,7 @@ export function finishPointerGesture(input: {
 		dragging = true
 		lastX = input.startX
 	}
-	const samples = appendFlickSample(input.samples, {
+	const samples = samplesForFlickVelocity(input.samples, {
 		t: input.endT,
 		x: input.endX,
 	})
