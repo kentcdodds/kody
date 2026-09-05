@@ -595,15 +595,20 @@ default-branch HEAD, opens a transient repo session checkout at that commit, and
 uses `publishFromExternalRef` to run the same package checks before advancing
 `entity_sources.published_commit`. Full check-time esbuild is deferred to the
 later published artifact rebuild so callable and importable targets are bundled
-once with published-artifact semantics (`rootPackageId`). Check failures before
-promotion return the failed checks and do not mutate D1, KV snapshots, published
-bundle artifacts, package projections, or vectors. A rebuild failure after
-promotion returns `checks_failed` with a bundle check; re-run the publish
-capability to repair artifacts. Non-fast-forward external heads are refused
-unless the caller passes `allow_force: true`. When `saved_packages.locked_at` is
-set, checks still run and the result is `locked` with an approval URL;
-`published_commit` does not move until the owner promotes that commit on the
-website.
+once with published-artifact semantics (`rootPackageId`). The rebuild skips
+esbuild for targets whose reachable inputs and bundler root config are unchanged
+versus the previous published snapshot, and copies those artifacts onto the new
+commit key so the identity row never points at a hole. Shared modules, stale
+captured `kody:@` dependency commits, missing prior artifacts, first publish,
+force, and mismatched `already_published` snapshot rewrites still rebuild. Check
+failures before promotion return the failed checks and do not mutate D1, KV
+snapshots, published bundle artifacts, package projections, or vectors. A
+rebuild failure after promotion returns `checks_failed` with a bundle check;
+re-run the publish capability to repair artifacts. Non-fast-forward external
+heads are refused unless the caller passes `allow_force: true`. When
+`saved_packages.locked_at` is set, checks still run and the result is `locked`
+with an approval URL; `published_commit` does not move until the owner promotes
+that commit on the website.
 
 When publish succeeds, `packagePublishExternalPush` decorates the response with
 `static_dependents`, a bounded summary of direct saved packages whose published

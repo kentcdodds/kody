@@ -5,10 +5,12 @@ import {
 	isPublishedPackageArtifactBuiltForCommit,
 	loadPublishedBundleArtifactByIdentity,
 	rebuildPublishedPackageArtifacts,
+	reusePublishedPackageArtifactIfUnchanged,
 } from './published-bundle-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
 	readPublishedBundleArtifact: vi.fn(),
@@ -20,6 +22,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
@@ -761,4 +765,499 @@ test('rebuildPublishedPackageArtifacts overlaps a bounded number of target build
 	await rebuildPromise
 	expect(buildModuleBundle).toHaveBeenCalledTimes(2)
 	expect(buildImportableModuleBundle).toHaveBeenCalledTimes(2)
+})
+
+const reusePackageJson = JSON.stringify({
+	name: '@alice/multi-export',
+	exports: {
+		'.': './src/a.ts',
+		'./b': './src/b.ts',
+	},
+	kody: { id: 'multi-export', description: 'fixture' },
+})
+
+const reusePreviousFiles = {
+	'package.json': reusePackageJson,
+	'src/a.ts': `import { shared } from './shared.ts'\nexport default async function a() { return shared('a') }\n`,
+	'src/b.ts': `export default async function b() { return 'b' }\n`,
+	'src/shared.ts': `export function shared(label: string) { return label }\n`,
+}
+
+function priorModuleArtifact(input: {
+	artifactName: string
+	entryPoint: string
+	publishedCommit?: string
+}) {
+	const publishedCommit = input.publishedCommit ?? 'commit-old'
+	return {
+		row: {
+			id: `row-${input.artifactName}`,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit,
+			artifactKind: 'module',
+			artifactName: input.artifactName,
+			entryPoint: input.entryPoint,
+			kvKey: `bundle-artifact:v1:source-1:${publishedCommit}:module:${input.artifactName}:${input.entryPoint}`,
+			dependenciesJson: '[]',
+			createdAt: '2026-05-13T00:00:00.000Z',
+			updatedAt: '2026-05-13T00:00:00.000Z',
+		},
+		artifact: {
+			version: 1 as const,
+			kind: 'module' as const,
+			artifactName: input.artifactName,
+			sourceId: 'source-1',
+			publishedCommit,
+			entryPoint: input.entryPoint,
+			mainModule: `dist/${input.entryPoint.replaceAll('/', '_')}.js`,
+			modules: {
+				[`dist/${input.entryPoint.replaceAll('/', '_')}.js`]:
+					'export default async function run() { return "ok" }',
+			},
+			dependencies: [],
+			dynamicDependencies: [],
+			packageContext: {
+				packageId: 'pkg-1',
+				kodyId: 'multi-export',
+				sourceId: 'source-1',
+			},
+			createdAt: '2026-05-13T00:00:00.000Z',
+		},
+	}
+}
+
+test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds dirty, missing, or same-commit leftovers', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
+	mockModule.readPublishedSourceSnapshot.mockReset()
+	mockModule.writePublishedBundleArtifact.mockReset()
+	mockModule.updatePublishedBundleArtifactRow.mockReset()
+	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:reused')
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValue(true)
+
+	const env = {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+	} as unknown as Env
+	const snapshotCache = new Map()
+	const priorA = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+	})
+	const priorB = priorModuleArtifact({
+		artifactName: './b',
+		entryPoint: 'src/b.ts',
+	})
+	const artifactsByEntry = new Map([
+		['src/a.ts', priorA],
+		['src/b.ts', priorB],
+	])
+	mockModule.getPublishedBundleArtifactByIdentity.mockImplementation(
+		async (_db: unknown, query: { entryPoint: string }) =>
+			artifactsByEntry.get(query.entryPoint)?.row ?? null,
+	)
+	mockModule.readPublishedBundleArtifact.mockImplementation(
+		async (input: { kvKey: string }) => {
+			for (const loaded of artifactsByEntry.values()) {
+				if (loaded.row.kvKey === input.kvKey) return loaded.artifact
+			}
+			return null
+		},
+	)
+	mockModule.readPublishedSourceSnapshot.mockImplementation(
+		async (input: { publishedCommit: string }) => {
+			if (input.publishedCommit === 'commit-old') {
+				return { files: reusePreviousFiles }
+			}
+			if (input.publishedCommit === 'commit-2') {
+				return {
+					files: {
+						...reusePreviousFiles,
+						'src/b.ts': `export default async function b() { return 'b-changed' }\n`,
+					},
+				}
+			}
+			return null
+		},
+	)
+
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+			snapshotCache,
+		}),
+	).toBe(true)
+	expect(mockModule.writePublishedBundleArtifact).toHaveBeenCalledWith(
+		expect.objectContaining({
+			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
+			artifact: expect.objectContaining({
+				publishedCommit: 'commit-2',
+				entryPoint: 'src/a.ts',
+				modules: priorA.artifact.modules,
+			}),
+		}),
+	)
+	expect(mockModule.updatePublishedBundleArtifactRow).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			id: 'row-.',
+			publishedCommit: 'commit-2',
+			kvKey: 'bundle-artifact:v1:source-1:commit-2:module:.:src/a.ts',
+		}),
+	)
+
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: './b',
+				entryPoint: 'src/b.ts',
+				bundleKind: 'module',
+			},
+			snapshotCache,
+		}),
+	).toBe(false)
+
+	const sharedSnapshotCache = new Map()
+	mockModule.readPublishedSourceSnapshot.mockImplementation(
+		async (input: { publishedCommit: string }) => {
+			if (input.publishedCommit === 'commit-old') {
+				return { files: reusePreviousFiles }
+			}
+			if (input.publishedCommit === 'commit-shared') {
+				return {
+					files: {
+						...reusePreviousFiles,
+						'src/shared.ts': `export function shared(label: string) { return label.toUpperCase() }\n`,
+					},
+				}
+			}
+			return null
+		},
+	)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-shared',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+			snapshotCache: sharedSnapshotCache,
+		}),
+	).toBe(false)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-shared',
+			target: {
+				kind: 'module',
+				artifactName: './b',
+				entryPoint: 'src/b.ts',
+				bundleKind: 'module',
+			},
+			snapshotCache: sharedSnapshotCache,
+		}),
+	).toBe(true)
+
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValueOnce(null)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: './missing',
+				entryPoint: 'src/missing.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+
+	mockModule.readPublishedSourceSnapshot.mockResolvedValueOnce(null)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+
+	const sameCommit = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+		publishedCommit: 'commit-2',
+	})
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValueOnce(
+		sameCommit.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValueOnce(
+		sameCommit.artifact,
+	)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env: { APP_DB: {} } as unknown as Env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+
+	const staleDep = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+	})
+	staleDep.artifact.dependencies = [
+		{
+			sourceId: 'source-dep',
+			publishedCommit: 'dep-old',
+			kodyId: 'dep',
+		},
+	]
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
+		staleDep.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(staleDep.artifact)
+	mockModule.readPublishedSourceSnapshot.mockImplementation(
+		async (input: { publishedCommit: string }) => {
+			if (
+				input.publishedCommit === 'commit-old' ||
+				input.publishedCommit === 'commit-2'
+			) {
+				return { files: reusePreviousFiles }
+			}
+			return null
+		},
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: 'source-dep',
+		user_id: 'user-1',
+		published_commit: 'dep-new',
+	})
+	mockModule.writePublishedBundleArtifact.mockClear()
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
+
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: 'source-dep',
+		user_id: 'user-1',
+		published_commit: 'dep-old',
+	})
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValueOnce(false)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+})
+
+test('rebuildPublishedPackageArtifacts reuses unchanged prior artifacts and only rebuilds dirty targets', async () => {
+	mockModule.getPublishedBundleArtifactByIdentity.mockReset()
+	mockModule.readPublishedBundleArtifact.mockReset()
+	mockModule.readPublishedSourceSnapshot.mockReset()
+	mockModule.writePublishedBundleArtifact.mockReset()
+	mockModule.updatePublishedBundleArtifactRow.mockReset()
+	mockModule.insertPublishedBundleArtifactRow.mockReset()
+	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:key')
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValue(true)
+	mockModule.insertPublishedBundleArtifactRow.mockResolvedValue(undefined)
+
+	const priorA = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+	})
+	const priorB = priorModuleArtifact({
+		artifactName: './b',
+		entryPoint: 'src/b.ts',
+	})
+	const artifactsByEntry = new Map([
+		['src/a.ts', priorA],
+		['src/b.ts', priorB],
+	])
+	mockModule.getPublishedBundleArtifactByIdentity.mockImplementation(
+		async (
+			_db: unknown,
+			query: { entryPoint: string; artifactKind: string },
+		) => {
+			if (query.artifactKind !== 'module') return null
+			return artifactsByEntry.get(query.entryPoint)?.row ?? null
+		},
+	)
+	mockModule.readPublishedBundleArtifact.mockImplementation(
+		async (input: { kvKey: string }) => {
+			for (const loaded of artifactsByEntry.values()) {
+				if (loaded.row.kvKey === input.kvKey) return loaded.artifact
+			}
+			return null
+		},
+	)
+	mockModule.readPublishedSourceSnapshot.mockImplementation(
+		async (input: { publishedCommit: string }) => {
+			if (input.publishedCommit === 'commit-old') {
+				return { files: reusePreviousFiles }
+			}
+			if (input.publishedCommit === 'commit-2') {
+				return {
+					files: {
+						...reusePreviousFiles,
+						'src/b.ts': `export default async function b() { return 'b-changed' }\n`,
+					},
+				}
+			}
+			return null
+		},
+	)
+
+	const buildAppBundle = vi.fn()
+	const buildModuleBundle = vi.fn(
+		async ({ entryPoint }: { entryPoint: string }) => ({
+			mainModule: `dist/${entryPoint.replaceAll('/', '_')}.js`,
+			modules: {
+				[`dist/${entryPoint.replaceAll('/', '_')}.js`]:
+					'export default async function run() { return "rebuilt" }',
+			},
+			dependencies: [],
+		}),
+	)
+	const buildImportableModuleBundle = vi.fn(
+		async ({ entryPoint }: { entryPoint: string }) => ({
+			mainModule: `dist/importable_${entryPoint.replaceAll('/', '_')}.js`,
+			modules: {
+				[`dist/importable_${entryPoint.replaceAll('/', '_')}.js`]:
+					'export default async function run() { return "rebuilt" }',
+			},
+			dependencies: [],
+		}),
+	)
+
+	await rebuildPublishedPackageArtifacts({
+		env: {
+			APP_DB: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as unknown as Env,
+		userId: 'user-1',
+		source: {
+			id: 'source-1',
+			user_id: 'user-1',
+			entity_kind: 'package',
+			entity_id: 'pkg-1',
+			repo_id: 'repo-1',
+			published_commit: 'commit-2',
+			indexed_commit: null,
+			manifest_path: 'package.json',
+			source_root: '/',
+			created_at: '2026-04-30T00:00:00.000Z',
+			updated_at: '2026-04-30T00:00:00.000Z',
+		},
+		savedPackage: {
+			id: 'pkg-1',
+			userId: 'user-1',
+			name: '@alice/multi-export',
+			kodyId: 'multi-export',
+			description: 'fixture',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-1',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-04-30T00:00:00.000Z',
+			updatedAt: '2026-04-30T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@alice/multi-export',
+			exports: {
+				'.': './src/a.ts',
+				'./b': './src/b.ts',
+			},
+			kody: { id: 'multi-export', description: 'fixture' },
+		},
+		buildAppBundle,
+		buildModuleBundle,
+		buildImportableModuleBundle,
+	})
+
+	expect(buildModuleBundle).toHaveBeenCalledTimes(1)
+	expect(buildModuleBundle).toHaveBeenCalledWith({ entryPoint: 'src/b.ts' })
+	expect(buildImportableModuleBundle).toHaveBeenCalledTimes(2)
+	expect(mockModule.updatePublishedBundleArtifactRow).toHaveBeenCalledWith(
+		{},
+		expect.objectContaining({
+			id: 'row-.',
+			publishedCommit: 'commit-2',
+			entryPoint: 'src/a.ts',
+		}),
+	)
 })

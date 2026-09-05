@@ -5,7 +5,11 @@ import {
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
-import { isPublishedPackageArtifactBuiltForCommit } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import {
+	isPublishedPackageArtifactBuiltForCommit,
+	reusePublishedPackageArtifactIfUnchanged,
+	type PublishedPackageArtifactReuseSnapshotCache,
+} from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
 import {
 	createIsolatedArtifactRebuildRunner,
@@ -129,6 +133,7 @@ async function filterTargetsNeedingRebuild(input: {
 	}
 	const remaining: Array<PublishedPackageArtifactBuildTarget> = []
 	const alreadyBuilt: Array<PublishedPackageArtifactBuildTarget> = []
+	const snapshotCache: PublishedPackageArtifactReuseSnapshotCache = new Map()
 	for (const target of input.targets) {
 		const built = await isPublishedPackageArtifactBuiltForCommit({
 			env: input.env,
@@ -138,6 +143,18 @@ async function filterTargetsNeedingRebuild(input: {
 			target,
 		})
 		if (built) {
+			alreadyBuilt.push(target)
+			continue
+		}
+		const reused = await reusePublishedPackageArtifactIfUnchanged({
+			env: input.env,
+			userId: input.userId,
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			target,
+			snapshotCache,
+		})
+		if (reused) {
 			alreadyBuilt.push(target)
 			continue
 		}
@@ -273,8 +290,9 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 		return
 	}
 
-	// List + skip before staging so already_published / repair resumes do not
-	// pay collectWorkspaceFiles + KV stage when nothing remains to rebuild.
+	// List + skip before staging so already_published / repair resumes and
+	// unchanged prior-commit targets do not pay collectWorkspaceFiles + KV
+	// stage when nothing remains to rebuild.
 	const targets = await listTargetsOrThrow({
 		session,
 		repoSessionId: input.repoSessionId,
