@@ -1,6 +1,164 @@
 /** Slow walk of one lap around the real card set. */
 export const TESTIMONIALS_LAP_MS = 45_000
 
+export const DRAG_THRESHOLD_PX = 8
+
+/** Keep only recent pointer samples so a flick velocity is not diluted. */
+export const FLICK_SAMPLE_WINDOW_MS = 80
+
+/**
+ * Minimum release speed to coast. ~0.45px/ms is a quick swipe, not a
+ * slow drag that should just stop.
+ */
+export const FLICK_MIN_VELOCITY_PX_PER_MS = 0.45
+
+/** Drop residual coast once it is slower than a crawl. */
+export const FLICK_STOP_VELOCITY_PX_PER_MS = 0.04
+
+/** Exponential decay per millisecond. A hard flick travels about 1–2 cards. */
+export const FLICK_FRICTION_PER_MS = 0.003
+
+/** Cap so a wild sample cannot sling the lane a full lap. */
+export const FLICK_MAX_VELOCITY_PX_PER_MS = 3
+
+export type FlickSample = {
+	t: number
+	x: number
+}
+
+export type PointerIntent = 'pending' | 'drag' | 'scroll'
+
+export function classifyPointerIntent(input: {
+	dx: number
+	dy: number
+	thresholdPx?: number
+}): PointerIntent {
+	const threshold = input.thresholdPx ?? DRAG_THRESHOLD_PX
+	const adx = Math.abs(input.dx)
+	const ady = Math.abs(input.dy)
+	if (adx < threshold && ady < threshold) return 'pending'
+	if (ady >= adx) return 'scroll'
+	return 'drag'
+}
+
+export function appendFlickSample(
+	samples: ReadonlyArray<FlickSample>,
+	sample: FlickSample,
+	windowMs = FLICK_SAMPLE_WINDOW_MS,
+): Array<FlickSample> {
+	const oldest = sample.t - windowMs
+	const next: Array<FlickSample> = []
+	for (const entry of samples) {
+		if (entry.t >= oldest) next.push(entry)
+	}
+	next.push(sample)
+	return next
+}
+
+export function flickVelocityPxPerMs(samples: ReadonlyArray<FlickSample>) {
+	const first = samples[0]
+	const last = samples.at(-1)
+	if (first == null || last == null) return 0
+	const dt = last.t - first.t
+	if (dt <= 0) return 0
+	return (first.x - last.x) / dt
+}
+
+/**
+ * Recent samples estimate release speed. A coalesced down/up pair, or a
+ * jump after an early move, can sit farther apart than the window. Pair
+ * the last prior sample with the release so velocity is that final hop.
+ * A pause then release has last.x near end.x, so velocity stays zero.
+ */
+export function samplesForFlickVelocity(
+	samples: ReadonlyArray<FlickSample>,
+	end: FlickSample,
+	windowMs = FLICK_SAMPLE_WINDOW_MS,
+): Array<FlickSample> {
+	const windowed = appendFlickSample(samples, end, windowMs)
+	if (windowed.length >= 2) return windowed
+	const last = samples.at(-1)
+	if (last == null) return windowed
+	return [last, end]
+}
+
+export function clampFlickVelocity(
+	velocity: number,
+	maxAbs = FLICK_MAX_VELOCITY_PX_PER_MS,
+) {
+	return Math.max(-maxAbs, Math.min(maxAbs, velocity))
+}
+
+export function shouldCoastFlick(
+	velocity: number,
+	minAbs = FLICK_MIN_VELOCITY_PX_PER_MS,
+) {
+	return Math.abs(velocity) >= minAbs
+}
+
+export function stepFlickCoast(input: {
+	offset: number
+	velocity: number
+	dt: number
+}): { offset: number; velocity: number; done: boolean } {
+	const dt = Math.min(Math.max(input.dt, 0), 48)
+	if (dt === 0) {
+		return { offset: input.offset, velocity: input.velocity, done: false }
+	}
+	const velocity = input.velocity * Math.exp(-FLICK_FRICTION_PER_MS * dt)
+	if (Math.abs(velocity) < FLICK_STOP_VELOCITY_PX_PER_MS) {
+		return { offset: input.offset, velocity: 0, done: true }
+	}
+	return {
+		offset: input.offset + velocity * dt,
+		velocity,
+		done: false,
+	}
+}
+
+/**
+ * Close out a pointer gesture. Coalesced touch flicks often skip move
+ * events, so a large horizontal jump on up still counts as a drag.
+ */
+export function finishPointerGesture(input: {
+	startX: number
+	startY: number
+	lastX: number
+	endX: number
+	endY: number
+	endT: number
+	samples: ReadonlyArray<FlickSample>
+	dragging: boolean
+}): {
+	offsetDelta: number
+	dragging: boolean
+	coastVelocity: number
+} {
+	let dragging = input.dragging
+	let lastX = input.lastX
+	if (!dragging) {
+		const intent = classifyPointerIntent({
+			dx: input.endX - input.startX,
+			dy: input.endY - input.startY,
+		})
+		if (intent !== 'drag') {
+			return { offsetDelta: 0, dragging: false, coastVelocity: 0 }
+		}
+		dragging = true
+		lastX = input.startX
+	}
+	const samples = samplesForFlickVelocity(input.samples, {
+		t: input.endT,
+		x: input.endX,
+	})
+	const velocity = clampFlickVelocity(flickVelocityPxPerMs(samples))
+	return {
+		offsetDelta: lastX - input.endX,
+		dragging: true,
+		coastVelocity: shouldCoastFlick(velocity) ? velocity : 0,
+	}
+}
+
 export type LanePlacement = {
 	itemIndex: number
 	x: number
