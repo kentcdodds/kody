@@ -537,9 +537,8 @@ Deleting a package removes it from the account. It is permanent.
 
 Use:
 
-- The **Delete package** control on the package page (`/@username/{kodyId}`, or
-  open a row from `/account/packages`). A modal asks you to type the package
-  name to confirm.
+- The **Delete package** control under `/@username/{kodyId}/settings`. A modal
+  asks you to type the package name to confirm.
 - **`packageDelete`** with a saved **`package_id`**. Show the owner the package
   name and what will be destroyed, wait for them to type that name, then pass
   **`confirm_name`** matching the package name exactly (`package.json` `name`,
@@ -561,28 +560,28 @@ resolve hidden packages.
 
 ## Publish lock
 
-A package with a **`locked_at`** timestamp on `/account/packages` (and on
-`packageList` / `packageGet`) keeps serving its current published tree. Agents
-and the five-minute reconcile job cannot advance `published_commit`. Use
-**`packageUpdate`** with **`changes: { locked: true }`** to lock a package.
-Agents cannot unlock. If an agent needs the package unlocked, it should send the
-owner to `/@{username}/{kodyId}` so they can click the lock icon.
-`packageUpdate` rejects **`changes.locked: false`** and returns that URL.
+A package with a **`locked_at`** timestamp on its `/@username/{kodyId}/settings`
+page (and on `packageList` / `packageGet`) keeps serving its current published
+tree. Agents and the five-minute reconcile job cannot advance
+`published_commit`. Use **`packageUpdate`** with **`changes: { locked: true }`**
+to lock a package. Agents cannot unlock. If an agent needs the package unlocked,
+it should send the owner to `/@{username}/{kodyId}/settings` so they can click
+the lock icon. `packageUpdate` rejects **`changes.locked: false`** and returns
+that URL.
 
 When an agent pushes or saves a locked package, the commit still lands on
 Artifacts HEAD. Publish tools then return **`locked`** with an
 **`approval_url`** that names that commit:
-`/account/packages/:packageId/approve-publish?commit=<sha>`. Opening that URL
-shows a file-by-file diff of the current published tree versus that commit.
-Clicking **Promote this commit** runs the real publish (checks, bundle
-artifacts, projections) for that SHA. Promoting one commit does not unlock the
-package.
+`/@{username}/{kodyId}/approve-publish?commit=<sha>`. Opening that URL shows a
+file-by-file diff of the current published tree versus that commit. Clicking
+**Promote this commit** runs the real publish (checks, bundle artifacts,
+projections) for that SHA. Promoting one commit does not unlock the package.
 
 Unlocked packages use the same review page. When default-branch HEAD is newer
 than the last publish, the package Code tab shows a **HEAD ahead of published**
 badge. Owners click it to open
-`/account/packages/:packageId/approve-publish?commit=<sha>`, where `<sha>` is
-the resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
+`/@{username}/{kodyId}/approve-publish?commit=<sha>`, where `<sha>` is the
+resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
 Visitors see the badge but not the link. The five-minute reconcile job still
 auto-publishes unlocked packages; this page is the explicit website path.
 
@@ -605,7 +604,7 @@ package instead:
 package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
 `listing_name`, `origin_commit`, `listing_pinned_commit`,
 `listing_published_at`, `listing_ahead`). Those fields are `null` for
-self-authored packages. When `listing_ahead` is true, `/account/packages`, the
+self-authored packages. When `listing_ahead` is true, the owner profile, the
 listing page, package search, and `{kodyId}:package` entity detail surface a
 **Fork outdated** / absorb next step. Full workflow:
 [Public packages → Forking a listing](./community-packages.md#forking-a-listing).

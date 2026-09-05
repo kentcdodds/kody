@@ -44,6 +44,7 @@ const user = {
 	userId: 11,
 	stableUserId: 'user-aaa',
 	email: 'waiting@example.com',
+	username: 'waiting',
 	emailVerified: true,
 }
 

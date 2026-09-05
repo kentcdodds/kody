@@ -7,7 +7,7 @@ import { AccountPackageApprovePublishRoute } from '#client/routes/account-packag
 import { type AccountPackageApprovePublishLoaderData } from '#universal/loader-data.ts'
 
 const approvePublishHref =
-	'/account/packages/1c43570a-b9ab-46c9-86ec-6c9f02926944/approve-publish?commit=34f338c19f91c698c3a28edd2992e0ab87dcb4e0'
+	'/@kodykoala/gmail-drafts/approve-publish?commit=34f338c19f91c698c3a28edd2992e0ab87dcb4e0'
 
 const loaderData: AccountPackageApprovePublishLoaderData = {
 	ok: true,

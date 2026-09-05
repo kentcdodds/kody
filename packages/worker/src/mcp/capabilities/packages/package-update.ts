@@ -113,7 +113,8 @@ export const packageUpdateCapability = defineDomainCapability(
 					createPackageUnlockRequiredMessage(
 						buildPackageUnlockUrl({
 							baseUrl: ctx.callerContext.baseUrl,
-							packageId: args.package_id,
+							username: owner.ownerScope,
+							kodyId: existing.kodyId,
 						}),
 					),
 				)

@@ -5,12 +5,12 @@ optional first-win email guide share one contract:
 
 [`packages/worker/universal/onboarding-process.ts`](../../../packages/worker/universal/onboarding-process.ts)
 
-| Surface                                  | Role                                                                    |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                     |
-| Wizard Step 2 `/onboarding/step-2`       | Give Kody Access (MCP chips + Show more; prompt on `:service`)          |
-| Checklist                                | Verify email, the two wizard steps, then persist on `/account/packages` |
-| [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected        |
+| Surface                                  | Role                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------- |
+| Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                              |
+| Wizard Step 2 `/onboarding/step-2`       | Give Kody Access (MCP chips + Show more; prompt on `:service`)   |
+| Checklist                                | Verify email, complete both wizard steps, then persist a package |
+| [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected |
 
 Step 2's index is the official MCP chip grid plus Show more. A selected service
 (`/onboarding/step-2/:service`) shows the copyable prompt and milestones. Hosted

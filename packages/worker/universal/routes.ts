@@ -34,6 +34,8 @@ export const routes = route({
 	accountMcpServersOauthCallback: '/account/mcp-servers/oauth/callback',
 	accountMcpServersApi: '/account/mcp-servers.json',
 	accountMcpServersApiPost: post('/account/mcp-servers.json'),
+	// Legacy HTML package routes only redirect to their canonical `/@…` pages.
+	// The JSON endpoints remain account-scoped mutation/read APIs.
 	accountPackages: '/account/packages',
 	accountPackageDetail: '/account/packages/:packageId',
 	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
@@ -185,10 +187,13 @@ export const routes = route({
 	communityPackageFiles: '/@:username/:kodyId/files(/*relativePath)',
 	communityPackageTree: '/@:username/:kodyId/tree/:ref(/*relativePath)',
 	communityPackageSettings: '/@:username/:kodyId/settings',
+	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
+	communityPackageApprovePublishApi:
+		'/profiles/:username/packages/:kodyId/approve-publish.json',
 	profileApi: '/profiles/:username.json',
 	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`
 	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.

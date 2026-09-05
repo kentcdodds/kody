@@ -52,7 +52,7 @@ Agent notes — for AI agents explaining or recreating this loop:
 - After the first successful publish, packageUpdate { locked: true },
   then integrationLock with the connection name and saved package_id.
   Later publishes return locked with approval_url
-  /account/packages/:packageId/approve-publish?commit=SHA. The owner
+  /@username/:kodyId/approve-publish?commit=SHA. The owner
   clicks Promote this commit. Promoting does not unlock.
 -->
 
@@ -213,12 +213,12 @@ this export only. It does not grow a send path "for convenience."
 ## Later publishes
 
 Pushes still land on Artifacts HEAD. Publish tools return `locked` with
-`approval_url` `/account/packages/:packageId/approve-publish?commit=<sha>`. The
-owner opens that URL and clicks **Promote this commit**. Promoting one commit
-does not unlock the package.
+`approval_url` `/@username/:kodyId/approve-publish?commit=<sha>`. The owner
+opens that URL and clicks **Promote this commit**. Promoting one commit does not
+unlock the package.
 
-If an agent needs the lock off, it sends the owner to `/@{username}/{kodyId}`.
-It does not pass `locked: false`.
+If an agent needs the lock off, it sends the owner to
+`/@{username}/{kodyId}/settings`. It does not pass `locked: false`.
 
 ## Same pattern on other coarse tokens
 

@@ -73,10 +73,10 @@ Profile activity reads stored `community_activity_events` plus public forks from
 
 `community_forks.origin_commit` is the origin SHA the fork last absorbed. It
 starts as HEAD copied at fork time. When origin HEAD later moves, `packageGet` /
-`packageList` set `listing_ahead`, and `/account/packages` plus the listing page
-replace Installed / Forked with a **Fork outdated** button. Package search hits
-and `{kodyId}:package` entity detail also set `listingAhead`. Clearing the
-banner is done by publishing with `repoPublishSession` and
+`packageList` set `listing_ahead`, and the owner's `/@username` profile plus the
+listing page replace Installed / Forked with a **Fork outdated** button. Package
+search hits and `{kodyId}:package` entity detail also set `listingAhead`.
+Clearing the banner is done by publishing with `repoPublishSession` and
 `absorbed_upstream_commit`; that does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.

@@ -71,6 +71,7 @@ function tryConsumeAccountJobsLoaderData(handle: Handle, href: string) {
 export function AccountJobsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
+	let username = ''
 	let jobs: Array<AccountJobListItem> = []
 	let selectedJob: AccountJobDetail | null = null
 	let retention: AccountJobsLoaderData['retention'] = {
@@ -132,6 +133,7 @@ export function AccountJobsRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountJobsLoaderData) {
+		username = payload.username
 		jobs = payload.jobs
 		selectedJob = payload.selectedJob
 		applyRetention(payload.retention)
@@ -524,6 +526,7 @@ export function AccountJobsRoute(handle: Handle) {
 						record={
 							detail
 								? renderAccountJobDetail({
+										username,
 										detail,
 										isMutating,
 										retention,

@@ -73,9 +73,11 @@ export function renderPackageRepoChrome(input: {
 	animate?: boolean
 }) {
 	const backHref = input.viewerIsOwner
-		? routes.accountPackages.href()
+		? routes.profile.href({ username: input.username })
 		: routes.community.href()
-	const backLabel = input.viewerIsOwner ? 'Packages' : 'Public packages'
+	const backLabel = input.viewerIsOwner
+		? `@${input.username}`
+		: 'Public packages'
 	const profileHref =
 		input.ownerProfilePublic === false
 			? null

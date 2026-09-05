@@ -34,8 +34,11 @@ const integrationGuideProviders = [
 	{ id: 'canva', label: 'Canva', href: connectMcpHref },
 ] as const
 
-function readChecklistItemHref(id: OnboardingChecklistItemId): string {
-	return onboardingChecklistItemHref(id, onboardingPath)
+function readChecklistItemHref(
+	id: OnboardingChecklistItemId,
+	username: string,
+): string {
+	return onboardingChecklistItemHref(id, username)
 }
 
 export function shouldShowOnboardingChecklist(
@@ -140,7 +143,7 @@ export function OnboardingChecklistCard(
 				<ul mix={css(checklistListCss)}>
 					{checklist.items.map((item) => {
 						const label = onboardingChecklistItemLabels[item.id]
-						const href = readChecklistItemHref(item.id)
+						const href = readChecklistItemHref(item.id, checklist.username)
 						const isIntegration = item.id === 'connect-integration'
 
 						return (

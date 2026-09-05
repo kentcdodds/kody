@@ -44,14 +44,16 @@ const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 function packageValue(
-	job: Pick<AccountJobDetail, 'ownership' | 'packageId' | 'packageName'>,
+	username: string,
+	job: Pick<AccountJobDetail, 'ownership' | 'packageName' | 'packageKodyId'>,
 ) {
 	if (job.ownership !== 'package') return '—'
-	if (job.packageId && job.packageName) {
+	if (username && job.packageKodyId && job.packageName) {
 		return (
 			<a
-				href={routes.accountPackageDetail.href({
-					packageId: job.packageId,
+				href={routes.communityPackage.href({
+					username,
+					kodyId: job.packageKodyId,
 				})}
 				mix={css(primaryLinkCss)}
 			>
@@ -81,6 +83,7 @@ export function renderJobDetailPlaceholder(title: string, body: string) {
 }
 
 export function renderAccountJobDetail(input: {
+	username: string
 	detail: AccountJobDetail
 	isMutating: boolean
 	retention: AccountJobsLoaderData['retention']
@@ -89,6 +92,7 @@ export function renderAccountJobDetail(input: {
 	navigateToList: () => void
 }) {
 	const {
+		username,
 		detail,
 		isMutating,
 		retention,
@@ -113,7 +117,7 @@ export function renderAccountJobDetail(input: {
 				items={[
 					{
 						label: 'Package',
-						value: packageValue(detail),
+						value: packageValue(username, detail),
 					},
 					{
 						label: 'Preserve',

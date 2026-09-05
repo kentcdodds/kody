@@ -9,14 +9,6 @@ import {
 import { routes } from '#universal/routes.ts'
 
 test('entity explainers resolve on entity pages, render collapsed, and skip settings-only routes', async () => {
-	expect(resolveEntityExplainer(routes.accountPackages.href())?.id).toBe(
-		'packages',
-	)
-	expect(
-		resolveEntityExplainer(
-			routes.accountPackageDetail.href({ packageId: 'pkg_123' }),
-		)?.id,
-	).toBe('packages')
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
 	expect(resolveEntityExplainer(routes.community.href())?.id).toBe('community')
 	expect(
@@ -42,17 +34,6 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	const comparisonHref = routes.guideDetail.href({
 		slug: 'packages-integrations-mcp',
 	})
-	const copy = resolveEntityExplainer(routes.accountPackages.href())
-	expect(copy).not.toBeNull()
-	if (!copy) throw new Error('expected packages explainer')
-	expect(copy.paragraphs.join(' ')).toContain(
-		'open a package to change visibility, publish lock, or delete it',
-	)
-	expect(copy.learnMore?.map((link) => link.href)).toEqual([
-		comparisonHref,
-		routes.guideDetail.href({ slug: 'package-lifecycle' }),
-	])
-
 	const integrationsCopy = resolveEntityExplainer(
 		routes.accountIntegrations.href(),
 	)
@@ -66,14 +47,13 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	expect(mcpCopy?.id).toBe('mcp-servers')
 	expect(mcpCopy?.learnMore?.map((link) => link.href)).toEqual([comparisonHref])
 
-	const explainerHtml = await renderToString(jsx(EntityExplainer, { copy }))
-	expect(explainerHtml).toContain('data-entity-explainer="packages"')
-	expect(explainerHtml).toContain(`href="${comparisonHref}"`)
-	expect(explainerHtml).toContain(
-		`href="${routes.guideDetail.href({ slug: 'package-lifecycle' })}"`,
+	const explainerHtml = await renderToString(
+		jsx(EntityExplainer, { copy: integrationsCopy! }),
 	)
+	expect(explainerHtml).toContain('data-entity-explainer="integrations"')
+	expect(explainerHtml).toContain(`href="${comparisonHref}"`)
 	expect(explainerHtml).toMatch(
-		/<details(?![^>]*\bopen\b)[^>]*data-entity-explainer="packages"/,
+		/<details(?![^>]*\bopen\b)[^>]*data-entity-explainer="integrations"/,
 	)
 
 	const integrationsHtml = await renderToString(
@@ -82,15 +62,6 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	expect(integrationsHtml).toContain(`href="${comparisonHref}"`)
 	const mcpHtml = await renderToString(jsx(EntityExplainer, { copy: mcpCopy! }))
 	expect(mcpHtml).toContain(`href="${comparisonHref}"`)
-
-	const packagesHtml = await renderToString(
-		jsx(AccountPageHeader, {
-			title: 'Packages',
-			description: 'Saved packages',
-			currentHref: routes.accountPackages.href(),
-		}),
-	)
-	expect(packagesHtml).toContain('data-entity-explainer="packages"')
 
 	const overviewHtml = await renderToString(
 		jsx(AccountPageHeader, {

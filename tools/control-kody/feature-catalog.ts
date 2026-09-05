@@ -95,11 +95,21 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'packages',
 		title: 'Packages',
 		file: 'packages.md',
-		paths: ['/account/packages'],
+		paths: [
+			'/account/packages',
+			'/account/packages/:packageId',
+			'/account/packages/:packageId/approve-publish',
+			'/account/packages/:packageId/files(/*relativePath)',
+			'/@:username',
+			'/@:username/:kodyId',
+			'/@:username/:kodyId/settings',
+			'/@:username/:kodyId/approve-publish',
+		],
 		apis: [
 			'/account/packages.json',
 			'/account/packages/:packageId/approve-publish.json',
 			'/account/packages/:packageId/files.json',
+			'/profiles/:username/packages/:kodyId/approve-publish.json',
 		],
 	},
 	{

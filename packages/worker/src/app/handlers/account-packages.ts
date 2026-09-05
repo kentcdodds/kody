@@ -59,16 +59,14 @@ export function createAccountPackagesHandler(env: Env) {
 				})
 			}
 
-			const accountPackages = await loadAccountPackagesData({
-				env,
-				request,
-				user,
-			})
-			return renderAppPage({
-				request,
-				env,
-				title: 'Packages',
-				loaderData: { accountPackages },
+			const destination = new URL(
+				routes.profile.href({ username: user.username }),
+				url,
+			)
+			destination.search = url.search
+			return new Response(null, {
+				status: 302,
+				headers: { location: destination.toString() },
 			})
 		},
 	} satisfies Action<

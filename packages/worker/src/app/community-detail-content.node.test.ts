@@ -88,7 +88,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(sourceAheadHtml).not.toContain('approve-publish')
 
 	const ownerAheadHref =
-		'/account/packages/pkg-1/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
 	const ownerAheadHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
 		listing: {
@@ -187,7 +187,8 @@ test('package chrome is shared for public listings and private owner packages', 
 	})
 	expect(ownerHtml).toContain('data-testid="package-repo-nav-settings"')
 	expect(ownerHtml).toContain('href="/@kentcdodds/github-triage/settings"')
-	expect(ownerHtml).toContain('← Packages')
+	expect(ownerHtml).toContain('href="/@kentcdodds"')
+	expect(ownerHtml).toContain('← @kentcdodds')
 
 	const privateHtml = await renderCommunityDetailContentHtml({
 		...detailBase,
@@ -209,22 +210,18 @@ test('package chrome is shared for public listings and private owner packages', 
 test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
 	expect(
 		buildSourceAheadPublishHref({
-			packageId: 'pkg-1',
+			username: 'kentcdodds',
+			kodyId: 'github-triage',
 			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		}),
 	).toBe(
-		'/account/packages/pkg-1/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 	)
 	expect(
 		buildSourceAheadPublishHref({
-			packageId: 'pkg-1',
+			username: 'kentcdodds',
+			kodyId: 'github-triage',
 			headCommit: null,
 		}),
-	).toBe('/account/packages/pkg-1/approve-publish')
-	expect(
-		buildSourceAheadPublishHref({
-			packageId: '',
-			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
-		}),
-	).toBeNull()
+	).toBe('/@kentcdodds/github-triage/approve-publish')
 })

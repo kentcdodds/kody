@@ -826,12 +826,9 @@ test('publishExternalPush returns locked with pending_commit and an approval URL
 		status: 'locked',
 		previous_commit: 'commit-old',
 		pending_commit: 'commit-new',
-		message:
-			'Package "@kentcdodds/demo-package" is locked. Publishes require approval at /account/packages/package-1/approve-publish?commit=commit-new.',
+		message: 'Package "@kentcdodds/demo-package" is locked.',
 		packageId: 'package-1',
 		packageName: '@kentcdodds/demo-package',
-		approvalPath:
-			'/account/packages/package-1/approve-publish?commit=commit-new',
 	})
 
 	const locked = await publishExternalPushCapability.handler(
@@ -844,9 +841,9 @@ test('publishExternalPush returns locked with pending_commit and an approval URL
 		previous_commit: 'commit-old',
 		pending_commit: 'commit-new',
 		approval_url:
-			'https://kody.test/account/packages/package-1/approve-publish?commit=commit-new',
+			'https://kody.test/@user/demo-package/approve-publish?commit=commit-new',
 		message:
-			'Package "@kentcdodds/demo-package" is locked. Publishes require approval at https://kody.test/account/packages/package-1/approve-publish?commit=commit-new.',
+			'Package "@kentcdodds/demo-package" is locked. Publishes require approval at https://kody.test/@user/demo-package/approve-publish?commit=commit-new.',
 	})
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 })

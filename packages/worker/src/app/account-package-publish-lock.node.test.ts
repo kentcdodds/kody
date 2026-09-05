@@ -246,7 +246,7 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 	const loaded = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			'https://example.com/account/packages/pkg-1/approve-publish?commit=abc1234',
+			'https://example.com/@test-user/discord-gateway/approve-publish?commit=abc1234',
 		),
 		user: user as never,
 		packageId: 'pkg-1',
@@ -302,7 +302,7 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	const fromArtifacts = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
+			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
@@ -333,7 +333,7 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	const failedPending = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
+			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
@@ -357,7 +357,7 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	const unresolvedPublished = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			`https://example.com/account/packages/pkg-1/approve-publish?commit=${pendingCommit}`,
+			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
 		),
 		user: user as never,
 		packageId: 'pkg-1',
@@ -380,7 +380,7 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 	const missingHead = await loadAccountPackageApprovePublishData({
 		env: { APP_DB: {} } as Env,
 		request: new Request(
-			'https://example.com/account/packages/pkg-1/approve-publish',
+			'https://example.com/@test-user/discord-gateway/approve-publish',
 		),
 		user: user as never,
 		packageId: 'pkg-1',

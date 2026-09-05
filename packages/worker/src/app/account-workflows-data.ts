@@ -41,6 +41,7 @@ export type AccountWorkflowDetail = AccountWorkflowListItem
 
 export type AccountWorkflowsLoaderData = {
 	ok: true
+	username: string
 	workflows: Array<AccountWorkflowListItem>
 	selectedWorkflow: AccountWorkflowDetail | null
 	selectedWorkflowId: string | null
@@ -172,6 +173,7 @@ export async function loadAccountWorkflowsData(input: {
 
 	return {
 		ok: true,
+		username: input.user.username,
 		workflows,
 		selectedWorkflow,
 		selectedWorkflowId,

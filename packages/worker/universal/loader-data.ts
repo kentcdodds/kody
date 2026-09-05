@@ -962,6 +962,7 @@ export type OnboardingLoaderData = {
 }
 
 export type OnboardingChecklistLoaderData = {
+	username: string
 	items: Array<{
 		id: OnboardingChecklistItemId
 		done: boolean
@@ -1428,6 +1429,7 @@ export type AccountJobListItem = {
 	ownership: AccountJobOwnership
 	packageId: string | null
 	packageName: string | null
+	packageKodyId: string | null
 	scheduleSummary: string
 	scheduleType: AccountJobSchedule['type']
 	timezone: string
@@ -1480,6 +1482,7 @@ export type AccountJobsAlarm = {
 
 export type AccountJobsLoaderData = {
 	ok: true
+	username: string
 	jobs: Array<AccountJobListItem>
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
@@ -1532,6 +1535,7 @@ export type AccountWorkflowDetail = AccountWorkflowListItem
 
 export type AccountWorkflowsLoaderData = {
 	ok: true
+	username: string
 	workflows: Array<AccountWorkflowListItem>
 	selectedWorkflow: AccountWorkflowDetail | null
 	selectedWorkflowId: string | null

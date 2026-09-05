@@ -450,7 +450,6 @@ const accountNavItems = [
 	{ href: '/account/billing', label: 'Billing' },
 	{ href: '/account/usage', label: 'Usage' },
 	{ href: '/account/activity', label: 'Activity' },
-	{ href: '/account/packages', label: 'Packages' },
 	{ href: '/account/jobs', label: 'Jobs' },
 	{ href: '/account/workflows', label: 'Workflows' },
 	{ href: '/account/secrets', label: 'Secrets' },

@@ -71,7 +71,7 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'connect-integration',
 		'install-starter',
 	])
-	expect(onboardingChecklistItemHref('verify-email', '/onboarding')).toBe(
+	expect(onboardingChecklistItemHref('verify-email', 'kentcdodds')).toBe(
 		'/pending-verification',
 	)
 	for (const step of onboardingWizardSteps) {
@@ -82,14 +82,14 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		if (!item) {
 			throw new Error(`wizard step ${step.number} needs a checklist item`)
 		}
-		expect(onboardingChecklistItemHref(item.id)).toBe(step.path)
+		expect(onboardingChecklistItemHref(item.id, 'kentcdodds')).toBe(step.path)
 	}
 	expect(onboardingIndexRedirectHref()).toBe('/onboarding/step-1')
 	expect(onboardingIndexRedirectHref('?redirectTo=%2F')).toBe(
 		'/onboarding/step-1?redirectTo=%2F',
 	)
-	expect(onboardingChecklistItemHref('install-starter')).toBe(
-		'/account/packages',
+	expect(onboardingChecklistItemHref('install-starter', 'kentcdodds')).toBe(
+		'/@kentcdodds',
 	)
 	expect(onboardingWizardStepHref(2)).toBe('/onboarding/step-2')
 	expect(onboardingUnconnectedNotice).toBe(

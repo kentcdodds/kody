@@ -23,19 +23,19 @@ test('publish lock treats a stored timestamp as locked and builds a commit-named
 
 	expect(
 		buildPackagePublishApprovalPath({
-			packageId: 'pkg-1',
+			username: 'user',
+			kodyId: 'notes',
 			commit: 'abc1234',
 		}),
-	).toBe('/account/packages/pkg-1/approve-publish?commit=abc1234')
+	).toBe('/@user/notes/approve-publish?commit=abc1234')
 	expect(
 		buildPackagePublishApprovalUrl({
 			baseUrl: 'https://kody.codes',
-			packageId: 'pkg-1',
+			username: 'user',
+			kodyId: 'notes',
 			commit: 'abc1234',
 		}),
-	).toBe(
-		'https://kody.codes/account/packages/pkg-1/approve-publish?commit=abc1234',
-	)
+	).toBe('https://kody.codes/@user/notes/approve-publish?commit=abc1234')
 
 	const error = new PackagePublishLockedError({
 		packageId: 'pkg-1',
@@ -43,17 +43,16 @@ test('publish lock treats a stored timestamp as locked and builds a commit-named
 		pendingCommit: 'abc1234',
 		currentPublishedCommit: 'oldcommit',
 	})
-	expect(error.approvalPath).toBe(
-		'/account/packages/pkg-1/approve-publish?commit=abc1234',
-	)
 	expect(error.message).toContain('@user/notes')
-	expect(error.message).toContain(error.approvalPath)
 
-	expect(buildPackageUnlockPath('pkg-1')).toBe('/account/packages/pkg-1')
+	expect(buildPackageUnlockPath({ username: 'user', kodyId: 'notes' })).toBe(
+		'/@user/notes/settings',
+	)
 	expect(
 		buildPackageUnlockUrl({
 			baseUrl: 'https://kody.codes',
-			packageId: 'pkg-1',
+			username: 'user',
+			kodyId: 'notes',
 		}),
-	).toBe('https://kody.codes/account/packages/pkg-1')
+	).toBe('https://kody.codes/@user/notes/settings')
 })

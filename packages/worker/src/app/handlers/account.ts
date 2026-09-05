@@ -34,6 +34,7 @@ export function createAccountHandler(env: Env) {
 				onboarding.checklist = await loadChecklist(
 					env,
 					user.mcpUser.userId,
+					user.username,
 					onboarding.hasMcpClient,
 				)
 			}

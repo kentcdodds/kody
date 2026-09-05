@@ -4,11 +4,12 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 ## How to get there
 
-`/account/packages` lists your packages. Each package lives at
-`/@username/:kodyId` (README), `/@username/:kodyId/tree/:ref` (files), and
-`/@username/:kodyId/settings` (lock, visibility, delete). Leftover
-`/account/packages/:packageId` and `/account/packages/:packageId/files` redirect
-to those URLs.
+`/@username` lists your packages, including private and unpublished packages
+when you view your own profile. Each package lives at `/@username/:kodyId`
+(README), `/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/settings`
+(lock, visibility, delete), and `/@username/:kodyId/approve-publish`
+(published-vs-HEAD review). Legacy `/account/packages` HTML URLs only redirect
+to these canonical pages.
 
 ## Drive it
 
@@ -18,7 +19,7 @@ UI posts to (`/account/packages.json`).
 ```bash
 node tools/control-kody.ts preview -- \
   --request 'GET /account/packages.json' \
-  --check /account/packages
+  --check /@me
 ```
 
 To prove delete, create a package through the JSON API, then delete it and
@@ -29,6 +30,7 @@ assert the empty state.
 - `GET|POST /account/packages.json`
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
+- `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`
 

@@ -29,6 +29,7 @@ export type DeriveWaitingUser = {
 	userId: number
 	stableUserId: string
 	email: string
+	username: string
 	emailVerified: boolean
 }
 
@@ -66,10 +67,14 @@ export async function deriveWaitingItemsForStableUser(input: {
 }): Promise<Array<WaitingItem>> {
 	try {
 		const userRow = await input.env.APP_DB.prepare(
-			`SELECT id, email_verified_at FROM users WHERE stable_user_id = ? LIMIT 1`,
+			`SELECT id, username, email_verified_at FROM users WHERE stable_user_id = ? LIMIT 1`,
 		)
 			.bind(input.stableUserId)
-			.first<{ id: number; email_verified_at: string | null }>()
+			.first<{
+				id: number
+				username: string
+				email_verified_at: string | null
+			}>()
 		if (!userRow) return []
 		return await deriveWaitingItems({
 			env: input.env,
@@ -77,6 +82,7 @@ export async function deriveWaitingItemsForStableUser(input: {
 				userId: userRow.id,
 				stableUserId: input.stableUserId,
 				email: input.email,
+				username: userRow.username,
 				emailVerified: Boolean(userRow.email_verified_at),
 			},
 			now: input.now,
@@ -131,6 +137,7 @@ export async function collectWaitingSignals(input: {
 	}))
 
 	return {
+		username: user.username,
 		emailVerified: user.emailVerified,
 		onboardingDismissed: onboardingDismissed || checklist.complete,
 		onboardingRemaining: checklist.items

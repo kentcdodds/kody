@@ -34,10 +34,6 @@ export {
 	accountMemoriesRouteLoader,
 } from './account-memories.tsx'
 export {
-	AccountPackagesRoute,
-	accountPackagesRouteLoader,
-} from './account-packages.tsx'
-export {
 	AccountPackageApprovePublishRoute,
 	accountPackageApprovePublishRouteLoader,
 } from './account-package-approve-publish.tsx'

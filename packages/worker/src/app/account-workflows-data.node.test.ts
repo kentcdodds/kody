@@ -110,6 +110,7 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 	expect(mockModule.getWorkflowProjection).not.toHaveBeenCalled()
 	expect(payload).toMatchObject({
 		ok: true,
+		username: 'test-user',
 		selectedWorkflowId: 'dynwf-1',
 		selectedWorkflow: expect.objectContaining({
 			id: 'dynwf-1',

@@ -589,6 +589,15 @@ test('account package detail redirects the owner to the canonical package URL', 
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
 	const handler = createAccountPackagesHandler(createEnv())
 
+	const indexRedirect = await handler.handler({
+		request: new Request('https://example.com/account/packages?q=discord'),
+		params: {},
+	} as never)
+	expect(indexRedirect.status).toBe(302)
+	expect(indexRedirect.headers.get('location')).toBe(
+		'https://example.com/@test-user?q=discord',
+	)
+
 	const redirect = await handler.handler({
 		request: new Request(
 			'https://example.com/account/packages/pkg-1?newToken=1&exportNames=.',

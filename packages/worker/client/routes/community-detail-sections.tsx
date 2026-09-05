@@ -68,6 +68,7 @@ export function renderShellStatus(shellStatusMessage: string) {
 }
 
 export type OwnerPackageSectionProps = {
+	ownerUsername: string
 	ownerPackage: AccountPackageDetail
 	lockInFlight: boolean
 	ownerDetailsMessage: string | null
@@ -88,6 +89,7 @@ export function renderOwnerPackageSection(props: OwnerPackageSectionProps) {
 				</p>
 			) : null}
 			<AccountPackageOwnerDetails
+				ownerUsername={props.ownerUsername}
 				packageDetail={props.ownerPackage}
 				lockInFlight={props.lockInFlight}
 				onToggleLock={props.onToggleLock}

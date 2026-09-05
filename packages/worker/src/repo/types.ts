@@ -332,7 +332,6 @@ export type RepoSessionPublishResult =
 			currentPublishedCommit: string | null
 			packageId: string
 			packageName: string
-			approvalPath: string
 	  }
 
 export type RepoExternalPublishResult =
@@ -367,7 +366,6 @@ export type RepoExternalPublishResult =
 			message: string
 			packageId: string
 			packageName: string
-			approvalPath: string
 	  }
 
 export type RepoSourceBootstrapResult = {

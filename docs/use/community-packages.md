@@ -124,11 +124,11 @@ Only after publish does the package become a live saved package in your account.
 If the listing owner later pushes to a public default branch, your fork keeps
 the snapshot you copied. `packageGet` / `packageList` set `listing_ahead` when
 origin HEAD differs from the commit your fork last absorbed (`origin_commit`).
-`/account/packages` and the listing page then replace Installed / Forked with a
-yellow **Fork outdated** button. Click it to copy a prompt: compare origin HEAD
-with your package, port useful changes, keep your customizations, then publish
-with `repoPublishSession` and `absorbed_upstream_commit` so the behind-upstream
-banner clears.
+Your `/@username` profile and the listing page then replace Installed / Forked
+with a yellow **Fork outdated** button. Click it to copy a prompt: compare
+origin HEAD with your package, port useful changes, keep your customizations,
+then publish with `repoPublishSession` and `absorbed_upstream_commit` so the
+behind-upstream banner clears.
 
 ## One-click install
 
