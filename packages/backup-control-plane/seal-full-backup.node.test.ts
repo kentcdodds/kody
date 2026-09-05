@@ -263,6 +263,76 @@ test('sealFullBackupDay completes over locked partial state and duplicate index 
 	assert.equal(sealed?.payload.day, day)
 })
 
+test('sealFullBackupDay resumes a locked partial day without re-getting dump bodies', async () => {
+	// 2026-09-04 production wedge: hourly seal copied every daily/full
+	// object then timed out before writing the signed manifest. Resume must
+	// HEAD sealed keys and skip staging re-download + 10069 byte-compare for
+	// dumps whose sealed size already matches the staging index entry.
+	const bucket = new MemoryBucket()
+	bucket.enableLockPolicy()
+	const day = '2026-09-04'
+	const { env, sqlKey } = await seedCompleteDay(bucket, day)
+	await putSqlStatsFixture(bucket, day, sqlKey)
+
+	const dumpBodies = {
+		storage: '{"key":"a","valueJson":"1"}\n',
+		mailbox: '{"kind":"thread","row":{"id":"thread-1"}}\n',
+		runLog:
+			'{"kind":"activationMilestone","row":{"milestone":"package_activated"}}\n',
+	} as const
+	const sealedDumpKeys = {
+		storage: `daily/full/${day}/storage/${encodeURIComponent('user-storage-1')}.ndjson`,
+		mailbox: `daily/full/${day}/mailbox/${encodeURIComponent('user-owner-1')}.ndjson`,
+		runLog: `daily/full/${day}/run-log/${encodeURIComponent('user-owner-1')}.ndjson`,
+	} as const
+	await bucket.put(sealedDumpKeys.storage, dumpBodies.storage)
+	await bucket.put(sealedDumpKeys.mailbox, dumpBodies.mailbox)
+	await bucket.put(sealedDumpKeys.runLog, dumpBodies.runLog)
+	const putsBeforeSeal = bucket.puts.length
+
+	const stagingDumpKeys = new Set([
+		stagingStorageDumpKey(day, 'user-storage-1'),
+		stagingMailboxDumpKey(day, 'user-owner-1'),
+		stagingRunLogDumpKey(day, 'user-owner-1'),
+	])
+	const getKeys: Array<string> = []
+	const originalGet = bucket.get.bind(bucket)
+	bucket.get = async (key: string) => {
+		getKeys.push(key)
+		return originalGet(key)
+	}
+
+	const result = await sealFullBackupDay(
+		env,
+		day,
+		new Date(`${day}T20:00:00.000Z`),
+	)
+	assert.equal(result.kind, 'sealed')
+	if (result.kind !== 'sealed') return
+	assert.equal(result.alreadySealed, false)
+	assert.ok(await bucket.head(sealedFullManifestKey(day)))
+	assert.deepEqual(
+		getKeys.filter((key) => stagingDumpKeys.has(key)),
+		[],
+		'resume must not re-get dump bodies already sealed with matching size',
+	)
+	assert.equal(
+		getKeys.some((key) => Object.values(sealedDumpKeys).includes(key)),
+		false,
+		'matching sealed dump sizes must skip putImmutableBytes body compare',
+	)
+	const sealedPuts = bucket.puts
+		.slice(putsBeforeSeal)
+		.filter((entry) => entry.key.startsWith(`daily/full/${day}/`))
+	assert.equal(
+		sealedPuts.some((entry) =>
+			Object.values(sealedDumpKeys).includes(entry.key),
+		),
+		false,
+		'already-sealed dumps must not be put again under the lock policy',
+	)
+})
+
 test('sealFullBackupDay fails closed on staging storage or mailbox sha mismatches', async () => {
 	const storageBucket = new MemoryBucket()
 	const storageDay = await seedCompleteDay(storageBucket)
