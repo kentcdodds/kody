@@ -3,6 +3,7 @@ import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-polic
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { maxRepoSourceFileBytes } from '#worker/repo/large-file-policy.ts'
+import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -409,6 +410,65 @@ test('packageSave does not gate updates to an existing package at the limit', as
 
 	expect(mockModule.ensureEntitySource).toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+})
+
+test('packageSave lock approval keeps the stored kody id during a rename', async () => {
+	const email = 'planned@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const existingPackageId = 'package-existing'
+	const db = createDatabase({
+		users: [
+			{ email, plan: 'pro', username: 'planned', stable_user_id: userId },
+		],
+		saved_packages: [
+			{
+				id: existingPackageId,
+				user_id: userId,
+				name: '@planned/current-package',
+				kody_id: 'current-package',
+				description: 'Current package',
+				tags_json: '[]',
+				search_text: null,
+				source_id: 'source-existing',
+				has_app: 0,
+				hidden: 0,
+				is_private: 0,
+				locked_at: '2026-04-18T00:00:00.000Z',
+				created_at: '2026-04-18T00:00:00.000Z',
+				updated_at: '2026-04-18T00:00:00.000Z',
+			},
+		],
+	})
+	setupPersistenceMocks()
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(
+		new PackagePublishLockedError({
+			packageId: existingPackageId,
+			packageName: '@planned/current-package',
+			pendingCommit: 'abc1234',
+			currentPublishedCommit: 'def5678',
+		}),
+	)
+	const ctx = createHandlerContext({ db, userId, email })
+
+	const error = await savePackageCapability
+		.handler(
+			{
+				package_id: existingPackageId,
+				confirm_destructive_overwrite: true,
+				files: buildPackageFiles('renamed-package', 'planned'),
+			},
+			ctx,
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+
+	expect(error).toBeInstanceOf(Error)
+	expect((error as Error).message).toContain(
+		'https://example.com/@planned/current-package/approve-publish?commit=abc1234',
+	)
+	expect((error as Error).message).not.toContain('/renamed-package/')
 })
 
 test('packageSave rejects a file over the per-file repo size limit with hosting guidance', async () => {

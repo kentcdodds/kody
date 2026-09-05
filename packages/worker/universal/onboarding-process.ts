@@ -75,7 +75,7 @@ export const onboardingChecklistItems = [
 		id: 'install-starter',
 		label: 'Persist your first package',
 		searchLabel: 'persist your first package',
-		href: '/onboarding/step-3',
+		profile: true,
 	},
 ] as const
 
@@ -349,13 +349,14 @@ export function onboardingIndexRedirectHref(search = '') {
 
 export function onboardingChecklistItemHref(
 	id: OnboardingChecklistItemId,
-	_onboardingPath?: string,
+	username: string,
 ): string {
 	const item = onboardingChecklistItems.find((candidate) => candidate.id === id)
 	if (!item) {
 		throw new Error(`Unknown onboarding checklist item ${id}`)
 	}
 	if ('href' in item) return item.href
+	if ('profile' in item) return routes.profile.href({ username })
 	return onboardingWizardStepHref(item.wizardStep)
 }
 

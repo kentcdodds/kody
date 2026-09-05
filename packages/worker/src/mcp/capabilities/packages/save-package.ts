@@ -383,7 +383,7 @@ export const savePackageCapability = defineDomainCapability(
 							approvalUrl: buildPackagePublishApprovalUrl({
 								baseUrl: ctx.callerContext.baseUrl,
 								username: owner.ownerScope,
-								kodyId: manifest.kody.id,
+								kodyId: existing?.kodyId ?? manifest.kody.id,
 								commit: error.pendingCommit,
 							}),
 						}),

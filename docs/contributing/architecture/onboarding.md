@@ -9,7 +9,7 @@ optional first-win email guide share one contract:
 | ---------------------------------------- | ---------------------------------------------------------------- |
 | Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                              |
 | Wizard Step 2 `/onboarding/step-2`       | Give Kody Access (MCP chips + Show more; prompt on `:service`)   |
-| Checklist                                | Verify email, then complete all three wizard steps               |
+| Checklist                                | Verify email, complete both wizard steps, then persist a package |
 | [`first-win`](../../guides/first-win.md) | Optional email → reply → memories loop after a host is connected |
 
 Step 2's index is the official MCP chip grid plus Show more. A selected service

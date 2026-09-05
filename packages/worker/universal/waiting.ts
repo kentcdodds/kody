@@ -271,7 +271,7 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 				why: 'Setup is still unfinished. Finish this step, or dismiss the checklist on Get started.',
 				who: 'you',
 				doLabel: 'Continue setup',
-				href: onboardingChecklistItemHref(step, routes.onboarding.href()),
+				href: onboardingChecklistItemHref(step, signals.username),
 				severity: 'setup',
 			})
 		}

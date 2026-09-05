@@ -1,15 +1,15 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
+import { createMatcher } from 'remix/route-pattern/match'
 import { loadAccountPackageApprovePublishData } from '#app/account-package-publish-lock.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadPackagePage } from '#app/package-page.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#universal/routes.ts'
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+
+const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
 
 function readPackageId(params: unknown): string | null {
 	if (
@@ -50,6 +50,32 @@ function redirectToCanonicalApproval(input: {
 		routes.communityPackageApprovePublish.href({
 			username: input.username,
 			kodyId: input.kodyId,
+		}),
+		requestUrl,
+	)
+	destination.search = requestUrl.search
+	return new Response(null, {
+		status: 302,
+		headers: {
+			location: destination.toString(),
+			'cache-control': 'private, no-store',
+		},
+	})
+}
+
+function redirectToCanonicalApprovalApi(input: {
+	request: Request
+	packageHref: string
+}) {
+	const match = communityPackageMatcher.match(
+		new URL(input.packageHref, input.request.url),
+	)
+	if (!match) return null
+	const requestUrl = new URL(input.request.url)
+	const destination = new URL(
+		routes.communityPackageApprovePublishApi.href({
+			username: match.params.username,
+			kodyId: match.params.kodyId,
 		}),
 		requestUrl,
 	)
@@ -160,16 +186,23 @@ export function createAccountPackageApprovePublishApiHandler(env: Env) {
 			}
 			let packageId = readPackageId(params)
 			const canonicalParams = readCanonicalPackageParams(params)
-			if (
-				!packageId &&
-				canonicalParams &&
-				canonicalParams.username === user.username
-			) {
-				const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
-					userId: user.mcpUser.userId,
+			if (!packageId && canonicalParams) {
+				const page = await loadPackagePage({
+					env,
+					request,
+					username: canonicalParams.username,
 					kodyId: canonicalParams.kodyId,
 				})
-				packageId = savedPackage?.id ?? null
+				if (page.kind === 'redirect') {
+					const redirect = redirectToCanonicalApprovalApi({
+						request,
+						packageHref: page.to,
+					})
+					if (redirect) return redirect
+				}
+				if (page.kind === 'page' && page.viewerIsOwner && page.ownerPackage) {
+					packageId = page.ownerPackage.id
+				}
 			}
 			if (!packageId) {
 				return jsonResponse(

@@ -962,6 +962,7 @@ export type OnboardingLoaderData = {
 }
 
 export type OnboardingChecklistLoaderData = {
+	username: string
 	items: Array<{
 		id: OnboardingChecklistItemId
 		done: boolean

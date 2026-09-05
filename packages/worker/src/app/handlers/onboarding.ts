@@ -67,6 +67,7 @@ import {
 export async function loadChecklist(
 	env: Env,
 	userId: string,
+	username: string,
 	hasMcpClient: boolean,
 ): Promise<OnboardingChecklistLoaderData> {
 	const [checklist, dismissed] = await Promise.all([
@@ -78,7 +79,7 @@ export async function loadChecklist(
 		}),
 		readOnboardingChecklistDismissed({ env, userId }),
 	])
-	return { items: checklist.items, dismissed }
+	return { username, items: checklist.items, dismissed }
 }
 
 export async function loadPersistedPackageKodyId(
@@ -308,7 +309,12 @@ export function createOnboardingHandler(env: Env) {
 				onboarding.persistedPackageKodyId,
 				onboarding.milestones,
 			] = await Promise.all([
-				loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+				loadChecklist(
+					env,
+					user.mcpUser.userId,
+					user.username,
+					onboarding.hasMcpClient,
+				),
 				loadPersistedPackageKodyId(env, user.mcpUser.userId),
 				loadOnboardingMilestones(env, user.mcpUser.userId),
 			])
@@ -396,7 +402,12 @@ export function createOnboardingApiHandler(env: Env) {
 					onboarding.persistedPackageKodyId,
 					onboarding.milestones,
 				] = await Promise.all([
-					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
+					loadChecklist(
+						env,
+						user.mcpUser.userId,
+						user.username,
+						onboarding.hasMcpClient,
+					),
 					loadPersistedPackageKodyId(env, user.mcpUser.userId),
 					loadOnboardingMilestones(env, user.mcpUser.userId),
 				])
