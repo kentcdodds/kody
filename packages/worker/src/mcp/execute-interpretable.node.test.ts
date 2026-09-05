@@ -101,6 +101,19 @@ export default async function main() {
 
 	expect(
 		classifyExecuteInterpretable(
+			`import { oauthClientCredentials } from 'kody:runtime'
+export default async function main() {
+	return await oauthClientCredentials({
+		tokenUrl: 'https://example.com/oauth/token',
+		clientIdSecret: 'client-id',
+		clientSecretSecret: 'client-secret',
+	})
+}`,
+		),
+	).toEqual({ class: 'non_interpretable', reason: 'has_fetch' })
+
+	expect(
+		classifyExecuteInterpretable(
 			`const specifier = condition ? 'kody:runtime' : 'lodash'
 const mod = await import(specifier)
 export default async function main() {

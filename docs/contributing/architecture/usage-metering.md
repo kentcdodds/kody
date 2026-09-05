@@ -340,10 +340,10 @@ tier). This is **not** a `recordUsage()` event and does not enter
 
 A module is the `q` numerator when it is pure orchestration over `kody.*` /
 `kody:runtime` and has none of: `kody:@` package imports, bare npm imports,
-`node:` builtins, ambient `fetch` / `createAuthenticatedFetch`, computed
-`import(expr)`, or any other non-`kody:runtime` specifier. Type-only imports are
-ignored. Unparseable source is conservative (not interpretable). This is not an
-interpreter runtime.
+`node:` builtins, ambient `fetch` / `createAuthenticatedFetch` /
+`oauthClientCredentials`, computed `import(expr)`, or any other
+non-`kody:runtime` specifier. Type-only imports are ignored. Unparseable source
+is conservative (not interpretable). This is not an interpreter runtime.
 
 Production dataset `kody_execute_interpretable_events` (preview:
 `kody_execute_interpretable_events_preview`). Binding

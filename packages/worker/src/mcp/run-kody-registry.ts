@@ -515,9 +515,10 @@ export async function runModuleWithRegistry(
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
 	if (
+		!options?.packageContext &&
 		shouldRecordExecuteUsageForRun({
 			surface: options?.runRecord?.surface,
-			hasPackageContext: Boolean(options?.packageContext),
+			hasPackageContext: false,
 		})
 	) {
 		recordExecuteInterpretableEvent(env, { source: code })

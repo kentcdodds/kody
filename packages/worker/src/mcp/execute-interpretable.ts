@@ -19,8 +19,9 @@
  * 2. `has_package_import` — `kody:@scope/pkg` (needs package RPC stubs)
  * 3. `has_npm` — bare npm specifier
  * 4. `has_node_builtin` — `node:` specifier
- * 5. `has_fetch` — ambient `fetch` / `globalThis.fetch` / `createAuthenticatedFetch`
- *    (secret placeholders in-V8)
+ * 5. `has_fetch` — ambient `fetch` / `globalThis.fetch`, or in-isolate
+ *    `kody:runtime` helpers that themselves `fetch` with secret placeholders
+ *    (`createAuthenticatedFetch`, `oauthClientCredentials`)
  * 6. `has_dynamic_import` — computed `import(expr)` (specifier not a literal)
  * 7. `has_unsupported_import` — any other non-`kody:runtime` specifier
  *    (`cloudflare:`, relative files, URL imports, unknown `kody:` schemes)
@@ -81,7 +82,14 @@ export type ExecuteInterpretableTelemetryEnv = {
 export const executeInterpretableTelemetryIndex = 'execute_interpretable_q'
 
 const kodyRuntimeSpecifier = 'kody:runtime'
-const ambientFetchBindingNames = new Set(['fetch', 'createAuthenticatedFetch'])
+const kodyRuntimeNetworkHelpers = new Set([
+	'createAuthenticatedFetch',
+	'oauthClientCredentials',
+])
+const ambientFetchBindingNames = new Set([
+	'fetch',
+	...kodyRuntimeNetworkHelpers,
+])
 const globalObjectNames = new Set(['globalThis', 'global', 'self'])
 
 const disqualifierPriority: ReadonlyArray<
@@ -159,7 +167,9 @@ function isAmbientFetchMember(node: unknown) {
 	if (typed.computed === true) return false
 	const objectName = readIdentifierName(typed.object)
 	const propertyName = readIdentifierName(typed.property)
-	if (propertyName === 'createAuthenticatedFetch') return true
+	if (propertyName != null && kodyRuntimeNetworkHelpers.has(propertyName)) {
+		return true
+	}
 	return (
 		propertyName === 'fetch' &&
 		objectName != null &&
@@ -182,7 +192,8 @@ function importIntroducesAuthenticatedFetch(node: unknown) {
 		const specifierType = readNodeType(specifier)
 		if (specifierType === 'ImportSpecifier') {
 			const imported = (specifier as { imported?: unknown }).imported
-			return readIdentifierName(imported) === 'createAuthenticatedFetch'
+			const importedName = readIdentifierName(imported)
+			return importedName != null && kodyRuntimeNetworkHelpers.has(importedName)
 		}
 		return false
 	})

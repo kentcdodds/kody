@@ -24,13 +24,14 @@ test('origin and platform bind execute interpretable telemetry in production and
 			const binding = config.env?.[envName]?.analytics_engine_datasets?.find(
 				(entry) => entry.binding === 'EXECUTE_INTERPRETABLE_EVENTS',
 			)
-			expect(binding?.binding, `${configPath} env.${envName}`).toBe(
-				'EXECUTE_INTERPRETABLE_EVENTS',
-			)
-			expect(
-				binding?.dataset?.length ?? 0,
-				`${configPath} env.${envName} dataset`,
-			).toBeGreaterThan(0)
+			const expectedDataset =
+				envName === 'production'
+					? 'kody_execute_interpretable_events'
+					: 'kody_execute_interpretable_events_preview'
+			expect(binding, `${configPath} env.${envName}`).toEqual({
+				binding: 'EXECUTE_INTERPRETABLE_EVENTS',
+				dataset: expectedDataset,
+			})
 		}
 	}
 })

@@ -1089,6 +1089,13 @@ export default async function main() { return await whatShipped({}) }`
 			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
 		})
 		expect(recordSpy).not.toHaveBeenCalled()
+
+		recordSpy.mockClear()
+		await runModuleWithRegistry(env, callerContext, glueCode, undefined, {
+			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+			runRecord: { surface: 'execute' },
+		})
+		expect(recordSpy).not.toHaveBeenCalled()
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
