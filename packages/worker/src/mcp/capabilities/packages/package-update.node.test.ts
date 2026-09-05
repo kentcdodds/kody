@@ -183,7 +183,7 @@ test('packageUpdate locks a package and rejects unlock with the owner website UR
 	expect(unlockError).toBeInstanceOf(McpCallerError)
 	expect(unlockError).toMatchObject({
 		message:
-			'Agents cannot unlock packages. Send the owner to https://heykody.dev/@kentcdodds/demo/settings to unlock publishes.',
+			'Agents cannot unlock packages. Send the owner to https://heykody.dev/@user/notes/settings to unlock publishes.',
 	})
 	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(1)
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()

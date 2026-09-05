@@ -96,6 +96,10 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		title: 'Packages',
 		file: 'packages.md',
 		paths: [
+			'/account/packages',
+			'/account/packages/:packageId',
+			'/account/packages/:packageId/approve-publish',
+			'/account/packages/:packageId/files(/*relativePath)',
 			'/@:username',
 			'/@:username/:kodyId',
 			'/@:username/:kodyId/settings',
