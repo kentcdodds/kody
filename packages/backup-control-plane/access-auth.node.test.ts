@@ -70,6 +70,27 @@ test('verifyAccessJwt accepts a self-signed RS256 Access assertion', async () =>
 	assert.equal(identity.email, 'ops@example.com')
 })
 
+test('verifyAccessJwt accepts Access service-token JWTs with common_name', async () => {
+	resetAccessJwksCacheForTests()
+	const { kid, jwks, sign } = rsaJwksAndSigner()
+	const env = environment()
+	const jwt = sign(
+		{ alg: 'RS256', kid },
+		futurePayload(env, {
+			email: undefined,
+			common_name: 'cursor-seal-operator',
+		}),
+	)
+	const identity = await verifyAccessJwt(
+		env,
+		new Request('https://backup.example/', {
+			headers: { 'cf-access-jwt-assertion': jwt },
+		}),
+		async () => Response.json(jwks),
+	)
+	assert.equal(identity.email, env.ACCESS_ALLOWED_EMAIL)
+})
+
 test('verifyAccessJwt rejects wrong aud, email, iss, expiry, signature, and missing header', async () => {
 	resetAccessJwksCacheForTests()
 	const { kid, jwks, sign } = rsaJwksAndSigner()
