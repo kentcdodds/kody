@@ -21,6 +21,7 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 	turnstileWidgetHeightPx,
+	turnstileWidgetWidthPx,
 } from '#client/public-form-protection.ts'
 import {
 	fieldErrorProps,
@@ -310,16 +311,17 @@ const bannerTurnstileCss = {
 
 const formCss = {
 	display: 'flex',
-	/* Wrap, do not nowrap: the pill refuses to shrink (`flex: 1 0 auto`) and
-	   the widget is a fixed 300px. Without wrap, that row overflows between
-	   the phone column breakpoint and ~800px (iPad portrait). */
+	/* Wrap children when the inner is narrower than pill + 300px widget.
+	   min-width prefers moving this form onto the next banner line over
+	   shrinking beside the prompt and overflowing (or stacking on desktop). */
 	flexWrap: 'wrap' as const,
 	alignItems: 'center',
 	justifyContent: 'center',
 	gap: spacing.sm,
 	margin: 0,
-	minWidth: 0,
+	width: 'max-content',
 	maxWidth: '100%',
+	minWidth: `min(100%, calc(${turnstileWidgetWidthPx}px + 26.5rem))`,
 	[stackMq]: {
 		/* Phone: the 300px widget must not sit beside the pill. Column plus a
 		   full-width pill puts Turnstile on its own centered row. */
