@@ -63,7 +63,10 @@ import {
 	maxRepoSourceFileBytes,
 } from './large-file-policy.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
-import { timePublishExternalPushPhase } from './publish-phase-timing.ts'
+import {
+	timePublishExternalPushPhase,
+	type PublishPhaseTimings,
+} from './publish-phase-timing.ts'
 
 export type RepoCheckKind =
 	| 'manifest'
@@ -1099,6 +1102,7 @@ export async function runRepoChecks(input: {
 	baseUrl?: string
 	userId?: string
 	expectedPackageScope?: string
+	phaseTimings?: PublishPhaseTimings
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -1350,7 +1354,7 @@ export async function runRepoChecks(input: {
 	try {
 		const runTypecheckPhase = async (): Promise<RepoCheckResult> => {
 			const { value } = await timePublishExternalPushPhase(
-				{ phase: 'checks/typecheck' },
+				{ phase: 'checks/typecheck', timings: input.phaseTimings },
 				async () => {
 					if (missingCallableTypecheckTargets.length > 0) {
 						return {
@@ -1406,7 +1410,7 @@ export async function runRepoChecks(input: {
 			message: string
 		}> => {
 			const { value } = await timePublishExternalPushPhase(
-				{ phase: 'checks/bundle' },
+				{ phase: 'checks/bundle', timings: input.phaseTimings },
 				async () => {
 					if (missingBundleTargets.length > 0) {
 						return {

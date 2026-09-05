@@ -107,7 +107,11 @@ import {
 	externalPublishWorkspaceDir,
 	isWorkspaceSqliteTooBigMessage,
 } from './external-publish-clone.ts'
-import { timePublishExternalPushPhase } from './publish-phase-timing.ts'
+import {
+	attachPublishPhaseTimings,
+	timePublishExternalPushPhase,
+	type PublishPhaseTimings,
+} from './publish-phase-timing.ts'
 import {
 	buildRepoSessionWorkspaceName,
 	measureRepoSessionWorkspaceBlobBytes,
@@ -2935,12 +2939,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			scope: 'read',
 		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		const phaseTimings: PublishPhaseTimings = {}
 		let publishClone: Awaited<ReturnType<typeof cloneExternalPublishWorkspace>>
 		try {
 			// In-memory clone: publish verification does not need the session
 			// Durable Object workspace (KODY-CLOUDFLARE-57).
 			;({ value: publishClone } = await timePublishExternalPushPhase(
-				{ phase: 'clone', sourceId: source.id },
+				{ phase: 'clone', sourceId: source.id, timings: phaseTimings },
 				async () => {
 					const cloned = await cloneExternalPublishWorkspace({
 						remote: sourceAccess.remote,
@@ -3004,6 +3009,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 			allowLockedPublish: input.allowLockedPublish,
+			phaseTimings,
 		})
 		if (publishResult.status === 'already_published') {
 			// D1 stays a no-op (overlapping inline + durable escalation). Rewrite
@@ -3068,10 +3074,13 @@ class RepoSessionBase extends DurableObject<Env> {
 				})
 				throw error
 			}
-			return {
-				...publishResult,
-				force_artifact_rebuild: forceArtifactRebuild,
-			}
+			return attachPublishPhaseTimings(
+				{
+					...publishResult,
+					force_artifact_rebuild: forceArtifactRebuild,
+				},
+				phaseTimings,
+			)
 		} else if (publishResult.status === 'published') {
 			try {
 				const sourceWriteAccess = await ensureArtifactRepoRemote({
@@ -3125,7 +3134,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				})
 			}
 		}
-		return publishResult
+		return attachPublishPhaseTimings(publishResult, phaseTimings)
 	}
 }
 

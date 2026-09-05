@@ -113,6 +113,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		},
 	})
 
+	const phaseTimings = { clone_ms: 9 }
 	const published = await publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
@@ -122,9 +123,13 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		workspace: workspace(),
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
+		phaseTimings,
 	})
 
 	expect(published.status).toBe('published')
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({ phaseTimings }),
+	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

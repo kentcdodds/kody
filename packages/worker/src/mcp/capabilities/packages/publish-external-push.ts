@@ -30,7 +30,12 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
-import { timePublishExternalPushPhase } from '#worker/repo/publish-phase-timing.ts'
+import {
+	mergePublishPhaseTimings,
+	timePublishExternalPushPhase,
+	withPublishAttemptTotalMs,
+	type PublishPhaseTimings,
+} from '#worker/repo/publish-phase-timing.ts'
 import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 import {
 	buildPendingPackageSecretApprovalsSummary,
@@ -243,6 +248,61 @@ const packageTestHintsSchema = z.object({
 		.optional(),
 })
 
+const publishPhaseTimingsSchema = z
+	.object({
+		clone_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds spent cloning Artifacts HEAD into the publish workspace. Omitted when this attempt did not clone.',
+			),
+		checks_typecheck_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds spent in the publish typecheck phase. Omitted when typecheck did not run (for example already_published).',
+			),
+		checks_bundle_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds spent in the publish bundle-check phase. Distinct from rebuild_ms. Omitted when bundle check did not run.',
+			),
+		rebuild_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds spent rebuilding published package artifacts after checks, or confirming they match this commit. Distinct from checks_bundle_ms.',
+			),
+		dependents_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds spent indexing static dependents, hosted app URL, test hints, and pending secret approvals.',
+			),
+		total_ms: z
+			.number()
+			.int()
+			.nonnegative()
+			.optional()
+			.describe(
+				'Milliseconds from the start of this publish attempt until the result was ready. On status dispatched, this is time-to-dispatch.',
+			),
+	})
+	.describe(
+		'Coarse packagePublishExternalPush phase timings in milliseconds. Field names are stable. Omitted keys mean that phase did not run in this result. checks_bundle_ms and rebuild_ms stay separate.',
+	)
+
 const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('already_published'),
@@ -251,6 +311,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
+		phase_timings: publishPhaseTimingsSchema,
 	}),
 	z.object({
 		status: z.literal('not_fast_forward'),
@@ -290,6 +351,7 @@ const outputSchema = z.discriminatedUnion('status', [
 		test_hints: packageTestHintsSchema.optional(),
 		static_dependents: staticDependentsSchema,
 		pending_secret_package_approvals: pendingPackageSecretApprovalsSchema,
+		phase_timings: publishPhaseTimingsSchema,
 	}),
 	z.object({
 		status: z.literal('dispatched'),
@@ -298,10 +360,26 @@ const outputSchema = z.discriminatedUnion('status', [
 		idempotency_key: z.string(),
 		run_status: z.string().nullable(),
 		message: z.string(),
+		phase_timings: publishPhaseTimingsSchema,
 	}),
 ])
 
 type PublishExternalPushResult = z.infer<typeof outputSchema>
+
+function buildPublishPhaseTimings(input: {
+	startedAt: number
+	fromPublish?: PublishPhaseTimings
+	rebuildMs: number
+	dependentsMs: number
+}): PublishPhaseTimings {
+	return withPublishAttemptTotalMs(
+		mergePublishPhaseTimings(input.fromPublish, {
+			rebuild_ms: input.rebuildMs,
+			dependents_ms: input.dependentsMs,
+		}),
+		input.startedAt,
+	)
+}
 
 function readPackageTestHintsFromManifest(input: {
 	manifest: unknown
@@ -638,6 +716,12 @@ async function runExternalPublishAttempt(input: {
 					static_dependents: alreadyPublishedExtras.static_dependents,
 					pending_secret_package_approvals:
 						alreadyPublishedExtras.pending_secret_package_approvals,
+					phase_timings: buildPublishPhaseTimings({
+						startedAt: publishStartedAt,
+						fromPublish: result.phase_timings,
+						rebuildMs,
+						dependentsMs,
+					}),
 				}
 			}
 			if (result.status === 'locked') {
@@ -740,6 +824,12 @@ async function runExternalPublishAttempt(input: {
 				static_dependents: publishedExtras.static_dependents,
 				pending_secret_package_approvals:
 					publishedExtras.pending_secret_package_approvals,
+				phase_timings: buildPublishPhaseTimings({
+					startedAt: publishStartedAt,
+					fromPublish: result.phase_timings,
+					rebuildMs,
+					dependentsMs,
+				}),
 			} as const
 		} catch (error) {
 			assertNotAborted(input.signal)
@@ -778,7 +868,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 	{
 		name: 'packagePublishExternalPush',
 		description:
-			'Publish the current Artifacts git HEAD for a saved package after a packageGetGitRemote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Common cases return the full synchronous result. If the publish exceeds the inline budget (~35s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflowRunList instead of hanging until an opaque execute timeout.',
+			'Publish the current Artifacts git HEAD for a saved package after a packageGetGitRemote clone/edit/push workflow and server-side checks pass. Non-fast-forward publishes require explicit destructive overwrite confirmation and a verified restorable backup snapshot. Published and already_published responses include hosted_app_url when the package declares an app, plus bounded static dependent metadata so agents can decide whether stale kody:@ bundled snapshots need inspection or dependent republish; Kody does not republish dependents automatically. Those success results also include phase_timings with optional millisecond fields clone_ms, checks_typecheck_ms, checks_bundle_ms, rebuild_ms, dependents_ms, and total_ms — omitted keys did not run; checks_bundle_ms and rebuild_ms stay separate. Common cases return the full synchronous result. If the publish exceeds the inline budget (~35s), the work is dispatched once to a durable workflow (idempotent per acting caller plus the full semantic publish input, including force/overwrite flags) and this capability returns status dispatched with a workflow_id to poll via workflowRunList instead of hanging until an opaque execute timeout. dispatched includes phase_timings.total_ms as time-to-dispatch.',
 		keywords: ['package', 'publish', 'git', 'artifacts', 'external', 'push'],
 		readOnly: false,
 		idempotent: true,
@@ -848,6 +938,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				allow_force: args.allow_force,
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
 			}
+			const escalateStartedAt = Date.now()
 			const outcome = await runWithDurableEscalation({
 				env: ctx.env,
 				userId: user.userId,
@@ -873,7 +964,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 				case 'completed':
 					return outcome.value
 				case 'dispatched':
-					return outcome.handle
+					return {
+						...outcome.handle,
+						phase_timings: withPublishAttemptTotalMs({}, escalateStartedAt),
+					}
 				case 'failed':
 					throw new Error(outcome.error)
 				default: {

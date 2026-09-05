@@ -701,11 +701,18 @@ publish checks run.
    this package. Stale entries mean the dependent bundle captured a dependency
    commit that differs from the current published commit. Kody does not
    automatically republish those dependents; inspect and republish only the ones
-   whose static snapshot should reference the current published commit. When an
-   interactive publish exceeds the inline budget (~35s), the tool returns
+   whose static snapshot should reference the current published commit. Those
+   same success results include `phase_timings` with optional millisecond fields
+   `clone_ms`, `checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`,
+   `dependents_ms`, and `total_ms`. Omitted keys did not run on that attempt.
+   `checks_bundle_ms` is the publish bundle-check; `rebuild_ms` is the later
+   artifact rebuild — they stay separate. Read `phase_timings` on the capability
+   result; it is not available from `runList` or Cloudflare Log Explorer. When
+   an interactive publish exceeds the inline budget (~35s), the tool returns
    `status: "dispatched"` with a `workflow_id` instead of hanging until the host
-   times out. Poll `workflowRunList` with that `workflow_id` until the run
-   finishes; do not retry the same publish while the run is active.
+   times out. `dispatched` includes `phase_timings.total_ms` as
+   time-to-dispatch. Poll `workflowRunList` with that `workflow_id` until the
+   run finishes; do not retry the same publish while the run is active.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package

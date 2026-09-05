@@ -195,6 +195,11 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect(publishedResult.status).toBe('published')
 	expect(publishedResult).toEqual(
 		expect.objectContaining({
+			phase_timings: {
+				rebuild_ms: expect.any(Number),
+				dependents_ms: expect.any(Number),
+				total_ms: expect.any(Number),
+			},
 			hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
 			test_hints: {
 				app: 'packageAppFetch({ kody_id: "demo-package" })',
@@ -276,6 +281,80 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	)
 })
 
+test('publishExternalPush returns forwarded clone and check timings without collapsing bundle and rebuild', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		phase_timings: {
+			clone_ms: 11,
+			checks_typecheck_ms: 22,
+			checks_bundle_ms: 33,
+		},
+	})
+
+	const published = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(published.status).toBe('published')
+	if (published.status !== 'published') {
+		throw new Error('expected published')
+	}
+	expect(published.phase_timings).toEqual({
+		clone_ms: 11,
+		checks_typecheck_ms: 22,
+		checks_bundle_ms: 33,
+		rebuild_ms: expect.any(Number),
+		dependents_ms: expect.any(Number),
+		total_ms: expect.any(Number),
+	})
+	expect(published.phase_timings.rebuild_ms).toBeGreaterThanOrEqual(0)
+	expect(published.phase_timings.dependents_ms).toBeGreaterThanOrEqual(0)
+	expect(published.phase_timings.total_ms).toBeGreaterThanOrEqual(0)
+	expect(published.phase_timings.checks_bundle_ms).toBe(33)
+
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-old',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'already_published',
+		published_commit: 'commit-old',
+		phase_timings: { clone_ms: 7 },
+	})
+
+	const alreadyPublished = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+	expect(alreadyPublished).toEqual(
+		expect.objectContaining({
+			status: 'already_published',
+			published_commit: 'commit-old',
+			phase_timings: {
+				clone_ms: 7,
+				rebuild_ms: expect.any(Number),
+				dependents_ms: expect.any(Number),
+				total_ms: expect.any(Number),
+			},
+		}),
+	)
+	if (alreadyPublished.status !== 'already_published') {
+		throw new Error('expected already_published')
+	}
+	expect(alreadyPublished.phase_timings.checks_typecheck_ms).toBeUndefined()
+	expect(alreadyPublished.phase_timings.checks_bundle_ms).toBeUndefined()
+})
+
 test('publishExternalPush handles already_published branches, stale dependents, and rebuild failures', async () => {
 	const targets = [
 		{
@@ -318,6 +397,11 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 			items: [],
 		}),
 		pending_secret_package_approvals: null,
+		phase_timings: {
+			rebuild_ms: expect.any(Number),
+			dependents_ms: expect.any(Number),
+			total_ms: expect.any(Number),
+		},
 	})
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
 		sourceId: 'source-1',
@@ -651,6 +735,9 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		idempotency_key: ['user-1', ...expectedParts].join(':'),
 		run_status: 'queued',
 		message: 'dispatched',
+		phase_timings: {
+			total_ms: expect.any(Number),
+		},
 	})
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
@@ -776,6 +863,11 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			items: [],
 		}),
 		pending_secret_package_approvals: null,
+		phase_timings: {
+			rebuild_ms: expect.any(Number),
+			dependents_ms: expect.any(Number),
+			total_ms: expect.any(Number),
+		},
 	})
 
 	setupDefaultMocks()
