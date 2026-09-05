@@ -11,10 +11,7 @@ import {
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import {
-	buildHostApprovalRequestUrl,
-	submitApprovalRequest,
-} from '#client/routes/account-approval-shared.ts'
+import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import {
 	pageDescriptionCss,
@@ -170,20 +167,24 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (approvingAllHosts || hostApprovalLinks.length === 0) return
 		approvingAllHosts = true
 		update()
-		const remainingLinks = [...hostApprovalLinks]
 		try {
-			for (const link of remainingLinks) {
-				const requestUrl = buildHostApprovalRequestUrl(
-					link.approvalUrl,
-					window.location.origin,
-				)
-				await submitApprovalRequest('approve', requestUrl)
-				hostApprovalLinks = hostApprovalLinks.filter(
-					(entry) =>
-						entry.secretName !== link.secretName || entry.host !== link.host,
-				)
-				update()
-			}
+			const names = Array.from(
+				new Set(hostApprovalLinks.map((link) => link.secretName)),
+			)
+			const hosts = Array.from(
+				new Set(hostApprovalLinks.map((link) => link.host)),
+			)
+			const requestUrl = new URL(
+				'/account/secrets.json',
+				window.location.origin,
+			)
+			requestUrl.searchParams.set('names', names.join(','))
+			requestUrl.searchParams.set('hosts', hosts.join(','))
+			await submitApprovalRequest(
+				'approve',
+				`${requestUrl.pathname}${requestUrl.search}`,
+			)
+			hostApprovalLinks = []
 			setStatus('All hosts approved.', 'info')
 		} catch (error) {
 			setStatus(

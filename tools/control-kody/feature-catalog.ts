@@ -106,7 +106,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		id: 'secrets',
 		title: 'Secrets',
 		file: 'secrets.md',
-		paths: ['/account/secrets'],
+		paths: ['/account/secrets', '/connect/secrets'],
 		apis: ['/account/secrets.json'],
 	},
 	{
@@ -249,6 +249,7 @@ export const requiredHtmlPrefixes = [
 	'/account',
 	'/admin',
 	'/connect/oauth',
+	'/connect/secrets',
 	'/community',
 	'/@:username',
 ] as const

@@ -86,15 +86,18 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	} catch (error) {
 		const message = getErrorMessage(error)
 		const approvals = parseHostApprovalRequiredBatchMessage(message)
-		expect(approvals).toEqual([
-			expect.objectContaining({
-				secretName: 'spotifyRefreshToken',
-				host: 'example.com',
-				approvalUrl: expect.stringMatching(
-					/\/account\/secrets\/user\/spotifyRefreshToken\?allowed-host=example\.com$/,
-				),
-			}),
-		])
+		expect(approvals).toEqual({
+			entries: [
+				expect.objectContaining({
+					secretName: 'spotifyRefreshToken',
+					host: 'example.com',
+					approvalUrl: expect.stringMatching(
+						/\/connect\/secrets\?name=spotifyRefreshToken&hosts=example\.com$/,
+					),
+				}),
+			],
+			bulkApprovalUrl: null,
+		})
 	} finally {
 		blockedResolveSpy.mockRestore()
 	}
@@ -209,12 +212,15 @@ test('fetch gateway expands secret placeholders in URL paths after Request seria
 		const approvals = parseHostApprovalRequiredBatchMessage(
 			getErrorMessage(error),
 		)
-		expect(approvals).toEqual([
-			expect.objectContaining({
-				secretName: 'telegramBotToken',
-				host: 'api.telegram.org',
-			}),
-		])
+		expect(approvals).toEqual({
+			entries: [
+				expect.objectContaining({
+					secretName: 'telegramBotToken',
+					host: 'api.telegram.org',
+				}),
+			],
+			bulkApprovalUrl: null,
+		})
 	} finally {
 		blockedResolveSpy.mockRestore()
 	}
@@ -793,8 +799,8 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 					getErrorMessage(error),
 				)
 				return (
-					approvals?.[0]?.secretName === blockedSecretName &&
-					approvals?.[0]?.host === 'api-m.paypal.com'
+					approvals?.entries[0]?.secretName === blockedSecretName &&
+					approvals?.entries[0]?.host === 'api-m.paypal.com'
 				)
 			})
 		}

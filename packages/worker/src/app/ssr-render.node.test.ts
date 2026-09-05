@@ -1559,6 +1559,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 					names: ['googleAccessToken'],
 					scope: 'user',
 					requestedHost: 'gmail.googleapis.com',
+					requestedHosts: ['gmail.googleapis.com'],
 					requestedPackageId: null,
 					currentAllowedHosts: ['oauth2.googleapis.com'],
 					currentAllowedPackages: [],
@@ -1574,6 +1575,58 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
 	expect(approvalHtml).not.toContain('Approve secret access')
+
+	const connectSecretsResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/connect/secrets?name=googleAccessToken&hosts=gmail.googleapis.com,oauth2.googleapis.com',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountSecrets: {
+				ok: true,
+				email: 'user@example.com',
+				packageOptions: [],
+				packages: [],
+				secrets: [
+					{
+						id: 'user:googleAccessToken',
+						name: 'googleAccessToken',
+						scope: 'user',
+						description: '',
+						packageId: null,
+						packageTitle: null,
+						allowedHosts: ['oauth2.googleapis.com'],
+						allowedPackages: [],
+						createdAt: '2026-01-01T00:00:00.000Z',
+						updatedAt: '2026-01-01T00:00:00.000Z',
+						expiresAt: null,
+						ttlMs: null,
+					},
+				],
+				selectedSecret: null,
+				approval: {
+					name: 'googleAccessToken',
+					names: ['googleAccessToken'],
+					scope: 'user',
+					requestedHost: 'gmail.googleapis.com',
+					requestedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
+					requestedPackageId: null,
+					currentAllowedHosts: ['oauth2.googleapis.com'],
+					currentAllowedPackages: [],
+				},
+				approvalError: null,
+			},
+		},
+	})
+	expect(connectSecretsResponse.status).toBe(200)
+	const connectSecretsHtml = await readResponseText(connectSecretsResponse)
+	expect(connectSecretsHtml).toContain('data-testid="connect-secrets"')
+	expect(connectSecretsHtml).toContain('Allow this secret at these hosts')
+	expect(connectSecretsHtml).toContain('gmail.googleapis.com')
+	expect(connectSecretsHtml).toContain('oauth2.googleapis.com')
+	expect(connectSecretsHtml).toContain('Allow all 2 hosts')
+	expect(connectSecretsHtml).not.toContain('New secret')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {

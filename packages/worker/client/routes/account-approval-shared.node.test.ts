@@ -32,6 +32,14 @@ test('buildHostApprovalRequestUrl maps secret approval links and rejects invalid
 	).toBe(
 		'/account/secrets.json?package_id=pkg-1&selected=package%3A%3Apkg-1%3A%3AsigningSecret',
 	)
+	expect(
+		buildHostApprovalRequestUrl(
+			'https://example.com/connect/secrets?name=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
+			'https://example.com',
+		),
+	).toBe(
+		'/account/secrets.json?name=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
+	)
 	expect(() =>
 		buildHostApprovalRequestUrl('/account/secrets?allowed-host=slack.com'),
 	).toThrow('Invalid approval link.')

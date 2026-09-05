@@ -1369,6 +1369,7 @@ export type AccountSecretsLoaderData = {
 		names: Array<string>
 		scope: 'package' | 'session' | 'user'
 		requestedHost: string
+		requestedHosts: Array<string>
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
 		currentAllowedPackages: Array<string>

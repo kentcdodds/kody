@@ -1,6 +1,9 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
-import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
+import {
+	buildSecretHostApprovalUrl,
+	buildSecretHostBulkApprovalUrlIfNeeded,
+} from '#mcp/secrets/host-approval.ts'
 import {
 	buildBasicAuthSecretPlaceholderFromReference,
 	buildSecretPlaceholder,
@@ -464,8 +467,21 @@ export async function expandSecretPlaceholders(input: {
 			resolvedSecrets,
 		})
 		if (missingApprovals.length > 0) {
+			const bulkApprovalUrl = buildSecretHostBulkApprovalUrlIfNeeded({
+				baseUrl: input.props.baseUrl,
+				names: missingApprovals.map((entry) => entry.secretName),
+				hosts: missingApprovals.map((entry) => entry.host),
+				scope: input.props.storageContext?.packageId
+					? 'package'
+					: input.props.storageContext?.sessionId
+						? 'session'
+						: 'user',
+				storageContext: input.props.storageContext,
+			})
 			throw new Error(
-				createHostSecretAccessDeniedBatchMessage(missingApprovals),
+				createHostSecretAccessDeniedBatchMessage(missingApprovals, {
+					bulkApprovalUrl,
+				}),
 			)
 		}
 	}
