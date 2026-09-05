@@ -84,6 +84,8 @@ style, tests, MCP capabilities, and runtime architecture.
 
 - [Architecture](./architecture/index.md) — production worker fleet, request
   lifecycle, [authorization](./architecture/authorization.md) (RBAC)
+- Spikes (point-in-time experiments, not durable design):
+  [fixed Dynamic Worker interpreter vs unique-worker billing](./spikes/dynamic-worker-fixed-interpreter-spike.md)
 
 Documentation for **using** Kody as an MCP server (not building the repo) lives
 under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
