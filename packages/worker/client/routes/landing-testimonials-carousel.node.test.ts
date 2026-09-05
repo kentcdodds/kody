@@ -4,11 +4,17 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	PARKED_TRANSFORM,
+	appendFlickSample,
 	canPauseOnHover,
+	classifyPointerIntent,
+	finishPointerGesture,
+	flickVelocityPxPerMs,
 	isTestimonialsLanePaused,
 	listLanePlacements,
 	parkUnusedLaneCards,
 	placeLaneCard,
+	shouldCoastFlick,
+	stepFlickCoast,
 	wrapPagerIndex,
 	wrapUnitInterval,
 } from './landing-testimonials-motion.ts'
@@ -232,6 +238,98 @@ test('unused cards keep a parked transform instead of snapping to the origin', (
 	expect(exiting.style.transform).not.toBe('')
 	expect(clone.hidden).toBe(true)
 	expect(clone.style.transform).toBe(PARKED_TRANSFORM)
+})
+
+test('a fast swipe coasts after release instead of freezing on the finger', () => {
+	expect(classifyPointerIntent({ dx: 2, dy: 1 })).toBe('pending')
+	expect(classifyPointerIntent({ dx: 24, dy: 4 })).toBe('drag')
+	expect(classifyPointerIntent({ dx: 4, dy: 24 })).toBe('scroll')
+
+	const flickSamples = [
+		{ t: 0, x: 300 },
+		{ t: 16, x: 240 },
+		{ t: 32, x: 170 },
+		{ t: 48, x: 90 },
+	]
+	const windowed = appendFlickSample(flickSamples, { t: 100, x: 80 })
+	expect(windowed[0]?.t).toBe(32)
+	expect(windowed).toHaveLength(3)
+	expect(flickVelocityPxPerMs(flickSamples)).toBeGreaterThan(3)
+	expect(shouldCoastFlick(0.2)).toBe(false)
+	expect(shouldCoastFlick(flickVelocityPxPerMs(flickSamples))).toBe(true)
+
+	const slowDrag = finishPointerGesture({
+		startX: 200,
+		startY: 40,
+		lastX: 140,
+		endX: 140,
+		endY: 42,
+		endT: 400,
+		samples: [
+			{ t: 0, x: 200 },
+			{ t: 400, x: 140 },
+		],
+		dragging: true,
+	})
+	expect(slowDrag.dragging).toBe(true)
+	expect(slowDrag.offsetDelta).toBe(0)
+	expect(slowDrag.coastVelocity).toBe(0)
+
+	const coalescedFlick = finishPointerGesture({
+		startX: 280,
+		startY: 20,
+		lastX: 280,
+		endX: 40,
+		endY: 28,
+		endT: 70,
+		samples: [{ t: 0, x: 280 }],
+		dragging: false,
+	})
+	expect(coalescedFlick.dragging).toBe(true)
+	expect(coalescedFlick.offsetDelta).toBe(240)
+	expect(coalescedFlick.coastVelocity).toBeGreaterThan(0)
+
+	const vertical = finishPointerGesture({
+		startX: 100,
+		startY: 20,
+		lastX: 100,
+		endX: 108,
+		endY: 140,
+		endT: 40,
+		samples: [{ t: 0, x: 100 }],
+		dragging: false,
+	})
+	expect(vertical.dragging).toBe(false)
+	expect(vertical.coastVelocity).toBe(0)
+
+	const stride = 320
+	const cardWidth = 308
+	const viewportWidth = 375
+	let offset = coalescedFlick.offsetDelta
+	let velocity = coalescedFlick.coastVelocity
+	const startOffset = offset
+	let done = false
+	for (let step = 0; step < 120 && !done; step += 1) {
+		const next = stepFlickCoast({ offset, velocity, dt: 16 })
+		offset = next.offset
+		velocity = next.velocity
+		done = next.done
+	}
+	expect(done).toBe(true)
+	expect(velocity).toBe(0)
+	expect(offset).toBeGreaterThan(startOffset + cardWidth)
+
+	const placements = listLanePlacements({
+		count: 4,
+		stride,
+		cardWidth,
+		offset,
+		viewportWidth,
+	})
+	expect(
+		largestVisibleHole(placements, viewportWidth, cardWidth),
+	).toBeLessThanOrEqual(stride - cardWidth)
+	expect(placements.some((placement) => placement.x === 0)).toBe(false)
 })
 
 test('virtual [hidden] cards override author display flex', () => {

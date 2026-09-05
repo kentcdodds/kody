@@ -9,16 +9,20 @@ import {
 } from '#universal/landing-testimonials.ts'
 import {
 	TESTIMONIALS_LAP_MS,
+	appendFlickSample,
+	classifyPointerIntent,
+	finishPointerGesture,
 	isTestimonialsLanePaused,
 	listLanePlacements,
 	parkUnusedLaneCards,
 	placeLaneCard,
+	stepFlickCoast,
 	wrapPagerIndex,
 	wrapUnitInterval,
+	type FlickSample,
 } from './landing-testimonials-motion.ts'
 
 const USER_NUDGE_RESUME_MS = 500
-const DRAG_THRESHOLD_PX = 8
 
 /**
  * Homepage testimonials strip. SSR and the first client render paint the
@@ -27,7 +31,8 @@ const DRAG_THRESHOLD_PX = 8
  * so a fully exited card is recycled to the other end. A quote that
  * straddles the wrap gets a second aria-hidden copy so the lane never
  * shows a hole. Yields to hover,
- * focus-within, wheel, and pointer-drag. Reduced-motion + JS is a chevron
+ * focus-within, wheel, pointer-drag, and a flick coast after a fast
+ * swipe. Reduced-motion + JS is a chevron
  * pager (one card, no rAF). No-JS keeps a stacked static list.
  */
 export function LandingTestimonialsCarousel(_handle: Handle) {
@@ -163,6 +168,9 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	let dragStartY = 0
 	let dragLastX = 0
 	let dragging = false
+	let flickSamples: Array<FlickSample> = []
+	let coastVelocity = 0
+	let suppressClick = false
 
 	function isPaused() {
 		return isTestimonialsLanePaused({
@@ -278,10 +286,46 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		}, USER_NUDGE_RESUME_MS)
 	}
 
+	function clearUserNudge() {
+		userNudging = false
+		if (userNudgeTimer != null) {
+			clearTimeout(userNudgeTimer)
+			userNudgeTimer = null
+		}
+	}
+
+	function stopCoast() {
+		coastVelocity = 0
+	}
+
 	function frame(now: number) {
 		if (signal.aborted) return
 		raf = requestAnimationFrame(frame)
 		if (stride <= 0) measure()
+		if (dragging) {
+			lastTs = 0
+			return
+		}
+		if (coastVelocity !== 0) {
+			if (focus) {
+				stopCoast()
+				lastTs = 0
+				return
+			}
+			if (lastTs === 0) lastTs = now
+			const dt = Math.min(now - lastTs, 48)
+			lastTs = now
+			const stepped = stepFlickCoast({
+				offset,
+				velocity: coastVelocity,
+				dt,
+			})
+			offset = stepped.offset
+			coastVelocity = stepped.velocity
+			apply()
+			if (stepped.done) lastTs = 0
+			return
+		}
 		if (isPaused()) {
 			lastTs = 0
 			return
@@ -302,9 +346,68 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			return
 		}
 		event.preventDefault()
+		stopCoast()
 		offset += horizontal
 		markUserNudge()
 		apply()
+	}
+
+	function recordPointerSamples(event: PointerEvent) {
+		const coalesced =
+			typeof event.getCoalescedEvents === 'function'
+				? event.getCoalescedEvents()
+				: []
+		const events = coalesced.length > 0 ? coalesced : [event]
+		for (const entry of events) {
+			flickSamples = appendFlickSample(flickSamples, {
+				t: entry.timeStamp,
+				x: entry.clientX,
+			})
+		}
+	}
+
+	function beginHorizontalDrag(event: PointerEvent) {
+		dragging = true
+		suppressClick = true
+		stopCoast()
+		scroller.style.touchAction = 'none'
+		if (!scroller.hasPointerCapture(event.pointerId)) {
+			scroller.setPointerCapture(event.pointerId)
+		}
+	}
+
+	function endPointerGesture(event: PointerEvent) {
+		if (pointerId !== event.pointerId) return
+		pointerId = null
+		if (scroller.hasPointerCapture(event.pointerId)) {
+			scroller.releasePointerCapture(event.pointerId)
+		}
+		scroller.style.touchAction = ''
+		const finished = finishPointerGesture({
+			startX: dragStartX,
+			startY: dragStartY,
+			lastX: dragLastX,
+			endX: event.clientX,
+			endY: event.clientY,
+			endT: event.timeStamp,
+			samples: flickSamples,
+			dragging,
+		})
+		dragging = false
+		flickSamples = []
+		if (!finished.dragging) return
+		suppressClick = true
+		if (finished.offsetDelta !== 0) {
+			offset += finished.offsetDelta
+			apply()
+		}
+		if (finished.coastVelocity !== 0) {
+			clearUserNudge()
+			coastVelocity = finished.coastVelocity
+			lastTs = 0
+			return
+		}
+		markUserNudge()
 	}
 
 	function onPointerDown(event: PointerEvent) {
@@ -313,25 +416,26 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		dragStartX = dragLastX = event.clientX
 		dragStartY = event.clientY
 		dragging = false
+		suppressClick = false
+		stopCoast()
+		flickSamples = []
+		recordPointerSamples(event)
 	}
 
 	function onPointerMove(event: PointerEvent) {
 		if (pointerId !== event.pointerId) return
+		recordPointerSamples(event)
 		const dx = event.clientX - dragStartX
 		const dy = event.clientY - dragStartY
 		if (!dragging) {
-			if (
-				Math.abs(dx) < DRAG_THRESHOLD_PX &&
-				Math.abs(dy) < DRAG_THRESHOLD_PX
-			) {
-				return
-			}
-			if (Math.abs(dy) >= Math.abs(dx)) {
+			const intent = classifyPointerIntent({ dx, dy })
+			if (intent === 'pending') return
+			if (intent === 'scroll') {
 				pointerId = null
+				flickSamples = []
 				return
 			}
-			dragging = true
-			scroller.setPointerCapture(event.pointerId)
+			beginHorizontalDrag(event)
 		}
 		offset += dragLastX - event.clientX
 		dragLastX = event.clientX
@@ -339,13 +443,11 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		apply()
 	}
 
-	function onPointerUp(event: PointerEvent) {
-		if (pointerId !== event.pointerId) return
-		if (dragging && scroller.hasPointerCapture(event.pointerId)) {
-			scroller.releasePointerCapture(event.pointerId)
-		}
-		pointerId = null
-		dragging = false
+	function onClickCapture(event: MouseEvent) {
+		if (!suppressClick) return
+		event.preventDefault()
+		event.stopPropagation()
+		suppressClick = false
 	}
 
 	function onFocusIn(event: FocusEvent) {
@@ -387,8 +489,12 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	scroller.addEventListener('wheel', onWheel, { passive: false, signal })
 	scroller.addEventListener('pointerdown', onPointerDown, { signal })
 	scroller.addEventListener('pointermove', onPointerMove, { signal })
-	scroller.addEventListener('pointerup', onPointerUp, { signal })
-	scroller.addEventListener('pointercancel', onPointerUp, { signal })
+	scroller.addEventListener('pointerup', endPointerGesture, { signal })
+	scroller.addEventListener('pointercancel', endPointerGesture, { signal })
+	scroller.addEventListener('click', onClickCapture, {
+		capture: true,
+		signal,
+	})
 	scroller.addEventListener(
 		'pointerenter',
 		(event) => {
@@ -435,6 +541,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			cancelAnimationFrame(raf)
 			if (userNudgeTimer != null) clearTimeout(userNudgeTimer)
 			visibilityObserver?.disconnect()
+			scroller.style.touchAction = ''
 			teardownVirtual()
 		},
 		{ once: true },
