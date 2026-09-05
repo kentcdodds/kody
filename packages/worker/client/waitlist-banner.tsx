@@ -336,9 +336,10 @@ const pillCss = {
 	display: 'grid',
 	gridTemplateColumns: 'minmax(0, 8.5rem) minmax(0, 12rem) auto',
 	alignItems: 'stretch',
-	/* Never shrink beside the 300px widget: wrap to the next flex line
-	   instead of truncating placeholders to "First n". */
-	flex: '1 0 auto',
+	/* Do not shrink beside the 300px widget (that truncated "First name")
+	   and do not grow when wrap leaves the pill alone on a line — grow
+	   would dump leftover space into the Join column as a wide slab. */
+	flex: '0 0 auto',
 	width: 'auto',
 	maxWidth: '100%',
 	backgroundColor: colors.surface,
