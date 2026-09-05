@@ -42,7 +42,7 @@ const packageUpdateChangesSchema = z
 			.enum(['public', 'private'])
 			.optional()
 			.describe(
-				'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only. Changing to private unlists the catalog entry; existing forks keep their copies.',
+				'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Before setting public, review the package for overly personal content (package_authoring visibility). If anything looks personal, stop, tell the user, suggest generalizing, and wait for explicit go-ahead. Private is owner-only. Changing to private unlists the catalog entry; existing forks keep their copies.',
 			),
 	})
 	.refine(
@@ -60,7 +60,7 @@ export const packageUpdateCapability = defineDomainCapability(
 	{
 		name: 'packageUpdate',
 		description:
-			'Update mutable settings for a saved package: hidden search-discovery, publish lock (`changes.locked: true`; agents cannot unlock), and repo visibility (`changes.visibility`). Making a package public lists it on /community with full source and fork. Making it private unlists it (public URLs 404; forks keep their copies) — pass confirm_name matching the package slug after the owner typed that name. Canonical package metadata such as name, description, and tags remains derived from package.json. Visibility is not package.json#private.',
+			'Update mutable settings for a saved package: hidden search-discovery, publish lock (`changes.locked: true`; agents cannot unlock), and repo visibility (`changes.visibility`). Making a package public lists it on /community with full source and fork. Before setting visibility public, review source, README, Intent, description, tags, examples, and hardcoded identifiers for overly personal material. If anything looks personal or household-specific, do not publish yet — tell the user what you found, suggest how to generalize, and wait for explicit go-ahead. No MIT, logo, or Intent platform gates. Making it private unlists it (public URLs 404; forks keep their copies) — pass confirm_name matching the package slug after the owner typed that name. Canonical package metadata such as name, description, and tags remains derived from package.json. Visibility is not package.json#private.',
 		keywords: [
 			'package',
 			'update',

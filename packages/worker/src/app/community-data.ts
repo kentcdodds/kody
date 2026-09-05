@@ -291,14 +291,16 @@ export function loadCommunityDetailData(
 }
 
 /**
- * The public listing with aggregates and the Artifacts repo behind it. Cached
- * as one unit so a warm isolate answers the listing half of a page without
- * touching D1. The owner's profile visibility is deliberately not in here: it
- * is a privacy control and stays a fresh read on every request.
+ * The public listing with aggregates, the Artifacts repo behind it, and the
+ * package runtime pin. Cached as one unit so a warm isolate answers the
+ * listing half of a page without touching D1. The owner's profile visibility
+ * is deliberately not in here: it is a privacy control and stays a fresh
+ * read on every request.
  */
 type CommunityDetailPublicData = {
 	listing: PublicCommunityListing
 	sourceRepoId: string | null
+	publishedCommit: string | null
 }
 
 function loadCommunityDetailPublicData(
@@ -324,6 +326,7 @@ function loadCommunityDetailPublicData(
 					return {
 						listing: toPublicCommunityListing(row),
 						sourceRepoId: source?.repo_id ?? null,
+						publishedCommit: source?.published_commit ?? null,
 					}
 				},
 				request,
@@ -335,12 +338,18 @@ function loadCommunityDetailPublicData(
  * Overlay the repo's current default-branch HEAD on the listing. HEAD is
  * best-effort: a failed lookup still renders the page with the fallback
  * branch name, and a listing without a source row is returned untouched.
+ *
+ * Compare HEAD to the package runtime pin, not `listing.pinnedCommit`. The
+ * catalog snapshot only moves on community republish; `published_commit`
+ * moves on every package publish. Mixing those made the Code tab claim
+ * HEAD was unpublished after Publish HEAD already showed no changes.
  */
 async function withSourceHead(
 	env: Env,
 	request: Request,
 	listing: PublicCommunityListing,
 	sourceRepoId: string | null,
+	publishedCommit: string | null,
 ): Promise<PublicCommunityListing> {
 	if (!sourceRepoId) return listing
 	try {
@@ -349,10 +358,11 @@ async function withSourceHead(
 		})
 		const defaultBranch = head.branch?.trim() || fallbackDefaultBranchName
 		const headCommit = head.commit
+		const publishedPin = publishedCommit?.trim() || listing.pinnedCommit
 		return {
 			...listing,
 			defaultBranch,
-			...(headCommit && headCommit !== listing.pinnedCommit
+			...(headCommit && headCommit !== publishedPin
 				? { headCommit, sourceAhead: true }
 				: {}),
 		}
@@ -372,12 +382,12 @@ async function loadCommunityDetailDataUncached(
 		listingId,
 	)
 	if (!publicData) return null
-	const { listing, sourceRepoId } = publicData
+	const { listing, sourceRepoId, publishedCommit } = publicData
 
 	// HEAD lives in Artifacts, the owner row in D1, and the viewer in the
 	// session cookie; none of the three reads needs another.
 	const [sourceAheadListing, ownerRow, user] = await Promise.all([
-		withSourceHead(env, request, listing, sourceRepoId),
+		withSourceHead(env, request, listing, sourceRepoId, publishedCommit),
 		getUserSocialRowByUsername(env.APP_DB, listing.ownerUsername),
 		readOptionalAuthenticatedAppUser(request, env),
 	])

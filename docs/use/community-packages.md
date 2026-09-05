@@ -30,14 +30,20 @@ Ask your agent to set visibility with `packageUpdate`
 (`changes.visibility: "public"`). `communityPublish` is an alias for the same
 action.
 
-There are **no** MIT, logo, README Intent, or `package.json#private` gates.
-Tags, description, category, and an icon are optional (ranking can prefer
-filled-in cards).
+There are **no** MIT, logo, README Intent, or `package.json#private`
+**platform** gates. Tags, description, category, and an icon are optional
+(ranking can prefer filled-in cards). Agents still review the package for overly
+personal content before flipping public — see
+[Personal-details hygiene](../guides/package-authoring.md#personal-details-hygiene-before-going-public)
+in the package authoring guide. If anything looks personal or
+household-specific, the agent stops, tells you what it found, suggests how to
+generalize, and waits for explicit go-ahead. The Worker does not scan or block
+on that review.
 
 - New packages are always created **private**.
-- Making a package **public** lists it on `/community`. Type the package slug to
-  confirm (`confirm_name` for agents). Anyone can then read and fork the default
-  branch.
+- Making a package **public** lists it on `/community`. Anyone can then read and
+  fork the default branch. On the website, type the package slug to confirm.
+  Agents do not pass `confirm_name` for public; they run the hygiene pass first.
 - Making a package **private** unlists it: public URLs 404; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
 - Deleting a package (`packageDelete` or **Delete package** on the package page)
@@ -231,7 +237,8 @@ rating, or reporting community listings.
 Use the MCP `community` domain:
 
 - `communityPublish` — alias for making a saved package public (prefer
-  `packageUpdate` with `changes.visibility: "public"`)
+  `packageUpdate` with `changes.visibility: "public"`; review personal details
+  first)
 - `communityUnpublish` — make a package private / unlist it (prefer
   `packageUpdate` with `changes.visibility: "private"` and `confirm_name`)
 - `packageDelete` — permanently delete a saved package (type the package name;

@@ -50,7 +50,11 @@ export type PublicCommunityListing = {
 	defaultBranch?: string
 	/** Default-branch HEAD SHA when it differs from the package runtime pin. */
 	headCommit?: string | null
-	/** True when default-branch HEAD is ahead of `pinnedCommit` (package publish). */
+	/**
+	 * True when default-branch HEAD differs from the package runtime pin,
+	 * not the community catalog snapshot (`pinnedCommit`). Runtime publish
+	 * can advance the pin without a community republish.
+	 */
 	sourceAhead?: boolean
 	publishedAt: string
 	ownerUsername: string
