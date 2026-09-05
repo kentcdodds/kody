@@ -25,6 +25,7 @@ import {
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { findIntegrationOwningSecretName } from '#worker/integrations/owned-secret-names.ts'
 import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
@@ -467,17 +468,20 @@ export async function expandSecretPlaceholders(input: {
 			resolvedSecrets,
 		})
 		if (missingApprovals.length > 0) {
-			const bulkApprovalUrl = buildSecretHostBulkApprovalUrlIfNeeded({
-				baseUrl: input.props.baseUrl,
-				names: missingApprovals.map((entry) => entry.secretName),
-				hosts: missingApprovals.map((entry) => entry.host),
-				scope: input.props.storageContext?.packageId
-					? 'package'
-					: input.props.storageContext?.sessionId
-						? 'session'
-						: 'user',
+			const bulkScope = readBulkHostApprovalScope({
+				missingApprovals,
+				resolvedSecrets,
 				storageContext: input.props.storageContext,
 			})
+			const bulkApprovalUrl = bulkScope
+				? buildSecretHostBulkApprovalUrlIfNeeded({
+						baseUrl: input.props.baseUrl,
+						names: missingApprovals.map((entry) => entry.secretName),
+						hosts: missingApprovals.map((entry) => entry.host),
+						scope: bulkScope.scope,
+						storageContext: bulkScope.storageContext,
+					})
+				: null
 			throw new Error(
 				createHostSecretAccessDeniedBatchMessage(missingApprovals, {
 					bulkApprovalUrl,
@@ -574,6 +578,37 @@ async function collectHostApprovalEntries(input: {
 	return entries.filter(
 		(entry): entry is NonNullable<typeof entry> => entry != null,
 	)
+}
+
+function readBulkHostApprovalScope(input: {
+	missingApprovals: Array<{ secretName: string }>
+	resolvedSecrets: Array<{
+		referenced: ReferencedSecret
+		resolved: ResolvedSecret
+	}>
+	storageContext: StorageContext | null
+}): { scope: SecretScope; storageContext: StorageContext | null } | null {
+	const scopes = input.missingApprovals.map((entry) => {
+		const match = input.resolvedSecrets.find(
+			(item) => item.referenced.name === entry.secretName,
+		)
+		return match?.resolved.scope ?? match?.referenced.scope ?? 'user'
+	})
+	const unique = new Set(scopes)
+	if (unique.size !== 1) return null
+	const scope = scopes[0]
+	if (!scope) return null
+	switch (scope) {
+		case 'user':
+			return { scope, storageContext: null }
+		case 'package':
+		case 'session':
+			return { scope, storageContext: input.storageContext }
+		default: {
+			const _exhaustive: never = scope
+			return _exhaustive
+		}
+	}
 }
 
 function readRequestedHost(url: string) {

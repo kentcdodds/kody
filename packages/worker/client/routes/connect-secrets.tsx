@@ -129,11 +129,13 @@ export function ConnectSecretsRoute(handle: Handle) {
 		const currentHref = getCurrentHref()
 		applyRouteLoaderData(currentHref)
 		const approval = data?.approval ?? null
-		const pendingPairs = approval
-			? collectPendingHostPairs(data?.secrets ?? [], approval)
-			: []
 		const alreadyAllowed =
-			Boolean(approval) && pendingPairs.length === 0 && completed !== 'reject'
+			approval != null &&
+			completed !== 'reject' &&
+			isConnectSecretsAlreadyAllowed({
+				secrets: data?.secrets ?? [],
+				approval,
+			})
 		const hosts = approval?.requestedHosts?.length
 			? approval.requestedHosts
 			: approval?.requestedHost
@@ -275,6 +277,19 @@ export function ConnectSecretsRoute(handle: Handle) {
 			</section>
 		)
 	}
+}
+
+export function isConnectSecretsAlreadyAllowed(input: {
+	secrets: AccountSecretsLoaderData['secrets']
+	approval: ApprovalView
+}) {
+	const pendingPairs = collectPendingHostPairs(input.secrets, input.approval)
+	if (pendingPairs.length > 0) return false
+	return input.approval.names.every((name) =>
+		input.secrets.some(
+			(item) => item.name === name && item.scope === input.approval.scope,
+		),
+	)
 }
 
 function collectPendingHostPairs(

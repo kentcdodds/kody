@@ -226,6 +226,73 @@ test('fetch gateway expands secret placeholders in URL paths after Request seria
 	}
 })
 
+test('fetch gateway bulk host approval uses the secret scope, not the package runtime context', async () => {
+	const packageProps = {
+		...props,
+		storageContext: {
+			sessionId: null,
+			appId: 'pkg-1',
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	}
+	const packageSpy = vi
+		.spyOn(packageRepo, 'getSavedPackageById')
+		.mockResolvedValue({
+			id: 'pkg-1',
+			userId: 'user-123',
+			kodyId: 'example-package',
+			name: '@user/example-package',
+			description: '',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			sourceId: 'source-1',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockResolvedValue(null)
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'secret-value',
+			scope: 'user',
+			allowedHosts: [],
+			allowedPackages: ['pkg-1'],
+		})
+	try {
+		await expandSecretPlaceholders({
+			request: new Request('https://api.example.com/v1', {
+				headers: {
+					Authorization: 'Bearer {{secret:accessToken|scope=user}}',
+					'X-Refresh': '{{secret:refreshToken|scope=user}}',
+				},
+			}),
+			props: packageProps,
+			env,
+		})
+		throw new Error('Expected host approval error.')
+	} catch (error) {
+		const approvals = parseHostApprovalRequiredBatchMessage(
+			getErrorMessage(error),
+		)
+		expect(approvals?.bulkApprovalUrl).toBe(
+			'https://example.com/connect/secrets?names=accessToken%2CrefreshToken&hosts=api.example.com',
+		)
+		expect(approvals?.bulkApprovalUrl).not.toContain('scope=package')
+		expect(approvals?.entries[0]?.approvalUrl).not.toContain('scope=package')
+	} finally {
+		packageSpy.mockRestore()
+		forkSpy.mockRestore()
+		resolveSpy.mockRestore()
+	}
+})
+
 test('fetch gateway requires package approval before resolving user secrets', async () => {
 	const request = () =>
 		new Request('https://example.com/api', {
