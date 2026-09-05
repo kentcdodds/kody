@@ -22,7 +22,7 @@ export const waitingSummaryCapability = defineDomainCapability(
 	{
 		name: 'waitingSummary',
 		description:
-			'List things currently waiting on the signed-in human: email verification, OAuth reconnects, expired secrets, MCP reconnects, locked-package publishes, plan caps, and unfinished setup. This is a current-state queue, not run history — use runSummary for Activity. Vendor outages do not appear here.',
+			'List things currently waiting on the signed-in human: email verification, OAuth reconnects, expired secrets, MCP reconnects, locked-package publishes, plan caps, unfinished setup, and an elevated open-error rate that still needs Activity triage. Ignored and resolved Activity errors do not keep that card around. This is a current-state queue, not run history — use runSummary for Activity. Vendor outages do not appear here.',
 		keywords: [
 			'waiting',
 			'inbox',

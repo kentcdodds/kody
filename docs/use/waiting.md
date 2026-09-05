@@ -22,7 +22,8 @@ Typical items:
 - review a locked package (published code stays put until you promote or unlock)
 - confirm a pending email change
 - a plan resource at its cap
-- an elevated error rate (one card that points at Activity)
+- an elevated **open** error rate (one card that points at Activity; ignored and
+  resolved runs do not keep it around)
 - unfinished onboarding steps, unless you dismissed the checklist
 
 Vendor outages, operator work, and other people's queues do not appear here.

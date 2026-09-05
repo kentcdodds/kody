@@ -31,6 +31,9 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 20 })).toBe(true)
 	expect(isElevatedUserErrorRate({ errorCount: 4, eventCount: 10 })).toBe(false)
 	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 40 })).toBe(false)
+	expect(isElevatedUserErrorRate({ errorCount: 0, eventCount: 162103 })).toBe(
+		false,
+	)
 
 	const now = new Date('2026-08-31T00:00:00.000Z')
 	expect(isUnexpiredEpochMs(now.getTime() + 1, now)).toBe(true)
@@ -90,6 +93,12 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	expect(items.find((item) => item.id === 'mcp-server:srv-ready')).toBe(
 		undefined,
 	)
+	expect(items.find((item) => item.id === 'error-rate')).toMatchObject({
+		title: 'Error rate is elevated',
+		why: '12 of 20 recent runs failed and still need triage. Activity is where you handle those errors.',
+		doLabel: 'Open Activity',
+		href: '/account/activity',
+	})
 
 	const notion = items.find((item) => item.id === 'mcp-server:srv-auth')
 	expect(notion).toMatchObject({
@@ -125,6 +134,12 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		onboardingRemaining: ['connect-agent'],
 	})
 	expect(emptyAfterDismiss).toEqual([])
+
+	const allErrorsTriaged = buildWaitingItems({
+		...emptySignals,
+		errorRate: { errorCount: 0, eventCount: 162103 },
+	})
+	expect(allErrorsTriaged).toEqual([])
 
 	const connectionHealth = buildWaitingItems({
 		...emptySignals,

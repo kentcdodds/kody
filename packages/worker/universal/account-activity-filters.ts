@@ -3,6 +3,9 @@
  * Client and server parse the same query so defaults cannot drift.
  */
 
+/** Activity summary / default list window. Waiting uses the same bound. */
+export const accountActivitySummaryWindowMs = 7 * 24 * 60 * 60 * 1000
+
 export const accountActivityViewFilterValues = ['errors', 'recent'] as const
 
 export type AccountActivityViewFilter =

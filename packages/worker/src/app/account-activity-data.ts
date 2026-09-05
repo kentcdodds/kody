@@ -17,6 +17,7 @@ import {
 	runRecordRetentionDays,
 } from '#worker/run-records/types.ts'
 import {
+	accountActivitySummaryWindowMs,
 	readAccountActivityFilters,
 	statusFilterToRunStatus,
 	surfaceFilterToRunSurface,
@@ -108,7 +109,6 @@ export type AccountActivityLoaderData = {
 }
 
 const accountActivityBasePath = '/account/activity'
-const summaryWindowMs = 7 * 24 * 60 * 60 * 1000
 const defaultPageSize = 25
 
 export function readAccountActivitySelectedRunId(
@@ -188,7 +188,7 @@ async function toDetail(
 }
 
 function summarySince(now: Date) {
-	return new Date(now.getTime() - summaryWindowMs).toISOString()
+	return new Date(now.getTime() - accountActivitySummaryWindowMs).toISOString()
 }
 
 export async function loadAccountActivityData(input: {

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	accountActivitySummaryWindowMs,
 	activityEmptyLabel,
 	buildActivitySearch,
 	readAccountActivityFilters,
@@ -8,6 +9,7 @@ import {
 } from './account-activity-filters.ts'
 
 test('activity URL defaults stay on open errors and recent runs flip to all history', () => {
+	expect(accountActivitySummaryWindowMs).toBe(7 * 24 * 60 * 60 * 1000)
 	expect(
 		readAccountActivityFilters('https://example.com/account/activity'),
 	).toEqual({
