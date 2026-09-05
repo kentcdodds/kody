@@ -94,18 +94,18 @@ test('package approve-publish is not swallowed by the package detail route', () 
 	const packageDetailRoute = 'package-detail-route' as unknown as JSX.Element
 	const approvePublishRoute = 'approve-publish-route' as unknown as JSX.Element
 	const packageRoutes = {
-		[routePattern(routes.accountPackageDetail)]: packageDetailRoute,
-		[routePattern(routes.accountPackageApprovePublish)]: approvePublishRoute,
+		[routePattern(routes.communityPackage)]: packageDetailRoute,
+		[routePattern(routes.communityPackageApprovePublish)]: approvePublishRoute,
 	}
-	expect(matchRoute('/account/packages/pkg-1', packageRoutes)).toBe(
+	expect(matchRoute('/@kentcdodds/pkg-1', packageRoutes)).toBe(
 		packageDetailRoute,
 	)
-	expect(
-		matchRoute('/account/packages/pkg-1/approve-publish', packageRoutes),
-	).toBe(approvePublishRoute)
+	expect(matchRoute('/@kentcdodds/pkg-1/approve-publish', packageRoutes)).toBe(
+		approvePublishRoute,
+	)
 	expect(
 		matchRoute(
-			'/account/packages/pkg-1/approve-publish?commit=abc1234',
+			'/@kentcdodds/pkg-1/approve-publish?commit=abc1234',
 			packageRoutes,
 		),
 	).toBe(approvePublishRoute)

@@ -8,6 +8,7 @@ import {
 } from './waiting.ts'
 
 const emptySignals: WaitingSignals = {
+	username: 'kentcdodds',
 	emailVerified: true,
 	onboardingDismissed: true,
 	onboardingRemaining: [],
@@ -43,6 +44,7 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	expect(buildWaitingItems(emptySignals)).toEqual([])
 
 	const items = buildWaitingItems({
+		username: 'kentcdodds',
 		emailVerified: false,
 		onboardingDismissed: false,
 		onboardingRemaining: ['verify-email', 'connect-agent'],

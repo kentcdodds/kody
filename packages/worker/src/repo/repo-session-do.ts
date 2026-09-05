@@ -2802,7 +2802,6 @@ class RepoSessionBase extends DurableObject<Env> {
 					currentPublishedCommit: source.published_commit,
 					packageId: lockedPackage.id,
 					packageName: lockedPackage.name,
-					approvalPath: error.approvalPath,
 					message: error.message,
 				}
 			}

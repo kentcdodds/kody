@@ -43,6 +43,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		createStubHandler('community-files'),
 	)
 	router.get(
+		routePattern(routes.communityPackageApprovePublish),
+		createStubHandler('community-approve-publish'),
+	)
+	router.get(
 		routePattern(routes.accountPackageDetail),
 		createStubHandler('package-detail'),
 	)
@@ -108,6 +112,13 @@ test('router prefers static nested paths and package files over dynamic siblings
 			)
 		).text(),
 	).toBe('community-files')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/@kentcdodds/devin/approve-publish'),
+			)
+		).text(),
+	).toBe('community-approve-publish')
 	expect(
 		await (
 			await router.fetch(new Request('http://localhost/account/packages/pkg-1'))

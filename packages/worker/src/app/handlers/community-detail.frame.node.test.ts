@@ -264,17 +264,10 @@ test('owner source-ahead badge links to the published-vs-HEAD approve-publish pa
 	} as never)
 	const html = await response.text()
 	expect(html).toContain(
-		`href="/account/packages/pkg-1/approve-publish?commit=${headCommit}"`,
+		`href="/@kentcdodds/github-triage/approve-publish?commit=${headCommit}"`,
 	)
 	expect(html).toMatch(
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
-	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
-		undefined,
-		expect.objectContaining({
-			userId: 'owner-mcp-id',
-			kodyId: 'github-triage',
-		}),
 	)
 })
 

@@ -27,7 +27,7 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. See the
 - [two-factor](./two-factor.md) — `/account/two-factor`
 - [passkeys](./passkeys.md) — `/account/passkeys`
 - [account](./account.md) — `/account`
-- [packages](./packages.md) — `/account/packages`
+- [packages](./packages.md) — `/@username`
 - [secrets](./secrets.md) — `/account/secrets`
 - [integrations](./integrations.md) — `/account/integrations`
 - [mcp-servers](./mcp-servers.md) — `/account/mcp-servers`

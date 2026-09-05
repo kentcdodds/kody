@@ -26,7 +26,10 @@ import { type AccountPackageDetail } from '#universal/loader-data.ts'
 type DeleteStatus = 'idle' | 'deleting'
 
 export function AccountPackageDeleteDialog(
-	handle: Handle<{ packageDetail: AccountPackageDetail }>,
+	handle: Handle<{
+		ownerUsername: string
+		packageDetail: AccountPackageDetail
+	}>,
 ) {
 	let dialogOpen = false
 	let confirmation = ''
@@ -92,7 +95,7 @@ export function AccountPackageDeleteDialog(
 				throw new Error(payload?.error || 'Unable to delete this package.')
 			}
 			closeDialog()
-			navigate(routes.accountPackages.href())
+			navigate(routes.profile.href({ username: handle.props.ownerUsername }))
 		} catch (caught) {
 			error =
 				caught instanceof Error

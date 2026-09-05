@@ -90,6 +90,7 @@ export type WaitingEntitlementCapSignal = {
 }
 
 export type WaitingSignals = {
+	username: string
 	emailVerified: boolean
 	onboardingDismissed: boolean
 	onboardingRemaining: Array<OnboardingChecklistItemId>
@@ -207,8 +208,9 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 			why: 'Agents can push drafts, but published code does not move until you promote a commit or unlock it.',
 			who: 'you',
 			doLabel: 'Review lock',
-			href: routes.accountPackageApprovePublish.href({
-				packageId: pkg.id,
+			href: routes.communityPackageApprovePublish.href({
+				username: signals.username,
+				kodyId: pkg.kodyId,
 			}),
 			severity: 'block',
 		})

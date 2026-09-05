@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -26,23 +27,24 @@ import {
 } from '#client/route-loader.ts'
 
 const accountPackagesApiPath = '/account/packages.json'
-const approvePublishPathPattern =
-	/^\/account\/packages\/([^/]+)\/approve-publish\/?$/
+const approvePublishMatcher = createMatcher(
+	routes.communityPackageApprovePublish.pattern,
+)
 
 type PageStatus = 'loading' | 'ready' | 'error' | 'promoting'
 
 function isApprovePublishPath(href: string) {
-	return approvePublishPathPattern.test(
-		new URL(href, 'http://localhost').pathname,
-	)
+	return approvePublishMatcher.match(new URL(href, 'http://localhost')) !== null
 }
 
 function buildApprovePublishApiUrl(href: string) {
 	const url = new URL(href, 'http://localhost')
-	const match = url.pathname.match(approvePublishPathPattern)
-	const packageId = match?.[1] ? decodeURIComponent(match[1]) : ''
+	const match = approvePublishMatcher.match(url)
 	const apiUrl = new URL(
-		routes.accountPackageApprovePublishApi.href({ packageId }),
+		routes.communityPackageApprovePublishApi.href({
+			username: match?.params.username ?? '',
+			kodyId: match?.params.kodyId ?? '',
+		}),
 		'http://localhost',
 	)
 	const commit = url.searchParams.get('commit')?.trim()

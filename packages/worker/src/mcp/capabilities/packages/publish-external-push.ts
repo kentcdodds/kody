@@ -36,7 +36,10 @@ import {
 	type PendingPackageSecretApprovalsSummary,
 } from '#mcp/secrets/pending-package-secret-approvals.ts'
 import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
-import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
+import {
+	buildPackagePublishApprovalUrl,
+	createPackagePublishLockedMessage,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { pendingPackageSecretApprovalsSchema } from './shared.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 import {
@@ -600,7 +603,8 @@ async function runExternalPublishAttempt(input: {
 			if (result.status === 'locked') {
 				const approvalUrl = buildPackagePublishApprovalUrl({
 					baseUrl: input.baseUrl,
-					packageId: result.packageId,
+					username: input.ownerScope,
+					kodyId: input.kodyId,
 					commit: result.pending_commit,
 				})
 				return {
@@ -608,7 +612,10 @@ async function runExternalPublishAttempt(input: {
 					previous_commit: result.previous_commit,
 					pending_commit: result.pending_commit,
 					approval_url: approvalUrl,
-					message: result.message.replace(result.approvalPath, approvalUrl),
+					message: createPackagePublishLockedMessage({
+						packageName: result.packageName,
+						approvalUrl,
+					}),
 				}
 			}
 			if (result.status !== 'published') {

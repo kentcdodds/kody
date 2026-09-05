@@ -261,6 +261,7 @@ export function PackageSettingsRoute(handle: Handle) {
 				{renderShellStatus(statusMessage)}
 				{showReady && ownerPackage
 					? renderOwnerPackageSection({
+							ownerUsername: username,
 							ownerPackage,
 							lockInFlight: lockInFlight.has(ownerPackage.id),
 							ownerDetailsMessage,

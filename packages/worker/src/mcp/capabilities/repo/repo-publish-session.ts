@@ -9,13 +9,17 @@ import {
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	repoPublishSessionInputSchema,
 	repoPublishSessionOutputSchema,
 } from './repo-shared.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
-import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
+import {
+	buildPackagePublishApprovalUrl,
+	createPackagePublishLockedMessage,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 
@@ -123,9 +127,20 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				}
 			}
 			if (result.status === 'locked') {
+				const [username, savedPackage] = await Promise.all([
+					getMcpUserPackageScope(ctx.env.APP_DB, user),
+					getSavedPackageById(ctx.env.APP_DB, {
+						userId: user.userId,
+						packageId: result.packageId,
+					}),
+				])
+				if (!savedPackage) {
+					throw new Error('Locked package was not found.')
+				}
 				const approvalUrl = buildPackagePublishApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
-					packageId: result.packageId,
+					username,
+					kodyId: savedPackage.kodyId,
 					commit: result.pendingCommit,
 				})
 				await reportCapabilityProgress(ctx.reportProgress, {
@@ -140,7 +155,10 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					pending_commit: result.pendingCommit,
 					current_published_commit: result.currentPublishedCommit,
 					approval_url: approvalUrl,
-					message: `${result.message.replace(result.approvalPath, approvalUrl)}`,
+					message: createPackagePublishLockedMessage({
+						packageName: result.packageName,
+						approvalUrl,
+					}),
 				}
 			}
 			if (result.status === 'checks_outdated') {

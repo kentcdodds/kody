@@ -9,7 +9,6 @@ export class PackagePublishLockedError extends Error {
 	readonly packageName: string
 	readonly pendingCommit: string
 	readonly currentPublishedCommit: string | null
-	readonly approvalPath: string
 
 	constructor(input: {
 		packageId: string
@@ -17,19 +16,12 @@ export class PackagePublishLockedError extends Error {
 		pendingCommit: string
 		currentPublishedCommit: string | null
 	}) {
-		const approvalPath = buildPackagePublishApprovalPath({
-			packageId: input.packageId,
-			commit: input.pendingCommit,
-		})
-		super(
-			`Package "${input.packageName}" is locked. Publishes require approval at ${approvalPath}.`,
-		)
+		super(`Package "${input.packageName}" is locked and requires approval.`)
 		this.name = 'PackagePublishLockedError'
 		this.packageId = input.packageId
 		this.packageName = input.packageName
 		this.pendingCommit = input.pendingCommit
 		this.currentPublishedCommit = input.currentPublishedCommit
-		this.approvalPath = approvalPath
 	}
 }
 
@@ -50,12 +42,14 @@ export function isGitCommitSha(value: string): boolean {
 }
 
 export function buildPackagePublishApprovalPath(input: {
-	packageId: string
+	username: string
+	kodyId: string
 	commit: string
 }): string {
 	const url = new URL(
-		routes.accountPackageApprovePublish.href({
-			packageId: input.packageId,
+		routes.communityPackageApprovePublish.href({
+			username: input.username,
+			kodyId: input.kodyId,
 		}),
 		'https://kody.invalid',
 	)
@@ -65,12 +59,14 @@ export function buildPackagePublishApprovalPath(input: {
 
 export function buildPackagePublishApprovalUrl(input: {
 	baseUrl: string
-	packageId: string
+	username: string
+	kodyId: string
 	commit: string
 }): string {
 	const url = new URL(
 		buildPackagePublishApprovalPath({
-			packageId: input.packageId,
+			username: input.username,
+			kodyId: input.kodyId,
 			commit: input.commit,
 		}),
 		input.baseUrl,
@@ -78,16 +74,23 @@ export function buildPackagePublishApprovalUrl(input: {
 	return url.toString()
 }
 
-export function buildPackageUnlockPath(packageId: string): string {
-	return routes.accountPackageDetail.href({ packageId })
+export function buildPackageUnlockPath(input: {
+	username: string
+	kodyId: string
+}): string {
+	return routes.communityPackageSettings.href(input)
 }
 
 export function buildPackageUnlockUrl(input: {
 	baseUrl: string
-	packageId: string
+	username: string
+	kodyId: string
 }): string {
 	return new URL(
-		buildPackageUnlockPath(input.packageId),
+		buildPackageUnlockPath({
+			username: input.username,
+			kodyId: input.kodyId,
+		}),
 		input.baseUrl,
 	).toString()
 }

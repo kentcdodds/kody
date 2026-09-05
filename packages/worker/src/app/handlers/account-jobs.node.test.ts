@@ -237,6 +237,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 	})
 	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
+		username: 'test-user',
 		selectedJobId: null,
 		selectedJob: null,
 		retention: {
@@ -255,6 +256,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 				ownership: 'ad-hoc',
 				packageId: null,
 				packageName: null,
+				packageKodyId: null,
 				scheduleSummary: adHocJob.scheduleSummary,
 				scheduleType: 'cron',
 				enabled: true,
@@ -268,6 +270,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 				ownership: 'package',
 				packageId: 'pkg-1',
 				packageName: 'State Store',
+				packageKodyId: 'state-store',
 				scheduleType: 'interval',
 			}),
 		],

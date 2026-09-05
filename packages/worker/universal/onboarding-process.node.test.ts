@@ -89,7 +89,7 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'/onboarding/step-1?redirectTo=%2F',
 	)
 	expect(onboardingChecklistItemHref('install-starter')).toBe(
-		'/account/packages',
+		'/onboarding/step-3',
 	)
 	expect(onboardingWizardStepHref(2)).toBe('/onboarding/step-2')
 	expect(onboardingUnconnectedNotice).toBe(

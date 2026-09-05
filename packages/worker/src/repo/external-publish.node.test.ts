@@ -502,8 +502,6 @@ test('locked package finishes checks then withholds published_commit unless allo
 		pending_commit: 'commit-new',
 		packageId: 'package-1',
 		packageName: '@scope/demo',
-		approvalPath:
-			'/account/packages/package-1/approve-publish?commit=commit-new',
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()

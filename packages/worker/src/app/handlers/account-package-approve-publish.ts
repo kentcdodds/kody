@@ -2,9 +2,14 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountPackageApprovePublishData } from '#app/account-package-publish-lock.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadPackagePage } from '#app/package-page.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#universal/routes.ts'
+import { routes } from '#universal/routes.ts'
+import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
 
 function readPackageId(params: unknown): string | null {
 	if (
@@ -19,6 +24,45 @@ function readPackageId(params: unknown): string | null {
 	return null
 }
 
+function readCanonicalPackageParams(
+	params: unknown,
+): { username: string; kodyId: string } | null {
+	if (
+		typeof params !== 'object' ||
+		params === null ||
+		!('username' in params) ||
+		typeof params.username !== 'string' ||
+		!('kodyId' in params) ||
+		typeof params.kodyId !== 'string'
+	) {
+		return null
+	}
+	return { username: params.username, kodyId: params.kodyId }
+}
+
+function redirectToCanonicalApproval(input: {
+	request: Request
+	username: string
+	kodyId: string
+}) {
+	const requestUrl = new URL(input.request.url)
+	const destination = new URL(
+		routes.communityPackageApprovePublish.href({
+			username: input.username,
+			kodyId: input.kodyId,
+		}),
+		requestUrl,
+	)
+	destination.search = requestUrl.search
+	return new Response(null, {
+		status: 302,
+		headers: {
+			location: destination.toString(),
+			'cache-control': 'private, no-store',
+		},
+	})
+}
+
 export function createAccountPackageApprovePublishHandler(env: Env) {
 	return {
 		middleware: [],
@@ -27,16 +71,65 @@ export function createAccountPackageApprovePublishHandler(env: Env) {
 			if (user instanceof Response) {
 				return user
 			}
+
 			const packageId = readPackageId(params)
-			if (!packageId) {
+			if (packageId) {
+				const savedPackage = await getSavedPackageById(env.APP_DB, {
+					userId: user.mcpUser.userId,
+					packageId,
+				})
+				if (!savedPackage) {
+					return renderAppPage({
+						request,
+						env,
+						title: 'Package not found',
+						notFound: true,
+						status: 404,
+					})
+				}
+				return redirectToCanonicalApproval({
+					request,
+					username: user.username,
+					kodyId: savedPackage.kodyId,
+				})
+			}
+
+			const canonicalParams = readCanonicalPackageParams(params)
+			if (!canonicalParams) {
 				return new Response('Not found', { status: 404 })
+			}
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: canonicalParams.username,
+				kodyId: canonicalParams.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				const destination = new URL(`${page.to}/approve-publish`, request.url)
+				destination.search = new URL(request.url).search
+				return new Response(null, {
+					status: 302,
+					headers: {
+						location: destination.toString(),
+						'cache-control': 'private, no-store',
+					},
+				})
+			}
+			if (page.kind !== 'page' || !page.viewerIsOwner || !page.ownerPackage) {
+				return renderAppPage({
+					request,
+					env,
+					title: 'Package not found',
+					notFound: true,
+					status: 404,
+				})
 			}
 			const accountPackageApprovePublish =
 				await loadAccountPackageApprovePublishData({
 					env,
 					request,
 					user,
-					packageId,
+					packageId: page.ownerPackage.id,
 				})
 			if (!accountPackageApprovePublish.ok) {
 				return new Response(accountPackageApprovePublish.error, { status: 404 })
@@ -48,7 +141,10 @@ export function createAccountPackageApprovePublishHandler(env: Env) {
 				loaderData: { accountPackageApprovePublish },
 			})
 		},
-	} satisfies Action<typeof routes.accountPackageApprovePublish>
+	} satisfies Action<
+		| typeof routes.accountPackageApprovePublish
+		| typeof routes.communityPackageApprovePublish
+	>
 }
 
 export function createAccountPackageApprovePublishApiHandler(env: Env) {
@@ -62,7 +158,19 @@ export function createAccountPackageApprovePublishApiHandler(env: Env) {
 			if (request.method !== 'GET') {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
-			const packageId = readPackageId(params)
+			let packageId = readPackageId(params)
+			const canonicalParams = readCanonicalPackageParams(params)
+			if (
+				!packageId &&
+				canonicalParams &&
+				canonicalParams.username === user.username
+			) {
+				const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+					userId: user.mcpUser.userId,
+					kodyId: canonicalParams.kodyId,
+				})
+				packageId = savedPackage?.id ?? null
+			}
 			if (!packageId) {
 				return jsonResponse(
 					{ ok: false, error: 'Package id is required.' },
@@ -80,5 +188,8 @@ export function createAccountPackageApprovePublishApiHandler(env: Env) {
 			}
 			return jsonResponse(payload)
 		},
-	} satisfies Action<typeof routes.accountPackageApprovePublishApi>
+	} satisfies Action<
+		| typeof routes.accountPackageApprovePublishApi
+		| typeof routes.communityPackageApprovePublishApi
+	>
 }

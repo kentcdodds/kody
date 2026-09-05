@@ -255,18 +255,20 @@ const badgeLinkCss = {
 }
 
 export function buildSourceAheadPublishHref(input: {
-	packageId: string | null | undefined
+	username: string
+	kodyId: string
 	headCommit: string | null | undefined
 }) {
-	if (!input.packageId) return null
 	if (input.headCommit) {
 		return buildPackagePublishApprovalPath({
-			packageId: input.packageId,
+			username: input.username,
+			kodyId: input.kodyId,
 			commit: input.headCommit,
 		})
 	}
-	return routes.accountPackageApprovePublish.href({
-		packageId: input.packageId,
+	return routes.communityPackageApprovePublish.href({
+		username: input.username,
+		kodyId: input.kodyId,
 	})
 }
 

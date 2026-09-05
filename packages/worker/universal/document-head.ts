@@ -152,9 +152,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountMcpServerNew)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
-	[routePattern(routes.accountPackages)]: titleOnly('Packages'),
-	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
-	[routePattern(routes.accountPackageApprovePublish)]: titleOnly(
+	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {

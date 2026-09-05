@@ -34,6 +34,7 @@ export function isPackageLocked(lockedAt: string | null | undefined) {
 
 export function AccountPackageOwnerDetails(
 	handle: Handle<{
+		ownerUsername: string
 		packageDetail: AccountPackageDetail
 		lockInFlight: boolean
 		onToggleLock: () => void
@@ -309,8 +310,9 @@ export function AccountPackageOwnerDetails(
 							})}
 						>
 							<a
-								href={routes.accountPackageApprovePublish.href({
-									packageId: packageDetail.id,
+								href={routes.communityPackageApprovePublish.href({
+									username: handle.props.ownerUsername,
+									kodyId: packageDetail.kodyId,
 								})}
 								data-testid="account-approve-publish"
 								mix={css({
@@ -324,7 +326,10 @@ export function AccountPackageOwnerDetails(
 						</div>
 					) : null}
 				</div>
-				<AccountPackageDeleteDialog packageDetail={packageDetail} />
+				<AccountPackageDeleteDialog
+					ownerUsername={handle.props.ownerUsername}
+					packageDetail={packageDetail}
+				/>
 				{packageDetail.searchText ? (
 					<details mix={css(accountDisclosureCss)}>
 						<summary>Search text</summary>

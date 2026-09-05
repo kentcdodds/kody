@@ -1,4 +1,3 @@
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import {
 	buildSourceAheadPublishHref,
@@ -10,32 +9,18 @@ import { loadPackagePage } from '#app/package-page.ts'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import { routes } from '#universal/routes.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 
 const communityPackageMatcher = createMatcher(routes.communityPackage.pattern)
 
-async function resolvePublishCompareHref(input: {
-	env: Env
-	request: Request
+function resolvePublishCompareHref(input: {
 	viewerIsOwner: boolean
 	listing: PublicCommunityListing | null
-	packageId?: string | null
 }) {
 	if (!input.viewerIsOwner || !input.listing?.sourceAhead) return null
-	let packageId = input.packageId ?? null
-	if (!packageId) {
-		const user = await readAuthenticatedAppUser(input.request, input.env)
-		if (user) {
-			const ownerPackage = await getSavedPackageByKodyId(input.env.APP_DB, {
-				userId: user.mcpUser.userId,
-				kodyId: input.listing.kodyId,
-			})
-			packageId = ownerPackage?.id ?? null
-		}
-	}
 	return buildSourceAheadPublishHref({
-		packageId,
+		username: input.listing.ownerUsername,
+		kodyId: input.listing.kodyId,
 		headCommit: input.listing.headCommit,
 	})
 }
@@ -64,12 +49,9 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 				loggedIn: page.loggedIn,
 				viewerIsOwner: page.viewerIsOwner,
 				returnTo: url.pathname,
-				publishCompareHref: await resolvePublishCompareHref({
-					env,
-					request,
+				publishCompareHref: resolvePublishCompareHref({
 					viewerIsOwner: page.viewerIsOwner,
 					listing,
-					packageId: page.ownerPackage?.id,
 				}),
 			})
 		}
@@ -94,9 +76,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 			loggedIn: detail.loggedIn,
 			viewerIsOwner: detail.viewerIsOwner,
 			returnTo: url.pathname,
-			publishCompareHref: await resolvePublishCompareHref({
-				env,
-				request,
+			publishCompareHref: resolvePublishCompareHref({
 				viewerIsOwner: detail.viewerIsOwner,
 				listing: detail.listing,
 			}),

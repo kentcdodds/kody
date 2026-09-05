@@ -75,7 +75,7 @@ export const onboardingChecklistItems = [
 		id: 'install-starter',
 		label: 'Persist your first package',
 		searchLabel: 'persist your first package',
-		href: '/account/packages',
+		href: '/onboarding/step-3',
 	},
 ] as const
 

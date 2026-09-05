@@ -373,8 +373,8 @@ step matched zero packages.
 Locked packages (`saved_packages.locked_at` set) still run apply and revert. The
 engine commits and pushes HEAD and does **not** advance `published_commit`. The
 owner reviews that HEAD commit later at
-`/account/packages/:packageId/approve-publish?commit=…`. Fleet apply does not
-skip locked packages.
+`/@username/:kodyId/approve-publish?commit=…`. Fleet apply does not skip locked
+packages.
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.

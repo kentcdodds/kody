@@ -224,8 +224,8 @@ explicitly asked to delete that package.
    exactly. The capability refuses and names the expected value when
    `confirm_name` is missing or wrong.
 
-People can delete from the package page: `/account/packages` → open the package
-→ **Delete package**, then type the package name in the modal.
+People can delete from `/@username/{kodyId}/settings`: choose **Delete
+package**, then type the package name in the modal.
 
 Hiding (`packageUpdate` `changes.hidden`) and making a package private are not
 deletion.

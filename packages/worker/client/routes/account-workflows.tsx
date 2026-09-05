@@ -144,17 +144,21 @@ function sourceLabel(workflow: Pick<AccountWorkflowListItem, 'sourceType'>) {
 }
 
 function packageValue(
-	workflow: Pick<AccountWorkflowListItem, 'sourceType' | 'packageId'>,
+	username: string,
+	workflow: Pick<AccountWorkflowListItem, 'sourceType' | 'kodyId'>,
 ) {
-	if (workflow.sourceType !== 'package' || !workflow.packageId) return '—'
+	if (workflow.sourceType !== 'package' || !workflow.kodyId || !username) {
+		return '—'
+	}
 	return (
 		<a
-			href={routes.accountPackageDetail.href({
-				packageId: workflow.packageId,
+			href={routes.communityPackage.href({
+				username,
+				kodyId: workflow.kodyId,
 			})}
 			mix={css(primaryLinkCss)}
 		>
-			{workflow.packageId}
+			{workflow.kodyId}
 		</a>
 	)
 }
@@ -220,6 +224,7 @@ function tryConsumeAccountWorkflowsLoaderData(handle: Handle, href: string) {
 export function AccountWorkflowsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
+	let username = ''
 	let workflows: Array<AccountWorkflowListItem> = []
 	let selectedWorkflow: AccountWorkflowDetail | null = null
 	let message: string | null = null
@@ -258,6 +263,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountWorkflowsLoaderData) {
+		username = payload.username
 		workflows = payload.workflows
 		selectedWorkflow = payload.selectedWorkflow
 		cancelWorkflowCheck.reset()
@@ -550,7 +556,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 											},
 											{
 												label: 'Package',
-												value: packageValue(detail),
+												value: packageValue(username, detail),
 											},
 											{
 												label: 'Export',

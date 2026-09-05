@@ -254,7 +254,6 @@ export async function publishFromExternalRef(input: {
 				message: error.message,
 				packageId: lockedPackage.id,
 				packageName: lockedPackage.name,
-				approvalPath: error.approvalPath,
 			}
 		}
 	}

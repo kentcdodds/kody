@@ -29,6 +29,7 @@ export type AccountJobListItem = {
 	ownership: JobOwnership
 	packageId: string | null
 	packageName: string | null
+	packageKodyId: string | null
 	scheduleSummary: string
 	scheduleType: JobSchedule['type']
 	timezone: string
@@ -87,6 +88,7 @@ export type AccountJobRetentionPreferences = JobRetentionPreferences & {
 
 export type AccountJobsLoaderData = {
 	ok: true
+	username: string
 	jobs: Array<AccountJobListItem>
 	selectedJob: AccountJobDetail | null
 	selectedJobId: string | null
@@ -143,16 +145,18 @@ export function readAccountJobsSelectedJobId(
 
 function toListItem(
 	job: JobView,
-	packageNamesById: ReadonlyMap<string, string>,
+	packagesById: ReadonlyMap<string, { name: string; kodyId: string }>,
 	inspection = buildJobInspectionOutput(job),
 ): AccountJobListItem {
 	const packageId = packageIdFromJobId(job.id)
+	const savedPackage = packageId ? packagesById.get(packageId) : null
 	return {
 		id: job.id,
 		name: job.name,
 		ownership: jobOwnershipForId(job.id),
 		packageId,
-		packageName: packageId ? (packageNamesById.get(packageId) ?? null) : null,
+		packageName: savedPackage?.name ?? null,
+		packageKodyId: savedPackage?.kodyId ?? null,
 		scheduleSummary: job.scheduleSummary,
 		scheduleType: job.schedule.type,
 		timezone: job.timezone,
@@ -196,7 +200,7 @@ async function toDetail(input: {
 	env: Env
 	userId: string
 	job: JobView
-	packageNamesById: ReadonlyMap<string, string>
+	packagesById: ReadonlyMap<string, { name: string; kodyId: string }>
 	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountJobDetail> {
 	const inspection = buildJobInspectionOutput(input.job)
@@ -206,7 +210,7 @@ async function toDetail(input: {
 		jobId: input.job.id,
 	})
 	return {
-		...toListItem(input.job, input.packageNamesById, inspection),
+		...toListItem(input.job, input.packagesById, inspection),
 		params: input.job.params ?? null,
 		paramsHighlighted: await highlightJsonValue(
 			input.env,
@@ -261,8 +265,11 @@ export async function loadAccountJobsData(input: {
 			userId,
 		}),
 	])
-	const packageNamesById = new Map(
-		savedPackages.map((savedPackage) => [savedPackage.id, savedPackage.name]),
+	const packagesById = new Map(
+		savedPackages.map((savedPackage) => [
+			savedPackage.id,
+			{ name: savedPackage.name, kodyId: savedPackage.kodyId },
+		]),
 	)
 	const selectedRecord = selectedJobId
 		? (inspection.jobs.find((job) => job.id === selectedJobId) ?? null)
@@ -270,13 +277,14 @@ export async function loadAccountJobsData(input: {
 
 	return {
 		ok: true,
-		jobs: inspection.jobs.map((job) => toListItem(job, packageNamesById)),
+		username: input.user.username,
+		jobs: inspection.jobs.map((job) => toListItem(job, packagesById)),
 		selectedJob: selectedRecord
 			? await toDetail({
 					env: input.env,
 					userId,
 					job: selectedRecord,
-					packageNamesById,
+					packagesById,
 					serverTiming: input.serverTiming,
 				})
 			: null,

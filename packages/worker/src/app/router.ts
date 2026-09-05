@@ -352,6 +352,10 @@ export function createAppRouter(env: Env) {
 				createAccountPackageApprovePublishHandler(env),
 			accountPackageApprovePublishApi:
 				createAccountPackageApprovePublishApiHandler(env),
+			communityPackageApprovePublish:
+				createAccountPackageApprovePublishHandler(env),
+			communityPackageApprovePublishApi:
+				createAccountPackageApprovePublishApiHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
