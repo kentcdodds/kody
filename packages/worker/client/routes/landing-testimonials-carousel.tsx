@@ -9,8 +9,10 @@ import {
 } from '#universal/landing-testimonials.ts'
 import {
 	TESTIMONIALS_LAP_MS,
-	canPauseOnHover,
+	isTestimonialsLanePaused,
 	listLanePlacements,
+	parkUnusedLaneCards,
+	placeLaneCard,
 	wrapPagerIndex,
 	wrapUnitInterval,
 } from './landing-testimonials-motion.ts'
@@ -163,16 +165,14 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	let dragging = false
 
 	function isPaused() {
-		if (!inView || userNudging) return true
-		// Touch and window-resize leave `:hover` / `:focus-within` stuck on
-		// the strip. Only fine pointers get a hover/focus pause.
-		if (!canPauseOnHover()) return false
-		return (
-			hover ||
-			focus ||
-			scroller.matches(':hover') ||
-			scroller.matches(':focus-within')
-		)
+		return isTestimonialsLanePaused({
+			inView,
+			userNudging,
+			focus,
+			hover,
+			matchesHover: scroller.matches(':hover'),
+			matchesFocusWithin: scroller.matches(':focus-within'),
+		})
 	}
 
 	function realCards() {
@@ -262,20 +262,11 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			const node = placement.seam
 				? takeSeamClone(source, placement.itemIndex, seamSlot++)
 				: source
-			node.hidden = false
-			node.style.transform = `translate3d(${placement.x}px, 0, 0)`
+			placeLaneCard(node, placement.x)
 			used.add(node)
 		}
-		for (const card of sources) {
-			if (used.has(card)) continue
-			card.hidden = true
-			card.style.transform = ''
-		}
-		for (const [index, clone] of seamClones.entries()) {
-			if (used.has(clone)) continue
-			clone.hidden = true
-			if (index >= seamSlot) clone.style.transform = ''
-		}
+		parkUnusedLaneCards(sources, used)
+		parkUnusedLaneCards(seamClones, used)
 	}
 
 	function markUserNudge() {

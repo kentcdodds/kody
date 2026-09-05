@@ -14,8 +14,9 @@ export function wrapPagerIndex(index: number, count: number) {
 }
 
 /**
- * Hover/focus pause is desktop-only. Coarse pointers and window-resize
- * leave `:hover` stuck on the strip, which freezes the lane.
+ * Hover pause is desktop-only. Coarse pointers and window-resize leave
+ * `:hover` stuck on the strip, which freezes the lane. Keyboard `focus`
+ * still pauses on every pointer class.
  */
 export function canPauseOnHover(
 	query: (query: string) => { matches: boolean } = (mediaQuery) =>
@@ -26,10 +27,53 @@ export function canPauseOnHover(
 	return query('(hover: hover) and (pointer: fine)').matches
 }
 
+export function isTestimonialsLanePaused(input: {
+	inView: boolean
+	userNudging: boolean
+	focus: boolean
+	hover: boolean
+	matchesHover: boolean
+	matchesFocusWithin: boolean
+	hoverCapable?: boolean
+}) {
+	if (!input.inView || input.userNudging || input.focus) return true
+	if (!(input.hoverCapable ?? canPauseOnHover())) return false
+	return input.hover || input.matchesHover || input.matchesFocusWithin
+}
+
 export function wrapUnitInterval(value: number, period: number) {
 	if (period <= 0) return 0
 	const next = value % period
 	return next < 0 ? next + period : next
+}
+
+/** Off-stage park if `[hidden]` loses to `display: flex` (see styles.css). */
+export const PARKED_TRANSFORM = 'translate3d(-200vw, 0, 0)'
+
+export type ParkableLaneCard = {
+	hidden: HTMLElement['hidden']
+	style: Pick<CSSStyleDeclaration, 'transform'>
+}
+
+export function placeLaneCard(node: ParkableLaneCard, x: number) {
+	node.hidden = false
+	node.style.transform = `translate3d(${x}px, 0, 0)`
+}
+
+export function parkLaneCard(node: ParkableLaneCard) {
+	node.hidden = true
+	node.style.transform = PARKED_TRANSFORM
+}
+
+/** Hide and park every card that is not in this frame's used set. */
+export function parkUnusedLaneCards<T extends ParkableLaneCard>(
+	nodes: Iterable<T>,
+	used: ReadonlySet<T>,
+) {
+	for (const node of nodes) {
+		if (used.has(node)) continue
+		parkLaneCard(node)
+	}
 }
 
 /**
