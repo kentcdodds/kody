@@ -20,10 +20,7 @@ import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
-import {
-	SENTRY_TUNNEL_PATH,
-	type SentryClientConfig,
-} from '#universal/sentry-config.ts'
+import { buildSsrSentryClientConfig } from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
 import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
 import { collectServerTiming } from '#worker/request-context.ts'
@@ -113,15 +110,12 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		documentHead.title = title
 	}
 	const parsedEnv = getEnv(env)
-	const sentryDsn = parsedEnv.SENTRY_DSN?.trim()
-	const sentryConfig: SentryClientConfig | null = sentryDsn
-		? {
-				dsn: sentryDsn,
-				environment: parsedEnv.SENTRY_ENVIRONMENT?.trim() || 'development',
-				release: parsedEnv.APP_COMMIT_SHA ?? null,
-				tunnel: SENTRY_TUNNEL_PATH,
-			}
-		: null
+	const sentryConfig = buildSsrSentryClientConfig({
+		dsn: parsedEnv.SENTRY_DSN,
+		environment: parsedEnv.SENTRY_ENVIRONMENT,
+		release: parsedEnv.APP_COMMIT_SHA,
+		localDev: parsedEnv.WRANGLER_IS_LOCAL_DEV === 'true',
+	})
 	const fathomSiteId = parsedEnv.FATHOM_SITE_ID?.trim() || null
 
 	const response = await pushServerTiming(serverTiming, 'ssr', async () => {

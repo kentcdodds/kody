@@ -42,12 +42,24 @@ export function RouterLocationProvider(
 	return () => handle.props.children
 }
 
+function readRouterLocation(
+	handle: Pick<Handle, 'context'>,
+): RouterLocationValue {
+	const location = handle.context.get(RouterLocationProvider)
+	if (location) return location
+	// Vite HMR can swap the provider function identity so `context.get`
+	// returns undefined mid-render (KODY-6T / KODY-6Z). Fall back to the
+	// current client URL instead of throwing.
+	const url = getClientUrl()
+	return { url, ssrUrl: url }
+}
+
 export function readRouterUrl(handle: Pick<Handle, 'context'>) {
-	return handle.context.get(RouterLocationProvider).url
+	return readRouterLocation(handle).url
 }
 
 export function readSsrRouterUrl(handle: Pick<Handle, 'context'>) {
-	return handle.context.get(RouterLocationProvider).ssrUrl
+	return readRouterLocation(handle).ssrUrl
 }
 
 export function readRouterPathname(handle: Pick<Handle, 'context'>) {

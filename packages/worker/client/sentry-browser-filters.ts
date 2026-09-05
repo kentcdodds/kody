@@ -1036,6 +1036,78 @@ export function isResolveFrameFetchNetworkError(error: unknown) {
 	)
 }
 
+/**
+ * Local `npm run dev` Vite / wrangler sessions (KODY-6Z, KODY-6T, KODY-6Y).
+ * Production wrangler vars copy `SENTRY_ENVIRONMENT=production` into local
+ * Vite, so HMR identity/CSS-binding crashes report as production. Match only
+ * loopback frame URLs, Vite HMR runtime tokens, or `Frame resolve failed`
+ * for a loopback `src` — production `kody.codes` resolveFrame 500s stay
+ * visible.
+ */
+const loopbackHttpUrlPattern =
+	/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i
+const viteDevStackTokenPattern =
+	/\/\.vite\/|remix_ui-hmr|callComponentRenderForHmr/i
+const frameResolveLoopbackMessagePattern =
+	/^Frame resolve failed \(\d+\) for https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i
+
+function isLocalViteDevFrameResolveMessage(message: string) {
+	return frameResolveLoopbackMessagePattern.test(
+		message.trim().replace(/^Error:\s*/i, ''),
+	)
+}
+
+function stackTextLooksLikeLocalViteDev(text: string) {
+	return (
+		loopbackHttpUrlPattern.test(text) || viteDevStackTokenPattern.test(text)
+	)
+}
+
+export function isLocalViteDevError(error: unknown) {
+	if (typeof error === 'string') {
+		return isLocalViteDevFrameResolveMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	const message =
+		'message' in error && typeof error.message === 'string' ? error.message : ''
+	const stack =
+		'stack' in error && typeof error.stack === 'string' ? error.stack : ''
+	if (isLocalViteDevFrameResolveMessage(message)) return true
+	return stackTextLooksLikeLocalViteDev(stack)
+}
+
+export function isLocalViteDevSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isLocalViteDevError(originalException)) return true
+	if (
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isLocalViteDevFrameResolveMessage(message),
+		)
+	) {
+		return true
+	}
+	if (sentryEventStackFrameUrls(event).some(stackTextLooksLikeLocalViteDev)) {
+		return true
+	}
+	return sentryEventStackFrameFunctions(event).some(
+		(name) =>
+			name.includes('callComponentRenderForHmr') ||
+			name.includes('remix_ui-hmr'),
+	)
+}
+
+export function filterLocalViteDevSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+	originalException?: unknown,
+): T | null {
+	if (isLocalViteDevSentryEvent(event, originalException)) return null
+	return event
+}
+
 export function filterResolveFrameFetchNetworkSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
@@ -1208,6 +1280,9 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterResolveFrameFetchNetworkSentryEvent(event, originalException) === null
 	) {
+		return null
+	}
+	if (filterLocalViteDevSentryEvent(event, originalException) === null) {
 		return null
 	}
 	if (

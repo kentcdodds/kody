@@ -450,12 +450,13 @@ current traffic).
 
 The client bundle initializes `@sentry/browser` from a `kody:sentry` meta tag
 that `ssr-document.tsx` renders when `SENTRY_DSN` is configured (the DSN is a
-publishable client key). Capture is errors plus **error-only Session Replay**:
-`replaysSessionSampleRate` is `0` and `replaysOnErrorSampleRate` is `1`, so
-nothing is recorded to Sentry unless an error occurs, and replays mask all text
-and block all media (`packages/worker/client/sentry-client.ts`) because Kody
-sessions contain personal content. Envelopes are sent through the same-origin
-`POST /sentry-tunnel` route
+publishable client key), except under `WRANGLER_IS_LOCAL_DEV` so Vite HMR noise
+does not report as production. Capture is errors plus **error-only Session
+Replay**: `replaysSessionSampleRate` is `0` and `replaysOnErrorSampleRate` is
+`1`, so nothing is recorded to Sentry unless an error occurs, and replays mask
+all text and block all media (`packages/worker/client/sentry-client.ts`) because
+Kody sessions contain personal content. Envelopes are sent through the
+same-origin `POST /sentry-tunnel` route
 (`packages/worker/src/app/handlers/sentry-tunnel.ts`), which only forwards
 envelopes whose DSN matches the Worker's own `SENTRY_DSN` — this keeps the
 first-party CSP at `connect-src 'self'`. Because that DSN is public, the route

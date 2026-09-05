@@ -17,6 +17,30 @@ export type SentryClientConfig = {
 	tunnel: string
 }
 
+/**
+ * SSR client-Sentry payload. Local `npm run dev` copies production
+ * `SENTRY_ENVIRONMENT` into wrangler vars and often has `SENTRY_DSN` in
+ * `.env`, so Vite HMR crashes would report as production (KODY-6Z). Skip
+ * the meta tag when `WRANGLER_IS_LOCAL_DEV` is set — the browser SDK already
+ * no-ops when the tag is absent.
+ */
+export function buildSsrSentryClientConfig(input: {
+	dsn?: string | null
+	environment?: string | null
+	release?: string | null
+	localDev?: boolean
+}): SentryClientConfig | null {
+	if (input.localDev) return null
+	const dsn = input.dsn?.trim()
+	if (!dsn) return null
+	return {
+		dsn,
+		environment: input.environment?.trim() || 'development',
+		release: input.release ?? null,
+		tunnel: SENTRY_TUNNEL_PATH,
+	}
+}
+
 export function parseSentryClientConfig(
 	content: string | null | undefined,
 ): SentryClientConfig | null {
