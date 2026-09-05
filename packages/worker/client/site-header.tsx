@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
+import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -19,6 +20,7 @@ import {
 export type SiteHeaderProps = {
 	loggedIn: boolean
 	displayName: string
+	username: string
 	avatarUrl: string | null
 	showAdminLink: boolean
 	showDemoIndicator: boolean
@@ -83,90 +85,23 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 		handle.update()
 	}
 
-	return () => (
-		<header class="site-header" mix={css(headerCss)}>
-			<nav aria-label="Main" mix={css(navCss)}>
-				<a href="/" mix={css(brandCss)}>
-					<img src="/images/kody-mark.png" alt="" width={34} height={34} />
-					<span>Kody</span>
-				</a>
-				<div mix={css(navLinksCss)}>
-					{marketingLinks.map((link) => (
-						<a
-							key={link.href}
-							href={link.href}
-							aria-current={ariaCurrent(
-								handle.props.currentPathname,
-								link.href,
-							)}
-						>
-							{link.label}
-						</a>
-					))}
-					{handle.props.showAdminLink ? (
-						<a
-							href="/admin/users"
-							aria-current={ariaCurrent(
-								handle.props.currentPathname,
-								'/admin/users',
-							)}
-						>
-							Admin
-						</a>
-					) : null}
-				</div>
-				<div mix={css(navActionsCss)}>
-					{handle.props.loggedIn ? (
-						<>
-							<a
-								href="/account/waiting"
-								aria-label={`Waiting — ${handle.props.displayName}`}
-								aria-current={ariaCurrent(
-									handle.props.currentPathname,
-									'/account/waiting',
-								)}
-								data-testid="site-header-waiting"
-								mix={css(navUserAvatarCss)}
-							>
-								<UserAvatar
-									displayName={handle.props.displayName}
-									avatarUrl={handle.props.avatarUrl}
-									size={32}
-									variant="well"
-								/>
-							</a>
-							{handle.props.showDemoIndicator ? (
-								<span data-testid="demo-indicator" mix={css(demoIndicatorCss)}>
-									Demo
-								</span>
-							) : null}
-						</>
-					) : (
-						<a href={handle.props.loginHref} mix={css(navLoginCss)}>
-							Log in
-						</a>
-					)}
-				</div>
-				<button
-					type="button"
-					popovertarget={menuPanelId}
-					aria-label="Menu"
-					aria-expanded={menuOpen ? 'true' : 'false'}
-					data-open={menuOpen ? '' : undefined}
-					mix={css(menuToggleCss)}
-				>
-					<span aria-hidden="true" mix={css(burgerCss)}>
-						<span />
-						<span />
-						<span />
-					</span>
-				</button>
-				<div
-					id={menuPanelId}
-					popover
-					mix={[css(menuPanelCss), on('toggle', onMenuToggle)]}
-				>
-					<div mix={css(menuGroupCss)}>
+	return () => {
+		const profileHref = handle.props.username
+			? routes.profile.href({ username: handle.props.username })
+			: null
+		const profileAriaCurrent =
+			profileHref && handle.props.currentPathname === profileHref
+				? ('page' as const)
+				: undefined
+
+		return (
+			<header class="site-header" mix={css(headerCss)}>
+				<nav aria-label="Main" mix={css(navCss)}>
+					<a href="/" mix={css(brandCss)}>
+						<img src="/images/kody-mark.png" alt="" width={34} height={34} />
+						<span>Kody</span>
+					</a>
+					<div mix={css(navLinksCss)}>
 						{marketingLinks.map((link) => (
 							<a
 								key={link.href}
@@ -191,47 +126,125 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 							</a>
 						) : null}
 					</div>
-					<div mix={css(menuGroupCss)}>
+					<div mix={css(navActionsCss)}>
 						{handle.props.loggedIn ? (
 							<>
-								<a
-									href="/account/waiting"
-									aria-label={`Waiting — ${handle.props.displayName}`}
-									aria-current={ariaCurrent(
-										handle.props.currentPathname,
-										'/account/waiting',
-									)}
-									data-testid="site-header-waiting-menu"
-									mix={css(menuWaitingLinkCss)}
-								>
-									<UserAvatar
-										displayName={handle.props.displayName}
-										avatarUrl={handle.props.avatarUrl}
-										size={32}
-										variant="well"
-									/>
-									Waiting
-								</a>
-								<a
-									href="/account"
-									aria-current={
-										handle.props.currentPathname === '/account'
-											? 'page'
-											: undefined
-									}
-									data-testid="site-header-account-menu"
-								>
-									Account
-								</a>
+								{profileHref ? (
+									<a
+										href={profileHref}
+										aria-label={`@${handle.props.username}`}
+										aria-current={profileAriaCurrent}
+										data-testid="site-header-profile"
+										mix={css(navUserAvatarCss)}
+									>
+										<UserAvatar
+											displayName={handle.props.displayName}
+											avatarUrl={handle.props.avatarUrl}
+											size={32}
+											variant="well"
+										/>
+									</a>
+								) : null}
+								{handle.props.showDemoIndicator ? (
+									<span
+										data-testid="demo-indicator"
+										mix={css(demoIndicatorCss)}
+									>
+										Demo
+									</span>
+								) : null}
 							</>
 						) : (
-							<a href={handle.props.loginHref}>Log in</a>
+							<a href={handle.props.loginHref} mix={css(navLoginCss)}>
+								Log in
+							</a>
 						)}
 					</div>
-				</div>
-			</nav>
-		</header>
-	)
+					<button
+						type="button"
+						popovertarget={menuPanelId}
+						aria-label="Menu"
+						aria-expanded={menuOpen ? 'true' : 'false'}
+						data-open={menuOpen ? '' : undefined}
+						mix={css(menuToggleCss)}
+					>
+						<span aria-hidden="true" mix={css(burgerCss)}>
+							<span />
+							<span />
+							<span />
+						</span>
+					</button>
+					<div
+						id={menuPanelId}
+						popover
+						mix={[css(menuPanelCss), on('toggle', onMenuToggle)]}
+					>
+						<div mix={css(menuGroupCss)}>
+							{marketingLinks.map((link) => (
+								<a
+									key={link.href}
+									href={link.href}
+									aria-current={ariaCurrent(
+										handle.props.currentPathname,
+										link.href,
+									)}
+								>
+									{link.label}
+								</a>
+							))}
+							{handle.props.showAdminLink ? (
+								<a
+									href="/admin/users"
+									aria-current={ariaCurrent(
+										handle.props.currentPathname,
+										'/admin/users',
+									)}
+								>
+									Admin
+								</a>
+							) : null}
+						</div>
+						<div mix={css(menuGroupCss)}>
+							{handle.props.loggedIn ? (
+								<>
+									{profileHref ? (
+										<a
+											href={profileHref}
+											aria-label={`@${handle.props.username}`}
+											aria-current={profileAriaCurrent}
+											data-testid="site-header-profile-menu"
+											mix={css(menuProfileLinkCss)}
+										>
+											<UserAvatar
+												displayName={handle.props.displayName}
+												avatarUrl={handle.props.avatarUrl}
+												size={32}
+												variant="well"
+											/>
+											{handle.props.username}
+										</a>
+									) : null}
+									<a
+										href="/account"
+										aria-current={
+											handle.props.currentPathname === '/account'
+												? 'page'
+												: undefined
+										}
+										data-testid="site-header-account-menu"
+									>
+										Account
+									</a>
+								</>
+							) : (
+								<a href={handle.props.loginHref}>Log in</a>
+							)}
+						</div>
+					</div>
+				</nav>
+			</header>
+		)
+	}
 }
 
 const headerCss = {
@@ -462,7 +475,7 @@ const navUserAvatarCss = {
 	'&:hover': { color: colors.text },
 }
 
-const menuWaitingLinkCss = {
+const menuProfileLinkCss = {
 	gap: '0.65rem',
 }
 

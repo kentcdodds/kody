@@ -389,10 +389,11 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountResponse.status).toBe(200)
 	const accountHtml = await readResponseText(accountResponse)
 	expect(accountHtml).toContain('aria-label="Account sections"')
-	expect(accountHtml).toContain('data-testid="site-header-waiting"')
+	expect(accountHtml).toContain('data-testid="site-header-profile"')
 	expect(accountHtml).toContain('data-testid="site-header-account-menu"')
-	expect(accountHtml).toContain('href="/account/waiting"')
-	expect(accountHtml).toContain('Waiting — account-user')
+	expect(accountHtml).toContain('href="/@account-user"')
+	expect(accountHtml).toContain('aria-label="@account-user"')
+	expect(accountHtml).not.toContain('data-testid="site-header-waiting"')
 	const accountProps = readAppRootProps(accountHtml)
 	expect(accountProps.loaderData?.accountProfile).toEqual({
 		ok: true,

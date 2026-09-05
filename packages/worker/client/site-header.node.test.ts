@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
-import { dismissOpenPopoverPanel } from './site-header.tsx'
+import { jsx } from 'remix/ui/jsx-runtime'
+import { renderToString } from 'remix/ui/server'
+import { dismissOpenPopoverPanel, SiteHeader } from './site-header.tsx'
 
 test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or closed', () => {
 	const unavailableMatches = vi.fn(() => {
@@ -29,4 +31,27 @@ test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or
 	} as unknown as HTMLElement
 	dismissOpenPopoverPanel(closedPanel)
 	expect(closedHidePopover).not.toHaveBeenCalled()
+})
+
+test('logged-in avatar and mobile menu go to the public profile with the username', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+		}),
+	)
+
+	expect(html).toContain('href="/@ada"')
+	expect(html).toContain('aria-label="@ada"')
+	expect(html).toContain('data-testid="site-header-profile"')
+	expect(html).toContain('data-testid="site-header-profile-menu"')
+	expect(html).toMatch(/site-header-profile-menu[\s\S]*?>ada</)
+	expect(html).not.toContain('Waiting')
+	expect(html).not.toContain('/account/waiting')
 })

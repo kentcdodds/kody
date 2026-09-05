@@ -1,7 +1,8 @@
 # Waiting
 
 Waiting is the current-state queue of things only **you** can clear. Open
-**`/account/waiting`** while signed in — the header avatar lands here.
+**`/account/waiting`** from Account while signed in. The header avatar goes to
+your public profile (`/@username`).
 
 Items are derived from live account state. They disappear when the gate clears.
 There is no read/unread mark, archive, or notification table.
