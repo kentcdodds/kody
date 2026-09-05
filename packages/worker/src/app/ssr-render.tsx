@@ -18,6 +18,7 @@ import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
+import { openDocumentStream } from '#app/ssr-document-stream.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import {
 	SENTRY_TUNNEL_PATH,
@@ -33,40 +34,16 @@ import {
 } from '#worker/server-timing.ts'
 
 /**
- * The remix/ui stream renderer emits markup starting at `<html>`; without a
- * doctype the browser parses the document in quirks mode.
- */
-function prependDoctype(stream: ReadableStream<Uint8Array>) {
-	const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
-	void (async () => {
-		const writer = writable.getWriter()
-		try {
-			await writer.write(new TextEncoder().encode('<!DOCTYPE html>'))
-			writer.releaseLock()
-			await stream.pipeTo(writable)
-		} catch (error) {
-			// Client disconnects abort the pipe; make sure both ends close.
-			try {
-				await stream.cancel(error)
-			} catch {
-				// Already errored or cancelled.
-			}
-			try {
-				await writable.abort(error)
-			} catch {
-				// Already aborted by pipeTo.
-			}
-		}
-	})()
-	return readable
-}
-
-/**
  * Maps a Remix `clientEntry` id onto the public Vite client module.
  * Production SSR often leaves `import.meta.url` empty, so the entry id is
  * `/client-entry.js#AppRoot` while the script tag is `/assets/entry-*.js`.
  * Without this hook, `#rmx-data` tells the browser to import the deleted
  * esbuild path and hydration 404s.
+ *
+ * Only the app root lives in that entry bundle. Any other island — Pitlane's
+ * dev `<HMR />`, whose id is its own dev-server URL — must be imported from
+ * the module it names; routed through the entry it fails with "Unknown client
+ * export", the island never hydrates, and server-data revalidation is dead.
  */
 export function resolveOriginClientEntry({
 	entryId,
@@ -77,7 +54,11 @@ export function resolveOriginClientEntry({
 	href: string
 	preloads: Array<string>
 }) {
-	const exportName = entryId.split('#')[1]?.trim() || 'AppRoot'
+	const [moduleUrl = '', rawExportName] = entryId.split('#')
+	const exportName = rawExportName?.trim() || 'AppRoot'
+	if (exportName !== 'AppRoot' && moduleUrl.startsWith('/')) {
+		return { href: moduleUrl, exportName, preloads: [] }
+	}
 	return { href, exportName, preloads }
 }
 
@@ -199,6 +180,9 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				},
 			},
 		)
+		// Throws when the render fails before producing the document; the
+		// handler's catch then answers with a 500 instead of a truncated 200.
+		const body = await openDocumentStream(stream)
 
 		const responseSetsCookie =
 			Boolean(setCookie) || (extraSetCookies?.length ?? 0) > 0
@@ -208,6 +192,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 			request,
 			responseSetsCookie,
 			status: status ?? 200,
+			localDev: parsedEnv.WRANGLER_IS_LOCAL_DEV === 'true',
 		})
 		const headers = new Headers({
 			'Cache-Control': pageCache.cacheControl,
@@ -228,7 +213,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		}
 
 		return applyFirstPartySecurityHeaders(
-			new Response(prependDoctype(stream), {
+			new Response(body, {
 				status: status ?? 200,
 				headers,
 			}),

@@ -6,9 +6,11 @@ import {
 import {
 	anonymousHtmlCacheAcceptHtml,
 	anonymousHtmlCacheAcceptParam,
+	buildAnonymousHtmlCacheEntry,
 	buildAnonymousHtmlCacheKey,
 	isAnonymousHtmlCacheRequest,
 	isAnonymousHtmlCacheStoreable,
+	isCompleteHtmlDocument,
 } from '#app/anonymous-html-edge-cache.ts'
 
 function htmlResponse(input: {
@@ -122,6 +124,13 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 	expect(
 		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {}),
 	).toBe(true)
+	// `npm run dev` and the Playwright web server: a stored page would hide
+	// the next edit from an anonymous tab for the stale-while-revalidate window.
+	expect(
+		isAnonymousHtmlCacheRequest(new Request('http://localhost:3742/'), {
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		}),
+	).toBe(false)
 
 	const htmlKey = buildAnonymousHtmlCacheKey(
 		new Request('https://preview.example.workers.dev/pricing?utm=1', {
@@ -162,4 +171,36 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 	expect(
 		isAnonymousHtmlCacheStoreable(htmlResponse({ cacheControl: 'no-store' })),
 	).toBe(false)
+})
+
+test('only a document that reached </html> counts as complete', () => {
+	// An SSR stream that failed after committing the doctype ends cleanly at
+	// 15 bytes; it must never be stored as the shared anonymous document.
+	expect(isCompleteHtmlDocument('<!DOCTYPE html>')).toBe(false)
+	expect(isCompleteHtmlDocument('')).toBe(false)
+	expect(isCompleteHtmlDocument('<!DOCTYPE html><html><body>')).toBe(false)
+	expect(
+		isCompleteHtmlDocument(
+			'<!DOCTYPE html><html><body></body></html><!-- rmx:flush document -->',
+		),
+	).toBe(true)
+	expect(isCompleteHtmlDocument('<html></HTML >')).toBe(true)
+})
+
+test('the stored entry keeps the buffered body and moves Vary aside', async () => {
+	const response = new Response('streamed', {
+		status: 200,
+		headers: {
+			'Content-Type': 'text/html; charset=utf-8',
+			'Cache-Control': anonymousHtmlCacheControl,
+			Vary: 'Cookie, Accept',
+			'X-Kody-Cache': 'MISS',
+		},
+	})
+	const entry = buildAnonymousHtmlCacheEntry(response, '<html></html>')
+	await expect(entry.text()).resolves.toBe('<html></html>')
+	expect(entry.headers.get('X-Kody-Cache')).toBeNull()
+	expect(entry.headers.get('X-Kody-Browser-Vary')).toBe('Cookie, Accept')
+	expect(entry.headers.get('Vary')).toBe('Accept')
+	expect(entry.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
 })

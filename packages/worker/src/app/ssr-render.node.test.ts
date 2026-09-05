@@ -298,6 +298,19 @@ test('resolveOriginClientEntry maps Remix entry IDs onto the Vite client href', 
 		exportName: 'AppRoot',
 		preloads: [],
 	})
+	// Pitlane's dev `<HMR />` island names its own dev-server module; the client
+	// entry bundle does not export it.
+	expect(
+		resolveOriginClientEntry({
+			entryId: '/@id/__x00__pitlane:dev#HMR',
+			href: '/packages/worker/client/entry.tsx',
+			preloads: ['/packages/worker/client/routes/auth-area.ts'],
+		}),
+	).toEqual({
+		href: '/@id/__x00__pitlane:dev',
+		exportName: 'HMR',
+		preloads: [],
+	})
 })
 
 test('SSR HTML routes render page content and embedded loader data', async () => {

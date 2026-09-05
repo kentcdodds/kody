@@ -46,6 +46,18 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 		vary: 'Cookie',
 	})
 
+	// Local dev: a browser-cached document would be what Vite's post-HMR page
+	// reload shows instead of the edit.
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/',
+			session: null,
+			request: request('https://example.com/'),
+			responseSetsCookie: false,
+			localDev: true,
+		}),
+	).toEqual({ cacheControl: 'no-store' })
+
 	expect(
 		resolveAppPageCacheControl({
 			pathname: '/pricing',

@@ -75,5 +75,16 @@ Prerequisites, install, and `npm run dev` notes. See the
   [`mock-api-servers.md`](../mock-api-servers.md).
 - `npm run dev:client`, `npm run dev:vite`, and `npm run dev:worker` all start
   the same Vite origin (client + worker in one workerd graph).
+- Worker-side HMR: the browser graph hot-swaps components as usual. In the
+  Worker environments, an edit that touches a component module (or a module a
+  component module imports) reloads the whole worker graph
+  (`page reload … (whole worker graph)` in the log; requests in flight wait for
+  it), because Vite's incremental SSR update re-evaluates only the importer
+  chain and splits Remix component identities across evaluations. Pure server
+  chains (handlers, data loaders) keep the incremental update, so module-level
+  registration side effects on that path must be idempotent. See
+  `tools/vite-worker-whole-graph-reload.ts`. The anonymous marketing HTML cache
+  (`caches.default`) is bypassed under `WRANGLER_IS_LOCAL_DEV`, so an anonymous
+  tab sees the edit on the next reload instead of a stored page.
 - Set `CLOUDFLARE_ENV` to switch Wrangler environments (defaults to
   `production`). Playwright sets this to `test`.

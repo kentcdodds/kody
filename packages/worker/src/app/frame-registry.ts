@@ -48,6 +48,18 @@ export function pathnameMatchesFrameRoute(
 	return routes.some((route) => getMatcherForRoute(route).match(url) !== null)
 }
 
+/**
+ * Registers (or re-registers) a frame renderer under `name`.
+ *
+ * Re-registration must replace, not throw: under Vite dev the Cloudflare
+ * module runner re-evaluates only the invalidated importer chain of a changed
+ * file (`frames/*.ts` → `frame-registrations.ts` → `ssr-render.tsx` → worker
+ * entry) while modules off that chain — this registry and its map — keep their
+ * state. The same frame module therefore legitimately runs again against a map
+ * that already holds its name, and the newest `render` must win so HMR serves
+ * fresh code. Name uniqueness across frame modules is a static property checked
+ * by `frame-registrations.node.test.ts`.
+ */
 export function registerFrame(
 	name: string,
 	config: {
@@ -55,10 +67,6 @@ export function registerFrame(
 		render: FrameRenderer
 	},
 ): RegisteredFrame {
-	if (framesByName.has(name)) {
-		throw new Error(`Frame name already registered: ${name}`)
-	}
-
 	const frame = {
 		name,
 		routes: config.routes,
@@ -71,6 +79,10 @@ export function registerFrame(
 
 export function getRegisteredFrame(name: string) {
 	return framesByName.get(name)
+}
+
+export function listRegisteredFrameNames() {
+	return [...framesByName.keys()]
 }
 
 export function createFrameHtmlResponse(html: string) {
