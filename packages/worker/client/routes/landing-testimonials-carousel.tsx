@@ -168,6 +168,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	let dragStartY = 0
 	let dragLastX = 0
 	let dragging = false
+	let pointerHeld = false
 	let flickSamples: Array<FlickSample> = []
 	let coastVelocity = 0
 	let suppressClick = false
@@ -302,7 +303,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		if (signal.aborted) return
 		raf = requestAnimationFrame(frame)
 		if (stride <= 0) measure()
-		if (dragging) {
+		if (pointerHeld) {
 			lastTs = 0
 			return
 		}
@@ -379,6 +380,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	function endPointerGesture(event: PointerEvent) {
 		if (pointerId !== event.pointerId) return
 		pointerId = null
+		pointerHeld = false
 		if (scroller.hasPointerCapture(event.pointerId)) {
 			scroller.releasePointerCapture(event.pointerId)
 		}
@@ -417,6 +419,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		dragStartY = event.clientY
 		dragging = false
 		suppressClick = false
+		pointerHeld = true
 		stopCoast()
 		flickSamples = []
 		recordPointerSamples(event)
@@ -432,6 +435,7 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 			if (intent === 'pending') return
 			if (intent === 'scroll') {
 				pointerId = null
+				pointerHeld = false
 				flickSamples = []
 				return
 			}
