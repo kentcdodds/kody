@@ -21,6 +21,8 @@ import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkth
 import { colors, radius } from '#universal/styles/tokens.ts'
 import {
 	articleMeasure,
+	getArticleBreakoutCss,
+	mergeCss,
 	pageGutter,
 	pageHeadCss,
 	proseCss,
@@ -304,7 +306,9 @@ export function GuideDetailRoute(handle: Handle) {
 						{interactiveGuideRenderers[guide.slug]?.(
 							guide.walkthroughHighlights,
 							guide.walkthroughHosts,
-						) ?? <div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>}
+						) ?? (
+							<div mix={css(guideProseCss)}>{renderGuideBody(guide.body)}</div>
+						)}
 
 						<footer mix={css(guideFootCss)}>
 							<p>
@@ -327,6 +331,10 @@ export function GuideDetailRoute(handle: Handle) {
 }
 
 /* Blog post rhythm on the 43rem measure. */
+
+const guideProseCss = mergeCss(proseCss, {
+	'& [data-markdown-table]': getArticleBreakoutCss(),
+})
 
 const guidePageCss = {
 	maxWidth: articleMeasure,

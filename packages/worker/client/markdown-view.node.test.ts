@@ -54,6 +54,8 @@ test('renders common markdown constructs as HTML elements', async () => {
 	expect(html).toContain('start="5"')
 	expect(html).toContain('>Name</th>')
 	expect(html).toContain('>a</td>')
+	expect(html).toContain('data-markdown-table')
+	expect(html).toContain('data-markdown-table-compact-last')
 	expect(html).toContain('class="shiki')
 	expect(html).toContain('const')
 	expect(html).toContain('<hr')
@@ -223,4 +225,26 @@ test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths',
 	expect(
 		getSafeMarkdownLinkHref('https://github.com/orgs/example/packages'),
 	).toBe('https://github.com/orgs/example/packages')
+})
+
+test('markdown tables keep last-column nowrap only when every last cell is a short label', async () => {
+	const compact = await renderMarkdown(
+		[
+			'| You want to | Use |',
+			'| --- | --- |',
+			'| Keep working code | A **package** |',
+			'| Sign in so code can act as you | An **integration** |',
+		].join('\n'),
+	)
+	expect(compact).toContain('data-markdown-table-compact-last')
+
+	const descriptive = await renderMarkdown(
+		[
+			'| File | Topic |',
+			'| --- | --- |',
+			'| oauth.md | Start here for third-party OAuth redirect URI and params |',
+		].join('\n'),
+	)
+	expect(descriptive).toContain('data-markdown-table=""')
+	expect(descriptive).not.toContain('data-markdown-table-compact-last=""')
 })

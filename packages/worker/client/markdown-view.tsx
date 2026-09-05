@@ -29,17 +29,21 @@
 import { lexer, type Token, type Tokens } from 'marked'
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
+import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import {
+	plainHighlightedCode,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
+import {
+	markdownTableCss,
+	mergeCss,
+} from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
-import {
-	plainHighlightedCode,
-	type HighlightedCode,
-} from '#universal/highlighted-code.ts'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
 
@@ -253,6 +257,19 @@ function renderTableCell(
 	)
 }
 
+const compactLastColumnMaxChars = 40
+
+function tableLastColumnIsCompact(table: Tokens.Table): boolean {
+	const lastCells = [
+		table.header.at(-1),
+		...table.rows.map((row) => row.at(-1)),
+	]
+	return lastCells.every((cell) => {
+		const text = cell?.text.trim() ?? ''
+		return text.length > 0 && text.length <= compactLastColumnMaxChars
+	})
+}
+
 function renderToken(
 	token: Token,
 	key: number,
@@ -321,25 +338,32 @@ function renderToken(
 			)
 		case 'table': {
 			const tableToken = token as Tokens.Table
+			const compactLast = tableLastColumnIsCompact(tableToken)
 			return (
-				<table key={key}>
-					<thead>
-						<tr>
-							{tableToken.header.map((cell, index) =>
-								renderTableCell(cell, index, 'th', options),
-							)}
-						</tr>
-					</thead>
-					<tbody>
-						{tableToken.rows.map((row, rowIndex) => (
-							<tr key={rowIndex}>
-								{row.map((cell, cellIndex) =>
-									renderTableCell(cell, cellIndex, 'td', options),
+				<div
+					key={key}
+					data-markdown-table=""
+					data-markdown-table-compact-last={compactLast ? '' : undefined}
+				>
+					<table>
+						<thead>
+							<tr>
+								{tableToken.header.map((cell, index) =>
+									renderTableCell(cell, index, 'th', options),
 								)}
 							</tr>
-						))}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{tableToken.rows.map((row, rowIndex) => (
+								<tr key={rowIndex}>
+									{row.map((cell, cellIndex) =>
+										renderTableCell(cell, cellIndex, 'td', options),
+									)}
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
 			)
 		}
 		case 'strong':
@@ -435,7 +459,7 @@ export function MarkdownView(handle: Handle<MarkdownViewProps>) {
 	}
 }
 
-const markdownCss = {
+const markdownCss = mergeCss(markdownTableCss, {
 	fontSize: typography.fontSize.sm,
 	lineHeight: 1.6,
 	color: colors.text,
@@ -456,7 +480,7 @@ const markdownCss = {
 	'& h4': {
 		fontSize: typography.fontSize.base,
 	},
-	'& p, & blockquote, & pre, & table, & ul, & ol': {
+	'& p, & blockquote, & pre, & ul, & ol': {
 		margin: `${spacing.sm} 0`,
 	},
 	'& ul, & ol': {
@@ -480,19 +504,6 @@ const markdownCss = {
 	'& code': {
 		fontSize: typography.fontSize.sm,
 	},
-	'& table': {
-		borderCollapse: 'collapse' as const,
-		display: 'block',
-		overflowX: 'auto' as const,
-	},
-	'& th, & td': {
-		border: `1px solid ${colors.border}`,
-		padding: `${spacing.xs} ${spacing.sm}`,
-		textAlign: 'left' as const,
-	},
-	'& th': {
-		fontWeight: typography.fontWeight.semibold,
-	},
 	'& a': {
 		color: colors.primaryText,
 		textDecoration: 'underline',
@@ -502,4 +513,4 @@ const markdownCss = {
 		borderTop: `1px solid ${colors.border}`,
 		margin: `${spacing.lg} 0`,
 	},
-}
+})
