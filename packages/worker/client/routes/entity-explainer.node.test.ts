@@ -20,8 +20,8 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
 	expect(resolveEntityExplainer(routes.community.href())?.id).toBe('community')
 	expect(
-		resolveEntityExplainer(routes.profile.href({ username: 'jane' }))?.id,
-	).toBe('profile')
+		resolveEntityExplainer(routes.profile.href({ username: 'jane' })),
+	).toBeNull()
 	expect(
 		resolveEntityExplainer(
 			routes.communityPackage.href({ username: 'jane', kodyId: 'helper' }),

@@ -1,9 +1,5 @@
 import { css } from 'remix/ui'
 import { buildAuthLink } from '#client/auth-links.ts'
-import {
-	EntityExplainer,
-	resolveEntityExplainer,
-} from '#client/routes/entity-explainer.tsx'
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { type ProfileShellLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
@@ -23,7 +19,6 @@ import { UserAvatar } from '#universal/user-avatar.tsx'
 const profilePagePath = (username: string) => routes.profile.href({ username })
 
 export function renderProfileIdentity(shell: ProfileShellLoaderData) {
-	const explainer = resolveEntityExplainer(profilePagePath(shell.username))
 	return (
 		<header mix={css(identityCss)} data-testid="profile-identity">
 			<div mix={css(avatarWrapCss)}>
@@ -68,9 +63,6 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 				{!shell.loggedIn
 					? renderProfileLoggedOutCtas(profilePagePath(shell.username))
 					: null}
-				{explainer ? (
-					<EntityExplainer copy={explainer} marginTop="0.85rem" />
-				) : null}
 			</div>
 		</header>
 	)
