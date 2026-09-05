@@ -10,6 +10,7 @@ import {
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
+	getEntitySourceByIdForUser: vi.fn(),
 	getPublishedBundleArtifactByIdentity: vi.fn(),
 	insertPublishedBundleArtifactRow: vi.fn(),
 	readPublishedBundleArtifact: vi.fn(),
@@ -21,6 +22,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
+	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceByIdForUser(...args),
 }))
 
 vi.mock('#worker/repo/published-bundle-artifacts-repo.ts', async () => {
@@ -1038,6 +1041,75 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	expect(
 		await reusePublishedPackageArtifactIfUnchanged({
 			env: { APP_DB: {} } as unknown as Env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+
+	const staleDep = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+	})
+	staleDep.artifact.dependencies = [
+		{
+			sourceId: 'source-dep',
+			publishedCommit: 'dep-old',
+			kodyId: 'dep',
+		},
+	]
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
+		staleDep.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(staleDep.artifact)
+	mockModule.readPublishedSourceSnapshot.mockImplementation(
+		async (input: { publishedCommit: string }) => {
+			if (
+				input.publishedCommit === 'commit-old' ||
+				input.publishedCommit === 'commit-2'
+			) {
+				return { files: reusePreviousFiles }
+			}
+			return null
+		},
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: 'source-dep',
+		user_id: 'user-1',
+		published_commit: 'dep-new',
+	})
+	mockModule.writePublishedBundleArtifact.mockClear()
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
+			userId: 'user-1',
+			sourceId: 'source-1',
+			publishedCommit: 'commit-2',
+			target: {
+				kind: 'module',
+				artifactName: '.',
+				entryPoint: 'src/a.ts',
+				bundleKind: 'module',
+			},
+		}),
+	).toBe(false)
+	expect(mockModule.writePublishedBundleArtifact).not.toHaveBeenCalled()
+
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: 'source-dep',
+		user_id: 'user-1',
+		published_commit: 'dep-old',
+	})
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValueOnce(false)
+	expect(
+		await reusePublishedPackageArtifactIfUnchanged({
+			env,
 			userId: 'user-1',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-2',

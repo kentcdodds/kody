@@ -701,8 +701,10 @@ publish checks run.
    subscription artifacts from the previous published commit when the target's
    entry, reachable source, and bundler root config (`package.json`, wrangler
    config, vendored `node_modules`) match the new snapshot; a shared-module
-   change dirties every dependent target. Missing prior artifacts or snapshots,
-   first publish, force, and `already_published` snapshot-mismatch repairs still
+   change dirties every dependent target. Stale captured `kody:@` dependency
+   commits also force a rebuild, so republishing a stale dependent still
+   refreshes inlined snapshots. Missing prior artifacts or snapshots, first
+   publish, force, and `already_published` snapshot-mismatch repairs still
    rebuild. A published commit always has a complete target set — reuse writes
    the prior modules under the new commit key rather than leaving holes. A
    rebuild failure after promotion also returns `checks_failed` with a bundle

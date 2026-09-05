@@ -24,6 +24,10 @@ import {
 	type PublishedBundleArtifactUpsertInput,
 	updatePublishedBundleArtifactRow,
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
+import {
+	getEntitySourceById,
+	getEntitySourceByIdForUser,
+} from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -330,10 +334,12 @@ function readPublishedSourceSnapshotCached(input: {
 
 /**
  * Copy a prior-commit artifact onto `publishedCommit` when the target's
- * bundler inputs are unchanged. Artifacts are keyed by commit, so reuse
- * writes the same modules under the new commit key and retargets the
- * identity row. Returns false (rebuild) when prior artifacts or snapshots
- * are missing, inputs changed, or the copy fails.
+ * bundler inputs are unchanged and captured `kody:@` dependency commits
+ * still match those sources' current `published_commit`. Artifacts are
+ * keyed by commit, so reuse writes the same modules under the new commit
+ * key and retargets the identity row. Returns false (rebuild) when prior
+ * artifacts or snapshots are missing, inputs changed, bundled dependency
+ * snapshots are stale, or the copy fails.
  */
 export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	env: Env
@@ -387,6 +393,15 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	) {
 		return false
 	}
+	if (
+		!(await publishedPackageArtifactDependenciesMatchCurrent({
+			env: input.env,
+			userId: input.userId,
+			dependencies: loaded.artifact.dependencies,
+		}))
+	) {
+		return false
+	}
 	const artifactName = normalizeArtifactName(input.target.artifactName)
 	const entryPoint = normalizeEntryPoint(input.target.entryPoint)
 	const kvKey = buildPublishedBundleArtifactKvKey({
@@ -417,10 +432,13 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 			artifact,
 			kvKey,
 		})
-		await updatePublishedBundleArtifactRow(input.env.APP_DB, {
+		const updated = await updatePublishedBundleArtifactRow(input.env.APP_DB, {
 			id: loaded.row.id,
 			...rowInput,
 		})
+		if (!updated) {
+			throw new Error('Published bundle artifact identity row was not updated.')
+		}
 		return true
 	} catch {
 		await deletePublishedBundleArtifact({
@@ -431,6 +449,25 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 		})
 		return false
 	}
+}
+
+async function publishedPackageArtifactDependenciesMatchCurrent(input: {
+	env: Env
+	userId: string
+	dependencies: ReadonlyArray<BundleArtifactDependency>
+}) {
+	for (const dependency of input.dependencies) {
+		if (!dependency.publishedCommit) return false
+		const source = dependency.platformOwned
+			? await getEntitySourceById(input.env.APP_DB, dependency.sourceId)
+			: await getEntitySourceByIdForUser(input.env.APP_DB, {
+					id: dependency.sourceId,
+					userId: input.userId,
+				})
+		if (!source?.published_commit) return false
+		if (source.published_commit !== dependency.publishedCommit) return false
+	}
+	return true
 }
 
 function publishedArtifactCreatedAtIsAtLeast(
