@@ -47,6 +47,7 @@ import {
 	hasPublishedRuntimeArtifacts,
 	loadPublishedSourceManifestSnapshot,
 	loadPublishedSourceSnapshot,
+	publishedSourceSnapshotFilesMatch,
 	writePublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { planRepoSessionContentEdits } from './plan-repo-session-content-edits.ts'
@@ -70,6 +71,7 @@ import {
 	isolatedArtifactRebuildStagingTtlSeconds,
 	type IsolatedArtifactRebuildOutcome,
 	type IsolatedArtifactRebuildRequest,
+	type IsolatedArtifactRebuildTargetResult,
 } from './isolated-artifact-rebuild.ts'
 import {
 	isolatedCheckStagingKeyBelongsToUser,
@@ -105,6 +107,7 @@ import {
 	externalPublishWorkspaceDir,
 	isWorkspaceSqliteTooBigMessage,
 } from './external-publish-clone.ts'
+import { timePublishExternalPushPhase } from './publish-phase-timing.ts'
 import {
 	buildRepoSessionWorkspaceName,
 	measureRepoSessionWorkspaceBlobBytes,
@@ -2290,45 +2293,69 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Pure-compute entrypoint for one published-package artifact rebuild,
-	 * invoked on a throwaway Durable Object id so the rebuild's peak memory
-	 * lives in its own isolate (see isolated-artifact-rebuild.ts). It has no
-	 * session and never touches this instance's storage; the staged source
-	 * files come from a short-TTL KV entry written by
+	 * Pure-compute entrypoint for a chunk of published-package artifact
+	 * rebuilds, invoked on a throwaway Durable Object id so the rebuild's
+	 * peak memory lives in its own isolate (see isolated-artifact-rebuild.ts).
+	 * It has no session and never touches this instance's storage; the staged
+	 * source files come from a short-TTL KV entry written by
 	 * `stagePublishedPackageArtifactRebuild`.
 	 */
 	async runIsolatedArtifactRebuild(
 		input: IsolatedArtifactRebuildRequest,
 	): Promise<IsolatedArtifactRebuildOutcome> {
+		const failTargets = (
+			targets: ReadonlyArray<PublishedPackageArtifactBuildTarget>,
+			message: string,
+		): Array<IsolatedArtifactRebuildTargetResult> =>
+			targets.map((target) => ({
+				ok: false,
+				message,
+				target,
+			}))
+
 		if (
 			!isolatedArtifactRebuildStagingKeyBelongsToUser({
 				stagingKey: input.stagingKey,
 				userId: input.userId,
 			})
 		) {
+			const message =
+				'Isolated artifact rebuild staging key does not belong to the requesting user.'
 			return {
 				ok: false,
-				message:
-					'Isolated artifact rebuild staging key does not belong to the requesting user.',
-				target: input.target,
+				message,
+				results: failTargets(input.targets, message),
 			}
 		}
-		const alreadyBuilt =
-			!input.force &&
-			(await isPublishedPackageArtifactBuiltForCommit({
-				env: this.env,
-				userId: input.userId,
-				sourceId: input.sourceId,
-				publishedCommit: input.publishedCommit,
-				target: input.target,
-			}))
-		if (alreadyBuilt) {
+		const results: Array<IsolatedArtifactRebuildTargetResult> = []
+		const remaining: Array<PublishedPackageArtifactBuildTarget> = []
+		for (const target of input.targets) {
+			const alreadyBuilt =
+				!input.force &&
+				(await isPublishedPackageArtifactBuiltForCommit({
+					env: this.env,
+					userId: input.userId,
+					sourceId: input.sourceId,
+					publishedCommit: input.publishedCommit,
+					target,
+				}))
+			if (alreadyBuilt) {
+				results.push({
+					ok: true,
+					message: 'Published package artifact already built for this commit.',
+					skipped: true,
+					kvKey: null,
+					target,
+				})
+				continue
+			}
+			remaining.push(target)
+		}
+		if (remaining.length === 0) {
 			return {
 				ok: true,
-				message: 'Published package artifact already built for this commit.',
-				skipped: true,
-				kvKey: null,
-				target: input.target,
+				message: 'Published package artifacts already built for this commit.',
+				results,
 			}
 		}
 		const staged = await this.env.BUNDLE_ARTIFACTS_KV.get<{
@@ -2336,12 +2363,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		}>(input.stagingKey, 'json')
 		const sourceFiles = staged?.sourceFiles
 		if (!sourceFiles) {
-			return {
-				ok: false,
-				message:
-					'Isolated artifact rebuild staging data expired or is missing; re-run the publish capability to repair artifacts.',
-				target: input.target,
-			}
+			const message =
+				'Isolated artifact rebuild staging data expired or is missing; re-run the publish capability to repair artifacts.'
+			results.push(...failTargets(remaining, message))
+			return { ok: false, message, results }
 		}
 		try {
 			const source = await this.resolvePublishSource({
@@ -2349,45 +2374,72 @@ class RepoSessionBase extends DurableObject<Env> {
 				userId: input.userId,
 			})
 			if (source.entity_kind !== 'package') {
-				return {
-					ok: false,
-					message:
-						'Published bundle artifacts can only be rebuilt for packages.',
-					target: input.target,
-				}
+				const message =
+					'Published bundle artifacts can only be rebuilt for packages.'
+				results.push(...failTargets(remaining, message))
+				return { ok: false, message, results }
 			}
 			const savedPackage = await getSavedPackageById(this.env.APP_DB, {
 				userId: input.userId,
 				packageId: source.entity_id,
 			})
 			if (!savedPackage) {
-				return {
-					ok: false,
-					message: `Saved package "${source.entity_id}" was not found.`,
-					target: input.target,
+				const message = `Saved package "${source.entity_id}" was not found.`
+				results.push(...failTargets(remaining, message))
+				return { ok: false, message, results }
+			}
+			for (const target of remaining) {
+				try {
+					const kvKey =
+						await this.persistPublishedPackageArtifactTargetFromFiles({
+							source,
+							savedPackage,
+							userId: input.userId,
+							publishedCommit: input.publishedCommit,
+							target,
+							baseUrl: input.baseUrl,
+							sourceFiles,
+						})
+					results.push({
+						ok: true,
+						message: 'Published package artifact rebuilt.',
+						kvKey,
+						target,
+					})
+				} catch (error) {
+					results.push({
+						ok: false,
+						message: getErrorMessage(error),
+						target,
+					})
 				}
 			}
-			const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
-				source,
-				savedPackage,
-				userId: input.userId,
-				publishedCommit: input.publishedCommit,
-				target: input.target,
-				baseUrl: input.baseUrl,
-				sourceFiles,
-			})
+		} catch (error) {
+			const message = getErrorMessage(error)
+			const recorded = new Set(results.map((result) => result.target))
+			for (const target of remaining) {
+				if (recorded.has(target)) continue
+				results.push({
+					ok: false,
+					message,
+					target,
+				})
+			}
+			return { ok: false, message, results }
+		}
+
+		const failed = results.filter((result) => !result.ok)
+		if (failed.length === 0) {
 			return {
 				ok: true,
-				message: 'Published package artifact rebuilt.',
-				kvKey,
-				target: input.target,
+				message: 'Published package artifacts rebuilt.',
+				results,
 			}
-		} catch (error) {
-			return {
-				ok: false,
-				message: getErrorMessage(error),
-				target: input.target,
-			}
+		}
+		return {
+			ok: false,
+			message: failed.map((result) => result.message).join('; '),
+			results,
 		}
 	}
 
@@ -2887,23 +2939,30 @@ class RepoSessionBase extends DurableObject<Env> {
 		try {
 			// In-memory clone: publish verification does not need the session
 			// Durable Object workspace (KODY-CLOUDFLARE-57).
-			publishClone = await cloneExternalPublishWorkspace({
-				remote: sourceAccess.remote,
-				token: sourceAccess.token,
-				branch: targetBranch,
-				checkoutCommit: input.newCommit,
-			})
-			// Race protection without a second Artifacts REST HEAD resolve: the
-			// single-branch clone tip is the remote default-branch HEAD at clone
-			// time. Compare it to the worker-resolved expectedHead before publish.
-			if (input.expectedHead) {
-				const clonedHead = publishClone.headCommit
-				if (clonedHead !== input.expectedHead) {
-					throw new Error(
-						`Artifacts HEAD changed from "${input.expectedHead}" to "${clonedHead ?? 'unknown'}" before publish.`,
-					)
-				}
-			}
+			;({ value: publishClone } = await timePublishExternalPushPhase(
+				{ phase: 'clone', sourceId: source.id },
+				async () => {
+					const cloned = await cloneExternalPublishWorkspace({
+						remote: sourceAccess.remote,
+						token: sourceAccess.token,
+						branch: targetBranch,
+						checkoutCommit: input.newCommit,
+					})
+					// Race protection without a second Artifacts REST HEAD resolve:
+					// the single-branch clone tip is the remote default-branch HEAD
+					// at clone time. Compare it to the worker-resolved expectedHead
+					// before publish.
+					if (input.expectedHead) {
+						const clonedHead = cloned.headCommit
+						if (clonedHead !== input.expectedHead) {
+							throw new Error(
+								`Artifacts HEAD changed from "${input.expectedHead}" to "${clonedHead ?? 'unknown'}" before publish.`,
+							)
+						}
+					}
+					return cloned
+				},
+			))
 		} catch (error) {
 			const message = getErrorMessage(error)
 			if (message.includes('Artifacts HEAD changed from')) {
@@ -2947,10 +3006,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			allowLockedPublish: input.allowLockedPublish,
 		})
 		if (publishResult.status === 'already_published') {
-			// D1 stays a no-op (overlapping inline + durable escalation). Still
-			// rewrite the KV snapshot from the just-cloned HEAD so a prior
-			// finalize that tagged the current commit with stale files cannot
-			// keep winning artifact rebuilds.
+			// D1 stays a no-op (overlapping inline + durable escalation). Rewrite
+			// the KV snapshot only when it is missing or the cloned HEAD files
+			// differ, so a prior finalize that tagged this commit with stale
+			// files cannot keep winning artifact rebuilds.
+			let forceArtifactRebuild = false
 			try {
 				if (
 					publishResult.published_commit &&
@@ -2958,14 +3018,25 @@ class RepoSessionBase extends DurableObject<Env> {
 				) {
 					const files = await publishClone.collectFiles()
 					if (typeof files[source.manifest_path] === 'string') {
-						await writePublishedSourceSnapshot({
+						const existingSnapshot = await loadPublishedSourceSnapshot({
 							env: this.env,
+							userId: input.userId,
 							source: {
 								...source,
 								published_commit: publishResult.published_commit,
 							},
-							files,
 						})
+						if (!publishedSourceSnapshotFilesMatch(existingSnapshot, files)) {
+							await writePublishedSourceSnapshot({
+								env: this.env,
+								source: {
+									...source,
+									published_commit: publishResult.published_commit,
+								},
+								files,
+							})
+							forceArtifactRebuild = true
+						}
 					}
 				}
 			} catch (error) {
@@ -2987,6 +3058,10 @@ class RepoSessionBase extends DurableObject<Env> {
 					error: getErrorMessage(error),
 				})
 				throw error
+			}
+			return {
+				...publishResult,
+				force_artifact_rebuild: forceArtifactRebuild,
 			}
 		} else if (publishResult.status === 'published') {
 			try {

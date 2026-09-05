@@ -20,10 +20,16 @@ vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	}),
 }))
 
-vi.mock('#worker/repo/isolated-artifact-rebuild.ts', () => ({
-	createIsolatedArtifactRebuildRunner: (...args: Array<unknown>) =>
-		mockModule.createIsolatedArtifactRebuildRunner(...args),
-}))
+vi.mock('#worker/repo/isolated-artifact-rebuild.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/repo/isolated-artifact-rebuild.ts')
+	>('#worker/repo/isolated-artifact-rebuild.ts')
+	return {
+		...actual,
+		createIsolatedArtifactRebuildRunner: (...args: Array<unknown>) =>
+			mockModule.createIsolatedArtifactRebuildRunner(...args),
+	}
+})
 
 vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 	isPublishedPackageArtifactBuiltForCommit: (...args: Array<unknown>) =>
@@ -52,6 +58,42 @@ const sampleTargets = [
 		entryPoint: 'src/c.ts',
 		bundleKind: 'module' as const,
 	},
+	{
+		kind: 'module' as const,
+		artifactName: './d',
+		entryPoint: 'src/d.ts',
+		bundleKind: 'module' as const,
+	},
+	{
+		kind: 'module' as const,
+		artifactName: './e',
+		entryPoint: 'src/e.ts',
+		bundleKind: 'module' as const,
+	},
+	{
+		kind: 'module' as const,
+		artifactName: './f',
+		entryPoint: 'src/f.ts',
+		bundleKind: 'module' as const,
+	},
+	{
+		kind: 'module' as const,
+		artifactName: './g',
+		entryPoint: 'src/g.ts',
+		bundleKind: 'module' as const,
+	},
+	{
+		kind: 'module' as const,
+		artifactName: './h',
+		entryPoint: 'src/h.ts',
+		bundleKind: 'module' as const,
+	},
+	{
+		kind: 'module' as const,
+		artifactName: './i',
+		entryPoint: 'src/i.ts',
+		bundleKind: 'module' as const,
+	},
 ]
 
 function resetMocks() {
@@ -63,12 +105,13 @@ function resetMocks() {
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 }
 
-test('isolated rebuild lists then stages once, fans out with bounded concurrency, and discards staging', async () => {
+test('isolated rebuild lists then stages once, chunks targets per isolate with bounded concurrency, and discards staging', async () => {
 	resetMocks()
 
 	const run = vi.fn(async () => ({
 		ok: true,
 		message: 'rebuilt',
+		results: [],
 	}))
 	const touch = vi.fn(async () => undefined)
 	const discard = vi.fn(async () => undefined)
@@ -87,7 +130,7 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 	let inFlight = 0
 	let maxInFlight = 0
 	const releaseGates: Array<() => void> = []
-	run.mockImplementation(async () => {
+	run.mockImplementation(async (input: { targets: typeof sampleTargets }) => {
 		inFlight += 1
 		maxInFlight = Math.max(maxInFlight, inFlight)
 		await new Promise<void>((resolve) => {
@@ -96,7 +139,15 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 				resolve()
 			})
 		})
-		return { ok: true, message: 'rebuilt' }
+		return {
+			ok: true,
+			message: 'rebuilt',
+			results: input.targets.map((target) => ({
+				ok: true,
+				message: 'rebuilt',
+				target,
+			})),
+		}
 	})
 
 	const rebuildPromise = rebuildPublishedPackageArtifactsViaRepoSession({
@@ -123,6 +174,8 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 	expect(touch).not.toHaveBeenCalled()
+	expect(run.mock.calls[0]?.[0]?.targets).toEqual(sampleTargets.slice(0, 4))
+	expect(run.mock.calls[1]?.[0]?.targets).toEqual(sampleTargets.slice(4, 8))
 
 	releaseGates.splice(0).forEach((release) => release())
 	await vi.waitFor(() => {
@@ -131,6 +184,7 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 	expect(touch).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
 	)
+	expect(run.mock.calls[2]?.[0]?.targets).toEqual(sampleTargets.slice(8))
 	releaseGates.splice(0).forEach((release) => release())
 	await rebuildPromise
 
@@ -146,7 +200,7 @@ test('isolated rebuild lists then stages once, fans out with bounded concurrency
 			sourceId: 'source-1',
 			userId: 'user-1',
 			publishedCommit: 'commit-1',
-			target: sampleTargets[0],
+			targets: sampleTargets.slice(0, 4),
 		}),
 	)
 })
@@ -161,7 +215,7 @@ test('isolated rebuild skips already-built targets and does not stage when all a
 		discard,
 	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets,
+		sampleTargets.slice(0, 3),
 	)
 	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
 		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
@@ -186,7 +240,7 @@ test('isolated rebuild skips already-built targets and does not stage when all a
 
 	expect(run).toHaveBeenCalledTimes(1)
 	expect(run).toHaveBeenCalledWith(
-		expect.objectContaining({ target: sampleTargets[1] }),
+		expect.objectContaining({ targets: [sampleTargets[1]] }),
 	)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		1,
@@ -256,31 +310,30 @@ test('force rebuilds already-built targets so already_published can repair stale
 	expect(run).toHaveBeenCalledWith(
 		expect.objectContaining({
 			force: true,
-			target: sampleTargets[0],
+			targets: sampleTargets.slice(0, 4),
 		}),
 	)
 	expect(discard).toHaveBeenCalledTimes(1)
 })
 
 test('rebuild failure stops later chunks and reports succeeded versus failed for isolated and fallback paths', async () => {
-	const targets = [
-		...sampleTargets,
-		{
-			kind: 'module' as const,
-			artifactName: './d',
-			entryPoint: 'src/d.ts',
-			bundleKind: 'module' as const,
-		},
-	]
+	const targets = sampleTargets
 	const failurePattern =
-		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}\. Failed: \{ kind "module", artifact "\.\/b", entry "src\/b\.ts", bundle "module" \}: bundle b failed/
+		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}.+Failed:.+bundle b failed/
 
 	resetMocks()
-	const run = vi.fn(async (input: { target: (typeof targets)[number] }) => {
-		if (input.target.artifactName === './b') {
-			return { ok: false, message: 'bundle b failed' }
+	const run = vi.fn(async (input: { targets: typeof targets }) => {
+		return {
+			ok: input.targets.every((target) => target.artifactName !== './b'),
+			message: input.targets.some((target) => target.artifactName === './b')
+				? 'bundle b failed'
+				: 'rebuilt',
+			results: input.targets.map((target) =>
+				target.artifactName === './b'
+					? { ok: false, message: 'bundle b failed', target }
+					: { ok: true, message: 'rebuilt', target },
+			),
 		}
-		return { ok: true, message: 'rebuilt' }
 	})
 	const touch = vi.fn(async () => undefined)
 	const discard = vi.fn(async () => undefined)
@@ -309,11 +362,14 @@ test('rebuild failure stops later chunks and reports succeeded versus failed for
 	).rejects.toThrow(failurePattern)
 	expect(touch).not.toHaveBeenCalled()
 	expect(run).toHaveBeenCalledTimes(2)
-	expect(run).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[2] }),
+	expect(run).toHaveBeenCalledWith(
+		expect.objectContaining({ targets: targets.slice(0, 4) }),
+	)
+	expect(run).toHaveBeenCalledWith(
+		expect.objectContaining({ targets: targets.slice(4, 8) }),
 	)
 	expect(run).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[3] }),
+		expect.objectContaining({ targets: targets.slice(8) }),
 	)
 	expect(discard).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
@@ -321,7 +377,9 @@ test('rebuild failure stops later chunks and reports succeeded versus failed for
 
 	resetMocks()
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		targets.slice(0, 4),
+	)
 	mockModule.rebuildPublishedPackageArtifact.mockImplementation(
 		async (input: { target: (typeof targets)[number] }) => {
 			if (input.target.artifactName === './b') {
@@ -361,7 +419,7 @@ test('falls back to per-target session rebuild when isolated runner bindings are
 	resetMocks()
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets,
+		sampleTargets.slice(0, 3),
 	)
 
 	let inFlight = 0

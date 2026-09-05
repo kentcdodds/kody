@@ -63,6 +63,7 @@ import {
 	maxRepoSourceFileBytes,
 } from './large-file-policy.ts'
 import { normalizeRepoWorkspacePath } from './manifest.ts'
+import { timePublishExternalPushPhase } from './publish-phase-timing.ts'
 
 export type RepoCheckKind =
 	| 'manifest'
@@ -1348,87 +1349,100 @@ export async function runRepoChecks(input: {
 	let bundleCheckResult: { ok: boolean; message: string }
 	try {
 		const runTypecheckPhase = async (): Promise<RepoCheckResult> => {
-			if (missingCallableTypecheckTargets.length > 0) {
-				return {
-					kind: 'typecheck',
-					ok: false,
-					message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
-						.map((path) => `"${path}"`)
-						.join(', ')}.`,
-				}
-			}
-			const callableTargetsMissingDefaultExport =
-				collectEntrypointsMissingDefaultExport({
-					snapshot,
-					targets: callableTypecheckTargets,
-				})
-			if (callableTargetsMissingDefaultExport.length > 0) {
-				return {
-					kind: 'typecheck',
-					ok: false,
-					message: formatMissingDefaultExportMessage(
-						callableTargetsMissingDefaultExport,
-					),
-				}
-			}
-			if (callableTypecheckTargets.length === 0) {
-				return {
-					kind: 'typecheck',
-					ok: true,
-					message: 'No callable package runtime entrypoint(s) to typecheck.',
-				}
-			}
-			const outcome =
-				isolatedRunner && stagingKey && bundleContext
-					? await isolatedRunner.run({
-							phase: 'typecheck',
-							stagingKey,
-							userId: bundleContext.userId,
-							typecheckTargets: callableTypecheckTargets,
-						})
-					: await runPackageTypecheckLanguageService({
-							sourceFiles,
+			const { value } = await timePublishExternalPushPhase(
+				{ phase: 'checks/typecheck' },
+				async () => {
+					if (missingCallableTypecheckTargets.length > 0) {
+						return {
+							kind: 'typecheck' as const,
+							ok: false,
+							message: `Typecheck skipped because callable package runtime entrypoint(s) are missing from the repo session snapshot: ${missingCallableTypecheckTargets
+								.map((path) => `"${path}"`)
+								.join(', ')}.`,
+						}
+					}
+					const callableTargetsMissingDefaultExport =
+						collectEntrypointsMissingDefaultExport({
+							snapshot,
 							targets: callableTypecheckTargets,
 						})
-			return { kind: 'typecheck', ...outcome }
+					if (callableTargetsMissingDefaultExport.length > 0) {
+						return {
+							kind: 'typecheck' as const,
+							ok: false,
+							message: formatMissingDefaultExportMessage(
+								callableTargetsMissingDefaultExport,
+							),
+						}
+					}
+					if (callableTypecheckTargets.length === 0) {
+						return {
+							kind: 'typecheck' as const,
+							ok: true,
+							message:
+								'No callable package runtime entrypoint(s) to typecheck.',
+						}
+					}
+					const outcome =
+						isolatedRunner && stagingKey && bundleContext
+							? await isolatedRunner.run({
+									phase: 'typecheck',
+									stagingKey,
+									userId: bundleContext.userId,
+									typecheckTargets: callableTypecheckTargets,
+								})
+							: await runPackageTypecheckLanguageService({
+									sourceFiles,
+									targets: callableTypecheckTargets,
+								})
+					return { kind: 'typecheck' as const, ...outcome }
+				},
+			)
+			return value
 		}
 
 		const runBundlePhase = async (): Promise<{
 			ok: boolean
 			message: string
 		}> => {
-			if (missingBundleTargets.length > 0) {
-				return {
-					ok: false,
-					message: formatBundleCheckMessage({
-						missingEntryPoints: missingBundleTargets,
-						targetCount: bundleTargets.length,
-					}),
-				}
-			}
-			if (!bundleContext) {
-				return {
-					ok: true,
-					message: formatBundleCheckMessage({
-						missingEntryPoints: missingBundleTargets,
-						targetCount: bundleTargets.length,
-					}),
-				}
-			}
-			if (isolatedRunner && stagingKey) {
-				return await runChunkedBundleValidation({
-					runner: isolatedRunner,
-					stagingKey,
-					baseUrl: bundleContext.baseUrl,
-					userId: bundleContext.userId,
-					entryPoints: bundleTargets,
-				})
-			}
-			return await validatePackageBundles({
-				...bundleContext,
-				sourceFiles,
-				entryPoints: bundleTargets,
-			})
+			const { value } = await timePublishExternalPushPhase(
+				{ phase: 'checks/bundle' },
+				async () => {
+					if (missingBundleTargets.length > 0) {
+						return {
+							ok: false,
+							message: formatBundleCheckMessage({
+								missingEntryPoints: missingBundleTargets,
+								targetCount: bundleTargets.length,
+							}),
+						}
+					}
+					if (!bundleContext) {
+						return {
+							ok: true,
+							message: formatBundleCheckMessage({
+								missingEntryPoints: missingBundleTargets,
+								targetCount: bundleTargets.length,
+							}),
+						}
+					}
+					if (isolatedRunner && stagingKey) {
+						return await runChunkedBundleValidation({
+							runner: isolatedRunner,
+							stagingKey,
+							baseUrl: bundleContext.baseUrl,
+							userId: bundleContext.userId,
+							entryPoints: bundleTargets,
+						})
+					}
+					return await validatePackageBundles({
+						...bundleContext,
+						sourceFiles,
+						entryPoints: bundleTargets,
+					})
+				},
+			)
+			return value
 		}
 
 		// Isolated phases use separate throwaway isolates, so overlapping them

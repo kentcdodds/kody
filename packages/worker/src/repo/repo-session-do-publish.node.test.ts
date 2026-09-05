@@ -626,9 +626,12 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 	})
-	expect(skipped).toMatchObject({ ok: true, skipped: true })
+	expect(skipped).toMatchObject({
+		ok: true,
+		results: [expect.objectContaining({ skipped: true, target })],
+	})
 	expect(kv.get).not.toHaveBeenCalled()
 	expect(
 		mockModule.persistPublishedPackageArtifactTarget,
@@ -639,14 +642,13 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 		baseUrl: 'https://kody.test',
 		force: true,
 	})
 	expect(forced).toMatchObject({
 		ok: true,
-		kvKey: 'kv:artifact',
-		target,
+		results: [expect.objectContaining({ kvKey: 'kv:artifact', target })],
 	})
 	expect(
 		mockModule.persistPublishedPackageArtifactTarget,
@@ -657,13 +659,12 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 		baseUrl: 'https://kody.test',
 	})
 	expect(rebuilt).toMatchObject({
 		ok: true,
-		kvKey: 'kv:artifact',
-		target,
+		results: [expect.objectContaining({ kvKey: 'kv:artifact', target })],
 	})
 	expect(mockModule.persistPublishedPackageArtifactTarget).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -679,7 +680,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 	})
 	expect(expired.ok).toBe(false)
 	expect(expired.message).toContain('staging data expired')
@@ -690,7 +691,7 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 	})
 	expect(crossUser.ok).toBe(false)
 	expect(crossUser.message).toContain('does not belong to the requesting user')
@@ -1013,16 +1014,93 @@ test('already_published external publish refreshes the snapshot from the in-memo
 	expect(result).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-new',
+		force_artifact_rebuild: true,
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(collectFiles).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedSourceSnapshot).toHaveBeenCalledTimes(1)
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			source: expect.objectContaining({ published_commit: 'commit-new' }),
 			files: cloneFiles,
 		}),
 	)
+})
+
+test('already_published external publish skips snapshot rewrite and force rebuild when files already match', async () => {
+	restoreRepoSessionMockBaseline()
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-new',
+		manifest_path: 'package.json',
+		source_root: '/',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+	})
+	const cloneFiles = {
+		'package.json':
+			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+		'index.ts': 'export const fromClone = true\n',
+	}
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce({
+		files: cloneFiles,
+	})
+	const collectFiles = vi.fn(async () => cloneFiles)
+	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: 'commit-new',
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+		collectFiles,
+	})
+	mockModule.writePublishedSourceSnapshot.mockClear()
+
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+	const result = await repoSession.publishFromExternalRef({
+		sessionId: 'external-publish-source-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+	})
+
+	expect(result).toEqual({
+		status: 'already_published',
+		published_commit: 'commit-new',
+		force_artifact_rebuild: false,
+	})
+	expect(collectFiles).toHaveBeenCalledTimes(1)
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('already_published external publish fails when snapshot refresh fails', async () => {

@@ -338,6 +338,12 @@ export type RepoExternalPublishResult =
 	| {
 			status: 'already_published'
 			published_commit: string | null
+			/**
+			 * True when already_published rewrote a missing or mismatched source
+			 * snapshot. Callers must force artifact rebuild so same-commit leftovers
+			 * cannot keep serving. Omit / false when the snapshot already matches.
+			 */
+			force_artifact_rebuild?: boolean
 	  }
 	| {
 			status: 'not_fast_forward'

@@ -46,7 +46,7 @@ test('createIsolatedArtifactRebuildRunner returns null without bindings', () => 
 	).toBeNull()
 })
 
-test('runner touches staging TTL, fans out one target per throwaway DO, and maps reset errors', async () => {
+test('runner touches staging TTL, fans out one target chunk per throwaway DO, and maps reset errors', async () => {
 	const put = vi.fn(async () => undefined)
 	const get = vi.fn(async () =>
 		JSON.stringify({ sourceFiles: { 'package.json': '{}' } }),
@@ -85,7 +85,7 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 		baseUrl: 'https://kody.test',
 	})
 	expect(outcome.ok).toBe(true)
@@ -97,7 +97,7 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 		baseUrl: 'https://kody.test',
 	})
 
@@ -111,14 +111,16 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
-		target,
+		targets: [target],
 	})
 	expect(resetOutcome.ok).toBe(false)
 	expect(resetOutcome.message).toContain('memory or CPU limits')
 	expect(resetOutcome.message).toContain(
 		'search({ entity: "heavy_work_offload:guide" })',
 	)
-	expect(resetOutcome.target).toEqual(target)
+	expect(resetOutcome.results).toEqual([
+		expect.objectContaining({ ok: false, target }),
+	])
 
 	// Deploy resets must not be remapped to "package too large" — callers retry.
 	runIsolatedArtifactRebuild.mockRejectedValueOnce(
@@ -130,7 +132,7 @@ test('runner touches staging TTL, fans out one target per throwaway DO, and maps
 			sourceId: 'source-1',
 			userId: 'user-1',
 			publishedCommit: 'commit-1',
-			target,
+			targets: [target],
 		}),
 	).rejects.toThrow('Durable Object reset because its code was updated.')
 

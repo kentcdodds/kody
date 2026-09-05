@@ -296,6 +296,25 @@ export async function loadPublishedSourceSnapshot(input: {
 	})
 }
 
+/**
+ * True when the stored snapshot file map is the same set of paths and
+ * contents as `files`. Missing snapshots never match, so callers can decide
+ * whether an already_published refresh must rewrite KV.
+ */
+export function publishedSourceSnapshotFilesMatch(
+	existing: PublishedSourceSnapshot | null | undefined,
+	files: Record<string, string>,
+) {
+	if (!existing?.files) return false
+	const existingKeys = Object.keys(existing.files)
+	const nextKeys = Object.keys(files)
+	if (existingKeys.length !== nextKeys.length) return false
+	for (const key of nextKeys) {
+		if (existing.files[key] !== files[key]) return false
+	}
+	return true
+}
+
 export async function readPublishedSourceManifestSnapshot(input: {
 	env: Env
 	sourceId: string
