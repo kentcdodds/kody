@@ -409,6 +409,11 @@ function collectReferencedBlobHashes(input: {
 	return hashes
 }
 
+// 2026-09-04 had 3168 unique referenced blob hashes. Sequential HEAD at
+// ~20ms wall ≈ 63s, which matches the scheduled seal failure (~67s wall,
+// ~227ms CPU, observability "Network connection lost.") — an R2/runtime
+// drop during long sequential binding I/O, not only browser disconnect.
+// Keep this in the 20–50 range; cheap sealed-object skip alone is not enough.
 const referencedBlobHeadConcurrency = 32
 
 async function mapPool<T, R>(
@@ -446,8 +451,7 @@ async function verifyReferencedBlobs(
 	| { kind: 'ok'; blobsVerified: number }
 	| { kind: 'missing'; reason: 'blob-missing' }
 > {
-	// Hashes are already unique from collectReferencedBlobHashes; HEAD every
-	// content-addressed blob key with modest concurrency.
+	// Hashes are already unique from collectReferencedBlobHashes.
 	const heads = await mapPool(
 		hashes,
 		referencedBlobHeadConcurrency,
