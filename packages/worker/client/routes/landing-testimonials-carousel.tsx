@@ -429,7 +429,6 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 		stopCoast()
 		flickSamples = []
 		recordPointerSamples(event)
-		captureScrollerPointer(event.pointerId)
 	}
 
 	function onPointerMove(event: PointerEvent) {
@@ -504,6 +503,8 @@ function armTestimonialsMotion(scroller: HTMLElement, signal: AbortSignal) {
 	scroller.addEventListener('pointermove', onPointerMove, { signal })
 	scroller.addEventListener('pointerup', endPointerGesture, { signal })
 	scroller.addEventListener('pointercancel', endPointerGesture, { signal })
+	// Pending presses do not capture, so a tap can still click name links.
+	// Window terminals still end a lift that happens outside the fade.
 	window.addEventListener('pointerup', endPointerGesture, { signal })
 	window.addEventListener('pointercancel', endPointerGesture, { signal })
 	scroller.addEventListener('click', onClickCapture, {

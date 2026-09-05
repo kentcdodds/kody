@@ -65,10 +65,10 @@ export function flickVelocityPxPerMs(samples: ReadonlyArray<FlickSample>) {
 }
 
 /**
- * Recent samples estimate release speed. A coalesced down/up pair can sit
- * farther apart than the window, so keep that lone start sample. A paused
- * drag with older points must not pair the original start with a late
- * stationary release.
+ * Recent samples estimate release speed. A coalesced down/up pair, or a
+ * jump after an early move, can sit farther apart than the window. Pair
+ * the last prior sample with the release so velocity is that final hop.
+ * A pause then release has last.x near end.x, so velocity stays zero.
  */
 export function samplesForFlickVelocity(
 	samples: ReadonlyArray<FlickSample>,
@@ -77,10 +77,9 @@ export function samplesForFlickVelocity(
 ): Array<FlickSample> {
 	const windowed = appendFlickSample(samples, end, windowMs)
 	if (windowed.length >= 2) return windowed
-	if (samples.length !== 1) return windowed
-	const first = samples[0]
-	if (first == null) return windowed
-	return [first, end]
+	const last = samples.at(-1)
+	if (last == null) return windowed
+	return [last, end]
 }
 
 export function clampFlickVelocity(
