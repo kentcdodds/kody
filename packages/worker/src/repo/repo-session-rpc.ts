@@ -200,6 +200,7 @@ export type RepoSessionRpc = {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		deferBundleCheckToRebuild?: boolean
 	}) => Promise<RepoExternalPublishResult>
 }
 

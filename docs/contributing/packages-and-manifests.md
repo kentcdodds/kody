@@ -593,12 +593,17 @@ identity.
 After a direct `git push`, `packagePublishExternalPush` resolves the package's
 default-branch HEAD, opens a transient repo session checkout at that commit, and
 uses `publishFromExternalRef` to run the same package checks before advancing
-`entity_sources.published_commit`. Check failures return the failed checks and
-do not mutate D1, KV snapshots, published bundle artifacts, package projections,
-or vectors. Non-fast-forward external heads are refused unless the caller passes
-`allow_force: true`. When `saved_packages.locked_at` is set, checks still run
-and the result is `locked` with an approval URL; `published_commit` does not
-move until the owner promotes that commit on the website.
+`entity_sources.published_commit`. Full check-time esbuild is deferred to the
+later published artifact rebuild so callable and importable targets are bundled
+once with published-artifact semantics (`rootPackageId`). Check failures before
+promotion return the failed checks and do not mutate D1, KV snapshots, published
+bundle artifacts, package projections, or vectors. A rebuild failure after
+promotion returns `checks_failed` with a bundle check; re-run the publish
+capability to repair artifacts. Non-fast-forward external heads are refused
+unless the caller passes `allow_force: true`. When `saved_packages.locked_at` is
+set, checks still run and the result is `locked` with an approval URL;
+`published_commit` does not move until the owner promotes that commit on the
+website.
 
 When publish succeeds, `packagePublishExternalPush` decorates the response with
 `static_dependents`, a bounded summary of direct saved packages whose published
@@ -608,7 +613,8 @@ is available. The stale count compares each dependent artifact's captured
 dependency commit to the current published commit. Successful `published` and
 `already_published` results also include `phase_timings` (`clone_ms`,
 `checks_typecheck_ms`, `checks_bundle_ms`, `rebuild_ms`, `dependents_ms`,
-`total_ms`). Omitted keys did not run. `dispatched` includes
+`total_ms`). Omitted keys did not run. `checks_bundle_ms` is omitted when bundle
+validation is deferred to rebuild. `dispatched` includes
 `phase_timings.total_ms` as time-to-dispatch.
 
 This summary is visibility only. Do not add automatic fanout republishing to the

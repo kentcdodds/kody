@@ -2927,6 +2927,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		allowLockedPublish?: boolean
+		deferBundleCheckToRebuild?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
 		if (!source || source.user_id !== input.userId) {
@@ -3010,6 +3011,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			expectedPackageScope: input.expectedPackageScope,
 			allowLockedPublish: input.allowLockedPublish,
 			phaseTimings,
+			...(input.deferBundleCheckToRebuild
+				? { deferBundleCheckToRebuild: true }
+				: {}),
 		})
 		if (publishResult.status === 'already_published') {
 			// D1 stays a no-op (overlapping inline + durable escalation). Rewrite

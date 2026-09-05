@@ -180,6 +180,7 @@ export async function publishFromExternalRef(input: {
 	expectedPackageScope?: string
 	allowLockedPublish?: boolean
 	phaseTimings?: PublishPhaseTimings
+	deferBundleCheckToRebuild?: boolean
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -228,6 +229,9 @@ export async function publishFromExternalRef(input: {
 		userId: input.userId,
 		expectedPackageScope: input.expectedPackageScope,
 		phaseTimings: input.phaseTimings,
+		...(input.deferBundleCheckToRebuild
+			? { deferBundleCheckToRebuild: true }
+			: {}),
 	})
 	const runId = input.runId ?? crypto.randomUUID()
 	if (!checks.ok) {

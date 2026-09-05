@@ -124,11 +124,15 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
 		phaseTimings,
+		deferBundleCheckToRebuild: true,
 	})
 
 	expect(published.status).toBe('published')
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
-		expect.objectContaining({ phaseTimings }),
+		expect.objectContaining({
+			phaseTimings,
+			deferBundleCheckToRebuild: true,
+		}),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
