@@ -39,7 +39,6 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	collectPublishedPackageArtifactTargets,
-	deletePublishedArtifactsForSource,
 	isPublishedPackageArtifactBuiltForCommit,
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
@@ -3028,16 +3027,14 @@ class RepoSessionBase extends DurableObject<Env> {
 							},
 						})
 						if (!publishedSourceSnapshotFilesMatch(existingSnapshot, files)) {
-							// Drop same-commit leftovers before rewriting the
-							// snapshot. force_artifact_rebuild is only true for this
-							// request; if rebuild is interrupted, the next
-							// already_published must not treat leftover KV rows as
-							// matching HEAD.
-							await deletePublishedArtifactsForSource({
-								env: this.env,
-								userId: input.userId,
-								sourceId: source.id,
-							})
+							// Missing snapshot is the D1-finalize vs KV-write
+							// overlap: keep live artifacts and do not force.
+							// Mismatch means this commit was tagged with stale
+							// files. Rewrite the snapshot (rebuild reads it)
+							// and stamp invalidateArtifactsBefore so a later
+							// already_published cannot skip leftovers. Do not
+							// delete rows: that would take invoke offline.
+							const snapshotExisted = existingSnapshot?.files != null
 							await writePublishedSourceSnapshot({
 								env: this.env,
 								source: {
@@ -3045,8 +3042,9 @@ class RepoSessionBase extends DurableObject<Env> {
 									published_commit: publishResult.published_commit,
 								},
 								files,
+								invalidateExistingArtifacts: snapshotExisted,
 							})
-							forceArtifactRebuild = true
+							forceArtifactRebuild = snapshotExisted
 						}
 					}
 				}

@@ -1017,29 +1017,19 @@ test('already_published external publish refreshes the snapshot from the in-memo
 	expect(result).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-new',
-		force_artifact_rebuild: true,
+		force_artifact_rebuild: false,
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(collectFiles).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedSourceSnapshot).toHaveBeenCalledTimes(1)
-	expect(mockModule.deletePublishedArtifactsForSource).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'user-1',
-			sourceId: 'source-1',
-		}),
-	)
+	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			source: expect.objectContaining({ published_commit: 'commit-new' }),
 			files: cloneFiles,
+			invalidateExistingArtifacts: false,
 		}),
-	)
-	expect(
-		mockModule.deletePublishedArtifactsForSource.mock.invocationCallOrder[0],
-	).toBeLessThan(
-		mockModule.writePublishedSourceSnapshot.mock.invocationCallOrder[0] ??
-			Number.POSITIVE_INFINITY,
 	)
 })
 
@@ -1118,6 +1108,91 @@ test('already_published external publish skips snapshot rewrite and force rebuil
 	expect(collectFiles).toHaveBeenCalledTimes(1)
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
+})
+
+test('already_published external publish invalidates leftovers on snapshot mismatch without deleting live artifacts', async () => {
+	restoreRepoSessionMockBaseline()
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-new',
+		manifest_path: 'package.json',
+		source_root: '/',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+	})
+	const cloneFiles = {
+		'package.json':
+			'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+		'index.ts': 'export const fromClone = true\n',
+	}
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce({
+		files: {
+			'package.json': cloneFiles['package.json'],
+			'index.ts': 'export const stale = true\n',
+		},
+	})
+	const collectFiles = vi.fn(async () => cloneFiles)
+	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: 'commit-new',
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+		collectFiles,
+	})
+	mockModule.writePublishedSourceSnapshot.mockClear()
+	mockModule.deletePublishedArtifactsForSource.mockClear()
+
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+	const result = await repoSession.publishFromExternalRef({
+		sessionId: 'external-publish-source-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+	})
+
+	expect(result).toEqual({
+		status: 'already_published',
+		published_commit: 'commit-new',
+		force_artifact_rebuild: true,
+	})
+	expect(mockModule.deletePublishedArtifactsForSource).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			source: expect.objectContaining({ published_commit: 'commit-new' }),
+			files: cloneFiles,
+			invalidateExistingArtifacts: true,
+		}),
+	)
 })
 
 test('already_published external publish fails when snapshot refresh fails', async () => {

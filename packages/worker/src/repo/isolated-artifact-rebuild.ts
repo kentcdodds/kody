@@ -56,8 +56,9 @@ export type IsolatedArtifactRebuildRequest = {
 	baseUrl?: string
 	/**
 	 * Rebuild even when a same-commit artifact already exists. Used when
-	 * already_published refreshed a missing or mismatched snapshot so a
-	 * leftover same-commit bundle cannot keep serving.
+	 * already_published rewrote a mismatched snapshot. Missing-snapshot
+	 * finalize races do not force: live artifacts stay and skip if they
+	 * already match this commit.
 	 */
 	force?: boolean
 }

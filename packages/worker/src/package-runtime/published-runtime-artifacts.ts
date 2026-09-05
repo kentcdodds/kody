@@ -65,6 +65,13 @@ export type PublishedSourceSnapshot = {
 	sourceRoot: string
 	files: Record<string, string>
 	createdAt: string
+	/**
+	 * When set, same-commit artifacts older than this timestamp are treated
+	 * as leftovers from a prior snapshot rewrite. Used so an interrupted
+	 * already_published rebuild cannot keep serving stale bundles after the
+	 * snapshot now matches HEAD.
+	 */
+	invalidateArtifactsBefore?: string
 }
 
 export type PublishedSourceManifestSnapshot = {
@@ -212,10 +219,12 @@ export async function writePublishedSourceSnapshot(input: {
 	env: Env
 	source: EntitySourceRow
 	files: Record<string, string>
+	invalidateExistingArtifacts?: boolean
 }) {
 	if (!input.source.published_commit) {
 		return null
 	}
+	const createdAt = new Date().toISOString()
 	const snapshot: PublishedSourceSnapshot = {
 		version: sourceSnapshotVersion,
 		sourceId: input.source.id,
@@ -226,7 +235,10 @@ export async function writePublishedSourceSnapshot(input: {
 		manifestPath: input.source.manifest_path,
 		sourceRoot: input.source.source_root,
 		files: input.files,
-		createdAt: new Date().toISOString(),
+		createdAt,
+		...(input.invalidateExistingArtifacts
+			? { invalidateArtifactsBefore: createdAt }
+			: {}),
 	}
 	const key = buildPublishedSourceSnapshotKvKey({
 		sourceId: input.source.id,

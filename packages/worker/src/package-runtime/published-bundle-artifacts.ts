@@ -11,6 +11,7 @@ import {
 	deletePublishedBundleArtifact,
 	hasPublishedRuntimeArtifacts,
 	readPublishedBundleArtifact,
+	readPublishedSourceSnapshot,
 	writePublishedBundleArtifact,
 } from './published-runtime-artifacts.ts'
 import {
@@ -252,8 +253,10 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 
 /**
  * True when a published bundle artifact already exists for this target
- * identity at `publishedCommit` (row + KV payload). Used to skip rebuild work
- * that would only rewrite the same commit's artifact.
+ * identity at `publishedCommit` (row + KV payload) and is not older than the
+ * snapshot's `invalidateArtifactsBefore` cutoff. Used to skip rebuild work
+ * that would only rewrite the same commit's artifact, while still repairing
+ * leftovers after a mismatched already_published snapshot rewrite.
  */
 export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	env: Env
@@ -272,10 +275,32 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 		entryPoint: input.target.entryPoint,
 	})
 	if (!loaded?.artifact) return false
-	return (
-		loaded.row.publishedCommit === input.publishedCommit &&
-		loaded.artifact.publishedCommit === input.publishedCommit
-	)
+	if (
+		loaded.row.publishedCommit !== input.publishedCommit ||
+		loaded.artifact.publishedCommit !== input.publishedCommit
+	) {
+		return false
+	}
+	const snapshot = await readPublishedSourceSnapshot({
+		env: input.env,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+	})
+	const cutoff = snapshot?.invalidateArtifactsBefore
+	if (
+		cutoff &&
+		!publishedArtifactCreatedAtIsAtLeast(loaded.artifact.createdAt, cutoff)
+	) {
+		return false
+	}
+	return true
+}
+
+function publishedArtifactCreatedAtIsAtLeast(
+	createdAt: string | undefined,
+	cutoff: string,
+) {
+	return typeof createdAt === 'string' && createdAt >= cutoff
 }
 
 export async function persistPublishedPackageArtifactTarget(
