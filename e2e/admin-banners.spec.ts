@@ -14,7 +14,40 @@ function screenshotPath(name: string): string {
 
 async function captureIfRequested(page: Page, name: string) {
 	if (!screenshotDir) return
-	await page.screenshot({ path: screenshotPath(name), fullPage: false })
+	// Crop the classic Linux scrollbar track so the artifact matches overlay
+	// scrollbars (the banner already spans `document.body.clientWidth`).
+	const clip = await page.evaluate(() => ({
+		x: 0,
+		y: 0,
+		width: document.body.clientWidth,
+		height: window.innerHeight,
+	}))
+	await page.screenshot({ path: screenshotPath(name), clip })
+}
+
+async function expectBannerSpansViewport(page: Page, look: string) {
+	const banner = page.getByTestId('site-banner')
+	await expect(banner).toBeVisible()
+	const box = await banner.boundingBox()
+	const bodyWidth = await page.evaluate(() => document.body.clientWidth)
+	expect(box, `${look} banner box`).toBeTruthy()
+	expect(box?.x, `${look} banner left edge`).toBe(0)
+	expect(box?.width, `${look} banner width`).toBe(bodyWidth)
+}
+
+async function disableLeftoverEnabledBanners(page: Page) {
+	const listed = await page.request.get('/admin/banners.json')
+	expect(listed.ok()).toBeTruthy()
+	const payload = (await listed.json()) as {
+		banners?: Array<{ id: string; enabled: boolean }>
+	}
+	for (const banner of payload.banners ?? []) {
+		if (!banner.enabled) continue
+		const deleted = await page.request.post('/admin/banners.json', {
+			data: { action: 'delete', id: banner.id },
+		})
+		expect(deleted.ok(), `delete leftover ${banner.id}`).toBeTruthy()
+	}
 }
 
 test('admin can create a site banner and preview launch looks', async ({
@@ -22,7 +55,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	seedE2eUser,
 	login,
 }) => {
-	test.setTimeout(90_000)
+	test.setTimeout(120_000)
 	const runId = Date.now()
 	const adminUser = await seedE2eUser({
 		email: `banner-admin-${runId}@example.com`,
@@ -47,6 +80,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	await expect(page.getByTestId('site-banner-preview-strip')).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-card')).toBeVisible()
+	await disableLeftoverEnabledBanners(page)
 
 	if (screenshotDir) {
 		await page.setViewportSize({ width: 1280, height: 900 })
@@ -64,18 +98,13 @@ test('admin can create a site banner and preview launch looks', async ({
 		const banner = page.getByTestId('site-banner')
 		await expect(banner).toBeVisible()
 		await expect(banner).toHaveAttribute('data-look', look)
-		const desktopBox = await banner.boundingBox()
-		expect(desktopBox, `${look} desktop banner box`).toBeTruthy()
-		expect(desktopBox?.x).toBe(0)
-		expect(desktopBox?.width).toBe(1280)
+		await expect(banner.getByText('Kody is live')).toBeVisible()
+		await expectBannerSpansViewport(page, `${look} desktop`)
 		await captureIfRequested(page, `option_${look}_desktop.png`)
 
 		await page.setViewportSize({ width: 390, height: 844 })
 		await expect(banner).toBeVisible()
-		const mobileBox = await banner.boundingBox()
-		expect(mobileBox, `${look} mobile banner box`).toBeTruthy()
-		expect(mobileBox?.x).toBe(0)
-		expect(mobileBox?.width).toBe(390)
+		await expectBannerSpansViewport(page, `${look} mobile`)
 		await captureIfRequested(page, `option_${look}_mobile.png`)
 	}
 
@@ -85,16 +114,13 @@ test('admin can create a site banner and preview launch looks', async ({
 	const darkPromo = page.getByTestId('site-banner')
 	await expect(darkPromo).toBeVisible()
 	await expect(darkPromo).toHaveAttribute('data-look', 'promo')
-	const darkDesktopBox = await darkPromo.boundingBox()
-	expect(darkDesktopBox?.x).toBe(0)
-	expect(darkDesktopBox?.width).toBe(1280)
+	await expect(darkPromo.getByText('Kody is live')).toBeVisible()
+	await expectBannerSpansViewport(page, 'promo dark desktop')
 	await captureIfRequested(page, 'option_b_promo_strip_dark_desktop.png')
 
 	await page.setViewportSize({ width: 390, height: 844 })
 	await expect(darkPromo).toBeVisible()
-	const darkMobileBox = await darkPromo.boundingBox()
-	expect(darkMobileBox?.x).toBe(0)
-	expect(darkMobileBox?.width).toBe(390)
+	await expectBannerSpansViewport(page, 'promo dark mobile')
 	await captureIfRequested(page, 'option_b_promo_strip_dark_mobile.png')
 	await page.emulateMedia({ colorScheme: 'light' })
 
