@@ -82,6 +82,7 @@ test('compute overage rates are wired and execute has no overage', () => {
 		executeCallsPerDay: 'hard_daily_cap',
 		durableObjectDuration: 'unmetered',
 		legacyMonthlyMeters: 'no_cut_no_bill',
+		overageRole: 'heavy_tail_safety_valve',
 	})
 	expect(Object.keys(computeOverageRatesUsd).sort()).toEqual([
 		'durableObjectRowsReadPerMillion',

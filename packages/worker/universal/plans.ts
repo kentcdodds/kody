@@ -372,7 +372,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
 		// Execute is a hard daily cap with no overage. Unique-worker-day
-		// overage (when billing ships) is {@link computeOverageRatesUsd}.
+		// overage is a heavy-tail safety valve
+		// ({@link computeOverageRatesUsd}), not a reason to shrink this
+		// include or the public $49 Pro price.
 		maxExecuteCallsPerDay: 750,
 		maxOutboundFetchesPerDay: 25_000,
 		maxJobRunsPerDay: 8_000,
@@ -480,10 +482,12 @@ export const cloudflareComputeListUsd = {
 /**
  * User-facing compute overage list prices (Cloudflare list + $0.0005).
  * These two keys are the only customer-facing monthly overage meters.
- * Overage is not charged. Execute has no overage (hard daily cap — an
- * execute overage would double-charge the same burn as unique worker
- * days). Durable Object duration is unmetered. Legacy Standard/Pro is
- * not cut and not billed on these allotments.
+ * Overage is a heavy-tail safety valve only — do not lower included
+ * amounts or the public Pro $49 price to monetize via overage. Overage
+ * is not charged. Execute has no overage (hard daily cap — an execute
+ * overage would double-charge the same burn as unique worker days).
+ * Durable Object duration is unmetered. Legacy Standard/Pro is not cut
+ * and not billed on these allotments.
  */
 export const computeOverageRatesUsd = {
 	uniqueWorkerDay: 0.0025,
@@ -496,6 +500,7 @@ export const computeMeteringPolicy = {
 	executeCallsPerDay: 'hard_daily_cap',
 	durableObjectDuration: 'unmetered',
 	legacyMonthlyMeters: 'no_cut_no_bill',
+	overageRole: 'heavy_tail_safety_valve',
 } as const
 
 /** 15-minute floor on free (and public Standard) recurring jobs. */

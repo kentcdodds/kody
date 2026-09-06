@@ -180,8 +180,12 @@ rows read $0.0015 per million — Cloudflare list plus a
 $0.0005 thin margin). Overage is not charged. Execute is a hard daily cap with
 no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute overage
 would double-charge the same burn as unique worker days. Durable Object duration
-is unmetered; a later duration rate should stay list plus a thin markup. Legacy
-Standard/Pro accounts are not cut and not billed on these allotments
+is unmetered; a later duration rate should stay list plus a thin markup.
+Overage is a heavy-tail safety valve only
+(`computeMeteringPolicy.overageRole`): included amounts and the public Pro
+$49
+price are not sized to monetize via overage. Legacy Standard/Pro accounts are
+not cut and not billed on these allotments
 (`computeMeteringPolicy.legacyMonthlyMeters`). See
 [Usage metering](./usage-metering.md).
 
