@@ -88,7 +88,9 @@ function formatUsageValue(resource: string, value: number) {
 	return formatIntegerNumber(value)
 }
 
-function computeOverageNotice(overage: AccountUsageComputeOverage) {
+export function computeAccountUsageOverageNotice(
+	overage: AccountUsageComputeOverage,
+) {
 	const overInclude = overage.meters.some((meter) => meter.percentOfLimit >= 1)
 	const approaching = overage.meters.some(
 		(meter) => meter.overEightyPercent && meter.percentOfLimit < 1,
@@ -105,6 +107,12 @@ function computeOverageNotice(overage: AccountUsageComputeOverage) {
 			body: overInclude
 				? "You are over this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed for that overage. Changing plan moves you onto public rates."
 				: "You are approaching this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed if you go over.",
+		}
+	}
+	if (!overage.chargingEnabled && (overInclude || approaching)) {
+		return {
+			title: 'Compute overage billing is paused',
+			body: 'Your compute overage is being recorded, but it is not billed while charging is disabled.',
 		}
 	}
 	if (overage.disposition === 'invoice' && overInclude) {
@@ -274,7 +282,7 @@ export function AccountUsageRoute(handle: Handle) {
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
 		const computeNotice = usage
-			? computeOverageNotice(usage.computeOverage)
+			? computeAccountUsageOverageNotice(usage.computeOverage)
 			: null
 
 		return (

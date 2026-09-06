@@ -12,9 +12,9 @@ import {
 	parseStripePlanName,
 	resolveEffectivePlan,
 } from '#universal/plans.ts'
+import { isComputeOverageChargingEnabled } from '#worker/billing/compute-overage-charging.ts'
 import { readMonthlyComputeUsage } from '#worker/billing/compute-overage-usage.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AccountUsageComputeOverage,
@@ -102,11 +102,7 @@ async function loadAccountComputeOverage(input: {
 			stableUserId: input.stableUserId,
 			month,
 		}),
-		isFeatureEnabled(
-			input.env.APP_DB,
-			'compute-overage-charging',
-			input.userId,
-		),
+		isComputeOverageChargingEnabled(input.env.APP_DB, input.userId),
 	])
 	const overage = computeMonthlyOverage({
 		plan: input.plan,

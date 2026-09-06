@@ -19,11 +19,13 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 }))
 
 const {
+	listUsersForEntitlementWarningSweep,
 	sendUserEntitlementWarningEmails,
 	userEntitlementWarningDailyClaimTtlSeconds,
 	userEntitlementWarningDailyKvKey,
 	userEntitlementWarningKvKey,
 	userEntitlementWarningStockClaimTtlSeconds,
+	userEntitlementWarningSweepLimit,
 } = await import('#app/user-entitlement-warning-emails.ts')
 
 const stableUserId = 'a'.repeat(64)
@@ -79,6 +81,11 @@ function createDb(
 		entitlement_ladder?: string | null
 	}>,
 	rollups: Array<{ metric: string; event_count: number }> = [],
+	options: {
+		computeUwdUsers?: Array<(typeof users)[number]>
+		computeDorowsUsers?: Array<(typeof users)[number]>
+		activeUsers?: Array<(typeof users)[number]>
+	} = {},
 ) {
 	return {
 		prepare(query: string) {
@@ -92,7 +99,19 @@ function createDb(
 						normalized.includes('from usage_rollups') &&
 						normalized.includes('inner join users')
 					) {
-						return { results: users as Array<T> }
+						if (normalized.includes("metric = 'dynamic_worker_day'")) {
+							return {
+								results: (options.computeUwdUsers ?? users) as Array<T>,
+							}
+						}
+						if (normalized.includes("metric = 'durable_object_rows_read'")) {
+							return {
+								results: (options.computeDorowsUsers ?? users) as Array<T>,
+							}
+						}
+						return {
+							results: (options.activeUsers ?? users) as Array<T>,
+						}
 					}
 					if (normalized.includes('from usage_rollups')) {
 						return { results: rollups as Array<T> }
@@ -114,9 +133,16 @@ function createEnv(input: {
 	}>
 	kv?: KVNamespace
 	rollups?: Array<{ metric: string; event_count: number }>
+	computeUwdUsers?: Array<(typeof input)['users'][number]>
+	computeDorowsUsers?: Array<(typeof input)['users'][number]>
+	activeUsers?: Array<(typeof input)['users'][number]>
 }) {
 	return {
-		APP_DB: createDb(input.users, input.rollups),
+		APP_DB: createDb(input.users, input.rollups, {
+			computeUwdUsers: input.computeUwdUsers,
+			computeDorowsUsers: input.computeDorowsUsers,
+			activeUsers: input.activeUsers,
+		}),
 		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
@@ -713,7 +739,118 @@ test('compute include crossings mail for public and legacy without charging copy
 				userId: stableUserId,
 				kind: 'approaching',
 				resource: 'unique_worker_days',
+				month: '2026-07',
 			}),
 		),
 	).toBe(String(now.getTime()))
+})
+
+test('compute warning claims are scoped to the UTC month', async () => {
+	sendCloudflareEmail.mockClear()
+	const july = new Date('2026-07-25T12:00:00.000Z')
+	const august = new Date('2026-08-02T12:00:00.000Z')
+	readAdminEntitlementConsumption.mockResolvedValue([])
+	const { kv, store } = createKv()
+	const env = createEnv({
+		users: [
+			{
+				stable_user_id: stableUserId,
+				email: 'compute-month@example.com',
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'public',
+			},
+		],
+		kv,
+		rollups: [{ metric: 'dynamic_worker_day', event_count: 300 }],
+	})
+
+	await sendUserEntitlementWarningEmails({ env, now: july })
+	expect(
+		store.has(
+			userEntitlementWarningKvKey({
+				userId: stableUserId,
+				kind: 'approaching',
+				resource: 'unique_worker_days',
+				month: '2026-07',
+			}),
+		),
+	).toBe(true)
+
+	sendCloudflareEmail.mockClear()
+	const second = await sendUserEntitlementWarningEmails({ env, now: august })
+	expect(second).toEqual({
+		status: 'notified',
+		emailedUsers: 1,
+		emailsSent: 1,
+		warnedResources: 1,
+	})
+	expect(
+		store.has(
+			userEntitlementWarningKvKey({
+				userId: stableUserId,
+				kind: 'approaching',
+				resource: 'unique_worker_days',
+				month: '2026-08',
+			}),
+		),
+	).toBe(true)
+})
+
+function sweepUser(
+	id: string,
+	email: string,
+): {
+	stable_user_id: string
+	email: string
+	plan: string
+	stripe_plan: string | null
+	entitlement_ladder: string
+} {
+	return {
+		stable_user_id: `${id}:${'x'.repeat(64)}`.slice(0, 64),
+		email,
+		plan: 'free',
+		stripe_plan: null,
+		entitlement_ladder: 'public',
+	}
+}
+
+test('compute warning sweep ranks unique worker-days and rows-read separately', async () => {
+	const uwdUser = sweepUser('uwd', 'uwd@example.com')
+	const dorowsUser = sweepUser('dorows', 'dorows@example.com')
+	const db = createDb([], [], {
+		activeUsers: [],
+		computeUwdUsers: [uwdUser],
+		computeDorowsUsers: [dorowsUser],
+	})
+	const users = await listUsersForEntitlementWarningSweep(
+		db,
+		new Date('2026-08-02T12:00:00.000Z'),
+	)
+	expect(users.map((user) => user.email).sort()).toEqual([
+		'dorows@example.com',
+		'uwd@example.com',
+	])
+})
+
+test('compute warning sweep reserves compute candidates before the global cap', async () => {
+	const computeUser = sweepUser('compute', 'compute-reserved@example.com')
+	const activeUsers = Array.from(
+		{ length: userEntitlementWarningSweepLimit },
+		(_, index) => sweepUser(`active-${index}`, `active-${index}@example.com`),
+	)
+	const db = createDb([], [], {
+		activeUsers,
+		computeUwdUsers: [computeUser],
+		computeDorowsUsers: [],
+	})
+	const users = await listUsersForEntitlementWarningSweep(
+		db,
+		new Date('2026-08-02T12:00:00.000Z'),
+	)
+	expect(users).toHaveLength(userEntitlementWarningSweepLimit)
+	expect(
+		users.some((user) => user.email === 'compute-reserved@example.com'),
+	).toBe(true)
 })

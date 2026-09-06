@@ -188,16 +188,19 @@ default: on) and `resolveComputeOverageDisposition` returns `invoice`: paid
 public Standard/Pro with a Stripe customer, or Free that already has a customer.
 Unpaid Free that exceeds includes is a soft-block (upgrade prompt on
 `/account/usage`), never a Stripe charge that would fail. Turn the flag off
-globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). D1
-evaluation failures fail closed (no charges). Execute is a hard daily cap with
-no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute overage
-would double-charge the same burn as unique worker days. Durable Object duration
-is unmetered; a later duration rate should stay list plus a thin markup.
-Overage is a heavy-tail safety valve only
-(`computeMeteringPolicy.overageRole`): included amounts and the public Pro
-$49
-price are not sized to monetize via overage. Legacy Standard/Pro accounts are
-not cut and not billed on these allotments
+globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). Global
+off is a hard gate — a per-user on override cannot charge. Amounts below
+Stripe's $0.50
+USD minimum are recorded as `skip_below_minimum`, not invoiced. Includes are
+resolved from the plan and ladder at invoice time (UTC days 1–3); there is no
+month-end plan snapshot. D1 evaluation failures fail closed (no charges).
+Execute is a hard daily cap with no overage
+(`computeMeteringPolicy.executeCallsPerDay`) — an execute overage would
+double-charge the same burn as unique worker days. Durable Object duration is
+unmetered; a later duration rate should stay list plus a thin markup. Overage is
+a heavy-tail safety valve only (`computeMeteringPolicy.overageRole`): included
+amounts and the public Pro $49 price are not sized to monetize via overage.
+Legacy Standard/Pro accounts are not cut and not billed on these allotments
 (`computeMeteringPolicy.legacyMonthlyMeters`); they get the same approaching and
 reached warnings. See [Usage metering](./usage-metering.md).
 

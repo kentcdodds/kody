@@ -11,6 +11,8 @@ import {
 	createCheckoutSession,
 	createDraftInvoice,
 	createInvoiceItem,
+	getInvoice,
+	listCustomerInvoices,
 	createProratedRefundCreditNote,
 	finalizeInvoice,
 	payInvoice,
@@ -1282,6 +1284,52 @@ test('standalone invoice helpers send idempotency keys and attach metadata', asy
 		const itemBody = new URLSearchParams(String(itemInit?.body))
 		expect(itemBody.get('amount')).toBe('100')
 		expect(itemBody.get('invoice')).toBe('in_overage_1')
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('getInvoice and listCustomerInvoices read existing overage invoices', async () => {
+	const fetchStub = vi.fn(async (url: string | URL) => {
+		const parsed = new URL(String(url))
+		if (
+			parsed.pathname === '/v1/invoices' &&
+			parsed.searchParams.get('customer')
+		) {
+			return jsonResponse({
+				data: [
+					{
+						id: 'in_listed',
+						status: 'paid',
+						amount_due: 0,
+						currency: 'usd',
+						metadata: {
+							kody_compute_overage: '1',
+							kody_overage_month: '2026-08',
+						},
+					},
+				],
+			})
+		}
+		if (parsed.pathname === '/v1/invoices/in_listed') {
+			return jsonResponse({
+				id: 'in_listed',
+				status: 'paid',
+				amount_due: 0,
+				currency: 'usd',
+				metadata: { kody_compute_overage: '1' },
+			})
+		}
+		return jsonResponse({ error: { message: 'unexpected' } }, 500)
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
+		const invoice = await getInvoice(env, 'in_listed')
+		expect(invoice.id).toBe('in_listed')
+		const listed = await listCustomerInvoices(env, 'cus_paid')
+		expect(listed).toHaveLength(1)
+		expect(listed[0]?.metadata?.kody_overage_month).toBe('2026-08')
 	} finally {
 		vi.unstubAllGlobals()
 	}

@@ -50,7 +50,11 @@ export type ComputeOverageDisposition =
 	| 'dry_run'
 	| 'skip_legacy'
 	| 'skip_zero'
+	| 'skip_below_minimum'
 	| 'skip_audience'
+
+/** Stripe's USD charge minimum. Below this, `payInvoice` always fails. */
+export const stripeUsdMinimumChargeCents = 50
 
 export const computeOverageWarningResources = [
 	'unique_worker_days',
@@ -203,6 +207,9 @@ export function resolveComputeOverageDisposition(
 	}
 	if (!input.chargingEnabled) return 'dry_run'
 	if (!input.hasStripeCustomer) return 'dry_run'
+	if (input.overage.totalCents < stripeUsdMinimumChargeCents) {
+		return 'skip_below_minimum'
+	}
 	return 'invoice'
 }
 

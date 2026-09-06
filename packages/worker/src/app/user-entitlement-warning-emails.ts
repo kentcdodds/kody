@@ -40,7 +40,8 @@ const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
  * crossings of the same kind still batch into one mail. Stock claims expire
  * after 30 days unless an hourly sweep still sees the user over and refreshes
  * the TTL; daily `*_per_day` claims stay scoped to the UTC day. Compute
- * includes use stock claims. Legacy Standard/Pro is warned, not billed.
+ * includes use month-qualified stock claims so a July crossing does not
+ * suppress August. Legacy Standard/Pro is warned, not billed.
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
@@ -49,6 +50,7 @@ export const userEntitlementWarningDailyKvKeyPrefix =
 export const userEntitlementWarningSweepLimit = 100
 export const userEntitlementWarningActiveSweepLimit = 80
 export const userEntitlementWarningStockSweepLimit = 40
+export const userEntitlementWarningComputeSweepLimit = 40
 export const userEntitlementApproachingThreshold = 0.8
 export const userEntitlementReachedThreshold = 1
 const warningSweepConcurrency = 4
@@ -93,20 +95,39 @@ export function isDailyEntitlementResource(resource: UserWarningResource) {
 	return resource.endsWith('_per_day')
 }
 
+export function isMonthlyComputeWarningResource(
+	resource: UserWarningResource,
+): resource is ComputeOverageWarningResource {
+	return (
+		resource === 'unique_worker_days' || resource === 'durable_object_rows_read'
+	)
+}
+
 export function userEntitlementWarningKvKey(input: {
 	userId: string
 	kind: UserEntitlementWarningKind
 	resource: UserWarningResource
 	day?: string
+	month?: string
 }) {
 	const base = `${userEntitlementWarningKvKeyPrefix}:${input.userId}:${input.kind}:${input.resource}`
-	if (!isDailyEntitlementResource(input.resource)) return base
-	if (!input.day) {
-		throw new Error(
-			`Daily entitlement warning key for ${input.resource} requires a UTC day`,
-		)
+	if (isDailyEntitlementResource(input.resource)) {
+		if (!input.day) {
+			throw new Error(
+				`Daily entitlement warning key for ${input.resource} requires a UTC day`,
+			)
+		}
+		return `${base}:${input.day}`
 	}
-	return `${base}:${input.day}`
+	if (isMonthlyComputeWarningResource(input.resource)) {
+		if (!input.month) {
+			throw new Error(
+				`Compute entitlement warning key for ${input.resource} requires a UTC month`,
+			)
+		}
+		return `${base}:${input.month}`
+	}
+	return base
 }
 
 export function userEntitlementWarningDailyKvKey(input: {
@@ -543,6 +564,9 @@ function warningInstanceKey(input: {
 		day: isDailyEntitlementResource(input.resource)
 			? utcDayKey(input.now)
 			: undefined,
+		month: isMonthlyComputeWarningResource(input.resource)
+			? utcMonthKey(input.now)
+			: undefined,
 	})
 }
 
@@ -576,6 +600,10 @@ async function deleteWarningClaims(input: {
 	resource: UserWarningResource
 	now: Date
 }) {
+	if (isMonthlyComputeWarningResource(input.resource)) {
+		await input.kv.delete(warningInstanceKey(input))
+		return
+	}
 	if (!isDailyEntitlementResource(input.resource)) {
 		await input.kv.delete(
 			userEntitlementWarningKvKey({
@@ -649,12 +677,16 @@ async function readComputeOverageWarnings(input: {
 	})
 }
 
-async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
+export async function listUsersForEntitlementWarningSweep(
+	db: D1Database,
+	now: Date,
+) {
 	const currentMonth = utcMonthKey(now)
-	const [active, packages, secrets, compute] = await Promise.all([
-		db
-			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
+	const [active, packages, secrets, computeUwd, computeDorows] =
+		await Promise.all([
+			db
+				.prepare(
+					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT user_id, SUM(event_count) AS event_count
 					FROM usage_rollups
@@ -669,16 +701,16 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
-			)
-			.bind(
-				currentMonth,
-				...observeOnlyUsageEventTypes,
-				userEntitlementWarningActiveSweepLimit,
-			)
-			.all<WarningCandidate>(),
-		db
-			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
+				)
+				.bind(
+					currentMonth,
+					...observeOnlyUsageEventTypes,
+					userEntitlementWarningActiveSweepLimit,
+				)
+				.all<WarningCandidate>(),
+			db
+				.prepare(
+					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT user_id, COUNT(*) AS stock_count
 					FROM saved_packages
@@ -691,12 +723,12 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 				 WHERE u.deleting_at IS NULL
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL`,
-			)
-			.bind(stockPackageThreshold, userEntitlementWarningStockSweepLimit)
-			.all<WarningCandidate>(),
-		db
-			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
+				)
+				.bind(stockPackageThreshold, userEntitlementWarningStockSweepLimit)
+				.all<WarningCandidate>(),
+			db
+				.prepare(
+					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT sb.user_id, COUNT(*) AS stock_count
 					FROM secret_entries se
@@ -711,22 +743,21 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 				 WHERE u.deleting_at IS NULL
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL`,
-			)
-			.bind(
-				now.toISOString(),
-				stockSecretThreshold,
-				userEntitlementWarningStockSweepLimit,
-			)
-			.all<WarningCandidate>(),
-		db
-			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
+				)
+				.bind(
+					now.toISOString(),
+					stockSecretThreshold,
+					userEntitlementWarningStockSweepLimit,
+				)
+				.all<WarningCandidate>(),
+			db
+				.prepare(
+					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
-					SELECT user_id, SUM(event_count) AS event_count
+					SELECT user_id, event_count
 					FROM usage_rollups
 					WHERE month = ?
-						AND metric IN ('dynamic_worker_day', 'durable_object_rows_read')
-					GROUP BY user_id
+						AND metric = 'dynamic_worker_day'
 					ORDER BY event_count DESC
 					LIMIT ?
 				 ) AS ranked
@@ -735,17 +766,37 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 					AND u.account_type = 'person'
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
-			)
-			.bind(currentMonth, userEntitlementWarningStockSweepLimit)
-			.all<WarningCandidate>(),
-	])
+				)
+				.bind(currentMonth, userEntitlementWarningComputeSweepLimit)
+				.all<WarningCandidate>(),
+			db
+				.prepare(
+					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
+				 FROM (
+					SELECT user_id, event_count
+					FROM usage_rollups
+					WHERE month = ?
+						AND metric = 'durable_object_rows_read'
+					ORDER BY event_count DESC
+					LIMIT ?
+				 ) AS ranked
+				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 WHERE u.deleting_at IS NULL
+					AND u.account_type = 'person'
+					AND u.email_verified_at IS NOT NULL
+				 ORDER BY ranked.event_count DESC`,
+				)
+				.bind(currentMonth, userEntitlementWarningComputeSweepLimit)
+				.all<WarningCandidate>(),
+		])
 
 	const byUserId = new Map<string, WarningCandidate>()
 	for (const row of [
+		...(computeUwd.results ?? []),
+		...(computeDorows.results ?? []),
 		...(active.results ?? []),
 		...(packages.results ?? []),
 		...(secrets.results ?? []),
-		...(compute.results ?? []),
 	]) {
 		if (byUserId.has(row.stable_user_id)) continue
 		byUserId.set(row.stable_user_id, row)

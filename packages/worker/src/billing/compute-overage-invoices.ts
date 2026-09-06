@@ -7,6 +7,10 @@
  * Invoice items (not Stripe Billing Meters) so yearly subscribers still
  * get a UTC-month invoice and so this PR does not require new Stripe
  * price ids.
+ *
+ * Includes are resolved from the plan and ladder at invoice time (UTC
+ * days 1–3). There is no month-end plan snapshot; a plan change before
+ * the job runs prices the prior month against the current includes.
  */
 import {
 	computeMonthlyOverage,
@@ -23,16 +27,22 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
-import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
 import { isBillingConfigured } from './billing-config.ts'
-import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
+import { isComputeOverageChargingEnabled } from './compute-overage-charging.ts'
+import {
+	readMonthlyComputeUsage,
+	type MonthlyComputeUsage,
+} from './compute-overage-usage.ts'
 import {
 	computeOverageInvoiceMetadataKey,
 	computeOverageInvoiceMonthMetadataKey,
 	createDraftInvoice,
 	createInvoiceItem,
 	finalizeInvoice,
+	getInvoice,
+	listCustomerInvoices,
 	payInvoice,
+	type StripeInvoice,
 } from './stripe-client.ts'
 
 export const computeOverageInvoiceStatuses = [
@@ -42,6 +52,7 @@ export const computeOverageInvoiceStatuses = [
 	'soft_block',
 	'skip_legacy',
 	'skip_zero',
+	'skip_below_minimum',
 	'skip_audience',
 	'failed',
 ] as const
@@ -50,7 +61,10 @@ export type ComputeOverageInvoiceStatus =
 	(typeof computeOverageInvoiceStatuses)[number]
 
 export const computeOverageBillingBatchSize = 25
+export const computeOverageBillingMaxBatchesPerRun = 20
 export const computeOverageBillingCatchUpLastDay = 3
+
+const retryableInvoiceStatuses = ['pending', 'failed'] as const
 
 type OverageUserRow = {
 	id: number
@@ -59,6 +73,11 @@ type OverageUserRow = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	stripe_customer_id: string | null
+}
+
+type LedgerLookupRow = {
+	status: string
+	stripe_invoice_id: string | null
 }
 
 export type ComputeOverageBillingResult =
@@ -94,61 +113,86 @@ export async function runComputeOverageBilling(input: {
 		return { status: 'skipped', reason: 'billing_unconfigured' }
 	}
 	const month = previousUtcMonthKey(now)
-	const users = await listOverageCandidates({
-		db: input.env.APP_DB,
-		month,
-		startAfter: input.startAfter ?? '',
-	})
+	let startAfter = input.startAfter ?? ''
+	let scanned = 0
 	let invoiced = 0
 	let dryRun = 0
 	let softBlocked = 0
 	let skippedLegacy = 0
 	let failed = 0
-	for (const user of users) {
-		const outcome = await invoiceOneUserIfNeeded({
-			env: input.env,
-			user,
+	let done = false
+	for (
+		let batch = 0;
+		batch < computeOverageBillingMaxBatchesPerRun;
+		batch += 1
+	) {
+		const users = await listOverageCandidates({
+			db: input.env.APP_DB,
 			month,
-			now,
+			startAfter,
 		})
-		switch (outcome) {
-			case 'invoiced':
-				invoiced += 1
-				break
-			case 'dry_run':
-				dryRun += 1
-				break
-			case 'soft_block':
-				softBlocked += 1
-				break
-			case 'skip_legacy':
-				skippedLegacy += 1
-				break
-			case 'failed':
-				failed += 1
-				break
-			case 'skip_zero':
-			case 'skip_audience':
-			case 'pending':
-				break
-			default: {
-				const exhaustive: never = outcome
-				throw new Error(
-					`Unknown compute overage invoice status: ${String(exhaustive)}`,
-				)
+		if (users.length === 0) {
+			done = true
+			break
+		}
+		for (const user of users) {
+			const outcome = await invoiceOneUserIfNeeded({
+				env: input.env,
+				user,
+				month,
+				now,
+			})
+			switch (outcome) {
+				case 'invoiced':
+					invoiced += 1
+					break
+				case 'dry_run':
+					dryRun += 1
+					break
+				case 'soft_block':
+					softBlocked += 1
+					break
+				case 'skip_legacy':
+					skippedLegacy += 1
+					break
+				case 'failed':
+					failed += 1
+					break
+				case 'skip_zero':
+				case 'skip_below_minimum':
+				case 'skip_audience':
+				case 'pending':
+					break
+				default: {
+					const exhaustive: never = outcome
+					throw new Error(
+						`Unknown compute overage invoice status: ${String(exhaustive)}`,
+					)
+				}
 			}
+		}
+		scanned += users.length
+		const lastUser = users.at(-1)
+		if (!lastUser) {
+			done = true
+			break
+		}
+		startAfter = lastUser.stable_user_id
+		if (users.length < computeOverageBillingBatchSize) {
+			done = true
+			break
 		}
 	}
 	return {
 		status: 'completed',
 		month,
-		scanned: users.length,
+		scanned,
 		invoiced,
 		dryRun,
 		softBlocked,
 		skippedLegacy,
 		failed,
-		done: users.length < computeOverageBillingBatchSize,
+		done,
 	}
 }
 
@@ -169,10 +213,21 @@ async function listOverageCandidates(input: {
 			 WHERE u.deleting_at IS NULL
 				AND u.stable_user_id > ?
 				AND (u.stripe_customer_id IS NOT NULL OR r.user_id IS NOT NULL)
+				AND NOT EXISTS (
+					SELECT 1 FROM compute_overage_invoices i
+					WHERE i.user_id = u.stable_user_id
+						AND i.month = ?
+						AND i.status NOT IN ('pending', 'failed')
+				)
 			 ORDER BY u.stable_user_id
 			 LIMIT ?`,
 		)
-		.bind(input.month, input.startAfter, computeOverageBillingBatchSize)
+		.bind(
+			input.month,
+			input.startAfter,
+			input.month,
+			computeOverageBillingBatchSize,
+		)
 		.all<OverageUserRow>()
 	return rows.results ?? []
 }
@@ -188,12 +243,8 @@ async function invoiceOneUserIfNeeded(input: {
 		 WHERE user_id = ? AND month = ?`,
 	)
 		.bind(input.user.stable_user_id, input.month)
-		.first<{ status: string; stripe_invoice_id: string | null }>()
-	if (
-		existing &&
-		existing.status !== 'pending' &&
-		existing.status !== 'failed'
-	) {
+		.first<LedgerLookupRow>()
+	if (existing && !isRetryableInvoiceStatus(existing.status)) {
 		return existing.status as ComputeOverageInvoiceStatus
 	}
 
@@ -213,9 +264,8 @@ async function invoiceOneUserIfNeeded(input: {
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
-	const chargingEnabled = await isFeatureEnabled(
+	const chargingEnabled = await isComputeOverageChargingEnabled(
 		input.env.APP_DB,
-		'compute-overage-charging',
 		input.user.id,
 	)
 	const disposition = resolveComputeOverageDisposition({
@@ -232,6 +282,7 @@ async function invoiceOneUserIfNeeded(input: {
 			db: input.env.APP_DB,
 			userId: input.user.stable_user_id,
 			month: input.month,
+			usage,
 			overage,
 			disposition,
 			status: disposition,
@@ -248,6 +299,7 @@ async function invoiceOneUserIfNeeded(input: {
 			db: input.env.APP_DB,
 			userId: input.user.stable_user_id,
 			month: input.month,
+			usage,
 			overage,
 			disposition,
 			status: 'dry_run',
@@ -258,8 +310,9 @@ async function invoiceOneUserIfNeeded(input: {
 		return 'dry_run'
 	}
 
+	let stripeInvoiceId = existing?.stripe_invoice_id ?? null
 	try {
-		const invoiceId = await createOverageInvoice({
+		const invoiceId = await settleOverageInvoice({
 			env: input.env,
 			userId: input.user.stable_user_id,
 			plan,
@@ -267,11 +320,28 @@ async function invoiceOneUserIfNeeded(input: {
 			customerId,
 			month: input.month,
 			overage,
+			storedInvoiceId: stripeInvoiceId,
+			onDraftCreated: async (draftId) => {
+				stripeInvoiceId = draftId
+				await upsertLedgerRow({
+					db: input.env.APP_DB,
+					userId: input.user.stable_user_id,
+					month: input.month,
+					usage,
+					overage,
+					disposition,
+					status: 'pending',
+					stripeCustomerId: customerId,
+					stripeInvoiceId: draftId,
+					nowIso,
+				})
+			},
 		})
 		await upsertLedgerRow({
 			db: input.env.APP_DB,
 			userId: input.user.stable_user_id,
 			month: input.month,
+			usage,
 			overage,
 			disposition,
 			status: 'invoiced',
@@ -289,18 +359,23 @@ async function invoiceOneUserIfNeeded(input: {
 			db: input.env.APP_DB,
 			userId: input.user.stable_user_id,
 			month: input.month,
+			usage,
 			overage,
 			disposition,
 			status: 'failed',
 			stripeCustomerId: customerId,
-			stripeInvoiceId: existing?.stripe_invoice_id ?? null,
+			stripeInvoiceId,
 			nowIso,
 		})
 		return 'failed'
 	}
 }
 
-async function createOverageInvoice(input: {
+function isRetryableInvoiceStatus(status: string): boolean {
+	return (retryableInvoiceStatuses as ReadonlyArray<string>).includes(status)
+}
+
+async function settleOverageInvoice(input: {
 	env: Env
 	userId: string
 	plan: PlanName
@@ -308,6 +383,8 @@ async function createOverageInvoice(input: {
 	customerId: string
 	month: string
 	overage: MonthlyComputeOverage
+	storedInvoiceId: string | null
+	onDraftCreated: (invoiceId: string) => Promise<void>
 }): Promise<string> {
 	const metadata = {
 		[computeOverageInvoiceMetadataKey]: '1',
@@ -316,28 +393,45 @@ async function createOverageInvoice(input: {
 		kody_plan: input.plan,
 		kody_ladder: input.ladder,
 	}
-	const invoice = await createDraftInvoice(input.env, {
+	let invoice = await findExistingOverageInvoice({
+		env: input.env,
 		customerId: input.customerId,
-		idempotencyKey: `kody-overage-invoice:${input.userId}:${input.month}`,
-		metadata,
+		month: input.month,
+		storedInvoiceId: input.storedInvoiceId,
 	})
-	if (input.overage.uniqueWorkerDayCents > 0) {
-		await createInvoiceItem(input.env, {
+	if (invoice?.status === 'paid') {
+		return invoice.id
+	}
+	if (invoice?.status === 'open') {
+		await payInvoice(
+			input.env,
+			invoice.id,
+			`kody-overage-pay:${input.userId}:${input.month}`,
+		)
+		return invoice.id
+	}
+	if (
+		invoice &&
+		(invoice.status === 'void' || invoice.status === 'uncollectible')
+	) {
+		invoice = null
+	}
+	if (!invoice) {
+		invoice = await createDraftInvoice(input.env, {
 			customerId: input.customerId,
-			invoiceId: invoice.id,
-			amountCents: input.overage.uniqueWorkerDayCents,
-			description: `Kody unique worker-day overage (${input.month}): ${input.overage.billableUniqueWorkerDays} days above include`,
-			idempotencyKey: `kody-overage-uwd:${input.userId}:${input.month}`,
+			idempotencyKey: `kody-overage-invoice:${input.userId}:${input.month}`,
 			metadata,
 		})
+		await input.onDraftCreated(invoice.id)
 	}
-	if (input.overage.durableObjectRowsReadCents > 0) {
-		await createInvoiceItem(input.env, {
+	if (invoice.amount_due <= 0) {
+		await addOverageInvoiceItems({
+			env: input.env,
+			userId: input.userId,
 			customerId: input.customerId,
 			invoiceId: invoice.id,
-			amountCents: input.overage.durableObjectRowsReadCents,
-			description: `Kody Durable Object rows-read overage (${input.month}): ${input.overage.billableDurableObjectRowsRead} rows above include`,
-			idempotencyKey: `kody-overage-dorows:${input.userId}:${input.month}`,
+			month: input.month,
+			overage: input.overage,
 			metadata,
 		})
 	}
@@ -354,10 +448,66 @@ async function createOverageInvoice(input: {
 	return invoice.id
 }
 
+async function findExistingOverageInvoice(input: {
+	env: Env
+	customerId: string
+	month: string
+	storedInvoiceId: string | null
+}): Promise<StripeInvoice | null> {
+	if (input.storedInvoiceId?.trim()) {
+		try {
+			return await getInvoice(input.env, input.storedInvoiceId)
+		} catch {
+			// Fall through to metadata reconcile when the stored id is gone.
+		}
+	}
+	const invoices = await listCustomerInvoices(input.env, input.customerId)
+	return (
+		invoices.find(
+			(invoice) =>
+				invoice.metadata?.[computeOverageInvoiceMetadataKey] === '1' &&
+				invoice.metadata?.[computeOverageInvoiceMonthMetadataKey] ===
+					input.month,
+		) ?? null
+	)
+}
+
+async function addOverageInvoiceItems(input: {
+	env: Env
+	userId: string
+	customerId: string
+	invoiceId: string
+	month: string
+	overage: MonthlyComputeOverage
+	metadata: Record<string, string>
+}) {
+	if (input.overage.uniqueWorkerDayCents > 0) {
+		await createInvoiceItem(input.env, {
+			customerId: input.customerId,
+			invoiceId: input.invoiceId,
+			amountCents: input.overage.uniqueWorkerDayCents,
+			description: `Kody unique worker-day overage (${input.month}): ${input.overage.billableUniqueWorkerDays} days above include`,
+			idempotencyKey: `kody-overage-uwd:${input.userId}:${input.month}`,
+			metadata: input.metadata,
+		})
+	}
+	if (input.overage.durableObjectRowsReadCents > 0) {
+		await createInvoiceItem(input.env, {
+			customerId: input.customerId,
+			invoiceId: input.invoiceId,
+			amountCents: input.overage.durableObjectRowsReadCents,
+			description: `Kody Durable Object rows-read overage (${input.month}): ${input.overage.billableDurableObjectRowsRead} rows above include`,
+			idempotencyKey: `kody-overage-dorows:${input.userId}:${input.month}`,
+			metadata: input.metadata,
+		})
+	}
+}
+
 async function upsertLedgerRow(input: {
 	db: D1Database
 	userId: string
 	month: string
+	usage: MonthlyComputeUsage
 	overage: MonthlyComputeOverage
 	disposition: ComputeOverageDisposition
 	status: ComputeOverageInvoiceStatus
@@ -390,11 +540,9 @@ async function upsertLedgerRow(input: {
 		.bind(
 			input.userId,
 			input.month,
-			input.overage.billableUniqueWorkerDays +
-				input.overage.includedUniqueWorkerDays,
+			input.usage.uniqueWorkerDays,
 			input.overage.uniqueWorkerDayCents,
-			input.overage.billableDurableObjectRowsRead +
-				input.overage.includedDurableObjectRowsRead,
+			input.usage.durableObjectRowsRead,
 			input.overage.durableObjectRowsReadCents,
 			input.overage.totalCents,
 			input.disposition,

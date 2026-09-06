@@ -136,7 +136,13 @@ test('public policy invoices paid customers, soft-blocks unpaid Free, and never 
 	const paidOverage = computeMonthlyOverage({
 		plan: 'standard',
 		ladder: 'public',
-		uniqueWorkerDays: 400,
+		uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 200,
+		durableObjectRowsRead: 0,
+	})
+	const belowMinimumOverage = computeMonthlyOverage({
+		plan: 'standard',
+		ladder: 'public',
+		uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 12,
 		durableObjectRowsRead: 0,
 	})
 
@@ -182,11 +188,27 @@ test('public policy invoices paid customers, soft-blocks unpaid Free, and never 
 			{
 				plan: 'free',
 				ladder: 'public',
-				overage: freeOverage,
+				overage: computeMonthlyOverage({
+					plan: 'free',
+					ladder: 'public',
+					uniqueWorkerDays: planLimits.free.maxUniqueWorkerDaysPerMonth + 200,
+					durableObjectRowsRead: 0,
+				}),
 				hasStripeCustomer: true,
 				chargingEnabled: true,
 			},
 			'invoice',
+		],
+		[
+			'public overage below the Stripe USD minimum is not invoiced',
+			{
+				plan: 'standard',
+				ladder: 'public',
+				overage: belowMinimumOverage,
+				hasStripeCustomer: true,
+				chargingEnabled: true,
+			},
+			'skip_below_minimum',
 		],
 		[
 			'paid-public with a customer invoices when charging is on',

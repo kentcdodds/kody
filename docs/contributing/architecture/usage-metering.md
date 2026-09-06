@@ -164,10 +164,11 @@ on `/pricing`. It is not in `entitlementResources` and does not replace the hard
 daily `execute` / `job_run` caps. Customer-facing monthly overage is unique
 worker days plus Durable Object rows-read, billed on the public ladder at
 `computeOverageRatesUsd` when `compute-overage-charging` is on. Unpaid Free is a
-soft-block, not a charge. Legacy Standard/Pro is warned, not billed. Never add
-durations across different `eventType` values — that double counts nested
-layers. Within one `eventType`, each chokepoint records exactly one event per
-metered unit, so sums are safe.
+soft-block, not a charge. Amounts below Stripe's $0.50 USD minimum are not
+invoiced. Legacy Standard/Pro is warned, not billed. Never add durations across
+different `eventType` values — that double counts nested layers. Within one
+`eventType`, each chokepoint records exactly one event per metered unit, so sums
+are safe.
 
 Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
 Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique

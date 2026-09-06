@@ -31,6 +31,7 @@ function createBillingDb(input: {
 	candidates: Array<Candidate>
 	ledger?: Map<string, LedgerRow>
 	chargingEnabled?: boolean
+	chargingOverrideEnabled?: boolean
 }) {
 	const ledger = input.ledger ?? new Map<string, LedgerRow>()
 	const inserts: Array<Record<string, unknown>> = []
@@ -51,7 +52,21 @@ function createBillingDb(input: {
 							normalized.includes('from users u') &&
 							normalized.includes('left join usage_rollups')
 						) {
-							return { results: input.candidates as Array<T> }
+							const month = String(statement.params[0])
+							const startAfter = String(statement.params[1])
+							const limit = Number(statement.params.at(-1))
+							const results = input.candidates
+								.filter((row) => row.stable_user_id > startAfter)
+								.filter((row) => {
+									const existing = ledger.get(`${row.stable_user_id}:${month}`)
+									if (!existing) return true
+									return (
+										existing.status === 'pending' ||
+										existing.status === 'failed'
+									)
+								})
+								.slice(0, limit)
+							return { results: results as Array<T> }
 						}
 						if (
 							normalized.includes('from usage_rollups') &&
@@ -80,11 +95,20 @@ function createBillingDb(input: {
 							return (ledger.get(key) as T | undefined) ?? null
 						}
 						if (normalized.includes('from feature_flag_user_overrides')) {
+							if (input.chargingOverrideEnabled === true) {
+								return { enabled: 1 } as T
+							}
+							if (input.chargingOverrideEnabled === false) {
+								return { enabled: 0 } as T
+							}
 							return null
 						}
 						if (normalized.includes('from feature_flags')) {
 							if (input.chargingEnabled === false) {
 								return { enabled: 0, rollout_percent: null } as T
+							}
+							if (input.chargingEnabled === true) {
+								return { enabled: 1, rollout_percent: null } as T
 							}
 							return null
 						}
@@ -95,7 +119,7 @@ function createBillingDb(input: {
 							const [
 								userId,
 								month,
-								,
+								uniqueWorkerDays,
 								,
 								,
 								,
@@ -114,6 +138,7 @@ function createBillingDb(input: {
 							inserts.push({
 								userId,
 								month,
+								uniqueWorkerDays,
 								disposition,
 								status,
 								invoiceId,
@@ -126,6 +151,73 @@ function createBillingDb(input: {
 			},
 		} as unknown as D1Database,
 	}
+}
+
+function stripeInvoiceFetchStub(input: {
+	createId?: string
+	existing?: Array<{
+		id: string
+		status: string
+		amount_due: number
+		metadata?: Record<string, string>
+	}>
+	payShouldFail?: boolean
+}) {
+	return vi.fn(async (url: string | URL, init?: RequestInit) => {
+		const parsed = new URL(String(url), 'https://api.stripe.com')
+		const method = (init?.method ?? 'GET').toUpperCase()
+		if (method === 'GET' && parsed.pathname === '/v1/invoices') {
+			return jsonResponse({ data: input.existing ?? [] })
+		}
+		if (method === 'GET' && parsed.pathname.startsWith('/v1/invoices/')) {
+			const id = decodeURIComponent(parsed.pathname.split('/').at(-1) ?? '')
+			const found = (input.existing ?? []).find((invoice) => invoice.id === id)
+			if (!found) return jsonResponse({ error: { message: 'missing' } }, 404)
+			return jsonResponse({
+				id: found.id,
+				status: found.status,
+				amount_due: found.amount_due,
+				currency: 'usd',
+				metadata: found.metadata ?? {},
+			})
+		}
+		if (method === 'POST' && parsed.pathname === '/v1/invoices') {
+			return jsonResponse({
+				id: input.createId ?? 'in_paid_1',
+				status: 'draft',
+				amount_due: 0,
+				currency: 'usd',
+			})
+		}
+		if (parsed.pathname.endsWith('/v1/invoiceitems')) {
+			return jsonResponse({
+				id: 'ii_paid_1',
+				invoice: input.createId ?? 'in_paid_1',
+				amount: 100,
+				currency: 'usd',
+			})
+		}
+		if (parsed.pathname.endsWith('/finalize')) {
+			return jsonResponse({
+				id: input.createId ?? 'in_paid_1',
+				status: 'open',
+				amount_due: 100,
+				currency: 'usd',
+			})
+		}
+		if (parsed.pathname.endsWith('/pay')) {
+			if (input.payShouldFail) {
+				return jsonResponse({ error: { message: 'card_declined' } }, 402)
+			}
+			return jsonResponse({
+				id: input.createId ?? 'in_paid_1',
+				status: 'paid',
+				amount_due: 0,
+				currency: 'usd',
+			})
+		}
+		return jsonResponse({ error: { message: 'unexpected' } }, 500)
+	})
 }
 
 test('compute overage window skips day-1 hour 0 and days after the catch-up', () => {
@@ -208,34 +300,7 @@ test('unpaid Free and legacy never call Stripe', async () => {
 })
 
 test('paid public invoices through Stripe invoice items when charging is on', async () => {
-	const fetchStub = vi.fn(async (url: string | URL) => {
-		const path = String(url)
-		if (path.endsWith('/v1/invoices')) {
-			return jsonResponse({
-				id: 'in_paid_1',
-				status: 'draft',
-				amount_due: 0,
-				currency: 'usd',
-			})
-		}
-		if (path.endsWith('/v1/invoiceitems')) {
-			return jsonResponse({
-				id: 'ii_paid_1',
-				invoice: 'in_paid_1',
-				amount: 100,
-				currency: 'usd',
-			})
-		}
-		if (path.includes('/finalize') || path.includes('/pay')) {
-			return jsonResponse({
-				id: 'in_paid_1',
-				status: 'paid',
-				amount_due: 0,
-				currency: 'usd',
-			})
-		}
-		return jsonResponse({ error: { message: 'unexpected' } }, 500)
-	})
+	const fetchStub = stripeInvoiceFetchStub({ createId: 'in_paid_1' })
 	vi.stubGlobal('fetch', fetchStub)
 	try {
 		const { db, inserts } = createBillingDb({
@@ -309,4 +374,227 @@ test('global flag off writes dry-run and does not call Stripe', async () => {
 	} finally {
 		vi.unstubAllGlobals()
 	}
+})
+
+test('per-user on override cannot invoice while the global flag is off', async () => {
+	const fetchStub = vi.fn()
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const { db, inserts } = createBillingDb({
+			chargingEnabled: false,
+			chargingOverrideEnabled: true,
+			candidates: [
+				{
+					id: 5,
+					stable_user_id: 'e'.repeat(64),
+					plan: 'standard',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stripe_customer_id: 'cus_paid',
+					uniqueWorkerDays:
+						planLimits.standard.maxUniqueWorkerDaysPerMonth + 400,
+				},
+			],
+		})
+		const result = await runComputeOverageBilling({
+			env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+			now: new Date('2026-09-02T12:00:00.000Z'),
+		})
+		expect(result).toMatchObject({
+			status: 'completed',
+			dryRun: 1,
+			invoiced: 0,
+		})
+		expect(fetchStub).not.toHaveBeenCalled()
+		expect(inserts.at(-1)?.status).toBe('dry_run')
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('billing job pages past the first batch and skips terminal ledger rows', async () => {
+	const invoicedId = 'a'.repeat(64)
+	const firstPage = Array.from({ length: 25 }, (_, index) => ({
+		id: 100 + index,
+		stable_user_id: `b${String(index).padStart(2, '0')}${'x'.repeat(61)}`,
+		plan: 'free',
+		stripe_plan: null,
+		entitlement_ladder: 'public',
+		stripe_customer_id: null,
+		uniqueWorkerDays: 1,
+	}))
+	const lastUser = {
+		id: 200,
+		stable_user_id: 'c'.repeat(64),
+		plan: 'free',
+		stripe_plan: null,
+		entitlement_ladder: 'public',
+		stripe_customer_id: null,
+		uniqueWorkerDays: 12,
+	}
+	const ledger = new Map<string, LedgerRow>([
+		[
+			`${invoicedId}:2026-08`,
+			{ status: 'invoiced', stripe_invoice_id: 'in_old' },
+		],
+	])
+	const { db, inserts } = createBillingDb({
+		candidates: [
+			{
+				id: 99,
+				stable_user_id: invoicedId,
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'public',
+				stripe_customer_id: 'cus_old',
+				uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 400,
+			},
+			...firstPage,
+			lastUser,
+		],
+		ledger,
+	})
+	const result = await runComputeOverageBilling({
+		env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+		now: new Date('2026-09-02T12:00:00.000Z'),
+	})
+	expect(result).toMatchObject({
+		status: 'completed',
+		scanned: 26,
+		done: true,
+		invoiced: 0,
+	})
+	expect(
+		inserts.some(
+			(row) => row.userId === invoicedId && row.status === 'invoiced',
+		),
+	).toBe(false)
+	expect(inserts.some((row) => row.userId === lastUser.stable_user_id)).toBe(
+		true,
+	)
+})
+
+test('sub-minimum public overage is recorded as skip_below_minimum, not invoiced', async () => {
+	const fetchStub = vi.fn()
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const { db, inserts } = createBillingDb({
+			candidates: [
+				{
+					id: 6,
+					stable_user_id: 'f'.repeat(64),
+					plan: 'standard',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stripe_customer_id: 'cus_paid',
+					uniqueWorkerDays:
+						planLimits.standard.maxUniqueWorkerDaysPerMonth + 12,
+				},
+			],
+		})
+		const result = await runComputeOverageBilling({
+			env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+			now: new Date('2026-09-02T12:00:00.000Z'),
+		})
+		expect(result).toMatchObject({
+			status: 'completed',
+			invoiced: 0,
+			scanned: 1,
+		})
+		expect(fetchStub).not.toHaveBeenCalled()
+		expect(inserts.at(-1)).toMatchObject({
+			status: 'skip_below_minimum',
+			uniqueWorkerDays: planLimits.standard.maxUniqueWorkerDaysPerMonth + 12,
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('retry resumes the stored Stripe invoice instead of creating a second one', async () => {
+	const fetchStub = stripeInvoiceFetchStub({
+		createId: 'in_resume_1',
+		existing: [
+			{
+				id: 'in_resume_1',
+				status: 'draft',
+				amount_due: 0,
+			},
+		],
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const userId = 'g'.repeat(64)
+		const { db, inserts } = createBillingDb({
+			candidates: [
+				{
+					id: 7,
+					stable_user_id: userId,
+					plan: 'standard',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stripe_customer_id: 'cus_paid',
+					uniqueWorkerDays:
+						planLimits.standard.maxUniqueWorkerDaysPerMonth + 400,
+				},
+			],
+			ledger: new Map([
+				[
+					`${userId}:2026-08`,
+					{ status: 'failed', stripe_invoice_id: 'in_resume_1' },
+				],
+			]),
+		})
+		const result = await runComputeOverageBilling({
+			env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+			now: new Date('2026-09-02T12:00:00.000Z'),
+		})
+		expect(result).toMatchObject({
+			status: 'completed',
+			invoiced: 1,
+			failed: 0,
+		})
+		const methods = fetchStub.mock.calls.map(([url, init]) => ({
+			url: String(url),
+			method: String((init as RequestInit | undefined)?.method ?? 'GET'),
+		}))
+		expect(
+			methods.some(
+				(call) => call.method === 'POST' && call.url.endsWith('/v1/invoices'),
+			),
+		).toBe(false)
+		expect(
+			methods.some((call) => call.url.includes('/v1/invoices/in_resume_1')),
+		).toBe(true)
+		expect(inserts.at(-1)).toMatchObject({
+			status: 'invoiced',
+			invoiceId: 'in_resume_1',
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('ledger stores actual usage, not the include allotment', async () => {
+	const { db, inserts } = createBillingDb({
+		candidates: [
+			{
+				id: 8,
+				stable_user_id: 'h'.repeat(64),
+				plan: 'free',
+				stripe_plan: null,
+				entitlement_ladder: 'public',
+				stripe_customer_id: null,
+				uniqueWorkerDays: 12,
+			},
+		],
+	})
+	await runComputeOverageBilling({
+		env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+		now: new Date('2026-09-02T12:00:00.000Z'),
+	})
+	expect(inserts.at(-1)).toMatchObject({
+		status: 'skip_zero',
+		uniqueWorkerDays: 12,
+	})
 })

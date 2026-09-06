@@ -125,6 +125,11 @@ const invoiceSchema = object({
 	status: string(),
 	amount_due: number(),
 	currency: string(),
+	metadata: optional(record(string(), string())),
+})
+
+const invoiceListSchema = object({
+	data: array(invoiceSchema),
 })
 
 const invoiceItemSchema = object({
@@ -899,6 +904,52 @@ export async function createDraftInvoice(
 		})
 	}
 	return parsed.value
+}
+
+export async function getInvoice(
+	env: StripeEnv,
+	invoiceId: string,
+): Promise<StripeInvoice> {
+	const trimmed = invoiceId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Invoice id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: `/v1/invoices/${encodeURIComponent(trimmed)}`,
+	})
+	const parsed = parseSafe(invoiceSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe invoice shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value
+}
+
+export async function listCustomerInvoices(
+	env: StripeEnv,
+	customerId: string,
+): Promise<Array<StripeInvoice>> {
+	const trimmed = customerId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Customer id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/invoices',
+		query: {
+			customer: trimmed,
+			limit: '100',
+		},
+	})
+	const parsed = parseSafe(invoiceListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe invoice list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data
 }
 
 export async function createInvoiceItem(

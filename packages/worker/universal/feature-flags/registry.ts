@@ -53,7 +53,7 @@ export const featureFlagDefinitions = [
 		key: 'compute-overage-charging',
 		defaultEnabled: true,
 		description:
-			'Creates Stripe invoices for public-ladder compute overages at list rates when resolveComputeOverageDisposition returns invoice (Standard/Pro with a Stripe customer, or Free that already has a customer). Unpaid Free is a soft-block, not a charge. Legacy Standard/Pro stays unbilled. Set the global flag off to dry-run. D1 evaluation failures fail closed (no charges). No success metric: this flag is a billing gate, not an experiment.',
+			'Creates Stripe invoices for public-ladder compute overages at list rates when resolveComputeOverageDisposition returns invoice (Standard/Pro with a Stripe customer, or Free that already has a customer). Unpaid Free is a soft-block, not a charge. Legacy Standard/Pro stays unbilled. Set the global flag off to dry-run for everyone; a per-user on override cannot charge while global is off. D1 evaluation failures fail closed (no charges). No success metric: this flag is a billing gate, not an experiment.',
 		// Intentionally no successMetric: a money-moving kill switch is not
 		// judged by moving a usage stream.
 	},
