@@ -40,12 +40,25 @@ export async function loadSiteBannerLoaderData(input: {
 	session: SessionInfo | null
 	pathname: string
 }): Promise<SiteBannerLoaderData> {
+	if (typeof input.env.APP_DB?.prepare !== 'function') {
+		return emptySiteBannerLoaderData()
+	}
 	try {
 		return await loadSiteBannerLoaderDataUnsafe(input)
 	} catch (error) {
-		console.error('site banner load failed', error)
+		if (!isMissingSiteBannerSchema(error)) {
+			console.error('site banner load failed', error)
+		}
 		return emptySiteBannerLoaderData()
 	}
+}
+
+function isMissingSiteBannerSchema(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error)
+	return (
+		message.includes('no such table: site_banners') ||
+		message.includes('db.prepare is not a function')
+	)
 }
 
 async function loadSiteBannerLoaderDataUnsafe(input: {
