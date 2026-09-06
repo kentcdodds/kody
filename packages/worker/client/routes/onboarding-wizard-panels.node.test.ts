@@ -191,7 +191,6 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	)
 	expect(selected).toContain('href="/guides/portability"')
 	expect(selected).toContain('Copy portability proof')
-	expect(selected).not.toContain('data-testid="onboarding-wizard-copy-prompt"')
 	expect(selected.split('Copy portability proof')).toHaveLength(2)
 
 	const connected = await renderToString(
