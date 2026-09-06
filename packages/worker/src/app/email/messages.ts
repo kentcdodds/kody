@@ -56,6 +56,27 @@ export function buildEmailChangeEmail(input: {
 	})
 }
 
+export function buildEmailClaimReleaseEmail(input: {
+	appBaseUrl: string
+	email: string
+	verificationUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Release this email from your Kody account',
+		preheader: `Confirm you want to release ${input.email} so it can open a new Kody account.`,
+		heading: 'Release this email address',
+		body: [
+			`${input.email} is still tied to your Kody account, so it cannot be used to create a second account.`,
+			'Confirm this link to drop that claim. Your current login email and account identity stay the same.',
+		],
+		action: { label: 'Release this email', url: input.verificationUrl },
+		afterAction: ['This link expires in 24 hours.'],
+		footnote:
+			'If you did not ask to release this address, you can safely ignore this email — the claim stays in place.',
+	})
+}
+
 export const userEntitlementWarningKinds = ['approaching', 'reached'] as const
 
 export type UserEntitlementWarningKind =

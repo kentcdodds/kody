@@ -909,6 +909,11 @@ export type AdminCreatedUserSetup = {
 	setupTokenExpiresAt: number
 }
 
+export type AccountFormerEmail = {
+	email: string
+	claimedAt: string
+}
+
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -919,6 +924,7 @@ export type AccountProfileLoaderData = {
 	bio: string | null
 	avatarUrl: string | null
 	profileVisibility: ProfileVisibility
+	formerEmails: Array<AccountFormerEmail>
 }
 
 export type AccountConnectionListItem = {
@@ -1031,7 +1037,7 @@ export type PendingVerificationLoaderData = {
 export type EmailVerificationLoaderData =
 	| {
 			ok: true
-			kind: 'email_verify' | 'email_change'
+			kind: 'email_verify' | 'email_change' | 'email_claim_release'
 			message: string
 			ctaHref?: string
 			ctaLabel?: string

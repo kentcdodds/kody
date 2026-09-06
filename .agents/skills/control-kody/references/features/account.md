@@ -22,6 +22,7 @@ node tools/control-kody.ts request GET /account/profile.json
 - `GET|POST /account/profile.json`
 - `POST /account/profile/avatar.json`
 - `POST /account/email-change.json`
+- `POST /account/email-claim-release.json`
 - `GET /account/export.json`
 - `POST /account/delete`
 - `GET|POST /account/connections.json`

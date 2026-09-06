@@ -87,6 +87,34 @@ export const pendingEmailChangesTable = table({
 	primaryKey: 'id',
 })
 
+export const userEmailClaimsTable = table({
+	name: 'user_email_claims',
+	columns: {
+		id: c.integer(),
+		user_id: c.integer(),
+		email: c.text(),
+		status: c.text(),
+		claimed_at: c.text(),
+		released_at: c.text(),
+		created_at: c.text(),
+		updated_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
+export const pendingEmailClaimReleasesTable = table({
+	name: 'pending_email_claim_releases',
+	columns: {
+		id: c.integer(),
+		user_id: c.integer(),
+		email: c.text(),
+		token_hash: c.text(),
+		expires_at: c.integer(),
+		created_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
 export const invitesTable = table({
 	name: 'invites',
 	columns: {

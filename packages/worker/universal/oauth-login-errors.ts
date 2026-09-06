@@ -1,3 +1,5 @@
+import { formerEmailClaimedSignupMessage } from '#universal/email-claim-errors.ts'
+
 /**
  * Social-login failure codes carried back to `/login?oauthError=<code>`.
  * Shared with the client login route, which maps codes to friendly copy, so
@@ -24,6 +26,7 @@ export const oauthLoginErrorMessages = {
 	'email-unverified': 'Verify your email before connecting a sign-in provider.',
 	'email-unavailable':
 		'This email address cannot be used for a new account. Contact support@kody.codes.',
+	'email-claimed': formerEmailClaimedSignupMessage,
 	'account-error': 'We could not create your account. Please try again.',
 	'rate-limited': 'Too many sign-in attempts. Please try again later.',
 } as const

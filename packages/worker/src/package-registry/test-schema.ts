@@ -1,3 +1,4 @@
+import { ensureEmailClaimsTestSchema } from '#worker/identity/email-claims-test-schema.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 /**
@@ -11,6 +12,7 @@ export async function ensurePackageScopeGrantsTestSchema(db: D1Database) {
 		db,
 		columns: ['email_verified_at', 'account_type'],
 	})
+	await ensureEmailClaimsTestSchema(db)
 	await db.prepare(`DROP TABLE IF EXISTS package_scope_grants`).run()
 	await db
 		.prepare(

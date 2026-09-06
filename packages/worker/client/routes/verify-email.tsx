@@ -23,21 +23,24 @@ export function VerifyEmailRoute(handle: Handle) {
 					'Open the verification link from your email to verify your account.',
 			} satisfies EmailVerificationLoaderData)
 		const isEmailChange = data.ok && data.kind === 'email_change'
+		const isEmailClaimRelease = data.ok && data.kind === 'email_claim_release'
 		const title = data.ok
 			? isEmailChange
 				? 'Email changed'
-				: 'Email verified'
+				: isEmailClaimRelease
+					? 'Email released'
+					: 'Email verified'
 			: 'Email verification'
 		const ctaHref =
 			data.ok && data.ctaHref
 				? data.ctaHref
-				: isEmailChange
+				: isEmailChange || isEmailClaimRelease
 					? '/account'
 					: '/onboarding'
 		const ctaLabel =
 			data.ok && data.ctaLabel
 				? data.ctaLabel
-				: isEmailChange
+				: isEmailChange || isEmailClaimRelease
 					? 'Go to account'
 					: 'Continue to onboarding'
 
@@ -49,7 +52,9 @@ export function VerifyEmailRoute(handle: Handle) {
 						{data.ok
 							? isEmailChange
 								? 'Your Kody account uses this email address.'
-								: 'Your Kody account can use MCP and send outbound email.'
+								: isEmailClaimRelease
+									? 'That former address can now be used to create a new Kody account.'
+									: 'Your Kody account can use MCP and send outbound email.'
 							: 'We could not verify your email address.'}
 					</p>
 				</header>

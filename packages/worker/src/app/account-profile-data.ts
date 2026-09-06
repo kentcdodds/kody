@@ -4,6 +4,7 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { listFormerEmailClaims } from '#worker/identity/email-claims.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -23,6 +24,7 @@ export function buildAccountProfilePayload(
 		bio?: string | null
 		avatarKey?: string | null
 		profileVisibility?: ProfileVisibility
+		formerEmails?: AccountProfileLoaderData['formerEmails']
 	},
 ): AccountProfileLoaderData {
 	const rawDisplayName = profileFields?.displayName
@@ -45,6 +47,7 @@ export function buildAccountProfilePayload(
 			avatarKey: profileFields?.avatarKey ?? null,
 		}),
 		profileVisibility: profileFields?.profileVisibility ?? 'public',
+		formerEmails: profileFields?.formerEmails ?? [],
 	}
 }
 
@@ -72,5 +75,9 @@ export async function loadAccountProfileData(
 		bio: row.bio,
 		avatarKey: row.avatar_key,
 		profileVisibility: asProfileVisibility(row.profile_visibility),
+		formerEmails: await listFormerEmailClaims(env.APP_DB, {
+			userId: user.userId,
+			currentEmail: user.email,
+		}),
 	})
 }

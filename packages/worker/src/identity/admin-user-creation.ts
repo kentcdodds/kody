@@ -13,7 +13,10 @@ import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	allocateSignupIdentity,
+	claimAccountEmail,
+} from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 
 export type AdminCreateUserErrorCode =
@@ -114,7 +117,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	})
 	const now = input.now ?? new Date()
 	const nowIso = now.toISOString()
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const allocated = await allocateSignupIdentity(input.db, email)
+	if (!allocated.ok) {
+		throw new AdminCreateUserError('email_exists', 'Email already registered.')
+	}
+	const stableUserId = allocated.stableUserId
 	let userId: number | null = null
 
 	try {
@@ -166,6 +173,16 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		throw new AdminCreateUserError(
 			'default_role_assignment_failed',
 			'Unable to create account.',
+		)
+	}
+
+	try {
+		await claimAccountEmail(input.db, { userId, email, now })
+	} catch (error) {
+		await deleteUserBestEffort(input.db, userId)
+		throw new AdminCreateUserError(
+			'create_failed',
+			error instanceof Error ? error.message : 'Unable to create account.',
 		)
 	}
 

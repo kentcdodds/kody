@@ -76,13 +76,16 @@ package-app surfaces:
 11. **Email change requires a verified current address.**
     `POST /account/email-change.json` refuses to start a change when
     `users.email_verified_at` is null (403, audit reason `email_unverified`). A
-    `stable_user_id` unique conflict at password or social-login signup is a
-    controlled 409 with audit reason `stable_user_id_exists` (message directs
-    the person to contact `support@kody.codes`) and releases a consumed invite.
-    Operators inspect collisions with `adminUserStableIdConflict` (metadata
-    only) and suspend or delete the squatting account with existing
-    capabilities. `users.stable_user_id` is never recomputed for an existing
-    account.
+    former-email claim collision at password or social-login signup is a
+    controlled 409 with audit reason `former_email_claimed` (copy tells the
+    person to sign in with the email that account uses now, or release the
+    address from Account settings — never leaking the current email) and
+    releases a consumed invite. The owner re-verifies the former address
+    (`POST /account/email-claim-release.json` plus
+    `/verify-email-claim-release`) to drop the claim; that path is rate limited.
+    Operators inspect leftover implicit sha256 collisions with
+    `adminUserStableIdConflict` (metadata only). `users.stable_user_id` is never
+    recomputed for an existing account.
 12. **Unverified accounts are reclaimed on a provider-verified social match.**
     When a social login profile presents a verified email that matches
     `users.email` and `email_verified_at` is null, treat the row as a possible

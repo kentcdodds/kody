@@ -160,7 +160,9 @@ test('email change requests require the current password and create a pending ve
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({
 		ok: true,
-		message: 'Verification email sent to your new address.',
+		formerEmailRemainsClaimed: true,
+		message:
+			'Verification email sent to your new address. After you confirm, your current address stays tied to this account until you release it from Former addresses.',
 	})
 	expect(
 		sqlite
@@ -328,4 +330,14 @@ test('email change verification updates email and preserves stable user id', asy
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM email_verifications`).get(),
 	).toEqual({ count: 0 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT email, status FROM user_email_claims WHERE user_id = 1 ORDER BY email`,
+			)
+			.all() as Array<{ email: string; status: string }>,
+	).toEqual([
+		{ email: 'new@example.com', status: 'claimed' },
+		{ email: 'old@example.com', status: 'claimed' },
+	])
 })

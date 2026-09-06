@@ -269,6 +269,7 @@ test('account profile API returns email and username for the signed-in user', as
 		bio: null,
 		avatarUrl: null,
 		profileVisibility: 'public',
+		formerEmails: [],
 	})
 	// Reads are not audited.
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
@@ -540,6 +541,7 @@ test('account profile API rounds trip displayName, bio, and visibility', async (
 		bio: 'I build packages',
 		avatarUrl: null,
 		profileVisibility: 'private',
+		formerEmails: [],
 	})
 	expect(mockModule.updateCommunityProfile).toHaveBeenCalledWith({
 		env,

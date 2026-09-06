@@ -42,6 +42,7 @@ export type AccountProfilePanelProps = {
 	normalizedDraftEmail: string
 	emailChangeMessage: string | null
 	emailChangeTone: 'error' | 'info'
+	emailChangeOpen: boolean
 	onProfileSubmit: (event: SubmitEvent) => void
 	onEmailChangeSubmit: (event: SubmitEvent) => void
 	onAvatarSelected: (event: Event) => void
@@ -74,6 +75,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 		normalizedDraftEmail,
 		emailChangeMessage,
 		emailChangeTone,
+		emailChangeOpen,
 		onProfileSubmit,
 		onEmailChangeSubmit,
 		onAvatarSelected,
@@ -280,6 +282,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 			</form>
 			{emailVerified ? (
 				<details
+					open={emailChangeOpen ? true : undefined}
 					mix={css({
 						...accountDisclosureCss,
 						marginTop: '0.6rem',
@@ -300,6 +303,11 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						<p mix={css(accountFieldNoteCss)}>
 							Enter your current password. We will send a verification link to
 							the new address before changing your account email.
+						</p>
+						<p mix={css(accountFieldNoteCss)}>
+							After you switch, your current verified address stays tied to this
+							account and cannot open a second account unless you release it
+							from Former addresses.
 						</p>
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>New email</span>

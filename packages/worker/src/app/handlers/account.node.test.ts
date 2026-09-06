@@ -23,6 +23,7 @@ vi.mock('#app/account-profile-data.ts', () => ({
 		bio: null,
 		avatarUrl: null,
 		profileVisibility: 'public',
+		formerEmails: [],
 	})),
 }))
 

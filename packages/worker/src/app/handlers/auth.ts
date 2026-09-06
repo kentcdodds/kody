@@ -41,9 +41,14 @@ import {
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import {
-	createStableUserIdFromEmail,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+	formerEmailClaimedSignupCode,
+	formerEmailClaimedSignupMessage,
+} from '#universal/email-claim-errors.ts'
+import {
+	allocateSignupIdentity,
+	claimAccountEmail,
+} from '#worker/identity/email-claims.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -72,9 +77,6 @@ const authRequestSchema = object({
 const dummyPasswordHash =
 	'pbkdf2_sha256$100000$00000000000000000000000000000000$0000000000000000000000000000000000000000000000000000000000000000'
 
-const stableUserIdConflictSignupMessage =
-	'This email address cannot be used for a new account. Contact support@kody.codes.'
-
 function signupUniqueConflict(
 	uniqueField: 'email' | 'username' | 'stable_user_id',
 ) {
@@ -91,8 +93,8 @@ function signupUniqueConflict(
 			}
 		case 'stable_user_id':
 			return {
-				reason: 'stable_user_id_exists',
-				error: stableUserIdConflictSignupMessage,
+				reason: 'former_email_claimed',
+				error: formerEmailClaimedSignupMessage,
 			}
 		default: {
 			const exhaustive: never = uniqueField
@@ -334,10 +336,47 @@ export function createAuthHandler(env: Env) {
 					return Response.json(signupAcceptedBody(normalizedMode))
 				}
 
+				const allocated = await allocateSignupIdentity(
+					env.APP_DB,
+					normalizedEmail,
+				)
+				if (!allocated.ok) {
+					await releaseConsumedInvite()
+					if (allocated.reason === 'current_email') {
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'auth',
+							action: 'signup',
+							result: 'failure',
+							email: normalizedEmail,
+							ip: requestIp,
+							path: url.pathname,
+							reason: 'email_exists',
+						})
+						return Response.json(signupAcceptedBody(normalizedMode))
+					}
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'former_email_claimed',
+					})
+					return Response.json(
+						{
+							error: formerEmailClaimedSignupMessage,
+							code: formerEmailClaimedSignupCode,
+						},
+						{ status: 409 },
+					)
+				}
+
 				let record: { id: number; stableUserId: string } | null = null
 				try {
-					const stableUserId =
-						await createStableUserIdFromEmail(normalizedEmail)
+					const stableUserId = allocated.stableUserId
 					const createdAt = new Date().toISOString()
 					const createdUser = await db.create(
 						usersTable,
@@ -379,7 +418,15 @@ export function createAuthHandler(env: Env) {
 						if (uniqueField === 'email') {
 							return Response.json(signupAcceptedBody(normalizedMode))
 						}
-						return Response.json({ error: conflict.error }, { status: 409 })
+						return Response.json(
+							uniqueField === 'stable_user_id'
+								? {
+										error: conflict.error,
+										code: formerEmailClaimedSignupCode,
+									}
+								: { error: conflict.error },
+							{ status: 409 },
+						)
 					}
 					await releaseConsumedInvite()
 					throw error
@@ -447,6 +494,40 @@ export function createAuthHandler(env: Env) {
 				}
 
 				try {
+					await claimAccountEmail(env.APP_DB, {
+						userId: record.id,
+						email: normalizedEmail,
+					})
+				} catch (error) {
+					console.error('Failed to claim signup email:', error)
+					try {
+						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+							.bind(record.id)
+							.run()
+					} catch (deleteError) {
+						console.error(
+							'Failed to remove user row after email claim failure:',
+							deleteError,
+						)
+					}
+					await releaseConsumedInvite()
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'email_claim_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to create account.' },
+						{ status: 500 },
+					)
+				}
+
+				try {
 					await createEmailVerification({
 						env,
 						userId: record.id,
@@ -494,7 +575,7 @@ export function createAuthHandler(env: Env) {
 					try {
 						await ensureDefaultEmailInbox({
 							db: env.APP_DB,
-							userId: await createStableUserIdFromEmail(normalizedEmail),
+							userId: record.stableUserId,
 							username: normalizedUsername,
 							domain: platformEmailDomain,
 						})

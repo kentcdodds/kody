@@ -14,6 +14,17 @@ export async function createStableUserIdFromEmail(email: string) {
 	return toHex(new Uint8Array(hash))
 }
 
+/**
+ * Random 64-hex id in the same shape as `createStableUserIdFromEmail`.
+ * Used only for a *new* account when the email-hash id is still held by the
+ * original account after that email claim was released.
+ */
+export function createRandomStableUserId() {
+	const bytes = new Uint8Array(32)
+	crypto.getRandomValues(bytes)
+	return toHex(bytes)
+}
+
 export function normalizeStableUserId(value: string | null | undefined) {
 	return value?.trim() ?? ''
 }
