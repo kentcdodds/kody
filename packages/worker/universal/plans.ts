@@ -464,13 +464,24 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 }
 
 /**
- * User-facing compute overage list prices. Overage is not charged.
- * Legacy Standard/Pro stays soft-warn only. Execute has no overage (hard
- * daily cap). Durable Object duration is unmetered.
+ * Cloudflare compute list prices used to derive the thin user-facing
+ * overage margin. Duration stays unmetered; a later duration rate should
+ * stay list plus a thin markup (~5% or a small fixed add-on).
+ */
+export const cloudflareComputeListUsd = {
+	uniqueWorkerDay: 0.002,
+	durableObjectRowsReadPerMillion: 0.001,
+} as const
+
+/**
+ * User-facing compute overage list prices (Cloudflare list + $0.0005).
+ * Overage is not charged. Legacy Standard/Pro stays soft-warn only.
+ * Execute has no overage (hard daily cap). Durable Object duration is
+ * unmetered.
  */
 export const computeOverageRatesUsd = {
-	uniqueWorkerDay: 0.005,
-	durableObjectRowsReadPerMillion: 0.003,
+	uniqueWorkerDay: 0.0025,
+	durableObjectRowsReadPerMillion: 0.0015,
 } as const
 
 export const computeMeteringPolicy = {

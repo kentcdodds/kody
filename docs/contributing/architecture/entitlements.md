@@ -172,11 +172,12 @@ allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
 Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Hard-cut
 enforcement is not wired for either allotment. User-facing overage list prices
 live on `computeOverageRatesUsd` (unique worker-day
-$0.005, Durable Object rows
-read $0.003 per million). Overage is not charged.
-Execute is a hard daily cap with no overage. Durable Object duration is
-unmetered (`computeMeteringPolicy`). Legacy Standard/Pro accounts are soft-warn
-only on these allotments (no cut, no bill). See
+$0.0025, Durable Object
+rows read $0.0015 per million — Cloudflare list plus a
+$0.0005 thin margin). Overage is not charged. Execute is a hard daily cap with
+no overage. Durable Object duration is unmetered (`computeMeteringPolicy`); a
+later duration rate should stay list plus a thin markup. Legacy Standard/Pro
+accounts are soft-warn only on these allotments (no cut, no bill). See
 [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in

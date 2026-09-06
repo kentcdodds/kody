@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	cloudflareComputeListUsd,
 	computeMeteringPolicy,
 	computeOverageRatesUsd,
 	formatDurableObjectRowsRead,
@@ -67,8 +68,14 @@ test('legacy Standard and Pro keep the pre-cut ceilings', () => {
 })
 
 test('compute overage rates are wired and execute has no overage', () => {
-	expect(computeOverageRatesUsd.uniqueWorkerDay).toBe(0.005)
-	expect(computeOverageRatesUsd.durableObjectRowsReadPerMillion).toBe(0.003)
+	expect(computeOverageRatesUsd.uniqueWorkerDay).toBe(0.0025)
+	expect(computeOverageRatesUsd.durableObjectRowsReadPerMillion).toBe(0.0015)
+	expect(computeOverageRatesUsd.uniqueWorkerDay).toBe(
+		cloudflareComputeListUsd.uniqueWorkerDay + 0.0005,
+	)
+	expect(computeOverageRatesUsd.durableObjectRowsReadPerMillion).toBe(
+		cloudflareComputeListUsd.durableObjectRowsReadPerMillion + 0.0005,
+	)
 	expect(computeMeteringPolicy.executeCallsPerDay).toBe('hard_daily_cap')
 	expect(computeMeteringPolicy.durableObjectDuration).toBe('unmetered')
 	expect(formatDurableObjectRowsRead(500_000_000)).toBe('0.5B')
