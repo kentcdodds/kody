@@ -85,7 +85,6 @@ test('admin can create a site banner and preview launch looks', async ({
 	await page.getByLabel('Body').fill('Watch the launch video.')
 	await page.getByLabel('CTA URL').fill('https://example.com/kody-launch-video')
 	await page.getByLabel('CTA label').fill('Watch the video')
-	await page.getByRole('checkbox', { name: 'Enabled' }).check()
 	await page.getByRole('button', { name: 'Save banner' }).click()
 	await expect(page.getByText('Banner created.')).toBeVisible()
 	await expect(

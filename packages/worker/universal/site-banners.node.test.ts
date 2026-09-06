@@ -328,4 +328,24 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 	)
 	expect(JSON.stringify(adminCandidates)).not.toContain(memberId)
 	expect(JSON.stringify(adminCandidates)).not.toContain(adminStableUserId)
+
+	const previewCandidates = selectSiteBannersForClient({
+		banners: [publicBanner, loggedInBanner, targeted, otherUser],
+		viewer: adminViewer,
+		includeUnmatched: true,
+	})
+	expect(previewCandidates.find((item) => item.id === otherUser.id)).toEqual(
+		expect.objectContaining({
+			audience: 'users',
+			audienceUserIds: [],
+		}),
+	)
+	expect(
+		resolveVisibleSiteBanner({
+			candidates: previewCandidates,
+			dismissedIds: [],
+			pathname: '/',
+			viewer: adminViewer,
+		})?.title,
+	).not.toBe('Someone else')
 })
