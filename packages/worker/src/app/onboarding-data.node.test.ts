@@ -53,7 +53,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		customMcpServers: [],
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 		checklist: null,
 	})
@@ -92,7 +92,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		customMcpServers: [],
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 		checklist: null,
 	})
@@ -119,7 +119,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		stableUserId: 'user-1',
 		username: 'u-b',
 		emailVerified: true,
-		persistedPackageKodyId: 'morning-digest',
+		persistedPackageName: '@u-b/morning-digest',
 		accessWinMemorySubject: 'Preferred commute',
 	})
 	expect(withClient).toMatchObject({
@@ -129,8 +129,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
-		// Handler-loaded persist target is passed through for Step 3 next-steps.
-		persistedPackageKodyId: 'morning-digest',
+		// Handler-loaded persist target is passed through for Step 3 chrome.
+		persistedPackageName: '@u-b/morning-digest',
 		accessWinMemorySubject: 'Preferred commute',
 	})
 
@@ -165,7 +165,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		stableUserId: 'user-1',
 		username: 'u-b',
 		emailVerified: false,
-		persistedPackageKodyId: 'morning-digest',
+		persistedPackageName: '@u-b/morning-digest',
 		accessWinMemorySubject: 'Preferred commute',
 	})
 	expect(unverifiedWithGrant).toMatchObject({
@@ -176,7 +176,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		setupPrompt: '',
 		persistPrompt: '',
 		// Persist next-steps stay empty until verification.
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 	})
 	expect(unverifiedWithGrant.discoveryPrompt).toContain('https://heykody.dev')

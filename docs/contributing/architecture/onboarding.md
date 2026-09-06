@@ -27,7 +27,10 @@ person picks a host, a short portability-proof prompt is folded into the same
 step so the new agent looks up [`portability`](../../guides/portability.md)
 (`search({ entity: "portability:guide" })`) and reuses what Step 2 made. When
 the onboarding payload has a known memory subject or saved-package name, Step 3
-shows that artifact so reuse is obvious.
+shows a short "You made …" chip (truncated subject and `@scope/kody-id`, or
+hidden if nothing sensible). `hasSecondMcpClient` is inbound grant count ≥ 2,
+not attribution to the selected host — the connected label stays "You've
+connected a second agent."
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers

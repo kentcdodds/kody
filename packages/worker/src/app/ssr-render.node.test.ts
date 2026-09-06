@@ -443,7 +443,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		featuredListings: [],
 		featuredMcpServers: [],
 		customMcpServers: [],
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 		checklist: null,
 	})

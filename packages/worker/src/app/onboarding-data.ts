@@ -32,8 +32,9 @@ type OnboardingEnv = {
 }
 
 /**
- * Inbound MCP OAuth grant count. Listing failures treat the user as still
- * needing onboarding so the banner stays available.
+ * Inbound MCP OAuth grant count. This is how many hosts have authorized,
+ * not which selected onboarding agent connected. Listing failures treat the
+ * user as still needing onboarding so the banner stays available.
  */
 export async function countMcpOAuthGrants(
 	env: OnboardingEnv,
@@ -89,7 +90,7 @@ export function loadPublicOnboardingData(input: {
 		featuredListings: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		customMcpServers: [],
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 		checklist: null,
 	}
@@ -115,8 +116,8 @@ export async function loadOnboardingData(input: {
 		connectedWorkspaceLabel?: string | null
 		installedExampleName?: string | null
 	}
-	/** Most recently updated saved-package kody id, loaded by the handler. */
-	persistedPackageKodyId?: string | null
+	/** Most recently updated saved-package user-facing name, loaded by the handler. */
+	persistedPackageName?: string | null
 	/** Most recently updated active memory subject, loaded by the handler. */
 	accessWinMemorySubject?: string | null
 	/** Derived progress checklist, computed by the handler. */
@@ -126,6 +127,9 @@ export async function loadOnboardingData(input: {
 }): Promise<OnboardingLoaderData> {
 	const grantCount = await countMcpOAuthGrants(input.env, input.stableUserId)
 	const hasMcpClient = grantCount > 0
+	// Grant count is inbound OAuth grants, not a specific selected host. ≥ 2
+	// means a second agent connected somewhere; Step 3 must not name a host
+	// from this flag.
 	const hasSecondMcpClient = grantCount >= 2
 	// Incomplete setup means either the account email is still unverified or no
 	// MCP host has authorized yet. An unverified account with a leftover grant
@@ -172,8 +176,8 @@ export async function loadOnboardingData(input: {
 				listDisconnectedOnboardingFeaturedMcpServers())
 			: [],
 		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
-		persistedPackageKodyId: input.emailVerified
-			? (input.persistedPackageKodyId ?? null)
+		persistedPackageName: input.emailVerified
+			? (input.persistedPackageName ?? null)
 			: null,
 		accessWinMemorySubject: input.emailVerified
 			? (input.accessWinMemorySubject ?? null)

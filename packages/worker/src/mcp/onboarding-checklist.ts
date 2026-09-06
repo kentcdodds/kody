@@ -57,8 +57,10 @@ export async function loadOnboardingAccessWin(
 }
 
 /**
- * Newest active memory subject for Step 3 reuse chrome. Fail-open to null so
- * a storage blip never invents an artifact.
+ * Newest active memory subject for Step 3 reuse chrome. This is newest-active,
+ * not a recorded Step 2 snapshot — the chip truncates long subjects and hides
+ * if nothing sensible remains. Fail-open to null so a storage blip never
+ * invents an artifact.
  */
 export async function loadOnboardingAccessWinMemorySubject(
 	env: OnboardingChecklistEnv,

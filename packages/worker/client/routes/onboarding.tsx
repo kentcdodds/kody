@@ -124,7 +124,7 @@ export function OnboardingRoute(handle: Handle) {
 	let hasAccessWin = false
 	let hasSecondMcpClient = false
 	let accessWinMemorySubject: string | null = null
-	let persistedPackageKodyId: string | null = null
+	let persistedPackageName: string | null = null
 	let initializedStep = false
 	let pendingAdvanceToAccess = false
 	// Panel entrances only play for real step changes, never on the first
@@ -157,10 +157,10 @@ export function OnboardingRoute(handle: Handle) {
 			source === 'snapshot'
 				? (accessWinMemorySubject ?? payload.accessWinMemorySubject)
 				: payload.accessWinMemorySubject
-		persistedPackageKodyId =
+		persistedPackageName =
 			source === 'snapshot'
-				? (persistedPackageKodyId ?? payload.persistedPackageKodyId)
-				: payload.persistedPackageKodyId
+				? (persistedPackageName ?? payload.persistedPackageName)
+				: payload.persistedPackageName
 		status = 'ready'
 		message = null
 		if (source === 'live') discardRenderPrefetches()
@@ -327,7 +327,7 @@ export function OnboardingRoute(handle: Handle) {
 				payload.hasAccessWin === hasAccessWin &&
 				payload.hasSecondMcpClient === hasSecondMcpClient &&
 				payload.accessWinMemorySubject === accessWinMemorySubject &&
-				payload.persistedPackageKodyId === persistedPackageKodyId
+				payload.persistedPackageName === persistedPackageName
 			) {
 				return
 			}
@@ -515,7 +515,7 @@ export function OnboardingRoute(handle: Handle) {
 									mcpHighlights: mcpHighlights ?? {},
 									search: readRouterSearch(handle),
 									accessWinMemorySubject,
-									persistedPackageKodyId,
+									persistedPackageName,
 								})
 							: null}
 					</>

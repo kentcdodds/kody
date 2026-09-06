@@ -58,7 +58,7 @@ function secondAgentPanel(selected: {
 	hasSecondMcpClient?: boolean
 	search?: string
 	accessWinMemorySubject?: string | null
-	persistedPackageKodyId?: string | null
+	persistedPackageName?: string | null
 }) {
 	return renderSecondAgentPanel({
 		entrance: css({}),
@@ -80,7 +80,7 @@ function secondAgentPanel(selected: {
 		mcpHighlights: {},
 		search: selected.search,
 		accessWinMemorySubject: selected.accessWinMemorySubject,
-		persistedPackageKodyId: selected.persistedPackageKodyId,
+		persistedPackageName: selected.persistedPackageName,
 	})
 }
 
@@ -167,12 +167,12 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			agent: null,
 			label: null,
 			accessWinMemorySubject: 'Preferred commute',
-			persistedPackageKodyId: 'morning-digest',
+			persistedPackageName: '@you/morning-digest',
 		}),
 	)
 	expect(withArtifact).toContain('data-testid="onboarding-access-win-made"')
 	expect(withArtifact).toContain(
-		'You made Preferred commute and morning-digest',
+		'You made Preferred commute and @you/morning-digest',
 	)
 
 	const selected = await renderToString(
@@ -190,7 +190,8 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		'data-testid="onboarding-portability-guide-pointer"',
 	)
 	expect(selected).toContain('href="/guides/portability"')
-	expect(selected).toContain('data-testid="onboarding-wizard-copy-prompt"')
+	expect(selected).toContain('Copy portability proof')
+	expect(selected.split('Copy portability proof')).toHaveLength(2)
 
 	const connected = await renderToString(
 		secondAgentPanel({
@@ -200,5 +201,5 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 			hasSecondMcpClient: true,
 		}),
 	)
-	expect(connected).toContain('Claude Code is connected')
+	expect(connected).toContain("You've connected a second agent.")
 })
