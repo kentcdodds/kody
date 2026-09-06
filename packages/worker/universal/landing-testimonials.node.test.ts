@@ -40,6 +40,19 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 	)
 })
 
+test('Justin Elias testimonial links to his Zoot Enterprises LinkedIn', () => {
+	const justin = landingTestimonials.find(
+		(entry) => entry.name === 'Justin Elias',
+	)
+	expect(justin).toBeDefined()
+	expect(justin?.href).toBe(
+		'https://www.linkedin.com/in/justin-elias-22279a75/',
+	)
+	expect(justin?.photo).toBe('/images/testimonials/justin-elias.webp')
+	expect(justin?.company).toBe('Zoot Enterprises')
+	expect(justin?.title).toBeUndefined()
+})
+
 test('testimonialInitials falls back to two letters from the public name', () => {
 	expect(testimonialInitials('Maciek Sitkowski')).toBe('MS')
 	expect(testimonialInitials('Justin Elias')).toBe('JE')
