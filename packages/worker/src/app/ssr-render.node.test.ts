@@ -402,6 +402,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountResponse.status).toBe(200)
 	const accountHtml = await readResponseText(accountResponse)
 	expect(accountHtml).toContain('aria-label="Account sections"')
+	expect(accountHtml).toContain('data-testid="site-header-account"')
 	expect(accountHtml).toContain('data-testid="site-header-profile"')
 	expect(accountHtml).toContain('data-testid="site-header-account-menu"')
 	expect(accountHtml).toContain('href="/@account-user"')

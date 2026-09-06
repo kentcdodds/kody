@@ -34,7 +34,14 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 
 	await expect(page).toHaveURL(/\/account$/)
 	// Header avatar links to the public profile and is labeled @username so
-	// it does not collide with the "Kody" brand link.
+	// it does not collide with the "Kody" brand link. Desktop also shows
+	// Account to the left of that avatar.
+	await expect(
+		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
+			name: 'Account',
+			exact: true,
+		}),
+	).toBeVisible()
 	await expect(
 		page.getByRole('navigation', { name: 'Main' }).getByRole('link', {
 			name: `@${primaryTestUser.username}`,
