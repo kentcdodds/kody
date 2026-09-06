@@ -8,7 +8,6 @@ import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type OnboardingChecklistLoaderData,
 	type AccountConnectionsLoaderData,
-	type AccountFormerEmail,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
@@ -39,6 +38,7 @@ import {
 	AccountPageHeader,
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
+import { createAccountEmailClaims } from '#client/routes/account-email-claims-client.ts'
 import { renderAccountFormerEmailsPanel } from '#client/routes/account-former-emails-panel.tsx'
 import { renderAccountProfilePanel } from '#client/routes/account-profile-panel.tsx'
 import { AccountPasswordPanel } from '#client/routes/account-password-panel.tsx'
@@ -61,8 +61,6 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 
-const emailChangeApiPath = '/account/email-change.json'
-const emailClaimReleaseApiPath = '/account/email-claim-release.json'
 const connectionsApiPath = '/account/connections.json'
 const accountAvatarApiPath = '/account/profile/avatar.json'
 
@@ -111,14 +109,6 @@ export function AccountRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let saveStatus: 'idle' | 'saving' = 'idle'
 	let resendStatus: 'idle' | 'sending' = 'idle'
-	let emailChangeStatus: 'idle' | 'sending' = 'idle'
-	let emailChangeOpen = false
-	let formerEmails: Array<AccountFormerEmail> = []
-	let releaseEmail = ''
-	let releasePassword = ''
-	let releaseStatus: 'idle' | 'sending' = 'idle'
-	let releaseMessage: string | null = null
-	let releaseTone: 'error' | 'info' = 'info'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
 	let email = ''
@@ -138,13 +128,10 @@ export function AccountRoute(handle: Handle) {
 	let avatarStatus: 'idle' | 'editing' | 'uploading' | 'removing' = 'idle'
 	let editorFile: File | null = null
 	let avatarDropActive = false
-	let draftEmail = ''
-	let emailChangePassword = ''
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let emailChangeMessage: string | null = null
-	let emailChangeTone: 'error' | 'info' = 'info'
 	const accountConnections = createAccountConnections(handle)
+	const accountEmailClaims = createAccountEmailClaims(handle)
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
 	let onboardingChecklist: OnboardingChecklistLoaderData | null = null
@@ -195,7 +182,7 @@ export function AccountRoute(handle: Handle) {
 			username = payload.username
 			draftUsername = payload.username
 			applyProfileFields(payload)
-			draftEmail = payload.email
+			accountEmailClaims.applyCurrentEmail(payload.email)
 			status = 'ready'
 			message = null
 			messageTone = 'info'
@@ -220,7 +207,7 @@ export function AccountRoute(handle: Handle) {
 		draftBio = payload.bio ?? ''
 		draftProfileVisibility = payload.profileVisibility
 		if (!optimisticAvatarObjectUrl) avatarUrl = payload.avatarUrl
-		formerEmails = payload.formerEmails ?? []
+		accountEmailClaims.applyFormerEmails(payload.formerEmails ?? [])
 	}
 
 	function releaseOptimisticAvatar() {
@@ -399,188 +386,6 @@ export function AccountRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function updateDraftEmail(event: InputEvent) {
-		if (!(event.currentTarget instanceof HTMLInputElement)) return
-		draftEmail = event.currentTarget.value
-		handle.update()
-	}
-
-	function updateEmailChangePassword(event: InputEvent) {
-		if (!(event.currentTarget instanceof HTMLInputElement)) return
-		emailChangePassword = event.currentTarget.value
-		handle.update()
-	}
-
-	function updateReleaseEmail(event: InputEvent) {
-		if (!(event.currentTarget instanceof HTMLInputElement)) return
-		releaseEmail = event.currentTarget.value
-		handle.update()
-	}
-
-	function updateReleasePassword(event: InputEvent) {
-		if (!(event.currentTarget instanceof HTMLInputElement)) return
-		releasePassword = event.currentTarget.value
-		handle.update()
-	}
-
-	function useFormerEmailAsLogin(nextEmail: string) {
-		draftEmail = nextEmail
-		emailChangeOpen = true
-		emailChangeMessage = null
-		handle.update()
-	}
-
-	async function requestFormerEmailRelease(nextEmail: string) {
-		if (!releasePassword) {
-			releaseEmail = nextEmail
-			releaseMessage = 'Current password is required to send a release link.'
-			releaseTone = 'error'
-			handle.update()
-			return
-		}
-		releaseEmail = nextEmail
-		handle.update()
-		await submitFormerEmailRelease()
-	}
-
-	async function handleFormerEmailReleaseSubmit(event: SubmitEvent) {
-		event.preventDefault()
-		await submitFormerEmailRelease()
-	}
-
-	async function submitFormerEmailRelease() {
-		const nextEmail = releaseEmail.trim().toLowerCase()
-		if (!nextEmail || !releasePassword) {
-			releaseMessage = 'Former email and current password are required.'
-			releaseTone = 'error'
-			handle.update()
-			return
-		}
-
-		releaseStatus = 'sending'
-		releaseMessage = null
-		releaseTone = 'info'
-		handle.update()
-
-		try {
-			const response = await fetch(emailClaimReleaseApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					email: nextEmail,
-					password: releasePassword,
-				}),
-			})
-			if (response.status === 401) {
-				const payload = await readJson<{ code?: string; error?: string }>(
-					response,
-				)
-				if (payload?.code === 'invalid_password') {
-					throw new Error(payload.error)
-				}
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<{
-				ok?: boolean
-				message?: string
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(
-					payload?.error || 'Unable to send the release verification.',
-				)
-			}
-			releasePassword = ''
-			releaseMessage =
-				payload.message ?? 'Verification email sent to that former address.'
-			releaseTone = 'info'
-		} catch (error) {
-			releaseMessage =
-				error instanceof Error
-					? error.message
-					: 'Unable to send the release verification.'
-			releaseTone = 'error'
-		} finally {
-			releaseStatus = 'idle'
-			handle.update()
-		}
-	}
-
-	async function handleEmailChangeSubmit(event: SubmitEvent) {
-		event.preventDefault()
-		const nextEmail = draftEmail.trim().toLowerCase()
-		if (!nextEmail || !emailChangePassword) {
-			emailChangeMessage = 'New email and current password are required.'
-			emailChangeTone = 'error'
-			handle.update()
-			return
-		}
-		if (nextEmail === email.trim().toLowerCase()) {
-			emailChangeMessage = 'Enter a different email address.'
-			emailChangeTone = 'error'
-			handle.update()
-			return
-		}
-
-		emailChangeStatus = 'sending'
-		emailChangeMessage = null
-		emailChangeTone = 'info'
-		handle.update()
-
-		try {
-			const response = await fetch(emailChangeApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					email: nextEmail,
-					password: emailChangePassword,
-				}),
-			})
-			if (response.status === 401) {
-				const payload = await readJson<{ code?: string; error?: string }>(
-					response,
-				)
-				if (payload?.code === 'invalid_password') {
-					throw new Error(payload.error)
-				}
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<{
-				ok?: boolean
-				message?: string
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(
-					payload?.error || 'Unable to send the email change verification.',
-				)
-			}
-			emailChangePassword = ''
-			emailChangeMessage =
-				payload.message ?? 'Verification email sent to your new address.'
-			emailChangeTone = 'info'
-		} catch (error) {
-			emailChangeMessage =
-				error instanceof Error
-					? error.message
-					: 'Unable to send the email change verification.'
-			emailChangeTone = 'error'
-		} finally {
-			emailChangeStatus = 'idle'
-			handle.update()
-		}
-	}
-
 	async function handleProfileSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		const nextUsername = draftUsername.trim()
@@ -672,7 +477,7 @@ export function AccountRoute(handle: Handle) {
 		username = routeData.username
 		draftUsername = routeData.username
 		applyProfileFields(routeData)
-		draftEmail = routeData.email
+		accountEmailClaims.applyCurrentEmail(routeData.email)
 		accountConnections.applyPayload(connectionsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (onboardingData) {
@@ -708,9 +513,10 @@ export function AccountRoute(handle: Handle) {
 			accountConnections.setMessage(readConnectionCallbackMessage(currentHref))
 		}
 		const isSaving = saveStatus === 'saving'
-		const isSendingEmailChange = emailChangeStatus === 'sending'
+		const emailClaims = accountEmailClaims.snapshot
+		const isSendingEmailChange = emailClaims.emailChangeStatus === 'sending'
 		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
-		const normalizedDraftEmail = draftEmail.trim().toLowerCase()
+		const normalizedDraftEmail = emailClaims.draftEmail.trim().toLowerCase()
 		const profileUnchanged =
 			normalizedDraftUsername === username &&
 			draftDisplayName === savedDisplayName &&
@@ -766,8 +572,8 @@ export function AccountRoute(handle: Handle) {
 							draftDisplayName,
 							draftBio,
 							draftProfileVisibility,
-							draftEmail,
-							emailChangePassword,
+							draftEmail: emailClaims.draftEmail,
+							emailChangePassword: emailClaims.emailChangePassword,
 							avatarUrl,
 							avatarStatus,
 							isSaving,
@@ -775,11 +581,13 @@ export function AccountRoute(handle: Handle) {
 							profileUnchanged,
 							normalizedDraftUsername,
 							normalizedDraftEmail,
-							emailChangeMessage,
-							emailChangeTone,
-							emailChangeOpen,
+							emailChangeMessage: emailClaims.emailChangeMessage,
+							emailChangeTone: emailClaims.emailChangeTone,
+							emailChangeOpen: emailClaims.emailChangeOpen,
 							onProfileSubmit: handleProfileSubmit,
-							onEmailChangeSubmit: handleEmailChangeSubmit,
+							onEmailChangeSubmit: (event) => {
+								void accountEmailClaims.handleEmailChangeSubmit(event, email)
+							},
 							onAvatarSelected: handleAvatarSelected,
 							onRemoveAvatar: () => void handleRemoveAvatar(),
 							onDraftUsernameInput: updateDraftUsername,
@@ -795,23 +603,28 @@ export function AccountRoute(handle: Handle) {
 								draftProfileVisibility = value
 								handle.update()
 							},
-							onDraftEmailInput: updateDraftEmail,
-							onEmailChangePasswordInput: updateEmailChangePassword,
+							onDraftEmailInput: accountEmailClaims.updateDraftEmail,
+							onEmailChangePasswordInput:
+								accountEmailClaims.updateEmailChangePassword,
 						})}
 						{emailVerified
 							? renderAccountFormerEmailsPanel({
-									formerEmails,
-									releaseEmail,
-									releasePassword,
-									releaseStatus,
-									releaseMessage,
-									releaseTone,
-									onReleaseEmailInput: updateReleaseEmail,
-									onReleasePasswordInput: updateReleasePassword,
-									onReleaseSubmit: handleFormerEmailReleaseSubmit,
-									onUseAgainAsLogin: useFormerEmailAsLogin,
+									formerEmails: emailClaims.formerEmails,
+									releaseEmail: emailClaims.releaseEmail,
+									releasePassword: emailClaims.releasePassword,
+									releaseStatus: emailClaims.releaseStatus,
+									releaseMessage: emailClaims.releaseMessage,
+									releaseTone: emailClaims.releaseTone,
+									onReleaseEmailInput: accountEmailClaims.updateReleaseEmail,
+									onReleasePasswordInput:
+										accountEmailClaims.updateReleasePassword,
+									onReleaseSubmit:
+										accountEmailClaims.handleFormerEmailReleaseSubmit,
+									onUseAgainAsLogin: accountEmailClaims.useFormerEmailAsLogin,
 									onReleaseListed: (listedEmail) => {
-										void requestFormerEmailRelease(listedEmail)
+										void accountEmailClaims.requestFormerEmailRelease(
+											listedEmail,
+										)
 									},
 								})
 							: null}
