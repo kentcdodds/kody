@@ -258,9 +258,9 @@ const stackMq = '@media (max-width: 720px)'
 function shellCss(look: SiteBannerLook, tone: SeverityTone) {
 	const minHeight = siteBannerLookMinHeights[look]
 	const shared = {
-		// Full-bleed chrome: the app column clips overflow-x, and a flex
-		// item's default min-width:auto can grow past the viewport. Keep the
-		// painted shell at the column width and put gutters on the inner row.
+		// Full-bleed chrome: gutters live on the inner row so the painted
+		// shell spans the app column. min-width:0 avoids a flex item growing
+		// past that column when an ancestor clips overflow-x.
 		width: '100%',
 		maxWidth: '100%',
 		minWidth: 0,
@@ -284,8 +284,9 @@ function shellCss(look: SiteBannerLook, tone: SeverityTone) {
 				paddingBlock: '0.85rem',
 				paddingInline: 0,
 				borderBottom: `1px solid ${colors.border}`,
+				// Solid tint to the viewport edge. A fade-to-surface read as
+				// the strip being inset or clipped on the right.
 				backgroundColor: tone.soft,
-				backgroundImage: `linear-gradient(90deg, ${tone.soft} 0%, color-mix(in srgb, ${tone.soft} 42%, ${colors.surface}) 100%)`,
 			}
 		case 'card':
 			return {
