@@ -1,14 +1,24 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { expect, test } from 'vitest'
+// @ts-expect-error - the oxlint helper is plain JS with no type declarations.
 import {
 	checkTautologicalAbsence,
 	findTautologicalAbsenceMatches,
 	isInstructionalCopyNeedle,
 	longestCommonPrefixLength,
 	siblingPrefixLength,
-} from './check-tautological-absence.ts'
+} from './tautological-absence.js'
+
+const repoRoot = path.resolve(import.meta.dirname, '../..')
+const vanishedCopy = 'The vanished owner subtitle belongs here.'
+// Split so this test file is not itself a haystack hit for the oxlint fixture.
+const oxlintWiringSentinel = [
+	'Zzyzx oxlint vanished-copy wiring',
+	'sentinel belongs nowhere else.',
+].join(' ')
 
 test('isInstructionalCopyNeedle keeps prose and skips markup, urls, and short ids', () => {
 	expect(
@@ -53,14 +63,14 @@ test('findTautologicalAbsenceMatches flags a lone vanished copy needle', () => {
 			relativePath: 'packages/worker/client/routes/profile.node.test.ts',
 			content: [
 				"expect(ownHtml).toContain('Edit profile')",
-				"expect(ownHtml).not.toContain('The vanished owner subtitle belongs here.')",
+				`expect(ownHtml).not.toContain('${vanishedCopy}')`,
 			].join('\n'),
 			otherContents: ["export const label = 'Edit profile'\n"],
 		}),
 	).toEqual([
 		expect.objectContaining({
 			line: 2,
-			needle: 'The vanished owner subtitle belongs here.',
+			needle: vanishedCopy,
 		}),
 	])
 })
@@ -106,6 +116,40 @@ test('findTautologicalAbsenceMatches keeps wrong-template siblings and fixtures'
 	expect(fixture).toEqual([])
 })
 
+test('findTautologicalAbsenceMatches flags the same vanished copy in two test files', () => {
+	const first = [
+		"expect(ownHtml).toContain('Edit profile')",
+		`expect(ownHtml).not.toContain('${vanishedCopy}')`,
+		'',
+	].join('\n')
+	const second = `expect(guestHtml).not.toContain('${vanishedCopy}')\n`
+
+	expect(
+		findTautologicalAbsenceMatches({
+			relativePath: 'packages/worker/client/routes/profile.node.test.ts',
+			content: first,
+			otherContents: [second],
+		}),
+	).toEqual([
+		expect.objectContaining({
+			file: 'packages/worker/client/routes/profile.node.test.ts',
+			needle: vanishedCopy,
+		}),
+	])
+	expect(
+		findTautologicalAbsenceMatches({
+			relativePath: 'packages/worker/client/routes/guest.node.test.ts',
+			content: second,
+			otherContents: [first],
+		}),
+	).toEqual([
+		expect.objectContaining({
+			file: 'packages/worker/client/routes/guest.node.test.ts',
+			needle: vanishedCopy,
+		}),
+	])
+})
+
 test('checkTautologicalAbsence scans test files against the rest of the tree', async () => {
 	const cwd = await mkdtemp(path.join(os.tmpdir(), 'tautological-absence-'))
 	try {
@@ -120,20 +164,50 @@ test('checkTautologicalAbsence scans test files against the rest of the tree', a
 				path.join(routesDir, 'profile.node.test.ts'),
 				[
 					"expect(ownHtml).toContain('Edit profile')",
-					"expect(ownHtml).not.toContain('The vanished owner subtitle belongs here.')",
+					`expect(ownHtml).not.toContain('${vanishedCopy}')`,
 					'',
 				].join('\n'),
 			),
 		])
 
-		expect(await checkTautologicalAbsence(cwd)).toEqual([
+		expect(checkTautologicalAbsence(cwd)).toEqual([
 			expect.objectContaining({
 				file: 'packages/worker/client/routes/profile.node.test.ts',
 				line: 2,
-				needle: 'The vanished owner subtitle belongs here.',
+				needle: vanishedCopy,
 			}),
 		])
 	} finally {
 		await rm(cwd, { recursive: true, force: true })
+	}
+})
+
+test('oxlint reports vanished instructional copy from kody-custom/no-tautological-absence', async () => {
+	const fixturePath = path.join(
+		os.tmpdir(),
+		`tautological-absence-${String(process.pid)}.node.test.ts`,
+	)
+	await writeFile(
+		fixturePath,
+		[
+			"import { expect, test } from 'vitest'",
+			'test("vanished copy", () => {',
+			`	expect(html).not.toContain(${JSON.stringify(oxlintWiringSentinel)})`,
+			'})',
+			'',
+		].join('\n'),
+	)
+	try {
+		const result = spawnSync(
+			path.join(repoRoot, 'node_modules', 'oxlint', 'bin', 'oxlint'),
+			[fixturePath],
+			{ cwd: repoRoot, encoding: 'utf8' },
+		)
+		const output = `${result.stdout}\n${result.stderr}`
+		expect(output).toContain('no-tautological-absence')
+		expect(output).toContain(oxlintWiringSentinel)
+		expect(result.status).not.toBe(0)
+	} finally {
+		await rm(fixturePath, { force: true })
 	}
 })

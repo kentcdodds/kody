@@ -122,10 +122,6 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run slop-ratchet:check
 
-      - name: 👻 Tautological absence
-        if: ${{ !cancelled() }}
-        run: npm run tautological-absence:check
-
       - name: 🪓 Knip
         if: ${{ !cancelled() }}
         run: npm run knip

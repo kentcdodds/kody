@@ -1,26 +1,6 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
-import { isExecutedDirectly } from './node-runtime.ts'
-
-export type TautologicalAbsenceMatch = {
-	file: string
-	line: number
-	needle: string
-}
-
-type QuotedString = {
-	decoded: string
-	rawInner: string
-	end: number
-}
-
-type ContainCall = {
-	kind: 'absent' | 'present'
-	line: number
-	start: number
-	end: number
-	quoted: QuotedString
-}
+import { cwd as processCwd } from 'node:process'
 
 const skipDirectoryNames = new Set([
 	'.git',
@@ -43,13 +23,13 @@ const presentMatcherPattern =
 /** Shared prefix long enough to treat two needles as the same template family. */
 export const siblingPrefixLength = 16
 
-const skipDirectoryPrefixes: ReadonlyArray<string> = ['e2e/playwright-report/']
+const skipDirectoryPrefixes = ['e2e/playwright-report/']
 
-export function isTestPath(relativePath: string) {
+export function isTestPath(relativePath) {
 	return testFilePattern.test(relativePath) || relativePath.startsWith('e2e/')
 }
 
-export function isInstructionalCopyNeedle(decoded: string, rawInner: string) {
+export function isInstructionalCopyNeedle(decoded, rawInner) {
 	const trimmed = decoded.trim()
 	if (!/[A-Za-z]/.test(trimmed) || !/\s/.test(trimmed)) return false
 	if (/[<>]/.test(trimmed)) return false
@@ -68,17 +48,43 @@ export function isInstructionalCopyNeedle(decoded: string, rawInner: string) {
 	return words.length >= 3 || titleCaseLabel || /[.!?…]$/.test(trimmed)
 }
 
-export function longestCommonPrefixLength(left: string, right: string) {
+export function longestCommonPrefixLength(left, right) {
 	const limit = Math.min(left.length, right.length)
 	let index = 0
 	while (index < limit && left[index] === right[index]) index += 1
 	return index
 }
 
-function readQuotedString(
-	source: string,
-	quoteIndex: number,
-): QuotedString | null {
+export function repoRelativePath(filename, cwd = processCwd()) {
+	if (typeof filename !== 'string' || filename.length === 0) return ''
+	if (path.isAbsolute(filename)) {
+		return path.relative(cwd, filename).replaceAll('\\', '/')
+	}
+	return filename.replaceAll('\\', '/')
+}
+
+export function indexToLoc(source, index) {
+	let line = 1
+	let column = 0
+	for (let offset = 0; offset < index; offset += 1) {
+		if (source[offset] === '\n') {
+			line += 1
+			column = 0
+			continue
+		}
+		column += 1
+	}
+	return { line, column }
+}
+
+export function locForRange(source, start, end) {
+	return {
+		start: indexToLoc(source, start),
+		end: indexToLoc(source, end),
+	}
+}
+
+function readQuotedString(source, quoteIndex) {
 	const quote = source[quoteIndex]
 	if (quote !== "'" && quote !== '"' && quote !== '`') return null
 	let index = quoteIndex + 1
@@ -108,10 +114,7 @@ function readQuotedString(
 	return null
 }
 
-function readEscape(
-	source: string,
-	index: number,
-): { value: string; end: number } | null {
+function readEscape(source, index) {
 	const char = source[index]
 	if (!char) return null
 	switch (char) {
@@ -160,16 +163,16 @@ function readEscape(
 	}
 }
 
-function lineNumberAt(source: string, index: number) {
+function lineNumberAt(source, index) {
 	return source.slice(0, index).split('\n').length
 }
 
-export function findContainCalls(content: string): Array<ContainCall> {
-	const calls: Array<ContainCall> = []
+export function findContainCalls(content) {
+	const calls = []
 	for (const [kind, pattern] of [
 		['absent', absenceMatcherPattern],
 		['present', presentMatcherPattern],
-	] as const) {
+	]) {
 		pattern.lastIndex = 0
 		let match = pattern.exec(content)
 		while (match) {
@@ -189,11 +192,7 @@ export function findContainCalls(content: string): Array<ContainCall> {
 	return calls
 }
 
-function blankAbsenceSpans(
-	content: string,
-	needle: string,
-	calls: ReadonlyArray<ContainCall>,
-) {
+function blankAbsenceSpans(content, needle, calls) {
 	let next = content
 	for (const call of [...calls].reverse()) {
 		if (call.kind !== 'absent' || call.quoted.decoded !== needle) continue
@@ -202,25 +201,26 @@ function blankAbsenceSpans(
 	return next
 }
 
-function mentionsNeedle(
-	content: string,
-	needle: { decoded: string; rawInner: string },
-) {
+function mentionsNeedle(content, needle) {
 	return content.includes(needle.decoded) || content.includes(needle.rawInner)
 }
 
-export function findTautologicalAbsenceMatches(input: {
-	relativePath: string
-	content: string
-	otherContents: ReadonlyArray<string>
-}): Array<TautologicalAbsenceMatch> {
+function otherFileMentionsNeedle(content, needle) {
+	if (!mentionsNeedle(content, needle)) return false
+	return mentionsNeedle(
+		blankAbsenceSpans(content, needle.decoded, findContainCalls(content)),
+		needle,
+	)
+}
+
+export function findTautologicalAbsenceMatches(input) {
 	if (!isTestPath(input.relativePath)) return []
 	const calls = findContainCalls(input.content)
 	const presentNeedles = calls
 		.filter((call) => call.kind === 'present')
 		.map((call) => call.quoted.decoded)
-	const matches: Array<TautologicalAbsenceMatch> = []
-	const seen = new Set<string>()
+	const matches = []
+	const seen = new Set()
 
 	for (const call of calls) {
 		if (call.kind !== 'absent') continue
@@ -239,7 +239,7 @@ export function findTautologicalAbsenceMatches(input: {
 		if (mentionsNeedle(remainder, { decoded, rawInner })) continue
 		if (
 			input.otherContents.some((content) =>
-				mentionsNeedle(content, { decoded, rawInner }),
+				otherFileMentionsNeedle(content, { decoded, rawInner }),
 			)
 		) {
 			continue
@@ -248,17 +248,17 @@ export function findTautologicalAbsenceMatches(input: {
 		matches.push({
 			file: input.relativePath,
 			line: call.line,
+			column: indexToLoc(input.content, call.start).column,
+			start: call.start,
+			end: call.end,
 			needle: decoded,
 		})
 	}
 	return matches
 }
 
-async function collectScannedFiles(
-	cwd: string,
-	relativeRoot = '',
-): Promise<Array<string>> {
-	const matches: Array<string> = []
+function collectScannedFiles(cwd, relativeRoot = '') {
+	const matches = []
 	const root = path.join(cwd, relativeRoot)
 	const stack = [root]
 	while (stack.length > 0) {
@@ -266,7 +266,7 @@ async function collectScannedFiles(
 		if (!current) continue
 		let entries
 		try {
-			entries = await readdir(current, { withFileTypes: true })
+			entries = readdirSync(current, { withFileTypes: true })
 		} catch (error) {
 			if (
 				error instanceof Error &&
@@ -301,68 +301,43 @@ async function collectScannedFiles(
 	return matches
 }
 
-export async function listTautologicalAbsencePaths(
-	cwd: string = process.cwd(),
-): Promise<Array<string>> {
-	return [...new Set(await collectScannedFiles(cwd))].sort()
+export function listTautologicalAbsencePaths(cwd = processCwd()) {
+	return [...new Set(collectScannedFiles(cwd))].sort()
 }
 
-export async function checkTautologicalAbsence(
-	cwd: string = process.cwd(),
-): Promise<Array<TautologicalAbsenceMatch>> {
-	const relativePaths = await listTautologicalAbsencePaths(cwd)
-	const contents = new Map<string, string>()
-	for (const relativePath of relativePaths) {
+export function loadTautologicalAbsenceCorpus(cwd = processCwd()) {
+	const contents = new Map()
+	for (const relativePath of listTautologicalAbsencePaths(cwd)) {
 		contents.set(
 			relativePath,
-			await readFile(path.join(cwd, relativePath), 'utf8'),
+			readFileSync(path.join(cwd, relativePath), 'utf8'),
 		)
 	}
-	const matches: Array<TautologicalAbsenceMatch> = []
-	for (const relativePath of relativePaths) {
-		const content = contents.get(relativePath)
-		if (!content) continue
+	return contents
+}
+
+export function checkTautologicalAbsence(cwd = processCwd()) {
+	const contents = loadTautologicalAbsenceCorpus(cwd)
+	const matches = []
+	for (const [relativePath, content] of contents) {
 		matches.push(
 			...findTautologicalAbsenceMatches({
 				relativePath,
 				content,
-				otherContents: relativePaths
-					.filter((candidate) => candidate !== relativePath)
-					.map((candidate) => contents.get(candidate) ?? ''),
+				otherContents: [...contents]
+					.filter(([candidate]) => candidate !== relativePath)
+					.map(([, otherContent]) => otherContent),
 			}),
 		)
 	}
 	return matches
 }
 
-function formatMatches(matches: ReadonlyArray<TautologicalAbsenceMatch>) {
-	return matches
-		.map(
-			(match) =>
-				`${match.file}:${String(match.line)}: not.toContain(${JSON.stringify(match.needle)})`,
-		)
-		.join('\n')
-}
-
-export async function main(cwd: string = process.cwd()): Promise<void> {
-	const matches = await checkTautologicalAbsence(cwd)
-	if (matches.length === 0) {
-		console.log('Tautological-absence check passed.')
-		return
+export function otherContentsFromCorpus(corpus, relativePath) {
+	const otherContents = []
+	for (const [candidate, content] of corpus) {
+		if (candidate === relativePath) continue
+		otherContents.push(content)
 	}
-	console.error(
-		[
-			`Tautological-absence check failed (${String(matches.length)} issue(s)).`,
-			'Do not keep a lone not.toContain of copy that no longer exists in the repo.',
-			'Fine while deleting; drop the assertion before commit. Keep absence checks that flip state or still appear on another path.',
-			'See docs/contributing/testing-principles.md.',
-			'',
-			formatMatches(matches),
-		].join('\n'),
-	)
-	process.exitCode = 1
-}
-
-if (isExecutedDirectly(import.meta.url)) {
-	await main()
+	return otherContents
 }

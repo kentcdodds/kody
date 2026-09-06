@@ -1,3 +1,12 @@
+import {
+	findTautologicalAbsenceMatches,
+	isTestPath,
+	loadTautologicalAbsenceCorpus,
+	locForRange,
+	otherContentsFromCorpus,
+	repoRelativePath,
+} from './tautological-absence.js'
+
 const EXAMPLE_IDENTIFIER = '__oxlint_plugin_example__'
 const CLIENT_ROUTE_FILE_PATTERN =
 	/(^|\/)packages\/worker\/client\/routes\/.+\.(ts|tsx)$/
@@ -253,6 +262,54 @@ export function findImportBoundaryViolation(filename, specifier) {
 	return null
 }
 
+let tautologicalAbsenceCorpus = null
+
+function tautologicalAbsenceCorpusFor() {
+	if (!tautologicalAbsenceCorpus) {
+		tautologicalAbsenceCorpus = loadTautologicalAbsenceCorpus()
+	}
+	return tautologicalAbsenceCorpus
+}
+
+const noTautologicalAbsenceRule = {
+	meta: {
+		type: 'problem',
+		docs: {
+			description:
+				'Reject instructional-copy not.toContain leftovers when the string exists only as that absence assertion.',
+		},
+		schema: [],
+		messages: {
+			vanishedCopy:
+				'Do not keep a lone not.toContain of copy that no longer exists in the repo ({{needle}}). Fine while deleting; drop the assertion before commit. Keep absence checks that flip state or still appear on another path.',
+		},
+	},
+	createOnce(context) {
+		return {
+			Program() {
+				const relativePath = repoRelativePath(context.filename)
+				if (!isTestPath(relativePath)) return
+				const source = context.sourceCode.getText()
+				const matches = findTautologicalAbsenceMatches({
+					relativePath,
+					content: source,
+					otherContents: otherContentsFromCorpus(
+						tautologicalAbsenceCorpusFor(),
+						relativePath,
+					),
+				})
+				for (const match of matches) {
+					context.report({
+						loc: locForRange(source, match.start, match.end),
+						messageId: 'vanishedCopy',
+						data: { needle: JSON.stringify(match.needle) },
+					})
+				}
+			},
+		}
+	},
+}
+
 const enforceImportBoundariesRule = {
 	meta: {
 		type: 'problem',
@@ -326,6 +383,7 @@ const plugin = {
 		'enforce-import-boundaries': enforceImportBoundariesRule,
 		'no-example-identifier': noExampleIdentifierRule,
 		'no-literal-frame-src': noLiteralFrameSrcRule,
+		'no-tautological-absence': noTautologicalAbsenceRule,
 		'prefer-loader-data-types': preferLoaderDataTypesRule,
 	},
 }

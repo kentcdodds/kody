@@ -61,15 +61,20 @@ plugin, and the matching helpers are exported so
 without spawning the linter. See [import boundaries](./import-boundaries.md) for
 the layering it enforces.
 
+`kody-custom/no-tautological-absence` is the haystack pattern: helpers in
+`tautological-absence.js` walk the repo once per lint process, then the visitor
+reports on the current test file.
+`tools/oxlint/tautological-absence.node.test.ts` asserts the heuristic without
+spawning the linter for every case.
+
 Repo-wide syntactic bans that do not need a custom visitor live in the same
 config as built-in rules: `typescript/no-explicit-any` and
 `eslint/no-warning-comments` for `TODO` / `FIXME` / `HACK`. The Remix `on()`
 wrapper in `packages/worker/client/event-mixin.ts` is the one `no-explicit-any`
 override — call sites mix SubmitEvent, MouseEvent, and untyped
-`currentTarget.value` reads. File-size allowlists, decorative comment banners,
-and vanished-copy `not.toContain` leftovers are separate `validate` scripts
-(`npm run slop-ratchet:check`, `npm run tautological-absence:check`) because
-they are inventory checks, not AST rules.
+`currentTarget.value` reads. File-size allowlists and decorative comment banners
+stay a separate `validate` script (`npm run slop-ratchet:check`) because they
+are allowlist / inventory checks, not per-file lint rules.
 
 ## Verify manually
 
