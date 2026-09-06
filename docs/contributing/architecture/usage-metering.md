@@ -80,10 +80,14 @@ inbox) has no owning user and is not metered.
 
 `createMeteredDurableObjectStub` must not wrap the RpcStub as the Proxy target.
 Cloudflare RPC binds stub methods to the receiver; a Proxy-of-stub is not a
-valid RPC receiver, so every StorageRunner call — including `packageStorage()`
-get of a missing key — throws "Proxy could not be serialized because it is not a
-valid RPC receiver type". The wrapper is a plain-object Proxy that `Reflect.get`
-/ `Reflect.apply`s against the original stub.
+valid RPC receiver, so every StorageRunner call throws "Proxy could not be
+serialized because it is not a valid RPC receiver type". That includes
+`packageStorage()` get of a missing key on export, subscription, job, and
+execute — `storageRunnerRpc` is the only production call site, so one broken
+wrapper fails every surface that touches package storage. The wrapper is a
+plain-object Proxy that `Reflect.get` / `Reflect.apply`s against the original
+stub. Local and workers-unit `env` omit `USAGE_EVENTS`, which skips the wrapper;
+tests that need the production path bind a stub Analytics Engine dataset.
 
 ### `package_static_call`: statically imported package export calls
 

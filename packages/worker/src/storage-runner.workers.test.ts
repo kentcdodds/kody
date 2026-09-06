@@ -638,6 +638,62 @@ test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject
 		key: 'ok',
 		deleted: true,
 	})
+
+	// Production call sites go through storageRunnerRpc, which wraps the
+	// stub only when env.USAGE_EVENTS is bound. Local workers env omits
+	// that binding, so the factory path must be forced here — otherwise
+	// this suite never sees the metered Proxy that production uses on
+	// every export / subscription / job StorageRunner call.
+	const meteredEnv = new Proxy(env, {
+		get(target, prop, receiver) {
+			if (prop === 'USAGE_EVENTS') {
+				return { writeDataPoint() {} }
+			}
+			return Reflect.get(target, prop, receiver)
+		},
+	})
+	const factoryUserId = `storage-metered-factory-${crypto.randomUUID()}`
+	const factoryRunner = storageRunnerRpc({
+		env: meteredEnv,
+		userId: factoryUserId,
+		storageId: createExecuteStorageId(),
+	})
+	await expect(
+		factoryRunner.getValue({ key: 'missing-via-factory' }),
+	).resolves.toEqual({
+		key: 'missing-via-factory',
+		value: null,
+	})
+	await expect(
+		factoryRunner.sqlQuery({
+			query: 'create table if not exists metered_t (id integer primary key)',
+			writable: true,
+		}),
+	).resolves.toMatchObject({
+		columns: expect.any(Array),
+		rows: expect.any(Array),
+	})
+	const factoryTools = createStorageKodyTools({
+		env: meteredEnv,
+		userId: factoryUserId,
+		storageId: createExecuteStorageId(),
+		writable: true,
+	})
+	await expect(
+		factoryTools.storageGet({ key: 'factory-fresh-missing' }),
+	).resolves.toEqual({
+		key: 'factory-fresh-missing',
+		value: null,
+	})
+	await expect(
+		factoryTools.storageSet({ key: 'factory-ok', value: { saved: true } }),
+	).resolves.toEqual({ ok: true, key: 'factory-ok' })
+	await expect(factoryTools.storageGet({ key: 'factory-ok' })).resolves.toEqual(
+		{
+			key: 'factory-ok',
+			value: { saved: true },
+		},
+	)
 })
 
 test('clearStorage during account-deletion purge must not recreate ownership rows', async () => {

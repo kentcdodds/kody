@@ -218,6 +218,35 @@ function packageBucketRunner(userId: string, packageId: string) {
 	})
 }
 
+async function withUsageEventsBinding<T>(run: () => Promise<T>) {
+	const previousUsageEvents = env.USAGE_EVENTS
+	Object.defineProperty(env, 'USAGE_EVENTS', {
+		configurable: true,
+		enumerable: true,
+		writable: true,
+		value: { writeDataPoint() {} },
+	})
+	if (!env.USAGE_EVENTS) {
+		throw new Error(
+			'Failed to bind a stub USAGE_EVENTS dataset on the workers env.',
+		)
+	}
+	try {
+		return await run()
+	} finally {
+		if (previousUsageEvents === undefined) {
+			Reflect.deleteProperty(env, 'USAGE_EVENTS')
+		} else {
+			Object.defineProperty(env, 'USAGE_EVENTS', {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value: previousUsageEvents,
+			})
+		}
+	}
+}
+
 test(
 	'statically imported package code reads its own bucket from an ad hoc execute call',
 	{ timeout: 90_000 },
@@ -469,6 +498,71 @@ test(
 				owner: 'inner-bucket',
 			},
 			outerBucketId: buildPackageStorageId(outerPackageId),
+		})
+	},
+)
+
+test(
+	'packageStorage get/set stay callable when StorageRunner metering is enabled',
+	{ timeout: 90_000 },
+	async () => {
+		silenceIncidentalRuntimeWarnings()
+		await ensureSavedPackageArtifactSchema()
+		const userId = `user-${crypto.randomUUID()}`
+		const packageId = `pkg-${crypto.randomUUID()}`
+		// Local workers env omits USAGE_EVENTS, so storageRunnerRpc returns
+		// the raw RpcStub. Bind a stub dataset on the real env — do not
+		// wrap env in a Proxy, because createExecuteExecutor passes env
+		// into the Dynamic Worker. Production wraps the StorageRunner stub
+		// when Analytics Engine is bound; that wrapper must stay a
+		// plain-object Proxy or every packageStorage() call — including get
+		// of a missing key on export and subscription — throws the RPC
+		// receiver serialization error.
+		await withUsageEventsBinding(async () => {
+			const bundle = await buildKodyModuleBundle({
+				env,
+				baseUrl: 'https://kody.dev',
+				userId,
+				sourceFiles: {
+					'entry.ts': [
+						"import { packageStorage } from 'kody:runtime'",
+						'export default async function main() {',
+						'\tconst bucket = packageStorage()',
+						"\tconst missing = await bucket.get('missing-key')",
+						"\tawait bucket.set('note', 'plain')",
+						"\tconst note = await bucket.get('note')",
+						'\tconst listed = await bucket.list()',
+						'\treturn {',
+						'\t\tmissing,',
+						'\t\tnote,',
+						'\t\tkeys: listed.entries.map((entry) => entry.key),',
+						'\t}',
+						'}',
+					].join('\n'),
+				},
+				entryPoint: 'entry.ts',
+				rootPackageId: packageId,
+			})
+			const result = await runBundledModuleWithRegistry(
+				env,
+				createCallerContext(userId),
+				bundle,
+				undefined,
+				{
+					skipCapabilityRegistry: true,
+					packageContext: {
+						packageId,
+						kodyId: 'metered-storage',
+						sourceId: `source-${packageId}`,
+					},
+				},
+			)
+			expect(result.error).toBeUndefined()
+			expect(result.result).toEqual({
+				missing: null,
+				note: 'plain',
+				keys: ['note'],
+			})
 		})
 	},
 )
