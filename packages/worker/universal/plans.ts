@@ -209,13 +209,17 @@ export type PlanLimits = {
 	 */
 	minJobIntervalMs: number
 	/**
-	 * Included unique Dynamic Worker days per UTC month (Cloudflare bills
-	 * $0.002 per unique worker id per UTC day). Wired as the public cap even
-	 * while hard-cut enforcement is still soft; usage metering already
-	 * records `dynamic_worker_day`. Legacy Standard/Pro accounts are not
-	 * hard-cut on this field.
+	 * Included unique Dynamic Worker days per UTC month. Shown on `/pricing`.
+	 * Hard-cut enforcement is not wired. Legacy Standard/Pro accounts are
+	 * soft-warn only on this allotment (no cut, no overage bill).
 	 */
 	maxUniqueWorkerDaysPerMonth: number
+	/**
+	 * Included Durable Object SQLite rows read per UTC month. Shown on
+	 * `/pricing`. Hard-cut enforcement is not wired. There is no duration
+	 * meter. Legacy Standard/Pro accounts are soft-warn only.
+	 */
+	maxDurableObjectRowsReadPerMonth: number
 }
 
 export const entitlementResources = [
@@ -326,7 +330,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 500,
 		maxJobRunsPerDay: 500,
 		minJobIntervalMs: 15 * 60 * 1000,
-		maxUniqueWorkerDaysPerMonth: 75,
+		maxUniqueWorkerDaysPerMonth: 50,
+		maxDurableObjectRowsReadPerMonth: 500_000_000,
 	},
 	standard: {
 		maxRepos: 200,
@@ -347,7 +352,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 5_000,
 		maxJobRunsPerDay: 1_500,
 		minJobIntervalMs: 15 * 60 * 1000,
-		maxUniqueWorkerDaysPerMonth: 400,
+		maxUniqueWorkerDaysPerMonth: 350,
+		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
 	},
 	pro: {
 		maxRepos: 400,
@@ -361,13 +367,14 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
-		// Public Pro execute sits under the $49 unique-worker list math
-		// ($0.002 × 750 × 30 ≈ $45) with room for a busy day.
+		// Execute is a hard daily cap with no overage. Unique-worker-day
+		// overage (when billing ships) is {@link computeOverageRatesUsd}.
 		maxExecuteCallsPerDay: 750,
 		maxOutboundFetchesPerDay: 25_000,
 		maxJobRunsPerDay: 8_000,
 		minJobIntervalMs: 5 * 60 * 1000,
-		maxUniqueWorkerDaysPerMonth: 2_500,
+		maxUniqueWorkerDaysPerMonth: 2_000,
+		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
 	},
 	max: {
 		// 25× pro (400) → 10_000.
@@ -402,6 +409,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxJobRunsPerDay: 40_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 25_000,
+		// Dominates public Pro (20B). Operator cap only.
+		maxDurableObjectRowsReadPerMonth: 200_000_000_000,
 	},
 }
 
@@ -409,8 +418,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
  * Pre-cut Standard/Pro ceilings. Applied only when
  * `users.entitlement_ladder = 'legacy'` and the effective plan is
  * `standard` or `pro`. Free and `max` always use {@link planLimits}.
- * Unique-worker-day numbers match the public table; that cap is not
- * hard-cut for legacy accounts.
+ * Unique-worker-day and Durable Object rows-read includes match the
+ * public table. Those allotments are soft-warn only for legacy accounts
+ * (no hard cut, no overage bill).
  */
 export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 	standard: {
@@ -429,7 +439,8 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 20_000,
 		maxJobRunsPerDay: 10_000,
 		minJobIntervalMs: 0,
-		maxUniqueWorkerDaysPerMonth: 400,
+		maxUniqueWorkerDaysPerMonth: 350,
+		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
 	},
 	pro: {
 		maxRepos: 400,
@@ -447,9 +458,27 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 40_000,
 		maxJobRunsPerDay: 20_000,
 		minJobIntervalMs: 0,
-		maxUniqueWorkerDaysPerMonth: 2_500,
+		maxUniqueWorkerDaysPerMonth: 2_000,
+		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
 	},
 }
+
+/**
+ * User-facing compute overage list prices. Overage is not charged.
+ * Legacy Standard/Pro stays soft-warn only. Execute has no overage (hard
+ * daily cap). Durable Object duration is unmetered.
+ */
+export const computeOverageRatesUsd = {
+	uniqueWorkerDay: 0.005,
+	durableObjectRowsReadPerMillion: 0.003,
+} as const
+
+export const computeMeteringPolicy = {
+	uniqueWorkerDays: 'included_then_overage',
+	durableObjectRowsRead: 'included_then_overage',
+	executeCallsPerDay: 'hard_daily_cap',
+	durableObjectDuration: 'unmetered',
+} as const
 
 /** 15-minute floor on free (and public Standard) recurring jobs. */
 export const freeMinJobIntervalMs = planLimits.free.minJobIntervalMs
@@ -484,6 +513,20 @@ export function formatMinJobInterval(minJobIntervalMs: number): string {
 		return minutes === 1 ? '1 minute' : `${minutes} minutes`
 	}
 	return `${minJobIntervalMs} ms`
+}
+
+const billionDurableObjectRows = 1_000_000_000
+
+/**
+ * Compact label for monthly Durable Object rows-read includes (0.5B, 5B).
+ */
+export function formatDurableObjectRowsRead(rows: number): string {
+	if (!Number.isFinite(rows) || rows < 0) return '0'
+	const billions = rows / billionDurableObjectRows
+	if (Number.isInteger(billions)) {
+		return billions === 1 ? '1B' : `${billions}B`
+	}
+	return `${billions}B`
 }
 
 /**

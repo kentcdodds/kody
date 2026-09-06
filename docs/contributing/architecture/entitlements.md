@@ -167,9 +167,17 @@ binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
 [Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
 Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
 double-counting. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
-allotment (Free 75, Standard 400, Pro 2,500) shown on `/pricing`. Hard-cut
-enforcement is not wired; legacy Standard/Pro accounts are not cut on this
-field. See [Usage metering](./usage-metering.md).
+allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
+`PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
+Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Hard-cut
+enforcement is not wired for either allotment. User-facing overage list prices
+live on `computeOverageRatesUsd` (unique worker-day
+$0.005, Durable Object rows
+read $0.003 per million). Overage is not charged.
+Execute is a hard daily cap with no overage. Durable Object duration is
+unmetered (`computeMeteringPolicy`). Legacy Standard/Pro accounts are soft-warn
+only on these allotments (no cut, no bill). See
+[Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO

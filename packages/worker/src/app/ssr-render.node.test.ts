@@ -37,7 +37,11 @@ import {
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 } from '#universal/code-runs.ts'
-import { planLimits } from '#universal/plans.ts'
+import {
+	computeOverageRatesUsd,
+	formatDurableObjectRowsRead,
+	planLimits,
+} from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
@@ -1591,6 +1595,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('15 minutes')
 	expect(html).toContain('5 minutes')
 	expect(html).toContain('Unique worker days per month')
+	expect(html).toContain('Durable Object rows read per month')
 	expect(html).toContain(
 		count.format(planLimits.free.maxUniqueWorkerDaysPerMonth),
 	)
@@ -1600,6 +1605,22 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain(
 		count.format(planLimits.pro.maxUniqueWorkerDaysPerMonth),
 	)
+	expect(html).toContain(
+		formatDurableObjectRowsRead(
+			planLimits.free.maxDurableObjectRowsReadPerMonth,
+		),
+	)
+	expect(html).toContain(
+		formatDurableObjectRowsRead(
+			planLimits.standard.maxDurableObjectRowsReadPerMonth,
+		),
+	)
+	expect(html).toContain(
+		formatDurableObjectRowsRead(
+			planLimits.pro.maxDurableObjectRowsReadPerMonth,
+		),
+	)
+	expect(html).toContain(`$${computeOverageRatesUsd.uniqueWorkerDay}`)
 })
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {

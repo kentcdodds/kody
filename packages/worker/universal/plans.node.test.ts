@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
 import {
+	computeMeteringPolicy,
+	computeOverageRatesUsd,
+	formatDurableObjectRowsRead,
 	legacyPlanLimits,
 	parseEntitlementLadder,
 	planLimits,
@@ -13,7 +16,8 @@ test('public Standard and Pro caps match the launch ladder', () => {
 	expect(planLimits.free.maxScheduledJobs).toBe(5)
 	expect(planLimits.free.minJobIntervalMs).toBe(15 * 60 * 1000)
 	expect(planLimits.free.maxJobRunsPerDay).toBe(500)
-	expect(planLimits.free.maxUniqueWorkerDaysPerMonth).toBe(75)
+	expect(planLimits.free.maxUniqueWorkerDaysPerMonth).toBe(50)
+	expect(planLimits.free.maxDurableObjectRowsReadPerMonth).toBe(500_000_000)
 
 	expect(planLimits.standard.maxScheduledJobs).toBe(15)
 	expect(planLimits.standard.minJobIntervalMs).toBe(15 * 60 * 1000)
@@ -22,7 +26,10 @@ test('public Standard and Pro caps match the launch ladder', () => {
 	expect(planLimits.standard.maxOutboundFetchesPerDay).toBe(5_000)
 	expect(planLimits.standard.maxSavedPackages).toBe(50)
 	expect(planLimits.standard.maxConcurrentWorkflows).toBe(10)
-	expect(planLimits.standard.maxUniqueWorkerDaysPerMonth).toBe(400)
+	expect(planLimits.standard.maxUniqueWorkerDaysPerMonth).toBe(350)
+	expect(planLimits.standard.maxDurableObjectRowsReadPerMonth).toBe(
+		5_000_000_000,
+	)
 
 	expect(planLimits.pro.maxScheduledJobs).toBe(75)
 	expect(planLimits.pro.minJobIntervalMs).toBe(5 * 60 * 1000)
@@ -32,7 +39,8 @@ test('public Standard and Pro caps match the launch ladder', () => {
 	expect(planLimits.pro.maxSavedPackages).toBe(200)
 	expect(planLimits.pro.maxConcurrentWorkflows).toBe(50)
 	expect(planLimits.pro.maxStorageBytes).toBe(5 * 1024 * 1024 * 1024)
-	expect(planLimits.pro.maxUniqueWorkerDaysPerMonth).toBe(2_500)
+	expect(planLimits.pro.maxUniqueWorkerDaysPerMonth).toBe(2_000)
+	expect(planLimits.pro.maxDurableObjectRowsReadPerMonth).toBe(20_000_000_000)
 })
 
 test('legacy Standard and Pro keep the pre-cut ceilings', () => {
@@ -50,6 +58,22 @@ test('legacy Standard and Pro keep the pre-cut ceilings', () => {
 	expect(legacyPlanLimits.pro.maxJobRunsPerDay).toBe(20_000)
 	expect(legacyPlanLimits.pro.maxOutboundFetchesPerDay).toBe(40_000)
 	expect(legacyPlanLimits.pro.maxConcurrentWorkflows).toBe(100)
+	expect(legacyPlanLimits.standard.maxUniqueWorkerDaysPerMonth).toBe(
+		planLimits.standard.maxUniqueWorkerDaysPerMonth,
+	)
+	expect(legacyPlanLimits.pro.maxUniqueWorkerDaysPerMonth).toBe(
+		planLimits.pro.maxUniqueWorkerDaysPerMonth,
+	)
+})
+
+test('compute overage rates are wired and execute has no overage', () => {
+	expect(computeOverageRatesUsd.uniqueWorkerDay).toBe(0.005)
+	expect(computeOverageRatesUsd.durableObjectRowsReadPerMillion).toBe(0.003)
+	expect(computeMeteringPolicy.executeCallsPerDay).toBe('hard_daily_cap')
+	expect(computeMeteringPolicy.durableObjectDuration).toBe('unmetered')
+	expect(formatDurableObjectRowsRead(500_000_000)).toBe('0.5B')
+	expect(formatDurableObjectRowsRead(5_000_000_000)).toBe('5B')
+	expect(formatDurableObjectRowsRead(20_000_000_000)).toBe('20B')
 })
 
 test('resolvePlanLimit uses public numbers unless the legacy ladder applies', () => {
