@@ -10,7 +10,9 @@ export const durableObjectGbSecondsEventType = 'durable_object_gb_seconds'
  * Wrap a per-user Durable Object RPC stub so each method call records one
  * observe-only `durable_object_gb_seconds` event. `durationMs` is RPC
  * wall-clock; admin display converts that to GB-s at the default 128 MB.
- * Recording failures never surface to the caller.
+ * Recording failures never surface to the caller. Without
+ * `USAGE_EVENTS` the stub is returned unchanged so local/test
+ * mocks that lack Analytics Engine do not attempt a D1 rollup.
  */
 export function createMeteredDurableObjectStub<T extends object>(input: {
 	env: UsageEnv
@@ -18,6 +20,7 @@ export function createMeteredDurableObjectStub<T extends object>(input: {
 	doClass: string
 	stub: T
 }): T {
+	if (!input.env.USAGE_EVENTS) return input.stub
 	return new Proxy(input.stub, {
 		get(target, prop, receiver) {
 			const value = Reflect.get(target, prop, receiver)
