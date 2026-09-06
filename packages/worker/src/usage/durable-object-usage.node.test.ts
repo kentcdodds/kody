@@ -121,6 +121,33 @@ test('createMeteredDurableObjectStub flushes a burst that never goes idle', asyn
 	vi.useRealTimers()
 })
 
+test('createMeteredDurableObjectStub binds Rpc methods to the real stub, not the wrapper Proxy', async () => {
+	recordUsage.mockClear()
+	const stub = {
+		get ping() {
+			const receiver = this
+			return async () => {
+				if (receiver !== stub) {
+					throw new Error(
+						"Proxy could not be serialized because it is not a valid RPC receiver type. The Proxy must emulate either a plain object or an RpcTarget, as indicated by the Proxy's prototype chain.",
+					)
+				}
+				return 'pong'
+			}
+		},
+	}
+	const metered = createMeteredDurableObjectStub({
+		env: { USAGE_EVENTS: { writeDataPoint() {} } },
+		userId: 'user-1',
+		doClass: 'StorageRunner',
+		stub,
+	})
+	expect(metered).not.toBe(stub)
+	await expect(metered.ping()).resolves.toBe('pong')
+	await flushDurableObjectUsageWrites()
+	expect(recordUsage).toHaveBeenCalledTimes(1)
+})
+
 test('createMeteredDurableObjectStub is a no-op without Analytics Engine', async () => {
 	await flushDurableObjectUsageWrites()
 	recordUsage.mockClear()

@@ -40,6 +40,12 @@ let burstStartedAt: number | null = null
  * one burst coalesce into a single write. Recording failures never surface
  * to the caller. Without `USAGE_EVENTS` the stub is returned unchanged so
  * local/test mocks that lack Analytics Engine do not attempt a D1 rollup.
+ *
+ * The wrapper must not use the RpcStub as the Proxy target or as `this` for
+ * method getters. Cloudflare RPC binds stub methods to the receiver; a
+ * Proxy-of-stub is not a valid RPC receiver and every call then throws
+ * "Proxy could not be serialized because it is not a valid RPC receiver
+ * type" — including `packageStorage()` get of a missing key.
  */
 export function createMeteredDurableObjectStub<T extends object>(input: {
 	env: UsageEnv
@@ -48,9 +54,11 @@ export function createMeteredDurableObjectStub<T extends object>(input: {
 	stub: T
 }): T {
 	if (!input.env.USAGE_EVENTS) return input.stub
-	return new Proxy(input.stub, {
-		get(target, prop, receiver) {
-			const value = Reflect.get(target, prop, receiver)
+	const stub = input.stub
+	return new Proxy({} as T, {
+		get(_target, prop) {
+			if (prop === 'then') return undefined
+			const value = Reflect.get(stub, prop, stub)
 			if (typeof value !== 'function') return value
 			return (...args: Array<unknown>) => {
 				const startedAt = Date.now()
@@ -69,7 +77,7 @@ export function createMeteredDurableObjectStub<T extends object>(input: {
 					}
 				}
 				try {
-					const result = value.apply(target, args) as unknown
+					const result = Reflect.apply(value, stub, args) as unknown
 					if (result && typeof result === 'object' && 'then' in result) {
 						return Promise.resolve(result).then(
 							(resolved) => {

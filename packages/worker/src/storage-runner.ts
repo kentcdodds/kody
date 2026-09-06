@@ -205,6 +205,33 @@ function normalizeStorageKey(key: string) {
 	return trimmed
 }
 
+export const storageValueNotCloneableMessage =
+	'Storage values must be structured-cloneable (plain objects, arrays, strings, numbers, booleans, null, and Dates). Proxies, functions, and other RPC-incompatible values cannot be stored.'
+
+/**
+ * Reject Proxies and other non-cloneable values on the host before the
+ * StorageRunner RPC. Passing a runtime Proxy (`kody`, `email`, `events`,
+ * or a metered stub) as a value otherwise fails at the DO boundary with
+ * "Proxy could not be serialized because it is not a valid RPC receiver
+ * type" and can make a later read of any key look broken.
+ */
+export function assertCloneableStorageValue(value: unknown) {
+	try {
+		structuredClone(value)
+	} catch (error) {
+		throw new Error(storageValueNotCloneableMessage, { cause: error })
+	}
+}
+
+function readCloneableStorageValue(value: unknown) {
+	if (value == null) return null
+	try {
+		return structuredClone(value)
+	} catch (error) {
+		throw new Error(storageValueNotCloneableMessage, { cause: error })
+	}
+}
+
 function normalizePageSize(pageSize: number | undefined) {
 	const requested =
 		typeof pageSize === 'number' && Number.isFinite(pageSize)
@@ -480,7 +507,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 		const key = normalizeStorageKey(input.key)
 		return {
 			key,
-			value: (await this.ctx.storage.get(key)) ?? null,
+			value: readCloneableStorageValue(await this.ctx.storage.get(key)),
 		}
 	}
 
@@ -489,6 +516,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 		value: unknown
 	}): Promise<StorageSetResult> {
 		const key = normalizeStorageKey(input.key)
+		assertCloneableStorageValue(input.value)
 		await this.ctx.storage.put(key, input.value)
 		return { ok: true, key }
 	}
@@ -533,7 +561,7 @@ class StorageRunnerBase extends DurableObject<Env> {
 				truncated = true
 				break
 			}
-			entries.push({ key, value })
+			entries.push({ key, value: readCloneableStorageValue(value) })
 			nextStartAfter = key
 		}
 		return {
@@ -677,6 +705,7 @@ export function storageRunnerRpc(input: {
 	return {
 		getValue: (payload: { key: string }) => runner.getValue(payload),
 		setValue: async (payload: { key: string; value: unknown }) => {
+			assertCloneableStorageValue(payload.value)
 			registerOwnedBucket()
 			const result = await runner.setValue(payload)
 			refreshOwnedBucketEstimate()
