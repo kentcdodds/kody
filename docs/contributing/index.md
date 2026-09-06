@@ -38,7 +38,8 @@ style, tests, MCP capabilities, and runtime architecture.
   universal layering)
 - [Oxlint JS plugins](./oxlint-js-plugins.md),
   [dependency overrides](./dependency-overrides.md)
-  (`typescript/no-explicit-any`, `TODO`/`FIXME`/`HACK`, file-size ratchet, knip)
+  (`typescript/no-explicit-any`, `TODO`/`FIXME`/`HACK`, file-size ratchet,
+  vanished-copy `kody-custom/no-tautological-absence`, knip)
 - [Remix skills and page checklist](./remix.md), [frames](./frames.md)
 - [Cloudflare Agents SDK usage](./cloudflare-agents-sdk.md)
 
