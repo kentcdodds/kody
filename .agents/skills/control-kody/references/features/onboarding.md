@@ -16,7 +16,9 @@ Step 2. Also linked from account.
 ```bash
 node tools/control-kody.ts preview -- \
   --request 'GET /onboarding.json' \
-  --check /onboarding \
+  --check /onboarding/step-1 \
+  --check /onboarding/step-2 \
+  --check /onboarding/step-3 \
   --request 'POST /onboarding/checklist-dismiss.json {}' \
   --request 'GET /onboarding.json'
 ```

@@ -28,7 +28,7 @@ same user:
 npm run preview:manual-test -- \
   --request 'POST /onboarding/checklist-dismiss.json {}' \
   --request 'GET /onboarding.json' \
-  --check /onboarding
+  --check /onboarding/step-2
 ```
 
 `--request` is authenticated HTTP as the seed user. Spec:
