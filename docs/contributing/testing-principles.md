@@ -58,8 +58,8 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     string, live schema after migration).
   - Self-equality: `equal(x, x)`. Type-only checks, instructional-copy pins, and
     a lone "q is not there" after a deletion (later bullets) are the same
-    failure mode. A cheap syntactic checker cannot see this reliably; reject it
-    in review.
+    failure mode. Identity predicates and algorithm echo stay a review item;
+    vanished-copy `not.toContain` is `npm run tautological-absence:check`.
 - Don't write tests for what the type system already guarantees.
 - Use disposable objects only when there is real cleanup. If no cleanup, skip
   `using` and `Symbol.dispose`.
@@ -95,7 +95,10 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   a static inventory list. Absence is still a good assertion when a live path
   could show the thing: loading vs ready, empty vs populated, secret vs
   redacted, admin vs user, or generated SQL vs a table the generator could still
-  emit.
+  emit. `npm run tautological-absence:check` rejects instructional-copy
+  `not.toContain('…')` when that string exists only as the absence assertion
+  (state flips, fixtures, live production copy, and wrong-template siblings
+  still pass).
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.

@@ -133,8 +133,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(grokBot).toContain('data-testid="onboarding-agent-help"')
 	expect(grokBot).toContain(grokBotConnectPluginsUrl)
 	expect(grokBot).toContain('Plugins')
-	expect(grokBot).not.toContain('Click Add to Grok Bot')
-	expect(grokBot).not.toContain('Install the official Kody plugin')
 	expect(grokBot).not.toContain('onboarding-mcp-plugin-alternative')
 	expect(grokBot.indexOf('onboarding-mcp-plugin-primary')).toBeLessThan(
 		grokBot.indexOf('Or add Kody from'),
@@ -165,8 +163,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(chatgpt).toContain('download="kody-app-icon.png"')
 	expect(chatgpt).toContain('Download App Icon')
 	expect(chatgpt).toContain('Right-click the icon')
-	expect(chatgpt).not.toContain('Download PNG')
-	expect(chatgpt).not.toContain('Copy icon URL')
 	expect(chatgpt).not.toContain('>App icon<')
 	expect(chatgpt).toContain('data-testid="onboarding-agent-help"')
 	expect(chatgpt).toContain(chatGptDeveloperModeGuideUrl)
@@ -189,8 +185,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(codexMobile).toContain('download="kody-app-icon.png"')
 	expect(codexMobile).toContain('Download App Icon')
-	expect(codexMobile).not.toContain('Download PNG')
-	expect(codexMobile).not.toContain('Copy icon URL')
 	expect(codexMobile).not.toContain('>App icon<')
 })
 

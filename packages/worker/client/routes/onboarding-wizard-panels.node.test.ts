@@ -200,7 +200,6 @@ test('step 2 connected index is picker plus Show more, without milestones', asyn
 	expect(connected).toContain('data-testid="onboarding-service-selection-meta"')
 	expect(connected).not.toContain('data-testid="onboarding-service-change"')
 	expect(connected).not.toContain('data-testid="onboarding-service-difficulty"')
-	expect(connected).not.toContain('You can leave this page whenever you want.')
 	expect(connected).not.toContain(onboardingUnconnectedNotice)
 	expect(connected).not.toContain('data-testid="onboarding-unconnected-prompt"')
 
@@ -285,7 +284,6 @@ test('step 2 selected service is a prompt well and milestones, without the grid'
 	expect(notion).not.toContain('href="/onboarding/step-2/linear"')
 	expect(notion).not.toContain('href="/onboarding/step-2/stripe"')
 	expect(notion).not.toContain('href="/onboarding/step-2/not-listed"')
-	expect(notion).not.toContain('You can leave this page whenever you want.')
 	expect(notion).not.toContain(onboardingUnconnectedNotice)
 
 	const linear = await renderToString(
@@ -391,7 +389,6 @@ test('step 2 footer copies remaining milestone tasks, not the CopyCard', async (
 	)
 	expect(notion).not.toContain(`data-copy-value="${notionCard}"`)
 	expect(notion).toContain(onboardingCopyRemainingTasksLabel)
-	expect(notion).not.toContain('Copy prompt for Cursor')
 	expect(notion).toContain(`href="${onboardingExplorePackagesHref()}"`)
 	expect(notion).not.toContain('data-testid="onboarding-wizard-next"')
 	expect(notion).toContain('data-status-slot')

@@ -66,9 +66,10 @@ config as built-in rules: `typescript/no-explicit-any` and
 `eslint/no-warning-comments` for `TODO` / `FIXME` / `HACK`. The Remix `on()`
 wrapper in `packages/worker/client/event-mixin.ts` is the one `no-explicit-any`
 override — call sites mix SubmitEvent, MouseEvent, and untyped
-`currentTarget.value` reads. File-size allowlists and decorative comment banners
-are separate `validate` scripts (`npm run slop-ratchet:check`) because they are
-inventory checks, not AST rules.
+`currentTarget.value` reads. File-size allowlists, decorative comment banners,
+and vanished-copy `not.toContain` leftovers are separate `validate` scripts
+(`npm run slop-ratchet:check`, `npm run tautological-absence:check`) because
+they are inventory checks, not AST rules.
 
 ## Verify manually
 
