@@ -471,11 +471,17 @@ compression Web Worker.
 [`upload_source_maps`](https://developers.cloudflare.com/workers/wrangler/configuration/#source-maps),
 and production deploys pass
 `--outdir .wrangler/sentry-bundle --upload-source-maps` so the bundle + maps are
-generated consistently. `npm run deploy` from a laptop is origin-only.
+generated consistently. Wrangler resolves that `--outdir` against the config
+file's directory, so platform and runtime maps land under
+`packages/platform-worker/.wrangler/sentry-bundle` and
+`packages/runtime-worker/.wrangler/sentry-bundle`. Origin maps come from
+`vite build` (`dist/ssr` plus `dist/client`). `npm run deploy` from a laptop is
+origin-only.
 
 To symbolicate stack traces in **Sentry** (not only in Cloudflare), configure
 [Cloudflare source maps in Sentry](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/):
 add GitHub **repository variables** `SENTRY_ORG` and `SENTRY_PROJECT`, a
 `SENTRY_AUTH_TOKEN` **secret** with release upload scopes, then CI runs
 `npm run sentry:upload-sourcemaps` after deploy using the same **release** as
-`APP_COMMIT_SHA`.
+`APP_COMMIT_SHA`. Sibling-only deploys upload the worker bundles that exist and
+skip client maps when origin Vite did not run.
