@@ -10,6 +10,15 @@ import {
 } from '#app/handlers/onboarding.ts'
 import { type OnboardingLoaderData } from '#universal/loader-data.ts'
 
+function expectDisconnectedFeaturedCatalog(
+	servers: OnboardingLoaderData['featuredMcpServers'],
+) {
+	expect(servers.map((server) => server.id)).toContain('notion')
+	expect(
+		servers.every((server) => !server.connected && server.serverId === null),
+	).toBe(true)
+}
+
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 const mockModule = vi.hoisted(() => ({
@@ -109,12 +118,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 	})
 	expect(anonymousPayload.setupPrompt.length).toBeGreaterThan(0)
 	expect(anonymousPayload.discoveryPrompt).toContain('https://example.com')
-	expect(
-		anonymousPayload.featuredMcpServers.every(
-			(server: { connected: boolean; serverId: string | null }) =>
-				!server.connected && server.serverId === null,
-		),
-	).toBe(true)
+	expectDisconnectedFeaturedCatalog(anonymousPayload.featuredMcpServers)
 })
 
 test('onboarding API includes the authenticated package-scope username', async () => {
@@ -167,10 +171,7 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	})
 
 	const anonymous = await loadOnboardingFeaturedMcpServers(env)
-	expect(
-		anonymous.every((server) => !server.connected && server.serverId === null),
-	).toBe(true)
-	expect(anonymous.map((server) => server.id)).toContain('notion')
+	expectDisconnectedFeaturedCatalog(anonymous)
 	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
 
 	const signedIn = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
@@ -192,9 +193,7 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 
 	mockModule.listMcpServerSettings.mockRejectedValue(new Error('d1 blip'))
 	const fallback = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
-	expect(
-		fallback.every((server) => !server.connected && server.serverId === null),
-	).toBe(true)
+	expectDisconnectedFeaturedCatalog(fallback)
 })
 
 test('onboarding custom MCP servers exclude featured remotes', async () => {

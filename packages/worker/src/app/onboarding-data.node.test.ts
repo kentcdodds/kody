@@ -59,6 +59,9 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	expect(publicData.setupPrompt.length).toBeGreaterThan(0)
 	expect(publicData.discoveryPrompt).toContain('https://heykody.dev')
 	expect(publicData.persistPrompt).toContain('https://heykody.dev')
+	expect(publicData.featuredMcpServers.map((server) => server.id)).toContain(
+		'notion',
+	)
 	expect(
 		publicData.featuredMcpServers.every(
 			(server) => !server.connected && server.serverId === null,
@@ -93,6 +96,9 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(withoutClient.setupPrompt.length).toBeGreaterThan(0)
 	expect(withoutClient.discoveryPrompt).toContain('https://heykody.dev')
+	expect(withoutClient.featuredMcpServers.map((server) => server.id)).toContain(
+		'notion',
+	)
 	expect(
 		withoutClient.featuredMcpServers.every(
 			(server) => !server.connected && server.serverId === null,
