@@ -128,42 +128,114 @@ test('legacy ladder survives continuous paid access and drops after cancel', () 
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'legacy',
 			manualPlan: 'free',
-			stripePlan: 'standard',
+			previousStripePlan: 'standard',
+			nextStripePlan: 'standard',
 		}),
 	).toBe('legacy')
 	expect(
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'legacy',
 			manualPlan: 'free',
-			stripePlan: 'pro',
+			previousStripePlan: 'pro',
+			nextStripePlan: 'pro',
 		}),
 	).toBe('legacy')
 	expect(
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'legacy',
 			manualPlan: 'pro',
-			stripePlan: null,
+			previousStripePlan: null,
+			nextStripePlan: null,
 		}),
 	).toBe('legacy')
 	expect(
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'legacy',
 			manualPlan: 'free',
-			stripePlan: null,
+			previousStripePlan: 'standard',
+			nextStripePlan: null,
 		}),
 	).toBe('public')
 	expect(
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'public',
 			manualPlan: 'free',
-			stripePlan: 'pro',
+			previousStripePlan: null,
+			nextStripePlan: 'pro',
 		}),
 	).toBe('public')
 	expect(
 		resolveEntitlementLadderAfterPaidAccessChange({
 			currentLadder: 'public',
 			manualPlan: 'pro',
-			stripePlan: null,
+			previousStripePlan: null,
+			nextStripePlan: null,
+		}),
+	).toBe('public')
+})
+
+test('same-plan renew keeps legacy including the first price observation', () => {
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'legacy',
+			manualPlan: 'free',
+			previousStripePlan: 'pro',
+			nextStripePlan: 'pro',
+			previousStripePriceId: 'price_pro',
+			nextStripePriceId: 'price_pro',
+		}),
+	).toBe('legacy')
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'legacy',
+			manualPlan: 'free',
+			previousStripePlan: 'pro',
+			nextStripePlan: 'pro',
+			previousStripePriceId: null,
+			nextStripePriceId: 'price_pro',
+		}),
+	).toBe('legacy')
+})
+
+test('plan or price change drops legacy; resubscribe stays public', () => {
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'legacy',
+			manualPlan: 'free',
+			previousStripePlan: 'standard',
+			nextStripePlan: 'pro',
+			previousStripePriceId: 'price_standard',
+			nextStripePriceId: 'price_pro',
+		}),
+	).toBe('public')
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'legacy',
+			manualPlan: 'free',
+			previousStripePlan: 'pro',
+			nextStripePlan: 'pro',
+			previousStripePriceId: 'price_pro_month',
+			nextStripePriceId: 'price_pro_year',
+		}),
+	).toBe('public')
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'legacy',
+			manualPlan: 'free',
+			previousStripePlan: 'pro',
+			nextStripePlan: 'pro',
+			previousStripePriceId: 'price_pro_29',
+			nextStripePriceId: 'price_pro_49',
+		}),
+	).toBe('public')
+	expect(
+		resolveEntitlementLadderAfterPaidAccessChange({
+			currentLadder: 'public',
+			manualPlan: 'free',
+			previousStripePlan: null,
+			nextStripePlan: 'pro',
+			previousStripePriceId: null,
+			nextStripePriceId: 'price_pro',
 		}),
 	).toBe('public')
 })

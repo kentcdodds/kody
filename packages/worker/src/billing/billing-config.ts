@@ -83,6 +83,13 @@ export type ResolvedSubscriptionPlan = {
 	 * switch it cannot describe.
 	 */
 	stripeInterval: BillingInterval | null
+	/**
+	 * Price id on the subscription that granted `stripePlan`, when that item
+	 * is a configured or retired Standard/Pro price. Null for metadata-only
+	 * grants. Persisted on `users.stripe_price_id` so a later refresh can
+	 * drop `legacy` when the price, product, or interval changes.
+	 */
+	stripePriceId: string | null
 	cancelAt: string | null
 	subscriptionStatus: string | null
 }
@@ -264,6 +271,19 @@ function planFromSubscription(
 	return parseStripePlanName(metadataPlan)
 }
 
+function grantingPriceIdFromSubscription(
+	subscription: StripeSubscription,
+	plan: PlanName,
+	env: BillingEnv,
+): string | null {
+	if (plan !== 'standard' && plan !== 'pro') return null
+	const matching = new Set(getMatchingPriceIdsForPlan(env, plan))
+	for (const item of subscription.items.data) {
+		if (matching.has(item.price.id)) return item.price.id
+	}
+	return null
+}
+
 function intervalFromSubscription(
 	subscription: StripeSubscription,
 	env: BillingEnv,
@@ -328,6 +348,7 @@ export function resolveSubscriptionPlan(
 	const proPriceIds = getMatchingPriceIdsForPlan(env, 'pro')
 	let stripePlan: PlanName | null = null
 	let stripeInterval: BillingInterval | null = null
+	let stripePriceId: string | null = null
 	let soonestCancelAt: number | null = null
 
 	for (const subscription of selectPlanRetainingSubscriptions(subscriptions)) {
@@ -339,6 +360,11 @@ export function resolveSubscriptionPlan(
 		const nextPlan = pickHigherPlan(stripePlan, subscriptionPlan)
 		if (subscriptionPlan && nextPlan !== stripePlan) {
 			stripeInterval = intervalFromSubscription(subscription, env)
+			stripePriceId = grantingPriceIdFromSubscription(
+				subscription,
+				subscriptionPlan,
+				env,
+			)
 		}
 		stripePlan = nextPlan
 		if (
@@ -353,6 +379,7 @@ export function resolveSubscriptionPlan(
 	return {
 		stripePlan,
 		stripeInterval,
+		stripePriceId,
 		cancelAt:
 			soonestCancelAt == null
 				? null

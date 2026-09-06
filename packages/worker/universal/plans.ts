@@ -112,9 +112,10 @@ export function resolveEffectivePlan(
  *
  * - `public` — the live pricing-page ladder (new subscribers and anyone
  *   who cancels and resubscribes).
- * - `legacy` — the pre-cut Standard/Pro ceilings, kept only while paid
- *   access stays continuous (active Stripe Standard/Pro, or a manual Pro
- *   grant that was already flagged). Never inferred from join date.
+ * - `legacy` — the pre-cut Standard/Pro ceilings, kept only while the
+ *   same Stripe subscription continues without a plan, price, product, or
+ *   interval change, or while a remaining manual Pro grant is already
+ *   flagged. Never inferred from join date.
  */
 export const entitlementLadders = ['public', 'legacy'] as const
 
@@ -136,21 +137,46 @@ export function parseEntitlementLadder(value: unknown): EntitlementLadder {
 	throw new Error('Stored entitlement ladder is not a registered ladder name.')
 }
 
+function isPaidStripePlan(plan: PlanName | null): plan is 'standard' | 'pro' {
+	return plan === 'standard' || plan === 'pro'
+}
+
+function normalizeStripePriceId(value: string | null | undefined): string {
+	return value?.trim() ?? ''
+}
+
 /**
- * Drop `legacy` once continuous paid access ends. Never promotes `public`
- * to `legacy` — only the one-shot backfill writes that marker.
+ * Drop `legacy` when continuous paid access ends, or when the granting
+ * Stripe subscription changes plan, price, product, or interval. Same-plan
+ * auto-renew (same price id) keeps `legacy`. The first Stripe refresh after
+ * `users.stripe_price_id` is added writes the current price without treating
+ * an empty previous value as a change. Never promotes `public` to `legacy`
+ * — only the one-shot backfill writes that marker.
  */
 export function resolveEntitlementLadderAfterPaidAccessChange(input: {
 	currentLadder: EntitlementLadder
 	manualPlan: PlanName
-	stripePlan: PlanName | null
+	previousStripePlan: PlanName | null
+	nextStripePlan: PlanName | null
+	previousStripePriceId?: string | null
+	nextStripePriceId?: string | null
 }): EntitlementLadder {
 	if (input.currentLadder !== 'legacy') return 'public'
-	if (input.stripePlan === 'standard' || input.stripePlan === 'pro') {
-		return 'legacy'
+	if (!isPaidStripePlan(input.nextStripePlan)) {
+		return input.manualPlan === 'pro' ? 'legacy' : 'public'
 	}
-	if (input.manualPlan === 'pro') return 'legacy'
-	return 'public'
+	if (
+		isPaidStripePlan(input.previousStripePlan) &&
+		input.previousStripePlan !== input.nextStripePlan
+	) {
+		return 'public'
+	}
+	const previousPrice = normalizeStripePriceId(input.previousStripePriceId)
+	const nextPrice = normalizeStripePriceId(input.nextStripePriceId)
+	if (previousPrice !== '' && nextPrice !== '' && previousPrice !== nextPrice) {
+		return 'public'
+	}
+	return 'legacy'
 }
 
 export type UserEntitlement = {

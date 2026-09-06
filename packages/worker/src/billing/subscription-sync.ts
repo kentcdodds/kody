@@ -66,7 +66,8 @@ export async function refreshStripePlanForUser(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT email, stable_user_id, plan, stripe_plan, entitlement_ladder
+		`SELECT email, stable_user_id, plan, stripe_plan, stripe_price_id,
+		        entitlement_ladder
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -75,6 +76,7 @@ export async function refreshStripePlanForUser(input: {
 			stable_user_id: string
 			plan: string
 			stripe_plan: string | null
+			stripe_price_id: string | null
 			entitlement_ladder: string | null
 		}>()
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
@@ -83,16 +85,21 @@ export async function refreshStripePlanForUser(input: {
 		? resolveEntitlementLadderAfterPaidAccessChange({
 				currentLadder: parseEntitlementLadder(previous.entitlement_ladder),
 				manualPlan: parseStoredPlanName(previous.plan),
-				stripePlan: resolved.stripePlan,
+				previousStripePlan: parseStripePlanName(previous.stripe_plan),
+				nextStripePlan: resolved.stripePlan,
+				previousStripePriceId: previous.stripe_price_id,
+				nextStripePriceId: resolved.stripePriceId,
 			})
 		: 'public'
 	await input.env.APP_DB.prepare(
 		`UPDATE users
-		 SET stripe_plan = ?, stripe_plan_refreshed_at = ?, entitlement_ladder = ?
+		 SET stripe_plan = ?, stripe_price_id = ?, stripe_plan_refreshed_at = ?,
+		     entitlement_ladder = ?
 		 WHERE id = ? AND stripe_customer_id = ?`,
 	)
 		.bind(
 			resolved.stripePlan,
+			resolved.stripePriceId,
 			now.toISOString(),
 			nextLadder,
 			input.userId,
@@ -411,6 +418,7 @@ export async function linkStripeCustomerFromCheckoutSession(input: {
 			return {
 				stripePlan: null,
 				stripeInterval: null,
+				stripePriceId: null,
 				cancelAt: null,
 				subscriptionStatus: null,
 			}

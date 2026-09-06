@@ -69,15 +69,19 @@ manual-only — admin-visible, not paid or public — and never written from Str
 `users.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
 `'public'`). The public table in `planLimits` is what `/pricing` renders and
 what new Standard/Pro subscribers get. `legacy` keeps the pre-cut Standard/Pro
-ceilings from `legacyPlanLimits` while paid access stays continuous: an active
-or past-due Stripe Standard/Pro subscription, or a manual Pro grant that was
-already flagged. The one-shot backfill in `0043-users-entitlement-ladder.sql`
-sets `legacy` for those accounts. Cancel (or removing the manual Pro grant
-without a remaining paid Stripe tier) writes `public`. Resubscribing does not
-restore `legacy`. Free and `max` always use `planLimits`; the ladder is ignored
-for those plans. Unique-worker-day and Durable Object rows-read numbers live on
-`PlanLimits` for the public table. They are not hard-cut and not billed for
-legacy accounts.
+ceilings from `legacyPlanLimits` only while the same Stripe subscription
+continues without a plan, price, product, or interval change: same-plan
+auto-renew stays `legacy`. Cancel, unpaid, Standard↔Pro, month↔year, or any
+other price/product switch writes `public`. A remaining manual Pro grant without
+a paid Stripe tier still keeps `legacy` until that grant is removed. The
+one-shot backfill in `0043-users-entitlement-ladder.sql` sets `legacy` for those
+accounts. Resubscribing does not restore `legacy`.
+`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` so Stripe refresh
+can detect those subscription changes; the first observation after deploy writes
+the current price without dropping the grandfather cohort. Free and `max` always
+use `planLimits`; the ladder is ignored for those plans. Unique-worker-day and
+Durable Object rows-read numbers live on `PlanLimits` for the public table. They
+are not hard-cut and not billed for legacy accounts.
 
 `getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
 Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
@@ -472,6 +476,8 @@ Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
 `pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
 `users.entitlement_ladder` (`public` | `legacy`, default `public`) and backfills
 `legacy` for then-active Stripe Standard/Pro subscribers and manual Pro grants.
+`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` for the granting
+Stripe price so a later refresh can drop `legacy` on a subscription change.
 
 ## Assigning plans
 
@@ -837,8 +843,8 @@ When the checkout handler finds a linked `stripe_customer_id`, it lists the
 customer's subscriptions and keeps the plan-retaining ones (`active` /
 `trialing` / `past_due`, the same set `resolveSubscriptionPlan` grants from).
 With exactly one, it creates a Billing Portal session with
-`flow_data[type]=subscription_update` for that subscription (Kody's portal
-configuration allows only the Standard/Pro prices and prorates with
+`flow_data[type]=subscription_update` for that subscription (the production
+portal lists only Standard $12/$120 and Pro $49/$480, and prorates with
 `always_invoice`) and returns `{ ok: true, url, mode: 'portal_update' }`; Stripe
 redirects back to `/account/billing?billing=updated` after the customer confirms
 the prorated change. Requesting the price the subscription already has returns
@@ -938,8 +944,9 @@ backstop and still refreshes on every view so non-persisted `cancel_at` /
 immediate refresh remains an error so the caller or Stripe webhook retries
 instead of acknowledging an unrecoverable stale projection. The
 `stripe_customer_id` (unique partial index), `stripe_plan`, and
-`stripe_plan_refreshed_at` columns ship in the squashed baseline; the alarm DO
-class exists without moving canonical billing data out of D1.
+`stripe_plan_refreshed_at` columns ship in the squashed baseline;
+`stripe_price_id` ships in `0044-users-stripe-price-id.sql`. The alarm DO class
+exists without moving canonical billing data out of D1.
 
 Published prices: Free $0, Standard $12/mo or $120/year ($10/mo billed
 annually), Pro $49/mo or $480/year ($40/mo billed annually). Env vars and deploy
@@ -954,11 +961,15 @@ wiring are documented in
 - `invites.plan` — signup plan; NOT NULL DEFAULT `'free'` (writers and admin UI
   default to `free`). Applied to `users.plan` when the invite is consumed at
   signup via `parseStoredPlanName` and `resolvePlanWrite`.
-- `users.stripe_customer_id`, `users.stripe_plan`,
+- `users.stripe_customer_id`, `users.stripe_plan`, `users.stripe_price_id`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
   `packages/worker/src/billing/`, read by `getUserEntitlement` via
   `resolveEffectivePlan`. `stripe_plan` stays nullable because it is
-  Stripe-derived; `max` is manual-only.
+  Stripe-derived; `max` is manual-only. `stripe_price_id` is the granting
+  configured or retired price so a later refresh can drop `legacy` when the
+  subscription changes.
 - `users.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
-  entitlements module; Stripe refresh and admin plan writes clear `legacy` when
-  continuous paid access ends.
+  entitlements module; Stripe refresh clears `legacy` when paid access ends or
+  the granting subscription changes plan, price, product, or interval. Admin
+  plan writes clear `legacy` when a remaining manual Pro grant is removed
+  without a paid Stripe tier.

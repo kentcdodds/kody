@@ -22,7 +22,9 @@ function createBillingEnv(
 	overrides: {
 		STRIPE_SECRET_KEY?: string
 		STRIPE_STANDARD_PRICE_ID?: string
+		STRIPE_STANDARD_YEARLY_PRICE_ID?: string
 		STRIPE_PRO_PRICE_ID?: string
+		STRIPE_PRO_YEARLY_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
 		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
 		DISCORD_BOT_TOKEN?: string
@@ -46,6 +48,7 @@ async function seedUser(input: {
 	plan?: 'free' | 'pro' | 'max'
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
+	stripePriceId?: string | null
 	stripePlanRefreshedAt?: string | null
 	entitlementLadder?: 'public' | 'legacy'
 }) {
@@ -54,9 +57,9 @@ async function seedUser(input: {
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_plan_refreshed_at,
+			stripe_customer_id, stripe_plan, stripe_price_id, stripe_plan_refreshed_at,
 			entitlement_ladder
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`billing-${crypto.randomUUID().slice(0, 8)}`,
@@ -67,6 +70,7 @@ async function seedUser(input: {
 			input.plan ?? 'max',
 			input.stripeCustomerId ?? null,
 			input.stripePlan ?? null,
+			input.stripePriceId ?? null,
 			input.stripePlanRefreshedAt ?? null,
 			input.entitlementLadder ?? 'public',
 		)
@@ -85,13 +89,15 @@ async function seedUser(input: {
 
 async function readUserBilling(userId: number) {
 	return env.APP_DB.prepare(
-		`SELECT stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
+		`SELECT stripe_customer_id, stripe_plan, stripe_price_id,
+		        stripe_plan_refreshed_at
 		 FROM users WHERE id = ?`,
 	)
 		.bind(userId)
 		.first<{
 			stripe_customer_id: string | null
 			stripe_plan: string | null
+			stripe_price_id: string | null
 			stripe_plan_refreshed_at: string | null
 		}>()
 }
@@ -182,6 +188,7 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 	expect(result).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'month',
+		stripePriceId: 'price_pro',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -190,6 +197,7 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 	expect(row).toEqual({
 		stripe_customer_id: 'cus_happy',
 		stripe_plan: 'pro',
+		stripe_price_id: 'price_pro',
 		stripe_plan_refreshed_at: now.toISOString(),
 	})
 	const refreshAlarm = env.STRIPE_PLAN_REFRESH.get(
@@ -448,17 +456,20 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 	}
 })
 
-test('refreshStripePlanForUser keeps legacy while paid access is continuous and drops it after cancel', async () => {
+test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it after cancel', async () => {
 	const email = `legacy-refresh-${crypto.randomUUID()}@example.com`
 	const user = await seedUser({
 		email,
 		plan: 'free',
 		stripeCustomerId: 'cus_legacy_refresh',
 		stripePlan: 'standard',
+		stripePriceId: 'price_standard',
 		entitlementLadder: 'legacy',
 	})
 	const billingEnv = createBillingEnv({
 		STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
+		STRIPE_PRO_PRICE_ID: 'price_pro',
 	})
 
 	stubStripeFetch({
@@ -480,11 +491,15 @@ test('refreshStripePlanForUser keeps legacy while paid access is continuous and 
 	})
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
+			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
 		)
 			.bind(user.id)
 			.first(),
-	).toEqual({ stripe_plan: 'standard', entitlement_ladder: 'legacy' })
+	).toEqual({
+		stripe_plan: 'standard',
+		stripe_price_id: 'price_standard',
+		entitlement_ladder: 'legacy',
+	})
 	vi.unstubAllGlobals()
 
 	stubStripeFetch({
@@ -506,11 +521,148 @@ test('refreshStripePlanForUser keeps legacy while paid access is continuous and 
 	})
 	expect(
 		await env.APP_DB.prepare(
-			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
+			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
 		)
 			.bind(user.id)
 			.first(),
-	).toEqual({ stripe_plan: null, entitlement_ladder: 'public' })
+	).toEqual({
+		stripe_plan: null,
+		stripe_price_id: null,
+		entitlement_ladder: 'public',
+	})
+	vi.unstubAllGlobals()
+})
+
+test('refreshStripePlanForUser drops legacy when the Stripe plan or price changes', async () => {
+	const billingEnv = createBillingEnv({
+		STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
+		STRIPE_PRO_PRICE_ID: 'price_pro',
+	})
+
+	{
+		const email = `legacy-plan-change-${crypto.randomUUID()}@example.com`
+		const user = await seedUser({
+			email,
+			plan: 'free',
+			stripeCustomerId: 'cus_legacy_plan_change',
+			stripePlan: 'standard',
+			stripePriceId: 'price_standard',
+			entitlementLadder: 'legacy',
+		})
+		stubStripeFetch({
+			subscriptions: {
+				data: [
+					{
+						id: 'sub_upgraded',
+						status: 'active',
+						cancel_at: null,
+						items: { data: [{ price: { id: 'price_pro' } }] },
+					},
+				],
+			},
+		})
+		await refreshStripePlanForUser({
+			env: billingEnv,
+			userId: user.id,
+			customerId: 'cus_legacy_plan_change',
+		})
+		expect(
+			await env.APP_DB.prepare(
+				`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
+			)
+				.bind(user.id)
+				.first(),
+		).toEqual({
+			stripe_plan: 'pro',
+			stripe_price_id: 'price_pro',
+			entitlement_ladder: 'public',
+		})
+		vi.unstubAllGlobals()
+	}
+
+	{
+		const email = `legacy-interval-change-${crypto.randomUUID()}@example.com`
+		const user = await seedUser({
+			email,
+			plan: 'free',
+			stripeCustomerId: 'cus_legacy_interval_change',
+			stripePlan: 'standard',
+			stripePriceId: 'price_standard',
+			entitlementLadder: 'legacy',
+		})
+		stubStripeFetch({
+			subscriptions: {
+				data: [
+					{
+						id: 'sub_yearly',
+						status: 'active',
+						cancel_at: null,
+						items: { data: [{ price: { id: 'price_standard_yearly' } }] },
+					},
+				],
+			},
+		})
+		await refreshStripePlanForUser({
+			env: billingEnv,
+			userId: user.id,
+			customerId: 'cus_legacy_interval_change',
+		})
+		expect(
+			await env.APP_DB.prepare(
+				`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
+			)
+				.bind(user.id)
+				.first(),
+		).toEqual({
+			stripe_plan: 'standard',
+			stripe_price_id: 'price_standard_yearly',
+			entitlement_ladder: 'public',
+		})
+		vi.unstubAllGlobals()
+	}
+})
+
+test('refreshStripePlanForUser keeps legacy on the first price observation after deploy', async () => {
+	const email = `legacy-first-price-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		plan: 'free',
+		stripeCustomerId: 'cus_legacy_first_price',
+		stripePlan: 'standard',
+		stripePriceId: null,
+		entitlementLadder: 'legacy',
+	})
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_first_price',
+					status: 'active',
+					cancel_at: null,
+					items: { data: [{ price: { id: 'price_standard' } }] },
+				},
+			],
+		},
+	})
+	await refreshStripePlanForUser({
+		env: createBillingEnv({
+			STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		}),
+		userId: user.id,
+		customerId: 'cus_legacy_first_price',
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
+		)
+			.bind(user.id)
+			.first(),
+	).toEqual({
+		stripe_plan: 'standard',
+		stripe_price_id: 'price_standard',
+		entitlement_ladder: 'legacy',
+	})
 	vi.unstubAllGlobals()
 })
 

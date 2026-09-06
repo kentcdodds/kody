@@ -19,6 +19,7 @@ export const usersTable = table({
 		entitlement_ladder: c.text(),
 		stripe_customer_id: c.text(),
 		stripe_plan: c.text(),
+		stripe_price_id: c.text(),
 		stripe_plan_refreshed_at: c.text(),
 		deleting_at: c.text(),
 		suspended_at: c.text(),

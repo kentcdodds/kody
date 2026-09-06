@@ -347,10 +347,12 @@ export async function updateAdminUserPlan(
 	if (!existingRow) return null
 
 	const nextPlan = resolvePlanWrite(input.plan)
+	const stripePlan = parseStripePlanName(existingRow.stripe_plan)
 	const nextLadder = resolveEntitlementLadderAfterPaidAccessChange({
 		currentLadder: parseEntitlementLadder(existingRow.entitlement_ladder),
 		manualPlan: nextPlan,
-		stripePlan: parseStripePlanName(existingRow.stripe_plan),
+		previousStripePlan: stripePlan,
+		nextStripePlan: stripePlan,
 	})
 	await db
 		.prepare(

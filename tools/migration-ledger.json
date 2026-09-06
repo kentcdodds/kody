@@ -175,6 +175,10 @@
 		{
 			"filename": "0043-users-entitlement-ladder.sql",
 			"sha256": "3717a78d621552cb086b32cb64b6cad4c6d5cd9e69c94f917e54e1dbbdd748fe"
+		},
+		{
+			"filename": "0044-users-stripe-price-id.sql",
+			"sha256": "2626ab6b7bba5c6f30181de4e22f5833a988444756b1b3e7d223e927fd1228b4"
 		}
 	]
 }

@@ -273,10 +273,12 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
   configuration id (`bpc_...`) passed as `configuration` when creating portal
   sessions for Manage subscription and for plan changes by existing subscribers.
   The production configuration enables `subscription_update` with
-  `proration_behavior=always_invoice`, allows price switches among the Kody
-  Standard / Kody Pro prices above, cancel at period end, payment method and
-  customer updates, and invoice history. When unset (preview, test, local),
-  Stripe uses the account's default portal configuration.
+  `proration_behavior=always_invoice`, allows price switches among the public
+  Standard $12/$120 and Pro $49/$480 checkout prices, cancel at period end,
+  payment method and customer updates, and invoice history. Previous Pro list
+  prices stay active in Stripe off-portal so existing subscribers keep their
+  plan. When unset (preview, test, local), Stripe uses the account's default
+  portal configuration.
 
 Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
@@ -287,10 +289,11 @@ $5
 Standard and previous Pro monthly/yearly price ids remain in
 `retiredStandardPriceIds` / `retiredProPriceIds` in
 `packages/worker/src/billing/billing-config.ts` so existing subscribers keep
-their plan after checkout ids rotate. The Stripe Billing Portal configuration
-(`STRIPE_BILLING_PORTAL_CONFIGURATION_ID`) must list every live Standard/Pro
-price used for checkout, including the public $49
-/ $480 Pro prices and the previous Pro prices that still have subscribers.
+their plan after checkout ids rotate. Those retired Pro prices stay active
+off-portal; the Stripe Billing Portal configuration
+(`STRIPE_BILLING_PORTAL_CONFIGURATION_ID`) lists only the public Standard
+$12/$120 and Pro $49/$480
+checkout prices.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

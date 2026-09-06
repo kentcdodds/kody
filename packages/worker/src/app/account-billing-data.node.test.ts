@@ -5,6 +5,7 @@ const refreshStripePlanForUser = vi.hoisted(() =>
 	vi.fn(async () => ({
 		stripePlan: 'pro' as const,
 		stripeInterval: 'month' as 'month' | 'year' | null,
+		stripePriceId: 'price_pro' as string | null,
 		cancelAt: null as string | null,
 		subscriptionStatus: 'active' as string | null,
 	})),
@@ -75,6 +76,7 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	refreshStripePlanForUser.mockResolvedValueOnce({
 		stripePlan: 'pro',
 		stripeInterval: 'year',
+		stripePriceId: 'price_pro_yearly',
 		cancelAt: '2026-08-01T00:00:00.000Z',
 		subscriptionStatus: 'past_due',
 	})
