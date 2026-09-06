@@ -6,6 +6,7 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpAddCommand,
+	buildCodexMcpDeepLink,
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
@@ -118,6 +119,10 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		}),
 	)
 	expect(codexPreview).toContain(buildCodexMcpAddCommand(previewUrl))
+	expect(codexPreview).toContain(
+		`href="${buildCodexMcpDeepLink(previewUrl).replaceAll('&', '&amp;')}"`,
+	)
+	expect(codexPreview).toContain('>Open Codex<')
 	expect(codexPreview).not.toContain(kodyCursorMarketplaceUrl)
 
 	const grokBot = await renderToString(
@@ -205,6 +210,10 @@ test('onboarding alternative config wells collapse behind closed details', async
 		}),
 	)
 	expect(codex).toContain(buildCodexMcpAddCommand(url))
+	expect(codex).toContain(
+		`href="${buildCodexMcpDeepLink(url).replaceAll('&', '&amp;')}"`,
+	)
+	expect(codex).toContain('>Open Codex<')
 	expect(codex).toContain(buildCodexMcpToml(url))
 	expect(codex).toContain('Copy TOML')
 	expect(codex).toContain('Or merge this into')
