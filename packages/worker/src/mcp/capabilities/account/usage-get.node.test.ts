@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { legacyPlanLimits, planLimits } from '#universal/plans.ts'
 import { accountUsageEntitlementResources } from '#worker/entitlements/resource-visibility.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
@@ -29,6 +30,7 @@ function createUsageTestDb(input: {
 	email: string
 	plan: string
 	stripePlan?: string | null
+	entitlementLadder?: 'public' | 'legacy'
 	packageCount?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
@@ -48,6 +50,7 @@ function createUsageTestDb(input: {
 									return {
 										plan: input.plan,
 										stripe_plan: input.stripePlan ?? null,
+										entitlement_ladder: input.entitlementLadder ?? 'public',
 									} as T
 								}
 								if (normalized.includes('from saved_packages')) {
@@ -112,4 +115,28 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 	expect(saved?.current).toBe(1)
 	expect(saved?.limit).toBeGreaterThan(0)
 	expect(saved?.percent).toBe(saved!.current / saved!.limit)
+})
+
+test('usageGet reports legacy Standard ceilings for grandfathered accounts', async () => {
+	const email = 'legacy-usage-get@example.com'
+	const userId = testStableUserIdFromEmail(email)
+	const { db } = createUsageTestDb({
+		email,
+		plan: 'free',
+		stripePlan: 'standard',
+		entitlementLadder: 'legacy',
+	})
+	const env = withUsageEnv({ APP_DB: db }) as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: { userId, email, displayName: 'Legacy' },
+	})
+
+	const result = await usageGetCapability.handler({}, { env, callerContext })
+	expect(result.plan).toBe('standard')
+	const execute = result.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.limit).toBe(legacyPlanLimits.standard.maxExecuteCallsPerDay)
+	expect(execute?.limit).not.toBe(planLimits.standard.maxExecuteCallsPerDay)
 })

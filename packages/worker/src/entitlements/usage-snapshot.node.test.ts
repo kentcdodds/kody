@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { legacyPlanLimits, planLimits } from '#universal/plans.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
@@ -109,6 +110,7 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 		env: env as Env,
 		usageUserId: stableUserId,
 		plan: 'free',
+		ladder: 'public',
 		now,
 	})
 	const sends = snapshot.resources.find(
@@ -134,10 +136,41 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 		env: env as Env,
 		usageUserId: testStableUserIdFromEmail('other-user@example.com'),
 		plan: 'free',
+		ladder: 'public',
 		now,
 	})
 	expect(
 		otherUserSnapshot.resources.find((row) => row.resource === 'storage_bytes')
 			?.current,
 	).toBe(0)
+})
+
+test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async () => {
+	const email = 'legacy-usage@example.com'
+	const { stableUserId, db } = createUsageTestDb({ email })
+	const env = withUsageEnv({ APP_DB: db })
+	const publicSnapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: stableUserId,
+		plan: 'standard',
+		ladder: 'public',
+	})
+	const legacySnapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: stableUserId,
+		plan: 'standard',
+		ladder: 'legacy',
+	})
+	expect(
+		publicSnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.limit,
+	).toBe(planLimits.standard.maxExecuteCallsPerDay)
+	expect(
+		legacySnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.limit,
+	).toBe(legacyPlanLimits.standard.maxExecuteCallsPerDay)
 })

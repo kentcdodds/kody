@@ -67,7 +67,7 @@ export async function readEntitlementUsageSnapshot(input: {
 	env: Env
 	usageUserId: string
 	plan: PlanName
-	ladder?: EntitlementLadder
+	ladder: EntitlementLadder
 	now?: Date
 }): Promise<EntitlementUsageSnapshot> {
 	const now = input.now ?? new Date()
@@ -84,11 +84,7 @@ export async function readEntitlementUsageSnapshot(input: {
 							resource,
 							now,
 						})
-			const limit = resolvePlanLimit(
-				input.plan,
-				resource,
-				input.ladder ?? 'public',
-			)
+			const limit = resolvePlanLimit(input.plan, resource, input.ladder)
 			// per_unit_max compares one candidate value (no accumulating
 			// usage) and a zero limit means the plan has no allowance, so a
 			// current/limit ratio is meaningless for both.
