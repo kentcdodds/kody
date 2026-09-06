@@ -189,7 +189,8 @@ public Standard/Pro with a Stripe customer, or Free that already has a customer.
 Unpaid Free that exceeds includes is a soft-block (upgrade prompt on
 `/account/usage`), never a Stripe charge that would fail. Turn the flag off
 globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). Global
-off is a hard gate — a per-user on override cannot charge. Amounts below
+off is a hard gate — a per-user on override cannot charge. A percentage
+rollout is still globally on. Amounts below
 Stripe's $0.50
 USD minimum are recorded as `skip_below_minimum`, not invoiced. Includes are
 resolved from the plan and ladder at invoice time (UTC days 1–3); there is no
