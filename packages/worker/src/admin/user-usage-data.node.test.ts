@@ -145,7 +145,7 @@ function createAdminUserUsageTestDb(input: {
 				async first<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stable_user_id from users where stable_user_id = ?',
+							'select id, username, email, plan, stripe_plan, entitlement_ladder, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??

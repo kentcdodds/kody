@@ -29,7 +29,7 @@ import {
 } from '#worker/email/types.ts'
 import { resolvePlanLimit, type PlanName } from '#universal/plans.ts'
 import {
-	getUserPlan,
+	getUserEntitlement,
 	readCurrentEntitlementResourceUsage,
 	readDailyEntitlementResourceUsage,
 	type EntitlementUsageEnv,
@@ -229,10 +229,11 @@ async function loadUsage(input: {
 	email: string
 }): Promise<AccountEmailUsage> {
 	const now = new Date()
-	const plan: PlanName = await getUserPlan(input.db, {
+	const entitlement = await getUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
+	const plan: PlanName = entitlement.plan
 	const [storedMessages, sendsToday, receivesToday] = await Promise.all([
 		readCurrentEntitlementResourceUsage({
 			db: input.db,
@@ -259,17 +260,29 @@ async function loadUsage(input: {
 		day: utcDayKey(now),
 		stored_messages: {
 			count: storedMessages,
-			limit: resolvePlanLimit(plan, 'stored_email_messages'),
+			limit: resolvePlanLimit(
+				plan,
+				'stored_email_messages',
+				entitlement.ladder,
+			),
 		},
 		sends_today: {
 			count: sendsToday,
-			limit: resolvePlanLimit(plan, 'email_sends_per_day'),
+			limit: resolvePlanLimit(plan, 'email_sends_per_day', entitlement.ladder),
 		},
 		receives_today: {
 			count: receivesToday,
-			limit: resolvePlanLimit(plan, 'email_receives_per_day'),
+			limit: resolvePlanLimit(
+				plan,
+				'email_receives_per_day',
+				entitlement.ladder,
+			),
 		},
-		max_message_bytes: resolvePlanLimit(plan, 'email_message_bytes'),
+		max_message_bytes: resolvePlanLimit(
+			plan,
+			'email_message_bytes',
+			entitlement.ladder,
+		),
 	}
 }
 

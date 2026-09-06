@@ -32,6 +32,7 @@ type UserRow = {
 	email: string
 	email_verified_at?: string | null
 	plan?: string | null
+	entitlement_ladder?: string | null
 	stripe_plan?: string | null
 	stripe_customer_id?: string | null
 	suspended_at?: string | null
@@ -310,13 +311,14 @@ function createAdminTestEnv(input: {
 								}
 								if (
 									normalizedQuery.includes(
-										'update users set plan = ?, updated_at = ? where id =',
+										'update users set plan = ?, entitlement_ladder = ?, updated_at = ? where id =',
 									)
 								) {
-									const user = users.get(Number(params[2]))
+									const user = users.get(Number(params[3]))
 									if (!user) return { meta: { changes: 0 } }
 									user.plan = params[0] === null ? null : String(params[0])
-									user.updated_at = String(params[1])
+									user.entitlement_ladder = String(params[1])
+									user.updated_at = String(params[2])
 									return { meta: { changes: 1 } }
 								}
 								if (

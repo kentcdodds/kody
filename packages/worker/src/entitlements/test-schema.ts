@@ -17,6 +17,7 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 			'email_verified_at',
 			'stripe_customer_id',
 			'stripe_plan',
+			'stripe_price_id',
 			'stripe_plan_refreshed_at',
 		],
 	})

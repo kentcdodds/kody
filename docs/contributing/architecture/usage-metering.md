@@ -148,10 +148,14 @@ metric answers its own question (`execute` is ad-hoc execute-tool volume;
 `job_run` is job activity; `package_export` is saved-package entrypoints;
 `package_static_call` is per-callee reuse). `dynamic_worker_day` is the
 Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
-every sandbox surface that creates a worker. It is not an entitlement and does
-not replace `execute` / `job_run`. Never add durations across different
-`eventType` values — that double counts nested layers. Within one `eventType`,
-each chokepoint records exactly one event per metered unit, so sums are safe.
+every sandbox surface that creates a worker.
+`PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included allotment shown
+on `/pricing`. It is not in `entitlementResources` and does not replace the hard
+daily `execute` / `job_run` caps. Customer-facing monthly overage (list prices
+only; not charged) is unique worker days plus Durable Object rows-read. Never
+add durations across different `eventType` values — that double counts nested
+layers. Within one `eventType`, each chokepoint records exactly one event per
+metered unit, so sums are safe.
 
 Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
 Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique

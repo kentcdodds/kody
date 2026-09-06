@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	createBillingLinkReference,
 	getBillingPortalConfigurationId,
+	getMatchingPriceIdsForPlan,
 	getPriceIdForPlan,
 	getPurchasablePlans,
 	parseBillingInterval,
@@ -70,6 +71,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: null,
 		stripeInterval: null,
+		stripePriceId: null,
 		cancelAt: null,
 		subscriptionStatus: 'incomplete',
 	})
@@ -87,6 +89,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'standard',
 		stripeInterval: 'month',
+		stripePriceId: 'price_standard',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -104,6 +107,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'month',
+		stripePriceId: 'price_pro',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -121,6 +125,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'month',
+		stripePriceId: 'price_pro',
 		cancelAt: null,
 		subscriptionStatus: 'trialing',
 	})
@@ -139,6 +144,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: null,
+		stripePriceId: null,
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -158,6 +164,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'standard',
 		stripeInterval: 'month',
+		stripePriceId: 'price_standard',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -175,6 +182,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: null,
 		stripeInterval: null,
+		stripePriceId: null,
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -205,6 +213,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'month',
+		stripePriceId: 'price_pro',
 		cancelAt: new Date(sooner * 1000).toISOString(),
 		subscriptionStatus: 'active',
 	})
@@ -226,6 +235,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'month',
+		stripePriceId: 'price_pro',
 		cancelAt: null,
 		subscriptionStatus: 'past_due',
 	})
@@ -243,6 +253,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: null,
 		stripeInterval: null,
+		stripePriceId: null,
 		cancelAt: null,
 		subscriptionStatus: 'unpaid',
 	})
@@ -260,6 +271,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'standard',
 		stripeInterval: 'year',
+		stripePriceId: 'price_standard_yearly',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -277,6 +289,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	).toEqual({
 		stripePlan: 'pro',
 		stripeInterval: 'year',
+		stripePriceId: 'price_pro_yearly',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
@@ -315,7 +328,11 @@ test('resolveSubscriptionPlan reports the interval of the subscription that gran
 			],
 			env,
 		),
-	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'year' })
+	).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: 'year',
+		stripePriceId: 'price_pro_yearly',
+	})
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -324,7 +341,11 @@ test('resolveSubscriptionPlan reports the interval of the subscription that gran
 			],
 			env,
 		),
-	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'year' })
+	).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: 'year',
+		stripePriceId: 'price_pro_yearly',
+	})
 })
 
 test('selectPlanRetainingSubscriptions and subscriptionHasPrice drive the checkout guard', () => {
@@ -384,7 +405,11 @@ test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids ro
 			],
 			env,
 		),
-	).toMatchObject({ stripePlan: 'pro', stripeInterval: null })
+	).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: null,
+		stripePriceId: 'price_1U3sg6LAQpAnsYszlVpEIFGx',
+	})
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -407,4 +432,51 @@ test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids ro
 			env,
 		).stripePlan,
 	).toBe('pro')
+})
+
+test('resolveSubscriptionPlan maps public $49 and $480 Pro checkout prices', () => {
+	const env = {
+		STRIPE_PRO_PRICE_ID: 'price_1UChg1LAQpAnsYszAYn6eGgt',
+		STRIPE_PRO_YEARLY_PRICE_ID: 'price_1UChg2LAQpAnsYszKAFCR778',
+	}
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1UChg1LAQpAnsYszAYn6eGgt'],
+				}),
+			],
+			env,
+		),
+	).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: 'month',
+		stripePriceId: 'price_1UChg1LAQpAnsYszAYn6eGgt',
+	})
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1UChg2LAQpAnsYszKAFCR778'],
+				}),
+			],
+			env,
+		),
+	).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: 'year',
+		stripePriceId: 'price_1UChg2LAQpAnsYszKAFCR778',
+	})
+	expect(getMatchingPriceIdsForPlan(env, 'pro').sort()).toEqual(
+		[
+			'price_1UChg1LAQpAnsYszAYn6eGgt',
+			'price_1UChg2LAQpAnsYszKAFCR778',
+			'price_1U1AISLAQpAnsYszIQvRJNhl',
+			'price_1U3sg6LAQpAnsYszlVpEIFGx',
+			'price_1U3sg7LAQpAnsYszpozAEFUi',
+		].sort(),
+	)
 })

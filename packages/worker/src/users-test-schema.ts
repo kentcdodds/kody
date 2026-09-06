@@ -19,6 +19,7 @@ export type UsersTestSchemaColumn =
 	| 'account_type'
 	| 'stripe_customer_id'
 	| 'stripe_plan'
+	| 'stripe_price_id'
 	| 'stripe_plan_refreshed_at'
 	| 'bio'
 	| 'avatar_key'
@@ -67,6 +68,10 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	// without a default; nullable TEXT matches migration 0052's add step.
 	stable_user_id: { create: 'TEXT NOT NULL', alter: 'TEXT' },
 	plan: { create: `TEXT NOT NULL DEFAULT 'free'` },
+	entitlement_ladder: {
+		create: `TEXT NOT NULL DEFAULT 'public' CHECK (entitlement_ladder IN ('public', 'legacy'))`,
+		alter: `TEXT NOT NULL DEFAULT 'public'`,
+	},
 	deleting_at: { create: 'TEXT' },
 	suspended_at: { create: 'TEXT' },
 	email_outbound_paused_at: { create: 'TEXT' },
@@ -94,7 +99,8 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 
 /**
  * Opt-in columns. `account_type` mirrors migration 0072, the Stripe columns
- * mirror 0066, `email_verified_at` mirrors 0046, the profile columns mirror
+ * mirror 0066 plus `0044-users-stripe-price-id.sql`, `email_verified_at`
+ * mirrors 0046, the profile columns mirror
  * the community social migration, and `onboarding_checklist_dismissed_at`
  * mirrors 0015. `CHECK` constraints are dropped from the alter forms to match
  * what the migrations do for preexisting tables.
@@ -107,6 +113,7 @@ const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 	},
 	stripe_customer_id: { create: 'TEXT' },
 	stripe_plan: { create: 'TEXT' },
+	stripe_price_id: { create: 'TEXT' },
 	stripe_plan_refreshed_at: { create: 'TEXT' },
 	bio: { create: 'TEXT' },
 	avatar_key: { create: 'TEXT' },

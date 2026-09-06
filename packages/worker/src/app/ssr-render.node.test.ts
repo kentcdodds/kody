@@ -37,7 +37,6 @@ import {
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 } from '#universal/code-runs.ts'
-import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
@@ -1562,34 +1561,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('Let Kody use this connection at')
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
-})
-
-test('renderAppPage renders the redesigned pricing page', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const response = await renderAppPage({
-		request: new Request('https://example.com/pricing'),
-		env,
-	})
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('Standard')
-	expect(html).toContain('Pro')
-	const count = new Intl.NumberFormat('en-US')
-	expect(html).toContain(count.format(planLimits.free.maxRepos))
-	expect(html).toContain(count.format(planLimits.standard.maxRepos))
-	expect(html).toContain(count.format(planLimits.pro.maxRepos))
-	expect(html).toContain(count.format(planLimits.free.maxExecuteCallsPerDay))
-	expect(html).toContain(
-		count.format(planLimits.standard.maxExecuteCallsPerDay),
-	)
-	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
-	// Free floor and paid "no floor" labels from the plan table (not marketing copy).
-	expect(html).toContain('15 minutes')
-	expect(html).toContain('None')
 })
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {

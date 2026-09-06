@@ -7,11 +7,14 @@ import { readPagination } from '#worker/query-params.ts'
 import { type AdminUsersLoaderData } from '#universal/loader-data.ts'
 import { type RoleName, roleNames } from '#universal/permissions.ts'
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	parseStripePlanName,
 	planNames,
 	resolveEffectivePlan,
+	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanWrite,
+	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
 import {
@@ -35,7 +38,7 @@ import {
 	normalizeStableUserId,
 } from '#worker/user-id.ts'
 
-export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
+export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
 				utm_source, utm_medium, utm_campaign, utm_content, utm_term, first_touch_landing_path, first_touch_referrer,
 				first_mcp_connected_at, first_execute_at, first_search_at, first_saved_package_at, mcp_client_name, last_active_at,
@@ -51,6 +54,7 @@ export const adminUserListItemFieldNames = [
 	'manualPlan',
 	'stripePlan',
 	'effectivePlan',
+	'entitlementLadder',
 	'stripeCustomerLinked',
 	'suspended_at',
 	'email_outbound_paused_at',
@@ -87,6 +91,7 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	manualPlan: PlanName
 	stripePlan: PlanName | null
 	effectivePlan: PlanName
+	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
@@ -341,9 +346,19 @@ export async function updateAdminUserPlan(
 	)
 	if (!existingRow) return null
 
+	const nextPlan = resolvePlanWrite(input.plan)
+	const stripePlan = parseStripePlanName(existingRow.stripe_plan)
+	const nextLadder = resolveEntitlementLadderAfterPaidAccessChange({
+		currentLadder: parseEntitlementLadder(existingRow.entitlement_ladder),
+		manualPlan: nextPlan,
+		previousStripePlan: stripePlan,
+		nextStripePlan: stripePlan,
+	})
 	await db
-		.prepare(`UPDATE users SET plan = ?, updated_at = ? WHERE id = ?`)
-		.bind(resolvePlanWrite(input.plan), utcSqliteTimestamp(), existingRow.id)
+		.prepare(
+			`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
+		)
+		.bind(nextPlan, nextLadder, utcSqliteTimestamp(), existingRow.id)
 		.run()
 
 	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
@@ -436,6 +451,7 @@ type AdminUserRow = {
 	email_verified_at: string | null
 	plan: string
 	stripe_plan: string | null
+	entitlement_ladder: string | null
 	stripe_customer_id: string | null
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
@@ -476,6 +492,7 @@ function toAdminUserListItem(
 		manualPlan,
 		stripePlan,
 		effectivePlan: resolveEffectivePlan(manualPlan, row.stripe_plan),
+		entitlementLadder: parseEntitlementLadder(row.entitlement_ladder),
 		stripeCustomerLinked: Boolean(row.stripe_customer_id),
 		suspended_at: row.suspended_at,
 		email_outbound_paused_at: row.email_outbound_paused_at,

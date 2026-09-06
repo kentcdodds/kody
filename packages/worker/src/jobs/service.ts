@@ -54,9 +54,13 @@ import {
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
-	getCachedUserPlan,
+	getCachedUserEntitlement,
 } from '#worker/entitlements/service.ts'
-import { planLimits, type PlanName } from '#universal/plans.ts'
+import {
+	resolvePlanLimits,
+	type EntitlementLadder,
+	type PlanName,
+} from '#universal/plans.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -719,10 +723,11 @@ export async function syncPackageJobsForPackage(input: {
 						),
 				})
 			}
-			const plan = await getCachedUserPlan(input.env.APP_DB, {
+			const entitlement = await getCachedUserEntitlement(input.env.APP_DB, {
 				userId: input.userId,
 				email: callerContext.user.email,
 			})
+			const plan = entitlement.plan
 			for (const [jobName, definition] of Object.entries(desiredJobs)) {
 				const existing = existingByName.get(jobName)
 				const schedule = normalizeJobSchedule(definition.schedule)
@@ -737,6 +742,7 @@ export async function syncPackageJobsForPackage(input: {
 				) {
 					assertJobScheduleIntervalFloor({
 						plan,
+						ladder: entitlement.ladder,
 						schedule,
 						timezone,
 					})
@@ -784,6 +790,7 @@ export async function syncPackageJobsForPackage(input: {
 					) {
 						assertJobScheduleIntervalFloor({
 							plan,
+							ladder: entitlement.ladder,
 							schedule,
 							timezone,
 						})
@@ -813,6 +820,7 @@ export async function syncPackageJobsForPackage(input: {
 
 				assertJobScheduleIntervalFloor({
 					plan,
+					ladder: entitlement.ladder,
 					schedule,
 					timezone,
 				})
@@ -879,10 +887,14 @@ function packageJobNeedsIntervalFloor(input: {
 
 function assertJobScheduleIntervalFloor(input: {
 	plan: PlanName
+	ladder?: EntitlementLadder
 	schedule: JobSchedule
 	timezone?: string | null
 }) {
-	const minIntervalMs = planLimits[input.plan].minJobIntervalMs
+	const minIntervalMs = resolvePlanLimits(
+		input.plan,
+		input.ladder ?? 'public',
+	).minJobIntervalMs
 	if (minIntervalMs <= 0) return
 	const intervalMs = estimateScheduleMinIntervalMs({
 		schedule: input.schedule,
@@ -1031,10 +1043,10 @@ export async function updateJob(input: {
 			const timezoneChanged = nextTimezone !== existing.timezone
 			if (scheduleChanged || timezoneChanged) {
 				assertJobScheduleIntervalFloor({
-					plan: await getCachedUserPlan(input.env.APP_DB, {
+					...(await getCachedUserEntitlement(input.env.APP_DB, {
 						userId: callerContext.user.userId,
 						email: callerContext.user.email,
-					}),
+					})),
 					schedule: nextSchedule,
 					timezone: nextTimezone,
 				})

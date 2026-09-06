@@ -62,6 +62,10 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	isAccountEmailVerified: vi.fn(async () => true),
 	getUserPlan: vi.fn(async () => 'free' as const),
+	getUserEntitlement: vi.fn(async () => ({
+		plan: 'free' as const,
+		ladder: 'public' as const,
+	})),
 	readEntitlementResourceUsage: vi.fn(async () => 2),
 	resolvePlanLimit: vi.fn((_plan: string, resource: string) => {
 		switch (resource) {
@@ -170,6 +174,8 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	return {
 		...actual,
 		getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
+		getUserEntitlement: (...args: Array<unknown>) =>
+			mockModule.getUserEntitlement(...args),
 		readEntitlementResourceUsage: (...args: Array<unknown>) =>
 			mockModule.readEntitlementResourceUsage(...args),
 		readCurrentEntitlementResourceUsage: (

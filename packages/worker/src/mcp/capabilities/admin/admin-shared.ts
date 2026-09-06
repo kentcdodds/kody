@@ -60,6 +60,11 @@ export const adminUserMetadataSchema = z.object({
 	effectivePlan: planNameSchema.describe(
 		'Higher of the manual grant and Stripe subscription. This is the plan entitlements enforce.',
 	),
+	entitlementLadder: z
+		.enum(['public', 'legacy'])
+		.describe(
+			'Which Standard/Pro ceiling table applies. legacy keeps the pre-cut limits while paid access stays continuous; cancel then resubscribe is public.',
+		),
 	stripeCustomerLinked: z
 		.boolean()
 		.describe('True when users.stripe_customer_id is set.'),

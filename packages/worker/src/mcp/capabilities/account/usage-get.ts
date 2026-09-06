@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { planNames } from '#universal/plans.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
+import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 
 const usageResourceSchema = z.object({
@@ -41,7 +41,7 @@ export const usageGetCapability = defineDomainCapability(
 		async handler(_args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
 			const db = ctx.env.APP_DB
-			const plan = await getUserPlan(db, {
+			const entitlement = await getUserEntitlement(db, {
 				userId: user.userId,
 				email: user.email,
 			})
@@ -49,7 +49,8 @@ export const usageGetCapability = defineDomainCapability(
 				db,
 				env: ctx.env,
 				usageUserId: user.userId,
-				plan,
+				plan: entitlement.plan,
+				ladder: entitlement.ladder,
 			})
 			const mapRow = (
 				row: Awaited<

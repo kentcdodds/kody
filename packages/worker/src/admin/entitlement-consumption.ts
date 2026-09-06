@@ -1,6 +1,7 @@
 import {
 	entitlementResourceLabels,
 	resolvePlanLimit,
+	type EntitlementLadder,
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
@@ -33,6 +34,7 @@ export async function readAdminEntitlementConsumption(input: {
 	env: Env
 	usageUserId: string
 	plan: PlanName
+	ladder?: EntitlementLadder
 	now: Date
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
@@ -44,7 +46,11 @@ export async function readAdminEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			const limit = resolvePlanLimit(input.plan, resource)
+			const limit = resolvePlanLimit(
+				input.plan,
+				resource,
+				input.ladder ?? 'public',
+			)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {
 				resource,

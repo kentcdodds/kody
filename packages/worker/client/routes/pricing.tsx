@@ -6,6 +6,8 @@ import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
+	computeOverageRatesUsd,
+	formatDurableObjectRowsRead,
 	formatMinJobInterval,
 	planLimits,
 	type PlanLimits,
@@ -70,6 +72,15 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 			{ label: 'Execute calls per day', key: 'maxExecuteCallsPerDay' },
 			{ label: 'Outbound fetches per day', key: 'maxOutboundFetchesPerDay' },
 			{ label: 'Job runs per day', key: 'maxJobRunsPerDay' },
+			{
+				label: 'Unique worker days per month',
+				key: 'maxUniqueWorkerDaysPerMonth',
+			},
+			{
+				label: 'Durable Object rows read per month',
+				key: 'maxDurableObjectRowsReadPerMonth',
+				format: (value) => ({ text: formatDurableObjectRowsRead(value) }),
+			},
 		],
 	},
 	{
@@ -245,6 +256,14 @@ export function PricingRoute(handle: Handle) {
 							</tbody>
 						</table>
 					</div>
+					<p mix={css(limitsFootnoteCss)}>
+						Overage list prices are ${computeOverageRatesUsd.uniqueWorkerDay}{' '}
+						per unique worker day and $
+						{computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million
+						Durable Object rows read. Those allotments are not hard-cut, and
+						overages are not currently charged. Execute is a hard daily cap.
+						Durable Object duration is unmetered.
+					</p>
 				</section>
 
 				<p mix={css(limitsCtaCss)}>
@@ -447,6 +466,12 @@ const limitsScrollCss = {
 const limitsCtaCss = {
 	margin: '2.4rem 0 0',
 	textAlign: 'center' as const,
+}
+
+const limitsFootnoteCss = {
+	margin: '1rem 0 0',
+	color: colors.textMuted,
+	font: `450 0.88rem/1.45 ${typography.fontFamilyBody}`,
 }
 
 const limitsCtaButtonCss = getPillButtonCss()

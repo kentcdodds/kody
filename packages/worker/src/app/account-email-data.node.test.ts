@@ -56,6 +56,10 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	return {
 		...actual,
 		getUserPlan: vi.fn(async () => 'free' as const),
+		getUserEntitlement: vi.fn(async () => ({
+			plan: 'free' as const,
+			ladder: 'public' as const,
+		})),
 		readCurrentEntitlementResourceUsage: vi.fn(async () => 1),
 		readDailyEntitlementResourceUsage: vi.fn(async () => 0),
 	}

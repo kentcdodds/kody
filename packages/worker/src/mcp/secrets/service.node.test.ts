@@ -103,14 +103,17 @@ function createSecretTestDb(
 					const statement = {
 						async first<T>() {
 							if (
-								normalizedQuery.includes(
-									'select plan, stripe_plan from users where email = ?',
-								)
+								normalizedQuery.includes('select plan, stripe_plan') &&
+								normalizedQuery.includes('from users')
 							) {
 								const [email] = params as Array<string>
 								const plan = users.get(String(email).toLowerCase())
 								if (plan === undefined) return null
-								return { plan } as T
+								return {
+									plan,
+									stripe_plan: null,
+									entitlement_ladder: 'public',
+								} as T
 							}
 							if (
 								normalizedQuery.includes('from secret_entries se') &&

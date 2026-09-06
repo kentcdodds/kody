@@ -9,7 +9,7 @@ import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
+import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
@@ -304,7 +304,7 @@ async function collectEntitlementCaps(
 	now: Date,
 ) {
 	try {
-		const plan = await getUserPlan(env.APP_DB, {
+		const entitlement = await getUserEntitlement(env.APP_DB, {
 			userId: user.stableUserId,
 			email: user.email,
 		})
@@ -312,7 +312,8 @@ async function collectEntitlementCaps(
 			db: env.APP_DB,
 			env,
 			usageUserId: user.stableUserId,
-			plan,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
 			now,
 		})
 		return snapshot.resources

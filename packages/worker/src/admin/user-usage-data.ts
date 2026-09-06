@@ -1,6 +1,10 @@
 import { cachified, type Cache } from '@epic-web/cachified'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import { parseStoredPlanName, resolveEffectivePlan } from '#universal/plans.ts'
+import {
+	parseEntitlementLadder,
+	parseStoredPlanName,
+	resolveEffectivePlan,
+} from '#universal/plans.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
@@ -37,6 +41,7 @@ type AdminUserUsageUserRow = {
 	email: string
 	plan: string
 	stripe_plan: string | null
+	entitlement_ladder: string | null
 	stable_user_id: string
 }
 
@@ -63,7 +68,7 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, plan, stripe_plan, stable_user_id FROM users WHERE stable_user_id = ?`,
+		`SELECT id, username, email, plan, stripe_plan, entitlement_ladder, stable_user_id FROM users WHERE stable_user_id = ?`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()
@@ -73,6 +78,7 @@ export async function loadAdminUserUsageData(
 		parseStoredPlanName(row.plan),
 		row.stripe_plan,
 	)
+	const ladder = parseEntitlementLadder(row.entitlement_ladder)
 	const usageUserId = resolveUserStableId(row)
 	const currentMonth = utcMonthKey(now)
 	const today = utcDayKey(now)
@@ -93,6 +99,7 @@ export async function loadAdminUserUsageData(
 			env,
 			usageUserId,
 			plan,
+			ladder,
 			now,
 		}),
 	])

@@ -196,6 +196,13 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 						value: selectedUser.effectivePlan ?? 'free',
 					},
 					{
+						label: 'Entitlement ladder',
+						value:
+							selectedUser.entitlementLadder === 'legacy'
+								? 'Legacy (pre-cut Standard/Pro ceilings)'
+								: 'Public',
+					},
+					{
 						label: 'Stripe customer',
 						value: selectedUser.stripeCustomerLinked ? 'Linked' : 'Not linked',
 					},

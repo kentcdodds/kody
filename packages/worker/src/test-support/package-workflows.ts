@@ -387,7 +387,7 @@ export function createWorkflowRunsDatabase(options?: {
 							if (query.includes('COUNT(*) AS count')) {
 								return { count: options?.activeCount ?? 0 }
 							}
-							if (query.includes('SELECT plan, stripe_plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan')) {
 								if (query.includes('email = ?')) {
 									const email = String(params[0] ?? '')
 									const stableUserId = String(params[1] ?? '')

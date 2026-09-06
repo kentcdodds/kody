@@ -9,7 +9,11 @@ import {
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
 } from './errors.ts'
-import { parseStripePlanName, planLimits } from '#universal/plans.ts'
+import {
+	legacyPlanLimits,
+	parseStripePlanName,
+	planLimits,
+} from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
@@ -17,7 +21,9 @@ import {
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageEntryBytes,
 	findCachedUserAccountByStableUserId,
+	getCachedUserEntitlement,
 	getCachedUserPlan,
+	getUserEntitlement,
 	getUserPlan,
 	readCurrentEntitlementResourceUsage,
 	refundDailyEntitlement,
@@ -32,6 +38,7 @@ function createEntitlementsTestDb(
 			email: string
 			plan: string | null
 			stripe_plan?: string | null
+			entitlement_ladder?: 'public' | 'legacy' | null
 			stable_user_id: string
 		}>
 		counts?: Partial<
@@ -85,6 +92,9 @@ function createEntitlementsTestDb(
 					return {
 						async first<T>() {
 							if (
+								query.includes(
+									'SELECT plan, stripe_plan, entitlement_ladder FROM users',
+								) ||
 								query.includes('SELECT plan, stripe_plan FROM users') ||
 								query.includes('SELECT plan FROM users')
 							) {
@@ -110,6 +120,8 @@ function createEntitlementsTestDb(
 											? {
 													plan: user.plan,
 													stripe_plan: user.stripe_plan ?? null,
+													entitlement_ladder:
+														user.entitlement_ladder ?? 'public',
 												}
 											: null
 									) as T | null
@@ -126,6 +138,7 @@ function createEntitlementsTestDb(
 										? {
 												plan: user.plan,
 												stripe_plan: user.stripe_plan ?? null,
+												entitlement_ladder: user.entitlement_ladder ?? 'public',
 											}
 										: null
 								) as T | null
@@ -943,13 +956,15 @@ test('requested units and getCurrent overrides are honored', async () => {
 		}),
 	).rejects.toThrow('pass getCurrent')
 
+	const savedPackageLimit = planLimits.standard.maxSavedPackages
+	const nearSavedPackageLimit = savedPackageLimit - 3
 	const overSavedPackages = await assertWithinEntitlement({
 		db,
 		userId,
 		email: plannedEmail,
 		resource: 'saved_packages',
 		requested: 5,
-		getCurrent: async () => 97,
+		getCurrent: async () => nearSavedPackageLimit,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -959,8 +974,8 @@ test('requested units and getCurrent overrides are honored', async () => {
 	}
 	expect(overSavedPackages.details).toMatchObject({
 		resource: 'saved_packages',
-		limit: 100,
-		current: 97,
+		limit: savedPackageLimit,
+		current: nearSavedPackageLimit,
 	})
 	await assertWithinEntitlement({
 		db,
@@ -968,7 +983,7 @@ test('requested units and getCurrent overrides are honored', async () => {
 		email: plannedEmail,
 		resource: 'saved_packages',
 		requested: 3,
-		getCurrent: async () => 97,
+		getCurrent: async () => nearSavedPackageLimit,
 	})
 })
 
@@ -1347,4 +1362,158 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	expect(parseStripePlanName('pro')).toBe('pro')
 	expect(parseStripePlanName('partner')).toBeNull()
 	expect(parseStripePlanName('max')).toBeNull()
+})
+
+test('continuous legacy Standard keeps old execute ceiling; new and resubscribed get the public cap', async () => {
+	const legacyEmail = 'legacy-standard@example.com'
+	const publicEmail = 'public-standard@example.com'
+	const resubEmail = 'resub-standard@example.com'
+	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
+	const publicUserId = await createStableUserIdFromEmail(publicEmail)
+	const resubUserId = await createStableUserIdFromEmail(resubEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [
+			{
+				email: legacyEmail,
+				plan: 'free',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'legacy',
+				stable_user_id: legacyUserId,
+			},
+			{
+				email: publicEmail,
+				plan: 'free',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'public',
+				stable_user_id: publicUserId,
+			},
+			{
+				email: resubEmail,
+				plan: 'free',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'public',
+				stable_user_id: resubUserId,
+			},
+		],
+	})
+
+	expect(
+		await getUserEntitlement(db, { userId: legacyUserId, email: legacyEmail }),
+	).toEqual({ plan: 'standard', ladder: 'legacy' })
+	expect(
+		await getCachedUserEntitlement(db, {
+			userId: publicUserId,
+			email: publicEmail,
+		}),
+	).toEqual({ plan: 'standard', ladder: 'public' })
+
+	const legacyLimit = legacyPlanLimits.standard.maxExecuteCallsPerDay
+	const publicLimit = planLimits.standard.maxExecuteCallsPerDay
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId: legacyUserId,
+			email: legacyEmail,
+			resource: 'execute_calls_per_day',
+			requested: 0,
+			getCurrent: async () => publicLimit,
+		}),
+	).resolves.toBeUndefined()
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId: publicUserId,
+			email: publicEmail,
+			resource: 'execute_calls_per_day',
+			requested: 1,
+			getCurrent: async () => publicLimit,
+		}),
+	).rejects.toMatchObject({
+		details: {
+			code: 'entitlement_limit_exceeded',
+			plan: 'standard',
+			limit: publicLimit,
+			current: publicLimit,
+		},
+	})
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId: resubUserId,
+			email: resubEmail,
+			resource: 'execute_calls_per_day',
+			requested: 1,
+			getCurrent: async () => publicLimit,
+		}),
+	).rejects.toMatchObject({
+		details: { limit: publicLimit },
+	})
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId: legacyUserId,
+			email: legacyEmail,
+			resource: 'execute_calls_per_day',
+			requested: 1,
+			getCurrent: async () => legacyLimit,
+		}),
+	).rejects.toMatchObject({
+		details: { limit: legacyLimit },
+	})
+})
+
+test('legacy Pro and manual Pro grants keep pre-cut scheduled-job ceilings', async () => {
+	const stripeProEmail = 'legacy-stripe-pro@example.com'
+	const manualProEmail = 'legacy-manual-pro@example.com'
+	const stripeProUserId = await createStableUserIdFromEmail(stripeProEmail)
+	const manualProUserId = await createStableUserIdFromEmail(manualProEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [
+			{
+				email: stripeProEmail,
+				plan: 'free',
+				stripe_plan: 'pro',
+				entitlement_ladder: 'legacy',
+				stable_user_id: stripeProUserId,
+			},
+			{
+				email: manualProEmail,
+				plan: 'pro',
+				stripe_plan: null,
+				entitlement_ladder: 'legacy',
+				stable_user_id: manualProUserId,
+			},
+		],
+	})
+	const legacyLimit = legacyPlanLimits.pro.maxScheduledJobs
+	const publicLimit = planLimits.pro.maxScheduledJobs
+	expect(legacyLimit).toBeGreaterThan(publicLimit)
+
+	for (const [userId, email] of [
+		[stripeProUserId, stripeProEmail],
+		[manualProUserId, manualProEmail],
+	] as const) {
+		await expect(
+			assertWithinEntitlement({
+				db,
+				userId,
+				email,
+				resource: 'scheduled_jobs',
+				requested: 1,
+				getCurrent: async () => publicLimit,
+			}),
+		).resolves.toBeUndefined()
+		await expect(
+			assertWithinEntitlement({
+				db,
+				userId,
+				email,
+				resource: 'scheduled_jobs',
+				requested: 1,
+				getCurrent: async () => legacyLimit,
+			}),
+		).rejects.toMatchObject({
+			details: { plan: 'pro', limit: legacyLimit },
+		})
+	}
 })
