@@ -33,10 +33,9 @@ function asSelectedAgent(value: unknown): McpClientKind | null {
 
 export function rememberOnboardingSelectedAgent(agent: McpClientKind) {
 	if (!isBrowserRuntime()) return
-	if (agent === 'other') {
-		clearOnboardingSelectedAgentSession()
-		return
-	}
+	// `other` is the overflow / generic-MCP path, not a first-agent identity.
+	// Visiting /onboarding/step-1/not-listed must not wipe a named pick —
+	// Step 3 greying and the same-ecosystem deep-link guard both read this.
 	const stored = asSelectedAgent(agent)
 	if (!stored) return
 	browserRemembered = stored
