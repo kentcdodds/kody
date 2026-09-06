@@ -35,14 +35,17 @@ async function expectBannerSpansViewport(page: Page, look: string) {
 	expect(box?.width, `${look} banner width`).toBe(bodyWidth)
 }
 
-async function disableLeftoverEnabledBanners(page: Page) {
+const e2eLaunchVideoTitlePrefix = 'Launch video '
+
+async function deleteLeftoverE2eLaunchBanners(page: Page) {
 	const listed = await page.request.get('/admin/banners.json')
 	expect(listed.ok()).toBeTruthy()
 	const payload = (await listed.json()) as {
-		banners?: Array<{ id: string; enabled: boolean }>
+		banners?: Array<{ id: string; enabled: boolean; title: string }>
 	}
 	for (const banner of payload.banners ?? []) {
 		if (!banner.enabled) continue
+		if (!banner.title.startsWith(e2eLaunchVideoTitlePrefix)) continue
 		const deleted = await page.request.post('/admin/banners.json', {
 			data: { action: 'delete', id: banner.id },
 		})
@@ -80,7 +83,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	await expect(page.getByTestId('site-banner-preview-strip')).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-card')).toBeVisible()
-	await disableLeftoverEnabledBanners(page)
+	await deleteLeftoverE2eLaunchBanners(page)
 
 	if (screenshotDir) {
 		await page.setViewportSize({ width: 1280, height: 900 })
@@ -124,7 +127,7 @@ test('admin can create a site banner and preview launch looks', async ({
 	await captureIfRequested(page, 'option_b_promo_strip_dark_mobile.png')
 	await page.emulateMedia({ colorScheme: 'light' })
 
-	const title = `Launch video ${runId}`
+	const title = `${e2eLaunchVideoTitlePrefix}${runId}`
 	await page.setViewportSize({ width: 1280, height: 800 })
 	await page.goto('/admin/banners')
 	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible({
