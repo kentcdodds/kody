@@ -8,8 +8,10 @@ import {
 import { readSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 import {
 	resolveVisibleSiteBanner,
+	selectSiteBannersForClient,
 	siteBannerPreviewIdParam,
 	siteBannerPreviewLookParam,
+	type SiteBannerRecord,
 	type SiteBannerViewer,
 } from '#universal/site-banners.ts'
 import { type SiteBannerLoaderData } from '#universal/loader-data.ts'
@@ -89,13 +91,13 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 			])
 		: cookieDismissed
 
-	const candidates = wantsPreview
+	const listed: Array<SiteBannerRecord> = wantsPreview
 		? await listSiteBannersForAdmin(input.env.APP_DB)
 		: await listEnabledSiteBanners(input.env.APP_DB)
 
 	const needsPlan =
 		Boolean(stableUserId) &&
-		candidates.some((banner) => banner.audience === 'plans')
+		listed.some((banner) => banner.audience === 'plans')
 	const plan =
 		needsPlan && stableUserId
 			? await getUserPlan(input.env.APP_DB, {
@@ -110,10 +112,15 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 		plan,
 		isAdmin,
 	}
+	const candidates = selectSiteBannersForClient({
+		banners: listed,
+		viewer,
+		includeUnmatched: wantsPreview,
+	})
 
 	return {
 		banner: resolveVisibleSiteBanner({
-			candidates,
+			candidates: listed,
 			dismissedIds,
 			pathname: input.pathname,
 			searchParams: requestUrl.searchParams,

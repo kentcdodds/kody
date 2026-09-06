@@ -9,6 +9,7 @@ import {
 	parseBannerHref,
 	parseSiteBannerInput,
 	resolveVisibleSiteBanner,
+	selectSiteBannersForClient,
 	shouldHideSiteBanner,
 	type SiteBannerRecord,
 	type SiteBannerViewer,
@@ -270,4 +271,61 @@ test('parseSiteBannerInput accepts a launch-video banner and rejects bad hrefs',
 		dismissible: false,
 	})
 	expect(missingCtaLabel.ok).toBe(false)
+})
+
+test('public client candidates drop targeted user ids and unmatched audiences', () => {
+	const memberId = 'b'.repeat(64)
+	const adminStableUserId = adminViewer.stableUserId ?? ''
+	const publicBanner = banner({
+		id: '11111111-1111-4111-8111-111111111111',
+		audience: 'everyone',
+	})
+	const loggedInBanner = banner({
+		id: '22222222-2222-4222-8222-222222222222',
+		audience: 'logged_in',
+		title: 'Members only',
+	})
+	const targeted = banner({
+		id: '33333333-3333-4333-8333-333333333333',
+		audience: 'users',
+		audienceUserIds: [adminStableUserId],
+		title: 'Just you',
+		createdBy: 9,
+		updatedBy: 9,
+	})
+	const otherUser = banner({
+		id: '44444444-4444-4444-8444-444444444444',
+		audience: 'users',
+		audienceUserIds: [memberId],
+		title: 'Someone else',
+	})
+
+	const guestCandidates = selectSiteBannersForClient({
+		banners: [publicBanner, loggedInBanner, targeted, otherUser],
+		viewer: guestViewer,
+		includeUnmatched: false,
+	})
+	expect(guestCandidates.map((item) => item.id)).toEqual([publicBanner.id])
+	expect(guestCandidates[0]?.audienceUserIds).toEqual([])
+
+	const adminCandidates = selectSiteBannersForClient({
+		banners: [publicBanner, loggedInBanner, targeted, otherUser],
+		viewer: adminViewer,
+		includeUnmatched: false,
+	})
+	expect(adminCandidates.map((item) => item.title)).toEqual([
+		'Kody is live',
+		'Members only',
+		'Just you',
+	])
+	expect(adminCandidates.find((item) => item.title === 'Just you')).toEqual(
+		expect.objectContaining({
+			audience: 'logged_in',
+			audienceUserIds: [],
+			createdBy: null,
+			updatedBy: null,
+		}),
+	)
+	expect(JSON.stringify(adminCandidates)).not.toContain(memberId)
+	expect(JSON.stringify(adminCandidates)).not.toContain(adminStableUserId)
 })

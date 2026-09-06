@@ -405,6 +405,7 @@ export type AdminFeatureFlagsLoaderData = {
 export type AdminBannersLoaderData = {
 	ok: true
 	banners: Array<SiteBannerRecord>
+	savedBannerId?: string
 }
 
 export type SiteBannerLoaderData = {

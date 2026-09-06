@@ -23,6 +23,9 @@ not jump after hydration.
 4. Sort by priority (highest wins), then `updatedAt`, then `id`.
 5. Show one banner. If an admin passed `siteBannerLook` and nothing else
    matches, show the launch-video sample.
+6. The HTML snapshot only embeds candidates this viewer is eligible for, with
+   `audienceUserIds` and actor ids stripped, so anonymous cache cannot leak
+   targeted copy or stable user ids.
 
 Page targeting is `all` or `routes` with globs: `*` is one path segment, `**` is
 a suffix. Audience is `everyone`, `logged_out`, `logged_in`, `users` (stable
@@ -33,8 +36,9 @@ user ids), or `plans` (`free` / `standard` / `pro` / `max`).
 Dismissible banners persist forever: signed-in users write
 `site_banner_dismissals`; everyone also gets the HttpOnly
 `kody_site_banner_dismiss` cookie. A dismiss cookie forces `no-store` on
-otherwise-cacheable anonymous marketing HTML so a dismissed visitor does not
-receive a cached document that still contains the banner.
+otherwise-cacheable anonymous marketing HTML and skips the origin
+`caches.default` lookup so a dismissed visitor does not receive a cached
+document that still contains the banner.
 
 ## Looks
 

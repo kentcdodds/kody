@@ -113,7 +113,10 @@ async function handleSaveAction(input: {
 				`look=${banner.look}`,
 			].join(';'),
 		})
-		return jsonResponse(await loadAdminBannersData(input.env))
+		return jsonResponse({
+			...(await loadAdminBannersData(input.env)),
+			savedBannerId: banner.id,
+		})
 	} catch (error) {
 		return jsonResponse(
 			{

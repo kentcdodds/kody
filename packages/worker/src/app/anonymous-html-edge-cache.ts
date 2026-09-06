@@ -5,6 +5,7 @@ import {
 	isCacheableAnonymousPath,
 	requestHasSessionCookie,
 } from '#app/anonymous-html-cache.ts'
+import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 import { prefersMarkdown } from '#app/markdown-negotiation.ts'
 
 export const anonymousHtmlEdgeCacheHeader = 'X-Kody-Cache'
@@ -38,6 +39,7 @@ export function isAnonymousHtmlCacheRequest(
 	if (request.method !== 'GET' && request.method !== 'HEAD') return false
 	if (request.headers.has('Authorization')) return false
 	if (requestHasSessionCookie(request)) return false
+	if (requestHasSiteBannerDismissCookie(request)) return false
 	if (requestBypassesAnonymousHtmlCache(request)) return false
 	if (prefersMarkdown(request)) return false
 	let url: URL

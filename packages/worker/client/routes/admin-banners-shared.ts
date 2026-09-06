@@ -69,6 +69,14 @@ export function emptyDraft(): BannerDraft {
 	}
 }
 
+export function bannerAfterSave(
+	banners: Array<SiteBannerRecord>,
+	savedBannerId: string | undefined,
+): SiteBannerRecord | null {
+	if (!savedBannerId) return null
+	return banners.find((banner) => banner.id === savedBannerId) ?? null
+}
+
 export function draftFromBanner(banner: SiteBannerRecord): BannerDraft {
 	return {
 		id: banner.id,
