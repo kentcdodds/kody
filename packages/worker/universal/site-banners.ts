@@ -328,10 +328,14 @@ export function compareSiteBannerPriority(
 
 export function toPublicSiteBannerCandidate(
 	banner: SiteBannerRecord,
+	options?: { remapMatchedUsersAudience?: boolean },
 ): SiteBannerRecord {
 	return {
 		...banner,
-		audience: banner.audience === 'users' ? 'logged_in' : banner.audience,
+		audience:
+			options?.remapMatchedUsersAudience && banner.audience === 'users'
+				? 'logged_in'
+				: banner.audience,
 		audienceUserIds: [],
 		createdBy: null,
 		updatedBy: null,
@@ -354,7 +358,11 @@ export function selectSiteBannersForClient(input: {
 				bannerMatchesAudience(banner, input.viewer)
 			)
 		})
-		.map(toPublicSiteBannerCandidate)
+		.map((banner) =>
+			toPublicSiteBannerCandidate(banner, {
+				remapMatchedUsersAudience: !input.includeUnmatched,
+			}),
+		)
 }
 
 export function toSiteBannerView(

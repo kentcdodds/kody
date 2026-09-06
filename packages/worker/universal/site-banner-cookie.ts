@@ -50,11 +50,14 @@ function uniqueValidIds(ids: ReadonlyArray<string>): Array<string> {
 	const seen = new Set<string>()
 	for (const id of ids) {
 		const trimmed = id.trim()
-		if (!isSiteBannerId(trimmed) || seen.has(trimmed)) continue
+		if (!isSiteBannerId(trimmed)) continue
+		seen.delete(trimmed)
 		seen.add(trimmed)
-		if (seen.size >= maxDismissedIds) break
 	}
-	return [...seen]
+	const unique = [...seen]
+	return unique.length <= maxDismissedIds
+		? unique
+		: unique.slice(-maxDismissedIds)
 }
 
 function decodeCookieValue(value: string): string {

@@ -32,6 +32,19 @@ test('siteBannerDismissCookie writes HttpOnly ids and addDismissedBannerId is un
 	expect(addDismissedBannerId([bannerId], bannerId)).toEqual([bannerId])
 })
 
+test('dismiss cookie keeps the newest 40 ids when the cap is exceeded', () => {
+	const ids = Array.from({ length: 40 }, (_, index) => {
+		const suffix = String(index + 1).padStart(12, '0')
+		return `11111111-1111-4111-8111-${suffix}`
+	})
+	const newest = '22222222-2222-4222-8222-222222222222'
+	const kept = addDismissedBannerId(ids, newest)
+	expect(kept).toHaveLength(40)
+	expect(kept.at(-1)).toBe(newest)
+	expect(kept).not.toContain(ids[0])
+	expect(kept).toContain(ids[1])
+})
+
 test('requestHasSiteBannerDismissCookie matches only the dismiss cookie name', () => {
 	expect(
 		requestHasSiteBannerDismissCookie(new Request('https://example.com/')),
