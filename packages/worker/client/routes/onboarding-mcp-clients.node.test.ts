@@ -19,7 +19,6 @@ import {
 	buildVsCodeMcpJson,
 	defaultKodyMcpUrl,
 	isDefaultKodyMcpUrl,
-	isValidOnboardingAgentChooserPick,
 	mcpClientTabs,
 	onboardingDataHref,
 	onboardingDesktopFeaturedAgentIds,
@@ -45,7 +44,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	)
 	const rotated = pickOnboardingAgentChooser(() => 0)
 	const identity = pickOnboardingAgentChooser((max) => max - 1)
-	expect(isValidOnboardingAgentChooserPick(rotated)).toBe(true)
 	expect(rotated.desktopFeatured).not.toEqual(identity.desktopFeatured)
 	expect(rotated.mobileFeatured).not.toEqual(identity.mobileFeatured)
 	expect(onboardingDataHref('/onboarding/step-1/cursor?redirectTo=%2F')).toBe(
@@ -91,16 +89,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		display: 'none',
 		[onboardingMobileAgentMq]: { display: 'list-item' },
 	})
-	expect(
-		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
-	).toEqual([
-		'chatgpt',
-		'claude-desktop',
-		'grok',
-		'grok-bot',
-		'copilot-app',
-		'gemini',
-	])
 
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)

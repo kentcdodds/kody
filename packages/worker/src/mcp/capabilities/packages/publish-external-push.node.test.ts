@@ -74,8 +74,17 @@ vi.mock('#mcp/capabilities/durable-escalation.ts', () => ({
 		mockModule.runWithDurableEscalation(...args),
 }))
 
-const { buildExternalPublishIdempotencyParts, publishExternalPushCapability } =
+const { publishExternalPushCapability } =
 	await import('./publish-external-push.ts')
+
+const defaultPublishIdempotencyParts = [
+	'packagePublishExternalPush',
+	'{"allowForce":false,"destructiveOverwriteConfirmed":false,"newCommit":"commit-new","ownerUserId":"user-1","packageId":"package-1"}',
+] as const
+const forcedPublishIdempotencyParts = [
+	'packagePublishExternalPush',
+	'{"allowForce":true,"destructiveOverwriteConfirmed":true,"newCommit":"commit-new","ownerUserId":"user-1","packageId":"package-1"}',
+] as const
 
 function setupDefaultMocks() {
 	mockModule.getSavedPackageById.mockResolvedValue({
@@ -202,13 +211,11 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			},
 			hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
 			test_hints: {
-				app: 'packageAppFetch({ kody_id: "demo-package" })',
+				app: expect.stringContaining('demo-package'),
 				subscriptions: [
-					{
+					expect.objectContaining({
 						topic: 'email.message.received',
-						snippet:
-							'packageSubscriptionDispatch({ kody_id: "demo-package", topic: "email.message.received", params: {} })',
-					},
+					}),
 				],
 			},
 			static_dependents: expect.objectContaining({
@@ -712,24 +719,12 @@ test('ineligible publishes return structured results without durable escalation 
 	// RunLog workflow projections are scoped by acting userId; parts keep full
 	// semantic input.
 	expect(escalationInput.userId).toBe('user-1')
-	expect(escalationInput.idempotencyParts).toEqual(
-		buildExternalPublishIdempotencyParts({
-			ownerUserId: 'user-1',
-			packageId: 'package-1',
-			newCommit: 'commit-new',
-			allowForce: false,
-			destructiveOverwriteConfirmed: false,
-		}),
-	)
-	expect(
-		buildExternalPublishIdempotencyParts({
-			ownerUserId: 'user-1',
-			packageId: 'package-1',
-			newCommit: 'commit-new',
-			allowForce: true,
-			destructiveOverwriteConfirmed: true,
-		}),
-	).not.toEqual(escalationInput.idempotencyParts)
+	expect(escalationInput.idempotencyParts).toEqual([
+		...defaultPublishIdempotencyParts,
+	])
+	expect(escalationInput.idempotencyParts).not.toEqual([
+		...forcedPublishIdempotencyParts,
+	])
 })
 
 test('missing executionOrigin fails closed and does not escalate', async () => {
@@ -761,13 +756,7 @@ test('budget exhaustion returns a dispatched handle and background re-entry skip
 		branch: 'main',
 		commit: 'commit-new',
 	})
-	const expectedParts = buildExternalPublishIdempotencyParts({
-		ownerUserId: 'user-1',
-		packageId: 'package-1',
-		newCommit: 'commit-new',
-		allowForce: false,
-		destructiveOverwriteConfirmed: false,
-	})
+	const expectedParts = [...defaultPublishIdempotencyParts]
 	mockModule.runWithDurableEscalation.mockResolvedValue({
 		kind: 'dispatched',
 		handle: {

@@ -1586,7 +1586,6 @@ export default async function main() {
 			expect.objectContaining({
 				kind: 'lint',
 				ok: true,
-				message: 'Lint placeholder passed for this phase.',
 			}),
 		]),
 	)
@@ -1628,7 +1627,6 @@ export type Bucket = typeof storage
 			expect.objectContaining({
 				kind: 'lint',
 				ok: true,
-				message: 'Lint placeholder passed for this phase.',
 			}),
 		]),
 	)

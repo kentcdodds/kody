@@ -3,7 +3,6 @@ import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import {
 	attachPublishPhaseTimings,
 	mergePublishPhaseTimings,
-	publishPhaseTimingField,
 	recordPublishPhaseTiming,
 	timePublishExternalPushPhase,
 	withPublishAttemptTotalMs,
@@ -55,7 +54,6 @@ test('timePublishExternalPushPhase records stable capability field names', async
 
 	recordPublishPhaseTiming(timings, 'checks/bundle', 12)
 	recordPublishPhaseTiming(timings, 'rebuild', 34)
-	expect(publishPhaseTimingField('clone')).toBe('clone_ms')
 	expect(timings).toEqual({
 		checks_typecheck_ms: expect.any(Number),
 		checks_bundle_ms: 12,

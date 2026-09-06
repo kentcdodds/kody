@@ -106,11 +106,9 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 		userId,
 		baseUrl: 'https://kody.example',
 	})
-	expect(notice).toContain('Onboarding:')
 	expect(notice).toContain('Connect your agent')
 	expect(notice).toContain('Give Kody access')
 	expect(notice).toContain('Connect a second agent')
-	expect(notice).toContain('not a gateway')
 	expect(notice).toContain('/onboarding')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)

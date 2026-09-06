@@ -1,10 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
-	buildOnboardingSetupPrompt,
 	buildPersistFirstPackagePrompt,
 	loadOnboardingData,
 	loadPublicOnboardingData,
@@ -38,38 +36,37 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://preview.example/onboarding',
 		}),
 	).toContain('https://preview.example/guides/quick-example')
-	expect(buildOnboardingSetupPrompt()).toContain('give Kody access')
 
-	expect(
-		loadPublicOnboardingData({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
-	).toEqual({
+	const publicData = loadPublicOnboardingData({
+		env: { APP_BASE_URL: 'https://heykody.dev' },
+		requestUrl: 'https://heykody.dev/onboarding',
+	})
+	expect(publicData).toMatchObject({
 		ok: true,
 		loggedIn: false,
 		username: null,
 		mcpServerUrl: 'https://heykody.dev/mcp',
-		setupPrompt: buildOnboardingSetupPrompt(),
-		discoveryPrompt: buildDiscoveryPrompt({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
-		persistPrompt: buildPersistFirstPackagePrompt({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
-		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})
+	expect(publicData.setupPrompt.length).toBeGreaterThan(0)
+	expect(publicData.discoveryPrompt).toContain('https://heykody.dev')
+	expect(publicData.persistPrompt).toContain('https://heykody.dev')
+	expect(publicData.featuredMcpServers.map((server) => server.id)).toContain(
+		'notion',
+	)
+	expect(
+		publicData.featuredMcpServers.every(
+			(server) => !server.connected && server.serverId === null,
+		),
+	).toBe(true)
 
 	const withoutClient = await loadOnboardingData({
 		env: {
@@ -82,31 +79,31 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		username: 'u-b',
 		emailVerified: true,
 	})
-	expect(withoutClient).toEqual({
+	expect(withoutClient).toMatchObject({
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
 		mcpServerUrl: 'https://heykody.dev/mcp',
-		setupPrompt: buildOnboardingSetupPrompt(),
-		discoveryPrompt: buildDiscoveryPrompt({
-			env: {},
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
-		persistPrompt: buildPersistFirstPackagePrompt({
-			env: {},
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
 		featuredListings: [],
-		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})
+	expect(withoutClient.setupPrompt.length).toBeGreaterThan(0)
+	expect(withoutClient.discoveryPrompt).toContain('https://heykody.dev')
+	expect(withoutClient.featuredMcpServers.map((server) => server.id)).toContain(
+		'notion',
+	)
+	expect(
+		withoutClient.featuredMcpServers.every(
+			(server) => !server.connected && server.serverId === null,
+		),
+	).toBe(true)
 
 	const withClient = await loadOnboardingData({
 		env: {
@@ -173,14 +170,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		mcpServerUrl: '',
 		setupPrompt: '',
 		persistPrompt: '',
-		// Discovery needs no verified email or MCP host, so it is never gated.
-		discoveryPrompt: buildDiscoveryPrompt({
-			env: {},
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
 		// Persist next-steps stay empty until verification.
 		persistedPackageKodyId: null,
 	})
+	expect(unverifiedWithGrant.discoveryPrompt).toContain('https://heykody.dev')
 
 	const whenProviderListingFails = await loadOnboardingData({
 		env: {

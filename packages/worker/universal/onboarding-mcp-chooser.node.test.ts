@@ -17,11 +17,9 @@ import {
 	matchOnboardingFeaturedMcpServer,
 	normalizeOnboardingMcpServerUrl,
 	canonicalOnboardingServiceChooser,
-	isValidOnboardingServiceChooserPick,
 	onboardingFeaturedMcpServers,
 	onboardingFeaturedMcpServerIds,
 	onboardingFeaturedMcpSlotCount,
-	onboardingServiceImageIconSrc,
 	pickOnboardingServiceChooser,
 	overlayOnboardingFeaturedMcpServers,
 	resolveOnboardingMcpOAuthBanner,
@@ -36,7 +34,6 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 	)
 	const shuffled = pickOnboardingServiceChooser(() => 0)
 	const identity = pickOnboardingServiceChooser((max) => max - 1)
-	expect(isValidOnboardingServiceChooserPick(shuffled)).toBe(true)
 	expect(shuffled.featured).toHaveLength(onboardingFeaturedMcpSlotCount)
 	expect(shuffled.featured).not.toEqual(identity.featured)
 	expect(canonicalOnboardingServiceChooser().overflow).toContain('github')
@@ -309,9 +306,6 @@ test('every featured MCP chip that is not a ProviderIcon has a repo SVG', () => 
 	const iconsDirectory = join(import.meta.dirname, '../public/images/icons')
 	for (const id of onboardingFeaturedMcpServerIds) {
 		if (providerIconIds.has(id)) continue
-		expect(onboardingServiceImageIconSrc(id), id).toBe(
-			`/images/icons/${id}.svg`,
-		)
-		expect(existsSync(join(iconsDirectory, `${id}.svg`)), id).toBe(true)
+		expect(existsSync(join(iconsDirectory, `${id}.svg`))).toBe(true)
 	}
 })

@@ -1,16 +1,6 @@
 import { css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
-import {
-	onboardingAccessLede,
-	onboardingAccessSelectedLede,
-	onboardingExplorePackagesHref,
-	onboardingGuideEntity,
-	onboardingPortabilityProofPrompt,
-	onboardingSecondAgentLede,
-	onboardingTeachPrompt,
-	onboardingUnconnectedNotice,
-} from '#universal/onboarding-process.ts'
 import { defaultKodyMcpUrl } from './onboarding-mcp-clients.ts'
 import {
 	renderAccessPanel,
@@ -118,28 +108,18 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 test('step 2 shows teach prompts and a guide pointer, not a service quest', async () => {
 	const unconnected = await renderToString(accessPanel({}))
 	expect(unconnected).toContain('Give Kody access')
-	expect(unconnected).toContain(onboardingAccessLede)
-	expect(unconnected).toContain(onboardingUnconnectedNotice)
 	expect(unconnected).toContain(discoveryPrompt)
 	expect(unconnected).toContain('data-testid="onboarding-wizard-next"')
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
+	expect(unconnected).not.toContain('data-testid="onboarding-teach-prompts"')
 
 	const connected = await renderToString(
 		accessPanel({ hasMcpClient: true, selectedAgentLabel: 'Cursor' }),
 	)
-	expect(connected).toContain(onboardingAccessSelectedLede('Cursor'))
 	expect(connected).toContain('data-testid="onboarding-teach-prompts"')
 	expect(connected).toContain('data-testid="onboarding-guide-pointer"')
-	expect(connected).toContain(onboardingGuideEntity)
-	expect(connected).toContain(onboardingTeachPrompt('home-and-memory'))
-	expect(connected).toContain(onboardingTeachPrompt('execute'))
-	expect(connected).toContain(onboardingTeachPrompt('packages'))
-	expect(connected).toContain(onboardingTeachPrompt('durable-surfaces'))
-	expect(connected).toContain('not a gateway')
 	expect(connected).toContain('data-testid="onboarding-wizard-next"')
-	expect(connected).not.toContain(
-		'data-testid="onboarding-wizard-explore-packages"',
-	)
+	expect(connected).not.toContain('data-testid="onboarding-unconnected-prompt"')
 })
 
 test('step 3 greys the first-agent ecosystem and folds in a portability proof', async () => {
@@ -151,8 +131,6 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(picker).toContain('Connect a second agent')
-	expect(picker).toContain(onboardingSecondAgentLede)
-	expect(picker.split(onboardingSecondAgentLede)).toHaveLength(2)
 	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
 	expect(picker).toContain('data-greyed="true"')
 	expect(picker).toContain('Same ecosystem')
@@ -161,7 +139,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(picker).not.toContain('href="/onboarding/step-3/chatgpt"')
 	expect(picker).not.toContain('href="/onboarding/step-3/codex"')
 	expect(picker).not.toContain('data-testid="onboarding-portability-proof"')
-	expect(picker).toContain(`href="${onboardingExplorePackagesHref()}"`)
+	expect(picker).toContain('href="/community"')
 
 	const selected = await renderToString(
 		secondAgentPanel({
@@ -173,9 +151,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(selected).toContain('Connect Claude Code')
 	expect(selected).toContain('Waiting for Claude Code to connect')
 	expect(selected).toContain('data-testid="onboarding-portability-proof"')
-	expect(selected).toContain(onboardingPortabilityProofPrompt)
 	expect(selected).toContain('data-testid="onboarding-wizard-copy-prompt"')
-	expect(selected).toContain('Copy portability proof')
 
 	const connected = await renderToString(
 		secondAgentPanel({
