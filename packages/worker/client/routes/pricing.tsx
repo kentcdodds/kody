@@ -260,8 +260,9 @@ export function PricingRoute(handle: Handle) {
 						Overage list prices are ${computeOverageRatesUsd.uniqueWorkerDay}{' '}
 						per unique worker day and $
 						{computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million
-						Durable Object rows read. Those allotments are not hard-cut. Execute
-						is a hard daily cap. Durable Object duration is unmetered.
+						Durable Object rows read. Those allotments are not hard-cut, and
+						overages are not currently charged. Execute is a hard daily cap.
+						Durable Object duration is unmetered.
 					</p>
 				</section>
 

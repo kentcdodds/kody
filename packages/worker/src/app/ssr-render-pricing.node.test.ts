@@ -124,4 +124,5 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		),
 	)
 	expect(html).toContain(`$${computeOverageRatesUsd.uniqueWorkerDay}`)
+	expect(html).toContain('overages are not currently charged')
 })
