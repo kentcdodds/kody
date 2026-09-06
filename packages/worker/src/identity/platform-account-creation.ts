@@ -98,6 +98,7 @@ export async function createPlatformAccount(input: {
 		)
 	}
 	const stableUserId = allocated.stableUserId
+	let userId: number | null = null
 
 	try {
 		const result = await input.db
@@ -120,18 +121,27 @@ export async function createPlatformAccount(input: {
 				'Unable to create platform account.',
 			)
 		}
+		userId = lastRowId
 		await claimAccountEmail(input.db, {
-			userId: lastRowId,
+			userId,
 			email,
 			now,
 		})
 		return {
-			userId: lastRowId,
+			userId,
 			email,
 			username,
 			stableUserId,
 		} satisfies CreatedPlatformAccount
 	} catch (error) {
+		if (userId != null) {
+			await deleteUserBestEffort(input.db, userId)
+			if (error instanceof PlatformAccountCreateError) throw error
+			throw new PlatformAccountCreateError(
+				'create_failed',
+				'Unable to create platform account.',
+			)
+		}
 		if (error instanceof PlatformAccountCreateError) throw error
 		const uniqueField = getUniqueConstraintField(error)
 		if (uniqueField === 'email') {
@@ -147,5 +157,13 @@ export async function createPlatformAccount(input: {
 			)
 		}
 		throw error
+	}
+}
+
+async function deleteUserBestEffort(db: D1Database, userId: number) {
+	try {
+		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
+	} catch (error) {
+		console.error('Failed to roll back platform account user:', error)
 	}
 }

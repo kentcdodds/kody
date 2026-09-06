@@ -12,7 +12,10 @@ import { hashVerificationToken } from '#app/email-verification.ts'
 import { formerEmailClaimedSignupCode } from '#universal/email-claim-errors.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -283,4 +286,45 @@ test('release requests are rate limited and refuse another account email', async
 		params: {},
 	} as never)
 	expect(limited.status).toBe(429)
+})
+
+test('refunds the request limiter when the release email cannot be sent', async () => {
+	consoleError.mockImplementation(() => {})
+	const { sqlite, db } = createMigratedDb()
+	await seedUser(sqlite, {
+		id: 1,
+		email: 'owner@example.com',
+		username: 'owner',
+		password: 'correct-password',
+	})
+	sqlite.exec(`
+		INSERT INTO user_email_claims (user_id, email, status)
+		VALUES (1, 'owner@example.com', 'claimed');
+		INSERT INTO user_email_claims (user_id, email, status)
+		VALUES (1, 'old@example.com', 'claimed');
+	`)
+	const env = {
+		...createAppEnv(db),
+		SENTRY_ENVIRONMENT: 'production',
+	} as Env
+	const handler = createAccountEmailClaimReleaseHandler(env)
+	const session = {
+		stableUserId: testStableUserIdFromEmail('owner@example.com'),
+		email: 'owner@example.com',
+		rememberMe: false,
+	}
+
+	for (let attempt = 0; attempt < 4; attempt += 1) {
+		const response = await handler.handler({
+			request: await createReleaseRequest({
+				session,
+				email: 'old@example.com',
+				password: 'correct-password',
+			}),
+			url: new URL('http://example.com/account/email-claim-release.json'),
+			params: {},
+		} as never)
+		expect(response.status).toBe(502)
+	}
+	expect(consoleError).toHaveBeenCalled()
 })

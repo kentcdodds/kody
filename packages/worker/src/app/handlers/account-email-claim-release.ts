@@ -231,6 +231,9 @@ export function createAccountEmailClaimReleaseHandler(env: Env) {
 					)
 				}
 				console.error('Failed to request email claim release:', error)
+				await releaseRateLimit(env.APP_DB, requestLimitKey).catch(
+					() => undefined,
+				)
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
