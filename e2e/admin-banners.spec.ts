@@ -1,15 +1,8 @@
-import { existsSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-	expect,
-	test,
-	waitForClientHydration,
-	type Page,
-} from './playwright-utils.ts'
+import { expect, test, type Page } from './playwright-utils.ts'
 
-const screenshotDir =
-	process.env.SITE_BANNER_SCREENSHOT_DIR ??
-	(existsSync('/opt/cursor/artifacts') ? '/opt/cursor/artifacts' : null)
+const screenshotDir = process.env.SITE_BANNER_SCREENSHOT_DIR ?? null
 
 function screenshotPath(name: string): string {
 	if (!screenshotDir) {
@@ -44,10 +37,12 @@ test('admin can create a site banner and preview launch looks', async ({
 	})
 
 	await page.goto('/admin/banners')
-	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { name: 'Admin banners' }),
-	).toBeVisible()
+	).toBeVisible({ timeout: 20_000 })
+	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true', {
+		timeout: 15_000,
+	})
 	await expect(page.getByRole('heading', { name: 'Look spike' })).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-strip')).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
@@ -80,8 +75,12 @@ test('admin can create a site banner and preview launch looks', async ({
 	const title = `Launch video ${runId}`
 	await page.setViewportSize({ width: 1280, height: 800 })
 	await page.goto('/admin/banners')
-	await waitForClientHydration(page)
-	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible({
+		timeout: 20_000,
+	})
+	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true', {
+		timeout: 15_000,
+	})
 	await page.getByLabel('Title', { exact: true }).fill(title)
 	await page.getByLabel('Body').fill('Watch the launch video.')
 	await page.getByLabel('CTA URL').fill('https://example.com/kody-launch-video')
