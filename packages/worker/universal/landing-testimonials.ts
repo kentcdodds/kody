@@ -41,9 +41,8 @@ export const landingTestimonials = [
 			'Kody feels like the missing layer between my coding agents and the real systems I need them to operate. My agents still do the thinking and build the software, but Kody gives that work a durable home that isn’t tied to any one agent or tool.',
 		name: 'Justin Elias',
 		photo: '/images/testimonials/justin-elias.webp',
-		href: 'https://www.linkedin.com/in/justin-elias',
-		title: 'Data Engineer',
-		company: 'John Deere',
+		href: 'https://www.linkedin.com/in/justin-elias-22279a75/',
+		company: 'Zoot Enterprises',
 	},
 	{
 		quote:
