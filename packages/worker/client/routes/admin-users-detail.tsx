@@ -37,6 +37,10 @@ import {
 	dynamicWorkerCostFootnote,
 	formatDynamicWorkerUsd,
 } from '#universal/dynamic-worker-cost.ts'
+import {
+	durableObjectDurationFootnote,
+	formatDurableObjectGbSeconds,
+} from '#universal/durable-object-duration.ts'
 
 const selectCss = getSelectCss()
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
@@ -545,6 +549,41 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 								})}
 							>
 								{dynamicWorkerCostFootnote}
+							</p>
+						</div>
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<h3
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.base,
+								})}
+							>
+								Durable Object duration
+							</h3>
+							<p
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.sm,
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
+								{formatDurableObjectGbSeconds(
+									selectedUsage.durableObjectDuration.gbSeconds,
+								)}{' '}
+								this month (
+								{formatIntegerNumber(
+									selectedUsage.durableObjectDuration.rpcCount,
+								)}{' '}
+								RPCs)
+							</p>
+							<p
+								mix={css({
+									margin: 0,
+									color: colors.textMuted,
+									fontSize: typography.fontSize.xs,
+								})}
+							>
+								{durableObjectDurationFootnote}
 							</p>
 						</div>
 						<div mix={css({ display: 'grid', gap: spacing.md })}>

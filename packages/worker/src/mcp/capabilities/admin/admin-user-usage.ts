@@ -20,6 +20,7 @@ const usageMetricSchema = z.enum([
 	'email_send',
 	'email_received',
 	'dynamic_worker_day',
+	'durable_object_gb_seconds',
 ])
 
 const entitlementResourceSchema = z.enum([
@@ -97,6 +98,12 @@ const outputSchema = z.object({
 				usdPerUniqueDay: z.number().nonnegative(),
 				includedPerAccountMonth: z.number().int().nonnegative(),
 			}),
+			durableObjectDuration: z.object({
+				gbSeconds: z.number().nonnegative(),
+				durationMs: z.number().nonnegative(),
+				rpcCount: z.number().int().nonnegative(),
+				memoryGb: z.number().nonnegative(),
+			}),
 		})
 		.nullable(),
 })
@@ -107,7 +114,7 @@ export const adminUserUsageCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminUserUsage',
 		description:
-			'Read usage rollups, entitlement counters, plan-limit consumption, and estimated Cloudflare Dynamic Worker cost for one user account by stable user id, email, or username. Admin-only; never returns user content.',
+			'Read usage rollups, entitlement counters, plan-limit consumption, estimated Cloudflare Dynamic Worker cost, and observe-only Durable Object duration (GB-s) for one user account by stable user id, email, or username. Admin-only; never returns user content.',
 		keywords: [
 			'admin',
 			'usage',

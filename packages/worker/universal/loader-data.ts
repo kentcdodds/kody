@@ -506,6 +506,7 @@ export type AdminUsageMetric =
 	| 'email_send'
 	| 'email_received'
 	| 'dynamic_worker_day'
+	| 'durable_object_gb_seconds'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'
@@ -563,6 +564,7 @@ export type AdminUserUsageLoaderData = {
 	entitlementConsumption: Array<AdminUsageEntitlementConsumption>
 	warnings: Array<AdminUsageEntitlementConsumption>
 	dynamicWorkerCost: AdminDynamicWorkerCost
+	durableObjectDuration: AdminDurableObjectDuration
 }
 
 export type AdminInsightsTotals = {
@@ -706,6 +708,13 @@ export type AdminDynamicWorkerCost = {
 	estimatedGrossUsd: number
 	usdPerUniqueDay: number
 	includedPerAccountMonth: number
+}
+
+export type AdminDurableObjectDuration = {
+	gbSeconds: number
+	durationMs: number
+	rpcCount: number
+	memoryGb: number
 }
 
 export type AdminInsightsDynamicWorkerCostConsumer = {

@@ -20,6 +20,7 @@ import {
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 
 const defaultStorageExportPageSize = 250
@@ -595,42 +596,47 @@ export function storageRunnerRpc(input: {
 	userId: string
 	storageId: string
 }) {
-	const runner = input.env.STORAGE_RUNNER.get(
-		input.env.STORAGE_RUNNER.idFromName(
-			storageRunnerDurableObjectName(input.userId, input.storageId),
-		),
-	) as unknown as {
-		getValue: (payload: { key: string }) => Promise<{
-			key: string
-			value: unknown
-		}>
-		setValue: (payload: {
-			key: string
-			value: unknown
-		}) => Promise<StorageSetResult>
-		deleteValue: (payload: { key: string }) => Promise<StorageDeleteResult>
-		clearStorage: () => Promise<StorageClearResult>
-		getEstimatedBytes: () => Promise<StorageEstimateResult>
-		listValues: (payload: {
-			prefix?: string | null
-			pageSize?: number
-			startAfter?: string | null
-		}) => Promise<StorageListResult>
-		exportStorage: (payload: {
-			pageSize?: number
-			startAfter?: string | null
-		}) => Promise<StorageExportResult>
-		importStorage: (payload: {
-			mode: 'replace'
-			replacePage: 'first' | 'continue'
-			entries: Array<{ key: string; valueJson: string }>
-		}) => Promise<{ ok: true; written: number; cleared: boolean }>
-		sqlQuery: (payload: {
-			query: string
-			params?: Array<unknown>
-			writable?: boolean
-		}) => Promise<StorageSqlResult>
-	}
+	const runner = createMeteredDurableObjectStub({
+		env: input.env,
+		userId: input.userId,
+		doClass: 'StorageRunner',
+		stub: input.env.STORAGE_RUNNER.get(
+			input.env.STORAGE_RUNNER.idFromName(
+				storageRunnerDurableObjectName(input.userId, input.storageId),
+			),
+		) as unknown as {
+			getValue: (payload: { key: string }) => Promise<{
+				key: string
+				value: unknown
+			}>
+			setValue: (payload: {
+				key: string
+				value: unknown
+			}) => Promise<StorageSetResult>
+			deleteValue: (payload: { key: string }) => Promise<StorageDeleteResult>
+			clearStorage: () => Promise<StorageClearResult>
+			getEstimatedBytes: () => Promise<StorageEstimateResult>
+			listValues: (payload: {
+				prefix?: string | null
+				pageSize?: number
+				startAfter?: string | null
+			}) => Promise<StorageListResult>
+			exportStorage: (payload: {
+				pageSize?: number
+				startAfter?: string | null
+			}) => Promise<StorageExportResult>
+			importStorage: (payload: {
+				mode: 'replace'
+				replacePage: 'first' | 'continue'
+				entries: Array<{ key: string; valueJson: string }>
+			}) => Promise<{ ok: true; written: number; cleared: boolean }>
+			sqlQuery: (payload: {
+				query: string
+				params?: Array<unknown>
+				writable?: boolean
+			}) => Promise<StorageSqlResult>
+		},
+	})
 
 	// Registration must never run on a path that executes after the owning
 	// user's D1 rows are removed. Account deletion clears StorageRunner DOs

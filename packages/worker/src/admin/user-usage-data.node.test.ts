@@ -267,6 +267,12 @@ test('loadAdminUserUsageData returns null for unknown users and zeroed usage for
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 	})
+	expect(data?.durableObjectDuration).toEqual({
+		gbSeconds: 0,
+		durationMs: 0,
+		rpcCount: 0,
+		memoryGb: 0.128,
+	})
 })
 
 test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-days', async () => {
@@ -305,6 +311,49 @@ test('loadAdminUserUsageData estimates Dynamic Worker cost from unique worker-da
 		estimatedGrossUsd: 0.3,
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
+	})
+	expect(data?.durableObjectDuration.rpcCount).toBe(0)
+})
+
+test('loadAdminUserUsageData converts Durable Object RPC duration to observe-only GB-s', async () => {
+	const email = 'do-duration@example.com'
+	const usageUserId = await createStableUserIdFromEmail(email)
+	const db = createAdminUserUsageTestDb({
+		users: [
+			{
+				id: 4,
+				username: 'doduration',
+				email,
+				plan: 'pro',
+				stable_user_id: usageUserId,
+			},
+		],
+		usageRollups: [
+			usageRow({
+				user_id: usageUserId,
+				metric: 'durable_object_gb_seconds',
+				month: '2026-07',
+				event_count: 8,
+				total_duration_ms: 10_000,
+			}),
+		],
+		resourceCounts: { [usageUserId]: {} },
+	})
+
+	const data = await loadAdminUserUsageData(
+		withUserMeter({ APP_DB: db }) as Env,
+		usageUserId,
+		new Date('2026-07-05T12:00:00.000Z'),
+	)
+
+	expect(
+		getEventCount(data?.currentMonthUsage, 'durable_object_gb_seconds'),
+	).toBe(8)
+	expect(data?.durableObjectDuration).toEqual({
+		gbSeconds: 1.28,
+		durationMs: 10_000,
+		rpcCount: 8,
+		memoryGb: 0.128,
 	})
 })
 

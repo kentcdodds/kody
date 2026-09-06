@@ -4,7 +4,8 @@
  * One event schema covers every metered chokepoint (execute runs, package
  * export invocations, statically imported package export calls, job runs,
  * workflow runs, realtime websocket sessions, gateway fetches, email sends and
- * receives, and unique Dynamic Worker days).
+ * receives, unique Dynamic Worker days, and observe-only Durable Object
+ * duration).
  *
  * The write path depends on the environment:
  *
