@@ -57,7 +57,6 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 						<a href={routes.account.href()} mix={css(getGhostButtonCss())}>
 							Edit profile
 						</a>
-						<p mix={css(selfHintCss)}>This is how the world sees you.</p>
 					</div>
 				) : null}
 				{!shell.loggedIn
@@ -161,12 +160,6 @@ const actionsCss = {
 	gap: spacing.sm,
 	justifyItems: 'start',
 	marginTop: spacing.xs,
-}
-
-const selfHintCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
 }
 
 const guestCtaCss = {
