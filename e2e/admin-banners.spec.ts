@@ -59,18 +59,44 @@ test('admin can create a site banner and preview launch looks', async ({
 	const looks = ['strip', 'promo', 'card'] as const
 	for (const look of looks) {
 		await page.setViewportSize({ width: 1280, height: 800 })
+		await page.emulateMedia({ colorScheme: 'light' })
 		await page.goto(`/?siteBannerLook=${look}`)
-		await expect(page.getByTestId('site-banner')).toBeVisible()
-		await expect(page.getByTestId('site-banner')).toHaveAttribute(
-			'data-look',
-			look,
-		)
+		const banner = page.getByTestId('site-banner')
+		await expect(banner).toBeVisible()
+		await expect(banner).toHaveAttribute('data-look', look)
+		const desktopBox = await banner.boundingBox()
+		expect(desktopBox, `${look} desktop banner box`).toBeTruthy()
+		expect(desktopBox?.x).toBe(0)
+		expect(desktopBox?.width).toBe(1280)
 		await captureIfRequested(page, `option_${look}_desktop.png`)
 
 		await page.setViewportSize({ width: 390, height: 844 })
-		await expect(page.getByTestId('site-banner')).toBeVisible()
+		await expect(banner).toBeVisible()
+		const mobileBox = await banner.boundingBox()
+		expect(mobileBox, `${look} mobile banner box`).toBeTruthy()
+		expect(mobileBox?.x).toBe(0)
+		expect(mobileBox?.width).toBe(390)
 		await captureIfRequested(page, `option_${look}_mobile.png`)
 	}
+
+	await page.emulateMedia({ colorScheme: 'dark' })
+	await page.setViewportSize({ width: 1280, height: 800 })
+	await page.goto('/?siteBannerLook=promo')
+	const darkPromo = page.getByTestId('site-banner')
+	await expect(darkPromo).toBeVisible()
+	await expect(darkPromo).toHaveAttribute('data-look', 'promo')
+	const darkDesktopBox = await darkPromo.boundingBox()
+	expect(darkDesktopBox?.x).toBe(0)
+	expect(darkDesktopBox?.width).toBe(1280)
+	await captureIfRequested(page, 'option_b_promo_strip_dark_desktop.png')
+
+	await page.setViewportSize({ width: 390, height: 844 })
+	await expect(darkPromo).toBeVisible()
+	const darkMobileBox = await darkPromo.boundingBox()
+	expect(darkMobileBox?.x).toBe(0)
+	expect(darkMobileBox?.width).toBe(390)
+	await captureIfRequested(page, 'option_b_promo_strip_dark_mobile.png')
+	await page.emulateMedia({ colorScheme: 'light' })
 
 	const title = `Launch video ${runId}`
 	await page.setViewportSize({ width: 1280, height: 800 })

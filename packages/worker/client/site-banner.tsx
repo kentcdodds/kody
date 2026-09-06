@@ -258,7 +258,13 @@ const stackMq = '@media (max-width: 720px)'
 function shellCss(look: SiteBannerLook, tone: SeverityTone) {
 	const minHeight = siteBannerLookMinHeights[look]
 	const shared = {
+		// Full-bleed chrome: the app column clips overflow-x, and a flex
+		// item's default min-width:auto can grow past the viewport. Keep the
+		// painted shell at the column width and put gutters on the inner row.
 		width: '100%',
+		maxWidth: '100%',
+		minWidth: 0,
+		alignSelf: 'stretch' as const,
 		margin: 0,
 		boxSizing: 'border-box' as const,
 		minHeight,
@@ -267,16 +273,19 @@ function shellCss(look: SiteBannerLook, tone: SeverityTone) {
 		case 'strip':
 			return {
 				...shared,
-				padding: `0.45rem ${pageGutter}`,
+				paddingBlock: '0.45rem',
+				paddingInline: 0,
 				borderBottom: `1px solid ${colors.border}`,
 				backgroundColor: tone.soft,
 			}
 		case 'promo':
 			return {
 				...shared,
-				padding: `0.85rem ${pageGutter}`,
+				paddingBlock: '0.85rem',
+				paddingInline: 0,
 				borderBottom: `1px solid ${colors.border}`,
-				background: `linear-gradient(90deg, ${tone.soft} 0%, ${colors.surface} 72%)`,
+				backgroundColor: tone.soft,
+				backgroundImage: `linear-gradient(90deg, ${tone.soft} 0%, color-mix(in srgb, ${tone.soft} 42%, ${colors.surface}) 100%)`,
 			}
 		case 'card':
 			return {
@@ -305,6 +314,7 @@ function innerCss(look: SiteBannerLook) {
 			return {
 				...shared,
 				maxWidth: layoutMaxWidths.wide,
+				paddingInline: pageGutter,
 				gap: spacing.md,
 				[stackMq]: {
 					flexWrap: 'wrap' as const,
@@ -317,6 +327,7 @@ function innerCss(look: SiteBannerLook) {
 			return {
 				...shared,
 				maxWidth: layoutMaxWidths.extended,
+				paddingInline: pageGutter,
 				gap: spacing.lg,
 				[stackMq]: {
 					flexWrap: 'wrap' as const,

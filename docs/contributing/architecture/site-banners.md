@@ -43,10 +43,11 @@ document that still contains the banner.
 ## Looks
 
 `look` is a first-class field: `strip` (slim top bar), `promo` (richer strip
-with a play badge), or `card` (inset announcement). Each look reserves a
-`minHeight` in the first paint. Do not lock a launch-video look until an
-operator picks one; preview all three from the admin page or the query params
-above.
+with a play badge), or `card` (inset announcement). `strip` and `promo` paint
+full-bleed chrome; gutters live on the inner row so the strip spans the
+viewport. `card` stays inset. Each look reserves a `minHeight` in the first
+paint. Do not lock a launch-video look until an operator picks one; preview all
+three from the admin page or the query params above.
 
 ## Code
 
