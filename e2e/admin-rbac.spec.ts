@@ -1,4 +1,4 @@
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 
 test('admin RBAC controls access, role assignment, and privacy boundaries', async ({
 	page,
@@ -98,6 +98,9 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 
 	await page.goto(`/admin/users?q=rbac-${runId}`)
 	await page.getByRole('link', { name: memberUser.username }).click()
+	// Assign is type="button" + on('click'). Without hydration the click is a
+	// silent no-op and waitForResponse burns the 60s CI test timeout.
+	await waitForClientHydration(page)
 	const roleSelect = page.getByLabel('Role', { exact: true })
 	await roleSelect.selectOption('admin')
 	const assignRoleResponse = page.waitForResponse((response) => {
