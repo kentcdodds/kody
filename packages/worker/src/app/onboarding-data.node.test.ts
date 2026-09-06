@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
-import { emptyOnboardingSessionMilestones } from '#universal/onboarding-process.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
@@ -60,7 +59,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		milestones: emptyOnboardingSessionMilestones,
+		hasAccessWin: false,
+		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -96,7 +96,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		milestones: emptyOnboardingSessionMilestones,
+		hasAccessWin: false,
+		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
@@ -124,11 +125,31 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	expect(withClient).toMatchObject({
 		username: 'u-b',
 		hasMcpClient: true,
+		hasSecondMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
 		// Handler-loaded persist target is passed through for Step 3 next-steps.
 		persistedPackageKodyId: 'morning-digest',
+	})
+
+	const withTwoClients = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({
+					items: [{ id: 'grant-1' }, { id: 'grant-2' }],
+				})),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+	})
+	expect(withTwoClients).toMatchObject({
+		hasMcpClient: true,
+		hasSecondMcpClient: true,
+		needsOnboarding: false,
 	})
 
 	const unverifiedWithGrant = await loadOnboardingData({

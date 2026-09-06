@@ -1,10 +1,10 @@
 /**
  * Browser-session store for the Step 1 agent the visitor actually picked.
  *
- * Step 2 URLs do not carry the agent, and the onboarding payload only has
- * `hasMcpClient` — not a step-1 display name. Remember the explicit choice
- * so `/onboarding/step-2/:service` can say "Copy this prompt to Cursor…"
- * instead of inventing a host from raw MCP client ids (`claude-ai`).
+ * Step 2 and Step 3 URLs do not carry the first agent, and the onboarding
+ * payload only has grant counts — not a step-1 display name. Remember the
+ * explicit choice so Step 2 can say "Copy a prompt to Cursor…" and Step 3
+ * can grey the same-ecosystem family.
  */
 
 import {

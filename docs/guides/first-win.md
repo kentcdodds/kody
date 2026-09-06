@@ -4,8 +4,9 @@ title: Email and memories — welcome email, reply, memories
 summary:
   Optional agent playbook: send a welcome email, point the person at their own
   inbox to reply, look the reply up when they say it is sent, save what matters
-  as memories, then offer a next step. After Connect your agent, Step 2 is
-  Give Kody Access (`/onboarding/step-2`); the optional climax guide is
+  as memories, then offer a next step. After Connect your agent (`/onboarding/step-1`),
+  Step 2 is Give Kody access (`/onboarding/step-2`) and Step 3 is Connect a
+  second agent (`/onboarding/step-3`); the optional climax guide is
   quick-example. Load this when someone wants the email loop. Includes the
   no-polling rule and troubleshooting for missing mail and unbound tools.
 category: platform
@@ -17,11 +18,11 @@ category: platform
 Agent notes — for AI agents driving the optional email loop from this page:
 
 - Onboarding Step 1 is Connect your agent (`/onboarding/step-1`). Step 2 is Give
-  Kody Access (`/onboarding/step-2`): official MCP chips plus Show more; a
-  selected service shows the copyable prompt. Hosted OAuth is not the onboarding
-  path. The optional climax
-  after that is /guides/quick-example (ad hoc execute → persist → own). Use
-  this guide only when the person wants the email-and-memories loop.
+  Kody access (`/onboarding/step-2`): short teach prompts plus
+  `search({ entity: "onboarding:guide" })`. Step 3 is Connect a second agent
+  (`/onboarding/step-3`). Hosted OAuth is not the onboarding path. The optional
+  climax after that is /guides/quick-example (ad hoc execute → persist → own).
+  Use this guide only when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
   to go back to the Kody web page except to finish Step 2 at
   `/onboarding/step-2` if they have not given Kody access yet.
@@ -132,10 +133,11 @@ moment the whole loop pays off, so make it visible rather than silent.
 
 The email loop is done. Offer one concrete next step and let them choose:
 
-- **Give Kody Access.** If they have not finished onboarding Step 2, send them
+- **Give Kody access.** If they have not finished onboarding Step 2, send them
   to `/onboarding/step-2` on the same origin this guide came from, or open
-  `search({ entity: "quick_example:guide" })`: one ad hoc execute, then persist
-  a package they own.
+  `search({ entity: "onboarding:guide" })`. After a first win, Step 3 is
+  `/onboarding/step-3`, or `search({ entity: "quick_example:guide" })` for one
+  ad hoc execute then persist.
 - **Ask what they want automated** and open
   `search({ entity: "package_lifecycle:guide" })` to pick between a one-off
   `execute`, a community fork, and a new package.

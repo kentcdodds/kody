@@ -288,7 +288,11 @@ test('invalid onboarding agent or service paths redirect to that step', async ()
 			new Request('https://example.com/onboarding/step-2/not-listed'),
 		),
 	)
-	expect(notListed.status).toBe(200)
+	expect(notListed.status).toBe(302)
+	expect(
+		new URL(notListed.headers.get('Location') ?? '', 'https://example.com')
+			.pathname,
+	).toBe('/onboarding/step-2')
 
 	const step2 = await handler.handler(
 		new RequestContext(new Request('https://example.com/onboarding/step-2')),
@@ -298,11 +302,25 @@ test('invalid onboarding agent or service paths redirect to that step', async ()
 	const step3 = await handler.handler(
 		new RequestContext(new Request('https://example.com/onboarding/step-3')),
 	)
-	expect(step3.status).toBe(302)
+	expect(step3.status).toBe(200)
+
+	const step3Agent = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding/step-3/claude-code'),
+		),
+	)
+	expect(step3Agent.status).toBe(200)
+
+	const badSecondAgent = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding/step-3/nope'),
+		),
+	)
+	expect(badSecondAgent.status).toBe(302)
 	expect(
-		new URL(step3.headers.get('Location') ?? '', 'https://example.com')
+		new URL(badSecondAgent.headers.get('Location') ?? '', 'https://example.com')
 			.pathname,
-	).toBe('/onboarding/step-2')
+	).toBe('/onboarding/step-3')
 })
 
 test('onboarding persist next-steps use the newest saved-package kody id', async () => {

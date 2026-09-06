@@ -2,13 +2,10 @@ import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import { canonicalOnboardingAgentChooser } from '#universal/onboarding-mcp-clients.ts'
+import { onboardingSecondAgentHref } from '#universal/onboarding-process.ts'
 import { OnboardingMcpClientTabs } from './onboarding-mcp-client-tabs.tsx'
 import { defaultKodyMcpUrl } from './onboarding-mcp-clients.ts'
-import {
-	onboardingAgentPickerPrefetchHrefs,
-	onboardingServicePickerPrefetchHrefs,
-} from './onboarding-picker-prefetch.ts'
-import { OnboardingServicePicker } from './onboarding-service-picker.tsx'
+import { onboardingAgentPickerPrefetchHrefs } from './onboarding-picker-prefetch.ts'
 
 function chipHrefsFromHtml(html: string, testIdPrefix: string) {
 	return [
@@ -21,7 +18,7 @@ function chipHrefsFromHtml(html: string, testIdPrefix: string) {
 	].map((match) => match[1] ?? '')
 }
 
-test('step 1 and step 2 pickers prefetch every rendered chip and never community', async () => {
+test('step 1 picker prefetch matches every rendered chip', async () => {
 	const chooser = canonicalOnboardingAgentChooser()
 	const agentHrefs = onboardingAgentPickerPrefetchHrefs(null, chooser)
 	const agentHtml = await renderToString(
@@ -31,75 +28,35 @@ test('step 1 and step 2 pickers prefetch every rendered chip and never community
 	expect(agentHrefs).toContain('/onboarding/step-1/cursor')
 	expect(agentHrefs).toContain('/onboarding/step-1/not-listed')
 	expect(agentHrefs).toContain('/onboarding/step-1/chatgpt')
-	expect(agentHrefs).not.toContain('/community')
 	expect(onboardingAgentPickerPrefetchHrefs('cursor', chooser)).toEqual([])
-
-	const featuredIds = ['notion', 'linear'] as const
-	const overflowIds = ['github'] as const
-	const serviceHrefs = onboardingServicePickerPrefetchHrefs(
-		featuredIds,
-		overflowIds,
-	)
-	const serviceHtml = await renderToString(
-		jsx(OnboardingServicePicker, {
-			featuredIds,
-			overflowIds,
-		}),
-	)
-	expect(chipHrefsFromHtml(serviceHtml, 'onboarding-service-')).toEqual(
-		serviceHrefs,
-	)
-	expect(serviceHrefs).toEqual([
-		'/onboarding/step-2/notion',
-		'/onboarding/step-2/linear',
-		'/onboarding/step-2/github',
-		'/onboarding/step-2/google',
-		'/onboarding/step-2/slack',
-		'/onboarding/step-2/discord',
-		'/onboarding/step-2/spotify',
-		'/onboarding/step-2/x',
-		'/onboarding/step-2/asana',
-		'/onboarding/step-2/dropbox',
-		'/onboarding/step-2/linkedin',
-		'/onboarding/step-2/zoom',
-		'/onboarding/step-2/not-listed',
-	])
-	expect(serviceHrefs).not.toContain('/community')
-	expect(serviceHtml).not.toContain('href="/community"')
 })
 
-test('picker prefetch hrefs keep the rendered search so redirectTo clicks stay warm', async () => {
+test('step 3 picker prefetch uses second-agent hrefs and keeps search', async () => {
 	const search = '?redirectTo=%2Faccount'
 	const chooser = canonicalOnboardingAgentChooser()
-	const agentHrefs = onboardingAgentPickerPrefetchHrefs(null, chooser, search)
-	const agentHtml = await renderToString(
+	const hrefs = onboardingAgentPickerPrefetchHrefs(
+		null,
+		chooser,
+		search,
+		onboardingSecondAgentHref,
+	)
+	const html = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
 			mcpServerUrl: defaultKodyMcpUrl,
 			search,
+			agentHref: onboardingSecondAgentHref,
+			greyedAgents: ['chatgpt', 'codex'],
+			greyedReason: 'Same ecosystem as Codex',
 		}),
 	)
-	expect(chipHrefsFromHtml(agentHtml, 'onboarding-agent-')).toEqual(agentHrefs)
-	expect(agentHrefs).toContain(`/onboarding/step-1/cursor${search}`)
-	expect(
-		onboardingAgentPickerPrefetchHrefs('other', chooser, search)[0],
-	).toMatch(/\?redirectTo=%2Faccount$/)
-
-	const featuredIds = ['notion'] as const
-	const overflowIds = ['github'] as const
-	const serviceHrefs = onboardingServicePickerPrefetchHrefs(
-		featuredIds,
-		overflowIds,
-		search,
+	expect(hrefs).toContain(`/onboarding/step-3/cursor${search}`)
+	expect(hrefs).toContain(`/onboarding/step-3/claude-code${search}`)
+	expect(html).toContain(
+		'href="/onboarding/step-3/cursor?redirectTo=%2Faccount"',
 	)
-	const serviceHtml = await renderToString(
-		jsx(OnboardingServicePicker, {
-			featuredIds,
-			overflowIds,
-			search,
-		}),
+	expect(html).toContain('data-greyed="true"')
+	expect(html).toContain('data-testid="onboarding-agent-chatgpt"')
+	expect(html).not.toContain(
+		'href="/onboarding/step-3/chatgpt?redirectTo=%2Faccount"',
 	)
-	expect(chipHrefsFromHtml(serviceHtml, 'onboarding-service-')).toEqual(
-		serviceHrefs,
-	)
-	expect(serviceHrefs[0]).toBe(`/onboarding/step-2/notion${search}`)
 })

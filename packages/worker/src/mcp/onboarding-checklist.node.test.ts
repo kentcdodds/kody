@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { upsertIntegration } from '#worker/integrations/service.ts'
 import { buildOnboardingSearchNotice } from '#mcp/tools/search-onboarding-notice.ts'
 import {
 	deriveOnboardingChecklist,
@@ -52,7 +51,7 @@ async function readDismissedAt(db: D1Database, stableUserId = userId) {
 	return row?.onboarding_checklist_dismissed_at ?? null
 }
 
-test('checklist derives from stored signals, fails open on missing bindings, and dismissal round-trips', async () => {
+test('checklist derives wizard steps from grants and an access win, not integrations', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
 
@@ -66,29 +65,9 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 	expect(Object.fromEntries(fresh.items.map((i) => [i.id, i.done]))).toEqual({
 		'verify-email': true,
 		'connect-agent': true,
-		'connect-integration': false,
+		'give-access': false,
+		'connect-second-agent': false,
 		'install-starter': false,
-	})
-
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			name: 'github',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			flow: 'confidential',
-			clientId: 'client-id',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: 'githubRefreshToken',
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['read:user'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
-			},
-		},
 	})
 
 	const progressed = await deriveOnboardingChecklist({
@@ -96,89 +75,25 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 		userId,
 		emailVerified: true,
 		hasMcpClient: true,
+		hasAccessWin: true,
+		hasSecondMcpClient: true,
 	})
 	const doneById = Object.fromEntries(
 		progressed.items.map((i) => [i.id, i.done]),
 	)
-	expect(doneById['connect-integration']).toBe(true)
+	expect(doneById['give-access']).toBe(true)
+	expect(doneById['connect-second-agent']).toBe(true)
 	expect(progressed.complete).toBe(false)
 
-	// Dismissal writes users.onboarding_checklist_dismissed_at and round-trips.
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
 	expect(await readDismissedAt(env.APP_DB)).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 })
 
-test('checklist connect-integration completes from a saved MCP server without OAuth', async () => {
+test('search onboarding notice lists remaining wizard steps without writing dismissal', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
-	await env.APP_DB.prepare(
-		`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled, created_at, updated_at)
-		 VALUES (?, ?, 'notion', 'https://mcp.notion.com/mcp', 1, ?, ?)`,
-	)
-		.bind(
-			'srv-notion',
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
-
-	const checklist = await deriveOnboardingChecklist({
-		env,
-		userId,
-		emailVerified: true,
-		hasMcpClient: true,
-	})
-	const doneById = Object.fromEntries(
-		checklist.items.map((i) => [i.id, i.done]),
-	)
-	expect(doneById['connect-integration']).toBe(true)
-	expect(doneById['install-starter']).toBe(false)
-})
-
-test('search onboarding notice lists leftover session milestones without writing dismissal', async () => {
-	const { env } = createEnv()
-	await seedUser(env.APP_DB)
-	await env.APP_DB.prepare(
-		`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled, created_at, updated_at)
-		 VALUES (?, ?, 'notion', 'https://mcp.notion.com/mcp', 1, ?, ?)`,
-	)
-		.bind(
-			'srv-notion',
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO entity_sources (
-			id, user_id, entity_kind, entity_id, repo_id, manifest_path, source_root, created_at, updated_at
-		) VALUES (?, ?, 'package', ?, ?, 'package.json', '.', ?, ?)`,
-	)
-		.bind(
-			'source-1',
-			userId,
-			'pkg-1',
-			'repo-1',
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO saved_packages (
-			id, user_id, name, kody_id, description, source_id, created_at, updated_at
-		) VALUES (?, ?, '@user/starter', 'starter', 'Starter', ?, ?, ?)`,
-	)
-		.bind(
-			'pkg-1',
-			userId,
-			'source-1',
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
 
 	const notice = await buildOnboardingSearchNotice({
 		env,
@@ -186,28 +101,13 @@ test('search onboarding notice lists leftover session milestones without writing
 		baseUrl: 'https://kody.example',
 	})
 	expect(notice).toContain('Onboarding:')
-	expect(notice).toContain('Run your first execute')
-	expect(notice).toContain('Create a secret')
-	expect(notice).not.toContain('Connect an integration or MCP server')
+	expect(notice).toContain('Connect your agent')
+	expect(notice).toContain('Give Kody access')
+	expect(notice).toContain('Connect a second agent')
+	expect(notice).toContain('not a gateway')
+	expect(notice).toContain('/onboarding')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
-})
-
-test('search onboarding notice points at /onboarding and goes quiet after dismissal', async () => {
-	const { env } = createEnv()
-	await seedUser(env.APP_DB)
-
-	const notice = await buildOnboardingSearchNotice({
-		env,
-		userId,
-		baseUrl: 'https://kody.example',
-	})
-	expect(typeof notice).toBe('string')
-	expect(notice!.length).toBeGreaterThan(0)
-	expect(notice).toContain('/onboarding')
-	expect(notice).toContain('Run your first execute')
-	expect(notice).toContain('Connect an integration or MCP server')
-	expect(notice).toContain('Set up a scheduled job')
 
 	await dismissOnboardingChecklist({ env, userId })
 	expect(

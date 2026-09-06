@@ -5,7 +5,6 @@ import {
 	type OnboardingFeaturedMcpServer,
 } from '#universal/loader-data.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import { type OnboardingSessionMilestoneState } from '#universal/onboarding-process.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
 /**
@@ -22,7 +21,8 @@ export type OnboardingPayload = {
 	setupPrompt: string
 	discoveryPrompt: string
 	persistPrompt: string
-	milestones: OnboardingSessionMilestoneState
+	hasAccessWin: boolean
+	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean

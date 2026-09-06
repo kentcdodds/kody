@@ -12,6 +12,7 @@
 /** Fundamentals shown first under Work with Kody. */
 export const guidesStartHereSlugs = [
 	'what-is-kody',
+	'onboarding',
 	'how-kody-works',
 	'kody-factory',
 	'quick-example',

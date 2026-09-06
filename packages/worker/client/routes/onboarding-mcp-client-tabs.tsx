@@ -42,6 +42,10 @@ type OnboardingMcpClientTabsProps = {
 	selectedAgent?: McpClientKind | null
 	chooser?: OnboardingAgentChooserPick | null
 	search?: string
+	agentHref?: (agent: McpClientKind | null, search?: string) => string
+	pickerLede?: string
+	greyedAgents?: ReadonlyArray<McpClientKind>
+	greyedReason?: string | null
 }
 
 function AgentMarkIcon(handle: Handle<{ icon: string | null }>) {
@@ -294,11 +298,14 @@ export function OnboardingMcpClientTabs(
 		const selectedAgent = handle.props.selectedAgent ?? null
 		const chooser = handle.props.chooser ?? canonicalOnboardingAgentChooser()
 		const search = handle.props.search ?? ''
+		const agentHref = handle.props.agentHref ?? onboardingAgentHref
+		const greyedAgents = handle.props.greyedAgents ?? []
 		handle.queueTask(() => {
 			const hrefs = onboardingAgentPickerPrefetchHrefs(
 				selectedAgent,
 				chooser,
 				search,
+				agentHref,
 			)
 			const key = hrefs.join('\0')
 			if (key === warmedKey) return
@@ -310,13 +317,16 @@ export function OnboardingMcpClientTabs(
 			return (
 				<div data-testid="onboarding-agent-picker" mix={css(installLayoutCss)}>
 					<p mix={css(pickerLedeCss)} id="onboarding-agent-picker-label">
-						Choose the agent you want to connect first. You can add others
-						later.
+						{handle.props.pickerLede ??
+							'Choose the agent you want to connect first. You can add others later.'}
 					</p>
 					<AgentPickerGrid
 						ids={[...onboardingPickerAgentIds(chooser), 'other']}
 						labelledBy="onboarding-agent-picker-label"
 						search={search}
+						agentHref={agentHref}
+						greyedAgents={greyedAgents}
+						greyedReason={handle.props.greyedReason ?? null}
 					/>
 				</div>
 			)
@@ -335,6 +345,9 @@ export function OnboardingMcpClientTabs(
 						ids={onboardingNotListedAgentIds(chooser)}
 						labelledBy="onboarding-agent-not-listed-label"
 						search={search}
+						agentHref={agentHref}
+						greyedAgents={greyedAgents}
+						greyedReason={handle.props.greyedReason ?? null}
 					/>
 					<p mix={css(pickerLedeCss)} id="onboarding-agent-not-listed-generic">
 						Or, connect any agent that speaks MCP
@@ -422,6 +435,9 @@ function AgentPickerGrid(
 			| Array<{ id: McpClientKind; viewport: OnboardingAgentViewport }>
 		labelledBy: string
 		search: string
+		agentHref: (agent: McpClientKind | null, search?: string) => string
+		greyedAgents: ReadonlyArray<McpClientKind>
+		greyedReason: string | null
 	}>,
 ) {
 	return () => (
@@ -433,19 +449,36 @@ function AgentPickerGrid(
 						? onboardingAgentViewport(id)
 						: entry.viewport
 				const shown = viewport === 'none' ? 'both' : viewport
+				const greyed = handle.props.greyedAgents.includes(id)
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
-						<a
-							href={onboardingAgentHref(id, handle.props.search)}
-							data-testid={`onboarding-agent-${id}`}
-							data-prevent-scroll-reset=""
-							mix={css(pickerCardCss)}
-						>
-							<AgentPickerMark agent={id} />
-							<strong>
-								<AgentSurfaceLabel agent={id} />
-							</strong>
-						</a>
+						{greyed ? (
+							<span
+								data-testid={`onboarding-agent-${id}`}
+								data-greyed="true"
+								aria-disabled="true"
+								title={handle.props.greyedReason ?? undefined}
+								mix={css(pickerCardGreyedCss)}
+							>
+								<AgentPickerMark agent={id} />
+								<strong>
+									<AgentSurfaceLabel agent={id} />
+								</strong>
+								<span mix={css(greyedHintCss)}>Same ecosystem</span>
+							</span>
+						) : (
+							<a
+								href={handle.props.agentHref(id, handle.props.search)}
+								data-testid={`onboarding-agent-${id}`}
+								data-prevent-scroll-reset=""
+								mix={css(pickerCardCss)}
+							>
+								<AgentPickerMark agent={id} />
+								<strong>
+									<AgentSurfaceLabel agent={id} />
+								</strong>
+							</a>
+						)}
 					</li>
 				)
 			})}
@@ -505,6 +538,28 @@ const pickerCardCss = {
 		'&:hover': { transform: 'none' },
 		'&:active': { transform: 'none' },
 	},
+}
+
+const pickerCardGreyedCss = {
+	...pickerCardCss,
+	cursor: 'not-allowed',
+	opacity: 0.45,
+	filter: 'grayscale(1)',
+	pointerEvents: 'none' as const,
+	[hoverMq]: {
+		'&:hover': {
+			borderColor: colors.border,
+			transform: 'none',
+		},
+	},
+	'&:active': { transform: 'none' },
+}
+
+const greyedHintCss = {
+	font: `550 0.72rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.04em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
 }
 
 const pickerMarkCss = {

@@ -15,6 +15,7 @@
  */
 const guideOrder: ReadonlyArray<string> = [
 	'what-is-kody',
+	'onboarding',
 	'how-kody-works',
 	'kody-factory',
 	'packages-integrations-mcp',

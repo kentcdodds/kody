@@ -23,7 +23,8 @@ import {
 export function renderWizardStepsNav(props: {
 	activeStep: OnboardingWizardStepNumber
 	hasMcpClient: boolean
-	milestonesComplete: boolean
+	accessWin: boolean
+	hasSecondMcpClient: boolean
 	stepHref: (step: OnboardingWizardStepNumber) => string
 }) {
 	return (
@@ -36,7 +37,8 @@ export function renderWizardStepsNav(props: {
 				const isActive = props.activeStep === step.number
 				const isComplete =
 					(step.number === 1 && props.hasMcpClient) ||
-					(step.number === 2 && props.milestonesComplete)
+					(step.number === 2 && props.accessWin) ||
+					(step.number === 3 && props.hasSecondMcpClient)
 				return (
 					<a
 						key={step.number}
@@ -67,10 +69,10 @@ export function renderWizardStepsNav(props: {
 const wizardStepsCss = {
 	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
 	display: 'grid',
-	gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	gap: '0.8rem',
 	'@media (max-width: 900px)': {
-		gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+		gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	},
 	'@media (max-width: 720px)': {
 		gridTemplateColumns: '1fr',

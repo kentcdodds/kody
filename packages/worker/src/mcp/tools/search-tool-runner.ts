@@ -403,7 +403,7 @@ export async function runSearchTool(input: {
 		}
 		rememberConversationPreamble()
 		// Onboarding reminder: at most once per conversation, only while the
-		// user's session milestones are incomplete and undismissed. A session
+		// user's onboarding wizard steps are incomplete and undismissed. A session
 		// cooldown backstops hosts that never send a conversationId (each of
 		// their calls resolves a fresh server id, so the id list alone would
 		// repeat the notice every call), and the id list is capped so

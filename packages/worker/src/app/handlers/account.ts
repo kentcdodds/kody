@@ -36,6 +36,9 @@ export function createAccountHandler(env: Env) {
 					user.mcpUser.userId,
 					user.username,
 					onboarding.hasMcpClient,
+					{
+						hasSecondMcpClient: onboarding.hasSecondMcpClient,
+					},
 				)
 			}
 			return renderAppPage({

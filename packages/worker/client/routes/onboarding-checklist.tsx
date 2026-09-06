@@ -3,12 +3,10 @@ import { routes } from '#universal/routes.ts'
 import {
 	onboardingChecklistItemHref,
 	onboardingChecklistItemLabels,
-	onboardingWizardStepHref,
 	type OnboardingChecklistItemId,
 } from '#universal/onboarding-process.ts'
 import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
 import { on } from '#client/event-mixin.ts'
-import { ProviderIcon } from '#client/provider-icons.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
@@ -18,21 +16,6 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 export { onboardingChecklistItemLabels }
-
-const connectMcpHref = onboardingWizardStepHref(2)
-
-const integrationGuideProviders = [
-	{ id: 'notion', label: 'Notion', href: connectMcpHref },
-	{ id: 'linear', label: 'Linear', href: connectMcpHref },
-	{
-		id: 'atlassian',
-		label: 'Atlassian',
-		href: connectMcpHref,
-	},
-	{ id: 'stripe', label: 'Stripe', href: connectMcpHref },
-	{ id: 'sentry', label: 'Sentry', href: connectMcpHref },
-	{ id: 'canva', label: 'Canva', href: connectMcpHref },
-] as const
 
 function readChecklistItemHref(
 	id: OnboardingChecklistItemId,
@@ -144,8 +127,6 @@ export function OnboardingChecklistCard(
 					{checklist.items.map((item) => {
 						const label = onboardingChecklistItemLabels[item.id]
 						const href = readChecklistItemHref(item.id, checklist.username)
-						const isIntegration = item.id === 'connect-integration'
-
 						return (
 							<li
 								key={item.id}
@@ -176,37 +157,6 @@ export function OnboardingChecklistCard(
 											{label}
 										</a>
 									)}
-									{isIntegration && !item.done ? (
-										<p mix={css(integrationHintCss)}>
-											Try{' '}
-											{integrationGuideProviders.map((provider, index) => (
-												<span key={provider.id} mix={css(providerEntryCss)}>
-													<a
-														href={provider.href}
-														target={
-															provider.href.startsWith(onboardingPath)
-																? undefined
-																: '_blank'
-														}
-														rel={
-															provider.href.startsWith(onboardingPath)
-																? undefined
-																: 'noreferrer noopener'
-														}
-														mix={css(integrationProviderLinkCss)}
-													>
-														<ProviderIcon providerId={provider.id} size="1em" />
-														{provider.label}
-													</a>
-													{index < integrationGuideProviders.length - 2
-														? ', '
-														: index === integrationGuideProviders.length - 2
-															? ', or '
-															: null}
-												</span>
-											))}
-										</p>
-									) : null}
 								</div>
 							</li>
 						)
@@ -298,29 +248,6 @@ const checklistLabelCss = {
 const checklistLinkCss = {
 	...primaryLinkCss,
 	fontWeight: 600,
-	textDecoration: 'none',
-	'&:hover': {
-		textDecoration: 'underline',
-	},
-}
-
-const integrationHintCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.9rem',
-}
-
-/** Keeps the separator hugging its provider label instead of the next icon. */
-const providerEntryCss = {
-	whiteSpace: 'nowrap' as const,
-}
-
-const integrationProviderLinkCss = {
-	...primaryLinkCss,
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.3rem',
-	fontWeight: 550,
 	textDecoration: 'none',
 	'&:hover': {
 		textDecoration: 'underline',

@@ -12,7 +12,6 @@ import {
 	pickOnboardingAgentChooser,
 	type OnboardingAgentChooserPick,
 } from './onboarding-mcp-clients.ts'
-import { emptyOnboardingSessionMilestones } from '#universal/onboarding-process.ts'
 import {
 	clearOnboardingPayloadCache,
 	type OnboardingPayload,
@@ -70,7 +69,8 @@ const anonymousOnboardingPayload = {
 	setupPrompt: '',
 	discoveryPrompt: '',
 	persistPrompt: '',
-	milestones: emptyOnboardingSessionMilestones,
+	hasAccessWin: false,
+	hasSecondMcpClient: false,
 	hasMcpClient: false,
 	emailVerified: false,
 	needsOnboarding: true,

@@ -1,12 +1,14 @@
 # Onboarding
 
-Two-step wizard after signup: connect an agent, then give Kody Access.
+Three-step wizard after signup: connect an agent, give Kody access (teach
+prompts), then connect a second agent from a different ecosystem.
 
 ## How to get there
 
 Signed-in visit to `/onboarding`. Step 1 is `/onboarding/step-1` (optional
-`:agent`). Step 2 is `/onboarding/step-2` (optional `:service`). Also linked
-from account.
+`:agent`). Step 2 is `/onboarding/step-2`. Step 3 is `/onboarding/step-3`
+(optional `:agent`). Former `/onboarding/step-2/:service` URLs redirect to
+Step 2. Also linked from account.
 
 ## Drive it
 
