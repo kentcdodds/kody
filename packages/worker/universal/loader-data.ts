@@ -33,6 +33,10 @@ import { type IntegrationAuthFailureView } from '#universal/connection-trouble.t
 import { type WaitingItem } from '#universal/waiting.ts'
 import { type EntitlementLadder } from '#universal/plans.ts'
 import {
+	type ComputeOverageDisposition,
+	type ComputeOverageWarningResource,
+} from '#universal/compute-overage.ts'
+import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
 	type AccountActivityTriageFilter,
@@ -507,6 +511,7 @@ export type AdminUsageMetric =
 	| 'email_received'
 	| 'dynamic_worker_day'
 	| 'durable_object_gb_seconds'
+	| 'durable_object_rows_read'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'
@@ -1914,6 +1919,24 @@ export type AccountUsageEntitlementConsumption = {
 	overEightyPercent: boolean
 }
 
+export type AccountUsageComputeMeter = {
+	resource: ComputeOverageWarningResource
+	label: string
+	current: number
+	include: number
+	percentOfLimit: number
+	overEightyPercent: boolean
+}
+
+export type AccountUsageComputeOverage = {
+	meters: Array<AccountUsageComputeMeter>
+	disposition: ComputeOverageDisposition
+	totalCents: number
+	chargingEnabled: boolean
+	hasStripeCustomer: boolean
+	legacyUnbilled: boolean
+}
+
 export type AccountUsageLoaderData = {
 	ok: true
 	plan: AdminPlanName
@@ -1922,6 +1945,7 @@ export type AccountUsageLoaderData = {
 	today: string
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
+	computeOverage: AccountUsageComputeOverage
 }
 
 export type AccountWaitingLoaderData = {

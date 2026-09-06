@@ -209,6 +209,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 	expect(body.session.featureFlags).toEqual({
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': true,
+		'compute-overage-charging': true,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
 })

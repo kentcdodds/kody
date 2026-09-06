@@ -82,6 +82,7 @@ export const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	email_received: 'Email receives',
 	dynamic_worker_day: 'Unique worker-days',
 	durable_object_gb_seconds: 'Durable Object duration (GB-s)',
+	durable_object_rows_read: 'Durable Object rows read',
 }
 
 /** Null when run-derived totals are complete; otherwise a user-facing warning. */

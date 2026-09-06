@@ -9,7 +9,11 @@ import {
 	cancelSubscription,
 	createBillingPortalSession,
 	createCheckoutSession,
+	createDraftInvoice,
+	createInvoiceItem,
 	createProratedRefundCreditNote,
+	finalizeInvoice,
+	payInvoice,
 	creditNoteCapFitAttempts,
 	creditNoteListMaxPages,
 	deleteCustomer,
@@ -1192,6 +1196,92 @@ test('stripe client rejects missing config and maps API failure shapes', async (
 		}
 		expect(emptyIdError.status).toBe(400)
 		expect(fetchStub).not.toHaveBeenCalled()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('standalone invoice helpers send idempotency keys and attach metadata', async () => {
+	const fetchStub = vi.fn(async (url: string | URL) => {
+		const path = String(url)
+		if (path.endsWith('/v1/invoices')) {
+			return jsonResponse({
+				id: 'in_overage_1',
+				status: 'draft',
+				amount_due: 0,
+				currency: 'usd',
+			})
+		}
+		if (path.endsWith('/v1/invoiceitems')) {
+			return jsonResponse({
+				id: 'ii_uwd_1',
+				invoice: 'in_overage_1',
+				amount: 100,
+				currency: 'usd',
+			})
+		}
+		if (path.endsWith('/finalize')) {
+			return jsonResponse({
+				id: 'in_overage_1',
+				status: 'open',
+				amount_due: 100,
+				currency: 'usd',
+			})
+		}
+		if (path.endsWith('/pay')) {
+			return jsonResponse({
+				id: 'in_overage_1',
+				status: 'paid',
+				amount_due: 0,
+				currency: 'usd',
+			})
+		}
+		return jsonResponse({ error: { message: 'unexpected' } }, 500)
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const env = { STRIPE_SECRET_KEY: 'sk_test_secret' }
+		const invoice = await createDraftInvoice(env, {
+			customerId: 'cus_paid',
+			idempotencyKey: 'kody-overage-invoice:user:2026-08',
+			metadata: { kody_compute_overage: '1', kody_overage_month: '2026-08' },
+		})
+		expect(invoice.id).toBe('in_overage_1')
+		const item = await createInvoiceItem(env, {
+			customerId: 'cus_paid',
+			invoiceId: invoice.id,
+			amountCents: 100,
+			description: 'Kody unique worker-day overage',
+			idempotencyKey: 'kody-overage-uwd:user:2026-08',
+			metadata: { kody_compute_overage: '1' },
+		})
+		expect(item.amount).toBe(100)
+		await finalizeInvoice(env, invoice.id, 'kody-overage-finalize:user:2026-08')
+		await payInvoice(env, invoice.id, 'kody-overage-pay:user:2026-08')
+
+		const [draftUrl, draftInit] = fetchStub.mock.calls[0]!
+		expect(String(draftUrl)).toBe('https://api.stripe.com/v1/invoices')
+		expect(draftInit).toMatchObject({
+			method: 'POST',
+			headers: expect.objectContaining({
+				'idempotency-key': 'kody-overage-invoice:user:2026-08',
+			}),
+		})
+		const draftBody = new URLSearchParams(String(draftInit?.body))
+		expect(draftBody.get('customer')).toBe('cus_paid')
+		expect(draftBody.get('auto_advance')).toBe('false')
+		expect(draftBody.get('pending_invoice_items_behavior')).toBe('exclude')
+		expect(draftBody.get('metadata[kody_compute_overage]')).toBe('1')
+
+		const [, itemInit] = fetchStub.mock.calls[1]!
+		expect(itemInit).toMatchObject({
+			headers: expect.objectContaining({
+				'idempotency-key': 'kody-overage-uwd:user:2026-08',
+			}),
+		})
+		const itemBody = new URLSearchParams(String(itemInit?.body))
+		expect(itemBody.get('amount')).toBe('100')
+		expect(itemBody.get('invoice')).toBe('in_overage_1')
 	} finally {
 		vi.unstubAllGlobals()
 	}

@@ -38,6 +38,11 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 		label: 'Unique worker-days',
 		color: chartColor.rose,
 	},
+	{
+		metric: 'durable_object_rows_read',
+		label: 'Durable Object rows read',
+		color: chartColor.amber,
+	},
 ]
 
 export const monthShortNames = [

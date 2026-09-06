@@ -280,12 +280,16 @@ export function PricingRoute(handle: Handle) {
 						</table>
 					</div>
 					<p mix={css(limitsFootnoteCss)}>
-						Overage list prices are ${computeOverageRatesUsd.uniqueWorkerDay}{' '}
-						per unique worker day and $
+						Overage is billed monthly at $
+						{computeOverageRatesUsd.uniqueWorkerDay} per unique worker day and $
 						{computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million
-						Durable Object rows read. Those allotments are not hard-cut, and
-						overages are not currently charged. Execute is a hard daily cap.
-						Durable Object duration is unmetered.
+						Durable Object rows read above the included allotment, for
+						public-ladder accounts with a payment method on file. Free accounts
+						that exceed an include are asked to upgrade instead of being
+						charged. Those allotments are not hard-cut. Grandfathered legacy
+						Standard/Pro accounts are not billed for these meters until they
+						leave the legacy ladder. Execute is a hard daily cap. Durable Object
+						duration is unmetered.
 					</p>
 				</section>
 

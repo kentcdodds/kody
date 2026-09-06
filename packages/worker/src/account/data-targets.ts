@@ -192,6 +192,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_invocation_tokens' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
+	{ kind: 'user_id', table: 'compute_overage_invoices' },
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
 	// Per-package codemod outcomes belong to the package owner. Delete before

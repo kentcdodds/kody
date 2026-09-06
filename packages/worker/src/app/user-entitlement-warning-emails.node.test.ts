@@ -76,7 +76,9 @@ function createDb(
 		email: string
 		plan: string
 		stripe_plan: string | null
+		entitlement_ladder?: string | null
 	}>,
+	rollups: Array<{ metric: string; event_count: number }> = [],
 ) {
 	return {
 		prepare(query: string) {
@@ -86,8 +88,14 @@ function createDb(
 					return this
 				},
 				async all<T>() {
-					if (normalized.includes('from usage_rollups')) {
+					if (
+						normalized.includes('from usage_rollups') &&
+						normalized.includes('inner join users')
+					) {
 						return { results: users as Array<T> }
+					}
+					if (normalized.includes('from usage_rollups')) {
+						return { results: rollups as Array<T> }
 					}
 					return { results: [] }
 				},
@@ -102,11 +110,13 @@ function createEnv(input: {
 		email: string
 		plan: string
 		stripe_plan: string | null
+		entitlement_ladder?: string | null
 	}>
 	kv?: KVNamespace
+	rollups?: Array<{ metric: string; event_count: number }>
 }) {
 	return {
-		APP_DB: createDb(input.users),
+		APP_DB: createDb(input.users, input.rollups),
 		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
@@ -664,4 +674,46 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 			resource: 'saved_packages',
 		}),
 	)
+})
+
+test('compute include crossings mail for public and legacy without charging copy', async () => {
+	sendCloudflareEmail.mockClear()
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	readAdminEntitlementConsumption.mockResolvedValue([])
+	const { kv, store } = createKv()
+	const env = createEnv({
+		users: [
+			{
+				stable_user_id: stableUserId,
+				email: 'compute@example.com',
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'legacy',
+			},
+		],
+		kv,
+		rollups: [{ metric: 'dynamic_worker_day', event_count: 300 }],
+	})
+
+	const result = await sendUserEntitlementWarningEmails({ env, now })
+	expect(result).toEqual({
+		status: 'notified',
+		emailedUsers: 1,
+		emailsSent: 1,
+		warnedResources: 1,
+	})
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+		text: string
+	}
+	expect(payload.text).toContain('unique worker-days')
+	expect(
+		store.get(
+			userEntitlementWarningKvKey({
+				userId: stableUserId,
+				kind: 'approaching',
+				resource: 'unique_worker_days',
+			}),
+		),
+	).toBe(String(now.getTime()))
 })

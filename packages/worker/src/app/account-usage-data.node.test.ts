@@ -34,7 +34,11 @@ function createUsageTestDb(input: {
 	email: string
 	plan: string
 	stripePlan?: string | null
+	entitlementLadder?: string | null
+	stripeCustomerId?: string | null
 	packageCount?: number
+	uniqueWorkerDays?: number
+	durableObjectRowsRead?: number
 }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	return {
@@ -54,7 +58,9 @@ function createUsageTestDb(input: {
 										id: input.userId,
 										plan: input.plan,
 										stripe_plan: input.stripePlan ?? null,
+										entitlement_ladder: input.entitlementLadder ?? 'public',
 										stable_user_id: stableUserId,
+										stripe_customer_id: input.stripeCustomerId ?? null,
 									} as T
 								}
 								if (normalized.includes('from saved_packages')) {
@@ -73,6 +79,22 @@ function createUsageTestDb(input: {
 								return null
 							},
 							async all() {
+								if (normalized.includes('from usage_rollups')) {
+									const results = []
+									if ((input.uniqueWorkerDays ?? 0) > 0) {
+										results.push({
+											metric: 'dynamic_worker_day',
+											event_count: input.uniqueWorkerDays,
+										})
+									}
+									if ((input.durableObjectRowsRead ?? 0) > 0) {
+										results.push({
+											metric: 'durable_object_rows_read',
+											event_count: input.durableObjectRowsRead,
+										})
+									}
+									return { results }
+								}
 								return { results: [] }
 							},
 						}
@@ -246,4 +268,49 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(subscribedData?.plan).toBe('pro')
 	expect(subscribedData?.manualPlan).toBe('free')
 	expect(subscribedData?.stripePlan).toBe('pro')
+	expect(baseline?.computeOverage.disposition).toBe('skip_zero')
+	expect(baseline?.computeOverage.meters).toHaveLength(2)
+})
+
+test('unpaid Free over compute includes is a soft-block, not a charge', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 21,
+		email: 'usage-soft-block@example.com',
+		plan: 'free',
+		uniqueWorkerDays: 60,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: db }) as Env,
+		userId: 21,
+		now,
+	})
+	expect(data?.computeOverage.disposition).toBe('soft_block')
+	expect(data?.computeOverage.hasStripeCustomer).toBe(false)
+	expect(data?.computeOverage.totalCents).toBeGreaterThan(0)
+	expect(
+		data?.computeOverage.meters.find(
+			(meter) => meter.resource === 'unique_worker_days',
+		)?.overEightyPercent,
+	).toBe(true)
+})
+
+test('legacy Standard over compute includes stays unbilled', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 22,
+		email: 'usage-legacy@example.com',
+		plan: 'standard',
+		stripePlan: 'standard',
+		entitlementLadder: 'legacy',
+		stripeCustomerId: 'cus_legacy',
+		uniqueWorkerDays: 400,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: db }) as Env,
+		userId: 22,
+		now,
+	})
+	expect(data?.computeOverage.legacyUnbilled).toBe(true)
+	expect(data?.computeOverage.disposition).toBe('skip_legacy')
 })

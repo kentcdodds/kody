@@ -1657,6 +1657,11 @@ Current retention policies:
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention. Months before the
   earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+- `compute_overage_invoices`: one ledger row per user per UTC month for unique
+  worker-day and Durable Object rows-read overage. Status is the disposition
+  (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
+  `failed`. Stripe invoice ids stay null on non-invoice rows. Durable forever
+  until account deletion/export; `user_id` is the stable user id.
 - `fleet_execute_days`: platform-owned UTC-day fleet `execute` totals (no
   `user_id`). Rows are rewritten hourly for the current and previous UTC months;
   older days remain so the delayed lifetime total can climb. The official replay

@@ -13,6 +13,7 @@ function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
 		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
 	}
 }
 

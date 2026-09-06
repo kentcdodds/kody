@@ -176,12 +176,20 @@ allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
 `PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
 Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two fields
 are the only customer-facing monthly overage meters. They are not in
-`entitlementResources`, so `assertWithinEntitlement` and user warning emails do
-not cover them. Hard-cut enforcement is not wired. User-facing overage list
-prices live on `computeOverageRatesUsd` (unique worker-day
-$0.0025, Durable Object
-rows read $0.0015 per million — Cloudflare list plus a
-$0.0005 thin margin). Overage is not charged. Execute is a hard daily cap with
+`entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
+Hourly user warning emails cover approaching (80%) and reached (100%) includes
+for both public and legacy accounts. User-facing overage list prices live on
+`computeOverageRatesUsd` (unique worker-day
+$0.0025, Durable Object rows read
+$0.0015 per million — Cloudflare list plus a
+$0.0005 thin margin). Public-ladder
+overage is billed at those rates when `compute-overage-charging` is on (registry
+default: on) and `resolveComputeOverageDisposition` returns `invoice`: paid
+public Standard/Pro with a Stripe customer, or Free that already has a customer.
+Unpaid Free that exceeds includes is a soft-block (upgrade prompt on
+`/account/usage`), never a Stripe charge that would fail. Turn the flag off
+globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). D1
+evaluation failures fail closed (no charges). Execute is a hard daily cap with
 no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute overage
 would double-charge the same burn as unique worker days. Durable Object duration
 is unmetered; a later duration rate should stay list plus a thin markup.
@@ -190,8 +198,8 @@ Overage is a heavy-tail safety valve only
 $49
 price are not sized to monetize via overage. Legacy Standard/Pro accounts are
 not cut and not billed on these allotments
-(`computeMeteringPolicy.legacyMonthlyMeters`). See
-[Usage metering](./usage-metering.md).
+(`computeMeteringPolicy.legacyMonthlyMeters`); they get the same approaching and
+reached warnings. See [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO

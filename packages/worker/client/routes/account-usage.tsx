@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import {
+	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 	type AdminPlanName,
@@ -34,6 +35,7 @@ import {
 } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
+	getAccentCalloutCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -84,6 +86,40 @@ function formatUsageValue(resource: string, value: number) {
 		return formatBytes(value)
 	}
 	return formatIntegerNumber(value)
+}
+
+function computeOverageNotice(overage: AccountUsageComputeOverage) {
+	const overInclude = overage.meters.some((meter) => meter.percentOfLimit >= 1)
+	const approaching = overage.meters.some(
+		(meter) => meter.overEightyPercent && meter.percentOfLimit < 1,
+	)
+	if (overage.disposition === 'soft_block') {
+		return {
+			title: 'Upgrade to keep using compute overage',
+			body: "You are over this month's unique worker-day or Durable Object rows-read include. Free accounts without a payment method are asked to upgrade instead of being charged.",
+		}
+	}
+	if (overage.legacyUnbilled && (overInclude || approaching)) {
+		return {
+			title: 'Legacy plan compute includes',
+			body: overInclude
+				? "You are over this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed for that overage. Changing plan moves you onto public rates."
+				: "You are approaching this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed if you go over.",
+		}
+	}
+	if (overage.disposition === 'invoice' && overInclude) {
+		return {
+			title: 'Compute overage this month',
+			body: 'Usage above your unique worker-day and Durable Object rows-read includes is billed at list rates after the UTC month closes.',
+		}
+	}
+	if (approaching) {
+		return {
+			title: 'Approaching compute includes',
+			body: "You are over 80% of this month's unique worker-day or Durable Object rows-read include. Public-ladder overage is billed at list rates when a payment method is on file.",
+		}
+	}
+	return null
 }
 
 function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
@@ -237,6 +273,9 @@ export function AccountUsageRoute(handle: Handle) {
 		const groupedRows = usage
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
+		const computeNotice = usage
+			? computeOverageNotice(usage.computeOverage)
+			: null
 
 		return (
 			<AccountManagementShell>
@@ -297,6 +336,74 @@ export function AccountUsageRoute(handle: Handle) {
 									Manage billing
 								</a>
 							</p>
+						</AccountManagementPanel>
+						{computeNotice ? (
+							<div
+								mix={css(
+									getAccentCalloutCss({
+										accentColor:
+											usage.computeOverage.disposition === 'soft_block'
+												? chartColor.amber
+												: colors.primary,
+									}),
+								)}
+							>
+								<p
+									mix={css({
+										margin: 0,
+										fontWeight: typography.fontWeight.semibold,
+										color: colors.text,
+									})}
+								>
+									{computeNotice.title}
+								</p>
+								<p mix={css(descriptionCss)}>{computeNotice.body}</p>
+								<p mix={css({ margin: 0 })}>
+									<a href={billingPath} mix={css(primaryLinkCss)}>
+										{usage.computeOverage.disposition === 'soft_block'
+											? 'Upgrade your plan'
+											: 'Review billing'}
+									</a>
+								</p>
+							</div>
+						) : null}
+						<AccountManagementPanel
+							title="Monthly compute"
+							description="Unique worker-days and Durable Object rows-read against this month's include. Execute stays on a hard daily cap. Durable Object duration is unmetered."
+						>
+							<RecordTable
+								mode="none"
+								ariaLabel="Monthly compute usage"
+								scrollHeight="none"
+								columns={[
+									{ key: 'resource', label: 'Resource', primary: true },
+									{ key: 'current', label: 'In use', align: 'end' },
+									{ key: 'include', label: 'Include', align: 'end' },
+									{ key: 'used', label: 'Used', align: 'end' },
+								]}
+								rows={usage.computeOverage.meters.map((item) => ({
+									id: item.resource,
+									cells: {
+										resource: item.label,
+										current: formatIntegerNumber(item.current),
+										include: formatIntegerNumber(item.include),
+										used: (
+											<span
+												mix={css(
+													item.overEightyPercent
+														? {
+																color: chartColor.amber,
+																fontWeight: typography.fontWeight.semibold,
+															}
+														: {},
+												)}
+											>
+												{formatUsagePercent(item.percentOfLimit)}
+											</span>
+										),
+									},
+								}))}
+							/>
 						</AccountManagementPanel>
 						{usage.warnings.length > 0 ? (
 							<AccountManagementPanel
