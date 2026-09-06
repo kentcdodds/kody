@@ -6,7 +6,7 @@ import {
 	createOnboardingHandler,
 	loadOnboardingCustomMcpServers,
 	loadOnboardingFeaturedMcpServers,
-	loadPersistedPackageKodyId,
+	loadPersistedPackageName,
 } from '#app/handlers/onboarding.ts'
 import { type OnboardingLoaderData } from '#universal/loader-data.ts'
 
@@ -114,7 +114,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		loggedIn: false,
 		mcpServerUrl: 'https://example.com/mcp',
 		needsOnboarding: true,
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 	})
 	expect(anonymousPayload.setupPrompt.length).toBeGreaterThan(0)
@@ -141,7 +141,7 @@ test('onboarding API includes the authenticated package-scope username', async (
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 	})
 })
@@ -322,15 +322,15 @@ test('invalid onboarding agent or service paths redirect to that step', async ()
 	).toBe('/onboarding/step-3')
 })
 
-test('onboarding persist next-steps use the newest saved-package kody id', async () => {
+test('onboarding persist chrome uses the newest saved-package name', async () => {
 	const env = { APP_DB: {} } as Env
 
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{ kodyId: 'morning-digest' },
-		{ kodyId: 'older-package' },
+		{ name: '@u-b/morning-digest', kodyId: 'morning-digest' },
+		{ name: '@u-b/older-package', kodyId: 'older-package' },
 	])
-	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBe(
-		'morning-digest',
+	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBe(
+		'@u-b/morning-digest',
 	)
 	expect(mockModule.listSavedPackagesByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
@@ -338,10 +338,10 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 	)
 
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBeNull()
 
 	mockModule.listSavedPackagesByUserId.mockRejectedValue(new Error('d1 blip'))
-	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBeNull()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		username: 'u-b',
@@ -349,7 +349,7 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		mcpUser: { userId: 'user-1' },
 	})
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
-		{ kodyId: 'morning-digest' },
+		{ name: '@u-b/morning-digest', kodyId: 'morning-digest' },
 	])
 	mockModule.listMcpServerSettings.mockResolvedValue([])
 
@@ -361,7 +361,7 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
-		persistedPackageKodyId: 'morning-digest',
+		persistedPackageName: '@u-b/morning-digest',
 		accessWinMemorySubject: null,
 	})
 })

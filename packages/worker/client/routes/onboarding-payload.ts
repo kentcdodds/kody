@@ -30,10 +30,11 @@ export type OnboardingPayload = {
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**
-	 * Most recently updated saved-package kody id after persist. Null when
-	 * logged out, unverified, or the listing fails open.
+	 * Most recently updated saved-package user-facing name (`@scope/kody-id`)
+	 * after persist. Null when logged out, unverified, or the listing fails
+	 * open.
 	 */
-	persistedPackageKodyId: string | null
+	persistedPackageName: string | null
 	/**
 	 * Most recently updated active memory subject from a Step 2 access win.
 	 * Null when logged out, unverified, none exist, or the listing fails open.

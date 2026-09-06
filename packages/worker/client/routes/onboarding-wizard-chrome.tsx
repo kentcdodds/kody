@@ -1,5 +1,4 @@
 import { type Handle, css } from 'remix/ui'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
 	onboardingExplorePackagesLabel,
@@ -153,11 +152,10 @@ export function WizardNavigation(
 		skipLabel?: string
 		onSkip?: () => void
 		/**
-		 * Last wizard step: never render a disabled Next. Primary is Copy when
-		 * a prompt exists; Explore packages is always on.
+		 * Last wizard step: never render a disabled Next. Explore packages is
+		 * the only trailing action — copy lives in the step card.
 		 */
 		lastStep?: {
-			copyPrompt?: { value: string; label: string } | null
 			exploreHref: string
 		}
 	}>,
@@ -181,9 +179,6 @@ export function WizardNavigation(
 			if (onNext) return onNext()
 			if (nextStep) handle.props.onSelectStep(nextStep)
 		}
-		const copyPrompt = lastStep?.copyPrompt
-		const showCopy = copyPrompt != null && copyPrompt.value.trim().length > 0
-
 		return (
 			<footer mix={css(wizardNavCss)}>
 				<button
@@ -210,28 +205,13 @@ export function WizardNavigation(
 						</button>
 					) : null}
 					{lastStep ? (
-						<>
-							<a
-								href={lastStep.exploreHref}
-								data-testid="onboarding-wizard-explore-packages"
-								mix={css(wizardExploreLinkCss)}
-							>
-								{onboardingExplorePackagesLabel}
-							</a>
-							{showCopy ? (
-								<div
-									data-testid="onboarding-wizard-copy-prompt"
-									data-copy-value={copyPrompt.value}
-									mix={css(wizardCopyWrapCss)}
-								>
-									<CopyTextButton
-										value={copyPrompt.value}
-										idleLabel={copyPrompt.label}
-										variant="pill"
-									/>
-								</div>
-							) : null}
-						</>
+						<a
+							href={lastStep.exploreHref}
+							data-testid="onboarding-wizard-explore-packages"
+							mix={css(wizardExploreLinkCss)}
+						>
+							{onboardingExplorePackagesLabel}
+						</a>
 					) : (
 						<button
 							type="button"
@@ -385,14 +365,6 @@ export const wizardNextButtonCss = {
 const wizardExploreLinkCss = {
 	...getGhostButtonCss(),
 	minWidth: '6.5rem',
-}
-
-const wizardCopyWrapCss = {
-	display: 'grid',
-	minWidth: '6.5rem',
-	'& > button': {
-		minWidth: '6.5rem',
-	},
 }
 
 const wizardBackButtonCss = {

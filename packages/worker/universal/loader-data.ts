@@ -953,7 +953,10 @@ export type OnboardingLoaderData = {
 	persistPrompt: string
 	/** True when the account has a memory, execute, or saved package. */
 	hasAccessWin: boolean
-	/** True when the account has two or more inbound MCP OAuth grants. */
+	/**
+	 * True when the account has two or more inbound MCP OAuth grants. That is
+	 * grant count, not "the selected Step 3 host connected."
+	 */
 	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
@@ -965,14 +968,15 @@ export type OnboardingLoaderData = {
 	/** Non-featured MCP servers the viewer added themselves. */
 	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**
-	 * Most recently updated saved-package kody id for this account, used by
-	 * Step 3 next-steps after persist. Null when logged out, unverified, or
+	 * Most recently updated saved-package user-facing name (`@scope/kody-id`)
+	 * for Step 3 "You made …" chrome. Null when logged out, unverified, or
 	 * the listing fails open.
 	 */
-	persistedPackageKodyId: string | null
+	persistedPackageName: string | null
 	/**
-	 * Most recently updated active memory subject from a Step 2 access win.
-	 * Null when logged out, unverified, none exist, or the listing fails open.
+	 * Most recently updated active memory subject for Step 3 "You made …"
+	 * chrome. Null when logged out, unverified, none exist, or the listing
+	 * fails open. The chip truncates long subjects; this field stays raw.
 	 */
 	accessWinMemorySubject: string | null
 	/** Derived progress checklist; null when logged out. */

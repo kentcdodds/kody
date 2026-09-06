@@ -60,6 +60,7 @@ export async function buildOnboardingSearchNotice(input: {
 		const remaining = remainingOnboardingWizardLabels({
 			hasMcpClient: grantCount > 0,
 			hasAccessWin,
+			// Grant count ≥ 2, not attribution to a named host.
 			hasSecondMcpClient: grantCount >= 2,
 		})
 		return formatOnboardingSearchNotice(remaining, input.baseUrl)

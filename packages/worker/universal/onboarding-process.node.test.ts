@@ -140,18 +140,35 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingPortabilityProofPrompt).toContain('Step 2')
 	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
 	expect(onboardingAccessWinMadeLine({})).toBeNull()
+	expect(onboardingAccessWinMadeLine({ packageName: 'grok-bot' })).toBeNull()
 	expect(
 		onboardingAccessWinMadeLine({ memorySubject: 'Preferred commute' }),
 	).toBe('You made Preferred commute')
-	expect(onboardingAccessWinMadeLine({ packageName: 'morning-digest' })).toBe(
-		'You made morning-digest',
-	)
+	expect(
+		onboardingAccessWinMadeLine({ packageName: '@you/morning-digest' }),
+	).toBe('You made @you/morning-digest')
 	expect(
 		onboardingAccessWinMadeLine({
 			memorySubject: 'Preferred commute',
-			packageName: 'morning-digest',
+			packageName: '@you/morning-digest',
 		}),
-	).toBe('You made Preferred commute and morning-digest')
+	).toBe('You made Preferred commute and @you/morning-digest')
+	expect(
+		onboardingAccessWinMadeLine({
+			memorySubject:
+				'Family vault photo backup cannot use Cloudflare Tunnel for large uploads',
+			packageName: 'grok-bot',
+		}),
+	).toBe('You made Family vault photo backup cannot use Cloudflare…')
+	expect(
+		onboardingAccessWinMadeLine({
+			memorySubject:
+				'Family vault photo backup cannot use Cloudflare Tunnel for large uploads',
+			packageName: '@you/family-vault',
+		}),
+	).toBe(
+		'You made Family vault photo backup cannot use Cloudflare… and @you/family-vault',
+	)
 	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
 	expect(onboardingSearchStartedLabel).toContain(
 		'started making something useful',

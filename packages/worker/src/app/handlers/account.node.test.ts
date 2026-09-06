@@ -54,7 +54,7 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		featuredListings: [],
 		featuredMcpServers: [],
 		customMcpServers: [],
-		persistedPackageKodyId: null,
+		persistedPackageName: null,
 		accessWinMemorySubject: null,
 		checklist: null,
 	})),

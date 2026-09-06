@@ -91,14 +91,14 @@ async function attachOnboardingProgress(
 	username: string,
 	onboarding: OnboardingLoaderData,
 ) {
-	const [hasAccessWin, persistedPackageKodyId, accessWinMemorySubject] =
+	const [hasAccessWin, persistedPackageName, accessWinMemorySubject] =
 		await Promise.all([
 			loadOnboardingAccessWin(env, userId),
-			loadPersistedPackageKodyId(env, userId),
+			loadPersistedPackageName(env, userId),
 			loadOnboardingAccessWinMemorySubject(env, userId),
 		])
 	onboarding.hasAccessWin = hasAccessWin
-	onboarding.persistedPackageKodyId = persistedPackageKodyId
+	onboarding.persistedPackageName = persistedPackageName
 	onboarding.accessWinMemorySubject = accessWinMemorySubject
 	onboarding.checklist = await loadChecklist(
 		env,
@@ -112,13 +112,14 @@ async function attachOnboardingProgress(
 	)
 }
 
-export async function loadPersistedPackageKodyId(
+export async function loadPersistedPackageName(
 	env: Pick<Env, 'APP_DB'>,
 	userId: string,
 ): Promise<string | null> {
 	try {
 		const packages = await listSavedPackagesByUserId(env.APP_DB, { userId })
-		return packages[0]?.kodyId ?? null
+		const name = packages[0]?.name?.trim()
+		return name ? name : null
 	} catch {
 		return null
 	}

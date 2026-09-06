@@ -158,12 +158,30 @@ export const onboardingPortabilityProofPrompt = [
 	'One short proof.',
 ].join(' ')
 
+/** Chip-length cap so Step 3 "You made …" stays one short line. */
+const onboardingAccessWinChipMaxLength = 48
+
+function truncateOnboardingAccessWinChip(value: string) {
+	const trimmed = value.trim()
+	if (!trimmed) return ''
+	if (trimmed.length <= onboardingAccessWinChipMaxLength) return trimmed
+	return `${trimmed.slice(0, onboardingAccessWinChipMaxLength - 1)}…`
+}
+
+function onboardingAccessWinPackageChip(packageName?: string | null) {
+	const name = packageName?.trim() ?? ''
+	// Saved-package names are `@scope/kody-id`. A bare kody id is not a
+	// sensible chip, so hide that half rather than invent a label.
+	if (!name.startsWith('@') || !name.includes('/')) return ''
+	return truncateOnboardingAccessWinChip(name)
+}
+
 export function onboardingAccessWinMadeLine(input: {
 	memorySubject?: string | null
 	packageName?: string | null
 }) {
-	const memory = input.memorySubject?.trim() ?? ''
-	const packageName = input.packageName?.trim() ?? ''
+	const memory = truncateOnboardingAccessWinChip(input.memorySubject ?? '')
+	const packageName = onboardingAccessWinPackageChip(input.packageName)
 	if (memory && packageName) return `You made ${memory} and ${packageName}`
 	if (memory) return `You made ${memory}`
 	if (packageName) return `You made ${packageName}`
@@ -171,6 +189,9 @@ export function onboardingAccessWinMadeLine(input: {
 }
 
 export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
+
+export const onboardingSecondAgentConnectedLabel =
+	"You've connected a second agent."
 
 export function remainingOnboardingWizardLabels(input: {
 	hasMcpClient: boolean

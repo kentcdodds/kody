@@ -10,6 +10,7 @@ import {
 	onboardingCopyPortabilityProofLabel,
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
+	onboardingSecondAgentConnectedLabel,
 	portabilityGuideHref,
 	onboardingSearchStartedLabel,
 	onboardingSearchWaitingLabel,
@@ -189,7 +190,7 @@ export function renderSecondAgentPanel(
 		mcpServerUrl: string
 		mcpHighlights: Record<string, HighlightedCode>
 		accessWinMemorySubject?: string | null
-		persistedPackageKodyId?: string | null
+		persistedPackageName?: string | null
 	},
 ) {
 	const firstLabel = props.firstAgent
@@ -200,7 +201,7 @@ export function renderSecondAgentPanel(
 		: null
 	const accessWinMade = onboardingAccessWinMadeLine({
 		memorySubject: props.accessWinMemorySubject,
-		packageName: props.persistedPackageKodyId,
+		packageName: props.persistedPackageName,
 	})
 	return (
 		<section
@@ -241,9 +242,7 @@ export function renderSecondAgentPanel(
 					props.selectedAgent,
 					props.search ?? '',
 				),
-				connectedLabel: props.selectedAgentLabel
-					? `${props.selectedAgentLabel} is connected`
-					: 'Second agent is connected',
+				connectedLabel: onboardingSecondAgentConnectedLabel,
 			})}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
@@ -287,12 +286,6 @@ export function renderSecondAgentPanel(
 				activeStep={props.activeStep}
 				onSelectStep={props.onSelectStep}
 				lastStep={{
-					copyPrompt: props.selectedAgent
-						? {
-								value: onboardingPortabilityProofPrompt,
-								label: onboardingCopyPortabilityProofLabel,
-							}
-						: null,
 					exploreHref: onboardingExplorePackagesHref(),
 				}}
 			/>
