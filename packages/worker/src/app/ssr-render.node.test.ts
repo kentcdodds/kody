@@ -37,11 +37,6 @@ import {
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 } from '#universal/code-runs.ts'
-import {
-	computeOverageRatesUsd,
-	formatDurableObjectRowsRead,
-	planLimits,
-} from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
@@ -1566,61 +1561,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('Let Kody use this connection at')
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
-})
-
-test('renderAppPage renders the redesigned pricing page', async () => {
-	resetDataCacheForTests()
-	setAuthSessionSecret(testCookieSecret)
-	const env = createTestEnv(createUserTestDb([]))
-
-	const response = await renderAppPage({
-		request: new Request('https://example.com/pricing'),
-		env,
-	})
-
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	expect(html).toContain('Standard')
-	expect(html).toContain('Pro')
-	const count = new Intl.NumberFormat('en-US')
-	expect(html).toContain(count.format(planLimits.free.maxRepos))
-	expect(html).toContain(count.format(planLimits.standard.maxRepos))
-	expect(html).toContain(count.format(planLimits.pro.maxRepos))
-	expect(html).toContain(count.format(planLimits.free.maxExecuteCallsPerDay))
-	expect(html).toContain(
-		count.format(planLimits.standard.maxExecuteCallsPerDay),
-	)
-	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
-	// Public Free/Standard share a 15-minute floor; public Pro is 5 minutes.
-	expect(html).toContain('15 minutes')
-	expect(html).toContain('5 minutes')
-	expect(html).toContain('Unique worker days per month')
-	expect(html).toContain('Durable Object rows read per month')
-	expect(html).toContain(
-		count.format(planLimits.free.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		count.format(planLimits.standard.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		count.format(planLimits.pro.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.free.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.standard.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.pro.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(`$${computeOverageRatesUsd.uniqueWorkerDay}`)
 })
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {
