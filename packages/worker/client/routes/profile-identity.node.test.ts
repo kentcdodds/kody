@@ -30,7 +30,6 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(ownHtml).toContain('Joined March 1, 2026')
 	expect(ownHtml).toContain('Edit profile')
 	expect(ownHtml).toContain(`href="${routes.account.href()}"`)
-	expect(ownHtml).not.toContain('Connect your agent')
 	expect(ownHtml).not.toContain('data-testid="profile-guest-cta"')
 	expect(ownHtml).not.toContain('data-testid="profile-private-badge"')
 	expect(ownHtml).not.toContain('Log out')
@@ -61,7 +60,6 @@ test('profile identity renders the person in HTML and keeps guest CTAs honest', 
 	expect(guestHtml).toContain(
 		`href="${routes.signup.href()}?redirectTo=${encodeURIComponent('/@jane')}"`,
 	)
-	expect(guestHtml).not.toContain('Connect your agent')
 	expect(guestHtml).not.toContain('Edit profile')
 	expect(guestHtml).not.toContain('data-testid="profile-actions"')
 

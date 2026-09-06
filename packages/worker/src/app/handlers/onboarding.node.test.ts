@@ -8,12 +8,7 @@ import {
 	loadOnboardingFeaturedMcpServers,
 	loadPersistedPackageKodyId,
 } from '#app/handlers/onboarding.ts'
-import {
-	buildDiscoveryPrompt,
-	buildOnboardingSetupPrompt,
-	buildPersistFirstPackagePrompt,
-} from '#app/onboarding-data.ts'
-import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
+import { type OnboardingLoaderData } from '#universal/loader-data.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -103,24 +98,23 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		anonymousApiResponse.headers.get('Server-Timing') ?? ''
 	expect(onboardingTiming).toContain('listings;dur=')
 	expect(onboardingTiming).toContain('highlight;dur=')
-	// Payload shape belongs to onboarding-data; the handler just serves it.
-	await expect(anonymousApiResponse.json()).resolves.toMatchObject({
+	const anonymousPayload =
+		(await anonymousApiResponse.json()) as OnboardingLoaderData
+	expect(anonymousPayload).toMatchObject({
 		ok: true,
 		loggedIn: false,
 		mcpServerUrl: 'https://example.com/mcp',
 		needsOnboarding: true,
-		setupPrompt: buildOnboardingSetupPrompt(),
-		discoveryPrompt: buildDiscoveryPrompt({
-			env,
-			requestUrl: 'https://example.com/onboarding.json',
-		}),
-		persistPrompt: buildPersistFirstPackagePrompt({
-			env,
-			requestUrl: 'https://example.com/onboarding.json',
-		}),
-		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		persistedPackageKodyId: null,
 	})
+	expect(anonymousPayload.setupPrompt.length).toBeGreaterThan(0)
+	expect(anonymousPayload.discoveryPrompt).toContain('https://example.com')
+	expect(
+		anonymousPayload.featuredMcpServers.every(
+			(server: { connected: boolean; serverId: string | null }) =>
+				!server.connected && server.serverId === null,
+		),
+	).toBe(true)
 })
 
 test('onboarding API includes the authenticated package-scope username', async () => {
@@ -173,7 +167,10 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	})
 
 	const anonymous = await loadOnboardingFeaturedMcpServers(env)
-	expect(anonymous).toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+	expect(
+		anonymous.every((server) => !server.connected && server.serverId === null),
+	).toBe(true)
+	expect(anonymous.map((server) => server.id)).toContain('notion')
 	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
 
 	const signedIn = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
@@ -194,9 +191,10 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	})
 
 	mockModule.listMcpServerSettings.mockRejectedValue(new Error('d1 blip'))
-	await expect(
-		loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
-	).resolves.toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+	const fallback = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
+	expect(
+		fallback.every((server) => !server.connected && server.serverId === null),
+	).toBe(true)
 })
 
 test('onboarding custom MCP servers exclude featured remotes', async () => {

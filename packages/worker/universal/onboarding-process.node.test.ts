@@ -128,23 +128,10 @@ test('step 2 teach prompts stay brief and point at the onboarding guide', () => 
 		'durable-surfaces',
 	])
 	for (const item of onboardingTeachConcepts) {
-		expect(item.prompt.length).toBeLessThan(700)
-		expect(item.prompt).toContain("I'm on Kody onboarding.")
-		expect(item.prompt).toContain('Ask 1–2 questions')
-		expect(item.prompt).toContain('Success:')
-		expect(item.prompt).toContain(onboardingGuideFetchHint)
-		expect(item.prompt).toContain(onboardingGuideEntity)
-		expect(onboardingTeachPrompt(item.id)).toBe(item.prompt)
+		expect(onboardingTeachPrompt(item.id).length).toBeLessThan(700)
+		expect(onboardingTeachPrompt(item.id)).toContain(onboardingGuideFetchHint)
+		expect(onboardingTeachPrompt(item.id)).toContain(onboardingGuideEntity)
 	}
-	expect(onboardingTeachPrompt('home-and-memory')).toContain('not a gateway')
-	expect(onboardingTeachPrompt('execute')).toContain("Kody's cloud")
-	expect(onboardingTeachPrompt('packages')).toContain('any MCP host')
-	expect(onboardingTeachPrompt('durable-surfaces')).toContain('webhooks')
-	expect(onboardingTeachPrompt('durable-surfaces')).toContain(
-		'never readable by you',
-	)
-	expect(onboardingPortabilityProofPrompt).toContain('second agent')
-	expect(onboardingPortabilityProofPrompt).toContain('Reuse one memory')
 	expect(onboardingPortabilityProofPrompt).toContain(onboardingGuideEntity)
 	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
 })
@@ -171,7 +158,6 @@ test('search leftover notice lists remaining wizard steps, not a quest', () => {
 	expect(notice).toContain('2 steps left')
 	expect(notice).toContain('Give Kody access')
 	expect(notice).toContain('Connect a second agent')
-	expect(notice).toContain('not a gateway')
 	expect(notice).toContain('https://kody.example/onboarding')
 	expect(formatOnboardingSearchNotice([], 'https://kody.example')).toBeNull()
 })

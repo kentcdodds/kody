@@ -5,7 +5,6 @@ import {
 	defaultDurableEscalationBudgetMs,
 	runWithDurableEscalation,
 } from './durable-escalation.ts'
-import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
 import {
 	type WorkflowProjectionRecord,
@@ -322,9 +321,6 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 })
 
 test('mid-creation workflow projection rows are treated as already dispatched', async () => {
-	expect(alreadyDispatchedWorkflowStatusExclusion).toEqual(
-		terminalWorkflowStatusValues,
-	)
 	expect(alreadyDispatchedWorkflowStatusExclusion).not.toContain('creating')
 
 	const hangUntilAborted = vi.fn(

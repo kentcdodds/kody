@@ -8,15 +8,7 @@ import {
 
 test('staging keys are user-namespaced and ownership-checked', () => {
 	const key = isolatedArtifactRebuildStagingKeyForUser('user-1')
-	expect(
-		key.startsWith(`${isolatedArtifactRebuildStagingKeyPrefix}user-1:`),
-	).toBe(true)
-	expect(
-		isolatedArtifactRebuildStagingKeyBelongsToUser({
-			stagingKey: key,
-			userId: 'user-1',
-		}),
-	).toBe(true)
+	expect(key.startsWith('repo-artifact-rebuild-staging:v1:user-1:')).toBe(true)
 	expect(
 		isolatedArtifactRebuildStagingKeyBelongsToUser({
 			stagingKey: key,

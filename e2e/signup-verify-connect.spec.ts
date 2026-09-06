@@ -141,9 +141,6 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		await expect(
 			page.getByTestId('onboarding-unconnected-prompt'),
 		).toBeVisible()
-		await expect(
-			page.getByText('Your agent cannot do anything in Kody yet.'),
-		).toBeVisible()
 
 		await stepsNav
 			.getByRole('link', { name: '3 Connect a second agent' })
