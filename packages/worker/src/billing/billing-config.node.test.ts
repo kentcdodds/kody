@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	createBillingLinkReference,
 	getBillingPortalConfigurationId,
+	getMatchingPriceIdsForPlan,
 	getPriceIdForPlan,
 	getPurchasablePlans,
 	parseBillingInterval,
@@ -407,4 +408,43 @@ test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids ro
 			env,
 		).stripePlan,
 	).toBe('pro')
+})
+
+test('resolveSubscriptionPlan maps public $49 and $480 Pro checkout prices', () => {
+	const env = {
+		STRIPE_PRO_PRICE_ID: 'price_1UChg1LAQpAnsYszAYn6eGgt',
+		STRIPE_PRO_YEARLY_PRICE_ID: 'price_1UChg2LAQpAnsYszKAFCR778',
+	}
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1UChg1LAQpAnsYszAYn6eGgt'],
+				}),
+			],
+			env,
+		),
+	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'month' })
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1UChg2LAQpAnsYszKAFCR778'],
+				}),
+			],
+			env,
+		),
+	).toMatchObject({ stripePlan: 'pro', stripeInterval: 'year' })
+	expect(getMatchingPriceIdsForPlan(env, 'pro').sort()).toEqual(
+		[
+			'price_1UChg1LAQpAnsYszAYn6eGgt',
+			'price_1UChg2LAQpAnsYszKAFCR778',
+			'price_1U1AISLAQpAnsYszIQvRJNhl',
+			'price_1U3sg6LAQpAnsYszlVpEIFGx',
+			'price_1U3sg7LAQpAnsYszpozAEFUi',
+		].sort(),
+	)
 })
