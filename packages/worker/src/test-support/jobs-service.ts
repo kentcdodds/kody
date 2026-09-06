@@ -220,7 +220,7 @@ export function createDatabase(
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
-							if (query.includes('SELECT plan, stripe_plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan')) {
 								const pairLookup = query.includes('email = ?')
 								return selectOne('users', (row) =>
 									pairLookup

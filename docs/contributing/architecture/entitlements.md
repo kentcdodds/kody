@@ -10,14 +10,18 @@ Module: `packages/worker/src/entitlements/` plus the client-safe plan registry
 at `packages/worker/universal/plans.ts`.
 
 - `plans.ts` (`#universal/plans.ts`) — plan names (`free`, `standard`, `pro`,
-  `max`), the `PlanLimits` config per plan, `max` email caps
+  `max`), the public `PlanLimits` config per plan, the pre-cut
+  `legacyPlanLimits` table for continuous Standard/Pro, `max` email caps
   (`maxPlanEmailLimits`), the `EntitlementResource` registry,
-  `resolvePlanLimit(plan, resource)`, `getPlanRank`, `parsePlanName` (strict,
-  untrusted input), `parseStoredPlanName` (stored-column reads), and
+  `resolvePlanLimit(plan, resource, ladder?)`, `resolvePlanLimits`,
+  `getPlanRank`, `parsePlanName` (strict, untrusted input),
+  `parseStoredPlanName` (stored-column reads), `parseEntitlementLadder`,
+  `resolveEntitlementLadderAfterPaidAccessChange`, and
   `resolveEffectivePlan(manual, stripe)`.
 - `errors.ts` — the one typed error (`EntitlementLimitError`) and the one
   user-facing message builder every enforcement point uses.
-- `service.ts` — `getUserPlan`, `getCachedUserPlan` (60s TTL enforcement cache),
+- `service.ts` — `getUserEntitlement` / `getUserPlan`,
+  `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
   helpers for rate-style limits, `assertWithinStorageBytesEntitlement`
   (UserMeter DO reserve with cold bootstrap), and
@@ -53,11 +57,30 @@ as validation failures.
 
 Migration `0002-restructure-plan-tiers.sql` maps stored `pro` values to
 `standard`, stored `partner` values to `pro`, and rebuilds both CHECK
-constraints for the current registry.
+constraints for the current registry. Migration
+`0043-users-entitlement-ladder.sql` adds `users.entitlement_ladder` and
+backfills `legacy` for then-active Stripe Standard/Pro subscribers and manual
+Pro grants.
 
 `users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
 (`parseStripePlanName` rejects it, along with any retired or unknown name).
+
+`users.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
+`'public'`). The public table in `planLimits` is what `/pricing` renders and
+what new Standard/Pro subscribers get. `legacy` keeps the pre-cut Standard/Pro
+ceilings from `legacyPlanLimits` while paid access stays continuous: an active
+or past-due Stripe Standard/Pro subscription, or a manual Pro grant that was
+already flagged. The one-shot backfill in `0043-users-entitlement-ladder.sql`
+sets `legacy` for those accounts. Cancel (or removing the manual Pro grant
+without a remaining paid Stripe tier) writes `public`. Resubscribing does not
+restore `legacy`. Free and `max` always use `planLimits`; the ladder is ignored
+for those plans. Unique-worker-day numbers live on `PlanLimits` for the public
+table and are not hard-cut for legacy accounts.
+
+`getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
+Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
+reserve, job interval floors) resolves limits through that pair.
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
 `parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
@@ -123,11 +146,11 @@ enforcement loop for the compute surfaces `usage-metering.md` already observes:
   (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
   before sandbox work, so over-limit ticks fail cheaply. This is separate from
   `scheduled_jobs` (how many job rows an account may own).
-- **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies only to free:
-  recurring jobs cannot run more often than every 15 minutes. The floor is
-  asserted on create and on an actual schedule change (`JobIntervalFloorError`).
-  Identity-only refreshes of an existing faster job are grandfathered. Paid
-  plans have no extra floor.
+- **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies to free and
+  public Standard (15 minutes) and public Pro (5 minutes). `0` still means no
+  extra floor (`max`, and legacy Standard/Pro). The floor is asserted on create
+  and on an actual schedule change (`JobIntervalFloorError`). Identity-only
+  refreshes of an existing faster job keep that schedule.
 
 These consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped. Daily consumption is
@@ -143,8 +166,10 @@ binding). Code lives in `packages/worker/src/entitlements/user-meter-do.ts` and
 `user-meter-client.ts`; storage layout and naming are documented in
 [Data storage](./data-storage.md). UserMeter also stores first-seen Dynamic
 Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
-double-counting; that table is cost attribution, not a plan cap. See
-[Usage metering](./usage-metering.md).
+double-counting. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
+allotment (Free 75, Standard 400, Pro 2,500) shown on `/pricing`. Hard-cut
+enforcement is not wired; legacy Standard/Pro accounts are not cut on this
+field. See [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
 UserMeter**. `assertWithinStorageBytesEntitlement` uses atomic DO
@@ -426,7 +451,9 @@ is collapsed into the squashed baseline; the individual migration files live in
 Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
 `standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and
 `invites.plan`) and rebuilds both CHECK constraints for `free`, `standard`,
-`pro`, and `max`.
+`pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
+`users.entitlement_ladder` (`public` | `legacy`, default `public`) and backfills
+`legacy` for then-active Stripe Standard/Pro subscribers and manual Pro grants.
 
 ## Assigning plans
 
@@ -465,8 +492,9 @@ when a manual plan is set.
 
 The MCP `userId` is the account's stored `users.stable_user_id` (NOT NULL,
 unique index; initially from `createStableUserIdFromEmail` at signup, then
-preserved across email changes). `getUserPlan(db, { userId, email })` always
-returns a `PlanName`:
+preserved across email changes). `getUserEntitlement` returns
+`{ plan, ladder }`. `getUserPlan(db, { userId, email })` is the plan-only
+wrapper and always returns a `PlanName`:
 
 1. Returns `free` when `userId` is absent (no warn).
 2. Returns `free` without touching D1 when `userId` is not a 64-char hex string
@@ -502,14 +530,14 @@ verified-state (for example the outbound fetch gateway), mirroring
 `findUserAccount` in `email/platform-address.ts`.
 
 **Enforcement plan cache:** `assertWithinEntitlement` resolves the plan limit
-via `getCachedUserPlan`, which wraps `getUserPlan` behind a 60-second
-per-isolate TTL cache keyed by D1 binding and
+via `getCachedUserEntitlement`, which wraps `getUserEntitlement` behind a
+60-second per-isolate TTL cache keyed by D1 binding and
 `(stable_user_id, normalized email)`. Cache entries share the lookup semantics
 above; failures are never cached. Built-in usage counters and any `getCurrent`
 override are read fresh on every call, so only the plan limit can be stale — a
-plan change may take up to ~60s to bind at enforcement points while current
-usage stays accurate. Surfaces that display the user's plan (billing UI, email
-usage) should keep calling `getUserPlan` directly.
+plan or ladder change may take up to ~60s to bind at enforcement points while
+current usage stays accurate. Surfaces that display the user's plan (billing UI,
+email usage) should keep calling `getUserPlan` / `getUserEntitlement` directly.
 
 ## The error shape
 
@@ -531,8 +559,8 @@ the stable programmatic contract:
 The `message` is built by `buildEntitlementLimitMessage` and is the single
 user-facing string across MCP and UI surfaces:
 
-> Plan limit reached: your "pro" plan allows at most 50 scheduled jobs and you
-> currently have 50. Remove or finish existing scheduled jobs you no longer
+> Plan limit reached: your "pro" plan allows at most 75 scheduled jobs and you
+> currently have 75. Remove or finish existing scheduled jobs you no longer
 > need, or upgrade your plan at /account/billing.
 
 Rules:
@@ -735,21 +763,21 @@ workflows via RunLog, and similar).
 
 ## Enforcement points
 
-| Resource                   | Enforcement point                                                                                                                                                                                                                                                                                                                  |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free also asserts `minJobIntervalMs` (15 minutes) on create or schedule change; existing faster jobs are grandfathered. |
-| `saved_packages`           | new-package branch of `packageSave` and projection insert                                                                                                                                                                                                                                                                          |
-| `repo_sessions`            | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                    |
-| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                |
-| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                  |
-| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                                                                                                                  |
-| `email_message_bytes`      | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                     |
-| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                   |
-| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                            |
-| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                     |
-| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                          |
-| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                      |
-| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                              |
+| Resource                   | Enforcement point                                                                                                                                                                                                                                                                                                                                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free and public Standard also assert `minJobIntervalMs` (15 minutes); public Pro asserts 5 minutes. Existing faster jobs keep their schedule on identity-only refreshes. |
+| `saved_packages`           | new-package branch of `packageSave` and projection insert                                                                                                                                                                                                                                                                                                                           |
+| `repo_sessions`            | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                                                                     |
+| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                                                                 |
+| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                                                                   |
+| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                                                                                                                                                                   |
+| `email_message_bytes`      | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                                                                      |
+| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                                                                    |
+| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                                                                             |
+| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                                                                      |
+| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                                                                           |
+| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                                                                       |
+| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                                                                               |
 
 ## Billing
 
@@ -907,6 +935,9 @@ wiring are documented in
   signup via `parseStoredPlanName` and `resolvePlanWrite`.
 - `users.stripe_customer_id`, `users.stripe_plan`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
-  `packages/worker/src/billing/`, read by `getUserPlan` via
+  `packages/worker/src/billing/`, read by `getUserEntitlement` via
   `resolveEffectivePlan`. `stripe_plan` stays nullable because it is
   Stripe-derived; `max` is manual-only.
+- `users.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
+  entitlements module; Stripe refresh and admin plan writes clear `legacy` when
+  continuous paid access ends.

@@ -67,6 +67,10 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	// without a default; nullable TEXT matches migration 0052's add step.
 	stable_user_id: { create: 'TEXT NOT NULL', alter: 'TEXT' },
 	plan: { create: `TEXT NOT NULL DEFAULT 'free'` },
+	entitlement_ladder: {
+		create: `TEXT NOT NULL DEFAULT 'public' CHECK (entitlement_ladder IN ('public', 'legacy'))`,
+		alter: `TEXT NOT NULL DEFAULT 'public'`,
+	},
 	deleting_at: { create: 'TEXT' },
 	suspended_at: { create: 'TEXT' },
 	email_outbound_paused_at: { create: 'TEXT' },

@@ -2,6 +2,7 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	resolveEffectivePlan,
 	resolvePlanLimit,
@@ -245,13 +246,14 @@ export async function handleInboundEmail(
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
-				`SELECT plan, stripe_plan, email_verified_at, suspended_at FROM users
+				`SELECT plan, stripe_plan, entitlement_ladder, email_verified_at, suspended_at FROM users
 			WHERE email = ? AND stable_user_id = ?`,
 			)
 				.bind(identity.email, userId)
 				.first<{
 					plan: string
 					stripe_plan: string | null
+					entitlement_ladder: string | null
 					email_verified_at: string | null
 					suspended_at: string | null
 				}>()
@@ -263,6 +265,7 @@ export async function handleInboundEmail(
 					accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
 					accountRow?.stripe_plan ?? null,
 				),
+				ladder: parseEntitlementLadder(accountRow?.entitlement_ladder),
 				emailVerified: Boolean(accountRow?.email_verified_at),
 				suspended: Boolean(accountRow?.suspended_at),
 			}
@@ -387,7 +390,11 @@ export async function handleInboundEmail(
 				env,
 				userId,
 			})
-			const keepCap = resolvePlanLimit(account.plan, 'email_message_bytes')
+			const keepCap = resolvePlanLimit(
+				account.plan,
+				'email_message_bytes',
+				account.ladder,
+			)
 			let prepared
 			try {
 				prepared = await readAndPrepareForwardableEmailRawMime(message, {
@@ -486,6 +493,7 @@ export async function handleInboundEmail(
 					const receiveLimit = resolvePlanLimit(
 						account.plan,
 						'email_receives_per_day',
+						account.ladder,
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
@@ -537,7 +545,11 @@ export async function handleInboundEmail(
 					const chargeResult = await authority.charge({
 						delivery: chargeCandidate,
 						plan: account.plan,
-						limit: resolvePlanLimit(account.plan, 'email_receives_per_day'),
+						limit: resolvePlanLimit(
+							account.plan,
+							'email_receives_per_day',
+							account.ladder,
+						),
 						now: quotaNow,
 					})
 					claimedDelivery = chargeResult.delivery

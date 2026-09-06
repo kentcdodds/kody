@@ -1587,9 +1587,19 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		count.format(planLimits.standard.maxExecuteCallsPerDay),
 	)
 	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
-	// Free floor and paid "no floor" labels from the plan table (not marketing copy).
+	// Public Free/Standard share a 15-minute floor; public Pro is 5 minutes.
 	expect(html).toContain('15 minutes')
-	expect(html).toContain('None')
+	expect(html).toContain('5 minutes')
+	expect(html).toContain('Unique worker days per month')
+	expect(html).toContain(
+		count.format(planLimits.free.maxUniqueWorkerDaysPerMonth),
+	)
+	expect(html).toContain(
+		count.format(planLimits.standard.maxUniqueWorkerDaysPerMonth),
+	)
+	expect(html).toContain(
+		count.format(planLimits.pro.maxUniqueWorkerDaysPerMonth),
+	)
 })
 
 test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {

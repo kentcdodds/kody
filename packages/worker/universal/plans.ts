@@ -11,6 +11,11 @@
  *
  * There is deliberately no uncapped plan: the live registry is finite `max`
  * only.
+ *
+ * Standard/Pro ceilings have two ladders: {@link planLimits} is the public
+ * table (pricing page, new subscribers). {@link legacyPlanLimits} applies
+ * only while `users.entitlement_ladder = 'legacy'` and paid access stays
+ * continuous.
  */
 
 export const planNames = ['free', 'standard', 'pro', 'max'] as const
@@ -102,6 +107,57 @@ export function resolveEffectivePlan(
 		: manualPlan
 }
 
+/**
+ * Which entitlement ceiling table applies for Standard/Pro.
+ *
+ * - `public` — the live pricing-page ladder (new subscribers and anyone
+ *   who cancels and resubscribes).
+ * - `legacy` — the pre-cut Standard/Pro ceilings, kept only while paid
+ *   access stays continuous (active Stripe Standard/Pro, or a manual Pro
+ *   grant that was already flagged). Never inferred from join date.
+ */
+export const entitlementLadders = ['public', 'legacy'] as const
+
+export type EntitlementLadder = (typeof entitlementLadders)[number]
+
+/**
+ * Parse a stored `users.entitlement_ladder` value. Missing/blank values
+ * (pre-migration test fixtures) resolve to `public`. Unexpected values
+ * throw without echoing the raw value.
+ */
+export function parseEntitlementLadder(value: unknown): EntitlementLadder {
+	if (value == null || value === '') return 'public'
+	if (
+		typeof value === 'string' &&
+		(entitlementLadders as ReadonlyArray<string>).includes(value)
+	) {
+		return value as EntitlementLadder
+	}
+	throw new Error('Stored entitlement ladder is not a registered ladder name.')
+}
+
+/**
+ * Drop `legacy` once continuous paid access ends. Never promotes `public`
+ * to `legacy` — only the one-shot backfill writes that marker.
+ */
+export function resolveEntitlementLadderAfterPaidAccessChange(input: {
+	currentLadder: EntitlementLadder
+	manualPlan: PlanName
+	stripePlan: PlanName | null
+}): EntitlementLadder {
+	if (input.currentLadder !== 'legacy') return 'public'
+	if (input.stripePlan === 'standard' || input.stripePlan === 'pro') {
+		return 'legacy'
+	}
+	if (input.manualPlan === 'pro') return 'legacy'
+	return 'public'
+}
+
+export type UserEntitlement = {
+	plan: PlanName
+	ladder: EntitlementLadder
+}
+
 export type PlanLimits = {
 	/** Maximum plain repos (rows in user_repos). */
 	maxRepos: number
@@ -152,6 +208,14 @@ export type PlanLimits = {
 	 * or changed — existing faster jobs are grandfathered.
 	 */
 	minJobIntervalMs: number
+	/**
+	 * Included unique Dynamic Worker days per UTC month (Cloudflare bills
+	 * $0.002 per unique worker id per UTC day). Wired as the public cap even
+	 * while hard-cut enforcement is still soft; usage metering already
+	 * records `dynamic_worker_day`. Legacy Standard/Pro accounts are not
+	 * hard-cut on this field.
+	 */
+	maxUniqueWorkerDaysPerMonth: number
 }
 
 export const entitlementResources = [
@@ -262,11 +326,12 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 500,
 		maxJobRunsPerDay: 500,
 		minJobIntervalMs: 15 * 60 * 1000,
+		maxUniqueWorkerDaysPerMonth: 75,
 	},
 	standard: {
 		maxRepos: 200,
-		maxSavedPackages: 100,
-		maxScheduledJobs: 50,
+		maxSavedPackages: 50,
+		maxScheduledJobs: 15,
 		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1_000,
@@ -274,18 +339,20 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
-		maxConcurrentWorkflows: 50,
-		// Above the heaviest Standard payer (~200/day avg). Unique-execute
-		// ceiling is still above list price if someone maxes new modules.
-		maxExecuteCallsPerDay: 500,
-		maxOutboundFetchesPerDay: 20_000,
-		maxJobRunsPerDay: 10_000,
-		minJobIntervalMs: 0,
+		maxConcurrentWorkflows: 10,
+		// Public Standard execute is a try-paid rung, not the old 500/day
+		// ceiling. Continuous pre-cut subscribers keep
+		// {@link legacyPlanLimits}.
+		maxExecuteCallsPerDay: 150,
+		maxOutboundFetchesPerDay: 5_000,
+		maxJobRunsPerDay: 1_500,
+		minJobIntervalMs: 15 * 60 * 1000,
+		maxUniqueWorkerDaysPerMonth: 400,
 	},
 	pro: {
 		maxRepos: 400,
 		maxSavedPackages: 200,
-		maxScheduledJobs: 150,
+		maxScheduledJobs: 75,
 		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2_000,
@@ -293,14 +360,14 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxEmailMessageBytes: 768 * 1024,
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
-		maxConcurrentWorkflows: 100,
-		// Above the heaviest Pro payer (~670/day August avg) with room
-		// for a busy day. Unique-execute ceiling at 800/day is about
-		// the $49 list price ($0.002 × 800 × 30 ≈ $48).
-		maxExecuteCallsPerDay: 800,
-		maxOutboundFetchesPerDay: 40_000,
-		maxJobRunsPerDay: 20_000,
-		minJobIntervalMs: 0,
+		maxConcurrentWorkflows: 50,
+		// Public Pro execute sits under the $49 unique-worker list math
+		// ($0.002 × 750 × 30 ≈ $45) with room for a busy day.
+		maxExecuteCallsPerDay: 750,
+		maxOutboundFetchesPerDay: 25_000,
+		maxJobRunsPerDay: 8_000,
+		minJobIntervalMs: 5 * 60 * 1000,
+		maxUniqueWorkerDaysPerMonth: 2_500,
 	},
 	max: {
 		// 25× pro (400) → 10_000.
@@ -329,14 +396,77 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 25_000,
 		// 2× pro (40_000). Today's fetch spike (~17,000) stays well under.
 		maxOutboundFetchesPerDay: 80_000,
-		// 2× pro (20_000). Busy days are ~1,500–1,700 job runs.
+		// 2× the previous public Pro (20_000). Busy days are ~1,500–1,700
+		// job runs. `max` ceilings stay on that earlier Pro table; they
+		// still dominate every paid plan.
 		maxJobRunsPerDay: 40_000,
 		minJobIntervalMs: 0,
+		maxUniqueWorkerDaysPerMonth: 25_000,
 	},
 }
 
-/** 15-minute floor on free recurring jobs. Paid plans have no extra floor. */
+/**
+ * Pre-cut Standard/Pro ceilings. Applied only when
+ * `users.entitlement_ladder = 'legacy'` and the effective plan is
+ * `standard` or `pro`. Free and `max` always use {@link planLimits}.
+ * Unique-worker-day numbers match the public table; that cap is not
+ * hard-cut for legacy accounts.
+ */
+export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
+	standard: {
+		maxRepos: 200,
+		maxSavedPackages: 100,
+		maxScheduledJobs: 50,
+		maxRepoSessions: 200,
+		maxEmailSendsPerDay: 200,
+		maxEmailReceivesPerDay: 1_000,
+		maxStoredEmailMessages: 10_000,
+		maxEmailMessageBytes: 768 * 1024,
+		maxSecrets: 100,
+		maxStorageBytes: 1024 * 1024 * 1024,
+		maxConcurrentWorkflows: 50,
+		maxExecuteCallsPerDay: 500,
+		maxOutboundFetchesPerDay: 20_000,
+		maxJobRunsPerDay: 10_000,
+		minJobIntervalMs: 0,
+		maxUniqueWorkerDaysPerMonth: 400,
+	},
+	pro: {
+		maxRepos: 400,
+		maxSavedPackages: 200,
+		maxScheduledJobs: 150,
+		maxRepoSessions: 400,
+		maxEmailSendsPerDay: 500,
+		maxEmailReceivesPerDay: 2_000,
+		maxStoredEmailMessages: 25_000,
+		maxEmailMessageBytes: 768 * 1024,
+		maxSecrets: 200,
+		maxStorageBytes: 5 * 1024 * 1024 * 1024,
+		maxConcurrentWorkflows: 100,
+		maxExecuteCallsPerDay: 800,
+		maxOutboundFetchesPerDay: 40_000,
+		maxJobRunsPerDay: 20_000,
+		minJobIntervalMs: 0,
+		maxUniqueWorkerDaysPerMonth: 2_500,
+	},
+}
+
+/** 15-minute floor on free (and public Standard) recurring jobs. */
 export const freeMinJobIntervalMs = planLimits.free.minJobIntervalMs
+
+/**
+ * Resolve the full limit table for a plan. Legacy applies only to
+ * Standard/Pro; free and `max` always use {@link planLimits}.
+ */
+export function resolvePlanLimits(
+	plan: PlanName,
+	ladder: EntitlementLadder = 'public',
+): PlanLimits {
+	if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
+		return legacyPlanLimits[plan]
+	}
+	return planLimits[plan]
+}
 
 /**
  * Human label for a plan's fastest job interval. `0` means no extra floor.
@@ -358,13 +488,14 @@ export function formatMinJobInterval(minJobIntervalMs: number): string {
 
 /**
  * Resolve the numeric limit for a resource under a plan. Every plan limit is
- * finite.
+ * finite. Pass `legacy` for continuous pre-cut Standard/Pro subscribers.
  */
 export function resolvePlanLimit(
 	plan: PlanName,
 	resource: EntitlementResource,
+	ladder: EntitlementLadder = 'public',
 ): number {
-	const limits = planLimits[plan]
+	const limits = resolvePlanLimits(plan, ladder)
 	switch (resource) {
 		case 'repos':
 			return limits.maxRepos

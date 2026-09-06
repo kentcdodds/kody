@@ -579,10 +579,13 @@
 				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $12/month
 				// price on the "Kody Standard" product;
 				// STRIPE_STANDARD_YEARLY_PRICE_ID is $120/year (two months
-				// free). STRIPE_PRO_PRICE_ID is the $49/month price on the
-				// "Kody Pro" product; STRIPE_PRO_YEARLY_PRICE_ID is $480/year.
-				// Historical $5/$20 monthly price ids remain in Stripe and
-				// match in billing-config for existing subscribers.
+				// free). STRIPE_PRO_PRICE_ID / STRIPE_PRO_YEARLY_PRICE_ID must
+				// be the public $49/month and $480/year Price ids Felix
+				// creates — do not invent ids here. The current values stay
+				// as live checkout until that rotation; billing-config also
+				// lists them under retiredProPriceIds so existing subscribers
+				// keep matching after the vars change. Historical $5 Standard
+				// is matched the same way.
 				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
 				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
 				"STRIPE_PRO_PRICE_ID": "price_1U3sg6LAQpAnsYszlVpEIFGx",

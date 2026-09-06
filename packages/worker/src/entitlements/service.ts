@@ -1,11 +1,13 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	resolveEffectivePlan,
 	resolvePlanLimit,
 	type EntitlementResource,
 	type PlanName,
+	type UserEntitlement,
 } from '#universal/plans.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
@@ -31,41 +33,67 @@ export type EntitlementUsageEnv = UserMeterEnv &
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
 
+const publicFreeEntitlement: UserEntitlement = {
+	plan: 'free',
+	ladder: 'public',
+}
+
+/**
+ * Resolve the effective plan and entitlement ladder for a user. Missing
+ * userId, invalid stable ids, and no matching row resolve to public `free`
+ * without warning. Stored plan values go through strict
+ * {@link parseStoredPlanName}; the ladder goes through
+ * {@link parseEntitlementLadder}.
+ *
+ * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
+ * uses the real account email + stable id pair when both are available so a
+ * mismatched caller context cannot resolve another account's plan. Background
+ * contexts with a blank/missing email reverse-resolve by stable id. Missing or
+ * invalid stable ids still fail closed to public `free` without touching D1.
+ *
+ * Effective plan = f(manual users.plan, users.stripe_plan): the higher-ranked
+ * of the manual grant and Stripe subscription plan is returned (`max` ranks
+ * highest). `legacy` ceilings apply only while that marker stays set and
+ * paid access remains continuous.
+ */
+export async function getUserEntitlement(
+	db: D1Database,
+	input: { userId: string; email: string | null | undefined },
+): Promise<UserEntitlement> {
+	const email = input.email?.trim().toLowerCase()
+	if (!input.userId) return publicFreeEntitlement
+	if (!stableUserIdPattern.test(input.userId)) return publicFreeEntitlement
+	const row = await db
+		.prepare(
+			email
+				? `SELECT plan, stripe_plan, entitlement_ladder FROM users WHERE email = ? AND stable_user_id = ?`
+				: `SELECT plan, stripe_plan, entitlement_ladder FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(...(email ? [email, input.userId] : [input.userId]))
+		.first<{
+			plan: string
+			stripe_plan: string | null
+			entitlement_ladder: string | null
+		}>()
+	if (!row) return publicFreeEntitlement
+	return {
+		plan: resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan),
+		ladder: parseEntitlementLadder(row.entitlement_ladder),
+	}
+}
+
 /**
  * Resolve the effective plan for a user. Always returns a {@link PlanName}
  * (never a meaningful null): missing userId, invalid stable ids, and no
  * matching row resolve to `free` without warning; stored values go through
  * strict {@link parseStoredPlanName} validation and throw if D1 violates the
  * plan CHECK constraint.
- *
- * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
- * uses the real account email + stable id pair when both are available so a
- * mismatched caller context cannot resolve another account's plan. Background
- * contexts with a blank/missing email reverse-resolve by stable id. Missing or
- * invalid stable ids still fail closed to `free` without touching D1.
- *
- * Effective plan = f(manual users.plan, users.stripe_plan): the higher-ranked
- * of the manual grant and Stripe subscription plan is returned (`max` ranks
- * highest). Signature stays `(db, { userId, email })` so enforcement call
- * sites are unchanged.
  */
 export async function getUserPlan(
 	db: D1Database,
 	input: { userId: string; email: string | null | undefined },
 ): Promise<PlanName> {
-	const email = input.email?.trim().toLowerCase()
-	if (!input.userId) return 'free'
-	if (!stableUserIdPattern.test(input.userId)) return 'free'
-	const row = await db
-		.prepare(
-			email
-				? `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
-				: `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?`,
-		)
-		.bind(...(email ? [email, input.userId] : [input.userId]))
-		.first<{ plan: string; stripe_plan: string | null }>()
-	if (!row) return 'free'
-	return resolveEffectivePlan(parseStoredPlanName(row.plan), row.stripe_plan)
+	return (await getUserEntitlement(db, input)).plan
 }
 
 export type StableUserAccount = {
@@ -130,9 +158,29 @@ function createEntitlementLookupCache<T>() {
 	}
 }
 
-const cachedUserPlans = createEntitlementLookupCache<PlanName>()
+const cachedUserEntitlements = createEntitlementLookupCache<UserEntitlement>()
 const cachedStableUserAccounts =
 	createEntitlementLookupCache<StableUserAccount | null>()
+
+/**
+ * {@link getUserEntitlement} behind the short-TTL hot-path cache. Use only
+ * where a plan or ladder change may take up to a minute to apply (quota
+ * limit resolution); interactive plan displays should keep calling
+ * {@link getUserEntitlement}.
+ */
+export async function getCachedUserEntitlement(
+	db: D1Database,
+	input: { userId: string; email: string | null | undefined },
+): Promise<UserEntitlement> {
+	const email = input.email?.trim().toLowerCase()
+	if (!input.userId) return publicFreeEntitlement
+	if (!stableUserIdPattern.test(input.userId)) return publicFreeEntitlement
+	return await cachedUserEntitlements.getOrCreate(
+		db,
+		`${input.userId}\n${email ?? ''}`,
+		async () => await getUserEntitlement(db, input),
+	)
+}
 
 /**
  * {@link getUserPlan} behind the short-TTL hot-path cache. Use only where a
@@ -143,14 +191,7 @@ export async function getCachedUserPlan(
 	db: D1Database,
 	input: { userId: string; email: string | null | undefined },
 ): Promise<PlanName> {
-	const email = input.email?.trim().toLowerCase()
-	if (!input.userId) return 'free'
-	if (!stableUserIdPattern.test(input.userId)) return 'free'
-	return await cachedUserPlans.getOrCreate(
-		db,
-		`${input.userId}\n${email ?? ''}`,
-		async () => await getUserPlan(db, input),
-	)
+	return (await getCachedUserEntitlement(db, input)).plan
 }
 
 /**
@@ -870,11 +911,12 @@ export async function assertWithinStorageBytesEntitlement(input: {
 
 	// Preserve the plan-cache convention: limit resolution tolerates ~60s
 	// staleness while the DO counter itself is always fresh.
-	const plan = await getCachedUserPlan(input.db, {
+	const entitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = resolvePlanLimit(plan, 'storage_bytes')
+	const plan = entitlement.plan
+	const limit = resolvePlanLimit(plan, 'storage_bytes', entitlement.ladder)
 	const requested = Math.max(0, input.requested ?? 1)
 	const updatedAt = new Date().toISOString()
 
@@ -960,11 +1002,12 @@ export async function assertWithinEntitlement(
 ): Promise<void> {
 	// Cached plan resolution: quota limit lookup tolerates short-TTL
 	// staleness; usage counters below stay fresh on every call.
-	const plan = await getCachedUserPlan(input.db, {
+	const entitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = resolvePlanLimit(plan, input.resource)
+	const plan = entitlement.plan
+	const limit = resolvePlanLimit(plan, input.resource, entitlement.ladder)
 	const now = input.now ?? new Date()
 	const requested = input.requested ?? 1
 	const current = input.getCurrent
@@ -1012,11 +1055,12 @@ export async function consumeDailyEntitlement(
 	// Cached plan resolution: this runs on every execute call and every
 	// sandbox outbound fetch; the UserMeter consume below is the only
 	// counter state that must be fresh.
-	const plan = await getCachedUserPlan(input.db, {
+	const entitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
-	const limit = resolvePlanLimit(plan, resource)
+	const plan = entitlement.plan
+	const limit = resolvePlanLimit(plan, resource, entitlement.ladder)
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
 	let result = await meter.consume({
 		resource,

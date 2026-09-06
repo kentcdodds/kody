@@ -35,6 +35,7 @@ type UserRow = {
 	email: string
 	stable_user_id: string
 	plan?: string
+	entitlement_ladder?: string
 	stripe_plan?: string | null
 	stripe_customer_id?: string | null
 	suspended_at?: string | null
@@ -235,7 +236,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, username, email, plan, stripe_plan, stable_user_id from users where stable_user_id = ?',
+							'select id, username, email, plan, stripe_plan, entitlement_ladder, stable_user_id from users where stable_user_id = ?',
 						)
 					) {
 						const user = users.find((row) => row.stable_user_id === params[0])
@@ -552,13 +553,14 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'update users set plan = ?, updated_at = ? where id = ?',
+							'update users set plan = ?, entitlement_ladder = ?, updated_at = ? where id = ?',
 						)
 					) {
-						const user = users.find((row) => row.id === Number(params[2]))
+						const user = users.find((row) => row.id === Number(params[3]))
 						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
 						user.plan = params[0] == null ? 'free' : String(params[0])
-						user.updated_at = String(params[1])
+						user.entitlement_ladder = String(params[1])
+						user.updated_at = String(params[2])
 						return { meta: { changes: 1, last_row_id: 0 } }
 					}
 					if (normalizedQuery.startsWith('delete from users')) {

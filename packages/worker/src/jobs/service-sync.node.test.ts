@@ -370,7 +370,13 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 		APP_DB: createDatabase({
 			users: [
 				{ email, plan: 'free', stable_user_id: userId },
-				{ email: paidEmail, plan: 'standard', stable_user_id: paidUserId },
+				{
+					email: paidEmail,
+					plan: 'standard',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'legacy',
+					stable_user_id: paidUserId,
+				},
 			],
 		}),
 	})
@@ -446,6 +452,53 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 		schedule: { type: 'interval', every: '1m' },
 	})
 	expect(paidCreated.schedule).toEqual({ type: 'interval', every: '1m' })
+})
+
+test('public Standard rejects new schedules faster than 15 minutes', async () => {
+	const email = 'public-standard-interval@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, id: string) => ({
+			userId: id,
+			email: id === userId ? email : `${id}@example.com`,
+			username: id,
+			displayName: id,
+		}),
+	)
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase({
+			users: [
+				{
+					email,
+					plan: 'free',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stable_user_id: userId,
+				},
+			],
+		}),
+	})
+	await expect(
+		syncSinglePackageJob({
+			env,
+			userId,
+			baseUrl: 'https://example.com',
+			packageId: 'public-standard-fast',
+			sourceId: 'public-standard-fast-source',
+			jobName: 'fast-job',
+			schedule: { type: 'interval', every: '5m' },
+		}),
+	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+	const created = await syncSinglePackageJob({
+		env,
+		userId,
+		baseUrl: 'https://example.com',
+		packageId: 'public-standard-ok',
+		sourceId: 'public-standard-ok-source',
+		jobName: 'ok-job',
+		schedule: { type: 'interval', every: '15m' },
+	})
+	expect(created.schedule).toEqual({ type: 'interval', every: '15m' })
 })
 
 test('package job sync preflights interval floors so a later invalid job writes nothing', async () => {

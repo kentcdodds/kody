@@ -262,10 +262,14 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
 - `STRIPE_STANDARD_YEARLY_PRICE_ID` — Stripe Price id for the
   $120/year
   `standard` plan ($10/month billed annually).
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $49/month `pro` plan.
-- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the
-  $480/year `pro` plan
-  ($40/month billed annually).
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the public $49/month `pro`
+  checkout price. Felix owns product/price creation; put the new Price id here
+  (and in `packages/worker/wrangler.jsonc` production vars) before launch. Do
+  not invent placeholder ids in the repo.
+- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the public
+  $480/year
+  `pro` checkout price ($40/month billed annually). Same owner and
+  wiring as the monthly Pro id.
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal
   configuration id (`bpc_...`) passed as `configuration` when creating portal
   sessions for Manage subscription and for plan changes by existing subscribers.
@@ -279,9 +283,15 @@ Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
 only that interval unavailable for purchase. Price ids and the portal
 configuration id are public (non-secret) values committed as production Wrangler
-vars in `packages/worker/wrangler.jsonc`, not Worker secrets. Historical $5/$20
-monthly price ids remain in Stripe and match so existing subscribers keep their
-plan.
+vars in `packages/worker/wrangler.jsonc`, not Worker secrets. Historical
+$5
+Standard and previous Pro monthly/yearly price ids remain in
+`retiredStandardPriceIds` / `retiredProPriceIds` in
+`packages/worker/src/billing/billing-config.ts` so existing subscribers keep
+their plan after checkout ids rotate. The Stripe Billing Portal configuration
+(`STRIPE_BILLING_PORTAL_CONFIGURATION_ID`) must list every live Standard/Pro
+price used for checkout, including the public $49
+/ $480 Pro prices Felix creates.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

@@ -16,6 +16,7 @@ export const usersTable = table({
 		password_hash: c.text(),
 		email_verified_at: c.text(),
 		plan: c.text(),
+		entitlement_ladder: c.text(),
 		stripe_customer_id: c.text(),
 		stripe_plan: c.text(),
 		stripe_plan_refreshed_at: c.text(),

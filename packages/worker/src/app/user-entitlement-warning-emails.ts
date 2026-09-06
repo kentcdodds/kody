@@ -7,6 +7,7 @@ import {
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	planLimits,
 	resolveEffectivePlan,
@@ -48,6 +49,7 @@ type WarningCandidate = {
 	email: string
 	plan: string
 	stripe_plan: string | null
+	entitlement_ladder: string | null
 }
 
 type WarningResource = {
@@ -161,6 +163,7 @@ async function warnOneUserIfNeeded(input: {
 		env: input.env,
 		usageUserId: input.user.stable_user_id,
 		plan,
+		ladder: parseEntitlementLadder(input.user.entitlement_ladder),
 		now: input.now,
 	})
 	const approaching: Array<WarningResource> = []
@@ -583,7 +586,7 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 	const [active, packages, secrets] = await Promise.all([
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan
+				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT user_id, SUM(event_count) AS event_count
 					FROM usage_rollups
@@ -602,7 +605,7 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 			.all<WarningCandidate>(),
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan
+				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT user_id, COUNT(*) AS stock_count
 					FROM saved_packages
@@ -620,7 +623,7 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 			.all<WarningCandidate>(),
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan
+				`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder
 				 FROM (
 					SELECT sb.user_id, COUNT(*) AS stock_count
 					FROM secret_entries se

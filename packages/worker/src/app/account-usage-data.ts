@@ -1,4 +1,5 @@
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	parseStripePlanName,
 	resolveEffectivePlan,
@@ -14,6 +15,7 @@ type UsageUserRow = {
 	id: number
 	plan: string
 	stripe_plan: string | null
+	entitlement_ladder: string | null
 	stable_user_id: string
 }
 
@@ -28,7 +30,7 @@ export async function loadAccountUsageData(input: {
 }): Promise<AccountUsageLoaderData | null> {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, plan, stripe_plan, stable_user_id FROM users WHERE id = ?`,
+		`SELECT id, plan, stripe_plan, entitlement_ladder, stable_user_id FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
 		.first<UsageUserRow>()
@@ -36,12 +38,14 @@ export async function loadAccountUsageData(input: {
 
 	const manualPlan = parseStoredPlanName(row.plan)
 	const plan = resolveEffectivePlan(manualPlan, row.stripe_plan)
+	const ladder = parseEntitlementLadder(row.entitlement_ladder)
 	const usageUserId = resolveUserStableId(row)
 	const snapshot = await readEntitlementUsageSnapshot({
 		db: input.env.APP_DB,
 		env: input.env,
 		usageUserId,
 		plan,
+		ladder,
 		now,
 	})
 

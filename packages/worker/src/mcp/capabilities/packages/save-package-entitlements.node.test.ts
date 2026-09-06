@@ -95,7 +95,7 @@ function createDatabase(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T = Record<string, unknown>>() {
-							if (query.includes('SELECT plan, stripe_plan FROM users')) {
+							if (query.includes('SELECT plan, stripe_plan')) {
 								const email = params[0]
 								const stableUserId = params[1]
 								if (

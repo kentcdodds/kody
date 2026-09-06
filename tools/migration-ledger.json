@@ -171,6 +171,10 @@
 		{
 			"filename": "0042-users-first-search-at.sql",
 			"sha256": "b2bec57147d5938f5cc710634b8fa388fb0ceb5f2c7550087db272554187e8aa"
+		},
+		{
+			"filename": "0043-users-entitlement-ladder.sql",
+			"sha256": "3717a78d621552cb086b32cb64b6cad4c6d5cd9e69c94f917e54e1dbbdd748fe"
 		}
 	]
 }

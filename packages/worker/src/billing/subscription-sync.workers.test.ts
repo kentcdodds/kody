@@ -8,6 +8,7 @@ import { StripeApiError } from './stripe-client.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSession,
+	refreshStripePlanForUser,
 } from './subscription-sync.ts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -20,6 +21,7 @@ function jsonResponse(body: unknown, status = 200) {
 function createBillingEnv(
 	overrides: {
 		STRIPE_SECRET_KEY?: string
+		STRIPE_STANDARD_PRICE_ID?: string
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
 		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
@@ -45,14 +47,16 @@ async function seedUser(input: {
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 	stripePlanRefreshedAt?: string | null
+	entitlementLadder?: 'public' | 'legacy'
 }) {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const stableUserId = await createStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			stripe_customer_id, stripe_plan, stripe_plan_refreshed_at,
+			entitlement_ladder
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			`billing-${crypto.randomUUID().slice(0, 8)}`,
@@ -64,6 +68,7 @@ async function seedUser(input: {
 			input.stripeCustomerId ?? null,
 			input.stripePlan ?? null,
 			input.stripePlanRefreshedAt ?? null,
+			input.entitlementLadder ?? 'public',
 		)
 		.run()
 	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
@@ -441,4 +446,106 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 	} finally {
 		vi.unstubAllGlobals()
 	}
+})
+
+test('refreshStripePlanForUser keeps legacy while paid access is continuous and drops it after cancel', async () => {
+	const email = `legacy-refresh-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		plan: 'free',
+		stripeCustomerId: 'cus_legacy_refresh',
+		stripePlan: 'standard',
+		entitlementLadder: 'legacy',
+	})
+	const billingEnv = createBillingEnv({
+		STRIPE_STANDARD_PRICE_ID: 'price_standard',
+	})
+
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_still_active',
+					status: 'active',
+					cancel_at: null,
+					items: { data: [{ price: { id: 'price_standard' } }] },
+				},
+			],
+		},
+	})
+	await refreshStripePlanForUser({
+		env: billingEnv,
+		userId: user.id,
+		customerId: 'cus_legacy_refresh',
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
+		)
+			.bind(user.id)
+			.first(),
+	).toEqual({ stripe_plan: 'standard', entitlement_ladder: 'legacy' })
+	vi.unstubAllGlobals()
+
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_canceled',
+					status: 'canceled',
+					cancel_at: null,
+					items: { data: [{ price: { id: 'price_standard' } }] },
+				},
+			],
+		},
+	})
+	await refreshStripePlanForUser({
+		env: billingEnv,
+		userId: user.id,
+		customerId: 'cus_legacy_refresh',
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
+		)
+			.bind(user.id)
+			.first(),
+	).toEqual({ stripe_plan: null, entitlement_ladder: 'public' })
+	vi.unstubAllGlobals()
+})
+
+test('refreshStripePlanForUser does not re-flag a public account that resubscribes', async () => {
+	const email = `resub-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({
+		email,
+		plan: 'free',
+		stripeCustomerId: 'cus_resub',
+		stripePlan: null,
+		entitlementLadder: 'public',
+	})
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_resub',
+					status: 'active',
+					cancel_at: null,
+					items: { data: [{ price: { id: 'price_pro' } }] },
+				},
+			],
+		},
+	})
+	await refreshStripePlanForUser({
+		env: createBillingEnv(),
+		userId: user.id,
+		customerId: 'cus_resub',
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
+		)
+			.bind(user.id)
+			.first(),
+	).toEqual({ stripe_plan: 'pro', entitlement_ladder: 'public' })
+	vi.unstubAllGlobals()
 })

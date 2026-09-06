@@ -7,7 +7,13 @@ import {
 } from '#app/user-account-emails.ts'
 import { maybeSyncDiscordGuildRolesForUser } from '#worker/discord/guild-role.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
-import { parseStripePlanName, type PlanName } from '#universal/plans.ts'
+import {
+	parseEntitlementLadder,
+	parseStoredPlanName,
+	parseStripePlanName,
+	resolveEntitlementLadderAfterPaidAccessChange,
+	type PlanName,
+} from '#universal/plans.ts'
 import {
 	createBillingLinkReference,
 	isBillingConfigured,
@@ -60,25 +66,35 @@ export async function refreshStripePlanForUser(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT email, stable_user_id, stripe_plan
+		`SELECT email, stable_user_id, plan, stripe_plan, entitlement_ladder
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
 		.first<{
 			email: string
 			stable_user_id: string
+			plan: string
 			stripe_plan: string | null
+			entitlement_ladder: string | null
 		}>()
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
 	const resolved = resolveSubscriptionPlan(subscriptions, input.env)
+	const nextLadder = previous
+		? resolveEntitlementLadderAfterPaidAccessChange({
+				currentLadder: parseEntitlementLadder(previous.entitlement_ladder),
+				manualPlan: parseStoredPlanName(previous.plan),
+				stripePlan: resolved.stripePlan,
+			})
+		: 'public'
 	await input.env.APP_DB.prepare(
 		`UPDATE users
-		 SET stripe_plan = ?, stripe_plan_refreshed_at = ?
+		 SET stripe_plan = ?, stripe_plan_refreshed_at = ?, entitlement_ladder = ?
 		 WHERE id = ? AND stripe_customer_id = ?`,
 	)
 		.bind(
 			resolved.stripePlan,
 			now.toISOString(),
+			nextLadder,
 			input.userId,
 			input.customerId,
 		)

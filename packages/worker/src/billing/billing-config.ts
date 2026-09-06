@@ -52,11 +52,13 @@ export function subscriptionHasPrice(
 
 /**
  * Retired production prices that still have live subscribers.
- * Checkout uses the $12 / $49 monthly prices; these ids stay in Stripe and
- * must resolve to standard/pro so existing subscriptions do not drop to free.
+ * Checkout uses the configured Standard $12 / Pro $49 ids; these historical
+ * ids stay in Stripe and must resolve to standard/pro so existing
+ * subscriptions do not drop to free.
  * Standard $5 (`price_1Tv3W2…`) has one customer through 2026-09-08.
- * Pro $29 monthly (`price_1U3sg6…`) and $288 yearly (`price_1U3sg7…`) remain
- * matched so existing subscriptions do not drop to free.
+ * Previous Pro prices (`price_1U1AIS…`, and the `price_1U3sg6…` /
+ * `price_1U3sg7…` ids still in wrangler until Felix rotates checkout to the
+ * new $49 / $480 prices) remain matched after those wrangler vars change.
  */
 const retiredStandardPriceIds = ['price_1Tv3W2LAQpAnsYszSr4PGBkE'] as const
 const retiredProPriceIds = [

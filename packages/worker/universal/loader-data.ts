@@ -31,6 +31,7 @@ import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clien
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
+import { type EntitlementLadder } from '#universal/plans.ts'
 import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
@@ -277,6 +278,8 @@ export type AdminUserListItem = {
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
+	/** `legacy` keeps pre-cut Standard/Pro ceilings while paid access stays continuous. */
+	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
