@@ -153,12 +153,13 @@ function scheduleDurableObjectUsageFlush() {
 		return
 	}
 	if (flushWaitUntil == null) {
+		let resolveFlush: (() => void) | undefined
+		const keepAlive = new Promise<void>((resolve) => {
+			resolveFlush = resolve
+		})
 		try {
-			waitUntil(
-				new Promise<void>((resolve) => {
-					flushWaitUntil = resolve
-				}),
-			)
+			waitUntil(keepAlive)
+			flushWaitUntil = resolveFlush ?? null
 		} catch (error) {
 			console.debug('durable-object-usage-waituntil-failed', error)
 		}

@@ -87,6 +87,8 @@ test('createMeteredDurableObjectStub never fails the RPC when waitUntil throws',
 		stub,
 	})
 	await expect(metered.ping()).resolves.toBe('pong')
+	await expect(metered.ping()).resolves.toBe('pong')
+	expect(waitUntilImpl).toHaveBeenCalledTimes(2)
 	await flushDurableObjectUsageWrites()
 	expect(recordUsage).toHaveBeenCalledTimes(1)
 	waitUntilImpl.mockReset()
