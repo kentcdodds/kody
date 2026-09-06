@@ -9,6 +9,7 @@ import {
 	resolveEffectivePlan,
 	type PlanName,
 } from '#universal/plans.ts'
+import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
 import {
@@ -23,6 +24,10 @@ import {
 } from '#universal/loader-data.ts'
 
 export const adminFleetTopConsumersLimit = 10
+
+const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
+	.map(() => '?')
+	.join(', ')
 
 /**
  * Entitlement-pressure sweep and the usage-entitlement alert lane share this
@@ -308,12 +313,17 @@ async function queryTopEventCountConsumers(
 			 FROM usage_rollups r
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
+				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL
 			 GROUP BY u.stable_user_id, u.username
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
 		)
-		.bind(currentMonth, adminFleetTopConsumersLimit)
+		.bind(
+			currentMonth,
+			...observeOnlyUsageEventTypes,
+			adminFleetTopConsumersLimit,
+		)
 		.all<{ stable_user_id: string; username: string; event_count: number }>()
 	return (rows.results ?? []).map((row) => ({
 		stableUserId: row.stable_user_id,
@@ -487,12 +497,17 @@ async function listActiveUsersForEntitlementSweep(
 			 FROM usage_rollups r
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
+				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL
 			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
 		)
-		.bind(currentMonth, adminFleetEntitlementSweepUserLimit)
+		.bind(
+			currentMonth,
+			...observeOnlyUsageEventTypes,
+			adminFleetEntitlementSweepUserLimit,
+		)
 		.all<ActiveUserRow>()
 	return rows.results ?? []
 }

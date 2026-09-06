@@ -13,6 +13,11 @@ import {
 	resolveEffectivePlan,
 	type EntitlementResource,
 } from '#universal/plans.ts'
+import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+
+const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
+	.map(() => '?')
+	.join(', ')
 
 /**
  * Hourly user-facing entitlement warnings. Shares the
@@ -591,6 +596,7 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 					SELECT user_id, SUM(event_count) AS event_count
 					FROM usage_rollups
 					WHERE month = ?
+						AND metric NOT IN (${observeOnlyMetricPlaceholders})
 					GROUP BY user_id
 					ORDER BY event_count DESC
 					LIMIT ?
@@ -601,7 +607,11 @@ async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 			)
-			.bind(currentMonth, userEntitlementWarningActiveSweepLimit)
+			.bind(
+				currentMonth,
+				...observeOnlyUsageEventTypes,
+				userEntitlementWarningActiveSweepLimit,
+			)
 			.all<WarningCandidate>(),
 		db
 			.prepare(

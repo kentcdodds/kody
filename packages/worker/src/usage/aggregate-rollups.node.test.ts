@@ -362,10 +362,11 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 		`timestamp < toDateTime('2026-07-01 00:00:00')`,
 	)
 	// Sampling-correct aggregates: counts and sums weight by _sample_interval.
-	expect(query).toContain('sum(_sample_interval) AS event_count')
-	expect(query).toContain(
-		`sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count`,
-	)
+	expect(query).toContain("blob2 = 'durable_object_gb_seconds' AND double3 > 0")
+	expect(query).toContain('double3')
+	expect(query).toContain('AS event_count')
+	expect(query).toContain(`blob4 = 'error'`)
+	expect(query).toContain('AS error_count')
 	expect(query).toContain(
 		'sum(double1 * _sample_interval) AS total_duration_ms',
 	)

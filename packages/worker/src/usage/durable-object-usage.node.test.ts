@@ -6,9 +6,12 @@ vi.mock('./record-usage.ts', () => ({
 	recordUsage,
 }))
 
-import { createMeteredDurableObjectStub } from './durable-object-usage.ts'
+import {
+	createMeteredDurableObjectStub,
+	flushDurableObjectUsageWrites,
+} from './durable-object-usage.ts'
 
-test('createMeteredDurableObjectStub records RPC wall-clock as durable_object_gb_seconds', async () => {
+test('createMeteredDurableObjectStub coalesces same-outcome RPC wall-clock', async () => {
 	const stub = {
 		async ping(label: string) {
 			return `pong:${label}`
@@ -23,35 +26,42 @@ test('createMeteredDurableObjectStub records RPC wall-clock as durable_object_gb
 	const metered = createMeteredDurableObjectStub({
 		env,
 		userId: 'user-1',
-		doClass: 'UserMeter',
+		doClass: 'StorageRunner',
 		stub,
 	})
 
 	await expect(metered.ping('ok')).resolves.toBe('pong:ok')
-	expect(recordUsage).toHaveBeenCalledTimes(1)
+	await expect(metered.ping('again')).resolves.toBe('pong:again')
+	await expect(metered.fail()).rejects.toThrow('rpc failed')
+	expect(recordUsage).not.toHaveBeenCalled()
+
+	await flushDurableObjectUsageWrites()
+	expect(recordUsage).toHaveBeenCalledTimes(2)
 	expect(recordUsage).toHaveBeenCalledWith(
 		env,
 		expect.objectContaining({
 			userId: 'user-1',
 			eventType: 'durable_object_gb_seconds',
-			entityId: 'UserMeter',
+			entityId: 'StorageRunner',
+			eventCount: 2,
 			outcome: 'success',
 		}),
 	)
-	expect(
-		(recordUsage.mock.calls[0]?.[1] as { durationMs: number }).durationMs,
-	).toBeGreaterThanOrEqual(0)
-
-	await expect(metered.fail()).rejects.toThrow('rpc failed')
-	expect(recordUsage).toHaveBeenCalledTimes(2)
-	expect(recordUsage).toHaveBeenLastCalledWith(
+	expect(recordUsage).toHaveBeenCalledWith(
 		env,
 		expect.objectContaining({
 			eventType: 'durable_object_gb_seconds',
-			entityId: 'UserMeter',
+			entityId: 'StorageRunner',
+			eventCount: 1,
 			outcome: 'error',
 		}),
 	)
+	const successDuration = (
+		recordUsage.mock.calls.find(
+			(call) => (call[1] as { outcome: string }).outcome === 'success',
+		)?.[1] as { durationMs: number }
+	).durationMs
+	expect(successDuration).toBeGreaterThanOrEqual(0)
 })
 
 test('createMeteredDurableObjectStub is a no-op without Analytics Engine', async () => {
@@ -69,5 +79,6 @@ test('createMeteredDurableObjectStub is a no-op without Analytics Engine', async
 	})
 	await expect(metered.ping()).resolves.toBe('pong')
 	expect(metered).toBe(stub)
+	await flushDurableObjectUsageWrites()
 	expect(recordUsage).not.toHaveBeenCalled()
 })

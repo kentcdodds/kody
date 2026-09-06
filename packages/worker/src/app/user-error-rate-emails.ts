@@ -3,6 +3,11 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildUserErrorRateEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { kodyIssueTriageListingPath } from '#universal/community-links.ts'
+import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
+
+const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
+	.map(() => '?')
+	.join(', ')
 
 export const userErrorRateEmailKvKeyPrefix = 'error-rate-email-user:v1'
 export const userErrorRateEmailSweepLimit = 80
@@ -61,6 +66,7 @@ export async function sendUserErrorRateEmails(input: {
 		 FROM usage_rollups r
 		 INNER JOIN users u ON u.stable_user_id = r.user_id
 		 WHERE r.month = ?
+		   AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 		   AND u.deleting_at IS NULL
 		   AND u.account_type = 'person'
 		   AND u.email_verified_at IS NOT NULL
@@ -69,7 +75,12 @@ export async function sendUserErrorRateEmails(input: {
 		 ORDER BY SUM(r.error_count) DESC
 		 LIMIT ?`,
 	)
-		.bind(month, userErrorRateMinErrors, userErrorRateEmailSweepLimit)
+		.bind(
+			month,
+			...observeOnlyUsageEventTypes,
+			userErrorRateMinErrors,
+			userErrorRateEmailSweepLimit,
+		)
 		.all<ErrorRateCandidate>()
 
 	const rows = candidates.results ?? []

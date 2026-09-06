@@ -65,6 +65,12 @@ export type UsageEvent = {
 	cpuMs?: number | null
 	/** Bytes transferred/stored when meaningful (fetch bodies, email size). */
 	bytes?: number | null
+	/**
+	 * How many metered units this write represents. Defaults to 1. Coalesced
+	 * `durable_object_gb_seconds` bursts send one Analytics Engine point with
+	 * the summed duration and this count in `doubles[2]`.
+	 */
+	eventCount?: number
 	outcome: UsageOutcome
 	/** ISO 8601 timestamp. Defaults to the time of recording. */
 	timestamp?: string
@@ -81,9 +87,9 @@ INSERT INTO usage_rollups (
 	event_count, error_count,
 	total_duration_ms, total_cpu_ms, total_bytes,
 	updated_at
-) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8)
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
 ON CONFLICT (user_id, metric, month) DO UPDATE SET
-	event_count = event_count + 1,
+	event_count = event_count + excluded.event_count,
 	error_count = error_count + excluded.error_count,
 	total_duration_ms = total_duration_ms + excluded.total_duration_ms,
 	total_cpu_ms = total_cpu_ms + excluded.total_cpu_ms,
@@ -197,7 +203,13 @@ function writeUsageDataPoint(
 				event.outcome,
 				timestamp,
 			],
-			doubles: [event.durationMs ?? 0, event.cpuMs ?? 0, event.bytes ?? 0],
+			doubles: [
+				event.durationMs ?? 0,
+				event.cpuMs ?? 0,
+				event.eventType === 'durable_object_gb_seconds'
+					? usageEventCount(event)
+					: (event.bytes ?? 0),
+			],
 		})
 	} catch (error) {
 		console.warn('usage-event-analytics-failed', error)
@@ -214,12 +226,14 @@ async function writeUsageRollup(
 		return
 	}
 	try {
+		const eventCount = usageEventCount(event)
 		await env.APP_DB.prepare(usageRollupUpsertStatement)
 			.bind(
 				event.userId,
 				event.eventType,
 				timestamp.slice(0, 7),
-				event.outcome === 'error' ? 1 : 0,
+				eventCount,
+				event.outcome === 'error' ? eventCount : 0,
 				Math.round(event.durationMs ?? 0),
 				Math.round(event.cpuMs ?? 0),
 				Math.round(event.bytes ?? 0),
@@ -229,6 +243,14 @@ async function writeUsageRollup(
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
 	}
+}
+
+function usageEventCount(event: UsageEvent) {
+	const count = event.eventCount
+	if (typeof count !== 'number' || !Number.isFinite(count) || count < 1) {
+		return 1
+	}
+	return Math.trunc(count)
 }
 
 async function writeLocalFleetExecuteDay(
