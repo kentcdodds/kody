@@ -85,6 +85,12 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	const html = await response.text()
 	expect(html).toContain('Standard')
 	expect(html).toContain('Pro')
+	expect(html).toContain('Teams / Enterprise')
+	expect(html).toContain(
+		'Running Kody across a team or with higher needs? Email us —',
+	)
+	expect(html).toContain('shaping that offering and want to hear your needs.')
+	expect(html).toContain('mailto:kody@kody.codes')
 	const count = new Intl.NumberFormat('en-US')
 	expect(html).toContain(count.format(planLimits.free.maxRepos))
 	expect(html).toContain(count.format(planLimits.standard.maxRepos))

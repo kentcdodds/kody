@@ -210,6 +210,29 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>
+
+					{/*
+					 * Invite-only strip, not a fourth SKU. No price, no Max
+					 * column, no feature-matrix cells — Teams/Enterprise and
+					 * Max stay manual.
+					 */}
+					<section
+						aria-labelledby="plan-teams"
+						mix={[css(teamsInviteCss), reveal(240)]}
+					>
+						<div>
+							<h2 id="plan-teams" mix={css(planTitleCss)}>
+								Teams / Enterprise
+							</h2>
+							<p mix={css(teamsInviteCopyCss)}>
+								Running Kody across a team or with higher needs? Email us —
+								we&rsquo;re shaping that offering and want to hear your needs.
+							</p>
+						</div>
+						<a href="mailto:kody@kody.codes" mix={css(teamsInviteButtonCss)}>
+							Email us
+						</a>
+					</section>
 				</div>
 
 				<section aria-labelledby="limits-title" mix={css(limitsCss)}>
@@ -441,6 +464,40 @@ const planPillButtonCss = {
 const planGhostButtonCss = {
 	...getGhostButtonCss(),
 	...planButtonSizeCss,
+}
+
+const teamsInviteCss = {
+	...getSurfaceCardCss(),
+	gridColumn: '1 / -1',
+	display: 'flex',
+	flexDirection: 'row' as const,
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	gap: '1.2rem',
+	textAlign: 'left' as const,
+	borderRadius: `calc(${radius.card} + 4px)`,
+	padding: 'clamp(1.5rem, 3vw, 2rem)',
+	'@media (max-width: 680px)': {
+		flexDirection: 'column' as const,
+		alignItems: 'stretch',
+		textAlign: 'center' as const,
+	},
+}
+
+const teamsInviteCopyCss = {
+	...planCopyCss,
+	marginTop: '0.55rem',
+	maxWidth: '62ch',
+}
+
+const teamsInviteButtonCss = {
+	...getGhostButtonCss(),
+	...planButtonSizeCss,
+	marginTop: 0,
+	flexShrink: 0,
+	'@media (max-width: 680px)': {
+		marginTop: '0.4rem',
+	},
 }
 
 /* One honest table, no marketing checkmarks. Spec-sheet measure — narrow
