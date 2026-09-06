@@ -45,7 +45,23 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	})
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
+	expect(installHtml).toContain('data-official="false"')
 	expect(installHtml).toContain('data-trusted="false"')
+
+	const officialHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: {
+			...sampleListing,
+			name: '@kody/notion-mcp',
+			ownerUsername: 'kody',
+			kodyId: 'notion-mcp',
+		},
+		username: 'kody',
+		kodyId: 'notion-mcp',
+		returnTo: '/@kody/notion-mcp',
+		loggedIn: true,
+	})
+	expect(officialHtml).toContain('data-official="true"')
 
 	const agentPrompt =
 		'Call packageGet for @me/github-triage and adapt it to my needs.'

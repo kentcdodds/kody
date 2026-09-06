@@ -216,7 +216,8 @@ pass, `refreshSavedPackageProjection` — the same projection step
 `repoPublishSession` ends with, so declared jobs are scheduled immediately. When
 checks fail (typically cross-scope imports), the fork stays inert and the
 failing checks are returned for agent follow-up. The HTTP surface is
-`POST /community/:listingId/install.json` (authenticated); callers must send
+`POST /community/:listingId/install.json` (authenticated). Official `@kody/*`
+listings skip acknowledgement. Third-party listings must send
 `acknowledged: true` or the handler responds `409`. There is intentionally
 **no** MCP capability for install: agents must go through `communityFork` +
 repo-session review, so a prompt-injected agent cannot silently activate

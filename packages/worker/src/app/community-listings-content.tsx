@@ -22,7 +22,10 @@ import {
 	renderCopyPromptPill,
 } from '#universal/fork-outdated-copy-button.tsx'
 import { routes } from '#universal/routes.ts'
-import { getCommunityListingHref } from '#universal/community-links.ts'
+import {
+	getCommunityListingHref,
+	isOfficialCommunityListing,
+} from '#universal/community-links.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
 import {
@@ -355,6 +358,9 @@ export function renderCommunityViewerInstallBadge(input: {
 			type="button"
 			data-testid="community-detail-install"
 			data-community-install=""
+			data-official={
+				isOfficialCommunityListing(input.listing) ? 'true' : 'false'
+			}
 			data-trusted={input.listing.trusted ? 'true' : 'false'}
 			mix={css(communityInstallPillCss)}
 		>

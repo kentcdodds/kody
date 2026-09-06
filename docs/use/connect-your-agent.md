@@ -75,8 +75,10 @@ you only have the MCP URL.
   under ChatGPT's 10 KB limit) — right-click Save as on the connect page, then
   upload it. The owner can edit a developer-mode app's name and logo later from
   Manage in Apps settings. ChatGPT desktop is Codex — use that entry instead.
-- **Codex** — ChatGPT desktop is Codex. After the CLI writes the shared config,
-  run `codex mcp login kody` if OAuth does not start. Manual includes
+- **Codex** — ChatGPT desktop is Codex. Get started offers **Open Codex**
+  (`codex://mcp/add?name=kody&url=<url>`) so the desktop app launches when that
+  protocol is registered. After the CLI writes the shared config, run
+  `codex mcp login kody` if OAuth does not start. Manual includes
   `codex mcp add kody --url <url>` and the shared `~/.codex/config.toml`
   `[mcp_servers.kody]` `url` entry. If Codex asks you to log in again after
   about an hour, see

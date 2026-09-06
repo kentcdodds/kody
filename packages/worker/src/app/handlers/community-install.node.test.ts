@@ -78,6 +78,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 
 	mockModule.getCommunityListingById.mockResolvedValue({
 		id: 'listing-1',
+		name: '@someone/demo',
 		trusted: false,
 		pinnedCommit: 'commit-1',
 	})
@@ -89,6 +90,39 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	})
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
+	mockModule.getCommunityListingById.mockResolvedValue({
+		id: 'listing-official',
+		name: '@kody/notion-mcp',
+		trusted: false,
+		pinnedCommit: 'commit-1',
+	})
+	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
+	mockModule.installCommunityListing.mockResolvedValue({
+		status: 'installed',
+		forkId: 'fork-official',
+		packageId: 'package-official',
+		sourceId: 'source-official',
+		targetKodyId: 'notion-mcp',
+		targetName: '@userb/notion-mcp',
+		originCommit: 'commit-1',
+	})
+	const officialWithoutAck = await handler.handler(buildInstallRequest({}))
+	expect(officialWithoutAck.status).toBe(200)
+	expect(await officialWithoutAck.json()).toMatchObject({
+		ok: true,
+		status: 'installed',
+		targetName: '@userb/notion-mcp',
+	})
+	expect(mockModule.installCommunityListing).toHaveBeenCalledTimes(1)
+	mockModule.installCommunityListing.mockClear()
+
+	mockModule.getCommunityListingById.mockResolvedValue({
+		id: 'listing-1',
+		name: '@someone/demo',
+		trusted: false,
+		pinnedCommit: 'commit-1',
+	})
+
 	const invalidBody = await handler.handler(
 		buildInstallRequest({ acknowledged: 'yes' }),
 	)
@@ -96,7 +130,6 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
 	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
-	// Community installs require an explicit acknowledgement on every listing.
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'installed',
 		forkId: 'fork-1',

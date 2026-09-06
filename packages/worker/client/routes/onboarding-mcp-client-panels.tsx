@@ -2,6 +2,7 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpAddCommand,
+	buildCodexMcpDeepLink,
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
@@ -67,6 +68,7 @@ export function renderPanelContent(
 		}
 		case 'codex': {
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
+			const codexDeepLink = buildCodexMcpDeepLink(mcpServerUrl)
 			const codexCommand = buildCodexMcpAddCommand(mcpServerUrl)
 			const codexToml = buildCodexMcpToml(mcpServerUrl)
 			if (surface === 'mobile') {
@@ -84,11 +86,13 @@ export function renderPanelContent(
 			}
 			return (
 				<>
+					<PrimaryActionLink href={codexDeepLink} label="Open Codex" />
 					<CopyCard
 						highlights={highlights}
 						label="codex CLI"
 						value={codexCommand}
 						copyLabel="Copy command"
+						variant="pill"
 						lang="sh"
 					/>
 					<CopyCardDetails

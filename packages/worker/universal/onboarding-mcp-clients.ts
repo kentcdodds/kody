@@ -534,6 +534,20 @@ export function buildClaudeCodeAddCommand(mcpServerUrl: string) {
 	return `claude mcp add --transport http -s user kody ${mcpServerUrl}`
 }
 
+/**
+ * Codex desktop registers `codex://` and launches on those URLs (OAuth
+ * callbacks use the same scheme). Prefill is not a documented public
+ * contract, so this opens the app with the MCP URL in the query and the
+ * CLI remains the install fallback.
+ */
+export function buildCodexMcpDeepLink(mcpServerUrl: string) {
+	const params = new URLSearchParams({
+		name: 'kody',
+		url: mcpServerUrl,
+	})
+	return `codex://mcp/add?${params}`
+}
+
 /** Codex CLI streamable HTTP add. OAuth may need `codex mcp login kody`. */
 export function buildCodexMcpAddCommand(mcpServerUrl: string) {
 	return `codex mcp add kody --url ${mcpServerUrl}`

@@ -3,6 +3,7 @@ import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
 	buildCodexMcpAddCommand,
+	buildCodexMcpDeepLink,
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
@@ -126,6 +127,9 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	)
 	expect(buildCodexMcpAddCommand(mcpServerUrl)).toBe(
 		`codex mcp add kody --url ${mcpServerUrl}`,
+	)
+	expect(buildCodexMcpDeepLink(mcpServerUrl)).toBe(
+		`codex://mcp/add?name=kody&url=${encodeURIComponent(mcpServerUrl)}`,
 	)
 	expect(buildOpenCodeMcpAddCommand(mcpServerUrl)).toBe(
 		`opencode mcp add kody --url ${mcpServerUrl}`,
