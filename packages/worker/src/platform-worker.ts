@@ -4,6 +4,7 @@ import {
 	platformWorkerHealthPath,
 } from '@kody-internal/shared/platform-worker.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { refuseNonCanonicalProductionHost } from '#app/canonical-host.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
@@ -25,11 +26,11 @@ import { getWorkerSentryOptions } from './sentry-options.ts'
  * only; MCP HTTP, OAuth, email, and the Remix app stay on the origin and
  * reach these classes through cross-script bindings.
  *
- * `KodyFetchGateway` is a loopback `ctx.exports` WorkerEntrypoint. MCP
- * `execute` (and the search/execute graph that fans into it) runs inside
- * the platform-owned `MCP` Durable Object and looks up that export on
- * **this** script, the same way `kody-runtime` exports its own gateway
- * instead of calling back into origin.
+ * `KodyFetchGateway` and `PackageAppRuntimeBridge` are loopback
+ * `ctx.exports` WorkerEntrypoints. MCP `execute` (and the search/execute
+ * graph that fans into it) runs inside the platform-owned `MCP` Durable
+ * Object and looks up those exports on **this** script, the same way
+ * `kody-runtime` exports its own gateway instead of calling back into origin.
  */
 export {
 	MCP,
@@ -41,6 +42,7 @@ export {
 	RepoSessionIndex,
 	StripePlanRefresh,
 	KodyFetchGateway,
+	PackageAppRuntimeBridge,
 }
 
 const platformWorkerHandler = {
