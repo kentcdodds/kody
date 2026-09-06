@@ -6,6 +6,10 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { buildEmailChangeEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
+import {
+	claimAccountEmail,
+	isEmailReservedForOtherAccount,
+} from '#worker/identity/email-claims.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
@@ -181,6 +185,11 @@ export async function verifyEmailChangeToken(input: {
 		.bind(newEmail, record.user_id)
 		.first<{ id: number }>()
 	if (existing) return { ok: false, reason: 'email_conflict' }
+	if (
+		await isEmailReservedForOtherAccount(input.db, newEmail, record.user_id)
+	) {
+		return { ok: false, reason: 'email_conflict' }
+	}
 
 	// Preserve the existing stable id across email changes so MCP identity,
 	// ownership rows, and grants stay bound to the same account.
@@ -214,6 +223,17 @@ export async function verifyEmailChangeToken(input: {
 		.prepare(`DELETE FROM email_verifications WHERE user_id = ?`)
 		.bind(record.user_id)
 		.run()
+
+	await claimAccountEmail(input.db, {
+		userId: record.user_id,
+		email: record.email,
+		now,
+	})
+	await claimAccountEmail(input.db, {
+		userId: record.user_id,
+		email: newEmail,
+		now,
+	})
 
 	return {
 		ok: true,

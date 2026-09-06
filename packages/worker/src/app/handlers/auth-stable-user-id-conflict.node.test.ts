@@ -9,6 +9,10 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import {
+	formerEmailClaimedSignupCode,
+	formerEmailClaimedSignupMessage,
+} from '#universal/email-claim-errors.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
@@ -24,8 +28,7 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 const { createAuthHandler } = await import('#app/handlers/auth.ts')
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
-const conflictMessage =
-	'This email address cannot be used for a new account. Contact support@kody.codes.'
+const conflictMessage = formerEmailClaimedSignupMessage
 
 function applyMigrations(db: DatabaseSync) {
 	const migrationsDir = new URL('../../../migrations/', import.meta.url)
@@ -103,7 +106,10 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 		mode: 'signup',
 	})
 	expect(openResponse.status).toBe(409)
-	expect(await openResponse.json()).toEqual({ error: conflictMessage })
+	expect(await openResponse.json()).toEqual({
+		error: conflictMessage,
+		code: formerEmailClaimedSignupCode,
+	})
 	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
 		count: 1,
 	})
@@ -113,7 +119,7 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 			category: 'auth',
 			action: 'signup',
 			result: 'failure',
-			reason: 'stable_user_id_exists',
+			reason: 'former_email_claimed',
 		}),
 	)
 
@@ -127,7 +133,10 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 		inviteCode: 'stable-id-invite',
 	})
 	expect(invitedResponse.status).toBe(409)
-	expect(await invitedResponse.json()).toEqual({ error: conflictMessage })
+	expect(await invitedResponse.json()).toEqual({
+		error: conflictMessage,
+		code: formerEmailClaimedSignupCode,
+	})
 	expect(
 		sqlite
 			.prepare(`SELECT use_count FROM invites WHERE code = ?`)

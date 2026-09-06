@@ -7,21 +7,20 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { createEmailChangeVerification } from '#app/email-change.ts'
-import { isEmailReservedForOtherAccount } from '#worker/identity/email-claims.ts'
+import {
+	createEmailClaimReleaseVerification,
+	emailClaimReleaseRequestRateLimitConfig,
+	emailClaimReleaseSuccessRateLimitConfig,
+	EmailClaimReleaseRequestError,
+} from '#app/email-claim-release.ts'
+import { countRecentEmailClaimReleases } from '#worker/identity/email-claims.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type routes } from '#universal/routes.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 
-export const emailChangeRateLimitConfig = {
-	maxRequests: 3,
-	windowSeconds: 15 * 60,
-}
-
-const emailChangeRequestSchema = object({
+const emailClaimReleaseRequestSchema = object({
 	email: string(),
 	password: string(),
 })
@@ -35,7 +34,24 @@ function getEmailValidationError(email: string) {
 	return null
 }
 
-export function createAccountEmailChangeHandler(env: Env) {
+function releaseRequestErrorMessage(
+	reason: 'current_email' | 'not_claimed' | 'already_released',
+) {
+	switch (reason) {
+		case 'current_email':
+			return 'You cannot release the email this account currently uses to sign in.'
+		case 'already_released':
+			return 'That address is already released from this account.'
+		case 'not_claimed':
+			return 'That address is not claimed by this account.'
+		default: {
+			const unreachable: never = reason
+			return unreachable
+		}
+	}
+}
+
+export function createAccountEmailClaimReleaseHandler(env: Env) {
 	const db = createDb(env.APP_DB)
 
 	return {
@@ -53,18 +69,18 @@ export function createAccountEmailChangeHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Invalid JSON payload.' }, 400)
 			}
 
-			const parsed = parseSafe(emailChangeRequestSchema, body)
+			const parsed = parseSafe(emailClaimReleaseRequestSchema, body)
 			const requestIp = getRequestIp(request) ?? undefined
-			const newEmail = parsed.success ? normalizeEmail(parsed.value.email) : ''
+			const email = parsed.success ? normalizeEmail(parsed.value.email) : ''
 			const password = parsed.success ? parsed.value.password : ''
 			const validationError = parsed.success
-				? getEmailValidationError(newEmail)
+				? getEmailValidationError(email)
 				: 'Invalid request body.'
 			if (validationError) {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
-					action: 'email_change_request',
+					action: 'email_claim_release_request',
 					result: 'failure',
 					email: user.email,
 					ip: requestIp,
@@ -72,13 +88,6 @@ export function createAccountEmailChangeHandler(env: Env) {
 					reason: 'invalid_payload',
 				})
 				return jsonResponse({ ok: false, error: validationError }, 400)
-			}
-
-			if (newEmail === normalizeEmail(user.email)) {
-				return jsonResponse(
-					{ ok: false, error: 'Enter a different email address.' },
-					400,
-				)
 			}
 
 			const userRecord = await db.findOne(usersTable, {
@@ -92,7 +101,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
-					action: 'email_change_request',
+					action: 'email_claim_release_request',
 					result: 'failure',
 					email: user.email,
 					ip: requestIp,
@@ -102,39 +111,71 @@ export function createAccountEmailChangeHandler(env: Env) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: 'Verify your current email address before changing it.',
+						error:
+							'Verify your current email address before releasing a former address.',
 					},
 					403,
 				)
 			}
 
-			const rateLimitKey = `email-change:user:${user.userId}`
-			const rateLimit = await checkRateLimit(
+			const requestLimitKey = `email-claim-release-request:user:${user.userId}`
+			const requestLimit = await checkRateLimit(
 				env.APP_DB,
-				rateLimitKey,
-				emailChangeRateLimitConfig,
+				requestLimitKey,
+				emailClaimReleaseRequestRateLimitConfig,
 			)
-			if (!rateLimit.allowed) {
+			if (!requestLimit.allowed) {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
-					action: 'email_change_request',
+					action: 'email_claim_release_request',
 					result: 'rate_limited',
 					email: user.email,
 					ip: requestIp,
 					path: url.pathname,
+					reason: 'request_window',
 				})
 				return jsonResponse(
 					{
 						ok: false,
-						error: 'Too many email change requests. Please try again later.',
+						error: 'Too many release requests. Please try again later.',
 					},
 					{
 						status: 429,
 						headers: {
-							'Retry-After': String(rateLimit.retryAfterSeconds ?? 60),
+							'Retry-After': String(requestLimit.retryAfterSeconds ?? 60),
 						},
 					},
+				)
+			}
+
+			const recentReleases = await countRecentEmailClaimReleases(env.APP_DB, {
+				userId: user.userId,
+				windowSeconds: emailClaimReleaseSuccessRateLimitConfig.windowSeconds,
+			})
+			if (
+				recentReleases >= emailClaimReleaseSuccessRateLimitConfig.maxRequests
+			) {
+				await releaseRateLimit(env.APP_DB, requestLimitKey).catch(
+					() => undefined,
+				)
+				void logAuditEvent({
+					db: auditDatabaseFromEnv(env),
+					category: 'account',
+					action: 'email_claim_release_request',
+					result: 'rate_limited',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'daily_cap',
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						error:
+							'You have released the maximum number of addresses for today. Try again tomorrow.',
+					},
+					429,
 				)
 			}
 
@@ -146,7 +187,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
-					action: 'email_change_request',
+					action: 'email_claim_release_request',
 					result: 'failure',
 					email: user.email,
 					ip: requestIp,
@@ -163,55 +204,37 @@ export function createAccountEmailChangeHandler(env: Env) {
 				)
 			}
 
-			const existingUser = await db.findOne(usersTable, {
-				where: { email: newEmail },
-			})
-			const reservedByOther = existingUser
-				? existingUser.id !== user.userId
-				: await isEmailReservedForOtherAccount(
-						env.APP_DB,
-						newEmail,
-						user.userId,
-					)
-			if (reservedByOther) {
-				void logAuditEvent({
-					db: auditDatabaseFromEnv(env),
-					category: 'account',
-					action: 'email_change_request',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'email_exists',
-				})
-				return jsonResponse(
-					{ ok: false, error: 'Email already registered.' },
-					409,
-				)
-			}
-
 			try {
-				await createEmailChangeVerification({
+				await createEmailClaimReleaseVerification({
 					env,
 					userId: user.userId,
+					stableUserId: user.mcpUser.userId,
 					currentEmail: user.email,
-					newEmail,
+					email,
 					requestUrl: url,
 				})
 			} catch (error) {
-				await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
-				const uniqueField = getUniqueConstraintField(error)
-				if (uniqueField === 'new_email') {
+				if (error instanceof EmailClaimReleaseRequestError) {
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'account',
+						action: 'email_claim_release_request',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: error.reason,
+					})
 					return jsonResponse(
-						{ ok: false, error: 'Email change is already pending.' },
-						409,
+						{ ok: false, error: releaseRequestErrorMessage(error.reason) },
+						error.reason === 'current_email' ? 400 : 404,
 					)
 				}
-				console.error('Failed to request email change:', error)
+				console.error('Failed to request email claim release:', error)
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
 					category: 'account',
-					action: 'email_change_request',
+					action: 'email_claim_release_request',
 					result: 'failure',
 					email: user.email,
 					ip: requestIp,
@@ -222,7 +245,7 @@ export function createAccountEmailChangeHandler(env: Env) {
 					{
 						ok: false,
 						error:
-							'Unable to send the email change verification. Please try again later.',
+							'Unable to send the release verification. Please try again later.',
 					},
 					502,
 				)
@@ -231,19 +254,17 @@ export function createAccountEmailChangeHandler(env: Env) {
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),
 				category: 'account',
-				action: 'email_change_request',
+				action: 'email_claim_release_request',
 				result: 'success',
 				email: user.email,
 				ip: requestIp,
 				path: url.pathname,
-				reason: `new_email=${newEmail}`,
+				reason: 'release_requested',
 			})
 			return jsonResponse({
 				ok: true,
-				formerEmailRemainsClaimed: true,
-				message:
-					'Verification email sent to your new address. After you confirm, your current address stays tied to this account until you release it from Former addresses.',
+				message: 'Verification email sent to that former address.',
 			})
 		},
-	} satisfies Action<typeof routes.accountEmailChange>
+	} satisfies Action<typeof routes.accountEmailClaimRelease>
 }

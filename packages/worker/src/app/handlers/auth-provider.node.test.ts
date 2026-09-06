@@ -1439,7 +1439,7 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 	)
 	expect(callback.status).toBe(302)
 	expect(callback.headers.get('Location')).toBe(
-		'/login?oauthError=email-unavailable',
+		'/login?oauthError=email-claimed',
 	)
 	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
 		count: 1,
@@ -1454,7 +1454,7 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 			category: 'auth',
 			action: 'oauth_login',
 			result: 'failure',
-			reason: 'stable_user_id_exists',
+			reason: 'former_email_claimed',
 		}),
 	)
 })

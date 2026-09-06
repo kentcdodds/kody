@@ -384,6 +384,10 @@ const routeDocumentHeads = {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email changed' : 'Verify email change')
 	},
+	[routePattern(routes.verifyEmailClaimRelease)]: ({ loaderData }) => {
+		const verification = loaderData?.emailVerification
+		return titleOnly(verification?.ok ? 'Email released' : 'Release email')
+	},
 	[routePattern(routes.connectOauth)]: ({ loaderData }) => {
 		const provider = loaderData?.connectOauth?.provider?.trim()
 		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')

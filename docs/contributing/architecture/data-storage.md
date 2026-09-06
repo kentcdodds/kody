@@ -327,27 +327,33 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, with a NOT NULL unique index in
   `0001-squashed-init.sql`; initially SHA-256 of the normalized email at signup
-  via `createStableUserIdFromEmail`, then preserved across email changes). Email
-  change requires a verified current address (`users.email_verified_at` is
-  non-null). A `stable_user_id` unique collision at signup is a controlled 409;
-  operators inspect collisions with `adminUserStableIdConflict` (returns stable
-  user id, username, `created_at`, and email-verified state — never content).
-  Optional community profile fields are `display_name`, `bio`, and
-  `profile_visibility` (default `public`). `account_type` (`'person'` default or
-  `'platform'`) distinguishes normal signups from operator-provisioned platform
-  accounts that own official package scopes (see
-  [Platform accounts](./platform-accounts.md)). First-touch marketing columns
-  (`utm_*`, `first_touch_landing_path`, `first_touch_referrer`) store signup
-  attribution when present. Activation and return columns
-  (`first_mcp_connected_at`, `first_execute_at`, `first_search_at`,
-  `first_saved_package_at`, `mcp_client_name`, `last_active_at`) support product
-  metrics; email verification delivery columns track the latest transactional
-  verify-mail outcome. The `d1_storage_reconciliation` lane sweeps users by
-  `stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
-  singleton. UserMeter `storage_bytes_state` (schema v4) drives storage-byte
-  enforcement; see [Entitlements](./entitlements.md#usermeter). Inbound email
-  routing does not reverse-resolve stable ids — it uses the indexed username
-  lookup (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
+  via `createStableUserIdFromEmail`, then preserved across email changes).
+  Emails are claims on that identity (`user_email_claims`): changing email keeps
+  the previous verified address claimed so it cannot open a second account until
+  the owner re-verifies and releases it. A released address can sign up as a new
+  account with a newly minted unique `stable_user_id`; the original account's id
+  is never reminted. Email change requires a verified current address
+  (`users.email_verified_at` is non-null). A former-email claim collision at
+  signup is a controlled 409 (`former_email_claimed`) that does not leak the
+  account's current email; operators inspect leftover implicit sha256 collisions
+  with `adminUserStableIdConflict` (returns stable user id, username,
+  `created_at`, and email-verified state — never content). Optional community
+  profile fields are `display_name`, `bio`, and `profile_visibility` (default
+  `public`). `account_type` (`'person'` default or `'platform'`) distinguishes
+  normal signups from operator-provisioned platform accounts that own official
+  package scopes (see [Platform accounts](./platform-accounts.md)). First-touch
+  marketing columns (`utm_*`, `first_touch_landing_path`,
+  `first_touch_referrer`) store signup attribution when present. Activation and
+  return columns (`first_mcp_connected_at`, `first_execute_at`,
+  `first_search_at`, `first_saved_package_at`, `mcp_client_name`,
+  `last_active_at`) support product metrics; email verification delivery columns
+  track the latest transactional verify-mail outcome. The
+  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
+  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
+  `storage_bytes_state` (schema v4) drives storage-byte enforcement; see
+  [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
+  reverse-resolve stable ids — it uses the indexed username lookup
+  (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
   (`resolveInboundMailboxRoute`). Plus-tags on user inbox hosts are aliases for
   that username, including tags that spell a reserved system local. Contextless
   paths resolve stable ids with one indexed point read on `users.stable_user_id`

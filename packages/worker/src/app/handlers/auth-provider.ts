@@ -61,9 +61,10 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 import {
-	createStableUserIdFromEmail,
-	resolveUserStableId,
-} from '#worker/user-id.ts'
+	allocateSignupIdentity,
+	claimAccountEmail,
+} from '#worker/identity/email-claims.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	getTurnstileSiteKey,
 	verifyPublicFormProtection,
@@ -765,7 +766,15 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					profile.username ?? usernameFromEmail(email),
 					env,
 				)
-				stableUserId = await createStableUserIdFromEmail(email)
+				const allocated = await allocateSignupIdentity(env.APP_DB, email)
+				if (!allocated.ok) {
+					await releaseConsumedInvite()
+					if (allocated.reason === 'former_email_claimed') {
+						return fail('email-claimed', 'former_email_claimed')
+					}
+					return fail('account-error', 'user_create_conflict')
+				}
+				stableUserId = allocated.stableUserId
 				const createdAt = new Date().toISOString()
 				const signupAttribution = loginState.attribution
 				const createdUser = await db.create(
@@ -787,7 +796,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				await releaseConsumedInvite()
 				const uniqueField = getUniqueConstraintField(error)
 				if (uniqueField === 'stable_user_id') {
-					return fail('email-unavailable', 'stable_user_id_exists')
+					return fail('email-claimed', 'former_email_claimed')
 				}
 				if (uniqueField) {
 					return fail('account-error', 'user_create_conflict')
@@ -819,6 +828,17 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			if (!assigned) {
 				await rollbackNewUser(newUser.id)
 				return fail('account-error', 'default_role_assignment_failed')
+			}
+
+			try {
+				await claimAccountEmail(env.APP_DB, {
+					userId: newUser.id,
+					email,
+				})
+			} catch (error) {
+				console.error('Failed to claim OAuth signup email:', error)
+				await rollbackNewUser(newUser.id)
+				return fail('account-error', 'email_claim_failed')
 			}
 
 			try {

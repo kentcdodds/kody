@@ -455,6 +455,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// integer id rather than the mcp user id.
 	{ kind: 'db_user_id', table: 'email_verifications' },
 	{ kind: 'db_user_id', table: 'pending_email_changes' },
+	{ kind: 'db_user_id', table: 'user_email_claims' },
+	{ kind: 'db_user_id', table: 'pending_email_claim_releases' },
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
 	{ kind: 'db_user_id', table: 'passkeys' },
@@ -755,6 +757,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	package_invocation_tokens: ['token_hash'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
+	pending_email_claim_releases: ['token_hash'],
 	platform_feedback: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
 	secret_entries: ['encrypted_value', 'lookup_hash'],
 	user_integrations: ['access_token_encrypted', 'refresh_token_encrypted'],

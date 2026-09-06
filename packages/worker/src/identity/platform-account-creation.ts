@@ -7,7 +7,10 @@ import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import {
+	allocateSignupIdentity,
+	claimAccountEmail,
+} from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
 
 export type PlatformAccountCreateErrorCode =
@@ -87,7 +90,14 @@ export async function createPlatformAccount(input: {
 
 	const now = input.now ?? new Date()
 	const nowIso = now.toISOString()
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const allocated = await allocateSignupIdentity(input.db, email)
+	if (!allocated.ok) {
+		throw new PlatformAccountCreateError(
+			'email_exists',
+			'Email already registered.',
+		)
+	}
+	const stableUserId = allocated.stableUserId
 
 	try {
 		const result = await input.db
@@ -110,6 +120,11 @@ export async function createPlatformAccount(input: {
 				'Unable to create platform account.',
 			)
 		}
+		await claimAccountEmail(input.db, {
+			userId: lastRowId,
+			email,
+			now,
+		})
 		return {
 			userId: lastRowId,
 			email,

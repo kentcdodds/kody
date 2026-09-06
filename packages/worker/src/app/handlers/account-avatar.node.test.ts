@@ -50,6 +50,7 @@ const profilePayload = {
 	bio: null,
 	avatarUrl: '/profiles/alice/avatar/hash.png',
 	profileVisibility: 'public' as const,
+	formerEmails: [],
 }
 
 function createEnv() {

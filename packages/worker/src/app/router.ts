@@ -58,6 +58,7 @@ import {
 	createAccountEmailHandler,
 } from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
+import { createAccountEmailClaimReleaseHandler } from '#app/handlers/account-email-claim-release.ts'
 import { createAccountPasswordHandler } from '#app/handlers/account-password.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
 import {
@@ -239,6 +240,7 @@ import {
 	createVerifyHandler,
 } from '#app/handlers/verify.ts'
 import { createVerifyEmailChangeHandler } from '#app/handlers/verify-email-change.ts'
+import { createVerifyEmailClaimReleaseHandler } from '#app/handlers/verify-email-claim-release.ts'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
 import {
 	createWebauthnAuthenticationHandler,
@@ -328,6 +330,7 @@ export function createAppRouter(env: Env) {
 			resetPassword: createResetPasswordHandler(env),
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
+			verifyEmailClaimRelease: createVerifyEmailClaimReleaseHandler(env),
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			waitingList: createWaitingListHandler(env),
@@ -389,6 +392,7 @@ export function createAppRouter(env: Env) {
 			accountWaiting: createAccountWaitingHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
+			accountEmailClaimRelease: createAccountEmailClaimReleaseHandler(env),
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountSecrets: createAccountSecretsHandler(env),

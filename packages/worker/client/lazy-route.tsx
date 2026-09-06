@@ -366,6 +366,7 @@ registerPreloadPatterns(
 		routePattern(routes.verify),
 		routePattern(routes.verifyEmail),
 		routePattern(routes.verifyEmailChange),
+		routePattern(routes.verifyEmailClaimRelease),
 	],
 	{ name: 'auth-area', load: authArea.load, getCached: authArea.getCached },
 )

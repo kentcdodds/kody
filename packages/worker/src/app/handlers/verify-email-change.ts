@@ -104,7 +104,8 @@ export function createVerifyEmailChangeHandler(env: Env) {
 					emailVerification: {
 						ok: true,
 						kind: 'email_change',
-						message: 'Your account email has been changed and verified.',
+						message:
+							'Your account email has been changed and verified. The previous address stays tied to this account until you release it from Account settings → Former addresses.',
 					},
 				},
 			})

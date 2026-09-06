@@ -567,6 +567,9 @@ export const clientRoutes = {
 	[routePattern(routes.verifyEmailChange)]: (
 		<LazyAuthRoute render={(m) => <m.VerifyEmailRoute />} />
 	),
+	[routePattern(routes.verifyEmailClaimRelease)]: (
+		<LazyAuthRoute render={(m) => <m.VerifyEmailRoute />} />
+	),
 	[routePattern(routes.connectOauth)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectOauthRoute />} />
 	),
