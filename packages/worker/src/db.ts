@@ -38,6 +38,7 @@ export const usersTable = table({
 		first_touch_referrer: c.text(),
 		first_mcp_connected_at: c.text(),
 		first_execute_at: c.text(),
+		first_search_at: c.text(),
 		first_saved_package_at: c.text(),
 		mcp_client_name: c.text(),
 		last_active_at: c.text(),

@@ -3,6 +3,7 @@ import {
 	stampFirstExecute,
 	stampFirstMcpConnected,
 	stampFirstSavedPackage,
+	stampFirstSearch,
 } from './activation-stamps.ts'
 
 function createUsersDb() {
@@ -18,6 +19,7 @@ function createUsersDb() {
 							const row = columns.get(stableUserId) ?? {
 								first_mcp_connected_at: null,
 								first_execute_at: null,
+								first_search_at: null,
 								first_saved_package_at: null,
 								mcp_client_name: null,
 								last_active_at: null,
@@ -37,6 +39,13 @@ function createUsersDb() {
 								const at = values[0]
 								if (row.first_execute_at == null) {
 									row.first_execute_at = at
+								}
+								row.last_active_at = at
+							}
+							if (sql.includes('first_search_at')) {
+								const at = values[0]
+								if (row.first_search_at == null) {
+									row.first_search_at = at
 								}
 								row.last_active_at = at
 							}
@@ -86,6 +95,14 @@ test('activation stamps are write-once and keep the first client name', async ()
 		stableUserId: userId,
 		at: '2026-08-28T11:00:00.000Z',
 	})
+	await stampFirstSearch(store.db, {
+		stableUserId: userId,
+		at: '2026-08-27T11:30:00.000Z',
+	})
+	await stampFirstSearch(store.db, {
+		stableUserId: userId,
+		at: '2026-08-28T11:30:00.000Z',
+	})
 	await stampFirstSavedPackage(store.db, {
 		stableUserId: userId,
 		at: '2026-08-27T12:00:00.000Z',
@@ -99,6 +116,7 @@ test('activation stamps are write-once and keep the first client name', async ()
 		first_mcp_connected_at: '2026-08-27T10:00:00.000Z',
 		mcp_client_name: 'claude-ai',
 		first_execute_at: '2026-08-27T11:00:00.000Z',
+		first_search_at: '2026-08-27T11:30:00.000Z',
 		first_saved_package_at: '2026-08-27T12:00:00.000Z',
 		last_active_at: '2026-08-28T12:00:00.000Z',
 	})

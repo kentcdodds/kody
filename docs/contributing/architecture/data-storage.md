@@ -339,15 +339,15 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   [Platform accounts](./platform-accounts.md)). First-touch marketing columns
   (`utm_*`, `first_touch_landing_path`, `first_touch_referrer`) store signup
   attribution when present. Activation and return columns
-  (`first_mcp_connected_at`, `first_execute_at`, `first_saved_package_at`,
-  `mcp_client_name`, `last_active_at`) support product metrics; email
-  verification delivery columns track the latest transactional verify-mail
-  outcome. The `d1_storage_reconciliation` lane sweeps users by `stable_user_id`
-  keyset from the platform-owned `d1_storage_reconcile_cursor` singleton.
-  UserMeter `storage_bytes_state` (schema v4) drives storage-byte enforcement;
-  see [Entitlements](./entitlements.md#usermeter). Inbound email routing does
-  not reverse-resolve stable ids — it uses the indexed username lookup
-  (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
+  (`first_mcp_connected_at`, `first_execute_at`, `first_search_at`,
+  `first_saved_package_at`, `mcp_client_name`, `last_active_at`) support product
+  metrics; email verification delivery columns track the latest transactional
+  verify-mail outcome. The `d1_storage_reconciliation` lane sweeps users by
+  `stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
+  singleton. UserMeter `storage_bytes_state` (schema v4) drives storage-byte
+  enforcement; see [Entitlements](./entitlements.md#usermeter). Inbound email
+  routing does not reverse-resolve stable ids — it uses the indexed username
+  lookup (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
   (`resolveInboundMailboxRoute`). Plus-tags on user inbox hosts are aliases for
   that username, including tags that spell a reserved system local. Contextless
   paths resolve stable ids with one indexed point read on `users.stable_user_id`

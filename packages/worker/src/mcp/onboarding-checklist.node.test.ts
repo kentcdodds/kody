@@ -7,6 +7,7 @@ import { buildOnboardingSearchNotice } from '#mcp/tools/search-onboarding-notice
 import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
+	loadOnboardingAccessWin,
 	readOnboardingChecklistDismissed,
 } from './onboarding-checklist.ts'
 
@@ -85,6 +86,26 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 	expect(doneById['connect-second-agent']).toBe(true)
 	expect(progressed.complete).toBe(false)
 
+	await env.APP_DB.prepare(
+		`UPDATE users SET first_search_at = ? WHERE stable_user_id = ?`,
+	)
+		.bind(new Date().toISOString(), userId)
+		.run()
+	expect(await loadOnboardingAccessWin(env, userId)).toBe(true)
+
+	const afterSearch = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({ items: [{}] }),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(afterSearch).not.toContain('Make something useful')
+	expect(afterSearch).toContain('Connect a second agent')
+
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
@@ -107,7 +128,7 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 		baseUrl: 'https://kody.example',
 	})
 	expect(notice).toContain('Connect your agent')
-	expect(notice).toContain('Give Kody access')
+	expect(notice).toContain('Make something useful')
 	expect(notice).toContain('Connect a second agent')
 	expect(notice).toContain('/onboarding')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)

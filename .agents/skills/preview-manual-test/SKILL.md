@@ -17,7 +17,7 @@ Prefer [`control-kody`](../control-kody/SKILL.md) when you also need `doctor`,
 local login, Feature Map lookup, or a `/health` SHA check:
 
 ```bash
-npm run control-kody -- preview -- --request 'GET /onboarding.json' --check /onboarding
+npm run control-kody -- preview -- --request 'GET /onboarding.json' --check /onboarding/step-2
 ```
 
 ## Command
@@ -35,7 +35,7 @@ assertions as the same logged-in user:
 npm run preview:manual-test -- \
   --request 'POST /onboarding/checklist-dismiss.json {}' \
   --request 'GET /onboarding.json' \
-  --check /onboarding
+  --check /onboarding/step-2
 ```
 
 `--request` spec: `METHOD /path [status] [json-body]` (default success: 2xx).

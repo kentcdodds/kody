@@ -100,7 +100,7 @@ package scope grant; see
 `listFeaturedCommunityListings` also loads up to 12 slim
 `OnboardingFeaturedListing` shapes into the signed-in onboarding payload so
 persist-prompt copy can name an already-installed example. The `/onboarding`
-wizard itself is connect an agent, give Kody access (teach prompts), then
+wizard itself is connect an agent, make something useful (one prompt), then
 connect a second agent — see [Onboarding process](./architecture/onboarding.md).
 Official `@kody/*` listings are catalog and fork source — person accounts run
 the owned copy, not the platform package. One-click install on listing detail

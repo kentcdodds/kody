@@ -33,7 +33,7 @@ export const onboardingWizardSteps = [
 		number: 2,
 		path: onboardingStepPaths.step2,
 		panelId: 'onboarding-step-2',
-		label: 'Give Kody access',
+		label: 'Make something useful',
 	},
 	{
 		number: 3,
@@ -67,8 +67,8 @@ export const onboardingChecklistItems = [
 	},
 	{
 		id: 'give-access',
-		label: 'Give Kody access',
-		searchLabel: 'give Kody access',
+		label: 'Make something useful',
+		searchLabel: 'make something useful',
 		wizardStep: 2,
 	},
 	{
@@ -124,82 +124,35 @@ export const onboardingGuideHref = '/guides/onboarding'
 export const onboardingGuideFetchHint = `For depth, search({ entity: "${onboardingGuideEntity}" }) or open ${onboardingGuideHref}.`
 
 export const onboardingAccessLede =
-	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste a prompt so your agent can teach one idea, ask what it is for in your life, and do a small win there. It is not a service gateway.'
+	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide and helps you make something useful. It is not a service gateway.'
 
 export function onboardingAccessSelectedLede(agentLabel: string | null) {
 	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
-	return `Copy a prompt to ${name}. It will teach one idea, ask 1–2 questions to find your use, and do a small win in Kody.`
+	return `Copy this prompt into ${name}. It will look up the onboarding guide, ask 1–2 questions to find your use, and help you make something useful in Kody.`
 }
 
-export const onboardingTeachConcepts = [
-	{
-		id: 'home-and-memory',
-		title: 'Home and memory',
-		prompt: [
-			"I'm on Kody onboarding.",
-			'Tell me in two sentences that Kody is the home my agents share — memory, secrets, packages, jobs, workflows, and apps — not a gateway for connecting APIs.',
-			'Ask 1–2 questions to find what I want to remember across agents.',
-			'Save one memory from my answer.',
-			'Success: I can say what Kody is for me, and a memory exists in my account.',
-			onboardingGuideFetchHint,
-		].join(' '),
-	},
-	{
-		id: 'execute',
-		title: 'Execute',
-		prompt: [
-			"I'm on Kody onboarding.",
-			"Teach me that execute runs one-off work in Kody's cloud, not on my laptop.",
-			'Ask 1–2 questions to find a small useful call.',
-			'Run that execute.',
-			'Success: I see a real result from Kody cloud.',
-			onboardingGuideFetchHint,
-		].join(' '),
-	},
-	{
-		id: 'packages',
-		title: 'Packages',
-		prompt: [
-			"I'm on Kody onboarding.",
-			'Teach me that a package is owned code I save and invoke from any MCP host.',
-			'Ask 1–2 questions to find something worth keeping.',
-			'Persist one small package from that.',
-			'Success: I own a package I can call from this agent or another.',
-			onboardingGuideFetchHint,
-		].join(' '),
-	},
-	{
-		id: 'durable-surfaces',
-		title: 'Apps, workflows, jobs, secrets',
-		prompt: [
-			"I'm on Kody onboarding.",
-			'Teach me apps, workflows, and jobs as event-driven surfaces (webhooks and events first; a schedule is optional), and that secrets are usable by packages but never readable by you.',
-			'Ask 1–2 questions to find a trigger or credential I already have.',
-			'Do one small win — name a secret, sketch a webhook, or skip if none.',
-			"Success: I know how work continues when I'm not in chat.",
-			onboardingGuideFetchHint,
-		].join(' '),
-	},
-] as const
+export const onboardingStep2Prompt = [
+	"I'm on Kody onboarding Step 2.",
+	`Look up the onboarding guide with search({ entity: "${onboardingGuideEntity}" }) and help me make something useful in my account.`,
+	'Follow the guide.',
+].join(' ')
 
-export type OnboardingTeachConceptId =
-	(typeof onboardingTeachConcepts)[number]['id']
+export const onboardingCopyStep2PromptLabel = 'Copy Step 2 prompt'
 
-export function onboardingTeachPrompt(id: OnboardingTeachConceptId): string {
-	const item = onboardingTeachConcepts.find((candidate) => candidate.id === id)
-	if (!item) {
-		throw new Error(`Unknown onboarding teach concept ${id}`)
-	}
-	return item.prompt
-}
+export const onboardingSearchWaitingLabel =
+	'Waiting for your agent to look up the onboarding guide…'
+
+/** Completes for first search or an existing access win (memory / execute / package). */
+export const onboardingSearchStartedLabel =
+	"You've started making something useful"
 
 export const onboardingSecondAgentLede =
-	'Connect an agent from a different ecosystem. Same-vendor hosts stay unavailable so you can prove Kody travels.'
+	'Connect an agent from a different ecosystem. Reuse what you made in Step 2 so you can see it travel.'
 
 export const onboardingPortabilityProofPrompt = [
 	'I just connected you as a second agent.',
 	'Kody is the home we share.',
-	'Reuse one memory, package, or ask from my first agent (or from Step 2) and show it works here.',
+	'Reuse the memory, package, or ask I made in Step 2 with my first agent, and show it works here.',
 	"One short proof — don't restart setup.",
 	onboardingGuideFetchHint,
 ].join(' ')
@@ -212,9 +165,15 @@ export function remainingOnboardingWizardLabels(input: {
 	hasSecondMcpClient: boolean
 }): Array<string> {
 	const remaining: Array<string> = []
-	if (!input.hasMcpClient) remaining.push('Connect your agent')
-	if (!input.hasAccessWin) remaining.push('Give Kody access')
-	if (!input.hasSecondMcpClient) remaining.push('Connect a second agent')
+	if (!input.hasMcpClient) {
+		remaining.push(onboardingWizardStepByNumber(1).label)
+	}
+	if (!input.hasAccessWin) {
+		remaining.push(onboardingWizardStepByNumber(2).label)
+	}
+	if (!input.hasSecondMcpClient) {
+		remaining.push(onboardingWizardStepByNumber(3).label)
+	}
 	return remaining
 }
 

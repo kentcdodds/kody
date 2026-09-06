@@ -60,10 +60,11 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
- * agent · Give Kody access · Connect a second agent), one surface panel at
- * a time with hand-tilted mascot art. Step 1 picks one agent. Step 2 is
- * short teach prompts plus a retrievable guide. Step 3 looks like Step 1
- * and greys the same-ecosystem family, then folds in a portability proof.
+ * agent · Make something useful · Connect a second agent), one surface panel
+ * at a time with hand-tilted mascot art. Step 1 picks one agent. Step 2 is
+ * one prompt that tells the agent to retrieve the onboarding guide. Step 3
+ * looks like Step 1 and greys the same-ecosystem family, then folds in a
+ * portability proof that reuses what Step 2 made.
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
@@ -285,8 +286,8 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	// Users typically keep this page open while their MCP client connects
-	// or a Step 2 win / second grant lands, so poll the same JSON endpoint
-	// until those signals arrive without a manual refresh.
+	// or a Step 2 first-search / second grant lands, so poll the same JSON
+	// endpoint until those signals arrive without a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -479,6 +480,7 @@ export function OnboardingRoute(handle: Handle) {
 									activeStep,
 									onSelectStep: selectStep,
 									hasMcpClient,
+									hasAccessWin,
 									discoveryPrompt,
 									selectedAgentLabel: connectedAgentLabel,
 									search: readRouterSearch(handle),

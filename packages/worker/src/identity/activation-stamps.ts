@@ -84,6 +84,26 @@ export async function userHasFirstExecute(
 	}
 }
 
+export async function userHasFirstSearch(
+	db: D1Database,
+	userId: string,
+): Promise<boolean> {
+	try {
+		const row = await db
+			.prepare(
+				`SELECT first_search_at
+				 FROM users
+				 WHERE stable_user_id = ?
+				 LIMIT 1`,
+			)
+			.bind(userId)
+			.first<{ first_search_at: string | null }>()
+		return Boolean(row?.first_search_at)
+	} catch {
+		return false
+	}
+}
+
 export async function stampFirstExecute(
 	db: D1Database,
 	input: { stableUserId: string; at?: string },
@@ -117,6 +137,42 @@ export async function stampFirstExecute(
 			.run()
 	} catch (error) {
 		console.debug('activation-stamp-execute-failed', error)
+	}
+}
+
+export async function stampFirstSearch(
+	db: D1Database,
+	input: { stableUserId: string; at?: string },
+): Promise<void> {
+	try {
+		const at = nowIso(input.at)
+		await db
+			.prepare(
+				`UPDATE users
+				SET first_search_at = COALESCE(first_search_at, ?1),
+					last_active_at = CASE
+						WHEN last_active_at IS NULL THEN ?1
+						WHEN date(last_active_at) < date(?1) THEN ?1
+						ELSE last_active_at
+					END,
+					updated_at = CASE
+						WHEN first_search_at IS NULL
+							OR last_active_at IS NULL
+							OR date(last_active_at) < date(?1)
+						THEN ?2
+						ELSE updated_at
+					END
+				WHERE stable_user_id = ?3
+					AND (
+						first_search_at IS NULL
+						OR last_active_at IS NULL
+						OR date(last_active_at) < date(?1)
+					)`,
+			)
+			.bind(at, utcSqliteTimestamp(), input.stableUserId)
+			.run()
+	} catch (error) {
+		console.debug('activation-stamp-search-failed', error)
 	}
 }
 

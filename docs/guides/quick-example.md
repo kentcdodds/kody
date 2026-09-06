@@ -2,8 +2,8 @@
 id: quick_example
 title: First build — ad hoc execute, then persist
 summary:
-  Agent playbook after Give Kody access (`/onboarding/step-2`) or Connect your
-  agent (`/onboarding/step-1`): run one useful ad hoc execute, show the result,
+  Agent playbook after Make something useful (`/onboarding/step-2`) or Connect
+  your agent (`/onboarding/step-1`): run one useful ad hoc execute, show the result,
   persist that working code as a package they own, and offer optional triggers
   without recommending one.
 category: platform
@@ -15,7 +15,7 @@ category: platform
 Agent notes — for AI agents driving the first build from this page:
 
 - The person already connected a host on /onboarding/step-1 and may have
-  pasted a Step 2 teach prompt (Give Kody access). They run an owned copy, not
+  pasted the Step 2 prompt (Make something useful). They run an owned copy, not
   kody:@kody/*. Prefer `search({ entity: "onboarding:guide" })` if they are
   still in first-run.
 - Your job is one useful execute call, a short result, then persist that
@@ -25,8 +25,8 @@ Agent notes — for AI agents driving the first build from this page:
   them to say when /onboarding shows Connected and try once more.
 - Discover tools with search. Call connected MCP tools from execute as
   kody.mcp["server-name"].tool_name(...) when a server is already on the
-  account. Do not invent a service connect as Step 2 — that step is teach
-  prompts.
+  account. Do not invent a service connect as Step 2 — that step is one prompt
+  plus the onboarding guide.
 - Persist with packageSave after the ad hoc call works. Do not invoke official
   @kody/* packages — person accounts run the owned fork from Connect, or a new
   packageSave.
@@ -38,19 +38,19 @@ Agent notes — for AI agents driving the first build from this page:
 
 This guide is the playbook for a Kody account's first build: run one useful ad
 hoc request, then save that working code as a package the person owns — after
-they give Kody access, or after they skip that step.
+they make something useful in Step 2, or after they skip that step.
 
-The person may have arrived from `/onboarding` Step 2 ("Give Kody access") on
-the same origin this guide was fetched from. They can paste a prompt into their
-agent as soon as they reach that step.
+The person may have arrived from `/onboarding` Step 2 ("Make something useful")
+on the same origin this guide was fetched from. They can paste a prompt into
+their agent as soon as they reach that step.
 
 ## Before you start
 
 The account needs a verified email and an authorized MCP host
-(`/onboarding/step-1`). Step 2 is teach prompts, not a service picker. If they
-pasted a Give Kody access prompt, follow that idea (memory, execute, packages,
-or durable surfaces) and do one small win. If they skipped, ask what they want
-to try and use whatever tools are already available.
+(`/onboarding/step-1`). Step 2 is one prompt that retrieves the onboarding
+guide, not a service picker. If they pasted that prompt, follow the guide: ask
+1–2 questions, do one small win, then send them to Step 3 to reuse it. If they
+skipped, ask what they want to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
@@ -99,6 +99,6 @@ for now. List the options. If they skip, they are done with Get started.
   message; one retry.
 - **No connected tools** — they skipped Step 2, or they have not added a remote
   MCP server yet. Ask what they want, or send them back to `/onboarding/step-2`
-  for a teach prompt.
+  for the Step 2 prompt.
 - **`packageSave` rejected** — the ad hoc module is incomplete. Keep the execute
   evidence, fix the package files, and save again. Do not invent extra packages.

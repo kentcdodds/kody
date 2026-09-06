@@ -9,6 +9,8 @@ import {
 	onboardingCopyPortabilityProofLabel,
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
+	onboardingSearchStartedLabel,
+	onboardingSearchWaitingLabel,
 	onboardingSecondAgentHref,
 	onboardingSecondAgentLede,
 	onboardingUnconnectedNotice,
@@ -27,7 +29,7 @@ import {
 	onboardingAgentLabel,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
-import { OnboardingTeachPrompts } from '#client/routes/onboarding-teach-prompts.tsx'
+import { OnboardingStep2Prompt } from '#client/routes/onboarding-step-2-prompt.tsx'
 import {
 	WizardNavigation,
 	connectStatusContent,
@@ -97,6 +99,7 @@ export function renderAccessPanel(
 	props: StepNavigationProps & {
 		entrance: MixValue
 		hasMcpClient: boolean
+		hasAccessWin: boolean
 		discoveryPrompt: string
 		selectedAgentLabel: string | null
 	},
@@ -115,7 +118,7 @@ export function renderAccessPanel(
 				<div>
 					<p mix={css(panelKickerCss)}>Step 2</p>
 					<h2 id="connect-mcp-title" tabIndex={-1} mix={css(panelTitleCss)}>
-						Give Kody access
+						Make something useful
 					</h2>
 				</div>
 				<img
@@ -128,11 +131,26 @@ export function renderAccessPanel(
 					mix={css(panelArtCss)}
 				/>
 			</div>
+			{props.hasMcpClient ? (
+				<div
+					mix={css(connectStatusCss)}
+					role="status"
+					aria-live="polite"
+					data-testid="onboarding-search-status"
+					data-connected={props.hasAccessWin ? 'true' : undefined}
+				>
+					{connectStatusContent({
+						connected: props.hasAccessWin,
+						connectedLabel: onboardingSearchStartedLabel,
+						waitingLabel: onboardingSearchWaitingLabel,
+					})}
+				</div>
+			) : null}
 			<p mix={css(panelLedeCss)} data-testid="onboarding-access-lede">
 				{accessLede}
 			</p>
 			{props.hasMcpClient ? (
-				<OnboardingTeachPrompts />
+				<OnboardingStep2Prompt />
 			) : (
 				<div
 					data-testid="onboarding-unconnected-prompt"
@@ -231,8 +249,9 @@ export function renderSecondAgentPanel(
 					mix={css(promptBlockCss)}
 				>
 					<p mix={css(proofLedeCss)}>
-						After it connects, paste this in the new agent. Reuse a memory,
-						package, or ask from steps 1–2 — one short proof that Kody travels.
+						After it connects, paste this in the new agent. Reuse the memory,
+						package, or ask you made in Step 2 — one short proof that Kody
+						travels.
 					</p>
 					<CopyCard
 						label="Portability proof"

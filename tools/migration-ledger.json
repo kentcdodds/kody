@@ -167,6 +167,10 @@
 		{
 			"filename": "0041-drop-community-listing-trusted.sql",
 			"sha256": "49a3ada82d467e11fd9806532192a9af6b968ef711e1ae30d60554d77968cbbd"
+		},
+		{
+			"filename": "0042-users-first-search-at.sql",
+			"sha256": "b2bec57147d5938f5cc710634b8fa388fb0ceb5f2c7550087db272554187e8aa"
 		}
 	]
 }
