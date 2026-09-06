@@ -10,12 +10,11 @@ import {
 	onboardingChecklistItems,
 	onboardingExplorePackagesHref,
 	onboardingGuideEntity,
-	onboardingGuideFetchHint,
 	onboardingIndexRedirectHref,
 	onboardingPortabilityProofPrompt,
 	onboardingSecondAgentHref,
-	onboardingTeachConcepts,
-	onboardingTeachPrompt,
+	onboardingSecondAgentLede,
+	onboardingStep2Prompt,
 	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	parseOnboardingPathname,
@@ -125,23 +124,17 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingExplorePackagesHref()).toBe('/community')
 })
 
-test('step 2 teach prompts stay brief and point at the onboarding guide', () => {
+test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
-	expect(onboardingAccessSelectedLede('Cursor')).not.toContain('your agent')
-	expect(onboardingTeachConcepts.map((item) => item.id)).toEqual([
-		'home-and-memory',
-		'execute',
-		'packages',
-		'durable-surfaces',
-	])
-	for (const item of onboardingTeachConcepts) {
-		expect(onboardingTeachPrompt(item.id).length).toBeLessThan(700)
-		expect(onboardingTeachPrompt(item.id)).toContain(onboardingGuideFetchHint)
-		expect(onboardingTeachPrompt(item.id)).toContain(onboardingGuideEntity)
-	}
+	expect(onboardingAccessSelectedLede('Cursor')).toContain('onboarding guide')
+	expect(onboardingStep2Prompt.length).toBeLessThan(280)
+	expect(onboardingStep2Prompt).toContain(onboardingGuideEntity)
+	expect(onboardingStep2Prompt).toContain('search({ entity:')
 	expect(onboardingPortabilityProofPrompt).toContain(onboardingGuideEntity)
+	expect(onboardingPortabilityProofPrompt).toContain('Step 2')
 	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
+	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
 })
 
 test('search leftover notice lists remaining wizard steps, not a quest', () => {
@@ -151,7 +144,7 @@ test('search leftover notice lists remaining wizard steps, not a quest', () => {
 			hasAccessWin: false,
 			hasSecondMcpClient: false,
 		}),
-	).toEqual(['Give Kody access', 'Connect a second agent'])
+	).toEqual(['Make something useful', 'Connect a second agent'])
 	expect(
 		remainingOnboardingWizardLabels({
 			hasMcpClient: true,
@@ -160,11 +153,11 @@ test('search leftover notice lists remaining wizard steps, not a quest', () => {
 		}),
 	).toEqual([])
 	const notice = formatOnboardingSearchNotice(
-		['Give Kody access', 'Connect a second agent'],
+		['Make something useful', 'Connect a second agent'],
 		'https://kody.example',
 	)
 	expect(notice).toContain('2 steps left')
-	expect(notice).toContain('Give Kody access')
+	expect(notice).toContain('Make something useful')
 	expect(notice).toContain('Connect a second agent')
 	expect(notice).toContain('https://kody.example/onboarding')
 	expect(formatOnboardingSearchNotice([], 'https://kody.example')).toBeNull()

@@ -291,6 +291,7 @@ export type AdminUserListItem = {
 	first_touch_referrer: string | null
 	first_mcp_connected_at: string | null
 	first_execute_at: string | null
+	first_search_at: string | null
 	first_saved_package_at: string | null
 	mcp_client_name: string | null
 	last_active_at: string | null

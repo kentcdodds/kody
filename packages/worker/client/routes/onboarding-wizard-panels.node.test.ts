@@ -35,6 +35,7 @@ function connectPanel(selected: {
 
 function accessPanel(selected: {
 	hasMcpClient?: boolean
+	hasAccessWin?: boolean
 	selectedAgentLabel?: string | null
 	discoveryPrompt?: string
 }) {
@@ -43,6 +44,7 @@ function accessPanel(selected: {
 		activeStep: 2,
 		onSelectStep() {},
 		hasMcpClient: selected.hasMcpClient ?? false,
+		hasAccessWin: selected.hasAccessWin ?? false,
 		discoveryPrompt: selected.discoveryPrompt ?? discoveryPrompt,
 		selectedAgentLabel: selected.selectedAgentLabel ?? null,
 	})
@@ -105,21 +107,34 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	expect(connected).toContain('Cursor is connected')
 })
 
-test('step 2 shows teach prompts and a guide pointer, not a service quest', async () => {
+test('step 2 shows one prompt and a search waiting spinner', async () => {
 	const unconnected = await renderToString(accessPanel({}))
-	expect(unconnected).toContain('Give Kody access')
+	expect(unconnected).toContain('Make something useful')
 	expect(unconnected).toContain(discoveryPrompt)
 	expect(unconnected).toContain('data-testid="onboarding-wizard-next"')
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
-	expect(unconnected).not.toContain('data-testid="onboarding-teach-prompts"')
 
-	const connected = await renderToString(
+	const waiting = await renderToString(
 		accessPanel({ hasMcpClient: true, selectedAgentLabel: 'Cursor' }),
 	)
-	expect(connected).toContain('data-testid="onboarding-teach-prompts"')
-	expect(connected).toContain('data-testid="onboarding-guide-pointer"')
-	expect(connected).toContain('data-testid="onboarding-wizard-next"')
-	expect(connected).not.toContain('data-testid="onboarding-unconnected-prompt"')
+	expect(waiting).toContain('data-testid="onboarding-step-2-prompt"')
+	expect(waiting).toContain('data-testid="onboarding-search-status"')
+	expect(waiting).toContain(
+		'Waiting for your agent to look up the onboarding guide',
+	)
+	expect(waiting).toContain('search({ entity: "onboarding:guide" })')
+	expect(waiting).toContain('data-testid="onboarding-guide-pointer"')
+	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
+
+	const started = await renderToString(
+		accessPanel({
+			hasMcpClient: true,
+			hasAccessWin: true,
+			selectedAgentLabel: 'Cursor',
+		}),
+	)
+	expect(started).toContain('Your agent looked up the onboarding guide')
+	expect(started).toContain('data-connected="true"')
 })
 
 test('step 3 greys the first-agent ecosystem and folds in a portability proof', async () => {
@@ -151,6 +166,9 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(selected).toContain('Connect Claude Code')
 	expect(selected).toContain('Waiting for Claude Code to connect')
 	expect(selected).toContain('data-testid="onboarding-portability-proof"')
+	expect(selected).toContain(
+		'Reuse the memory, package, or ask you made in Step 2',
+	)
 	expect(selected).toContain('data-testid="onboarding-wizard-copy-prompt"')
 
 	const connected = await renderToString(

@@ -86,6 +86,7 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	first_touch_referrer: { create: 'TEXT' },
 	first_mcp_connected_at: { create: 'TEXT' },
 	first_execute_at: { create: 'TEXT' },
+	first_search_at: { create: 'TEXT' },
 	first_saved_package_at: { create: 'TEXT' },
 	mcp_client_name: { create: 'TEXT' },
 	last_active_at: { create: 'TEXT' },

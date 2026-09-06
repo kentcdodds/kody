@@ -118,7 +118,7 @@ export async function loadOnboardingData(input: {
 	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
-	/** Memory, execute, or saved package — a Step 2 win. */
+	/** First search, memory, execute, or saved package — a Step 2 win. */
 	hasAccessWin?: boolean
 }): Promise<OnboardingLoaderData> {
 	const grantCount = await countMcpOAuthGrants(input.env, input.stableUserId)

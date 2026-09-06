@@ -156,6 +156,10 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 						value: selectedUser.first_execute_at ?? 'Not yet',
 					},
 					{
+						label: 'First search',
+						value: selectedUser.first_search_at ?? 'Not yet',
+					},
+					{
 						label: 'First saved package',
 						value: selectedUser.first_saved_package_at ?? 'Not yet',
 					},

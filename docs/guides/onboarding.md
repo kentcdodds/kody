@@ -3,8 +3,9 @@ id: onboarding
 title: Onboarding — the home your agents share
 summary:
   First-run guide for a connected agent. Teach lightly what Kody is and is not,
-  then help the person find their use for memory, execute, packages, apps,
-  workflows, jobs, and secrets. One small win per idea — not a tour.
+  ask 1–2 questions to find the person's use, help them take advantage of the
+  right features, and set up integrations with clear difficulty. One small win,
+  then Step 3.
 category: platform
 ---
 
@@ -13,8 +14,8 @@ category: platform
 <!--
 Agent notes — for AI agents driving first-run from a copied onboarding prompt:
 
-- The person pasted a short prompt from /onboarding. Follow that prompt. This
-  guide is depth, not a script to dump.
+- The person pasted a short prompt from /onboarding/step-2. Follow that prompt.
+  This guide is depth, not a script to dump.
 - Interview conversationally. Ask at most two short questions, then wait.
   Keep each message under roughly 120 words.
 - Do one small concrete win in their Kody account from their answer. Do not
@@ -29,13 +30,18 @@ Agent notes — for AI agents driving first-run from a copied onboarding prompt:
   is optional, not the hero.
 - Secrets are usable by packages. You never read a secret value. There is no
   secret_get.
+- Integration difficulty: MCP is the easy path, a PAT/API key is harder and
+  more powerful, OAuth is hardest and most powerful. Say that out loud before
+  you start a setup.
+- Once they have made something useful, send them to Step 3
+  (`/onboarding/step-3`) to connect another agent and reuse that same thing.
 - Paths like /onboarding are relative to the origin you fetched this guide
   from.
 -->
 
 This page is the first-run briefing for an agent already connected to a Kody
-account. People see short copy-paste prompts on `/onboarding`. Agents retrieve
-this guide with `search({ entity: "onboarding:guide" })` when they need depth.
+account. People paste one short prompt on `/onboarding/step-2`. Agents retrieve
+this guide with `search({ entity: "onboarding:guide" })`.
 
 ## What Kody is
 
@@ -54,6 +60,14 @@ middleware that sits in front of every SaaS login. Integrations and MCP servers
 are available when a job needs them. They are supporting cast.
 
 If the person leaves thinking "I signed up to wire APIs," this briefing failed.
+
+## Start with their use
+
+Ask 1–2 short questions. Wait. Examples: what should follow them into another
+agent? What do they want done when they are not in chat? What tool do they
+already live in?
+
+Then pick the smallest Kody surface that fits that answer. Do not tour the rest.
 
 ## Memory
 
@@ -87,7 +101,8 @@ Small win: persist one small package they own — or fork something close.
 These are how work continues when nobody is in the chat.
 
 - **Apps** — package-owned realtime surfaces.
-- **Workflows** — deferred one-shot work, including `runAt`.
+- **Workflows** — deferred one-shot work, including `runAt`. Cloud runs belong
+  here and in execute, not on their laptop.
 - **Jobs** — package-owned recurring work.
 
 Prefer webhooks and events as the trigger. A schedule is fine when they ask for
@@ -95,6 +110,24 @@ one. Do not make cron the hero of first-run.
 
 Small win: name the event that should start their thing, or skip if they do not
 have one yet.
+
+## Integrations — pick the right difficulty
+
+Only set up a connection when their use needs one. Say the difficulty first.
+
+- **MCP (easy).** Add a remote MCP server they already have, or one they can
+  authorize quickly. Start here when a server exists.
+- **PAT / API key (harder, more powerful).** Store a token they already have as
+  a secret. Packages can use it; you never read the value. Open
+  `search({ entity: "connect_secret:guide" })` or a resolved
+  `search({ entity: "provider_<slug>:guide" })`.
+- **OAuth (hardest, most powerful).** They register their own provider app and
+  complete `/connect/oauth`. Use this when a key is not enough. Open
+  `search({ entity: "oauth:guide" })` or a resolved
+  `search({ entity: "provider_<slug>:guide" })`.
+
+Hosted / platform OAuth is not the onboarding path. New connects are
+bring-your-own.
 
 ## Secrets
 
@@ -104,7 +137,9 @@ and sign — there is no get.
 Small win: name a credential they already have and store it as a secret, or skip
 if they have none.
 
-## After a second agent
+## After something useful exists
 
-The last onboarding beat is portability: reuse a memory, package, or ask from
-the first agent in the new one. One short proof. Do not restart setup.
+The last onboarding beat is portability. Send them to `/onboarding/step-3` to
+connect a second agent from a different ecosystem. That new agent should reuse
+the memory, package, or ask you just made — one short proof. Do not restart
+setup.

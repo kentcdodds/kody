@@ -126,17 +126,16 @@ ChatGPT desktop, Grok CLI, Copilot, OpenCode, Devin, Pi, OpenClaw, and similar)
 is usually smoother because those hosts can edit files and iterate on code more
 easily.
 
-## Give Kody access, then prove it travels
+## Make something useful, then prove it travels
 
-After the connection works, Get started Step 2 is **Give Kody access**: short
-prompts you paste into the agent you just connected. The agent teaches one idea
-(memory, execute, packages, or durable surfaces), asks what it is for in your
-life, and does a small win in your Kody account. Agents retrieve
-`search({ entity: "onboarding:guide" })` for depth.
+After the connection works, Get started Step 2 is **Make something useful**: one
+short prompt you paste into the agent you just connected. The agent looks up
+`search({ entity: "onboarding:guide" })`, asks what it is for in your life, and
+helps you make something useful in your Kody account.
 
 Step 3 is **Connect a second agent** from a different ecosystem. Same-vendor
 hosts stay unavailable. After you pick one, copy the portability proof so the
-new agent reuses a memory, package, or ask from the first.
+new agent reuses the memory, package, or ask you made in Step 2.
 
 ## Where to go next
 

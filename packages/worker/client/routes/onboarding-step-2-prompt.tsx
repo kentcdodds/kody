@@ -1,32 +1,28 @@
 import { type Handle, css } from 'remix/ui'
 import { CopyCard } from '#client/routes/onboarding-mcp-client-cards.tsx'
 import {
-	onboardingGuideEntity,
+	onboardingCopyStep2PromptLabel,
 	onboardingGuideHref,
-	onboardingTeachConcepts,
+	onboardingStep2Prompt,
 } from '#universal/onboarding-process.ts'
 import { colors, typography } from '#universal/styles/tokens.ts'
 import { primaryLinkCss } from '#universal/styles/style-primitives.ts'
 
-export function OnboardingTeachPrompts(_handle: Handle) {
+export function OnboardingStep2Prompt(_handle: Handle) {
 	return () => (
-		<div data-testid="onboarding-teach-prompts" mix={css(listCss)}>
+		<div data-testid="onboarding-step-2-prompt" mix={css(listCss)}>
+			<CopyCard
+				label="Step 2 prompt"
+				value={onboardingStep2Prompt}
+				copyLabel={onboardingCopyStep2PromptLabel}
+			/>
 			<p mix={css(guidePointerCss)} data-testid="onboarding-guide-pointer">
-				Agents retrieve{' '}
-				<code>{`search({ entity: "${onboardingGuideEntity}" })`}</code>
-				{' · '}
+				Depth lives in the{' '}
 				<a href={onboardingGuideHref} mix={css(guideLinkCss)}>
-					Onboarding guide
+					onboarding guide
 				</a>
+				. The prompt tells your agent to retrieve it.
 			</p>
-			{onboardingTeachConcepts.map((item) => (
-				<CopyCard
-					key={item.id}
-					label={item.title}
-					value={item.prompt}
-					copyLabel={`Copy ${item.title} prompt`}
-				/>
-			))}
 		</div>
 	)
 }
@@ -43,14 +39,6 @@ const guidePointerCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.sm,
-	'& code': {
-		font: '500 0.88em ui-monospace, "SF Mono", Menlo, monospace',
-		color: colors.text,
-		backgroundColor: colors.background,
-		border: `1px solid ${colors.border}`,
-		borderRadius: '6px',
-		padding: '0.1em 0.4em',
-	},
 }
 
 const guideLinkCss = {

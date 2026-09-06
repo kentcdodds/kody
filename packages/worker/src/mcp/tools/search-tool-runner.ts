@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
 import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
@@ -56,6 +57,26 @@ import {
 	formatSearchWaitingMarkdown,
 	toSearchWaitingStructured,
 } from './search-waiting.ts'
+
+async function stampFirstSearchIfAuthenticated(
+	agent: McpRegistrationAgent,
+	userId: string | null,
+) {
+	if (!userId) return
+	const db = agent.getEnv().APP_DB
+	if (!db) return
+	const stamp = stampFirstSearch(db, { stableUserId: userId }).catch(
+		(error: unknown) => {
+			console.warn('activation-stamp-search-failed', error)
+		},
+	)
+	const waitUntil = agent.waitUntil?.bind(agent)
+	if (waitUntil) {
+		waitUntil(stamp)
+		return
+	}
+	await stamp
+}
 
 export async function runSearchTool(input: {
 	agent: McpRegistrationAgent
@@ -266,6 +287,7 @@ export async function runSearchTool(input: {
 				durationMs: timing.durationMs,
 				...mcpCallerFields,
 			})
+			await stampFirstSearchIfAuthenticated(agent, userId)
 			return {
 				content: prependToolMetadataContent(conversationId, [
 					{
@@ -373,6 +395,9 @@ export async function runSearchTool(input: {
 						}
 					: {}),
 			})
+			if (!allFailed) {
+				await stampFirstSearchIfAuthenticated(agent, userId)
+			}
 			return {
 				content: prependToolMetadataContent(conversationId, [
 					{
@@ -578,6 +603,7 @@ export async function runSearchTool(input: {
 				phaseTimings: result.phaseTimings,
 			},
 		})
+		await stampFirstSearchIfAuthenticated(agent, userId)
 		return {
 			content: prependToolMetadataContent(conversationId, [
 				...(waitingMarkdown

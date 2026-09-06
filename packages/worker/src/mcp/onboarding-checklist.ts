@@ -3,7 +3,10 @@ import {
 	type EntitlementUsageEnv,
 } from '#worker/entitlements/service.ts'
 import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
-import { userHasFirstExecute } from '#worker/identity/activation-stamps.ts'
+import {
+	userHasFirstExecute,
+	userHasFirstSearch,
+} from '#worker/identity/activation-stamps.ts'
 import {
 	type OnboardingChecklistItem,
 	type OnboardingChecklistItemId,
@@ -25,7 +28,7 @@ export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> & EntitlementUsageEnv
 
 /**
  * Compute the checklist from existing signals: MCP OAuth grants (passed in),
- * a Step 2 access win (memory, execute, or package), a second host grant,
+ * a Step 2 access win (first search, memory, execute, or package), a second host grant,
  * and the saved-package meter. Individual probe failures fail open to "not
  * done" so a storage blip never breaks onboarding surfaces. The optional
  * first-win email loop is not a checklist item.
@@ -34,7 +37,8 @@ export async function loadOnboardingAccessWin(
 	env: OnboardingChecklistEnv,
 	userId: string,
 ): Promise<boolean> {
-	const [execute, memories, savedPackages] = await Promise.all([
+	const [firstSearch, execute, memories, savedPackages] = await Promise.all([
+		userHasFirstSearch(env.APP_DB, userId).catch(() => false),
 		userHasFirstExecute(env.APP_DB, userId).catch(() => false),
 		listMemoriesByUserId(env.APP_DB, userId, { limit: 1 })
 			.then((rows) => rows.length > 0)
@@ -49,7 +53,7 @@ export async function loadOnboardingAccessWin(
 			.then((count) => count > 0)
 			.catch(() => false),
 	])
-	return execute || memories || savedPackages
+	return firstSearch || execute || memories || savedPackages
 }
 
 export async function deriveOnboardingChecklist(input: {

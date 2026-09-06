@@ -1,7 +1,8 @@
 # Onboarding
 
-Three-step wizard after signup: connect an agent, give Kody access (teach
-prompts), then connect a second agent from a different ecosystem.
+Three-step wizard after signup: connect an agent, make something useful (one
+prompt plus first search), then connect a second agent from a different
+ecosystem.
 
 ## How to get there
 

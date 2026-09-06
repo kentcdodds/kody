@@ -38,7 +38,7 @@ import {
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
 				utm_source, utm_medium, utm_campaign, utm_content, utm_term, first_touch_landing_path, first_touch_referrer,
-				first_mcp_connected_at, first_execute_at, first_saved_package_at, mcp_client_name, last_active_at,
+				first_mcp_connected_at, first_execute_at, first_search_at, first_saved_package_at, mcp_client_name, last_active_at,
 				created_at, updated_at`
 
 export const adminUserListItemFieldNames = [
@@ -65,6 +65,7 @@ export const adminUserListItemFieldNames = [
 	'first_touch_referrer',
 	'first_mcp_connected_at',
 	'first_execute_at',
+	'first_search_at',
 	'first_saved_package_at',
 	'mcp_client_name',
 	'last_active_at',
@@ -100,6 +101,7 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	first_touch_referrer: string | null
 	first_mcp_connected_at: string | null
 	first_execute_at: string | null
+	first_search_at: string | null
 	first_saved_package_at: string | null
 	mcp_client_name: string | null
 	last_active_at: string | null
@@ -450,6 +452,7 @@ type AdminUserRow = {
 	first_touch_referrer: string | null
 	first_mcp_connected_at: string | null
 	first_execute_at: string | null
+	first_search_at: string | null
 	first_saved_package_at: string | null
 	mcp_client_name: string | null
 	last_active_at: string | null
@@ -492,6 +495,7 @@ function toAdminUserListItem(
 		first_touch_referrer: row.first_touch_referrer ?? null,
 		first_mcp_connected_at: row.first_mcp_connected_at ?? null,
 		first_execute_at: row.first_execute_at ?? null,
+		first_search_at: row.first_search_at ?? null,
 		first_saved_package_at: row.first_saved_package_at ?? null,
 		mcp_client_name: row.mcp_client_name ?? null,
 		last_active_at: row.last_active_at ?? null,

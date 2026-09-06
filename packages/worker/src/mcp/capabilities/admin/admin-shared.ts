@@ -124,6 +124,10 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe('First successful execute usage timestamp.'),
+	first_search_at: z
+		.string()
+		.nullable()
+		.describe('First successful MCP search timestamp.'),
 	first_saved_package_at: z
 		.string()
 		.nullable()

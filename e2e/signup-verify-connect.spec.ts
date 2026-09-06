@@ -136,7 +136,9 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		).toBeVisible()
 
 		const stepsNav = page.getByRole('navigation', { name: 'Onboarding steps' })
-		await stepsNav.getByRole('link', { name: '2 Give Kody access' }).click()
+		await stepsNav
+			.getByRole('link', { name: '2 Make something useful' })
+			.click()
 		await expect(page.getByTestId('onboarding-connect-mcp')).toBeVisible()
 		await expect(
 			page.getByTestId('onboarding-unconnected-prompt'),
