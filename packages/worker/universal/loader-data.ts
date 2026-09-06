@@ -970,6 +970,11 @@ export type OnboardingLoaderData = {
 	 * the listing fails open.
 	 */
 	persistedPackageKodyId: string | null
+	/**
+	 * Most recently updated active memory subject from a Step 2 access win.
+	 * Null when logged out, unverified, none exist, or the listing fails open.
+	 */
+	accessWinMemorySubject: string | null
 	/** Derived progress checklist; null when logged out. */
 	checklist: OnboardingChecklistLoaderData | null
 }

@@ -115,6 +115,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		mcpServerUrl: 'https://example.com/mcp',
 		needsOnboarding: true,
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 	})
 	expect(anonymousPayload.setupPrompt.length).toBeGreaterThan(0)
 	expect(anonymousPayload.discoveryPrompt).toContain('https://example.com')
@@ -141,6 +142,7 @@ test('onboarding API includes the authenticated package-scope username', async (
 		loggedIn: true,
 		username: 'u-b',
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 	})
 })
 
@@ -360,5 +362,6 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		loggedIn: true,
 		username: 'u-b',
 		persistedPackageKodyId: 'morning-digest',
+		accessWinMemorySubject: null,
 	})
 })

@@ -8,6 +8,7 @@ import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	loadOnboardingAccessWin,
+	loadOnboardingAccessWinMemorySubject,
 	readOnboardingChecklistDismissed,
 } from './onboarding-checklist.ts'
 
@@ -154,4 +155,38 @@ test('search onboarding notice stays quiet when grant helpers cannot be resolved
 			baseUrl: 'https://kody.example',
 		}),
 	).toBe(null)
+})
+
+test('access-win memory subject is the newest active subject and fails open', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	expect(await loadOnboardingAccessWinMemorySubject(env, userId)).toBeNull()
+
+	await env.APP_DB.prepare(
+		`INSERT INTO mcp_memories (id, user_id, subject, summary)
+		 VALUES (?, ?, ?, ?)`,
+	)
+		.bind('mem-1', userId, 'Preferred commute', 'Takes the train')
+		.run()
+	expect(await loadOnboardingAccessWinMemorySubject(env, userId)).toBe(
+		'Preferred commute',
+	)
+
+	await env.APP_DB.prepare(
+		`UPDATE mcp_memories SET status = 'deleted' WHERE id = ?`,
+	)
+		.bind('mem-1')
+		.run()
+	expect(await loadOnboardingAccessWinMemorySubject(env, userId)).toBeNull()
+
+	const missingDb = {
+		APP_DB: {
+			prepare() {
+				throw new Error('d1 blip')
+			},
+		},
+	} as unknown as Env
+	expect(
+		await loadOnboardingAccessWinMemorySubject(missingDb, userId),
+	).toBeNull()
 })

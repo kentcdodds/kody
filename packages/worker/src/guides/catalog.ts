@@ -40,6 +40,7 @@ import secretBackedIntegration from '../../../../docs/guides/secret-backed-integ
 import values from '../../../../docs/guides/values.md'
 import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 import onboarding from '../../../../docs/guides/onboarding.md'
+import portability from '../../../../docs/guides/portability.md'
 
 /**
  * Static guide sources. The canonical markdown lives in `docs/guides/` (also
@@ -52,6 +53,7 @@ import onboarding from '../../../../docs/guides/onboarding.md'
 const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
 	{ slug: 'onboarding', raw: onboarding },
+	{ slug: 'portability', raw: portability },
 	{ slug: 'how-kody-works', raw: howKodyWorks },
 	{ slug: 'kody-factory', raw: kodyFactory },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },

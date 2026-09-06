@@ -90,6 +90,7 @@ export function loadPublicOnboardingData(input: {
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	}
 }
@@ -116,6 +117,8 @@ export async function loadOnboardingData(input: {
 	}
 	/** Most recently updated saved-package kody id, loaded by the handler. */
 	persistedPackageKodyId?: string | null
+	/** Most recently updated active memory subject, loaded by the handler. */
+	accessWinMemorySubject?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
 	/** First search, memory, execute, or saved package — a Step 2 win. */
@@ -171,6 +174,9 @@ export async function loadOnboardingData(input: {
 		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
 		persistedPackageKodyId: input.emailVerified
 			? (input.persistedPackageKodyId ?? null)
+			: null,
+		accessWinMemorySubject: input.emailVerified
+			? (input.accessWinMemorySubject ?? null)
 			: null,
 		checklist: input.checklist ?? null,
 	}

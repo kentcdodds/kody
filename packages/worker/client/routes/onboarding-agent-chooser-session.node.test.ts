@@ -78,6 +78,7 @@ const anonymousOnboardingPayload = {
 	featuredMcpServers: [],
 	customMcpServers: [],
 	persistedPackageKodyId: null,
+	accessWinMemorySubject: null,
 	checklist: null,
 } satisfies OnboardingPayload
 

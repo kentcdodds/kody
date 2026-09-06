@@ -443,6 +443,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		featuredMcpServers: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	})
 	expect(accountHtml).toContain('/pending-verification')

@@ -54,6 +54,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	})
 	expect(publicData.setupPrompt.length).toBeGreaterThan(0)
@@ -92,6 +93,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	})
 	expect(withoutClient.setupPrompt.length).toBeGreaterThan(0)
@@ -118,6 +120,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		username: 'u-b',
 		emailVerified: true,
 		persistedPackageKodyId: 'morning-digest',
+		accessWinMemorySubject: 'Preferred commute',
 	})
 	expect(withClient).toMatchObject({
 		username: 'u-b',
@@ -128,6 +131,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		mcpServerUrl: 'http://localhost:3742/mcp',
 		// Handler-loaded persist target is passed through for Step 3 next-steps.
 		persistedPackageKodyId: 'morning-digest',
+		accessWinMemorySubject: 'Preferred commute',
 	})
 
 	const withTwoClients = await loadOnboardingData({
@@ -162,6 +166,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		username: 'u-b',
 		emailVerified: false,
 		persistedPackageKodyId: 'morning-digest',
+		accessWinMemorySubject: 'Preferred commute',
 	})
 	expect(unverifiedWithGrant).toMatchObject({
 		hasMcpClient: true,
@@ -172,6 +177,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		persistPrompt: '',
 		// Persist next-steps stay empty until verification.
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 	})
 	expect(unverifiedWithGrant.discoveryPrompt).toContain('https://heykody.dev')
 

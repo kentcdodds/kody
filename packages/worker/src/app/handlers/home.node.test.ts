@@ -37,6 +37,7 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		featuredMcpServers: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	})),
 	loadPublicOnboardingData: vi.fn(() => ({
@@ -56,6 +57,7 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		featuredMcpServers: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
+		accessWinMemorySubject: null,
 		checklist: null,
 	})),
 }))
@@ -187,6 +189,7 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 			featuredMcpServers: [],
 			customMcpServers: [],
 			persistedPackageKodyId: null,
+			accessWinMemorySubject: null,
 			checklist: null,
 		}
 	})

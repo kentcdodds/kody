@@ -2,7 +2,8 @@
 
 Three-step wizard after signup: connect an agent, make something useful (one
 prompt plus first search), then connect a second agent from a different
-ecosystem.
+ecosystem. Step 3 pastes a portability-guide prompt and, when the payload has a
+known memory subject or package name, shows a "You made …" line.
 
 ## How to get there
 
