@@ -59,8 +59,8 @@ for a close public package.
 If a listing is close to the user's goal:
 
 1. Inspect it with `communityGet`.
-2. Fork with `communityFork` (or point the user at one-click install on
-   `/onboarding` or the listing detail page).
+2. Fork with `communityFork` (or point the user at one-click install on the
+   listing detail page).
 3. Review the forked source, adapt it to the user's intent (including the README
    `## Intent` section), then publish.
 

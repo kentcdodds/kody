@@ -34,3 +34,5 @@ node tools/control-kody.ts request GET /community.json --skip-login
 - Files and tree URLs are public read for listed packages and owner-only for
   private ones.
 - Package settings 404 for anyone who is not the owner.
+- Official `@kody/*` listings skip the install confirm; third-party listings ask
+  once (`acknowledged: true` or the install endpoint responds `409`).

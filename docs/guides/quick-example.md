@@ -23,9 +23,10 @@ Agent notes — for AI agents driving the first build from this page:
 - Keep messages short — under roughly 120 words.
 - NEVER poll, sleep, or retry on a timer. If access is still authorizing, ask
   them to say when /onboarding shows Connected and try once more.
-- Discover tools with search or mcpServerList. Call them from execute as
-  kody.mcp["notion"].tool_name(...), kody.mcp["linear"].tool_name(...), or the
-  matching connected server name.
+- Discover tools with search. Call connected MCP tools from execute as
+  kody.mcp["server-name"].tool_name(...) when a server is already on the
+  account. Do not invent a service connect as Step 2 — that step is teach
+  prompts.
 - Persist with packageSave after the ad hoc call works. Do not invoke official
   @kody/* packages — person accounts run the owned fork from Connect, or a new
   packageSave.
@@ -46,35 +47,26 @@ agent as soon as they reach that step.
 ## Before you start
 
 The account needs a verified email and an authorized MCP host
-(`/onboarding/step-1`). If they gave Kody access on `/onboarding` Step 2
-(featured or custom), confirm the server is ready with `mcpServerList` before
-calling its tools. If they installed a Just-try-Kody example, invoke that owned
-package. If they skipped, ask what they want to try and use whatever tools are
-already available.
+(`/onboarding/step-1`). Step 2 is teach prompts, not a service picker. If they
+pasted a Give Kody access prompt, follow that idea (memory, execute, packages,
+or durable surfaces) and do one small win. If they skipped, ask what they want
+to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
-If they named a service they gave Kody access to, look it up once with
-`mcpServerList` (or `search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`,
-`mcp:stripe`, `mcp:sentry`, or `mcp:canva`).
-
-If the server is still authorizing, tell them to finish the provider window and
-say when `/onboarding` shows Connected. Try the list **once** more after they
-confirm. Do not poll.
+Confirm the host is ready with `search` (or `mcpServerList` if they already
+named a connected server). If the host is still authorizing, tell them to finish
+the window and say when `/onboarding` shows Connected. Try **once** more after
+they confirm. Do not poll.
 
 If they skipped Step 2, ask one short question about what they want to try
 instead of adding a server yourself.
 
 ## Step 2 — Run one ad hoc execute
 
-Use `execute` for a single useful call. Prefer the connected MCP tools:
-
-- **Notion** — search a page they mention, or list recent pages they can access.
-- **Linear** — list a few issues, or summarize what is in progress.
-- **Atlassian** — list Jira issues or Confluence pages they can already see.
-- **Stripe** — list recent customers, invoices, or payments they can access.
-- **Sentry** — list recent issues, or summarize one they name.
-- **Canva** — list recent designs or folders they can access.
+Use `execute` for a single useful call from their answer. Prefer tools that are
+already on the account: search, memory, a connected MCP server, or a package
+they own.
 
 Show a short summary of the result. Do not create a package until this call
 works.
@@ -105,8 +97,8 @@ for now. List the options. If they skip, they are done with Get started.
 - **Server not connected** — the authorize window is still open, or they are on
   a different account than the browser session. Wait for their "Connected"
   message; one retry.
-- **No connected tools** — they skipped Step 2, or the server name is not one of
-  the Step 2 cards. Ask what they want, or send them back to
-  `/onboarding/step-2`.
+- **No connected tools** — they skipped Step 2, or they have not added a remote
+  MCP server yet. Ask what they want, or send them back to `/onboarding/step-2`
+  for a teach prompt.
 - **`packageSave` rejected** — the ad hoc module is incomplete. Keep the execute
   evidence, fix the package files, and save again. Do not invent extra packages.
