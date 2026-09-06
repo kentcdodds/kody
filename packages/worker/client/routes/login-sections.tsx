@@ -284,7 +284,11 @@ export function renderAuthForm(
 					name="email"
 					required
 					autoFocus={!props.isSignup}
-					autoComplete="email"
+					// Login uses username so vault entries that store the email
+					// in the username field (1Password's default) can autofill.
+					// Signup email stays email; the username field above is the
+					// Kody handle.
+					autoComplete={props.isSignup ? 'email' : 'username'}
 					placeholder="you@yourdomain.dev"
 					data-field-ring
 					{...fieldErrorProps('email', invalidFields, statusId)}

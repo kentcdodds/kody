@@ -32,6 +32,8 @@ test('credential errors associate the status message with email and password', a
 	expect(html).toMatch(
 		/id="auth-email"[^>]*aria-describedby="auth-form-status"/,
 	)
+	expect(html).toMatch(/id="auth-email"[^>]*type="email"/)
+	expect(html).toMatch(/id="auth-email"[^>]*autocomplete="username"/)
 	expect(html).not.toContain('id="auth-username"')
 })
 
@@ -51,6 +53,7 @@ test('username and invite errors mark only those fields', async () => {
 		}),
 	)
 	expect(usernameHtml).toMatch(/id="auth-username"[^>]*aria-invalid="true"/)
+	expect(usernameHtml).toMatch(/id="auth-email"[^>]*autocomplete="email"/)
 	expect(usernameHtml).not.toMatch(/id="auth-email"[^>]*aria-invalid/)
 
 	const inviteHtml = await renderToString(
