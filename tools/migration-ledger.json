@@ -215,6 +215,10 @@
 		{
 			"filename": "0053-user-tips-email-opt-outs.sql",
 			"sha256": "47c028697bc21976963cd1a0bf5825d3d48b7ba2640f93c7192e31d192aa2ea2"
+		},
+		{
+			"filename": "0054-site-banners.sql",
+			"sha256": "5b99394ee4a1d61400b0810fb1db471f584f8c180e2efe15ca4f9c050685ea36"
 		}
 	]
 }

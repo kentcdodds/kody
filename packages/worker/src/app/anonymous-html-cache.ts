@@ -10,6 +10,7 @@
 
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
+import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 
 export const sessionCookieName = 'kody_session'
 
@@ -95,6 +96,9 @@ export function resolveAppPageCacheControl(input: {
 		return { cacheControl: 'no-store' }
 	}
 	if (requestHasSessionCookie(input.request)) {
+		return { cacheControl: 'no-store' }
+	}
+	if (requestHasSiteBannerDismissCookie(input.request)) {
 		return { cacheControl: 'no-store' }
 	}
 	if (!isCacheableAnonymousPath(input.pathname)) {
