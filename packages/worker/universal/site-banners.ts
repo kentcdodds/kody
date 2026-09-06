@@ -326,6 +326,37 @@ export function compareSiteBannerPriority(
 	return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
 }
 
+export function toPublicSiteBannerCandidate(
+	banner: SiteBannerRecord,
+): SiteBannerRecord {
+	return {
+		...banner,
+		audience: banner.audience === 'users' ? 'logged_in' : banner.audience,
+		audienceUserIds: [],
+		createdBy: null,
+		updatedBy: null,
+	}
+}
+
+export function selectSiteBannersForClient(input: {
+	banners: Array<SiteBannerRecord>
+	viewer: SiteBannerViewer
+	includeUnmatched: boolean
+	nowMs?: number
+}): Array<SiteBannerRecord> {
+	const nowMs = input.nowMs ?? Date.now()
+	return input.banners
+		.filter((banner) => {
+			if (input.includeUnmatched) return true
+			return (
+				banner.enabled &&
+				bannerIsScheduled(banner, nowMs) &&
+				bannerMatchesAudience(banner, input.viewer)
+			)
+		})
+		.map(toPublicSiteBannerCandidate)
+}
+
 export function toSiteBannerView(
 	banner: SiteBannerRecord,
 	lookOverride?: SiteBannerLook,

@@ -26,6 +26,7 @@ import { AdminBannerForm } from './admin-banners-form.tsx'
 import {
 	adminBannersApiPath,
 	audienceLabel,
+	bannerAfterSave,
 	draftFromBanner,
 	draftToInput,
 	emptyDraft,
@@ -129,7 +130,7 @@ export function AdminBannersRoute(handle: Handle) {
 		body: Record<string, unknown>,
 		nextActionState: Exclude<ActionState, 'idle'>,
 		successMessage: string,
-	): Promise<boolean> {
+	): Promise<AdminBannersLoaderData | null> {
 		actionState = nextActionState
 		message = null
 		messageTone = 'info'
@@ -146,7 +147,7 @@ export function AdminBannersRoute(handle: Handle) {
 			})
 			if (response.status === 401) {
 				window.location.assign('/login')
-				return false
+				return null
 			}
 			const payload = await readJson<
 				AdminBannersLoaderData & { ok?: boolean; error?: string }
@@ -157,12 +158,12 @@ export function AdminBannersRoute(handle: Handle) {
 			applyData(payload)
 			message = successMessage
 			messageTone = 'info'
-			return true
+			return payload
 		} catch (error) {
 			message =
 				error instanceof Error ? error.message : 'Unable to update banners.'
 			messageTone = 'error'
-			return false
+			return null
 		} finally {
 			actionState = 'idle'
 			handle.update()
@@ -171,16 +172,16 @@ export function AdminBannersRoute(handle: Handle) {
 
 	function handleSaveSubmit(event: SubmitEvent) {
 		event.preventDefault()
+		const wasCreate = draft.id === null
 		void submitAdminAction(
 			{ action: 'save', ...draftToInput(draft) },
 			'saving',
-			draft.id ? 'Banner saved.' : 'Banner created.',
-		).then((ok) => {
-			if (ok && !draft.id) {
-				const created = banners[0]
-				if (created) draft = draftFromBanner(created)
-				handle.update()
-			}
+			wasCreate ? 'Banner created.' : 'Banner saved.',
+		).then((payload) => {
+			if (!payload || !wasCreate) return
+			const created = bannerAfterSave(banners, payload.savedBannerId)
+			if (created) draft = draftFromBanner(created)
+			handle.update()
 		})
 	}
 
