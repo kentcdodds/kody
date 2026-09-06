@@ -210,14 +210,18 @@ export type PlanLimits = {
 	minJobIntervalMs: number
 	/**
 	 * Included unique Dynamic Worker days per UTC month. Shown on `/pricing`.
-	 * Hard-cut enforcement is not wired. Legacy Standard/Pro accounts are
-	 * soft-warn only on this allotment (no cut, no overage bill).
+	 * The only customer-facing monthly overage meter besides Durable Object
+	 * rows-read. Not in `entitlementResources` (no hard cut). Overage is not
+	 * charged. User warning emails do not cover this allotment. Legacy
+	 * Standard/Pro is the same: no cut, no bill.
 	 */
 	maxUniqueWorkerDaysPerMonth: number
 	/**
 	 * Included Durable Object SQLite rows read per UTC month. Shown on
-	 * `/pricing`. Hard-cut enforcement is not wired. There is no duration
-	 * meter. Legacy Standard/Pro accounts are soft-warn only.
+	 * `/pricing`. The other customer-facing monthly overage meter. Not in
+	 * `entitlementResources` (no hard cut). No duration meter. Overage is
+	 * not charged. User warning emails do not cover this allotment. Legacy
+	 * Standard/Pro is the same: no cut, no bill.
 	 */
 	maxDurableObjectRowsReadPerMonth: number
 }
@@ -419,8 +423,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
  * `users.entitlement_ladder = 'legacy'` and the effective plan is
  * `standard` or `pro`. Free and `max` always use {@link planLimits}.
  * Unique-worker-day and Durable Object rows-read includes match the
- * public table. Those allotments are soft-warn only for legacy accounts
- * (no hard cut, no overage bill).
+ * public table. Those allotments are not hard-cut and not billed for
+ * legacy accounts. User warning emails do not cover them.
  */
 export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 	standard: {
@@ -475,9 +479,11 @@ export const cloudflareComputeListUsd = {
 
 /**
  * User-facing compute overage list prices (Cloudflare list + $0.0005).
- * Overage is not charged. Legacy Standard/Pro stays soft-warn only.
- * Execute has no overage (hard daily cap). Durable Object duration is
- * unmetered.
+ * These two keys are the only customer-facing monthly overage meters.
+ * Overage is not charged. Execute has no overage (hard daily cap — an
+ * execute overage would double-charge the same burn as unique worker
+ * days). Durable Object duration is unmetered. Legacy Standard/Pro is
+ * not cut and not billed on these allotments.
  */
 export const computeOverageRatesUsd = {
 	uniqueWorkerDay: 0.0025,
@@ -489,6 +495,7 @@ export const computeMeteringPolicy = {
 	durableObjectRowsRead: 'included_then_overage',
 	executeCallsPerDay: 'hard_daily_cap',
 	durableObjectDuration: 'unmetered',
+	legacyMonthlyMeters: 'no_cut_no_bill',
 } as const
 
 /** 15-minute floor on free (and public Standard) recurring jobs. */

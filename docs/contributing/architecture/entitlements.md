@@ -75,8 +75,9 @@ already flagged. The one-shot backfill in `0043-users-entitlement-ladder.sql`
 sets `legacy` for those accounts. Cancel (or removing the manual Pro grant
 without a remaining paid Stripe tier) writes `public`. Resubscribing does not
 restore `legacy`. Free and `max` always use `planLimits`; the ladder is ignored
-for those plans. Unique-worker-day numbers live on `PlanLimits` for the public
-table and are not hard-cut for legacy accounts.
+for those plans. Unique-worker-day and Durable Object rows-read numbers live on
+`PlanLimits` for the public table. They are not hard-cut and not billed for
+legacy accounts.
 
 `getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
 Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
@@ -169,15 +170,19 @@ Worker ids per UTC day so usage metering can record `dynamic_worker_day` without
 double-counting. `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included
 allotment (Free 50, Standard 350, Pro 2,000) shown on `/pricing`.
 `PlanLimits.maxDurableObjectRowsReadPerMonth` is the public included Durable
-Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Hard-cut
-enforcement is not wired for either allotment. User-facing overage list prices
-live on `computeOverageRatesUsd` (unique worker-day
+Object rows-read allotment (Free 0.5B, Standard 5B, Pro 20B). Those two fields
+are the only customer-facing monthly overage meters. They are not in
+`entitlementResources`, so `assertWithinEntitlement` and user warning emails do
+not cover them. Hard-cut enforcement is not wired. User-facing overage list
+prices live on `computeOverageRatesUsd` (unique worker-day
 $0.0025, Durable Object
 rows read $0.0015 per million — Cloudflare list plus a
 $0.0005 thin margin). Overage is not charged. Execute is a hard daily cap with
-no overage. Durable Object duration is unmetered (`computeMeteringPolicy`); a
-later duration rate should stay list plus a thin markup. Legacy Standard/Pro
-accounts are soft-warn only on these allotments (no cut, no bill). See
+no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute overage
+would double-charge the same burn as unique worker days. Durable Object duration
+is unmetered; a later duration rate should stay list plus a thin markup. Legacy
+Standard/Pro accounts are not cut and not billed on these allotments
+(`computeMeteringPolicy.legacyMonthlyMeters`). See
 [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in

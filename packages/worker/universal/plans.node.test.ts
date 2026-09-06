@@ -76,8 +76,17 @@ test('compute overage rates are wired and execute has no overage', () => {
 	expect(computeOverageRatesUsd.durableObjectRowsReadPerMillion).toBe(
 		cloudflareComputeListUsd.durableObjectRowsReadPerMillion + 0.0005,
 	)
-	expect(computeMeteringPolicy.executeCallsPerDay).toBe('hard_daily_cap')
-	expect(computeMeteringPolicy.durableObjectDuration).toBe('unmetered')
+	expect(computeMeteringPolicy).toEqual({
+		uniqueWorkerDays: 'included_then_overage',
+		durableObjectRowsRead: 'included_then_overage',
+		executeCallsPerDay: 'hard_daily_cap',
+		durableObjectDuration: 'unmetered',
+		legacyMonthlyMeters: 'no_cut_no_bill',
+	})
+	expect(Object.keys(computeOverageRatesUsd).sort()).toEqual([
+		'durableObjectRowsReadPerMillion',
+		'uniqueWorkerDay',
+	])
 	expect(formatDurableObjectRowsRead(500_000_000)).toBe('0.5B')
 	expect(formatDurableObjectRowsRead(5_000_000_000)).toBe('5B')
 	expect(formatDurableObjectRowsRead(20_000_000_000)).toBe('20B')
