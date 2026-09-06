@@ -65,17 +65,14 @@ async function stampFirstSearchIfAuthenticated(
 	if (!userId) return
 	const db = agent.getEnv().APP_DB
 	if (!db) return
-	const stamp = stampFirstSearch(db, { stableUserId: userId }).catch(
-		(error: unknown) => {
-			console.warn('activation-stamp-search-failed', error)
-		},
-	)
-	const waitUntil = agent.waitUntil?.bind(agent)
-	if (waitUntil) {
-		waitUntil(stamp)
-		return
+	// Await the write. List-mode search builds the leftover-steps notice in
+	// the same request, and waitUntil would leave first_search_at unset so
+	// the notice still says Step 2 is left after this search completed it.
+	try {
+		await stampFirstSearch(db, { stableUserId: userId })
+	} catch (error: unknown) {
+		console.warn('activation-stamp-search-failed', error)
 	}
-	await stamp
 }
 
 export async function runSearchTool(input: {
@@ -427,12 +424,14 @@ export async function runSearchTool(input: {
 			offline: execution.result.offline,
 		}
 		rememberConversationPreamble()
+		await stampFirstSearchIfAuthenticated(agent, userId)
 		// Onboarding reminder: at most once per conversation, only while the
-		// user's onboarding wizard steps are incomplete and undismissed. A session
-		// cooldown backstops hosts that never send a conversationId (each of
-		// their calls resolves a fresh server id, so the id list alone would
-		// repeat the notice every call), and the id list is capped so
-		// long-lived agent sessions cannot grow state unboundedly.
+		// user's onboarding wizard steps are incomplete and undismissed. Stamp
+		// first so this search does not tell the agent Step 2 is still left.
+		// A session cooldown backstops hosts that never send a conversationId
+		// (each of their calls resolves a fresh server id, so the id list
+		// alone would repeat the notice every call), and the id list is
+		// capped so long-lived agent sessions cannot grow state unboundedly.
 		const onboardingNoticeConversationIds = Array.isArray(
 			statefulAgent.state?.onboardingNoticeConversationIds,
 		)
@@ -603,7 +602,6 @@ export async function runSearchTool(input: {
 				phaseTimings: result.phaseTimings,
 			},
 		})
-		await stampFirstSearchIfAuthenticated(agent, userId)
 		return {
 			content: prependToolMetadataContent(conversationId, [
 				...(waitingMarkdown

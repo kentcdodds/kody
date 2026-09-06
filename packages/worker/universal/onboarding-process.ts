@@ -142,8 +142,9 @@ export const onboardingCopyStep2PromptLabel = 'Copy Step 2 prompt'
 export const onboardingSearchWaitingLabel =
 	'Waiting for your agent to look up the onboarding guide…'
 
+/** Completes for first search or an existing access win (memory / execute / package). */
 export const onboardingSearchStartedLabel =
-	'Your agent looked up the onboarding guide'
+	"You've started making something useful"
 
 export const onboardingSecondAgentLede =
 	'Connect an agent from a different ecosystem. Reuse what you made in Step 2 so you can see it travel.'

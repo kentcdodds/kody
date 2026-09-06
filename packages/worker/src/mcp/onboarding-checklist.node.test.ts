@@ -93,6 +93,19 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 		.run()
 	expect(await loadOnboardingAccessWin(env, userId)).toBe(true)
 
+	const afterSearch = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({ items: [{}] }),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(afterSearch).not.toContain('Make something useful')
+	expect(afterSearch).toContain('Connect a second agent')
+
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)

@@ -12,6 +12,7 @@ import {
 	onboardingGuideEntity,
 	onboardingIndexRedirectHref,
 	onboardingPortabilityProofPrompt,
+	onboardingSearchStartedLabel,
 	onboardingSecondAgentHref,
 	onboardingSecondAgentLede,
 	onboardingStep2Prompt,
@@ -135,6 +136,9 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingPortabilityProofPrompt).toContain('Step 2')
 	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
 	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
+	expect(onboardingSearchStartedLabel).toContain(
+		'started making something useful',
+	)
 })
 
 test('search leftover notice lists remaining wizard steps, not a quest', () => {

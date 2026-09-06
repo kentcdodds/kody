@@ -133,7 +133,7 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 			selectedAgentLabel: 'Cursor',
 		}),
 	)
-	expect(started).toContain('Your agent looked up the onboarding guide')
+	expect(started).toContain("You've started making something useful")
 	expect(started).toContain('data-connected="true"')
 })
 
