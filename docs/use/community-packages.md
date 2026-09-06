@@ -71,8 +71,8 @@ same tree URL; unauthenticated visitors get 404. Owner settings are
 `/@username/:name/settings`. The package home renders the README.
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
-**Featured** is editorial onboarding placement only — not a safety badge. There
-is no trusted-listing review mark.
+**Featured** is editorial placement only — not a safety badge. There is no
+trusted-listing review mark.
 
 The detail page opens with the README. The facts row shows **Version** from
 `package.json#version` when the author set a string (same label on catalog
@@ -156,9 +156,9 @@ session instead.
 
 ## Featured listings
 
-Admins can mark listings as **featured**. Featured listings appear on
-`/onboarding` as starter packages. Featured is editorial placement, not a safety
-review. Admins toggle featuring from the listing detail page or with
+Admins can mark listings as **featured**. Featured is editorial placement on
+`/community` and listing detail, not a safety review and not an onboarding
+wizard step. Admins toggle featuring from the listing detail page or with
 `communitySetFeatured`.
 
 ## Public profiles
@@ -256,8 +256,7 @@ Use the MCP `community` domain:
   [Secrets and host approval](./secrets-and-values.md))
 - `communityRate` — rate a listing after forking
 - `communityReport` — report a listing (requires login)
-- `communitySetFeatured` — admin-only: feature or unfeature a listing as an
-  onboarding starter package
+- `communitySetFeatured` — admin-only: feature or unfeature a listing
 - `communityProfileGet` — read a profile by username (own private profile
   included when signed in as that user)
 - `communityProfileUpdate` — update display name, bio, and visibility

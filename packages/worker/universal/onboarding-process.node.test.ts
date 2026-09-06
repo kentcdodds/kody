@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	formatOnboardingSearchNotice,
@@ -18,6 +21,11 @@ import {
 	parseOnboardingPathname,
 	remainingOnboardingWizardLabels,
 } from './onboarding-process.ts'
+
+const guidesDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'../../../docs/guides',
+)
 
 test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingChecklistItems.map((item) => item.id)).toEqual([
@@ -174,4 +182,21 @@ test('search leftover notice lists remaining wizard steps, not a quest', () => {
 	expect(notice).toContain('not a gateway')
 	expect(notice).toContain('https://kody.example/onboarding')
 	expect(formatOnboardingSearchNotice([], 'https://kody.example')).toBeNull()
+})
+
+test('first-win and quick-example name the current wizard steps', () => {
+	const firstWin = readFileSync(join(guidesDir, 'first-win.md'), 'utf8')
+	const quickExample = readFileSync(join(guidesDir, 'quick-example.md'), 'utf8')
+	for (const step of onboardingWizardSteps) {
+		expect(firstWin.includes(step.label) || firstWin.includes(step.path)).toBe(
+			true,
+		)
+	}
+	const giveAccess = onboardingWizardSteps.find((step) => step.number === 2)
+	const connectAgent = onboardingWizardSteps.find((step) => step.number === 1)
+	if (!giveAccess || !connectAgent) {
+		throw new Error('wizard steps 1 and 2 are required')
+	}
+	expect(quickExample).toContain(giveAccess.label)
+	expect(quickExample).toContain(connectAgent.path)
 })

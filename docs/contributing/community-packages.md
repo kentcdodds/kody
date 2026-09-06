@@ -87,27 +87,28 @@ KV snapshot, and ratings.
 There is no trusted-listing mark. Public listing records expose
 `trusted: false`. `POST /community/:listingId/trust.json` returns 410.
 
-Admin **featured** marks live in `featured_at` and highlight onboarding starter
-packages. Featured is editorial only (`featured_at IS NOT NULL`). Operators
-publish official starters under a platform scope (for example `@kody`) by
-passing `package_scope` while holding a package scope grant; see
-[Platform accounts](./architecture/platform-accounts.md).
-`listFeaturedCommunityListings` feeds the onboarding page (slim
-`OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
-badge on the detail page, the admin-only toggle
-(`POST /community/:listingId/feature.json`, audited), the admin-only
-`communitySetFeatured` capability, and onboarding Steps 2–3: Step 2 offers
-official one-click access (Notion, Linear, Atlassian, Stripe, Sentry, Canva)
-plus the matching `@kody/*-mcp` helper, a custom MCP URL, Advanced provider
-guides, Just-try-Kody zero-auth examples, or skip as the quicker first-value
-path. Official `@kody/*` listings are catalog and fork source — person accounts
-run the owned copy, not the platform package. Step 3 leads with an ad hoc
-execute → persist prompt. Step 2 Connect forks the matching `@kody/*-mcp`
-listing automatically. Signed-in onboarding, `/community` cards, and listing
-detail overlay a per-request `viewerInstall` when the viewer already has a
-matching slug saved package or a `community_forks` row for that listing, so
-those surfaces show Copy prompt instead of Install. `communityGet` exposes the
-`featured` flag. Onboarding loads up to 12 featured listings.
+Admin **featured** marks live in `featured_at`. Featured is editorial placement
+on `/community` and listing detail (`featured_at IS NOT NULL`), not a safety
+badge and not a wizard step. Operators publish official starters under a
+platform scope (for example `@kody`) by passing `package_scope` while holding a
+package scope grant; see
+[Platform accounts](./architecture/platform-accounts.md). Surfaces: the
+`Featured` badge on the detail page, the admin-only toggle
+(`POST /community/:listingId/feature.json`, audited), and the admin-only
+`communitySetFeatured` capability. `communityGet` exposes the `featured` flag.
+
+`listFeaturedCommunityListings` also loads up to 12 slim
+`OnboardingFeaturedListing` shapes into the signed-in onboarding payload so
+persist-prompt copy can name an already-installed example. The `/onboarding`
+wizard itself is connect an agent, give Kody access (teach prompts), then
+connect a second agent — see [Onboarding process](./architecture/onboarding.md).
+Official `@kody/*` listings are catalog and fork source — person accounts run
+the owned copy, not the platform package. One-click install on listing detail
+skips the confirm for official `@kody/*` packages. `/community` cards and
+listing detail overlay a per-request `viewerInstall` when the viewer already has
+a matching slug saved package or a `community_forks` row for that listing, so
+those surfaces show **Installed** / **Forked** (or Copy prompt) instead of
+Install.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
