@@ -15,6 +15,8 @@ import {
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
+import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import {
 	assertStorageRunnerWriteWithinEntitlement,
 	createStorageKodyTools,
@@ -23,6 +25,7 @@ import {
 	readOnlyStorageSqlDeniedMessage,
 	StorageRunner,
 	storageRunnerRpc,
+	storageValueNotCloneableMessage,
 } from './storage-runner.ts'
 
 async function ensureStorageRunnerTestSchema() {
@@ -552,6 +555,89 @@ test('storage runner dedupes bucket registration to one D1 write per isolate', a
 	} finally {
 		env.APP_DB.prepare = originalPrepare
 	}
+})
+
+test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject Proxies on write', async () => {
+	await ensureStorageRunnerTestSchema()
+	const userId = `storage-metered-${crypto.randomUUID()}`
+	const storageId = createExecuteStorageId()
+	const stub = env.STORAGE_RUNNER.get(
+		env.STORAGE_RUNNER.idFromName(
+			storageRunnerDurableObjectName(userId, storageId),
+		),
+	)
+	const runner = createMeteredDurableObjectStub({
+		env: { USAGE_EVENTS: { writeDataPoint() {} } },
+		userId,
+		doClass: 'StorageRunner',
+		stub,
+	})
+
+	await expect(runner.getValue({ key: 'missing-key' })).resolves.toEqual({
+		key: 'missing-key',
+		value: null,
+	})
+	await expect(
+		runner.setValue({ key: 'note', value: 'plain-string' }),
+	).resolves.toEqual({ ok: true, key: 'note' })
+	await expect(
+		runner.setValue({
+			key: 'roster',
+			value: { bots: ['cole'], count: 1 },
+		}),
+	).resolves.toEqual({ ok: true, key: 'roster' })
+	await expect(runner.getValue({ key: 'note' })).resolves.toEqual({
+		key: 'note',
+		value: 'plain-string',
+	})
+	await expect(runner.listValues({ pageSize: 10 })).resolves.toMatchObject({
+		entries: [
+			{ key: 'note', value: 'plain-string' },
+			{ key: 'roster', value: { bots: ['cole'], count: 1 } },
+		],
+		truncated: false,
+	})
+	await expect(runner.deleteValue({ key: 'note' })).resolves.toEqual({
+		ok: true,
+		key: 'note',
+		deleted: true,
+	})
+	await expect(runner.getValue({ key: 'note' })).resolves.toEqual({
+		key: 'note',
+		value: null,
+	})
+
+	const tools = createStorageKodyTools({
+		env,
+		userId,
+		storageId: createExecuteStorageId(),
+		writable: true,
+	})
+	await expect(tools.storageGet({ key: 'fresh-missing' })).resolves.toEqual({
+		key: 'fresh-missing',
+		value: null,
+	})
+	await expect(
+		tools.storageSet({
+			key: 'poison',
+			value: new Proxy({ leaked: true }, {}),
+		}),
+	).rejects.toThrow(storageValueNotCloneableMessage)
+	await expect(tools.storageGet({ key: 'poison' })).resolves.toEqual({
+		key: 'poison',
+		value: null,
+	})
+	await expect(
+		tools.storageSet({ key: 'ok', value: { saved: true } }),
+	).resolves.toEqual({ ok: true, key: 'ok' })
+	await expect(tools.storageList({ pageSize: 10 })).resolves.toMatchObject({
+		entries: [{ key: 'ok', value: { saved: true } }],
+	})
+	await expect(tools.storageDelete({ key: 'ok' })).resolves.toEqual({
+		ok: true,
+		key: 'ok',
+		deleted: true,
+	})
 })
 
 test('clearStorage during account-deletion purge must not recreate ownership rows', async () => {

@@ -78,6 +78,13 @@ rejections, size rejections, entitlement rejections, and parse failures record
 rejected mail. Mail rejected before inbox resolution (unknown alias, disabled
 inbox) has no owning user and is not metered.
 
+`createMeteredDurableObjectStub` must not wrap the RpcStub as the Proxy target.
+Cloudflare RPC binds stub methods to the receiver; a Proxy-of-stub is not a
+valid RPC receiver, so every StorageRunner call — including `packageStorage()`
+get of a missing key — throws "Proxy could not be serialized because it is not a
+valid RPC receiver type". The wrapper is a plain-object Proxy that `Reflect.get`
+/ `Reflect.apply`s against the original stub.
+
 ### `package_static_call`: statically imported package export calls
 
 Static imports (`import fn from 'kody:@scope/pkg/export'`) are the default way
