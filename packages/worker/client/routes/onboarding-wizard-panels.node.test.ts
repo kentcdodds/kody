@@ -152,6 +152,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	)
 	expect(picker).toContain('Connect a second agent')
 	expect(picker).toContain(onboardingSecondAgentLede)
+	expect(picker.split(onboardingSecondAgentLede)).toHaveLength(2)
 	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
 	expect(picker).toContain('data-greyed="true"')
 	expect(picker).toContain('Same ecosystem')

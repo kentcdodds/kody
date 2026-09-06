@@ -195,9 +195,11 @@ export function renderSecondAgentPanel(
 				artAlt: 'Kody plugging a cable into a warmly glowing port on a laptop',
 				tilt: '-1.5deg',
 			})}
-			<p mix={css(panelLedeCss)} data-testid="onboarding-second-agent-lede">
-				{onboardingSecondAgentLede}
-			</p>
+			{props.selectedAgent ? (
+				<p mix={css(panelLedeCss)} data-testid="onboarding-second-agent-lede">
+					{onboardingSecondAgentLede}
+				</p>
+			) : null}
 			{renderConnectAgentStatus({
 				loggedIn: props.loggedIn,
 				hasMcpClient: props.hasSecondMcpClient,
