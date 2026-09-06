@@ -357,6 +357,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		const decision = decideCommunityInstallClick({
 			installState,
 			alreadyInstalled: installOutcome != null,
+			official: control.getAttribute('data-official') === 'true',
 		})
 		switch (decision) {
 			case 'ignore':

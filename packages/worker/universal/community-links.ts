@@ -8,6 +8,9 @@ export const kodyIssueTriageListingPath = '/@kentcdodds/kody-issue-triage'
 
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
+/** Platform account that owns official first-party `@kody/*` listings. */
+export const officialCommunityOwnerUsername = 'kody'
+
 /**
  * Owner half of a scoped package name (`@owner/kody-id`), or null when the name
  * carries no scope. Listing names carry the owner, so surfaces that only hold a
@@ -16,6 +19,33 @@ const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 export function parseListingOwnerUsername(name: string) {
 	const match = scopedPackageNamePattern.exec(name.trim())
 	return match?.[1] ?? null
+}
+
+/**
+ * Official / first-party catalog listings (`@kody/*`). These skip the
+ * third-party install confirm — they are implicitly trusted.
+ */
+export function isOfficialCommunityListing(input: {
+	name?: string | null
+	ownerUsername?: string | null
+}) {
+	const owner =
+		input.ownerUsername?.trim().toLowerCase() ||
+		parseListingOwnerUsername(input.name ?? '') ||
+		''
+	return owner === officialCommunityOwnerUsername
+}
+
+/** Canonical `/@owner/kody-id` for a scoped package name, or null. */
+export function getCommunityPackageHrefFromName(name: string) {
+	const ownerUsername = parseListingOwnerUsername(name)
+	if (!ownerUsername) return null
+	const kodyId = name.trim().slice(`@${ownerUsername}/`.length)
+	if (!kodyId) return null
+	return routes.communityPackage.href({
+		username: ownerUsername,
+		kodyId,
+	})
 }
 
 /**

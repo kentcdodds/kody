@@ -7,6 +7,7 @@ import {
 	buildInstallAdaptPrompt,
 	buildInstallSuccessPrompt,
 } from '#app/community-public.ts'
+import { isOfficialCommunityListing } from '#universal/community-links.ts'
 import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { installCommunityListing } from '#worker/community/install.ts'
@@ -23,7 +24,7 @@ const communityInstallPostSchema = z.object({
 })
 
 const thirdPartyInstallConfirmError =
-	"This is someone else's code and will run in your account. Confirm to install it."
+	'This listing is from another account. Confirm to install it.'
 
 export function createCommunityInstallApiPostHandler(env: Env) {
 	return {
@@ -54,10 +55,11 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					404,
 				)
 			}
-			// The UI shows the untrusted warning before calling this endpoint;
-			// this re-check keeps direct API calls behind the same explicit
-			// acknowledgement.
-			if (parsed.data.acknowledged !== true) {
+			// Official `@kody/*` listings are first-party and skip confirm.
+			// Third-party listings still need the explicit acknowledgement
+			// the UI shows before calling this endpoint.
+			const official = isOfficialCommunityListing({ name: listing.name })
+			if (!official && parsed.data.acknowledged !== true) {
 				return jsonResponse(
 					{
 						ok: false,

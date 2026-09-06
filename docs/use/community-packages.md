@@ -133,9 +133,12 @@ behind-upstream banner clears.
 ## One-click install
 
 Each listing detail page has an **Install** pill for signed-in users. Logged-out
-visitors get the same pill as a login link. Every public install asks for one
-generic confirm (`acknowledged: true` on
+visitors get the same pill as a login link. Official `@kody/*` listings install
+on the first click — they are first-party platform packages and skip the
+confirm. Third-party listings still ask once (`acknowledged: true` on
 `POST /community/:listingId/install.json`, or the endpoint responds `409`).
+After install, the page shows **Open package** (or **Open fork**) and **Use in
+agent** so you are not left on a dead listing.
 
 If you already have a saved package with the same slug, or a fork of that
 listing, cards and the detail page show **Installed** or **Forked** instead.

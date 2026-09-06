@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { getCommunityListingHref } from '#universal/community-links.ts'
+import {
+	getCommunityListingHref,
+	getCommunityPackageHrefFromName,
+	isOfficialCommunityListing,
+} from '#universal/community-links.ts'
 
 test('community listing hrefs prefer the canonical pair and fall back to the id URL', () => {
 	expect(
@@ -31,4 +35,21 @@ test('community listing hrefs prefer the canonical pair and fall back to the id 
 			kodyId: null,
 		}),
 	).toBe('/community/listing-1')
+})
+
+test('official listings are the first-party @kody scope', () => {
+	expect(isOfficialCommunityListing({ name: '@kody/notion-mcp' })).toBe(true)
+	expect(isOfficialCommunityListing({ ownerUsername: 'kody' })).toBe(true)
+	expect(isOfficialCommunityListing({ ownerUsername: 'Kody' })).toBe(true)
+	expect(
+		isOfficialCommunityListing({
+			name: '@kentcdodds/github-triage',
+			ownerUsername: 'kentcdodds',
+		}),
+	).toBe(false)
+	expect(isOfficialCommunityListing({ name: 'unscoped' })).toBe(false)
+	expect(getCommunityPackageHrefFromName('@jane/hn-pulse')).toBe(
+		'/@jane/hn-pulse',
+	)
+	expect(getCommunityPackageHrefFromName('unscoped')).toBeNull()
 })
