@@ -9,6 +9,7 @@ import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consu
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { toAdminDynamicWorkerCost } from '#universal/dynamic-worker-cost.ts'
+import { toAdminDurableObjectDuration } from '#universal/durable-object-duration.ts'
 import {
 	type AdminUsageMetric,
 	type AdminUsageMonthRollup,
@@ -26,6 +27,7 @@ export const adminUsageMetrics = [
 	'email_send',
 	'email_received',
 	'dynamic_worker_day',
+	'durable_object_gb_seconds',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
 /**
@@ -111,6 +113,9 @@ export async function loadAdminUserUsageData(
 	const uniqueWorkerDays =
 		currentMonthUsage.find((row) => row.metric === 'dynamic_worker_day')
 			?.eventCount ?? 0
+	const durableObjectUsage = currentMonthUsage.find(
+		(row) => row.metric === 'durable_object_gb_seconds',
+	)
 
 	return {
 		ok: true,
@@ -124,6 +129,10 @@ export async function loadAdminUserUsageData(
 		entitlementConsumption,
 		warnings: entitlementConsumption.filter((item) => item.overEightyPercent),
 		dynamicWorkerCost: toAdminDynamicWorkerCost(uniqueWorkerDays),
+		durableObjectDuration: toAdminDurableObjectDuration({
+			durationMs: durableObjectUsage?.totalDurationMs ?? 0,
+			rpcCount: durableObjectUsage?.eventCount ?? 0,
+		}),
 	}
 }
 

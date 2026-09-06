@@ -61,8 +61,17 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 		outcome: 'success',
 		timestamp: '2026-07-05T12:00:00.000Z',
 	})
+	await recordUsage(usageEnv, {
+		userId: userA,
+		eventType: 'durable_object_gb_seconds',
+		entityId: 'StorageRunner',
+		durationMs: 10_000,
+		eventCount: 8,
+		outcome: 'success',
+		timestamp: '2026-07-05T12:30:00.000Z',
+	})
 
-	expect(dataPoints).toHaveLength(3)
+	expect(dataPoints).toHaveLength(4)
 	expect(dataPoints[0]).toEqual({
 		indexes: [userA],
 		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z'],
@@ -74,6 +83,17 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 		doubles: [80, 0, 512],
 	})
 	expect(dataPoints[2]?.indexes).toEqual([userB])
+	expect(dataPoints[3]).toEqual({
+		indexes: [userA],
+		blobs: [
+			userA,
+			'durable_object_gb_seconds',
+			'StorageRunner',
+			'success',
+			'2026-07-05T12:30:00.000Z',
+		],
+		doubles: [10_000, 0, 8],
+	})
 
 	// Production path: usage_rollups is a derived aggregate recomputed by the
 	// hourly aggregation cron, never written per event.
@@ -119,8 +139,27 @@ test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (loc
 		outcome: 'success',
 		timestamp: '2026-07-05T12:00:00.000Z',
 	})
+	await recordUsage(usageEnv, {
+		userId: userA,
+		eventType: 'durable_object_gb_seconds',
+		entityId: 'StorageRunner',
+		durationMs: 10_000,
+		eventCount: 8,
+		outcome: 'success',
+		timestamp: '2026-07-05T10:30:00.000Z',
+	})
 
 	expect(await listRollups(env.APP_DB, userA)).toEqual([
+		{
+			user_id: userA,
+			metric: 'durable_object_gb_seconds',
+			month: '2026-07',
+			event_count: 8,
+			error_count: 0,
+			total_duration_ms: 10_000,
+			total_cpu_ms: 0,
+			total_bytes: 0,
+		},
 		{
 			user_id: userA,
 			metric: 'email_send',

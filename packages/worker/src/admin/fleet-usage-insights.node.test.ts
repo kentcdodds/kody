@@ -51,6 +51,7 @@ function createFleetDb(input: {
 	dynamicWorkerDays?: number
 	uniqueWorkerDaysByUser?: Record<string, number>
 	onDurationQueryBind?: (params: Array<unknown>) => void
+	onEventCountQueryBind?: (params: Array<unknown>) => void
 }) {
 	return {
 		prepare(query: string) {
@@ -62,6 +63,12 @@ function createFleetDb(input: {
 						normalized.includes('user_id in')
 					) {
 						input.onDurationQueryBind?.(params)
+					}
+					if (
+						normalized.includes('sum(r.event_count)') &&
+						normalized.includes('not in')
+					) {
+						input.onEventCountQueryBind?.(params)
 					}
 					return this
 				},
@@ -167,6 +174,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 			overEightyPercent: true,
 		},
 	])
+	const eventCountBinds: Array<Array<unknown>> = []
 	const db = createFleetDb({
 		runtimeLeaders: [
 			{
@@ -207,6 +215,9 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 				event_count: 90,
 			},
 		],
+		onEventCountQueryBind(params) {
+			eventCountBinds.push(params)
+		},
 	})
 	const data = await loadFleetUsageInsights({
 		db,
@@ -227,6 +238,8 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 			eventCount: 42,
 		},
 	])
+	expect(eventCountBinds.length).toBeGreaterThan(0)
+	expect(eventCountBinds[0]?.[1]).toBe('durable_object_gb_seconds')
 	expect(data.topDurationConsumersByMetric).toHaveLength(3)
 	expect(data.topDurationConsumersByMetric[0]?.consumers).toEqual([
 		{

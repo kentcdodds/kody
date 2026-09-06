@@ -18,6 +18,16 @@ export const usageEventTypes = [
 	'email_send',
 	'email_received',
 	'dynamic_worker_day',
+	'durable_object_gb_seconds',
 ] as const
 
 export type UsageEventType = (typeof usageEventTypes)[number]
+
+/**
+ * High-volume observe-only metrics. They still roll up for admin drill-down
+ * but must not drive fleet event-count rankings, entitlement-pressure
+ * candidate selection, or customer usage emails.
+ */
+export const observeOnlyUsageEventTypes = [
+	'durable_object_gb_seconds',
+] as const satisfies ReadonlyArray<UsageEventType>

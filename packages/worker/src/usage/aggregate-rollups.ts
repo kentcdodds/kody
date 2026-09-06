@@ -144,8 +144,10 @@ function utcMonthBounds(now: Date) {
 /**
  * Analytics Engine samples data under load, so every aggregate must weight
  * by `_sample_interval`: counts are `sum(_sample_interval)` and value sums
- * are `sum(doubleN * _sample_interval)`. Blob/double positions match the
- * data point layout in `record-usage.ts`.
+ * are `sum(doubleN * _sample_interval)`. Coalesced
+ * `durable_object_gb_seconds` points store the RPC count in `double3`, so
+ * that metric's counts use `double3` when it is set. Blob/double positions
+ * match the data point layout in `record-usage.ts`.
  */
 function buildMonthToDateAggregateQuery(
 	dataset: string,
@@ -155,11 +157,29 @@ function buildMonthToDateAggregateQuery(
 SELECT
 	blob1 AS user_id,
 	blob2 AS metric,
-	sum(_sample_interval) AS event_count,
-	sum(if(blob4 = 'error', _sample_interval, 0)) AS error_count,
+	sum(
+		if(
+			blob2 = 'durable_object_gb_seconds' AND double3 > 0,
+			double3,
+			1
+		) * _sample_interval
+	) AS event_count,
+	sum(
+		if(
+			blob4 = 'error',
+			if(
+				blob2 = 'durable_object_gb_seconds' AND double3 > 0,
+				double3,
+				1
+			),
+			0
+		) * _sample_interval
+	) AS error_count,
 	sum(double1 * _sample_interval) AS total_duration_ms,
 	sum(double2 * _sample_interval) AS total_cpu_ms,
-	sum(double3 * _sample_interval) AS total_bytes
+	sum(
+		if(blob2 = 'durable_object_gb_seconds', 0, double3) * _sample_interval
+	) AS total_bytes
 FROM ${dataset}
 WHERE timestamp >= toDateTime('${bounds.monthStart}')
 	AND timestamp < toDateTime('${bounds.nextMonthStart}')
