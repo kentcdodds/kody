@@ -30,8 +30,9 @@ export type SiteHeaderProps = {
 
 /**
  * Sticky site header from the heykody.dev redesign: brand, marketing nav
- * (Community · Pricing · Blog), and the session corner. The bottom hairline
- * is a static CSS border so it paints before JS.
+ * (Community · Guides · Pricing · Blog), and the session corner (Account
+ * then the avatar on desktop). The bottom hairline is a static CSS border so
+ * it paints before JS.
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
@@ -129,6 +130,17 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 					<div mix={css(navActionsCss)}>
 						{handle.props.loggedIn ? (
 							<>
+								<a
+									href={routes.account.href()}
+									aria-current={ariaCurrent(
+										handle.props.currentPathname,
+										routes.account.href(),
+									)}
+									data-testid="site-header-account"
+									mix={css(navAccountCss)}
+								>
+									Account
+								</a>
 								{profileHref ? (
 									<a
 										href={profileHref}
@@ -225,12 +237,11 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 										</a>
 									) : null}
 									<a
-										href="/account"
-										aria-current={
-											handle.props.currentPathname === '/account'
-												? 'page'
-												: undefined
-										}
+										href={routes.account.href()}
+										aria-current={ariaCurrent(
+											handle.props.currentPathname,
+											routes.account.href(),
+										)}
 										data-testid="site-header-account-menu"
 									>
 										Account
@@ -461,6 +472,17 @@ const navLoginCss = {
 	padding: '0.7rem 0.25rem',
 	whiteSpace: 'nowrap' as const,
 	'&:hover': { color: colors.primaryText },
+}
+
+const navAccountCss = {
+	color: colors.textMuted,
+	textDecoration: 'none',
+	fontWeight: 500,
+	fontSize: '0.98rem',
+	whiteSpace: 'nowrap' as const,
+	transition: `color ${transitions.fast}`,
+	'&:hover': { color: colors.text },
+	'&[aria-current="page"]': { color: colors.text },
 }
 
 const navUserAvatarCss = {

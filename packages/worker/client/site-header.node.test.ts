@@ -33,7 +33,7 @@ test('dismissOpenPopoverPanel hides open popovers and no-ops when unavailable or
 	expect(closedHidePopover).not.toHaveBeenCalled()
 })
 
-test('logged-in avatar and mobile menu go to the public profile with the username', async () => {
+test('logged-in header shows Account to the left of the profile avatar', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
 			loggedIn: true,
@@ -52,4 +52,35 @@ test('logged-in avatar and mobile menu go to the public profile with the usernam
 	expect(html).toContain('data-testid="site-header-profile"')
 	expect(html).toContain('data-testid="site-header-profile-menu"')
 	expect(html).toMatch(/site-header-profile-menu[\s\S]*?>ada</)
+
+	const accountTestIdAt = html.indexOf('data-testid="site-header-account"')
+	const profileTestIdAt = html.indexOf('data-testid="site-header-profile"')
+	expect(accountTestIdAt).toBeGreaterThan(-1)
+	expect(profileTestIdAt).toBeGreaterThan(accountTestIdAt)
+	const desktopAccountTag = html.slice(
+		html.lastIndexOf('<a', accountTestIdAt),
+		html.indexOf('>', accountTestIdAt) + 1,
+	)
+	expect(desktopAccountTag).toContain('href="/account"')
+	expect(desktopAccountTag).toContain('aria-current="page"')
+})
+
+test('logged-out header shows Log in without an Account link', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: false,
+			displayName: '',
+			username: '',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/',
+		}),
+	)
+
+	expect(html).toContain('href="/login"')
+	expect(html).toContain('>Log in</a>')
+	expect(html).not.toContain('data-testid="site-header-account"')
+	expect(html).not.toContain('data-testid="site-header-account-menu"')
 })
