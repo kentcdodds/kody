@@ -20,6 +20,7 @@ import {
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import { recordDurableObjectRowsRead } from '#worker/usage/durable-object-rows.ts'
 import { createMeteredDurableObjectStub } from '#worker/usage/durable-object-usage.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 
@@ -757,6 +758,12 @@ export function storageRunnerRpc(input: {
 			if (mutating) {
 				refreshOwnedBucketEstimate()
 			}
+			void recordDurableObjectRowsRead({
+				env: input.env,
+				userId: input.userId,
+				doClass: 'StorageRunner',
+				rowsRead: result.rowsRead,
+			})
 			return result
 		},
 	}

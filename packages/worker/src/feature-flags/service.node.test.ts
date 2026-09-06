@@ -6,6 +6,7 @@ import {
 	getFeatureFlagEvaluationsForUser,
 	getFeatureFlagsForUser,
 	isFeatureEnabled,
+	isFeatureGloballyEnabled,
 	listFeatureFlagsForAdmin,
 	setFeatureFlagGlobalState,
 	setFeatureFlagUserOverride,
@@ -283,6 +284,7 @@ test('isFeatureEnabled falls back to registry default when no DB state exists', 
 	await expect(getFeatureFlagsForUser(db, 1)).resolves.toEqual({
 		'demo-indicator': false,
 		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
 	})
 })
 
@@ -306,6 +308,9 @@ test('global on/off and percentage rollout evaluation', async () => {
 	})
 	await expect(isFeatureEnabled(db, 'demo-indicator', 1)).resolves.toBe(true)
 	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(true)
+	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
+		true,
+	)
 
 	await setFeatureFlagGlobalState(db, {
 		key: 'demo-indicator',
@@ -348,6 +353,9 @@ test('global on/off and percentage rollout evaluation', async () => {
 	).resolves.toBe(false)
 	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
 		false,
+	)
+	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
+		true,
 	)
 
 	await expect(
@@ -450,6 +458,7 @@ test('user override wins over global off and global on; clear restores evaluatio
 	await expect(getFeatureFlagsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': true,
 		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -482,6 +491,7 @@ test('getFeatureFlagEvaluationsForUser reports assignment sources', async () => 
 	await expect(getFeatureFlagEvaluationsForUser(db, 7)).resolves.toEqual({
 		'demo-indicator': { enabled: false, source: 'default' },
 		'compact-mcp-server-instructions': { enabled: false, source: 'default' },
+		'compute-overage-charging': { enabled: true, source: 'default' },
 	})
 
 	await setFeatureFlagGlobalState(db, {
@@ -567,7 +577,17 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 	})
 
 	const listed = await listFeatureFlagsForAdmin(db)
-	expect(listed).toHaveLength(4)
+	expect(listed).toHaveLength(5)
+
+	const charging = listed.find(
+		(flag) => flag.key === 'compute-overage-charging',
+	)
+	expect(charging).toMatchObject({
+		key: 'compute-overage-charging',
+		stale: false,
+		defaultEnabled: true,
+		successMetric: null,
+	})
 
 	const compact = listed.find(
 		(flag) => flag.key === 'compact-mcp-server-instructions',

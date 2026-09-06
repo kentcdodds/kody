@@ -54,6 +54,12 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 			reason:
 				'Per-user durable storage bucket ownership is current state for backup, export, and deletion enumeration; it is removed only by account deletion.',
 		},
+		{
+			table: 'compute_overage_invoices',
+			kind: 'durable_forever',
+			reason:
+				'Monthly compute-overage ledger rows are billing records removed only by account deletion, not by time-based retention.',
+		},
 	] as const
 
 export function getAccountRetentionDispositionCoverage(): Set<string> {

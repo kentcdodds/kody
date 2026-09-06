@@ -34,7 +34,10 @@
  */
 
 import * as cloudflareWorkers from 'cloudflare:workers'
-import { type UsageEventType } from '#universal/usage-event-types.ts'
+import {
+	isCoalescedCountUsageEventType,
+	type UsageEventType,
+} from '#universal/usage-event-types.ts'
 import { stampFirstExecute } from '#worker/identity/activation-stamps.ts'
 
 export {
@@ -206,7 +209,7 @@ function writeUsageDataPoint(
 			doubles: [
 				event.durationMs ?? 0,
 				event.cpuMs ?? 0,
-				event.eventType === 'durable_object_gb_seconds'
+				isCoalescedCountUsageEventType(event.eventType)
 					? usageEventCount(event)
 					: (event.bytes ?? 0),
 			],

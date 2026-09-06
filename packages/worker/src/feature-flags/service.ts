@@ -165,6 +165,26 @@ export async function isFeatureEnabled(
 	return (await evaluateFeatureFlag(db, key, userId)).enabled
 }
 
+/**
+ * Global on/off only. A percentage rollout is still globally on: in-bucket
+ * users and per-user overrides are decided by {@link isFeatureEnabled}.
+ */
+export async function isFeatureGloballyEnabled(
+	db: D1Database,
+	key: FeatureFlagKey,
+): Promise<boolean> {
+	const global = await db
+		.prepare(
+			`SELECT enabled
+			 FROM feature_flags
+			 WHERE key = ?`,
+		)
+		.bind(key)
+		.first<{ enabled: number }>()
+	if (!global) return getFeatureFlagDefinition(key).defaultEnabled
+	return global.enabled === 1
+}
+
 type GlobalEvaluationRow = {
 	key: string
 	enabled: number

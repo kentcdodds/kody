@@ -19,6 +19,7 @@ export const scheduledLaneNames = [
 	'job_retention',
 	'unverified_account_purge',
 	'usage_aggregation',
+	'compute_overage_billing',
 	'auth_denial_alert',
 	'email_delivery_alert',
 	'email_verification_stall_alert',
@@ -102,6 +103,14 @@ export function shouldRunUsageAggregationCron(now: Date) {
 		now.getUTCMinutes() < usageAggregationCronGateMinutes &&
 		now.getUTCMinutes() % usageAggregationCronIntervalMinutes === 0
 	)
+}
+
+/**
+ * Hourly at minute 0. The lane itself no-ops outside UTC days 1–3
+ * (and day 1 hour 0) so usage_aggregation can finish the prior month.
+ */
+export function shouldRunComputeOverageBillingCron(now: Date) {
+	return now.getUTCMinutes() === 0
 }
 
 export function shouldRunAuthDenialAlertCron(now: Date) {
@@ -189,6 +198,9 @@ export function getScheduledLaneCadence(
 	}
 	if (shouldRunUsageAggregationCron(scheduledAt)) {
 		lanes.push('usage_aggregation')
+	}
+	if (shouldRunComputeOverageBillingCron(scheduledAt)) {
+		lanes.push('compute_overage_billing')
 	}
 	if (shouldRunAuthDenialAlertCron(scheduledAt)) {
 		lanes.push('auth_denial_alert')

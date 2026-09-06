@@ -16,6 +16,7 @@ const signedInSession: session.SessionInfo = {
 	featureFlags: {
 		'demo-indicator': false,
 		'compact-mcp-server-instructions': false,
+		'compute-overage-charging': true,
 	},
 }
 

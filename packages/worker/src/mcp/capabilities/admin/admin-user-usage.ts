@@ -21,6 +21,7 @@ const usageMetricSchema = z.enum([
 	'email_received',
 	'dynamic_worker_day',
 	'durable_object_gb_seconds',
+	'durable_object_rows_read',
 ])
 
 const entitlementResourceSchema = z.enum([

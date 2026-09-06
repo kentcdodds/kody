@@ -24,6 +24,7 @@ import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
 import { refreshPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
+import { runComputeOverageBilling } from '#worker/billing/compute-overage-invoices.ts'
 import { syncFleetExecuteDays } from '#worker/usage/fleet-execute-days.ts'
 
 export {
@@ -136,6 +137,11 @@ export async function runScheduledLane(input: {
 			}
 			return { ...result, fleetPackageErrorRate }
 		}
+		case 'compute_overage_billing':
+			return runComputeOverageBilling({
+				env: input.env,
+				now: input.scheduledAt,
+			})
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
 				env: input.env,

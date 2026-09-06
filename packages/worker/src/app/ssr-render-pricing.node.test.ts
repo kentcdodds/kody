@@ -130,5 +130,14 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		),
 	)
 	expect(html).toContain(`$${computeOverageRatesUsd.uniqueWorkerDay}`)
-	expect(html).toContain('overages are not currently charged')
+	expect(html).toContain('Overage is billed monthly')
+	expect(html).toContain(
+		'that exceed an include and have no payment method are asked to upgrade',
+	)
+	expect(html).toContain(
+		'Free accounts that already have a Stripe customer are invoiced',
+	)
+	expect(html).toContain('Grandfathered legacy Standard/Pro')
+	expect(html).toContain('Execute is a hard daily cap')
+	expect(html).toContain('Durable Object duration is unmetered')
 })

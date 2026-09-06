@@ -81,6 +81,7 @@ test('compute overage rates are wired and execute has no overage', () => {
 		durableObjectRowsRead: 'included_then_overage',
 		executeCallsPerDay: 'hard_daily_cap',
 		durableObjectDuration: 'unmetered',
+		publicMonthlyMeters: 'charge_list_rates',
 		legacyMonthlyMeters: 'no_cut_no_bill',
 		overageRole: 'heavy_tail_safety_valve',
 	})
