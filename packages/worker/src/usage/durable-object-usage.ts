@@ -15,6 +15,9 @@ export const durableObjectGbSecondsEventType = 'durable_object_gb_seconds'
  */
 export const durableObjectUsageCoalesceDelayMs = 25
 
+/** Force a write if same-outcome RPCs keep resetting the debounce timer. */
+export const durableObjectUsageMaxBurstMs = 5_000
+
 type PendingDurableObjectUsage = {
 	env: UsageEnv
 	userId: string
@@ -28,6 +31,7 @@ const pendingByKey = new Map<string, PendingDurableObjectUsage>()
 let coalesceTimer: ReturnType<typeof setTimeout> | null = null
 let flushWaitUntil: (() => void) | null = null
 let inFlightFlush: Promise<void> | null = null
+let burstStartedAt: number | null = null
 
 /**
  * Wrap a per-user Durable Object RPC stub so method calls record observe-only
@@ -52,13 +56,17 @@ export function createMeteredDurableObjectStub<T extends object>(input: {
 				const startedAt = Date.now()
 				let outcome: UsageOutcome = 'success'
 				const finish = () => {
-					queueDurableObjectUsage({
-						env: input.env,
-						userId: input.userId,
-						doClass: input.doClass,
-						outcome,
-						durationMs: Date.now() - startedAt,
-					})
+					try {
+						queueDurableObjectUsage({
+							env: input.env,
+							userId: input.userId,
+							doClass: input.doClass,
+							outcome,
+							durationMs: Date.now() - startedAt,
+						})
+					} catch (error) {
+						console.debug('durable-object-usage-failed', error)
+					}
 				}
 				try {
 					const result = value.apply(target, args) as unknown
@@ -96,6 +104,7 @@ export async function flushDurableObjectUsageWrites(): Promise<void> {
 		clearTimeout(coalesceTimer)
 		coalesceTimer = null
 	}
+	burstStartedAt = null
 	const pending = flushWaitUntil
 	flushWaitUntil = null
 	try {
@@ -134,17 +143,33 @@ function scheduleDurableObjectUsageFlush() {
 	if (coalesceTimer != null) {
 		clearTimeout(coalesceTimer)
 	}
-	if (flushWaitUntil == null) {
-		waitUntil(
-			new Promise<void>((resolve) => {
-				flushWaitUntil = resolve
-			}),
-		)
-	}
-	coalesceTimer = setTimeout(() => {
-		coalesceTimer = null
+	if (burstStartedAt == null) burstStartedAt = Date.now()
+	const remainingMs = Math.max(
+		0,
+		durableObjectUsageMaxBurstMs - (Date.now() - burstStartedAt),
+	)
+	if (remainingMs === 0) {
 		void flushDurableObjectUsageWrites()
-	}, durableObjectUsageCoalesceDelayMs)
+		return
+	}
+	if (flushWaitUntil == null) {
+		try {
+			waitUntil(
+				new Promise<void>((resolve) => {
+					flushWaitUntil = resolve
+				}),
+			)
+		} catch (error) {
+			console.debug('durable-object-usage-waituntil-failed', error)
+		}
+	}
+	coalesceTimer = setTimeout(
+		() => {
+			coalesceTimer = null
+			void flushDurableObjectUsageWrites()
+		},
+		Math.min(durableObjectUsageCoalesceDelayMs, remainingMs),
+	)
 }
 
 async function flushQueuedDurableObjectUsage() {

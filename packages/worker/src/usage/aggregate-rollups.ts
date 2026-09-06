@@ -177,7 +177,9 @@ SELECT
 	) AS error_count,
 	sum(double1 * _sample_interval) AS total_duration_ms,
 	sum(double2 * _sample_interval) AS total_cpu_ms,
-	sum(double3 * _sample_interval) AS total_bytes
+	sum(
+		if(blob2 = 'durable_object_gb_seconds', 0, double3) * _sample_interval
+	) AS total_bytes
 FROM ${dataset}
 WHERE timestamp >= toDateTime('${bounds.monthStart}')
 	AND timestamp < toDateTime('${bounds.nextMonthStart}')

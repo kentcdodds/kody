@@ -367,6 +367,7 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 	expect(query).toContain('AS event_count')
 	expect(query).toContain(`blob4 = 'error'`)
 	expect(query).toContain('AS error_count')
+	expect(query).toContain("if(blob2 = 'durable_object_gb_seconds', 0, double3)")
 	expect(query).toContain(
 		'sum(double1 * _sample_interval) AS total_duration_ms',
 	)

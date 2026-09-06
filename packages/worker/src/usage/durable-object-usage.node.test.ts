@@ -1,13 +1,19 @@
 import { expect, test, vi } from 'vitest'
 
 const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
+const waitUntilImpl = vi.hoisted(() => vi.fn())
 
 vi.mock('./record-usage.ts', () => ({
 	recordUsage,
 }))
 
+vi.mock('cloudflare:workers', () => ({
+	waitUntil: (...args: Array<unknown>) => waitUntilImpl(...args),
+}))
+
 import {
 	createMeteredDurableObjectStub,
+	durableObjectUsageMaxBurstMs,
 	flushDurableObjectUsageWrites,
 } from './durable-object-usage.ts'
 
@@ -64,7 +70,57 @@ test('createMeteredDurableObjectStub coalesces same-outcome RPC wall-clock', asy
 	expect(successDuration).toBeGreaterThanOrEqual(0)
 })
 
+test('createMeteredDurableObjectStub never fails the RPC when waitUntil throws', async () => {
+	recordUsage.mockClear()
+	waitUntilImpl.mockImplementation(() => {
+		throw new Error('no invocation context')
+	})
+	const stub = {
+		async ping() {
+			return 'pong'
+		},
+	}
+	const metered = createMeteredDurableObjectStub({
+		env: { USAGE_EVENTS: { writeDataPoint() {} } },
+		userId: 'user-1',
+		doClass: 'StorageRunner',
+		stub,
+	})
+	await expect(metered.ping()).resolves.toBe('pong')
+	await flushDurableObjectUsageWrites()
+	expect(recordUsage).toHaveBeenCalledTimes(1)
+	waitUntilImpl.mockReset()
+})
+
+test('createMeteredDurableObjectStub flushes a burst that never goes idle', async () => {
+	recordUsage.mockClear()
+	vi.useFakeTimers()
+	const stub = {
+		async ping() {
+			return 'pong'
+		},
+	}
+	const metered = createMeteredDurableObjectStub({
+		env: { USAGE_EVENTS: { writeDataPoint() {} } },
+		userId: 'user-1',
+		doClass: 'StorageRunner',
+		stub,
+	})
+	await metered.ping()
+	for (let elapsed = 0; elapsed < durableObjectUsageMaxBurstMs; elapsed += 20) {
+		await vi.advanceTimersByTimeAsync(20)
+		await metered.ping()
+	}
+	expect(recordUsage).toHaveBeenCalledTimes(1)
+	expect(
+		(recordUsage.mock.calls[0]?.[1] as { eventCount: number }).eventCount,
+	).toBeGreaterThan(2)
+	await flushDurableObjectUsageWrites()
+	vi.useRealTimers()
+})
+
 test('createMeteredDurableObjectStub is a no-op without Analytics Engine', async () => {
+	await flushDurableObjectUsageWrites()
 	recordUsage.mockClear()
 	const stub = {
 		async ping() {

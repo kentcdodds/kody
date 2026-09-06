@@ -40,6 +40,7 @@ type UsageEvent = {
 	durationMs?: number | null // wall-clock duration of the metered unit
 	cpuMs?: number | null // CPU time, only when the platform exposes it
 	bytes?: number | null // bytes moved/stored when meaningful
+	eventCount?: number // coalesced units in one write; defaults to 1
 	outcome: 'success' | 'error'
 	timestamp?: string // ISO 8601; defaults to time of recording
 }
@@ -386,7 +387,10 @@ ORDER BY executes DESC
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
   the `index1` user id; blob/double positions are listed above. Remember that
   Analytics Engine samples: count with `sum(_sample_interval)` and sum values
-  with `sum(doubleN * _sample_interval)`.
+  with `sum(doubleN * _sample_interval)`. Coalesced `durable_object_gb_seconds`
+  points store the RPC count in `double3`, so that metric's `event_count` is
+  `sum(if(double3 > 0, double3, 1) * _sample_interval)` and `total_bytes`
+  stays 0.
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.
 - Admin usage drill-down (on the admin users page):
