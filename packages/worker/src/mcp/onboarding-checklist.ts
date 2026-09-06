@@ -56,6 +56,26 @@ export async function loadOnboardingAccessWin(
 	return firstSearch || execute || memories || savedPackages
 }
 
+/**
+ * Newest active memory subject for Step 3 reuse chrome. Fail-open to null so
+ * a storage blip never invents an artifact.
+ */
+export async function loadOnboardingAccessWinMemorySubject(
+	env: OnboardingChecklistEnv,
+	userId: string,
+): Promise<string | null> {
+	try {
+		const rows = await listMemoriesByUserId(env.APP_DB, userId, {
+			statuses: ['active'],
+			limit: 1,
+		})
+		const subject = rows[0]?.subject.trim()
+		return subject ? subject : null
+	} catch {
+		return null
+	}
+}
+
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
 	userId: string

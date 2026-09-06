@@ -135,7 +135,8 @@ helps you make something useful in your Kody account.
 
 Step 3 is **Connect a second agent** from a different ecosystem. Same-vendor
 hosts stay unavailable. After you pick one, copy the portability proof so the
-new agent reuses the memory, package, or ask you made in Step 2.
+new agent looks up `search({ entity: "portability:guide" })` and reuses the
+memory, package, or ask you made in Step 2.
 
 ## Where to go next
 

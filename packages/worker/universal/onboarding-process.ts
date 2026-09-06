@@ -121,7 +121,10 @@ export const onboardingGuideSlug = 'onboarding'
 export const onboardingGuideEntity = 'onboarding:guide'
 export const onboardingGuideHref = '/guides/onboarding'
 
-export const onboardingGuideFetchHint = `For depth, search({ entity: "${onboardingGuideEntity}" }) or open ${onboardingGuideHref}.`
+/** Agent-retrievable Step 3 reuse guide (bundled + `search({ entity })`). */
+export const portabilityGuideSlug = 'portability'
+export const portabilityGuideEntity = 'portability:guide'
+export const portabilityGuideHref = '/guides/portability'
 
 export const onboardingAccessLede =
 	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide and helps you make something useful. It is not a service gateway.'
@@ -151,11 +154,21 @@ export const onboardingSecondAgentLede =
 
 export const onboardingPortabilityProofPrompt = [
 	'I just connected you as a second agent.',
-	'Kody is the home we share.',
-	'Reuse the memory, package, or ask I made in Step 2 with my first agent, and show it works here.',
-	"One short proof — don't restart setup.",
-	onboardingGuideFetchHint,
+	`Look up the portability guide with search({ entity: "${portabilityGuideEntity}" }) and reuse what I made in Step 2.`,
+	'One short proof.',
 ].join(' ')
+
+export function onboardingAccessWinMadeLine(input: {
+	memorySubject?: string | null
+	packageName?: string | null
+}) {
+	const memory = input.memorySubject?.trim() ?? ''
+	const packageName = input.packageName?.trim() ?? ''
+	if (memory && packageName) return `You made ${memory} and ${packageName}`
+	if (memory) return `You made ${memory}`
+	if (packageName) return `You made ${packageName}`
+	return null
+}
 
 export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
 

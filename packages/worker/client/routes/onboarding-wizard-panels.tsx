@@ -5,10 +5,12 @@ import { routes } from '#universal/routes.ts'
 import {
 	onboardingAccessLede,
 	onboardingAccessSelectedLede,
+	onboardingAccessWinMadeLine,
 	onboardingAgentHref,
 	onboardingCopyPortabilityProofLabel,
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
+	portabilityGuideHref,
 	onboardingSearchStartedLabel,
 	onboardingSearchWaitingLabel,
 	onboardingSecondAgentHref,
@@ -186,6 +188,8 @@ export function renderSecondAgentPanel(
 		agentChooser: OnboardingAgentChooserPick | null
 		mcpServerUrl: string
 		mcpHighlights: Record<string, HighlightedCode>
+		accessWinMemorySubject?: string | null
+		persistedPackageKodyId?: string | null
 	},
 ) {
 	const firstLabel = props.firstAgent
@@ -194,6 +198,10 @@ export function renderSecondAgentPanel(
 	const greyedReason = props.firstAgent
 		? onboardingSameEcosystemDisabledReason(props.firstAgent, firstLabel)
 		: null
+	const accessWinMade = onboardingAccessWinMadeLine({
+		memorySubject: props.accessWinMemorySubject,
+		packageName: props.persistedPackageKodyId,
+	})
 	return (
 		<section
 			id="onboarding-step-3"
@@ -213,6 +221,11 @@ export function renderSecondAgentPanel(
 				artAlt: 'Kody plugging a cable into a warmly glowing port on a laptop',
 				tilt: '-1.5deg',
 			})}
+			{accessWinMade ? (
+				<p data-testid="onboarding-access-win-made" mix={css(accessWinMadeCss)}>
+					{accessWinMade}
+				</p>
+			) : null}
 			{props.selectedAgent ? (
 				<p mix={css(panelLedeCss)} data-testid="onboarding-second-agent-lede">
 					{onboardingSecondAgentLede}
@@ -249,15 +262,25 @@ export function renderSecondAgentPanel(
 					mix={css(promptBlockCss)}
 				>
 					<p mix={css(proofLedeCss)}>
-						After it connects, paste this in the new agent. Reuse the memory,
-						package, or ask you made in Step 2 — one short proof that Kody
-						travels.
+						After it connects, paste this in the new agent. It looks up the
+						portability guide and reuses what you already made — one short proof
+						that Kody travels.
 					</p>
 					<CopyCard
 						label="Portability proof"
 						value={onboardingPortabilityProofPrompt}
 						copyLabel={onboardingCopyPortabilityProofLabel}
 					/>
+					<p
+						mix={css(guidePointerCss)}
+						data-testid="onboarding-portability-guide-pointer"
+					>
+						Depth lives in the{' '}
+						<a href={portabilityGuideHref} mix={css(guideLinkCss)}>
+							portability guide
+						</a>
+						. The prompt tells your agent to retrieve it.
+					</p>
 				</div>
 			) : null}
 			<WizardNavigation
@@ -483,6 +506,31 @@ const panelLedeCss = {
 	margin: 0,
 	color: colors.textMuted,
 	maxWidth: '68ch',
+}
+
+const accessWinMadeCss = {
+	margin: 0,
+	width: 'fit-content',
+	maxWidth: '100%',
+	padding: '0.22rem 0.7rem',
+	borderRadius: radius.full,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.primarySoft,
+	color: colors.text,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.semibold,
+	lineHeight: 1.35,
+}
+
+const guidePointerCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+}
+
+const guideLinkCss = {
+	...primaryLinkCss,
+	fontWeight: 600,
 }
 
 const proofLedeCss = {

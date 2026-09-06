@@ -57,6 +57,8 @@ function secondAgentPanel(selected: {
 	loggedIn?: boolean
 	hasSecondMcpClient?: boolean
 	search?: string
+	accessWinMemorySubject?: string | null
+	persistedPackageKodyId?: string | null
 }) {
 	return renderSecondAgentPanel({
 		entrance: css({}),
@@ -77,6 +79,8 @@ function secondAgentPanel(selected: {
 		mcpServerUrl: defaultKodyMcpUrl,
 		mcpHighlights: {},
 		search: selected.search,
+		accessWinMemorySubject: selected.accessWinMemorySubject,
+		persistedPackageKodyId: selected.persistedPackageKodyId,
 	})
 }
 
@@ -154,7 +158,22 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(picker).not.toContain('href="/onboarding/step-3/chatgpt"')
 	expect(picker).not.toContain('href="/onboarding/step-3/codex"')
 	expect(picker).not.toContain('data-testid="onboarding-portability-proof"')
+	expect(picker).not.toContain('data-testid="onboarding-access-win-made"')
 	expect(picker).toContain('href="/community"')
+
+	const withArtifact = await renderToString(
+		secondAgentPanel({
+			firstAgent: 'codex',
+			agent: null,
+			label: null,
+			accessWinMemorySubject: 'Preferred commute',
+			persistedPackageKodyId: 'morning-digest',
+		}),
+	)
+	expect(withArtifact).toContain('data-testid="onboarding-access-win-made"')
+	expect(withArtifact).toContain(
+		'You made Preferred commute and morning-digest',
+	)
 
 	const selected = await renderToString(
 		secondAgentPanel({
@@ -166,9 +185,11 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(selected).toContain('Connect Claude Code')
 	expect(selected).toContain('Waiting for Claude Code to connect')
 	expect(selected).toContain('data-testid="onboarding-portability-proof"')
+	expect(selected).toContain('looks up the portability guide')
 	expect(selected).toContain(
-		'Reuse the memory, package, or ask you made in Step 2',
+		'data-testid="onboarding-portability-guide-pointer"',
 	)
+	expect(selected).toContain('href="/guides/portability"')
 	expect(selected).toContain('data-testid="onboarding-wizard-copy-prompt"')
 
 	const connected = await renderToString(

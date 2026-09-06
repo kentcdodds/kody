@@ -5,6 +5,7 @@ import { expect, test } from 'vitest'
 import {
 	formatOnboardingSearchNotice,
 	onboardingAccessSelectedLede,
+	onboardingAccessWinMadeLine,
 	onboardingAgentHref,
 	onboardingChecklistItemHref,
 	onboardingChecklistItems,
@@ -19,6 +20,9 @@ import {
 	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	parseOnboardingPathname,
+	portabilityGuideEntity,
+	portabilityGuideHref,
+	portabilityGuideSlug,
 	remainingOnboardingWizardLabels,
 } from './onboarding-process.ts'
 
@@ -132,9 +136,22 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingStep2Prompt.length).toBeLessThan(280)
 	expect(onboardingStep2Prompt).toContain(onboardingGuideEntity)
 	expect(onboardingStep2Prompt).toContain('search({ entity:')
-	expect(onboardingPortabilityProofPrompt).toContain(onboardingGuideEntity)
+	expect(onboardingPortabilityProofPrompt).toContain(portabilityGuideEntity)
 	expect(onboardingPortabilityProofPrompt).toContain('Step 2')
 	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
+	expect(onboardingAccessWinMadeLine({})).toBeNull()
+	expect(
+		onboardingAccessWinMadeLine({ memorySubject: 'Preferred commute' }),
+	).toBe('You made Preferred commute')
+	expect(onboardingAccessWinMadeLine({ packageName: 'morning-digest' })).toBe(
+		'You made morning-digest',
+	)
+	expect(
+		onboardingAccessWinMadeLine({
+			memorySubject: 'Preferred commute',
+			packageName: 'morning-digest',
+		}),
+	).toBe('You made Preferred commute and morning-digest')
 	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
 	expect(onboardingSearchStartedLabel).toContain(
 		'started making something useful',
@@ -170,6 +187,7 @@ test('search leftover notice lists remaining wizard steps, not a quest', () => {
 test('first-win and quick-example name the current wizard steps', () => {
 	const firstWin = readFileSync(join(guidesDir, 'first-win.md'), 'utf8')
 	const quickExample = readFileSync(join(guidesDir, 'quick-example.md'), 'utf8')
+	const portability = readFileSync(join(guidesDir, 'portability.md'), 'utf8')
 	for (const step of onboardingWizardSteps) {
 		expect(firstWin.includes(step.label) || firstWin.includes(step.path)).toBe(
 			true,
@@ -177,9 +195,15 @@ test('first-win and quick-example name the current wizard steps', () => {
 	}
 	const giveAccess = onboardingWizardSteps.find((step) => step.number === 2)
 	const connectAgent = onboardingWizardSteps.find((step) => step.number === 1)
-	if (!giveAccess || !connectAgent) {
-		throw new Error('wizard steps 1 and 2 are required')
+	const secondAgent = onboardingWizardSteps.find((step) => step.number === 3)
+	if (!giveAccess || !connectAgent || !secondAgent) {
+		throw new Error('wizard steps 1, 2, and 3 are required')
 	}
 	expect(quickExample).toContain(giveAccess.label)
 	expect(quickExample).toContain(connectAgent.path)
+	expect(portability).toContain(`id: ${portabilityGuideSlug}`)
+	expect(portability).toContain(portabilityGuideEntity)
+	expect(portability).toContain(secondAgent.path)
+	expect(portability.length).toBeLessThan(3500)
+	expect(portabilityGuideHref).toBe('/guides/portability')
 })

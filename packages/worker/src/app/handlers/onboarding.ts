@@ -4,6 +4,7 @@ import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	loadOnboardingAccessWin,
+	loadOnboardingAccessWinMemorySubject,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
@@ -90,12 +91,15 @@ async function attachOnboardingProgress(
 	username: string,
 	onboarding: OnboardingLoaderData,
 ) {
-	const [hasAccessWin, persistedPackageKodyId] = await Promise.all([
-		loadOnboardingAccessWin(env, userId),
-		loadPersistedPackageKodyId(env, userId),
-	])
+	const [hasAccessWin, persistedPackageKodyId, accessWinMemorySubject] =
+		await Promise.all([
+			loadOnboardingAccessWin(env, userId),
+			loadPersistedPackageKodyId(env, userId),
+			loadOnboardingAccessWinMemorySubject(env, userId),
+		])
 	onboarding.hasAccessWin = hasAccessWin
 	onboarding.persistedPackageKodyId = persistedPackageKodyId
+	onboarding.accessWinMemorySubject = accessWinMemorySubject
 	onboarding.checklist = await loadChecklist(
 		env,
 		userId,

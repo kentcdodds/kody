@@ -20,7 +20,8 @@ Agent notes — for AI agents driving the optional email loop from this page:
 - Onboarding Step 1 is Connect your agent (`/onboarding/step-1`). Step 2 is Make
   something useful (`/onboarding/step-2`): one prompt that retrieves
   `search({ entity: "onboarding:guide" })`. Step 3 is Connect a second agent
-  (`/onboarding/step-3`) and reuses what Step 2 made. Hosted OAuth is not the
+  (`/onboarding/step-3`) and reuses what Step 2 made via
+  `search({ entity: "portability:guide" })`. Hosted OAuth is not the
   onboarding path. The optional climax after that is /guides/quick-example
   (ad hoc execute → persist → own). Use this guide only when the person wants
   the email-and-memories loop.
@@ -137,7 +138,8 @@ The email loop is done. Offer one concrete next step and let them choose:
 - **Make something useful.** If they have not finished onboarding Step 2, send
   them to `/onboarding/step-2` on the same origin this guide came from, or open
   `search({ entity: "onboarding:guide" })`. After a first win, Step 3 is
-  `/onboarding/step-3` so a second agent can reuse that same thing, or
+  `/onboarding/step-3` so a second agent can reuse that same thing
+  (`search({ entity: "portability:guide" })`), or
   `search({ entity: "quick_example:guide" })` for one ad hoc execute then
   persist.
 - **Ask what they want automated** and open
