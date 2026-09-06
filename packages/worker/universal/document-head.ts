@@ -360,6 +360,10 @@ const routeDocumentHeads = {
 		'onboarding',
 		'Get started',
 	),
+	[routePattern(routes.onboardingStep3Agent)]: publicPageHead(
+		'onboarding',
+		'Get started',
+	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),

@@ -64,6 +64,11 @@ test('step 1 agent choice is remembered for step 2, but not-listed is not', () =
 
 		rememberOnboardingSelectedAgent('chatgpt')
 		expect(readRememberedOnboardingSelectedAgent()).toBe('chatgpt')
+
+		// Opening Not listed is the overflow picker, not a new first agent.
+		rememberOnboardingSelectedAgent('other')
+		expect(readRememberedOnboardingSelectedAgent()).toBe('chatgpt')
+		expect(store.get(onboardingSelectedAgentSessionKey)).toBe('chatgpt')
 	} finally {
 		restoreBrowserStubs()
 	}

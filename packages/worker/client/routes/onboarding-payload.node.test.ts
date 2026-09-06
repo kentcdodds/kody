@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { emptyOnboardingSessionMilestones } from '#universal/onboarding-process.ts'
 import {
 	clearOnboardingPayloadCache,
 	fetchOnboardingPayload,
@@ -14,7 +13,8 @@ const payload = {
 	setupPrompt: '',
 	discoveryPrompt: '',
 	persistPrompt: '',
-	milestones: emptyOnboardingSessionMilestones,
+	hasAccessWin: false,
+	hasSecondMcpClient: false,
 	hasMcpClient: false,
 	emailVerified: false,
 	needsOnboarding: true,
@@ -60,7 +60,7 @@ test('onboarding payload fetch coalesces in flight and reuses the warm cache', a
 	}
 })
 
-test('fresh fetch skips the warm cache so progress polls see live milestones', async () => {
+test('fresh fetch skips the warm cache so progress polls see live access wins', async () => {
 	clearOnboardingPayloadCache()
 	const originalFetch = globalThis.fetch
 	const calls: Array<string> = []

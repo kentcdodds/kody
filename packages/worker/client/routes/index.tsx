@@ -303,6 +303,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.onboardingStep2)]: onboardingRouteLoader,
 	[routePattern(routes.onboardingStep2Service)]: onboardingRouteLoader,
 	[routePattern(routes.onboardingStep3)]: onboardingRouteLoader,
+	[routePattern(routes.onboardingStep3Agent)]: onboardingRouteLoader,
 	[routePattern(routes.connectOauth)]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.connectOauthRouteLoader,
@@ -529,6 +530,7 @@ export const clientRoutes = {
 	[routePattern(routes.onboardingStep2)]: <OnboardingRoute />,
 	[routePattern(routes.onboardingStep2Service)]: <OnboardingRoute />,
 	[routePattern(routes.onboardingStep3)]: <OnboardingRoute />,
+	[routePattern(routes.onboardingStep3Agent)]: <OnboardingRoute />,
 	[routePattern(routes.pendingVerification)]: (
 		<LazyAuthRoute render={(m) => <m.PendingVerificationRoute />} />
 	),

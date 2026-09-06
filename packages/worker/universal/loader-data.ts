@@ -10,12 +10,10 @@ import {
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
-import { type OnboardingSessionMilestoneState } from '#universal/onboarding-process.ts'
 import {
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingFeaturedMcpServerId,
-	type OnboardingServiceChooserPick,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	type SignupMode,
@@ -940,8 +938,10 @@ export type OnboardingLoaderData = {
 	discoveryPrompt: string
 	/** Step 3 paste: ad hoc execute, then persist as a package. */
 	persistPrompt: string
-	/** Live first-session milestones derived from existing account activity. */
-	milestones: OnboardingSessionMilestoneState
+	/** True when the account has a memory, execute, or saved package. */
+	hasAccessWin: boolean
+	/** True when the account has two or more inbound MCP OAuth grants. */
+	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
@@ -1841,7 +1841,6 @@ export type AppLoaderData = {
 	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
 	onboardingAgentChooser?: OnboardingAgentChooserPick
-	onboardingServiceChooser?: OnboardingServiceChooserPick
 	signupMode?: SignupMode
 }
 

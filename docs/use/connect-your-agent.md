@@ -126,18 +126,17 @@ ChatGPT desktop, Grok CLI, Copilot, OpenCode, Devin, Pi, OpenClaw, and similar)
 is usually smoother because those hosts can edit files and iterate on code more
 easily.
 
-## Give Kody Access, then persist a first build
+## Give Kody access, then prove it travels
 
-After the connection works, Get started Step 2 is **Give Kody access**: pick
-Notion, Linear, Atlassian, Stripe, Sentry, or Canva, then connect it. Connect
-authorizes the service and copies the matching official helper into your
-account. You run that owned copy — official `@kody/*` listings are a catalog,
-not something a person account invokes live. Not listed is for anything else
-with an API.
+After the connection works, Get started Step 2 is **Give Kody access**: short
+prompts you paste into the agent you just connected. The agent teaches one idea
+(memory, execute, packages, or durable surfaces), asks what it is for in your
+life, and does a small win in your Kody account. Agents retrieve
+`search({ entity: "onboarding:guide" })` for depth.
 
-Step 3 copies a prompt that asks your agent to run one ad hoc request, then
-persist that working code as a package you own. If nothing fits, use **Choose
-your own adventure** to copy an open-ended setup prompt.
+Step 3 is **Connect a second agent** from a different ecosystem. Same-vendor
+hosts stay unavailable. After you pick one, copy the portability proof so the
+new agent reuses a memory, package, or ask from the first.
 
 ## Where to go next
 

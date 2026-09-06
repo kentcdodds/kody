@@ -3,6 +3,7 @@ import { type Action } from 'remix/router'
 import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
+	loadOnboardingAccessWin,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
@@ -17,14 +18,12 @@ import {
 } from '#mcp/capabilities/mcp-servers/shared.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { loadOnboardingMilestones } from '#mcp/onboarding-milestones.ts'
 import {
 	attachOnboardingMcpPackageListings,
 	firstConnectedOnboardingWorkspaceLabel,
 	listDisconnectedOnboardingFeaturedMcpServers,
 	listOnboardingCustomMcpServers,
 	overlayOnboardingFeaturedMcpServers,
-	pickOnboardingServiceChooser,
 } from '#universal/onboarding-mcp-chooser.ts'
 import { firstInstalledOnboardingExampleName } from '#universal/onboarding-examples.ts'
 import {
@@ -69,6 +68,7 @@ export async function loadChecklist(
 	userId: string,
 	username: string,
 	hasMcpClient: boolean,
+	options?: { hasAccessWin?: boolean; hasSecondMcpClient?: boolean },
 ): Promise<OnboardingChecklistLoaderData> {
 	const [checklist, dismissed] = await Promise.all([
 		deriveOnboardingChecklist({
@@ -76,10 +76,36 @@ export async function loadChecklist(
 			userId,
 			emailVerified: true,
 			hasMcpClient,
+			hasAccessWin: options?.hasAccessWin,
+			hasSecondMcpClient: options?.hasSecondMcpClient,
 		}),
 		readOnboardingChecklistDismissed({ env, userId }),
 	])
 	return { username, items: checklist.items, dismissed }
+}
+
+async function attachOnboardingProgress(
+	env: Env,
+	userId: string,
+	username: string,
+	onboarding: OnboardingLoaderData,
+) {
+	const [hasAccessWin, persistedPackageKodyId] = await Promise.all([
+		loadOnboardingAccessWin(env, userId),
+		loadPersistedPackageKodyId(env, userId),
+	])
+	onboarding.hasAccessWin = hasAccessWin
+	onboarding.persistedPackageKodyId = persistedPackageKodyId
+	onboarding.checklist = await loadChecklist(
+		env,
+		userId,
+		username,
+		onboarding.hasMcpClient,
+		{
+			hasAccessWin,
+			hasSecondMcpClient: onboarding.hasSecondMcpClient,
+		},
+	)
 }
 
 export async function loadPersistedPackageKodyId(
@@ -283,7 +309,6 @@ export function createOnboardingHandler(env: Env) {
 					loaderData: {
 						onboarding,
 						onboardingAgentChooser: pickOnboardingAgentChooser(),
-						onboardingServiceChooser: pickOnboardingServiceChooser(),
 					},
 					serverTiming,
 				})
@@ -304,20 +329,12 @@ export function createOnboardingHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				...chooser,
 			})
-			;[
-				onboarding.checklist,
-				onboarding.persistedPackageKodyId,
-				onboarding.milestones,
-			] = await Promise.all([
-				loadChecklist(
-					env,
-					user.mcpUser.userId,
-					user.username,
-					onboarding.hasMcpClient,
-				),
-				loadPersistedPackageKodyId(env, user.mcpUser.userId),
-				loadOnboardingMilestones(env, user.mcpUser.userId),
-			])
+			await attachOnboardingProgress(
+				env,
+				user.mcpUser.userId,
+				user.username,
+				onboarding,
+			)
 			return renderAppPage({
 				request,
 				env,
@@ -328,7 +345,6 @@ export function createOnboardingHandler(env: Env) {
 						serverTiming,
 					),
 					onboardingAgentChooser: pickOnboardingAgentChooser(),
-					onboardingServiceChooser: pickOnboardingServiceChooser(),
 				},
 				serverTiming,
 			})
@@ -340,6 +356,7 @@ export function createOnboardingHandler(env: Env) {
 		| typeof routes.onboardingStep2
 		| typeof routes.onboardingStep2Service
 		| typeof routes.onboardingStep3
+		| typeof routes.onboardingStep3Agent
 	>
 }
 
@@ -397,20 +414,12 @@ export function createOnboardingApiHandler(env: Env) {
 				...chooser,
 			})
 			if (user.emailVerified) {
-				;[
-					onboarding.checklist,
-					onboarding.persistedPackageKodyId,
-					onboarding.milestones,
-				] = await Promise.all([
-					loadChecklist(
-						env,
-						user.mcpUser.userId,
-						user.username,
-						onboarding.hasMcpClient,
-					),
-					loadPersistedPackageKodyId(env, user.mcpUser.userId),
-					loadOnboardingMilestones(env, user.mcpUser.userId),
-				])
+				await attachOnboardingProgress(
+					env,
+					user.mcpUser.userId,
+					user.username,
+					onboarding,
+				)
 			}
 			return jsonResponse(
 				await withOnboardingHighlights(env, onboarding, serverTiming),

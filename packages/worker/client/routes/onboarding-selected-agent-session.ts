@@ -1,10 +1,10 @@
 /**
  * Browser-session store for the Step 1 agent the visitor actually picked.
  *
- * Step 2 URLs do not carry the agent, and the onboarding payload only has
- * `hasMcpClient` — not a step-1 display name. Remember the explicit choice
- * so `/onboarding/step-2/:service` can say "Copy this prompt to Cursor…"
- * instead of inventing a host from raw MCP client ids (`claude-ai`).
+ * Step 2 and Step 3 URLs do not carry the first agent, and the onboarding
+ * payload only has grant counts — not a step-1 display name. Remember the
+ * explicit choice so Step 2 can say "Copy a prompt to Cursor…" and Step 3
+ * can grey the same-ecosystem family.
  */
 
 import {
@@ -32,9 +32,12 @@ function asSelectedAgent(value: unknown): McpClientKind | null {
 }
 
 export function rememberOnboardingSelectedAgent(agent: McpClientKind) {
+	if (!isBrowserRuntime()) return
+	// `other` is the overflow / generic-MCP path, not a first-agent identity.
+	// Visiting /onboarding/step-1/not-listed must not wipe a named pick —
+	// Step 3 greying and the same-ecosystem deep-link guard both read this.
 	const stored = asSelectedAgent(agent)
 	if (!stored) return
-	if (!isBrowserRuntime()) return
 	browserRemembered = stored
 	setSessionStorageItem(onboardingSelectedAgentSessionKey, stored)
 }

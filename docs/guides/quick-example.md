@@ -2,10 +2,10 @@
 id: quick_example
 title: First build — ad hoc execute, then persist
 summary:
-  Agent playbook after Give Kody Access: run one useful ad hoc execute against
-  something they gave Kody access to (or whatever they ask for if they
-  skipped), show the result, persist that working code as a package they own,
-  and offer optional triggers without recommending one.
+  Agent playbook after Give Kody access (`/onboarding/step-2`) or Connect your
+  agent (`/onboarding/step-1`): run one useful ad hoc execute, show the result,
+  persist that working code as a package they own, and offer optional triggers
+  without recommending one.
 category: platform
 ---
 
@@ -14,9 +14,10 @@ category: platform
 <!--
 Agent notes — for AI agents driving the first build from this page:
 
-- The person already gave Kody access on /onboarding Step 2 (official MCP
-  remotes, or Show more / ask-your-agent), or skipped so they could try an ad
-  hoc request first. They run an owned copy, not kody:@kody/*.
+- The person already connected a host on /onboarding/step-1 and may have
+  pasted a Step 2 teach prompt (Give Kody access). They run an owned copy, not
+  kody:@kody/*. Prefer `search({ entity: "onboarding:guide" })` if they are
+  still in first-run.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.
 - Keep messages short — under roughly 120 words.
@@ -38,7 +39,7 @@ This guide is the playbook for a Kody account's first build: run one useful ad
 hoc request, then save that working code as a package the person owns — after
 they give Kody access, or after they skip that step.
 
-The person may have arrived from `/onboarding` Step 2 ("Give Kody Access") on
+The person may have arrived from `/onboarding` Step 2 ("Give Kody access") on
 the same origin this guide was fetched from. They can paste a prompt into their
 agent as soon as they reach that step.
 

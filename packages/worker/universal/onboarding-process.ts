@@ -8,13 +8,6 @@ import {
 	type McpClientKind,
 	isMcpClientKind,
 } from '#universal/onboarding-mcp-clients.ts'
-import {
-	type OnboardingServiceChoice,
-	isOnboardingServiceChoice,
-	onboardingFeaturedMcpServerById,
-	onboardingNotListedServiceId,
-	onboardingServiceLabel,
-} from '#universal/onboarding-mcp-chooser.ts'
 import { routes } from '#universal/routes.ts'
 
 export const onboardingStepPaths = {
@@ -23,6 +16,8 @@ export const onboardingStepPaths = {
 	step1Agent: '/onboarding/step-1/:agent',
 	step2: '/onboarding/step-2',
 	step2Service: '/onboarding/step-2/:service',
+	step3: '/onboarding/step-3',
+	step3Agent: '/onboarding/step-3/:agent',
 } as const
 
 export const onboardingNotListedSegment = 'not-listed'
@@ -38,7 +33,13 @@ export const onboardingWizardSteps = [
 		number: 2,
 		path: onboardingStepPaths.step2,
 		panelId: 'onboarding-step-2',
-		label: 'Give Kody Access',
+		label: 'Give Kody access',
+	},
+	{
+		number: 3,
+		path: onboardingStepPaths.step3,
+		panelId: 'onboarding-step-3',
+		label: 'Connect a second agent',
 	},
 ] as const
 
@@ -48,7 +49,6 @@ export type OnboardingWizardStepNumber =
 export type OnboardingLocation = {
 	step: OnboardingWizardStepNumber
 	agent: McpClientKind | null
-	service: OnboardingServiceChoice | null
 	valid: boolean
 }
 
@@ -66,10 +66,16 @@ export const onboardingChecklistItems = [
 		wizardStep: 1,
 	},
 	{
-		id: 'connect-integration',
-		label: 'Give Kody Access',
+		id: 'give-access',
+		label: 'Give Kody access',
 		searchLabel: 'give Kody access',
 		wizardStep: 2,
+	},
+	{
+		id: 'connect-second-agent',
+		label: 'Connect a second agent',
+		searchLabel: 'connect a second agent',
+		wizardStep: 3,
 	},
 	{
 		id: 'install-starter',
@@ -110,144 +116,106 @@ export const firstWinAlignment = {
 export const onboardingUnconnectedNotice =
 	'Your agent cannot do anything in Kody yet.'
 
-/** Step 2 picker index (`/onboarding/step-2` with no service). */
-export const onboardingAccessPickerLede =
-	'Kody works best when you give it access to your stuff.'
+/** Agent-retrievable first-run guide (bundled + `search({ entity })`). */
+export const onboardingGuideSlug = 'onboarding'
+export const onboardingGuideEntity = 'onboarding:guide'
+export const onboardingGuideHref = '/guides/onboarding'
 
-/**
- * Step 2 selected-service lede. Uses the step-1 display name when we know
- * it; otherwise "your agent". Do not pass "Not listed" / "Other".
- */
+export const onboardingGuideFetchHint = `For depth, search({ entity: "${onboardingGuideEntity}" }) or open ${onboardingGuideHref}.`
+
+export const onboardingAccessLede =
+	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste a prompt so your agent can teach one idea, ask what it is for in your life, and do a small win there. It is not a service gateway.'
+
 export function onboardingAccessSelectedLede(agentLabel: string | null) {
 	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
-	return `Copy this prompt to ${name}, and it will help you get set up.`
+	return `Copy a prompt to ${name}. It will teach one idea, ask 1–2 questions to find your use, and do a small win in Kody.`
 }
 
-export const onboardingConnectedPrompt = "I'm set up with Kody. Help me use it."
-
-export const onboardingNotListedAnything =
-	'You can integrate Kody with anything. Just ask your agent.'
-
-export const onboardingSessionMilestones = [
+export const onboardingTeachConcepts = [
+	{
+		id: 'home-and-memory',
+		title: 'Home and memory',
+		prompt: [
+			"I'm on Kody onboarding.",
+			'Tell me in two sentences that Kody is the home my agents share — memory, secrets, packages, jobs, workflows, and apps — not a gateway for connecting APIs.',
+			'Ask 1–2 questions to find what I want to remember across agents.',
+			'Save one memory from my answer.',
+			'Success: I can say what Kody is for me, and a memory exists in my account.',
+			onboardingGuideFetchHint,
+		].join(' '),
+	},
 	{
 		id: 'execute',
-		label: 'Run your first execute',
-		how: 'Use execute for a small one-off so I can see it work.',
+		title: 'Execute',
+		prompt: [
+			"I'm on Kody onboarding.",
+			"Teach me that execute runs one-off work in Kody's cloud, not on my laptop.",
+			'Ask 1–2 questions to find a small useful call.',
+			'Run that execute.',
+			'Success: I see a real result from Kody cloud.',
+			onboardingGuideFetchHint,
+		].join(' '),
 	},
 	{
-		id: 'access',
-		label: 'Connect an integration or MCP server',
-		how: 'Add an official MCP server or an integration I already use.',
+		id: 'packages',
+		title: 'Packages',
+		prompt: [
+			"I'm on Kody onboarding.",
+			'Teach me that a package is owned code I save and invoke from any MCP host.',
+			'Ask 1–2 questions to find something worth keeping.',
+			'Persist one small package from that.',
+			'Success: I own a package I can call from this agent or another.',
+			onboardingGuideFetchHint,
+		].join(' '),
 	},
 	{
-		id: 'secret',
-		label: 'Create a secret',
-		how: 'Create a stored secret for a credential I already have. Never ask me to paste the secret value in chat.',
-	},
-	{
-		id: 'email-send',
-		label: 'Send yourself an email',
-		how: 'Send me an email through Kody.',
-	},
-	{
-		id: 'email-receive',
-		label: 'Receive an email',
-		how: 'Get a message into my Kody inbox so inbound mail is working.',
-	},
-	{
-		id: 'job',
-		label: 'Set up a scheduled job',
-		how: 'Create a package-owned scheduled job I can keep.',
+		id: 'durable-surfaces',
+		title: 'Apps, workflows, jobs, secrets',
+		prompt: [
+			"I'm on Kody onboarding.",
+			'Teach me apps, workflows, and jobs as event-driven surfaces (webhooks and events first; a schedule is optional), and that secrets are usable by packages but never readable by you.',
+			'Ask 1–2 questions to find a trigger or credential I already have.',
+			'Do one small win — name a secret, sketch a webhook, or skip if none.',
+			"Success: I know how work continues when I'm not in chat.",
+			onboardingGuideFetchHint,
+		].join(' '),
 	},
 ] as const
 
-export type OnboardingSessionMilestoneId =
-	(typeof onboardingSessionMilestones)[number]['id']
+export type OnboardingTeachConceptId =
+	(typeof onboardingTeachConcepts)[number]['id']
 
-export type OnboardingSessionMilestoneState = Record<
-	OnboardingSessionMilestoneId,
-	boolean
->
-
-export const emptyOnboardingSessionMilestones = {
-	execute: false,
-	access: false,
-	secret: false,
-	'email-send': false,
-	'email-receive': false,
-	job: false,
-} satisfies OnboardingSessionMilestoneState
-
-export function onboardingSessionMilestonesComplete(
-	milestones: OnboardingSessionMilestoneState,
-) {
-	return onboardingSessionMilestones.every((item) => milestones[item.id])
-}
-
-export function onboardingSessionMilestonesEqual(
-	left: OnboardingSessionMilestoneState,
-	right: OnboardingSessionMilestoneState,
-) {
-	return onboardingSessionMilestones.every(
-		(item) => left[item.id] === right[item.id],
-	)
-}
-
-export function onboardingMilestonesHeading(agentLabel: string | null) {
-	const name = agentLabel?.trim() ? agentLabel.trim() : 'your agent'
-	return `Here are the tasks for ${name}.`
-}
-
-export function remainingOnboardingSessionMilestoneLabels(
-	milestones: OnboardingSessionMilestoneState,
-): Array<string> {
-	return onboardingSessionMilestones
-		.filter((item) => !milestones[item.id])
-		.map((item) => item.label)
-}
-
-export function onboardingSessionMilestoneInstruction(
-	id: OnboardingSessionMilestoneId,
-): string {
-	const item = onboardingSessionMilestones.find(
-		(candidate) => candidate.id === id,
-	)
+export function onboardingTeachPrompt(id: OnboardingTeachConceptId): string {
+	const item = onboardingTeachConcepts.find((candidate) => candidate.id === id)
 	if (!item) {
-		throw new Error(`Unknown onboarding session milestone ${id}`)
+		throw new Error(`Unknown onboarding teach concept ${id}`)
 	}
-	return `${item.label}. ${item.how}`
+	return item.prompt
 }
 
-export function onboardingSessionMilestonePrompt(
-	id: OnboardingSessionMilestoneId,
-): string {
-	return `I'm finishing Kody onboarding. Help me complete this remaining step: ${onboardingSessionMilestoneInstruction(id)}`
-}
+export const onboardingSecondAgentLede =
+	'Connect an agent from a different ecosystem. Same-vendor hosts stay unavailable so you can prove Kody travels.'
 
-/**
- * One pasteable leftover-onboarding prompt for the step-2 footer. Reuses the
- * same per-milestone instruction text as a single clipboard copy. Returns
- * null when nothing remains.
- */
-export function onboardingRemainingMilestonesPrompt(
-	milestones: OnboardingSessionMilestoneState,
-	agentLabel: string | null,
-): string | null {
-	const remaining = onboardingSessionMilestones.filter(
-		(item) => !milestones[item.id],
-	)
-	if (remaining.length === 0) return null
-	const name = agentLabel?.trim()
-	const lead = name ? `${name}, I'm` : `I'm`
-	if (remaining.length === 1) {
-		const only = remaining[0]
-		if (!only) return null
-		return `${lead} finishing Kody onboarding. Help me complete this remaining step: ${onboardingSessionMilestoneInstruction(only.id)}`
-	}
-	const lines = remaining
-		.map((item) => `- ${onboardingSessionMilestoneInstruction(item.id)}`)
-		.join('\n')
-	return `${lead} finishing Kody onboarding. Help me complete these remaining steps:\n${lines}`
+export const onboardingPortabilityProofPrompt = [
+	'I just connected you as a second agent.',
+	'Kody is the home we share.',
+	'Reuse one memory, package, or ask from my first agent (or from Step 2) and show it works here.',
+	"One short proof — don't restart setup.",
+	onboardingGuideFetchHint,
+].join(' ')
+
+export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
+
+export function remainingOnboardingWizardLabels(input: {
+	hasMcpClient: boolean
+	hasAccessWin: boolean
+	hasSecondMcpClient: boolean
+}): Array<string> {
+	const remaining: Array<string> = []
+	if (!input.hasMcpClient) remaining.push('Connect your agent')
+	if (!input.hasAccessWin) remaining.push('Give Kody access')
+	if (!input.hasSecondMcpClient) remaining.push('Connect a second agent')
+	return remaining
 }
 
 export function formatOnboardingSearchNotice(
@@ -256,74 +224,13 @@ export function formatOnboardingSearchNotice(
 ): string | null {
 	if (remainingLabels.length === 0) return null
 	const count = remainingLabels.length
-	return `Onboarding: ${count} step${count === 1 ? '' : 's'} left — ${remainingLabels.join(', ')}. Details and dismissal: ${baseUrl}/onboarding`
+	return `Onboarding: ${count} step${count === 1 ? '' : 's'} left — ${remainingLabels.join(', ')}. Kody is the home your agents share, not a gateway. Details: ${baseUrl}/onboarding`
 }
-
-export const onboardingUseKodyPromptOauthPatFollowUp =
-	'MCP is easier; OAuth or a PAT is more powerful. Ask whether I want a quick test or extra time for more control. If I want a package, communitySearch for a close public one to fork or adapt.'
-
-/**
- * Points the copied first-build prompt at integrations.sh directly (site
- * or public MCP). Do not tell the agent to fork or install a package.
- */
-export function onboardingIntegrationsShFollowUp(serviceLabel: string) {
-	return `Ask integrations.sh what ${serviceLabel} needs: https://integrations.sh or MCP at https://integrations.sh/mcp.`
-}
-
-export const onboardingCustomServicePlaceholder = 'this service'
-
-export function onboardingUseKodyPrompt(
-	serviceLabel: string | null,
-	options?: { hasOauthPatAlternative?: boolean },
-) {
-	if (!serviceLabel) return onboardingConnectedPrompt
-	const base = `Help me use Kody with ${serviceLabel}.`
-	const integrations = onboardingIntegrationsShFollowUp(serviceLabel)
-	if (options?.hasOauthPatAlternative) {
-		return `${base} ${onboardingUseKodyPromptOauthPatFollowUp} ${integrations}`
-	}
-	return `${base} ${integrations}`
-}
-
-export function onboardingUseKodyPromptForCustomName(name: string) {
-	const label = name.trim() || onboardingCustomServicePlaceholder
-	return onboardingUseKodyPrompt(label, { hasOauthPatAlternative: true })
-}
-
-export function onboardingUseKodyPromptForService(
-	service: OnboardingServiceChoice | null,
-) {
-	if (!service) return onboardingConnectedPrompt
-	if (service === onboardingNotListedServiceId) {
-		return onboardingUseKodyPromptForCustomName('')
-	}
-	const server = onboardingFeaturedMcpServerById(service)
-	return onboardingUseKodyPrompt(onboardingServiceLabel(service), {
-		hasOauthPatAlternative: server?.hasOauthPatAlternative ?? false,
-	})
-}
-
-/** Last-step footer primary. Not "Copy prompt" — that label is the CopyCard. */
-export const onboardingCopyRemainingTasksLabel = 'Copy remaining tasks'
 
 export const onboardingExplorePackagesLabel = 'Explore packages'
 
 export function onboardingExplorePackagesHref() {
 	return routes.community.href()
-}
-
-/**
- * Last-step footer copy payload: leftover session milestones, never the
- * service-setup CopyCard. Picker / unconnected / all-done → null.
- */
-export function onboardingAccessFooterCopyValue(input: {
-	hasMcpClient: boolean
-	selectedService: OnboardingServiceChoice | null
-	milestones: OnboardingSessionMilestoneState
-	agentLabel: string | null
-}): string | null {
-	if (!input.hasMcpClient || !input.selectedService) return null
-	return onboardingRemainingMilestonesPrompt(input.milestones, input.agentLabel)
 }
 
 export function onboardingWizardStepByNumber(
@@ -365,10 +272,10 @@ export function isOnboardingPagePath(pathname: string) {
 		pathname === onboardingStepPaths.index ||
 		pathname === onboardingStepPaths.step1 ||
 		pathname === onboardingStepPaths.step2 ||
-		pathname === '/onboarding/step-3' ||
+		pathname === onboardingStepPaths.step3 ||
 		pathname.startsWith(`${onboardingStepPaths.step1}/`) ||
 		pathname.startsWith(`${onboardingStepPaths.step2}/`) ||
-		pathname.startsWith('/onboarding/step-3/')
+		pathname.startsWith(`${onboardingStepPaths.step3}/`)
 	)
 }
 
@@ -383,10 +290,6 @@ export function readOnboardingAgentSegment(
 	return isMcpClientKind(segment) ? segment : null
 }
 
-export function onboardingServicePathSegment(service: OnboardingServiceChoice) {
-	return service
-}
-
 export function onboardingAgentHref(agent: McpClientKind | null, search = '') {
 	if (!agent) return `${routes.onboardingStep1.href()}${search}`
 	return `${routes.onboardingStep1Agent.href({
@@ -394,13 +297,13 @@ export function onboardingAgentHref(agent: McpClientKind | null, search = '') {
 	})}${search}`
 }
 
-export function onboardingServiceHref(
-	service: OnboardingServiceChoice | null,
+export function onboardingSecondAgentHref(
+	agent: McpClientKind | null,
 	search = '',
 ) {
-	if (!service) return `${routes.onboardingStep2.href()}${search}`
-	return `${routes.onboardingStep2Service.href({
-		service: onboardingServicePathSegment(service),
+	if (!agent) return `${routes.onboardingStep3.href()}${search}`
+	return `${routes.onboardingStep3Agent.href({
+		agent: onboardingAgentPathSegment(agent),
 	})}${search}`
 }
 
@@ -411,34 +314,36 @@ export function parseOnboardingPathname(
 		pathname === onboardingStepPaths.index ||
 		pathname === onboardingStepPaths.step1
 	) {
-		return { step: 1, agent: null, service: null, valid: true }
+		return { step: 1, agent: null, valid: true }
 	}
 	if (pathname === onboardingStepPaths.step2) {
-		return { step: 2, agent: null, service: null, valid: true }
+		return { step: 2, agent: null, valid: true }
 	}
-	if (
-		pathname === '/onboarding/step-3' ||
-		pathname.startsWith('/onboarding/step-3/')
-	) {
-		return { step: 2, agent: null, service: null, valid: false }
+	if (pathname === onboardingStepPaths.step3) {
+		return { step: 3, agent: null, valid: true }
 	}
 	const step1Prefix = `${onboardingStepPaths.step1}/`
 	if (pathname.startsWith(step1Prefix)) {
 		const segment = pathname.slice(step1Prefix.length)
 		if (!segment || segment.includes('/')) {
-			return { step: 1, agent: null, service: null, valid: false }
+			return { step: 1, agent: null, valid: false }
 		}
 		const agent = readOnboardingAgentSegment(segment)
-		return { step: 1, agent, service: null, valid: agent != null }
+		return { step: 1, agent, valid: agent != null }
 	}
 	const step2Prefix = `${onboardingStepPaths.step2}/`
 	if (pathname.startsWith(step2Prefix)) {
-		const segment = pathname.slice(step2Prefix.length)
+		// Former service-picker URLs land on the rewritten Step 2.
+		return { step: 2, agent: null, valid: false }
+	}
+	const step3Prefix = `${onboardingStepPaths.step3}/`
+	if (pathname.startsWith(step3Prefix)) {
+		const segment = pathname.slice(step3Prefix.length)
 		if (!segment || segment.includes('/')) {
-			return { step: 2, agent: null, service: null, valid: false }
+			return { step: 3, agent: null, valid: false }
 		}
-		const service = isOnboardingServiceChoice(segment) ? segment : null
-		return { step: 2, agent: null, service, valid: service != null }
+		const agent = readOnboardingAgentSegment(segment)
+		return { step: 3, agent, valid: agent != null }
 	}
 	return null
 }

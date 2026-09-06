@@ -46,6 +46,8 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		setupPrompt: '',
 		discoveryPrompt: '',
 		persistPrompt: '',
+		hasAccessWin: false,
+		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,

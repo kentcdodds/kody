@@ -2,8 +2,8 @@ import {
 	readCurrentEntitlementResourceUsage,
 	type EntitlementUsageEnv,
 } from '#worker/entitlements/service.ts'
-import { listIntegrations } from '#worker/integrations/service.ts'
-import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
+import { userHasFirstExecute } from '#worker/identity/activation-stamps.ts'
 import {
 	type OnboardingChecklistItem,
 	type OnboardingChecklistItemId,
@@ -25,23 +25,48 @@ export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> & EntitlementUsageEnv
 
 /**
  * Compute the checklist from existing signals: MCP OAuth grants (passed in),
- * saved integrations or MCP servers, and the saved-package meter. Individual
- * probe failures fail open to "not done" so a storage blip never breaks
- * onboarding surfaces. The optional first-win email loop is not a checklist
- * item.
+ * a Step 2 access win (memory, execute, or package), a second host grant,
+ * and the saved-package meter. Individual probe failures fail open to "not
+ * done" so a storage blip never breaks onboarding surfaces. The optional
+ * first-win email loop is not a checklist item.
  */
+export async function loadOnboardingAccessWin(
+	env: OnboardingChecklistEnv,
+	userId: string,
+): Promise<boolean> {
+	const [execute, memories, savedPackages] = await Promise.all([
+		userHasFirstExecute(env.APP_DB, userId).catch(() => false),
+		listMemoriesByUserId(env.APP_DB, userId, { limit: 1 })
+			.then((rows) => rows.length > 0)
+			.catch(() => false),
+		readCurrentEntitlementResourceUsage({
+			db: env.APP_DB,
+			env,
+			userId,
+			resource: 'saved_packages',
+			now: new Date(),
+		})
+			.then((count) => count > 0)
+			.catch(() => false),
+	])
+	return execute || memories || savedPackages
+}
+
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
 	userId: string
 	emailVerified: boolean
 	hasMcpClient: boolean
+	hasAccessWin?: boolean
+	hasSecondMcpClient?: boolean
 	now?: Date
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
 	const now = input.now ?? new Date()
-	const [integrations, mcpServers, savedPackages] = await Promise.all([
-		listIntegrations({ env, userId }).catch(() => [] as Array<unknown>),
-		listMcpServerSettings({ env, userId }).catch(() => [] as Array<unknown>),
+	const [hasAccessWin, savedPackages] = await Promise.all([
+		input.hasAccessWin === undefined
+			? loadOnboardingAccessWin(env, userId)
+			: input.hasAccessWin,
 		readCurrentEntitlementResourceUsage({
 			db: env.APP_DB,
 			env,
@@ -54,9 +79,10 @@ export async function deriveOnboardingChecklist(input: {
 	const items: Array<OnboardingChecklistItem> = [
 		{ id: 'verify-email', done: input.emailVerified },
 		{ id: 'connect-agent', done: input.hasMcpClient },
+		{ id: 'give-access', done: hasAccessWin === true },
 		{
-			id: 'connect-integration',
-			done: integrations.length > 0 || mcpServers.length > 0,
+			id: 'connect-second-agent',
+			done: input.hasSecondMcpClient === true,
 		},
 		{ id: 'install-starter', done: savedPackages > 0 },
 	]

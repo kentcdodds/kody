@@ -19,17 +19,17 @@ import { routes } from '#universal/routes.ts'
 import {
 	isOnboardingPagePath,
 	onboardingIndexRedirectHref,
-	onboardingSessionMilestones,
-	onboardingSessionMilestonesComplete,
-	onboardingSessionMilestonesEqual,
+	onboardingSecondAgentHref,
 	onboardingStepPaths,
 	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
 	parseOnboardingPathname,
-	emptyOnboardingSessionMilestones,
-	type OnboardingSessionMilestoneState,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
+import {
+	onboardingGreyedSecondAgents,
+	resolveOnboardingStep3SelectedAgent,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -44,17 +44,13 @@ import {
 	resolveOnboardingAgentChooser,
 } from '#client/routes/onboarding-agent-chooser-session.ts'
 import {
-	rememberOnboardingServiceChooser,
-	resolveOnboardingServiceChooser,
-} from '#client/routes/onboarding-service-chooser-session.ts'
-import {
 	readRememberedOnboardingSelectedAgent,
 	rememberOnboardingSelectedAgent,
 } from '#client/routes/onboarding-selected-agent-session.ts'
-import { type OnboardingServiceChooserPick } from '#universal/onboarding-mcp-chooser.ts'
 import {
-	OnboardingAccessPanel,
+	renderAccessPanel,
 	renderConnectAgentPanel,
+	renderSecondAgentPanel,
 } from '#client/routes/onboarding-wizard-panels.tsx'
 import { renderWizardStepsNav } from '#client/routes/onboarding-wizard-chrome.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
@@ -63,31 +59,17 @@ import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 /**
- * Onboarding wizard: shirt-pattern head, two-step stepper (Connect your
- * agent · Give Kody Access), one surface panel at a time with hand-tilted
- * mascot art. Step 1 picks one agent, then shows only that host.
- *
- * Step 2 is prompt-first. The first row is official MCP remotes plus Not
- * listed. Picking a chip flavors a short copyable prompt. Not listed is
- * "ask your agent" plus optional logos that only update that prompt.
- * Hosted OAuth is not the path. Live milestones observe account activity.
+ * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
+ * agent · Give Kody access · Connect a second agent), one surface panel at
+ * a time with hand-tilted mascot art. Step 1 picks one agent. Step 2 is
+ * short teach prompts plus a retrievable guide. Step 3 looks like Step 1
+ * and greys the same-ecosystem family, then folds in a portability proof.
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
 
 function isOnboardingPath(href: string) {
 	return isOnboardingPagePath(new URL(href, 'http://localhost').pathname)
-}
-
-function retainOnboardingMilestones(
-	current: OnboardingSessionMilestoneState,
-	incoming: OnboardingSessionMilestoneState,
-): OnboardingSessionMilestoneState {
-	const next = { ...incoming }
-	for (const item of onboardingSessionMilestones) {
-		next[item.id] = current[item.id] || incoming[item.id]
-	}
-	return next
 }
 
 function readOnboardingLocation(href: string) {
@@ -127,7 +109,6 @@ export async function onboardingRouteLoader(
 	return {
 		onboarding: payload,
 		onboardingAgentChooser: resolveOnboardingAgentChooser(),
-		onboardingServiceChooser: resolveOnboardingServiceChooser(),
 	}
 }
 
@@ -139,8 +120,8 @@ export function OnboardingRoute(handle: Handle) {
 	let mcpHighlights: OnboardingPayload['mcpHighlights'] = {}
 	let discoveryPrompt = ''
 	let hasMcpClient = false
-	let milestones: OnboardingSessionMilestoneState =
-		emptyOnboardingSessionMilestones
+	let hasAccessWin = false
+	let hasSecondMcpClient = false
 	let initializedStep = false
 	let pendingAdvanceToAccess = false
 	// Panel entrances only play for real step changes, never on the first
@@ -153,16 +134,18 @@ export function OnboardingRoute(handle: Handle) {
 		source: 'live' | 'snapshot' = 'snapshot',
 	) {
 		const wasConnected = hasMcpClient
-		const incomingMilestones =
-			payload.milestones ?? emptyOnboardingSessionMilestones
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
 		discoveryPrompt = payload.discoveryPrompt
-		milestones =
+		hasAccessWin =
 			source === 'snapshot'
-				? retainOnboardingMilestones(milestones, incomingMilestones)
-				: incomingMilestones
+				? hasAccessWin || payload.hasAccessWin
+				: payload.hasAccessWin
+		hasSecondMcpClient =
+			source === 'snapshot'
+				? hasSecondMcpClient || payload.hasSecondMcpClient
+				: payload.hasSecondMcpClient
 		hasMcpClient =
 			source === 'snapshot'
 				? hasMcpClient || payload.hasMcpClient
@@ -213,7 +196,6 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	let agentChooser: OnboardingAgentChooserPick | null = null
-	let serviceChooser: OnboardingServiceChooserPick | null = null
 
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
@@ -290,7 +272,6 @@ export function OnboardingRoute(handle: Handle) {
 			applyPayload(payload, 'live')
 			flushPendingAdvanceToAccess(false)
 			if (!agentChooser) agentChooser = resolveOnboardingAgentChooser()
-			if (!serviceChooser) serviceChooser = resolveOnboardingServiceChooser()
 			loadLatch.markLoaded(onboardingDataHref(href))
 			handle.update()
 		} catch (error) {
@@ -304,8 +285,8 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	// Users typically keep this page open while their MCP client connects
-	// or first-session milestones land, so poll the same JSON endpoint until
-	// those signals arrive without a manual refresh.
+	// or a Step 2 win / second grant lands, so poll the same JSON endpoint
+	// until those signals arrive without a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -319,7 +300,7 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function pollOnboardingProgress() {
 		if (pollInFlight || status !== 'ready' || !loggedIn) return
-		if (hasMcpClient && onboardingSessionMilestonesComplete(milestones)) {
+		if (hasMcpClient && hasAccessWin && hasSecondMcpClient) {
 			return
 		}
 		if (document.hidden) return
@@ -330,11 +311,10 @@ export function OnboardingRoute(handle: Handle) {
 				fresh: true,
 			})
 			if (handle.signal.aborted || !payload) return
-			const nextMilestones =
-				payload.milestones ?? emptyOnboardingSessionMilestones
 			if (
 				payload.hasMcpClient === hasMcpClient &&
-				onboardingSessionMilestonesEqual(nextMilestones, milestones)
+				payload.hasAccessWin === hasAccessWin &&
+				payload.hasSecondMcpClient === hasSecondMcpClient
 			) {
 				return
 			}
@@ -373,15 +353,6 @@ export function OnboardingRoute(handle: Handle) {
 			rememberOnboardingAgentChooser(chooserData)
 			agentChooser = chooserData
 		}
-		const serviceChooserData = tryConsumeRouteLoaderData(
-			handle,
-			'onboardingServiceChooser',
-			href,
-		)
-		if (serviceChooserData) {
-			rememberOnboardingServiceChooser(serviceChooserData)
-			serviceChooser = serviceChooserData
-		}
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
 		if (routeData.loggedIn && !routeData.emailVerified) {
@@ -419,16 +390,33 @@ export function OnboardingRoute(handle: Handle) {
 				? 2
 				: 1
 		const selectedAgent = location?.valid ? location.agent : null
-		const selectedService = location?.valid ? location.service : null
-		if (selectedAgent) rememberOnboardingSelectedAgent(selectedAgent)
-		const selectedAgentLabel = selectedAgent
-			? onboardingAgentLabel(selectedAgent)
+		if (activeStep === 1 && selectedAgent) {
+			rememberOnboardingSelectedAgent(selectedAgent)
+		}
+		const firstAgent = readRememberedOnboardingSelectedAgent()
+		const visibleSelectedAgent =
+			activeStep === 3
+				? resolveOnboardingStep3SelectedAgent(firstAgent, selectedAgent)
+				: selectedAgent
+		if (
+			activeStep === 3 &&
+			selectedAgent &&
+			visibleSelectedAgent == null &&
+			typeof window !== 'undefined'
+		) {
+			handle.queueTask((signal) => {
+				if (signal.aborted) return
+				navigate(onboardingSecondAgentHref(null, readRouterSearch(handle)), {
+					preventScrollReset: true,
+				})
+			})
+		}
+		const selectedAgentLabel = visibleSelectedAgent
+			? onboardingAgentLabel(visibleSelectedAgent)
 			: null
-		const rememberedAgent =
-			selectedAgent ?? readRememberedOnboardingSelectedAgent()
 		const connectedAgentLabel =
-			rememberedAgent && rememberedAgent !== 'other'
-				? onboardingAgentLabel(rememberedAgent)
+			firstAgent && firstAgent !== 'other'
+				? onboardingAgentLabel(firstAgent)
 				: null
 
 		return (
@@ -464,8 +452,8 @@ export function OnboardingRoute(handle: Handle) {
 						{renderWizardStepsNav({
 							activeStep,
 							hasMcpClient,
-							milestonesComplete:
-								onboardingSessionMilestonesComplete(milestones),
+							accessWin: hasAccessWin,
+							hasSecondMcpClient,
 							stepHref: (step) => buildStepHref(step, currentHref),
 						})}
 
@@ -476,7 +464,7 @@ export function OnboardingRoute(handle: Handle) {
 									onSelectStep: selectStep,
 									hasMcpClient,
 									loggedIn,
-									selectedAgent,
+									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,
 									agentChooser,
 									mcpServerUrl,
@@ -485,20 +473,35 @@ export function OnboardingRoute(handle: Handle) {
 								})
 							: null}
 
-						{activeStep === 2 ? (
-							<OnboardingAccessPanel
-								entrance={panelEntrance()}
-								activeStep={activeStep}
-								onSelectStep={selectStep}
-								hasMcpClient={hasMcpClient}
-								discoveryPrompt={discoveryPrompt}
-								milestones={milestones}
-								selectedService={selectedService}
-								serviceChooser={serviceChooser}
-								selectedAgentLabel={connectedAgentLabel}
-								search={readRouterSearch(handle)}
-							/>
-						) : null}
+						{activeStep === 2
+							? renderAccessPanel({
+									entrance: panelEntrance(),
+									activeStep,
+									onSelectStep: selectStep,
+									hasMcpClient,
+									discoveryPrompt,
+									selectedAgentLabel: connectedAgentLabel,
+									search: readRouterSearch(handle),
+								})
+							: null}
+
+						{activeStep === 3
+							? renderSecondAgentPanel({
+									entrance: panelEntrance(),
+									activeStep,
+									onSelectStep: selectStep,
+									loggedIn,
+									hasSecondMcpClient,
+									firstAgent,
+									selectedAgent: visibleSelectedAgent,
+									selectedAgentLabel,
+									greyedAgents: onboardingGreyedSecondAgents(firstAgent),
+									agentChooser,
+									mcpServerUrl,
+									mcpHighlights: mcpHighlights ?? {},
+									search: readRouterSearch(handle),
+								})
+							: null}
 					</>
 				) : null}
 			</section>

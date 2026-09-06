@@ -25,6 +25,7 @@ const eagerPatterns = new Set([
 	routePattern(routes.onboardingStep2),
 	routePattern(routes.onboardingStep2Service),
 	routePattern(routes.onboardingStep3),
+	routePattern(routes.onboardingStep3Agent),
 ])
 
 function concretePathForPattern(pattern: string) {

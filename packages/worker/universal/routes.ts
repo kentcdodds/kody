@@ -223,6 +223,7 @@ export const routes = route({
 	onboardingStep2: '/onboarding/step-2',
 	onboardingStep2Service: '/onboarding/step-2/:service',
 	onboardingStep3: '/onboarding/step-3',
+	onboardingStep3Agent: '/onboarding/step-3/:agent',
 	onboardingApi: '/onboarding.json',
 	onboardingChecklistDismissPost: post('/onboarding/checklist-dismiss.json'),
 	resetPassword: '/reset-password',

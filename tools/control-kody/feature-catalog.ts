@@ -47,6 +47,8 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/onboarding/step-1/:agent',
 			'/onboarding/step-2',
 			'/onboarding/step-2/:service',
+			'/onboarding/step-3',
+			'/onboarding/step-3/:agent',
 		],
 		apis: ['/onboarding.json', '/onboarding/checklist-dismiss.json'],
 	},

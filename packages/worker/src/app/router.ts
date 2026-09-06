@@ -321,6 +321,7 @@ export function createAppRouter(env: Env) {
 			onboardingStep2: createOnboardingHandler(env),
 			onboardingStep2Service: createOnboardingHandler(env),
 			onboardingStep3: createOnboardingHandler(env),
+			onboardingStep3Agent: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),
 			onboardingChecklistDismissPost:
 				createOnboardingChecklistDismissHandler(env),

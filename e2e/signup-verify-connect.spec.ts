@@ -136,7 +136,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		).toBeVisible()
 
 		const stepsNav = page.getByRole('navigation', { name: 'Onboarding steps' })
-		await stepsNav.getByRole('link', { name: '2 Give Kody Access' }).click()
+		await stepsNav.getByRole('link', { name: '2 Give Kody access' }).click()
 		await expect(page.getByTestId('onboarding-connect-mcp')).toBeVisible()
 		await expect(
 			page.getByTestId('onboarding-unconnected-prompt'),
@@ -144,6 +144,14 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		await expect(
 			page.getByText('Your agent cannot do anything in Kody yet.'),
 		).toBeVisible()
+
+		await stepsNav
+			.getByRole('link', { name: '3 Connect a second agent' })
+			.click()
+		await expect(
+			page.getByTestId('onboarding-connect-second-agent'),
+		).toBeVisible()
+		await expect(page.getByTestId('onboarding-agent-picker')).toBeVisible()
 
 		await stepsNav.getByRole('link', { name: '1 Connect your agent' }).click()
 		await expect(page.getByTestId('onboarding-agent-picker')).toBeVisible()

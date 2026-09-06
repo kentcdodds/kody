@@ -317,8 +317,8 @@ test('search tool returns compact query markdown while preserving structured aux
 		}
 		matches: Array<{ type: string; entityRef?: string }>
 	}
-	// Two retriever warnings. The onboarding leftover-steps notice fails
-	// open when this mock env cannot load session milestones.
+	// Two retriever warnings. The leftover notice stays quiet when this
+	// mock env cannot resolve OAuth grant helpers.
 	expect(result.warnings).toHaveLength(2)
 	expect(result.warnings.join('\n')).not.toContain('Onboarding:')
 	expect(result.matches).toEqual([

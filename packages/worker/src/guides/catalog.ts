@@ -39,6 +39,7 @@ import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
 import values from '../../../../docs/guides/values.md'
 import whatIsKody from '../../../../docs/guides/what-is-kody.md'
+import onboarding from '../../../../docs/guides/onboarding.md'
 
 /**
  * Static guide sources. The canonical markdown lives in `docs/guides/` (also
@@ -50,6 +51,7 @@ import whatIsKody from '../../../../docs/guides/what-is-kody.md'
  */
 const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
+	{ slug: 'onboarding', raw: onboarding },
 	{ slug: 'how-kody-works', raw: howKodyWorks },
 	{ slug: 'kody-factory', raw: kodyFactory },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },

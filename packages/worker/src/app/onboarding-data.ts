@@ -13,11 +13,6 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
-import {
-	emptyOnboardingSessionMilestones,
-	type OnboardingSessionMilestoneState,
-} from '#universal/onboarding-process.ts'
-
 export {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
@@ -37,22 +32,32 @@ type OnboardingEnv = {
 }
 
 /**
- * True when the user has at least one inbound MCP OAuth grant (an AI host
- * authorized against this account). Listing failures treat the user as still
+ * Inbound MCP OAuth grant count. Listing failures treat the user as still
  * needing onboarding so the banner stays available.
+ */
+export async function countMcpOAuthGrants(
+	env: OnboardingEnv,
+	stableUserId: string,
+) {
+	const helpers = env.OAUTH_PROVIDER
+	if (!helpers) return 0
+	try {
+		const page = await helpers.listUserGrants(stableUserId)
+		return page.items.length
+	} catch {
+		return 0
+	}
+}
+
+/**
+ * True when the user has at least one inbound MCP OAuth grant (an AI host
+ * authorized against this account).
  */
 export async function userHasMcpOAuthGrants(
 	env: OnboardingEnv,
 	stableUserId: string,
 ) {
-	const helpers = env.OAUTH_PROVIDER
-	if (!helpers) return false
-	try {
-		const page = await helpers.listUserGrants(stableUserId)
-		return page.items.length > 0
-	} catch {
-		return false
-	}
+	return (await countMcpOAuthGrants(env, stableUserId)) > 0
 }
 
 export function loadPublicOnboardingData(input: {
@@ -76,7 +81,8 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		milestones: emptyOnboardingSessionMilestones,
+		hasAccessWin: false,
+		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -103,7 +109,7 @@ export async function loadOnboardingData(input: {
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
 	/** Non-featured MCP servers the viewer added, loaded by the handler. */
 	customMcpServers?: Array<OnboardingCustomMcpServer>
-	/** Contextual Step 3 persist prompt, computed by the handler. */
+	/** Contextual persist prompt, computed by the handler. */
 	persistContext?: {
 		connectedWorkspaceLabel?: string | null
 		installedExampleName?: string | null
@@ -112,13 +118,12 @@ export async function loadOnboardingData(input: {
 	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
-	/** Live first-session milestones, computed by the handler. */
-	milestones?: OnboardingSessionMilestoneState
+	/** Memory, execute, or saved package — a Step 2 win. */
+	hasAccessWin?: boolean
 }): Promise<OnboardingLoaderData> {
-	const hasMcpClient = await userHasMcpOAuthGrants(
-		input.env,
-		input.stableUserId,
-	)
+	const grantCount = await countMcpOAuthGrants(input.env, input.stableUserId)
+	const hasMcpClient = grantCount > 0
+	const hasSecondMcpClient = grantCount >= 2
 	// Incomplete setup means either the account email is still unverified or no
 	// MCP host has authorized yet. An unverified account with a leftover grant
 	// still needs onboarding until verification is finished.
@@ -153,7 +158,8 @@ export async function loadOnboardingData(input: {
 					installedExampleName: input.persistContext?.installedExampleName,
 				})
 			: '',
-		milestones: input.milestones ?? emptyOnboardingSessionMilestones,
+		hasAccessWin: input.hasAccessWin ?? false,
+		hasSecondMcpClient,
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,

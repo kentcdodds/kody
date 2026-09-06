@@ -1,34 +1,30 @@
 import { expect, test } from 'vitest'
 import {
-	onboardingAccessFooterCopyValue,
-	onboardingAccessSelectedLede,
-	onboardingExplorePackagesHref,
-	onboardingRemainingMilestonesPrompt,
-	onboardingSessionMilestoneInstruction,
-	onboardingMilestonesHeading,
-	onboardingSessionMilestonePrompt,
 	formatOnboardingSearchNotice,
-	remainingOnboardingSessionMilestoneLabels,
+	onboardingAccessSelectedLede,
 	onboardingAgentHref,
 	onboardingChecklistItemHref,
-	onboardingIndexRedirectHref,
 	onboardingChecklistItems,
-	onboardingServiceHref,
+	onboardingExplorePackagesHref,
+	onboardingGuideEntity,
+	onboardingGuideFetchHint,
+	onboardingIndexRedirectHref,
+	onboardingPortabilityProofPrompt,
+	onboardingSecondAgentHref,
+	onboardingTeachConcepts,
+	onboardingTeachPrompt,
 	onboardingWizardStepHref,
-	emptyOnboardingSessionMilestones,
-	onboardingSessionMilestonesEqual,
-	onboardingIntegrationsShFollowUp,
-	onboardingUseKodyPromptForCustomName,
-	onboardingUseKodyPromptForService,
 	onboardingWizardSteps,
 	parseOnboardingPathname,
+	remainingOnboardingWizardLabels,
 } from './onboarding-process.ts'
 
 test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingChecklistItems.map((item) => item.id)).toEqual([
 		'verify-email',
 		'connect-agent',
-		'connect-integration',
+		'give-access',
+		'connect-second-agent',
 		'install-starter',
 	])
 	expect(onboardingChecklistItemHref('verify-email', 'kentcdodds')).toBe(
@@ -52,21 +48,7 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 		'/@kentcdodds',
 	)
 	expect(onboardingWizardStepHref(2)).toBe('/onboarding/step-2')
-	expect(onboardingUseKodyPromptForService('github')).toContain(
-		'communitySearch',
-	)
-	expect(onboardingUseKodyPromptForService('x')).toContain('x.com')
-	expect(onboardingUseKodyPromptForService('x')).not.toContain(
-		'Help me use Kody with X.',
-	)
-	expect(onboardingUseKodyPromptForCustomName('Todoist')).toContain('Todoist')
-	expect(onboardingUseKodyPromptForCustomName('Todoist')).toContain(
-		'integrations.sh',
-	)
-	expect(onboardingUseKodyPromptForCustomName('')).toContain('this service')
-	expect(onboardingIntegrationsShFollowUp('Zoom')).toContain(
-		'https://integrations.sh/mcp',
-	)
+	expect(onboardingWizardStepHref(3)).toBe('/onboarding/step-3')
 	expect(onboardingAgentHref('cursor')).toBe('/onboarding/step-1/cursor')
 	expect(onboardingAgentHref('other')).toBe('/onboarding/step-1/not-listed')
 	expect(onboardingAgentHref('cursor', '?redirectTo=%2F')).toBe(
@@ -75,214 +57,121 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingAgentHref(null, '?redirectTo=%2F')).toBe(
 		'/onboarding/step-1?redirectTo=%2F',
 	)
-	expect(onboardingServiceHref('notion')).toBe('/onboarding/step-2/notion')
-	expect(onboardingServiceHref('not-listed')).toBe(
-		'/onboarding/step-2/not-listed',
+	expect(onboardingSecondAgentHref('claude-code')).toBe(
+		'/onboarding/step-3/claude-code',
 	)
-	expect(onboardingServiceHref('x')).toBe('/onboarding/step-2/x')
-	expect(onboardingServiceHref('notion', '?redirectTo=%2F')).toBe(
-		'/onboarding/step-2/notion?redirectTo=%2F',
+	expect(onboardingSecondAgentHref('other')).toBe(
+		'/onboarding/step-3/not-listed',
 	)
-	expect(onboardingServiceHref(null, '?redirectTo=%2F')).toBe(
-		'/onboarding/step-2?redirectTo=%2F',
+	expect(onboardingSecondAgentHref(null, '?redirectTo=%2F')).toBe(
+		'/onboarding/step-3?redirectTo=%2F',
 	)
-	expect(parseOnboardingPathname('/onboarding/step-2/not-listed')).toEqual({
-		step: 2,
-		agent: null,
-		service: 'not-listed',
-		valid: true,
-	})
-	expect(parseOnboardingPathname('/onboarding/step-2/x')).toEqual({
-		step: 2,
-		agent: null,
-		service: 'x',
-		valid: true,
-	})
 	expect(parseOnboardingPathname('/onboarding')).toEqual({
 		step: 1,
 		agent: null,
-		service: null,
 		valid: true,
 	})
 	expect(parseOnboardingPathname('/onboarding/step-1/cursor')).toEqual({
 		step: 1,
 		agent: 'cursor',
-		service: null,
 		valid: true,
 	})
 	expect(parseOnboardingPathname('/onboarding/step-1/not-listed')).toEqual({
 		step: 1,
 		agent: 'other',
-		service: null,
 		valid: true,
 	})
 	expect(parseOnboardingPathname('/onboarding/step-1/nope')?.valid).toBe(false)
-	expect(parseOnboardingPathname('/onboarding/step-2/canva')).toEqual({
+	expect(parseOnboardingPathname('/onboarding/step-2')).toEqual({
 		step: 2,
 		agent: null,
-		service: 'canva',
 		valid: true,
 	})
-	expect(parseOnboardingPathname('/onboarding/step-2/github')).toEqual({
+	expect(parseOnboardingPathname('/onboarding/step-2/notion')).toEqual({
 		step: 2,
 		agent: null,
-		service: 'github',
+		valid: false,
+	})
+	expect(parseOnboardingPathname('/onboarding/step-3')).toEqual({
+		step: 3,
+		agent: null,
 		valid: true,
 	})
+	expect(parseOnboardingPathname('/onboarding/step-3/claude-code')).toEqual({
+		step: 3,
+		agent: 'claude-code',
+		valid: true,
+	})
+	expect(parseOnboardingPathname('/onboarding/step-3/not-listed')).toEqual({
+		step: 3,
+		agent: 'other',
+		valid: true,
+	})
+	expect(parseOnboardingPathname('/onboarding/step-3/nope')?.valid).toBe(false)
 	expect(parseOnboardingPathname('/account')).toBeNull()
-	expect(parseOnboardingPathname('/onboarding/step-3')?.valid).toBe(false)
 	expect(onboardingWizardSteps.map((step) => step.path)).toEqual([
 		'/onboarding/step-1',
 		'/onboarding/step-2',
+		'/onboarding/step-3',
 	])
-})
-
-test('last-step footer copies remaining milestone tasks, not the service CopyCard', () => {
 	expect(onboardingExplorePackagesHref()).toBe('/community')
-	const leftover = {
-		...emptyOnboardingSessionMilestones,
-		execute: true,
-	}
-	const composed = onboardingRemainingMilestonesPrompt(leftover, 'Cursor')
-	expect(composed).toContain("Cursor, I'm finishing Kody onboarding.")
-	expect(composed).toContain('these remaining steps:')
-	expect(composed).toContain(
-		`- ${onboardingSessionMilestoneInstruction('access')}`,
-	)
-	expect(composed).toContain(
-		`- ${onboardingSessionMilestoneInstruction('job')}`,
-	)
-	expect(composed).not.toContain(
-		onboardingSessionMilestoneInstruction('execute'),
-	)
-	expect(composed).not.toContain(onboardingUseKodyPromptForService('notion'))
-	expect(
-		onboardingRemainingMilestonesPrompt(
-			{
-				execute: true,
-				access: true,
-				secret: true,
-				'email-send': true,
-				'email-receive': true,
-				job: true,
-			},
-			'Cursor',
-		),
-	).toBeNull()
-	expect(
-		onboardingRemainingMilestonesPrompt(
-			{
-				...emptyOnboardingSessionMilestones,
-				execute: true,
-				access: true,
-				secret: true,
-				'email-send': true,
-				'email-receive': true,
-			},
-			null,
-		),
-	).toBe(onboardingSessionMilestonePrompt('job'))
-	expect(
-		onboardingAccessFooterCopyValue({
-			hasMcpClient: true,
-			selectedService: null,
-			milestones: leftover,
-			agentLabel: 'Cursor',
-		}),
-	).toBeNull()
-	expect(
-		onboardingAccessFooterCopyValue({
-			hasMcpClient: true,
-			selectedService: 'notion',
-			milestones: leftover,
-			agentLabel: 'Cursor',
-		}),
-	).toBe(composed)
-	expect(
-		onboardingAccessFooterCopyValue({
-			hasMcpClient: true,
-			selectedService: 'notion',
-			milestones: {
-				execute: true,
-				access: true,
-				secret: true,
-				'email-send': true,
-				'email-receive': true,
-				job: true,
-			},
-			agentLabel: 'Cursor',
-		}),
-	).toBeNull()
-	expect(
-		onboardingAccessFooterCopyValue({
-			hasMcpClient: false,
-			selectedService: 'notion',
-			milestones: leftover,
-			agentLabel: null,
-		}),
-	).toBeNull()
 })
 
-test('step 2 selected lede names the connected agent when we know it', () => {
+test('step 2 teach prompts stay brief and point at the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
-	expect(onboardingAccessSelectedLede('')).toContain('your agent')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
 	expect(onboardingAccessSelectedLede('Cursor')).not.toContain('your agent')
+	expect(onboardingTeachConcepts.map((item) => item.id)).toEqual([
+		'home-and-memory',
+		'execute',
+		'packages',
+		'durable-surfaces',
+	])
+	for (const item of onboardingTeachConcepts) {
+		expect(item.prompt.length).toBeLessThan(700)
+		expect(item.prompt).toContain("I'm on Kody onboarding.")
+		expect(item.prompt).toContain('Ask 1–2 questions')
+		expect(item.prompt).toContain('Success:')
+		expect(item.prompt).toContain(onboardingGuideFetchHint)
+		expect(item.prompt).toContain(onboardingGuideEntity)
+		expect(onboardingTeachPrompt(item.id)).toBe(item.prompt)
+	}
+	expect(onboardingTeachPrompt('home-and-memory')).toContain('not a gateway')
+	expect(onboardingTeachPrompt('execute')).toContain("Kody's cloud")
+	expect(onboardingTeachPrompt('packages')).toContain('any MCP host')
+	expect(onboardingTeachPrompt('durable-surfaces')).toContain('webhooks')
+	expect(onboardingTeachPrompt('durable-surfaces')).toContain(
+		'never readable by you',
+	)
+	expect(onboardingPortabilityProofPrompt).toContain('second agent')
+	expect(onboardingPortabilityProofPrompt).toContain('Reuse one memory')
+	expect(onboardingPortabilityProofPrompt).toContain(onboardingGuideEntity)
+	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
 })
 
-test('session milestone copy and search notice share leftover task labels', () => {
-	expect(onboardingMilestonesHeading(null)).toContain('your agent')
-	expect(onboardingMilestonesHeading('Cursor')).toContain('Cursor')
-	expect(onboardingMilestonesHeading('Cursor')).not.toContain('your agent')
+test('search leftover notice lists remaining wizard steps, not a quest', () => {
 	expect(
-		remainingOnboardingSessionMilestoneLabels({
-			...emptyOnboardingSessionMilestones,
-			execute: true,
-			access: true,
+		remainingOnboardingWizardLabels({
+			hasMcpClient: true,
+			hasAccessWin: false,
+			hasSecondMcpClient: false,
 		}),
-	).toEqual([
-		'Create a secret',
-		'Send yourself an email',
-		'Receive an email',
-		'Set up a scheduled job',
-	])
+	).toEqual(['Give Kody access', 'Connect a second agent'])
 	expect(
-		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
-			...emptyOnboardingSessionMilestones,
-			execute: true,
+		remainingOnboardingWizardLabels({
+			hasMcpClient: true,
+			hasAccessWin: true,
+			hasSecondMcpClient: true,
 		}),
-	).toBe(false)
-	expect(
-		onboardingSessionMilestonesEqual(
-			{ ...emptyOnboardingSessionMilestones, execute: true, secret: true },
-			{ ...emptyOnboardingSessionMilestones, execute: true, secret: true },
-		),
-	).toBe(true)
-	expect(
-		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
-			...emptyOnboardingSessionMilestones,
-			'email-send': true,
-		}),
-	).toBe(false)
-	expect(
-		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
-			...emptyOnboardingSessionMilestones,
-			'email-receive': true,
-		}),
-	).toBe(false)
-	expect(
-		onboardingSessionMilestonesEqual(emptyOnboardingSessionMilestones, {
-			...emptyOnboardingSessionMilestones,
-			job: true,
-		}),
-	).toBe(false)
+	).toEqual([])
 	const notice = formatOnboardingSearchNotice(
-		['Run your first execute', 'Create a secret'],
+		['Give Kody access', 'Connect a second agent'],
 		'https://kody.example',
 	)
 	expect(notice).toContain('2 steps left')
-	expect(notice).toContain('Run your first execute')
-	expect(notice).toContain('Create a secret')
+	expect(notice).toContain('Give Kody access')
+	expect(notice).toContain('Connect a second agent')
+	expect(notice).toContain('not a gateway')
 	expect(notice).toContain('https://kody.example/onboarding')
 	expect(formatOnboardingSearchNotice([], 'https://kody.example')).toBeNull()
 })
