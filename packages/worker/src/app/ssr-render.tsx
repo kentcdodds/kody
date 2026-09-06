@@ -16,6 +16,7 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
+import { loadSiteBannerLoaderData } from '#app/site-banner-ssr.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
@@ -94,6 +95,15 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
+	const siteBanner = await pushServerTiming(serverTiming, 'siteBanner', () =>
+		loadSiteBannerLoaderData({
+			request,
+			env,
+			session,
+			pathname: requestUrl.pathname,
+		}),
+	)
+	const pageLoaderData = { ...loaderData, siteBanner }
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientAssets = getClientEntryAssets(requestUrl.pathname)
 	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'
@@ -103,7 +113,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 	// domain; everything request-scoped keeps using getAppBaseUrl.
 	const origin = getCanonicalAppBaseUrl({ env, requestUrl: request.url })
 	const documentHead = absolutizeDocumentHead(
-		resolveDocumentHead(requestUrl.pathname, loaderData),
+		resolveDocumentHead(requestUrl.pathname, pageLoaderData),
 		origin,
 	)
 	if (title !== undefined) {
@@ -139,7 +149,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 					canonicalOrigin={origin}
 					url={url}
 					session={session}
-					loaderData={loaderData}
+					loaderData={pageLoaderData}
 					notFound={notFound}
 					unauthorized={unauthorized}
 					clientEntryHref={clientEntryHref}

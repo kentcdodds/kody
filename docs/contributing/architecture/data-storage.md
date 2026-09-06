@@ -438,6 +438,15 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
+- `site_banners` (`0042-site-banners.sql`): operator-owned site announcement
+  banners. Global config with **no `user_id`** (like feature flags). Holds copy,
+  look, severity, page targeting, audience, schedule, and dismiss settings.
+  `created_by` / `updated_by` are integer FKs to `users.id` and SET NULL on
+  account deletion. See [Site banners](./site-banners.md).
+- `site_banner_dismissals` (`0042-site-banners.sql`): per-user forever-dismiss
+  rows keyed by `(banner_id, user_id)` with `user_id` as an integer `users.id`
+  FK. Covered by account export/deletion as `db_user_id`. Anonymous dismissals
+  live only in the `kody_site_banner_dismiss` cookie.
 - `platform_provider_marks` (`0035-platform-provider-marks.sql`): operator-owned
   brand marks for saved integrations, keyed by `slug`, with no `user_id`.
   `aliases_json` holds extra provider keys and authorize hosts. `logo_key` /

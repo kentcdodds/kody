@@ -191,6 +191,7 @@ const routeDocumentHeads = {
 		'Admin reserved usernames',
 	),
 	[routePattern(routes.adminFeatureFlags)]: titleOnly('Admin feature flags'),
+	[routePattern(routes.adminBanners)]: titleOnly('Admin banners'),
 	[routePattern(routes.adminPlatformIntegrations)]: titleOnly(
 		'Admin platform integrations',
 	),
