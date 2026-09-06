@@ -13,6 +13,7 @@ export {
 	AdminFeatureFlagsRoute,
 	adminFeatureFlagsRouteLoader,
 } from './admin-feature-flags.tsx'
+export { AdminBannersRoute, adminBannersRouteLoader } from './admin-banners.tsx'
 export { AdminPlatformIntegrationsRoute } from './admin-platform-integrations.tsx'
 export { adminPlatformIntegrationsRouteLoader } from './admin-platform-integrations-shared.ts'
 export { AdminProviderMarksRoute } from './admin-provider-marks.tsx'

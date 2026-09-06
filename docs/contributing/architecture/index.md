@@ -65,6 +65,9 @@ smoke does not prove MCP execute health.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
+- [Site banners](./site-banners.md): operator-owned announcement banners with
+  page targeting, audience, priority, dismiss, and SSR rendering, managed at
+  `/admin/banners`.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects. The rubric for choosing between D1, a per-user Durable Object, and
   Analytics Engine is recorded in decision record

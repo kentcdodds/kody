@@ -67,6 +67,17 @@ test('anonymous HTML Cache API stores only cookie-less 200 HTML with the shared 
 	expect(
 		isAnonymousHtmlCacheRequest(
 			new Request('https://kody.codes/', {
+				headers: {
+					Cookie:
+						'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
+				},
+			}),
+			canonicalEnv,
+		),
+	).toBe(false)
+	expect(
+		isAnonymousHtmlCacheRequest(
+			new Request('https://kody.codes/', {
 				headers: { Authorization: 'Bearer x' },
 			}),
 			canonicalEnv,
