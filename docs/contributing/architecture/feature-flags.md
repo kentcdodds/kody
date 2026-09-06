@@ -82,8 +82,9 @@ public-ladder unique worker-day and Durable Object rows-read overage when
 soft-block. Legacy Standard/Pro stays unbilled. To dry-run without charging, set
 the **global** flag off at `/admin/feature-flags` (or `adminFeatureFlagSet`).
 Global off is a hard gate: a per-user on override cannot charge. A per-user off
-override still dry-runs that account while global is on. D1 evaluation failures
-fail closed (all flags off, so no charges).
+override still dry-runs that account while global is on. A percentage rollout is
+still globally on — in-bucket users charge. D1 evaluation failures fail closed
+(all flags off, so no charges).
 
 ## Success metrics
 

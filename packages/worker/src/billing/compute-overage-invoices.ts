@@ -36,13 +36,18 @@ import {
 import {
 	computeOverageInvoiceMetadataKey,
 	computeOverageInvoiceMonthMetadataKey,
+	computeOverageMeterDurableObjectRows,
+	computeOverageMeterMetadataKey,
+	computeOverageMeterUniqueWorkerDays,
 	createDraftInvoice,
 	createInvoiceItem,
 	finalizeInvoice,
 	getInvoice,
 	listCustomerInvoices,
+	listInvoiceItemsForInvoice,
 	payInvoice,
 	type StripeInvoice,
+	type StripeInvoiceItem,
 } from './stripe-client.ts'
 
 export const computeOverageInvoiceStatuses = [
@@ -424,17 +429,15 @@ async function settleOverageInvoice(input: {
 		})
 		await input.onDraftCreated(invoice.id)
 	}
-	if (invoice.amount_due <= 0) {
-		await addOverageInvoiceItems({
-			env: input.env,
-			userId: input.userId,
-			customerId: input.customerId,
-			invoiceId: invoice.id,
-			month: input.month,
-			overage: input.overage,
-			metadata,
-		})
-	}
+	await addOverageInvoiceItems({
+		env: input.env,
+		userId: input.userId,
+		customerId: input.customerId,
+		invoiceId: invoice.id,
+		month: input.month,
+		overage: input.overage,
+		metadata,
+	})
 	await finalizeInvoice(
 		input.env,
 		invoice.id,
@@ -481,26 +484,58 @@ async function addOverageInvoiceItems(input: {
 	overage: MonthlyComputeOverage
 	metadata: Record<string, string>
 }) {
-	if (input.overage.uniqueWorkerDayCents > 0) {
+	const existing = await listInvoiceItemsForInvoice(input.env, input.invoiceId)
+	if (
+		input.overage.uniqueWorkerDayCents > 0 &&
+		!invoiceHasOverageMeter(
+			existing,
+			computeOverageMeterUniqueWorkerDays,
+			'unique worker-day',
+		)
+	) {
 		await createInvoiceItem(input.env, {
 			customerId: input.customerId,
 			invoiceId: input.invoiceId,
 			amountCents: input.overage.uniqueWorkerDayCents,
 			description: `Kody unique worker-day overage (${input.month}): ${input.overage.billableUniqueWorkerDays} days above include`,
 			idempotencyKey: `kody-overage-uwd:${input.userId}:${input.month}`,
-			metadata: input.metadata,
+			metadata: {
+				...input.metadata,
+				[computeOverageMeterMetadataKey]: computeOverageMeterUniqueWorkerDays,
+			},
 		})
 	}
-	if (input.overage.durableObjectRowsReadCents > 0) {
+	if (
+		input.overage.durableObjectRowsReadCents > 0 &&
+		!invoiceHasOverageMeter(
+			existing,
+			computeOverageMeterDurableObjectRows,
+			'rows-read',
+		)
+	) {
 		await createInvoiceItem(input.env, {
 			customerId: input.customerId,
 			invoiceId: input.invoiceId,
 			amountCents: input.overage.durableObjectRowsReadCents,
 			description: `Kody Durable Object rows-read overage (${input.month}): ${input.overage.billableDurableObjectRowsRead} rows above include`,
 			idempotencyKey: `kody-overage-dorows:${input.userId}:${input.month}`,
-			metadata: input.metadata,
+			metadata: {
+				...input.metadata,
+				[computeOverageMeterMetadataKey]: computeOverageMeterDurableObjectRows,
+			},
 		})
 	}
+}
+
+function invoiceHasOverageMeter(
+	items: ReadonlyArray<StripeInvoiceItem>,
+	meter: string,
+	descriptionNeedle: string,
+): boolean {
+	return items.some((item) => {
+		if (item.metadata?.[computeOverageMeterMetadataKey] === meter) return true
+		return (item.description ?? '').includes(descriptionNeedle)
+	})
 }
 
 async function upsertLedgerRow(input: {

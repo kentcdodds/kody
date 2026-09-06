@@ -137,6 +137,12 @@ const invoiceItemSchema = object({
 	invoice: nullable(string()),
 	amount: number(),
 	currency: string(),
+	description: optional(string()),
+	metadata: optional(record(string(), string())),
+})
+
+const invoiceItemListSchema = object({
+	data: array(invoiceItemSchema),
 })
 
 export type StripeInvoice = InferOutput<typeof invoiceSchema>
@@ -144,6 +150,9 @@ export type StripeInvoiceItem = InferOutput<typeof invoiceItemSchema>
 
 export const computeOverageInvoiceMetadataKey = 'kody_compute_overage'
 export const computeOverageInvoiceMonthMetadataKey = 'kody_overage_month'
+export const computeOverageMeterMetadataKey = 'kody_overage_meter'
+export const computeOverageMeterUniqueWorkerDays = 'unique_worker_days'
+export const computeOverageMeterDurableObjectRows = 'durable_object_rows_read'
 
 // `amount` is the line's gross amount before discounts and before exclusive
 // tax; `discount_amounts` is only parsed so callers can see it exists. A
@@ -946,6 +955,31 @@ export async function listCustomerInvoices(
 	const parsed = parseSafe(invoiceListSchema, body)
 	if (!parsed.success) {
 		throw new StripeApiError('Unexpected Stripe invoice list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data
+}
+
+export async function listInvoiceItemsForInvoice(
+	env: StripeEnv,
+	invoiceId: string,
+): Promise<Array<StripeInvoiceItem>> {
+	const trimmed = invoiceId.trim()
+	if (!trimmed) {
+		throw new StripeApiError('Invoice id is required.', { status: 400 })
+	}
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/invoiceitems',
+		query: {
+			invoice: trimmed,
+			limit: '100',
+		},
+	})
+	const parsed = parseSafe(invoiceItemListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe invoice item list shape.', {
 			status: 502,
 		})
 	}

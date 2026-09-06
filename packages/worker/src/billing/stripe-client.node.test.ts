@@ -13,6 +13,7 @@ import {
 	createInvoiceItem,
 	getInvoice,
 	listCustomerInvoices,
+	listInvoiceItemsForInvoice,
 	createProratedRefundCreditNote,
 	finalizeInvoice,
 	payInvoice,
@@ -1330,6 +1331,39 @@ test('getInvoice and listCustomerInvoices read existing overage invoices', async
 		const listed = await listCustomerInvoices(env, 'cus_paid')
 		expect(listed).toHaveLength(1)
 		expect(listed[0]?.metadata?.kody_overage_month).toBe('2026-08')
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('listInvoiceItemsForInvoice reads items already on a draft', async () => {
+	const fetchStub = vi.fn(async (url: string | URL) => {
+		const parsed = new URL(String(url))
+		if (parsed.pathname === '/v1/invoiceitems') {
+			expect(parsed.searchParams.get('invoice')).toBe('in_listed')
+			return jsonResponse({
+				data: [
+					{
+						id: 'ii_uwd',
+						invoice: 'in_listed',
+						amount: 100,
+						currency: 'usd',
+						description: 'Kody unique worker-day overage',
+						metadata: { kody_overage_meter: 'unique_worker_days' },
+					},
+				],
+			})
+		}
+		return jsonResponse({ error: { message: 'unexpected' } }, 500)
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const items = await listInvoiceItemsForInvoice(
+			{ STRIPE_SECRET_KEY: 'sk_test_secret' },
+			'in_listed',
+		)
+		expect(items).toHaveLength(1)
+		expect(items[0]?.metadata?.kody_overage_meter).toBe('unique_worker_days')
 	} finally {
 		vi.unstubAllGlobals()
 	}

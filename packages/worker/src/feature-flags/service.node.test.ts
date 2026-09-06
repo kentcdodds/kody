@@ -6,6 +6,7 @@ import {
 	getFeatureFlagEvaluationsForUser,
 	getFeatureFlagsForUser,
 	isFeatureEnabled,
+	isFeatureGloballyEnabled,
 	listFeatureFlagsForAdmin,
 	setFeatureFlagGlobalState,
 	setFeatureFlagUserOverride,
@@ -307,6 +308,9 @@ test('global on/off and percentage rollout evaluation', async () => {
 	})
 	await expect(isFeatureEnabled(db, 'demo-indicator', 1)).resolves.toBe(true)
 	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(true)
+	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
+		true,
+	)
 
 	await setFeatureFlagGlobalState(db, {
 		key: 'demo-indicator',
@@ -349,6 +353,9 @@ test('global on/off and percentage rollout evaluation', async () => {
 	).resolves.toBe(false)
 	await expect(isFeatureEnabled(db, 'demo-indicator', null)).resolves.toBe(
 		false,
+	)
+	await expect(isFeatureGloballyEnabled(db, 'demo-indicator')).resolves.toBe(
+		true,
 	)
 
 	await expect(

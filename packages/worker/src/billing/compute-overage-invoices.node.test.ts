@@ -25,6 +25,7 @@ type Candidate = {
 	entitlement_ladder: string | null
 	stripe_customer_id: string | null
 	uniqueWorkerDays: number
+	durableObjectRowsRead?: number
 }
 
 function createBillingDb(input: {
@@ -83,6 +84,14 @@ function createBillingDb(input: {
 												metric: 'dynamic_worker_day',
 												event_count: candidate.uniqueWorkerDays,
 											},
+											...(candidate.durableObjectRowsRead
+												? [
+														{
+															metric: 'durable_object_rows_read',
+															event_count: candidate.durableObjectRowsRead,
+														},
+													]
+												: []),
 										]
 									: [],
 							}
@@ -161,6 +170,13 @@ function stripeInvoiceFetchStub(input: {
 		amount_due: number
 		metadata?: Record<string, string>
 	}>
+	existingItems?: Array<{
+		id: string
+		invoice: string
+		amount: number
+		description?: string
+		metadata?: Record<string, string>
+	}>
 	payShouldFail?: boolean
 }) {
 	return vi.fn(async (url: string | URL, init?: RequestInit) => {
@@ -190,6 +206,14 @@ function stripeInvoiceFetchStub(input: {
 			})
 		}
 		if (parsed.pathname.endsWith('/v1/invoiceitems')) {
+			if (method === 'GET') {
+				return jsonResponse({
+					data: (input.existingItems ?? []).map((item) => ({
+						currency: 'usd',
+						...item,
+					})),
+				})
+			}
 			return jsonResponse({
 				id: 'ii_paid_1',
 				invoice: input.createId ?? 'in_paid_1',
@@ -569,6 +593,82 @@ test('retry resumes the stored Stripe invoice instead of creating a second one',
 		expect(inserts.at(-1)).toMatchObject({
 			status: 'invoiced',
 			invoiceId: 'in_resume_1',
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('retry on a draft with amount_due still attaches the missing meter item', async () => {
+	const fetchStub = stripeInvoiceFetchStub({
+		createId: 'in_partial_1',
+		existing: [
+			{
+				id: 'in_partial_1',
+				status: 'draft',
+				amount_due: 100,
+			},
+		],
+		existingItems: [
+			{
+				id: 'ii_uwd',
+				invoice: 'in_partial_1',
+				amount: 100,
+				description:
+					'Kody unique worker-day overage (2026-08): 400 days above include',
+				metadata: { kody_overage_meter: 'unique_worker_days' },
+			},
+		],
+	})
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const userId = 'i'.repeat(64)
+		const { db, inserts } = createBillingDb({
+			candidates: [
+				{
+					id: 9,
+					stable_user_id: userId,
+					plan: 'standard',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stripe_customer_id: 'cus_paid',
+					uniqueWorkerDays:
+						planLimits.standard.maxUniqueWorkerDaysPerMonth + 400,
+					durableObjectRowsRead:
+						planLimits.standard.maxDurableObjectRowsReadPerMonth + 10_000_000,
+				},
+			],
+			ledger: new Map([
+				[
+					`${userId}:2026-08`,
+					{ status: 'failed', stripe_invoice_id: 'in_partial_1' },
+				],
+			]),
+		})
+		const result = await runComputeOverageBilling({
+			env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+			now: new Date('2026-09-02T12:00:00.000Z'),
+		})
+		expect(result).toMatchObject({
+			status: 'completed',
+			invoiced: 1,
+			failed: 0,
+		})
+		const itemPosts = fetchStub.mock.calls.filter(([url, init]) => {
+			const parsed = new URL(String(url), 'https://api.stripe.com')
+			return (
+				String((init as RequestInit | undefined)?.method ?? 'GET') === 'POST' &&
+				parsed.pathname.endsWith('/v1/invoiceitems')
+			)
+		})
+		expect(itemPosts).toHaveLength(1)
+		const itemBody = new URLSearchParams(
+			String((itemPosts[0]?.[1] as RequestInit | undefined)?.body),
+		)
+		expect(itemBody.get('description') ?? '').toContain('rows-read')
+		expect(inserts.at(-1)).toMatchObject({
+			status: 'invoiced',
+			invoiceId: 'in_partial_1',
 		})
 	} finally {
 		vi.unstubAllGlobals()
