@@ -19,13 +19,17 @@ import { routes } from '#universal/routes.ts'
 import {
 	isOnboardingPagePath,
 	onboardingIndexRedirectHref,
+	onboardingSecondAgentHref,
 	onboardingStepPaths,
 	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
 	parseOnboardingPathname,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
-import { onboardingGreyedSecondAgents } from '#universal/onboarding-agent-ecosystems.ts'
+import {
+	onboardingGreyedSecondAgents,
+	resolveOnboardingStep3SelectedAgent,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -389,10 +393,27 @@ export function OnboardingRoute(handle: Handle) {
 		if (activeStep === 1 && selectedAgent) {
 			rememberOnboardingSelectedAgent(selectedAgent)
 		}
-		const selectedAgentLabel = selectedAgent
-			? onboardingAgentLabel(selectedAgent)
-			: null
 		const firstAgent = readRememberedOnboardingSelectedAgent()
+		const visibleSelectedAgent =
+			activeStep === 3
+				? resolveOnboardingStep3SelectedAgent(firstAgent, selectedAgent)
+				: selectedAgent
+		if (
+			activeStep === 3 &&
+			selectedAgent &&
+			visibleSelectedAgent == null &&
+			typeof window !== 'undefined'
+		) {
+			handle.queueTask((signal) => {
+				if (signal.aborted) return
+				navigate(onboardingSecondAgentHref(null, readRouterSearch(handle)), {
+					preventScrollReset: true,
+				})
+			})
+		}
+		const selectedAgentLabel = visibleSelectedAgent
+			? onboardingAgentLabel(visibleSelectedAgent)
+			: null
 		const connectedAgentLabel =
 			firstAgent && firstAgent !== 'other'
 				? onboardingAgentLabel(firstAgent)
@@ -443,7 +464,7 @@ export function OnboardingRoute(handle: Handle) {
 									onSelectStep: selectStep,
 									hasMcpClient,
 									loggedIn,
-									selectedAgent,
+									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,
 									agentChooser,
 									mcpServerUrl,
@@ -472,7 +493,7 @@ export function OnboardingRoute(handle: Handle) {
 									loggedIn,
 									hasSecondMcpClient,
 									firstAgent,
-									selectedAgent,
+									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,
 									greyedAgents: onboardingGreyedSecondAgents(firstAgent),
 									agentChooser,

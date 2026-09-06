@@ -64,6 +64,10 @@ test('step 1 agent choice is remembered for step 2, but not-listed is not', () =
 
 		rememberOnboardingSelectedAgent('chatgpt')
 		expect(readRememberedOnboardingSelectedAgent()).toBe('chatgpt')
+
+		rememberOnboardingSelectedAgent('other')
+		expect(readRememberedOnboardingSelectedAgent()).toBeNull()
+		expect(store.get(onboardingSelectedAgentSessionKey)).toBeUndefined()
 	} finally {
 		restoreBrowserStubs()
 	}

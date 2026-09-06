@@ -68,6 +68,16 @@ export function isOnboardingSameEcosystemAgent(
 	return onboardingGreyedSecondAgents(firstAgent).includes(candidate)
 }
 
+/** Step 3 deep links to a same-ecosystem host fall back to the picker. */
+export function resolveOnboardingStep3SelectedAgent(
+	firstAgent: McpClientKind | null,
+	selectedAgent: McpClientKind | null,
+): McpClientKind | null {
+	if (!selectedAgent) return null
+	if (isOnboardingSameEcosystemAgent(firstAgent, selectedAgent)) return null
+	return selectedAgent
+}
+
 export function onboardingSameEcosystemDisabledReason(
 	firstAgent: McpClientKind,
 	firstAgentLabel: string,

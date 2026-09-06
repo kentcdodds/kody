@@ -32,9 +32,13 @@ function asSelectedAgent(value: unknown): McpClientKind | null {
 }
 
 export function rememberOnboardingSelectedAgent(agent: McpClientKind) {
+	if (!isBrowserRuntime()) return
+	if (agent === 'other') {
+		clearOnboardingSelectedAgentSession()
+		return
+	}
 	const stored = asSelectedAgent(agent)
 	if (!stored) return
-	if (!isBrowserRuntime()) return
 	browserRemembered = stored
 	setSessionStorageItem(onboardingSelectedAgentSessionKey, stored)
 }

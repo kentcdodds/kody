@@ -94,9 +94,15 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 test('search onboarding notice lists remaining wizard steps without writing dismissal', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
+	const envWithGrants = {
+		...env,
+		OAUTH_PROVIDER: {
+			listUserGrants: async () => ({ items: [] }),
+		},
+	}
 
 	const notice = await buildOnboardingSearchNotice({
-		env,
+		env: envWithGrants,
 		userId,
 		baseUrl: 'https://kody.example',
 	})
@@ -110,6 +116,18 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
 
 	await dismissOnboardingChecklist({ env, userId })
+	expect(
+		await buildOnboardingSearchNotice({
+			env: envWithGrants,
+			userId,
+			baseUrl: 'https://kody.example',
+		}),
+	).toBe(null)
+})
+
+test('search onboarding notice stays quiet when grant helpers cannot be resolved', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
 	expect(
 		await buildOnboardingSearchNotice({
 			env,

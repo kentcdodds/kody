@@ -5,6 +5,7 @@ import {
 	onboardingGreyedSecondAgents,
 	onboardingSameEcosystemDisabledReason,
 	onboardingSameEcosystemAgents,
+	resolveOnboardingStep3SelectedAgent,
 } from './onboarding-agent-ecosystems.ts'
 
 test('same-ecosystem greying follows vendor families, not agent kind', () => {
@@ -46,4 +47,14 @@ test('same-ecosystem greying follows vendor families, not agent kind', () => {
 	expect(onboardingSameEcosystemDisabledReason('cursor', 'Cursor')).toContain(
 		'You started with Cursor',
 	)
+})
+
+test('step 3 deep links drop same-ecosystem hosts and keep a different one', () => {
+	expect(resolveOnboardingStep3SelectedAgent('codex', 'chatgpt')).toBeNull()
+	expect(resolveOnboardingStep3SelectedAgent('codex', 'codex')).toBeNull()
+	expect(resolveOnboardingStep3SelectedAgent('codex', 'claude-code')).toBe(
+		'claude-code',
+	)
+	expect(resolveOnboardingStep3SelectedAgent(null, 'chatgpt')).toBe('chatgpt')
+	expect(resolveOnboardingStep3SelectedAgent('codex', null)).toBeNull()
 })

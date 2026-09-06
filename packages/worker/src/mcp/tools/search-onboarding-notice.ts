@@ -6,6 +6,7 @@ import {
 	loadOnboardingAccessWin,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 
 type GrantCountEnv = Env & {
 	OAUTH_PROVIDER?: {
@@ -24,12 +25,17 @@ type GrantCountEnv = Env & {
  * Search does not write the dismissal column; that stays on `/onboarding`.
  */
 
-async function countInboundMcpGrants(env: GrantCountEnv, userId: string) {
+async function countInboundMcpGrants(
+	env: GrantCountEnv,
+	userId: string,
+): Promise<number | null> {
 	try {
-		const page = await env.OAUTH_PROVIDER?.listUserGrants(userId)
-		return page?.items.length ?? 0
+		const helpers = await resolveOAuthHelpers(env)
+		if (!helpers) return null
+		const page = await helpers.listUserGrants(userId)
+		return page.items.length
 	} catch {
-		return 0
+		return null
 	}
 }
 
@@ -50,6 +56,7 @@ export async function buildOnboardingSearchNotice(input: {
 			countInboundMcpGrants(input.env, input.userId),
 			loadOnboardingAccessWin(input.env, input.userId),
 		])
+		if (grantCount === null) return null
 		const remaining = remainingOnboardingWizardLabels({
 			hasMcpClient: grantCount > 0,
 			hasAccessWin,
