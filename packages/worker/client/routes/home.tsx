@@ -18,7 +18,12 @@ import { reveal, revealPop } from '#client/reveal.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	publicCreateAccountLabel,
+	publicHaveCodeLabel,
+	publicJoinWaitlistLabel,
+} from '#universal/public-signup-copy.ts'
+import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
@@ -131,7 +136,7 @@ export async function homeRouteLoader(
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
 	if (codeRuns) result.codeRuns = codeRuns
-	if (authConfig) result.signupMode = authConfig.signupMode
+	result.signupMode = parseSignupMode(authConfig?.signupMode)
 	result.walkthroughHosts = pickWalkthroughHosts()
 	return result
 }
@@ -173,7 +178,7 @@ export function HomeRoute(handle: Handle) {
 			if (signal.aborted) return
 			applyOnboardingPayload(payload)
 			applyCodeRunsPayload(codeRuns)
-			if (authConfig) signupMode = authConfig.signupMode
+			signupMode = parseSignupMode(authConfig?.signupMode)
 			if (!walkthroughHosts) walkthroughHosts = pickWalkthroughHosts()
 			loadLatch.markLoaded(href)
 			handle.update()
@@ -256,7 +261,7 @@ export function HomeRoute(handle: Handle) {
 						) : signupMode === 'open' ? (
 							<>
 								<a href={homepageSignupPath} class="landing-pill">
-									Create a free account
+									{publicCreateAccountLabel}
 								</a>
 								<a href="/login" class="landing-code-link">
 									I already have an account
@@ -265,10 +270,10 @@ export function HomeRoute(handle: Handle) {
 						) : (
 							<>
 								<a href="#invite" class="landing-pill">
-									Join the waiting list
+									{publicJoinWaitlistLabel}
 								</a>
 								<a href={homepageSignupPath} class="landing-code-link">
-									I have a code
+									{publicHaveCodeLabel}
 								</a>
 							</>
 						)}
@@ -559,7 +564,7 @@ export function HomeRoute(handle: Handle) {
 							</p>
 							<p class="landing-invite-cta">
 								<a href={homepageSignupPath} class="landing-pill">
-									Create a free account
+									{publicCreateAccountLabel}
 								</a>
 							</p>
 						</div>
@@ -572,7 +577,7 @@ export function HomeRoute(handle: Handle) {
 							<WaitlistForm />
 							<p class="landing-invite-code">
 								<a href={homepageSignupPath} class="landing-code-link">
-									I have a code
+									{publicHaveCodeLabel}
 								</a>
 							</p>
 						</>
