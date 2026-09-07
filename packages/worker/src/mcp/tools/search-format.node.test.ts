@@ -620,6 +620,77 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
 	expect(aheadDetail.markdown).toContain('repoPublishSession')
 	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
+
+	const [forkAheadMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-fork-ahead',
+				kodyId: 'github-triage',
+				name: '@me/github-triage',
+				title: '@me/github-triage',
+				description: 'Triage GitHub issues.',
+				tags: ['github'],
+				hasApp: false,
+				hidden: false,
+			},
+		],
+	})
+	expect(forkAheadMatch).not.toHaveProperty('listingAhead')
+	expect(
+		forkAheadMatch && 'nextStep' in forkAheadMatch
+			? forkAheadMatch.nextStep
+			: '',
+	).not.toMatch(/ahead/i)
+	expect(
+		forkAheadMatch && 'nextStep' in forkAheadMatch
+			? forkAheadMatch.nextStep
+			: '',
+	).not.toContain('repoPublishSession')
+
+	const forkAheadDetail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'github-triage',
+		title: '@me/github-triage',
+		description: 'Triage GitHub issues.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
+		hostedUrl: null,
+		listingAhead: false,
+		record: {
+			id: 'package-fork-ahead',
+			userId: 'user-1',
+			name: '@me/github-triage',
+			kodyId: 'github-triage',
+			description: 'Triage GitHub issues.',
+			tags: ['github'],
+			searchText: null,
+			sourceId: 'source-fork-ahead',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@me/github-triage',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'github-triage',
+				description: 'Triage GitHub issues.',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'README.md': '# GitHub triage\n\n## Intent\n\nTriage issues.\n',
+		},
+	})
+	expect(forkAheadDetail.markdown).not.toContain('Listing ahead')
+	expect(forkAheadDetail.markdown).not.toMatch(/fork ahead/i)
+	expect(forkAheadDetail.markdown).not.toContain('repoPublishSession')
+	expect(forkAheadDetail.structured).not.toMatchObject({ listingAhead: true })
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {

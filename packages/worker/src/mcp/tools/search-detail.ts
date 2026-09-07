@@ -7,6 +7,7 @@ import {
 	getJoinedIntegration,
 	toJoinedIntegrationConfig,
 } from '#worker/integrations/service.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
 	getSavedPackageWithCommunityProvenanceByKodyId,
@@ -74,7 +75,7 @@ export async function resolveEntityDetail(input: {
 
 	if (ref.type === 'package') {
 		const env = input.agent.getEnv()
-		const ownRecord =
+		const loadedOwnRecord =
 			(await getSavedPackageWithCommunityProvenanceById(env.APP_DB, {
 				userId: input.userId,
 				packageId: ref.id,
@@ -83,6 +84,12 @@ export async function resolveEntityDetail(input: {
 				userId: input.userId,
 				kodyId: ref.id,
 			}))
+		const [ownRecord] = loadedOwnRecord
+			? await applySavedPackageForkListingAncestry({
+					env,
+					records: [loadedOwnRecord],
+				})
+			: [null]
 		// Platform (built-in) packages stay discoverable without a fork so
 		// agents can inspect and communityFork them. The caller's own copy
 		// wins when both exist.

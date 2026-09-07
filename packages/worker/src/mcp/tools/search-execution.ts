@@ -78,6 +78,7 @@ async function executeSearchListWithinBudget(
 		input.query && !domainFilter
 			? await resolvePackageIdentitySearch({
 					db: input.env.APP_DB,
+					env: input.env,
 					userId: input.userId,
 					query: input.query,
 					baseUrl: input.callerContext.baseUrl,

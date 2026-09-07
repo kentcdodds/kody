@@ -14,6 +14,14 @@ const mockModule = vi.hoisted(() => ({
 	collectIntegrationPackageSuggestions: vi.fn(),
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 	listPlatformPackagesForSearch: async () => [],
 	findPlatformPackageByRef: async () => null,

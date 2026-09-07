@@ -14,12 +14,20 @@ export type ViewerListingInstall = {
 	 */
 	packageId: string | null
 	/**
-	 * True when this viewer's fork last absorbed an older listing pin than
-	 * the listing currently publishes.
+	 * True when this viewer's fork is behind or diverged: the listing pin is
+	 * not an ancestor of the fork tip.
 	 */
 	listingAhead: boolean
 	/** Copyable agent prompt when `listingAhead` is true; otherwise null. */
 	listingAheadPrompt: string | null
+	/**
+	 * True when SHAs differ and the listing pin is an ancestor of the fork
+	 * tip (or ancestry is unproven). Human-only informational UI; omit from
+	 * MCP / search payloads.
+	 */
+	forkAhead: boolean
+	/** Listing files at the pinned commit when outdated or ahead. */
+	listingDiffHref: string | null
 }
 
 /**

@@ -9,6 +9,7 @@ import {
 	listPlatformPackagesForSearch,
 	type PlatformPackageForSearch,
 } from '#worker/package-registry/platform-packages.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
 
 import { buildSavedPackageSearchRows } from './search-package-rows.ts'
@@ -95,8 +96,14 @@ export async function loadSearchRowsAndRegistry(input: {
 					return { rows: [], warnings: [] }
 				}
 				const [savedPackages, platformPackages] = await Promise.all([
-					listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
-						userId,
+					applySavedPackageForkListingAncestry({
+						env: input.env,
+						records: await listSavedPackagesWithCommunityProvenanceByUserId(
+							input.env.APP_DB,
+							{
+								userId,
+							},
+						),
 					}),
 					listPlatformPackagesForSearch(input.env.APP_DB),
 				])

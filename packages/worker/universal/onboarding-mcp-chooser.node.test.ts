@@ -158,6 +158,8 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 				packageId: 'pkg-notion-mcp',
 				listingAhead: false,
 				listingAheadPrompt: null,
+				forkAhead: false,
+				listingDiffHref: null,
 			},
 		},
 	])

@@ -17,16 +17,25 @@ export const FORKED_COPY_TOOLTIP =
 	'Click to copy a prompt to finish adapting this fork'
 export const COPY_PROMPT_COPIED_TOOLTIP = 'Copied'
 
+const FORK_AHEAD_TOOLTIP = 'Review the listing snapshot this fork is ahead of'
+
 type CopyPromptPillInput = {
 	label: string
 	prompt: string
 	testId: string
 	tooltip: string
 	tone: 'badge' | 'outdated'
+	href?: string | null
 }
 
 type ForkOutdatedCopyButtonProps = {
 	prompt: string
+	testId: string
+	href?: string | null
+}
+
+type ForkAheadLinkProps = {
+	href: string
 	testId: string
 }
 
@@ -36,25 +45,37 @@ type ForkOutdatedCopyButtonProps = {
  */
 export function renderCopyPromptPill(input: CopyPromptPillInput) {
 	const tooltipId = `${input.testId}-tooltip`
-	return (
-		<button
-			type="button"
-			data-testid={input.testId}
-			data-copy-prompt=""
-			data-copy-text={input.prompt}
-			data-copy-tooltip={input.tooltip}
-			aria-describedby={tooltipId}
-			{...(input.tone === 'outdated' ? { 'data-fork-outdated-copy': '' } : {})}
-			mix={css(
-				input.tone === 'outdated'
-					? forkOutdatedCopyButtonCss
-					: badgeCopyPromptButtonCss,
-			)}
-		>
+	const copyAttrs = {
+		'data-testid': input.testId,
+		'data-copy-prompt': '',
+		'data-copy-text': input.prompt,
+		'data-copy-tooltip': input.tooltip,
+		'aria-describedby': tooltipId,
+		...(input.tone === 'outdated' ? { 'data-fork-outdated-copy': '' } : {}),
+	}
+	const copyMix = css(
+		input.tone === 'outdated'
+			? forkOutdatedCopyButtonCss
+			: badgeCopyPromptButtonCss,
+	)
+	const children = (
+		<>
 			{input.label}
 			<span id={tooltipId} role="tooltip" aria-hidden="true">
 				{input.tooltip}
 			</span>
+		</>
+	)
+	if (input.href) {
+		return (
+			<a href={input.href} {...copyAttrs} mix={copyMix}>
+				{children}
+			</a>
+		)
+	}
+	return (
+		<button type="button" {...copyAttrs} mix={copyMix}>
+			{children}
 		</button>
 	)
 }
@@ -73,7 +94,38 @@ export function ForkOutdatedCopyButton(
 			testId: handle.props.testId,
 			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
 			tone: 'outdated',
+			href: handle.props.href,
 		})
+}
+
+/**
+ * Calm informational pill when the listing pin is an ancestor of the fork
+ * tip. Links to the listing files at that pin; no absorb-prompt action.
+ */
+export function ForkAheadLink(handle: Handle<ForkAheadLinkProps>) {
+	return () => (
+		<a
+			href={handle.props.href}
+			data-testid={handle.props.testId}
+			title={FORK_AHEAD_TOOLTIP}
+			mix={css(forkAheadLinkCss)}
+		>
+			Fork ahead
+		</a>
+	)
+}
+
+export function renderForkAheadPill(input: { href: string; testId: string }) {
+	return (
+		<a
+			href={input.href}
+			data-testid={input.testId}
+			title={FORK_AHEAD_TOOLTIP}
+			mix={css(forkAheadLinkCss)}
+		>
+			Fork ahead
+		</a>
+	)
 }
 
 const copyPromptTooltipCss = {
@@ -131,6 +183,7 @@ const copyPromptButtonBaseCss = {
 	zIndex: 1,
 	appearance: 'none' as const,
 	cursor: 'pointer',
+	textDecoration: 'none',
 	...copyPromptTooltipCss,
 }
 
@@ -165,6 +218,25 @@ const badgeCopyPromptButtonCss = mergeCss(copyPromptButtonBaseCss, {
 	},
 	'&:focus-visible': {
 		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+})
+
+const forkAheadLinkCss = mergeCss(communityStatusPillBoxCss, {
+	position: 'relative' as const,
+	zIndex: 1,
+	textDecoration: 'none',
+	color: colors.textMuted,
+	backgroundColor: colors.surface,
+	border: `1px solid ${colors.border}`,
+	[hoverMq]: {
+		'&:hover': {
+			color: colors.text,
+			borderColor: colors.textMuted,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.border}`,
 		outlineOffset: '2px',
 	},
 })
