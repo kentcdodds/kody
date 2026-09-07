@@ -17,7 +17,10 @@ import {
 import { waitUntil } from 'cloudflare:workers'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
-import { isBillingConfigured,selectPlanRetainingSubscriptions } from './billing-config.ts'
+import {
+	isBillingConfigured,
+	selectPlanRetainingSubscriptions,
+} from './billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
