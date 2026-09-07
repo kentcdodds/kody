@@ -608,6 +608,98 @@ test('daytime catch-up resumes a stranded previous day until its summary is writ
 	}
 })
 
+test('catch-up prefers the oldest stranded day in the lookback', async () => {
+	storageMocks.exportStorage.mockReset()
+	storageMocks.exportStorage.mockResolvedValue({
+		entries: [],
+		truncated: false,
+		nextStartAfter: null,
+		pageSize: 250,
+		estimatedBytes: 0,
+	})
+	mailboxMocks.exportMailbox.mockReset()
+	mailboxMocks.exportMailbox.mockResolvedValue({
+		rows: [],
+		truncated: false,
+		nextStartAfter: null,
+	})
+	runLogMocks.exportRuns.mockReset()
+	runLogMocks.exportRuns.mockResolvedValue({
+		runs: [],
+		logs: [],
+		packageInvocations: [],
+		workflowProjections: [],
+		jobRunObservability: [],
+		packageRunSuccesses: [],
+		activationMilestones: [],
+		truncated: false,
+		nextStartAfter: null,
+	})
+	const { client } = createMemoryS3()
+	const now = new Date('2026-07-23T12:00:00.000Z')
+	const env = {
+		DR_EXPORT_ENABLED: 'true',
+		DR_BACKUP_ACCOUNT_ID: 'acct',
+		DR_BACKUP_BUCKET_NAME: 'bucket',
+		DR_BACKUP_ACCESS_KEY_ID: 'key',
+		DR_BACKUP_SECRET_ACCESS_KEY: 'secret',
+		APP_DB: createDb({}),
+		EMAIL_BLOBS: createR2({}),
+		COMMUNITY_ASSETS: createR2({}),
+		BUNDLE_ARTIFACTS_KV: { get: async () => null },
+		STORAGE_RUNNER: {},
+	} as unknown as Env
+	for (const day of ['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-23']) {
+		await client.put(
+			`staging/${day}/exporter/progress.json`,
+			JSON.stringify(__testOnlyCreateInitialProgress(day, now)),
+		)
+	}
+
+	const oldestInLookback = await runDrExportTick({
+		env,
+		now,
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(oldestInLookback).toMatchObject({
+		day: '2026-07-21',
+		mode: 'catch-up',
+		skipped: false,
+		summaryWritten: true,
+	})
+	expect(await client.getText(stagingSummaryKey('2026-07-20'))).toBeNull()
+	expect(await client.getText(stagingSummaryKey('2026-07-21'))).not.toBeNull()
+	expect(await client.getText(stagingSummaryKey('2026-07-22'))).toBeNull()
+	expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeNull()
+
+	const yesterday = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T12:15:00.000Z'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(yesterday).toMatchObject({
+		day: '2026-07-22',
+		mode: 'catch-up',
+		summaryWritten: true,
+	})
+	expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeNull()
+
+	const today = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T12:30:00.000Z'),
+		timeBudgetMs: 60_000,
+		s3: client,
+	})
+	expect(today).toMatchObject({
+		day: '2026-07-23',
+		mode: 'catch-up',
+		summaryWritten: true,
+	})
+	expect(await client.getText(stagingSummaryKey('2026-07-20'))).toBeNull()
+})
+
 test('catch-up honors an active progress lease and resumes after it expires', async () => {
 	storageMocks.exportStorage.mockReset()
 	storageMocks.exportStorage.mockResolvedValue({
@@ -1621,12 +1713,14 @@ test('watchdog stays loud when an earlier day is stranded despite catch-up', asy
 	} as unknown as Env
 	const now = new Date('2026-07-23T06:15:00.000Z')
 	const { client } = createMemoryS3()
-	// Tonight finished, but the day before is still progress-without-summary.
+	// Tonight finished, but earlier days are still progress-without-summary.
+	// The page lists oldest first — the same order catch-up resumes.
 	await client.put(stagingSummaryKey('2026-07-23'), '{}')
 	await client.put('staging/2026-07-22/exporter/progress.json', '{}')
+	await client.put('staging/2026-07-21/exporter/progress.json', '{}')
 	await expect(
 		runDrExportWatchdogTick({ env, now, s3: client }),
-	).rejects.toThrow(/catch-up is stuck.*2026-07-22/)
+	).rejects.toThrow(/catch-up is stuck.*2026-07-21, 2026-07-22/)
 
 	// A previous day with neither progress nor summary (for example before DR
 	// enablement) is not stranded.

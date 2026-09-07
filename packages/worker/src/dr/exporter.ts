@@ -211,19 +211,21 @@ function utcDayMinus(day: string, daysBack: number) {
 }
 
 /**
- * Most recent day (today first) whose staging has progress but no completion
- * summary — a night the exporter started and never finished because the
- * window closed. Days with neither object never started (for example before
- * DR enablement) and are deliberately not eligible: catch-up resumes staged
- * work, it never starts a fresh past-day export whose dumps would actually
- * contain current data.
+ * Oldest day in the lookback (furthest back first, then toward today) whose
+ * staging has progress but no completion summary — a night the exporter
+ * started and never finished because the window closed. Preferring the
+ * oldest stranded day lets yesterday finish and seal before today's
+ * catch-up ticks consume the daytime budget. Days with neither object
+ * never started (for example before DR enablement) and are deliberately
+ * not eligible: catch-up resumes staged work, it never starts a fresh
+ * past-day export whose dumps would actually contain current data.
  */
 async function findStrandedStagingDay(input: {
 	s3: DrBackupS3Client
 	today: string
 	lookbackDays: number
 }): Promise<string | null> {
-	for (let offset = 0; offset <= input.lookbackDays; offset += 1) {
+	for (let offset = input.lookbackDays; offset >= 0; offset -= 1) {
 		const candidate = utcDayMinus(input.today, offset)
 		if ((await input.s3.head(stagingSummaryKey(candidate))).exists) continue
 		if ((await input.s3.head(stagingProgressKey(candidate))).exists) {
@@ -1492,8 +1494,9 @@ export type DrExportWatchdogResult = {
  * reports the failure to Sentry — an incomplete night is otherwise silent
  * (the exporter just stops getting ticks when the window closes). Also throws
  * when an earlier day within the catch-up lookback is still stranded
- * (progress without summary), so a stuck catch-up stays loud once per day
- * instead of failing silently forever.
+ * (progress without summary). Catch-up prefers the oldest stranded day, so
+ * an earlier day still missing a summary at 06:15 means catch-up is stuck
+ * and should stay loud once per day instead of failing silently forever.
  */
 export async function runDrExportWatchdogTick(input: {
 	env: Env
@@ -1522,7 +1525,7 @@ export async function runDrExportWatchdogTick(input: {
 	const s3 = input.s3 ?? createDrBackupS3Client(config)
 	const summary = await s3.getText(stagingSummaryKey(day))
 	const strandedPreviousDays: Array<string> = []
-	for (let offset = 1; offset <= drExportCatchUpLookbackDays; offset += 1) {
+	for (let offset = drExportCatchUpLookbackDays; offset >= 1; offset -= 1) {
 		const candidate = utcDayMinus(day, offset)
 		if ((await s3.head(stagingSummaryKey(candidate))).exists) continue
 		if ((await s3.head(stagingProgressKey(candidate))).exists) {
@@ -1556,7 +1559,7 @@ export async function runDrExportWatchdogTick(input: {
 		}
 	}
 	throw new Error(
-		`DR staging summary missing for ${day} after the export window closed (progress phase=${phase}${detail}). The night's non-D1 backup is incomplete and the day cannot be sealed. Daytime catch-up ticks will resume it; if it stays stranded, finish it via POST /__maintenance/dr-export.${strandedDetail}`,
+		`DR staging summary missing for ${day} after the export window closed (progress phase=${phase}${detail}). The night's non-D1 backup is incomplete and the day cannot be sealed. Daytime catch-up ticks resume the oldest stranded day in the lookback first; if a day stays stranded, finish it via POST /__maintenance/dr-export.${strandedDetail}`,
 	)
 }
 

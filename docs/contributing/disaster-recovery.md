@@ -93,7 +93,7 @@ Nightly */5 ticks 00:30–06:10 UTC           02:15 UTC: D1 export Workflow
   / StorageRunner / R2 / artifacts      →    APP_DB and JOBS_DB)
   into staging/{day}/...                    Hourly: D1 freshness + catch-up
 Daytime */15 ticks: staging catch-up        Hourly: seal complete days
-  resume a stranded day (≤2 days back)      Admin UI: drill / production restore
+  resume oldest stranded day (≤2 days)      Admin UI: drill / production restore
 06:15 UTC: staging watchdog → Sentry
 ```
 
@@ -194,12 +194,13 @@ Contract: `packages/shared/src/backup-staging.ts`.
      00:30–06:10 window can hold ends with `exporter/progress.json` but no
      `exporter/summary.json` (a _stranded day_; first hit live on 2026-08-07).
      Outside the nightly window, one tick every 15 minutes scans today plus the
-     previous 2 days for progress-without-summary and resumes the most recent
+     previous 2 days for progress-without-summary and resumes the oldest
      stranded day under the normal ~20 s budget and progress lease until its
-     summary is written. Catch-up is resume-only: a day that never staged
-     progress is not started fresh (its dumps would contain current data, not
-     that day's). Data staged during catch-up is read at resume time; a slightly
-     newer dump is preferred over an unsealable day.
+     summary is written, so yesterday can finish and seal before today's
+     catch-up consumes the daytime budget. Catch-up is resume-only: a day that
+     never staged progress is not started fresh (its dumps would contain current
+     data, not that day's). Data staged during catch-up is read at resume time;
+     a slightly newer dump is preferred over an unsealable day.
    - **Resumable phase state** — `exporter/progress.json` contains phase
      cursors, counters, bounded index-entry tails, and conditional-write
      revision data. Mailbox, selected RunLog, and StorageRunner dump pages plus
@@ -664,7 +665,7 @@ the correctness spec and incident-only fallback:
 | When (UTC)                       | Who               | What                                                                                                                           |
 | -------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `*/5` during 00:30–06:10         | Production worker | Stage Mailbox, selected RunLog state, and other non-D1 stores for the current UTC day (cheap no-op once complete)              |
-| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the most recent stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise       |
+| Every 15 min outside 00:30–06:10 | Production worker | Staging catch-up: resume the oldest stranded day (progress without summary, today − ≤2 days); cheap no-op otherwise            |
 | 06:15                            | Production worker | Staging watchdog: a missing `exporter/summary.json` for today, or an earlier stranded day, fails the lane → Sentry             |
 | 02:15                            | Control plane     | Primary D1 export Workflow per configured database (APP_DB and JOBS_DB)                                                        |
 | 02:45–05:45 hourly               | Control plane     | Catch-up create/restart of same-day D1 Workflows                                                                               |
@@ -676,7 +677,9 @@ Failure mode: the nightly exporter hard-stops when the window closes, so a night
 with too much work leaves `staging/{day}/exporter/progress.json` without
 `exporter/summary.json`. The 06:15 watchdog pages; without a summary the day can
 never seal. Daytime catch-up ticks (table above) normally finish the day
-automatically within a few hours, and the hourly control-plane seal (3-day
+automatically within a few hours. When more than one day in the lookback is
+stranded, catch-up finishes the oldest first so yesterday can seal before
+today's ticks consume the daytime budget. The hourly control-plane seal (3-day
 lookback) then seals it — no operator action needed.
 
 Operate manually when catch-up is stuck, the day has already fallen outside the
