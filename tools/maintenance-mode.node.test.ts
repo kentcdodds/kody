@@ -70,6 +70,44 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
 	return { fetchImpl, calls }
 }
 
+test('dry-run without a token prints command-specific Rulesets API calls', async () => {
+	const lines: Array<string> = []
+	const on = await runMaintenanceMode(parseArgs(['on', '--dry-run']), {
+		env: {},
+		log: (line) => lines.push(line),
+	})
+	expect(
+		on.requests.map((request) => `${request.method} ${request.url}`),
+	).toEqual([
+		`GET ${cloudflareApiBaseUrl}/zones?name=${defaultMaintenanceZone}&status=active`,
+		`GET ${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets/phases/http_request_dynamic_redirect/entrypoint`,
+		`POST ${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets`,
+	])
+	expect(on.requests[2]?.body).toMatchObject({
+		phase: 'http_request_dynamic_redirect',
+		rules: [{ description: maintenanceRuleMarker, enabled: true }],
+	})
+
+	const off = await runMaintenanceMode(parseArgs(['off', '--dry-run']), {
+		env: {},
+		log: () => {},
+	})
+	expect(off.requests.at(-1)).toMatchObject({
+		method: 'PATCH',
+		url: `${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets/{ruleset_id}/rules/{rule_id}`,
+		body: { enabled: false },
+	})
+
+	const status = await runMaintenanceMode(parseArgs(['status', '--dry-run']), {
+		env: {},
+		log: () => {},
+	})
+	expect(status.requests.every((request) => request.method === 'GET')).toBe(
+		true,
+	)
+	expect(lines.join('\n')).toContain('POST')
+})
+
 test('parseArgs reads command, zone, target, dry-run, and json', () => {
 	expect(parseArgs(['status'])).toEqual({
 		command: 'status',

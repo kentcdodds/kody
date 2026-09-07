@@ -250,57 +250,90 @@ async function cloudflareRequest<T>(input: {
 	return { status: response.status, result: payload.result }
 }
 
+function pathSegment(value: string) {
+	return /^[\w{}-]+$/.test(value) ? value : encodeURIComponent(value)
+}
+
 function zoneLookupPath(zone: string) {
 	return `/zones?name=${encodeURIComponent(zone)}&status=active`
 }
 
 function entrypointPath(zoneId: string) {
-	return `/zones/${encodeURIComponent(zoneId)}/rulesets/phases/${dynamicRedirectPhase}/entrypoint`
+	return `/zones/${pathSegment(zoneId)}/rulesets/phases/${dynamicRedirectPhase}/entrypoint`
 }
 
 function rulesetsPath(zoneId: string) {
-	return `/zones/${encodeURIComponent(zoneId)}/rulesets`
+	return `/zones/${pathSegment(zoneId)}/rulesets`
 }
 
 function rulesetRulesPath(zoneId: string, rulesetId: string) {
-	return `/zones/${encodeURIComponent(zoneId)}/rulesets/${encodeURIComponent(rulesetId)}/rules`
+	return `/zones/${pathSegment(zoneId)}/rulesets/${pathSegment(rulesetId)}/rules`
 }
 
 function rulePath(zoneId: string, rulesetId: string, ruleId: string) {
-	return `${rulesetRulesPath(zoneId, rulesetId)}/${encodeURIComponent(ruleId)}`
+	return `${rulesetRulesPath(zoneId, rulesetId)}/${pathSegment(ruleId)}`
 }
 
 function plannedUrl(pathname: string) {
 	return `${cloudflareApiBaseUrl}${pathname}`
 }
 
-function firstRunCreateRequests(options: MaintenanceModeOptions) {
-	const zonePlaceholder = '{zone_id}'
-	const rule = buildMaintenanceRedirectRule({
-		zone: options.zone,
-		target: options.target,
-		enabled: true,
-	})
+function dryRunLookupRequests(zone: string) {
 	return [
 		{
 			method: 'GET' as const,
-			url: plannedUrl(zoneLookupPath(options.zone)),
+			url: plannedUrl(zoneLookupPath(zone)),
 		},
 		{
 			method: 'GET' as const,
-			url: plannedUrl(entrypointPath(zonePlaceholder)),
-		},
-		{
-			method: 'POST' as const,
-			url: plannedUrl(rulesetsPath(zonePlaceholder)),
-			body: {
-				name: 'Redirect rules ruleset',
-				kind: 'zone',
-				phase: dynamicRedirectPhase,
-				rules: [rule],
-			},
+			url: plannedUrl(entrypointPath('{zone_id}')),
 		},
 	]
+}
+
+function unauthenticatedDryRunRequests(options: MaintenanceModeOptions) {
+	const lookups = dryRunLookupRequests(options.zone)
+	switch (options.command) {
+		case 'status':
+			return lookups
+		case 'on':
+			return [
+				...lookups,
+				{
+					method: 'POST' as const,
+					url: plannedUrl(rulesetsPath('{zone_id}')),
+					body: {
+						name: 'Redirect rules ruleset',
+						kind: 'zone',
+						phase: dynamicRedirectPhase,
+						rules: [
+							buildMaintenanceRedirectRule({
+								zone: options.zone,
+								target: options.target,
+								enabled: true,
+							}),
+						],
+					},
+				},
+			]
+		case 'off':
+			return [
+				...lookups,
+				{
+					method: 'PATCH' as const,
+					url: plannedUrl(rulePath('{zone_id}', '{ruleset_id}', '{rule_id}')),
+					body: buildMaintenanceRedirectRule({
+						zone: options.zone,
+						target: options.target,
+						enabled: false,
+					}),
+				},
+			]
+		default: {
+			const unexpected: never = options.command
+			throw new Error(`Unexpected command: ${String(unexpected)}`)
+		}
+	}
 }
 
 function printHumanResult(
@@ -342,7 +375,7 @@ export async function runMaintenanceMode(
 				`CLOUDFLARE_API_TOKEN is required. ${requiredTokenScopesMessage}`,
 			)
 		}
-		const requests = firstRunCreateRequests(options)
+		const requests = unauthenticatedDryRunRequests(options)
 		const result: MaintenanceModeResult = {
 			command: options.command,
 			zone: options.zone,
