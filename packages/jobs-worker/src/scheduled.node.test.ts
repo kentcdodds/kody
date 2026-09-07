@@ -1,10 +1,15 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
+import * as Sentry from '@sentry/cloudflare'
 import {
 	consoleError,
 	consoleWarn,
+	silenceExpectedConsoleErrors,
+	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import {
 	getScheduledLaneCadence,
+	scheduledDispatchMaxRetries,
 	type ScheduledLaneMessage,
 } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { type JobsWorkerEnv } from './env.ts'
@@ -45,6 +50,20 @@ function message(
 	scheduledTime = Date.UTC(2026, 0, 1, 12, 0),
 ): ScheduledLaneMessage {
 	return { lane, scheduledTime, cron: '*/5 * * * *' }
+}
+
+function queueMessage(input: {
+	id?: string
+	body: unknown
+	attempts?: number
+}) {
+	return {
+		id: input.id ?? 'msg',
+		body: input.body,
+		attempts: input.attempts ?? 1,
+		ack: vi.fn(),
+		retry: vi.fn(),
+	}
 }
 
 test('lane routing forwards platform work to HOST, runs watchdog locally, and acks invalid queue bodies', async () => {
@@ -186,4 +205,155 @@ test('retryable D1 lock contention is distinguished from ordinary failures', asy
 			message: message('retention'),
 		}),
 	).resolves.toBe('failed')
+})
+
+test('queue consumer acks completed and terminal work, retries lock contention with backoff, and preserves scheduledTime', async () => {
+	silenceExpectedConsoleWarns([
+		'scheduled_lane_d1_lock_contention lane=retention',
+	])
+	silenceExpectedConsoleErrors([
+		'scheduled_lane_failed lane=retention',
+		'scheduled_lane_message_invalid',
+		'scheduled_lane_terminal_not_retried',
+		'scheduled_lane_retry_exhausted',
+	])
+	const captureMessage = vi.spyOn(Sentry, 'captureMessage')
+	const scheduledTime = Date.UTC(2026, 0, 1, 12, 0)
+	const retention = message('retention', scheduledTime)
+	const host = vi
+		.fn()
+		.mockResolvedValueOnce('completed')
+		.mockResolvedValueOnce('d1_lock_contention')
+		.mockResolvedValueOnce('failed')
+		.mockResolvedValueOnce('d1_lock_contention')
+	const env = createEnv({ HOST: { runScheduledLane: host } })
+
+	const completed = queueMessage({ id: 'completed', body: retention })
+	const lock = queueMessage({ id: 'lock', body: retention, attempts: 1 })
+	const failed = queueMessage({ id: 'failed', body: retention })
+	const invalid = queueMessage({
+		id: 'invalid',
+		body: { lane: 'nope' },
+	})
+	const exhausted = queueMessage({
+		id: 'exhausted',
+		body: retention,
+		attempts: scheduledDispatchMaxRetries + 1,
+	})
+
+	await handleScheduledDispatchQueue(
+		{
+			messages: [completed, lock, failed, invalid, exhausted],
+		} as unknown as MessageBatch<unknown>,
+		env,
+	)
+
+	expect(completed.ack).toHaveBeenCalledOnce()
+	expect(completed.retry).not.toHaveBeenCalled()
+
+	expect(lock.retry).toHaveBeenCalledOnce()
+	expect(lock.retry).toHaveBeenCalledWith({ delaySeconds: 10 })
+	expect(lock.ack).not.toHaveBeenCalled()
+
+	expect(failed.ack).toHaveBeenCalledOnce()
+	expect(failed.retry).not.toHaveBeenCalled()
+	expect(consoleError).toHaveBeenCalledWith(
+		'scheduled_lane_terminal_not_retried',
+		expect.objectContaining({
+			lane: 'retention',
+			scheduledTime,
+			attempts: 1,
+			outcome: 'failed',
+		}),
+	)
+
+	expect(invalid.ack).toHaveBeenCalledOnce()
+	expect(invalid.retry).not.toHaveBeenCalled()
+	expect(consoleError).toHaveBeenCalledWith(
+		'scheduled_lane_message_invalid',
+		expect.objectContaining({ queueMessageId: 'invalid' }),
+	)
+
+	expect(exhausted.retry).toHaveBeenCalledOnce()
+	expect(exhausted.retry).toHaveBeenCalledWith({ delaySeconds: 90 })
+	expect(exhausted.ack).not.toHaveBeenCalled()
+	expect(consoleError).toHaveBeenCalledWith(
+		'scheduled_lane_retry_exhausted',
+		expect.objectContaining({
+			lane: 'retention',
+			scheduledTime,
+			attempts: scheduledDispatchMaxRetries + 1,
+			outcome: 'd1_lock_contention',
+		}),
+	)
+	expect(captureMessage).toHaveBeenCalledWith(
+		'scheduled_lane_retry_exhausted lane=retention',
+	)
+
+	expect(host).toHaveBeenCalledTimes(4)
+	for (const call of host.mock.calls) {
+		expect(call[0]).toEqual(retention)
+	}
+
+	const laterLock = queueMessage({
+		id: 'later-lock',
+		body: retention,
+		attempts: 2,
+	})
+	host.mockResolvedValueOnce('d1_lock_contention')
+	await handleScheduledDispatchQueue(
+		{ messages: [laterLock] } as unknown as MessageBatch<unknown>,
+		env,
+	)
+	expect(laterLock.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
+	expect(laterLock.ack).not.toHaveBeenCalled()
+})
+
+test('inline fallback keeps scheduledTime and does not invent extra lane retries', async () => {
+	silenceExpectedConsoleErrors([
+		'scheduled_lane_dispatch_failed lane=oauth_purge_expired',
+		'scheduled_lane_inline_d1_lock_contention',
+	])
+	const host = vi.fn().mockResolvedValue('d1_lock_contention')
+	const failingSend = vi.fn(async (body: ScheduledLaneMessage) => {
+		if (body.lane === 'oauth_purge_expired') {
+			throw new Error('queue unavailable')
+		}
+	})
+	const env = createEnv({
+		HOST: { runScheduledLane: host },
+		SCHEDULED_DISPATCH_QUEUE: { send: failingSend },
+	})
+	const fallbackTime = Date.UTC(2026, 0, 1, 12, 10)
+	await dispatchScheduledLanes({
+		controller: {
+			scheduledTime: fallbackTime,
+			cron: '*/5 * * * *',
+		} as ScheduledController,
+		env,
+	})
+	expect(host).toHaveBeenCalledTimes(1)
+	expect(host).toHaveBeenCalledWith({
+		lane: 'oauth_purge_expired',
+		scheduledTime: fallbackTime,
+		cron: '*/5 * * * *',
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'scheduled_lane_inline_d1_lock_contention',
+		expect.objectContaining({
+			lane: 'oauth_purge_expired',
+			scheduledTime: fallbackTime,
+		}),
+	)
+})
+
+test('production scheduled-dispatch consumer retry bound matches the shared contract', async () => {
+	const wrangler = await readFile(
+		new URL('../wrangler.jsonc', import.meta.url),
+		'utf8',
+	)
+	const consumer = wrangler.match(
+		/"queue": "kody-scheduled-dispatch",[\s\S]*?"max_retries": (\d+),[\s\S]*?"dead_letter_queue": "kody-scheduled-dispatch-dlq"/,
+	)
+	expect(consumer?.[1]).toBe(String(scheduledDispatchMaxRetries))
 })

@@ -1,6 +1,9 @@
 import { type McpCallerContext } from '../chat.ts'
 import { type JobManagerDebugState } from './manager-debug.ts'
-import { type ScheduledLaneMessage } from './scheduled-lanes.ts'
+import {
+	type ScheduledLaneMessage,
+	type ScheduledLaneOutcome,
+} from './scheduled-lanes.ts'
 import { type SchedulerJobOutcomeLog } from './scheduler-logging.ts'
 import { type JobsStore } from './store.ts'
 import {
@@ -63,7 +66,5 @@ export type JobsHostContract = {
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	}): Promise<RunJobNowResult>
 	/** Execute one platform scheduled lane with failure isolation. */
-	runScheduledLane(
-		message: ScheduledLaneMessage,
-	): Promise<'completed' | 'd1_lock_contention' | 'failed'>
+	runScheduledLane(message: ScheduledLaneMessage): Promise<ScheduledLaneOutcome>
 }
