@@ -194,6 +194,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'usage_rollups' },
 	{ kind: 'user_id', table: 'user_usage_campaigns' },
 	{ kind: 'user_id', table: 'user_usage_campaign_sends' },
+	{ kind: 'user_id', table: 'user_tips_email_opt_outs' },
 	{ kind: 'user_id', table: 'compute_overage_invoices' },
 	{
 		kind: 'user_columns',

@@ -109,13 +109,13 @@ export async function isTipsEmailsOptedOut(input: {
 }) {
 	const row = await input.db
 		.prepare(
-			`SELECT tips_emails_opted_out_at
-			 FROM users
-			 WHERE stable_user_id = ?`,
+			`SELECT opted_out_at
+			 FROM user_tips_email_opt_outs
+			 WHERE user_id = ?`,
 		)
 		.bind(input.userId)
-		.first<{ tips_emails_opted_out_at: string | null }>()
-	return row?.tips_emails_opted_out_at != null
+		.first<{ opted_out_at: string | null }>()
+	return row?.opted_out_at != null
 }
 
 export async function optOutTipsEmails(input: {
@@ -124,29 +124,38 @@ export async function optOutTipsEmails(input: {
 	now?: Date
 }): Promise<{ optedOut: boolean; alreadyOptedOut: boolean }> {
 	const nowIso = (input.now ?? new Date()).toISOString()
-	const existing = await input.db
+	const user = await input.db
 		.prepare(
-			`SELECT tips_emails_opted_out_at
+			`SELECT stable_user_id
 			 FROM users
 			 WHERE stable_user_id = ? AND deleting_at IS NULL`,
 		)
 		.bind(input.userId)
-		.first<{ tips_emails_opted_out_at: string | null }>()
-	if (!existing) return { optedOut: false, alreadyOptedOut: false }
-	if (existing.tips_emails_opted_out_at != null) {
+		.first<{ stable_user_id: string }>()
+	if (!user) return { optedOut: false, alreadyOptedOut: false }
+	const existing = await input.db
+		.prepare(
+			`SELECT opted_out_at
+			 FROM user_tips_email_opt_outs
+			 WHERE user_id = ?`,
+		)
+		.bind(input.userId)
+		.first<{ opted_out_at: string | null }>()
+	if (existing?.opted_out_at != null) {
 		return { optedOut: true, alreadyOptedOut: true }
 	}
 	const updated = await input.db
 		.prepare(
-			`UPDATE users
-			 SET tips_emails_opted_out_at = COALESCE(tips_emails_opted_out_at, ?),
-			     updated_at = ?
-			 WHERE stable_user_id = ? AND deleting_at IS NULL`,
+			`INSERT OR IGNORE INTO user_tips_email_opt_outs (user_id, opted_out_at)
+			 VALUES (?, ?)`,
 		)
-		.bind(nowIso, nowIso, input.userId)
+		.bind(input.userId, nowIso)
 		.run()
+	if ((updated.meta.changes ?? 0) === 0) {
+		return { optedOut: true, alreadyOptedOut: true }
+	}
 	return {
-		optedOut: (updated.meta.changes ?? 0) > 0,
+		optedOut: true,
 		alreadyOptedOut: false,
 	}
 }

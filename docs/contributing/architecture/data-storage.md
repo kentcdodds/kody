@@ -353,7 +353,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   first reach 2; `second_agent_standard_gift_expires_at` is set only when that
   overlay actually raises a free account (NULL means already paid / no-op). See
   [Entitlements](./entitlements.md#second-agent-standard-gift).
-  `tips_emails_opted_out_at` is the durable Kody tips opt-out (usage-state
+  `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
   Standard overlay from the uncapped referral program. Pre-signup attribution
   lives in the last-wins one-week `kody_ref` cookie. `referrals` stores the
@@ -1682,6 +1682,8 @@ Current retention policies:
   machine and send ledger keyed by `stable_user_id`. `ever_activated` and
   `cooling_terminal` are sticky. Deleted and exported with the account. Durable
   until deletion; no TTL.
+- `user_tips_email_opt_outs`: Kody tips opt-out stamp keyed by `stable_user_id`.
+  Deleted and exported with the account. Durable until deletion; no TTL.
 - `compute_overage_invoices`: one ledger row per user per UTC month for unique
   worker-day and Durable Object rows-read overage. Status is the disposition
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or

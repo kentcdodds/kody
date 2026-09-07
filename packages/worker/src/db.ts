@@ -46,7 +46,6 @@ export const usersTable = table({
 		last_active_at: c.text(),
 		second_agent_standard_gift_granted_at: c.text(),
 		second_agent_standard_gift_expires_at: c.text(),
-		tips_emails_opted_out_at: c.text(),
 		referral_standard_credit_expires_at: c.text(),
 		created_at: c.text(),
 		updated_at: c.text(),

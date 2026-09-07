@@ -304,9 +304,9 @@ test('tips opt-out skips campaign mail and does not consume a send slot', async 
 	await insertUser(db, { id: 'user-opted', email: 'opted@example.com' })
 	await db
 		.prepare(
-			`UPDATE users SET tips_emails_opted_out_at = ? WHERE stable_user_id = ?`,
+			`INSERT INTO user_tips_email_opt_outs (user_id, opted_out_at) VALUES (?, ?)`,
 		)
-		.bind('2026-09-06T00:00:00.000Z', 'user-opted')
+		.bind('user-opted', '2026-09-06T00:00:00.000Z')
 		.run()
 	const env = createEnv(db)
 	await recordVerifiedNoMcpCampaignSend({

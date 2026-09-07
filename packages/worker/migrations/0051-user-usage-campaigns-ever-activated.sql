@@ -1,6 +1,5 @@
--- Remember activation so LimitAware / Paid cannot erase it. Once a user has
--- been Activated, Cooling, or Paid, they must not fall back to packaged
--- onboarding mail after a later client-count or execute-depth dip.
+-- ever_activated now lands in 0050-user-usage-campaigns.sql so a renamed
+-- preview apply does not ADD COLUMN onto a table that already has it.
 
-ALTER TABLE user_usage_campaigns
-	ADD COLUMN ever_activated INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_user_usage_campaigns_evaluated
+	ON user_usage_campaigns(last_evaluated_at, user_id);

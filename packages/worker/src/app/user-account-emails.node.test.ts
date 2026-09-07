@@ -169,8 +169,14 @@ test('connect-agent mail skips when the user opted out of Kody tips', async () =
 	const db = createD1FromSqlite(sqlite)
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type, tips_emails_opted_out_at)
-			 VALUES ('ada', 'ada@example.com', 'x', 'user-1', 'free', 'person', '2026-09-06T00:00:00.000Z')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
+			 VALUES ('ada', 'ada@example.com', 'x', 'user-1', 'free', 'person')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO user_tips_email_opt_outs (user_id, opted_out_at)
+			 VALUES ('user-1', '2026-09-06T00:00:00.000Z')`,
 		)
 		.run()
 	const { kv } = createKv()

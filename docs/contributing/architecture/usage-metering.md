@@ -607,8 +607,8 @@ unsubscribe-token minting fails (no footerless campaign mail). A lost claim race
 does not persist a stale `send_count`. Kit is not part of this machine.
 
 Campaign mail is the only surface gated by the **Kody tips** preference
-(`users.tips_emails_opted_out_at`). Each campaign send includes an “Unsubscribe
-from tips” footer and RFC `List-Unsubscribe` / `List-Unsubscribe-Post` one-click
+(`user_tips_email_opt_outs`). Each campaign send includes an “Unsubscribe from
+tips” footer and RFC `List-Unsubscribe` / `List-Unsubscribe-Post` one-click
 headers. The signed `/unsubscribe/tips` route sets that stamp; transactional
 verify, billing, and error-rate mail is never suppressed. Distinct inbound
 client counts come from `loadInboundMcpConnectionState`. A failed grant listing
