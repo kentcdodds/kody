@@ -24,6 +24,8 @@ type Candidate = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	stripe_customer_id: string | null
+	second_agent_standard_gift_expires_at?: string | null
+	referral_standard_credit_expires_at?: string | null
 	uniqueWorkerDays: number
 	durableObjectRowsRead?: number
 }
@@ -132,7 +134,7 @@ function createBillingDb(input: {
 								,
 								,
 								,
-								,
+								totalCents,
 								disposition,
 								status,
 								,
@@ -148,6 +150,7 @@ function createBillingDb(input: {
 								userId,
 								month,
 								uniqueWorkerDays,
+								totalCents,
 								disposition,
 								status,
 								invoiceId,
@@ -697,4 +700,195 @@ test('ledger stores actual usage, not the include allotment', async () => {
 		status: 'skip_zero',
 		uniqueWorkerDays: 12,
 	})
+})
+
+test('invoice job prices includes from invoice-time Standard overlays', async () => {
+	const fetchStub = stripeInvoiceFetchStub({ createId: 'in_overlay_1' })
+	vi.stubGlobal('fetch', fetchStub)
+	try {
+		const invoiceNow = new Date('2026-09-02T12:00:00.000Z')
+		const activeThroughCatchUp = '2026-09-04T00:00:00.000Z'
+		const expiredAtMonthBoundary = '2026-09-01T00:00:00.000Z'
+		const expiredInPriorMonth = '2026-08-15T00:00:00.000Z'
+		const standardIncludeDays = planLimits.standard.maxUniqueWorkerDaysPerMonth
+		const overlayUser = (input: {
+			id: number
+			prefix: string
+			plan: string
+			stripePlan: string | null
+			ladder?: string
+			customerId: string | null
+			giftExpiresAt?: string | null
+			referralExpiresAt?: string | null
+			uniqueWorkerDays?: number
+		}): Candidate => ({
+			id: input.id,
+			stable_user_id: input.prefix.padEnd(64, '0'),
+			plan: input.plan,
+			stripe_plan: input.stripePlan,
+			entitlement_ladder: input.ladder ?? 'public',
+			stripe_customer_id: input.customerId,
+			second_agent_standard_gift_expires_at: input.giftExpiresAt ?? null,
+			referral_standard_credit_expires_at: input.referralExpiresAt ?? null,
+			uniqueWorkerDays: input.uniqueWorkerDays ?? standardIncludeDays,
+			durableObjectRowsRead: 0,
+		})
+
+		const { db, inserts } = createBillingDb({
+			candidates: [
+				overlayUser({
+					id: 21,
+					prefix: '01',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_gift_active',
+					giftExpiresAt: activeThroughCatchUp,
+				}),
+				overlayUser({
+					id: 22,
+					prefix: '02',
+					plan: 'free',
+					stripePlan: null,
+					customerId: null,
+					giftExpiresAt: activeThroughCatchUp,
+				}),
+				overlayUser({
+					id: 23,
+					prefix: '03',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_gift_expired',
+					giftExpiresAt: expiredInPriorMonth,
+				}),
+				overlayUser({
+					id: 24,
+					prefix: '04',
+					plan: 'free',
+					stripePlan: null,
+					customerId: null,
+					giftExpiresAt: expiredInPriorMonth,
+				}),
+				overlayUser({
+					id: 25,
+					prefix: '05',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_referral_active',
+					referralExpiresAt: activeThroughCatchUp,
+				}),
+				overlayUser({
+					id: 26,
+					prefix: '06',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_referral_expired',
+					referralExpiresAt: expiredInPriorMonth,
+				}),
+				overlayUser({
+					id: 27,
+					prefix: '07',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_later_referral',
+					giftExpiresAt: expiredInPriorMonth,
+					referralExpiresAt: activeThroughCatchUp,
+				}),
+				overlayUser({
+					id: 28,
+					prefix: '08',
+					plan: 'free',
+					stripePlan: null,
+					customerId: 'cus_month_boundary',
+					giftExpiresAt: expiredAtMonthBoundary,
+				}),
+				overlayUser({
+					id: 29,
+					prefix: '09',
+					plan: 'standard',
+					stripePlan: 'standard',
+					customerId: 'cus_paid_standard',
+					giftExpiresAt: expiredInPriorMonth,
+					referralExpiresAt: expiredInPriorMonth,
+				}),
+				overlayUser({
+					id: 30,
+					prefix: '10',
+					plan: 'pro',
+					stripePlan: 'pro',
+					customerId: 'cus_paid_pro',
+					giftExpiresAt: activeThroughCatchUp,
+				}),
+				overlayUser({
+					id: 31,
+					prefix: '11',
+					plan: 'pro',
+					stripePlan: 'pro',
+					ladder: 'legacy',
+					customerId: 'cus_legacy',
+					giftExpiresAt: expiredInPriorMonth,
+					uniqueWorkerDays: planLimits.pro.maxUniqueWorkerDaysPerMonth + 100,
+				}),
+			],
+		})
+		const byPrefix = (prefix: string) =>
+			inserts.findLast((row) => row.userId === prefix.padEnd(64, '0'))
+		const result = await runComputeOverageBilling({
+			env: { APP_DB: db, STRIPE_SECRET_KEY: 'sk_test' } as Env,
+			now: invoiceNow,
+		})
+
+		expect(result).toMatchObject({
+			status: 'completed',
+			month: '2026-08',
+			scanned: 11,
+			invoiced: 3,
+			softBlocked: 1,
+			skippedLegacy: 1,
+		})
+		expect(byPrefix('01')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('02')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('03')).toMatchObject({
+			status: 'invoiced',
+			totalCents: 75,
+		})
+		expect(byPrefix('04')).toMatchObject({
+			status: 'soft_block',
+			totalCents: 75,
+		})
+		expect(byPrefix('05')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('06')).toMatchObject({
+			status: 'invoiced',
+			totalCents: 75,
+		})
+		expect(byPrefix('07')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('08')).toMatchObject({
+			status: 'invoiced',
+			totalCents: 75,
+		})
+		expect(byPrefix('09')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('10')).toMatchObject({
+			status: 'skip_zero',
+			totalCents: 0,
+		})
+		expect(byPrefix('11')).toMatchObject({
+			status: 'skip_legacy',
+		})
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })

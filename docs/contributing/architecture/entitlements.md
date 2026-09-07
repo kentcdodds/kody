@@ -117,7 +117,7 @@ Standard/Pro/max and Stripe was not touched. There is no existing helper that
 extends a remaining Stripe period, and mutating `trial_end` / period end is
 payment-adjacent.
 
-`getUserEntitlement` overlays Standard through
+`getUserEntitlement` and compute-overage invoicing overlay Standard through
 `resolveEffectivePlanWithSecondAgentGift` while `expires_at` is in the future
 and the base rank is still below Standard. The gift never lowers a paid or
 manual grant. Expiry is read-time (no sweeper). Authorize completion and
@@ -158,8 +158,8 @@ referrer. An unverified party holds the qualifying invoice id on the pending
 row; email verification retries the grant. `/account/billing` shows the share
 link and simple referrer status.
 
-`getUserEntitlement` overlays Standard through the later of the second-agent
-gift and this referral credit.
+`getUserEntitlement` and compute-overage invoicing overlay Standard through the
+later of the second-agent gift and this referral credit.
 
 ### `max` plan limits
 
@@ -265,9 +265,12 @@ off is a hard gate — a per-user on override cannot charge. A percentage
 rollout is still globally on. Amounts below
 Stripe's $0.50
 USD minimum are recorded as `skip_below_minimum`, not invoiced. Includes are
-resolved from the plan and ladder at invoice time (UTC days 1–3); there is no
-month-end plan snapshot. D1 evaluation failures fail closed (no charges).
-Execute is a hard daily cap with no overage
+resolved from the effective plan and ladder at invoice time (UTC days 1–3),
+including an unexpired second-agent gift or referral Standard credit (the later
+of the two expiry columns, same helper as `getUserEntitlement`). There is no
+month-end plan snapshot; a plan or overlay that is expired when the job runs
+prices the prior month against the then-current includes. D1 evaluation failures
+fail closed (no charges). Execute is a hard daily cap with no overage
 (`computeMeteringPolicy.executeCallsPerDay`) — an execute overage would
 double-charge the same burn as unique worker days. Durable Object duration is
 unmetered; a later duration rate should stay list plus a thin markup. Overage is
@@ -610,15 +613,16 @@ wrapper and always returns a `PlanName`:
 1. Returns `free` when `userId` is absent (no warn).
 2. Returns `free` without touching D1 when `userId` is not a 64-char hex string
    (test fixtures and non-account ids).
-3. When email is present: reads
-   `SELECT plan, stripe_plan FROM users WHERE email = ? AND stable_user_id = ?`
-   and returns `resolveEffectivePlan(parseStoredPlanName(plan), stripe_plan)`. A
-   mismatched email/stable-id pair or missing row returns `free` (no warn).
-4. When email is absent/blank: reverse-resolves
-   `SELECT plan, stripe_plan FROM users WHERE stable_user_id = ?` so
-   package-job, workflow, webhook, and other background contexts that persist
-   `email: ''` still enforce the account's real plan. Missing rows return
-   `free`.
+3. When email is present: reads `plan`, `stripe_plan`, `entitlement_ladder`, and
+   the two Standard overlay expiry columns where
+   `email = ? AND stable_user_id = ?`, then returns
+   `resolveEffectivePlanWithSecondAgentGift` with `laterIsoTimestamp` of those
+   expiries. A mismatched email/stable-id pair or missing row returns `free` (no
+   warn).
+4. When email is absent/blank: reverse-resolves the same columns by
+   `stable_user_id` so package-job, workflow, webhook, and other background
+   contexts that persist `email: ''` still enforce the account's real plan.
+   Missing rows return `free`.
 
 Interactive surfaces still carry email (app sessions expose
 `user.mcpUser.email`, MCP caller contexts expose
