@@ -78,6 +78,7 @@ import {
 } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import {
@@ -896,6 +897,14 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				source: 'oauth',
 				inviteCode: consumedInviteCode,
 				attribution: loginState.attribution,
+			})
+			void attributeReferralAtSignup({
+				db: env.APP_DB,
+				refereeStableUserId: stableUserId,
+				refereeUsername: username,
+				referralCode: loginState.attribution?.referralCode,
+			}).catch((error) => {
+				console.warn('referral-attribution-failed', error)
 			})
 
 			void logAuditEvent({

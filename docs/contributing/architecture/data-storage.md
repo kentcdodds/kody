@@ -352,7 +352,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   14-day Standard overlay granted when unique inbound MCP OAuth `clientId`s
   first reach 2; `second_agent_standard_gift_expires_at` is set only when that
   overlay actually raises a free account (NULL means already paid / no-op). See
-  [Entitlements](./entitlements.md#second-agent-standard-gift). The
+  [Entitlements](./entitlements.md#second-agent-standard-gift).
+  `referral_standard_credit_expires_at` is the stackable Standard overlay from
+  the uncapped referral program. `referrals` stores write-once signup
+  attribution (`referrer_stable_user_id`, `referee_stable_user_id`) and the
+  invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
+  fields while email is unverified). See
+  [Entitlements](./entitlements.md#referral-standard-credit). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see

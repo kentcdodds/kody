@@ -23,6 +23,7 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: 'kody',
 		landingPath: '/signup',
 		referrer: 'https://youtube.com/watch?v=1',
+		referralCode: null,
 	})
 
 	expect(
@@ -42,6 +43,7 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: null,
 		landingPath: '/signup',
 		referrer: null,
+		referralCode: null,
 	})
 
 	expect(
@@ -57,6 +59,7 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: null,
 		landingPath: null,
 		referrer: null,
+		referralCode: null,
 	})
 
 	const attribution = parseFirstTouchAttribution({
@@ -83,4 +86,18 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 	expect(params.get('utm_source')).toBe('youtube')
 	expect(params.get('utm_medium')).toBe('video')
 	expect(params.get('landing_path')).toBe('/signup')
+
+	const fromRef = parseFirstTouchAttribution({
+		searchParams: new URLSearchParams('ref=KentCDodds'),
+		landingPath: '/signup',
+	})
+	expect(fromRef.referralCode).toBe('kentcdodds')
+	expect(hasFirstTouchAttribution(fromRef)).toBe(true)
+	expect(serializeFirstTouchAttributionForTransport(fromRef)).toEqual({
+		landingPath: '/signup',
+		referralCode: 'kentcdodds',
+	})
+	const refParams = new URLSearchParams()
+	appendAttributionQueryParams(refParams, fromRef)
+	expect(refParams.get('ref')).toBe('kentcdodds')
 })

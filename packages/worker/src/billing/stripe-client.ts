@@ -96,6 +96,7 @@ const subscriptionSchema = object({
 	id: string(),
 	status: string(),
 	cancel_at: nullable(number()),
+	current_period_end: optional(nullable(number())),
 	metadata: optional(record(string(), string())),
 	items: object({
 		data: array(subscriptionItemSchema),

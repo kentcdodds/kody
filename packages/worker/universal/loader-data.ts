@@ -28,6 +28,7 @@ import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import { type ReferralProgramSummary } from '#universal/referral-program.ts'
 import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
@@ -1922,6 +1923,7 @@ export type AccountBillingLoaderData = {
 	purchasablePlans: Array<'standard' | 'pro'>
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
+	referralProgram: ReferralProgramSummary | null
 	error?: string
 	/** Success notice mapped from `?billing=<code>` (e.g. a completed plan change). */
 	notice?: string

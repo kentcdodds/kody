@@ -16,6 +16,7 @@ test('oauth login state cookie preserves first-touch UTMs through round-trip', a
 		utmTerm: null,
 		landingPath: '/signup',
 		referrer: 'https://youtube.com/',
+		referralCode: null,
 	}
 	const cookie = await createOauthLoginStateCookie(
 		{
@@ -46,6 +47,7 @@ test('oauth login state cookie preserves first-touch UTMs through round-trip', a
 			utmTerm: null,
 			landingPath: '/signup',
 			referrer: 'https://youtube.com/',
+			referralCode: null,
 		},
 	})
 })

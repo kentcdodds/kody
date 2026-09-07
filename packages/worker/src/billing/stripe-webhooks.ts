@@ -17,12 +17,22 @@ import {
 import { waitUntil } from 'cloudflare:workers'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
-import { isBillingConfigured } from './billing-config.ts'
+import { isBillingConfigured,selectPlanRetainingSubscriptions } from './billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
 	refreshStripePlanForStripeCustomer,
 } from './subscription-sync.ts'
+import { listSubscriptions } from './stripe-client.ts'
+import {
+	isQualifyingPaidReferralInvoice,
+	readStripeInvoiceCustomerId,
+	readStripeInvoiceId,
+	readStripeInvoicePeriodEndIso,
+	readStripeInvoiceSubscriptionId,
+	rewardReferralForPaidInvoice,
+} from '#worker/entitlements/referral-program.ts'
+import { unixSecondsToIso } from '#universal/referral-program.ts'
 import {
 	StripeWebhookSignatureError,
 	verifyStripeWebhookSignature,
@@ -235,6 +245,91 @@ async function handleInvoicePaymentFailed(input: {
 	)
 }
 
+async function latestReferrerPaidPeriodEnd(input: {
+	env: Env
+	referrerStableUserId: string
+}): Promise<string | null> {
+	const row = await input.env.APP_DB.prepare(
+		`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(input.referrerStableUserId)
+		.first<{ stripe_customer_id: string | null }>()
+	const customerId = row?.stripe_customer_id?.trim()
+	if (!customerId) return null
+	try {
+		const subscriptions = selectPlanRetainingSubscriptions(
+			await listSubscriptions(input.env, customerId),
+		)
+		let latest: string | null = null
+		for (const subscription of subscriptions) {
+			const iso = unixSecondsToIso(subscription.current_period_end)
+			if (!iso) continue
+			if (!latest || Date.parse(iso) > Date.parse(latest)) latest = iso
+		}
+		return latest
+	} catch (error) {
+		console.warn('referral-referrer-period-end-failed', error)
+		return null
+	}
+}
+
+async function handleInvoicePaid(input: {
+	env: Env
+	object: Record<string, unknown>
+	now?: Date
+}) {
+	const customerId = readStripeInvoiceCustomerId(input.object)
+	const invoiceId = readStripeInvoiceId(input.object)
+	if (!customerId || !invoiceId) {
+		console.error('stripe_webhook_invoice_paid_missing_ids')
+		return
+	}
+	const user = await input.env.APP_DB.prepare(
+		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?`,
+	)
+		.bind(customerId)
+		.first<{ stable_user_id: string }>()
+	if (!user?.stable_user_id) return
+
+	const subscriptionId = readStripeInvoiceSubscriptionId(input.object)
+	const qualifies = isQualifyingPaidReferralInvoice({
+		status: input.object.status,
+		paid: input.object.paid,
+		amount_paid: input.object.amount_paid,
+		billing_reason: input.object.billing_reason,
+		subscription: subscriptionId,
+		metadata:
+			input.object.metadata && typeof input.object.metadata === 'object'
+				? (input.object.metadata as Record<string, string>)
+				: null,
+	})
+	if (!qualifies) return
+
+	const pending = await input.env.APP_DB.prepare(
+		`SELECT referrer_stable_user_id
+		 FROM referrals
+		 WHERE referee_stable_user_id = ? AND status = 'pending'`,
+	)
+		.bind(user.stable_user_id)
+		.first<{ referrer_stable_user_id: string }>()
+	if (!pending) return
+
+	const referrerPaidPeriodEndAt = await latestReferrerPaidPeriodEnd({
+		env: input.env,
+		referrerStableUserId: pending.referrer_stable_user_id,
+	})
+
+	await rewardReferralForPaidInvoice({
+		db: input.env.APP_DB,
+		refereeStableUserId: user.stable_user_id,
+		invoiceId,
+		invoiceQualifies: true,
+		paidPeriodEndAt: readStripeInvoicePeriodEndIso(input.object),
+		referrerPaidPeriodEndAt,
+		now: input.now,
+	})
+}
+
 export async function processStripeWebhookEvent(input: {
 	env: Env
 	eventType: string
@@ -259,6 +354,13 @@ export async function processStripeWebhookEvent(input: {
 			return
 		case 'invoice.payment_failed':
 			await handleInvoicePaymentFailed({
+				env: input.env,
+				object: input.object,
+				now: input.now,
+			})
+			return
+		case 'invoice.paid':
+			await handleInvoicePaid({
 				env: input.env,
 				object: input.object,
 				now: input.now,

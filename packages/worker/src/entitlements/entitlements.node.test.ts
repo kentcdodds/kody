@@ -40,6 +40,7 @@ function createEntitlementsTestDb(
 			stripe_plan?: string | null
 			entitlement_ladder?: 'public' | 'legacy' | null
 			second_agent_standard_gift_expires_at?: string | null
+			referral_standard_credit_expires_at?: string | null
 			stable_user_id: string
 		}>
 		counts?: Partial<
@@ -94,7 +95,7 @@ function createEntitlementsTestDb(
 						async first<T>() {
 							if (
 								query.includes(
-									'SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at FROM users',
+									'SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users',
 								) ||
 								query.includes(
 									'SELECT plan, stripe_plan, entitlement_ladder FROM users',
@@ -128,6 +129,8 @@ function createEntitlementsTestDb(
 														user.entitlement_ladder ?? 'public',
 													second_agent_standard_gift_expires_at:
 														user.second_agent_standard_gift_expires_at ?? null,
+													referral_standard_credit_expires_at:
+														user.referral_standard_credit_expires_at ?? null,
 												}
 											: null
 									) as T | null
@@ -147,6 +150,8 @@ function createEntitlementsTestDb(
 												entitlement_ladder: user.entitlement_ladder ?? 'public',
 												second_agent_standard_gift_expires_at:
 													user.second_agent_standard_gift_expires_at ?? null,
+												referral_standard_credit_expires_at:
+													user.referral_standard_credit_expires_at ?? null,
 											}
 										: null
 								) as T | null

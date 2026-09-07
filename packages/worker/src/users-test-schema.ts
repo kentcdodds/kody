@@ -97,6 +97,7 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	last_active_at: { create: 'TEXT' },
 	second_agent_standard_gift_granted_at: { create: 'TEXT' },
 	second_agent_standard_gift_expires_at: { create: 'TEXT' },
+	referral_standard_credit_expires_at: { create: 'TEXT' },
 }
 
 /**

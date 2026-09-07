@@ -5,7 +5,8 @@ Plan, checkout, portal, and entitlement usage.
 ## How to get there
 
 `/account/billing` (success `/account/billing/success`, portal
-`/account/billing/portal`) and `/account/usage`.
+`/account/billing/portal`) and `/account/usage`. Billing also shows the
+signed-in user's referral share link and reward status.
 
 ## Drive it
 
@@ -16,7 +17,9 @@ node tools/control-kody.ts request GET /account/usage.json
 
 Do not complete a real Stripe checkout from a Cloud Agent. Existing subscribers
 change plans through the Stripe portal (proration). Deleting an account refunds
-unused paid subscription time automatically.
+unused paid subscription time automatically. Referral rewards fire on the
+referee's first qualifying paid Stripe invoice (not a trial); do not invent a
+paid invoice from this environment.
 
 ## APIs
 

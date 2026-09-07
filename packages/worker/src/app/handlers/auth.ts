@@ -64,6 +64,7 @@ import {
 } from '#universal/first-touch-attribution.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -608,6 +609,14 @@ export function createAuthHandler(env: Env) {
 					source: 'signup',
 					inviteCode: consumedInviteCode,
 					attribution: signupAttribution,
+				})
+				void attributeReferralAtSignup({
+					db: env.APP_DB,
+					refereeStableUserId: record.stableUserId,
+					refereeUsername: normalizedUsername,
+					referralCode: signupAttribution?.referralCode,
+				}).catch((error) => {
+					console.warn('referral-attribution-failed', error)
 				})
 
 				const cookie = await createAuthCookie(
