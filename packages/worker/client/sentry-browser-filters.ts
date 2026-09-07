@@ -24,7 +24,7 @@ type SentryExceptionValue = {
 	}
 }
 
-export type SentryErrorEventLike = {
+type SentryErrorEventLike = {
 	message?: string
 	exception?: {
 		values?: Array<SentryExceptionValue>
@@ -78,7 +78,7 @@ const browserAbortErrorMessages = new Set([
 	'AbortError: aborted',
 ])
 
-export function isBrowserAbortErrorMessage(message: string) {
+function isBrowserAbortErrorMessage(message: string) {
 	return browserAbortErrorMessages.has(message)
 }
 
@@ -93,7 +93,7 @@ export function isBrowserAbortError(error: unknown) {
  * unhandledrejection via `auto.browser.global_handlers.onunhandledrejection`
  * and are not actionable product defects.
  */
-export function isBrowserAbortSentryEvent(
+function isBrowserAbortSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -137,7 +137,7 @@ export function filterBrowserAbortSentryEvent<T extends SentryErrorEventLike>(
 const firefoxDomPermissionDeniedMessage =
 	/^Permission denied to access property ["'][^"']+["'](?: on cross-origin object)?\.?$/
 
-export function isFirefoxDomPermissionDeniedMessage(message: string) {
+function isFirefoxDomPermissionDeniedMessage(message: string) {
 	return firefoxDomPermissionDeniedMessage.test(message)
 }
 
@@ -147,7 +147,7 @@ export function isFirefoxDomPermissionDeniedError(error: unknown) {
 	return isFirefoxDomPermissionDeniedMessage(error.message)
 }
 
-export function isFirefoxDomPermissionDeniedSentryEvent(
+function isFirefoxDomPermissionDeniedSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -179,7 +179,7 @@ export function filterFirefoxDomPermissionDeniedSentryEvent<
  * Match is intentionally narrow: only these injected-global access patterns.
  * Never blanket-drop TypeError / ReferenceError.
  */
-export function isBrowserInjectedGlobalNoiseMessage(message: string) {
+function isBrowserInjectedGlobalNoiseMessage(message: string) {
 	const withoutTypePrefix = message
 		.trim()
 		.replace(/^(?:TypeError|ReferenceError):\s*/i, '')
@@ -202,7 +202,7 @@ export function isBrowserInjectedGlobalNoiseError(error: unknown) {
 	return isBrowserInjectedGlobalNoiseMessage(error.message)
 }
 
-export function isBrowserInjectedGlobalNoiseSentryEvent(
+function isBrowserInjectedGlobalNoiseSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -241,11 +241,11 @@ const fathomRemoveChildNullMessage =
 
 const fathomAnalyticsHostname = 'cdn.usefathom.com'
 
-export function isFathomRemoveChildNullMessage(message: string) {
+function isFathomRemoveChildNullMessage(message: string) {
 	return fathomRemoveChildNullMessage.test(message.trim())
 }
 
-export function isFathomAnalyticsStackFrameUrl(url: string) {
+function isFathomAnalyticsStackFrameUrl(url: string) {
 	try {
 		if (
 			new URL(url, 'https://sentry.invalid').hostname ===
@@ -261,9 +261,7 @@ export function isFathomAnalyticsStackFrameUrl(url: string) {
 	return normalized === '/script.js'
 }
 
-export function isFathomRemoveChildNullSentryEvent(
-	event: SentryErrorEventLike,
-) {
+function isFathomRemoveChildNullSentryEvent(event: SentryErrorEventLike) {
 	const hasRemoveChildNull = sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' && isFathomRemoveChildNullMessage(message),
@@ -272,9 +270,9 @@ export function isFathomRemoveChildNullSentryEvent(
 	return sentryEventStackFrameUrls(event).some(isFathomAnalyticsStackFrameUrl)
 }
 
-export function filterFathomRemoveChildNullSentryEvent<
-	T extends SentryErrorEventLike,
->(event: T): T | null {
+function filterFathomRemoveChildNullSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+): T | null {
 	if (isFathomRemoveChildNullSentryEvent(event)) return null
 	return event
 }
@@ -295,11 +293,11 @@ export function filterFathomRemoveChildNullSentryEvent<
 const chromeExtensionObjectNotFoundMessage =
 	/(?:^|\b)Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+\b/
 
-export function isChromeExtensionObjectNotFoundMessage(message: string) {
+function isChromeExtensionObjectNotFoundMessage(message: string) {
 	return chromeExtensionObjectNotFoundMessage.test(message.trim())
 }
 
-export function isChromeExtensionObjectNotFoundError(error: unknown) {
+function isChromeExtensionObjectNotFoundError(error: unknown) {
 	if (typeof error === 'string') {
 		return isChromeExtensionObjectNotFoundMessage(error)
 	}
@@ -308,7 +306,7 @@ export function isChromeExtensionObjectNotFoundError(error: unknown) {
 	return isChromeExtensionObjectNotFoundMessage(error.message)
 }
 
-export function isChromeExtensionObjectNotFoundSentryEvent(
+function isChromeExtensionObjectNotFoundSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -320,7 +318,7 @@ export function isChromeExtensionObjectNotFoundSentryEvent(
 	)
 }
 
-export function filterChromeExtensionObjectNotFoundSentryEvent<
+function filterChromeExtensionObjectNotFoundSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isChromeExtensionObjectNotFoundSentryEvent(event, originalException)) {
@@ -347,11 +345,11 @@ export function filterChromeExtensionObjectNotFoundSentryEvent<
 const chromeExtensionReceivingEndMissingMessage =
 	/^(?:Error:\s*)?Could not establish connection\. Receiving end does not exist\.?$/
 
-export function isChromeExtensionReceivingEndMissingMessage(message: string) {
+function isChromeExtensionReceivingEndMissingMessage(message: string) {
 	return chromeExtensionReceivingEndMissingMessage.test(message.trim())
 }
 
-export function isChromeExtensionReceivingEndMissingError(error: unknown) {
+function isChromeExtensionReceivingEndMissingError(error: unknown) {
 	if (typeof error === 'string') {
 		return isChromeExtensionReceivingEndMissingMessage(error)
 	}
@@ -360,7 +358,7 @@ export function isChromeExtensionReceivingEndMissingError(error: unknown) {
 	return isChromeExtensionReceivingEndMissingMessage(error.message)
 }
 
-export function isChromeExtensionReceivingEndMissingSentryEvent(
+function isChromeExtensionReceivingEndMissingSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -372,7 +370,7 @@ export function isChromeExtensionReceivingEndMissingSentryEvent(
 	)
 }
 
-export function filterChromeExtensionReceivingEndMissingSentryEvent<
+function filterChromeExtensionReceivingEndMissingSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (
@@ -401,13 +399,11 @@ export function filterChromeExtensionReceivingEndMissingSentryEvent<
 const chromeExtensionSendMessageTabNotFoundMessage =
 	/^(?:Error:\s*)?Invalid call to runtime\.sendMessage\(\)\. Tab not found\.?$/
 
-export function isChromeExtensionSendMessageTabNotFoundMessage(
-	message: string,
-) {
+function isChromeExtensionSendMessageTabNotFoundMessage(message: string) {
 	return chromeExtensionSendMessageTabNotFoundMessage.test(message.trim())
 }
 
-export function isChromeExtensionSendMessageTabNotFoundError(error: unknown) {
+function isChromeExtensionSendMessageTabNotFoundError(error: unknown) {
 	if (typeof error === 'string') {
 		return isChromeExtensionSendMessageTabNotFoundMessage(error)
 	}
@@ -416,7 +412,7 @@ export function isChromeExtensionSendMessageTabNotFoundError(error: unknown) {
 	return isChromeExtensionSendMessageTabNotFoundMessage(error.message)
 }
 
-export function isChromeExtensionSendMessageTabNotFoundSentryEvent(
+function isChromeExtensionSendMessageTabNotFoundSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -430,7 +426,7 @@ export function isChromeExtensionSendMessageTabNotFoundSentryEvent(
 	)
 }
 
-export function filterChromeExtensionSendMessageTabNotFoundSentryEvent<
+function filterChromeExtensionSendMessageTabNotFoundSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (
@@ -459,11 +455,11 @@ const metaMaskConnectFailureMessage =
 /** Published MetaMask Chrome Web Store extension id. */
 const metaMaskChromeExtensionId = 'nkbihfbeogaeaoehlefnkodbefgpgknn'
 
-export function isMetaMaskConnectFailureMessage(message: string) {
+function isMetaMaskConnectFailureMessage(message: string) {
 	return metaMaskConnectFailureMessage.test(message.trim())
 }
 
-export function isMetaMaskChromeExtensionStackFrameUrl(url: string) {
+function isMetaMaskChromeExtensionStackFrameUrl(url: string) {
 	try {
 		const parsed = new URL(url, 'https://sentry.invalid')
 		return (
@@ -475,7 +471,7 @@ export function isMetaMaskChromeExtensionStackFrameUrl(url: string) {
 	}
 }
 
-export function isMetaMaskConnectFailureError(error: unknown) {
+function isMetaMaskConnectFailureError(error: unknown) {
 	if (typeof error === 'string') {
 		return isMetaMaskConnectFailureMessage(error)
 	}
@@ -484,7 +480,7 @@ export function isMetaMaskConnectFailureError(error: unknown) {
 	return isMetaMaskConnectFailureMessage(error.message)
 }
 
-export function isMetaMaskExtensionSentryEvent(
+function isMetaMaskExtensionSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -500,9 +496,10 @@ export function isMetaMaskExtensionSentryEvent(
 	)
 }
 
-export function filterMetaMaskExtensionSentryEvent<
-	T extends SentryErrorEventLike,
->(event: T, originalException?: unknown): T | null {
+function filterMetaMaskExtensionSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+	originalException?: unknown,
+): T | null {
 	if (isMetaMaskExtensionSentryEvent(event, originalException)) return null
 	return event
 }
@@ -525,7 +522,7 @@ export function filterMetaMaskExtensionSentryEvent<
 const metaMaskWalletNoAccountMessage =
 	/^(?:Error:\s*)?wallet must ha(?:s|ve) at least one account\.?$/i
 
-export function isMetaMaskWalletNoAccountMessage(message: string) {
+function isMetaMaskWalletNoAccountMessage(message: string) {
 	return metaMaskWalletNoAccountMessage.test(message.trim())
 }
 
@@ -538,7 +535,7 @@ export function isMetaMaskWalletNoAccountError(error: unknown) {
 	return isMetaMaskWalletNoAccountMessage(error.message)
 }
 
-export function isMetaMaskWalletNoAccountSentryEvent(
+function isMetaMaskWalletNoAccountSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -549,7 +546,7 @@ export function isMetaMaskWalletNoAccountSentryEvent(
 	)
 }
 
-export function filterMetaMaskWalletNoAccountSentryEvent<
+function filterMetaMaskWalletNoAccountSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isMetaMaskWalletNoAccountSentryEvent(event, originalException)) {
@@ -575,11 +572,11 @@ export function filterMetaMaskWalletNoAccountSentryEvent<
 const chromeExtensionClientDestroyedMessage =
 	/^(?:(?:WrappedError|Error):\s*)?Client has been destroyed\.?$/i
 
-export function isChromeExtensionClientDestroyedMessage(message: string) {
+function isChromeExtensionClientDestroyedMessage(message: string) {
 	return chromeExtensionClientDestroyedMessage.test(message.trim())
 }
 
-export function isChromeExtensionStackFrameUrl(url: string) {
+function isChromeExtensionStackFrameUrl(url: string) {
 	try {
 		return (
 			new URL(url, 'https://sentry.invalid').protocol === 'chrome-extension:'
@@ -589,7 +586,7 @@ export function isChromeExtensionStackFrameUrl(url: string) {
 	}
 }
 
-export function isChromeExtensionClientDestroyedError(error: unknown) {
+function isChromeExtensionClientDestroyedError(error: unknown) {
 	if (typeof error === 'string') {
 		return isChromeExtensionClientDestroyedMessage(error)
 	}
@@ -598,7 +595,7 @@ export function isChromeExtensionClientDestroyedError(error: unknown) {
 	return isChromeExtensionClientDestroyedMessage(error.message)
 }
 
-export function isChromeExtensionClientDestroyedSentryEvent(
+function isChromeExtensionClientDestroyedSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -614,7 +611,7 @@ export function isChromeExtensionClientDestroyedSentryEvent(
 	return frameUrls.length > 0 && frameUrls.every(isChromeExtensionStackFrameUrl)
 }
 
-export function filterChromeExtensionClientDestroyedSentryEvent<
+function filterChromeExtensionClientDestroyedSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isChromeExtensionClientDestroyedSentryEvent(event, originalException)) {
@@ -640,11 +637,11 @@ export function filterChromeExtensionClientDestroyedSentryEvent<
 const chromeExtensionCallStackExceededMessage =
 	/^(?:(?:RangeError|Error):\s*)?Maximum call stack size exceeded\.?$/i
 
-export function isChromeExtensionCallStackExceededMessage(message: string) {
+function isChromeExtensionCallStackExceededMessage(message: string) {
 	return chromeExtensionCallStackExceededMessage.test(message.trim())
 }
 
-export function isAnonymousOrNativeStackFrameUrl(url: string) {
+function isAnonymousOrNativeStackFrameUrl(url: string) {
 	const trimmed = url.trim()
 	return (
 		trimmed.length === 0 ||
@@ -654,13 +651,13 @@ export function isAnonymousOrNativeStackFrameUrl(url: string) {
 	)
 }
 
-export function isChromeExtensionOrAnonymousStackFrameUrl(url: string) {
+function isChromeExtensionOrAnonymousStackFrameUrl(url: string) {
 	return (
 		isAnonymousOrNativeStackFrameUrl(url) || isChromeExtensionStackFrameUrl(url)
 	)
 }
 
-export function isChromeExtensionCallStackExceededError(error: unknown) {
+function isChromeExtensionCallStackExceededError(error: unknown) {
 	if (typeof error === 'string') {
 		return isChromeExtensionCallStackExceededMessage(error)
 	}
@@ -669,7 +666,7 @@ export function isChromeExtensionCallStackExceededError(error: unknown) {
 	return isChromeExtensionCallStackExceededMessage(error.message)
 }
 
-export function isChromeExtensionCallStackExceededSentryEvent(
+function isChromeExtensionCallStackExceededSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -693,7 +690,7 @@ export function isChromeExtensionCallStackExceededSentryEvent(
 	return frameUrls.every(isChromeExtensionOrAnonymousStackFrameUrl)
 }
 
-export function filterChromeExtensionCallStackExceededSentryEvent<
+function filterChromeExtensionCallStackExceededSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isChromeExtensionCallStackExceededSentryEvent(event, originalException)) {
@@ -721,15 +718,15 @@ const twitterInAppBrowserChromeFunctions = new Set([
 	'updateGapFiller',
 ])
 
-export function isTwitterInAppBrowserConfigMessage(message: string) {
+function isTwitterInAppBrowserConfigMessage(message: string) {
 	return twitterInAppBrowserConfigMessage.test(message.trim())
 }
 
-export function isTwitterInAppBrowserChromeStackFunction(name: string) {
+function isTwitterInAppBrowserChromeStackFunction(name: string) {
 	return twitterInAppBrowserChromeFunctions.has(name)
 }
 
-export function isTwitterInAppBrowserConfigError(error: unknown) {
+function isTwitterInAppBrowserConfigError(error: unknown) {
 	if (typeof error === 'string') {
 		return isTwitterInAppBrowserConfigMessage(error)
 	}
@@ -738,7 +735,7 @@ export function isTwitterInAppBrowserConfigError(error: unknown) {
 	return isTwitterInAppBrowserConfigMessage(error.message)
 }
 
-export function isTwitterInAppBrowserConfigSentryEvent(
+function isTwitterInAppBrowserConfigSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -755,7 +752,7 @@ export function isTwitterInAppBrowserConfigSentryEvent(
 	)
 }
 
-export function filterTwitterInAppBrowserConfigSentryEvent<
+function filterTwitterInAppBrowserConfigSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isTwitterInAppBrowserConfigSentryEvent(event, originalException)) {
@@ -779,15 +776,11 @@ export function filterTwitterInAppBrowserConfigSentryEvent<
 const twitterInAppBrowserWebkitMessageHandlersMessage =
 	/^(?:TypeError:\s*)?undefined is not an object \(evaluating ['"]window\.webkit\.messageHandlers(?:\.[^'"]*)?['"]\)$/i
 
-export function isTwitterInAppBrowserWebkitMessageHandlersMessage(
-	message: string,
-) {
+function isTwitterInAppBrowserWebkitMessageHandlersMessage(message: string) {
 	return twitterInAppBrowserWebkitMessageHandlersMessage.test(message.trim())
 }
 
-export function isTwitterInAppBrowserWebkitMessageHandlersError(
-	error: unknown,
-) {
+function isTwitterInAppBrowserWebkitMessageHandlersError(error: unknown) {
 	if (typeof error === 'string') {
 		return isTwitterInAppBrowserWebkitMessageHandlersMessage(error)
 	}
@@ -796,7 +789,7 @@ export function isTwitterInAppBrowserWebkitMessageHandlersError(
 	return isTwitterInAppBrowserWebkitMessageHandlersMessage(error.message)
 }
 
-export function isTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
+function isTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -813,7 +806,7 @@ export function isTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
 	)
 }
 
-export function filterTwitterInAppBrowserWebkitMessageHandlersSentryEvent<
+function filterTwitterInAppBrowserWebkitMessageHandlersSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (
@@ -844,11 +837,11 @@ export function filterTwitterInAppBrowserWebkitMessageHandlersSentryEvent<
 const ogTypeMetaQuerySelectorContentMessage =
 	/^(?:TypeError:\s*)?null is not an object \(evaluating ['"]document\.querySelector\([^)]*meta\[property=['"]og:type['"]\][^)]*\)\.content['"]\)$/i
 
-export function isOgTypeMetaQuerySelectorContentMessage(message: string) {
+function isOgTypeMetaQuerySelectorContentMessage(message: string) {
 	return ogTypeMetaQuerySelectorContentMessage.test(message.trim())
 }
 
-export function isOgTypeMetaQuerySelectorContentError(error: unknown) {
+function isOgTypeMetaQuerySelectorContentError(error: unknown) {
 	if (typeof error === 'string') {
 		return isOgTypeMetaQuerySelectorContentMessage(error)
 	}
@@ -857,7 +850,7 @@ export function isOgTypeMetaQuerySelectorContentError(error: unknown) {
 	return isOgTypeMetaQuerySelectorContentMessage(error.message)
 }
 
-export function isOgTypeMetaQuerySelectorContentSentryEvent(
+function isOgTypeMetaQuerySelectorContentSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -874,7 +867,7 @@ export function isOgTypeMetaQuerySelectorContentSentryEvent(
 	)
 }
 
-export function filterOgTypeMetaQuerySelectorContentSentryEvent<
+function filterOgTypeMetaQuerySelectorContentSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isOgTypeMetaQuerySelectorContentSentryEvent(event, originalException)) {
@@ -892,11 +885,11 @@ export function filterOgTypeMetaQuerySelectorContentSentryEvent<
 const browserBlobImportScriptsNetworkErrorMessage =
 	/Failed to execute 'importScripts' on 'WorkerGlobalScope': The script at 'blob:[^']+' failed to load\.?/i
 
-export function isBrowserBlobImportScriptsNetworkErrorMessage(message: string) {
+function isBrowserBlobImportScriptsNetworkErrorMessage(message: string) {
 	return browserBlobImportScriptsNetworkErrorMessage.test(message.trim())
 }
 
-export function isBrowserBlobImportScriptsNetworkError(error: unknown) {
+function isBrowserBlobImportScriptsNetworkError(error: unknown) {
 	if (typeof error === 'string') {
 		return isBrowserBlobImportScriptsNetworkErrorMessage(error)
 	}
@@ -905,7 +898,7 @@ export function isBrowserBlobImportScriptsNetworkError(error: unknown) {
 	return isBrowserBlobImportScriptsNetworkErrorMessage(error.message)
 }
 
-export function isBrowserBlobImportScriptsNetworkSentryEvent(
+function isBrowserBlobImportScriptsNetworkSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -917,7 +910,7 @@ export function isBrowserBlobImportScriptsNetworkSentryEvent(
 	)
 }
 
-export function filterBrowserBlobImportScriptsNetworkSentryEvent<
+function filterBrowserBlobImportScriptsNetworkSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isBrowserBlobImportScriptsNetworkSentryEvent(event, originalException)) {
@@ -939,9 +932,7 @@ export function filterBrowserBlobImportScriptsNetworkSentryEvent<
 const syntaxHighlightCoreDynamicImportFailureMessage =
 	/Failed to fetch dynamically imported module:\s*\S*syntax-highlight-core[^/\s]*\.js/i
 
-export function isSyntaxHighlightCoreDynamicImportFailureMessage(
-	message: string,
-) {
+function isSyntaxHighlightCoreDynamicImportFailureMessage(message: string) {
 	return syntaxHighlightCoreDynamicImportFailureMessage.test(message.trim())
 }
 
@@ -954,7 +945,7 @@ export function isSyntaxHighlightCoreDynamicImportFailureError(error: unknown) {
 	return isSyntaxHighlightCoreDynamicImportFailureMessage(error.message)
 }
 
-export function isSyntaxHighlightCoreDynamicImportFailureSentryEvent(
+function isSyntaxHighlightCoreDynamicImportFailureSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -968,7 +959,7 @@ export function isSyntaxHighlightCoreDynamicImportFailureSentryEvent(
 	)
 }
 
-export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
+function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (
@@ -992,7 +983,7 @@ export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
  * frame names `resolveFrame`, `fetchFrameResolve`, or `createFrameResolveInit`
  * so other fetch TypeErrors stay Sentry-visible.
  */
-export function isResolveFrameFetchNetworkSentryEvent(
+function isResolveFrameFetchNetworkSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -1077,7 +1068,7 @@ export function isLocalViteDevError(error: unknown) {
 	return stackTextLooksLikeLocalViteDev(stack)
 }
 
-export function isLocalViteDevSentryEvent(
+function isLocalViteDevSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -1101,7 +1092,7 @@ export function isLocalViteDevSentryEvent(
 	)
 }
 
-export function filterLocalViteDevSentryEvent<T extends SentryErrorEventLike>(
+function filterLocalViteDevSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
 	originalException?: unknown,
 ): T | null {
@@ -1109,7 +1100,7 @@ export function filterLocalViteDevSentryEvent<T extends SentryErrorEventLike>(
 	return event
 }
 
-export function filterResolveFrameFetchNetworkSentryEvent<
+function filterResolveFrameFetchNetworkSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isResolveFrameFetchNetworkSentryEvent(event, originalException)) {
@@ -1129,7 +1120,7 @@ export function filterResolveFrameFetchNetworkSentryEvent<
 const cloudflareTurnstileClientErrorMessage =
 	/^(?:Error:\s*)?(?:Turnstile script failed to load\.|Turnstile API did not initialize\.|\[Cloudflare Turnstile\] Error: \d+\.?)$/i
 
-export function isCloudflareTurnstileClientErrorMessage(message: string) {
+function isCloudflareTurnstileClientErrorMessage(message: string) {
 	return cloudflareTurnstileClientErrorMessage.test(message.trim())
 }
 
@@ -1145,7 +1136,7 @@ export function isCloudflareTurnstileClientError(error: unknown) {
 	return isCloudflareTurnstileClientErrorMessage(error.message)
 }
 
-export function isCloudflareTurnstileClientSentryEvent(
+function isCloudflareTurnstileClientSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
@@ -1162,7 +1153,7 @@ export function isCloudflareTurnstileClientSentryEvent(
 	)
 }
 
-export function filterCloudflareTurnstileClientSentryEvent<
+function filterCloudflareTurnstileClientSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (isCloudflareTurnstileClientSentryEvent(event, originalException)) {
