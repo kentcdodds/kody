@@ -317,7 +317,7 @@ export function HomeRoute(handle: Handle) {
 
 				<section aria-labelledby="factory-title" class="landing-factory">
 					<h2 id="factory-title" class="landing-section-heading">
-						From ad hoc prompts to durable software
+						From ad hoc prompts to <em>durable software</em>
 					</h2>
 					<p class="landing-factory-lead">
 						Stop burning your tokens on the same thing over and over again. Turn
@@ -426,7 +426,7 @@ export function HomeRoute(handle: Handle) {
 				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
 						<h2 id="ecosystem-title" class="landing-section-heading">
-							Your own git and npm.
+							Your own <em>git</em> and <em>npm</em>.
 						</h2>
 						<p class="landing-split-copy">
 							Kody gives you a <strong>personal software ecosystem</strong>.
@@ -477,7 +477,7 @@ export function HomeRoute(handle: Handle) {
 
 				<section aria-labelledby="world-title" class="landing-world">
 					<h2 id="world-title" class="landing-section-heading">
-						It already speaks your stack
+						It already speaks <em>your stack</em>
 					</h2>
 					<p class="landing-world-lead">
 						Public packages cover the tools you live in. Browse what other
@@ -538,7 +538,7 @@ export function HomeRoute(handle: Handle) {
 						id="invite-title"
 						class="landing-section-heading landing-invite-title"
 					>
-						Give your agents a home
+						Give your agents a <em>home</em>
 					</h2>
 					{isSignedIn ? (
 						<div>
