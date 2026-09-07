@@ -98,6 +98,11 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					fork the installer owns.
 				</p>
 				<p>
+					Trying to run Kody across a team, or have other multi-user needs?
+					Email <a href="mailto:support@kody.codes">support@kody.codes</a> —
+					we&rsquo;re shaping that and want to hear what you need.
+				</p>
+				<p>
 					<a href={routes.community.href()}>Public packages</a>
 				</p>
 			</>

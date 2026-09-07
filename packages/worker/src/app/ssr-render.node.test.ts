@@ -1578,6 +1578,8 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	const html = await readResponseText(response)
 	expect(html).toContain('<title>FAQ</title>')
 	expect(html).toContain('data-faq="replace-agents"')
+	expect(html).toContain('data-faq="shared-account"')
+	expect(html).toContain('mailto:support@kody.codes')
 	expect(html).toContain('<details')
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
