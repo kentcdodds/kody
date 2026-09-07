@@ -614,4 +614,7 @@ verify, billing, and error-rate mail is never suppressed. Distinct inbound
 client counts come from `loadInboundMcpConnectionState`. A failed grant listing
 does not treat the count as 0: packaged users without Activated history hold
 `PackagedSingleClient` and persist without sending, so a later successful
-listing stays a seed instead of an event backfill.
+listing stays a seed instead of an event backfill. A failed execute-rollup read
+does not treat depth as 0: the same packaged row persists without sending, so a
+later successful read can still become Activated silence instead of second-agent
+mail.

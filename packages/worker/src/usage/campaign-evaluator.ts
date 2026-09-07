@@ -25,6 +25,8 @@ export type UsageCampaignSnapshot = {
 	/** True when the jobs list failed. Do not treat that as "no jobs". */
 	jobListingFailed?: boolean
 	hasStrongRecentUse: boolean
+	/** True when the execute rollup read failed. Do not treat that as 0 use. */
+	executeReadFailed?: boolean
 	isStripePaid: boolean
 	isNearEntitlementCap: boolean
 	/** Username used to mint the live referral share URL. */
@@ -173,6 +175,19 @@ export function evaluateUsageCampaign(
 			coolingTerminal: false,
 			everActivated,
 			reason: 'inbound_listing_failed',
+		}
+	}
+
+	if (state === 'PackagedSingleClient' && snapshot.executeReadFailed) {
+		return {
+			state,
+			action: 'persist',
+			template: null,
+			sendIndex: null,
+			origin,
+			coolingTerminal: false,
+			everActivated,
+			reason: 'execute_read_failed',
 		}
 	}
 

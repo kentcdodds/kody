@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	gatherUsageCampaignSnapshot,
@@ -173,4 +174,52 @@ test('near-cap reads use Standard overlays, not the stored free plan', async () 
 			})
 		).isNearEntitlementCap,
 	).toBe(true)
+})
+
+test('execute rollup failures do not look like zero use', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const failingDb = {
+		prepare(query: string) {
+			if (query.includes('usage_rollups')) {
+				throw new Error('rollup down')
+			}
+			return db.prepare(query)
+		},
+	}
+	const now = new Date('2026-09-07T12:00:00.000Z')
+	const snapshot = await gatherUsageCampaignSnapshot({
+		env: {
+			APP_DB: failingDb,
+			JOBS: {
+				listJobsForUser: async () => [],
+			},
+		} as unknown as Env,
+		user: {
+			stable_user_id: 'user-exec',
+			username: 'exec',
+			email: 'exec@example.com',
+			email_verified_at: '2026-09-01T00:00:00.000Z',
+			first_mcp_connected_at: '2026-09-02T00:00:00.000Z',
+			first_saved_package_at: '2026-09-03T00:00:00.000Z',
+			first_execute_at: '2026-09-03T00:00:00.000Z',
+			mcp_client_name: null,
+			last_active_at: '2026-09-06T00:00:00.000Z',
+			second_agent_standard_gift_granted_at: null,
+			second_agent_standard_gift_expires_at: null,
+			referral_standard_credit_expires_at: null,
+			plan: 'free',
+			stripe_plan: null,
+			entitlement_ladder: null,
+		},
+		now,
+	})
+	expect(snapshot.executeReadFailed).toBe(true)
+	expect(snapshot.hasStrongRecentUse).toBe(false)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'usage-campaign-execute-read-failed',
+		expect.any(Error),
+	)
 })

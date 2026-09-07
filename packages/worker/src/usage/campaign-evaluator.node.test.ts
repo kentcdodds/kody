@@ -113,6 +113,25 @@ test('evaluator walks usage stamps into states, caps, and Activated/Paid silence
 		reason: 'inbound_listing_failed',
 	})
 	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+				executeReadFailed: true,
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+			}),
+			persisted({
+				state: 'PackagedSingleClient',
+				enteredAt: '2026-09-01T00:00:00.000Z',
+				origin: 'event',
+			}),
+		),
+	).toMatchObject({
+		state: 'PackagedSingleClient',
+		action: 'persist',
+		reason: 'execute_read_failed',
+	})
+	expect(
 		resolveUsageCampaignState(
 			snapshot({
 				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',

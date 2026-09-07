@@ -45,7 +45,7 @@ export async function gatherUsageCampaignSnapshot(input: {
 	user: UsageCampaignCandidate
 	now: Date
 }): Promise<UsageCampaignSnapshot> {
-	const [clients, jobs, executeCount, nearCap] = await Promise.all([
+	const [clients, jobs, execute, nearCap] = await Promise.all([
 		countDistinctInboundClients(input.env, input.user.stable_user_id),
 		readJobActivity(input.env, input.user.stable_user_id),
 		readMonthlyExecuteCount(
@@ -73,9 +73,10 @@ export async function gatherUsageCampaignSnapshot(input: {
 		hasStrongRecentUse: isStrongRecentUse({
 			lastActiveAt: input.user.last_active_at,
 			firstExecuteAt: input.user.first_execute_at,
-			executeCount,
+			executeCount: execute.eventCount,
 			now: input.now,
 		}),
+		executeReadFailed: execute.readFailed,
 		isStripePaid: isStripePaidPlan(input.user.stripe_plan),
 		isNearEntitlementCap: nearCap,
 		username: input.user.username,
@@ -149,9 +150,16 @@ async function readMonthlyExecuteCount(
 			)
 			.bind(userId, utcMonthKey(now))
 			.first<{ event_count: number }>()
-		return Number(row?.event_count ?? 0)
-	} catch {
-		return 0
+		return {
+			eventCount: Number(row?.event_count ?? 0),
+			readFailed: false,
+		}
+	} catch (error) {
+		console.warn('usage-campaign-execute-read-failed', error)
+		return {
+			eventCount: 0,
+			readFailed: true,
+		}
 	}
 }
 
