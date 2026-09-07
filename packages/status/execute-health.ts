@@ -14,8 +14,8 @@
 export const executeHealthOrganicFreshMs = 60_000
 export const executeHealthSyntheticCooldownMs = 60 * 60 * 1000
 
-export type ExecuteHealthSource = 'organic' | 'synthetic'
-export type ExecuteHealthStatus = 'recent' | 'unknown'
+type ExecuteHealthSource = 'organic' | 'synthetic'
+type ExecuteHealthStatus = 'recent' | 'unknown'
 
 export type ExecuteHealthSnapshot = {
 	status: ExecuteHealthStatus
