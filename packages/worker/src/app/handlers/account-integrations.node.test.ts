@@ -508,7 +508,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: { lane: 'user', appSlug: 'github' },
-		hasStoredClientSecret: false,
+		hasStoredClientSecret: true,
 		integration: {
 			name: 'github',
 			appSlug: 'github',

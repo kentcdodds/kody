@@ -328,7 +328,7 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 		flow: 'confidential',
 		usePkce: false,
 		tokenExchangeStyle: 'basic-json',
-		hasClientSecret: true,
+		hasClientSecret: false,
 	})
 
 	const storedNotion = parseStoredIntegrationConfig(
@@ -424,7 +424,7 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'basic-form',
-		hasClientSecret: true,
+		hasClientSecret: false,
 	})
 
 	// Explicit query params still win over host defaults.
@@ -462,7 +462,7 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'form',
-		hasClientSecret: true,
+		hasClientSecret: false,
 	})
 
 	// Reconnects read the persisted PKCE choice back from the stored config.
@@ -701,7 +701,7 @@ test('connect OAuth keeps slack comma scope separators and extra authorize param
 		scopeSeparator: ',',
 		extraAuthorizeParams: { user_scope: 'identify' },
 		usePkce: false,
-		hasClientSecret: true,
+		hasClientSecret: false,
 	})
 })
 

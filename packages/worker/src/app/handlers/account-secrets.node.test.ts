@@ -92,6 +92,8 @@ const mockModule = vi.hoisted(() => ({
 	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
 	persistIntegrationTokens: vi.fn(async () => undefined),
 	persistUserOauthAppClientSecret: vi.fn(async () => undefined),
+	resolveUserOauthAppClientSecret: vi.fn(async () => null),
+	getOauthApp: vi.fn(async () => null),
 	getJoinedIntegration: vi.fn(async (input: { name: string }) => ({
 		lane: 'user' as const,
 		app: { slug: String(input.name).toLowerCase() },
@@ -175,6 +177,7 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.upsertPlatformIntegration(...args),
 		getJoinedIntegration: (...args: Array<unknown>) =>
 			mockModule.getJoinedIntegration(...args),
+		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
 		// Real scope validation so handler ordering tests exercise the actual
 		// allowlist semantics.
 		assertScopesAllowedForPlatformApp: actual.assertScopesAllowedForPlatformApp,
@@ -203,6 +206,8 @@ vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
 			mockModule.persistIntegrationTokens(...args),
 		persistUserOauthAppClientSecret: (...args: Array<unknown>) =>
 			mockModule.persistUserOauthAppClientSecret(...args),
+		resolveUserOauthAppClientSecret: (...args: Array<unknown>) =>
+			mockModule.resolveUserOauthAppClientSecret(...args),
 	}
 })
 
