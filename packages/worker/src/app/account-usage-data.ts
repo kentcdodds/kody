@@ -3,6 +3,7 @@ import {
 	parseStoredPlanName,
 	parseStripePlanName,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import {
 	computeOverageUsageWarningRows,
@@ -23,6 +24,7 @@ type UsageUserRow = {
 	stable_user_id: string
 	stripe_customer_id: string | null
 	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 }
 
 /**
@@ -37,7 +39,8 @@ export async function loadAccountUsageData(input: {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
 		`SELECT id, plan, stripe_plan, entitlement_ladder, stable_user_id,
-			stripe_customer_id, second_agent_standard_gift_expires_at
+			stripe_customer_id, second_agent_standard_gift_expires_at,
+			referral_standard_credit_expires_at
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -48,7 +51,10 @@ export async function loadAccountUsageData(input: {
 	const plan = resolveEffectivePlanWithSecondAgentGift(
 		manualPlan,
 		row.stripe_plan,
-		row.second_agent_standard_gift_expires_at,
+		laterIsoTimestamp(
+			row.second_agent_standard_gift_expires_at,
+			row.referral_standard_credit_expires_at,
+		),
 		now,
 	)
 	const ladder = parseEntitlementLadder(row.entitlement_ladder)

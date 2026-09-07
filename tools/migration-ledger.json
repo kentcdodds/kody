@@ -191,6 +191,10 @@
 		{
 			"filename": "0047-users-second-agent-standard-gift.sql",
 			"sha256": "c36bf33ecda407df550a712148c3c24f9938169ecb4d9a4ede9ae00d980933a0"
+		},
+		{
+			"filename": "0048-referral-program.sql",
+			"sha256": "27996f6591596eca494e762e060c32cc8408652dcca0c70a65d27f0c189ab8fd"
 		}
 	]
 }

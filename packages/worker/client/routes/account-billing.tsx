@@ -1,5 +1,6 @@
 import { type Handle, css, on } from 'remix/ui'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
+import { CopyTextButton } from '#client/copy-text-button.tsx'
 import {
 	type AccountBillingLoaderData,
 	type AdminPlanName,
@@ -17,6 +18,9 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
+	accountFieldCss,
+	accountFieldLabelCss,
+	accountInputCss,
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
@@ -386,7 +390,7 @@ export function AccountBillingRoute(handle: Handle) {
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
 				<AccountPageHeader
 					title="Billing"
-					description="View your plan, subscribe to Standard or Pro, and manage your Stripe subscription."
+					description="View your plan, subscribe to Standard or Pro, manage your Stripe subscription, and share your referral link."
 					currentHref={currentHref}
 				/>
 
@@ -475,6 +479,107 @@ export function AccountBillingRoute(handle: Handle) {
 								</p>
 							) : null}
 						</AccountManagementPanel>
+
+						{billing.referralProgram ? (
+							<AccountManagementPanel
+								title="Refer a friend"
+								description="Share your link. When someone new creates an account, verifies their email, and pays their first invoice, you both get one month of Standard. There is no cap."
+							>
+								<div
+									mix={css({
+										display: 'grid',
+										gap: spacing.sm,
+									})}
+								>
+									<div mix={css(accountFieldCss)}>
+										<label
+											for="referral-share-url"
+											mix={css(accountFieldLabelCss)}
+										>
+											Your referral link
+										</label>
+										<div
+											mix={css({
+												display: 'flex',
+												flexWrap: 'wrap',
+												gap: spacing.sm,
+												alignItems: 'center',
+											})}
+										>
+											<input
+												id="referral-share-url"
+												type="url"
+												readOnly
+												value={billing.referralProgram.shareUrl}
+												data-field-ring
+												mix={css({
+													...accountInputCss,
+													flex: '1 1 16rem',
+												})}
+											/>
+											<CopyTextButton
+												value={billing.referralProgram.shareUrl}
+												idleLabel="Copy link"
+												variant="ghost"
+												size="sm"
+												ariaLabel="Copy referral link"
+											/>
+										</div>
+									</div>
+									<MetadataGrid
+										items={[
+											{
+												label: 'Rewarded',
+												value: String(billing.referralProgram.rewardedCount),
+											},
+											{
+												label: 'Pending first payment',
+												value: String(billing.referralProgram.pendingCount),
+											},
+											{
+												label: 'Standard credit through',
+												value: billing.referralProgram.creditExpiresAt
+													? formatCancelDate(
+															billing.referralProgram.creditExpiresAt,
+														)
+													: 'None yet',
+											},
+										]}
+									/>
+									{billing.referralProgram.referrals.length > 0 ? (
+										<ul
+											mix={css({
+												margin: 0,
+												padding: 0,
+												listStyle: 'none',
+												display: 'grid',
+												gap: spacing.xs,
+											})}
+										>
+											{billing.referralProgram.referrals.map((item) => (
+												<li
+													key={`${item.createdAt}:${item.refereeUsername ?? 'unknown'}`}
+													mix={css(descriptionCss)}
+												>
+													{item.refereeUsername
+														? `@${item.refereeUsername}`
+														: 'A referred account'}{' '}
+													{item.status === 'rewarded'
+														? item.rewardedAt
+															? `earned you a month on ${formatCancelDate(item.rewardedAt)}`
+															: 'earned you a month'
+														: 'signed up and has not paid yet'}
+												</li>
+											))}
+										</ul>
+									) : (
+										<p mix={css(descriptionCss)}>
+											No one has used your link yet.
+										</p>
+									)}
+								</div>
+							</AccountManagementPanel>
+						) : null}
 
 						{billing.cancelAt ? (
 							<AccountManagementPanel

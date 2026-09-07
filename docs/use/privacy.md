@@ -22,25 +22,29 @@ information (email, username, optional display name and bio, and profile
 visibility), first-touch marketing attribution captured on public-site visits
 when UTM or landing context is present and associated with the account at signup
 (`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term`,
-landing path, and referrer), first-seen activation timestamps (email verified,
-first MCP connection, first execute, first saved package), MCP client name when
-known, last-active day stamps used for return metrics, secrets, memories,
-packages and their source, jobs, email inboxes and messages, durable storage,
-MCP server configuration, OAuth grants, package invocation tokens, short-lived
-execution history (see [Activity](./activity.md)), stored community activity
-events, and any platform feedback you approve for submission. All of this
-remains scoped to your account except for content you deliberately make public
-(community listings and a public profile), the narrow admin review of approved
-platform feedback, and the community activity metadata described below.
+landing path, and referrer), referral attribution when a signup used a
+`kody_ref` cookie from `?ref=<username>` (the referred and referring stable user
+ids, reward status, and the Stripe invoice id after a paid reward), first-seen
+activation timestamps (email verified, first MCP connection, first execute,
+first saved package), MCP client name when known, last-active day stamps used
+for return metrics, secrets, memories, packages and their source, jobs, email
+inboxes and messages, durable storage, MCP server configuration, OAuth grants,
+package invocation tokens, short-lived execution history (see
+[Activity](./activity.md)), stored community activity events, and any platform
+feedback you approve for submission. All of this remains scoped to your account
+except for content you deliberately make public (community listings and a public
+profile), the narrow admin review of approved platform feedback, and the
+community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
 metadata, and public activity are visible on `/@username`. When visibility is
 **private**, the public profile is not found. See
 [Public packages](./community-packages.md#public-profiles).
 
-The only cookies are the session cookie (`kody_session`) and the package-app
-session cookie on `kody.run` (`__Host-kody_pkg_session` on HTTPS,
-`kody_pkg_session` on HTTP). Short-lived cookies support two-factor
+The only cookies are the session cookie (`kody_session`), the one-week last-wins
+referral cookie (`kody_ref`) set by `/signup?ref=<username>` share links, and
+the package-app session cookie on `kody.run` (`__Host-kody_pkg_session` on
+HTTPS, `kody_pkg_session` on HTTP). Short-lived cookies support two-factor
 verification, passkey challenges, and OAuth login. Analytics (Fathom) is
 cookieless. The browser uses sessionStorage for first-touch signup attribution
 and scroll restoration, not tracking cookies.
@@ -118,32 +122,34 @@ the same community metadata, and a metadata-only `user.created` or
 `user.deleted` event when a person account is created or self-deleted (stable
 user id, username, email, the create source or delete timestamp, the consumed
 invite code when `user.created` used one, and first-touch marketing attribution
-fields when present). Those lifecycle events omit passwords, roles, plan,
-secrets, and unrelated account content. Admin-configured notification packages
-may also receive a metadata-only `user.email_verification.failed` event when
-signup/verify mail first hits a terminal delivery failure (stable user id,
-username, email, status, `class` (`sender_block` / `other` / `null`), an admin
-user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
+fields when present). Referral rows are account data (export and deletion) and
+are not included on those lifecycle events. Those lifecycle events omit
+passwords, roles, plan, secrets, and unrelated account content. Admin-configured
+notification packages may also receive a metadata-only
+`user.email_verification.failed` event when signup/verify mail first hits a
+terminal delivery failure (stable user id, username, email, status, `class`
+(`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
+event omits SMTP transcripts, tokens, and unrelated account content.
+Admin-configured notification packages may also receive a metadata-only
+`user.email_verification.stalled` event when signup/verify mail stays `accepted`
+for an hour with no Cloudflare lifecycle event (stable user id, username, email,
+`accepted_at`, stall threshold, an admin user URL, and `occurred_at`). That
+event omits SMTP transcripts, tokens, and unrelated account content.
+Admin-configured notification packages may also receive a metadata-only
+`user.email_outbound.paused` event when outbound sending is paused after a spam
+complaint or repeated bounces (stable user id, username, email, reason, bounce
+threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
+That event omits SMTP transcripts, message bodies, and unrelated account
+content. Admin-configured notification packages may also receive
+`email.system-message.sent` when operator correspondence leaves a reserved
+system sender (`kody@`, `support@`, and the other system locals). That event
+includes the recipients, subject, and sent text/HTML because outbound system
+mail is not stored on the inbound system-email graph; it is admin-only and omits
 unrelated account content. Admin-configured notification packages may also
-receive a metadata-only `user.email_verification.stalled` event when
-signup/verify mail stays `accepted` for an hour with no Cloudflare lifecycle
-event (stable user id, username, email, `accepted_at`, stall threshold, an admin
-user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
-unrelated account content. Admin-configured notification packages may also
-receive a metadata-only `user.email_outbound.paused` event when outbound sending
-is paused after a spam complaint or repeated bounces (stable user id, username,
-email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
-and `occurred_at`). That event omits SMTP transcripts, message bodies, and
-unrelated account content. Admin-configured notification packages may also
-receive `email.system-message.sent` when operator correspondence leaves a
-reserved system sender (`kody@`, `support@`, and the other system locals). That
-event includes the recipients, subject, and sent text/HTML because outbound
-system mail is not stored on the inbound system-email graph; it is admin-only
-and omits unrelated account content. Admin-configured notification packages may
-also receive metadata-only `auth.denial.burst` or `email.delivery.burst` events
-when hourly MCP auth denials or shared-domain bounce/complaint counts cross
-their thresholds (count, threshold, window, insights URL, and `observed_at`).
-Those events omit user identities, tokens, recipients, and message content.
+receive metadata-only `auth.denial.burst` or `email.delivery.burst` events when
+hourly MCP auth denials or shared-domain bounce/complaint counts cross their
+thresholds (count, threshold, window, insights URL, and `observed_at`). Those
+events omit user identities, tokens, recipients, and message content.
 Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when package-runtime error rates rise
 (window bounds, per-metric counts and rates, public status URL, insights URL,

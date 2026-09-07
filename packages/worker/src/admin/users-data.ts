@@ -16,6 +16,7 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import {
 	chunkArray,
@@ -42,7 +43,7 @@ export const adminUserRowSelectSql = `id, stable_user_id, username, email, email
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
 				utm_source, utm_medium, utm_campaign, utm_content, utm_term, first_touch_landing_path, first_touch_referrer,
 				first_mcp_connected_at, first_execute_at, first_search_at, first_saved_package_at, mcp_client_name, last_active_at,
-				second_agent_standard_gift_expires_at, created_at, updated_at`
+				second_agent_standard_gift_expires_at, referral_standard_credit_expires_at, created_at, updated_at`
 
 export const adminUserListItemFieldNames = [
 	'stableUserId',
@@ -473,6 +474,7 @@ type AdminUserRow = {
 	mcp_client_name: string | null
 	last_active_at: string | null
 	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 	created_at: string
 	updated_at: string
 }
@@ -495,7 +497,10 @@ function toAdminUserListItem(
 		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
 			manualPlan,
 			row.stripe_plan,
-			row.second_agent_standard_gift_expires_at,
+			laterIsoTimestamp(
+				row.second_agent_standard_gift_expires_at,
+				row.referral_standard_credit_expires_at,
+			),
 		),
 		entitlementLadder: parseEntitlementLadder(row.entitlement_ladder),
 		stripeCustomerLinked: Boolean(row.stripe_customer_id),

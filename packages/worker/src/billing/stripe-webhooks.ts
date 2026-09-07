@@ -17,12 +17,28 @@ import {
 import { waitUntil } from 'cloudflare:workers'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
-import { isBillingConfigured } from './billing-config.ts'
+import {
+	isBillingConfigured,
+	selectPlanRetainingSubscriptions,
+} from './billing-config.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
 	refreshStripePlanForStripeCustomer,
 } from './subscription-sync.ts'
+import {
+	listSubscriptions,
+	readStripeSubscriptionPeriodEndUnix,
+} from './stripe-client.ts'
+import {
+	isQualifyingPaidReferralInvoice,
+	readStripeInvoiceCustomerId,
+	readStripeInvoiceId,
+	readStripeInvoicePeriodEndIso,
+	readStripeInvoiceSubscriptionId,
+	rewardReferralForPaidInvoice,
+} from '#worker/entitlements/referral-program.ts'
+import { unixSecondsToIso } from '#universal/referral-program.ts'
 import {
 	StripeWebhookSignatureError,
 	verifyStripeWebhookSignature,
@@ -235,6 +251,122 @@ async function handleInvoicePaymentFailed(input: {
 	)
 }
 
+export async function latestReferrerPaidPeriodEnd(input: {
+	env: Env
+	referrerStableUserId: string
+}): Promise<string | null> {
+	const row = await input.env.APP_DB.prepare(
+		`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(input.referrerStableUserId)
+		.first<{ stripe_customer_id: string | null }>()
+	const customerId = row?.stripe_customer_id?.trim()
+	if (!customerId) return null
+	const subscriptions = selectPlanRetainingSubscriptions(
+		await listSubscriptions(input.env, customerId),
+	)
+	let latest: string | null = null
+	for (const subscription of subscriptions) {
+		const iso = unixSecondsToIso(
+			readStripeSubscriptionPeriodEndUnix(subscription),
+		)
+		if (!iso) continue
+		if (!latest || Date.parse(iso) > Date.parse(latest)) latest = iso
+	}
+	return latest
+}
+
+async function handleInvoicePaid(input: {
+	env: Env
+	object: Record<string, unknown>
+	now?: Date
+}) {
+	const customerId = readStripeInvoiceCustomerId(input.object)
+	const invoiceId = readStripeInvoiceId(input.object)
+	if (!customerId || !invoiceId) {
+		console.error('stripe_webhook_invoice_paid_missing_ids')
+		return
+	}
+	const subscriptionId = readStripeInvoiceSubscriptionId(input.object)
+	const qualifies = isQualifyingPaidReferralInvoice({
+		status: input.object.status,
+		paid: input.object.paid,
+		amount_paid: input.object.amount_paid,
+		billing_reason: input.object.billing_reason,
+		subscription: subscriptionId,
+		metadata:
+			input.object.metadata && typeof input.object.metadata === 'object'
+				? (input.object.metadata as Record<string, string>)
+				: null,
+	})
+	if (!qualifies) return
+
+	const user = await input.env.APP_DB.prepare(
+		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?`,
+	)
+		.bind(customerId)
+		.first<{ stable_user_id: string }>()
+	if (!user?.stable_user_id) {
+		throw new Error('stripe_webhook_invoice_paid_user_not_linked')
+	}
+
+	const pending = await input.env.APP_DB.prepare(
+		`SELECT referrer_stable_user_id
+		 FROM referrals
+		 WHERE referee_stable_user_id = ? AND status = 'pending'`,
+	)
+		.bind(user.stable_user_id)
+		.first<{ referrer_stable_user_id: string }>()
+	if (pending) {
+		const referrerPaidPeriodEndAt = await latestReferrerPaidPeriodEnd({
+			env: input.env,
+			referrerStableUserId: pending.referrer_stable_user_id,
+		})
+		await rewardReferralForPaidInvoice({
+			db: input.env.APP_DB,
+			refereeStableUserId: user.stable_user_id,
+			invoiceId,
+			invoiceQualifies: true,
+			paidPeriodEndAt: readStripeInvoicePeriodEndIso(input.object),
+			referrerPaidPeriodEndAt,
+			now: input.now,
+		})
+	}
+
+	const heldAsReferrer = await input.env.APP_DB.prepare(
+		`SELECT referee_stable_user_id, held_invoice_id, held_period_end_at
+		 FROM referrals
+		 WHERE referrer_stable_user_id = ?
+		   AND status = 'pending'
+		   AND held_invoice_id IS NOT NULL`,
+	)
+		.bind(user.stable_user_id)
+		.all<{
+			referee_stable_user_id: string
+			held_invoice_id: string | null
+			held_period_end_at: string | null
+		}>()
+	const heldRows = heldAsReferrer.results ?? []
+	if (heldRows.length === 0) return
+
+	const referrerPaidPeriodEndAt = await latestReferrerPaidPeriodEnd({
+		env: input.env,
+		referrerStableUserId: user.stable_user_id,
+	})
+	for (const row of heldRows) {
+		if (!row.held_invoice_id) continue
+		await rewardReferralForPaidInvoice({
+			db: input.env.APP_DB,
+			refereeStableUserId: row.referee_stable_user_id,
+			invoiceId: row.held_invoice_id,
+			invoiceQualifies: true,
+			paidPeriodEndAt: row.held_period_end_at,
+			referrerPaidPeriodEndAt,
+			now: input.now,
+		})
+	}
+}
+
 export async function processStripeWebhookEvent(input: {
 	env: Env
 	eventType: string
@@ -259,6 +391,13 @@ export async function processStripeWebhookEvent(input: {
 			return
 		case 'invoice.payment_failed':
 			await handleInvoicePaymentFailed({
+				env: input.env,
+				object: input.object,
+				now: input.now,
+			})
+			return
+		case 'invoice.paid':
+			await handleInvoicePaid({
 				env: input.env,
 				object: input.object,
 				now: input.now,

@@ -2,6 +2,7 @@
  * First-touch marketing attribution captured at signup (email or OAuth).
  * Invite codes remain the access key; these fields are the acquisition story.
  * Values are write-once on the user row — never overwrite later UTMs.
+ * Referral share links use a last-wins `kody_ref` cookie, not this payload.
  */
 
 export type FirstTouchAttribution = {

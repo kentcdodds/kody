@@ -1,4 +1,5 @@
 import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
+import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getPurchasablePlans,
 	isBillingConfigured,
@@ -11,7 +12,9 @@ import {
 	parseStripePlanName,
 	type PlanName,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import { loadReferralProgramSummary } from '#worker/entitlements/referral-program.ts'
 
 const billingErrorMessages: Record<string, string> = {
 	billing_not_configured: 'Billing is not configured on this deployment.',
@@ -57,11 +60,13 @@ export function resolveBillingNoticeMessage(
 
 type BillingUserRow = {
 	plan: string
+	username: string | null
 	stripe_plan: string | null
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
 	stable_user_id: string
 	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 }
 
 export async function loadAccountBillingData(input: {
@@ -77,8 +82,9 @@ export async function loadAccountBillingData(input: {
 	const notice = resolveBillingNoticeMessage(input.noticeCode)
 
 	const row = await input.env.APP_DB.prepare(
-		`SELECT plan, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
-		        stable_user_id, second_agent_standard_gift_expires_at
+		`SELECT plan, username, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
+		        stable_user_id, second_agent_standard_gift_expires_at,
+		        referral_standard_credit_expires_at
 		 FROM users
 		 WHERE id = ?`,
 	)
@@ -129,6 +135,30 @@ export async function loadAccountBillingData(input: {
 	}
 
 	const purchasablePlans = configured ? getPurchasablePlans(input.env) : []
+	const overlayExpiresAt = laterIsoTimestamp(
+		row?.second_agent_standard_gift_expires_at,
+		row?.referral_standard_credit_expires_at,
+	)
+	const origin = getCanonicalAppBaseUrl({ env: input.env })
+	const referralProgram =
+		row?.stable_user_id && row.username
+			? await loadReferralProgramSummary({
+					db: input.env.APP_DB,
+					stableUserId: row.stable_user_id,
+					username: row.username,
+					origin,
+					now,
+				}).catch((referralError) => {
+					console.error('account_billing_referral_failed', {
+						userId: input.userId,
+						error:
+							referralError instanceof Error
+								? referralError.message
+								: String(referralError),
+					})
+					return null
+				})
+			: null
 
 	return {
 		ok: true,
@@ -139,7 +169,7 @@ export async function loadAccountBillingData(input: {
 		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
 			manualPlan,
 			stripePlan,
-			row?.second_agent_standard_gift_expires_at,
+			overlayExpiresAt,
 			now,
 		),
 		hasStripeCustomer,
@@ -147,6 +177,7 @@ export async function loadAccountBillingData(input: {
 		subscriptionStatus,
 		purchasablePlans,
 		usageHref: '/account/usage',
+		referralProgram,
 		...(error ? { error } : {}),
 		...(notice ? { notice } : {}),
 	}

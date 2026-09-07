@@ -23,6 +23,7 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 
@@ -71,6 +72,7 @@ type WarningCandidate = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 }
 
 export type UserWarningResource =
@@ -204,7 +206,10 @@ async function warnOneUserIfNeeded(input: {
 	const plan = resolveEffectivePlanWithSecondAgentGift(
 		parseStoredPlanName(input.user.plan),
 		input.user.stripe_plan,
-		input.user.second_agent_standard_gift_expires_at,
+		laterIsoTimestamp(
+			input.user.second_agent_standard_gift_expires_at,
+			input.user.referral_standard_credit_expires_at,
+		),
 		input.now,
 	)
 	const ladder = parseEntitlementLadder(input.user.entitlement_ladder)
@@ -707,7 +712,8 @@ export async function listUsersForEntitlementWarningSweep(
 			db
 				.prepare(
 					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at
+					u.second_agent_standard_gift_expires_at,
+					u.referral_standard_credit_expires_at
 				 FROM (
 					SELECT user_id, SUM(event_count) AS event_count
 					FROM usage_rollups
@@ -732,7 +738,8 @@ export async function listUsersForEntitlementWarningSweep(
 			db
 				.prepare(
 					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at
+					u.second_agent_standard_gift_expires_at,
+					u.referral_standard_credit_expires_at
 				 FROM (
 					SELECT user_id, COUNT(*) AS stock_count
 					FROM saved_packages
@@ -751,7 +758,8 @@ export async function listUsersForEntitlementWarningSweep(
 			db
 				.prepare(
 					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at
+					u.second_agent_standard_gift_expires_at,
+					u.referral_standard_credit_expires_at
 				 FROM (
 					SELECT sb.user_id, COUNT(*) AS stock_count
 					FROM secret_entries se
@@ -776,7 +784,8 @@ export async function listUsersForEntitlementWarningSweep(
 			db
 				.prepare(
 					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at
+					u.second_agent_standard_gift_expires_at,
+					u.referral_standard_credit_expires_at
 				 FROM (
 					SELECT user_id, event_count
 					FROM usage_rollups
@@ -796,7 +805,8 @@ export async function listUsersForEntitlementWarningSweep(
 			db
 				.prepare(
 					`SELECT u.stable_user_id, u.email, u.plan, u.stripe_plan, u.entitlement_ladder,
-					u.second_agent_standard_gift_expires_at
+					u.second_agent_standard_gift_expires_at,
+					u.referral_standard_credit_expires_at
 				 FROM (
 					SELECT user_id, event_count
 					FROM usage_rollups
