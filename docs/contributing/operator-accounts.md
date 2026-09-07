@@ -10,8 +10,10 @@ semantics live in [environment-variables.md](./environment-variables.md). Crypto
 key rotation lives in [secret-rotation.md](./secret-rotation.md). Production
 data recovery lives in [disaster-recovery.md](./disaster-recovery.md).
 
-Dashboard-only facts the repo cannot name are marked `Operator to fill:` and
-collected in [Operator fill-in list](#operator-fill-in-list).
+Dashboard-only facts the repo cannot name (registrar, account logins, vault item
+names, dashboard object ids) live in the operator password manager, never here.
+Lines marked `Password manager:` say what is recorded there; see
+[Password manager coverage](#password-manager-coverage).
 
 ## Cloudflare
 
@@ -39,7 +41,7 @@ Retired brand hosts (`heykody.app`, `heykody.dev`, `kodyapps.dev`,
 ([0044](./decisions/0044-retired-brand-domains-stay-retired.md)). They may still
 answer as Cloudflare-level redirects. Registrar ownership is not in the repo.
 
-`Operator to fill: registrar for kody.codes, kody.run, and the retired heykody.* / kodyapps.dev zones.`
+`Password manager: registrar for kody.codes, kody.run, and the retired heykody.* / kodyapps.dev zones.`
 
 ### Workers fleet
 
@@ -267,7 +269,7 @@ Recovery: GitHub account login for `kentcdodds` plus org/repo admin. A second
 GitHub owner is not configured in-repo. Losing the user account without a
 recovery code blocks Actions secret edits and CLA recording.
 
-`Operator to fill: GitHub OAuth App display name; password-manager entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and the kody-bot GitHub user login.`
+`Password manager: GitHub OAuth App display name; password-manager entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and the kody-bot GitHub user login.`
 
 ## Stripe
 
@@ -328,7 +330,7 @@ Recovery: Stripe account login. Customers and subscriptions live in Stripe;
 refreshed by webhooks and `StripePlanRefresh`. Losing `STRIPE_WEBHOOK_SECRET`
 returns 503 from `/webhooks/stripe` until it is replaced.
 
-`Operator to fill: Stripe webhook endpoint id; password-manager entry for STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.`
+`Password manager: Stripe webhook endpoint id; password-manager entry for STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.`
 
 ## Sentry
 
@@ -362,7 +364,7 @@ project DSN public key.
 Recovery: Sentry org owner login. A missing DSN disables reporting; the app
 stays up.
 
-`Operator to fill: Sentry org slug; alert-rule destination (email / Discord webhook); password-manager entry for SENTRY_AUTH_TOKEN.`
+`Password manager: Sentry org slug; alert-rule destination (email / Discord webhook); password-manager entry for SENTRY_AUTH_TOKEN.`
 
 ## Fathom
 
@@ -378,7 +380,7 @@ Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret.
 Recovery: Fathom account login. Losing the site id only drops analytics; the app
 stays up.
 
-`Operator to fill: Fathom account login / password-manager entry.`
+`Password manager: Fathom account login / password-manager entry.`
 
 ## Kit
 
@@ -407,7 +409,7 @@ Rotation: mint a new Kit API key, update `KIT_API_KEY`, deploy. Production
 Recovery: Kit account login (`hello@kentcdodds.com` is the documented sequence
 sender). Subscriber list lives in Kit, not D1.
 
-`Operator to fill: Kit account login / password-manager entry.`
+`Password manager: Kit account login / password-manager entry.`
 
 ## Discord
 
@@ -439,7 +441,7 @@ Recovery: Discord account that owns the application and the official guild.
 Login and billing still succeed when the bot secrets are unset; join/role writes
 and shipped-PR posts skip.
 
-`Operator to fill: Discord application name(s) for social login vs shipped-PR bot; guild name; password-manager entries.`
+`Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name; password-manager entries.`
 
 ## Google
 
@@ -457,7 +459,7 @@ deploy.
 Recovery: Google account that owns the Cloud project. The GitHub login button
 still works if Google is unset.
 
-`Operator to fill: Google Cloud project name / OAuth client name; password-manager entry.`
+`Password manager: Google Cloud project name / OAuth client name; password-manager entry.`
 
 ## X
 
@@ -475,7 +477,7 @@ Rotation: regenerate the OAuth 2.0 client secret, update
 Recovery: X developer account that owns the project/app. X often omits email;
 those users connect from `/account` while already signed in.
 
-`Operator to fill: X project / app name; password-manager entry.`
+`Password manager: X project / app name; password-manager entry.`
 
 ## Cursor
 
@@ -496,7 +498,7 @@ the packages that read it. No Actions secret.
 Recovery: Cursor account login for Kent. Losing the key blocks agent spawn and
 ship-pr Discord cost lookup; production Kody stays up.
 
-`Operator to fill: password-manager entry for the Cursor API key / cursorApiKey.`
+`Password manager: entry for the Cursor API key / cursorApiKey.`
 
 ## MCP Registry
 
@@ -519,7 +521,7 @@ Recovery: registrar login plus Cloudflare zone access. A registrar lockout
 without Cloudflare nameserver control still leaves DNS editable in Cloudflare
 until the registration expires.
 
-`Operator to fill: registrar name and account login for each registrable domain (kody.codes, kody.run, kentcdodds.com, retired heykody.* / kodyapps.dev).`
+`Password manager: registrar name and account login for each registrable domain (kody.codes, kody.run, kentcdodds.com, retired heykody.* / kodyapps.dev).`
 
 ## Password manager and escrow
 
@@ -528,21 +530,21 @@ GitHub Actions secret. It unwraps `escrow/secret-store-key.v1.json` in the DR
 bucket ([secret-rotation.md escrow](./secret-rotation.md#escrow),
 [disaster-recovery.md](./disaster-recovery.md)).
 
-`Operator to fill: password-manager vault / item names for SECRET_ESCROW_PASSPHRASE, SECRET_STORE_KEY, COOKIE_SECRET, OIDC private key, Cloudflare tokens, and the other secrets listed above.`
+`Password manager: vault / item names for SECRET_ESCROW_PASSPHRASE, SECRET_STORE_KEY, COOKIE_SECRET, OIDC private key, Cloudflare tokens, and the other secrets listed above.`
 
-## Operator fill-in list
+## Password manager coverage
 
-Copy these into the password manager or this page after a 10-minute dashboard
-pass. Names only; no values.
+Each of these is recorded in the operator password manager. Names only; no
+values in this repo.
 
-1. `Operator to fill: registrar for kody.codes, kody.run, kentcdodds.com, and retired heykody.* / kodyapps.dev.`
-2. `Operator to fill: password-manager vault / item names for every secret in this inventory (including SECRET_ESCROW_PASSPHRASE).`
-3. `Operator to fill: Stripe webhook endpoint id.`
-4. `Operator to fill: Sentry org slug; alert-rule destination; SENTRY_AUTH_TOKEN item name.`
-5. `Operator to fill: Fathom account login item name.`
-6. `Operator to fill: Kit account login item name.`
-7. `Operator to fill: Discord application name(s) for social login vs shipped-PR bot; guild name.`
-8. `Operator to fill: Google Cloud project / OAuth client name.`
-9. `Operator to fill: X project / app name.`
-10. `Operator to fill: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
-11. `Operator to fill: Cursor API key / cursorApiKey item name.`
+1. `Password manager: registrar for kody.codes, kody.run, kentcdodds.com, and retired heykody.* / kodyapps.dev.`
+2. `Password manager: vault / item names for every secret in this inventory (including SECRET_ESCROW_PASSPHRASE).`
+3. `Password manager: Stripe webhook endpoint id.`
+4. `Password manager: Sentry org slug; alert-rule destination; SENTRY_AUTH_TOKEN item name.`
+5. `Password manager: Fathom account login item name.`
+6. `Password manager: Kit account login item name.`
+7. `Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
+8. `Password manager: Google Cloud project / OAuth client name.`
+9. `Password manager: X project / app name.`
+10. `Password manager: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
+11. `Password manager: Cursor API key / cursorApiKey item name.`
