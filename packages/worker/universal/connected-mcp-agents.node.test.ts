@@ -83,7 +83,7 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		}),
 	).toEqual({
 		kind: null,
-		label: truncateClientIdLabel('opaque-client-id-abcdefghijklmnopqrstuvwxyz'),
+		label: 'opaque-c…',
 	})
 	expect(
 		truncateClientIdLabel('opaque-client-id-abcdefghijklmnopqrstuvwxyz'),

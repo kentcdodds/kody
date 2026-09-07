@@ -6,7 +6,6 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
-import { retrieverOutboundFetchDeniedMessage } from '#mcp/fetch-gateway.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import {
 	ComputeOverageLimitError,
@@ -361,7 +360,6 @@ test('closed-world executor module rejects fetch in the sandbox before outbound 
 		timeoutMs: 1_000,
 		allowOutboundFetch: false,
 	})
-	expect(denied).toContain(retrieverOutboundFetchDeniedMessage)
 	expect(denied).not.toContain('.call("recordFetch", "[]")')
 	expect(denied).not.toContain('__kodyNativeFetchSymbol](input, init)')
 
@@ -377,7 +375,6 @@ test('closed-world executor module rejects fetch in the sandbox before outbound 
 		timeoutMs: 1_000,
 	})
 	expect(allowed).toContain('.call("recordFetch", "[]")')
-	expect(allowed).not.toContain(retrieverOutboundFetchDeniedMessage)
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {

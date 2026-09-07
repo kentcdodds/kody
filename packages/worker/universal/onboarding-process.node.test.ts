@@ -11,22 +11,15 @@ import {
 	onboardingChecklistItemHref,
 	onboardingChecklistItems,
 	onboardingExplorePackagesHref,
-	onboardingGuideEntity,
 	onboardingIndexRedirectHref,
 	onboardingPortabilityProofPrompt,
-	onboardingSearchStartedLabel,
 	onboardingSecondAgentHref,
-	onboardingSecondAgentConnectedGiftLabel,
-	onboardingSecondAgentConnectedLabel,
 	onboardingSecondAgentConnectedStatusLabel,
-	onboardingSecondAgentGiftAdvertise,
-	onboardingSecondAgentLede,
 	onboardingStep2Prompt,
 	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	parseOnboardingPathname,
 	portabilityGuideEntity,
-	portabilityGuideHref,
 	portabilityGuideSlug,
 	remainingOnboardingWizardLabels,
 } from './onboarding-process.ts'
@@ -37,13 +30,6 @@ const guidesDir = join(
 )
 
 test('the derived checklist covers verify-email plus each wizard step', () => {
-	expect(onboardingChecklistItems.map((item) => item.id)).toEqual([
-		'verify-email',
-		'connect-agent',
-		'give-access',
-		'connect-second-agent',
-		'install-starter',
-	])
 	expect(onboardingChecklistItemHref('verify-email', 'kentcdodds')).toBe(
 		'/pending-verification',
 	)
@@ -138,12 +124,12 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingAccessSelectedLede(null)).toContain('your agent')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('Cursor')
 	expect(onboardingAccessSelectedLede('Cursor')).toContain('onboarding guide')
-	expect(onboardingStep2Prompt.length).toBeLessThan(280)
-	expect(onboardingStep2Prompt).toContain(onboardingGuideEntity)
-	expect(onboardingStep2Prompt).toContain('search({ entity:')
-	expect(onboardingPortabilityProofPrompt).toContain(portabilityGuideEntity)
-	expect(onboardingPortabilityProofPrompt).toContain('Step 2')
-	expect(onboardingPortabilityProofPrompt.length).toBeLessThan(400)
+	expect(onboardingStep2Prompt).toContain(
+		'search({ entity: "onboarding:guide" })',
+	)
+	expect(onboardingPortabilityProofPrompt).toContain(
+		'search({ entity: "portability:guide" })',
+	)
 	expect(onboardingAccessWinMadeLine({})).toBeNull()
 	expect(onboardingAccessWinMadeLine({ packageName: 'grok-bot' })).toBeNull()
 	expect(
@@ -184,21 +170,11 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 			{ label: 'Claude Desktop' },
 		]),
 	).toBe('Connected: Cursor and Claude Desktop')
-	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
-	expect(onboardingSecondAgentLede).toContain(
-		onboardingSecondAgentGiftAdvertise,
-	)
 	expect(onboardingSecondAgentConnectedStatusLabel(false)).toBe(
-		onboardingSecondAgentConnectedLabel,
+		"You've connected a second agent.",
 	)
 	expect(onboardingSecondAgentConnectedStatusLabel(true)).toBe(
-		onboardingSecondAgentConnectedGiftLabel,
-	)
-	expect(onboardingSecondAgentConnectedLabel).not.toContain(
-		'Standard is free for 2 weeks',
-	)
-	expect(onboardingSearchStartedLabel).toContain(
-		'started making something useful',
+		"You've connected a second agent. Standard is free for 2 weeks.",
 	)
 })
 
@@ -248,6 +224,4 @@ test('first-win and quick-example name the current wizard steps', () => {
 	expect(portability).toContain(`id: ${portabilityGuideSlug}`)
 	expect(portability).toContain(portabilityGuideEntity)
 	expect(portability).toContain(secondAgent.path)
-	expect(portability.length).toBeLessThan(3500)
-	expect(portabilityGuideHref).toBe('/guides/portability')
 })

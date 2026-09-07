@@ -298,9 +298,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: true,
 		persistContext: { connectedWorkspaceLabel: 'acme' },
 	})
-	expect(withCustomPersist.persistPrompt).toContain(
-		'I gave Kody access to acme',
-	)
+	expect(withCustomPersist.persistPrompt).toContain('acme')
 	expect(withCustomPersist.customMcpServers).toEqual([])
 
 	const withExamplePersist = await loadOnboardingData({
@@ -315,7 +313,5 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: true,
 		persistContext: { installedExampleName: '@kody/hn-pulse' },
 	})
-	expect(withExamplePersist.persistPrompt).toContain(
-		'I installed @kody/hn-pulse from /onboarding Step 2 Just try Kody',
-	)
+	expect(withExamplePersist.persistPrompt).toContain('@kody/hn-pulse')
 })

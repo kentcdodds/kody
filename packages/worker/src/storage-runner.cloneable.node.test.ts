@@ -1,8 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	assertCloneableStorageValue,
-	storageValueNotCloneableMessage,
-} from './storage-runner.ts'
+import { assertCloneableStorageValue } from './storage-runner.ts'
 
 test('assertCloneableStorageValue accepts JSON values and rejects Proxies', () => {
 	expect(() => assertCloneableStorageValue(null)).not.toThrow()
@@ -15,12 +12,12 @@ test('assertCloneableStorageValue accepts JSON values and rejects Proxies', () =
 	).not.toThrow()
 
 	expect(() => assertCloneableStorageValue(new Proxy({}, {}))).toThrow(
-		storageValueNotCloneableMessage,
+		/cannot be stored/,
 	)
 	expect(() => assertCloneableStorageValue(new Proxy(() => {}, {}))).toThrow(
-		storageValueNotCloneableMessage,
+		/cannot be stored/,
 	)
 	expect(() => assertCloneableStorageValue(() => 'fn')).toThrow(
-		storageValueNotCloneableMessage,
+		/cannot be stored/,
 	)
 })

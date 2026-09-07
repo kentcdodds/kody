@@ -11,7 +11,6 @@ vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
 }))
 
 const {
-	adminFleetRuntimeDurationAlertMetrics,
 	detectFleetUsagePressure,
 	fleetRuntimeDurationAlertThresholdMs,
 	loadFleetUsageInsights,
@@ -389,12 +388,9 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 			totalDurationMs: fleetRuntimeDurationAlertThresholdMs + 1,
 		},
 	])
-	expect(adminFleetRuntimeDurationAlertMetrics).toEqual([
+	expect(durationQueryBind?.slice(1, 4)).toEqual([
 		'execute',
 		'job_run',
 		'workflow_run',
-	])
-	expect(durationQueryBind?.slice(1, 4)).toEqual([
-		...adminFleetRuntimeDurationAlertMetrics,
 	])
 })

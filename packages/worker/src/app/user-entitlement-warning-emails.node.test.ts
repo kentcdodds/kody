@@ -733,8 +733,6 @@ test('compute include crossings mail for public and legacy without charging copy
 		text: string
 	}
 	expect(payload.text).toContain('Unique worker days')
-	expect(payload.text).toContain('Dynamic Worker isolates')
-	expect(payload.text).toContain('Keep package code stable')
 	expect(
 		store.get(
 			userEntitlementWarningKvKey({

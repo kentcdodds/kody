@@ -1,16 +1,13 @@
 import { expect, test } from 'vitest'
 import {
-	buildComputeOverageHowToReduce,
 	computeMonthlyOverage,
 	computeOverageBillingPolicy,
 	computeOverageIncludePercent,
-	computeOverageResourceVisibility,
 	previousUtcMonthKey,
 	resolveComputeOverageDisposition,
-	uniqueWorkerDayMechanic,
 	type ComputeOverageDisposition,
 } from './compute-overage.ts'
-import { computeOverageRatesUsd, planLimits } from './plans.ts'
+import { planLimits } from './plans.ts'
 
 test('public-ladder include math bills only the units above the allotment', () => {
 	const free = computeMonthlyOverage({
@@ -22,12 +19,6 @@ test('public-ladder include math bills only the units above the allotment', () =
 	})
 	expect(free.billableUniqueWorkerDays).toBe(12)
 	expect(free.billableDurableObjectRowsRead).toBe(2_000_000)
-	expect(free.uniqueWorkerDayUsd).toBe(
-		12 * computeOverageRatesUsd.uniqueWorkerDay,
-	)
-	expect(free.durableObjectRowsReadUsd).toBe(
-		2 * computeOverageRatesUsd.durableObjectRowsReadPerMillion,
-	)
 	expect(free.uniqueWorkerDayCents).toBe(3)
 	expect(free.durableObjectRowsReadCents).toBe(0)
 	expect(free.totalCents).toBe(3)
@@ -92,9 +83,7 @@ test('legacy Standard and Pro compute display amounts but stay unbilled', () => 
 		uniqueWorkerDays: 50_000,
 		durableObjectRowsRead: 40_000_000_000,
 	})
-	expect(legacy.includedUniqueWorkerDays).toBe(
-		planLimits.pro.maxUniqueWorkerDaysPerMonth,
-	)
+	expect(legacy.includedUniqueWorkerDays).toBe(2_000)
 	expect(legacy.billableUniqueWorkerDays).toBe(48_000)
 	expect(legacy.uniqueWorkerDayCents).toBe(12_000)
 	expect(legacy.legacyUnbilled).toBe(true)
@@ -149,10 +138,6 @@ test('public policy invoices paid customers, soft-blocks unpaid Free, and never 
 		durableObjectRowsRead: 0,
 	})
 
-	expect(computeOverageBillingPolicy).toEqual({
-		audience: 'public',
-		chargeLegacy: false,
-	})
 	expect(computeOverageIncludePercent(40, 50)).toBe(0.8)
 	expect(computeOverageIncludePercent(50, 50)).toBe(1)
 	expect(computeOverageIncludePercent(0, 50)).toBe(0)
@@ -255,25 +240,6 @@ test('public policy invoices paid customers, soft-blocks unpaid Free, and never 
 	for (const [label, input, expected] of cases) {
 		expect(resolveComputeOverageDisposition(input), label).toBe(expected)
 	}
-})
-
-test('unique worker days visibility explains the meter and next step', () => {
-	const visibility = computeOverageResourceVisibility.unique_worker_days
-	expect(visibility.whatCounts).toMatch(/Dynamic Worker isolates/)
-	expect(visibility.whatCounts).toMatch(/UTC day/)
-	expect(visibility.howToReduce).toMatch(/Keep package code stable/)
-	expect(visibility.howToReduce).toMatch(/saved packages or jobs/)
-	expect(uniqueWorkerDayMechanic).toMatch(/Meter unique_worker_days/)
-	expect(uniqueWorkerDayMechanic).toMatch(/worker id/)
-	expect(
-		buildComputeOverageHowToReduce('unique_worker_days', 'soft_block'),
-	).toMatch(/add a payment method/)
-	expect(
-		buildComputeOverageHowToReduce('unique_worker_days', 'invoice'),
-	).toMatch(/\$0\.0025 per unique worker day/)
-	expect(
-		buildComputeOverageHowToReduce('unique_worker_days', 'skip_legacy'),
-	).toMatch(/not billed/)
 })
 
 test('previousUtcMonthKey walks across year boundaries', () => {

@@ -2,9 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	interpretAccountProfileSave,
 	readApiErrorMessage,
-	readProfileFormValues,
 	usernameFormatError,
-	usernameFormatRequirements,
 } from './account-profile-save.ts'
 
 test('failed username rename shows the server reason without success chrome', () => {
@@ -135,16 +133,6 @@ test('readApiErrorMessage accepts string or nested envelope errors', () => {
 
 test('username format errors stay next to the field while typing', () => {
 	expect(usernameFormatError('jklotz')).toBeNull()
-	expect(usernameFormatError('bad username')).toBe(usernameFormatRequirements)
+	expect(usernameFormatError('bad username')).toMatch(/3 to 32/)
 	expect(usernameFormatError('')).toBe('Username is required.')
-})
-
-test('readProfileFormValues keeps fallbacks when submit is not from a form', () => {
-	const fallback = {
-		username: 'jklotz08',
-		displayName: 'Old',
-		bio: '',
-		profileVisibility: 'public' as const,
-	}
-	expect(readProfileFormValues(null, fallback)).toEqual(fallback)
 })

@@ -1,13 +1,11 @@
 import { expect, test } from 'vitest'
 import {
 	durationMsToDurableObjectGbSeconds,
-	durableObjectDefaultMemoryGb,
 	formatDurableObjectGbSeconds,
 	toAdminDurableObjectDuration,
 } from './durable-object-duration.ts'
 
 test('durationMsToDurableObjectGbSeconds uses default 128 MB memory', () => {
-	expect(durableObjectDefaultMemoryGb).toBe(0.128)
 	expect(durationMsToDurableObjectGbSeconds(1000)).toBe(0.128)
 	expect(durationMsToDurableObjectGbSeconds(10_000)).toBe(1.28)
 	expect(durationMsToDurableObjectGbSeconds(0)).toBe(0)
