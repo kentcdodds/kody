@@ -868,6 +868,10 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('aria-label="Pause"')
 	expect(html).toContain('aria-label="Skip to the end"')
 	expect(html).toContain('class="landing-loop-status-dot"')
+	expect(html).toContain('From ad hoc prompts to <em>durable software</em>')
+	expect(html).toContain('Your own <em>git</em> and <em>npm</em>.')
+	expect(html).toContain('It already speaks <em>your stack</em>')
+	expect(html).toContain('Give your agents a <em>home</em>')
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {
