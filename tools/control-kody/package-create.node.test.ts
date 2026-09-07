@@ -18,6 +18,9 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 	expect(isLowerKebabKodyId('pkg')).toBe(true)
 	expect(isLowerKebabKodyId('Not-A-Slug')).toBe(false)
 	expect(isProductionKodyOrigin('https://kody.codes')).toBe(true)
+	expect(isProductionKodyOrigin('https://www.kody.codes')).toBe(true)
+	expect(isProductionKodyOrigin('https://kody.codes.')).toBe(true)
+	expect(isProductionKodyOrigin('https://www.kody.codes.')).toBe(true)
 	expect(isProductionKodyOrigin('https://kody-pr-9.kody.workers.dev')).toBe(
 		false,
 	)
@@ -153,6 +156,16 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 
 	await expect(
 		createPreviewPackage({
+			origin: 'https://kody.codes.',
+			email: 'me@kentcdodds.com',
+			password: 'ilikecode',
+			kodyId: 'preview-pkg',
+			headAhead: false,
+		}),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+
+	await expect(
+		createPreviewPackage({
 			origin: 'https://kody-pr-9.kody.workers.dev',
 			email: 'me@kentcdodds.com',
 			password: 'ilikecode',
@@ -212,6 +225,25 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 			{ encoding: 'utf8' },
 		)
 		expect(show).toContain(headAheadFileName)
+
+		await pushHeadAheadCommit({
+			package_id: 'pkg-1',
+			kody_id: 'preview-pkg',
+			authenticated_remote: bare,
+			git_author: { name: 'Me', email: 'me@example.com' },
+			setup_commands: [
+				"git config --local user.email -- 'me@example.com'",
+				"git config --local user.name -- 'Me'",
+			],
+		})
+		const logAfterRerun = execFileSync(
+			'git',
+			['--git-dir', bare, 'log', '--oneline'],
+			{ encoding: 'utf8' },
+		)
+		expect(logAfterRerun.match(/leave HEAD ahead of published/g)).toHaveLength(
+			1,
+		)
 	} finally {
 		await rm(parent, { recursive: true, force: true })
 	}

@@ -91,7 +91,7 @@ export function isLowerKebabKodyId(value: string) {
 
 export function isProductionKodyOrigin(origin: string) {
 	try {
-		const hostname = new URL(origin).hostname
+		const hostname = new URL(origin).hostname.replace(/\.+$/, '')
 		return hostname === 'kody.codes' || hostname === 'www.kody.codes'
 	} catch {
 		return false
@@ -241,6 +241,8 @@ export async function pushHeadAheadCommit(remote: GitRemoteResult) {
 			'preview HEAD-ahead marker\n',
 		)
 		runGit(['add', headAheadFileName], cloneDir)
+		const staged = runGit(['status', '--porcelain'], cloneDir).trim()
+		if (!staged) return
 		runGit(['commit', '-m', 'chore: leave HEAD ahead of published'], cloneDir)
 		runGit(['push', '--quiet', 'origin', 'HEAD'], cloneDir)
 	} finally {

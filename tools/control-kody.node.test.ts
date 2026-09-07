@@ -140,6 +140,17 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			]),
 		),
 	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'package-create',
+				'--kody-id',
+				'preview-pkg',
+				'--origin',
+				'https://kody.codes.',
+			]),
+		),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
 
 	expect(credentialsForOrigin('http://localhost:3742').email).toBe(
 		localSeedEmail,
