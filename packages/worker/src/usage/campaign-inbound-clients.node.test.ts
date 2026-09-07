@@ -10,14 +10,17 @@ test('distinct inbound clientIds page every grant and do not treat grant count a
 	const pages = [
 		{
 			items: [
-				{ clientId: 'cursor' },
-				{ clientId: 'cursor' },
-				{ clientId: '  ' },
+				{ id: 'g1', clientId: 'cursor', scope: [] },
+				{ id: 'g2', clientId: 'cursor', scope: [] },
+				{ id: 'g3', clientId: '  ', scope: [] },
 			],
 			cursor: 'page-2',
 		},
 		{
-			items: [{ clientId: 'claude' }, { clientId: 'cursor' }],
+			items: [
+				{ id: 'g4', clientId: 'claude', scope: [] },
+				{ id: 'g5', clientId: 'cursor', scope: [] },
+			],
 		},
 	]
 	let calls = 0

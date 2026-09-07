@@ -1,6 +1,7 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
+import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
@@ -8,10 +9,7 @@ import {
 	resolveEffectivePlan,
 	resolvePlanLimits,
 } from '#universal/plans.ts'
-import {
-	countDistinctInboundClientIds,
-	type CampaignGrantListHelpers,
-} from './campaign-inbound-clients.ts'
+import { countDistinctInboundClientIds } from './campaign-inbound-clients.ts'
 import {
 	usageCampaignLimitAwareThreshold,
 	usageCampaignStrongUseActiveMs,
@@ -63,6 +61,7 @@ export async function gatherUsageCampaignSnapshot(input: {
 		firstSavedPackageAt: input.user.first_saved_package_at,
 		lastActiveAt: input.user.last_active_at,
 		distinctInboundClientCount: clients.uniqueClientCount,
+		inboundListingFailed: clients.listingFailed,
 		hasEnabledScheduledJob: jobs.hasEnabledScheduledJob,
 		lastJobActivityAt: jobs.lastJobActivityAt,
 		hasStrongRecentUse: isStrongRecentUse({
@@ -97,7 +96,7 @@ export function isStrongRecentUse(input: {
 }
 
 async function countDistinctInboundClients(env: Env, userId: string) {
-	const helpers = await resolveOAuthHelpers<CampaignGrantListHelpers>(env)
+	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(env)
 	return countDistinctInboundClientIds(helpers, userId)
 }
 

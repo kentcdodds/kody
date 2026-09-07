@@ -15,6 +15,8 @@ export type UsageCampaignSnapshot = {
 	firstSavedPackageAt: string | null
 	lastActiveAt: string | null
 	distinctInboundClientCount: number
+	/** True when grant listing failed. Do not treat count as 0. */
+	inboundListingFailed?: boolean
 	hasEnabledScheduledJob: boolean
 	lastJobActivityAt: string | null
 	hasStrongRecentUse: boolean
@@ -57,6 +59,13 @@ export function resolveUsageCampaignState(
 	if (packaged || isActivatedOrCoolingHistory(persisted)) {
 		if (quiet) return 'Cooling'
 		if (isActivatedUsage(snapshot)) return 'Activated'
+		if (snapshot.inboundListingFailed) {
+			if (persisted.state === 'Activated') return 'Activated'
+			if (packaged && persisted.state === 'PackagedSingleClient') {
+				return 'PackagedSingleClient'
+			}
+			return 'Activated'
+		}
 		if (packaged && snapshot.distinctInboundClientCount < 2) {
 			return 'PackagedSingleClient'
 		}
@@ -110,6 +119,18 @@ export function evaluateUsageCampaign(
 	const lastSentAt = stateChanged ? null : persisted.lastSentAt
 	const cap = usageCampaignSendCaps[state]
 	const template = usageCampaignTemplateByState[state]
+
+	if (state === 'PackagedSingleClient' && snapshot.inboundListingFailed) {
+		return {
+			state,
+			action: 'persist',
+			template: null,
+			sendIndex: null,
+			origin,
+			coolingTerminal: false,
+			reason: 'inbound_listing_failed',
+		}
+	}
 
 	if (cap === 0 || template == null) {
 		return {
