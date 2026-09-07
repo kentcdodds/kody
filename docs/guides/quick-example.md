@@ -48,9 +48,9 @@ their agent as soon as they reach that step.
 
 The account needs a verified email and an authorized MCP host
 (`/onboarding/step-1`). Step 2 is one prompt that retrieves the onboarding
-guide, not a service picker. If they pasted that prompt, follow the guide: ask
-1–2 questions, do one small win, then send them to Step 3 to reuse it. If they
-skipped, ask what they want to try and use whatever tools are already available.
+guide. If they pasted that prompt, follow the guide: ask 1–2 questions, do one
+small win, then send them to Step 3 to reuse it. If they skipped, ask what they
+want to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
