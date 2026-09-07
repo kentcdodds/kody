@@ -513,6 +513,58 @@ test('failed job listing does not invent Cooling or demote Activated', () => {
 	})
 })
 
+test('Activated and Cooling history does not fall back into PackagedSingleClient mail', () => {
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+				hasStrongRecentUse: false,
+			}),
+			persisted({ state: 'Activated', origin: 'event' }),
+		),
+	).toBe('Activated')
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+			}),
+			persisted({
+				state: 'Activated',
+				enteredAt: '2026-08-01T00:00:00.000Z',
+				origin: 'event',
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+			}),
+			persisted({
+				state: 'Cooling',
+				enteredAt: '2026-08-20T00:00:00.000Z',
+				sendCount: 1,
+				origin: 'event',
+				coolingTerminal: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+})
+
 test('failed inbound listing seeds PackagedSingleClient instead of Activated', () => {
 	const first = evaluateUsageCampaign(
 		snapshot({

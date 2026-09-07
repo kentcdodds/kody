@@ -571,7 +571,9 @@ treated as 21 days stale. A failed jobs list does not count as "no jobs":
 Activated and Cooling rows stay put, and Cooling is not mailed. First
 observation still uses the stamp-based quiet check so a quiet packaged user
 seeds `Cooling` instead of a later event transition that would backfill the
-poke.
+poke. Once a user has been `Activated` or `Cooling`, they do not fall back to
+`PackagedSingleClient` mail when strong-use or client count dips — recent
+activity returns them to Activated silence.
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of

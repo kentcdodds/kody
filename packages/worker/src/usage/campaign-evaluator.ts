@@ -66,8 +66,10 @@ export function resolveUsageCampaignState(
 		}
 		if (isUsageCampaignQuiet(snapshot)) return 'Cooling'
 		if (isActivatedUsage(snapshot)) return 'Activated'
+		if (persisted.state === 'Activated' || persisted.state === 'Cooling') {
+			return 'Activated'
+		}
 		if (snapshot.inboundListingFailed) {
-			if (persisted.state === 'Activated') return 'Activated'
 			if (packaged) return 'PackagedSingleClient'
 			return 'Activated'
 		}
