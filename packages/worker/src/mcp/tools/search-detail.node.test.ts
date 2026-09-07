@@ -14,6 +14,14 @@ const mockModule = vi.hoisted(() => ({
 	collectIntegrationPackageSuggestions: vi.fn(),
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 	listPlatformPackagesForSearch: async () => [],
 	findPlatformPackageByRef: async () => null,
@@ -93,7 +101,7 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 			provider: name,
 			label: null,
 			clientId: `${name}-client-id-value`,
-			clientSecretSecretName: `${name}-client-secret`,
+			hasClientSecret: true,
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			apiBaseUrl: 'https://api.github.com',
@@ -114,8 +122,8 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 			description: `${name} OAuth integration`,
 			scopes: ['repo'],
 			requiredHosts: ['api.github.com'],
-			accessTokenSecretName: `${name}-access-token`,
-			refreshTokenSecretName: null,
+			usageMode: 'any',
+			allowedPackageIds: [],
 			connectedAt: null,
 			tokenRefreshedAt: null,
 			createdAt: now,
@@ -233,8 +241,6 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', as
 		config: {
 			name: 'github',
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'github-client-secret',
-			accessTokenSecretName: 'github-access-token',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 		},
 	})

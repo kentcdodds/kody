@@ -48,6 +48,14 @@ vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 	findPlatformPackageByRef: async () => null,
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
@@ -858,7 +866,7 @@ test('integration entity detail enriches related packages without bloating ranke
 			provider: 'github',
 			label: null,
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'github-client-secret',
+			hasClientSecret: true,
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			apiBaseUrl: 'https://api.github.com',
@@ -879,8 +887,8 @@ test('integration entity detail enriches related packages without bloating ranke
 			description: 'GitHub OAuth integration',
 			scopes: [],
 			requiredHosts: ['api.github.com', 'github.com'],
-			accessTokenSecretName: 'github-access-token',
-			refreshTokenSecretName: null,
+			usageMode: 'any',
+			allowedPackageIds: [],
 			connectedAt: null,
 			tokenRefreshedAt: null,
 			createdAt: now,

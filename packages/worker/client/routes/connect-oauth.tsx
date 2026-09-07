@@ -55,7 +55,6 @@ import {
 	readStoredConnectOauthConfig,
 	redirectToLoginOn401,
 	saveConnectOauthApp,
-	saveConnectOauthSecret,
 	validateConnectOauthState,
 } from './connect-oauth-shared.ts'
 import {
@@ -231,7 +230,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		clientSecretInput = ''
 		hasStoredClientId = Boolean(nextConfig.clientId.trim())
 		hasStoredClientSecret =
-			Boolean(nextConfig.clientSecretSecretName) && hasStoredClientSecret
+			nextConfig.hasClientSecret === true || hasStoredClientSecret
 		revealStoredClientSecretField = false
 		const setupStatus = summarizeStoredSetupState({
 			flow: nextConfig.flow,
@@ -277,27 +276,32 @@ export function ConnectOauthRoute(handle: Handle) {
 					setStatus('Client secret is required for confidential flow.', 'error')
 					return
 				}
-				const secretResult = await saveConnectOauthSecret(
-					config.clientSecretSecretName ?? '',
-					clientSecret,
-					`${config.provider} OAuth client secret`,
-					config.allowedHosts,
-				)
-				if (!secretResult.ok) {
-					setStatus(secretResult.error, 'error')
-					return
-				}
-				hasStoredClientSecret = true
-				revealStoredClientSecretField = false
-				clientSecretInput = ''
 			}
-			const nextConfig = { ...config, clientId }
-			const appResult = await saveConnectOauthApp(nextConfig)
+			const nextConfig = {
+				...config,
+				clientId,
+				hasClientSecret:
+					hasStoredClientSecret ||
+					(config.flow === 'confidential' && Boolean(clientSecret)),
+			}
+			const appResult = await saveConnectOauthApp(
+				nextConfig,
+				clientSecret || undefined,
+			)
 			if (!appResult.ok) {
 				setStatus(appResult.error, 'error')
 				return
 			}
-			config = { ...nextConfig, clientId: appResult.clientId }
+			if (clientSecret) {
+				hasStoredClientSecret = true
+				revealStoredClientSecretField = false
+				clientSecretInput = ''
+			}
+			config = {
+				...nextConfig,
+				clientId: appResult.clientId,
+				hasClientSecret: hasStoredClientSecret,
+			}
 			persistConnectOauthConfig(config)
 			hasStoredClientId = true
 			setStatus('Saved OAuth client configuration.', 'info')
@@ -431,10 +435,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					usePkce: config.usePkce,
 					tokenExchangeStyle: config.tokenExchangeStyle,
 					clientId: config.clientId,
-					clientSecretSecretName: config.clientSecretSecretName,
 					allowedHosts: config.allowedHosts,
-					accessTokenSecretName: config.accessTokenSecretName,
-					refreshTokenSecretName: config.refreshTokenSecretName,
 					tokenPayload: exchange.data,
 				}),
 			})

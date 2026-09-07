@@ -37,6 +37,6 @@ node tools/control-kody.ts preview -- \
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
 - Step 3 completion is unique inbound OAuth `clientId`s ≥ 2, not raw grant
-  count. Account → Connected agents is the labeled inbound list. That first
-  cross also records the one-time 14-day Standard gift
-  (`secondAgentStandardGift` on `/onboarding.json`).
+  count. Account → Connected agents is the grouped inbound list (logos for known
+  kinds, newest-first). That first cross also records the one-time 14-day
+  Standard gift (`secondAgentStandardGift` on `/onboarding.json`).

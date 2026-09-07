@@ -30,6 +30,7 @@ const mockModule = vi.hoisted(() => ({
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
+	resolveListingPinAncestry: vi.fn(async () => null),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -74,6 +75,11 @@ vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
 vi.mock('#worker/community/profile-repo.ts', () => ({
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
+}))
+
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	resolveListingPinAncestry: (...args: Array<unknown>) =>
+		mockModule.resolveListingPinAncestry(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -336,20 +342,60 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 			sourceId: 'src-github',
 		},
 	])
-	const ahead = await loadCommunityDetailData(
+	mockModule.resolveListingPinAncestry.mockResolvedValueOnce(false)
+	const outdated = await loadCommunityDetailData(
 		{} as Env,
 		new Request('https://example.com/community/listing-github-ahead'),
 		'listing-github',
 	)
-	expect(ahead?.viewerInstall).toEqual(
+	expect(outdated?.viewerInstall).toEqual(
 		expect.objectContaining({
 			status: 'installed',
 			listingAhead: true,
+			forkAhead: false,
 		}),
 	)
-	expect(typeof ahead?.viewerInstall?.listingAheadPrompt).toBe('string')
-	expect(ahead?.viewerInstall?.listingAheadPrompt?.length ?? 0).toBeGreaterThan(
-		0,
+	expect(typeof outdated?.viewerInstall?.listingAheadPrompt).toBe('string')
+	expect(
+		outdated?.viewerInstall?.listingAheadPrompt?.length ?? 0,
+	).toBeGreaterThan(0)
+
+	resetDataCacheForTests()
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
+		...sampleListing,
+		pinnedCommit: 'commit-pin',
+	})
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		{
+			listingId: 'listing-github',
+			targetKodyId: 'github',
+			forkedPackageId: 'pkg-github',
+			forkedSourceId: 'src-github',
+			createdAt: '2026-08-01T00:00:00.000Z',
+			originCommit: 'commit-tip',
+		},
+	])
+	mockModule.resolveListingPinAncestry.mockResolvedValueOnce(true)
+	const forkAhead = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github-fork-ahead'),
+		'listing-github',
+	)
+	expect(forkAhead?.viewerInstall).toEqual(
+		expect.objectContaining({
+			status: 'installed',
+			listingAhead: false,
+			forkAhead: true,
+		}),
+	)
+	expect(forkAhead?.viewerInstall?.listingAheadPrompt).toBeNull()
+	expect(forkAhead?.viewerInstall?.listingDiffHref).toContain('/tree/')
+	expect(mockModule.resolveListingPinAncestry).toHaveBeenCalledWith(
+		expect.objectContaining({
+			listingId: 'listing-github',
+			listingPinnedCommit: 'commit-pin',
+			originCommit: 'commit-tip',
+		}),
 	)
 })
 

@@ -1100,9 +1100,7 @@ export type AccountIntegrationListItem = {
 	usePkce?: boolean | null
 	/** Empty when a provider-family prefill could not agree on client id. */
 	clientId: string
-	clientSecretSecretName?: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName?: string | null
+	hasClientSecret?: boolean | null
 	requiredHosts?: Array<string>
 	tokenExchangeStyle?: 'form' | 'basic-json' | 'basic-form' | null
 	authorization?: {
@@ -1145,15 +1143,15 @@ type AccountOauthAppConnectionRef = {
 }
 
 /**
- * Shared OAuth app projection for the account UI. Includes secret *names* and
- * sibling connection refs only — never secret or token values.
+ * Shared OAuth app projection for the account UI. Includes sibling
+ * connection refs only — never secret or token values.
  */
 export type AccountOauthAppListItem = {
 	slug: string
 	provider: string
 	label: string | null
 	clientId: string
-	clientSecretSecretName: string | null
+	hasClientSecret: boolean
 	tokenUrl: string
 	authorizeUrl: string | null
 	apiBaseUrl: string | null
@@ -1319,6 +1317,14 @@ export type AccountPackageListingAhead = {
 	listingPinnedCommit: string
 	listingPublishedAt: string | null
 	prompt: string
+	diffHref: string
+}
+
+export type AccountPackageForkAhead = {
+	listingId: string
+	listingName: string
+	listingHref: string
+	diffHref: string
 }
 
 export type AccountPackageListItem = {
@@ -1336,6 +1342,7 @@ export type AccountPackageListItem = {
 	isPrivate: boolean
 	hasCommunityListing: boolean
 	listingAhead: AccountPackageListingAhead | null
+	forkAhead: AccountPackageForkAhead | null
 }
 
 export type AccountPackageDetail = AccountPackageListItem & {

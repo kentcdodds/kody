@@ -4,6 +4,8 @@ const secretPlaceholderRegex =
 	/\{\{secret:([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
 const basicAuthSecretPlaceholderRegex =
 	/\{\{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)(?:\|scope=(session|package|user))?\}\}/g
+const integrationTokenPlaceholderRegex =
+	/\{\{integration-token:([a-zA-Z0-9._-]+)\}\}/g
 
 export type ReferencedSecret = {
 	name: string
@@ -87,6 +89,30 @@ export function parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(
 	return placeholders
 }
 
+export function parseIntegrationTokenPlaceholders(value: string) {
+	const names: Array<string> = []
+	for (const match of value.matchAll(integrationTokenPlaceholderRegex)) {
+		const name = match[1]?.trim()
+		if (name) names.push(name)
+	}
+	return names
+}
+
+export function parseIntegrationTokenPlaceholdersFromFormUrlEncoded(
+	value: string,
+) {
+	const names: Array<string> = []
+	for (const [key, entryValue] of new URLSearchParams(value)) {
+		names.push(...parseIntegrationTokenPlaceholders(key))
+		names.push(...parseIntegrationTokenPlaceholders(entryValue))
+	}
+	return names
+}
+
+export function buildIntegrationTokenPlaceholder(name: string) {
+	return `{{integration-token:${name}}}`
+}
+
 export function buildSecretPlaceholder(secret: ReferencedSecret) {
 	return secret.scope
 		? `{{secret:${secret.name}|scope=${secret.scope}}}`
@@ -139,7 +165,7 @@ export function replaceSecretPlaceholdersInFormUrlEncoded(
 }
 
 export function containsSecretPlaceholder(value: string) {
-	return /\{\{secret(?::|-basic:)/.test(value)
+	return /\{\{(?:secret(?::|-basic:)|integration-token:)/.test(value)
 }
 
 function parseSecretScope(scope: string | undefined) {

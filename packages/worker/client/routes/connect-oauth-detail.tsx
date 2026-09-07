@@ -183,21 +183,11 @@ function renderExistingIntegrationConfig(
 					</code>
 				</div>
 				<div mix={css(detailItemCss)}>
-					<span mix={css(detailLabelCss)}>Client secret secret</span>
+					<span mix={css(detailLabelCss)}>Client secret</span>
 					<code mix={css(detailValueCss)}>
-						{existingIntegrationConfig.clientSecretSecretName ?? 'Not used'}
-					</code>
-				</div>
-				<div mix={css(detailItemCss)}>
-					<span mix={css(detailLabelCss)}>Access token secret</span>
-					<code mix={css(detailValueCss)}>
-						{existingIntegrationConfig.accessTokenSecretName}
-					</code>
-				</div>
-				<div mix={css(detailItemCss)}>
-					<span mix={css(detailLabelCss)}>Refresh token secret</span>
-					<code mix={css(detailValueCss)}>
-						{existingIntegrationConfig.refreshTokenSecretName ?? 'Not used'}
+						{existingIntegrationConfig.hasClientSecret
+							? 'Stored'
+							: 'Not stored'}
 					</code>
 				</div>
 			</div>

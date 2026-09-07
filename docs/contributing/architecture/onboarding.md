@@ -34,8 +34,9 @@ the connected label stays "You've connected a second agent." When the
 second-agent Standard gift is active, that status adds "Standard is free for 2
 weeks." Step 3 copy advertises "Connect a second agent and get Standard free for
 2 weeks." Same-ecosystem greying stays picker UX only. Account → Connected
-agents lists those inbound hosts with best-effort labels and revoke. That list
-is not `users.mcp_client_name` (first-touch) and not
+agents lists those inbound hosts grouped by display name, with public logos for
+known kinds, newest-first sort, best-effort labels, and per-`clientId` revoke.
+That list is not `users.mcp_client_name` (first-touch) and not
 `/account/mcp-oauth-clients` (user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in

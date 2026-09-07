@@ -10,6 +10,7 @@ type CopyPromptButtonEl = {
 		copyTooltip?: string
 		tooltipDismissed?: string
 	}
+	href?: string
 	querySelector: (selector: string) => { textContent: string | null } | null
 	contains: (node: Node) => boolean
 }
@@ -35,11 +36,42 @@ function setCopyPromptTooltip(button: CopyPromptButtonEl, text: string) {
 	if (tooltip) tooltip.textContent = text
 }
 
+function copyPromptHref(button: CopyPromptButtonEl) {
+	const href = button.href?.trim() ?? ''
+	return href.length > 0 ? href : null
+}
+
+function isModifiedClick(event: Event) {
+	if (!('metaKey' in event)) return false
+	const mouse = event as MouseEvent
+	return (
+		mouse.metaKey ||
+		mouse.ctrlKey ||
+		mouse.shiftKey ||
+		mouse.altKey ||
+		mouse.button === 1
+	)
+}
+
+function navigateCopyPromptHref(href: string) {
+	globalThis.location.assign(href)
+}
+
 export async function handleForkOutdatedCopyClick(event: Event) {
 	const button = findCopyPromptButton(event)
 	if (!button) return
 	const text = button.dataset.copyText
 	if (!text) return
+	const href = copyPromptHref(button)
+	if (href && isModifiedClick(event)) {
+		try {
+			await writeClipboardText(text)
+			setCopyPromptTooltip(button, COPY_PROMPT_COPIED_TOOLTIP)
+		} catch {
+			setCopyPromptTooltip(button, 'Copy failed')
+		}
+		return
+	}
 	event.preventDefault()
 	event.stopPropagation()
 	try {
@@ -48,6 +80,7 @@ export async function handleForkOutdatedCopyClick(event: Event) {
 	} catch {
 		setCopyPromptTooltip(button, 'Copy failed')
 	}
+	if (href) navigateCopyPromptHref(href)
 }
 
 export function handleForkOutdatedCopyPointerOut(event: Event) {

@@ -100,9 +100,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				apiBaseUrl: 'https://api.github.com',
 				clientId: 'github_client_id',
-				clientSecretSecretName: 'github_client_secret',
-				accessTokenSecretName: 'github_access_token',
-				refreshTokenSecretName: 'github_refresh_token',
 				requiredHosts: ['api.github.com'],
 				authorization: {
 					authorizeUrl: 'https://github.com/login/oauth/authorize',
@@ -122,9 +119,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				apiBaseUrl: 'https://example.com/api',
 				requiredHosts: ['example.com'],
 				clientId: 'client-id',
-				clientSecretSecretName: 'client-secret',
-				accessTokenSecretName: 'access-token',
-				refreshTokenSecretName: 'refresh-token',
 			},
 			{
 				type: 'secret',
@@ -174,9 +168,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
 			clientId: 'github_client_id',
-			clientSecretSecretName: 'github_client_secret',
-			accessTokenSecretName: 'github_access_token',
-			refreshTokenSecretName: null,
 			requiredHosts: ['api.github.com'],
 			authorization: null,
 		},
@@ -237,9 +228,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
 			clientId: 'github_client_id',
-			clientSecretSecretName: 'github_client_secret',
-			accessTokenSecretName: 'github_access_token',
-			refreshTokenSecretName: null,
 			requiredHosts: ['api.github.com'],
 			authorization: null,
 		},
@@ -632,6 +620,77 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
 	expect(aheadDetail.markdown).toContain('repoPublishSession')
 	expect(aheadDetail.markdown).toContain('absorbed_upstream_commit')
+
+	const [forkAheadMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-fork-ahead',
+				kodyId: 'github-triage',
+				name: '@me/github-triage',
+				title: '@me/github-triage',
+				description: 'Triage GitHub issues.',
+				tags: ['github'],
+				hasApp: false,
+				hidden: false,
+			},
+		],
+	})
+	expect(forkAheadMatch).not.toHaveProperty('listingAhead')
+	expect(
+		forkAheadMatch && 'nextStep' in forkAheadMatch
+			? forkAheadMatch.nextStep
+			: '',
+	).not.toMatch(/ahead/i)
+	expect(
+		forkAheadMatch && 'nextStep' in forkAheadMatch
+			? forkAheadMatch.nextStep
+			: '',
+	).not.toContain('repoPublishSession')
+
+	const forkAheadDetail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'github-triage',
+		title: '@me/github-triage',
+		description: 'Triage GitHub issues.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
+		hostedUrl: null,
+		listingAhead: false,
+		record: {
+			id: 'package-fork-ahead',
+			userId: 'user-1',
+			name: '@me/github-triage',
+			kodyId: 'github-triage',
+			description: 'Triage GitHub issues.',
+			tags: ['github'],
+			searchText: null,
+			sourceId: 'source-fork-ahead',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@me/github-triage',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'github-triage',
+				description: 'Triage GitHub issues.',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'README.md': '# GitHub triage\n\n## Intent\n\nTriage issues.\n',
+		},
+	})
+	expect(forkAheadDetail.markdown).not.toContain('Listing ahead')
+	expect(forkAheadDetail.markdown).not.toMatch(/fork ahead/i)
+	expect(forkAheadDetail.markdown).not.toContain('repoPublishSession')
+	expect(forkAheadDetail.structured).not.toMatchObject({ listingAhead: true })
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
@@ -756,9 +815,6 @@ test('integration search hits surface reconnect nextStep when last auth failure 
 				apiBaseUrl: 'https://www.googleapis.com',
 				requiredHosts: ['www.googleapis.com'],
 				clientId: 'google-client-id',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'googleAccessToken',
-				refreshTokenSecretName: 'googleRefreshToken',
 				lastAuthFailure: {
 					reason: 'provider_rejected',
 					occurredAt: '2026-09-01T00:00:00.000Z',
@@ -797,9 +853,6 @@ test('integration search hits surface reconnect nextStep when last auth failure 
 					apiBaseUrl: 'https://www.googleapis.com',
 					requiredHosts: ['www.googleapis.com'],
 					clientId: 'google-client-id',
-					clientSecretSecretName: null,
-					accessTokenSecretName: 'googleAccessToken',
-					refreshTokenSecretName: 'googleRefreshToken',
 					lastAuthFailure: {
 						reason: 'provider_rejected',
 						occurredAt: '2026-09-01T00:00:00.000Z',
@@ -854,9 +907,6 @@ test('search markdown summarizes broad results safely and only suggests entity d
 				apiBaseUrl: 'https://api.github.com',
 				requiredHosts: ['api.github.com'],
 				clientId: 'github-client-id',
-				clientSecretSecretName: 'github-client-secret',
-				accessTokenSecretName: 'github-access-token',
-				refreshTokenSecretName: 'github-refresh-token',
 			},
 		],
 	})

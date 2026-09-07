@@ -197,15 +197,19 @@
 			"sha256": "27996f6591596eca494e762e060c32cc8408652dcca0c70a65d27f0c189ab8fd"
 		},
 		{
-			"filename": "0049-user-usage-campaigns.sql",
-			"sha256": "f7b3c2338ff68fd0cedda4e90d27709524c4bcbf9fff26279ec547376b1f6333"
+			"filename": "0049-drop-integration-secret-names.sql",
+			"sha256": "606a6740863b1834367cc6f61ab6785e3eb07de8fe7e8db61b658257f7ba219e"
 		},
 		{
-			"filename": "0050-user-usage-campaigns-ever-activated.sql",
+			"filename": "0050-user-usage-campaigns.sql",
+			"sha256": "d661ada15992f3d9149b0ffbcbbdebb2005ca13d0a7390b29fffb89596fa9e67"
+		},
+		{
+			"filename": "0051-user-usage-campaigns-ever-activated.sql",
 			"sha256": "28d4be6fa0ca11aa4bb62d008bf04177926b89d3368c7c5ea1c7800c40b37339"
 		},
 		{
-			"filename": "0051-user-usage-campaigns-advocate.sql",
+			"filename": "0052-user-usage-campaigns-advocate.sql",
 			"sha256": "0d78e74505ec01960ec1912692a9e114ffc754c6a1371f3c71bad4df53fbcedb"
 		}
 	]

@@ -7,6 +7,7 @@ import {
 	onboardingAccessSelectedLede,
 	onboardingAccessWinMadeLine,
 	onboardingConnectedAgentLabelsLine,
+	uniqueOnboardingConnectedAgents,
 	onboardingAgentHref,
 	onboardingChecklistItemHref,
 	onboardingChecklistItems,
@@ -166,10 +167,20 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	)
 	expect(
 		onboardingConnectedAgentLabelsLine([
-			{ label: 'Cursor' },
-			{ label: 'Claude Desktop' },
+			{ label: 'Cursor', kind: 'cursor' },
+			{ label: 'Claude Desktop', kind: 'claude-desktop' },
 		]),
 	).toBe('Connected: Cursor and Claude Desktop')
+	expect(
+		uniqueOnboardingConnectedAgents([
+			{ label: 'Cursor', kind: 'cursor' },
+			{ label: ' Cursor ', kind: 'cursor' },
+			{ label: 'Kody' },
+		]),
+	).toEqual([
+		{ label: 'Cursor', kind: 'cursor' },
+		{ label: 'Kody', kind: null },
+	])
 	expect(onboardingSecondAgentConnectedStatusLabel(false)).toBe(
 		"You've connected a second agent.",
 	)

@@ -1,4 +1,4 @@
-import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
+import { classifyForkListingRelation } from '#universal/community-listing-ahead.ts'
 
 export type ViewerInstallListingRef = {
 	id: string
@@ -29,21 +29,26 @@ export type ResolvedViewerListingInstall = {
 	/** Live saved package id when status is `installed`; otherwise null. */
 	packageId: string | null
 	listingAhead: boolean
+	forkAhead: boolean
 	originCommit: string | null
 	listingPinnedCommit: string | null
 }
 
-function listingAheadState(input: {
+function listingRelationState(input: {
 	originCommit?: string
 	pinnedCommit?: string
+	listingPinIsAncestorOfForkTip?: boolean | null
 }) {
 	const originCommit = input.originCommit ?? null
 	const listingPinnedCommit = input.pinnedCommit ?? null
+	const relation = classifyForkListingRelation({
+		originCommit,
+		listingPinnedCommit,
+		listingPinIsAncestorOfForkTip: input.listingPinIsAncestorOfForkTip,
+	})
 	return {
-		listingAhead: isCommunityListingAhead({
-			originCommit,
-			listingPinnedCommit,
-		}),
+		listingAhead: relation === 'outdated',
+		forkAhead: relation === 'ahead',
 		originCommit,
 		listingPinnedCommit,
 	}
@@ -71,6 +76,7 @@ export function resolveViewerListingInstalls(input: {
 	packageScope: string
 	savedPackages: Array<ViewerInstallSavedPackage>
 	forks: Array<ViewerInstallFork>
+	listingPinIsAncestorByListingId?: Map<string, boolean | null>
 }): Map<string, ResolvedViewerListingInstall> {
 	const savedByKodyId = new Map<string, ViewerInstallSavedPackage>()
 	const savedById = new Map<string, ViewerInstallSavedPackage>()
@@ -98,6 +104,8 @@ export function resolveViewerListingInstalls(input: {
 			(fork) => fork.targetKodyId === listing.kodyId,
 		)
 		const newestFork = listingForks?.[0]
+		const listingPinIsAncestorOfForkTip =
+			input.listingPinIsAncestorByListingId?.get(listing.id)
 
 		const savedByKody = savedByKodyId.get(listing.kodyId)
 		if (savedByKody) {
@@ -109,9 +117,10 @@ export function resolveViewerListingInstalls(input: {
 				targetName: savedByKody.name,
 				sourceId: savedByKody.sourceId,
 				packageId: savedByKody.id,
-				...listingAheadState({
+				...listingRelationState({
 					originCommit: forkForSaved?.originCommit,
 					pinnedCommit: listing.pinnedCommit,
+					listingPinIsAncestorOfForkTip,
 				}),
 			})
 			continue
@@ -120,9 +129,10 @@ export function resolveViewerListingInstalls(input: {
 		if (!listingForks || listingForks.length === 0) continue
 		const fork = matchingKodyFork ?? newestFork
 		if (!fork) continue
-		const ahead = listingAheadState({
+		const relation = listingRelationState({
 			originCommit: fork.originCommit,
 			pinnedCommit: listing.pinnedCommit,
+			listingPinIsAncestorOfForkTip,
 		})
 		const forkedSaved = savedById.get(fork.forkedPackageId)
 		if (forkedSaved) {
@@ -131,7 +141,7 @@ export function resolveViewerListingInstalls(input: {
 				targetName: forkedSaved.name,
 				sourceId: forkedSaved.sourceId,
 				packageId: forkedSaved.id,
-				...ahead,
+				...relation,
 			})
 			continue
 		}
@@ -140,7 +150,7 @@ export function resolveViewerListingInstalls(input: {
 			targetName: scopedPackageName(input.packageScope, fork.targetKodyId),
 			sourceId: fork.forkedSourceId,
 			packageId: null,
-			...ahead,
+			...relation,
 		})
 	}
 	return resolved

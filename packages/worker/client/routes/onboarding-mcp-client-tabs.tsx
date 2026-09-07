@@ -17,6 +17,10 @@ import {
 	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
+import {
+	type OnboardingSecondAgentDisableReason,
+	onboardingSecondAgentDisableHint,
+} from '#universal/onboarding-agent-ecosystems.ts'
 import { onboardingAgentHref } from '#universal/onboarding-process.ts'
 import {
 	colors,
@@ -45,6 +49,10 @@ type OnboardingMcpClientTabsProps = {
 	agentHref?: (agent: McpClientKind | null, search?: string) => string
 	pickerLede?: string
 	greyedAgents?: ReadonlyArray<McpClientKind>
+	greyedReasons?: Partial<
+		Record<McpClientKind, OnboardingSecondAgentDisableReason>
+	>
+	greyedTitles?: Partial<Record<McpClientKind, string>>
 	greyedReason?: string | null
 }
 
@@ -81,14 +89,16 @@ export function AgentPickerMark(
 	handle: Handle<{
 		agent: McpClientKind
 		testId?: string
+		size?: 'picker' | 'inline'
 	}>,
 ) {
 	return () => {
 		const desktopIcon = onboardingAgentIconName(handle.props.agent, 'desktop')
 		const mobileIcon = onboardingAgentIconName(handle.props.agent, 'mobile')
+		const size = handle.props.size ?? 'picker'
 		return (
 			<span
-				mix={css(pickerMarkCss)}
+				mix={css(size === 'inline' ? pickerMarkInlineCss : pickerMarkCss)}
 				aria-hidden="true"
 				data-testid={handle.props.testId}
 			>
@@ -300,6 +310,8 @@ export function OnboardingMcpClientTabs(
 		const search = handle.props.search ?? ''
 		const agentHref = handle.props.agentHref ?? onboardingAgentHref
 		const greyedAgents = handle.props.greyedAgents ?? []
+		const greyedReasons = handle.props.greyedReasons ?? {}
+		const greyedTitles = handle.props.greyedTitles ?? {}
 		handle.queueTask(() => {
 			const hrefs = onboardingAgentPickerPrefetchHrefs(
 				selectedAgent,
@@ -326,6 +338,8 @@ export function OnboardingMcpClientTabs(
 						search={search}
 						agentHref={agentHref}
 						greyedAgents={greyedAgents}
+						greyedReasons={greyedReasons}
+						greyedTitles={greyedTitles}
 						greyedReason={handle.props.greyedReason ?? null}
 					/>
 				</div>
@@ -347,6 +361,8 @@ export function OnboardingMcpClientTabs(
 						search={search}
 						agentHref={agentHref}
 						greyedAgents={greyedAgents}
+						greyedReasons={greyedReasons}
+						greyedTitles={greyedTitles}
 						greyedReason={handle.props.greyedReason ?? null}
 					/>
 					<p mix={css(pickerLedeCss)} id="onboarding-agent-not-listed-generic">
@@ -437,6 +453,10 @@ function AgentPickerGrid(
 		search: string
 		agentHref: (agent: McpClientKind | null, search?: string) => string
 		greyedAgents: ReadonlyArray<McpClientKind>
+		greyedReasons: Partial<
+			Record<McpClientKind, OnboardingSecondAgentDisableReason>
+		>
+		greyedTitles: Partial<Record<McpClientKind, string>>
 		greyedReason: string | null
 	}>,
 ) {
@@ -450,21 +470,26 @@ function AgentPickerGrid(
 						: entry.viewport
 				const shown = viewport === 'none' ? 'both' : viewport
 				const greyed = handle.props.greyedAgents.includes(id)
+				const reason = handle.props.greyedReasons[id] ?? 'same-ecosystem'
+				const title = handle.props.greyedTitles[id] ?? handle.props.greyedReason
 				return (
 					<li key={id} mix={css(onboardingViewportCss(shown, 'list-item'))}>
 						{greyed ? (
 							<span
 								data-testid={`onboarding-agent-${id}`}
 								data-greyed="true"
+								data-greyed-reason={reason}
 								aria-disabled="true"
-								title={handle.props.greyedReason ?? undefined}
+								title={title ?? undefined}
 								mix={css(pickerCardGreyedCss)}
 							>
 								<AgentPickerMark agent={id} />
 								<strong>
 									<AgentSurfaceLabel agent={id} />
 								</strong>
-								<span mix={css(greyedHintCss)}>Same ecosystem</span>
+								<span mix={css(greyedHintCss)}>
+									{onboardingSecondAgentDisableHint(reason)}
+								</span>
 							</span>
 						) : (
 							<a
@@ -569,6 +594,20 @@ const pickerMarkCss = {
 	width: '1.75rem',
 	height: '1.75rem',
 	color: colors.text,
+}
+
+const pickerMarkInlineCss = {
+	display: 'inline-grid',
+	placeItems: 'center',
+	flex: 'none',
+	width: '1em',
+	height: '1em',
+	verticalAlign: '-0.125em',
+	color: colors.text,
+	'& img, & svg': {
+		width: '1em',
+		height: '1em',
+	},
 }
 
 const pickerIconImgCss = {

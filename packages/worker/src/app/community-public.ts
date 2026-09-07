@@ -1,4 +1,7 @@
-import { buildListingAheadPrompt } from '#universal/community-listing-ahead.ts'
+import {
+	buildForkListingDiffHref,
+	buildListingAheadPrompt,
+} from '#universal/community-listing-ahead.ts'
 import {
 	type OnboardingFeaturedListing,
 	type PublicCommunityActivityItem,
@@ -180,6 +183,7 @@ export function toViewerListingInstall(input: {
 	sourceId: string
 	packageId: string | null
 	listingAhead?: boolean
+	forkAhead?: boolean
 	originCommit?: string | null
 	listingPinnedCommit?: string | null
 	listingId?: string
@@ -187,6 +191,7 @@ export function toViewerListingInstall(input: {
 	listingKodyId?: string
 }): ViewerListingInstall {
 	const listingAhead = input.listingAhead === true
+	const forkAhead = listingAhead ? false : input.forkAhead === true
 	const listingAheadPrompt =
 		listingAhead &&
 		input.listingId &&
@@ -204,6 +209,15 @@ export function toViewerListingInstall(input: {
 					listingPinnedCommit: input.listingPinnedCommit,
 				})
 			: null
+	const listingDiffHref =
+		(listingAhead || forkAhead) && input.listingId && input.listingPinnedCommit
+			? buildForkListingDiffHref({
+					listingId: input.listingId,
+					listingName: input.listingName,
+					listingKodyId: input.listingKodyId,
+					listingPinnedCommit: input.listingPinnedCommit,
+				})
+			: null
 	if (input.status === 'installed') {
 		return {
 			status: input.status,
@@ -214,6 +228,8 @@ export function toViewerListingInstall(input: {
 			packageId: input.packageId,
 			listingAhead,
 			listingAheadPrompt,
+			forkAhead,
+			listingDiffHref,
 		}
 	}
 	return {
@@ -226,5 +242,7 @@ export function toViewerListingInstall(input: {
 		packageId: null,
 		listingAhead,
 		listingAheadPrompt,
+		forkAhead,
+		listingDiffHref,
 	}
 }

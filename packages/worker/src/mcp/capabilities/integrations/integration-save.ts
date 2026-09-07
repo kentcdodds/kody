@@ -96,9 +96,6 @@ function createNewIntegrationConfig(
 		flow: args.flow,
 		...(args.usePkce !== undefined ? { usePkce: args.usePkce } : {}),
 		clientId: args.clientId,
-		clientSecretSecretName: args.clientSecretSecretName ?? null,
-		accessTokenSecretName: args.accessTokenSecretName,
-		refreshTokenSecretName: args.refreshTokenSecretName ?? null,
 		requiredHosts: args.requiredHosts,
 		...(args.tokenExchangeStyle !== undefined
 			? { tokenExchangeStyle: args.tokenExchangeStyle }

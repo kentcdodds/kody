@@ -361,7 +361,6 @@ async function resolveSecretApprovalView(input: {
 			env: input.env,
 			userId: input.userId,
 			scope: 'user',
-			includeIntegrationOwned: true,
 		})
 		const byName = new Map(
 			secrets
@@ -412,7 +411,6 @@ async function resolveSecretApprovalView(input: {
 			userId: input.userId,
 			scope: approval.scope,
 			storageContext: approval.storageContext,
-			includeIntegrationOwned: true,
 		})
 		const byName = new Map(
 			secrets
@@ -443,7 +441,6 @@ async function resolveSecretApprovalView(input: {
 		userId: input.userId,
 		scope: approval.scope,
 		storageContext: approval.storageContext,
-		includeIntegrationOwned: true,
 	})
 	const secret = secrets.find(
 		(item) => item.name === approval.name && item.scope === approval.scope,

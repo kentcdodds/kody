@@ -29,9 +29,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: 'https://api.github.com/',
 			flow: 'confidential',
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: 'githubRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['api.github.com', ' github.com ', 'api.github.com'],
 			authorization: {
 				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
@@ -50,9 +48,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		flow: 'confidential',
 		usePkce: null,
 		clientId: 'github-client-id-value',
-		clientSecretSecretName: 'githubClientSecret',
-		accessTokenSecretName: 'githubAccessToken',
-		refreshTokenSecretName: 'githubRefreshToken',
+		hasClientSecret: true,
 		requiredHosts: ['api.github.com', 'github.com'],
 		authorization: null,
 	})
@@ -81,9 +77,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: 'githubRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['api.github.com'],
 		},
 	})
@@ -104,9 +98,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		extraAuthorizeParams: { prompt: 'consent' },
 		dashboardUrl: 'https://github.com/settings/developers',
 		clientId: 'github-client-id-value',
-		clientSecretSecretName: 'githubClientSecret',
-		accessTokenSecretName: 'githubAccessToken',
-		refreshTokenSecretName: 'githubRefreshToken',
+		hasClientSecret: true,
 		allowedHosts: ['api.github.com', 'github.com'],
 	})
 
@@ -134,9 +126,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
 			flow: 'confidential',
 			clientId: 'google-youtube-brand-client-id-value',
-			clientSecretSecretName: 'googleYoutubeBrandClientSecret',
-			accessTokenSecretName: 'googleYoutubeBrandAccessToken',
-			refreshTokenSecretName: 'googleYoutubeBrandRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -194,9 +184,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
 			flow: 'confidential',
 			clientId: 'google-youtube-brand-client-id-value',
-			clientSecretSecretName: 'googleYoutubeBrandClientSecret',
-			accessTokenSecretName: 'googleYoutubeBrandAccessToken',
-			refreshTokenSecretName: 'googleYoutubeBrandRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -243,9 +231,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			apiBaseUrl: 'https://www.googleapis.com',
 			flow: 'confidential',
 			clientId: 'platform-google-client',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'googleAccessToken',
-			refreshTokenSecretName: 'googleRefreshToken',
+			hasClientSecret: false,
 			requiredHosts: ['oauth2.googleapis.com'],
 			platformAppSlug: 'google',
 			platformAllowedScopes: ['openid', 'email', 'profile'],
@@ -294,9 +280,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		usePkce: true,
 		tokenExchangeStyle: 'form',
 		clientId: '',
-		clientSecretSecretName: null,
-		accessTokenSecretName: 'spotifyAccessToken',
-		refreshTokenSecretName: 'spotifyRefreshToken',
+		hasClientSecret: false,
 	})
 
 	const confidentialSetup = summarizeStoredSetupState({
@@ -344,8 +328,7 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 		flow: 'confidential',
 		usePkce: false,
 		tokenExchangeStyle: 'basic-json',
-		clientSecretSecretName: 'notionClientSecret',
-		accessTokenSecretName: 'notionAccessToken',
+		hasClientSecret: false,
 	})
 
 	const storedNotion = parseStoredIntegrationConfig(
@@ -355,9 +338,7 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 			apiBaseUrl: 'https://api.notion.com/v1',
 			flow: 'confidential',
 			clientId: 'notion-client-id-value',
-			clientSecretSecretName: 'notionClientSecret',
-			accessTokenSecretName: 'notionAccessToken',
-			refreshTokenSecretName: 'notionRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['api.notion.com'],
 			tokenExchangeStyle: 'basic-json',
 			authorization: {
@@ -443,8 +424,7 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'basic-form',
-		clientSecretSecretName: 'canvaClientSecret',
-		accessTokenSecretName: 'canvaAccessToken',
+		hasClientSecret: false,
 	})
 
 	// Explicit query params still win over host defaults.
@@ -482,7 +462,7 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'form',
-		clientSecretSecretName: 'acmeClientSecret',
+		hasClientSecret: false,
 	})
 
 	// Reconnects read the persisted PKCE choice back from the stored config.
@@ -494,9 +474,7 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 			flow: 'confidential',
 			usePkce: true,
 			clientId: 'canva-client-id-value',
-			clientSecretSecretName: 'canvaClientSecret',
-			accessTokenSecretName: 'canvaAccessToken',
-			refreshTokenSecretName: 'canvaRefreshToken',
+			hasClientSecret: true,
 			requiredHosts: ['api.canva.com'],
 			tokenExchangeStyle: 'basic-form',
 			authorization: {
@@ -547,9 +525,7 @@ test('shared-app family lookup prefills google-calendar from the google app payl
 			apiBaseUrl: 'https://www.googleapis.com',
 			flow: 'pkce',
 			clientId: 'shared-google-client',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'google-calendarAccessToken',
-			refreshTokenSecretName: 'google-calendarRefreshToken',
+			hasClientSecret: false,
 			requiredHosts: [],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -586,7 +562,6 @@ test('shared-app family lookup prefills google-calendar from the google app payl
 		provider: 'google-calendar',
 		clientId: 'shared-google-client',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
-		accessTokenSecretName: 'google-calendarAccessToken',
 	})
 
 	const reconnectWithHint = mergeConnectOauthConfig({
@@ -627,9 +602,7 @@ test('abandoned setup still prefills client id from a connectionless app on a fr
 			apiBaseUrl: null,
 			flow: 'pkce',
 			clientId: 'spotify-client-from-setup',
-			clientSecretSecretName: null,
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
+			hasClientSecret: false,
 			requiredHosts: [],
 			authorization: {
 				authorizeUrl: 'https://accounts.spotify.com/authorize',
@@ -728,7 +701,7 @@ test('connect OAuth keeps slack comma scope separators and extra authorize param
 		scopeSeparator: ',',
 		extraAuthorizeParams: { user_scope: 'identify' },
 		usePkce: false,
-		clientSecretSecretName: 'slackClientSecret',
+		hasClientSecret: false,
 	})
 })
 
@@ -750,9 +723,7 @@ test('session config parsing is strict: usePkce and clientId are required and st
 		providerSetupInstructions: null,
 		dashboardUrl: null,
 		clientId: 'spotify-client-id-value',
-		clientSecretSecretName: null,
-		accessTokenSecretName: 'spotifyAccessToken',
-		refreshTokenSecretName: 'spotifyRefreshToken',
+		hasClientSecret: false,
 		allowedHosts: ['accounts.spotify.com'],
 	}
 

@@ -438,9 +438,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
   gate and are never implied by authorship or adoption.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
-  `(user_id, slug)`. Holds shared client id, client-secret ciphertext (soak
-  dual-write also keeps `client_secret_secret_name`), provider endpoints, and
-  flow options. See [OAuth integrations](./integrations.md).
+  `(user_id, slug)`. Holds shared client id, client-secret ciphertext, provider
+  endpoints, and flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
   built-in OAuth apps that remaining connections still refresh against. New
   connects and reconnects are bring-your-own only. Global operator config with
@@ -471,9 +470,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform_app_slug` (FK to `platform_oauth_apps(slug)`) is set, enforced by a
   `CHECK` constraint; both FKs use `ON DELETE RESTRICT`. Holds `scopes_json`,
   `required_hosts_json`, `usage_mode` / `allowed_packages_json`, and access /
-  refresh token ciphertext. Soak dual-write keeps `*_secret_name` columns
-  pointing at `secret_entries`. The non-secret `client_id` is stored inline on
-  the owning app row.
+  refresh token ciphertext. The non-secret `client_id` is stored inline on the
+  owning app row.
 - `user_openapi_bindings` / `user_openapi_binding_operations`
   (`0001-squashed-init.sql`): leftover squash-create tables. Migration `0037`
   drops them. Do not add new readers or writers.
@@ -1392,11 +1390,9 @@ on write unless a migration backfills existing rows.
   saved-package-id list respectively. Parsers in the integrations data-access
   layer own the shapes. Access and refresh token ciphertexts live on
   `user_integrations`; the user-lane client secret ciphertext lives on
-  `user_oauth_apps`. Account export redacts those columns. `*_secret_name`
-  columns remain for dual-write soak. The operator backfill at
-  `POST /__maintenance/backfill-integration-credentials` copies leftover
-  secret-store values onto null ciphertext columns (see
-  [Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
+  `user_oauth_apps`. Account export redacts those columns. Migration `0049`
+  dropped the soak `*_secret_name` columns and leftover dual-written
+  `secret_entries`.
 - `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
   (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
   drops the tables. Do not add new parsers.

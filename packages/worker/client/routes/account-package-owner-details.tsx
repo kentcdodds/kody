@@ -8,7 +8,10 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
+import {
+	ForkAheadLink,
+	ForkOutdatedCopyButton,
+} from '#universal/fork-outdated-copy-button.tsx'
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
@@ -153,6 +156,12 @@ export function AccountPackageOwnerDetails(
 							<ForkOutdatedCopyButton
 								prompt={packageDetail.listingAhead.prompt}
 								testId="account-package-listing-ahead"
+								href={packageDetail.listingAhead.diffHref}
+							/>
+						) : packageDetail.forkAhead ? (
+							<ForkAheadLink
+								href={packageDetail.forkAhead.diffHref}
+								testId="account-package-listing-fork-ahead"
 							/>
 						) : null}
 					</div>

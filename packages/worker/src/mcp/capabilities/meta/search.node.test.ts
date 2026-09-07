@@ -63,6 +63,14 @@ vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 	findPlatformPackageByRef: async () => null,
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),

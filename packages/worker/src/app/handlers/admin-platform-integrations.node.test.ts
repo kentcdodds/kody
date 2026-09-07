@@ -123,10 +123,10 @@ test('admin save and delete return HTTP shapes without echoing secrets', async (
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug, access_token_secret_name
-			) VALUES (?, ?, NULL, ?, ?)`,
+				user_id, name, app_slug, platform_app_slug
+			) VALUES (?, ?, NULL, ?)`,
 		)
-		.run('user-1', 'github', 'github', 'githubAccessToken')
+		.run('user-1', 'github', 'github')
 
 	const blocked = await invoke({ action: 'delete', slug: 'github' })
 	expect(blocked.status).toBe(400)
@@ -157,10 +157,10 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug, access_token_secret_name
-			) VALUES (?, ?, NULL, ?, ?)`,
+				user_id, name, app_slug, platform_app_slug
+			) VALUES (?, ?, NULL, ?)`,
 		)
-		.run('user-1', 'github', 'github', 'githubAccessToken')
+		.run('user-1', 'github', 'github')
 
 	// Rename plus a same-call edit; clientSecret omitted → retained.
 	const renamed = await invoke({

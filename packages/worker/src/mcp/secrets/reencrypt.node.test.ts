@@ -144,11 +144,10 @@ function insertUserIntegration(
 			`INSERT INTO user_integrations (
 				user_id, name, app_slug, platform_app_slug,
 				description, scopes_json, required_hosts_json,
-				access_token_secret_name, refresh_token_secret_name,
 				access_token_encrypted, refresh_token_encrypted
 			) VALUES (
 				?, ?, ?, NULL, '', '[]', '[]',
-				'access', 'refresh', ?, ?
+				?, ?
 			)`,
 		)
 		.run(

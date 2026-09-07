@@ -6,6 +6,7 @@ import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import { readListingAheadFlag } from '#universal/community-listing-ahead.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
 	getSavedPackageWithCommunityProvenanceByKodyId,
@@ -220,6 +221,7 @@ function toPackageSearchMatch(
 
 export async function resolvePackageIdentitySearch(input: {
 	db: D1Database
+	env?: Env
 	userId: string | null
 	query: string
 	baseUrl: string
@@ -234,7 +236,7 @@ export async function resolvePackageIdentitySearch(input: {
 		return { recognized: true, match: null }
 	}
 
-	const record =
+	const loaded =
 		identity.kind === 'package-id'
 			? await getSavedPackageWithCommunityProvenanceById(input.db, {
 					userId: input.userId,
@@ -244,6 +246,13 @@ export async function resolvePackageIdentitySearch(input: {
 					userId: input.userId,
 					kodyId: identity.value,
 				})
+	const [record] =
+		loaded && input.env
+			? await applySavedPackageForkListingAncestry({
+					env: input.env,
+					records: [loaded],
+				})
+			: [loaded]
 	if (!record) {
 		return identity.authoritative
 			? { recognized: true, match: null }

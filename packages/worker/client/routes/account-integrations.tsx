@@ -340,7 +340,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				? {
 						...entry,
 						clientId: rotatedApp.clientId,
-						clientSecretSecretName: rotatedApp.clientSecretSecretName,
+						hasClientSecret: rotatedApp.hasClientSecret,
 						appLabel: rotatedApp.label,
 					}
 				: entry,

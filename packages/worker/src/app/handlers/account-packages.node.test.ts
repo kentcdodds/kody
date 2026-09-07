@@ -27,6 +27,7 @@ const savedPackageWithProvenance = {
 	listingPinnedCommit: null,
 	listingPublishedAt: null,
 	listingAhead: null,
+	forkListingRelation: null,
 }
 
 const tokenRecord = {
@@ -107,6 +108,14 @@ vi.mock('#app/ssr-render.tsx', () => ({
 
 vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+}))
+
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({

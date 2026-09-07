@@ -32,7 +32,7 @@ const mockModule = vi.hoisted(() => ({
 				provider: 'google',
 				label: null,
 				clientId: 'shared-google-client',
-				clientSecretSecretName: 'googleClientSecret',
+				hasClientSecret: true,
 				tokenUrl: 'https://oauth2.googleapis.com/token',
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 				apiBaseUrl: 'https://www.googleapis.com',
@@ -53,8 +53,6 @@ const mockModule = vi.hoisted(() => ({
 				description: '',
 				scopes: ['openid', 'email'],
 				requiredHosts: ['www.googleapis.com'],
-				accessTokenSecretName: 'googleAccessToken',
-				refreshTokenSecretName: 'googleRefreshToken',
 				usageMode: 'any',
 				allowedPackageIds: [],
 				connectedAt: null,
@@ -71,7 +69,7 @@ const mockModule = vi.hoisted(() => ({
 				provider: 'google',
 				label: null,
 				clientId: 'shared-google-client',
-				clientSecretSecretName: 'googleClientSecret',
+				hasClientSecret: true,
 				tokenUrl: 'https://oauth2.googleapis.com/token',
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 				apiBaseUrl: 'https://www.googleapis.com',
@@ -92,8 +90,8 @@ const mockModule = vi.hoisted(() => ({
 				description: '',
 				scopes: ['calendar.readonly'],
 				requiredHosts: ['www.googleapis.com'],
-				accessTokenSecretName: 'googleCalendarAccessToken',
-				refreshTokenSecretName: 'googleCalendarRefreshToken',
+				usageMode: 'any',
+				allowedPackageIds: [],
 				connectedAt: null,
 				tokenRefreshedAt: null,
 				createdAt: '1970-01-01T00:00:00.000Z',
@@ -108,7 +106,7 @@ const mockModule = vi.hoisted(() => ({
 				provider: 'github',
 				label: null,
 				clientId: 'github-client-id-value',
-				clientSecretSecretName: 'githubClientSecret',
+				hasClientSecret: true,
 				tokenUrl: 'https://github.com/login/oauth/access_token',
 				authorizeUrl: 'https://github.com/login/oauth/authorize',
 				apiBaseUrl: 'https://api.github.com',
@@ -129,8 +127,8 @@ const mockModule = vi.hoisted(() => ({
 				description: '',
 				scopes: ['repo', 'read:user'],
 				requiredHosts: ['api.github.com'],
-				accessTokenSecretName: 'githubAccessToken',
-				refreshTokenSecretName: null,
+				usageMode: 'any',
+				allowedPackageIds: [],
 				connectedAt: null,
 				tokenRefreshedAt: null,
 				createdAt: '1970-01-01T00:00:00.000Z',
@@ -146,7 +144,7 @@ const mockModule = vi.hoisted(() => ({
 			provider: 'github',
 			label: null,
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
+			hasClientSecret: true,
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			apiBaseUrl: 'https://api.github.com',
@@ -167,8 +165,8 @@ const mockModule = vi.hoisted(() => ({
 			description: '',
 			scopes: ['repo', 'read:user'],
 			requiredHosts: ['api.github.com'],
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
+			usageMode: 'any',
+			allowedPackageIds: [],
 			connectedAt: null,
 			tokenRefreshedAt: null,
 			createdAt: '1970-01-01T00:00:00.000Z',
@@ -183,7 +181,7 @@ const mockModule = vi.hoisted(() => ({
 			provider: 'github',
 			label: null,
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
+			hasClientSecret: true,
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			apiBaseUrl: 'https://api.github.com',
@@ -202,7 +200,7 @@ const mockModule = vi.hoisted(() => ({
 			provider: 'google',
 			label: null,
 			clientId: 'shared-google-client',
-			clientSecretSecretName: 'googleClientSecret',
+			hasClientSecret: true,
 			tokenUrl: 'https://oauth2.googleapis.com/token',
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 			apiBaseUrl: 'https://www.googleapis.com',
@@ -222,7 +220,7 @@ const mockModule = vi.hoisted(() => ({
 		provider: 'google',
 		label: null,
 		clientId: 'shared-google-client',
-		clientSecretSecretName: 'googleClientSecret',
+		hasClientSecret: true,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		apiBaseUrl: 'https://www.googleapis.com',
@@ -240,7 +238,7 @@ const mockModule = vi.hoisted(() => ({
 		provider: 'google',
 		label: null,
 		clientId: 'shared-google-client-rotated',
-		clientSecretSecretName: 'googleClientSecret',
+		hasClientSecret: true,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		apiBaseUrl: 'https://www.googleapis.com',
@@ -510,7 +508,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: { lane: 'user', appSlug: 'github' },
-		hasStoredClientSecret: false,
+		hasStoredClientSecret: true,
 		integration: {
 			name: 'github',
 			appSlug: 'github',
@@ -543,7 +541,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 		provider: 'spotify',
 		label: null,
 		clientId: 'spotify-client-from-setup',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		tokenUrl: 'https://accounts.spotify.com/api/token',
 		authorizeUrl: 'https://accounts.spotify.com/authorize',
 		apiBaseUrl: null,
@@ -589,7 +587,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 		provider: 'google',
 		label: null,
 		clientId: 'shared-google-client',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		apiBaseUrl: 'https://www.googleapis.com',
@@ -616,7 +614,6 @@ test('integrations API resolves named connections for connect OAuth, including m
 			appSlug: 'google',
 			clientId: 'shared-google-client',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
-			accessTokenSecretName: 'google-calendarAccessToken',
 		},
 	})
 	expect(JSON.stringify(familyPayload)).not.toMatch(
@@ -652,39 +649,18 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 		userId: 'stable-user-1',
 		slug: 'google',
 	})
-	expect(mockModule.listSecrets).toHaveBeenCalledWith({
-		env: expect.any(Object),
-		userId: 'stable-user-1',
-		scope: 'user',
-		storageContext: { sessionId: null, appId: null, packageId: null },
-		includeIntegrationOwned: true,
-	})
 	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
 			slug: 'google',
 			value: 'new-google-client-secret',
-			secretName: 'googleClientSecret',
 		}),
 	)
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
-		env: expect.any(Object),
-		userId: 'stable-user-1',
-		name: 'googleClientSecret',
-		scope: 'user',
-		allowedHosts: [
-			'accounts.google.com',
-			'oauth2.googleapis.com',
-			'www.googleapis.com',
-		],
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
 	expect(mockModule.rotateOauthAppClientCredentials).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
 		slug: 'google',
 		clientId: 'shared-google-client-rotated',
-		clientSecretSecretName: 'googleClientSecret',
 	})
 	const rotatePayload = await rotateResponse.json()
 	expect(rotatePayload).toMatchObject({
@@ -692,7 +668,7 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 		app: {
 			slug: 'google',
 			clientId: 'shared-google-client-rotated',
-			clientSecretSecretName: 'googleClientSecret',
+			hasClientSecret: true,
 			connectionCount: 2,
 			connections: [
 				{ name: 'google', accountLabel: 'Personal' },
@@ -732,19 +708,13 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 		params: {},
 	} as never)
 	expect(mergeResponse.status).toBe(200)
-	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
-		env: expect.any(Object),
-		userId: 'stable-user-1',
-		name: 'googleClientSecret',
-		scope: 'user',
-		allowedHosts: [
-			'accounts.google.com',
-			'custom-package-api.example.com',
-			'oauth2.googleapis.com',
-			'www.googleapis.com',
-		],
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
+	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			slug: 'google',
+			value: 'rotated-secret-value',
+		}),
+	)
 	expect(JSON.stringify(await mergeResponse.json())).not.toMatch(
 		/rotated-secret-value/,
 	)

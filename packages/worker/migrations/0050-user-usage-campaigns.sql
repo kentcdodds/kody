@@ -7,9 +7,11 @@
 --
 -- tips_emails_opted_out_at shipped on this PR as
 -- 0048-users-tips-emails-opted-out-at.sql before main took 0048 for the
--- referral program. Check-migrations cannot keep both 0048 files. Preview
--- already applied the old 0048-tips name and this 0049 file; production
--- gets the column the first time 0049 runs.
+-- referral program. Main later took 0049 for
+-- 0049-drop-integration-secret-names.sql. Check-migrations cannot keep
+-- two 0049 files. Preview already applied the old 0048-tips name and the
+-- 0049-user-usage-campaigns filename; production gets the column the
+-- first time 0050 runs.
 
 ALTER TABLE users ADD COLUMN tips_emails_opted_out_at TEXT;
 

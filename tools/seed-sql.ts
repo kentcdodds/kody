@@ -59,11 +59,10 @@ export function buildSeedIntegrationSql(email: string) {
 	const userId = quoteSqlString(stableUserIdFromEmail(email))
 	return `
 INSERT INTO user_oauth_apps (
-	user_id, slug, provider, label, client_id, client_secret_secret_name,
+	user_id, slug, provider, label, client_id,
 	token_url, authorize_url, api_base_url, flow, extra_authorize_params_json
 ) VALUES (
 	${userId}, 'google', 'google', 'Google', 'seed-google-client',
-	'googleClientSecret',
 	'https://oauth2.googleapis.com/token',
 	'https://accounts.google.com/o/oauth2/v2/auth',
 	'https://www.googleapis.com',
@@ -75,18 +74,15 @@ ON CONFLICT(user_id, slug) DO UPDATE SET
 	updated_at = CURRENT_TIMESTAMP;
 INSERT INTO user_integrations (
 	user_id, name, app_slug, platform_app_slug, account_label, description,
-	scopes_json, required_hosts_json, access_token_secret_name,
-	refresh_token_secret_name, connected_at
+	scopes_json, required_hosts_json, connected_at
 ) VALUES
 	(
 		${userId}, 'google', 'google', NULL, 'Personal', '',
-		'["openid","email"]', '["www.googleapis.com"]',
-		'googleAccessToken', 'googleRefreshToken', CURRENT_TIMESTAMP
+		'["openid","email"]', '["www.googleapis.com"]', CURRENT_TIMESTAMP
 	),
 	(
 		${userId}, 'google-work', 'google', NULL, 'Work', '',
-		'["openid","email"]', '["www.googleapis.com"]',
-		'googleWorkAccessToken', 'googleWorkRefreshToken', CURRENT_TIMESTAMP
+		'["openid","email"]', '["www.googleapis.com"]', CURRENT_TIMESTAMP
 	)
 ON CONFLICT(user_id, name) DO UPDATE SET
 	account_label = excluded.account_label,

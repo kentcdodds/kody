@@ -608,8 +608,9 @@ package instead:
 package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
 `listing_name`, `origin_commit`, `listing_pinned_commit`,
 `listing_published_at`, `listing_ahead`). Those fields are `null` for
-self-authored packages. When `listing_ahead` is true, the owner profile, the
-listing page, package search, and `{kodyId}:package` entity detail surface a
+self-authored packages. `listing_ahead` is true only when the listing pin is not
+an ancestor of the fork tip. When `listing_ahead` is true, the owner profile,
+the listing page, package search, and `{kodyId}:package` entity detail surface a
 **Fork outdated** / absorb next step. Full workflow:
 [Public packages → Forking a listing](./community-packages.md#forking-a-listing).
 

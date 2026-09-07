@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
@@ -16,9 +15,6 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
-import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
-import { listSecrets, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
 import {
 	deleteIntegration,
 	deleteOauthAppWithConnections,
@@ -396,52 +392,15 @@ async function handleRotateOauthAppCredentials(input: {
 	}
 
 	const nextClientId = input.body.clientId?.trim() || existing.clientId
-	let nextClientSecretSecretName = existing.clientSecretSecretName
 
 	try {
 		if (input.body.clientSecret) {
-			const secretName =
-				existing.clientSecretSecretName ??
-				`${canonicalIntegrationName(existing.slug) || existing.slug}ClientSecret`
-			const storageContext = {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-			}
-			// Merge endpoint hosts into any pre-existing allowlist so rotation
-			// cannot silently drop hosts packages already rely on.
-			const currentSecrets = await listSecrets({
-				env: input.env,
-				userId,
-				scope: 'user',
-				storageContext,
-				includeIntegrationOwned: true,
-			})
-			const existingSecret = currentSecrets.find(
-				(secret) => secret.name === secretName && secret.scope === 'user',
-			)
-			const allowedHosts = normalizeAllowedHosts([
-				...(existingSecret?.allowedHosts ?? []),
-				...oauthAppSecretAllowedHosts(existing),
-			])
 			await persistUserOauthAppClientSecret({
 				env: input.env,
 				userId,
-				userEmail: input.user.mcpUser.email,
 				slug: existing.slug,
 				value: input.body.clientSecret,
-				secretName,
-				description: `${existing.provider} OAuth client secret`,
 			})
-			await setSecretAllowedHosts({
-				env: input.env,
-				userId,
-				name: secretName,
-				scope: 'user',
-				allowedHosts,
-				storageContext,
-			})
-			nextClientSecretSecretName = secretName
 		}
 
 		const rotated = await rotateOauthAppClientCredentials({
@@ -449,7 +408,6 @@ async function handleRotateOauthAppCredentials(input: {
 			userId,
 			slug: existing.slug,
 			clientId: nextClientId,
-			clientSecretSecretName: nextClientSecretSecretName,
 		})
 		const joined = await listJoinedIntegrations({
 			env: input.env,
@@ -480,17 +438,4 @@ async function handleRotateOauthAppCredentials(input: {
 			400,
 		)
 	}
-}
-
-function oauthAppSecretAllowedHosts(app: {
-	tokenUrl: string
-	authorizeUrl: string | null
-	apiBaseUrl: string | null
-}): Array<string> {
-	const hosts = [
-		safeParseHost(app.tokenUrl),
-		app.authorizeUrl ? safeParseHost(app.authorizeUrl) : null,
-		app.apiBaseUrl ? safeParseHost(app.apiBaseUrl) : null,
-	].filter((host): host is string => Boolean(host))
-	return hosts
 }

@@ -144,6 +144,8 @@ test('community listings render sort controls, categories, empty states, and for
 			packageId: 'pkg-1',
 			listingAhead: false,
 			listingAheadPrompt: null,
+			forkAhead: false,
+			listingDiffHref: null,
 		},
 	}
 	const installedHtml = await renderCommunityListingsContentHtml({
@@ -169,6 +171,8 @@ test('community listings render sort controls, categories, empty states, and for
 					...installedListing.viewerInstall,
 					listingAhead: true,
 					listingAheadPrompt: aheadPrompt,
+					forkAhead: false,
+					listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
 				},
 			},
 		],
@@ -180,4 +184,32 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(aheadHtml).not.toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
+	expect(aheadHtml).toContain(
+		'href="/@kentcdodds/github-triage/tree/commit-new"',
+	)
+
+	const forkAheadHtml = await renderCommunityListingsContentHtml({
+		listings: [
+			{
+				...installedListing,
+				viewerInstall: {
+					...installedListing.viewerInstall,
+					listingAhead: false,
+					listingAheadPrompt: null,
+					forkAhead: true,
+					listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
+				},
+			},
+		],
+		query: null,
+	})
+	expect(forkAheadHtml).toContain(
+		'data-testid="community-listing-fork-ahead-listing-1"',
+	)
+	expect(forkAheadHtml).toContain('Fork ahead')
+	expect(forkAheadHtml).toContain(
+		'href="/@kentcdodds/github-triage/tree/commit-pin"',
+	)
+	expect(forkAheadHtml).not.toContain('data-copy-prompt')
+	expect(forkAheadHtml).not.toContain('data-fork-outdated-copy')
 })
