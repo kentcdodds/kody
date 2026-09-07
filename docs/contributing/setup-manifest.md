@@ -47,8 +47,9 @@ This project uses the following resources:
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork
-    repos plus session workspace branch pushes (`sessions/<id>`). Mapped package
-    topics: `repo.pushed`, `repo.created`, `repo.deleted`.
+    repos, session workspace branch pushes (`sessions/<id>`), and publish
+    git-notes (`refs/notes/commits`). Mapped package topics: `repo.pushed`,
+    `repo.created`, `repo.deleted`.
 - Cloudflare Queue for durable platform-feedback subscription dispatch
   - Producer binding: `PLATFORM_FEEDBACK_DISPATCH_QUEUE`
   - Queue: `kody-platform-feedback-dispatch`

@@ -147,3 +147,13 @@ export function isSessionBranchRef(ref: string) {
 		: ref
 	return branch.startsWith('sessions/')
 }
+
+/**
+ * Publish git-notes (`refs/notes/commits` and other notes refs). Publish
+ * attaches a metadata note after the source-branch push; those updates must
+ * not fan out as a second `repo.pushed`.
+ */
+export function isPublishGitNotesRef(ref: string) {
+	const notesRef = ref.startsWith('refs/') ? ref.slice('refs/'.length) : ref
+	return notesRef.startsWith('notes/')
+}
