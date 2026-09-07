@@ -193,6 +193,20 @@ export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
 export const onboardingSecondAgentConnectedLabel =
 	"You've connected a second agent."
 
+export function onboardingConnectedAgentLabelsLine(
+	agents: ReadonlyArray<{ label: string }>,
+) {
+	const labels = [
+		...new Set(
+			agents.map((agent) => agent.label.trim()).filter((label) => label),
+		),
+	]
+	if (labels.length === 0) return null
+	if (labels.length === 1) return `Connected: ${labels[0]}`
+	if (labels.length === 2) return `Connected: ${labels[0]} and ${labels[1]}`
+	return `Connected: ${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`
+}
+
 export function remainingOnboardingWizardLabels(input: {
 	hasMcpClient: boolean
 	hasAccessWin: boolean

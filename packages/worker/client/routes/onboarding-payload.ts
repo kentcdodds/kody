@@ -1,3 +1,4 @@
+import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
 	type OnboardingChecklistLoaderData,
@@ -24,6 +25,7 @@ export type OnboardingPayload = {
 	hasAccessWin: boolean
 	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
+	connectedAgents: Array<ConnectedMcpAgent>
 	emailVerified: boolean
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>

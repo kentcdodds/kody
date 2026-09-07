@@ -1,5 +1,6 @@
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
+import { loadAccountConnectedAgentsData } from '#app/handlers/account-connected-agents.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
@@ -16,18 +17,26 @@ export function createAccountHandler(env: Env) {
 				return user
 			}
 
-			const [accountProfile, accountConnections, onboarding] =
-				await Promise.all([
-					loadAccountProfileData(user, env),
-					loadAccountConnectionsData({ env, userId: user.userId }),
-					loadOnboardingData({
-						env,
-						requestUrl: request.url,
-						stableUserId: user.mcpUser.userId,
-						username: user.username,
-						emailVerified: user.emailVerified,
-					}),
-				])
+			const [
+				accountProfile,
+				accountConnections,
+				accountConnectedAgents,
+				onboarding,
+			] = await Promise.all([
+				loadAccountProfileData(user, env),
+				loadAccountConnectionsData({ env, userId: user.userId }),
+				loadAccountConnectedAgentsData({
+					env,
+					stableUserId: user.mcpUser.userId,
+				}),
+				loadOnboardingData({
+					env,
+					requestUrl: request.url,
+					stableUserId: user.mcpUser.userId,
+					username: user.username,
+					emailVerified: user.emailVerified,
+				}),
+			])
 			// The banner shows checklist progress, so the SSR payload needs the
 			// checklist too — hydration keeps SSR data and does not refetch.
 			if (user.emailVerified) {
@@ -45,7 +54,12 @@ export function createAccountHandler(env: Env) {
 				request,
 				env,
 				title: 'Account',
-				loaderData: { accountProfile, accountConnections, onboarding },
+				loaderData: {
+					accountProfile,
+					accountConnections,
+					accountConnectedAgents,
+					onboarding,
+				},
 			})
 		},
 	} satisfies Action<typeof routes.account>

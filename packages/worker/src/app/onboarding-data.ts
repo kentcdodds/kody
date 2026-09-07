@@ -8,11 +8,17 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
+	type ConnectedMcpAgent,
+	hasSecondConnectedMcpClient,
+} from '#universal/connected-mcp-agents.ts'
+import {
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
+import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
+import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 export {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
@@ -23,31 +29,31 @@ export {
 
 type OnboardingEnv = {
 	APP_BASE_URL?: string | null
-	OAUTH_PROVIDER?: {
-		listUserGrants(
-			userId: string,
-			options?: { cursor?: string },
-		): Promise<{ items: Array<unknown>; cursor?: string }>
-	}
+	OAUTH_PROVIDER?: OAuthGrantListHelpers
 }
 
 /**
- * Inbound MCP OAuth grant count. This is how many hosts have authorized,
- * not which selected onboarding agent connected. Listing failures treat the
- * user as still needing onboarding so the banner stays available.
+ * Unique inbound MCP OAuth clients. Two grants for the same `clientId`
+ * count as one host. Listing failures treat the user as still needing
+ * onboarding so the banner stays available.
  */
+export async function countUniqueMcpOAuthClients(
+	env: OnboardingEnv,
+	stableUserId: string,
+) {
+	const state = await loadInboundMcpConnectionState(
+		env.OAUTH_PROVIDER,
+		stableUserId,
+	)
+	return state.uniqueClientCount
+}
+
+/** Unique inbound MCP OAuth clients. Same as `countUniqueMcpOAuthClients`. */
 export async function countMcpOAuthGrants(
 	env: OnboardingEnv,
 	stableUserId: string,
 ) {
-	const helpers = env.OAUTH_PROVIDER
-	if (!helpers) return 0
-	try {
-		const page = await helpers.listUserGrants(stableUserId)
-		return page.items.length
-	} catch {
-		return 0
-	}
+	return countUniqueMcpOAuthClients(env, stableUserId)
 }
 
 /**
@@ -85,6 +91,7 @@ export function loadPublicOnboardingData(input: {
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
+		connectedAgents: [],
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -125,12 +132,17 @@ export async function loadOnboardingData(input: {
 	/** First search, memory, execute, or saved package — a Step 2 win. */
 	hasAccessWin?: boolean
 }): Promise<OnboardingLoaderData> {
-	const grantCount = await countMcpOAuthGrants(input.env, input.stableUserId)
-	const hasMcpClient = grantCount > 0
-	// Grant count is inbound OAuth grants, not a specific selected host. ≥ 2
-	// means a second agent connected somewhere; Step 3 must not name a host
-	// from this flag.
-	const hasSecondMcpClient = grantCount >= 2
+	const inbound = await loadInboundMcpConnectionState(
+		input.env.OAUTH_PROVIDER,
+		input.stableUserId,
+	)
+	const connectedAgents = toOnboardingConnectedAgents(inbound.agents)
+	const hasMcpClient = inbound.uniqueClientCount > 0
+	// Unique inbound clientIds, not raw grant count and not attribution to
+	// the selected Step 3 host. ≥ 2 means a second agent connected.
+	const hasSecondMcpClient = hasSecondConnectedMcpClient(
+		inbound.uniqueClientCount,
+	)
 	// Incomplete setup means either the account email is still unverified or no
 	// MCP host has authorized yet. An unverified account with a leftover grant
 	// still needs onboarding until verification is finished.
@@ -168,6 +180,7 @@ export async function loadOnboardingData(input: {
 		hasAccessWin: input.hasAccessWin ?? false,
 		hasSecondMcpClient,
 		hasMcpClient,
+		connectedAgents,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
@@ -184,4 +197,15 @@ export async function loadOnboardingData(input: {
 			: null,
 		checklist: input.checklist ?? null,
 	}
+}
+
+function toOnboardingConnectedAgents(
+	agents: Array<ConnectedMcpAgent & { grantIds?: Array<string> }>,
+): Array<ConnectedMcpAgent> {
+	return agents.map((agent) => ({
+		clientId: agent.clientId,
+		label: agent.label,
+		kind: agent.kind,
+		connectedAt: agent.connectedAt,
+	}))
 }

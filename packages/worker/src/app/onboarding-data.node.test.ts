@@ -49,6 +49,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
+		connectedAgents: [],
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -88,6 +89,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
+		connectedAgents: [],
 		emailVerified: true,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -111,7 +113,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		env: {
 			OAUTH_PROVIDER: {
 				listUserGrants: vi.fn(async () => ({
-					items: [{ id: 'grant-1' }],
+					items: [{ id: 'grant-1', clientId: 'client-a' }],
 				})),
 			},
 		},
@@ -126,6 +128,14 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		username: 'u-b',
 		hasMcpClient: true,
 		hasSecondMcpClient: false,
+		connectedAgents: [
+			{
+				clientId: 'client-a',
+				label: 'client-a',
+				kind: null,
+				connectedAt: null,
+			},
+		],
 		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
@@ -134,11 +144,37 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		accessWinMemorySubject: 'Preferred commute',
 	})
 
+	const withTwoGrantsSameClient = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({
+					items: [
+						{ id: 'grant-1', clientId: 'client-a' },
+						{ id: 'grant-2', clientId: 'client-a' },
+					],
+				})),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+	})
+	expect(withTwoGrantsSameClient).toMatchObject({
+		hasMcpClient: true,
+		hasSecondMcpClient: false,
+		needsOnboarding: false,
+		connectedAgents: [{ clientId: 'client-a', kind: null }],
+	})
+
 	const withTwoClients = await loadOnboardingData({
 		env: {
 			OAUTH_PROVIDER: {
 				listUserGrants: vi.fn(async () => ({
-					items: [{ id: 'grant-1' }, { id: 'grant-2' }],
+					items: [
+						{ id: 'grant-1', clientId: 'client-a' },
+						{ id: 'grant-2', clientId: 'client-b' },
+					],
 				})),
 			},
 		},
@@ -151,13 +187,45 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasMcpClient: true,
 		hasSecondMcpClient: true,
 		needsOnboarding: false,
+		connectedAgents: [
+			{ clientId: 'client-a', kind: null },
+			{ clientId: 'client-b', kind: null },
+		],
+	})
+
+	const withPagedSecondClient = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(
+					async (_userId: string, options?: { cursor?: string }) => {
+						if (options?.cursor === 'page-2') {
+							return {
+								items: [{ id: 'grant-2', clientId: 'client-b' }],
+							}
+						}
+						return {
+							items: [{ id: 'grant-1', clientId: 'client-a' }],
+							cursor: 'page-2',
+						}
+					},
+				),
+			},
+		},
+		requestUrl: 'http://localhost:3742/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+	})
+	expect(withPagedSecondClient).toMatchObject({
+		hasMcpClient: true,
+		hasSecondMcpClient: true,
 	})
 
 	const unverifiedWithGrant = await loadOnboardingData({
 		env: {
 			OAUTH_PROVIDER: {
 				listUserGrants: vi.fn(async () => ({
-					items: [{ id: 'grant-1' }],
+					items: [{ id: 'grant-1', clientId: 'client-a' }],
 				})),
 			},
 		},

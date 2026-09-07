@@ -15,6 +15,7 @@ profile (`/@username`).
 ```bash
 node tools/control-kody.ts login
 node tools/control-kody.ts request GET /account/profile.json
+node tools/control-kody.ts request GET /account/connected-agents.json
 ```
 
 ## APIs
@@ -26,6 +27,7 @@ node tools/control-kody.ts request GET /account/profile.json
 - `GET /account/export.json`
 - `POST /account/delete`
 - `GET|POST /account/connections.json`
+- `GET|POST /account/connected-agents.json`
 - `POST /logout` (form at the bottom of this page)
 
 ## Gotchas

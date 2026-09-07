@@ -28,9 +28,13 @@ step so the new agent looks up [`portability`](../../guides/portability.md)
 (`search({ entity: "portability:guide" })`) and reuses what Step 2 made. When
 the onboarding payload has a known memory subject or saved-package name, Step 3
 shows a short "You made …" chip (truncated subject and `@scope/kody-id`, or
-hidden if nothing sensible). `hasSecondMcpClient` is inbound grant count ≥ 2,
-not attribution to the selected host — the connected label stays "You've
-connected a second agent."
+hidden if nothing sensible). `hasSecondMcpClient` is unique inbound OAuth
+`clientId`s ≥ 2, not raw grant count and not attribution to the selected host —
+the connected label stays "You've connected a second agent." Same-ecosystem
+greying stays picker UX only. Account → Connected agents lists those inbound
+hosts with best-effort labels and revoke. That list is not
+`users.mcp_client_name` (first-touch) and not `/account/mcp-oauth-clients`
+(user-minted confidential clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers

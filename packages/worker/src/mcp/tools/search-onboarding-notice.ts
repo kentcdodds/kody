@@ -2,20 +2,14 @@ import {
 	formatOnboardingSearchNotice,
 	remainingOnboardingWizardLabels,
 } from '#universal/onboarding-process.ts'
+import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
 import {
 	loadOnboardingAccessWin,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
+import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
-
-type GrantCountEnv = Env & {
-	OAUTH_PROVIDER?: {
-		listUserGrants(
-			userId: string,
-			options?: { cursor?: string },
-		): Promise<{ items: Array<unknown>; cursor?: string }>
-	}
-}
+import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 
 /**
  * One-line onboarding reminder appended to `search` notices, at most once per
@@ -25,22 +19,8 @@ type GrantCountEnv = Env & {
  * Search does not write the dismissal column; that stays on `/onboarding`.
  */
 
-async function countInboundMcpGrants(
-	env: GrantCountEnv,
-	userId: string,
-): Promise<number | null> {
-	try {
-		const helpers = await resolveOAuthHelpers(env)
-		if (!helpers) return null
-		const page = await helpers.listUserGrants(userId)
-		return page.items.length
-	} catch {
-		return null
-	}
-}
-
 export async function buildOnboardingSearchNotice(input: {
-	env: GrantCountEnv
+	env: Env
 	userId: string
 	/** Deployment origin for the details link, e.g. https://kody.codes */
 	baseUrl: string
@@ -52,16 +32,18 @@ export async function buildOnboardingSearchNotice(input: {
 		})
 		if (dismissed) return null
 
-		const [grantCount, hasAccessWin] = await Promise.all([
-			countInboundMcpGrants(input.env, input.userId),
+		const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
+		if (!helpers) return null
+		const [inbound, hasAccessWin] = await Promise.all([
+			loadInboundMcpConnectionState(helpers, input.userId),
 			loadOnboardingAccessWin(input.env, input.userId),
 		])
-		if (grantCount === null) return null
 		const remaining = remainingOnboardingWizardLabels({
-			hasMcpClient: grantCount > 0,
+			hasMcpClient: inbound.uniqueClientCount > 0,
 			hasAccessWin,
-			// Grant count ≥ 2, not attribution to a named host.
-			hasSecondMcpClient: grantCount >= 2,
+			hasSecondMcpClient: hasSecondConnectedMcpClient(
+				inbound.uniqueClientCount,
+			),
 		})
 		return formatOnboardingSearchNotice(remaining, input.baseUrl)
 	} catch {

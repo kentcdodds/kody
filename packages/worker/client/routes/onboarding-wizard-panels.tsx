@@ -10,6 +10,7 @@ import {
 	onboardingCopyPortabilityProofLabel,
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
+	onboardingConnectedAgentLabelsLine,
 	onboardingSecondAgentConnectedLabel,
 	portabilityGuideHref,
 	onboardingSearchStartedLabel,
@@ -182,6 +183,7 @@ export function renderSecondAgentPanel(
 		entrance: MixValue
 		loggedIn: boolean
 		hasSecondMcpClient: boolean
+		connectedAgents?: ReadonlyArray<{ label: string }>
 		firstAgent: McpClientKind | null
 		selectedAgent: McpClientKind | null
 		selectedAgentLabel: string | null
@@ -203,6 +205,9 @@ export function renderSecondAgentPanel(
 		memorySubject: props.accessWinMemorySubject,
 		packageName: props.persistedPackageName,
 	})
+	const connectedLabels = onboardingConnectedAgentLabelsLine(
+		props.connectedAgents ?? [],
+	)
 	return (
 		<section
 			id="onboarding-step-3"
@@ -244,6 +249,11 @@ export function renderSecondAgentPanel(
 				),
 				connectedLabel: onboardingSecondAgentConnectedLabel,
 			})}
+			{connectedLabels ? (
+				<p mix={css(panelLedeCss)} data-testid="onboarding-connected-agents">
+					{connectedLabels}
+				</p>
+			) : null}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
