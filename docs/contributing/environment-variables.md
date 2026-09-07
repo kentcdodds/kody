@@ -347,20 +347,19 @@ Worker secrets:
   skips the post-deploy capability reindex and origin-only execute smoke check
   when it is unset); bearer token for
   `POST /__maintenance/reindex-capabilities`,
-  `POST /__maintenance/reencrypt-secrets`, and other secret-gated
-  maintenance endpoints. Production deploy POSTs
-  `{ "phases": ["capabilities"] }` so only builtin capability vectors refresh
-  after a ship. User-owned memory, job, and saved-package vectors upsert on
-  write. Omit `phases` (or list every kind) after changing the embedding model,
-  pooling, or Vectorize index dimensions to rebuild those rows too, with
-  per-user `userId` metadata on user-owned rows. Unchanged embed text and
-  Vectorize metadata skip embed and Vectorize upsert; after Vectorize data loss
-  or a pooling-only change, POST `{ "force": true }` (and omit `phases` for
-  every kind) so matching fingerprints cannot skip upserts. Each call is
-  time-budgeted and may return `complete: false` plus a `cursor` to resume. Use
-  the re-encrypt endpoint to rewrite pre-AAD (2-part) secret ciphertexts to v2
-  without rotating `SECRET_STORE_KEY` — including after restoring a D1 export
-  sealed before the 2026-08-17 format-upgrade pass (see
+  `POST /__maintenance/reencrypt-secrets`, and other secret-gated maintenance
+  endpoints. Production deploy POSTs `{ "phases": ["capabilities"] }` so only
+  builtin capability vectors refresh after a ship. User-owned memory, job, and
+  saved-package vectors upsert on write. Omit `phases` (or list every kind)
+  after changing the embedding model, pooling, or Vectorize index dimensions to
+  rebuild those rows too, with per-user `userId` metadata on user-owned rows.
+  Unchanged embed text and Vectorize metadata skip embed and Vectorize upsert;
+  after Vectorize data loss or a pooling-only change, POST `{ "force": true }`
+  (and omit `phases` for every kind) so matching fingerprints cannot skip
+  upserts. Each call is time-budgeted and may return `complete: false` plus a
+  `cursor` to resume. Use the re-encrypt endpoint to rewrite pre-AAD (2-part)
+  secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` — including after
+  restoring a D1 export sealed before the 2026-08-17 format-upgrade pass (see
   [Secret rotation](./secret-rotation.md) and
   [Disaster recovery](./disaster-recovery.md)). Local dev uses offline search
   while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.

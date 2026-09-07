@@ -522,7 +522,9 @@ export async function expandSecretPlaceholders(input: {
 					userId,
 					name,
 				})
-				if (!joined) continue
+				if (!joined) {
+					throw new Error(createMissingIntegrationAccessTokenMessage(name))
+				}
 				assertIntegrationHostAllowed(
 					name,
 					{
