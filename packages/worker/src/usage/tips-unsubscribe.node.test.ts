@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -81,4 +82,33 @@ test('tips unsubscribe tokens verify, opt-out is idempotent, and headers are RFC
 	expect(
 		await optOutTipsEmails({ db, userId: 'missing', now: new Date() }),
 	).toEqual({ optedOut: false, alreadyOptedOut: false })
+})
+
+test('0053 creates user_tips_email_opt_outs when rewritten 0050 was already applied', async () => {
+	const migrations = new URL('../../migrations/', import.meta.url)
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrations)
+	sqlite.exec('DROP TABLE user_tips_email_opt_outs')
+	sqlite.exec(
+		readFileSync(
+			new URL('0053-user-tips-email-opt-outs.sql', migrations),
+			'utf8',
+		),
+	)
+	const db = createD1FromSqlite(sqlite)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
+			 VALUES ('catchup', 'catchup@example.com', 'x', 'user-catchup', 'free', 'person')`,
+		)
+		.run()
+	expect(await isTipsEmailsOptedOut({ db, userId: 'user-catchup' })).toBe(false)
+	expect(
+		await optOutTipsEmails({
+			db,
+			userId: 'user-catchup',
+			now: new Date('2026-09-07T12:00:00.000Z'),
+		}),
+	).toEqual({ optedOut: true, alreadyOptedOut: false })
+	expect(await isTipsEmailsOptedOut({ db, userId: 'user-catchup' })).toBe(true)
 })

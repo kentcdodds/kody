@@ -211,6 +211,10 @@
 		{
 			"filename": "0052-user-usage-campaigns-advocate.sql",
 			"sha256": "97bbc37ad00f8bbbe28ce5fb8b7e86b53d9c06f3a8eed6d748e4c573dfdedd05"
+		},
+		{
+			"filename": "0053-user-tips-email-opt-outs.sql",
+			"sha256": "47c028697bc21976963cd1a0bf5825d3d48b7ba2640f93c7192e31d192aa2ea2"
 		}
 	]
 }
