@@ -36,6 +36,40 @@ test('fork outdated click copies the prompt and swaps the tooltip to Copied', as
 	expect(writeText).toHaveBeenCalledWith('absorb these listing changes')
 	expect(tooltip.textContent).toBe('Copied')
 
+	const assign = vi.fn()
+	vi.stubGlobal('location', { assign })
+	const linked = {
+		...button,
+		href: 'https://example.com/listing/tree/pin',
+	}
+	const linkedEvent = {
+		target: {
+			closest: (selector: string) =>
+				selector === '[data-copy-prompt]' ? linked : null,
+		},
+		preventDefault: vi.fn(),
+		stopPropagation: vi.fn(),
+		metaKey: false,
+		ctrlKey: false,
+		shiftKey: false,
+		altKey: false,
+		button: 0,
+	}
+	await handleForkOutdatedCopyClick(linkedEvent as unknown as Event)
+	expect(linkedEvent.preventDefault).toHaveBeenCalled()
+	expect(assign).toHaveBeenCalledWith('https://example.com/listing/tree/pin')
+
+	assign.mockClear()
+	const modifiedEvent = {
+		...linkedEvent,
+		preventDefault: vi.fn(),
+		stopPropagation: vi.fn(),
+		metaKey: true,
+	}
+	await handleForkOutdatedCopyClick(modifiedEvent as unknown as Event)
+	expect(modifiedEvent.preventDefault).not.toHaveBeenCalled()
+	expect(assign).not.toHaveBeenCalled()
+
 	handleForkOutdatedCopyPointerOut({
 		target: event.target,
 		relatedTarget: null,

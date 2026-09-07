@@ -3,6 +3,7 @@ import {
 	type ForkListingRelation,
 } from '#universal/community-listing-ahead.ts'
 import { listingPinIsAncestorOfForkTip } from '#worker/community/fork-listing-ancestry.ts'
+import { getCommunityListingById } from '#worker/community/repo.ts'
 import { type SavedPackageWithCommunityProvenanceRecord } from '#worker/package-registry/types.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
@@ -13,23 +14,29 @@ export function needsForkListingAncestry(input: {
 	return classifyForkListingRelation(input) === 'ahead'
 }
 
+/**
+ * Compare two origin-repo SHAs: the listing pin and the fork's last absorbed
+ * origin commit. Walks the listing's Artifacts repo, not the fork's copy.
+ */
 export async function resolveListingPinAncestry(input: {
 	env: Env
-	sourceId: string
+	listingId: string
 	listingPinnedCommit: string
 	originCommit: string
 }): Promise<boolean | null> {
 	try {
-		const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+		const listing = await getCommunityListingById(input.env.APP_DB, {
+			listingId: input.listingId,
+			includeDelisted: false,
+		})
+		if (!listing) return null
+		const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
 		if (!source) return null
-		const publishedCommit = source.published_commit?.trim() ?? ''
-		const forkTip =
-			publishedCommit.length > 0 ? publishedCommit : input.originCommit
 		return await listingPinIsAncestorOfForkTip({
 			env: input.env,
 			repoId: source.repo_id,
 			listingPinnedCommit: input.listingPinnedCommit,
-			forkTip,
+			forkTip: input.originCommit,
 		})
 	} catch {
 		return null
@@ -41,25 +48,27 @@ export async function applySavedPackageForkListingAncestry(input: {
 	records: Array<SavedPackageWithCommunityProvenanceRecord>
 }): Promise<Array<SavedPackageWithCommunityProvenanceRecord>> {
 	if (input.records.length === 0) return input.records
-	const ancestryBySourceId = new Map<string, Promise<boolean | null>>()
+	const ancestryByKey = new Map<string, Promise<boolean | null>>()
 	function ancestryFor(record: SavedPackageWithCommunityProvenanceRecord) {
 		if (
 			record.listingCurrent !== true ||
+			record.sourceListingId == null ||
 			record.originCommit == null ||
 			record.listingPinnedCommit == null ||
 			!needsForkListingAncestry(record)
 		) {
 			return null
 		}
-		const existing = ancestryBySourceId.get(record.sourceId)
+		const key = `${record.sourceListingId}:${record.originCommit}:${record.listingPinnedCommit}`
+		const existing = ancestryByKey.get(key)
 		if (existing) return existing
 		const pending = resolveListingPinAncestry({
 			env: input.env,
-			sourceId: record.sourceId,
+			listingId: record.sourceListingId,
 			listingPinnedCommit: record.listingPinnedCommit,
 			originCommit: record.originCommit,
 		})
-		ancestryBySourceId.set(record.sourceId, pending)
+		ancestryByKey.set(key, pending)
 		return pending
 	}
 	return Promise.all(

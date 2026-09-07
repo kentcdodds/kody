@@ -615,7 +615,7 @@ async function resolveViewerListingAncestry(input: {
 				listingId,
 				await resolveListingPinAncestry({
 					env: input.env,
-					sourceId: install.sourceId,
+					listingId,
 					listingPinnedCommit: install.listingPinnedCommit,
 					originCommit: install.originCommit,
 				}),

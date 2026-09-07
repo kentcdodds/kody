@@ -73,15 +73,16 @@ Profile activity reads stored `community_activity_events` plus public forks from
 
 `community_forks.origin_commit` is the origin SHA the fork last absorbed. It
 starts as HEAD copied at fork time. When that SHA and the listing pin differ,
-the platform walks the fork tip's Artifacts commit graph. `listing_ahead` /
-`listingAhead` are true only when the listing pin is **not** an ancestor of the
-fork tip (behind or diverged). If the pin is an ancestor — or ancestry cannot be
-proven — the relation is **ahead**: account and community UI show a **Fork
-ahead** link to the listing files at the pin, and MCP search / `packageGet` /
-`packageList` omit any ahead flag or next step. Outdated UI keeps the yellow
-**Fork outdated** copy-prompt control (also linked to that listing tree).
-Clearing an outdated banner is done by publishing with `repoPublishSession` and
-`absorbed_upstream_commit`; that does not copy files.
+the platform walks the **listing origin** Artifacts repo from the absorb marker.
+The fork is a new repo and does not contain origin SHAs. `listing_ahead`
+/`listingAhead` are true only when the listing pin is **not** an ancestor of
+that absorb marker (behind or diverged). If the pin is an ancestor — or ancestry
+cannot be proven — the relation is **ahead**: account and community UI show a
+**Fork ahead** link to the listing files at the pin, and MCP search /
+`packageGet` / `packageList` omit any ahead flag or next step. Outdated UI keeps
+the yellow **Fork outdated** copy-prompt control (also linked to that listing
+tree). Clearing an outdated banner is done by publishing with
+`repoPublishSession` and `absorbed_upstream_commit`; that does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks

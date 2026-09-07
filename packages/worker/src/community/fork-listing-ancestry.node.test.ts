@@ -44,7 +44,7 @@ function readyRepo() {
 	}
 }
 
-test('listing pin ancestry walks the fork tip and treats missing history as not-ancestor', async () => {
+test('listing pin ancestry walks the origin absorb marker and treats missing history as not-ancestor', async () => {
 	expect(
 		await listingPinIsAncestorOfForkTip({
 			env: {} as Env,

@@ -3,8 +3,14 @@ import { applySavedPackageForkListingAncestry } from './fork-listing-relation.ts
 import { type SavedPackageWithCommunityProvenanceRecord } from '#worker/package-registry/types.ts'
 
 const mocks = vi.hoisted(() => ({
+	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	listingPinIsAncestorOfForkTip: vi.fn(),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingById: (...args: Array<unknown>) =>
+		mocks.getCommunityListingById(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -63,10 +69,15 @@ test('package provenance enrichment marks outdated only when the pin is not an a
 		forkListingRelation: 'synced',
 	})
 	expect(mocks.getEntitySourceById).not.toHaveBeenCalled()
+	expect(mocks.getCommunityListingById).not.toHaveBeenCalled()
 
+	mocks.getCommunityListingById.mockResolvedValue({
+		id: 'listing-1',
+		sourceId: 'listing-source-1',
+	})
 	mocks.getEntitySourceById.mockResolvedValue({
-		repo_id: 'repo-1',
-		published_commit: 'commit-tip',
+		repo_id: 'listing-origin-repo',
+		published_commit: 'unrelated-fork-sha',
 	})
 	mocks.listingPinIsAncestorOfForkTip.mockResolvedValue(true)
 	const ahead = await applySavedPackageForkListingAncestry({
@@ -77,9 +88,20 @@ test('package provenance enrichment marks outdated only when the pin is not an a
 		listingAhead: false,
 		forkListingRelation: 'ahead',
 	})
+	expect(mocks.getCommunityListingById).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			listingId: 'listing-1',
+			includeDelisted: false,
+		},
+	)
+	expect(mocks.getEntitySourceById).toHaveBeenCalledWith(
+		expect.anything(),
+		'listing-source-1',
+	)
 	expect(mocks.listingPinIsAncestorOfForkTip).toHaveBeenCalledWith({
 		env: expect.anything(),
-		repoId: 'repo-1',
+		repoId: 'listing-origin-repo',
 		listingPinnedCommit: 'commit-new',
 		forkTip: 'commit-tip',
 	})

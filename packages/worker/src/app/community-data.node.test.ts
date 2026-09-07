@@ -390,6 +390,13 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	)
 	expect(forkAhead?.viewerInstall?.listingAheadPrompt).toBeNull()
 	expect(forkAhead?.viewerInstall?.listingDiffHref).toContain('/tree/')
+	expect(mockModule.resolveListingPinAncestry).toHaveBeenCalledWith(
+		expect.objectContaining({
+			listingId: 'listing-github',
+			listingPinnedCommit: 'commit-pin',
+			originCommit: 'commit-tip',
+		}),
+	)
 })
 
 test('sourceAhead compares HEAD to the runtime pin, not the community catalog snapshot', async () => {

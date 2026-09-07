@@ -9,10 +9,12 @@ import { createEphemeralGitWorkspace } from '#worker/repo/ephemeral-git-workspac
 import { loadIsomorphicGit } from '#worker/repo/isomorphic-git-lazy.ts'
 
 /**
- * Walk the fork tip's commit graph in the package's Artifacts repo.
- * Returns true when `ancestor` is the tip or appears in its history, false
- * when the walk completes without it, and null when the graph cannot be
- * read (missing repo, loopback snapshot, or fetch failure).
+ * Walk the listing origin repo from the fork's absorb marker (`origin_commit`).
+ * Both SHAs live in that origin graph — the fork is a new Artifacts repo and
+ * never contains the listing pin. Returns true when `ancestor` is the tip or
+ * appears in its history, false when the walk completes without it, and null
+ * when the graph cannot be read (missing repo, loopback snapshot, or fetch
+ * failure).
  */
 export async function listingPinIsAncestorOfForkTip(input: {
 	env: Env
