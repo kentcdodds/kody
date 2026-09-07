@@ -408,3 +408,74 @@ test('seed observations do not mail, Cooling is one send then terminal, jobs kee
 		reason: 'dwell',
 	})
 })
+
+test('missing last_active uses the newest known stamp and does not invent Cooling', () => {
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				firstMcpConnectedAt: '2026-09-02T00:00:00.000Z',
+				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+				lastActiveAt: null,
+				distinctInboundClientCount: 1,
+			}),
+			persisted(),
+		),
+	).toBe('PackagedSingleClient')
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				emailVerifiedAt: '2026-07-01T00:00:00.000Z',
+				firstMcpConnectedAt: '2026-07-02T00:00:00.000Z',
+				firstSavedPackageAt: '2026-07-03T00:00:00.000Z',
+				lastActiveAt: null,
+				lastJobActivityAt: null,
+				distinctInboundClientCount: 1,
+			}),
+			persisted(),
+		),
+	).toBe('Cooling')
+})
+
+test('failed job listing does not invent Cooling or demote Activated', () => {
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+				lastActiveAt: null,
+				distinctInboundClientCount: 1,
+				jobListingFailed: true,
+			}),
+			persisted({ state: 'Activated', origin: 'event' }),
+		),
+	).toBe('Activated')
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+				lastActiveAt: '2026-07-01T00:00:00.000Z',
+				jobListingFailed: true,
+				now: new Date(now.getTime() + usageCampaignFirstSendDwellMs),
+			}),
+			persisted({
+				state: 'Cooling',
+				enteredAt: now.toISOString(),
+				origin: 'event',
+			}),
+		),
+	).toMatchObject({
+		state: 'Cooling',
+		action: 'persist',
+		reason: 'job_listing_failed',
+	})
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+				lastActiveAt: null,
+				distinctInboundClientCount: 1,
+				jobListingFailed: true,
+			}),
+			persisted(),
+		),
+	).toBe('PackagedSingleClient')
+})

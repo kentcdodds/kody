@@ -564,14 +564,19 @@ stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
 
 `last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
 read separately so a quiet interactive user with a live schedule stays
-Activated, and Cooling requires stale `last_active_at` plus no job activity.
+Activated. Cooling requires stale `last_active_at` plus no job activity. When
+both of those stamps are missing, the newest of `first_saved_package_at` /
+`first_mcp_connected_at` is the fallback — a missing `last_active_at` is not
+treated as 21 days stale. A failed jobs list does not count as "no jobs" and
+does not enter or mail Cooling.
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of
 `VerifiedNoMcp` (`origin=event`). Later sends wait 24 hours after a transition
 and 5 days between sends in the same state. The send ledger claim is
 `INSERT OR IGNORE` on `(user_id, state, send_index)` and is released if the
-Cloudflare send fails. Kit is not part of this machine.
+Cloudflare send fails. A lost claim race does not persist a stale `send_count`.
+Kit is not part of this machine.
 
 Campaign mail is the only surface gated by the **Kody tips** preference
 (`users.tips_emails_opted_out_at`). Each campaign send includes an “Unsubscribe

@@ -298,14 +298,6 @@ async function sendClaimedCampaignEmail(input: {
 		now: input.now,
 	})
 	if (!claimed) {
-		await persistDecision({
-			db: input.env.APP_DB,
-			userId: input.user.stable_user_id,
-			decision: input.decision,
-			persisted: input.persisted,
-			now: input.now,
-			sent: false,
-		})
 		return false
 	}
 

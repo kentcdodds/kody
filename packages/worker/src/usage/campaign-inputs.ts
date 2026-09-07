@@ -64,6 +64,7 @@ export async function gatherUsageCampaignSnapshot(input: {
 		inboundListingFailed: clients.listingFailed,
 		hasEnabledScheduledJob: jobs.hasEnabledScheduledJob,
 		lastJobActivityAt: jobs.lastJobActivityAt,
+		jobListingFailed: jobs.listingFailed,
 		hasStrongRecentUse: isStrongRecentUse({
 			lastActiveAt: input.user.last_active_at,
 			firstExecuteAt: input.user.first_execute_at,
@@ -114,10 +115,18 @@ async function readJobActivity(env: Env, userId: string) {
 				lastJobActivityAt = runAt
 			}
 		}
-		return { hasEnabledScheduledJob, lastJobActivityAt }
+		return {
+			hasEnabledScheduledJob,
+			lastJobActivityAt,
+			listingFailed: false,
+		}
 	} catch (error) {
 		console.warn('usage-campaign-jobs-read-failed', error)
-		return { hasEnabledScheduledJob: false, lastJobActivityAt: null }
+		return {
+			hasEnabledScheduledJob: false,
+			lastJobActivityAt: null,
+			listingFailed: true,
+		}
 	}
 }
 

@@ -19,6 +19,8 @@ export type UsageCampaignSnapshot = {
 	inboundListingFailed?: boolean
 	hasEnabledScheduledJob: boolean
 	lastJobActivityAt: string | null
+	/** True when the jobs list failed. Do not treat that as "no jobs". */
+	jobListingFailed?: boolean
 	hasStrongRecentUse: boolean
 	isStripePaid: boolean
 	isNearEntitlementCap: boolean
@@ -58,6 +60,12 @@ export function resolveUsageCampaignState(
 
 	if (packaged || isActivatedOrCoolingHistory(persisted)) {
 		if (quiet) return 'Cooling'
+		if (snapshot.jobListingFailed && persisted.state === 'Activated') {
+			return 'Activated'
+		}
+		if (snapshot.jobListingFailed && persisted.state === 'Cooling') {
+			return 'Cooling'
+		}
 		if (isActivatedUsage(snapshot)) return 'Activated'
 		if (snapshot.inboundListingFailed) {
 			if (persisted.state === 'Activated') return 'Activated'
@@ -77,11 +85,31 @@ export function resolveUsageCampaignState(
 }
 
 export function isUsageCampaignQuiet(snapshot: UsageCampaignSnapshot) {
+	if (snapshot.jobListingFailed) return false
 	if (snapshot.hasEnabledScheduledJob) return false
-	return (
-		isStampStale(snapshot.lastActiveAt, snapshot.now) &&
-		isStampStale(snapshot.lastJobActivityAt, snapshot.now)
-	)
+	if (snapshot.lastActiveAt != null || snapshot.lastJobActivityAt != null) {
+		return (
+			isMissingOrStale(snapshot.lastActiveAt, snapshot.now) &&
+			isMissingOrStale(snapshot.lastJobActivityAt, snapshot.now)
+		)
+	}
+	return isStampStale(latestActivationStamp(snapshot), snapshot.now)
+}
+
+function latestActivationStamp(snapshot: UsageCampaignSnapshot) {
+	let latest: string | null = null
+	let latestTime = Number.NEGATIVE_INFINITY
+	for (const stamp of [
+		snapshot.firstSavedPackageAt,
+		snapshot.firstMcpConnectedAt,
+	]) {
+		if (stamp == null) continue
+		const at = Date.parse(stamp)
+		if (!Number.isFinite(at) || at <= latestTime) continue
+		latest = stamp
+		latestTime = at
+	}
+	return latest
 }
 
 export function isActivatedUsage(snapshot: UsageCampaignSnapshot) {
@@ -129,6 +157,18 @@ export function evaluateUsageCampaign(
 			origin,
 			coolingTerminal: false,
 			reason: 'inbound_listing_failed',
+		}
+	}
+
+	if (state === 'Cooling' && snapshot.jobListingFailed) {
+		return {
+			state,
+			action: 'persist',
+			template: null,
+			sendIndex: null,
+			origin,
+			coolingTerminal: coolingTerminal,
+			reason: 'job_listing_failed',
 		}
 	}
 
@@ -227,10 +267,15 @@ function isActivatedOrCoolingHistory(persisted: UsageCampaignPersisted) {
 	)
 }
 
-function isStampStale(stamp: string | null, now: Date) {
+function isMissingOrStale(stamp: string | null, now: Date) {
 	if (stamp == null) return true
+	return isStampStale(stamp, now)
+}
+
+function isStampStale(stamp: string | null, now: Date) {
+	if (stamp == null) return false
 	const at = Date.parse(stamp)
-	if (!Number.isFinite(at)) return true
+	if (!Number.isFinite(at)) return false
 	return now.getTime() - at >= usageCampaignCoolingStaleMs
 }
 

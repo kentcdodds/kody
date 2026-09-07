@@ -5,8 +5,10 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { type UsageCampaignSnapshot } from '#worker/usage/campaign-evaluator.ts'
 import {
+	claimUsageCampaignSend,
 	listUsageCampaignSends,
 	readUsageCampaign,
+	upsertUsageCampaign,
 } from '#worker/usage/campaign-ledger.ts'
 import { type UsageCampaignCandidate } from '#worker/usage/campaign-inputs.ts'
 
@@ -321,4 +323,54 @@ test('tips opt-out skips campaign mail and does not consume a send slot', async 
 			send_index: 1,
 		}),
 	])
+})
+
+test('a lost send-ledger race does not persist a stale campaign row', async () => {
+	const { db } = createDb()
+	await insertUser(db, {
+		id: 'user-race',
+		email: 'race@example.com',
+		packageAt: '2026-07-01T00:00:00.000Z',
+	})
+	const env = createEnv(db)
+	const enteredAt = '2026-09-06T11:00:00.000Z'
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-race',
+		state: 'Cooling',
+		enteredAt,
+		sendCount: 0,
+		lastSentAt: null,
+		origin: 'event',
+		coolingTerminal: false,
+		now: new Date(enteredAt),
+	})
+	const claimed = await claimUsageCampaignSend({
+		db,
+		userId: 'user-race',
+		state: 'Cooling',
+		template: 'cooling',
+		sendIndex: 1,
+		now: new Date(enteredAt),
+	})
+	expect(claimed).toBe(true)
+	const before = await readUsageCampaign(db, 'user-race')
+	gatherUsageCampaignSnapshot.mockResolvedValue(
+		snapshot({
+			firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+			lastActiveAt: '2026-07-01T00:00:00.000Z',
+			now,
+		}),
+	)
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	const after = await readUsageCampaign(db, 'user-race')
+	expect(after?.send_count).toBe(0)
+	expect(after?.last_sent_at).toBeNull()
+	expect(after?.last_evaluated_at).toBe(before?.last_evaluated_at)
+	expect(after?.cooling_terminal).toBe(0)
 })

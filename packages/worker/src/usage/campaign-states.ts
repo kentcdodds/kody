@@ -64,7 +64,7 @@ export const usageCampaignSendIntervalMs = 5 * 24 * 60 * 60 * 1000
  */
 export const usageCampaignFirstSendDwellMs = 24 * 60 * 60 * 1000
 
-/** last_active_at / last job activity older than this, with no enabled job. */
+/** Latest known activity older than this, with no enabled job. */
 export const usageCampaignCoolingStaleMs = 21 * 24 * 60 * 60 * 1000
 
 /** last_active_at window used with execute depth for "strong recent use". */
