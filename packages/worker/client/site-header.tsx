@@ -29,7 +29,7 @@ export type SiteHeaderProps = {
 }
 
 /**
- * Sticky site header from the heykody.dev redesign: brand, marketing nav
+ * Sticky site header from the 2026 landing redesign: brand, marketing nav
  * (Community · Guides · Pricing · Blog), and the session corner (Account
  * then the avatar on desktop). The bottom hairline is a static CSS border so
  * it paints before JS.
