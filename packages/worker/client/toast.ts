@@ -1,6 +1,6 @@
 export type ToastTone = 'info' | 'success' | 'error'
 
-export type ToastAction = {
+type ToastAction = {
 	label: string
 	onClick: () => void
 }
@@ -28,7 +28,7 @@ export type ToastRecord = {
 	action?: ToastAction
 }
 
-export const defaultToastDurationMs = {
+const defaultToastDurationMs = {
 	info: 4_000,
 	success: 4_000,
 	error: null,

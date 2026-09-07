@@ -1,7 +1,7 @@
 import { css, type Handle } from 'remix/ui'
 import { chartAxisTextCss, chartEmptyFill, softColor } from './chart-theme.ts'
 
-export type HeatmapCell = {
+type HeatmapCell = {
 	/** 0 = Sunday through 6 = Saturday, matching `Date#getUTCDay`. */
 	weekday: number
 	/** Hour of day, 0-23. */

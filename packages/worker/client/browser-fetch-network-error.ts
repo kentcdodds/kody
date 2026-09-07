@@ -17,7 +17,7 @@ const browserFetchNetworkErrorMessages = new Set([
 /** Chromium "Failed to fetch (hostname)" without matching dynamic-import text. */
 const chromiumFailedToFetchWithOrigin = /^Failed to fetch(?:\s+\([^)]+\))?$/i
 
-export function normalizeBrowserFetchNetworkErrorMessage(message: string) {
+function normalizeBrowserFetchNetworkErrorMessage(message: string) {
 	const withoutTypePrefix = message.trim().replace(/^TypeError:\s*/i, '')
 	if (chromiumFailedToFetchWithOrigin.test(withoutTypePrefix)) {
 		return 'Failed to fetch'

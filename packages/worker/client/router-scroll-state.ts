@@ -30,7 +30,7 @@ export type ScrollRestorationTarget =
 
 let scrollRestorationKeyCount = 0
 
-export function createScrollRestorationKey() {
+function createScrollRestorationKey() {
 	scrollRestorationKeyCount += 1
 	return `${Date.now().toString(36)}-${scrollRestorationKeyCount.toString(36)}`
 }
@@ -69,7 +69,7 @@ export function ensureCurrentScrollRestorationKey() {
 	return key
 }
 
-export function getScrollRestorationHash(location: string) {
+function getScrollRestorationHash(location: string) {
 	const hash = new URL(location, 'https://kody.local').hash
 	if (!hash) return null
 	const encodedId = hash.slice(1)
