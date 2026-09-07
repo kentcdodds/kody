@@ -46,61 +46,6 @@ export const onboardingFeaturedMcpServerIds = [
 export type OnboardingFeaturedMcpServerId =
 	(typeof onboardingFeaturedMcpServerIds)[number]
 
-/**
- * Extra Show more chips on `/onboarding/step-2`. Each one is a real
- * `/onboarding/step-2/:service` selection that flavors the copyable prompt.
- * They are not a connect wizard and they are not hosted OAuth. Official MCP
- * remotes stay off this list.
- */
-export const onboardingNotListedPromptServices = [
-	{ id: 'google', label: 'Google' },
-	{ id: 'slack', label: 'Slack' },
-	{ id: 'discord', label: 'Discord' },
-	{ id: 'spotify', label: 'Spotify' },
-	{ id: 'x', label: 'x.com' },
-	{ id: 'asana', label: 'Asana' },
-	{ id: 'dropbox', label: 'Dropbox' },
-	{ id: 'linkedin', label: 'LinkedIn' },
-	{ id: 'zoom', label: 'Zoom' },
-] as const
-
-export type OnboardingNotListedPromptServiceId =
-	(typeof onboardingNotListedPromptServices)[number]['id']
-
-export const onboardingNotListedServiceId = 'not-listed' as const
-
-export type OnboardingServiceChoice =
-	| OnboardingFeaturedMcpServerId
-	| OnboardingNotListedPromptServiceId
-	| typeof onboardingNotListedServiceId
-
-export function isOnboardingServiceChoice(
-	value: string | null,
-): value is OnboardingServiceChoice {
-	if (value == null) return false
-	if (value === onboardingNotListedServiceId) return true
-	if (
-		(onboardingFeaturedMcpServerIds as ReadonlyArray<string>).includes(value)
-	) {
-		return true
-	}
-	return onboardingNotListedPromptServices.some(
-		(service) => service.id === value,
-	)
-}
-
-export function onboardingServiceLabel(id: OnboardingServiceChoice): string {
-	if (id === onboardingNotListedServiceId) return 'Not listed'
-	const server = onboardingFeaturedMcpServers.find(
-		(candidate) => candidate.id === id,
-	)
-	if (server) return server.label
-	const byo = onboardingNotListedPromptServices.find(
-		(candidate) => candidate.id === id,
-	)
-	return byo?.label ?? id
-}
-
 export type OnboardingFeaturedMcpServerOption = {
 	id: OnboardingFeaturedMcpServerId
 	name: string
@@ -362,50 +307,6 @@ export function formatOnboardingFeaturedMcpAddHint(): string {
 		.join(', ')
 }
 
-export function onboardingFeaturedMcpServerById(
-	id: string,
-): OnboardingFeaturedMcpServerOption | null {
-	return onboardingFeaturedMcpServers.find((server) => server.id === id) ?? null
-}
-
-/**
- * Repo icons for catalog chips that are not in `ProviderIcon`. Do not invent
- * lookalikes — missing files fall through to a letter mark.
- */
-const onboardingServiceImageIconIds = [
-	'airtable',
-	'cloudflare',
-	'cloudinary',
-	'intercom',
-	'monday',
-	'neon',
-	'netlify',
-	'paypal',
-	'plaid',
-	'prisma',
-	'resend',
-	'square',
-	'supabase',
-	'workos',
-] as const
-
-export function onboardingServiceImageIconSrc(id: string): string | null {
-	if (!(onboardingServiceImageIconIds as ReadonlyArray<string>).includes(id)) {
-		return null
-	}
-	return `/images/icons/${id}.svg`
-}
-
-function isPermutation(
-	actual: ReadonlyArray<OnboardingFeaturedMcpServerId>,
-	expected: ReadonlyArray<OnboardingFeaturedMcpServerId>,
-) {
-	if (actual.length !== expected.length) return false
-	const expectedIds = new Set(expected)
-	if (new Set(actual).size !== expectedIds.size) return false
-	return actual.every((id) => expectedIds.has(id))
-}
-
 export function pickOnboardingServiceChooser(
 	randomInt: OnboardingRandomInt = randomOnboardingInt,
 ): OnboardingServiceChooserPick {
@@ -429,20 +330,6 @@ export function canonicalOnboardingServiceChooser(): OnboardingServiceChooserPic
 		featured: onboardingFeaturedMcpServerIds.slice(0, slotCount),
 		overflow: onboardingFeaturedMcpServerIds.slice(slotCount),
 	}
-}
-
-export function isValidOnboardingServiceChooserPick(
-	value: OnboardingServiceChooserPick,
-): boolean {
-	const slotCount = Math.min(
-		onboardingFeaturedMcpSlotCount,
-		onboardingFeaturedMcpServerIds.length,
-	)
-	if (value.featured.length !== slotCount) return false
-	return isPermutation(
-		[...value.featured, ...value.overflow],
-		onboardingFeaturedMcpServerIds,
-	)
 }
 
 export function normalizeOnboardingMcpServerUrl(url: string): string {

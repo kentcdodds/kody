@@ -3,7 +3,6 @@ import {
 	mcpOAuthMessageType,
 	mcpOAuthPopupName,
 	mcpOAuthReturnCookie,
-	mcpOAuthReturnOnboarding,
 	readMcpOAuthDoneMessage,
 	type McpOAuthDoneMessage,
 } from '#universal/mcp-oauth-return.ts'
@@ -34,26 +33,6 @@ function publishOnboardingMcpOAuthDone(outcome: McpOAuthDoneMessage) {
 	if (typeof window === 'undefined') return
 	if (!window.opener || window.opener.closed) return
 	window.opener.postMessage(outcome, window.location.origin)
-}
-
-/**
- * Remember that this authorize flow started on onboarding, then open the
- * provider page in a named popup so the callback tab can close itself.
- * `window.name` survives provider COOP, which often severs `window.opener`.
- */
-export function openOnboardingMcpOAuthPopup(authUrl: string) {
-	document.cookie = mcpOAuthReturnCookie({
-		value: mcpOAuthReturnOnboarding,
-		secure: window.location.protocol === 'https:',
-	})
-	const popup = window.open(
-		authUrl,
-		mcpOAuthPopupName,
-		'popup,width=560,height=780',
-	)
-	if (popup == null) {
-		window.location.assign(authUrl)
-	}
 }
 
 /** Drop the onboarding return marker so a later account authorize stays put. */

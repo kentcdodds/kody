@@ -16,18 +16,6 @@ export const chartColor = {
 	teal: '#14b8a6',
 } as const
 
-export const chartSeriesColors = [
-	chartColor.blue,
-	chartColor.emerald,
-	chartColor.amber,
-	chartColor.violet,
-	chartColor.rose,
-	chartColor.cyan,
-	chartColor.lime,
-	chartColor.fuchsia,
-	chartColor.teal,
-] as const
-
 export const chartGridStroke =
 	'color-mix(in srgb, var(--color-border) 55%, transparent)'
 

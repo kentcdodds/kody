@@ -15,10 +15,7 @@ import {
 	mutedLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
-export {
-	buildPendingVerificationPath,
-	pendingVerificationPath,
-} from '#client/routes/pending-verification-path.ts'
+export { buildPendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 
 export const resendVerificationApiPath = '/account/resend-verification.json'
 

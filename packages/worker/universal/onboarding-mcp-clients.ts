@@ -202,13 +202,6 @@ export function isValidOnboardingAgentChooserPick(
 	)
 }
 
-export function onboardingFeaturedIdsFromChooser(
-	chooser: OnboardingAgentChooserPick,
-	surface: OnboardingAgentSurface,
-): ReadonlyArray<McpClientKind> {
-	return surface === 'mobile' ? chooser.mobileFeatured : chooser.desktopFeatured
-}
-
 export type OnboardingAgentViewport = 'desktop-only' | 'mobile-only' | 'both'
 
 export function onboardingAgentViewport(
@@ -264,13 +257,6 @@ export function onboardingViewportCss(
 		display: 'none',
 		[onboardingMobileAgentMq]: { display: shownDisplay },
 	}
-}
-
-export function onboardingMoreIdsFromChooser(
-	chooser: OnboardingAgentChooserPick,
-	surface: OnboardingAgentSurface,
-): ReadonlyArray<McpClientKind> {
-	return surface === 'mobile' ? chooser.mobileMore : chooser.desktopMore
 }
 
 export function onboardingAgentLabel(

@@ -4,8 +4,6 @@ import {
 	COPY_PROMPT_SELECTOR,
 } from '#universal/fork-outdated-copy-button.tsx'
 
-export const FORK_OUTDATED_COPY_BUTTON_SELECTOR = COPY_PROMPT_SELECTOR
-
 type CopyPromptButtonEl = {
 	dataset: {
 		copyText?: string

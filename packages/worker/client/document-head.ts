@@ -7,13 +7,6 @@ import {
 } from '#universal/document-head.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 
-export {
-	DEFAULT_DOCUMENT_TITLE,
-	NOT_FOUND_DOCUMENT_TITLE,
-	resolveDocumentHead,
-	resolveDocumentTitle,
-} from '#universal/document-head.ts'
-
 function removeManagedHeadNodes(head: HTMLHeadElement) {
 	for (const node of head.querySelectorAll(`[${DOCUMENT_HEAD_ATTR}]`)) {
 		node.remove()
