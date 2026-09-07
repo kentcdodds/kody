@@ -245,6 +245,12 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(labeled).toContain('/images/icons/chatgpt.svg')
 	expect(labeled).toContain('/images/icons/cursor.svg')
 	expect(labeled).toContain('/images/icons/githubcopilot.svg')
+	const connectedLine = labeled.match(
+		/data-testid="onboarding-connected-agents"[\s\S]*?<\/p>/,
+	)?.[0]
+	expect(connectedLine).toContain('data-mark-size="inline"')
+	expect(connectedLine).not.toContain('width="28"')
+	expect(connectedLine).not.toContain('height="28"')
 	expect(labeled).toContain('data-greyed-reason="same-ecosystem"')
 	expect(labeled).toContain('data-greyed-reason="connected"')
 	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')

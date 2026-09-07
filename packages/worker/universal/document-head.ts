@@ -388,6 +388,12 @@ const routeDocumentHeads = {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email released' : 'Release email')
 	},
+	[routePattern(routes.unsubscribeTips)]: ({ loaderData }) => {
+		const unsubscribe = loaderData?.tipsUnsubscribe
+		return titleOnly(
+			unsubscribe?.ok ? 'Unsubscribed from tips' : 'Unsubscribe from tips',
+		)
+	},
 	[routePattern(routes.connectOauth)]: ({ loaderData }) => {
 		const provider = loaderData?.connectOauth?.provider?.trim()
 		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')

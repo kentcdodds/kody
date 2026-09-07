@@ -353,12 +353,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   first reach 2; `second_agent_standard_gift_expires_at` is set only when that
   overlay actually raises a free account (NULL means already paid / no-op). See
   [Entitlements](./entitlements.md#second-agent-standard-gift).
-  `referral_standard_credit_expires_at` is the stackable Standard overlay from
-  the uncapped referral program. Pre-signup attribution lives in the last-wins
-  one-week `kody_ref` cookie. `referrals` stores the signup-time row
-  (`referrer_stable_user_id`, `referee_stable_user_id`) and the invoice-gated
-  reward ledger (`status`, `reward_invoice_id`, held invoice fields while email
-  is unverified). See
+  `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
+  campaign mail only). `referral_standard_credit_expires_at` is the stackable
+  Standard overlay from the uncapped referral program. Pre-signup attribution
+  lives in the last-wins one-week `kody_ref` cookie. `referrals` stores the
+  signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
+  invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
+  fields while email is unverified). See
   [Entitlements](./entitlements.md#referral-standard-credit). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
@@ -537,6 +538,17 @@ Two D1 reporting projections deliberately remain:
   Engine's account retention is approximately 90 days, so it cannot safely serve
   the 12-month admin trend or preserve the 24-month read model. The hourly
   Analytics Engine recompute and D1 table remain unchanged.
+- `user_usage_campaigns` and `user_usage_campaign_sends` store one usage-state
+  campaign row per user plus an idempotent send ledger
+  (`UNIQUE(user_id, state, send_index)`), plus `first_activated_at` /
+  `advocate_sent_at` and a partial unique index that caps
+  `advocate_referral_testimonial` at one send forever. The hourly
+  `usage_entitlement_alert` lane evaluates verified person accounts and mails
+  from `kody@` with the standard transactional template. Seed observations
+  persist state without mailing (backfill is out of scope). Activated and Paid
+  stay drip-silent except that one-shot advocate mail. LimitAware shares the
+  existing entitlement-warning mail. Kit stays exist-only tags. See
+  [Usage metering](./usage-metering.md#usage-campaign).
 - `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
   the homepage ticker (no `user_id`; not an account export/deletion target). The
   hourly `usage_aggregation` lane rewrites the current and previous UTC months
@@ -1666,6 +1678,12 @@ Current retention policies:
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention. Months before the
   earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+- `user_usage_campaigns` / `user_usage_campaign_sends`: usage-state campaign
+  machine and send ledger keyed by `stable_user_id`. `ever_activated` and
+  `cooling_terminal` are sticky. Deleted and exported with the account. Durable
+  until deletion; no TTL.
+- `user_tips_email_opt_outs`: Kody tips opt-out stamp keyed by `stable_user_id`.
+  Deleted and exported with the account. Durable until deletion; no TTL.
 - `compute_overage_invoices`: one ledger row per user per UTC month for unique
   worker-day and Durable Object rows-read overage. Status is the disposition
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or

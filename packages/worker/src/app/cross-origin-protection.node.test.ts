@@ -11,7 +11,7 @@ function createStubHandler(name: string) {
 	}
 }
 
-test('COP rejects cross-site app posts and bypasses webhook and sentry posts', async () => {
+test('COP rejects cross-site app posts and bypasses webhook, sentry, and tips unsubscribe posts', async () => {
 	const router = createRouter({
 		middleware: [remixCrossOriginProtection],
 	})
@@ -22,6 +22,7 @@ test('COP rejects cross-site app posts and bypasses webhook and sentry posts', a
 		createStubHandler('hook'),
 	)
 	router.post('/sentry-tunnel', createStubHandler('sentry'))
+	router.post('/unsubscribe/tips', createStubHandler('tips-unsub'))
 	router.get('/account', createStubHandler('account-get'))
 
 	const sameOrigin = await router.fetch(
@@ -88,4 +89,15 @@ test('COP rejects cross-site app posts and bypasses webhook and sentry posts', a
 		}),
 	)
 	expect(await sentry.text()).toBe('sentry')
+
+	const tipsUnsub = await router.fetch(
+		new Request('http://localhost/unsubscribe/tips?token=abc', {
+			method: 'POST',
+			headers: {
+				Origin: 'https://mail.google.com',
+				'Sec-Fetch-Site': 'cross-site',
+			},
+		}),
+	)
+	expect(await tipsUnsub.text()).toBe('tips-unsub')
 })

@@ -295,6 +295,16 @@ off-portal; the Stripe Billing Portal configuration
 $12/$120 and Pro $49/$480
 checkout prices.
 
+Dashboard-side dunning (not an environment variable, recorded here so it
+survives re-provisioning): the production Stripe account has every customer
+email under Settings → Billing → Subscriptions and emails → "Email notifications
+and customer management" enabled (trial-ending reminder, upcoming renewals,
+expiring cards, failed card payments, failed bank-debit payments), and "Manage
+failed payments" cancels the subscription when all retries fail. Kody also sends
+its own past-due and payment-failed emails (`billing/subscription-sync.ts`,
+`billing/stripe-webhooks.ts`), deduplicated so one failed charge is not two Kody
+emails; the Stripe email is additive and carries the card-update link.
+
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 
 ## MCP OIDC ID token signing

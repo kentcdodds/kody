@@ -543,3 +543,78 @@ ORDER BY executes DESC
   for six hours. The payload has no user ids, package UUIDs, emails, or error
   strings. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
+
+## Usage campaign
+
+The hourly `usage_entitlement_alert` lane also runs the usage-state lifecycle
+campaign (`sendUserUsageCampaignEmails`). One campaign state per user. The
+evaluator branches on activation stamps and live reads (paged distinct inbound
+`clientId`s, enabled jobs / last job run, execute-rollup depth, Stripe paid,
+stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
+
+| State                  | Mail                                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                              |
+| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                                     |
+| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Standard gift is still unreceived (`describeSecondAgentStandardGift` status `none`) |
+| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                                       |
+| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                                   |
+| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                           |
+| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                                |
+
+`last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
+read separately so a quiet interactive user with a live schedule stays
+Activated. Cooling requires stale `last_active_at` plus no job activity. When
+both of those stamps are missing, the newest of `first_saved_package_at` /
+`first_mcp_connected_at` is the fallback — a missing `last_active_at` is not
+treated as 21 days stale. A failed jobs list does not count as "no jobs":
+Activated and Cooling rows stay put, and Cooling is not mailed. First
+observation still uses the stamp-based quiet check so a quiet packaged user
+seeds `Cooling` instead of a later event transition that would backfill the
+poke. Once a user has been `Activated` or `Cooling`, they do not fall back to
+`PackagedSingleClient` mail when strong-use or client count dips — recent
+activity returns them to Activated silence. `ever_activated` survives LimitAware
+and Paid so those silent states cannot erase that history. A LimitAware snapshot
+that already shows two clients, a live job, or strong use sets the flag even
+when the resolved state is still LimitAware, so leaving the cap after a later
+dip does not become PackagedSingleClient mail. LimitAware from VerifiedNoMcp
+without those signals still leaves the flag off. Cooling is one lifetime poke:
+`cooling_terminal` is sticky, so a later re-entry does not retry send 1 or stall
+the sweep.
+
+The advocate mail is not a drip and does not reopen Activated or Paid campaign
+caps (those stay 0). Eligibility is current `Activated` or `Paid`, tenure of
+seven days from `first_activated_at` (or `entered_at` when that stamp is not set
+yet), a live referral `shareUrl` (`/signup?ref=<username>` from
+`referralSharePath`), and no prior `advocate_referral_testimonial` ledger row.
+Seed origin does not block it after tenure; first observation still only
+persists. Tips opt-out suppresses it. The CTA is the account's referral invite
+link; the secondary action is `mailto:me@kentcdodds.com` (the existing
+testimonial channel — the homepage carousel has no intake form).
+
+First sweep of an existing user seeds the current state without mailing
+(backfill is out of scope). Verify-time connect-agent mail is send 1 of
+`VerifiedNoMcp` (`origin=event`). If that first mail fails closed, the verify
+path still opens an event-origin row with `send_count` 0 so the hourly sweep can
+retry after the normal first-send dwell instead of seeding the user permanently.
+The campaign upsert keeps `MAX(send_count)` and the later `last_sent_at` when
+the state is unchanged, and never downgrades `event` to `seed`, so a later sweep
+persist cannot clobber that verify-time row. A real state change still resets
+`send_count`. Later sends wait 24 hours after a transition and 5 days between
+sends in the same state. The send ledger claim is `INSERT OR IGNORE` on
+`(user_id, state, send_index)` and is released if the Cloudflare send fails or
+unsubscribe-token minting fails (no footerless campaign mail). A lost claim race
+does not persist a stale `send_count`. Kit is not part of this machine.
+
+Campaign mail is the only surface gated by the **Kody tips** preference
+(`user_tips_email_opt_outs`). Each campaign send includes an “Unsubscribe from
+tips” footer and RFC `List-Unsubscribe` / `List-Unsubscribe-Post` one-click
+headers. The signed `/unsubscribe/tips` route sets that stamp; transactional
+verify, billing, and error-rate mail is never suppressed. Distinct inbound
+client counts come from `loadInboundMcpConnectionState`. A failed grant listing
+does not treat the count as 0: packaged users without Activated history hold
+`PackagedSingleClient` and persist without sending, so a later successful
+listing stays a seed instead of an event backfill. A failed execute-rollup read
+does not treat depth as 0: the same packaged row persists without sending, so a
+later successful read can still become Activated silence instead of second-agent
+mail.

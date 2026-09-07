@@ -235,6 +235,7 @@ export const routes = route({
 	verifyEmail: '/verify-email',
 	verifyEmailChange: '/verify-email-change',
 	verifyEmailClaimRelease: '/verify-email-claim-release',
+	unsubscribeTips: '/unsubscribe/tips',
 	pendingVerification: '/pending-verification',
 	signup: '/signup',
 	waitingList: post('/waiting-list'),

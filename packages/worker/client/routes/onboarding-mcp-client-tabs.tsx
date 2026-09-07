@@ -56,16 +56,20 @@ type OnboardingMcpClientTabsProps = {
 	greyedReason?: string | null
 }
 
-function AgentMarkIcon(handle: Handle<{ icon: string | null }>) {
+function AgentMarkIcon(
+	handle: Handle<{ icon: string | null; size?: 'picker' | 'inline' }>,
+) {
 	return () => {
+		const inline = handle.props.size === 'inline'
 		if (!handle.props.icon) {
 			return (
 				<svg
 					viewBox="0 0 24 24"
-					width="22"
-					height="22"
+					width={inline ? undefined : 22}
+					height={inline ? undefined : 22}
 					fill="currentColor"
 					aria-hidden="true"
+					mix={inline ? css(pickerIconImgInlineCss) : undefined}
 				>
 					<circle cx="6" cy="12" r="1.6" />
 					<circle cx="12" cy="12" r="1.6" />
@@ -77,9 +81,9 @@ function AgentMarkIcon(handle: Handle<{ icon: string | null }>) {
 			<img
 				src={`/images/icons/${handle.props.icon}.svg`}
 				alt=""
-				width={28}
-				height={28}
-				mix={css(pickerIconImgCss)}
+				width={inline ? undefined : 28}
+				height={inline ? undefined : 28}
+				mix={css(inline ? pickerIconImgInlineCss : pickerIconImgCss)}
 			/>
 		)
 	}
@@ -101,16 +105,17 @@ export function AgentPickerMark(
 				mix={css(size === 'inline' ? pickerMarkInlineCss : pickerMarkCss)}
 				aria-hidden="true"
 				data-testid={handle.props.testId}
+				data-mark-size={size}
 			>
 				{desktopIcon === mobileIcon ? (
-					<AgentMarkIcon icon={desktopIcon} />
+					<AgentMarkIcon icon={desktopIcon} size={size} />
 				) : (
 					<>
 						<span mix={css(onboardingViewportCss('desktop-only', 'grid'))}>
-							<AgentMarkIcon icon={desktopIcon} />
+							<AgentMarkIcon icon={desktopIcon} size={size} />
 						</span>
 						<span mix={css(onboardingViewportCss('mobile-only', 'grid'))}>
-							<AgentMarkIcon icon={mobileIcon} />
+							<AgentMarkIcon icon={mobileIcon} size={size} />
 						</span>
 					</>
 				)}
@@ -602,18 +607,25 @@ const pickerMarkInlineCss = {
 	flex: 'none',
 	width: '1em',
 	height: '1em',
+	overflow: 'hidden',
 	verticalAlign: '-0.125em',
 	color: colors.text,
-	'& img, & svg': {
-		width: '1em',
-		height: '1em',
-	},
 }
 
 const pickerIconImgCss = {
 	display: 'block',
 	width: '1.75rem',
 	height: '1.75rem',
+	objectFit: 'contain' as const,
+	'@media (prefers-color-scheme: dark)': {
+		filter: 'invert(1)',
+	},
+}
+
+const pickerIconImgInlineCss = {
+	display: 'block',
+	width: '1em',
+	height: '1em',
 	objectFit: 'contain' as const,
 	'@media (prefers-color-scheme: dark)': {
 		filter: 'invert(1)',

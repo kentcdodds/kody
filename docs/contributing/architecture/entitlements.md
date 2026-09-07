@@ -354,7 +354,10 @@ the same cold zero-init path):
   UTC day claims stock limits only, so a `*_per_day` midnight reset can mail.
   Candidate selection is the top ~80 accounts by current-month event count plus
   high package/secret stock, capped at 100. Operator crossing events run even
-  when user warning sends fail.
+  when user warning sends fail. The same hourly lane also evaluates the
+  usage-state campaign. Users near stock caps enter `LimitAware` and stay
+  campaign-silent so these entitlement warnings remain the entitlement nudge.
+  See [Usage metering](./usage-metering.md#usage-campaign).
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere
