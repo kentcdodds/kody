@@ -168,11 +168,11 @@ export function buildConnectAgentEmail(input: {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Connect the agent you already use',
-		preheader: 'Cursor, Claude, ChatGPT — one connection.',
+		preheader: 'Cursor, Claude, ChatGPT, Grok Bot: one connection.',
 		heading: 'Connect the agent you already use',
 		body: [
 			'Your email is verified. Open the agent you already live in and connect Kody as an MCP server.',
-			'That one connection is the home: memory, secrets, and jobs follow you to every host.',
+			'That one connection is the home: packages of code, memory, secrets, and jobs follow you to every host.',
 		],
 		action: { label: 'Connect your agent', url: input.onboardingUrl },
 		illustration: {
@@ -198,16 +198,21 @@ export function buildKeepPackageEmail(input: {
 	clientLabel: string
 	unsubscribe?: CampaignUnsubscribe
 }) {
+	const clientLabel = capitalizeCampaignLabel(input.clientLabel)
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: `Keep what ${input.clientLabel} just figured out`,
 		preheader: 'Save one working answer as a package.',
 		heading: 'Keep what you just figured out',
 		body: [
-			`${capitalizeCampaignLabel(input.clientLabel)} already did the hard part. Save that working answer as a package so the next session does not start from zero.`,
+			`You got ${clientLabel} to use Kody to do something. If that was useful, tell ${clientLabel} to save that work as a package so the next session does not start from zero.`,
 			'One durable package is enough. You can refine it later.',
 		],
 		action: { label: 'Save a package', url: input.onboardingUrl },
+		afterAction: [
+			"And if what it did wasn't useful, then send it this:",
+			{ kind: 'quote', text: "Let's talk about how we can use Kody" },
+		],
 		illustration: {
 			src: '/images/kody-lantern.png',
 			alt: '',
@@ -257,9 +262,9 @@ export function buildCoolingHomeEmail(input: {
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
-		subject: 'Your home is still there',
+		subject: 'Your home is still here',
 		preheader: 'Nothing expired. Pick up when you want.',
-		heading: 'Your home is still there',
+		heading: 'Your home is still here',
 		body: [
 			'Kody still has your packages, memory, and secrets. Nothing expired.',
 			'When you want them again, open the agent you already use and connect.',
@@ -273,6 +278,40 @@ export function buildCoolingHomeEmail(input: {
 		},
 		footnote:
 			"You're receiving this because your Kody account has been quiet. This is the only poke.",
+		unsubscribe: input.unsubscribe,
+	})
+}
+
+export const kodyTestimonialMailto =
+	'mailto:me@kentcdodds.com?subject=Kody%20testimonial'
+
+export function buildAdvocateReferralEmail(input: {
+	appBaseUrl: string
+	shareUrl: string
+	unsubscribe?: CampaignUnsubscribe
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Share Kody (and a free month)',
+		preheader: 'Invite a friend. Tell us what stuck.',
+		heading: 'Share Kody — and keep a month',
+		body: [
+			"You've been using Kody long enough to know if it stuck. Send someone you trust your invite. When they pay their first invoice, you both get a Standard month.",
+			'If you have thirty seconds, tell Kent what made Kody worth keeping. He reads those.',
+		],
+		action: { label: 'Open your invite link', url: input.shareUrl },
+		secondaryAction: {
+			label: 'Email a short testimonial',
+			url: kodyTestimonialMailto,
+		},
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because you've been using Kody. This is the only ask.",
 		unsubscribe: input.unsubscribe,
 	})
 }

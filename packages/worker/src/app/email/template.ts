@@ -12,6 +12,8 @@ type EmailAction = {
 	url: string
 }
 
+export type EmailAfterActionBlock = string | { kind: 'quote'; text: string }
+
 type EmailIllustration = {
 	/** Site-relative path resolved against `appBaseUrl`. */
 	src: string
@@ -33,8 +35,10 @@ export type TransactionalEmailContent = {
 	body: Array<string>
 	/** Primary call to action. */
 	action?: EmailAction
-	/** Paragraphs shown below the action button, above the footer. */
-	afterAction?: Array<string>
+	/** Quieter second action under the primary button. */
+	secondaryAction?: EmailAction
+	/** Paragraphs or quoted prompts shown below the action button, above the footer. */
+	afterAction?: Array<EmailAfterActionBlock>
 	/** Optional decorative image centered at the bottom of the card. */
 	illustration?: EmailIllustration
 	/** Small muted line at the very bottom of the card. */
@@ -73,6 +77,27 @@ function paragraphs(values: Array<string>, className: string, style: string) {
 		.join('\n                ')
 }
 
+function afterActionBlocks(
+	values: Array<EmailAfterActionBlock>,
+	mutedStyle: string,
+	quoteStyle: string,
+) {
+	return values
+		.map((value) => {
+			if (typeof value === 'string') {
+				return `<p class="kody-muted" style="${mutedStyle}">${escapeHtml(value)}</p>`
+			}
+			return `<blockquote class="kody-text" style="${quoteStyle}">${escapeHtml(value.text)}</blockquote>`
+		})
+		.join('\n                ')
+}
+
+function afterActionText(values: Array<EmailAfterActionBlock>) {
+	return values.map((value) =>
+		typeof value === 'string' ? value : `"${value.text}"`,
+	)
+}
+
 export function renderTransactionalEmail(
 	content: TransactionalEmailContent,
 ): RenderedEmail {
@@ -82,7 +107,9 @@ export function renderTransactionalEmail(
 		'/images/kody-mark.png',
 		content.appBaseUrl,
 	).toString()
+	const quoteStyle = `margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid ${colors.accent}; font-family: ${fontStack}; font-size: 16px; line-height: 1.6; color: ${colors.text};`
 	const action = content.action
+	const secondaryAction = content.secondaryAction
 	const actionBlock = action
 		? `
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin: 24px 0;">
@@ -92,7 +119,12 @@ export function renderTransactionalEmail(
                 </td>
               </tr>
             </table>
-            <p class="kody-muted" style="${mutedStyle}">Button not working? Paste this link into your browser:<br /><a href="${escapeHtml(action.url)}" class="kody-link" style="color: ${colors.accent}; word-break: break-all;">${escapeHtml(action.url)}</a></p>`
+            <p class="kody-muted" style="${mutedStyle}">Button not working? Paste this link into your browser:<br /><a href="${escapeHtml(action.url)}" class="kody-link" style="color: ${colors.accent}; word-break: break-all;">${escapeHtml(action.url)}</a></p>${
+							secondaryAction
+								? `
+            <p class="kody-muted" style="${mutedStyle}"><a href="${escapeHtml(secondaryAction.url)}" class="kody-link" style="color: ${colors.accent};">${escapeHtml(secondaryAction.label)}</a></p>`
+								: ''
+						}`
 		: ''
 	const illustration = content.illustration
 	const illustrationBlock = illustration
@@ -149,7 +181,7 @@ export function renderTransactionalEmail(
               <td class="kody-card" style="background-color: ${colors.card}; border: 1px solid ${colors.border}; border-radius: 14px; padding: 32px;">
                 <h1 class="kody-text" style="margin: 0 0 16px; font-family: ${displayFontStack}; font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: ${colors.text};">${escapeHtml(content.heading)}</h1>
                 ${paragraphs(content.body, 'kody-text', bodyStyle)}${actionBlock}
-                ${content.afterAction?.length ? paragraphs(content.afterAction, 'kody-muted', mutedStyle) : ''}${illustrationBlock}
+                ${content.afterAction?.length ? afterActionBlocks(content.afterAction, mutedStyle, quoteStyle) : ''}${illustrationBlock}
               </td>
             </tr>
             ${
@@ -178,7 +210,10 @@ export function renderTransactionalEmail(
 		content.heading,
 		...content.body,
 		...(action ? [`${action.label}: ${action.url}`] : []),
-		...(content.afterAction ?? []),
+		...(secondaryAction
+			? [`${secondaryAction.label}: ${secondaryAction.url}`]
+			: []),
+		...(content.afterAction ? afterActionText(content.afterAction) : []),
 		...(content.footnote ? [content.footnote] : []),
 		...(content.unsubscribe
 			? [`${content.unsubscribe.label}: ${content.unsubscribe.url}`]

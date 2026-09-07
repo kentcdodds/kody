@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	buildAdvocateReferralEmail,
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
 	buildCoolingHomeEmail,
@@ -110,7 +111,12 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		onboardingUrl: 'https://kody.codes/onboarding',
 		clientLabel: 'your agent',
 	})
-	expect(keepFallback.text).toContain('Your agent already did the hard part')
+	expect(keepFallback.text).toContain(
+		'You got Your agent to use Kody to do something',
+	)
+	expect(keepFallback.text).toContain("Let's talk about how we can use Kody")
+	expect(keep.html).toContain('<blockquote')
+	expect(keep.html).toContain('Let&#39;s talk about how we can use Kody')
 
 	const second = buildSecondAgentEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -130,8 +136,18 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		appBaseUrl: 'https://kody.codes',
 		onboardingUrl: 'https://kody.codes/onboarding',
 	})
-	expect(cooling.subject).toBe('Your home is still there')
+	expect(cooling.subject).toBe('Your home is still here')
 	expect(cooling.html).toContain('https://kody.codes/onboarding')
+
+	const advocate = buildAdvocateReferralEmail({
+		appBaseUrl: 'https://kody.codes',
+		shareUrl: 'https://kody.codes/signup?ref=kentcdodds',
+	})
+	expect(advocate.subject).toBe('Share Kody (and a free month)')
+	expect(advocate.html).toContain('https://kody.codes/signup?ref=kentcdodds')
+	expect(advocate.text).toContain(
+		'Email a short testimonial: mailto:me@kentcdodds.com?subject=Kody%20testimonial',
+	)
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',
