@@ -10,14 +10,14 @@ import {
 	type IncidentView,
 } from './status-types.ts'
 
-export const incidentRetrospectiveColumn = 'retrospective'
+const incidentRetrospectiveColumn = 'retrospective'
 
 export const retrospectiveFieldMaxChars = 2_000
-export const retrospectiveTimelineNoteMaxChars = 500
-export const retrospectiveTimelineAtMaxChars = 80
-export const retrospectiveTimelineMaxEntries = 24
+const retrospectiveTimelineNoteMaxChars = 500
+const retrospectiveTimelineAtMaxChars = 80
+const retrospectiveTimelineMaxEntries = 24
 
-export type RetrospectiveTimelineEntry = {
+type RetrospectiveTimelineEntry = {
 	at: string
 	note: string
 }
@@ -35,7 +35,7 @@ export type IncidentRetrospective = IncidentRetrospectiveInput & {
 	publishedAt: string
 }
 
-export type RetrospectiveParseError =
+type RetrospectiveParseError =
 	| 'not-object'
 	| 'invalid-field'
 	| 'empty-field'

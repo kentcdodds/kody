@@ -17,7 +17,7 @@ const minuteMs = 60_000
 const majorIncidentMinutes = 60
 const majorFailedRatio = 0.05
 
-export function utcDayStartMs(day: string): number {
+function utcDayStartMs(day: string): number {
 	return Date.parse(`${day}T00:00:00.000Z`)
 }
 
