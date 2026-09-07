@@ -128,6 +128,11 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 			notConfiguredMessage: 'Status incident events are not configured',
 		},
 		{
+			path: '/__maintenance/mcp-execute-health',
+			secret: env.STATUS_INCIDENT_EVENT_SECRET,
+			notConfiguredMessage: 'MCP execute health probe is not configured',
+		},
+		{
 			path: '/__maintenance/reencrypt-secrets',
 			secret: env.CAPABILITY_REINDEX_SECRET,
 			notConfiguredMessage: 'Secret re-encryption is not configured',
