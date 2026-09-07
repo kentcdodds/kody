@@ -357,6 +357,9 @@ export const EnvSchema = object({
 	// /__maintenance/status-incidents returns not-configured and the status
 	// worker skips emit (sweep polling remains the backstop).
 	STATUS_INCIDENT_EVENT_SECRET: optionalNonEmptyStringSchema,
+	// Dedicated canary OAuth access token for the hourly authenticated MCP
+	// execute fallback. Timestamp-only fleet heartbeat never stores this.
+	MCP_EXECUTE_HEALTH_CANARY_ACCESS_TOKEN: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

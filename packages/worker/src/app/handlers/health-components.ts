@@ -1,6 +1,7 @@
 import { type Action } from 'remix/router'
 import { type routes } from '#universal/routes.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
+import { readFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 /**
@@ -8,8 +9,10 @@ import { type AppEnv } from '#worker/env-schema.ts'
  * (`packages/status`). Each check is a cheap read against one storage binding.
  * The prober maps product-affecting bindings (`app_db`, `kv`, `assets`) onto
  * public cards; `audit_db` is on this endpoint for operators and is not a
- * public status card. Results are memoized briefly so public traffic cannot
- * amplify load on the underlying bindings.
+ * public status card. `executeEvidence` is a cheap timestamp-only read of the
+ * fleet last-success heartbeat; this handler never runs MCP execute. Results
+ * are memoized briefly so public traffic cannot amplify load on the
+ * underlying bindings.
  */
 
 const componentCheckTimeoutMs = 5_000
@@ -44,11 +47,16 @@ export type HealthComponentResult = {
 	error?: 'timeout' | 'unavailable' | 'error'
 }
 
+export type HealthExecuteEvidence = {
+	lastSuccessAt: string | null
+}
+
 export type HealthComponentsReport = {
 	ok: boolean
 	commitSha: string | null
 	checkedAt: string
 	components: Array<HealthComponentResult>
+	executeEvidence: HealthExecuteEvidence
 }
 
 type HealthComponentsEnv = {
@@ -56,6 +64,7 @@ type HealthComponentsEnv = {
 	APP_DB?: D1Database
 	AUDIT_DB?: D1Database
 	OAUTH_KV?: KVNamespace
+	BUNDLE_ARTIFACTS_KV?: KVNamespace
 	COMMUNITY_ASSETS?: R2Bucket
 }
 
@@ -107,41 +116,74 @@ export async function collectHealthComponents(
 	const auditDb = env.AUDIT_DB
 	const oauthKv = env.OAUTH_KV
 	const assets = env.COMMUNITY_ASSETS
-	const components = await Promise.all([
-		runComponentCheck(
-			'app_db',
-			appDb
-				? () =>
-						runD1WithRetry(
-							() => appDb.prepare('SELECT 1').first(),
-							d1CheckRetryOptions,
-						)
-				: null,
-		),
-		runComponentCheck(
-			'audit_db',
-			auditDb
-				? () =>
-						runD1WithRetry(
-							() => auditDb.prepare('SELECT 1').first(),
-							d1CheckRetryOptions,
-						)
-				: null,
-		),
-		runComponentCheck(
-			'kv',
-			oauthKv ? () => oauthKv.get('health-component-probe') : null,
-		),
-		runComponentCheck(
-			'assets',
-			assets ? () => assets.head('health-component-probe') : null,
-		),
+	const [components, lastSuccess] = await Promise.all([
+		Promise.all([
+			runComponentCheck(
+				'app_db',
+				appDb
+					? () =>
+							runD1WithRetry(
+								() => appDb.prepare('SELECT 1').first(),
+								d1CheckRetryOptions,
+							)
+					: null,
+			),
+			runComponentCheck(
+				'audit_db',
+				auditDb
+					? () =>
+							runD1WithRetry(
+								() => auditDb.prepare('SELECT 1').first(),
+								d1CheckRetryOptions,
+							)
+					: null,
+			),
+			runComponentCheck(
+				'kv',
+				oauthKv ? () => oauthKv.get('health-component-probe') : null,
+			),
+			runComponentCheck(
+				'assets',
+				assets ? () => assets.head('health-component-probe') : null,
+			),
+		]),
+		readExecuteEvidence(env),
 	])
 	return {
 		ok: components.every((component) => component.ok),
 		commitSha: env.APP_COMMIT_SHA ?? null,
 		checkedAt: new Date().toISOString(),
 		components,
+		executeEvidence: lastSuccess,
+	}
+}
+
+async function readExecuteEvidence(
+	env: HealthComponentsEnv,
+): Promise<HealthExecuteEvidence> {
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+	const timeout = new Promise<'timeout'>((resolve) => {
+		timeoutHandle = setTimeout(
+			() => resolve('timeout'),
+			componentCheckTimeoutMs,
+		)
+	})
+	try {
+		const outcome = await Promise.race([
+			readFleetExecuteLastSuccess({ kv: env.BUNDLE_ARTIFACTS_KV }),
+			timeout,
+		])
+		if (outcome === 'timeout' || outcome === null) {
+			if (outcome === 'timeout') {
+				console.warn('health-execute-evidence-timeout')
+			}
+			return { lastSuccessAt: null }
+		}
+		return { lastSuccessAt: new Date(outcome.at).toISOString() }
+	} catch {
+		return { lastSuccessAt: null }
+	} finally {
+		clearTimeout(timeoutHandle)
 	}
 }
 

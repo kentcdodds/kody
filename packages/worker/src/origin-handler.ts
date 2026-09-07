@@ -35,6 +35,10 @@ import { getRequestIp } from '#worker/audit-log.ts'
 import { discardUnreadRequestBody } from '#worker/request-body.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
+import {
+	executeHealthMaintenancePath,
+	handleExecuteHealthProbeRequest,
+} from './execute-health-probe.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import {
@@ -240,6 +244,18 @@ const appHandler = withCors({
 			// Origin-only: proves this script's ctx.exports.KodyFetchGateway.
 			// MCP execute looks up the gateway on kody-platform.
 			return handleExecuteSmokeRequest(request, env)
+		}
+
+		if (url.pathname === executeHealthMaintenancePath) {
+			return handleExecuteHealthProbeRequest(
+				request,
+				env,
+				ctx,
+				(mcpRequest, mcpEnv, mcpContext) =>
+					loadLegacyMcpFetch().then((fetchLegacy) =>
+						fetchLegacy(mcpRequest, mcpEnv, mcpContext),
+					),
+			)
 		}
 
 		if (url.pathname === '/__maintenance/reindex-memories') {

@@ -6,6 +6,7 @@ import {
 	healthComponentIds,
 	type HealthComponentsReport,
 } from '#app/handlers/health-components.ts'
+import { fleetExecuteLastSuccessKvKey } from '#worker/execute-health-heartbeat.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function createHealthyBindings() {
@@ -35,6 +36,21 @@ test('collectHealthComponents reports healthy, failed, and unavailable bindings'
 	expect(healthy.components.map((component) => component.id)).toEqual([
 		...healthComponentIds,
 	])
+	expect(healthy.executeEvidence).toEqual({ lastSuccessAt: null })
+
+	const lastSuccessAt = '2026-09-07T17:00:00.000Z'
+	const withEvidence = createHealthyBindings()
+	;(
+		withEvidence as typeof withEvidence & { BUNDLE_ARTIFACTS_KV: KVNamespace }
+	).BUNDLE_ARTIFACTS_KV = {
+		get: async (key: string) =>
+			key === fleetExecuteLastSuccessKvKey
+				? JSON.stringify({ at: Date.parse(lastSuccessAt) })
+				: null,
+	} as unknown as KVNamespace
+	const evidenced = await collectHealthComponents(withEvidence)
+	expect(evidenced.ok).toBe(true)
+	expect(evidenced.executeEvidence).toEqual({ lastSuccessAt })
 	for (const component of healthy.components) {
 		expect(component.ok).toBe(true)
 		expect(component.latencyMs).toBeGreaterThanOrEqual(0)
@@ -174,6 +190,7 @@ test('health components handler memoizes, coalesces in-flight work, and returns 
 	const body = (await first.json()) as HealthComponentsReport
 	expect(body.ok).toBe(true)
 	expect(body.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+	expect(body.executeEvidence.lastSuccessAt).toBeNull()
 
 	let releaseFirst: (() => void) | undefined
 	const gate = new Promise<void>((resolve) => {
@@ -223,4 +240,18 @@ test('health components handler memoizes, coalesces in-flight work, and returns 
 		'health-component-failed',
 		expect.any(String),
 	)
+})
+
+test('hung execute-evidence KV read fails open as unknown and does not block components', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const bindings = createHealthyBindings()
+	;(
+		bindings as typeof bindings & { BUNDLE_ARTIFACTS_KV: KVNamespace }
+	).BUNDLE_ARTIFACTS_KV = {
+		get: async () => await new Promise(() => {}),
+	} as unknown as KVNamespace
+	const report = await collectHealthComponents(bindings)
+	expect(report.ok).toBe(true)
+	expect(report.executeEvidence).toEqual({ lastSuccessAt: null })
+	expect(consoleWarn).toHaveBeenCalledWith('health-execute-evidence-timeout')
 })

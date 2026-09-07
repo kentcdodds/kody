@@ -9,7 +9,9 @@ import {
  * cover the worker surfaces (app, MCP, package runtime, jobs); the
  * `/health/components` endpoint on the main worker reports storage bindings.
  * Only product-affecting bindings become public cards (`app_db`, `kv`,
- * `assets`). Jobs is reached over a service binding (or an optional
+ * `assets`). `/health/components` may also carry timestamp-only MCP execute
+ * evidence; that field is observational and never starts a paid execute.
+ * Jobs is reached over a service binding (or an optional
  * non-public origin fallback), never through the main app and never via a
  * user-facing jobs hostname.
  */
@@ -37,6 +39,9 @@ type HealthComponentsBody = {
 		latencyMs?: number
 		error?: string
 	}>
+	executeEvidence?: {
+		lastSuccessAt?: string | null
+	}
 }
 
 const componentEndpointIds = [
@@ -269,38 +274,60 @@ async function probeJobs(
 async function probeStorageComponents(
 	fetcher: typeof fetch,
 	primaryOrigin: string,
-): Promise<Array<ProbeOutcome>> {
+): Promise<{
+	outcomes: Array<ProbeOutcome>
+	executeLastSuccessAt: number | null
+}> {
 	const result = await timedFetch(fetcher, `${primaryOrigin}/health/components`)
 	if (!result.response) {
-		return componentEndpointIds.map((component) => ({
-			component,
-			ok: false,
-			latencyMs: null,
-			detail: 'unreachable',
-		}))
+		return {
+			outcomes: componentEndpointIds.map((component) => ({
+				component,
+				ok: false,
+				latencyMs: null,
+				detail: 'unreachable',
+			})),
+			executeLastSuccessAt: null,
+		}
 	}
 	const body = await readJsonBody<HealthComponentsBody>(result.response)
 	if (!body || !Array.isArray(body.components)) {
-		return componentEndpointIds.map((component) => ({
-			component,
-			ok: false,
-			latencyMs: null,
-			detail: `HTTP ${result.response.status}`,
-		}))
-	}
-	return componentEndpointIds.map((component) => {
-		const reported = body.components?.find((entry) => entry.id === component)
-		if (!reported) {
-			return { component, ok: false, latencyMs: null, detail: 'unreported' }
-		}
 		return {
-			component,
-			ok: reported.ok === true,
-			latencyMs:
-				typeof reported.latencyMs === 'number' ? reported.latencyMs : null,
-			detail: reported.ok === true ? null : (reported.error ?? 'error'),
+			outcomes: componentEndpointIds.map((component) => ({
+				component,
+				ok: false,
+				latencyMs: null,
+				detail: `HTTP ${result.response.status}`,
+			})),
+			executeLastSuccessAt: null,
 		}
-	})
+	}
+	return {
+		outcomes: componentEndpointIds.map((component) => {
+			const reported = body.components?.find((entry) => entry.id === component)
+			if (!reported) {
+				return { component, ok: false, latencyMs: null, detail: 'unreported' }
+			}
+			return {
+				component,
+				ok: reported.ok === true,
+				latencyMs:
+					typeof reported.latencyMs === 'number' ? reported.latencyMs : null,
+				detail: reported.ok === true ? null : (reported.error ?? 'error'),
+			}
+		}),
+		executeLastSuccessAt: parseExecuteLastSuccessAt(
+			body.executeEvidence?.lastSuccessAt,
+		),
+	}
+}
+
+function parseExecuteLastSuccessAt(
+	value: string | null | undefined,
+): number | null {
+	if (!value) return null
+	const parsed = Date.parse(value)
+	return Number.isFinite(parsed) ? parsed : null
 }
 
 export type ProbeRunResult = {
@@ -308,6 +335,7 @@ export type ProbeRunResult = {
 	productionCommitSha: string | null
 	runtimeCommitSha: string | null
 	jobsCommitSha: string | null
+	executeLastSuccessAt: number | null
 }
 
 export async function runAllProbes(
@@ -328,7 +356,7 @@ export async function runAllProbes(
 		mcp,
 		packageRuntime.outcome,
 		jobs.outcome,
-		...storage,
+		...storage.outcomes,
 	]
 	const covered = new Set(outcomes.map((outcome) => outcome.component))
 	for (const component of statusComponentIds) {
@@ -346,5 +374,6 @@ export async function runAllProbes(
 		productionCommitSha: app.productionCommitSha,
 		runtimeCommitSha: packageRuntime.runtimeCommitSha,
 		jobsCommitSha: jobs.jobsCommitSha,
+		executeLastSuccessAt: storage.executeLastSuccessAt,
 	}
 }

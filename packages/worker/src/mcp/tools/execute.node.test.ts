@@ -20,6 +20,12 @@ import { formatRawFetchHostNudge } from '#mcp/raw-fetch-host-nudge.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
+const heartbeatMock = vi.hoisted(() => ({
+	scheduleFleetExecuteLastSuccess: vi.fn(),
+}))
+
+vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
+
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
 	createExecutePackageInvokeTools: vi.fn(),
@@ -119,6 +125,7 @@ async function getExecuteRegistration(
 	agentExtras: {
 		state?: Record<string, unknown>
 		setState?: (state: Record<string, unknown>) => void
+		waitUntil?: (promise: Promise<unknown>) => void
 	} = {},
 ) {
 	vi.clearAllMocks()
@@ -1062,4 +1069,33 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 		used: quotaLimit,
 		remaining: 0,
 	})
+})
+
+test('successful execute completion schedules a fail-open fleet heartbeat and caller errors do not', async () => {
+	const handler = await getExecuteHandler()
+	mockPerformanceSequence(1, 2)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result: { ok: true },
+		logs: [],
+	})
+	const success = await handler({
+		code: 'export default async () => ({ ok: true })',
+		conversationId: 'conv-heartbeat-success',
+	})
+	expect(success.isError).toBe(false)
+	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).toHaveBeenCalledTimes(1)
+
+	heartbeatMock.scheduleFleetExecuteLastSuccess.mockClear()
+	mockPerformanceSequence(3, 4)
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		error: new Error('caller boom'),
+		logs: [],
+	})
+	const failure = await handler({
+		code: 'export default async () => { throw new Error("caller boom") }',
+		conversationId: 'conv-heartbeat-error',
+	})
+	expect(failure.isError).toBe(true)
+	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
+	heartbeatMock.scheduleFleetExecuteLastSuccess.mockReset()
 })

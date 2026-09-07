@@ -38,6 +38,12 @@ import {
 	publicAuditDbRetiredMetaKey,
 	retirePublicAuditDbData,
 } from './retire-public-audit-db.ts'
+import {
+	applyExecuteHealthTick,
+	deriveExecuteHealthView,
+	mergeExecuteLastSuccess,
+	type ExecuteHealthCoordinatorState,
+} from './execute-health.ts'
 import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
@@ -61,6 +67,12 @@ const providerIncidentsMetaKey = 'provider_incidents_cache'
 const productionCommitMetaKey = 'production_commit_sha'
 const runtimeCommitMetaKey = 'runtime_commit_sha'
 const jobsCommitMetaKey = 'jobs_commit_sha'
+const executeLastSuccessMetaKey = 'execute_health_last_success_at'
+const executeLastSyntheticAttemptMetaKey =
+	'execute_health_last_synthetic_attempt_at'
+const executeLastSyntheticSuccessMetaKey =
+	'execute_health_last_synthetic_success_at'
+const executeLastSyntheticErrorMetaKey = 'execute_health_last_synthetic_error'
 
 export type StatusWorkerEnv = {
 	STATUS_STORE: DurableObjectNamespace<StatusStore>
@@ -222,6 +234,89 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			key,
 			value,
 		)
+	}
+
+	private deleteMeta(key: string) {
+		this.ctx.storage.sql.exec(`DELETE FROM meta WHERE key = ?`, key)
+	}
+
+	private readEpochMeta(key: string): number | null {
+		const raw = this.getMeta(key)
+		if (!raw) return null
+		const value = Number(raw)
+		return Number.isFinite(value) ? value : null
+	}
+
+	private readExecuteHealthState(
+		lastSuccessAt: number | null,
+	): ExecuteHealthCoordinatorState {
+		const storedSuccessAt = this.readEpochMeta(executeLastSuccessMetaKey)
+		return {
+			lastSuccessAt: mergeExecuteLastSuccess(lastSuccessAt, storedSuccessAt),
+			lastSyntheticAttemptAt: this.readEpochMeta(
+				executeLastSyntheticAttemptMetaKey,
+			),
+			lastSyntheticSuccessAt: this.readEpochMeta(
+				executeLastSyntheticSuccessMetaKey,
+			),
+			lastSyntheticError: this.getMeta(executeLastSyntheticErrorMetaKey),
+			syntheticConfigured: Boolean(
+				this.env.STATUS_INCIDENT_EVENT_SECRET?.trim(),
+			),
+		}
+	}
+
+	private writeExecuteHealthState(state: ExecuteHealthCoordinatorState) {
+		if (state.lastSuccessAt !== null) {
+			this.setMeta(executeLastSuccessMetaKey, String(state.lastSuccessAt))
+		}
+		if (state.lastSyntheticAttemptAt !== null) {
+			this.setMeta(
+				executeLastSyntheticAttemptMetaKey,
+				String(state.lastSyntheticAttemptAt),
+			)
+		}
+		if (state.lastSyntheticSuccessAt !== null) {
+			this.setMeta(
+				executeLastSyntheticSuccessMetaKey,
+				String(state.lastSyntheticSuccessAt),
+			)
+		}
+		if (state.lastSyntheticError) {
+			this.setMeta(executeLastSyntheticErrorMetaKey, state.lastSyntheticError)
+		} else {
+			this.deleteMeta(executeLastSyntheticErrorMetaKey)
+		}
+	}
+
+	private async runExecuteHealthSynthetic(): Promise<{
+		ok: boolean
+		error?: string | null
+	}> {
+		const secret = this.env.STATUS_INCIDENT_EVENT_SECRET?.trim()
+		if (!secret) {
+			return { ok: false, error: 'not-configured' }
+		}
+		const response = await fetch(
+			`${this.env.PRIMARY_ORIGIN}/__maintenance/mcp-execute-health`,
+			{
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${secret}`,
+					'User-Agent': 'kody-status-prober',
+				},
+				redirect: 'manual',
+				signal: AbortSignal.timeout(15_000),
+			},
+		)
+		if (!response.ok) {
+			return { ok: false, error: `HTTP ${String(response.status)}` }
+		}
+		const body = (await response.json()) as { ok?: boolean }
+		if (body.ok !== true) {
+			return { ok: false, error: 'probe-failed' }
+		}
+		return { ok: true, error: null }
 	}
 
 	private loadComponentState(
@@ -532,13 +627,18 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		const jobsFetcher = this.env.JOBS
 			? (this.env.JOBS.fetch.bind(this.env.JOBS) as typeof fetch)
 			: undefined
-		const { outcomes, productionCommitSha, runtimeCommitSha, jobsCommitSha } =
-			await runAllProbes({
-				primaryOrigin: this.env.PRIMARY_ORIGIN,
-				packageAppOrigin: this.env.PACKAGE_APP_ORIGIN,
-				jobsOrigin: this.env.JOBS_ORIGIN ?? jobsProbeOrigin,
-				jobsFetcher,
-			})
+		const {
+			outcomes,
+			productionCommitSha,
+			runtimeCommitSha,
+			jobsCommitSha,
+			executeLastSuccessAt,
+		} = await runAllProbes({
+			primaryOrigin: this.env.PRIMARY_ORIGIN,
+			packageAppOrigin: this.env.PACKAGE_APP_ORIGIN,
+			jobsOrigin: this.env.JOBS_ORIGIN ?? jobsProbeOrigin,
+			jobsFetcher,
+		})
 		const now = Date.now()
 		if (productionCommitSha) {
 			this.setMeta(productionCommitMetaKey, productionCommitSha)
@@ -552,6 +652,22 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		for (const outcome of outcomes) {
 			this.recordOutcome(outcome, now)
 		}
+		const executeState = await applyExecuteHealthTick({
+			now,
+			...this.readExecuteHealthState(executeLastSuccessAt),
+			runSynthetic: async () => {
+				try {
+					return await this.runExecuteHealthSynthetic()
+				} catch (error) {
+					return {
+						ok: false,
+						error:
+							error instanceof Error ? error.message.slice(0, 200) : 'error',
+					}
+				}
+			},
+		})
+		this.writeExecuteHealthState(executeState)
 		await this.refreshProviderIncidents(now)
 		await this.maybeSendAlert(now)
 		this.prune(now)
@@ -609,6 +725,12 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			productionCommit: this.getMeta(productionCommitMetaKey),
 			runtimeCommit: this.getMeta(runtimeCommitMetaKey),
 			jobsCommit: this.getMeta(jobsCommitMetaKey),
+			executeHealth: deriveExecuteHealthView({
+				now,
+				...this.readExecuteHealthState(
+					this.readEpochMeta(executeLastSuccessMetaKey),
+				),
+			}),
 		}
 	}
 

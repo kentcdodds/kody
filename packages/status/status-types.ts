@@ -3,10 +3,11 @@
  * state, and the snapshot shape the public page renders.
  */
 
+import { type ExecuteHealthSnapshot } from './execute-health.ts'
 import { type IncidentRetrospective } from './retrospective.ts'
 import { type ProviderIncident } from './provider-incidents.ts'
 
-export type { ProviderIncident }
+export type { ExecuteHealthSnapshot, ProviderIncident }
 
 export const statusComponents = [
 	{ id: 'app', name: 'App & API' },
@@ -91,4 +92,9 @@ export type StatusSnapshot = {
 	runtimeCommit: string | null
 	/** Latest `commit` from jobs-worker `GET /health`. */
 	jobsCommit: string | null
+	/**
+	 * Traffic-backed MCP execute evidence. Missing or stale telemetry is
+	 * unknown, not an outage, and does not change overallStatus.
+	 */
+	executeHealth: ExecuteHealthSnapshot
 }

@@ -63,6 +63,9 @@ function healthyRoutes(): Record<string, FakeRoute> {
 					{ id: 'kv', ok: true, latencyMs: 2 },
 					{ id: 'assets', ok: true, latencyMs: 9 },
 				],
+				executeEvidence: {
+					lastSuccessAt: '2026-09-07T17:00:00.000Z',
+				},
 			},
 		},
 	}
@@ -99,6 +102,9 @@ test('a fully healthy pass reports every component ok', async () => {
 		'def4567890abcdef1234567890abcdef12345678',
 	)
 	expect(result.jobsCommitSha).toBe('7890abcdef1234567890abcdef1234567890abcd')
+	expect(result.executeLastSuccessAt).toBe(
+		Date.parse('2026-09-07T17:00:00.000Z'),
+	)
 })
 
 test('apex 302 is not package-runtime up; jobs probe failure is not app-down', async () => {
@@ -212,6 +218,7 @@ test('probe failures isolate to the affected component and map error details', a
 	})
 	expect(outcome(componentOutcomes, 'kv')?.ok).toBe(true)
 	expect(outcome(componentOutcomes, 'assets')?.ok).toBe(true)
+	expect(componentOutcomes.executeLastSuccessAt).toBeNull()
 
 	const unreachable = healthyRoutes()
 	unreachable[`${primaryOrigin}/health`] = { error: 'connection refused' }
