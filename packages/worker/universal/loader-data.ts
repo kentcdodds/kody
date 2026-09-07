@@ -13,7 +13,6 @@ import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-
 import {
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
-	type OnboardingFeaturedMcpServerId,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	type SignupMode,
@@ -47,12 +46,7 @@ import { type FleetPackageErrorRateConcentration } from '#universal/fleet-packag
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
-export type { OnboardingChecklistItemId }
-export type {
-	OnboardingCustomMcpServer,
-	OnboardingFeaturedMcpServer,
-	OnboardingFeaturedMcpServerId,
-}
+export type { OnboardingCustomMcpServer, OnboardingFeaturedMcpServer }
 
 export type BlogPostSummaryLoaderData = {
 	slug: string
@@ -1587,13 +1581,6 @@ export type AccountWorkflowsLoaderData = {
 	workflows: Array<AccountWorkflowListItem>
 	selectedWorkflow: AccountWorkflowDetail | null
 	selectedWorkflowId: string | null
-}
-
-export type {
-	AccountActivityStatusFilter,
-	AccountActivitySurfaceFilter,
-	AccountActivityTriageFilter,
-	AccountActivityViewFilter,
 }
 
 export type AccountActivityRunListItem = {

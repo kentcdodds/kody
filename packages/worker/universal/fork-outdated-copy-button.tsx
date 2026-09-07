@@ -11,13 +11,11 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 
-export const COPY_PROMPT_ATTRIBUTE = 'data-copy-prompt'
 export const COPY_PROMPT_SELECTOR = '[data-copy-prompt]'
 export const FORK_OUTDATED_COPY_TOOLTIP = 'Click to copy an update prompt'
 export const FORKED_COPY_TOOLTIP =
 	'Click to copy a prompt to finish adapting this fork'
 export const COPY_PROMPT_COPIED_TOOLTIP = 'Copied'
-export const FORK_OUTDATED_COPIED_TOOLTIP = COPY_PROMPT_COPIED_TOOLTIP
 
 type CopyPromptPillInput = {
 	label: string

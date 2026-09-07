@@ -30,17 +30,6 @@ export function buildProviderStartPath(
 	return query ? `/auth/${providerId}?${query}` : `/auth/${providerId}`
 }
 
-/**
- * Returns the enabled providers, or null when the request failed — callers
- * must not treat a transient failure as "no providers configured".
- */
-export async function fetchEnabledAuthProviders(
-	signal?: AbortSignal,
-): Promise<Array<AuthProviderInfo> | null> {
-	const config = await fetchPublicAuthConfig(signal)
-	return config?.providers ?? null
-}
-
 export async function fetchPublicAuthConfig(
 	signal?: AbortSignal,
 ): Promise<PublicAuthConfig | null> {

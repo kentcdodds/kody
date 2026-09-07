@@ -50,8 +50,6 @@ export type ScheduledBackupWorkflowPayload =
 
 export type BackupPayload = ScheduledBackupPayload
 
-export type BackupRuntimePayload = BackupPayload | LegacyScheduledBackupPayload
-
 export interface ExportReady {
 	kind: 'complete'
 	bookmark: string
