@@ -4,7 +4,11 @@ import {
 	parseIncidentRetrospectivePath,
 	unknownStatusMaintenanceResponse,
 } from './retrospective-maintenance.ts'
-import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
+import {
+	renderMaintenancePage,
+	renderStatusPage,
+	renderStatusUnavailablePage,
+} from './status-page.ts'
 import { StatusStore, type StatusWorkerEnv } from './status-store.ts'
 import { type ComponentStatus } from './status-types.ts'
 
@@ -39,6 +43,15 @@ export default {
 		}
 		if (request.method !== 'GET' && request.method !== 'HEAD') {
 			return new Response('Method not allowed', { status: 405 })
+		}
+		if (url.pathname === '/maintenance') {
+			return new Response(renderMaintenancePage(), {
+				status: 200,
+				headers: {
+					'Content-Type': 'text/html; charset=utf-8',
+					'Cache-Control': 'no-store',
+				},
+			})
 		}
 		if (url.pathname === '/health') {
 			return Response.json(

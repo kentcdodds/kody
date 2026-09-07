@@ -294,6 +294,33 @@ function renderProviderIncidentsSection(
 </section>`
 }
 
+const statusPageUrl = 'https://status.kody.codes/'
+
+/** Static HTML for origin-edge maintenance. No Durable Object or D1. */
+export function renderMaintenancePage(): string {
+	return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kody is in maintenance</title>
+${renderFaviconLinks('unknown')}
+<style>${pageStyles}</style>
+</head>
+<body>
+<main>
+	<header>
+		<h1>Kody is in maintenance</h1>
+	</header>
+	<div class="banner unknown">Service restore in progress</div>
+	<div class="card">
+		<p>Kody is in maintenance. We are restoring service; nothing you need to do. Check <a href="${statusPageUrl}">status.kody.codes</a> for updates.</p>
+	</div>
+</main>
+</body>
+</html>`
+}
+
 /** Controlled 503 HTML when the status Durable Object is unavailable. */
 export function renderStatusUnavailablePage(message: string): string {
 	return `<!doctype html>
