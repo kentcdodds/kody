@@ -7,8 +7,8 @@ import {
 	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
 import {
+	connectedAgentConnectionLabel,
 	groupConnectedAgents,
-	truncateClientIdLabel,
 } from '#universal/connected-mcp-agents.ts'
 import {
 	type AccountConnectedAgentListItem,
@@ -173,7 +173,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 										>
 											{group.members.map((agent) => {
 												const revokeCheck = getRevokeCheck(agent.clientId)
-												const connectionLabel = truncateClientIdLabel(
+												const connectionLabel = connectedAgentConnectionLabel(
 													agent.clientId,
 												)
 												const revokeName =

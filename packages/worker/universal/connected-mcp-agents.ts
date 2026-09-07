@@ -126,6 +126,33 @@ export function truncateClientIdLabel(clientId: string) {
 	return `${trimmed.slice(0, truncatedClientIdLength)}…`
 }
 
+/**
+ * Distinguish one inbound client inside a same-name group. URL clientIds
+ * (CIMD) share an `https://` prefix, so the first eight characters are not
+ * unique — use hostname plus a path token instead.
+ */
+export function connectedAgentConnectionLabel(clientId: string) {
+	const trimmed = clientId.trim()
+	const fromUrl = connectionLabelFromClientUrl(trimmed)
+	return fromUrl ?? truncateClientIdLabel(trimmed)
+}
+
+function connectionLabelFromClientUrl(clientId: string) {
+	try {
+		const url = new URL(clientId)
+		const hostname = url.hostname.toLowerCase()
+		if (!hostname) return null
+		const hint = url.pathname
+			.split('/')
+			.filter((part) => part && part !== 'client.json' && part !== 'client')
+			.at(-1)
+		if (hint) return `${hostname} · ${truncateClientIdLabel(hint)}`
+		return hostname
+	} catch {
+		return null
+	}
+}
+
 export function connectedAgentIconName(
 	kind: McpClientKind | null,
 ): string | null {

@@ -25,11 +25,18 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 				connectedAt: '2024-06-01T00:00:00.000Z',
 			},
 			{
-				clientId: 'https://chatgpt.com/oauth/client.json',
-				grantIds: ['grant-chatgpt'],
+				clientId: 'https://chatgpt.com/oauth/vG3/client.json',
+				grantIds: ['grant-chatgpt-old'],
 				label: 'ChatGPT.com',
 				kind: 'chatgpt',
 				connectedAt: '2024-03-01T00:00:00.000Z',
+			},
+			{
+				clientId: 'https://chatgpt.com/oauth/vG4/client.json',
+				grantIds: ['grant-chatgpt-new'],
+				label: 'ChatGPT.com',
+				kind: 'chatgpt',
+				connectedAt: '2024-04-01T00:00:00.000Z',
 			},
 			{
 				clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
@@ -65,6 +72,15 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-n…)"')
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-o…)"')
 	expect(cursorBlock).not.toContain('Confirm revoke')
-	expect(html).toContain('aria-label="Revoke ChatGPT.com"')
+	const chatgptBlock = html.slice(
+		html.indexOf('data-agent-label="ChatGPT.com"'),
+	)
+	expect(chatgptBlock).toContain(
+		'aria-label="Revoke ChatGPT.com (chatgpt.com · vG4)"',
+	)
+	expect(chatgptBlock).toContain(
+		'aria-label="Revoke ChatGPT.com (chatgpt.com · vG3)"',
+	)
+	expect(chatgptBlock.indexOf('vG4')).toBeLessThan(chatgptBlock.indexOf('vG3'))
 	expect(html).toContain('aria-label="Revoke Acme Agent"')
 })

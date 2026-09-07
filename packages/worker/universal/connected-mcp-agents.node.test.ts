@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	type ConnectedMcpAgent,
+	connectedAgentConnectionLabel,
 	connectedAgentIconName,
 	countUniqueOAuthClientIds,
 	groupConnectedAgents,
@@ -101,6 +102,20 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 	expect(
 		truncateClientIdLabel('opaque-client-id-abcdefghijklmnopqrstuvwxyz'),
 	).toBe('opaque-c…')
+	expect(
+		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG3/client.json'),
+	).toBe('chatgpt.com · vG3')
+	expect(
+		connectedAgentConnectionLabel(
+			'https://chatgpt.com/oauth/vG4-MLZWUV83/client.json',
+		),
+	).toBe('chatgpt.com · vG4-MLZW…')
+	expect(connectedAgentConnectionLabel('cursor-old')).toBe('cursor-o…')
+	expect(
+		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG3/client.json'),
+	).not.toBe(
+		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG4/client.json'),
+	)
 })
 
 test('grant createdAt unix seconds become an ISO timestamp', () => {
