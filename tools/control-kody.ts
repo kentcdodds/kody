@@ -23,6 +23,12 @@ import {
 	type Feature,
 } from './control-kody/feature-catalog.ts'
 import {
+	createPreviewPackage,
+	formatPackageCreateReport,
+	isLowerKebabKodyId,
+	isProductionKodyOrigin,
+} from './control-kody/package-create.ts'
+import {
 	cookieHeaderFromSetCookie,
 	evaluateAppHealth,
 	parseSessionRequest,
@@ -42,18 +48,22 @@ const usageLines = [
 	'Drive and verify the Kody app without throwaway scripts.',
 	'',
 	'Commands:',
-	'  doctor     Check Node, Playwright browsers, hooks, and /health',
-	'  dev        Start or reuse the local origin (npm run dev:ensure)',
-	'  login      POST /auth and write a session cookie',
-	'  request    Authenticated HTTP as the current session',
-	'  preview    PR preview smoke (wraps preview:manual-test)',
-	'  health     GET /health and optionally assert commitSha',
-	'  map        List or print a Feature Map entry; --check for drift',
+	'  doctor          Check Node, Playwright browsers, hooks, and /health',
+	'  dev             Start or reuse the local origin (npm run dev:ensure)',
+	'  login           POST /auth and write a session cookie',
+	'  request         Authenticated HTTP as the current session',
+	'  preview         PR preview smoke (wraps preview:manual-test)',
+	'  health          GET /health and optionally assert commitSha',
+	'  map             List or print a Feature Map entry; --check for drift',
+	'  package-create  Create a stub saved package via MCP (preview data)',
 	'',
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
 	'  --cookie-file <p>    Session Cookie header file',
+	'  --kody-id <slug>     Required for package-create (lower-kebab)',
+	'  --description <t>    Optional package-create stub description',
+	'  --head-ahead         package-create: push one unpublished commit',
 	'  --help               Print this help',
 	'',
 	'Docs: docs/contributing/control-kody.md',
@@ -67,6 +77,7 @@ export type ControlKodyCommand =
 	| 'preview'
 	| 'health'
 	| 'map'
+	| 'package-create'
 	| 'help'
 
 export type ControlKodyOptions = {
@@ -84,6 +95,9 @@ export type ControlKodyOptions = {
 	request: SessionRequestSpec | null
 	body: string | null
 	previewArgv: Array<string>
+	kodyId: string | null
+	description: string | null
+	headAhead: boolean
 }
 
 export class ControlKodyError extends Error {
@@ -133,6 +147,9 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		request: null,
 		body: null,
 		previewArgv: [],
+		kodyId: null,
+		description: null,
+		headAhead: false,
 	}
 
 	const [command, ...rest] = argv
@@ -155,6 +172,7 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		'preview',
 		'health',
 		'map',
+		'package-create',
 		'help',
 	]
 	if (!commands.includes(command as ControlKodyCommand)) {
@@ -256,6 +274,20 @@ function parseSharedFlags(
 			case '--body': {
 				options.body = requireValue(argv[index + 1], '--body')
 				index += 1
+				break
+			}
+			case '--kody-id': {
+				options.kodyId = requireValue(argv[index + 1], '--kody-id')
+				index += 1
+				break
+			}
+			case '--description': {
+				options.description = requireValue(argv[index + 1], '--description')
+				index += 1
+				break
+			}
+			case '--head-ahead': {
+				options.headAhead = true
 				break
 			}
 			default: {
@@ -682,6 +714,44 @@ async function runCommand(options: ControlKodyOptions) {
 			else
 				console.log(`${result.ok ? 'ok' : 'FAIL'} ${origin} ${result.detail}`)
 			return result.ok ? 0 : 1
+		}
+		case 'package-create': {
+			if (!options.kodyId) {
+				throw new ControlKodyError(
+					'package-create requires --kody-id <lower-kebab-slug>',
+				)
+			}
+			if (!isLowerKebabKodyId(options.kodyId)) {
+				throw new ControlKodyError(
+					'--kody-id must be a lower-kebab-case slug (for example "preview-pkg")',
+				)
+			}
+			const origin = await resolveOrigin(options)
+			if (isProductionKodyOrigin(origin)) {
+				throw new ControlKodyError(
+					'package-create refuses to run against https://kody.codes',
+				)
+			}
+			const defaults = credentialsForOrigin(origin)
+			const report = await createPreviewPackage({
+				origin,
+				email: options.email ?? defaults.email,
+				password: options.password ?? defaults.password,
+				kodyId: options.kodyId,
+				description: options.description,
+				headAhead: options.headAhead,
+			})
+			if (report.cookieHeader) {
+				await writeCookieFile(options.cookieFile, report.cookieHeader)
+			}
+			if (options.json) {
+				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				printJson({ ...publicReport, cookieFile: options.cookieFile })
+			} else {
+				console.log(formatPackageCreateReport(report))
+				console.log(`cookie-file ${options.cookieFile}`)
+			}
+			return 0
 		}
 		case 'map': {
 			if (options.check) {
