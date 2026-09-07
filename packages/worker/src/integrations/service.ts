@@ -16,11 +16,9 @@ import {
 	listPlatformOauthApps,
 	type PlatformOauthApp,
 } from './platform-apps.ts'
-import { deleteIntegrationOwnedSecrets } from './credentials.ts'
 import {
 	addPlatformIntegrationRequiredHosts,
 	countConnectionsForApp,
-	countOauthAppsByClientSecretName,
 	deleteIntegrationConnection,
 	deleteOauthApp,
 	findOauthAppByAppTuple,
@@ -72,7 +70,6 @@ export type OauthAppConfigInput = {
 	flow: IntegrationConfig['flow']
 	usePkce?: boolean | null
 	clientId: string
-	clientSecretSecretName?: string | null
 	tokenExchangeStyle?: IntegrationConfig['tokenExchangeStyle']
 	authorization?: {
 		authorizeUrl: string
@@ -89,7 +86,6 @@ type OauthAppWriteConfig = {
 	flow: IntegrationConfig['flow']
 	usePkce?: boolean
 	clientId: string
-	clientSecretSecretName: string | null
 	tokenExchangeStyle?: NonNullable<IntegrationConfig['tokenExchangeStyle']>
 	authorization?: NonNullable<IntegrationConfig['authorization']>
 }
@@ -114,9 +110,6 @@ export function toIntegrationConfig(
 		flow: app.flow,
 		usePkce: app.usePkce,
 		clientId: app.clientId,
-		clientSecretSecretName: app.clientSecretSecretName,
-		accessTokenSecretName: connection.accessTokenSecretName,
-		refreshTokenSecretName: connection.refreshTokenSecretName,
 		requiredHosts: connection.requiredHosts,
 		tokenExchangeStyle: app.tokenExchangeStyle,
 		authorization,
@@ -139,9 +132,6 @@ export function toPlatformIntegrationConfig(
 			flow: app.flow,
 			usePkce: app.usePkce,
 			clientId: app.clientId,
-			clientSecretSecretName: null,
-			accessTokenSecretName: connection.accessTokenSecretName,
-			refreshTokenSecretName: connection.refreshTokenSecretName,
 			requiredHosts: normalizeAllowedHosts([
 				...connection.requiredHosts,
 				...app.requiredHosts,
@@ -330,8 +320,6 @@ export async function upsertIntegration(
 			required_hosts_json: JSON.stringify(
 				normalizeAllowedHosts(config.requiredHosts ?? []),
 			),
-			access_token_secret_name: config.accessTokenSecretName,
-			refresh_token_secret_name: config.refreshTokenSecretName ?? null,
 			connected_at: existing?.connection.connectedAt ?? null,
 			token_refreshed_at: existing?.connection.tokenRefreshedAt ?? null,
 			created_at: existing?.connection.createdAt ?? now,
@@ -420,14 +408,6 @@ export async function deleteIntegration(input: {
 		name,
 	})
 	if (!existing) return false
-	await deleteIntegrationOwnedSecrets({
-		env: input.env,
-		userId: input.userId,
-		secretNames: [
-			existing.connection.accessTokenSecretName,
-			existing.connection.refreshTokenSecretName,
-		],
-	})
 	const deleted = await deleteIntegrationConnection({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -457,8 +437,6 @@ export async function upsertPlatformIntegration(input: {
 	platformAppSlug: string
 	name?: string | null
 	scopes: Array<string>
-	accessTokenSecretName: string
-	refreshTokenSecretName?: string | null
 	accountLabel?: string | null
 	description?: string | null
 }): Promise<IntegrationConfig> {
@@ -473,10 +451,6 @@ export async function upsertPlatformIntegration(input: {
 	}
 	const name =
 		canonicalIntegrationName(input.name?.trim() || app.slug) || app.slug
-	const accessTokenSecretName = input.accessTokenSecretName.trim()
-	if (!accessTokenSecretName) {
-		throw new Error('Access token secret name is required.')
-	}
 	const scopes = assertScopesAllowedForPlatformApp(app, input.scopes)
 	const tokenHost = safeParseHost(app.tokenUrl)
 	const requiredHosts = normalizeAllowedHosts([
@@ -510,8 +484,6 @@ export async function upsertPlatformIntegration(input: {
 				scopes.length > 0 ? scopes : app.defaultScopes,
 			),
 			required_hosts_json: JSON.stringify(requiredHosts),
-			access_token_secret_name: accessTokenSecretName,
-			refresh_token_secret_name: input.refreshTokenSecretName?.trim() || null,
 			connected_at: now,
 			token_refreshed_at: existing?.connection.tokenRefreshedAt ?? null,
 			created_at: existing?.connection.createdAt ?? now,
@@ -580,26 +552,6 @@ export async function getAvailablePlatformApp(input: {
 	})
 }
 
-async function deleteUnreferencedClientSecret(input: {
-	env: IntegrationWriteEnv
-	userId: string
-	secretName: string | null | undefined
-}): Promise<void> {
-	const secretName = input.secretName?.trim() ?? ''
-	if (!secretName) return
-	const stillReferenced = await countOauthAppsByClientSecretName({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		secretName,
-	})
-	if (stillReferenced !== 0) return
-	await deleteIntegrationOwnedSecrets({
-		env: input.env,
-		userId: input.userId,
-		secretNames: [secretName],
-	})
-}
-
 async function deleteOauthAppIfNoConnections(input: {
 	env: IntegrationWriteEnv
 	userId: string
@@ -622,11 +574,6 @@ async function deleteOauthAppIfNoConnections(input: {
 		slug: input.appSlug,
 	})
 	if (!deleted || !existing) return
-	await deleteUnreferencedClientSecret({
-		env: input.env,
-		userId: input.userId,
-		secretName: existing.clientSecretSecretName,
-	})
 	if (input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
 			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
@@ -671,7 +618,7 @@ export type OauthAppSetupPrefill = {
 	provider: string
 	label: string | null
 	clientId: string | null
-	clientSecretSecretName: string | null
+	hasClientSecret: boolean | null
 	tokenUrl: string | null
 	authorizeUrl: string | null
 	apiBaseUrl: string | null
@@ -739,7 +686,7 @@ export function oauthAppToSetupPrefill(
 		provider: app.provider,
 		label: app.label,
 		clientId: app.clientId,
-		clientSecretSecretName: app.clientSecretSecretName,
+		hasClientSecret: app.hasClientSecret,
 		tokenUrl: app.tokenUrl,
 		authorizeUrl: app.authorizeUrl,
 		apiBaseUrl: app.apiBaseUrl,
@@ -773,8 +720,8 @@ function mergeOauthAppFamilyPrefill(input: {
 		provider: family,
 		label: null,
 		clientId: agreedSetupValue(candidates.map((app) => app.clientId)),
-		clientSecretSecretName: agreedSetupValue(
-			candidates.map((app) => app.clientSecretSecretName),
+		hasClientSecret: agreedSetupValue(
+			candidates.map((app) => app.hasClientSecret),
 		),
 		tokenUrl: agreedSetupValue(candidates.map((app) => app.tokenUrl)),
 		authorizeUrl: agreedSetupValue(candidates.map((app) => app.authorizeUrl)),
@@ -817,7 +764,7 @@ function sameExtraAuthorizeParams(
 function setupPrefillHasAgreedField(prefill: OauthAppSetupPrefill) {
 	return Boolean(
 		prefill.clientId ||
-		prefill.clientSecretSecretName ||
+		prefill.hasClientSecret ||
 		prefill.tokenUrl ||
 		prefill.authorizeUrl ||
 		prefill.apiBaseUrl ||
@@ -835,16 +782,11 @@ export async function rotateOauthAppClientCredentials(input: {
 	userId: string
 	slug: string
 	clientId: string
-	clientSecretSecretName?: string | null
 }): Promise<UserOauthApp> {
 	const slug = canonicalizeOauthAppSlug(input.slug)
 	const clientId = input.clientId.trim()
 	if (!slug) throw new Error('OAuth app slug is required.')
 	if (!clientId) throw new Error('Client id is required.')
-	const clientSecretSecretName =
-		input.clientSecretSecretName == null
-			? null
-			: input.clientSecretSecretName.trim() || null
 
 	const existing = await getOauthAppBySlug({
 		db: input.env.APP_DB,
@@ -859,7 +801,6 @@ export async function rotateOauthAppClientCredentials(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 		clientId,
-		clientSecretSecretName,
 	})
 	if (conflicting && conflicting.slug !== slug) {
 		throw new Error(
@@ -872,7 +813,6 @@ export async function rotateOauthAppClientCredentials(input: {
 		userId: input.userId,
 		slug,
 		clientId,
-		clientSecretSecretName,
 	})
 	if (!updated) {
 		throw new Error(`Failed to rotate credentials for OAuth app "${slug}".`)
@@ -909,14 +849,6 @@ export async function deleteOauthAppWithConnections(input: {
 	const connectionNames: Array<string> = []
 	for (const entry of joined) {
 		if (entry.lane !== 'user' || entry.app.slug !== existing.slug) continue
-		await deleteIntegrationOwnedSecrets({
-			env: input.env,
-			userId: input.userId,
-			secretNames: [
-				entry.connection.accessTokenSecretName,
-				entry.connection.refreshTokenSecretName,
-			],
-		})
 		const deleted = await deleteIntegrationConnection({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -930,13 +862,6 @@ export async function deleteOauthAppWithConnections(input: {
 		userId: input.userId,
 		slug: existing.slug,
 	})
-	if (deleted) {
-		await deleteUnreferencedClientSecret({
-			env: input.env,
-			userId: input.userId,
-			secretName: existing.clientSecretSecretName,
-		})
-	}
 	if (deleted && input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
 			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
@@ -1030,7 +955,6 @@ function oauthAppWriteConfigFromIntegration(
 		flow: config.flow,
 		...(typeof config.usePkce === 'boolean' ? { usePkce: config.usePkce } : {}),
 		clientId: config.clientId,
-		clientSecretSecretName: config.clientSecretSecretName ?? null,
 		...(config.tokenExchangeStyle
 			? { tokenExchangeStyle: config.tokenExchangeStyle }
 			: {}),
@@ -1076,7 +1000,6 @@ function normalizeOauthAppConfig(
 		flow: value.flow,
 		...(usePkce == null ? {} : { usePkce }),
 		clientId,
-		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
 		...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 		...(authorization ? { authorization } : {}),
 	}
@@ -1106,7 +1029,6 @@ async function resolveOrCreateOauthApp(input: {
 		db: input.db,
 		userId: input.userId,
 		clientId: appTupleFields.client_id,
-		clientSecretSecretName: appTupleFields.client_secret_secret_name,
 		tokenUrl: appTupleFields.token_url,
 		authorizeUrl: appTupleFields.authorize_url,
 		apiBaseUrl: appTupleFields.api_base_url,
@@ -1212,12 +1134,6 @@ function buildOauthAppRow(input: {
 		provider,
 		label: input.label,
 		client_id: input.config.clientId,
-		// Client secrets are only meaningful for confidential apps; pkce rows
-		// must store NULL so setup and connect tuple-match the same way.
-		client_secret_secret_name:
-			input.config.flow === 'confidential'
-				? (input.config.clientSecretSecretName ?? null)
-				: null,
 		token_url: input.config.tokenUrl,
 		authorize_url: authorization?.authorizeUrl ?? null,
 		api_base_url: input.config.apiBaseUrl ?? null,

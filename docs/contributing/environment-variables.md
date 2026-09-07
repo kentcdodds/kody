@@ -347,8 +347,7 @@ Worker secrets:
   skips the post-deploy capability reindex and origin-only execute smoke check
   when it is unset); bearer token for
   `POST /__maintenance/reindex-capabilities`,
-  `POST /__maintenance/reencrypt-secrets`,
-  `POST /__maintenance/backfill-integration-credentials`, and other secret-gated
+  `POST /__maintenance/reencrypt-secrets`, and other secret-gated
   maintenance endpoints. Production deploy POSTs
   `{ "phases": ["capabilities"] }` so only builtin capability vectors refresh
   after a ship. User-owned memory, job, and saved-package vectors upsert on

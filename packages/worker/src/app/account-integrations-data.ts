@@ -47,6 +47,7 @@ function toAccountIntegrationRecord(
 		provider: entry.app.provider,
 		appLabel: entry.app.label,
 		accountLabel: entry.connection.accountLabel,
+		hasClientSecret: entry.lane === 'user' ? entry.app.hasClientSecret : false,
 		...(entry.lane === 'platform'
 			? {
 					platformAllowedScopes: entry.app.allowedScopes,
@@ -77,7 +78,7 @@ function toBringYourOwnReconnectRecord(
 		// sibling BYO client secret.
 		appSlug: '',
 		clientId: '',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		platformAllowedScopes: undefined,
 		platformLogoPath: undefined,
 		platformDescription: undefined,
@@ -102,8 +103,7 @@ function toBringYourOwnSetupFromPlatformConnection(
 		...record,
 		name: providerKey,
 		accountLabel: null,
-		accessTokenSecretName: `${providerKey}AccessToken`,
-		refreshTokenSecretName: `${providerKey}RefreshToken`,
+		hasClientSecret: false,
 	}
 }
 
@@ -135,9 +135,7 @@ function toAppOnlyIntegrationRecord(
 			? { usePkce: prefill.usePkce }
 			: {}),
 		clientId: prefill.clientId ?? '',
-		clientSecretSecretName: prefill.clientSecretSecretName,
-		accessTokenSecretName: `${providerKey}AccessToken`,
-		refreshTokenSecretName: `${providerKey}RefreshToken`,
+		hasClientSecret: prefill.hasClientSecret,
 		requiredHosts: [],
 		...(prefill.tokenExchangeStyle
 			? { tokenExchangeStyle: prefill.tokenExchangeStyle }
@@ -213,7 +211,7 @@ function buildPlatformOauthAppRecords(
 		provider: app.provider,
 		label: app.label,
 		clientId: app.clientId,
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		tokenUrl: app.tokenUrl,
 		authorizeUrl: app.authorizeUrl,
 		apiBaseUrl: app.apiBaseUrl,
@@ -471,11 +469,10 @@ export async function loadExistingConnectionSummary(
 }
 
 /**
- * True when the user already stores the client-secret secret the connect
- * page would use for `name`: the stored integration's secret name when
- * present, else the page's default `<providerKey>ClientSecret`. Embedded in
- * loader data so the page renders its setup / ready state without a
- * follow-up secrets fetch.
+ * True when the user already stores the client secret the connect page
+ * would use for `name`: ciphertext on the user-lane app, or a leftover
+ * secret-store row under the conventional `<providerKey>ClientSecret`
+ * name from a setup that has not persisted ciphertext yet.
  */
 export async function hasStoredConnectClientSecret(
 	env: Env,
@@ -483,15 +480,13 @@ export async function hasStoredConnectClientSecret(
 	name: string,
 	record: AccountIntegrationRecord | null,
 ): Promise<boolean> {
-	const secretName =
-		record?.clientSecretSecretName?.trim() ||
-		`${normalizeProviderKey(name)}ClientSecret`
+	if (record?.hasClientSecret) return true
+	const secretName = `${normalizeProviderKey(name)}ClientSecret`
 	const [secrets, storedCiphertext] = await Promise.all([
 		listSecrets({
 			env,
 			userId: user.mcpUser.userId,
 			scope: 'user',
-			includeIntegrationOwned: true,
 		}),
 		record?.appSlug && !record.platform
 			? getOauthAppClientSecretCiphertext({

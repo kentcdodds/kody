@@ -6,10 +6,13 @@ import {
 } from '#mcp/secrets/host-approval.ts'
 import {
 	buildBasicAuthSecretPlaceholderFromReference,
+	buildIntegrationTokenPlaceholder,
 	buildSecretPlaceholder,
 	decodeSecretPlaceholderDelimiters,
 	parseBasicAuthSecretPlaceholders,
 	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
+	parseIntegrationTokenPlaceholders,
+	parseIntegrationTokenPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
 	parseSecretPlaceholdersFromFormUrlEncoded,
 	replaceSecretPlaceholders,
@@ -27,7 +30,10 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
-import { findIntegrationOwningSecretName } from '#worker/integrations/owned-secret-names.ts'
+import {
+	createMissingIntegrationAccessTokenMessage,
+	resolveIntegrationAccessToken,
+} from '#worker/integrations/credentials.ts'
 import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
@@ -273,6 +279,9 @@ function readMeteredRequestHostname(
 	if (originalHostname) return originalHostname
 	const urlForPlaceholderScan = decodeSecretPlaceholderDelimiters(originalUrl)
 	if (parseSecretPlaceholders(urlForPlaceholderScan).length > 0) return ''
+	if (parseIntegrationTokenPlaceholders(urlForPlaceholderScan).length > 0) {
+		return ''
+	}
 	if (parseBasicAuthSecretPlaceholders(urlForPlaceholderScan).length > 0) {
 		return ''
 	}
@@ -361,7 +370,15 @@ export async function expandSecretPlaceholders(input: {
 			placeholder.password,
 		]),
 	])
-	const hasReferencedSecrets = referencedSecrets.length > 0
+	const referencedIntegrationTokens = dedupeIntegrationTokenNames([
+		...collectReferencedIntegrationTokens([
+			requestUrl,
+			...Array.from(headers.values()),
+		]),
+		...collectReferencedIntegrationTokensFromRequestBody(headers, requestBody),
+	])
+	const hasReferencedSecrets =
+		referencedSecrets.length > 0 || referencedIntegrationTokens.length > 0
 	const userId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
@@ -389,36 +406,38 @@ export async function expandSecretPlaceholders(input: {
 					}),
 				)
 			}
-			const owningIntegration =
-				resolved.scope === 'user'
-					? await findIntegrationOwningSecretName({
-							db: input.env.APP_DB,
-							userId,
-							secretName: referenced.name,
-						})
-					: null
-			// Dual-written OAuth names are hidden from /account/secrets, so
-			// secret allowed_packages is not a grant the user can manage.
-			// The connection's any/packages grant is the only package gate.
-			if (owningIntegration) {
-				await assertCanUseIntegration({
-					env: input.env,
-					baseUrl: input.props.baseUrl,
-					userId,
-					name: owningIntegration.name,
-					packageId: input.props.storageContext?.packageId ?? null,
-				})
-			} else {
-				await assertPackageCanAccessResolvedSecret({
-					env: input.env,
-					baseUrl: input.props.baseUrl,
-					userId,
-					storageContext: input.props.storageContext,
-					secretName: referenced.name,
-					resolved,
-				})
-			}
+			await assertPackageCanAccessResolvedSecret({
+				env: input.env,
+				baseUrl: input.props.baseUrl,
+				userId,
+				storageContext: input.props.storageContext,
+				secretName: referenced.name,
+				resolved,
+			})
 			return { referenced, resolved, value: resolved.value }
+		}),
+	)
+	const resolvedIntegrationTokens = await Promise.all(
+		referencedIntegrationTokens.map(async (name) => {
+			if (!userId) {
+				throw new Error(fetchSecretAuthRequiredMessage)
+			}
+			await assertCanUseIntegration({
+				env: input.env,
+				baseUrl: input.props.baseUrl,
+				userId,
+				name,
+				packageId: input.props.storageContext?.packageId ?? null,
+			})
+			const value = await resolveIntegrationAccessToken({
+				env: input.env,
+				userId,
+				name,
+			})
+			if (!value) {
+				throw new Error(createMissingIntegrationAccessTokenMessage(name))
+			}
+			return { name, value }
 		}),
 	)
 	for (const { referenced, resolved, value } of resolvedSecretResults) {
@@ -430,6 +449,12 @@ export async function expandSecretPlaceholders(input: {
 			resolvedValues.set(placeholder, value)
 		}
 		resolvedSecrets.push({ referenced, resolved })
+	}
+	for (const { name, value } of resolvedIntegrationTokens) {
+		const placeholder = buildIntegrationTokenPlaceholder(name)
+		if (!replacements.has(placeholder)) {
+			replacements.set(placeholder, value)
+		}
 	}
 	for (const placeholder of basicAuthPlaceholders) {
 		const renderedPlaceholder =
@@ -665,6 +690,26 @@ function collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
 				parseBasicAuthSecretPlaceholdersFromFormUrlEncoded(requestBody.text),
 			)
 		: collectReferencedBasicAuthSecretPlaceholders([requestBody.text])
+}
+
+function collectReferencedIntegrationTokens(values: Array<string>) {
+	return values.flatMap((value) =>
+		value ? parseIntegrationTokenPlaceholders(value) : [],
+	)
+}
+
+function collectReferencedIntegrationTokensFromRequestBody(
+	headers: Headers,
+	requestBody: GatewayRequestBody | null,
+) {
+	if (requestBody?.kind !== 'text' || !requestBody.text) return []
+	return isFormUrlEncodedRequest(headers)
+		? parseIntegrationTokenPlaceholdersFromFormUrlEncoded(requestBody.text)
+		: parseIntegrationTokenPlaceholders(requestBody.text)
+}
+
+function dedupeIntegrationTokenNames(names: Array<string>) {
+	return Array.from(new Set(names.filter((name) => name.trim().length > 0)))
 }
 
 function collectReferencedSecretsFromRequestBody(

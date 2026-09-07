@@ -9,7 +9,6 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
-	deleteIntegrationOwnedSecrets,
 	persistIntegrationTokens,
 	persistUserOauthAppClientSecret,
 	resolveIntegrationAccessToken,
@@ -70,9 +69,6 @@ const googleConfig = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'confidential' as const,
 	clientId: 'google-client-id',
-	clientSecretSecretName: 'googleClientSecret',
-	accessTokenSecretName: 'googleAccessToken',
-	refreshTokenSecretName: 'googleRefreshToken',
 	requiredHosts: ['www.googleapis.com', 'oauth2.googleapis.com'],
 	authorization: {
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -82,10 +78,9 @@ const googleConfig = {
 	},
 }
 
-test('integration-owned credentials persist, hide, grant, approve, and disconnect without dropping the shared client secret', async () => {
+test('integration-owned credentials persist as ciphertext, stay off secret lists, and survive sibling disconnect', async () => {
 	const { sqlite, env } = createHarness()
 	const userId = 'user-owned-creds'
-	const userEmail = 'user@example.com'
 	seedPackage(sqlite, { id: 'pkg-mail', userId, kodyId: 'mail' })
 	seedPackage(sqlite, { id: 'pkg-docs', userId, kodyId: 'docs' })
 
@@ -93,22 +88,15 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 	await persistIntegrationTokens({
 		env,
 		userId,
-		userEmail,
 		name: 'google',
 		accessToken: 'access-live',
 		refreshToken: 'refresh-live',
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
-		descriptionPrefix: 'google',
 	})
 	await persistUserOauthAppClientSecret({
 		env,
 		userId,
-		userEmail,
 		slug: 'google',
 		value: 'client-secret-live',
-		secretName: 'googleClientSecret',
-		description: 'google OAuth client secret',
 	})
 
 	const ciphertexts = sqlite
@@ -140,7 +128,6 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 			env,
 			userId,
 			name: 'google',
-			secretName: 'googleAccessToken',
 		}),
 	).toBe('access-live')
 	expect(
@@ -148,17 +135,15 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 			env,
 			userId,
 			name: 'google',
-			secretName: 'googleRefreshToken',
 		}),
-	).toMatchObject({ value: 'refresh-live', source: 'integration' })
+	).toBe('refresh-live')
 	expect(
 		await resolveUserOauthAppClientSecret({
 			env,
 			userId,
 			slug: 'google',
-			secretName: 'googleClientSecret',
 		}),
-	).toMatchObject({ value: 'client-secret-live', source: 'integration' })
+	).toBe('client-secret-live')
 
 	sqlite
 		.prepare(
@@ -172,24 +157,28 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 			env,
 			userId,
 			name: 'google',
-			secretName: 'googleAccessToken',
 		}),
-	).toBe('access-live')
+	).toBeNull()
 
-	const listed = await listSecrets({ env, userId, scope: 'user' })
-	expect(listed.map((secret) => secret.name)).toEqual([])
-	const listedOwned = await listSecrets({
+	expect(await listSecrets({ env, userId, scope: 'user' })).toEqual([])
+	expect(await listUserSecretsForSearch({ env, userId })).toEqual([])
+	expect(
+		await resolveSecret({
+			env,
+			userId,
+			name: 'googleAccessToken',
+			scope: 'user',
+			storageContext,
+		}),
+	).toMatchObject({ found: false })
+
+	await persistIntegrationTokens({
 		env,
 		userId,
-		scope: 'user',
-		includeIntegrationOwned: true,
+		name: 'google',
+		accessToken: 'access-live',
+		refreshToken: 'refresh-live',
 	})
-	expect(listedOwned.map((secret) => secret.name).sort()).toEqual([
-		'googleAccessToken',
-		'googleClientSecret',
-		'googleRefreshToken',
-	])
-	expect(await listUserSecretsForSearch({ env, userId })).toEqual([])
 
 	await assertCanUseIntegration({
 		env,
@@ -282,48 +271,27 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 		config: {
 			...googleConfig,
 			name: 'google-work',
-			accessTokenSecretName: 'googleWorkAccessToken',
-			refreshTokenSecretName: 'googleWorkRefreshToken',
 		},
 	})
 	await persistIntegrationTokens({
 		env,
 		userId,
-		userEmail,
 		name: 'google-work',
 		accessToken: 'work-access',
 		refreshToken: 'work-refresh',
-		accessTokenSecretName: 'googleWorkAccessToken',
-		refreshTokenSecretName: 'googleWorkRefreshToken',
-		descriptionPrefix: 'google-work',
 	})
 
 	expect(await deleteIntegration({ env, userId, name: 'google-work' })).toBe(
 		true,
 	)
 	expect(
-		await resolveSecret({
-			env,
-			userId,
-			name: 'googleWorkAccessToken',
-			scope: 'user',
-			storageContext,
-		}),
-	).toMatchObject({ found: false })
-	expect(
 		await resolveUserOauthAppClientSecret({
 			env,
 			userId,
 			slug: 'google',
-			secretName: 'googleClientSecret',
 		}),
-	).toMatchObject({ value: 'client-secret-live', source: 'integration' })
+	).toBe('client-secret-live')
 
-	await deleteIntegrationOwnedSecrets({
-		env,
-		userId,
-		secretNames: ['googleAccessToken', 'googleRefreshToken'],
-	})
 	const deletedApp = await deleteOauthAppWithConnections({
 		env,
 		userId,
@@ -334,70 +302,49 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 		connectionNames: ['google'],
 	})
 	expect(
-		await resolveSecret({
+		await resolveUserOauthAppClientSecret({
 			env,
 			userId,
-			name: 'googleClientSecret',
-			scope: 'user',
-			storageContext,
+			slug: 'google',
 		}),
-	).toMatchObject({ found: false })
+	).toBeNull()
 })
 
 test('disconnecting the last user-lane connection deletes the leftover client secret', async () => {
 	const { env } = createHarness()
 	const userId = 'user-last-disconnect'
-	const userEmail = 'user@example.com'
 
 	await upsertIntegration({ env, userId, config: googleConfig })
 	await persistIntegrationTokens({
 		env,
 		userId,
-		userEmail,
 		name: 'google',
 		accessToken: 'access-live',
 		refreshToken: 'refresh-live',
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
-		descriptionPrefix: 'google',
 	})
 	await persistUserOauthAppClientSecret({
 		env,
 		userId,
-		userEmail,
 		slug: 'google',
 		value: 'client-secret-live',
-		secretName: 'googleClientSecret',
-		description: 'google OAuth client secret',
 	})
 
 	expect(await deleteIntegration({ env, userId, name: 'google' })).toBe(true)
 	expect(
-		await resolveSecret({
+		await resolveIntegrationAccessToken({
 			env,
 			userId,
-			name: 'googleAccessToken',
-			scope: 'user',
-			storageContext,
+			name: 'google',
 		}),
-	).toMatchObject({ found: false })
+	).toBeNull()
 	expect(
-		await resolveSecret({
+		await resolveUserOauthAppClientSecret({
 			env,
 			userId,
-			name: 'googleClientSecret',
-			scope: 'user',
-			storageContext,
+			slug: 'google',
 		}),
-	).toMatchObject({ found: false })
-	expect(
-		await listSecrets({
-			env,
-			userId,
-			scope: 'user',
-			includeIntegrationOwned: true,
-		}),
-	).toEqual([])
+	).toBeNull()
+	expect(await listSecrets({ env, userId, scope: 'user' })).toEqual([])
 })
 
 test('lockIntegrationToPackage switches any-context usage to packages and rejects unknown packages', async () => {

@@ -9,9 +9,6 @@ export type SearchableIntegration = {
 	tokenUrl: string
 	apiBaseUrl?: string | null
 	clientId: string
-	clientSecretSecretName?: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName?: string | null
 	requiredHosts?: Array<string>
 	authorization?: {
 		authorizeUrl: string
@@ -43,9 +40,6 @@ export function filterIntegrations<integration extends SearchableIntegration>(
 			integration.tokenUrl,
 			integration.apiBaseUrl,
 			integration.clientId,
-			integration.clientSecretSecretName,
-			integration.accessTokenSecretName,
-			integration.refreshTokenSecretName,
 			...(integration.requiredHosts ?? []),
 			integration.authorization?.authorizeUrl,
 			...(integration.authorization?.scopes ?? []),

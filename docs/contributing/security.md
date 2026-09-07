@@ -532,10 +532,9 @@ guarded by a bearer secret comparison.
   maintenance-only helper, re-encrypts as `v2` (same KEK; optimistic compare so
   a concurrent user rotation wins; decrypt failures are counted and left
   unchanged), and is the restore path after a D1 export sealed before the
-  2026-08-17 format-upgrade pass. Leftover integration-owned OAuth values that
-  still live only in `secret_entries` are copied onto the connection/app
-  ciphertext columns by `POST /__maintenance/backfill-integration-credentials`
-  (same bearer; writes only where the ciphertext column is still null). A 2-part
+  2026-08-17 format-upgrade pass. Integration-owned OAuth tokens and user-lane
+  client secrets live only as ciphertext on `user_integrations` /
+  `user_oauth_apps`; they are not dual-written to `secret_entries`. A 2-part
   ciphertext carries no AAD, so a copied row would decrypt under the maintenance
   helper until rewritten. Row swaps already require write access to the
   database, so this is defense-in-depth, not a standing hole.

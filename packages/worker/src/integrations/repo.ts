@@ -38,8 +38,6 @@ type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
 		description: string
 		scopes_json: string
 		required_hosts_json: string
-		access_token_secret_name: string
-		refresh_token_secret_name: string | null
 		usage_mode: string | null
 		allowed_packages_json: string | null
 		connected_at: string | null
@@ -59,7 +57,13 @@ type UserOauthAppWithCountRow = UserOauthAppRow & {
 }
 
 const appSelectColumns = `
-	user_id, slug, provider, label, client_id, client_secret_secret_name,
+	user_id, slug, provider, label, client_id,
+	CASE
+		WHEN client_secret_encrypted IS NOT NULL
+			AND TRIM(client_secret_encrypted) != ''
+		THEN 1
+		ELSE 0
+	END AS has_client_secret,
 	token_url, authorize_url, api_base_url, flow, use_pkce, token_exchange_style,
 	scope_separator, extra_authorize_params_json, logo_key, logo_content_type,
 	logo_source, favicon_source_host, created_at, updated_at
@@ -72,7 +76,12 @@ const joinedSelectColumns = `
 	a.provider AS a_provider,
 	a.label AS a_label,
 	a.client_id AS a_client_id,
-	a.client_secret_secret_name AS a_client_secret_secret_name,
+	CASE
+		WHEN a.client_secret_encrypted IS NOT NULL
+			AND TRIM(a.client_secret_encrypted) != ''
+		THEN 1
+		ELSE 0
+	END AS a_has_client_secret,
 	a.token_url AS a_token_url,
 	a.authorize_url AS a_authorize_url,
 	a.api_base_url AS a_api_base_url,
@@ -116,8 +125,6 @@ const joinedSelectColumns = `
 	i.description AS description,
 	i.scopes_json AS scopes_json,
 	i.required_hosts_json AS required_hosts_json,
-	i.access_token_secret_name AS access_token_secret_name,
-	i.refresh_token_secret_name AS refresh_token_secret_name,
 	i.usage_mode AS usage_mode,
 	i.allowed_packages_json AS allowed_packages_json,
 	i.connected_at AS connected_at,
@@ -211,32 +218,17 @@ export async function findOauthAppByClientCredentials(input: {
 	db: D1Database
 	userId: string
 	clientId: string
-	clientSecretSecretName: string | null
 }): Promise<UserOauthApp | null> {
-	const row =
-		input.clientSecretSecretName == null
-			? await input.db
-					.prepare(
-						`SELECT ${appSelectColumns}
-						FROM user_oauth_apps
-						WHERE user_id = ?
-							AND client_id = ?
-							AND client_secret_secret_name IS NULL
-						LIMIT 1`,
-					)
-					.bind(input.userId, input.clientId)
-					.first<UserOauthAppRow>()
-			: await input.db
-					.prepare(
-						`SELECT ${appSelectColumns}
-						FROM user_oauth_apps
-						WHERE user_id = ?
-							AND client_id = ?
-							AND client_secret_secret_name = ?
-						LIMIT 1`,
-					)
-					.bind(input.userId, input.clientId, input.clientSecretSecretName)
-					.first<UserOauthAppRow>()
+	const row = await input.db
+		.prepare(
+			`SELECT ${appSelectColumns}
+			FROM user_oauth_apps
+			WHERE user_id = ?
+				AND client_id = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.clientId)
+		.first<UserOauthAppRow>()
 	return row ? mapOauthAppRow(row) : null
 }
 
@@ -245,7 +237,6 @@ export async function findOauthAppByAppTuple(input: {
 	db: D1Database
 	userId: string
 	clientId: string
-	clientSecretSecretName: string | null
 	tokenUrl: string
 	authorizeUrl: string | null
 	apiBaseUrl: string | null
@@ -261,7 +252,6 @@ export async function findOauthAppByAppTuple(input: {
 			FROM user_oauth_apps
 			WHERE user_id = ?
 				AND client_id = ?
-				AND client_secret_secret_name IS ?
 				AND token_url = ?
 				AND authorize_url IS ?
 				AND api_base_url IS ?
@@ -275,7 +265,6 @@ export async function findOauthAppByAppTuple(input: {
 		.bind(
 			input.userId,
 			input.clientId,
-			input.clientSecretSecretName,
 			input.tokenUrl,
 			input.authorizeUrl,
 			input.apiBaseUrl,
@@ -297,7 +286,13 @@ export async function listOauthAppsWithConnectionCounts(input: {
 		.prepare(
 			`SELECT
 				a.user_id, a.slug, a.provider, a.label, a.client_id,
-				a.client_secret_secret_name, a.token_url, a.authorize_url,
+				CASE
+					WHEN a.client_secret_encrypted IS NOT NULL
+						AND TRIM(a.client_secret_encrypted) != ''
+					THEN 1
+					ELSE 0
+				END AS has_client_secret,
+				a.token_url, a.authorize_url,
 				a.api_base_url, a.flow, a.use_pkce, a.token_exchange_style,
 				a.scope_separator, a.extra_authorize_params_json,
 				a.logo_key, a.logo_content_type, a.logo_source,
@@ -354,17 +349,16 @@ export async function upsertOauthApp(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO user_oauth_apps (
-				user_id, slug, provider, label, client_id, client_secret_secret_name,
+				user_id, slug, provider, label, client_id,
 				token_url, authorize_url, api_base_url, flow, use_pkce,
 				token_exchange_style, scope_separator, extra_authorize_params_json,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(user_id, slug)
 			DO UPDATE SET
 				provider = excluded.provider,
 				label = excluded.label,
 				client_id = excluded.client_id,
-				client_secret_secret_name = excluded.client_secret_secret_name,
 				token_url = excluded.token_url,
 				authorize_url = excluded.authorize_url,
 				api_base_url = excluded.api_base_url,
@@ -381,7 +375,6 @@ export async function upsertOauthApp(input: {
 			input.row.provider,
 			input.row.label,
 			input.row.client_id,
-			input.row.client_secret_secret_name,
 			input.row.token_url,
 			input.row.authorize_url,
 			input.row.api_base_url,
@@ -401,20 +394,17 @@ export async function updateOauthAppClientCredentials(input: {
 	userId: string
 	slug: string
 	clientId: string
-	clientSecretSecretName: string | null
 	updatedAt?: string
 }): Promise<boolean> {
 	const result = await input.db
 		.prepare(
 			`UPDATE user_oauth_apps
 			SET client_id = ?,
-				client_secret_secret_name = ?,
 				updated_at = ?
 			WHERE user_id = ? AND slug = ?`,
 		)
 		.bind(
 			input.clientId,
-			input.clientSecretSecretName,
 			input.updatedAt ?? new Date().toISOString(),
 			input.userId,
 			input.slug,
@@ -438,24 +428,6 @@ export async function deleteOauthApp(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function countOauthAppsByClientSecretName(input: {
-	db: D1Database
-	userId: string
-	secretName: string
-}): Promise<number> {
-	const name = input.secretName.trim()
-	if (!name) return 0
-	const row = await input.db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			FROM user_oauth_apps
-			WHERE user_id = ? AND client_secret_secret_name = ?`,
-		)
-		.bind(input.userId, name)
-		.first<{ count: number }>()
-	return row?.count ?? 0
-}
-
 export async function upsertIntegrationConnection(input: {
 	db: D1Database
 	row: Omit<UserIntegrationRow, 'created_at' | 'updated_at'> & {
@@ -468,10 +440,9 @@ export async function upsertIntegrationConnection(input: {
 		.prepare(
 			`INSERT INTO user_integrations (
 				user_id, name, app_slug, platform_app_slug, account_label, description,
-				scopes_json, required_hosts_json, access_token_secret_name,
-				refresh_token_secret_name, connected_at, token_refreshed_at,
+				scopes_json, required_hosts_json, connected_at, token_refreshed_at,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(user_id, name)
 			DO UPDATE SET
 				app_slug = excluded.app_slug,
@@ -480,8 +451,6 @@ export async function upsertIntegrationConnection(input: {
 				description = excluded.description,
 				scopes_json = excluded.scopes_json,
 				required_hosts_json = excluded.required_hosts_json,
-				access_token_secret_name = excluded.access_token_secret_name,
-				refresh_token_secret_name = excluded.refresh_token_secret_name,
 				connected_at = excluded.connected_at,
 				token_refreshed_at = excluded.token_refreshed_at,
 				updated_at = excluded.updated_at`,
@@ -495,8 +464,6 @@ export async function upsertIntegrationConnection(input: {
 			input.row.description,
 			input.row.scopes_json,
 			input.row.required_hosts_json,
-			input.row.access_token_secret_name,
-			input.row.refresh_token_secret_name,
 			input.row.connected_at,
 			input.row.token_refreshed_at,
 			input.row.created_at ?? now,
@@ -667,7 +634,7 @@ export function mapOauthAppRow(row: UserOauthAppRow): UserOauthApp {
 		provider: row.provider,
 		label: row.label,
 		clientId: row.client_id,
-		clientSecretSecretName: row.client_secret_secret_name,
+		hasClientSecret: row.has_client_secret === 1,
 		tokenUrl: row.token_url,
 		authorizeUrl: row.authorize_url,
 		apiBaseUrl: row.api_base_url,
@@ -697,8 +664,6 @@ export function mapIntegrationRow(
 		description: row.description,
 		scopes: parseJsonStringArray(row.scopes_json),
 		requiredHosts: parseJsonStringArray(row.required_hosts_json),
-		accessTokenSecretName: row.access_token_secret_name,
-		refreshTokenSecretName: row.refresh_token_secret_name,
 		usageMode: normalizeIntegrationUsageMode(row.usage_mode),
 		allowedPackageIds: parseAllowedPackages(row.allowed_packages_json),
 		connectedAt: row.connected_at,
@@ -810,8 +775,6 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 		description: row.description,
 		scopes_json: row.scopes_json,
 		required_hosts_json: row.required_hosts_json,
-		access_token_secret_name: row.access_token_secret_name,
-		refresh_token_secret_name: row.refresh_token_secret_name,
 		usage_mode: normalizeIntegrationUsageMode(row.usage_mode),
 		allowed_packages_json: row.allowed_packages_json ?? '[]',
 		connected_at: row.connected_at,
@@ -868,7 +831,7 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 			provider: row.a_provider ?? row.a_slug,
 			label: row.a_label,
 			client_id: row.a_client_id ?? '',
-			client_secret_secret_name: row.a_client_secret_secret_name,
+			has_client_secret: row.a_has_client_secret,
 			token_url: row.a_token_url ?? '',
 			authorize_url: row.a_authorize_url,
 			api_base_url: row.a_api_base_url,

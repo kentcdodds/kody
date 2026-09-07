@@ -1089,9 +1089,7 @@ export type AccountIntegrationListItem = {
 	usePkce?: boolean | null
 	/** Empty when a provider-family prefill could not agree on client id. */
 	clientId: string
-	clientSecretSecretName?: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName?: string | null
+	hasClientSecret?: boolean | null
 	requiredHosts?: Array<string>
 	tokenExchangeStyle?: 'form' | 'basic-json' | 'basic-form' | null
 	authorization?: {
@@ -1134,15 +1132,15 @@ type AccountOauthAppConnectionRef = {
 }
 
 /**
- * Shared OAuth app projection for the account UI. Includes secret *names* and
- * sibling connection refs only — never secret or token values.
+ * Shared OAuth app projection for the account UI. Includes sibling
+ * connection refs only — never secret or token values.
  */
 export type AccountOauthAppListItem = {
 	slug: string
 	provider: string
 	label: string | null
 	clientId: string
-	clientSecretSecretName: string | null
+	hasClientSecret: boolean
 	tokenUrl: string
 	authorizeUrl: string | null
 	apiBaseUrl: string | null

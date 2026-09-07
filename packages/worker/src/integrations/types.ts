@@ -15,7 +15,7 @@ export const userOauthAppSchema = z.object({
 	provider: z.string().min(1),
 	label: z.string().min(1).nullable(),
 	clientId: z.string().min(1),
-	clientSecretSecretName: z.string().min(1).nullable(),
+	hasClientSecret: z.boolean(),
 	tokenUrl: z.string().url(),
 	authorizeUrl: z.string().url().nullable(),
 	apiBaseUrl: z.string().url().nullable(),
@@ -45,8 +45,6 @@ export const userIntegrationConnectionSchema = z.object({
 	description: z.string(),
 	scopes: z.array(z.string()),
 	requiredHosts: z.array(z.string()),
-	accessTokenSecretName: z.string().min(1),
-	refreshTokenSecretName: z.string().min(1).nullable(),
 	usageMode: z.enum(integrationUsageModeValues),
 	allowedPackageIds: z.array(z.string()),
 	connectedAt: z.string().min(1).nullable(),
@@ -88,7 +86,7 @@ export type UserOauthAppRow = {
 	provider: string
 	label: string | null
 	client_id: string
-	client_secret_secret_name: string | null
+	has_client_secret?: number | null
 	token_url: string
 	authorize_url: string | null
 	api_base_url: string | null
@@ -114,8 +112,6 @@ export type UserIntegrationRow = {
 	description: string
 	scopes_json: string
 	required_hosts_json: string
-	access_token_secret_name: string
-	refresh_token_secret_name: string | null
 	access_token_encrypted?: string | null
 	refresh_token_encrypted?: string | null
 	usage_mode?: (typeof integrationUsageModeValues)[number]

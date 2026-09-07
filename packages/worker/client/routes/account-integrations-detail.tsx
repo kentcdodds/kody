@@ -596,8 +596,8 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						)}
 						{renderIntegrationDetail('Client ID', selectedApp.clientId)}
 						{renderIntegrationDetail(
-							'Client-secret secret name',
-							formatOptional(selectedApp.clientSecretSecretName),
+							'Client secret',
+							selectedApp.hasClientSecret ? 'Stored' : 'None',
 						)}
 						{renderIntegrationDetail('Token URL', selectedApp.tokenUrl)}
 						{renderIntegrationDetail(
@@ -654,14 +654,6 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 								{renderIntegrationDetail(
 									'Required hosts',
 									formatList(highlightedConnection.requiredHosts),
-								)}
-								{renderIntegrationDetail(
-									'Access token secret',
-									highlightedConnection.accessTokenSecretName,
-								)}
-								{renderIntegrationDetail(
-									'Refresh token secret',
-									formatOptional(highlightedConnection.refreshTokenSecretName),
 								)}
 							</div>
 							<p mix={css(descriptionCss)}>

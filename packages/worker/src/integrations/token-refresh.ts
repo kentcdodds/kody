@@ -444,68 +444,28 @@ async function refreshIntegrationTokensOrThrow(input: {
 			{ reason: 'invalid_config' },
 		)
 	}
-	const refreshTokenSecretName = connection.refreshTokenSecretName?.trim() ?? ''
-	if (!refreshTokenSecretName) {
-		throw fail(
-			`Integration "${connection.name}" does not define a refresh token secret name. This connection cannot refresh; reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integrationTokenRefresh for this integration.`,
-			{ reason: 'missing_refresh_token' },
-		)
-	}
-	const accessTokenSecretName = connection.accessTokenSecretName.trim()
-	if (!accessTokenSecretName) {
-		throw fail(
-			`Integration "${connection.name}" does not define an access token secret name. Reconnect at ${reconnectPath}.`,
-			{ reason: 'missing_secret' },
-		)
-	}
-
-	// User-lane destinations are user-configurable (integrationSave can point
-	// tokenUrl anywhere), so materializing user secrets here must honor the
-	// same per-secret host allowlist the fetch gateway enforces for
-	// placeholder resolution. Platform-lane destinations are operator-pinned
-	// rows, so no user-secret allowlist applies.
 	const tokenHost = safeParseHost(app.tokenUrl)
 	if (!tokenHost) {
 		throw fail(`Integration "${connection.name}" has an invalid token URL.`, {
 			reason: 'invalid_config',
 		})
 	}
-	const assertUserSecretAllowedForTokenHost = (
-		secretName: string,
-		allowedHosts: Array<string>,
-	) => {
-		if (joined.lane !== 'user') return
-		if (allowedHosts.includes(tokenHost)) return
+	if (joined.lane === 'user' && !connection.requiredHosts.includes(tokenHost)) {
 		throw fail(
-			`Secret "${secretName}" is not approved for host "${tokenHost}". Approve the host on /account/secrets before refreshing this integration.`,
+			`Integration "${connection.name}" is not approved for host "${tokenHost}".`,
 			{ reason: 'host_not_approved' },
 		)
 	}
 
-	const refreshTokenSecret = await resolveIntegrationRefreshToken({
+	const refreshToken = await resolveIntegrationRefreshToken({
 		env: input.env,
 		userId: input.userId,
 		name: connection.name,
-		secretName: refreshTokenSecretName,
 	})
-	if (!refreshTokenSecret.value) {
+	if (!refreshToken) {
 		throw fail(
-			`Refresh token secret "${refreshTokenSecretName}" was not found. Reconnect at ${reconnectPath}.`,
+			`Integration "${connection.name}" does not have a stored refresh token. Reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integrationTokenRefresh for this integration.`,
 			{ reason: 'missing_refresh_token' },
-		)
-	}
-	if (refreshTokenSecret.source === 'secret') {
-		assertUserSecretAllowedForTokenHost(
-			refreshTokenSecretName,
-			refreshTokenSecret.allowedHosts,
-		)
-	} else if (
-		joined.lane === 'user' &&
-		!connection.requiredHosts.includes(tokenHost)
-	) {
-		throw fail(
-			`Integration "${connection.name}" is not approved for host "${tokenHost}".`,
-			{ reason: 'host_not_approved' },
 		)
 	}
 
@@ -521,35 +481,11 @@ async function refreshIntegrationTokensOrThrow(input: {
 				break
 			}
 			case 'user': {
-				const clientSecretSecretName =
-					joined.app.clientSecretSecretName?.trim() ?? ''
-				if (!clientSecretSecretName) {
-					throw fail(
-						`Integration "${connection.name}" uses confidential flow but does not define a client secret secret name.`,
-						{ reason: 'missing_secret' },
-					)
-				}
-				const resolved = await resolveUserOauthAppClientSecret({
+				clientSecret = await resolveUserOauthAppClientSecret({
 					env: input.env,
 					userId: input.userId,
 					slug: joined.app.slug,
-					secretName: clientSecretSecretName,
 				})
-				if (resolved.source === 'secret') {
-					assertUserSecretAllowedForTokenHost(
-						clientSecretSecretName,
-						resolved.allowedHosts,
-					)
-				} else if (
-					joined.lane === 'user' &&
-					!connection.requiredHosts.includes(tokenHost)
-				) {
-					throw fail(
-						`Integration "${connection.name}" is not approved for host "${tokenHost}".`,
-						{ reason: 'host_not_approved' },
-					)
-				}
-				clientSecret = resolved.value
 				break
 			}
 			default: {
@@ -569,7 +505,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 
 	const params = new URLSearchParams()
 	params.set('grant_type', 'refresh_token')
-	params.set('refresh_token', refreshTokenSecret.value)
+	params.set('refresh_token', refreshToken)
 	params.set('client_id', clientId)
 	const style = resolveTokenExchangeStyle({
 		tokenUrl: app.tokenUrl,
@@ -662,15 +598,11 @@ async function refreshIntegrationTokensOrThrow(input: {
 	await persistIntegrationTokens({
 		env: input.env,
 		userId: input.userId,
-		userEmail: input.userEmail,
 		name: connection.name,
 		accessToken: payload.access_token,
 		refreshToken: refreshTokenRotated
 			? (payload.refresh_token as string)
 			: null,
-		accessTokenSecretName,
-		refreshTokenSecretName,
-		descriptionPrefix: connection.name,
 	})
 
 	const refreshedAt = new Date().toISOString()
