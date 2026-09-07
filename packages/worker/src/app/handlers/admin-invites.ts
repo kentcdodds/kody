@@ -23,7 +23,7 @@ import {
 	createInvite,
 	normalizeInviteCode,
 	revokeInvite,
-} from '#app/invites.ts'
+} from '#worker/invites.ts'
 import { requirePageUserWithRole } from '#app/page-auth.ts'
 import { requireUserWithRole } from '#app/permissions-server.ts'
 import { readNonEmptyTrimmedStringOrNumber } from '#app/request-body.ts'

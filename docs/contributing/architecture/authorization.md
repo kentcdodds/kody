@@ -153,18 +153,19 @@ the same way).
 
 ### Where guards are used
 
-| Route / handler                        | Guard                                              |
-| -------------------------------------- | -------------------------------------------------- |
-| `GET /admin`                           | `requireUserWithRole('admin')` → redirect to users |
-| `GET /admin/users`                     | `requireUserWithRole('admin')`                     |
-| `GET /admin/users.json`                | `requireUserWithPermission('read:user:any')`       |
-| `POST /admin/users.json` (roles, plan) | `requireUserWithPermission('update:user:any')`     |
-| `GET /admin/roles`                     | `requireUserWithRole('admin')`                     |
-| `GET /admin/roles.json`                | `requireUserWithPermission('read:role:any')`       |
-| `GET /admin/invites`                   | `requireUserWithRole('admin')`                     |
-| `GET/POST /admin/invites.json`         | `requireUserWithRole('admin')`                     |
-| `GET /admin/system-email`              | `requireUserWithRole('admin')`                     |
-| `GET /admin/system-email.json`         | `requireUserWithRole('admin')`                     |
+| Route / handler                             | Guard                                              |
+| ------------------------------------------- | -------------------------------------------------- |
+| `GET /admin`                                | `requireUserWithRole('admin')` → redirect to users |
+| `GET /admin/users`                          | `requireUserWithRole('admin')`                     |
+| `GET /admin/users.json`                     | `requireUserWithPermission('read:user:any')`       |
+| `POST /admin/users.json` (roles, plan)      | `requireUserWithPermission('update:user:any')`     |
+| `GET /admin/roles`                          | `requireUserWithRole('admin')`                     |
+| `GET /admin/roles.json`                     | `requireUserWithPermission('read:role:any')`       |
+| `GET /admin/invites`                        | `requireUserWithRole('admin')`                     |
+| `GET/POST /admin/invites.json`              | `requireUserWithRole('admin')`                     |
+| `adminInviteCreate` / `adminInviteList` MCP | `requiredRole: 'admin'`                            |
+| `GET /admin/system-email`                   | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email.json`              | `requireUserWithRole('admin')`                     |
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`,

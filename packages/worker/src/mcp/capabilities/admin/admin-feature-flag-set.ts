@@ -9,11 +9,11 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminUserId,
 } from './admin-shared.ts'
 import {
 	adminFeatureFlagSchema,
 	assertFeatureFlagKey,
-	resolveActingAdminUserId,
 } from './feature-flag-shared.ts'
 
 const inputSchema = z.object({

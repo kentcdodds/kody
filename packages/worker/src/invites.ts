@@ -87,20 +87,28 @@ export async function createInvite(input: {
 		throw new Error('Max uses must be at least 1.')
 	}
 
-	await input.db
-		.prepare(
-			`INSERT INTO invites (code, created_by, note, max_uses, expires_at, plan)
+	try {
+		await input.db
+			.prepare(
+				`INSERT INTO invites (code, created_by, note, max_uses, expires_at, plan)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			code,
-			input.createdBy,
-			input.note?.trim() ?? '',
-			input.maxUses,
-			input.expiresAt ?? null,
-			resolvePlanWrite(input.plan),
-		)
-		.run()
+			)
+			.bind(
+				code,
+				input.createdBy,
+				input.note?.trim() ?? '',
+				input.maxUses,
+				input.expiresAt ?? null,
+				resolvePlanWrite(input.plan),
+			)
+			.run()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : ''
+		if (/unique constraint failed/i.test(message)) {
+			throw new Error(`Invite code ${code} already exists.`)
+		}
+		throw error
+	}
 
 	const invite = await getInviteByCode(input.db, code)
 	if (!invite) throw new Error('Invite was not created.')

@@ -22,7 +22,7 @@ import {
 	getInviteFailureMessage,
 	normalizeInviteCode,
 	releaseInviteUse,
-} from '#app/invites.ts'
+} from '#worker/invites.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'

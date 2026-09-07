@@ -21,7 +21,7 @@ import {
 	type InviteConsumeFailureReason,
 	normalizeInviteCode,
 	releaseInviteUse,
-} from '#app/invites.ts'
+} from '#worker/invites.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	oauthLoginErrorMessages,
