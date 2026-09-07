@@ -248,9 +248,14 @@ administration write, used to delete `preview-<pr>` GitHub Environments.
 `@kentcdodds/weekly-site-perf` webhook `run`. Copy of the Kody user secret
 `weeklySitePerfWebhookRun`. Not a Worker secret.
 
-Operator GitHub packages (`kody:@kentcdodds/github`) use a Kody user secret
-(guide default `githubAccessToken`; the official bot lane uses
-`github-botAccessToken`). That is account-secret storage, not an Actions secret.
+Operator GitHub packages (`kody:@kentcdodds/github`) authenticate through Kody
+OAuth integrations, not secrets: `github-bot` (kody-bot, the default) and
+`github-kent` (Kent's account, explicit request only) via
+`createAuthenticatedFetch`. Tokens live encrypted on the integration row
+(#2133); there is no password-manager item to keep. Recovery is
+`/connect/oauth?provider=github-bot` signed in as the kody-bot GitHub user. The
+guide-default `githubAccessToken` user secret in the how-Kody-works transcript
+is a tutorial example, not an operator credential.
 
 Rotation: replace the Actions secret, then re-run production deploy so Worker
 secrets sync. OAuth App client secrets: **Developer Settings → OAuth Apps →
@@ -262,7 +267,7 @@ Recovery: GitHub account login for `kentcdodds` plus org/repo admin. A second
 GitHub owner is not configured in-repo. Losing the user account without a
 recovery code blocks Actions secret edits and CLA recording.
 
-`Operator to fill: GitHub OAuth App display name; password-manager entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and github-botAccessToken.`
+`Operator to fill: GitHub OAuth App display name; password-manager entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and the kody-bot GitHub user login.`
 
 ## Stripe
 
@@ -539,5 +544,5 @@ pass. Names only; no values.
 7. `Operator to fill: Discord application name(s) for social login vs shipped-PR bot; guild name.`
 8. `Operator to fill: Google Cloud project / OAuth client name.`
 9. `Operator to fill: X project / app name.`
-10. `Operator to fill: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN and github-botAccessToken item names.`
+10. `Operator to fill: GitHub OAuth App display name; PREVIEW_ENVIRONMENT_ADMIN_TOKEN item name; kody-bot GitHub user login item name.`
 11. `Operator to fill: Cursor API key / cursorApiKey item name.`
