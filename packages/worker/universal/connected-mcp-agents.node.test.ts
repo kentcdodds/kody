@@ -109,12 +109,21 @@ test('inbound labels prefer a known kind, then clientName, then hostname, then a
 		connectedAgentConnectionLabel(
 			'https://chatgpt.com/oauth/vG4-MLZWUV83/client.json',
 		),
-	).toBe('chatgpt.com · vG4-MLZW…')
+	).toBe('chatgpt.com · vG4-MLZWUV83')
 	expect(connectedAgentConnectionLabel('cursor-old')).toBe('cursor-o…')
 	expect(
 		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG3/client.json'),
 	).not.toBe(
 		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG4/client.json'),
+	)
+	expect(
+		connectedAgentConnectionLabel(
+			'https://chatgpt.com/oauth/vG4-MLZWUV83/client.json',
+		),
+	).not.toBe(
+		connectedAgentConnectionLabel(
+			'https://chatgpt.com/oauth/vG4-MLZWUV84/client.json',
+		),
 	)
 })
 

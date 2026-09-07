@@ -146,7 +146,9 @@ function connectionLabelFromClientUrl(clientId: string) {
 			.split('/')
 			.filter((part) => part && part !== 'client.json' && part !== 'client')
 			.at(-1)
-		if (hint) return `${hostname} · ${truncateClientIdLabel(hint)}`
+		// Keep the full path token. Prefix truncation collides on CIMD ids
+		// that share an eight-character start (vG4-MLZWUV83 vs vG4-MLZWUV84).
+		if (hint) return `${hostname} · ${hint}`
 		return hostname
 	} catch {
 		return null
