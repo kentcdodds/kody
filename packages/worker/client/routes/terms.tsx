@@ -43,6 +43,7 @@ export function TermsRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					You are responsible for activity under your account, including agents
 					and packages you connect or run. Keep credentials and secrets private.
+					Accounts are for individual use; sharing a login is not supported.
 					Give us accurate account information, and tell us promptly if you
 					think someone else has access. You may export or delete your account
 					data from Account settings.
