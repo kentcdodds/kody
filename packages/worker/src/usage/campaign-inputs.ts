@@ -6,9 +6,10 @@ import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
 	parseStripePlanName,
-	resolveEffectivePlan,
 	resolvePlanLimits,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
+import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import { countDistinctInboundClientIds } from './campaign-inbound-clients.ts'
 import {
 	usageCampaignLimitAwareThreshold,
@@ -29,6 +30,7 @@ export type UsageCampaignCandidate = {
 	last_active_at: string | null
 	second_agent_standard_gift_granted_at: string | null
 	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 	plan: string
 	stripe_plan: string | null
 	entitlement_ladder: string | null
@@ -159,9 +161,14 @@ async function readNearStockCap(input: {
 	now: Date
 }) {
 	try {
-		const plan = resolveEffectivePlan(
+		const plan = resolveEffectivePlanWithSecondAgentGift(
 			parseStoredPlanName(input.user.plan),
 			input.user.stripe_plan,
+			laterIsoTimestamp(
+				input.user.second_agent_standard_gift_expires_at,
+				input.user.referral_standard_credit_expires_at,
+			),
+			input.now,
 		)
 		const limits = resolvePlanLimits(
 			plan,

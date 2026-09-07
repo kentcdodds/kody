@@ -1,5 +1,13 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { isStripePaidPlan, isStrongRecentUse } from './campaign-inputs.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import {
+	gatherUsageCampaignSnapshot,
+	isStripePaidPlan,
+	isStrongRecentUse,
+	type UsageCampaignCandidate,
+} from './campaign-inputs.ts'
 import {
 	campaignClientLabel,
 	isPackagedSingleClientTrialCtaLive,
@@ -56,4 +64,113 @@ test('campaign inputs treat Stripe Standard/Pro as paid and require execute dept
 			now: new Date('2026-09-07T12:00:00.000Z'),
 		}),
 	).toBe(false)
+})
+
+test('near-cap reads use Standard overlays, not the stored free plan', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	sqlite
+		.prepare(
+			`INSERT INTO users (
+				username, email, password_hash, email_verified_at, stable_user_id,
+				plan, account_type
+			) VALUES ('stock', 'stock@example.com', 'x', ?, 'user-stock', 'free', 'person')`,
+		)
+		.run('2026-09-01T00:00:00.000Z')
+	// Free 80% of 10 packages is 8; Standard 80% of 50 is 40.
+	for (let i = 0; i < 8; i += 1) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, source_id
+				) VALUES (?, 'user-stock', ?, ?, 'pkg', ?)`,
+			)
+			.run(`pkg-${i}`, `pkg-${i}`, `pkg-${i}`, `source-${i}`)
+	}
+
+	const now = new Date('2026-09-07T12:00:00.000Z')
+	const env = {
+		APP_DB: db,
+		JOBS: {
+			listJobsForUser: async () => [],
+		},
+	} as unknown as Env
+	const baseUser: UsageCampaignCandidate = {
+		stable_user_id: 'user-stock',
+		username: 'stock',
+		email: 'stock@example.com',
+		email_verified_at: '2026-09-01T00:00:00.000Z',
+		first_mcp_connected_at: null,
+		first_saved_package_at: '2026-09-02T00:00:00.000Z',
+		first_execute_at: null,
+		mcp_client_name: null,
+		last_active_at: null,
+		second_agent_standard_gift_granted_at: null,
+		second_agent_standard_gift_expires_at: null,
+		referral_standard_credit_expires_at: null,
+		plan: 'free',
+		stripe_plan: null,
+		entitlement_ladder: null,
+	}
+
+	expect(
+		(
+			await gatherUsageCampaignSnapshot({
+				env,
+				user: baseUser,
+				now,
+			})
+		).isNearEntitlementCap,
+	).toBe(true)
+	expect(
+		(
+			await gatherUsageCampaignSnapshot({
+				env,
+				user: {
+					...baseUser,
+					second_agent_standard_gift_granted_at: '2026-09-01T00:00:00.000Z',
+					second_agent_standard_gift_expires_at: '2026-09-15T00:00:00.000Z',
+				},
+				now,
+			})
+		).isNearEntitlementCap,
+	).toBe(false)
+	expect(
+		(
+			await gatherUsageCampaignSnapshot({
+				env,
+				user: {
+					...baseUser,
+					second_agent_standard_gift_granted_at: '2026-08-01T00:00:00.000Z',
+					second_agent_standard_gift_expires_at: '2026-08-15T00:00:00.000Z',
+				},
+				now,
+			})
+		).isNearEntitlementCap,
+	).toBe(true)
+	expect(
+		(
+			await gatherUsageCampaignSnapshot({
+				env,
+				user: {
+					...baseUser,
+					referral_standard_credit_expires_at: '2026-10-01T00:00:00.000Z',
+				},
+				now,
+			})
+		).isNearEntitlementCap,
+	).toBe(false)
+	expect(
+		(
+			await gatherUsageCampaignSnapshot({
+				env,
+				user: {
+					...baseUser,
+					referral_standard_credit_expires_at: '2026-08-01T00:00:00.000Z',
+				},
+				now,
+			})
+		).isNearEntitlementCap,
+	).toBe(true)
 })

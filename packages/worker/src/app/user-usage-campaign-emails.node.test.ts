@@ -31,6 +31,7 @@ vi.mock('#worker/usage/campaign-inputs.ts', async (importOriginal) => {
 })
 
 const {
+	listUsersForUsageCampaignSweep,
 	openVerifiedNoMcpCampaignEvent,
 	recordVerifiedNoMcpCampaignSend,
 	sendUserUsageCampaignEmails,
@@ -657,4 +658,29 @@ test('advocate one-shot uses the live referral share URL and never repeats', asy
 	})
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 	expect((await listUsageCampaignSends(db, 'kentcdodds')).length).toBe(1)
+})
+
+test('campaign sweep selects referral overlay expiry for stock-cap plan reads', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-overlay', email: 'overlay@example.com' })
+	await db
+		.prepare(
+			`UPDATE users
+			 SET referral_standard_credit_expires_at = ?,
+			     second_agent_standard_gift_expires_at = ?
+			 WHERE stable_user_id = ?`,
+		)
+		.bind(
+			'2026-10-01T00:00:00.000Z',
+			'2026-09-20T00:00:00.000Z',
+			'user-overlay',
+		)
+		.run()
+	expect(await listUsersForUsageCampaignSweep(db, 10)).toEqual([
+		expect.objectContaining({
+			stable_user_id: 'user-overlay',
+			referral_standard_credit_expires_at: '2026-10-01T00:00:00.000Z',
+			second_agent_standard_gift_expires_at: '2026-09-20T00:00:00.000Z',
+		}),
+	])
 })

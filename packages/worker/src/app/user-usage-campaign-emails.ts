@@ -266,6 +266,7 @@ export async function listUsersForUsageCampaignSweep(
 			        u.first_execute_at, u.mcp_client_name, u.last_active_at,
 			        u.second_agent_standard_gift_granted_at,
 			        u.second_agent_standard_gift_expires_at,
+			        u.referral_standard_credit_expires_at,
 			        u.plan, u.stripe_plan, u.entitlement_ladder
 			 FROM users u
 			 LEFT JOIN user_usage_campaigns c ON c.user_id = u.stable_user_id
