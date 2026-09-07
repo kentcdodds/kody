@@ -4,13 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { type Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
-import {
-	Client as ModernClient,
-	StreamableHTTPClientTransport as ModernStreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client'
 import getPort from 'get-port'
 import { createTestHarness } from 'wrangler'
 import {
@@ -22,6 +17,16 @@ import {
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
+import {
+	authorizeOAuthClient,
+	closeMcpConnection,
+	connectMcpClient,
+	connectStatelessMcpClient,
+	exchangeAuthorizationCode,
+	loginToApp,
+	registerOAuthClient,
+	type AppAuthUser,
+} from './mcp-oauth-client.ts'
 import { buildRoleAssignmentSql } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
@@ -35,17 +40,7 @@ const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
 const perAttemptFetchTimeoutMs = 5_000
 const maxPortBindRetries = 5
 
-type TestUser = {
-	email: string
-	username: string
-	password: string
-}
-
-type OAuthClientRegistration = {
-	clientId: string
-	clientSecret: string
-	redirectUri: string
-}
+type TestUser = AppAuthUser
 
 type TestCallToolParams = CallToolRequest['params'] & {
 	headers?: Record<string, string>
@@ -335,30 +330,6 @@ function isPortAlreadyInUseError(error: unknown) {
 	)
 }
 
-async function loginToApp(origin: string, user: TestUser) {
-	const signupResponse = await authenticateAppUser(origin, user, 'signup')
-	// An already-registered email gets the same accepted body as a fresh
-	// signup but no session cookie (anti-enumeration), so only a response
-	// that actually set the session counts as a signup.
-	if (
-		signupResponse.ok &&
-		signupResponse.headers.get('Set-Cookie')?.includes('kody_session=')
-	) {
-		return readCookieHeader(signupResponse)
-	}
-
-	const loginResponse = await authenticateAppUser(origin, user, 'login')
-	if (!loginResponse.ok) {
-		const signupBody = await signupResponse.text()
-		const loginBody = await loginResponse.text()
-		throw new Error(
-			`Failed to authenticate test user.\nSignup: ${signupResponse.status} ${signupBody}\nLogin: ${loginResponse.status} ${loginBody}`,
-		)
-	}
-
-	return readCookieHeader(loginResponse)
-}
-
 /**
  * Browser session cookie for authenticated app-origin fetches
  * (`Cookie: kody_session=…`). Same JSON `/auth` signup-or-login path used by
@@ -469,70 +440,18 @@ export async function createModernMcpClient(
 		clientRegistration,
 		code,
 	)
-	const client = new ModernClient(
-		{ name: 'kody-mcp-e2e-modern-client', version: '1.0.0' },
-		{ versionNegotiation: { mode: { pin: '2026-07-28' } } },
+	const connection = await connectStatelessMcpClient(
+		origin,
+		{ Authorization: `Bearer ${accessToken}` },
+		{ name: 'kody-mcp-e2e-modern-client' },
 	)
-	const transport = new ModernStreamableHTTPClientTransport(
-		new URL('/mcp', origin),
-		{
-			requestInit: {
-				headers: { Authorization: `Bearer ${accessToken}` },
-			},
-		},
-	)
-	await client.connect(transport)
 	return {
-		client,
+		client: connection.client,
 		async [Symbol.asyncDispose]() {
-			await client.close().catch(() => undefined)
-			await transport.close().catch(() => undefined)
+			await connection.client.close().catch(() => undefined)
+			await connection.transport.close().catch(() => undefined)
 		},
 	}
-}
-
-async function fetchJson<T = Record<string, unknown>>(
-	origin: string,
-	pathname: string,
-	init?: RequestInit,
-): Promise<T> {
-	const response = await fetch(new URL(pathname, origin), init)
-	const rawBody = await response.text()
-	if (!response.ok) {
-		throw new Error(
-			`Request to ${pathname} failed with ${response.status}: ${rawBody}`,
-		)
-	}
-	return JSON.parse(rawBody) as T
-}
-
-async function connectMcpClient(
-	origin: string,
-	headers: Record<string, string>,
-) {
-	const client = new Client(
-		{
-			name: 'kody-mcp-e2e-client',
-			version: '1.0.0',
-		},
-		{ capabilities: {} },
-	)
-	const transport = new StreamableHTTPClientTransport(new URL('/mcp', origin), {
-		requestInit: {
-			headers,
-		},
-	})
-	await client.connect(transport)
-	return { client, transport }
-}
-
-async function closeMcpConnection(input: {
-	client: Client
-	transport: StreamableHTTPClientTransport
-}) {
-	await input.client.close().catch(() => undefined)
-	await input.transport.terminateSession().catch(() => undefined)
-	await input.transport.close().catch(() => undefined)
 }
 
 async function applyMigrations(persistDir: string) {
@@ -654,144 +573,4 @@ async function waitForHttpReady(input: {
 			.filter(Boolean)
 			.join('\n\n'),
 	)
-}
-
-async function authenticateAppUser(
-	origin: string,
-	user: TestUser,
-	mode: 'login' | 'signup',
-) {
-	return fetch(new URL('/auth', origin), {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify({
-			email: user.email,
-			...(mode === 'signup' ? { username: user.username } : {}),
-			password: user.password,
-			mode,
-		}),
-	})
-}
-
-function readCookieHeader(response: Response) {
-	const cookie = response.headers.get('Set-Cookie')
-	if (!cookie) {
-		throw new Error('Authentication response did not include a session cookie.')
-	}
-	return cookie.split(';')[0] ?? cookie
-}
-
-async function registerOAuthClient(
-	origin: string,
-): Promise<OAuthClientRegistration> {
-	const redirectUri = 'http://127.0.0.1/oauth/callback'
-	const payload = await fetchJson<Record<string, unknown>>(
-		origin,
-		'/oauth/register',
-		{
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				client_name: 'Kody MCP E2E Test Client',
-				redirect_uris: [redirectUri],
-				grant_types: ['authorization_code', 'refresh_token'],
-				response_types: ['code'],
-				token_endpoint_auth_method: 'client_secret_post',
-			}),
-		},
-	)
-	const clientId = readStringField(payload, 'client_id')
-	const clientSecret = readStringField(payload, 'client_secret')
-	return {
-		clientId,
-		clientSecret,
-		redirectUri,
-	}
-}
-
-async function authorizeOAuthClient(
-	origin: string,
-	client: OAuthClientRegistration,
-	cookieHeader: string,
-) {
-	const authorizeUrl = new URL('/oauth/authorize', origin)
-	const resource = new URL('/mcp', origin).toString()
-	authorizeUrl.searchParams.set('response_type', 'code')
-	authorizeUrl.searchParams.set('client_id', client.clientId)
-	authorizeUrl.searchParams.set('redirect_uri', client.redirectUri)
-	authorizeUrl.searchParams.set('scope', 'profile email')
-	authorizeUrl.searchParams.set('state', 'kody-mcp-e2e-state')
-	authorizeUrl.searchParams.set('resource', resource)
-
-	const response = await fetch(authorizeUrl, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			Cookie: cookieHeader,
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: new URLSearchParams({
-			decision: 'approve',
-		}),
-	})
-	const rawBody = await response.text()
-	if (!response.ok) {
-		throw new Error(
-			`OAuth authorize request failed with ${response.status}: ${rawBody}`,
-		)
-	}
-	const payload = JSON.parse(rawBody) as Record<string, unknown>
-	const redirectTo = readStringField(payload, 'redirectTo')
-	const code = new URL(redirectTo).searchParams.get('code')
-	if (!code) {
-		throw new Error(
-			`OAuth authorize response did not include a code: ${rawBody}`,
-		)
-	}
-	return code
-}
-
-async function exchangeAuthorizationCode(
-	origin: string,
-	client: OAuthClientRegistration,
-	code: string,
-) {
-	const resource = new URL('/mcp', origin).toString()
-	const response = await fetch(new URL('/oauth/token', origin), {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: new URLSearchParams({
-			grant_type: 'authorization_code',
-			code,
-			client_id: client.clientId,
-			client_secret: client.clientSecret,
-			redirect_uri: client.redirectUri,
-			resource,
-		}),
-	})
-	const rawBody = await response.text()
-	if (!response.ok) {
-		throw new Error(
-			`OAuth token exchange failed with ${response.status}: ${rawBody}`,
-		)
-	}
-	const payload = JSON.parse(rawBody) as Record<string, unknown>
-	return readStringField(payload, 'access_token')
-}
-
-function readStringField(record: Record<string, unknown>, key: string) {
-	const value = record[key]
-	if (typeof value !== 'string' || value.length === 0) {
-		throw new Error(`Expected "${key}" to be a non-empty string.`)
-	}
-	return value
 }

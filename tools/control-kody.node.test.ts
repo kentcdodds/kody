@@ -23,6 +23,7 @@ import {
 	runCommand,
 	runDoctor,
 	runMapCheck,
+	usageLines,
 } from './control-kody.ts'
 import { previewSeedEmail } from './preview-manual-test.ts'
 import { featureCatalog } from './control-kody/feature-catalog.ts'
@@ -86,7 +87,70 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(parseControlArgs(['preview', '--', '--pr', '42']).previewArgv).toEqual(
 		['--pr', '42'],
 	)
+	expect(
+		parseControlArgs([
+			'package-create',
+			'--kody-id',
+			'preview-pkg',
+			'--description',
+			'preview fixture',
+			'--head-ahead',
+			'--origin',
+			'https://kody-pr-9.kody.workers.dev',
+			'--json',
+		]),
+	).toEqual(
+		expect.objectContaining({
+			command: 'package-create',
+			kodyId: 'preview-pkg',
+			description: 'preview fixture',
+			headAhead: true,
+			json: true,
+			origin: 'https://kody-pr-9.kody.workers.dev',
+		}),
+	)
+	expect(usageLines.join('\n')).toMatch(/package-create/)
+	expect(usageLines.join('\n')).toMatch(/--kody-id/)
+	expect(usageLines.join('\n')).toMatch(/--head-ahead/)
 	expect(() => parseControlArgs(['nope'])).toThrow(/Unknown command/)
+	await expect(
+		runCommand(
+			parseControlArgs(['package-create', '--origin', 'http://127.0.0.1:9']),
+		),
+	).rejects.toThrow(/requires --kody-id/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'package-create',
+				'--kody-id',
+				'Not-A-Slug',
+				'--origin',
+				'http://127.0.0.1:9',
+			]),
+		),
+	).rejects.toThrow(/lower-kebab/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'package-create',
+				'--kody-id',
+				'preview-pkg',
+				'--origin',
+				'https://kody.codes',
+			]),
+		),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+	await expect(
+		runCommand(
+			parseControlArgs([
+				'package-create',
+				'--kody-id',
+				'preview-pkg',
+				'--origin',
+				'https://kody.codes.',
+			]),
+		),
+	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
 
 	expect(credentialsForOrigin('http://localhost:3742').email).toBe(
 		localSeedEmail,
