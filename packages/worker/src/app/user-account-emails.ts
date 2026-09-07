@@ -6,6 +6,7 @@ import {
 	buildPaymentFailedEmail,
 } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
+import { recordVerifiedNoMcpCampaignSend } from '#app/user-usage-campaign-emails.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 
 export const userAccountEmailKvKeyPrefix = 'account-email-user:v1'
@@ -112,7 +113,7 @@ export async function sendConnectAgentEmail(input: {
 	email: string
 	userId: string
 }): Promise<boolean> {
-	return await claimAndSend({
+	const sent = await claimAndSend({
 		env: input.env,
 		to: input.email,
 		userId: input.userId,
@@ -123,6 +124,13 @@ export async function sendConnectAgentEmail(input: {
 				onboardingUrl: new URL('/onboarding', config.appBaseUrl).toString(),
 			}),
 	})
+	if (sent) {
+		await recordVerifiedNoMcpCampaignSend({
+			env: input.env,
+			userId: input.userId,
+		})
+	}
+	return sent
 }
 
 export async function sendBillingSuccessEmail(input: {

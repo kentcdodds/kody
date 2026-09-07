@@ -543,3 +543,32 @@ ORDER BY executes DESC
   for six hours. The payload has no user ids, package UUIDs, emails, or error
   strings. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
+
+## Usage campaign
+
+The hourly `usage_entitlement_alert` lane also runs the usage-state lifecycle
+campaign (`sendUserUsageCampaignEmails`). One campaign state per user. The
+evaluator branches on activation stamps and live reads (paged distinct inbound
+`clientId`s, enabled jobs / last job run, execute-rollup depth, Stripe paid,
+stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
+
+| State                  | Mail                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                             |
+| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                    |
+| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only when `SECOND_AGENT_TRIAL_GIFT=true` |
+| `Activated`            | Campaign silence                                                                                   |
+| `Cooling`              | One “home’s still there” poke, then terminal quiet                                                 |
+| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                          |
+| `Paid`                 | Campaign silence; billing transactional only                                                       |
+
+`last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
+read separately so a quiet interactive user with a live schedule stays
+Activated, and Cooling requires stale `last_active_at` plus no job activity.
+
+First sweep of an existing user seeds the current state without mailing
+(backfill is out of scope). Verify-time connect-agent mail is send 1 of
+`VerifiedNoMcp` (`origin=event`). Later sends wait 24 hours after a transition
+and 5 days between sends in the same state. The send ledger claim is
+`INSERT OR IGNORE` on `(user_id, state, send_index)` and is released if the
+Cloudflare send fails. Kit is not part of this machine.

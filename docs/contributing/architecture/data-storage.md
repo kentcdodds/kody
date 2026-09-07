@@ -527,6 +527,14 @@ Two D1 reporting projections deliberately remain:
   Engine's account retention is approximately 90 days, so it cannot safely serve
   the 12-month admin trend or preserve the 24-month read model. The hourly
   Analytics Engine recompute and D1 table remain unchanged.
+- `user_usage_campaigns` and `user_usage_campaign_sends` store one usage-state
+  campaign row per user plus an idempotent send ledger
+  (`UNIQUE(user_id, state, send_index)`). The hourly `usage_entitlement_alert`
+  lane evaluates verified person accounts and mails from `kody@` with the
+  standard transactional template. Seed observations persist state without
+  mailing (backfill is out of scope). Activated and Paid are campaign-silent.
+  LimitAware shares the existing entitlement-warning mail. Kit stays exist-only
+  tags. See [Usage metering](./usage-metering.md#usage-campaign).
 - `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
   the homepage ticker (no `user_id`; not an account export/deletion target). The
   hourly `usage_aggregation` lane rewrites the current and previous UTC months
@@ -1658,6 +1666,9 @@ Current retention policies:
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention. Months before the
   earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+- `user_usage_campaigns` / `user_usage_campaign_sends`: usage-state campaign
+  machine and send ledger keyed by `stable_user_id`. Deleted and exported with
+  the account. Durable until deletion; no TTL.
 - `compute_overage_invoices`: one ledger row per user per UTC month for unique
   worker-day and Durable Object rows-read overage. Status is the disposition
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or

@@ -2,7 +2,10 @@ import { expect, test } from 'vitest'
 import {
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
+	buildCoolingHomeEmail,
+	buildKeepPackageEmail,
 	buildPlatformFeedbackOutcomeEmail,
+	buildSecondAgentEmail,
 	buildUserEntitlementWarningEmail,
 	buildUserErrorRateEmail,
 	buildVerificationEmail,
@@ -82,8 +85,38 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		appBaseUrl: 'https://kody.codes',
 		onboardingUrl: 'https://kody.codes/onboarding',
 	})
+	expect(connect.subject).toBe('Connect the agent you already use')
 	expect(connect.html).toContain('https://kody.codes/onboarding')
 	expect(connect.text).toContain('https://kody.codes/onboarding')
+
+	const keep = buildKeepPackageEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+		clientLabel: 'Cursor',
+	})
+	expect(keep.subject).toBe('Keep what Cursor just figured out')
+	expect(keep.html).toContain('https://kody.codes/onboarding')
+
+	const second = buildSecondAgentEmail({
+		appBaseUrl: 'https://kody.codes',
+		portabilityUrl: 'https://kody.codes/guides/portability',
+	})
+	expect(second.html).toContain('https://kody.codes/guides/portability')
+	expect(second.text).not.toContain('/account/billing')
+
+	const secondWithTrial = buildSecondAgentEmail({
+		appBaseUrl: 'https://kody.codes',
+		portabilityUrl: 'https://kody.codes/guides/portability',
+		trialUrl: 'https://kody.codes/account/billing',
+	})
+	expect(secondWithTrial.text).toContain('https://kody.codes/account/billing')
+
+	const cooling = buildCoolingHomeEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+	})
+	expect(cooling.subject).toBe('Your home is still there')
+	expect(cooling.html).toContain('https://kody.codes/onboarding')
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',

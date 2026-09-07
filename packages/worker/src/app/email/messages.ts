@@ -161,12 +161,12 @@ export function buildConnectAgentEmail(input: {
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
-		subject: 'Connect your agent to Kody',
-		preheader: 'One connection and your assistant has a home.',
+		subject: 'Connect the agent you already use',
+		preheader: 'Cursor, Claude, ChatGPT — one connection.',
 		heading: 'Connect the agent you already use',
 		body: [
-			'Your email is verified. Next, connect Cursor, Claude, ChatGPT, or another MCP host so Kody can keep memory, secrets, and jobs for you.',
-			'It takes a couple of minutes. After that, every agent you use can share the same home.',
+			'Your email is verified. Open the agent you already live in and connect Kody as an MCP server.',
+			'That one connection is the home: memory, secrets, and jobs follow you to every host.',
 		],
 		action: { label: 'Connect your agent', url: input.onboardingUrl },
 		illustration: {
@@ -175,7 +175,87 @@ export function buildConnectAgentEmail(input: {
 			width: 96,
 			height: 96,
 		},
-		footnote: "You're receiving this because you just verified a Kody account.",
+		footnote:
+			"You're receiving this because you verified a Kody account and have not connected an agent yet.",
+	})
+}
+
+export function buildKeepPackageEmail(input: {
+	appBaseUrl: string
+	onboardingUrl: string
+	clientLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: `Keep what ${input.clientLabel} just figured out`,
+		preheader: 'Save one working answer as a package.',
+		heading: 'Keep what you just figured out',
+		body: [
+			`${input.clientLabel} already did the hard part. Save that working answer as a package so the next session does not start from zero.`,
+			'One durable package is enough. You can refine it later.',
+		],
+		action: { label: 'Save a package', url: input.onboardingUrl },
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because you connected an agent to Kody and have not saved a package yet.",
+	})
+}
+
+export function buildSecondAgentEmail(input: {
+	appBaseUrl: string
+	portabilityUrl: string
+	trialUrl?: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your home works in more than one agent',
+		preheader: 'Connect a second host and keep the same memory.',
+		heading: 'Bring a second agent home',
+		body: [
+			'You have a package. Connect a second agent so the same memory, secrets, and packages show up there too.',
+		],
+		action: { label: 'See how portability works', url: input.portabilityUrl },
+		afterAction: input.trialUrl
+			? [`A second-agent trial is available on your account: ${input.trialUrl}`]
+			: undefined,
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because you saved a Kody package and have connected one agent.",
+	})
+}
+
+export function buildCoolingHomeEmail(input: {
+	appBaseUrl: string
+	onboardingUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your home is still there',
+		preheader: 'Nothing expired. Pick up when you want.',
+		heading: 'Your home is still there',
+		body: [
+			'Kody still has your packages, memory, and secrets. Nothing expired.',
+			'When you want them again, open the agent you already use and connect.',
+		],
+		action: { label: 'Open Kody', url: input.onboardingUrl },
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because your Kody account has been quiet. This is the only poke.",
 	})
 }
 
