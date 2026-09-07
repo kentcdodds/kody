@@ -376,8 +376,59 @@ test('a lost send-ledger race does not persist a stale campaign row', async () =
 	const after = await readUsageCampaign(db, 'user-race')
 	expect(after?.send_count).toBe(0)
 	expect(after?.last_sent_at).toBeNull()
-	expect(after?.last_evaluated_at).toBe(before?.last_evaluated_at)
+	expect(after?.last_evaluated_at).toBe(now.toISOString())
+	expect(after?.last_evaluated_at).not.toBe(before?.last_evaluated_at)
 	expect(after?.cooling_terminal).toBe(0)
+})
+
+test('re-entry claim loss persists last_evaluated_at without mailing again', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-reentry', email: 'reentry@example.com' })
+	const env = createEnv(db)
+	const firstSentAt = '2026-08-01T00:00:00.000Z'
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-reentry',
+		state: 'LimitAware',
+		enteredAt: '2026-08-20T00:00:00.000Z',
+		sendCount: 0,
+		lastSentAt: null,
+		origin: 'event',
+		coolingTerminal: false,
+		everActivated: false,
+		now: new Date('2026-08-20T00:00:00.000Z'),
+	})
+	const claimed = await claimUsageCampaignSend({
+		db,
+		userId: 'user-reentry',
+		state: 'VerifiedNoMcp',
+		template: 'verified_no_mcp',
+		sendIndex: 1,
+		now: new Date(firstSentAt),
+	})
+	expect(claimed).toBe(true)
+	const later = new Date(now.getTime() + usageCampaignFirstSendDwellMs)
+	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot({ now: later }))
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now: later })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	const after = await readUsageCampaign(db, 'user-reentry')
+	expect(after).toMatchObject({
+		state: 'VerifiedNoMcp',
+		send_count: 0,
+		last_sent_at: null,
+		last_evaluated_at: later.toISOString(),
+		origin: 'event',
+	})
+	expect(await listUsageCampaignSends(db, 'user-reentry')).toEqual([
+		expect.objectContaining({
+			state: 'VerifiedNoMcp',
+			send_index: 1,
+		}),
+	])
 })
 
 test('a later seed persist cannot clobber a verify-time event row', async () => {

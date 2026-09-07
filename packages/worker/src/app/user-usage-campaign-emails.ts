@@ -365,6 +365,18 @@ async function sendClaimedCampaignEmail(input: {
 		now: input.now,
 	})
 	if (!claimed) {
+		// Ledger UNIQUE already holds this send (overlapping sweep or a
+		// later re-entry after LimitAware). Persist so last_evaluated_at
+		// moves; sent:false plus the upsert MAX/keep rules cannot clobber
+		// a concurrent winner's send_count or last_sent_at.
+		await persistDecision({
+			db: input.env.APP_DB,
+			userId: input.user.stable_user_id,
+			decision: input.decision,
+			persisted: input.persisted,
+			now: input.now,
+			sent: false,
+		})
 		return false
 	}
 
