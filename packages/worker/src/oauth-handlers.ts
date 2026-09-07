@@ -35,6 +35,7 @@ import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
 import { listUserOAuthGrantsForClient } from '#worker/oauth-grants.ts'
+import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
 import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
 import {
@@ -88,12 +89,17 @@ async function evaluateSecondAgentGiftAfterAuthorize(
 		getOAuthHelpers(env),
 		stableUserId,
 	)
-	await maybeEvaluateSecondAgentStandardGift({
-		db: env.APP_DB,
-		stableUserId,
-		uniqueClientCount: inbound.uniqueClientCount,
-		listingFailed: inbound.listingFailed,
-	})
+	if (
+		!inbound.listingFailed &&
+		hasSecondConnectedMcpClient(inbound.uniqueClientCount)
+	) {
+		await maybeEvaluateSecondAgentStandardGift({
+			db: env.APP_DB,
+			stableUserId,
+			uniqueClientCount: inbound.uniqueClientCount,
+			listingFailed: inbound.listingFailed,
+		})
+	}
 }
 
 type OAuthClientResetVerification = {

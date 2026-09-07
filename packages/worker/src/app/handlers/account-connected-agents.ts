@@ -7,6 +7,7 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
 import {
 	loadInboundMcpConnectionState,
 	revokeConnectedMcpAgent,
@@ -26,12 +27,17 @@ export async function loadAccountConnectedAgentsData(input: {
 }): Promise<AccountConnectedAgentsLoaderData> {
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
 	const state = await loadInboundMcpConnectionState(helpers, input.stableUserId)
-	await maybeEvaluateSecondAgentStandardGift({
-		db: input.env.APP_DB,
-		stableUserId: input.stableUserId,
-		uniqueClientCount: state.uniqueClientCount,
-		listingFailed: state.listingFailed,
-	})
+	if (
+		!state.listingFailed &&
+		hasSecondConnectedMcpClient(state.uniqueClientCount)
+	) {
+		await maybeEvaluateSecondAgentStandardGift({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			uniqueClientCount: state.uniqueClientCount,
+			listingFailed: state.listingFailed,
+		})
+	}
 	return {
 		ok: true,
 		agents: state.agents,
