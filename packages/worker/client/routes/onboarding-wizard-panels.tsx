@@ -546,9 +546,6 @@ const connectedAgentsLineCss = {
 }
 
 const connectedAgentItemCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.3em',
 	whiteSpace: 'nowrap' as const,
 }
 

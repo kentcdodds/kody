@@ -111,10 +111,24 @@ export function AgentPickerMark(
 					<AgentMarkIcon icon={desktopIcon} size={size} />
 				) : (
 					<>
-						<span mix={css(onboardingViewportCss('desktop-only', 'grid'))}>
+						<span
+							mix={css(
+								onboardingViewportCss(
+									'desktop-only',
+									size === 'inline' ? 'inline-block' : 'grid',
+								),
+							)}
+						>
 							<AgentMarkIcon icon={desktopIcon} size={size} />
 						</span>
-						<span mix={css(onboardingViewportCss('mobile-only', 'grid'))}>
+						<span
+							mix={css(
+								onboardingViewportCss(
+									'mobile-only',
+									size === 'inline' ? 'inline-block' : 'grid',
+								),
+							)}
+						>
 							<AgentMarkIcon icon={mobileIcon} size={size} />
 						</span>
 					</>
@@ -602,13 +616,12 @@ const pickerMarkCss = {
 }
 
 const pickerMarkInlineCss = {
-	display: 'inline-grid',
-	placeItems: 'center',
-	flex: 'none',
-	width: '1em',
-	height: '1em',
+	display: 'inline-block',
+	width: '1cap',
+	height: '1cap',
 	overflow: 'hidden',
-	verticalAlign: '-0.125em',
+	verticalAlign: 'baseline',
+	marginInlineEnd: '0.25em',
 	color: colors.text,
 }
 
@@ -624,8 +637,8 @@ const pickerIconImgCss = {
 
 const pickerIconImgInlineCss = {
 	display: 'block',
-	width: '1em',
-	height: '1em',
+	width: '1cap',
+	height: '1cap',
 	objectFit: 'contain' as const,
 	'@media (prefers-color-scheme: dark)': {
 		filter: 'invert(1)',
