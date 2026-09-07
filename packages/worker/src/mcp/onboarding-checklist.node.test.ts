@@ -164,9 +164,7 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 		userId,
 		baseUrl: 'https://kody.example',
 	})
-	expect(notice).toContain('Connect your agent')
-	expect(notice).toContain('Make something useful')
-	expect(notice).toContain('Connect a second agent')
+	expect(notice).toContain('3 steps left')
 	expect(notice).toContain('/onboarding')
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
@@ -181,7 +179,7 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 	).toBe(null)
 })
 
-test('search onboarding notice stays quiet when grant listing fails', async () => {
+test('search onboarding notice stays quiet when grants cannot be listed', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
 	expect(
@@ -198,11 +196,6 @@ test('search onboarding notice stays quiet when grant listing fails', async () =
 			baseUrl: 'https://kody.example',
 		}),
 	).toBe(null)
-})
-
-test('search onboarding notice stays quiet when grant helpers cannot be resolved', async () => {
-	const { env } = createEnv()
-	await seedUser(env.APP_DB)
 	expect(
 		await buildOnboardingSearchNotice({
 			env,

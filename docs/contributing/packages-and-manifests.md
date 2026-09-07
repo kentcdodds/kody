@@ -12,13 +12,13 @@ Kody-specific metadata.
 
 Use `package.json` as the canonical source of truth for saved package metadata.
 
-- `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment
-  must match `kody.id` (for example `@scope/my-package` pairs with
-  `kody.id: "my-package"`)
+- `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment is
+  the URL slug
 - `exports` — authoritative import/export map
-- `private` — optional; a `"private": true` package cannot be published as a
-  community listing
-- `kody.id` — user-scoped Kody package id
+- `private` — leftover npm-style field; ignored for catalog listing. Visibility
+  is a repo setting (`packageUpdate` `changes.visibility`), default private
+- `kody.id` — optional; if present must match the package name leaf. Prefer
+  omitting it and letting the leaf be the slug
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.category` — optional community browse category (`integrations`,

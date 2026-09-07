@@ -56,31 +56,26 @@ export const onboardingChecklistItems = [
 	{
 		id: 'verify-email',
 		label: 'Verify your email',
-		searchLabel: 'verify your email',
 		href: '/pending-verification',
 	},
 	{
 		id: 'connect-agent',
 		label: 'Connect your agent',
-		searchLabel: 'connect your agent',
 		wizardStep: 1,
 	},
 	{
 		id: 'give-access',
 		label: 'Make something useful',
-		searchLabel: 'make something useful',
 		wizardStep: 2,
 	},
 	{
 		id: 'connect-second-agent',
 		label: 'Connect a second agent',
-		searchLabel: 'connect a second agent',
 		wizardStep: 3,
 	},
 	{
 		id: 'install-starter',
 		label: 'Persist your first package',
-		searchLabel: 'persist your first package',
 		profile: true,
 	},
 ] as const
@@ -97,27 +92,10 @@ export const onboardingChecklistItemLabels = Object.fromEntries(
 	onboardingChecklistItems.map((item) => [item.id, item.label]),
 ) as Record<OnboardingChecklistItemId, string>
 
-export const onboardingChecklistSearchLabels = Object.fromEntries(
-	onboardingChecklistItems.map((item) => [item.id, item.searchLabel]),
-) as Record<OnboardingChecklistItemId, string>
-
-/**
- * Optional email → reply → memories loop. Not a wizard step. The climax guide
- * and next-step path here are what `onboarding-process.node.test.ts` requires
- * `docs/guides/first-win.md` to name.
- */
-export const firstWinAlignment = {
-	guideSlug: 'first-win',
-	climaxGuideSlug: 'quick-example',
-	prerequisiteWizardStep: 1,
-	nextWizardStep: 2,
-} as const
-
 export const onboardingUnconnectedNotice =
 	'Your agent cannot do anything in Kody yet.'
 
 /** Agent-retrievable first-run guide (bundled + `search({ entity })`). */
-export const onboardingGuideSlug = 'onboarding'
 export const onboardingGuideEntity = 'onboarding:guide'
 export const onboardingGuideHref = '/guides/onboarding'
 

@@ -9,14 +9,7 @@ import {
 	type TranscriptAct,
 } from './interactive-guide-transcript.ts'
 
-export {
-	transcriptFileLang,
-	type TranscriptAct,
-	type TranscriptFile,
-	type TranscriptInput,
-	type TranscriptLine,
-	type TranscriptTool,
-} from './interactive-guide-transcript.ts'
+export { transcriptFileLang } from './interactive-guide-transcript.ts'
 
 const whatShippedSource = `import { packageStorage } from 'kody:runtime'
 

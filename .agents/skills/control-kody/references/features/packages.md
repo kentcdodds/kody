@@ -48,4 +48,5 @@ assert the empty state.
   unadvertised operator drain. Settings does not show token forms.
 - When default-branch HEAD is newer than the last publish, the Code tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
-  publish HEAD on `/@username/:kodyId/approve-publish`.
+  publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
+  non-empty root `README.md` and `AGENTS.md`.

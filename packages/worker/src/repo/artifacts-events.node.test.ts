@@ -4,9 +4,6 @@ import {
 	isSessionArtifactRepoName,
 	isSessionBranchRef,
 	parseCloudflareArtifactsRepoEvent,
-	repoCreatedTopic,
-	repoDeletedTopic,
-	repoPushedTopic,
 	topicForArtifactsRepoEvent,
 } from './artifacts-events.ts'
 
@@ -47,7 +44,7 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 	})
 	expect(pushed?.type).toBe('cf.artifacts.repo.pushed')
 	expect(pushed?.source.type).toBe('artifacts.repo')
-	expect(topicForArtifactsRepoEvent(pushed!)).toBe(repoPushedTopic)
+	expect(topicForArtifactsRepoEvent(pushed!)).toBe('repo.pushed')
 
 	const accountPushed = parseCloudflareArtifactsRepoEvent({
 		type: 'cf.artifacts.repo.pushed',
@@ -67,7 +64,7 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 		metadata,
 	})
 	expect(accountPushed?.source.type).toBe('artifacts')
-	expect(topicForArtifactsRepoEvent(accountPushed!)).toBe(repoPushedTopic)
+	expect(topicForArtifactsRepoEvent(accountPushed!)).toBe('repo.pushed')
 
 	const created = parseCloudflareArtifactsRepoEvent({
 		type: 'cf.artifacts.repo.created',
@@ -87,7 +84,7 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 		},
 		metadata,
 	})
-	expect(topicForArtifactsRepoEvent(created!)).toBe(repoCreatedTopic)
+	expect(topicForArtifactsRepoEvent(created!)).toBe('repo.created')
 
 	const deleted = parseCloudflareArtifactsRepoEvent({
 		type: 'cf.artifacts.repo.deleted',
@@ -102,7 +99,7 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 		},
 		metadata,
 	})
-	expect(topicForArtifactsRepoEvent(deleted!)).toBe(repoDeletedTopic)
+	expect(topicForArtifactsRepoEvent(deleted!)).toBe('repo.deleted')
 
 	expect(parseCloudflareArtifactsRepoEvent(null)).toBeNull()
 	expect(
