@@ -18,11 +18,11 @@ function plainText(status: number, message: string): Response {
 	})
 }
 
-export type CacheAuthorization =
+type CacheAuthorization =
 	| { ok: true; canWrite: boolean }
 	| { ok: false; response: Response }
 
-export async function authorizeCacheRequest(
+async function authorizeCacheRequest(
 	request: Request,
 	tokens: { write?: string; read?: string },
 ): Promise<CacheAuthorization> {
