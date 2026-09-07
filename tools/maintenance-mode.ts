@@ -194,6 +194,25 @@ function ruleTarget(rule: CloudflareRedirectRule | null, fallback: string) {
 	return rule?.action_parameters?.from_value?.target_url?.value ?? fallback
 }
 
+function ruleNeedsUpdate(
+	existing: CloudflareRedirectRule,
+	desired: ReturnType<typeof buildMaintenanceRedirectRule>,
+) {
+	const fromValue = existing.action_parameters?.from_value
+	return (
+		existing.expression !== desired.expression ||
+		fromValue?.target_url?.value !==
+			desired.action_parameters.from_value.target_url.value ||
+		fromValue?.status_code !==
+			desired.action_parameters.from_value.status_code ||
+		fromValue?.preserve_query_string !==
+			desired.action_parameters.from_value.preserve_query_string ||
+		existing.action !== desired.action ||
+		existing.ref !== desired.ref ||
+		existing.description !== desired.description
+	)
+}
+
 function formatAuthFailure(status: number) {
 	return `Cloudflare API request failed (${status}). ${requiredTokenScopesMessage}`
 }
@@ -480,10 +499,10 @@ export async function runMaintenanceMode(
 					url: plannedUrl(rulesetRulesPath(zone.id, entrypoint.id)),
 					body: rule,
 				})
-			} else if (!enabled) {
+			} else if (!enabled || ruleNeedsUpdate(existingRule, rule)) {
 				if (!existingRule.id) {
 					throw new Error(
-						'Maintenance redirect rule is missing an id; cannot enable it.',
+						'Maintenance redirect rule is missing an id; cannot update it.',
 					)
 				}
 				await applyWrite({

@@ -268,6 +268,58 @@ test('on enables an existing disabled maintenance rule', async () => {
 	})
 })
 
+test('on patches an enabled rule when the target differs', async () => {
+	const staleTarget = 'https://status.kody.codes/old-maintenance'
+	const { fetchImpl, calls } = mockFetch((url, init) => {
+		if (url.includes('/zones?name=')) return zoneLookup()
+		if (url.includes('/entrypoint')) {
+			return envelope({
+				id: rulesetId,
+				name: 'Redirect rules ruleset',
+				kind: 'zone',
+				phase: 'http_request_dynamic_redirect',
+				rules: [
+					{
+						...redirectRule(true),
+						action_parameters: {
+							from_value: {
+								target_url: { value: staleTarget },
+								status_code: 302,
+								preserve_query_string: false,
+							},
+						},
+					},
+				],
+			})
+		}
+		if ((init?.method ?? 'GET') === 'PATCH' && url.endsWith(`/${ruleId}`)) {
+			return envelope({
+				id: rulesetId,
+				rules: [redirectRule(true)],
+			})
+		}
+		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
+	})
+
+	const result = await runMaintenanceMode(parseArgs(['on']), {
+		env: { CLOUDFLARE_API_TOKEN: 'token' },
+		fetch: fetchImpl,
+		log: () => {},
+	})
+
+	expect(result.target).toBe(defaultMaintenanceTarget)
+	expect(calls.at(-1)).toMatchObject({
+		method: 'PATCH',
+		url: `${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/${rulesetId}/rules/${ruleId}`,
+		body: {
+			enabled: true,
+			action_parameters: {
+				from_value: { target_url: { value: defaultMaintenanceTarget } },
+			},
+		},
+	})
+})
+
 test('off disables the existing rule and does not delete it', async () => {
 	const { fetchImpl, calls } = mockFetch((url, init) => {
 		if (url.includes('/zones?name=')) return zoneLookup()
