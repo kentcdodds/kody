@@ -526,19 +526,19 @@ guarded by a bearer secret comparison.
   versioned (`v2.<iv>.<ct>`) and bound via AES-GCM additional authenticated data
   to their purpose and owning identity (`user:<userId>` for user secrets,
   `app:<slug>` for platform OAuth client secrets), so a ciphertext copied into
-  another user's row fails to decrypt. Unversioned (2-part) ciphertexts decrypt
-  under the same KEK and upgrade to `v2` on write re-encryption, or via the
-  operator pass at `POST /__maintenance/reencrypt-secrets` (same KEK; optimistic
-  compare so a concurrent user rotation wins; decrypt failures are counted and
-  left unchanged). Leftover integration-owned OAuth values that still live only
-  in `secret_entries` are copied onto the connection/app ciphertext columns by
-  `POST /__maintenance/backfill-integration-credentials` (same bearer; writes
-  only where the ciphertext column is still null). Only `v2` provides owner
-  binding: a 2-part ciphertext carries no AAD, so a copied row would decrypt
-  until rewritten (metadata-only writes preserve the 2-part ciphertext). Row
-  swaps already require write access to the database, so this is
-  defense-in-depth, not a standing hole. Decrypt dual-reads both shapes;
-  user-facing reads never rewrite.
+  another user's row fails to decrypt. User-facing decrypt accepts only `v2`.
+  Unversioned (2-part) payloads are invalid on read. The operator pass at
+  `POST /__maintenance/reencrypt-secrets` decrypts that leftover shape with a
+  maintenance-only helper, re-encrypts as `v2` (same KEK; optimistic compare so
+  a concurrent user rotation wins; decrypt failures are counted and left
+  unchanged), and is the restore path after a D1 export sealed before the
+  2026-08-17 format-upgrade pass. Leftover integration-owned OAuth values that
+  still live only in `secret_entries` are copied onto the connection/app
+  ciphertext columns by `POST /__maintenance/backfill-integration-credentials`
+  (same bearer; writes only where the ciphertext column is still null). A 2-part
+  ciphertext carries no AAD, so a copied row would decrypt under the maintenance
+  helper until rewritten. Row swaps already require write access to the
+  database, so this is defense-in-depth, not a standing hole.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and

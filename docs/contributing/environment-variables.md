@@ -359,10 +359,12 @@ Worker secrets:
   or a pooling-only change, POST `{ "force": true }` (and omit `phases` for
   every kind) so matching fingerprints cannot skip upserts. Each call is
   time-budgeted and may return `complete: false` plus a `cursor` to resume. Use
-  the re-encrypt endpoint to rewrite remaining pre-AAD (2-part) secret
-  ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
-  [Secret rotation](./secret-rotation.md)). Local dev uses offline search while
-  `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+  the re-encrypt endpoint to rewrite pre-AAD (2-part) secret ciphertexts to v2
+  without rotating `SECRET_STORE_KEY` — including after restoring a D1 export
+  sealed before the 2026-08-17 format-upgrade pass (see
+  [Secret rotation](./secret-rotation.md) and
+  [Disaster recovery](./disaster-recovery.md)). Local dev uses offline search
+  while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
   `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild
   (without a full capability/memory/package reindex). When unset, the jobs-only
