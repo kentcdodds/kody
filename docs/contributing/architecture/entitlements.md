@@ -187,7 +187,12 @@ overage is billed at those rates when `compute-overage-charging` is on (registry
 default: on) and `resolveComputeOverageDisposition` returns `invoice`: paid
 public Standard/Pro with a Stripe customer, or Free that already has a customer.
 Unpaid Free that exceeds includes is a soft-block (upgrade prompt on
-`/account/usage`), never a Stripe charge that would fail. Turn the flag off
+`/account/usage` and the same `whatCounts` / `howToReduce` copy on `usageGet`),
+never a Stripe charge that would fail. `usageGet` and the account usage UI
+include these monthly meters with plain-language guidance; they are not hard
+entitlement cuts. A `ComputeOverageLimitError` (`compute_overage_include_reached`)
+carries that same guidance for execute/jobs structured entitlement errors when
+a soft-block denial is raised. Turn the flag off
 globally at `/admin/feature-flags` to dry-run (ledger rows, no Stripe). Global
 off is a hard gate — a per-user on override cannot charge. A percentage
 rollout is still globally on. Amounts below

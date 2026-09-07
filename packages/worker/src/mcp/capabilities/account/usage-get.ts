@@ -4,13 +4,18 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { planNames } from '#universal/plans.ts'
+import {
+	computeOverageUsageWarningRows,
+	readAccountComputeOverage,
+	toComputeOverageUsageRows,
+} from '#worker/billing/compute-overage-account.ts'
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 
 const usageResourceSchema = z.object({
 	resource: z.string(),
 	label: z.string(),
-	group: z.enum(['daily', 'counts', 'storage', 'limits']),
+	group: z.enum(['monthly', 'daily', 'counts', 'storage', 'limits']),
 	kind: z.enum(['counter', 'per_unit_max']),
 	whatCounts: z.string(),
 	howToReduce: z.string(),
@@ -25,8 +30,17 @@ export const usageGetCapability = defineDomainCapability(
 	{
 		name: 'usageGet',
 		description:
-			'Read the signed-in user’s entitlement usage against plan limits: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
-		keywords: ['account', 'usage', 'quota', 'limits', 'entitlements', 'plan'],
+			'Read the signed-in user’s entitlement usage against plan limits, including monthly unique worker days (Dynamic Worker isolates) and Durable Object rows-read: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
+		keywords: [
+			'account',
+			'usage',
+			'quota',
+			'limits',
+			'entitlements',
+			'plan',
+			'unique worker days',
+			'dynamic worker',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
@@ -45,18 +59,48 @@ export const usageGetCapability = defineDomainCapability(
 				userId: user.userId,
 				email: user.email,
 			})
-			const snapshot = await readEntitlementUsageSnapshot({
-				db,
-				env: ctx.env,
-				usageUserId: user.userId,
-				plan: entitlement.plan,
-				ladder: entitlement.ladder,
-			})
-			const mapRow = (
-				row: Awaited<
-					ReturnType<typeof readEntitlementUsageSnapshot>
-				>['resources'][number],
-			) => ({
+			const billing = await db
+				.prepare(
+					user.email
+						? `SELECT id, stripe_customer_id FROM users WHERE email = ? AND stable_user_id = ?`
+						: `SELECT id, stripe_customer_id FROM users WHERE stable_user_id = ?`,
+				)
+				.bind(
+					...(user.email
+						? [user.email.trim().toLowerCase(), user.userId]
+						: [user.userId]),
+				)
+				.first<{ id: number; stripe_customer_id: string | null }>()
+			const [snapshot, computeOverage] = await Promise.all([
+				readEntitlementUsageSnapshot({
+					db,
+					env: ctx.env,
+					usageUserId: user.userId,
+					plan: entitlement.plan,
+					ladder: entitlement.ladder,
+				}),
+				readAccountComputeOverage({
+					db,
+					userId: billing?.id ?? null,
+					stableUserId: user.userId,
+					plan: entitlement.plan,
+					ladder: entitlement.ladder,
+					hasStripeCustomer: Boolean(billing?.stripe_customer_id?.trim()),
+					now: new Date(),
+				}),
+			])
+			const mapRow = (row: {
+				resource: string
+				label: string
+				group: 'monthly' | 'daily' | 'counts' | 'storage' | 'limits'
+				kind: 'counter' | 'per_unit_max'
+				whatCounts: string
+				howToReduce: string
+				current: number
+				limit: number
+				percentOfLimit: number | null
+				overEightyPercent: boolean
+			}) => ({
 				resource: row.resource,
 				label: row.label,
 				group: row.group,
@@ -68,11 +112,18 @@ export const usageGetCapability = defineDomainCapability(
 				percent: row.percentOfLimit,
 				overEightyPercent: row.overEightyPercent,
 			})
+			const computeRows = toComputeOverageUsageRows(computeOverage)
 			return {
 				plan: snapshot.plan,
 				day: snapshot.today,
-				resources: snapshot.resources.map(mapRow),
-				warnings: snapshot.warnings.map(mapRow),
+				resources: [
+					...computeRows.map(mapRow),
+					...snapshot.resources.map(mapRow),
+				],
+				warnings: [
+					...computeOverageUsageWarningRows(computeOverage).map(mapRow),
+					...snapshot.warnings.map(mapRow),
+				],
 			}
 		},
 	},

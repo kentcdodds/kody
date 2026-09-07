@@ -1,6 +1,11 @@
 import { type EntitlementResource } from '#universal/plans.ts'
 
-export type EntitlementResourceGroup = 'daily' | 'counts' | 'storage' | 'limits'
+export type EntitlementResourceGroup =
+	| 'monthly'
+	| 'daily'
+	| 'counts'
+	| 'storage'
+	| 'limits'
 
 export type EntitlementResourceVisibilityKind = 'counter' | 'per_unit_max'
 
@@ -8,6 +13,7 @@ export const entitlementResourceGroupLabels: Record<
 	EntitlementResourceGroup,
 	string
 > = {
+	monthly: 'Monthly compute',
 	daily: 'Daily rates',
 	counts: 'Resource counts',
 	storage: 'Storage',
@@ -17,6 +23,8 @@ export const entitlementResourceGroupLabels: Record<
 export const entitlementResourceGroupNotes: Partial<
 	Record<EntitlementResourceGroup, string>
 > = {
+	monthly:
+		'Included unique worker days and Durable Object rows-read this UTC month. Public-ladder overage invoices when a payment method is on file; unpaid Free is asked to upgrade.',
 	daily: 'Counters reset at UTC midnight.',
 }
 
@@ -149,6 +157,7 @@ export const accountUsageEntitlementResources = [
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
 export const entitlementResourceGroupOrder: Array<EntitlementResourceGroup> = [
+	'monthly',
 	'daily',
 	'counts',
 	'storage',

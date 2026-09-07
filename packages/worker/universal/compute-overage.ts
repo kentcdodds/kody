@@ -65,9 +65,44 @@ export type ComputeOverageWarningResource =
 	(typeof computeOverageWarningResources)[number]
 
 export const computeOverageWarningResourceLabels = {
-	unique_worker_days: 'unique worker-days',
+	unique_worker_days: 'Unique worker days',
 	durable_object_rows_read: 'Durable Object rows read',
 } as const satisfies Record<ComputeOverageWarningResource, string>
+
+export type ComputeOverageResourceVisibility = {
+	group: 'monthly'
+	kind: 'counter'
+	whatCounts: string
+	howToReduce: string
+}
+
+/**
+ * Plain-language copy for account usage UI, `usageGet`, warning emails,
+ * and compute-include denials. Keep factual and terse; update when
+ * overage policy changes. Not a hard entitlement — see
+ * {@link computeMeteringPolicy} / {@link resolveComputeOverageDisposition}.
+ */
+export const computeOverageResourceVisibility = {
+	unique_worker_days: {
+		group: 'monthly',
+		kind: 'counter',
+		whatCounts:
+			'Counts distinct Cloudflare Dynamic Worker isolates (worker id + code) that run on a given UTC day, rolled up for the month. Reusing the same warm isolate typically does not add another day.',
+		howToReduce:
+			'Keep package code stable so isolates stay warm, and consolidate one-off execute runs into saved packages or jobs.',
+	},
+	durable_object_rows_read: {
+		group: 'monthly',
+		kind: 'counter',
+		whatCounts:
+			'SQLite rows read by your Durable Object package storage this UTC month.',
+		howToReduce:
+			'Read less from package storage, cache repeated queries, or upgrade your plan.',
+	},
+} as const satisfies Record<
+	ComputeOverageWarningResource,
+	ComputeOverageResourceVisibility
+>
 
 export type MonthlyComputeOverage = {
 	includedUniqueWorkerDays: number
@@ -211,6 +246,56 @@ export function resolveComputeOverageDisposition(
 		return 'skip_below_minimum'
 	}
 	return 'invoice'
+}
+
+/**
+ * Actionable reduction + billing next step for one monthly compute meter.
+ * Disposition is optional: omit it for the generic under-include prompt.
+ */
+export function buildComputeOverageHowToReduce(
+	resource: ComputeOverageWarningResource,
+	disposition?: ComputeOverageDisposition | null,
+): string {
+	const base = computeOverageResourceVisibility[resource].howToReduce
+	const billing = computeOverageBillingGuidance(resource, disposition)
+	return billing ? `${base} ${billing}` : base
+}
+
+function computeOverageBillingGuidance(
+	resource: ComputeOverageWarningResource,
+	disposition?: ComputeOverageDisposition | null,
+): string {
+	const uniqueWorkerDayRate = `$${computeOverageRatesUsd.uniqueWorkerDay}`
+	const rowsReadRate = `$${computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million`
+	switch (disposition) {
+		case 'soft_block':
+			return 'Upgrade your plan or add a payment method at /account/billing. Free accounts without a payment method are asked to upgrade instead of being charged for overage.'
+		case 'invoice':
+			return resource === 'unique_worker_days'
+				? `Usage above this month's include is billed at ${uniqueWorkerDayRate} per unique worker day after the UTC month closes.`
+				: `Usage above this month's include is billed at ${rowsReadRate} rows read after the UTC month closes.`
+		case 'skip_legacy':
+			return 'Legacy Standard and Pro are not billed for this overage. Changing plan moves you onto public rates.'
+		case 'dry_run':
+			return 'Overage is being recorded but is not billed while charging is paused.'
+		case 'skip_below_minimum':
+			return resource === 'unique_worker_days'
+				? `Public-ladder overage is billed at ${uniqueWorkerDayRate} per unique worker day when a payment method is on file. Amounts below Stripe's $0.50 minimum are not invoiced.`
+				: `Public-ladder overage is billed at ${rowsReadRate} rows read when a payment method is on file. Amounts below Stripe's $0.50 minimum are not invoiced.`
+		case 'skip_zero':
+		case 'skip_audience':
+		case undefined:
+		case null:
+			return resource === 'unique_worker_days'
+				? `Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage at ${uniqueWorkerDayRate} per unique worker day.`
+				: 'Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage.'
+		default: {
+			const exhaustive: never = disposition
+			throw new Error(
+				`Unknown compute overage disposition: ${String(exhaustive)}`,
+			)
+		}
+	}
 }
 
 /** Previous UTC `YYYY-MM` for a clock instant. */

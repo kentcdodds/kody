@@ -1913,7 +1913,7 @@ export type AccountBillingSuccessLoaderData = {
 export type AccountUsageEntitlementConsumption = {
 	resource: string
 	label: string
-	group: 'daily' | 'counts' | 'storage' | 'limits'
+	group: 'daily' | 'counts' | 'storage' | 'limits' | 'monthly'
 	kind: 'counter' | 'per_unit_max'
 	whatCounts: string
 	howToReduce: string
@@ -1926,6 +1926,8 @@ export type AccountUsageEntitlementConsumption = {
 export type AccountUsageComputeMeter = {
 	resource: ComputeOverageWarningResource
 	label: string
+	whatCounts: string
+	howToReduce: string
 	current: number
 	include: number
 	percentOfLimit: number

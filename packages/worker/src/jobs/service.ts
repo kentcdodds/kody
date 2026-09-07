@@ -48,6 +48,7 @@ import {
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import {
+	isComputeOverageLimitError,
 	isEntitlementLimitError,
 	JobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
@@ -1353,7 +1354,10 @@ export async function executeJobOnce(input: {
 				// Still return an error outcome so schedules advance, but do
 				// not emit job_run usage or else every post-limit tick
 				// inflates rollups while the UserMeter counter stays capped.
-				if (!isEntitlementLimitError(error)) {
+				if (
+					!isEntitlementLimitError(error) &&
+					!isComputeOverageLimitError(error)
+				) {
 					completedOccurrence = true
 				}
 			} finally {

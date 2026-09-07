@@ -9,6 +9,7 @@ import {
 import { retrieverOutboundFetchDeniedMessage } from '#mcp/fetch-gateway.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import {
+	ComputeOverageLimitError,
 	EntitlementLimitError,
 	JobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
@@ -1553,6 +1554,40 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			limit: 3,
 			current: 3,
 			upgradeHint: 'Remove an old package or upgrade your plan.',
+		},
+	})
+
+	const computeOverageError = new ComputeOverageLimitError({
+		resource: 'unique_worker_days',
+		plan: 'free',
+		limit: 50,
+		current: 60,
+		disposition: 'soft_block',
+	})
+	expect(getExecutionErrorDetails(computeOverageError)).toMatchObject({
+		kind: 'compute_overage_include_reached',
+		nextStep: expect.stringMatching(/Keep package code stable/),
+		details: {
+			code: 'compute_overage_include_reached',
+			resource: 'unique_worker_days',
+			plan: 'free',
+			limit: 50,
+			current: 60,
+			disposition: 'soft_block',
+		},
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: 'unique_worker_days',
+		},
+	})
+	expect(computeOverageError.message).toMatch(/Dynamic Worker isolates/)
+	expect(
+		getExecutionErrorDetails(new Error(computeOverageError.message)),
+	).toMatchObject({
+		kind: 'compute_overage_include_reached',
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: 'unique_worker_days',
 		},
 	})
 

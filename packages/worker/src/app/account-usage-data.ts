@@ -1,23 +1,16 @@
-import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	computeMonthlyOverage,
-	computeOverageBillingPolicy,
-	computeOverageIncludePercent,
-	computeOverageWarningResourceLabels,
-	resolveComputeOverageDisposition,
-} from '#universal/compute-overage.ts'
 import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
 	parseStripePlanName,
 	resolveEffectivePlan,
 } from '#universal/plans.ts'
-import { isComputeOverageChargingEnabled } from '#worker/billing/compute-overage-charging.ts'
-import { readMonthlyComputeUsage } from '#worker/billing/compute-overage-usage.ts'
+import {
+	computeOverageUsageWarningRows,
+	readAccountComputeOverage,
+} from '#worker/billing/compute-overage-account.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
-	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 } from '#universal/loader-data.ts'
@@ -63,8 +56,8 @@ export async function loadAccountUsageData(input: {
 			ladder,
 			now,
 		}),
-		loadAccountComputeOverage({
-			env: input.env,
+		readAccountComputeOverage({
+			db: input.env.APP_DB,
 			userId: row.id,
 			stableUserId: usageUserId,
 			plan,
@@ -81,84 +74,26 @@ export async function loadAccountUsageData(input: {
 		stripePlan: parseStripePlanName(row.stripe_plan),
 		today: snapshot.today,
 		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
-		warnings: snapshot.warnings.map(toAccountUsageRow),
+		warnings: [
+			...computeOverageUsageWarningRows(computeOverage).map(toAccountUsageRow),
+			...snapshot.warnings.map(toAccountUsageRow),
+		],
 		computeOverage,
 	}
 }
 
-async function loadAccountComputeOverage(input: {
-	env: Env
-	userId: number
-	stableUserId: string
-	plan: ReturnType<typeof resolveEffectivePlan>
-	ladder: ReturnType<typeof parseEntitlementLadder>
-	hasStripeCustomer: boolean
-	now: Date
-}): Promise<AccountUsageComputeOverage> {
-	const month = utcMonthKey(input.now)
-	const [usage, chargingEnabled] = await Promise.all([
-		readMonthlyComputeUsage({
-			db: input.env.APP_DB,
-			stableUserId: input.stableUserId,
-			month,
-		}),
-		isComputeOverageChargingEnabled(input.env.APP_DB, input.userId),
-	])
-	const overage = computeMonthlyOverage({
-		plan: input.plan,
-		ladder: input.ladder,
-		uniqueWorkerDays: usage.uniqueWorkerDays,
-		durableObjectRowsRead: usage.durableObjectRowsRead,
-	})
-	const uniqueWorkerDayPercent =
-		computeOverageIncludePercent(
-			usage.uniqueWorkerDays,
-			overage.includedUniqueWorkerDays,
-		) ?? 0
-	const durableObjectRowsReadPercent =
-		computeOverageIncludePercent(
-			usage.durableObjectRowsRead,
-			overage.includedDurableObjectRowsRead,
-		) ?? 0
-	return {
-		meters: [
-			{
-				resource: 'unique_worker_days',
-				label: computeOverageWarningResourceLabels.unique_worker_days,
-				current: usage.uniqueWorkerDays,
-				include: overage.includedUniqueWorkerDays,
-				percentOfLimit: uniqueWorkerDayPercent,
-				overEightyPercent: uniqueWorkerDayPercent >= 0.8,
-			},
-			{
-				resource: 'durable_object_rows_read',
-				label: computeOverageWarningResourceLabels.durable_object_rows_read,
-				current: usage.durableObjectRowsRead,
-				include: overage.includedDurableObjectRowsRead,
-				percentOfLimit: durableObjectRowsReadPercent,
-				overEightyPercent: durableObjectRowsReadPercent >= 0.8,
-			},
-		],
-		disposition: resolveComputeOverageDisposition({
-			plan: input.plan,
-			ladder: input.ladder,
-			overage,
-			hasStripeCustomer: input.hasStripeCustomer,
-			chargingEnabled,
-			policy: computeOverageBillingPolicy,
-		}),
-		totalCents: overage.totalCents,
-		chargingEnabled,
-		hasStripeCustomer: input.hasStripeCustomer,
-		legacyUnbilled: overage.legacyUnbilled,
-	}
-}
-
-function toAccountUsageRow(
-	row: Awaited<
-		ReturnType<typeof readEntitlementUsageSnapshot>
-	>['resources'][number],
-): AccountUsageEntitlementConsumption {
+function toAccountUsageRow(row: {
+	resource: string
+	label: string
+	group: AccountUsageEntitlementConsumption['group']
+	kind: AccountUsageEntitlementConsumption['kind']
+	whatCounts: string
+	howToReduce: string
+	current: number
+	limit: number
+	percentOfLimit: number | null
+	overEightyPercent: boolean
+}): AccountUsageEntitlementConsumption {
 	return {
 		resource: row.resource,
 		label: row.label,

@@ -288,10 +288,14 @@ test('unpaid Free over compute includes is a soft-block, not a charge', async ()
 	expect(data?.computeOverage.disposition).toBe('soft_block')
 	expect(data?.computeOverage.hasStripeCustomer).toBe(false)
 	expect(data?.computeOverage.totalCents).toBeGreaterThan(0)
+	const uniqueWorkerDays = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
+	expect(uniqueWorkerDays?.whatCounts).toMatch(/Dynamic Worker isolates/)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(/payment method/)
 	expect(
-		data?.computeOverage.meters.find(
-			(meter) => meter.resource === 'unique_worker_days',
-		)?.overEightyPercent,
+		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
 })
 
@@ -313,4 +317,39 @@ test('legacy Standard over compute includes stays unbilled', async () => {
 	})
 	expect(data?.computeOverage.legacyUnbilled).toBe(true)
 	expect(data?.computeOverage.disposition).toBe('skip_legacy')
+	const uniqueWorkerDays = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
+	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
+	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
+})
+
+test('legacy Standard approaching compute include stays unbilled copy', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const { db } = createUsageTestDb({
+		userId: 23,
+		email: 'usage-legacy-approaching@example.com',
+		plan: 'standard',
+		stripePlan: 'standard',
+		entitlementLadder: 'legacy',
+		stripeCustomerId: 'cus_legacy_approaching',
+		uniqueWorkerDays: 280,
+	})
+	const data = await loadAccountUsageData({
+		env: withUsageEnv({ APP_DB: db }) as Env,
+		userId: 23,
+		now,
+	})
+	expect(data?.computeOverage.legacyUnbilled).toBe(true)
+	expect(data?.computeOverage.disposition).toBe('skip_zero')
+	const uniqueWorkerDays = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(uniqueWorkerDays?.current).toBe(280)
+	expect(uniqueWorkerDays?.include).toBe(350)
+	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
+	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
+	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
 })

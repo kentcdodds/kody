@@ -165,7 +165,9 @@ Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
 every sandbox surface that creates a worker.
 `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included allotment shown
 on `/pricing`. It is not in `entitlementResources` and does not replace the hard
-daily `execute` / `job_run` caps. Customer-facing monthly overage is unique
+daily `execute` / `job_run` caps. `usageGet` and the account usage UI report
+this meter (and Durable Object rows-read) with `whatCounts` / `howToReduce` so
+the include is self-explanatory. Customer-facing monthly overage is unique
 worker days plus Durable Object rows-read, billed on the public ladder at
 `computeOverageRatesUsd` when `compute-overage-charging` is on. Unpaid Free is a
 soft-block, not a charge. Amounts below Stripe's $0.50 USD minimum are not

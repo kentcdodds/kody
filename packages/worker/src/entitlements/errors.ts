@@ -1,4 +1,11 @@
 import {
+	buildComputeOverageHowToReduce,
+	computeOverageResourceVisibility,
+	computeOverageWarningResourceLabels,
+	type ComputeOverageDisposition,
+	type ComputeOverageWarningResource,
+} from '#universal/compute-overage.ts'
+import {
 	entitlementResourceLabels,
 	formatMinJobInterval,
 	parsePlanName,
@@ -157,6 +164,123 @@ function parseFormattedMinJobInterval(interval: string) {
 		return value
 	}
 	return null
+}
+
+export const computeOverageLimitErrorCode =
+	'compute_overage_include_reached' as const
+
+export type ComputeOverageLimitErrorDetails = {
+	code: typeof computeOverageLimitErrorCode
+	resource: ComputeOverageWarningResource
+	plan: PlanName
+	limit: number
+	current: number
+	whatCounts: string
+	upgradeHint: string
+	disposition: ComputeOverageDisposition
+}
+
+export function buildComputeOverageUpgradeHint(
+	resource: ComputeOverageWarningResource,
+	disposition?: ComputeOverageDisposition | null,
+) {
+	return buildComputeOverageHowToReduce(resource, disposition)
+}
+
+/**
+ * User-facing denial when an unpaid Free account is over a monthly
+ * compute include (soft-block). Paid public-ladder overage invoices
+ * instead; legacy is not cut. Enforcement points must not compose
+ * their own messages.
+ */
+export function buildComputeOverageLimitMessage(
+	details: ComputeOverageLimitErrorDetails,
+) {
+	const label = computeOverageWarningResourceLabels[details.resource]
+	return `Monthly compute include reached: your "${details.plan}" plan includes at most ${details.limit} ${label} this UTC month and you currently have ${details.current}. ${details.whatCounts} ${details.upgradeHint}`
+}
+
+export function parseComputeOverageLimitMessage(
+	message: string,
+): ComputeOverageLimitErrorDetails | null {
+	for (const [resource, label] of Object.entries(
+		computeOverageWarningResourceLabels,
+	) as Array<[ComputeOverageWarningResource, string]>) {
+		const match = new RegExp(
+			`^Monthly compute include reached: your "([^"]+)" plan includes at most (\\d+) ${escapeRegex(label)} this UTC month and you currently have (\\d+)\\. (.+)$`,
+		).exec(message)
+		if (!match) continue
+
+		const plan = parsePlanName(match[1])
+		if (!plan) return null
+		const limit = Number(match[2])
+		const current = Number(match[3])
+		if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(current)) {
+			return null
+		}
+		const rest = match[4] ?? ''
+		const whatCounts = computeOverageResourceVisibility[resource].whatCounts
+		const upgradeHint = rest.startsWith(whatCounts)
+			? rest.slice(whatCounts.length).trim()
+			: rest
+		return {
+			code: computeOverageLimitErrorCode,
+			resource,
+			plan,
+			limit,
+			current,
+			whatCounts,
+			upgradeHint,
+			disposition: 'soft_block',
+		}
+	}
+	return null
+}
+
+export class ComputeOverageLimitError extends Error {
+	readonly details: ComputeOverageLimitErrorDetails
+
+	constructor(
+		details: Omit<
+			ComputeOverageLimitErrorDetails,
+			'code' | 'whatCounts' | 'upgradeHint'
+		> & {
+			whatCounts?: string
+			upgradeHint?: string
+		},
+	) {
+		const fullDetails: ComputeOverageLimitErrorDetails = {
+			code: computeOverageLimitErrorCode,
+			resource: details.resource,
+			plan: details.plan,
+			limit: details.limit,
+			current: details.current,
+			whatCounts:
+				details.whatCounts ??
+				computeOverageResourceVisibility[details.resource].whatCounts,
+			upgradeHint:
+				details.upgradeHint ??
+				buildComputeOverageUpgradeHint(details.resource, details.disposition),
+			disposition: details.disposition,
+		}
+		super(buildComputeOverageLimitMessage(fullDetails))
+		this.name = 'ComputeOverageLimitError'
+		this.details = fullDetails
+	}
+}
+
+export function isComputeOverageLimitError(
+	error: unknown,
+): error is ComputeOverageLimitError {
+	return (
+		error instanceof ComputeOverageLimitError ||
+		(error instanceof Error &&
+			'details' in error &&
+			typeof error.details === 'object' &&
+			error.details !== null &&
+			'code' in error.details &&
+			error.details.code === computeOverageLimitErrorCode)
+	)
 }
 
 export class JobIntervalFloorError extends Error {

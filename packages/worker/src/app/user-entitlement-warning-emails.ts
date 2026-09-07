@@ -9,7 +9,9 @@ import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consu
 import { readMonthlyComputeUsage } from '#worker/billing/compute-overage-usage.ts'
 import {
 	computeMonthlyOverage,
+	buildComputeOverageHowToReduce,
 	computeOverageIncludePercent,
+	computeOverageResourceVisibility,
 	computeOverageWarningResourceLabels,
 	computeOverageWarningResources,
 	type ComputeOverageWarningResource,
@@ -79,6 +81,8 @@ type WarningResource = {
 	current: number
 	limit: number
 	percentOfLimit: number
+	whatCounts?: string
+	howToReduce?: string
 }
 
 export type UserEntitlementWarningEmailResult =
@@ -226,6 +230,12 @@ async function warnOneUserIfNeeded(input: {
 			current: item.current,
 			limit: item.limit,
 			percentOfLimit: item.percentOfLimit,
+			...('whatCounts' in item && item.whatCounts
+				? { whatCounts: item.whatCounts }
+				: {}),
+			...('howToReduce' in item && item.howToReduce
+				? { howToReduce: item.howToReduce }
+				: {}),
 		}
 		if (item.percentOfLimit >= userEntitlementReachedThreshold) {
 			reached.push(warning)
@@ -667,12 +677,18 @@ async function readComputeOverageWarnings(input: {
 	return computeOverageWarningResources.map((resource) => {
 		const current = currentByResource[resource]
 		const limit = includeByResource[resource]
+		const percentOfLimit = computeOverageIncludePercent(current, limit) ?? 0
 		return {
 			resource,
 			label: computeOverageWarningResourceLabels[resource],
 			current,
 			limit,
-			percentOfLimit: computeOverageIncludePercent(current, limit) ?? 0,
+			percentOfLimit,
+			whatCounts: computeOverageResourceVisibility[resource].whatCounts,
+			howToReduce: buildComputeOverageHowToReduce(
+				resource,
+				overage.legacyUnbilled ? 'skip_legacy' : 'skip_zero',
+			),
 		}
 	})
 }

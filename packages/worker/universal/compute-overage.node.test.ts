@@ -1,8 +1,10 @@
 import { expect, test } from 'vitest'
 import {
+	buildComputeOverageHowToReduce,
 	computeMonthlyOverage,
 	computeOverageBillingPolicy,
 	computeOverageIncludePercent,
+	computeOverageResourceVisibility,
 	previousUtcMonthKey,
 	resolveComputeOverageDisposition,
 	type ComputeOverageDisposition,
@@ -252,6 +254,23 @@ test('public policy invoices paid customers, soft-blocks unpaid Free, and never 
 	for (const [label, input, expected] of cases) {
 		expect(resolveComputeOverageDisposition(input), label).toBe(expected)
 	}
+})
+
+test('unique worker days visibility explains the meter and next step', () => {
+	const visibility = computeOverageResourceVisibility.unique_worker_days
+	expect(visibility.whatCounts).toMatch(/Dynamic Worker isolates/)
+	expect(visibility.whatCounts).toMatch(/UTC day/)
+	expect(visibility.howToReduce).toMatch(/Keep package code stable/)
+	expect(visibility.howToReduce).toMatch(/saved packages or jobs/)
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'soft_block'),
+	).toMatch(/add a payment method/)
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'invoice'),
+	).toMatch(/\$0\.0025 per unique worker day/)
+	expect(
+		buildComputeOverageHowToReduce('unique_worker_days', 'skip_legacy'),
+	).toMatch(/not billed/)
 })
 
 test('previousUtcMonthKey walks across year boundaries', () => {

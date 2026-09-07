@@ -732,7 +732,9 @@ test('compute include crossings mail for public and legacy without charging copy
 	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		text: string
 	}
-	expect(payload.text).toContain('unique worker-days')
+	expect(payload.text).toContain('Unique worker days')
+	expect(payload.text).toContain('Dynamic Worker isolates')
+	expect(payload.text).toContain('Keep package code stable')
 	expect(
 		store.get(
 			userEntitlementWarningKvKey({
