@@ -251,6 +251,19 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(connectedLine).toContain('data-mark-size="inline"')
 	expect(connectedLine).not.toContain('width="28"')
 	expect(connectedLine).not.toContain('height="28"')
+	const markClass = connectedLine?.match(
+		/data-mark-size="inline" class="([^"]+)"/,
+	)?.[1]
+	expect(markClass).toBeTruthy()
+	const markCss = labeled.match(
+		new RegExp(`data-rmx-style="${markClass}"[\\s\\S]*?</style>`),
+	)?.[0]
+	expect(markCss).toContain('display: inline-block')
+	expect(markCss).toContain('width: 1cap')
+	expect(markCss).toContain('height: 1cap')
+	expect(markCss).toContain('vertical-align: baseline')
+	expect(markCss).not.toContain('inline-flex')
+	expect(markCss).not.toContain('inline-grid')
 	expect(labeled).toContain('data-greyed-reason="same-ecosystem"')
 	expect(labeled).toContain('data-greyed-reason="connected"')
 	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')
