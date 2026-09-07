@@ -1,10 +1,12 @@
 import { expect, test } from 'vitest'
 import { planLimits } from '#universal/plans.ts'
 import {
+	ComputeOverageLimitError,
 	EntitlementLimitError,
 	JobIntervalFloorError,
 	buildEntitlementUpgradeHint,
 	buildJobIntervalFloorUpgradeHint,
+	computeOverageLimitErrorCode,
 	entitlementLimitErrorCode,
 	jobIntervalFloorErrorCode,
 } from '#worker/entitlements/errors.ts'
@@ -92,6 +94,37 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		upgradeHint: buildJobIntervalFloorUpgradeHint(),
 		minIntervalMs: intervalMs,
 	})
+	const computeDenial = new ComputeOverageLimitError({
+		resource: 'unique_worker_days',
+		plan: 'free',
+		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		disposition: 'soft_block',
+	})
+	expect(toMcpEntitlementMetadata(computeDenial)).toEqual({
+		code: computeOverageLimitErrorCode,
+		resource: 'unique_worker_days',
+		plan: 'free',
+		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		whatCounts: computeDenial.details.whatCounts,
+		upgradeHint: computeDenial.details.upgradeHint,
+		disposition: 'soft_block',
+	})
+	expect(computeDenial.message).toMatch(/Dynamic Worker isolates/)
+	expect(computeDenial.message).toMatch(/Keep package code stable/)
+	expect(computeDenial.message).toMatch(/payment method/)
+	expect(toMcpEntitlementMetadata(new Error(computeDenial.message))).toEqual({
+		code: computeOverageLimitErrorCode,
+		resource: 'unique_worker_days',
+		plan: 'free',
+		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		whatCounts: computeDenial.details.whatCounts,
+		upgradeHint: computeDenial.details.upgradeHint,
+		disposition: 'soft_block',
+	})
+
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()
 	expect(entitlementStructuredContent(new Error('Boom'))).toEqual({})
 })

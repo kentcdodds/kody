@@ -45,12 +45,13 @@ const billingPath = '/account/billing'
 
 const entitlementGroupOrder: Array<
 	AccountUsageEntitlementConsumption['group']
-> = ['daily', 'counts', 'storage', 'limits']
+> = ['monthly', 'daily', 'counts', 'storage', 'limits']
 
 const entitlementGroupLabels: Record<
 	AccountUsageEntitlementConsumption['group'],
 	string
 > = {
+	monthly: 'Monthly compute',
 	daily: 'Daily rates',
 	counts: 'Resource counts',
 	storage: 'Storage',
@@ -60,6 +61,8 @@ const entitlementGroupLabels: Record<
 const entitlementGroupNotes: Partial<
 	Record<AccountUsageEntitlementConsumption['group'], string>
 > = {
+	monthly:
+		'Included unique worker days and Durable Object rows-read this UTC month.',
 	daily: 'Counters reset at UTC midnight.',
 }
 
@@ -392,7 +395,28 @@ export function AccountUsageRoute(handle: Handle) {
 								rows={usage.computeOverage.meters.map((item) => ({
 									id: item.resource,
 									cells: {
-										resource: item.label,
+										resource: (
+											<span mix={css({ display: 'grid', gap: spacing.xs })}>
+												<span
+													mix={css({
+														fontWeight: typography.fontWeight.medium,
+														color: colors.text,
+													})}
+												>
+													{item.label}
+												</span>
+												<span
+													mix={css({
+														fontSize: typography.fontSize.sm,
+														color: colors.textMuted,
+														lineHeight: 1.4,
+														whiteSpace: 'normal',
+													})}
+												>
+													{item.whatCounts} {item.howToReduce}
+												</span>
+											</span>
+										),
 										current: formatIntegerNumber(item.current),
 										include: formatIntegerNumber(item.include),
 										used: (

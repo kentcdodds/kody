@@ -92,11 +92,18 @@ export function buildUserEntitlementWarningEmail(input: {
 		current: number
 		limit: number
 		percentOfLimit: number
+		whatCounts?: string
+		howToReduce?: string
 	}>
 }) {
 	const lines = input.warnings.map((warning) => {
 		const percent = Math.round(warning.percentOfLimit * 100)
-		return `${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`
+		const counts = [
+			`${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`,
+			warning.whatCounts,
+			warning.howToReduce,
+		].filter((part): part is string => Boolean(part && part.trim()))
+		return counts.join(' ')
 	})
 	const copy = entitlementWarningCopy(input.kind)
 	return renderTransactionalEmail({

@@ -288,10 +288,14 @@ test('unpaid Free over compute includes is a soft-block, not a charge', async ()
 	expect(data?.computeOverage.disposition).toBe('soft_block')
 	expect(data?.computeOverage.hasStripeCustomer).toBe(false)
 	expect(data?.computeOverage.totalCents).toBeGreaterThan(0)
+	const uniqueWorkerDays = data?.computeOverage.meters.find(
+		(meter) => meter.resource === 'unique_worker_days',
+	)
+	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
+	expect(uniqueWorkerDays?.whatCounts).toMatch(/Dynamic Worker isolates/)
+	expect(uniqueWorkerDays?.howToReduce).toMatch(/payment method/)
 	expect(
-		data?.computeOverage.meters.find(
-			(meter) => meter.resource === 'unique_worker_days',
-		)?.overEightyPercent,
+		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
 })
 

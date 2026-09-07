@@ -3,7 +3,10 @@ import { type ErrorEvent, type EventHint } from '@sentry/core'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isCimdUnknownClientSentryMessage } from './oauth-cimd-error.ts'
-import { isEntitlementLimitError } from './entitlements/errors.ts'
+import {
+	isComputeOverageLimitError,
+	isEntitlementLimitError,
+} from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
 import { isUserCodeError } from './user-code-error.ts'
@@ -48,13 +51,18 @@ export function isEntitlementLimitErrorSentryEvent(
 	hint?: EventHint,
 ) {
 	if (
-		getErrorCauseChain(hint?.originalException).some(isEntitlementLimitError)
+		getErrorCauseChain(hint?.originalException).some(
+			(error) =>
+				isEntitlementLimitError(error) || isComputeOverageLimitError(error),
+		)
 	) {
 		return true
 	}
 	return (
 		event.exception?.values?.some(
-			(value) => value.type === 'EntitlementLimitError',
+			(value) =>
+				value.type === 'EntitlementLimitError' ||
+				value.type === 'ComputeOverageLimitError',
 		) ?? false
 	)
 }

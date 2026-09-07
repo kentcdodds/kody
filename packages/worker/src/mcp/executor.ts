@@ -38,10 +38,13 @@ import {
 } from '#mcp/secrets/errors.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import {
+	isComputeOverageLimitError,
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
+	parseComputeOverageLimitMessage,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
+	type ComputeOverageLimitErrorDetails,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import { buildIntegrationReconnectHref } from '#universal/connection-trouble.ts'
@@ -1194,6 +1197,16 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'compute_overage_include_reached'
+			message: string
+			nextStep: string
+			details: ComputeOverageLimitErrorDetails
+			suggestedAction: {
+				type: 'review_plan_limit'
+				resource: ComputeOverageLimitErrorDetails['resource']
+			}
+	  }
+	| {
 			kind: 'job_interval_floor'
 			message: string
 			nextStep: string
@@ -1291,6 +1304,10 @@ export function getExecutionErrorDetails(
 		return toEntitlementExecutionErrorDetails(message, error.details)
 	}
 
+	if (isComputeOverageLimitError(error)) {
+		return toComputeOverageExecutionErrorDetails(message, error.details)
+	}
+
 	if (isJobIntervalFloorError(error)) {
 		return {
 			kind: 'job_interval_floor',
@@ -1306,6 +1323,11 @@ export function getExecutionErrorDetails(
 	const entitlementDetails = parseEntitlementLimitMessage(message)
 	if (entitlementDetails) {
 		return toEntitlementExecutionErrorDetails(message, entitlementDetails)
+	}
+
+	const computeDetails = parseComputeOverageLimitMessage(message)
+	if (computeDetails) {
+		return toComputeOverageExecutionErrorDetails(message, computeDetails)
 	}
 
 	const intervalDetails = parseJobIntervalFloorMessage(message)
@@ -1650,6 +1672,22 @@ function toEntitlementExecutionErrorDetails(
 		kind: 'entitlement_limit_exceeded',
 		message,
 		nextStep: details.upgradeHint,
+		details,
+		suggestedAction: {
+			type: 'review_plan_limit',
+			resource: details.resource,
+		},
+	}
+}
+
+function toComputeOverageExecutionErrorDetails(
+	message: string,
+	details: ComputeOverageLimitErrorDetails,
+): ExecutionErrorDetails {
+	return {
+		kind: 'compute_overage_include_reached',
+		message,
+		nextStep: `${details.whatCounts} ${details.upgradeHint}`,
 		details,
 		suggestedAction: {
 			type: 'review_plan_limit',

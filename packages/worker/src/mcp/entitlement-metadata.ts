@@ -1,11 +1,15 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	computeOverageLimitErrorCode,
 	entitlementLimitErrorCode,
+	isComputeOverageLimitError,
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 	jobIntervalFloorErrorCode,
+	parseComputeOverageLimitMessage,
 	parseEntitlementLimitMessage,
 	parseJobIntervalFloorMessage,
+	type ComputeOverageLimitErrorDetails,
 	type EntitlementLimitErrorDetails,
 	type JobIntervalFloorErrorDetails,
 } from '#worker/entitlements/errors.ts'
@@ -34,12 +38,25 @@ export type McpEntitlementMetadata =
 			upgradeHint: string
 			minIntervalMs: number
 	  }
+	| {
+			code: typeof computeOverageLimitErrorCode
+			resource: ComputeOverageLimitErrorDetails['resource']
+			plan: ComputeOverageLimitErrorDetails['plan']
+			limit: number
+			current: number
+			whatCounts: string
+			upgradeHint: string
+			disposition: ComputeOverageLimitErrorDetails['disposition']
+	  }
 
 export function toMcpEntitlementMetadata(
 	error: unknown,
 ): McpEntitlementMetadata | undefined {
 	if (isEntitlementLimitError(error)) {
 		return toEntitlementLimitMetadata(error.details)
+	}
+	if (isComputeOverageLimitError(error)) {
+		return toComputeOverageLimitMetadata(error.details)
 	}
 	if (isJobIntervalFloorError(error)) {
 		return toJobIntervalMetadata(error.details)
@@ -48,6 +65,8 @@ export function toMcpEntitlementMetadata(
 	const message = getErrorMessage(error)
 	const entitlementDetails = parseEntitlementLimitMessage(message)
 	if (entitlementDetails) return toEntitlementLimitMetadata(entitlementDetails)
+	const computeDetails = parseComputeOverageLimitMessage(message)
+	if (computeDetails) return toComputeOverageLimitMetadata(computeDetails)
 	const intervalDetails = parseJobIntervalFloorMessage(message)
 	if (intervalDetails) return toJobIntervalMetadata(intervalDetails)
 	return undefined
@@ -79,6 +98,21 @@ function toEntitlementLimitMetadata(
 		...metadata,
 		used: details.current,
 		remaining: Math.max(0, details.limit - details.current),
+	}
+}
+
+function toComputeOverageLimitMetadata(
+	details: ComputeOverageLimitErrorDetails,
+): McpEntitlementMetadata {
+	return {
+		code: computeOverageLimitErrorCode,
+		resource: details.resource,
+		plan: details.plan,
+		limit: details.limit,
+		current: details.current,
+		whatCounts: details.whatCounts,
+		upgradeHint: details.upgradeHint,
+		disposition: details.disposition,
 	}
 }
 

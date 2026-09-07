@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { EntitlementLimitError } from './entitlements/errors.ts'
+import {
+	ComputeOverageLimitError,
+	EntitlementLimitError,
+} from './entitlements/errors.ts'
 import { isUserCodeError, UserCodeError } from './user-code-error.ts'
 import {
 	cloudflareArtifactsOpaqueInternalErrorMessage,
@@ -453,6 +456,29 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		}),
 	).toBeNull()
 	expect(filterSentryEvent(entitlementEvent)).toBeNull()
+	const computeOverageError = new ComputeOverageLimitError({
+		resource: 'unique_worker_days',
+		plan: 'free',
+		limit: 50,
+		current: 60,
+		disposition: 'soft_block',
+	})
+	const computeOverageEvent = {
+		exception: {
+			values: [
+				{
+					type: 'ComputeOverageLimitError',
+					value: computeOverageError.message,
+				},
+			],
+		},
+	}
+	expect(
+		filterSentryEvent(computeOverageEvent, {
+			originalException: computeOverageError,
+		}),
+	).toBeNull()
+	expect(filterSentryEvent(computeOverageEvent)).toBeNull()
 	expect(
 		filterSentryEvent(
 			{

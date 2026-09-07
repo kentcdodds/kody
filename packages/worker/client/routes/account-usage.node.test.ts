@@ -12,7 +12,9 @@ function overage(
 		meters: [
 			{
 				resource: 'unique_worker_days',
-				label: 'unique worker-days',
+				label: 'Unique worker days',
+				whatCounts: 'Counts distinct Dynamic Worker isolates.',
+				howToReduce: 'Keep package code stable.',
 				current: 45,
 				include: 50,
 				percentOfLimit,

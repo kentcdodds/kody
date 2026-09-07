@@ -3,6 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
+	isComputeOverageLimitError,
 	isEntitlementLimitError,
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
@@ -110,6 +111,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (payload.callerError) return true
 	if (isUserCodeError(cause)) return true
 	if (getErrorCauseChain(cause).some(isEntitlementLimitError)) return true
+	if (getErrorCauseChain(cause).some(isComputeOverageLimitError)) return true
 	if (getErrorCauseChain(cause).some(isJobIntervalFloorError)) return true
 	// Community preconditions (rate before fork, self-rate, banned, …) are
 	// caller-clearable; keep them on mcp-event and out of Sentry.
