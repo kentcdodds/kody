@@ -11,7 +11,7 @@ import {
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
 	onboardingConnectedAgentLabelsLine,
-	onboardingSecondAgentConnectedLabel,
+	onboardingSecondAgentConnectedStatusLabel,
 	portabilityGuideHref,
 	onboardingSearchStartedLabel,
 	onboardingSearchWaitingLabel,
@@ -183,6 +183,7 @@ export function renderSecondAgentPanel(
 		entrance: MixValue
 		loggedIn: boolean
 		hasSecondMcpClient: boolean
+		secondAgentGiftActive?: boolean
 		connectedAgents?: ReadonlyArray<{ label: string }>
 		firstAgent: McpClientKind | null
 		selectedAgent: McpClientKind | null
@@ -247,7 +248,9 @@ export function renderSecondAgentPanel(
 					props.selectedAgent,
 					props.search ?? '',
 				),
-				connectedLabel: onboardingSecondAgentConnectedLabel,
+				connectedLabel: onboardingSecondAgentConnectedStatusLabel(
+					props.secondAgentGiftActive === true,
+				),
 			})}
 			{connectedLabels ? (
 				<p mix={css(panelLedeCss)} data-testid="onboarding-connected-agents">

@@ -1,4 +1,5 @@
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
 	type OnboardingChecklistLoaderData,
@@ -26,6 +27,7 @@ export type OnboardingPayload = {
 	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
 	connectedAgents: Array<ConnectedMcpAgent>
+	secondAgentStandardGift: SecondAgentStandardGiftState
 	emailVerified: boolean
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>

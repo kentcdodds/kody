@@ -11,6 +11,7 @@ import {
 	loadInboundMcpConnectionState,
 	revokeConnectedMcpAgent,
 } from '#worker/connected-mcp-agents.ts'
+import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import {
 	type OAuthGrantHelpers,
@@ -25,6 +26,12 @@ export async function loadAccountConnectedAgentsData(input: {
 }): Promise<AccountConnectedAgentsLoaderData> {
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
 	const state = await loadInboundMcpConnectionState(helpers, input.stableUserId)
+	await maybeEvaluateSecondAgentStandardGift({
+		db: input.env.APP_DB,
+		stableUserId: input.stableUserId,
+		uniqueClientCount: state.uniqueClientCount,
+		listingFailed: state.listingFailed,
+	})
 	return {
 		ok: true,
 		agents: state.agents,

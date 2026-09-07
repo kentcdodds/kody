@@ -16,6 +16,10 @@ import {
 	onboardingPortabilityProofPrompt,
 	onboardingSearchStartedLabel,
 	onboardingSecondAgentHref,
+	onboardingSecondAgentConnectedGiftLabel,
+	onboardingSecondAgentConnectedLabel,
+	onboardingSecondAgentConnectedStatusLabel,
+	onboardingSecondAgentGiftAdvertise,
 	onboardingSecondAgentLede,
 	onboardingStep2Prompt,
 	onboardingWizardStepHref,
@@ -181,6 +185,18 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 		]),
 	).toBe('Connected: Cursor and Claude Desktop')
 	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
+	expect(onboardingSecondAgentLede).toContain(
+		onboardingSecondAgentGiftAdvertise,
+	)
+	expect(onboardingSecondAgentConnectedStatusLabel(false)).toBe(
+		onboardingSecondAgentConnectedLabel,
+	)
+	expect(onboardingSecondAgentConnectedStatusLabel(true)).toBe(
+		onboardingSecondAgentConnectedGiftLabel,
+	)
+	expect(onboardingSecondAgentConnectedLabel).not.toContain(
+		'Standard is free for 2 weeks',
+	)
 	expect(onboardingSearchStartedLabel).toContain(
 		'started making something useful',
 	)

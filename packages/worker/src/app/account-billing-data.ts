@@ -9,9 +9,9 @@ import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
 import {
 	parseStoredPlanName,
 	parseStripePlanName,
-	resolveEffectivePlan,
 	type PlanName,
 } from '#universal/plans.ts'
+import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 
 const billingErrorMessages: Record<string, string> = {
 	billing_not_configured: 'Billing is not configured on this deployment.',
@@ -61,6 +61,7 @@ type BillingUserRow = {
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
 	stable_user_id: string
+	second_agent_standard_gift_expires_at: string | null
 }
 
 export async function loadAccountBillingData(input: {
@@ -77,7 +78,7 @@ export async function loadAccountBillingData(input: {
 
 	const row = await input.env.APP_DB.prepare(
 		`SELECT plan, stripe_plan, stripe_customer_id, stripe_plan_refreshed_at,
-		        stable_user_id
+		        stable_user_id, second_agent_standard_gift_expires_at
 		 FROM users
 		 WHERE id = ?`,
 	)
@@ -135,7 +136,12 @@ export async function loadAccountBillingData(input: {
 		manualPlan,
 		stripePlan,
 		stripeInterval,
-		effectivePlan: resolveEffectivePlan(manualPlan, stripePlan),
+		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
+			manualPlan,
+			stripePlan,
+			row?.second_agent_standard_gift_expires_at,
+			now,
+		),
 		hasStripeCustomer,
 		cancelAt,
 		subscriptionStatus,

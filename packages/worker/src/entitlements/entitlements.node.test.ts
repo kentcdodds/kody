@@ -39,6 +39,7 @@ function createEntitlementsTestDb(
 			plan: string | null
 			stripe_plan?: string | null
 			entitlement_ladder?: 'public' | 'legacy' | null
+			second_agent_standard_gift_expires_at?: string | null
 			stable_user_id: string
 		}>
 		counts?: Partial<
@@ -93,6 +94,9 @@ function createEntitlementsTestDb(
 						async first<T>() {
 							if (
 								query.includes(
+									'SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at FROM users',
+								) ||
+								query.includes(
 									'SELECT plan, stripe_plan, entitlement_ladder FROM users',
 								) ||
 								query.includes('SELECT plan, stripe_plan FROM users') ||
@@ -122,6 +126,8 @@ function createEntitlementsTestDb(
 													stripe_plan: user.stripe_plan ?? null,
 													entitlement_ladder:
 														user.entitlement_ladder ?? 'public',
+													second_agent_standard_gift_expires_at:
+														user.second_agent_standard_gift_expires_at ?? null,
 												}
 											: null
 									) as T | null
@@ -139,6 +145,8 @@ function createEntitlementsTestDb(
 												plan: user.plan,
 												stripe_plan: user.stripe_plan ?? null,
 												entitlement_ladder: user.entitlement_ladder ?? 'public',
+												second_agent_standard_gift_expires_at:
+													user.second_agent_standard_gift_expires_at ?? null,
 											}
 										: null
 								) as T | null
@@ -1308,6 +1316,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	const freePlusStandardEmail = 'manual-free-stripe-standard@example.com'
 	const standardPlusProEmail = 'manual-standard-stripe-pro@example.com'
 	const unlimitedPlusProEmail = 'manual-unlimited-stripe-pro@example.com'
+	const giftEmail = 'second-agent-gift@example.com'
 	const freePlusStandardUserId = await createStableUserIdFromEmail(
 		freePlusStandardEmail,
 	)
@@ -1316,6 +1325,7 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 	const unlimitedPlusProUserId = await createStableUserIdFromEmail(
 		unlimitedPlusProEmail,
 	)
+	const giftUserId = await createStableUserIdFromEmail(giftEmail)
 	const { db } = createEntitlementsTestDb({
 		users: [
 			{
@@ -1335,6 +1345,13 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 				plan: 'max',
 				stripe_plan: 'pro',
 				stable_user_id: unlimitedPlusProUserId,
+			},
+			{
+				email: giftEmail,
+				plan: 'free',
+				stripe_plan: null,
+				second_agent_standard_gift_expires_at: '2099-01-01T00:00:00.000Z',
+				stable_user_id: giftUserId,
 			},
 		],
 	})
@@ -1357,6 +1374,12 @@ test('getUserPlan resolves effective plan from manual plan and stripe_plan', asy
 			email: unlimitedPlusProEmail,
 		}),
 	).toBe('max')
+	expect(
+		await getUserPlan(db, {
+			userId: giftUserId,
+			email: giftEmail,
+		}),
+	).toBe('standard')
 
 	expect(parseStripePlanName('standard')).toBe('standard')
 	expect(parseStripePlanName('pro')).toBe('pro')

@@ -17,7 +17,9 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
+import { describeSecondAgentStandardGift } from '#universal/second-agent-standard-gift.ts'
 import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
+import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
 import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 export {
 	buildDiscoveryPrompt,
@@ -29,6 +31,7 @@ export {
 
 type OnboardingEnv = {
 	APP_BASE_URL?: string | null
+	APP_DB?: D1Database
 	OAUTH_PROVIDER?: OAuthGrantListHelpers
 }
 
@@ -92,6 +95,7 @@ export function loadPublicOnboardingData(input: {
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		connectedAgents: [],
+		secondAgentStandardGift: describeSecondAgentStandardGift({}),
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -136,6 +140,12 @@ export async function loadOnboardingData(input: {
 		input.env.OAUTH_PROVIDER,
 		input.stableUserId,
 	)
+	const secondAgentStandardGift = await maybeEvaluateSecondAgentStandardGift({
+		db: input.env.APP_DB,
+		stableUserId: input.stableUserId,
+		uniqueClientCount: inbound.uniqueClientCount,
+		listingFailed: inbound.listingFailed,
+	})
 	const connectedAgents = toOnboardingConnectedAgents(inbound.agents)
 	const hasMcpClient = inbound.uniqueClientCount > 0
 	// Unique inbound clientIds, not raw grant count and not attribution to
@@ -181,6 +191,7 @@ export async function loadOnboardingData(input: {
 		hasSecondMcpClient,
 		hasMcpClient,
 		connectedAgents,
+		secondAgentStandardGift,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],

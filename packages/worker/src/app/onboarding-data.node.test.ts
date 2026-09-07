@@ -50,6 +50,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		connectedAgents: [],
+		secondAgentStandardGift: {
+			received: false,
+			active: false,
+			status: 'none',
+			expiresAt: null,
+			grantedAt: null,
+		},
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -90,6 +97,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		connectedAgents: [],
+		secondAgentStandardGift: {
+			received: false,
+			active: false,
+			status: 'none',
+			expiresAt: null,
+			grantedAt: null,
+		},
 		emailVerified: true,
 		needsOnboarding: true,
 		featuredListings: [],
@@ -191,6 +205,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			{ clientId: 'client-a', kind: null },
 			{ clientId: 'client-b', kind: null },
 		],
+		secondAgentStandardGift: {
+			received: false,
+			active: false,
+			status: 'none',
+			expiresAt: null,
+			grantedAt: null,
+		},
 	})
 
 	const withPagedSecondClient = await loadOnboardingData({
