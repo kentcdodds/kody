@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { isStripePaidPlan, isStrongRecentUse } from './campaign-inputs.ts'
 import {
 	campaignClientLabel,
-	isSecondAgentTrialGiftLive,
+	isPackagedSingleClientTrialCtaLive,
 } from './campaign-states.ts'
 
 test('campaign inputs treat Stripe Standard/Pro as paid and require execute depth for strong use', () => {
@@ -48,8 +48,12 @@ test('campaign inputs treat Stripe Standard/Pro as paid and require execute dept
 
 	expect(campaignClientLabel(null)).toBe('your agent')
 	expect(campaignClientLabel('Cursor')).toBe('Cursor')
-	expect(isSecondAgentTrialGiftLive({})).toBe(false)
-	expect(isSecondAgentTrialGiftLive({ SECOND_AGENT_TRIAL_GIFT: 'true' })).toBe(
-		true,
-	)
+	expect(isPackagedSingleClientTrialCtaLive({})).toBe(true)
+	expect(
+		isPackagedSingleClientTrialCtaLive({
+			grantedAt: '2026-09-01T00:00:00.000Z',
+			expiresAt: '2026-09-15T00:00:00.000Z',
+			now: new Date('2026-09-07T12:00:00.000Z'),
+		}),
+	).toBe(false)
 })

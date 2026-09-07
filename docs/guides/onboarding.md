@@ -140,6 +140,7 @@ if they have none.
 ## After something useful exists
 
 The last onboarding beat is portability. Send them to `/onboarding/step-3` to
-connect a second agent from a different ecosystem. That new agent looks up
+connect a second agent from a different ecosystem. Connecting that second agent
+unlocks Standard free for 2 weeks (once per account). That new agent looks up
 `search({ entity: "portability:guide" })` and reuses the memory, package, or ask
 you just made — one short proof. Do not restart setup.

@@ -25,7 +25,7 @@ import {
 } from '#worker/usage/campaign-ledger.ts'
 import {
 	campaignClientLabel,
-	isSecondAgentTrialGiftLive,
+	isPackagedSingleClientTrialCtaLive,
 	usageCampaignSweepConcurrency,
 	usageCampaignSweepLimit,
 	type UsageCampaignMailTemplate,
@@ -199,6 +199,8 @@ export async function listUsersForUsageCampaignSweep(
 			`SELECT u.stable_user_id, u.email, u.email_verified_at,
 			        u.first_mcp_connected_at, u.first_saved_package_at,
 			        u.first_execute_at, u.mcp_client_name, u.last_active_at,
+			        u.second_agent_standard_gift_granted_at,
+			        u.second_agent_standard_gift_expires_at,
 			        u.plan, u.stripe_plan, u.entitlement_ladder
 			 FROM users u
 			 LEFT JOIN user_usage_campaigns c ON c.user_id = u.stable_user_id
@@ -310,7 +312,11 @@ async function sendClaimedCampaignEmail(input: {
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		template,
 		clientLabel: campaignClientLabel(input.user.mcp_client_name),
-		trialGiftLive: isSecondAgentTrialGiftLive(input.env),
+		trialGiftLive: isPackagedSingleClientTrialCtaLive({
+			grantedAt: input.user.second_agent_standard_gift_granted_at,
+			expiresAt: input.user.second_agent_standard_gift_expires_at,
+			now: input.now,
+		}),
 		unsubscribe: unsubscribe?.unsubscribe,
 	})
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>

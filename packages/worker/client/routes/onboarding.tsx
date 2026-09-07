@@ -139,6 +139,7 @@ export function OnboardingRoute(handle: Handle) {
 	let hasMcpClient = false
 	let hasAccessWin = false
 	let hasSecondMcpClient = false
+	let secondAgentGiftActive = false
 	let connectedAgents: OnboardingPayload['connectedAgents'] = []
 	let accessWinMemorySubject: string | null = null
 	let persistedPackageName: string | null = null
@@ -166,6 +167,7 @@ export function OnboardingRoute(handle: Handle) {
 			source === 'snapshot'
 				? hasSecondMcpClient || payload.hasSecondMcpClient
 				: payload.hasSecondMcpClient
+		secondAgentGiftActive = payload.secondAgentStandardGift?.active === true
 		connectedAgents =
 			source === 'live' || connectedAgents.length === 0
 				? (payload.connectedAgents ?? [])
@@ -347,6 +349,7 @@ export function OnboardingRoute(handle: Handle) {
 				payload.hasMcpClient === hasMcpClient &&
 				payload.hasAccessWin === hasAccessWin &&
 				payload.hasSecondMcpClient === hasSecondMcpClient &&
+				payload.secondAgentStandardGift?.active === secondAgentGiftActive &&
 				payload.accessWinMemorySubject === accessWinMemorySubject &&
 				payload.persistedPackageName === persistedPackageName &&
 				sameConnectedAgents(payload.connectedAgents, connectedAgents)
@@ -528,6 +531,7 @@ export function OnboardingRoute(handle: Handle) {
 									onSelectStep: selectStep,
 									loggedIn,
 									hasSecondMcpClient,
+									secondAgentGiftActive,
 									connectedAgents,
 									firstAgent,
 									selectedAgent: visibleSelectedAgent,

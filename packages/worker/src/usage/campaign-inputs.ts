@@ -26,6 +26,8 @@ export type UsageCampaignCandidate = {
 	first_execute_at: string | null
 	mcp_client_name: string | null
 	last_active_at: string | null
+	second_agent_standard_gift_granted_at: string | null
+	second_agent_standard_gift_expires_at: string | null
 	plan: string
 	stripe_plan: string | null
 	entitlement_ladder: string | null

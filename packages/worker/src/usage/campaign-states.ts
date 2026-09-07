@@ -5,6 +5,8 @@
  * template from kody@kody.codes.
  */
 
+import { describeSecondAgentStandardGift } from '#universal/second-agent-standard-gift.ts'
+
 export const usageCampaignStates = [
 	'VerifiedNoMcp',
 	'ConnectedNoPackage',
@@ -103,14 +105,14 @@ export function campaignClientLabel(mcpClientName: string | null | undefined) {
 }
 
 /**
- * Second-agent trial gift lives in a follow-up PR. Until that gift is on,
- * PackagedSingleClient mail omits the trial CTA. Operators can flip the
- * env string for preview sends.
+ * PackagedSingleClient advertises the 14-day Standard gift only while the
+ * user has not yet received it. Connecting a second unique inbound client
+ * is what records the gift.
  */
-export function isSecondAgentTrialGiftLive(env: object) {
-	return (
-		'SECOND_AGENT_TRIAL_GIFT' in env &&
-		(env as { SECOND_AGENT_TRIAL_GIFT?: unknown }).SECOND_AGENT_TRIAL_GIFT ===
-			'true'
-	)
+export function isPackagedSingleClientTrialCtaLive(input: {
+	grantedAt?: string | null
+	expiresAt?: string | null
+	now?: Date
+}) {
+	return describeSecondAgentStandardGift(input).status === 'none'
 }

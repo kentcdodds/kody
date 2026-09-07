@@ -51,6 +51,13 @@ vi.mock('#app/onboarding-data.ts', () => ({
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
 		connectedAgents: [],
+		secondAgentStandardGift: {
+			received: false,
+			active: false,
+			status: 'none',
+			expiresAt: null,
+			grantedAt: null,
+		},
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],

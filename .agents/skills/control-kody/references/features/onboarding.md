@@ -2,7 +2,8 @@
 
 Three-step wizard after signup: connect an agent, make something useful (one
 prompt plus first search), then connect a second agent from a different
-ecosystem. Step 3 pastes a portability-guide prompt and, when the payload has a
+ecosystem. Step 3 advertises Standard free for 2 weeks on that second unique
+inbound client, pastes a portability-guide prompt, and, when the payload has a
 known memory subject or package name, shows a short "You made …" chip.
 
 ## How to get there
@@ -36,4 +37,6 @@ node tools/control-kody.ts preview -- \
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
 - Step 3 completion is unique inbound OAuth `clientId`s ≥ 2, not raw grant
-  count. Account → Connected agents is the labeled inbound list.
+  count. Account → Connected agents is the labeled inbound list. That first
+  cross also records the one-time 14-day Standard gift
+  (`secondAgentStandardGift` on `/onboarding.json`).

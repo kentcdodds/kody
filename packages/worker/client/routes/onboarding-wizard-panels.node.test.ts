@@ -56,6 +56,7 @@ function secondAgentPanel(selected: {
 	label: string | null
 	loggedIn?: boolean
 	hasSecondMcpClient?: boolean
+	secondAgentGiftActive?: boolean
 	search?: string
 	accessWinMemorySubject?: string | null
 	persistedPackageName?: string | null
@@ -66,6 +67,7 @@ function secondAgentPanel(selected: {
 		onSelectStep() {},
 		loggedIn: selected.loggedIn ?? true,
 		hasSecondMcpClient: selected.hasSecondMcpClient ?? false,
+		secondAgentGiftActive: selected.secondAgentGiftActive,
 		firstAgent: selected.firstAgent,
 		selectedAgent: selected.agent,
 		selectedAgentLabel: selected.label,
@@ -150,6 +152,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(picker).toContain('Connect a second agent')
+	expect(picker).toContain('Standard free for 2 weeks')
 	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
 	expect(picker).toContain('data-greyed="true"')
 	expect(picker).toContain('Same ecosystem')
@@ -202,6 +205,20 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(connected).toContain("You've connected a second agent.")
+	expect(connected).not.toContain('Standard is free for 2 weeks')
+
+	const gifted = await renderToString(
+		secondAgentPanel({
+			firstAgent: 'codex',
+			agent: 'claude-code',
+			label: 'Claude Code',
+			hasSecondMcpClient: true,
+			secondAgentGiftActive: true,
+		}),
+	)
+	expect(gifted).toContain(
+		"You've connected a second agent. Standard is free for 2 weeks.",
+	)
 
 	const labeled = await renderToString(
 		renderSecondAgentPanel({

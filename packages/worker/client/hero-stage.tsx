@@ -2,7 +2,7 @@ import { type Handle, css, ref } from 'remix/ui'
 import { heroBaseImage } from '#universal/landing-images.ts'
 
 /**
- * Layered mascot stage from the heykody.dev redesign: Kody stands still
+ * Layered mascot stage from the 2026 landing redesign: Kody stands still
  * holding the lantern while each prop drifts on its own clock, and the whole
  * field responds to the pointer with depth-weighted parallax. Used by the
  * landing hero and the login brand panel. Coordinates come straight from the

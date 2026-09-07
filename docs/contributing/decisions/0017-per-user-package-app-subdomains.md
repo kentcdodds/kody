@@ -69,8 +69,12 @@ package-app apex:
 - User-to-user browser isolation for hosted apps is complete; same-owner
   cross-package reachability remains an accepted residual risk (documented in
   [`security.md`](../security.md)).
-- Production deploys require wildcard DNS and a `*.kodyapps.dev/*` Worker route
-  (see [`setup-manifest.md`](../setup-manifest.md)).
+- Production deploys require wildcard DNS and `kody.run/*` plus `*.kody.run/*`
+  Worker routes on the runtime Worker (see
+  [`setup-manifest.md`](../setup-manifest.md)). `kodyapps.dev` is not a product
+  zone; do not attach Worker routes or submit that apex to the Public Suffix
+  List ([0044](./0044-retired-brand-domains-stay-retired.md)). PSL follow-up, if
+  any, is for `kody.run` ([`security.md`](../security.md)).
 - The one production underscore account was renamed by hand on 2026-08-12; no
   underscore usernames remain, so no rename affordances exist in the app.
 - `parsePackageSearchIdentity`, status probes, and author docs must recognize

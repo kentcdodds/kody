@@ -287,10 +287,10 @@ export function filterFathomRemoveChildNullSentryEvent<
  * non-Error rejection on the host page — with no app stack frames.
  *
  * Signature from production issue 7655189301 / KODY-CLOUDFLARE-3S (breadcrumb
- * showed an antifingerprint extension injecting into heykody.dev). Match is
- * intentionally narrow: only this Chrome "Object Not Found Matching Id…,
- * MethodName…, ParamCount…" form (optionally wrapped by Sentry's Non-Error
- * rejection preface). Never blanket-drop UnhandledRejection.
+ * showed an antifingerprint extension injecting into the then-production host
+ * heykody.dev). Match is intentionally narrow: only this Chrome "Object Not
+ * Found Matching Id…, MethodName…, ParamCount…" form (optionally wrapped by
+ * Sentry's Non-Error rejection preface). Never blanket-drop UnhandledRejection.
  */
 const chromeExtensionObjectNotFoundMessage =
 	/(?:^|\b)Object Not Found Matching Id:\d+, MethodName:\w+, ParamCount:\d+\b/
@@ -338,10 +338,11 @@ export function filterChromeExtensionObjectNotFoundSentryEvent<
  * no app stack frames (Sentry attributes the culprit to the document URL).
  *
  * Signature from production issue 7662064169 / KODY-CLOUDFLARE-4F (Chrome on
- * https://heykody.app/, zero frames, handled generic capture). Kody never uses
- * `chrome.runtime` / `browser.runtime`. Match is intentionally narrow: only
- * this exact "Could not establish connection. Receiving end does not exist"
- * wording (optional `Error:` preface). Never blanket-drop connection errors.
+ * then-production https://heykody.app/, zero frames, handled generic capture).
+ * Kody never uses `chrome.runtime` / `browser.runtime`. Match is intentionally
+ * narrow: only this exact "Could not establish connection. Receiving end does
+ * not exist" wording (optional `Error:` preface). Never blanket-drop connection
+ * errors.
  */
 const chromeExtensionReceivingEndMissingMessage =
 	/^(?:Error:\s*)?Could not establish connection\. Receiving end does not exist\.?$/
