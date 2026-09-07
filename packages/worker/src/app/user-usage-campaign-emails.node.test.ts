@@ -11,6 +11,7 @@ import {
 	upsertUsageCampaign,
 } from '#worker/usage/campaign-ledger.ts'
 import { type UsageCampaignCandidate } from '#worker/usage/campaign-inputs.ts'
+import { usageCampaignFirstSendDwellMs } from '#worker/usage/campaign-states.ts'
 
 const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
 const gatherUsageCampaignSnapshot = vi.fn()
@@ -521,9 +522,10 @@ test('opening a verify-time event row lets the sweep send after a failed first m
 	})
 	expect(await listUsageCampaignSends(db, 'user-open')).toEqual([])
 
-	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot())
+	const later = new Date(now.getTime() + usageCampaignFirstSendDwellMs)
+	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot({ now: later }))
 	sendCloudflareEmail.mockClear()
-	expect(await sendUserUsageCampaignEmails({ env, now })).toEqual({
+	expect(await sendUserUsageCampaignEmails({ env, now: later })).toEqual({
 		status: 'notified',
 		evaluatedUsers: 1,
 		emailedUsers: 1,

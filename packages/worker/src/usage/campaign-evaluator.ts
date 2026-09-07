@@ -322,9 +322,11 @@ function hasCompletedInterval(lastSentAt: string, now: Date) {
 }
 
 /**
- * Verify-time VerifiedNoMcp send 1 is due immediately: either the evaluator
- * is called before a row exists, or the verify path opened an event-origin
- * row with send_count 0 after a failed first mail.
+ * Verify-time VerifiedNoMcp send 1 is recorded as an event-origin row with
+ * no prior send. The verify handler sends immediately; the evaluator used
+ * from that path treats the first send as due. A later VerifiedNoMcp
+ * re-entry (for example leaving LimitAware) still waits out the dwell so
+ * it cannot retry ledger send 1 the same hour.
  */
 function isImmediateFirstSend(
 	state: UsageCampaignState,
@@ -332,9 +334,8 @@ function isImmediateFirstSend(
 ) {
 	return (
 		state === 'VerifiedNoMcp' &&
-		persisted.origin === 'event' &&
-		persisted.sendCount === 0 &&
-		(persisted.state == null || persisted.state === 'VerifiedNoMcp')
+		persisted.state == null &&
+		persisted.origin === 'event'
 	)
 }
 

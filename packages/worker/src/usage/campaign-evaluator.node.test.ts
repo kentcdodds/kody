@@ -175,10 +175,22 @@ test('evaluator walks usage stamps into states, caps, and Activated/Paid silence
 		),
 	).toMatchObject({
 		state: 'VerifiedNoMcp',
-		action: 'send',
-		template: 'verified_no_mcp',
-		sendIndex: 1,
-		reason: 'nudge',
+		action: 'persist',
+		reason: 'dwell',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot(),
+			persisted({
+				state: 'LimitAware',
+				enteredAt: now.toISOString(),
+				origin: 'event',
+			}),
+		),
+	).toMatchObject({
+		state: 'VerifiedNoMcp',
+		action: 'persist',
+		reason: 'dwell',
 	})
 
 	const afterFirst = evaluateUsageCampaign(

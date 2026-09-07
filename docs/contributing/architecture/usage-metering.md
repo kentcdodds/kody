@@ -586,15 +586,15 @@ First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of
 `VerifiedNoMcp` (`origin=event`). If that first mail fails closed, the verify
 path still opens an event-origin row with `send_count` 0 so the hourly sweep can
-retry instead of seeding the user permanently. The campaign upsert keeps
-`MAX(send_count)` and the later `last_sent_at` when the state is unchanged, and
-never downgrades `event` to `seed`, so a later sweep persist cannot clobber that
-verify-time row. A real state change still resets `send_count`. Later sends wait
-24 hours after a transition and 5 days between sends in the same state. The send
-ledger claim is `INSERT OR IGNORE` on `(user_id, state, send_index)` and is
-released if the Cloudflare send fails or unsubscribe-token minting fails (no
-footerless campaign mail). A lost claim race does not persist a stale
-`send_count`. Kit is not part of this machine.
+retry after the normal first-send dwell instead of seeding the user permanently.
+The campaign upsert keeps `MAX(send_count)` and the later `last_sent_at` when
+the state is unchanged, and never downgrades `event` to `seed`, so a later sweep
+persist cannot clobber that verify-time row. A real state change still resets
+`send_count`. Later sends wait 24 hours after a transition and 5 days between
+sends in the same state. The send ledger claim is `INSERT OR IGNORE` on
+`(user_id, state, send_index)` and is released if the Cloudflare send fails or
+unsubscribe-token minting fails (no footerless campaign mail). A lost claim race
+does not persist a stale `send_count`. Kit is not part of this machine.
 
 Campaign mail is the only surface gated by the **Kody tips** preference
 (`users.tips_emails_opted_out_at`). Each campaign send includes an “Unsubscribe
