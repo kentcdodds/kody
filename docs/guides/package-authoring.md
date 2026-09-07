@@ -270,8 +270,8 @@ New packages are always **private**. Visibility is a repo setting
 ### Personal-details hygiene before going public
 
 Before calling `packageUpdate` with `changes.visibility: "public"` or
-`communityPublish`, review source, README, Intent, description, tags, examples,
-and hardcoded identifiers for overly personal material.
+`communityPublish`, review source, README, AGENTS.md, Intent, description, tags,
+examples, and hardcoded identifiers for overly personal material.
 
 Treat as personal or too household-specific:
 
