@@ -10,12 +10,12 @@ import {
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminUserId,
 	stableUserIdSchema,
 } from './admin-shared.ts'
 import {
 	adminFeatureFlagSchema,
 	assertFeatureFlagKey,
-	resolveActingAdminUserId,
 	resolveTargetUser,
 } from './feature-flag-shared.ts'
 

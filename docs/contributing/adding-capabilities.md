@@ -243,6 +243,8 @@ rule.
 - `adminReservedUsernameRemove`
 - `adminSignupModeGet`
 - `adminSignupModeSet`
+- `adminInviteCreate`
+- `adminInviteList`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
 - `adminSystemEmailSend`

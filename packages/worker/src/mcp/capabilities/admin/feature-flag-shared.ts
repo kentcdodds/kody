@@ -1,6 +1,4 @@
 import { z } from 'zod'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import {
 	featureFlagKeys,
 	isFeatureFlagKey,
@@ -77,25 +75,6 @@ export function assertFeatureFlagKey(key: string): FeatureFlagKey {
 		)
 	}
 	return key
-}
-
-export async function resolveActingAdminUserId(
-	ctx: CapabilityContext,
-): Promise<number> {
-	const user = requireMcpUser(ctx.callerContext)
-	const stableUserId = normalizeStableUserId(user.userId)
-	if (!stableUserId) {
-		throw new Error('Authenticated admin account was not found.')
-	}
-	const row = await ctx.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stable_user_id = ?`,
-	)
-		.bind(stableUserId)
-		.first<{ id: number }>()
-	if (!row) {
-		throw new Error('Authenticated admin account was not found.')
-	}
-	return row.id
 }
 
 export async function resolveTargetUser(

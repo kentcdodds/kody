@@ -169,7 +169,10 @@ when one is provided so E2E coverage can exercise the same path.
 
 Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
 guard, not an owner-scoped content bypass. Invite creation (including optional
-plan), use, and revocation emit audit events.
+plan), use, and revocation emit audit events. Agents mint the same rows with
+`adminInviteCreate` (optional bulk `codes` with a shared `maxUses`) and
+`adminInviteList`; both are admin-only MCP capabilities that call `createInvite`
+/ `listInvites` and return invite metadata only.
 
 The same admin page can create a user directly by email for manually invited
 people. That flow calls `adminCreateUserWithPasswordSetup` in
@@ -778,8 +781,10 @@ Token lifetimes are set on the `OAuthProvider` in
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
-- `packages/worker/src/app/invites.ts` and
+- `packages/worker/src/invites.ts` and
   `packages/worker/src/app/handlers/admin-invites.ts` for invite management
+- `packages/worker/src/mcp/capabilities/admin/admin-invite-create.ts` and
+  `admin-invite-list.ts` for the admin MCP mint/list path
 - `packages/worker/src/identity/admin-user-creation.ts` for admin-created
   account setup links
 - `packages/worker/src/app/email-verification.ts`,

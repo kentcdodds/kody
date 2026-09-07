@@ -4,6 +4,7 @@ import {
 	createInvite,
 	getInviteByCode,
 	listInvites,
+	normalizeInviteCode,
 	type InviteRecord,
 } from './invites.ts'
 
@@ -18,6 +19,9 @@ function createInviteDb(invites: Array<InviteFixture> = []) {
 				async run() {
 					if (normalizedQuery.startsWith('insert into invites')) {
 						const [code, createdBy, note, maxUses, expiresAt, plan] = params
+						if (records.has(String(code))) {
+							throw new Error('UNIQUE constraint failed: invites.code')
+						}
 						const invite: InviteFixture = {
 							code: String(code),
 							created_by: createdBy == null ? null : Number(createdBy),
@@ -186,6 +190,61 @@ test('createInvite stores plan and roundtrips through getInviteByCode and listIn
 			plan: 'pro',
 		}),
 	])
+})
+
+test('normalizeInviteCode trims, uppercases, and rejects empty or non-string values', () => {
+	expect(normalizeInviteCode('  kent-friend  ')).toBe('KENT-FRIEND')
+	expect(normalizeInviteCode('already-upper')).toBe('ALREADY-UPPER')
+	expect(normalizeInviteCode('')).toBeNull()
+	expect(normalizeInviteCode('   ')).toBeNull()
+	expect(normalizeInviteCode(null)).toBeNull()
+	expect(normalizeInviteCode(12)).toBeNull()
+})
+
+test('createInvite maps wrapped D1 unique errors to a stable already-exists message', async () => {
+	const db = {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							const error = new Error('D1_ERROR')
+							error.cause = new Error('UNIQUE constraint failed: invites.code')
+							throw error
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		createInvite({
+			db,
+			code: 'kent-friend',
+			createdBy: 7,
+			maxUses: 1,
+		}),
+	).rejects.toThrow('Invite code KENT-FRIEND already exists.')
+})
+
+test('createInvite rejects a duplicate code', async () => {
+	const db = createInviteDb()
+	await createInvite({
+		db,
+		code: 'kent-friend',
+		createdBy: 7,
+		maxUses: 1,
+	})
+
+	await expect(
+		createInvite({
+			db,
+			code: 'KENT-FRIEND',
+			createdBy: 7,
+			maxUses: 1,
+		}),
+	).rejects.toThrow('Invite code KENT-FRIEND already exists.')
 })
 
 test('createInvite without plan stores free', async () => {
