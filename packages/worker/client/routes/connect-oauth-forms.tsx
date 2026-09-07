@@ -38,7 +38,7 @@ import {
 	connectOauthTrustedBadgeCss,
 } from './connect-oauth-shared.ts'
 
-export function renderScopePicker(input: {
+function renderScopePicker(input: {
 	config: ConnectOauthConfig
 	currentStep: 'setup' | 'connect' | 'callback' | 'success'
 	offeredScopeMenu: Array<string>

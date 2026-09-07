@@ -26,7 +26,7 @@ import { type AuthStatus } from './login-shared.ts'
 const motionOk = '@media (prefers-reduced-motion: no-preference)'
 const mobileMq = '@media (max-width: 900px)'
 
-export function renderBrand(
+function renderBrand(
 	extraCss: Parameters<typeof css>[0],
 	options: { decorative?: boolean } = {},
 ) {

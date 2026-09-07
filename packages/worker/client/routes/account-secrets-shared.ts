@@ -136,7 +136,7 @@ export function createEditorStateFromNewSecretQuery(
 	}
 }
 
-export function coerceStringRows(list: Array<unknown>): Array<string> {
+function coerceStringRows(list: Array<unknown>): Array<string> {
 	return list.filter((item): item is string => typeof item === 'string')
 }
 

@@ -15,8 +15,6 @@ import {
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
-export { onboardingChecklistItemLabels }
-
 function readChecklistItemHref(
 	id: OnboardingChecklistItemId,
 	username: string,

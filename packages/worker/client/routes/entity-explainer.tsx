@@ -2,7 +2,7 @@ import { css, type Handle } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { nativeDisclosureCss } from '#universal/styles/style-primitives.ts'
 
-export type EntityExplainerLink = {
+type EntityExplainerLink = {
 	href: string
 	label: string
 }

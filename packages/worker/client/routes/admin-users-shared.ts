@@ -20,7 +20,7 @@ const {
 	buildDetailHref,
 } = createListDetailRoute('/admin/users')
 
-export { getSelection, buildDetailHref }
+export { getSelection }
 
 export function formatUsageLimit(limit: number) {
 	return formatIntegerNumber(limit)

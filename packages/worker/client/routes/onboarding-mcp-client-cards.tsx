@@ -249,7 +249,7 @@ export function PluginPrimaryInstall(
 	)
 }
 
-export const deepLinkCss = {
+const deepLinkCss = {
 	display: 'grid',
 	gap: '0.45rem',
 	justifyItems: 'start',

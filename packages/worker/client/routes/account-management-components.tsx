@@ -27,7 +27,7 @@ import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
  */
 
 /** `.account-section` — hairline-topped section, no card chrome. */
-export const accountSectionCss = {
+const accountSectionCss = {
 	borderTop: `1px solid ${colors.border}`,
 	paddingTop: 'clamp(2rem, 4vw, 2.75rem)',
 	scrollMarginTop: '5.5rem',
@@ -36,7 +36,7 @@ export const accountSectionCss = {
 }
 
 /** `.account-section h2` — display face, quiet weight. */
-export const accountSectionTitleCss = {
+const accountSectionTitleCss = {
 	margin: 0,
 	fontSize: '1.35rem',
 	fontWeight: 720,
@@ -46,7 +46,7 @@ export const accountSectionTitleCss = {
 }
 
 /** `.account-section > p` — muted lede with a reading measure. */
-export const accountSectionLedeCss = {
+const accountSectionLedeCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.98rem',

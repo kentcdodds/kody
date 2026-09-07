@@ -16,7 +16,7 @@ export const connectOauthChooserOptionMarkSize = '3rem'
  * and borders. Using only the mark left the third card's peek as empty
  * padding, so overlay-scrollbar users could not tell the list scrolled.
  */
-export const connectOauthChooserOptionRowHeight = `calc(max(${connectOauthChooserOptionMarkSize}, calc((1em * var(--line-height-body) * 2) + ${spacing.xs})) + (${spacing.md} * 2) + 2px)`
+const connectOauthChooserOptionRowHeight = `calc(max(${connectOauthChooserOptionMarkSize}, calc((1em * var(--line-height-body) * 2) + ${spacing.xs})) + (${spacing.md} * 2) + 2px)`
 
 /**
  * `2.5 * (row + gap) - gap`: two full cards, half of a third, and the gaps

@@ -8,14 +8,14 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 
 /** Dummy value so the native password control paints dots. Never a real key. */
-export const landingByokDemoSecret = 'sk-kody-byok-key'
+const landingByokDemoSecret = 'sk-kody-byok-key'
 
 /** Class added after hydrate to start the loop. First paint stays still. */
-export const landingByokPlayingClass = 'is-playing'
-export const landingByokClickingClass = 'is-clicking'
-export const landingByokShakingClass = 'is-shaking'
+const landingByokPlayingClass = 'is-playing'
+const landingByokClickingClass = 'is-clicking'
+const landingByokShakingClass = 'is-shaking'
 
-export const landingByokLoopMs = 4800
+const landingByokLoopMs = 4800
 
 export type ByokPoint = { x: number; y: number }
 
@@ -26,13 +26,13 @@ export type ByokCubic = {
 	p3: ByokPoint
 }
 
-export type ByokLoopPhase =
+type ByokLoopPhase =
 	| { kind: 'park' }
 	| { kind: 'out'; t: number }
 	| { kind: 'click' }
 	| { kind: 'in'; t: number }
 
-export function landingByokEaseInOut(t: number) {
+function landingByokEaseInOut(t: number) {
 	const clamped = Math.min(1, Math.max(0, t))
 	return clamped < 0.5
 		? 4 * clamped * clamped * clamped
@@ -93,7 +93,7 @@ export function landingByokBeelineCubic(
 	}
 }
 
-export function landingByokLoopPhase(progress: number): ByokLoopPhase {
+function landingByokLoopPhase(progress: number): ByokLoopPhase {
 	const p = ((progress % 1) + 1) % 1
 	if (p < 0.1) return { kind: 'park' }
 	if (p < 0.32) return { kind: 'out', t: (p - 0.1) / 0.22 }
@@ -211,7 +211,7 @@ function resetByokCursor(node: HTMLElement, cursor: HTMLElement | null) {
  * First render is the parked still. After insert (hydrate), one rAF starts
  * the beeline loop. Reduced-motion never gets the class or offsets.
  */
-export function armLandingByokDemo(node: HTMLElement, signal: AbortSignal) {
+function armLandingByokDemo(node: HTMLElement, signal: AbortSignal) {
 	const media = reducedMotionQuery()
 	const cursorNode = node.querySelector('.landing-byok-cursor')
 	const eyeNode = node.querySelector('.landing-byok-eye')

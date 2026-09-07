@@ -11,7 +11,7 @@ export type AuthorizeSessionSnapshot = {
  * still the pre-refresh identity; drop it once the shell catches up or the
  * signed-in user changes.
  */
-export function sessionsMatch(
+function sessionsMatch(
 	left: SessionInfo | null | undefined,
 	right: SessionInfo | null | undefined,
 ) {

@@ -1,25 +1,25 @@
 /** Slow walk of one lap around the real card set. */
 export const TESTIMONIALS_LAP_MS = 45_000
 
-export const DRAG_THRESHOLD_PX = 8
+const DRAG_THRESHOLD_PX = 8
 
 /** Keep only recent pointer samples so a flick velocity is not diluted. */
-export const FLICK_SAMPLE_WINDOW_MS = 80
+const FLICK_SAMPLE_WINDOW_MS = 80
 
 /**
  * Minimum release speed to coast. ~0.45px/ms is a quick swipe, not a
  * slow drag that should just stop.
  */
-export const FLICK_MIN_VELOCITY_PX_PER_MS = 0.45
+const FLICK_MIN_VELOCITY_PX_PER_MS = 0.45
 
 /** Drop residual coast once it is slower than a crawl. */
-export const FLICK_STOP_VELOCITY_PX_PER_MS = 0.04
+const FLICK_STOP_VELOCITY_PX_PER_MS = 0.04
 
 /** Exponential decay per millisecond. A hard flick travels about 1–2 cards. */
-export const FLICK_FRICTION_PER_MS = 0.003
+const FLICK_FRICTION_PER_MS = 0.003
 
 /** Cap so a wild sample cannot sling the lane a full lap. */
-export const FLICK_MAX_VELOCITY_PX_PER_MS = 3
+const FLICK_MAX_VELOCITY_PX_PER_MS = 3
 
 export type FlickSample = {
 	t: number
@@ -82,7 +82,7 @@ export function samplesForFlickVelocity(
 	return [last, end]
 }
 
-export function clampFlickVelocity(
+function clampFlickVelocity(
 	velocity: number,
 	maxAbs = FLICK_MAX_VELOCITY_PX_PER_MS,
 ) {
@@ -218,7 +218,7 @@ export function placeLaneCard(node: ParkableLaneCard, x: number) {
 	node.style.transform = `translate3d(${x}px, 0, 0)`
 }
 
-export function parkLaneCard(node: ParkableLaneCard) {
+function parkLaneCard(node: ParkableLaneCard) {
 	node.hidden = true
 	node.style.transform = PARKED_TRANSFORM
 }
