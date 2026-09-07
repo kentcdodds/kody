@@ -8,6 +8,7 @@
 import {
 	type McpClientKind,
 	mcpClientById,
+	onboardingAgentIconName,
 } from '#universal/onboarding-mcp-clients.ts'
 
 export type InboundMcpClientSignals = {
@@ -28,6 +29,16 @@ export type ConnectedMcpAgent = {
 	label: string
 	kind: McpClientKind | null
 	connectedAt: string | null
+}
+
+export type ConnectedAgentGroup<
+	T extends ConnectedMcpAgent = ConnectedMcpAgent,
+> = {
+	label: string
+	kind: McpClientKind | null
+	icon: string | null
+	connectedAt: string | null
+	members: Array<T>
 }
 
 const truncatedClientIdLength = 8
@@ -113,6 +124,85 @@ export function truncateClientIdLabel(clientId: string) {
 	const trimmed = clientId.trim()
 	if (trimmed.length <= truncatedClientIdLength) return trimmed
 	return `${trimmed.slice(0, truncatedClientIdLength)}…`
+}
+
+export function connectedAgentIconName(
+	kind: McpClientKind | null,
+): string | null {
+	if (!kind) return null
+	return onboardingAgentIconName(kind)
+}
+
+export function latestConnectedAt(
+	timestamps: ReadonlyArray<string | null | undefined>,
+): string | null {
+	let latest: string | null = null
+	for (const value of timestamps) {
+		if (!value) continue
+		if (latest === null || value > latest) latest = value
+	}
+	return latest
+}
+
+export function groupConnectedAgents<T extends ConnectedMcpAgent>(
+	agents: ReadonlyArray<T>,
+): Array<ConnectedAgentGroup<T>> {
+	const byLabel = new Map<string, Array<T>>()
+	for (const agent of agents) {
+		const existing = byLabel.get(agent.label)
+		if (existing) existing.push(agent)
+		else byLabel.set(agent.label, [agent])
+	}
+
+	const groups = new Array<ConnectedAgentGroup<T>>()
+	for (const [label, members] of byLabel) {
+		const sortedMembers = [...members].sort(compareConnectedAgentMembers)
+		const kind = kindForConnectedAgentGroup(sortedMembers)
+		groups.push({
+			label,
+			kind,
+			icon: connectedAgentIconName(kind),
+			connectedAt: latestConnectedAt(
+				sortedMembers.map((member) => member.connectedAt),
+			),
+			members: sortedMembers,
+		})
+	}
+	groups.sort(compareConnectedAgentGroups)
+	return groups
+}
+
+function kindForConnectedAgentGroup(
+	members: ReadonlyArray<ConnectedMcpAgent>,
+): McpClientKind | null {
+	for (const member of members) {
+		if (member.kind && connectedAgentIconName(member.kind)) {
+			return member.kind
+		}
+	}
+	return members[0]?.kind ?? null
+}
+
+function compareConnectedAgentMembers(
+	left: ConnectedMcpAgent,
+	right: ConnectedMcpAgent,
+) {
+	const byTime = compareNewestFirst(left.connectedAt, right.connectedAt)
+	if (byTime !== 0) return byTime
+	return left.clientId.localeCompare(right.clientId)
+}
+
+function compareConnectedAgentGroups(
+	left: ConnectedAgentGroup,
+	right: ConnectedAgentGroup,
+) {
+	const byTime = compareNewestFirst(left.connectedAt, right.connectedAt)
+	if (byTime !== 0) return byTime
+	return left.label.localeCompare(right.label)
+}
+
+function compareNewestFirst(left: string | null, right: string | null) {
+	return (right ?? '').localeCompare(left ?? '')
 }
 
 export function labelInboundMcpClient(

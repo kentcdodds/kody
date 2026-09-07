@@ -671,14 +671,19 @@ routed from `packages/worker/src/index.ts`.
   → Advanced). That page is user-minted clients, not inbound host grants.
   Account → Connected agents lists inbound grants from `listUserGrants` (paged)
   joined with `lookupClient` for a best-effort label, authorized time, and
-  revoke. Onboarding Step 3 completion is unique `clientId`s ≥ 2, not raw grant
-  count and not `users.mcp_client_name`. `user_mcp_oauth_clients` stores the
-  account-owned metadata. The provider stores the secret hash in `OAUTH_KV` via
-  `env.OAUTH_PROVIDER.createClient()`. List and revoke are scoped to the owning
-  `user_id`. The plaintext secret is shown once and never written to D1. MCP
-  `2026-07-28` deprecates RFC 7591 dynamic registration in favor of CIMD, so
-  both stay enabled: clients without a pre-registered credential that do not use
-  CIMD register via `/oauth/register`. Failed CIMD fetches throw
+  revoke. The account UI groups those unique `clientId`s by display name, shows
+  a public icon when the host kind already has an SVG, and sorts newest-first.
+  Timestamps are grant `createdAt` (connected time). The provider grant summary
+  has no last-used / last-accessed field, and recording MCP activity per
+  connection would need new persistence, so the page does not invent a
+  last-heard time. Onboarding Step 3 completion is unique `clientId`s ≥ 2, not
+  raw grant count and not `users.mcp_client_name`. `user_mcp_oauth_clients`
+  stores the account-owned metadata. The provider stores the secret hash in
+  `OAUTH_KV` via `env.OAUTH_PROVIDER.createClient()`. List and revoke are scoped
+  to the owning `user_id`. The plaintext secret is shown once and never written
+  to D1. MCP `2026-07-28` deprecates RFC 7591 dynamic registration in favor of
+  CIMD, so both stay enabled: clients without a pre-registered credential that
+  do not use CIMD register via `/oauth/register`. Failed CIMD fetches throw
   `CimdFetchError`: authorize maps that to an unknown-client page, and the token
   endpoint still returns generic `invalid_client`. Any DCR retry after that is
   the client's own recovery, not a server-side fallback. CIMD metadata fetches
