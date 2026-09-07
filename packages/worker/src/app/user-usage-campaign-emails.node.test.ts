@@ -374,3 +374,89 @@ test('a lost send-ledger race does not persist a stale campaign row', async () =
 	expect(after?.last_evaluated_at).toBe(before?.last_evaluated_at)
 	expect(after?.cooling_terminal).toBe(0)
 })
+
+test('a later seed persist cannot clobber a verify-time event row', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-verify', email: 'verify@example.com' })
+	const env = createEnv(db)
+	expect(
+		await recordVerifiedNoMcpCampaignSend({
+			env,
+			userId: 'user-verify',
+			now,
+		}),
+	).toBe(true)
+	const verifyRow = await readUsageCampaign(db, 'user-verify')
+	expect(verifyRow).toMatchObject({
+		state: 'VerifiedNoMcp',
+		send_count: 1,
+		origin: 'event',
+		last_sent_at: now.toISOString(),
+	})
+
+	const sweepAt = new Date('2026-09-07T12:00:05.000Z')
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-verify',
+		state: 'VerifiedNoMcp',
+		enteredAt: sweepAt.toISOString(),
+		sendCount: 0,
+		lastSentAt: null,
+		origin: 'seed',
+		coolingTerminal: false,
+		now: sweepAt,
+	})
+	const afterSweep = await readUsageCampaign(db, 'user-verify')
+	expect(afterSweep).toMatchObject({
+		state: 'VerifiedNoMcp',
+		send_count: 1,
+		origin: 'event',
+		last_sent_at: now.toISOString(),
+		last_evaluated_at: sweepAt.toISOString(),
+	})
+})
+
+test('failed unsubscribe mint releases the claim and does not send campaign mail', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-mint', email: 'mint@example.com' })
+	const env = createEnv(db)
+	env.COOKIE_SECRET = ''
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-mint',
+		state: 'VerifiedNoMcp',
+		enteredAt: '2026-09-01T00:00:00.000Z',
+		sendCount: 1,
+		lastSentAt: now.toISOString(),
+		origin: 'event',
+		coolingTerminal: false,
+		now,
+	})
+	await claimUsageCampaignSend({
+		db,
+		userId: 'user-mint',
+		state: 'VerifiedNoMcp',
+		template: 'verified_no_mcp',
+		sendIndex: 1,
+		now,
+	})
+	const later = new Date('2026-09-13T12:00:00.000Z')
+	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot({ now: later }))
+	sendCloudflareEmail.mockClear()
+	consoleWarn.mockImplementation(() => {})
+	expect(await sendUserUsageCampaignEmails({ env, now: later })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(await listUsageCampaignSends(db, 'user-mint')).toEqual([
+		expect.objectContaining({
+			state: 'VerifiedNoMcp',
+			send_index: 1,
+		}),
+	])
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'usage-campaign-unsubscribe-mint-failed',
+		expect.any(Error),
+	)
+})

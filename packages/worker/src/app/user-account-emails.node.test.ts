@@ -136,6 +136,31 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(3)
 })
 
+test('connect-agent mail does not claim when unsubscribe minting fails', async () => {
+	const { kv, store } = createKv()
+	const env = createEnv(kv)
+	env.COOKIE_SECRET = ''
+	sendCloudflareEmail.mockClear()
+	consoleWarn.mockImplementation(() => {})
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-mint',
+		}),
+	).toBe(false)
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(
+		store.get(
+			userAccountEmailKvKey({ userId: 'user-mint', kind: 'connect_agent' }),
+		),
+	).toBeUndefined()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'connect-agent-unsubscribe-mint-failed',
+		expect.any(Error),
+	)
+})
+
 test('connect-agent mail skips when the user opted out of Kody tips', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))

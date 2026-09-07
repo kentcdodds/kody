@@ -79,10 +79,27 @@ export async function upsertUsageCampaign(input: {
 			ON CONFLICT(user_id) DO UPDATE SET
 				state = excluded.state,
 				entered_at = excluded.entered_at,
-				send_count = excluded.send_count,
-				last_sent_at = excluded.last_sent_at,
+				send_count = CASE
+					WHEN excluded.state = user_usage_campaigns.state
+						THEN MAX(user_usage_campaigns.send_count, excluded.send_count)
+					ELSE excluded.send_count
+				END,
+				last_sent_at = CASE
+					WHEN excluded.state != user_usage_campaigns.state
+						THEN excluded.last_sent_at
+					WHEN excluded.last_sent_at IS NULL
+						THEN user_usage_campaigns.last_sent_at
+					WHEN user_usage_campaigns.last_sent_at IS NULL
+						THEN excluded.last_sent_at
+					WHEN excluded.last_sent_at > user_usage_campaigns.last_sent_at
+						THEN excluded.last_sent_at
+					ELSE user_usage_campaigns.last_sent_at
+				END,
 				last_evaluated_at = excluded.last_evaluated_at,
-				origin = excluded.origin,
+				origin = CASE
+					WHEN user_usage_campaigns.origin = 'event' THEN 'event'
+					ELSE excluded.origin
+				END,
 				cooling_terminal = excluded.cooling_terminal,
 				updated_at = excluded.updated_at`,
 		)

@@ -137,26 +137,28 @@ export async function sendConnectAgentEmail(input: {
 	) {
 		return false
 	}
+	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
+	if (!emailConfig) return false
+	const unsubscribe = await mintConnectAgentUnsubscribe({
+		env: input.env,
+		appBaseUrl: emailConfig.appBaseUrl,
+		userId: input.userId,
+	})
+	if (!unsubscribe) return false
+
 	const sent = await claimAndSend({
 		env: input.env,
 		to: input.email,
 		userId: input.userId,
 		kind: 'connect_agent',
-		build: async (config) => {
-			const unsubscribe = await mintConnectAgentUnsubscribe({
-				env: input.env,
+		build: (config) => ({
+			...buildConnectAgentEmail({
 				appBaseUrl: config.appBaseUrl,
-				userId: input.userId,
-			})
-			return {
-				...buildConnectAgentEmail({
-					appBaseUrl: config.appBaseUrl,
-					onboardingUrl: new URL('/onboarding', config.appBaseUrl).toString(),
-					unsubscribe: unsubscribe?.unsubscribe,
-				}),
-				headers: unsubscribe?.headers,
-			}
-		},
+				onboardingUrl: new URL('/onboarding', config.appBaseUrl).toString(),
+				unsubscribe: unsubscribe.unsubscribe,
+			}),
+			headers: unsubscribe.headers,
+		}),
 	})
 	if (sent) {
 		await recordVerifiedNoMcpCampaignSend({

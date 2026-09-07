@@ -308,6 +308,15 @@ async function sendClaimedCampaignEmail(input: {
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		userId: input.user.stable_user_id,
 	})
+	if (!unsubscribe) {
+		await releaseUsageCampaignSend({
+			db: input.env.APP_DB,
+			userId: input.user.stable_user_id,
+			state: input.decision.state,
+			sendIndex,
+		})
+		return false
+	}
 	const email = buildUsageCampaignEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		template,

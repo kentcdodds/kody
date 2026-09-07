@@ -56,22 +56,19 @@ export function resolveUsageCampaignState(
 	if (snapshot.isNearEntitlementCap) return 'LimitAware'
 
 	const packaged = snapshot.firstSavedPackageAt != null
-	const quiet = isUsageCampaignQuiet(snapshot)
 
 	if (packaged || isActivatedOrCoolingHistory(persisted)) {
-		if (quiet) return 'Cooling'
 		if (snapshot.jobListingFailed && persisted.state === 'Activated') {
 			return 'Activated'
 		}
 		if (snapshot.jobListingFailed && persisted.state === 'Cooling') {
 			return 'Cooling'
 		}
+		if (isUsageCampaignQuiet(snapshot)) return 'Cooling'
 		if (isActivatedUsage(snapshot)) return 'Activated'
 		if (snapshot.inboundListingFailed) {
 			if (persisted.state === 'Activated') return 'Activated'
-			if (packaged && persisted.state === 'PackagedSingleClient') {
-				return 'PackagedSingleClient'
-			}
+			if (packaged) return 'PackagedSingleClient'
 			return 'Activated'
 		}
 		if (packaged && snapshot.distinctInboundClientCount < 2) {
@@ -85,7 +82,6 @@ export function resolveUsageCampaignState(
 }
 
 export function isUsageCampaignQuiet(snapshot: UsageCampaignSnapshot) {
-	if (snapshot.jobListingFailed) return false
 	if (snapshot.hasEnabledScheduledJob) return false
 	if (snapshot.lastActiveAt != null || snapshot.lastJobActivityAt != null) {
 		return (

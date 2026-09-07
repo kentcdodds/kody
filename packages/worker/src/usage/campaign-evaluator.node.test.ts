@@ -478,4 +478,75 @@ test('failed job listing does not invent Cooling or demote Activated', () => {
 			persisted(),
 		),
 	).toBe('PackagedSingleClient')
+	const firstQuietJobsFailed = evaluateUsageCampaign(
+		snapshot({
+			firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+			lastActiveAt: '2026-07-01T00:00:00.000Z',
+			jobListingFailed: true,
+		}),
+		persisted(),
+	)
+	expect(firstQuietJobsFailed).toMatchObject({
+		state: 'Cooling',
+		action: 'persist',
+		origin: 'seed',
+		reason: 'job_listing_failed',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+				lastActiveAt: '2026-07-01T00:00:00.000Z',
+				now: new Date(now.getTime() + usageCampaignFirstSendDwellMs),
+			}),
+			persisted({
+				state: 'Cooling',
+				enteredAt: now.toISOString(),
+				origin: 'seed',
+			}),
+		),
+	).toMatchObject({
+		state: 'Cooling',
+		action: 'persist',
+		origin: 'seed',
+		reason: 'seed_no_backfill',
+	})
+})
+
+test('failed inbound listing seeds PackagedSingleClient instead of Activated', () => {
+	const first = evaluateUsageCampaign(
+		snapshot({
+			firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+			distinctInboundClientCount: 0,
+			inboundListingFailed: true,
+			lastActiveAt: '2026-09-06T00:00:00.000Z',
+		}),
+		persisted(),
+	)
+	expect(first).toMatchObject({
+		state: 'PackagedSingleClient',
+		action: 'persist',
+		origin: 'seed',
+		reason: 'inbound_listing_failed',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-09-03T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				now: new Date(now.getTime() + usageCampaignFirstSendDwellMs),
+			}),
+			persisted({
+				state: 'PackagedSingleClient',
+				enteredAt: now.toISOString(),
+				origin: 'seed',
+			}),
+		),
+	).toMatchObject({
+		state: 'PackagedSingleClient',
+		action: 'persist',
+		origin: 'seed',
+		reason: 'seed_no_backfill',
+	})
 })

@@ -567,16 +567,23 @@ read separately so a quiet interactive user with a live schedule stays
 Activated. Cooling requires stale `last_active_at` plus no job activity. When
 both of those stamps are missing, the newest of `first_saved_package_at` /
 `first_mcp_connected_at` is the fallback — a missing `last_active_at` is not
-treated as 21 days stale. A failed jobs list does not count as "no jobs" and
-does not enter or mail Cooling.
+treated as 21 days stale. A failed jobs list does not count as "no jobs":
+Activated and Cooling rows stay put, and Cooling is not mailed. First
+observation still uses the stamp-based quiet check so a quiet packaged user
+seeds `Cooling` instead of a later event transition that would backfill the
+poke.
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of
-`VerifiedNoMcp` (`origin=event`). Later sends wait 24 hours after a transition
-and 5 days between sends in the same state. The send ledger claim is
+`VerifiedNoMcp` (`origin=event`). The campaign upsert keeps `MAX(send_count)`
+and the later `last_sent_at` when the state is unchanged, and never downgrades
+`event` to `seed`, so a later sweep persist cannot clobber that verify-time row.
+A real state change still resets `send_count`. Later sends wait 24 hours after a
+transition and 5 days between sends in the same state. The send ledger claim is
 `INSERT OR IGNORE` on `(user_id, state, send_index)` and is released if the
-Cloudflare send fails. A lost claim race does not persist a stale `send_count`.
-Kit is not part of this machine.
+Cloudflare send fails or unsubscribe-token minting fails (no footerless campaign
+mail). A lost claim race does not persist a stale `send_count`. Kit is not part
+of this machine.
 
 Campaign mail is the only surface gated by the **Kody tips** preference
 (`users.tips_emails_opted_out_at`). Each campaign send includes an “Unsubscribe
@@ -584,5 +591,6 @@ from tips” footer and RFC `List-Unsubscribe` / `List-Unsubscribe-Post` one-cli
 headers. The signed `/unsubscribe/tips` route sets that stamp; transactional
 verify, billing, and error-rate mail is never suppressed. Distinct inbound
 client counts come from `loadInboundMcpConnectionState`. A failed grant listing
-does not treat the count as 0 (no PackagedSingleClient send, no Activated
-demotion).
+does not treat the count as 0: packaged users without Activated history hold
+`PackagedSingleClient` and persist without sending, so a later successful
+listing stays a seed instead of an event backfill.
