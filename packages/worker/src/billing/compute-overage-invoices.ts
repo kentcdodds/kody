@@ -8,9 +8,11 @@
  * get a UTC-month invoice and so this PR does not require new Stripe
  * price ids.
  *
- * Includes are resolved from the plan and ladder at invoice time (UTC
- * days 1–3). There is no month-end plan snapshot; a plan change before
- * the job runs prices the prior month against the current includes.
+ * Includes are resolved from the effective plan and ladder at invoice
+ * time (UTC days 1–3), including an unexpired second-agent gift or
+ * referral Standard credit. There is no month-end plan snapshot; a plan
+ * or overlay change before the job runs prices the prior month against
+ * the current includes.
  */
 import {
 	computeMonthlyOverage,
@@ -23,10 +25,11 @@ import {
 import {
 	parseEntitlementLadder,
 	parseStoredPlanName,
-	resolveEffectivePlan,
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
+import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import { isBillingConfigured } from './billing-config.ts'
 import { isComputeOverageChargingEnabled } from './compute-overage-charging.ts'
 import {
@@ -78,6 +81,8 @@ type OverageUserRow = {
 	stripe_plan: string | null
 	entitlement_ladder: string | null
 	stripe_customer_id: string | null
+	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
 }
 
 type LedgerLookupRow = {
@@ -209,7 +214,9 @@ async function listOverageCandidates(input: {
 	const rows = await input.db
 		.prepare(
 			`SELECT DISTINCT u.id, u.stable_user_id, u.plan, u.stripe_plan,
-				u.entitlement_ladder, u.stripe_customer_id
+				u.entitlement_ladder, u.stripe_customer_id,
+				u.second_agent_standard_gift_expires_at,
+				u.referral_standard_credit_expires_at
 			 FROM users u
 			 LEFT JOIN usage_rollups r
 				ON r.user_id = u.stable_user_id
@@ -253,9 +260,14 @@ async function invoiceOneUserIfNeeded(input: {
 		return existing.status as ComputeOverageInvoiceStatus
 	}
 
-	const plan = resolveEffectivePlan(
+	const plan = resolveEffectivePlanWithSecondAgentGift(
 		parseStoredPlanName(input.user.plan),
 		input.user.stripe_plan,
+		laterIsoTimestamp(
+			input.user.second_agent_standard_gift_expires_at,
+			input.user.referral_standard_credit_expires_at,
+		),
+		input.now,
 	)
 	const ladder = parseEntitlementLadder(input.user.entitlement_ladder)
 	const usage = await readMonthlyComputeUsage({
