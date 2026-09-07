@@ -8,8 +8,8 @@
  * slow. Sweep polling of /status.json remains the backstop.
  */
 
-export const statusIncidentEventTimeoutMs = 3000
-export const statusIncidentEventPath = '/__maintenance/status-incidents'
+const statusIncidentEventTimeoutMs = 3000
+const statusIncidentEventPath = '/__maintenance/status-incidents'
 
 export type StatusIncidentOpenedPayload = {
 	event: 'status.incident.opened'

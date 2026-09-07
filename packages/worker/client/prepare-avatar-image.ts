@@ -215,7 +215,7 @@ async function encodeWithFallback(
 	throw new Error('Unable to convert that image in the browser.')
 }
 
-export function cropToMaxAspect(
+function cropToMaxAspect(
 	width: number,
 	height: number,
 	maxAspect = userAvatarMaxAspectRatio,
@@ -269,7 +269,7 @@ export function scaleToMaxDimension(
  * server's `longer / shorter > 3` check (1200×400 → 1024×341). Grow the
  * shorter side so the encoded canvas stays within the stored-avatar limit.
  */
-export function clampEncodedAspect(
+function clampEncodedAspect(
 	width: number,
 	height: number,
 	maxAspect = userAvatarMaxAspectRatio,
@@ -286,7 +286,7 @@ export function clampEncodedAspect(
 	return { width: minShorter, height }
 }
 
-export function isHeicLikeFile(file: File): boolean {
+function isHeicLikeFile(file: File): boolean {
 	const type = file.type.toLowerCase()
 	const name = file.name.toLowerCase()
 	return (

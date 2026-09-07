@@ -26,7 +26,7 @@ figures below were measured directly against the repository (2026-08-30).
 - `tools/file-size-ratchet.json` enforces budgets of 800 lines for client routes
   and 2,000 lines for node test files. Files may only shrink out of the
   grandfathered list; new oversized files fail CI.
-- `knip` fails the gate on unused exports, files, and dependencies.
+- `knip` fails the gate on unused files, exports, and types.
 - `tools/check-decorative-banners.ts` rejects decorative comment banners.
 
 ## Oversized-file cleanup receipts

@@ -6,13 +6,13 @@
  * Fetch failures are fail-soft: callers get an empty list and keep serving.
  */
 
-export const cloudflareStatusIncidentsUrl =
+const cloudflareStatusIncidentsUrl =
 	'https://www.cloudflarestatus.com/api/v2/incidents/unresolved.json'
 
 export const cloudflareStatusPageUrl = 'https://www.cloudflarestatus.com'
 
 /** Exact Statuspage component names for products kody depends on. */
-export const relevantCloudflareComponentNames = [
+const relevantCloudflareComponentNames = [
 	'Workers',
 	'D1',
 	'R2',
@@ -26,11 +26,11 @@ export const relevantCloudflareComponentNames = [
 
 const relevantNameSet = new Set<string>(relevantCloudflareComponentNames)
 
-export const providerIncidentFetchTimeoutMs = 2500
+const providerIncidentFetchTimeoutMs = 2500
 /** Keep a slightly stale cache across one missed cron tick / flaky API. */
 export const providerIncidentCacheStaleMs = 5 * 60_000
 
-export type ProviderIncidentStatus =
+type ProviderIncidentStatus =
 	| 'investigating'
 	| 'identified'
 	| 'monitoring'
@@ -99,7 +99,7 @@ function collectAffectedComponentNames(
 	return [...names]
 }
 
-export function isRelevantCloudflareComponentName(name: string): boolean {
+function isRelevantCloudflareComponentName(name: string): boolean {
 	return relevantNameSet.has(name)
 }
 

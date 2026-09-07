@@ -82,7 +82,7 @@ export type ConnectOauthConfig = {
 	platformAllowedScopes: Array<string>
 }
 
-export type StoredIntegrationAuthorization = NonNullable<
+type StoredIntegrationAuthorization = NonNullable<
 	NonNullable<AccountIntegrationListItem['authorization']>
 >
 
@@ -128,7 +128,7 @@ export type ConnectOauthHostApprovalLink = {
 	approvalUrl: string
 }
 
-export type ConnectOauthPackageSuggestion = {
+type ConnectOauthPackageSuggestion = {
 	listingId: string
 	name: string
 	kodyId: string
@@ -318,7 +318,7 @@ export function parseStoredIntegrationConfig(
 	}
 }
 
-export function parseStoredIntegrationAuthorization(
+function parseStoredIntegrationAuthorization(
 	raw: unknown,
 ): StoredIntegrationAuthorization | null {
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -466,7 +466,7 @@ export function mergeConnectOauthConfig(input: {
 	}
 }
 
-export function resolveConnectOauthScopes(input: {
+function resolveConnectOauthScopes(input: {
 	queryConfig: ConnectOauthQueryConfig
 	storedIntegration: StoredIntegrationConfig | null
 }) {
@@ -476,7 +476,7 @@ export function resolveConnectOauthScopes(input: {
 	return input.storedIntegration?.authorization?.scopes ?? []
 }
 
-export function resolveConnectOauthExtraAuthorizeParams(input: {
+function resolveConnectOauthExtraAuthorizeParams(input: {
 	queryConfig: ConnectOauthQueryConfig
 	storedIntegration: StoredIntegrationConfig | null
 }) {
@@ -562,7 +562,7 @@ function parseSameOriginLogoPath(raw: unknown, pattern: RegExp): string | null {
  * optional cache tag, so tampered session snapshots cannot point the img at
  * other same-origin paths via `..` or extra segments.
  */
-export function parsePlatformLogoPath(raw: unknown): string | null {
+function parsePlatformLogoPath(raw: unknown): string | null {
 	return parseSameOriginLogoPath(
 		raw,
 		new RegExp(
@@ -576,7 +576,7 @@ export function parsePlatformLogoPath(raw: unknown): string | null {
  * the per-app logo route. Session restore must keep those paths or the
  * connect callback falls back to the letter after the provider redirect.
  */
-export function parseCatalogLogoPath(raw: unknown): string | null {
+function parseCatalogLogoPath(raw: unknown): string | null {
 	return parseSameOriginLogoPath(
 		raw,
 		new RegExp(
@@ -656,9 +656,7 @@ export function isOAuthExchangeSessionExpired(input: {
 	return true
 }
 
-export function hasProviderOAuthExchangeError(
-	data: Record<string, unknown> | null,
-) {
+function hasProviderOAuthExchangeError(data: Record<string, unknown> | null) {
 	if (!data) return false
 	if (typeof data.providerStatus === 'number') return true
 	if (
@@ -674,7 +672,7 @@ export function hasProviderOAuthExchangeError(
 	)
 }
 
-export function resolveConnectOauthTokenExchangeStyle(input: {
+function resolveConnectOauthTokenExchangeStyle(input: {
 	tokenUrl: string
 	queryStyle: TokenExchangeStyle | null
 	storedStyle: TokenExchangeStyle | null
@@ -691,11 +689,11 @@ export function resolveConnectOauthTokenExchangeStyle(input: {
  * Hosts that require a confidential client even though the default flow is
  * PKCE-only. Canva requires both S256 PKCE and a client secret.
  */
-export function defaultConnectOauthFlow(tokenUrl: string): OAuthFlow {
+function defaultConnectOauthFlow(tokenUrl: string): OAuthFlow {
 	return safeParseHost(tokenUrl) === 'api.canva.com' ? 'confidential' : 'pkce'
 }
 
-export function defaultConnectOauthUsePkce(input: {
+function defaultConnectOauthUsePkce(input: {
 	flow: OAuthFlow
 	tokenUrl: string
 }): boolean {

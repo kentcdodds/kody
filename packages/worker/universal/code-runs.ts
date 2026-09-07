@@ -19,7 +19,7 @@
  * `/code-runs.json` instead of polling a still pair.
  */
 
-export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
+const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
 export const codeRunsHonestySlotMs = 3000
 
 export type PublicCodeRunsWindow = {
@@ -110,7 +110,7 @@ export function msUntilCodeRunsWindowRefresh(
 }
 
 export const codeRunsCatchUpSnapAfterMs = 1000
-export const codeRunsCatchUpSnapBehind = 60
+const codeRunsCatchUpSnapBehind = 60
 
 /**
  * Advance the on-screen ticker by one integer while the tab is live.

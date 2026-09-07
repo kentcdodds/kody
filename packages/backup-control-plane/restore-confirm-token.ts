@@ -7,7 +7,7 @@ import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { BackupError } from './backup-policy.ts'
 import { type BackupEnvironment } from './backup-types.ts'
 
-export const RESTORE_CONFIRM_TTL_MS = 10 * 60 * 1000
+const RESTORE_CONFIRM_TTL_MS = 10 * 60 * 1000
 
 function requireSecret(env: BackupEnvironment): string {
 	const secret = env.RESTORE_CONFIRM_SECRET?.trim()

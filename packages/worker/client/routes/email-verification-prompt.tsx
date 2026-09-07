@@ -17,7 +17,7 @@ import {
 
 export { buildPendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 
-export const resendVerificationApiPath = '/account/resend-verification.json'
+const resendVerificationApiPath = '/account/resend-verification.json'
 
 export type ResendVerificationResult =
 	| { ok: true; message: string }

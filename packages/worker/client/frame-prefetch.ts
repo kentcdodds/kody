@@ -9,7 +9,7 @@ function makeCacheKey(src: string, target: string | undefined): FrameCacheKey {
 const frameCache = new Map<FrameCacheKey, string>()
 
 /** Clears all prefetched frame HTML. Called at the start of each prefetch. */
-export function clearPrefetchedFrames(): void {
+function clearPrefetchedFrames(): void {
 	frameCache.clear()
 }
 

@@ -143,7 +143,7 @@ export function nextSuggestedConnectionName(
 	return `${slugKey}-${n}`
 }
 
-export const addAccountQueryParam = 'add-account'
+const addAccountQueryParam = 'add-account'
 export const addAccountAnchorId = 'add-account'
 
 export function isAddAccountFormOpen(href: string) {

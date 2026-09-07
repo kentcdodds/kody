@@ -22,7 +22,7 @@ export type PageStatus = 'loading' | 'ready' | 'error'
 export type ClassifyState = 'idle' | 'saving'
 export type ClassificationFilter = 'all' | 'quarantined'
 
-export const accountEmailApiPath = '/account/email.json'
+const accountEmailApiPath = '/account/email.json'
 export const emailRoute = createListDetailRoute('/account/email')
 
 export const quarantinedBadgeCss = {

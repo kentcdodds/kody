@@ -8,7 +8,7 @@
 import { parseReferralCode } from '#universal/referral-program.ts'
 
 export const referralCookieName = 'kody_ref'
-export const referralCookieMaxAgeSeconds = 7 * 24 * 60 * 60
+const referralCookieMaxAgeSeconds = 7 * 24 * 60 * 60
 
 export function readReferralCodeFromCookie(
 	cookieHeader: string | null | undefined,

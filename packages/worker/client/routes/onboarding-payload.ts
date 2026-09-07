@@ -47,14 +47,14 @@ export type OnboardingPayload = {
 	checklist: OnboardingChecklistLoaderData | null
 }
 
-export const onboardingApiPath = '/onboarding.json'
+const onboardingApiPath = '/onboarding.json'
 
 /**
  * Chip navigations and render prefetch all hit this payload. Keep one
  * in-flight request and reuse a short-lived result so a picker cannot
  * stampede `/onboarding.json` on a loaded Vite origin.
  */
-export const onboardingPayloadCacheTtlMs = 30_000
+const onboardingPayloadCacheTtlMs = 30_000
 
 type OnboardingPayloadCache = {
 	payload: OnboardingPayload

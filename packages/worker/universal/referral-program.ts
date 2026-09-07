@@ -15,11 +15,7 @@ import { type PlanName } from '#universal/plans.ts'
 /** 30 days. Observed through grant `expires_at`, not this export alone. */
 export const referralStandardCreditDurationMs = 30 * 24 * 60 * 60 * 1000
 
-export const referralStatuses = ['pending', 'rewarded', 'rejected'] as const
-
-export type ReferralStatus = (typeof referralStatuses)[number]
-
-export const referralRejectReasons = [
+const referralRejectReasons = [
 	'self_referral',
 	'same_email',
 	'same_stripe_customer',

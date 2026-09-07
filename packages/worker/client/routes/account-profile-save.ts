@@ -1,7 +1,7 @@
 import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 
-export const usernameFormatRequirements =
+const usernameFormatRequirements =
 	'Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number.'
 
 export type AccountProfileSavePayload = {
@@ -22,7 +22,7 @@ export type AccountProfileSaveResult =
 	  }
 	| { status: 'noop'; appliedUsername: string }
 
-export function normalizeProfileUsername(value: unknown) {
+function normalizeProfileUsername(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 

@@ -77,7 +77,7 @@ export type CommunityInstallOutcome = {
 	failedChecks: Array<{ kind: string; message: string }>
 }
 
-export function getListingIdFromPathname(pathname: string) {
+function getListingIdFromPathname(pathname: string) {
 	const prefix = `${routes.community.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	let listingId: string
@@ -171,9 +171,7 @@ export function getPackageSettingsPageRef(
 	}
 }
 
-export function getPackageDetailApiRef(
-	pathname: string,
-): ListingPageRef | null {
+function getPackageDetailApiRef(pathname: string): ListingPageRef | null {
 	return getListingPageRef(pathname) ?? getPackageSettingsPageRef(pathname)
 }
 

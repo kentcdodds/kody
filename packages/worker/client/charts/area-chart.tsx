@@ -14,7 +14,7 @@ import {
 	softColor,
 } from './chart-theme.ts'
 
-export type AreaChartSeries = {
+type AreaChartSeries = {
 	label: string
 	color: string
 	values: Array<number>

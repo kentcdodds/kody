@@ -2,7 +2,7 @@ export const userAvatarMaxSourceBytes = 1_000_000
 export const userAvatarMinDimension = 64
 export const userAvatarMaxDimension = 4096
 export const userAvatarMaxAspectRatio = 3
-export const userAvatarOutputContentTypes = [
+const userAvatarOutputContentTypes = [
 	'image/png',
 	'image/jpeg',
 	'image/webp',

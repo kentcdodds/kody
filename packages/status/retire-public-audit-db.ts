@@ -6,7 +6,7 @@
  */
 
 export const publicAuditDbRetiredMetaKey = 'audit_db_public_card_retired'
-export const retiredPublicAuditDbComponent = 'audit_db'
+const retiredPublicAuditDbComponent = 'audit_db'
 
 export function retirePublicAuditDbData(
 	exec: (query: string, ...bindings: Array<string | number>) => void,

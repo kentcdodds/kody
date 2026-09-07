@@ -11,13 +11,13 @@
  * `deleteRule`, and `cssRules`.
  */
 
-export type ConstructableStyleSheetLike = {
+type ConstructableStyleSheetLike = {
 	readonly cssRules: { readonly length: number }
 	insertRule: (rule: string, index?: number) => number
 	deleteRule: (index: number) => void
 }
 
-export type ConstructableStylesheetsDocument = {
+type ConstructableStylesheetsDocument = {
 	createElement: (tagName: string) => {
 		sheet: ConstructableStyleSheetLike | null
 		appendChild: (node: unknown) => unknown

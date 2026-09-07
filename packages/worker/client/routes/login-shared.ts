@@ -13,7 +13,7 @@ export type AuthMode = 'login' | 'signup'
 export type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
 export type SignupPanel = 'waiting-list' | 'invite' | 'open'
 
-export function shouldOpenInviteSignup(searchParams: URLSearchParams) {
+function shouldOpenInviteSignup(searchParams: URLSearchParams) {
 	if (searchParams.has('code') || searchParams.has('invite')) return true
 	const panel = searchParams.get('panel')
 	return panel === 'invite' || panel === 'code'

@@ -11,9 +11,9 @@ import {
 } from './retrospective.ts'
 import { type IncidentView } from './status-types.ts'
 
-export const incidentRetrospectivePathPrefix = '/__maintenance/incidents/'
-export const incidentRetrospectivePathSuffix = '/retrospective'
-export const incidentRetrospectiveNotConfiguredMessage =
+const incidentRetrospectivePathPrefix = '/__maintenance/incidents/'
+const incidentRetrospectivePathSuffix = '/retrospective'
+const incidentRetrospectiveNotConfiguredMessage =
 	'Status incident retrospectives are not configured'
 
 export type SetIncidentRetrospectiveResult =

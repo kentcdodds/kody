@@ -28,7 +28,7 @@ export type EmailVerificationDelivery = {
 export const emailVerificationSenderBlockMessage =
 	'Your mailbox provider rejected mail from kody.codes (sender domain or IP block). Resending the same message will not get through and can make delivery worse. Contact support or use a different email address.'
 
-export const emailVerificationDeliveryFailedMessage =
+const emailVerificationDeliveryFailedMessage =
 	'The verification email could not be delivered. You can try resending, or contact support if it keeps failing.'
 
 export function isEmailVerificationDeliveryStatus(

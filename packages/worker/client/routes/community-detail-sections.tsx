@@ -392,7 +392,7 @@ const backLinkCss = {
 	},
 }
 
-export const missingHeadCss = {
+const missingHeadCss = {
 	marginTop: '1.8rem',
 	'& h1': {
 		margin: 0,
@@ -414,7 +414,7 @@ const shellStatusCss = {
 }
 
 /* Quiet sections in the `.pkg-fork` voice: display-face h2, muted lede. */
-export const detailSectionCss = {
+const detailSectionCss = {
 	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
 	'& h2': {
 		margin: 0,
@@ -493,13 +493,13 @@ const buttonRowCss = {
 	flexWrap: 'wrap' as const,
 }
 
-export const inlineLinkCss = {
+const inlineLinkCss = {
 	color: colors.primaryText,
 	textDecorationThickness: '1.5px',
 	textUnderlineOffset: '3px',
 }
 
-export const errorTextCss = {
+const errorTextCss = {
 	margin: '0.8rem 0 0',
 	color: colors.error,
 	fontSize: '0.95rem',

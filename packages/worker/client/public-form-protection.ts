@@ -51,10 +51,8 @@ function getTurnstileApi() {
  * blocker / privacy extension / network) or the script loads without
  * exposing `window.turnstile`. Matched by browser Sentry filters (KODY-6D).
  */
-export const turnstileScriptFailedToLoadMessage =
-	'Turnstile script failed to load.'
-export const turnstileApiDidNotInitializeMessage =
-	'Turnstile API did not initialize.'
+const turnstileScriptFailedToLoadMessage = 'Turnstile script failed to load.'
+const turnstileApiDidNotInitializeMessage = 'Turnstile API did not initialize.'
 
 function loadTurnstileScript() {
 	const existingApi = getTurnstileApi()

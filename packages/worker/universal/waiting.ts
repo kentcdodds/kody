@@ -24,7 +24,7 @@ export const waitingItemKinds = [
 	'onboarding',
 ] as const
 
-export type WaitingItemKind = (typeof waitingItemKinds)[number]
+type WaitingItemKind = (typeof waitingItemKinds)[number]
 
 export const waitingSeverities = ['block', 'degraded', 'setup'] as const
 
@@ -46,9 +46,9 @@ export type WaitingItem = {
 	severity: WaitingSeverity
 }
 
-export const userErrorRateMinErrors = 5
-export const userErrorRateMinPercent = 0.2
-export const userErrorRateAbsoluteErrors = 10
+const userErrorRateMinErrors = 5
+const userErrorRateMinPercent = 0.2
+const userErrorRateAbsoluteErrors = 10
 
 export function isElevatedUserErrorRate(input: {
 	errorCount: number
@@ -78,13 +78,13 @@ export type WaitingExpiredSecretSignal = {
 	name: string
 }
 
-export type WaitingLockedPackageSignal = {
+type WaitingLockedPackageSignal = {
 	id: string
 	name: string
 	kodyId: string
 }
 
-export type WaitingEntitlementCapSignal = {
+type WaitingEntitlementCapSignal = {
 	resource: string
 	label: string
 }

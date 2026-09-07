@@ -53,7 +53,7 @@ const interactiveGuideRenderers: Readonly<
  * (`data-rmx-document` so the SPA does not intercept `/guides/:slug.md`).
  */
 
-export function getGuideSlugFromPathname(pathname: string) {
+function getGuideSlugFromPathname(pathname: string) {
 	const prefix = `${routes.guides.href()}/`
 	if (!pathname.startsWith(prefix)) return null
 	let slug: string
@@ -113,7 +113,7 @@ export async function guideDetailRouteLoader(
  * readers; the page owns the h1 from frontmatter, so drop the body's
  * leading h1 to avoid rendering the title twice.
  */
-export function stripLeadingH1(body: string): string {
+function stripLeadingH1(body: string): string {
 	return body.replace(/^# [^\n]*\n+/, '')
 }
 

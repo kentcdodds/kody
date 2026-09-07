@@ -7,8 +7,6 @@ import {
 	type McpOAuthDoneMessage,
 } from '#universal/mcp-oauth-return.ts'
 
-export { mcpOAuthMessageType }
-
 function isOnboardingMcpOAuthPopup() {
 	return typeof window !== 'undefined' && window.name === mcpOAuthPopupName
 }
