@@ -269,7 +269,7 @@ Recovery: GitHub account login for `kentcdodds` plus org/repo admin. A second
 GitHub owner is not configured in-repo. Losing the user account without a
 recovery code blocks Actions secret edits and CLA recording.
 
-`Password manager: GitHub OAuth App display name; password-manager entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and the kody-bot GitHub user login.`
+`Password manager: GitHub OAuth App display name; entry for PREVIEW_ENVIRONMENT_ADMIN_TOKEN and the kody-bot GitHub user login.`
 
 ## Stripe
 
@@ -330,7 +330,7 @@ Recovery: Stripe account login. Customers and subscriptions live in Stripe;
 refreshed by webhooks and `StripePlanRefresh`. Losing `STRIPE_WEBHOOK_SECRET`
 returns 503 from `/webhooks/stripe` until it is replaced.
 
-`Password manager: Stripe webhook endpoint id; password-manager entry for STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.`
+`Password manager: Stripe webhook endpoint id; entry for STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.`
 
 ## Sentry
 
@@ -364,7 +364,7 @@ project DSN public key.
 Recovery: Sentry org owner login. A missing DSN disables reporting; the app
 stays up.
 
-`Password manager: Sentry org slug; alert-rule destination (email / Discord webhook); password-manager entry for SENTRY_AUTH_TOKEN.`
+`Password manager: Sentry org slug; alert-rule destination (email / Discord webhook); entry for SENTRY_AUTH_TOKEN.`
 
 ## Fathom
 
@@ -380,7 +380,7 @@ Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret.
 Recovery: Fathom account login. Losing the site id only drops analytics; the app
 stays up.
 
-`Password manager: Fathom account login / password-manager entry.`
+`Password manager: Fathom account login entry.`
 
 ## Kit
 
@@ -409,7 +409,7 @@ Rotation: mint a new Kit API key, update `KIT_API_KEY`, deploy. Production
 Recovery: Kit account login (`hello@kentcdodds.com` is the documented sequence
 sender). Subscriber list lives in Kit, not D1.
 
-`Password manager: Kit account login / password-manager entry.`
+`Password manager: Kit account login entry.`
 
 ## Discord
 
@@ -441,7 +441,7 @@ Recovery: Discord account that owns the application and the official guild.
 Login and billing still succeed when the bot secrets are unset; join/role writes
 and shipped-PR posts skip.
 
-`Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name; password-manager entries.`
+`Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
 
 ## Google
 
@@ -459,7 +459,7 @@ deploy.
 Recovery: Google account that owns the Cloud project. The GitHub login button
 still works if Google is unset.
 
-`Password manager: Google Cloud project name / OAuth client name; password-manager entry.`
+`Password manager: Google Cloud project name / OAuth client name.`
 
 ## X
 
@@ -477,7 +477,7 @@ Rotation: regenerate the OAuth 2.0 client secret, update
 Recovery: X developer account that owns the project/app. X often omits email;
 those users connect from `/account` while already signed in.
 
-`Password manager: X project / app name; password-manager entry.`
+`Password manager: X project / app name.`
 
 ## Cursor
 
