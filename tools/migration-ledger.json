@@ -193,12 +193,12 @@
 			"sha256": "c36bf33ecda407df550a712148c3c24f9938169ecb4d9a4ede9ae00d980933a0"
 		},
 		{
-			"filename": "0048-user-usage-campaigns.sql",
-			"sha256": "5f200642c12431e47725261f909e1d336b038bdfc13d130a31dc297ca48c5b09"
+			"filename": "0048-users-tips-emails-opted-out-at.sql",
+			"sha256": "a3bbd8a16a5400efd7c58c774c78b4b26b5e1e42efc8782125987754e6acaacf"
 		},
 		{
-			"filename": "0049-users-tips-emails-opted-out-at.sql",
-			"sha256": "a3bbd8a16a5400efd7c58c774c78b4b26b5e1e42efc8782125987754e6acaacf"
+			"filename": "0049-user-usage-campaigns.sql",
+			"sha256": "635dd63c02d971d8b5116a40f9c3bf8d5ebb36fd2dd23a73d76774e1d793c581"
 		}
 	]
 }
