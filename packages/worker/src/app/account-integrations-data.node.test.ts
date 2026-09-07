@@ -45,8 +45,6 @@ const googleConfig = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'pkce' as const,
 	clientId: 'shared-google-client',
-	accessTokenSecretName: 'googleAccessToken',
-	refreshTokenSecretName: 'googleRefreshToken',
 	requiredHosts: ['www.googleapis.com'],
 	authorization: {
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -86,10 +84,8 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 			scopes: [],
 		},
-		accessTokenSecretName: 'google-calendarAccessToken',
-		refreshTokenSecretName: 'google-calendarRefreshToken',
 	})
-	expect(calendarSetup?.clientSecretSecretName ?? null).toBeNull()
+	expect(calendarSetup?.hasClientSecret).toBe(false)
 	expect(JSON.stringify(calendarSetup)).not.toMatch(
 		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
 	)
@@ -100,8 +96,6 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 		config: {
 			...googleConfig,
 			name: 'google-calendar',
-			accessTokenSecretName: 'googleCalendarAccessToken',
-			refreshTokenSecretName: 'googleCalendarRefreshToken',
 			authorization: {
 				...googleConfig.authorization,
 				scopes: ['calendar.readonly'],
@@ -118,8 +112,6 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 		name: 'google-calendar',
 		appSlug: 'google',
 		clientId: 'shared-google-client',
-		accessTokenSecretName: 'googleCalendarAccessToken',
-		refreshTokenSecretName: 'googleCalendarRefreshToken',
 		authorization: {
 			scopes: ['calendar.readonly'],
 		},
@@ -187,7 +179,6 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		platformAppSlug: 'github',
 		name: 'github',
 		scopes: ['read:user'],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	const platformReconnect = await loadAccountIntegrationByName(
 		env,
@@ -224,8 +215,6 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
 			scopes: ['read:user'],
 		},
-		accessTokenSecretName: 'github-2AccessToken',
-		refreshTokenSecretName: 'github-2RefreshToken',
 	})
 
 	await upsertOauthAppWithoutConnection({
@@ -236,7 +225,6 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			flow: 'confidential',
 			clientId: 'user-github-client',
-			clientSecretSecretName: 'otherGithubClientSecret',
 			authorization: {
 				authorizeUrl: 'https://github.com/login/oauth/authorize',
 			},
@@ -274,9 +262,6 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
 			clientId: 'user-github-client',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
 			requiredHosts: ['api.github.com'],
 			authorization: {
 				authorizeUrl: 'https://github.com/login/oauth/authorize',
@@ -314,8 +299,6 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			tokenUrl: 'https://api.linear.app/oauth/token',
 			flow: 'confidential',
 			clientId: 'user-linear-client',
-			accessTokenSecretName: 'linearAccessToken',
-			refreshTokenSecretName: null,
 		},
 	})
 	const incomplete = await loadAccountIntegrationByName(
@@ -368,8 +351,6 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 		config: {
 			...googleConfig,
 			name: 'google-calendar',
-			accessTokenSecretName: 'googleCalendarAccessToken',
-			refreshTokenSecretName: 'googleCalendarRefreshToken',
 			authorization: {
 				...googleConfig.authorization,
 				scopes: ['calendar.readonly'],
@@ -384,7 +365,6 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
 			flow: 'confidential',
 			clientId: 'notion-client-from-setup',
-			clientSecretSecretName: 'notionClientSecret',
 			authorization: {
 				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
 			},
@@ -403,7 +383,6 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 				slug: 'google',
 				provider: 'google',
 				clientId: 'shared-google-client',
-				clientSecretSecretName: null,
 				connectionCount: 2,
 				connections: expect.arrayContaining([
 					expect.objectContaining({ name: 'google' }),
@@ -414,7 +393,6 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 				slug: 'notion',
 				provider: 'notion',
 				clientId: 'notion-client-from-setup',
-				clientSecretSecretName: 'notionClientSecret',
 				connectionCount: 0,
 				connections: [],
 			}),
@@ -471,8 +449,6 @@ test('loadAccountIntegrationsData lists built-in apps next to user-registered ap
 		platformAppSlug: 'google',
 		name: 'google',
 		scopes: ['openid', 'email'],
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
 		accountLabel: 'me@example.com',
 	})
 	await upsertOauthAppWithoutConnection({
@@ -483,7 +459,6 @@ test('loadAccountIntegrationsData lists built-in apps next to user-registered ap
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
 			flow: 'confidential',
 			clientId: 'notion-client-from-setup',
-			clientSecretSecretName: 'notionClientSecret',
 			authorization: {
 				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
 			},
@@ -503,7 +478,6 @@ test('loadAccountIntegrationsData lists built-in apps next to user-registered ap
 						accountLabel: 'me@example.com',
 					}),
 				],
-				clientSecretSecretName: null,
 			}),
 			expect.objectContaining({
 				slug: 'notion',

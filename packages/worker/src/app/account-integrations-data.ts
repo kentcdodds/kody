@@ -7,7 +7,6 @@ import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { listSecrets } from '#mcp/secrets/service.ts'
 import {
 	findOauthAppForProviderSetup,
 	getJoinedIntegration,
@@ -47,6 +46,7 @@ function toAccountIntegrationRecord(
 		provider: entry.app.provider,
 		appLabel: entry.app.label,
 		accountLabel: entry.connection.accountLabel,
+		hasClientSecret: entry.lane === 'user' ? entry.app.hasClientSecret : false,
 		...(entry.lane === 'platform'
 			? {
 					platformAllowedScopes: entry.app.allowedScopes,
@@ -77,7 +77,7 @@ function toBringYourOwnReconnectRecord(
 		// sibling BYO client secret.
 		appSlug: '',
 		clientId: '',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		platformAllowedScopes: undefined,
 		platformLogoPath: undefined,
 		platformDescription: undefined,
@@ -102,8 +102,7 @@ function toBringYourOwnSetupFromPlatformConnection(
 		...record,
 		name: providerKey,
 		accountLabel: null,
-		accessTokenSecretName: `${providerKey}AccessToken`,
-		refreshTokenSecretName: `${providerKey}RefreshToken`,
+		hasClientSecret: false,
 	}
 }
 
@@ -135,9 +134,7 @@ function toAppOnlyIntegrationRecord(
 			? { usePkce: prefill.usePkce }
 			: {}),
 		clientId: prefill.clientId ?? '',
-		clientSecretSecretName: prefill.clientSecretSecretName,
-		accessTokenSecretName: `${providerKey}AccessToken`,
-		refreshTokenSecretName: `${providerKey}RefreshToken`,
+		hasClientSecret: prefill.hasClientSecret,
 		requiredHosts: [],
 		...(prefill.tokenExchangeStyle
 			? { tokenExchangeStyle: prefill.tokenExchangeStyle }
@@ -213,7 +210,7 @@ function buildPlatformOauthAppRecords(
 		provider: app.provider,
 		label: app.label,
 		clientId: app.clientId,
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		tokenUrl: app.tokenUrl,
 		authorizeUrl: app.authorizeUrl,
 		apiBaseUrl: app.apiBaseUrl,
@@ -471,11 +468,8 @@ export async function loadExistingConnectionSummary(
 }
 
 /**
- * True when the user already stores the client-secret secret the connect
- * page would use for `name`: the stored integration's secret name when
- * present, else the page's default `<providerKey>ClientSecret`. Embedded in
- * loader data so the page renders its setup / ready state without a
- * follow-up secrets fetch.
+ * True when the user-lane app already stores a client-secret ciphertext
+ * the connect page can reuse.
  */
 export async function hasStoredConnectClientSecret(
 	env: Env,
@@ -483,26 +477,13 @@ export async function hasStoredConnectClientSecret(
 	name: string,
 	record: AccountIntegrationRecord | null,
 ): Promise<boolean> {
-	const secretName =
-		record?.clientSecretSecretName?.trim() ||
-		`${normalizeProviderKey(name)}ClientSecret`
-	const [secrets, storedCiphertext] = await Promise.all([
-		listSecrets({
-			env,
-			userId: user.mcpUser.userId,
-			scope: 'user',
-			includeIntegrationOwned: true,
-		}),
-		record?.appSlug && !record.platform
-			? getOauthAppClientSecretCiphertext({
-					db: env.APP_DB,
-					userId: user.mcpUser.userId,
-					slug: record.appSlug,
-				})
-			: Promise.resolve(null),
-	])
-	if (storedCiphertext) return true
-	return secrets.some(
-		(secret) => secret.scope === 'user' && secret.name === secretName,
-	)
+	void name
+	if (record?.hasClientSecret) return true
+	if (!record?.appSlug || record.platform) return false
+	const storedCiphertext = await getOauthAppClientSecretCiphertext({
+		db: env.APP_DB,
+		userId: user.mcpUser.userId,
+		slug: record.appSlug,
+	})
+	return Boolean(storedCiphertext)
 }

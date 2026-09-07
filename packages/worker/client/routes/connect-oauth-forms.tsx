@@ -181,11 +181,7 @@ export function ConnectOauthCredentialsForm(
 						!props.revealStoredClientSecretField ? (
 							<section mix={css(insetCardCss)}>
 								<p mix={css({ margin: 0, color: colors.text })}>
-									Using the stored client secret in{' '}
-									<code>
-										{props.config.clientSecretSecretName ?? 'unknown secret'}
-									</code>
-									.
+									Using the stored client secret.
 								</p>
 								<p mix={css(descriptionCss)}>
 									You can continue without re-entering it.

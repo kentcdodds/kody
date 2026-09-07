@@ -55,9 +55,7 @@ export type ConnectOauthConfig = {
 	providerSetupInstructions: string | null
 	dashboardUrl: string | null
 	clientId: string
-	clientSecretSecretName: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName: string
+	hasClientSecret: boolean
 	allowedHosts: Array<string>
 	/**
 	 * Set when connecting through a platform (built-in) OAuth app: the
@@ -91,9 +89,7 @@ export type StoredIntegrationConfig = Omit<
 	AccountIntegrationListItem,
 	| 'apiBaseUrl'
 	| 'authorization'
-	| 'clientSecretSecretName'
 	| 'createdAt'
-	| 'refreshTokenSecretName'
 	| 'requiredHosts'
 	| 'updatedAt'
 	| 'appSlug'
@@ -102,8 +98,7 @@ export type StoredIntegrationConfig = Omit<
 	| 'accountLabel'
 > & {
 	apiBaseUrl: string | null
-	clientSecretSecretName: string | null
-	refreshTokenSecretName: string | null
+	hasClientSecret: boolean
 	requiredHosts: Array<string>
 	usePkce?: boolean | null
 	/** Omitted when unset so persisted JSON stays sparse (matches pre-import shape). */
@@ -189,9 +184,7 @@ export function toStoredIntegrationConfig(
 		usePkce:
 			typeof integration.usePkce === 'boolean' ? integration.usePkce : null,
 		clientId: integration.clientId,
-		clientSecretSecretName: integration.clientSecretSecretName?.trim() || null,
-		accessTokenSecretName: integration.accessTokenSecretName,
-		refreshTokenSecretName: integration.refreshTokenSecretName?.trim() || null,
+		hasClientSecret: integration.hasClientSecret === true,
 		requiredHosts: normalizeHosts(integration.requiredHosts ?? []),
 		...(integration.tokenExchangeStyle
 			? { tokenExchangeStyle: integration.tokenExchangeStyle }
@@ -243,20 +236,7 @@ export function parseStoredIntegrationConfig(
 		const usePkce = typeof parsed.usePkce === 'boolean' ? parsed.usePkce : null
 		const clientId =
 			typeof parsed.clientId === 'string' ? parsed.clientId.trim() : ''
-		const accessTokenSecretName =
-			typeof parsed.accessTokenSecretName === 'string'
-				? parsed.accessTokenSecretName.trim()
-				: ''
-		const refreshTokenSecretName =
-			typeof parsed.refreshTokenSecretName === 'string' &&
-			parsed.refreshTokenSecretName.trim()
-				? parsed.refreshTokenSecretName.trim()
-				: null
-		const clientSecretSecretName =
-			typeof parsed.clientSecretSecretName === 'string' &&
-			parsed.clientSecretSecretName.trim()
-				? parsed.clientSecretSecretName.trim()
-				: null
+		const hasClientSecret = parsed.hasClientSecret === true
 		const tokenExchangeStyle = parseTokenExchangeStyle(
 			parsed.tokenExchangeStyle,
 		)
@@ -285,7 +265,7 @@ export function parseStoredIntegrationConfig(
 			parsed.platformDescription.trim()
 				? parsed.platformDescription.trim()
 				: null
-		if (!name || !tokenUrl || !clientId || !accessTokenSecretName) {
+		if (!name || !tokenUrl || !clientId) {
 			return null
 		}
 		return {
@@ -306,9 +286,7 @@ export function parseStoredIntegrationConfig(
 			flow,
 			usePkce,
 			clientId,
-			clientSecretSecretName,
-			accessTokenSecretName,
-			refreshTokenSecretName,
+			hasClientSecret,
 			requiredHosts: normalizeHosts(requiredHosts),
 			...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 			authorization,
@@ -451,17 +429,7 @@ export function mergeConnectOauthConfig(input: {
 		clientId: input.storedIntegration?.platformAppSlug
 			? ''
 			: input.storedIntegration?.clientId?.trim() || '',
-		clientSecretSecretName:
-			flow === 'confidential'
-				? (input.storedIntegration?.clientSecretSecretName ??
-					`${providerKey}ClientSecret`)
-				: null,
-		accessTokenSecretName:
-			input.storedIntegration?.accessTokenSecretName ??
-			`${providerKey}AccessToken`,
-		refreshTokenSecretName:
-			input.storedIntegration?.refreshTokenSecretName ??
-			`${providerKey}RefreshToken`,
+		hasClientSecret: input.storedIntegration?.hasClientSecret === true,
 		allowedHosts,
 	}
 }
@@ -516,7 +484,6 @@ export function parseSessionConnectOauthConfig(
 		typeof record.usePkce === 'boolean' &&
 		typeof record.scopeSeparator === 'string' &&
 		typeof record.clientId === 'string' &&
-		typeof record.accessTokenSecretName === 'string' &&
 		Array.isArray(record.scopes) &&
 		Array.isArray(record.allowedHosts) &&
 		record.scopes.every((value) => typeof value === 'string') &&
@@ -526,6 +493,7 @@ export function parseSessionConnectOauthConfig(
 	if (!isValid) return null
 	return {
 		...(record as unknown as ConnectOauthConfig),
+		hasClientSecret: record.hasClientSecret === true,
 		platformAppSlug:
 			typeof record.platformAppSlug === 'string'
 				? record.platformAppSlug

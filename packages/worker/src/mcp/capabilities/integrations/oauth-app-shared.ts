@@ -11,7 +11,7 @@ import {
 
 /**
  * Public OAuth-app projection for MCP capabilities.
- * Never includes client secret / token values — only secret *names*.
+ * Never includes client secret or token values.
  */
 export const oauthAppConnectionRefSchema = z.object({
 	name: z.string().min(1),
@@ -23,7 +23,7 @@ export const oauthAppPublicSchema = z.object({
 	provider: z.string().min(1),
 	label: z.string().nullable(),
 	clientId: z.string().min(1),
-	clientSecretSecretName: z.string().nullable(),
+	hasClientSecret: z.boolean(),
 	tokenUrl: z.string().url(),
 	authorizeUrl: z.string().url().nullable(),
 	apiBaseUrl: z.string().url().nullable(),
@@ -55,7 +55,7 @@ export function toOauthAppPublic(
 		provider: app.provider,
 		label: app.label,
 		clientId: app.clientId,
-		clientSecretSecretName: app.clientSecretSecretName,
+		hasClientSecret: app.hasClientSecret,
 		tokenUrl: app.tokenUrl,
 		authorizeUrl: app.authorizeUrl,
 		apiBaseUrl: app.apiBaseUrl,

@@ -175,7 +175,6 @@ export function filterOauthApps(
 			app.provider,
 			app.label,
 			app.clientId,
-			app.clientSecretSecretName,
 			app.tokenUrl,
 			app.authorizeUrl,
 			app.apiBaseUrl,

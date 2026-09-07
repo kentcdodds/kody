@@ -33,9 +33,6 @@ const spotifyIntegration = {
 	apiBaseUrl: 'https://api.spotify.test/v1',
 	flow: 'pkce' as const,
 	clientId: 'spotify-client-id',
-	clientSecretSecretName: null,
-	accessTokenSecretName: 'spotifyAccessToken',
-	refreshTokenSecretName: 'spotifyRefreshToken',
 	requiredHosts: ['api.spotify.test'],
 }
 
@@ -48,7 +45,7 @@ function createKody(
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
 	const storedSecrets = new Map<string, string>()
 	if (options.accessToken) {
-		storedSecrets.set(integration.accessTokenSecretName, options.accessToken)
+		storedSecrets.set(integration.name, options.accessToken)
 	}
 	const kody = {
 		async integrationGet(args: CapabilityArgs) {
@@ -184,7 +181,7 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		'https://api.spotify.test/v1/me/playlists',
 	)
 	expect(storedTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+		'Bearer {{integration-token:spotify}}',
 	)
 	expect(storedTokenRefreshCalls).toEqual([])
 
@@ -197,7 +194,9 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		using _spotifyFetch = createSpotifyFetchInterceptor({
 			tokenPayload: { access_token: 'new-access-token' },
 			fetchCalls: missingTokenFetchCalls,
-			apiErrors: [new Error('Secret "spotifyAccessToken" was not found.')],
+			apiErrors: [
+				new Error('Integration "spotify" does not have a stored access token.'),
+			],
 		})
 		const missingTokenFetch = await createAuthenticatedFetch(
 			missingTokenKody,
@@ -209,10 +208,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	expect(missingTokenRefreshCalls).toEqual([{ name: 'spotify' }])
 	expect(missingTokenFetchCalls).toHaveLength(2)
 	expect(missingTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+		'Bearer {{integration-token:spotify}}',
 	)
 	expect(missingTokenFetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+		'Bearer {{integration-token:spotify}}',
 	)
 
 	const expiredTokenFetchCalls: Array<Request> = []
@@ -242,10 +241,10 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		'https://api.spotify.test/v1/me?market=US',
 	)
 	expect(expiredTokenFetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+		'Bearer {{integration-token:spotify}}',
 	)
 	expect(expiredTokenFetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:spotifyAccessToken|scope=user}}',
+		'Bearer {{integration-token:spotify}}',
 	)
 })
 
@@ -310,9 +309,6 @@ const githubPlatformIntegration = {
 	apiBaseUrl: 'https://api.github.test',
 	flow: 'confidential' as const,
 	clientId: 'platform-github-client-id',
-	clientSecretSecretName: null,
-	accessTokenSecretName: 'githubAccessToken',
-	refreshTokenSecretName: 'githubRefreshToken',
 	requiredHosts: ['api.github.test'],
 	platform: true,
 }
@@ -356,10 +352,10 @@ test('createAuthenticatedFetch refreshes platform integrations host-side and ret
 	// Both attempts use the placeholder header: the raw token never enters
 	// the sandbox even on the post-refresh retry.
 	expect(fetchCalls[0]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:githubAccessToken|scope=user}}',
+		'Bearer {{integration-token:github}}',
 	)
 	expect(fetchCalls[1]?.headers.get('authorization')).toBe(
-		'Bearer {{secret:githubAccessToken|scope=user}}',
+		'Bearer {{integration-token:github}}',
 	)
 })
 

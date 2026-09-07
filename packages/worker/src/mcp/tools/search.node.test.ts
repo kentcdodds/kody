@@ -35,9 +35,7 @@ function createJoinedIntegration(input: {
 	flow?: JoinedIntegration['app']['flow']
 	scopes?: Array<string>
 	requiredHosts?: Array<string>
-	accessTokenSecretName?: string
-	refreshTokenSecretName?: string | null
-	clientSecretSecretName?: string | null
+	hasClientSecret?: boolean
 }): JoinedIntegration {
 	const userId = input.userId ?? 'user-1'
 	const appSlug = input.appSlug ?? input.name
@@ -50,10 +48,7 @@ function createJoinedIntegration(input: {
 			provider: input.provider ?? appSlug.split('-')[0] ?? appSlug,
 			label: null,
 			clientId: input.clientId ?? `${input.name}-client-id`,
-			clientSecretSecretName:
-				input.clientSecretSecretName === undefined
-					? `${input.name}-client-secret`
-					: input.clientSecretSecretName,
+			hasClientSecret: input.hasClientSecret ?? true,
 			tokenUrl: input.tokenUrl ?? 'https://oauth2.googleapis.com/token',
 			authorizeUrl:
 				input.authorizeUrl === undefined
@@ -80,12 +75,8 @@ function createJoinedIntegration(input: {
 			description: input.description ?? `${input.name} integration`,
 			scopes: input.scopes ?? [],
 			requiredHosts: input.requiredHosts ?? [],
-			accessTokenSecretName:
-				input.accessTokenSecretName ?? `${input.name}-access-token`,
-			refreshTokenSecretName:
-				input.refreshTokenSecretName === undefined
-					? `${input.name}-refresh-token`
-					: input.refreshTokenSecretName,
+			usageMode: 'any',
+			allowedPackageIds: [],
 			connectedAt: null,
 			tokenRefreshedAt: null,
 			createdAt: now,
@@ -342,9 +333,6 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				apiBaseUrl: 'https://epsilon.example/api',
 				authorizeUrl: null,
 				clientId: 'github-client-id',
-				clientSecretSecretName: 'github-client-secret',
-				accessTokenSecretName: 'github-access-token',
-				refreshTokenSecretName: 'github-refresh-token',
 				requiredHosts: ['epsilon.example'],
 			}),
 		],
@@ -377,9 +365,6 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				integrationName: 'github',
 				tokenUrl: 'https://delta.example/token',
 				clientId: 'github-client-id',
-				clientSecretSecretName: 'github-client-secret',
-				accessTokenSecretName: 'github-access-token',
-				refreshTokenSecretName: 'github-refresh-token',
 			}),
 			expect.objectContaining({
 				type: 'secret',
@@ -469,7 +454,6 @@ test('searchUnified returns four connections on one shared OAuth app as distinct
 		appSlug: 'google',
 		provider: 'google',
 		clientId: 'shared-google-client-id',
-		clientSecretSecretName: 'google-client-secret',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		apiBaseUrl: 'https://www.googleapis.com',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -489,8 +473,6 @@ test('searchUnified returns four connections on one shared OAuth app as distinct
 				description: `${name} connection`,
 				scopes: [`scope-for-${name}`],
 				requiredHosts: ['www.googleapis.com'],
-				accessTokenSecretName: `${name}-access-token`,
-				refreshTokenSecretName: `${name}-refresh-token`,
 			}),
 		),
 	} satisfies OptionalSearchRowsResult

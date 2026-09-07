@@ -46,7 +46,6 @@ import {
 } from '#worker/entitlements/service.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type SecretMetadata, type SecretScope } from './types.ts'
-import { listReferencedIntegrationSecretNames } from '#worker/integrations/owned-secret-names.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 
 type SecretOwnerContext = {
@@ -71,7 +70,6 @@ type SaveSecretInput = SecretOwnerContext & {
 type ListSecretsInput = SecretOwnerContext & {
 	env: Pick<Env, 'APP_DB'>
 	scope?: SecretScope | null
-	includeIntegrationOwned?: boolean
 }
 
 type ResolveSecretInput = SecretOwnerContext & {
@@ -623,14 +621,7 @@ export async function listSecrets(
 				expiresAt: row.expires_at,
 			}),
 		)
-	if (input.includeIntegrationOwned) return listed
-	const ownedNames = await listReferencedIntegrationSecretNames({
-		db: input.env.APP_DB,
-		userId: input.userId,
-	})
-	return listed.filter(
-		(row) => row.scope !== 'user' || !ownedNames.has(row.name),
-	)
+	return listed
 }
 
 export async function resolveSecret(
@@ -793,14 +784,8 @@ export async function listUserSecretsForSearch(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
-	const ownedNames = await listReferencedIntegrationSecretNames({
-		db: input.env.APP_DB,
-		userId: input.userId,
-	})
 	return rows
-		.filter(
-			(row) => !isReservedSecretName(row.name) && !ownedNames.has(row.name),
-		)
+		.filter((row) => !isReservedSecretName(row.name))
 		.map((row) => ({
 			name: row.name,
 			scope: row.scope,

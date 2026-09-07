@@ -38,9 +38,6 @@ function createIntegration(name: string) {
 		apiBaseUrl: 'https://www.googleapis.com/calendar/v3',
 		flow: 'confidential' as const,
 		clientId: `${name}-client-id-value`,
-		clientSecretSecretName: `${name}ClientSecret`,
-		accessTokenSecretName: `${name}AccessToken`,
-		refreshTokenSecretName: `${name}RefreshToken`,
 		requiredHosts: ['www.googleapis.com'],
 		authorization: {
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',

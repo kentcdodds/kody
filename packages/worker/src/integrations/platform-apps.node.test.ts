@@ -248,10 +248,10 @@ test('deletePlatformOauthApp refuses while user connections reference the app', 
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug, access_token_secret_name
-			) VALUES (?, ?, NULL, ?, ?)`,
+				user_id, name, app_slug, platform_app_slug
+			) VALUES (?, ?, NULL, ?)`,
 		)
-		.run('user-1', 'github', 'github', 'githubAccessToken')
+		.run('user-1', 'github', 'github')
 
 	expect(await countConnectionsForPlatformApp({ db, slug: 'github' })).toBe(1)
 	await expect(deletePlatformOauthApp({ db, slug: 'github' })).rejects.toThrow(
@@ -279,15 +279,15 @@ test('listTopPlatformAppsByUse orders enabled apps by connection count and hides
 	}
 	const insertConnection = sqlite.prepare(
 		`INSERT INTO user_integrations (
-			user_id, name, app_slug, platform_app_slug, access_token_secret_name
-		) VALUES (?, ?, NULL, ?, ?)`,
+			user_id, name, app_slug, platform_app_slug
+		) VALUES (?, ?, NULL, ?)`,
 	)
-	insertConnection.run('user-1', 'google', 'google', 'googleAccessToken')
-	insertConnection.run('user-2', 'google', 'google', 'googleAccessToken')
-	insertConnection.run('user-1', 'notion', 'notion', 'notionAccessToken')
-	insertConnection.run('user-1', 'slack', 'slack', 'slackAccessToken')
-	insertConnection.run('user-2', 'slack', 'slack', 'slackAccessToken')
-	insertConnection.run('user-3', 'slack', 'slack', 'slackAccessToken')
+	insertConnection.run('user-1', 'google', 'google')
+	insertConnection.run('user-2', 'google', 'google')
+	insertConnection.run('user-1', 'notion', 'notion')
+	insertConnection.run('user-1', 'slack', 'slack')
+	insertConnection.run('user-2', 'slack', 'slack')
+	insertConnection.run('user-3', 'slack', 'slack')
 
 	const top = await listTopPlatformAppsByUse({ db, limit: 3 })
 	expect(top.map((app) => app.slug)).toEqual(['google', 'notion', 'github'])
@@ -312,10 +312,10 @@ test('renamePlatformOauthApp carries the secret and moves connections atomically
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug, access_token_secret_name
-			) VALUES (?, ?, NULL, ?, ?)`,
+				user_id, name, app_slug, platform_app_slug
+			) VALUES (?, ?, NULL, ?)`,
 		)
-		.run('user-1', 'github', 'github', 'githubAccessToken')
+		.run('user-1', 'github', 'github')
 
 	const renamed = await renamePlatformOauthApp({
 		db,
@@ -395,19 +395,19 @@ test('user_integrations enforces exactly one of app_slug / platform_app_slug', a
 		sqlite
 			.prepare(
 				`INSERT INTO user_integrations (
-					user_id, name, app_slug, platform_app_slug, access_token_secret_name
-				) VALUES (?, ?, ?, ?, ?)`,
+					user_id, name, app_slug, platform_app_slug
+				) VALUES (?, ?, ?, ?)`,
 			)
-			.run('user-1', 'github', 'github', 'github', 'githubAccessToken'),
+			.run('user-1', 'github', 'github', 'github'),
 	).toThrow(/CHECK/i)
 
 	expect(() =>
 		sqlite
 			.prepare(
 				`INSERT INTO user_integrations (
-					user_id, name, app_slug, platform_app_slug, access_token_secret_name
-				) VALUES (?, ?, NULL, NULL, ?)`,
+					user_id, name, app_slug, platform_app_slug
+				) VALUES (?, ?, NULL, NULL)`,
 			)
-			.run('user-1', 'github', 'githubAccessToken'),
+			.run('user-1', 'github'),
 	).toThrow(/CHECK/i)
 })

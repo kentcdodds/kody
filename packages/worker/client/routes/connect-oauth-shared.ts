@@ -52,8 +52,6 @@ export type OAuthExchangeResult =
 	| { ok: true; data: Record<string, unknown>; status: number }
 	| { ok: false; status: number; error: string }
 
-export type SaveSecretResult = { ok: true } | { ok: false; error: string }
-
 export type SaveOauthAppResult =
 	| { ok: true; clientId: string }
 	| { ok: false; error: string }
@@ -376,38 +374,6 @@ export function redirectToLoginOn401(response: Response) {
 	return true
 }
 
-export async function saveConnectOauthSecret(
-	name: string,
-	value: string,
-	description: string,
-	allowedHosts: Array<string>,
-): Promise<SaveSecretResult> {
-	const response = await fetch('/account/secrets.json', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Accept: 'application/json',
-		},
-		credentials: 'include',
-		body: JSON.stringify({
-			action: 'save',
-			name,
-			value,
-			scope: 'user',
-			description,
-			allowedHosts,
-		}),
-	})
-	if (redirectToLoginOn401(response)) {
-		return { ok: false, error: 'Session expired.' }
-	}
-	const payload = await response.json().catch(() => null)
-	if (!response.ok || payload?.ok !== true) {
-		return { ok: false, error: payload?.error || 'Unable to save secret.' }
-	}
-	return { ok: true }
-}
-
 export async function exchangeConnectOauthCode(
 	nextConfig: ConnectOauthConfig,
 	code: string,
@@ -444,7 +410,7 @@ export async function exchangeConnectOauthCode(
 			params: params.toString(),
 			flow: nextConfig.flow,
 			tokenExchangeStyle: nextConfig.tokenExchangeStyle,
-			clientSecretSecretName: nextConfig.clientSecretSecretName,
+			provider: nextConfig.provider,
 			allowedHosts: nextConfig.allowedHosts,
 			...(nextConfig.platformAppSlug
 				? { platformAppSlug: nextConfig.platformAppSlug }
@@ -478,6 +444,7 @@ export async function exchangeConnectOauthCode(
 
 export async function saveConnectOauthApp(
 	nextConfig: ConnectOauthConfig,
+	clientSecret?: string,
 ): Promise<SaveOauthAppResult> {
 	const response = await fetch('/account/secrets.json', {
 		method: 'POST',
@@ -496,7 +463,7 @@ export async function saveConnectOauthApp(
 			usePkce: nextConfig.usePkce,
 			tokenExchangeStyle: nextConfig.tokenExchangeStyle,
 			clientId: nextConfig.clientId,
-			clientSecretSecretName: nextConfig.clientSecretSecretName,
+			...(clientSecret ? { clientSecret } : {}),
 			scopeSeparator: nextConfig.scopeSeparator,
 			extraAuthorizeParams: nextConfig.extraAuthorizeParams,
 		}),

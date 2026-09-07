@@ -127,10 +127,10 @@ test('delete refuses while connections exist and records the failure in the audi
 	sqlite
 		.prepare(
 			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug, access_token_secret_name
-			) VALUES (?, ?, NULL, ?, ?)`,
+				user_id, name, app_slug, platform_app_slug
+			) VALUES (?, ?, NULL, ?)`,
 		)
-		.run('user-1', 'github', 'github', 'githubAccessToken')
+		.run('user-1', 'github', 'github')
 
 	await expect(
 		adminPlatformOauthAppDeleteCapability.handler({ slug: 'github' }, ctx),

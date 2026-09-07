@@ -515,9 +515,6 @@ export type SearchMatch =
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
 			clientId: string
-			clientSecretSecretName: string | null
-			accessTokenSecretName: string
-			refreshTokenSecretName: string | null
 			authorization?: IntegrationConfig['authorization'] | null
 			lastAuthFailure?: IntegrationConfig['lastAuthFailure']
 	  }

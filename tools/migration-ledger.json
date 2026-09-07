@@ -195,6 +195,10 @@
 		{
 			"filename": "0048-referral-program.sql",
 			"sha256": "27996f6591596eca494e762e060c32cc8408652dcca0c70a65d27f0c189ab8fd"
+		},
+		{
+			"filename": "0049-drop-integration-secret-names.sql",
+			"sha256": "606a6740863b1834367cc6f61ab6785e3eb07de8fe7e8db61b658257f7ba219e"
 		}
 	]
 }

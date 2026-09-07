@@ -18,7 +18,7 @@ function integration(
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		flow: 'confidential',
 		clientId: 'client',
-		accessTokenSecretName: 'googleAccessToken',
+		hasClientSecret: false,
 		authorization: {
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 			scopes: [],

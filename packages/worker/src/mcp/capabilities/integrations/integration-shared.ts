@@ -63,17 +63,13 @@ export const integrationConfigSchema = z.object({
 	 */
 	usePkce: z.boolean().optional().nullable(),
 	clientId: z.string().min(1),
-	clientSecretSecretName: z.string().min(1).optional().nullable(),
-	accessTokenSecretName: z.string().min(1),
-	refreshTokenSecretName: z.string().min(1).optional().nullable(),
 	requiredHosts: z.array(z.string()).optional(),
 	tokenExchangeStyle: z.enum(tokenExchangeStyleValues).optional().nullable(),
 	authorization: integrationAuthorizationSchema.optional().nullable(),
 	/**
-	 * True when the connection uses a platform (built-in) OAuth app. Platform
-	 * connections never expose a client secret name: the shared secret lives
-	 * encrypted outside the user secret store and token exchange runs
-	 * host-side (`integrationTokenRefresh`).
+	 * True when the connection uses a platform (built-in) OAuth app. The
+	 * shared client secret lives encrypted on the platform app row and token
+	 * exchange runs host-side (`integrationTokenRefresh`).
 	 */
 	platform: z.boolean().optional(),
 	/**
@@ -112,8 +108,19 @@ export const integrationSaveSchema = z
 		flow: z.enum(integrationFlowValues).optional(),
 		usePkce: z.boolean().nullable().optional(),
 		clientId: z.string().min(1).optional(),
+		/**
+		 * @deprecated Ignored. User-lane client secrets live encrypted on the
+		 * app row. Kept so existing callers that still send a secret-store name
+		 * do not fail `.strict()` validation.
+		 */
 		clientSecretSecretName: z.string().min(1).nullable().optional(),
+		/**
+		 * @deprecated Ignored. Access tokens live encrypted on the connection.
+		 */
 		accessTokenSecretName: z.string().min(1).optional(),
+		/**
+		 * @deprecated Ignored. Refresh tokens live encrypted on the connection.
+		 */
 		refreshTokenSecretName: z.string().min(1).nullable().optional(),
 		requiredHosts: z.array(z.string()).optional(),
 		tokenExchangeStyle: z.enum(tokenExchangeStyleValues).nullable().optional(),
@@ -149,9 +156,6 @@ function normalizeIntegrationConfigFields(
 		| 'apiBaseUrl'
 		| 'flow'
 		| 'usePkce'
-		| 'clientSecretSecretName'
-		| 'accessTokenSecretName'
-		| 'refreshTokenSecretName'
 		| 'requiredHosts'
 		| 'tokenExchangeStyle'
 		| 'authorization'
@@ -176,9 +180,6 @@ function normalizeIntegrationConfigFields(
 		apiBaseUrl: value.apiBaseUrl?.trim() || null,
 		flow: value.flow,
 		...(usePkce == null ? {} : { usePkce }),
-		clientSecretSecretName: value.clientSecretSecretName?.trim() || null,
-		accessTokenSecretName: value.accessTokenSecretName.trim(),
-		refreshTokenSecretName: value.refreshTokenSecretName?.trim() || null,
 		requiredHosts: normalizeAllowedHosts(value.requiredHosts ?? []),
 		...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 		...(authorization ? { authorization } : {}),

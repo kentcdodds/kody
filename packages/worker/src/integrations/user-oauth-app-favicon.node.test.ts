@@ -64,7 +64,7 @@ test('shouldFetchUserOauthAppFavicon skips explicit uploads and stale-host refet
 		provider: 'dropbox',
 		label: null,
 		clientId: 'client',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
 		authorizeUrl: 'https://www.dropbox.com/oauth2/authorize',
 		apiBaseUrl: 'https://api.dropboxapi.com/2',

@@ -137,9 +137,6 @@ test('mergeIntegrationConfig and integrationSave create, canonicalize identity, 
 		apiBaseUrl: 'https://api.spotify.com/v1',
 		flow: 'pkce',
 		clientId: 'spotify-client-id-value',
-		clientSecretSecretName: null,
-		accessTokenSecretName: 'spotifyAccessToken',
-		refreshTokenSecretName: 'spotifyRefreshToken',
 		requiredHosts: ['api.spotify.com'],
 		authorization: {
 			authorizeUrl: 'https://accounts.spotify.com/authorize',
@@ -276,7 +273,7 @@ test('integrationSave reuses an existing app when credentials match and preserve
 		slug: 'google',
 		connectionCount: 2,
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 	})
 	expect(apps.apps[0]?.connections.map((entry) => entry.name).sort()).toEqual([
 		'google',
@@ -294,9 +291,6 @@ test('integrationSave reuses an existing app when credentials match and preserve
 		name: 'google',
 		apiBaseUrl: 'https://www.googleapis.com/v2',
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: null,
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
 		requiredHosts: ['accounts.google.com', 'www.googleapis.com'],
 		authorization: {
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -379,7 +373,7 @@ test('integrationDelete and credential rotation return the expected MCP response
 	expect(rotated.app).toMatchObject({
 		slug: 'google',
 		clientId: 'google-client-id-rotated',
-		clientSecretSecretName: 'googleClientSecretRotated',
+		hasClientSecret: false,
 		connectionCount: 2,
 	})
 
@@ -504,7 +498,6 @@ test('integrationSave refuses platform (built-in) connections instead of convert
 		userId: 'user-123',
 		platformAppSlug: 'github',
 		scopes: ['read:user'],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 
 	await expect(

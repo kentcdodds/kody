@@ -17,14 +17,11 @@ const inputSchema = z
 			.min(1)
 			.describe('OAuth app slug whose client credentials should be rotated.'),
 		clientId: z.string().min(1).describe('New OAuth client id (inline value).'),
-		clientSecretSecretName: z
-			.string()
-			.min(1)
-			.nullable()
-			.optional()
-			.describe(
-				'Secret-store name for the new client secret, or null to clear it. Omit to leave the existing secret name unchanged.',
-			),
+		/**
+		 * @deprecated Ignored. Client secrets live encrypted on the app row.
+		 * Rotate the secret value from /account/integrations.
+		 */
+		clientSecretSecretName: z.string().min(1).nullable().optional(),
 	})
 	.strict()
 
@@ -36,7 +33,7 @@ export const integrationOauthAppRotateCredentialsCapability =
 	defineDomainCapability(capabilityDomainNames.integrations, {
 		name: 'integrationOauthAppRotateCredentials',
 		description:
-			'Rotate the client id and optional client-secret secret name on a shared OAuth app. Every connection on that app sees the new credentials on the next join — one write instead of updating each connection.',
+			'Rotate the client id on a shared OAuth app. Every connection on that app sees the new client id on the next join — one write instead of updating each connection. Rotate the client secret value from /account/integrations.',
 		keywords: [
 			'integration',
 			'oauth',
@@ -64,16 +61,11 @@ export const integrationOauthAppRotateCredentialsCapability =
 					`OAuth app "${args.slug.trim()}" was not found for this user.`,
 				)
 			}
-			const clientSecretSecretName =
-				args.clientSecretSecretName === undefined
-					? existing.clientSecretSecretName
-					: args.clientSecretSecretName
 			const rotated = await rotateOauthAppClientCredentials({
 				env: ctx.env,
 				userId: user.userId,
 				slug: args.slug,
 				clientId: args.clientId,
-				clientSecretSecretName,
 			})
 			const joined = await listJoinedIntegrations({
 				env: ctx.env,

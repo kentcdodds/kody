@@ -42,9 +42,6 @@ const baseGoogleConfig = {
 	apiBaseUrl: 'https://www.googleapis.com',
 	flow: 'pkce' as const,
 	clientId: 'google-client-id-value',
-	clientSecretSecretName: null as string | null,
-	accessTokenSecretName: 'googleAccessToken',
-	refreshTokenSecretName: 'googleRefreshToken',
 	requiredHosts: ['www.googleapis.com', 'accounts.google.com'],
 	authorization: {
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -82,8 +79,6 @@ test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch,
 		config: {
 			...baseGoogleConfig,
 			name: 'google-calendar',
-			accessTokenSecretName: 'googleCalendarAccessToken',
-			refreshTokenSecretName: 'googleCalendarRefreshToken',
 			authorization: {
 				...baseGoogleConfig.authorization,
 				scopes: ['calendar.readonly'],
@@ -122,8 +117,6 @@ test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch,
 			...baseGoogleConfig,
 			name: 'google-legacy',
 			tokenUrl: 'https://oauth2.googleapis.com/token/legacy',
-			accessTokenSecretName: 'googleLegacyAccessToken',
-			refreshTokenSecretName: 'googleLegacyRefreshToken',
 		},
 	})
 
@@ -169,8 +162,6 @@ test('rotateOauthAppClientCredentials updates sibling joins, blocks delete while
 		config: {
 			...baseGoogleConfig,
 			name: 'google-mail',
-			accessTokenSecretName: 'googleMailAccessToken',
-			refreshTokenSecretName: 'googleMailRefreshToken',
 		},
 	})
 
@@ -185,20 +176,17 @@ test('rotateOauthAppClientCredentials updates sibling joins, blocks delete while
 		userId,
 		slug: ' Google ',
 		clientId: 'google-client-id-rotated',
-		clientSecretSecretName: 'googleClientSecretRotated',
 	})
 	expect(rotated).toMatchObject({
 		slug: 'google',
 		clientId: 'google-client-id-rotated',
-		clientSecretSecretName: 'googleClientSecretRotated',
+		hasClientSecret: false,
 	})
 
 	const google = await getIntegration({ env, userId, name: 'google' })
 	const googleMail = await getIntegration({ env, userId, name: 'google-mail' })
 	expect(google?.clientId).toBe('google-client-id-rotated')
-	expect(google?.clientSecretSecretName).toBe('googleClientSecretRotated')
 	expect(googleMail?.clientId).toBe('google-client-id-rotated')
-	expect(googleMail?.clientSecretSecretName).toBe('googleClientSecretRotated')
 
 	await expect(
 		deleteOauthAppIfUnused({ env, userId, slug: 'GOOGLE' }),
@@ -234,18 +222,17 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 	sqlite
 		.prepare(
 			`INSERT INTO user_oauth_apps (
-				user_id, slug, provider, label, client_id, client_secret_secret_name,
+				user_id, slug, provider, label, client_id,
 				token_url, authorize_url, api_base_url, flow, use_pkce,
 				token_exchange_style, scope_separator, extra_authorize_params_json,
 				created_at, updated_at
-			) VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, ?, 'confidential', NULL, ?, NULL, '{}', ?, ?)`,
+			) VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, 'confidential', NULL, ?, NULL, '{}', ?, ?)`,
 		)
 		.run(
 			'user-reuse',
 			'canva',
 			'canva',
 			'canva-client-id-value',
-			'canvaClientSecret',
 			'https://api.canva.com/rest/v1/oauth/token',
 			'https://api.canva.com',
 			'basic-form',
@@ -256,17 +243,15 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 		.prepare(
 			`INSERT INTO user_integrations (
 				user_id, name, app_slug, account_label, description, scopes_json,
-				required_hosts_json, access_token_secret_name, refresh_token_secret_name,
+				required_hosts_json,
 				connected_at, token_refreshed_at, created_at, updated_at
-			) VALUES (?, ?, ?, NULL, '', '[]', ?, ?, ?, NULL, NULL, ?, ?)`,
+			) VALUES (?, ?, ?, NULL, '', '[]', ?, NULL, NULL, ?, ?)`,
 		)
 		.run(
 			'user-reuse',
 			'canva',
 			'canva',
 			JSON.stringify(['api.canva.com']),
-			'canvaAccessToken',
-			'canvaRefreshToken',
 			now,
 			now,
 		)
@@ -296,9 +281,6 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 			flow: 'confidential',
 			usePkce: false,
 			clientId: 'canva-client-id-value',
-			clientSecretSecretName: 'canvaClientSecret',
-			accessTokenSecretName: 'canvaTeamAccessToken',
-			refreshTokenSecretName: 'canvaTeamRefreshToken',
 			requiredHosts: ['api.canva.com'],
 			tokenExchangeStyle: 'basic-form',
 		},
@@ -335,8 +317,6 @@ test('shared app identity survives reuse and scope-only resaves across sibling c
 		config: {
 			...baseGoogleConfig,
 			name: 'google-calendar',
-			accessTokenSecretName: 'googleCalendarAccessToken',
-			refreshTokenSecretName: 'googleCalendarRefreshToken',
 		},
 	})
 	const before = sqlite
@@ -362,8 +342,6 @@ test('shared app identity survives reuse and scope-only resaves across sibling c
 		config: {
 			...baseGoogleConfig,
 			name: 'acme-thing',
-			accessTokenSecretName: 'acmeAccessToken',
-			refreshTokenSecretName: 'acmeRefreshToken',
 			authorization: {
 				...baseGoogleConfig.authorization,
 				scopes: ['acme.scope'],
@@ -394,8 +372,6 @@ test('shared app identity survives reuse and scope-only resaves across sibling c
 			config: {
 				...baseGoogleConfig,
 				name,
-				accessTokenSecretName: `${name}AccessToken`,
-				refreshTokenSecretName: `${name}RefreshToken`,
 				authorization: {
 					...baseGoogleConfig.authorization,
 					scopes: [`${name}.initial`],
@@ -417,8 +393,6 @@ test('shared app identity survives reuse and scope-only resaves across sibling c
 		config: {
 			...baseGoogleConfig,
 			name: 'google-mail',
-			accessTokenSecretName: 'googleMailAccessToken',
-			refreshTokenSecretName: 'googleMailRefreshToken',
 			authorization: {
 				...baseGoogleConfig.authorization,
 				scopes: ['gmail.modify', 'gmail.readonly'],
@@ -469,9 +443,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 			...baseGoogleConfig,
 			name: 'solo-app',
 			clientId: 'solo-client-id',
-			clientSecretSecretName: 'soloClientSecret',
-			accessTokenSecretName: 'soloAccessToken',
-			refreshTokenSecretName: 'soloRefreshToken',
 		},
 	})
 	expect(
@@ -488,8 +459,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 		config: {
 			...baseGoogleConfig,
 			name: 'solo-app',
-			accessTokenSecretName: 'soloAccessToken',
-			refreshTokenSecretName: 'soloRefreshToken',
 		},
 	})
 
@@ -525,8 +494,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 			config: {
 				...baseGoogleConfig,
 				name,
-				accessTokenSecretName: `${name}AccessToken`,
-				refreshTokenSecretName: `${name}RefreshToken`,
 				authorization: {
 					...baseGoogleConfig.authorization,
 					scopes: name === 'google' ? ['openid', 'email'] : [`${name}.scope`],
@@ -553,8 +520,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 			...baseGoogleConfig,
 			name: 'google-drive',
 			tokenUrl: 'https://oauth2.googleapis.com/token/other',
-			accessTokenSecretName: 'googleDriveAccessToken',
-			refreshTokenSecretName: 'googleDriveRefreshToken',
 		},
 	})
 
@@ -596,9 +561,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			flow: 'confidential',
 			clientId: 'personal-github-client-id',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
 			requiredHosts: ['api.github.com'],
 			authorization: {
 				authorizeUrl: 'https://github.com/login/oauth/authorize',
@@ -617,7 +579,6 @@ test('rematch deletes orphan apps, keeps sibling apps intact, and converts sole 
 		userId: convertUserId,
 		platformAppSlug: 'github',
 		scopes: ['read:user'],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	expect(
 		await listOauthApps({ env: platformEnv.env, userId: convertUserId }),
@@ -675,8 +636,6 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 			apiBaseUrl: null,
 			flow: 'pkce',
 			clientId: 'spotify-client-from-setup',
-			accessTokenSecretName: 'spotifyAccessToken',
-			refreshTokenSecretName: 'spotifyRefreshToken',
 			requiredHosts: ['api.spotify.com'],
 			authorization: {
 				authorizeUrl: 'https://accounts.spotify.com/authorize',
@@ -703,7 +662,6 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
 			flow: 'confidential',
 			clientId: 'notion-client-old',
-			clientSecretSecretName: 'notionClientSecret',
 			authorization: {
 				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
 			},
@@ -717,7 +675,6 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 			tokenUrl: 'https://api.notion.com/v1/oauth/token',
 			flow: 'confidential',
 			clientId: 'notion-client-new',
-			clientSecretSecretName: 'notionClientSecret',
 			authorization: {
 				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
 			},
@@ -755,8 +712,6 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 			apiBaseUrl: 'https://www.googleapis.com',
 			flow: 'pkce',
 			clientId: 'shared-google-client',
-			accessTokenSecretName: 'googleAccessToken',
-			refreshTokenSecretName: 'googleRefreshToken',
 			requiredHosts: ['www.googleapis.com'],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -885,15 +840,11 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 		userId: 'user-platform',
 		platformAppSlug: 'github',
 		scopes: ['read:user', 'repo'],
-		accessTokenSecretName: 'githubAccessToken',
-		refreshTokenSecretName: 'githubRefreshToken',
 	})
 	expect(saved).toMatchObject({
 		name: 'github',
 		platform: true,
 		clientId: 'platform-github-client-id',
-		clientSecretSecretName: null,
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	expect(saved.requiredHosts).toEqual(['api.github.com', 'github.com'])
 	expect(saved.authorization?.scopes).toEqual(['read:user', 'repo'])
@@ -919,7 +870,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			userId: 'user-platform-scopes',
 			platformAppSlug: 'github',
 			scopes: ['admin:org'],
-			accessTokenSecretName: 'githubAccessToken',
 		}),
 	).rejects.toThrow('Scopes not allowed for platform integration "github"')
 
@@ -928,7 +878,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 		userId: 'user-platform-defaults',
 		platformAppSlug: 'github',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	expect(defaultScopes.authorization?.scopes).toEqual(['read:user'])
 
@@ -952,7 +901,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			userId: 'user-strict',
 			platformAppSlug: 'github-strict',
 			scopes: ['repo'],
-			accessTokenSecretName: 'githubAccessToken',
 		}),
 	).rejects.toThrow(
 		'Scopes not allowed for platform integration "github-strict"',
@@ -962,7 +910,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 		userId: 'user-strict',
 		platformAppSlug: 'github-strict',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	expect(scopeless.authorization?.scopes).toEqual([])
 
@@ -971,7 +918,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 		userId: 'user-deletes',
 		platformAppSlug: 'github',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	expect(
 		await deleteIntegration({ env, userId: 'user-deletes', name: 'github' }),
@@ -1001,7 +947,6 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 			userId: 'user-blocked',
 			platformAppSlug: 'github',
 			scopes: [],
-			accessTokenSecretName: 'githubAccessToken',
 		}),
 	).rejects.toThrow('Platform integration "github" is not available.')
 })
@@ -1014,7 +959,6 @@ test('loading a platform integration adds current app hosts without removing con
 		userId: 'user-stale-platform-hosts',
 		platformAppSlug: app.slug,
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	sqlite
 		.prepare(
