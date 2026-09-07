@@ -43,6 +43,7 @@ export type AccountProfilePanelProps = {
 	emailChangeMessage: string | null
 	emailChangeTone: 'error' | 'info'
 	emailChangeOpen: boolean
+	usernameFieldError: string | null
 	onProfileSubmit: (event: SubmitEvent) => void
 	onEmailChangeSubmit: (event: SubmitEvent) => void
 	onAvatarSelected: (event: Event) => void
@@ -76,6 +77,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 		emailChangeMessage,
 		emailChangeTone,
 		emailChangeOpen,
+		usernameFieldError,
 		onProfileSubmit,
 		onEmailChangeSubmit,
 		onAvatarSelected,
@@ -154,14 +156,29 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 					<input
 						type="text"
 						name="username"
+						id="account-username"
 						data-field-ring
 						required
 						autoComplete="username"
 						pattern="[A-Za-z0-9][A-Za-z0-9-]{1,30}[A-Za-z0-9]"
 						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 						value={draftUsername}
+						aria-invalid={usernameFieldError ? 'true' : undefined}
+						aria-describedby={
+							usernameFieldError ? 'account-username-error' : undefined
+						}
 						mix={[css(accountInputCss), on('input', onDraftUsernameInput)]}
 					/>
+					{usernameFieldError ? (
+						<p
+							id="account-username-error"
+							role="alert"
+							data-testid="account-username-error"
+							mix={css({ color: colors.error, margin: 0 })}
+						>
+							{usernameFieldError}
+						</p>
+					) : null}
 				</label>
 				<label mix={css(accountFieldCss)}>
 					<span mix={css(accountFieldLabelCss)}>Display name</span>
@@ -213,6 +230,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						<input
 							type="radio"
 							name="profileVisibility"
+							value="public"
 							checked={draftProfileVisibility === 'public'}
 							mix={[
 								on('change', () => {
@@ -233,6 +251,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						<input
 							type="radio"
 							name="profileVisibility"
+							value="private"
 							checked={draftProfileVisibility === 'private'}
 							mix={[
 								on('change', () => {
