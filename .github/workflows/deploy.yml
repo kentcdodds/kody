@@ -1136,11 +1136,9 @@ jobs:
     # path filter set deploy_status_worker=true (see #2143: guard matched
     # packages/status/ but this job never started).
     if: >-
-      always() && !cancelled() &&
-      needs.sha-guard.result == 'success' &&
-      needs.deploy.result == 'success' &&
-      needs.sha-guard.outputs.should_deploy == 'true' &&
-      needs.sha-guard.outputs.deploy_status_worker == 'true'
+      always() && !cancelled() && needs.sha-guard.result == 'success' &&
+      needs.deploy.result == 'success' && needs.sha-guard.outputs.should_deploy
+      == 'true' && needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
       url: https://status.kody.codes
