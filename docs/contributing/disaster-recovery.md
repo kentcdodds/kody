@@ -462,6 +462,13 @@ reindex Vectorize (`POST /__maintenance/reindex-capabilities` with
 APP_DB is not the job schedule store); recreate queues from Wrangler config; and
 expect users to reauthorize OAuth and reconnect MCP servers.
 
+After restoring a D1 export sealed before the 2026-08-17 secret format-upgrade
+pass, 2-part (`<iv>.<ciphertext>`) rows fail to decrypt on the user-facing path.
+Before serving, run `POST /__maintenance/reencrypt-secrets` until every table
+reports `remaining: 0` (see
+[Secret rotation](./secret-rotation.md#upgrading-pre-aad-2-part-ciphertexts)).
+Prefer restoring a later sealed day when one is available.
+
 ### Durable Object point-in-time recovery
 
 Use Durable Object (DO) PITR for an application bug or corruption inside one
