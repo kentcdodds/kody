@@ -1,10 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
+import { createRouter } from 'remix/router'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testCookieSecret } from '#worker/test-support/auth-provider-harness.ts'
 import { createUnsubscribeTipsHandler } from '#app/handlers/unsubscribe-tips.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { routes } from '#universal/routes.ts'
 import {
 	createTipsUnsubscribeToken,
 	isTipsEmailsOptedOut,
@@ -120,4 +122,33 @@ test('unsubscribe-tips GET applies opt-out and POST accepts RFC one-click', asyn
 	expect(
 		await isTipsEmailsOptedOut({ db: otherDb, userId: 'user-one-click' }),
 	).toBe(true)
+})
+
+test('string-literal unsubscribeTips route accepts RFC one-click POST', async () => {
+	let method = ''
+	const router = createRouter()
+	router.map(
+		{ unsubscribeTips: routes.unsubscribeTips },
+		{
+			actions: {
+				unsubscribeTips: {
+					middleware: [],
+					async handler({ request }) {
+						method = request.method
+						return new Response('posted')
+					},
+				},
+			},
+		},
+	)
+	const posted = await router.fetch(
+		new Request('http://localhost/unsubscribe/tips?token=x', {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: tipsUnsubscribeOneClickBody,
+		}),
+	)
+	expect(posted.status).toBe(200)
+	expect(await posted.text()).toBe('posted')
+	expect(method).toBe('POST')
 })
