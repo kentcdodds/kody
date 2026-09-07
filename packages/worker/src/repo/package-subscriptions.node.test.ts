@@ -211,6 +211,18 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 		},
 	})
 	expect(sessionBranch.outcome).toBe('ignored')
+
+	const publishNotes = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: {
+			...pushedEvent,
+			payload: {
+				...pushedEvent.payload,
+				ref: 'refs/notes/commits',
+			},
+		},
+	})
+	expect(publishNotes.outcome).toBe('ignored')
 	// Ignored events never touch the cached HEAD.
 	expect(mocks.applyArtifactSourcePushToHeadCache).not.toHaveBeenCalled()
 

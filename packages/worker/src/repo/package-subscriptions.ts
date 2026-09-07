@@ -14,8 +14,8 @@ import { getArtifactsNamespace } from './artifacts.ts'
 import {
 	type CloudflareArtifactsRepoEvent,
 	type RepoSubscriptionTopic,
+	isIgnoredRepoPushedRef,
 	isSessionArtifactRepoName,
-	isSessionBranchRef,
 	parseCloudflareArtifactsRepoEvent,
 	repoCreatedTopic,
 	repoDeletedTopic,
@@ -406,7 +406,7 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 	}
 	if (
 		providerEvent.type === 'cf.artifacts.repo.pushed' &&
-		isSessionBranchRef(providerEvent.payload.ref)
+		isIgnoredRepoPushedRef(providerEvent.payload.ref)
 	) {
 		return { outcome: 'ignored', providerEvent }
 	}

@@ -147,3 +147,19 @@ export function isSessionBranchRef(ref: string) {
 		: ref
 	return branch.startsWith('sessions/')
 }
+
+/**
+ * Publish git notes (`refs/notes/commits` and other `refs/notes/*`). Each
+ * package or repo publish force-pushes this bookkeeping ref after the
+ * source-branch push. Fan-out would invoke `repo.pushed` subscribers twice
+ * for one user-facing publish.
+ */
+export function isPublishNotesRef(ref: string) {
+	const normalized = ref.startsWith('refs/') ? ref.slice('refs/'.length) : ref
+	return normalized.startsWith('notes/')
+}
+
+/** Internal bookkeeping refs that must not fan out as `repo.pushed`. */
+export function isIgnoredRepoPushedRef(ref: string) {
+	return isSessionBranchRef(ref) || isPublishNotesRef(ref)
+}

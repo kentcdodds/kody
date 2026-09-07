@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import {
+	isIgnoredRepoPushedRef,
+	isPublishNotesRef,
 	isSessionArtifactRepoName,
 	isSessionBranchRef,
 	parseCloudflareArtifactsRepoEvent,
@@ -138,4 +140,17 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 	).toBe(true)
 	expect(isSessionBranchRef('refs/heads/main')).toBe(false)
 	expect(isSessionBranchRef('refs/heads/session-notes')).toBe(false)
+
+	expect(isPublishNotesRef('refs/notes/commits')).toBe(true)
+	expect(isPublishNotesRef('notes/commits')).toBe(true)
+	expect(isPublishNotesRef('refs/notes/kody')).toBe(true)
+	expect(isPublishNotesRef('refs/heads/main')).toBe(false)
+	expect(isPublishNotesRef('refs/heads/notes/commits')).toBe(false)
+	expect(isIgnoredRepoPushedRef('refs/notes/commits')).toBe(true)
+	expect(
+		isIgnoredRepoPushedRef(
+			'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
+		),
+	).toBe(true)
+	expect(isIgnoredRepoPushedRef('refs/heads/main')).toBe(false)
 })
