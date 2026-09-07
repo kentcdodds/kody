@@ -6,7 +6,7 @@
  * company, and not a host that is already authorized.
  *
  * `other` is an unknown vendor. It never shares a family with a named host,
- * and Not listed stays available for another unlisted connect.
+ * and Not listed stays available even when the first pick was unlisted.
  */
 
 import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
@@ -87,7 +87,7 @@ export function listOnboardingGreyedSecondAgents(
 	connectedAgents: ReadonlyArray<OnboardingConnectedAgentKind> = [],
 ): Array<OnboardingGreyedSecondAgent> {
 	const greyed = new Map<McpClientKind, OnboardingSecondAgentDisableReason>()
-	if (firstAgent) {
+	if (firstAgent && firstAgent !== 'other') {
 		for (const id of onboardingSameEcosystemAgents(firstAgent)) {
 			greyed.set(id, 'same-ecosystem')
 		}

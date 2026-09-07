@@ -43,7 +43,7 @@ test('same-ecosystem greying follows vendor families, not agent kind', () => {
 	])
 
 	expect(onboardingGreyedSecondAgents(null)).toEqual([])
-	expect(onboardingGreyedSecondAgents('other')).toEqual(['other'])
+	expect(onboardingGreyedSecondAgents('other')).toEqual([])
 	expect(isOnboardingSameEcosystemAgent('other', 'chatgpt')).toBe(false)
 
 	expect(onboardingSameEcosystemDisabledReason('codex', 'Codex')).toContain(
@@ -141,4 +141,6 @@ test('step 3 deep links drop greyed hosts and keep a different one', () => {
 	expect(
 		resolveOnboardingStep3SelectedAgent(null, 'other', [{ kind: null }]),
 	).toBe('other')
+	expect(resolveOnboardingStep3SelectedAgent('other', 'other')).toBe('other')
+	expect(resolveOnboardingStep3SelectedAgent('other', 'cursor')).toBe('cursor')
 })

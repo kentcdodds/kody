@@ -261,4 +261,25 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
 	expect(labeled).toContain('href="/onboarding/step-3/not-listed"')
 	expect(labeled).toContain('Same ecosystem')
+
+	const notListed = await renderToString(
+		renderSecondAgentPanel({
+			entrance: css({}),
+			activeStep: 3,
+			onSelectStep() {},
+			loggedIn: true,
+			hasSecondMcpClient: false,
+			connectedAgents: [{ label: 'Zephyr' }, { label: 'Kody' }],
+			firstAgent: 'other',
+			selectedAgent: null,
+			selectedAgentLabel: null,
+			agentChooser: null,
+			mcpServerUrl: defaultKodyMcpUrl,
+			mcpHighlights: {},
+		}),
+	)
+	expect(notListed).toContain('href="/onboarding/step-3/not-listed"')
+	expect(notListed).toContain('data-testid="onboarding-agent-other"')
+	expect(notListed).toContain('data-agent-kind="unknown"')
+	expect(notListed).not.toContain('data-greyed="true"')
 })
