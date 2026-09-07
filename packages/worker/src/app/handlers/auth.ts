@@ -62,6 +62,7 @@ import {
 	firstTouchAttributionCreateFields,
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
+import { resolveReferralCodeForSignup } from '#universal/referral-cookie.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
@@ -615,7 +616,11 @@ export function createAuthHandler(env: Env) {
 						db: env.APP_DB,
 						refereeStableUserId: record.stableUserId,
 						refereeUsername: normalizedUsername,
-						referralCode: signupAttribution?.referralCode,
+						referralCode: resolveReferralCodeForSignup({
+							body:
+								typeof body === 'object' && body !== null ? body : undefined,
+							cookieHeader: request.headers.get('Cookie'),
+						}),
 					})
 				} catch (error) {
 					console.warn('referral-attribution-failed', error)

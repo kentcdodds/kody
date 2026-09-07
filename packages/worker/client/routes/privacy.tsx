@@ -374,8 +374,10 @@ export function PrivacyRoute(_handle: Handle) {
 					<li>Fathom — privacy-focused website traffic analytics</li>
 				</ul>
 				<p mix={css(descriptionCss)}>
-					The only cookies are the session cookie (<code>kody_session</code>)
-					and the package-app session cookie on <code>kody.run</code> (
+					The only cookies are the session cookie (<code>kody_session</code>),
+					the one-week last-wins referral cookie (<code>kody_ref</code>) set by{' '}
+					<code>/signup?ref=&lt;username&gt;</code> share links, and the
+					package-app session cookie on <code>kody.run</code> (
 					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
 					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
 					two-factor verification, passkey challenges, and OAuth login.

@@ -57,7 +57,6 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 				utmTerm: null,
 				landingPath: '/signup',
 				referrer: null,
-				referralCode: null,
 			},
 		}),
 	).toEqual({

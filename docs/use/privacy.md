@@ -22,27 +22,29 @@ information (email, username, optional display name and bio, and profile
 visibility), first-touch marketing attribution captured on public-site visits
 when UTM or landing context is present and associated with the account at signup
 (`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term`,
-landing path, and referrer), referral attribution when a signup used
-`?ref=<username>` (the referred and referring stable user ids, reward status,
-and the Stripe invoice id after a paid reward), first-seen activation timestamps
-(email verified, first MCP connection, first execute, first saved package), MCP
-client name when known, last-active day stamps used for return metrics, secrets,
-memories, packages and their source, jobs, email inboxes and messages, durable
-storage, MCP server configuration, OAuth grants, package invocation tokens,
-short-lived execution history (see [Activity](./activity.md)), stored community
-activity events, and any platform feedback you approve for submission. All of
-this remains scoped to your account except for content you deliberately make
-public (community listings and a public profile), the narrow admin review of
-approved platform feedback, and the community activity metadata described below.
+landing path, and referrer), referral attribution when a signup used a
+`kody_ref` cookie from `?ref=<username>` (the referred and referring stable user
+ids, reward status, and the Stripe invoice id after a paid reward), first-seen
+activation timestamps (email verified, first MCP connection, first execute,
+first saved package), MCP client name when known, last-active day stamps used
+for return metrics, secrets, memories, packages and their source, jobs, email
+inboxes and messages, durable storage, MCP server configuration, OAuth grants,
+package invocation tokens, short-lived execution history (see
+[Activity](./activity.md)), stored community activity events, and any platform
+feedback you approve for submission. All of this remains scoped to your account
+except for content you deliberately make public (community listings and a public
+profile), the narrow admin review of approved platform feedback, and the
+community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
 metadata, and public activity are visible on `/@username`. When visibility is
 **private**, the public profile is not found. See
 [Public packages](./community-packages.md#public-profiles).
 
-The only cookies are the session cookie (`kody_session`) and the package-app
-session cookie on `kody.run` (`__Host-kody_pkg_session` on HTTPS,
-`kody_pkg_session` on HTTP). Short-lived cookies support two-factor
+The only cookies are the session cookie (`kody_session`), the one-week last-wins
+referral cookie (`kody_ref`) set by `/signup?ref=<username>` share links, and
+the package-app session cookie on `kody.run` (`__Host-kody_pkg_session` on
+HTTPS, `kody_pkg_session` on HTTP). Short-lived cookies support two-factor
 verification, passkey challenges, and OAuth login. Analytics (Fathom) is
 cookieless. The browser uses sessionStorage for first-touch signup attribution
 and scroll restoration, not tracking cookies.

@@ -574,7 +574,6 @@ test('auth handler login and signup workflow', async () => {
 			utmTerm: null,
 			landingPath: null,
 			referrer: null,
-			referralCode: null,
 		},
 	})
 
@@ -794,7 +793,6 @@ test('successful open signup schedules an admin user.created event', async () =>
 			utmTerm: null,
 			landingPath: null,
 			referrer: null,
-			referralCode: null,
 		},
 	})
 })

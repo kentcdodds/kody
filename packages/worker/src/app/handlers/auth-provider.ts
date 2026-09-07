@@ -77,6 +77,7 @@ import {
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
+import { resolveReferralCodeForSignup } from '#universal/referral-cookie.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
@@ -903,7 +904,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					db: env.APP_DB,
 					refereeStableUserId: stableUserId,
 					refereeUsername: username,
-					referralCode: loginState.attribution?.referralCode,
+					referralCode: resolveReferralCodeForSignup({
+						searchParams: url.searchParams,
+						cookieHeader: request.headers.get('Cookie'),
+					}),
 				})
 			} catch (error) {
 				console.warn('referral-attribution-failed', error)

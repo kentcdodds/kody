@@ -1,10 +1,8 @@
 import { expect, test } from 'vitest'
 import {
 	appendAttributionQueryParams,
-	emptyFirstTouchAttribution,
 	firstTouchAttributionToUserColumns,
 	hasFirstTouchAttribution,
-	mergeReferralCodeIntoFirstTouch,
 	parseFirstTouchAttribution,
 	serializeFirstTouchAttributionForTransport,
 } from './first-touch-attribution.ts'
@@ -25,7 +23,6 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: 'kody',
 		landingPath: '/signup',
 		referrer: 'https://youtube.com/watch?v=1',
-		referralCode: null,
 	})
 
 	expect(
@@ -45,7 +42,6 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: null,
 		landingPath: '/signup',
 		referrer: null,
-		referralCode: null,
 	})
 
 	expect(
@@ -61,7 +57,6 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 		utmTerm: null,
 		landingPath: null,
 		referrer: null,
-		referralCode: null,
 	})
 
 	const attribution = parseFirstTouchAttribution({
@@ -89,34 +84,21 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 	expect(params.get('utm_medium')).toBe('video')
 	expect(params.get('landing_path')).toBe('/signup')
 
-	const fromRef = parseFirstTouchAttribution({
+	const fromRefOnly = parseFirstTouchAttribution({
 		searchParams: new URLSearchParams('ref=KentCDodds'),
 		landingPath: '/signup',
 	})
-	expect(fromRef.referralCode).toBe('kentcdodds')
-	expect(hasFirstTouchAttribution(fromRef)).toBe(true)
-	expect(serializeFirstTouchAttributionForTransport(fromRef)).toEqual({
+	expect(fromRefOnly).toEqual({
+		utmSource: null,
+		utmMedium: null,
+		utmCampaign: null,
+		utmContent: null,
+		utmTerm: null,
 		landingPath: '/signup',
-		referralCode: 'kentcdodds',
+		referrer: null,
 	})
+	expect(hasFirstTouchAttribution(fromRefOnly)).toBe(true)
 	const refParams = new URLSearchParams()
-	appendAttributionQueryParams(refParams, fromRef)
-	expect(refParams.get('ref')).toBe('kentcdodds')
-
-	const homepageFirstTouch = parseFirstTouchAttribution({
-		landingPath: '/',
-	})
-	expect(mergeReferralCodeIntoFirstTouch(homepageFirstTouch, fromRef)).toEqual({
-		...homepageFirstTouch,
-		referralCode: 'kentcdodds',
-	})
-	expect(
-		mergeReferralCodeIntoFirstTouch(fromRef, {
-			...emptyFirstTouchAttribution,
-			referralCode: 'ada',
-		}),
-	).toEqual(fromRef)
-	expect(
-		mergeReferralCodeIntoFirstTouch(homepageFirstTouch, homepageFirstTouch),
-	).toBe(homepageFirstTouch)
+	appendAttributionQueryParams(refParams, fromRefOnly)
+	expect(refParams.get('ref')).toBeNull()
 })

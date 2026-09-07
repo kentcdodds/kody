@@ -22,9 +22,8 @@ test('buildProviderStartPath includes redirect, invite, and attribution query pa
 			utmTerm: null,
 			landingPath: '/signup',
 			referrer: null,
-			referralCode: 'ada',
 		}),
 	).toBe(
-		'/auth/github?utm_source=youtube&utm_medium=video&utm_campaign=bwk&landing_path=%2Fsignup&ref=ada',
+		'/auth/github?utm_source=youtube&utm_medium=video&utm_campaign=bwk&landing_path=%2Fsignup',
 	)
 })

@@ -50,6 +50,10 @@ import {
 	captureFirstTouchAttributionFromLocation,
 	clearStoredFirstTouchAttribution,
 } from './first-touch-attribution.ts'
+import {
+	clearReferralCookie,
+	persistReferralCookieFromLocation,
+} from './referral-cookie.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -122,7 +126,9 @@ export function App(handle: Handle<AppProps>) {
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
 		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
+		// Referral share links write a last-wins one-week cookie separately.
 		captureFirstTouchAttributionFromLocation()
+		persistReferralCookieFromLocation()
 		// New-account signal: drop tab-scoped first-touch so a later signup in
 		// this tab cannot inherit the previous visitor's campaign.
 		try {
@@ -130,6 +136,7 @@ export function App(handle: Handle<AppProps>) {
 				new URL(window.location.href).searchParams.get('accountCreated') === '1'
 			) {
 				clearStoredFirstTouchAttribution()
+				clearReferralCookie()
 			}
 		} catch {
 			// ignore malformed locations
@@ -145,6 +152,7 @@ export function App(handle: Handle<AppProps>) {
 		}
 		listenToRouterNavigation(handle, () => {
 			currentPathname = readRouterPathname(handle)
+			persistReferralCookieFromLocation()
 			queueThrottledSessionRefresh()
 			handle.update()
 		})

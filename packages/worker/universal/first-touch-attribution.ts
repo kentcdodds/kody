@@ -2,11 +2,8 @@
  * First-touch marketing attribution captured at signup (email or OAuth).
  * Invite codes remain the access key; these fields are the acquisition story.
  * Values are write-once on the user row — never overwrite later UTMs.
- * `referralCode` rides along for signup attribution but is not a users UTM
- * column — it writes a `referrals` row instead.
+ * Referral share links use a last-wins `kody_ref` cookie, not this payload.
  */
-
-import { parseReferralCode } from '#universal/referral-program.ts'
 
 export type FirstTouchAttribution = {
 	utmSource: string | null
@@ -16,8 +13,6 @@ export type FirstTouchAttribution = {
 	utmTerm: string | null
 	landingPath: string | null
 	referrer: string | null
-	/** Username from `?ref=` / `?referral=` — not a marketing UTM column. */
-	referralCode: string | null
 }
 
 export const emptyFirstTouchAttribution: FirstTouchAttribution = {
@@ -28,7 +23,6 @@ export const emptyFirstTouchAttribution: FirstTouchAttribution = {
 	utmTerm: null,
 	landingPath: null,
 	referrer: null,
-	referralCode: null,
 }
 
 const maxAttributionValueLength = 200
@@ -77,8 +71,7 @@ export function hasFirstTouchAttribution(
 		value.utmContent != null ||
 		value.utmTerm != null ||
 		value.landingPath != null ||
-		value.referrer != null ||
-		value.referralCode != null
+		value.referrer != null
 	)
 }
 
@@ -127,24 +120,7 @@ export function parseFirstTouchAttribution(input: {
 		utmTerm: readParam('utm_term', ['utmTerm', 'utm_term']),
 		landingPath,
 		referrer,
-		referralCode: parseReferralCode({
-			searchParams: params,
-			body: fromBody,
-		}),
 	}
-}
-
-/**
- * UTMs stay first-touch write-once. A later `/signup?ref=` can still fill
- * `referralCode` when the stored first-touch has none, so a homepage visit
- * in the same tab does not drop the share link.
- */
-export function mergeReferralCodeIntoFirstTouch(
-	firstTouch: FirstTouchAttribution,
-	later: FirstTouchAttribution,
-): FirstTouchAttribution {
-	if (firstTouch.referralCode || !later.referralCode) return firstTouch
-	return { ...firstTouch, referralCode: later.referralCode }
 }
 
 /**
@@ -163,7 +139,6 @@ export function serializeFirstTouchAttributionForTransport(
 	if (attribution.utmTerm) out.utmTerm = attribution.utmTerm
 	if (attribution.landingPath) out.landingPath = attribution.landingPath
 	if (attribution.referrer) out.referrer = attribution.referrer
-	if (attribution.referralCode) out.referralCode = attribution.referralCode
 	return out
 }
 
@@ -231,5 +206,4 @@ export function appendAttributionQueryParams(
 	if (attribution.landingPath)
 		params.set('landing_path', attribution.landingPath)
 	if (attribution.referrer) params.set('referrer', attribution.referrer)
-	if (attribution.referralCode) params.set('ref', attribution.referralCode)
 }

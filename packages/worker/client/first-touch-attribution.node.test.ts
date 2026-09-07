@@ -36,7 +36,7 @@ function installSessionStorage() {
 	clearStoredFirstTouchAttribution()
 }
 
-test('later signup ref fills a missing first-touch referral code', () => {
+test('first-touch UTMs stay write-once and ignore later share links', () => {
 	try {
 		installSessionStorage()
 		const homepage = captureFirstTouchAttributionFromLocation(
@@ -51,29 +51,20 @@ test('later signup ref fills a missing first-touch referral code', () => {
 			utmTerm: null,
 			landingPath: '/',
 			referrer: null,
-			referralCode: null,
 		})
 
-		const afterShareLink = captureFirstTouchAttributionFromLocation(
-			'https://kody.codes/signup?ref=Ada',
-			null,
-		)
-		expect(afterShareLink).toEqual({
-			...homepage,
-			referralCode: 'ada',
-		})
 		expect(
 			captureFirstTouchAttributionFromLocation(
-				'https://kody.codes/signup?ref=other',
+				'https://kody.codes/signup?ref=Ada',
 				null,
 			),
-		).toEqual(afterShareLink)
+		).toEqual(homepage)
 		expect(
 			captureFirstTouchAttributionFromLocation(
 				'https://kody.codes/signup?utm_source=youtube',
 				null,
 			),
-		).toEqual(afterShareLink)
+		).toEqual(homepage)
 	} finally {
 		restoreSessionStorage()
 	}
