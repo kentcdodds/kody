@@ -279,12 +279,6 @@ async function handleSaveOauthAppAction(input: {
 				slug: app.slug,
 				value: clientSecret,
 			})
-			await deleteLeftoverConnectClientSecret({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
-				provider,
-				clientSecretSecretName,
-			})
 		}
 		return jsonResponse({
 			ok: true,
@@ -439,12 +433,6 @@ async function handleConnectOauthAction(input: {
 			userId: input.user.mcpUser.userId,
 			slug: saved.app.slug,
 			value: clientSecret,
-		})
-		await deleteLeftoverConnectClientSecret({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			provider: integrationName,
-			clientSecretSecretName,
 		})
 	}
 	const hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
@@ -774,35 +762,6 @@ async function listConnectClientSecretSlugs(input: {
 	})
 	add(setup?.slug)
 	return slugs
-}
-
-async function deleteLeftoverConnectClientSecret(input: {
-	env: Env
-	userId: string
-	provider: string
-	clientSecretSecretName?: string | null
-}) {
-	const leftoverNames = [
-		input.clientSecretSecretName?.trim(),
-		canonicalIntegrationName(input.provider)
-			? `${canonicalIntegrationName(input.provider)}ClientSecret`
-			: null,
-	].filter((name, index, names): name is string => {
-		return Boolean(name) && names.indexOf(name) === index
-	})
-	for (const name of leftoverNames) {
-		try {
-			await deleteSecret({
-				env: input.env,
-				userId: input.userId,
-				name,
-				scope: 'user',
-				storageContext: { sessionId: null, appId: null, packageId: null },
-			})
-		} catch {
-			// Leftover name may already be gone.
-		}
-	}
 }
 
 function readTokenField(

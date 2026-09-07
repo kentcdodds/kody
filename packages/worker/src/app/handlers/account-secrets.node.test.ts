@@ -285,6 +285,41 @@ test('save_oauth_app persists the app (client id + endpoints) before authorize r
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
 })
 
+test('save_oauth_app does not delete user secrets after persisting a client-secret ciphertext', async () => {
+	mockModule.persistUserOauthAppClientSecret.mockClear()
+	mockModule.deleteSecret.mockClear()
+	const handler = createAccountSecretsApiHandler(createEnv())
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save_oauth_app',
+				provider: 'slack',
+				authorizeUrl: 'https://slack.com/oauth/v2/authorize',
+				tokenUrl: 'https://slack.com/api/oauth.v2.access',
+				apiBaseUrl: 'https://slack.com/api',
+				flow: 'confidential',
+				clientId: 'slack-client-id',
+				clientSecret: 'slack-client-secret',
+				clientSecretSecretName: 'slackClientSecret',
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			slug: 'slack',
+			value: 'slack-client-secret',
+		}),
+	)
+	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
+})
+
 test('connect oauth saves tokens via the secret store and persists app+connection through the integrations service', async () => {
 	mockModule.upsertIntegration.mockClear()
 	mockModule.saveSecret.mockClear()
@@ -1394,6 +1429,7 @@ test('oauth_exchange resolves secrets, maps provider failures, and forwards exch
 
 test('connect oauth persists usePkce for confidential + PKCE providers like Canva', async () => {
 	mockModule.saveValue.mockClear()
+	mockModule.deleteSecret.mockClear()
 	mockModule.searchCommunityListings.mockClear()
 	mockModule.searchCommunityListings.mockResolvedValueOnce([
 		{
@@ -1547,6 +1583,7 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		limit: 12,
 		resultFilter: expect.any(Function),
 	})
+	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
 		expect.objectContaining({
 			config: expect.objectContaining({
