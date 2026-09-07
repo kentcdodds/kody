@@ -676,12 +676,14 @@ run-error strings for connection health.
 When Cloudflare Artifacts reports commits pushed to a Kody-managed Artifacts
 repo (plain repo, package, or job source), Kody dispatches `repo.pushed` to
 packages saved by that same user that declare the topic. Delivery is durable via
-the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos and
-session workspace branch pushes (`sessions/<id>`) never emit — opening a repo
-session git-pushes that ref, and delivering it as `repo.pushed` would let a
-handler that opens another session loop. Events for other `ARTIFACTS_NAMESPACE`
-values are ignored. Handlers that only care about default branch content should
-still check `push.ref`.
+the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos, session
+workspace branch pushes (`sessions/<id>`), and publish git-notes
+(`refs/notes/commits`) never emit. Opening a repo session git-pushes the session
+ref, and delivering it as `repo.pushed` would let a handler that opens another
+session loop. Publish attaches a metadata note after the source-branch push;
+that second git update is not a content push. Events for other
+`ARTIFACTS_NAMESPACE` values are ignored. Handlers that only care about default
+branch content should still check `push.ref`.
 
 Handlers receive a metadata-first payload:
 

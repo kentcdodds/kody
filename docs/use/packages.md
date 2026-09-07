@@ -435,10 +435,10 @@ is metadata-first (server id/name/state, `account_url`). See the
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
-lifecycle events. Session workspace branch pushes (`sessions/<id>`) do not fan
-out. See [Plain repos](./repos.md) and the
-[package subscriptions guide](../guides/package-subscriptions.md) for payloads
-and the distinction between live HEAD and package publish.
+lifecycle events. Session workspace branch pushes (`sessions/<id>`) and publish
+git-notes (`refs/notes/commits`) do not fan out. See [Plain repos](./repos.md)
+and the [package subscriptions guide](../guides/package-subscriptions.md) for
+payloads and the distinction between live HEAD and package publish.
 
 ## Package webhooks
 
