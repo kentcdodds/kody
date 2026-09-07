@@ -20,7 +20,6 @@ import {
 	clearStoredFirstTouchAttribution,
 	readSignupFirstTouchAttribution,
 } from '#client/first-touch-attribution.ts'
-import { clearReferralCookie } from '#client/referral-cookie.ts'
 import { fathomEventNames, trackFathomEvent } from '#client/fathom-events.ts'
 import { serializeFirstTouchAttributionForTransport } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
@@ -286,7 +285,6 @@ export function LoginRoute(handle: Handle) {
 			if (mode === 'signup') {
 				const tracked = trackFathomEvent(fathomEventNames.accountCreated)
 				clearStoredFirstTouchAttribution()
-				clearReferralCookie()
 				if (typeof window !== 'undefined') {
 					const destination = resolvePasswordAuthRedirect({
 						mode,

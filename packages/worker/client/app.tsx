@@ -50,10 +50,7 @@ import {
 	captureFirstTouchAttributionFromLocation,
 	clearStoredFirstTouchAttribution,
 } from './first-touch-attribution.ts'
-import {
-	clearReferralCookie,
-	persistReferralCookieFromLocation,
-} from './referral-cookie.ts'
+import { persistReferralCookieFromLocation } from './referral-cookie.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -136,7 +133,6 @@ export function App(handle: Handle<AppProps>) {
 				new URL(window.location.href).searchParams.get('accountCreated') === '1'
 			) {
 				clearStoredFirstTouchAttribution()
-				clearReferralCookie()
 			}
 		} catch {
 			// ignore malformed locations
