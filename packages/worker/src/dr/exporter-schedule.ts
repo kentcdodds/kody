@@ -22,10 +22,11 @@ export const drExportCatchUpLookbackDays = 2
 
 /**
  * Daytime catch-up cadence: outside the nightly window, one tick every 15
- * minutes resumes a stranded day until its summary is written. A single tick
- * still spends at most the normal ~20 s budget, so daytime blast radius is
- * bounded while a stranded night finishes within a few hours. Ticks with no
- * stranded day exit after two cheap HEAD-style checks per lookback day.
+ * minutes resumes the oldest stranded day in the lookback until its summary
+ * is written. A single tick still spends at most the normal ~20 s budget,
+ * so daytime blast radius is bounded while a stranded night finishes within
+ * a few hours. Ticks with no stranded day exit after two cheap HEAD-style
+ * checks per lookback day.
  */
 export function shouldRunDrExportCatchUpCron(now: Date) {
 	if (shouldRunDrExportCron(now)) return false
