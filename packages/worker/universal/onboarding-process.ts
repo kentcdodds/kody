@@ -20,7 +20,7 @@ export const onboardingStepPaths = {
 	step3Agent: '/onboarding/step-3/:agent',
 } as const
 
-export const onboardingNotListedSegment = 'not-listed'
+const onboardingNotListedSegment = 'not-listed'
 
 export const onboardingWizardSteps = [
 	{
@@ -96,7 +96,7 @@ export const onboardingUnconnectedNotice =
 	'Your agent cannot do anything in Kody yet.'
 
 /** Agent-retrievable first-run guide (bundled + `search({ entity })`). */
-export const onboardingGuideEntity = 'onboarding:guide'
+const onboardingGuideEntity = 'onboarding:guide'
 export const onboardingGuideHref = '/guides/onboarding'
 
 /** Agent-retrievable Step 3 reuse guide (bundled + `search({ entity })`). */
@@ -127,7 +127,7 @@ export const onboardingSearchWaitingLabel =
 export const onboardingSearchStartedLabel =
 	"You've started making something useful"
 
-export const onboardingSecondAgentGiftAdvertise =
+const onboardingSecondAgentGiftAdvertise =
 	'Connect a second agent and get Standard free for 2 weeks.'
 
 export const onboardingSecondAgentLede = `Connect an agent from a different ecosystem. Reuse what you made in Step 2 so you can see it travel. ${onboardingSecondAgentGiftAdvertise}`
@@ -170,10 +170,9 @@ export function onboardingAccessWinMadeLine(input: {
 
 export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
 
-export const onboardingSecondAgentConnectedLabel =
-	"You've connected a second agent."
+const onboardingSecondAgentConnectedLabel = "You've connected a second agent."
 
-export const onboardingSecondAgentConnectedGiftLabel =
+const onboardingSecondAgentConnectedGiftLabel =
 	"You've connected a second agent. Standard is free for 2 weeks."
 
 export function onboardingSecondAgentConnectedStatusLabel(giftActive: boolean) {
@@ -275,13 +274,11 @@ export function isOnboardingPagePath(pathname: string) {
 	)
 }
 
-export function onboardingAgentPathSegment(agent: McpClientKind) {
+function onboardingAgentPathSegment(agent: McpClientKind) {
 	return agent === 'other' ? onboardingNotListedSegment : agent
 }
 
-export function readOnboardingAgentSegment(
-	segment: string,
-): McpClientKind | null {
+function readOnboardingAgentSegment(segment: string): McpClientKind | null {
 	if (segment === onboardingNotListedSegment) return 'other'
 	return isMcpClientKind(segment) ? segment : null
 }

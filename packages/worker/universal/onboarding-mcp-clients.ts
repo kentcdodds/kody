@@ -89,11 +89,11 @@ export const onboardingMobileFeaturedAgentIds = [
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /** Narrow viewport or a coarse phone-like pointer. */
-export const onboardingMobileAgentMediaQuery = `(max-width: ${breakpoints.mobile}), (hover: none) and (pointer: coarse)`
+const onboardingMobileAgentMediaQuery = `(max-width: ${breakpoints.mobile}), (hover: none) and (pointer: coarse)`
 
 export const onboardingMobileAgentMq = `@media ${onboardingMobileAgentMediaQuery}`
 
-export function onboardingFeaturedAgentIdsFor(
+function onboardingFeaturedAgentIdsFor(
 	surface: OnboardingAgentSurface,
 ): ReadonlyArray<McpClientKind> {
 	return surface === 'mobile'
@@ -349,11 +349,11 @@ export function onboardingDataHref(href: string): string {
 }
 
 /** GitHub docs for adding MCP servers in Copilot CLI (also used by the app). */
-export const copilotCliMcpGuideUrl =
+const copilotCliMcpGuideUrl =
 	'https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers'
 
 /** GitHub docs for MCP in the GitHub Copilot app. */
-export const copilotAppCustomizeGuideUrl =
+const copilotAppCustomizeGuideUrl =
 	'https://docs.github.com/en/copilot/how-tos/github-copilot-app/customize-github-copilot-app'
 
 export const chatGptDeveloperModeGuideUrl =
@@ -363,23 +363,23 @@ export const chatGptDeveloperModeGuideUrl =
 export const cursorMcpGuideUrl = 'https://cursor.com/docs/mcp'
 
 /** Claude Desktop / Claude.ai custom remote connector help. */
-export const claudeCustomConnectorsGuideUrl =
+const claudeCustomConnectorsGuideUrl =
 	'https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp'
 
 /** Long-form host notes when a vendor page is not a better first click. */
-export const kodyConnectYourAgentUrl =
+const kodyConnectYourAgentUrl =
 	'https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md'
 
 /** Grok.com UI for adding a custom remote MCP connector. */
 export const grokConnectorsUrl = 'https://grok.com/connectors'
 
-export const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
+const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
 
 /** Grok CLI (`grok`) MCP add / config.toml docs. */
-export const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
+const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
-export const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
+const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
 
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
@@ -388,7 +388,7 @@ export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 export const kodyCursorAddPluginCommand = '/add-plugin kody'
 
 /** Confirmed Cursor Marketplace plugin id for Kody. */
-export const kodyMarketplacePluginId = '56286216'
+const kodyMarketplacePluginId = '56286216'
 
 /** Confirmed Grok Bot one-click add for the official Kody plugin. */
 export const grokBotInstallUrl = `grokbot://app/v1/plugin/add?id=${kodyMarketplacePluginId}`
@@ -451,7 +451,7 @@ export function onboardingAgentHelp(id: McpClientKind): {
  * rejects uploads over 10 KB; `/apple-touch-icon.png` is larger, so
  * onboarding points here.
  */
-export const kodyAppIconPath = '/images/kody-app-icon.png'
+const kodyAppIconPath = '/images/kody-app-icon.png'
 export const kodyAppIconFilename = kodyAppIconPath.slice(
 	kodyAppIconPath.lastIndexOf('/') + 1,
 )
@@ -561,7 +561,7 @@ export function buildOpenClawMcpAddCommand(mcpServerUrl: string) {
 
 export const openClawMcpLoginCommand = 'openclaw mcp login kody'
 
-export const openClawMcpDoctorCommand = 'openclaw mcp doctor kody --probe'
+const openClawMcpDoctorCommand = 'openclaw mcp doctor kody --probe'
 
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {

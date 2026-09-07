@@ -9,7 +9,7 @@ export const kodyIssueTriageListingPath = '/@kentcdodds/kody-issue-triage'
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
 /** Platform account that owns official first-party `@kody/*` listings. */
-export const officialCommunityOwnerUsername = 'kody'
+const officialCommunityOwnerUsername = 'kody'
 
 /**
  * Owner half of a scoped package name (`@owner/kody-id`), or null when the name

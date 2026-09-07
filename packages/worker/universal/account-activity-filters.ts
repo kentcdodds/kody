@@ -6,12 +6,12 @@
 /** Activity summary / default list window. Waiting uses the same bound. */
 export const accountActivitySummaryWindowMs = 7 * 24 * 60 * 60 * 1000
 
-export const accountActivityViewFilterValues = ['errors', 'recent'] as const
+const accountActivityViewFilterValues = ['errors', 'recent'] as const
 
 export type AccountActivityViewFilter =
 	(typeof accountActivityViewFilterValues)[number]
 
-export const accountActivityStatusFilterValues = [
+const accountActivityStatusFilterValues = [
 	'error',
 	'all',
 	'success',
@@ -21,7 +21,7 @@ export const accountActivityStatusFilterValues = [
 export type AccountActivityStatusFilter =
 	(typeof accountActivityStatusFilterValues)[number]
 
-export const accountActivitySurfaceFilterValues = [
+const accountActivitySurfaceFilterValues = [
 	'all',
 	'execute',
 	'export',
@@ -37,7 +37,7 @@ export const accountActivitySurfaceFilterValues = [
 export type AccountActivitySurfaceFilter =
 	(typeof accountActivitySurfaceFilterValues)[number]
 
-export const accountActivityTriageFilterValues = [
+const accountActivityTriageFilterValues = [
 	'open',
 	'ignored',
 	'resolved',
@@ -47,7 +47,7 @@ export const accountActivityTriageFilterValues = [
 export type AccountActivityTriageFilter =
 	(typeof accountActivityTriageFilterValues)[number]
 
-export function isAccountActivityViewFilter(
+function isAccountActivityViewFilter(
 	value: string | null | undefined,
 ): value is AccountActivityViewFilter {
 	return (
@@ -56,7 +56,7 @@ export function isAccountActivityViewFilter(
 	)
 }
 
-export function isAccountActivityStatusFilter(
+function isAccountActivityStatusFilter(
 	value: string | null | undefined,
 ): value is AccountActivityStatusFilter {
 	return (
@@ -65,7 +65,7 @@ export function isAccountActivityStatusFilter(
 	)
 }
 
-export function isAccountActivitySurfaceFilter(
+function isAccountActivitySurfaceFilter(
 	value: string | null | undefined,
 ): value is AccountActivitySurfaceFilter {
 	return (
@@ -76,7 +76,7 @@ export function isAccountActivitySurfaceFilter(
 	)
 }
 
-export function isAccountActivityTriageFilter(
+function isAccountActivityTriageFilter(
 	value: string | null | undefined,
 ): value is AccountActivityTriageFilter {
 	return (

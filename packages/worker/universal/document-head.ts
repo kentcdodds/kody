@@ -5,7 +5,7 @@ import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
 
-export const DEFAULT_DOCUMENT_TITLE = 'kody'
+const DEFAULT_DOCUMENT_TITLE = 'kody'
 export const NOT_FOUND_DOCUMENT_TITLE = 'Not found'
 
 /** Stable marker so SPA navigation can upsert/remove managed head tags. */
@@ -21,14 +21,14 @@ export const CANONICAL_ORIGIN_META_NAME = 'kody:canonical-origin'
 
 const documentHeadOrigin = 'https://kody.local'
 
-export type DocumentHeadLink = {
+type DocumentHeadLink = {
 	rel: string
 	hrefPath: string
 	type?: string
 	title?: string
 }
 
-export type DocumentHeadOg = {
+type DocumentHeadOg = {
 	title: string
 	description: string
 	imagePath: string

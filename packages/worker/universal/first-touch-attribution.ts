@@ -32,12 +32,12 @@ const maxReferrerLength = 500
  * Homepage CTA query so Fathom channel reports are not empty for organic
  * site traffic that starts signup from kody.codes.
  */
-export const homepageSignupAttributionQuery =
+const homepageSignupAttributionQuery =
 	'utm_source=kody.codes&utm_medium=homepage&utm_campaign=signup'
 
 export const homepageSignupPath = `/signup?${homepageSignupAttributionQuery}`
 
-export function normalizeAttributionValue(
+function normalizeAttributionValue(
 	value: unknown,
 	maxLength = maxAttributionValueLength,
 ): string | null {
@@ -47,7 +47,7 @@ export function normalizeAttributionValue(
 	return trimmed.slice(0, maxLength)
 }
 
-export function normalizeLandingPath(value: unknown): string | null {
+function normalizeLandingPath(value: unknown): string | null {
 	const raw = normalizeAttributionValue(value, maxLandingPathLength)
 	if (!raw) return null
 	if (!raw.startsWith('/')) return null
@@ -55,7 +55,7 @@ export function normalizeLandingPath(value: unknown): string | null {
 	return raw
 }
 
-export function normalizeReferrer(value: unknown): string | null {
+function normalizeReferrer(value: unknown): string | null {
 	return normalizeAttributionValue(value, maxReferrerLength)
 }
 

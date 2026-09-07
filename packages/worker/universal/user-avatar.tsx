@@ -33,7 +33,7 @@ export type UserAvatarProps = {
 	variant?: 'plain' | 'well'
 }
 
-export function intrinsicUserAvatarSize(size: UserAvatarSize) {
+function intrinsicUserAvatarSize(size: UserAvatarSize) {
 	return typeof size === 'number' ? size : size.wide
 }
 

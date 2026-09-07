@@ -7,7 +7,7 @@ import { routes } from '#universal/routes.ts'
  * `/@owner/:kodyId/files/…` because `/@owner/packages/files/…` is a hosted
  * package-app path. Fall back to `/community/:listingId/files/…`.
  */
-export const reservedPackageFilesKodyIds = [
+const reservedPackageFilesKodyIds = [
 	'packages',
 	'api',
 	'webhooks',
@@ -16,15 +16,15 @@ export const reservedPackageFilesKodyIds = [
 
 export type PackageFilesKind = 'file' | 'directory'
 
-export type PackageFilesContentKind = 'markdown' | 'code' | 'text'
+type PackageFilesContentKind = 'markdown' | 'code' | 'text'
 
-export type PackageFilesChild = {
+type PackageFilesChild = {
 	name: string
 	path: string
 	kind: PackageFilesKind
 }
 
-export type PackageFilesAncestor = {
+type PackageFilesAncestor = {
 	name: string
 	path: string
 }
@@ -174,7 +174,7 @@ export function normalizePackageFilesPath(
 	return parts.join('/')
 }
 
-export function languageFromFilePath(path: string) {
+function languageFromFilePath(path: string) {
 	const name = path.split('/').pop() ?? ''
 	if (name === 'Dockerfile' || name === 'dockerfile') return 'dockerfile'
 	if (name === '.env' || name.startsWith('.env.')) return 'dotenv'
@@ -184,9 +184,7 @@ export function languageFromFilePath(path: string) {
 	return extensionLanguages[ext] ?? 'plaintext'
 }
 
-export function contentKindFromLanguage(
-	language: string,
-): PackageFilesContentKind {
+function contentKindFromLanguage(language: string): PackageFilesContentKind {
 	if (language === 'markdown') return 'markdown'
 	if (language === 'plaintext') return 'text'
 	return 'code'
@@ -346,12 +344,12 @@ export function isPublicTreeDefaultRefAlias(ref: string | null | undefined) {
 	return trimmed === '' || trimmed.toUpperCase() === 'HEAD'
 }
 
-export function publicTreeRefForHref(ref: string | null | undefined) {
+function publicTreeRefForHref(ref: string | null | undefined) {
 	if (isPublicTreeDefaultRefAlias(ref)) return fallbackDefaultBranchName
 	return ref!.trim()
 }
 
-export function getCommunityPackageTreeHref(input: {
+function getCommunityPackageTreeHref(input: {
 	listingId: string
 	ownerUsername?: string | null
 	kodyId?: string | null

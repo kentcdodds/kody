@@ -16,7 +16,7 @@ export const heroBaseImage = {
 	height: 1254,
 } as const
 
-export const landingArtNames = [
+const landingArtNames = [
 	'kody-compounding-capabilities',
 	'kody-community-packages',
 	'kody-factory-map',

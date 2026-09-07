@@ -9,7 +9,7 @@
 
 import { type McpClientKind } from '#universal/onboarding-mcp-clients.ts'
 
-export const onboardingAgentEcosystems = {
+const onboardingAgentEcosystems = {
 	openai: ['chatgpt', 'codex'],
 	anthropic: ['claude-desktop', 'claude-code'],
 	xai: ['grok', 'grok-cli', 'grok-bot'],

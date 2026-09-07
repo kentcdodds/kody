@@ -921,7 +921,7 @@ export const inlineSpinnerCss = {
 	},
 }
 
-export const focusRingCss = {
+const focusRingCss = {
 	outline: `2px solid ${colors.primary}`,
 	outlineOffset: '2px',
 }

@@ -91,7 +91,7 @@ const featureFlagDefinitionByKey = new Map<
  * Registry flags that declare a success metric. Only these flags get
  * exposure recording and admin metric readouts.
  */
-export const measuredFeatureFlagDefinitions: ReadonlyArray<
+const measuredFeatureFlagDefinitions: ReadonlyArray<
 	FeatureFlagDefinition & { successMetric: FeatureFlagSuccessMetric }
 > = (featureFlagDefinitions as ReadonlyArray<FeatureFlagDefinition>).filter(
 	(
