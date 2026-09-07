@@ -13,21 +13,32 @@ to these canonical pages.
 
 ## Drive it
 
-Preview seed has **no** packages until you create one through the JSON API the
-UI posts to (`/account/packages.json`).
+Preview seed has **no** packages until you create one. Package creation is
+MCP-only (`packageGetGitRemote({ create: true, kody_id })`). There is no create
+action on `POST /account/packages.json`. Use the CLI — logged-in preview testing
+does not require agents to hand-roll an MCP OAuth dance — the CLI does it for
+them:
+
+```bash
+npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]
+```
+
+Then assert the pages:
 
 ```bash
 node tools/control-kody.ts preview -- \
   --request 'GET /account/packages.json' \
-  --check /@me
+  --check /@user-me
 ```
 
-To prove delete, create a package through the JSON API, then delete it and
-assert the empty state.
+`--head-ahead` pushes one unpublished commit so the Code tab can show **HEAD
+ahead of published**. To prove delete, create a package with `package-create`,
+then delete it and assert the empty state.
 
 ## APIs
 
-- `GET|POST /account/packages.json`
+- `GET|POST /account/packages.json` (list / token actions; no package-create
+  action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`

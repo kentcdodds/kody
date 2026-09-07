@@ -19,6 +19,7 @@ node tools/control-kody.ts request GET /account/waiting.json
 node tools/control-kody.ts map waiting
 node tools/control-kody.ts health --sha <merge-sha>
 node tools/control-kody.ts preview -- --request 'GET /account/waiting.json' --check /account/waiting
+node tools/control-kody.ts package-create --origin <preview> --kody-id <slug> [--head-ahead]
 ```
 
 `npm run control-kody -- <command>` is the same entry.
@@ -36,7 +37,7 @@ Load **one** feature file for the surface you are changing.
 
 - Local: `jane@example.com` / `ilikecode` (non-admin)
 - Preview: `me@kentcdodds.com` / `ilikecode` (non-admin, empty until you create
-  data through JSON APIs)
+  data through JSON APIs, or `package-create` for a saved package)
 - `/admin` 403 and `/mcp` 401 are expected for those seeds
 
 ## Proof

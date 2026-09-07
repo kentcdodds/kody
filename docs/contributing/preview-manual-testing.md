@@ -22,7 +22,14 @@ Same thing: `node tools/preview-manual-test.ts`.
 The script signs in as the preview seed user and keeps that session. The seed
 account starts **empty** except the user row — there are no secrets, packages,
 or jobs until you create them. Create that data and assert the change as the
-same user:
+same user. For a saved package, use `package-create` (not a create action on
+`POST /account/packages.json`):
+
+```bash
+npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]
+```
+
+JSON APIs still cover other account data:
 
 ```bash
 npm run preview:manual-test -- \
@@ -82,13 +89,16 @@ in a browser at `/login` with Email + Password and the **Sign in** button.
 
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
-the product JSON APIs instead (`/account/*.json` in
-`packages/worker/universal/routes.ts`). Those are the same endpoints the UI
-posts to.
+the product JSON APIs (`/account/*.json` in
+`packages/worker/universal/routes.ts`) or, for a saved package,
+`npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]`.
+Those JSON endpoints are the same ones the UI posts to. Package creation is
+MCP-only (`packageGetGitRemote({ create: true, kody_id })`); there is no create
+action on `POST /account/packages.json`.
 
 `/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
-preview testing is the browser app and cookie-backed HTTP, not a full MCP OAuth
-dance.
+preview testing does not require agents to hand-roll an MCP OAuth dance — the
+CLI does it for them.
 
 ## Logged-in data and UI pass
 
