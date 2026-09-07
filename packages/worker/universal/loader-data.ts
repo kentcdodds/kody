@@ -163,7 +163,7 @@ export type CommunityDetailLoaderData = {
 	invocationUrlOrigin: string
 }
 
-export type PackageFilesChildLoaderData = {
+type PackageFilesChildLoaderData = {
 	name: string
 	path: string
 	kind: 'file' | 'directory'
@@ -192,7 +192,7 @@ export type PackageFilesLoaderData = {
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
-export type CommunityDetailShellLoaderData = {
+type CommunityDetailShellLoaderData = {
 	ok: true
 	listingId: string | null
 	name: string
@@ -214,7 +214,7 @@ export type CommunityDetailShellLoaderData = {
 	invocationUrlOrigin: string
 }
 
-export type CommunityPackageUnauthorizedLoaderData = {
+type CommunityPackageUnauthorizedLoaderData = {
 	ok: false
 	unauthorized: true
 }
@@ -330,7 +330,7 @@ export type AdminUsersMutationData = AdminUsersLoaderData & {
 	verifyUrlExpiresAt?: number | null
 }
 
-export type AdminRoleListItem = {
+type AdminRoleListItem = {
 	name: string
 	description: string
 	permissions: Array<PermissionString>
@@ -341,7 +341,7 @@ export type AdminRolesLoaderData = {
 	roles: Array<AdminRoleListItem>
 }
 
-export type AdminCommunityReportListItem = {
+type AdminCommunityReportListItem = {
 	id: string
 	listingId: string
 	listingName: string
@@ -360,7 +360,7 @@ export type AdminCommunityReportsLoaderData = {
 	statusFilter: string
 }
 
-export type AdminInviteListItem = {
+type AdminInviteListItem = {
 	code: string
 	createdByStableUserId: string | null
 	createdByEmail: string | null
@@ -380,7 +380,7 @@ export type AdminInvitesLoaderData = {
 	signupMode: SignupModeSetting
 }
 
-export type AdminReservedUsernameConflict = {
+type AdminReservedUsernameConflict = {
 	username: string
 	stableUserId: string
 }
@@ -705,21 +705,21 @@ export type AdminInsightsEventCountConsumer = {
 	eventCount: number
 }
 
-export type AdminDynamicWorkerCost = {
+type AdminDynamicWorkerCost = {
 	uniqueWorkerDays: number
 	estimatedGrossUsd: number
 	usdPerUniqueDay: number
 	includedPerAccountMonth: number
 }
 
-export type AdminDurableObjectDuration = {
+type AdminDurableObjectDuration = {
 	gbSeconds: number
 	durationMs: number
 	rpcCount: number
 	memoryGb: number
 }
 
-export type AdminInsightsDynamicWorkerCostConsumer = {
+type AdminInsightsDynamicWorkerCostConsumer = {
 	stableUserId: string
 	username: string
 	uniqueWorkerDays: number
@@ -735,7 +735,7 @@ export type AdminInsightsMetricDurationConsumers = {
 	consumers: Array<AdminInsightsDurationConsumer>
 }
 
-export type AdminInsightsEntitlementPressureResource = {
+type AdminInsightsEntitlementPressureResource = {
 	resource: AdminUsageEntitlementResource
 	label: string
 	current: number
@@ -765,14 +765,14 @@ export type AdminInsightsPackageErrorRateMetricRow =
 			| 'workflow_run'
 	}
 
-export type AdminInsightsPackageErrorRateWindow = {
+type AdminInsightsPackageErrorRateWindow = {
 	start: string
 	end: string
 	combined: AdminInsightsPackageErrorRateCounts
 	by_metric: Array<AdminInsightsPackageErrorRateMetricRow>
 }
 
-export type AdminInsightsPackageErrorRateComparison = {
+type AdminInsightsPackageErrorRateComparison = {
 	kind: 'hour' | 'day'
 	recent: AdminInsightsPackageErrorRateWindow
 	previous: AdminInsightsPackageErrorRateWindow
@@ -813,7 +813,7 @@ export type AdminInsightsLoaderData = {
 	packageErrorRate: AdminInsightsPackageErrorRate
 }
 
-export type AdminSystemEmailListItem = {
+type AdminSystemEmailListItem = {
 	id: string
 	inbox_local_part: string
 	from_address: string | null
@@ -826,7 +826,7 @@ export type AdminSystemEmailListItem = {
 	to_addresses: Array<string>
 }
 
-export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
+type AdminSystemEmailDetail = AdminSystemEmailListItem & {
 	cc_addresses: Array<string>
 	reply_to_addresses: Array<string>
 	headers: Record<string, Array<string>>
@@ -1015,7 +1015,7 @@ export type AccountTwoFactorLoaderData = {
 	enabled: boolean
 }
 
-export type AccountPasskeyListItem = {
+type AccountPasskeyListItem = {
 	id: string
 	name: string
 	deviceType: string
@@ -1029,7 +1029,7 @@ export type AccountPasskeysLoaderData = {
 	passkeys: Array<AccountPasskeyListItem>
 }
 
-export type AccountMcpOauthClientListItem = {
+type AccountMcpOauthClientListItem = {
 	id: string
 	label: string
 	clientId: string
@@ -1127,7 +1127,7 @@ export type AccountIntegrationListItem = {
 	lastAuthFailure?: IntegrationAuthFailureView
 }
 
-export type AccountOauthAppConnectionRef = {
+type AccountOauthAppConnectionRef = {
 	name: string
 	accountLabel: string | null
 }
@@ -1254,7 +1254,7 @@ export type ConnectOauthLoaderData = {
 	}
 }
 
-export type AccountMcpServerListItem = {
+type AccountMcpServerListItem = {
 	id: string
 	name: string
 	url: string
@@ -1333,7 +1333,7 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	publishedCommit: string | null
 }
 
-export type AccountPackagePublishDiffFile = {
+type AccountPackagePublishDiffFile = {
 	path: string
 	status: 'added' | 'removed' | 'modified'
 	patch: string | null
@@ -1453,13 +1453,13 @@ export type AccountValuesLoaderData = {
 	selectedValueId: string | null
 }
 
-export type AccountJobOwnership = 'ad-hoc' | 'package'
+type AccountJobOwnership = 'ad-hoc' | 'package'
 
 /**
  * JSON-safe blob for job params (and similar free-form payloads). Remix
  * entry props require SerializableValue; `unknown` is not allowed.
  */
-export type AccountLoaderJsonValue =
+type AccountLoaderJsonValue =
 	| string
 	| number
 	| boolean
@@ -1467,7 +1467,7 @@ export type AccountLoaderJsonValue =
 	| Array<AccountLoaderJsonValue>
 	| { [key: string]: AccountLoaderJsonValue }
 
-export type AccountJobSchedule =
+type AccountJobSchedule =
 	| { type: 'once'; runAt: string }
 	| { type: 'interval'; every: string }
 	| { type: 'cron'; expression: string }
@@ -1496,7 +1496,7 @@ export type AccountJobListItem = {
 	errorCount: number
 }
 
-export type AccountJobRecentRun = {
+type AccountJobRecentRun = {
 	id: string
 	startedAt: string
 	finishedAt: string
@@ -1519,7 +1519,7 @@ export type AccountJobDetail = AccountJobListItem & {
 	updatedAt: string
 }
 
-export type AccountJobsAlarm = {
+type AccountJobsAlarm = {
 	bindingAvailable: boolean
 	status: string
 	storedUserId: string | null
@@ -1548,7 +1548,7 @@ export type AccountJobsLoaderData = {
 	}
 }
 
-export type AccountWorkflowSourceType = 'package' | 'inline'
+type AccountWorkflowSourceType = 'package' | 'inline'
 
 export type AccountWorkflowRunStatus =
 	| 'queued'
@@ -1606,7 +1606,7 @@ export type AccountActivityRunListItem = {
 	logCount: number
 }
 
-export type AccountActivityRunLog = {
+type AccountActivityRunLog = {
 	sequence: number
 	level: 'debug' | 'info' | 'log' | 'warn' | 'error'
 	message: string
@@ -1654,7 +1654,7 @@ export type AccountActivityLoaderData = {
 	retentionDays: number
 }
 
-export type AccountMemoryStatus = 'active' | 'archived' | 'deleted'
+type AccountMemoryStatus = 'active' | 'archived' | 'deleted'
 
 export type AccountMemoryListItem = {
 	id: string
@@ -1685,12 +1685,12 @@ export type AccountMemoriesLoaderData = {
 	includeDeleted: boolean
 }
 
-export type AccountEmailUsageEntry = {
+type AccountEmailUsageEntry = {
 	count: number
 	limit: number
 }
 
-export type AccountEmailUsage = {
+type AccountEmailUsage = {
 	plan: AdminPlanName
 	day: string
 	stored_messages: AccountEmailUsageEntry
@@ -1699,14 +1699,14 @@ export type AccountEmailUsage = {
 	max_message_bytes: number
 }
 
-export type AccountEmailInboxAddress = {
+type AccountEmailInboxAddress = {
 	id: string
 	address: string
 	enabled: boolean
 	created_at: string
 }
 
-export type AccountEmailInbox = {
+type AccountEmailInbox = {
 	id: string
 	name: string
 	description: string
@@ -1739,7 +1739,7 @@ export type AccountEmailMessageListItem = {
 	updated_at: string
 }
 
-export type AccountEmailAttachment = {
+type AccountEmailAttachment = {
 	id: string
 	filename: string | null
 	content_type: string | null
@@ -1751,7 +1751,7 @@ export type AccountEmailAttachment = {
 	created_at: string
 }
 
-export type AccountEmailDeliveryEvent = {
+type AccountEmailDeliveryEvent = {
 	id: string
 	event_type: string
 	provider: string | null
@@ -1795,7 +1795,7 @@ export type AccountEmailLoaderData = {
 	classification: 'accepted' | 'quarantined' | null
 }
 
-export type AuthProvidersLoaderData = {
+type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
 	signupMode: SignupMode
@@ -1932,7 +1932,7 @@ export type AccountUsageEntitlementConsumption = {
 	overEightyPercent: boolean
 }
 
-export type AccountUsageComputeMeter = {
+type AccountUsageComputeMeter = {
 	resource: ComputeOverageWarningResource
 	label: string
 	whatCounts: string
