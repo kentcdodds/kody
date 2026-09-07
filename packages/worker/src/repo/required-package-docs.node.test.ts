@@ -44,9 +44,7 @@ test('validateRequiredPackageDocs requires non-empty root README.md and AGENTS.m
 	})
 	expect(failure.ok).toBe(false)
 	if (failure.ok) throw new Error('Expected docs validation to fail.')
-	expect(failure.message).toContain('human-focused')
-	expect(failure.message).toContain('agent-focused')
-	expect(failure.message).toContain('package_authoring:guide')
+	expect(failure.missing).toEqual(['README.md', 'AGENTS.md'])
 	expect(
 		findRootPackageDoc({ 'docs/README.md': '# Nested' }, 'README.md'),
 	).toBe(null)

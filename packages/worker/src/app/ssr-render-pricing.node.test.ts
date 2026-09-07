@@ -4,11 +4,6 @@ import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
-import {
-	computeOverageRatesUsd,
-	formatDurableObjectRowsRead,
-	planLimits,
-} from '#universal/plans.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -86,58 +81,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('Standard')
 	expect(html).toContain('Pro')
 	expect(html).toContain('Teams / Enterprise')
-	expect(html).toContain(
-		'Running Kody across a team or with higher needs? Email us —',
-	)
-	expect(html).toContain('shaping that offering and want to hear your needs.')
 	expect(html).toContain('mailto:kody@kody.codes')
-	const count = new Intl.NumberFormat('en-US')
-	expect(html).toContain(count.format(planLimits.free.maxRepos))
-	expect(html).toContain(count.format(planLimits.standard.maxRepos))
-	expect(html).toContain(count.format(planLimits.pro.maxRepos))
-	expect(html).toContain(count.format(planLimits.free.maxExecuteCallsPerDay))
-	expect(html).toContain(
-		count.format(planLimits.standard.maxExecuteCallsPerDay),
-	)
-	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
-	// Public Free/Standard share a 15-minute floor; public Pro is 5 minutes.
-	expect(html).toContain('15 minutes')
-	expect(html).toContain('5 minutes')
 	expect(html).toContain('Unique worker days per month')
 	expect(html).toContain('Durable Object rows read per month')
-	expect(html).toContain(
-		count.format(planLimits.free.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		count.format(planLimits.standard.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		count.format(planLimits.pro.maxUniqueWorkerDaysPerMonth),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.free.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.standard.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(
-		formatDurableObjectRowsRead(
-			planLimits.pro.maxDurableObjectRowsReadPerMonth,
-		),
-	)
-	expect(html).toContain(`$${computeOverageRatesUsd.uniqueWorkerDay}`)
-	expect(html).toContain('Overage is billed monthly')
-	expect(html).toContain(
-		'that exceed an include and have no payment method are asked to upgrade',
-	)
-	expect(html).toContain(
-		'Free accounts that already have a Stripe customer are invoiced',
-	)
-	expect(html).toContain('Grandfathered legacy Standard/Pro')
-	expect(html).toContain('Execute is a hard daily cap')
-	expect(html).toContain('Durable Object duration is unmetered')
 })

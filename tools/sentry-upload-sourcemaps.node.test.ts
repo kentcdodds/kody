@@ -2,11 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { expect, test } from 'vitest'
-import {
-	planSentrySourcemapUploads,
-	sentryClientAssetsRelPath,
-	sentryWorkerBundleRelPaths,
-} from './sentry-upload-sourcemaps.ts'
+import { planSentrySourcemapUploads } from './sentry-upload-sourcemaps.ts'
 
 async function sourcemapFixture(files: Record<string, string>) {
 	const root = await mkdtemp(join(tmpdir(), 'sentry-sourcemaps-'))
@@ -76,7 +72,7 @@ test('origin vite deploys require client maps and upload every worker bundle tha
 				label: 'platform worker bundle',
 			},
 			{
-				dir: join(fixture.root, sentryClientAssetsRelPath),
+				dir: join(fixture.root, 'dist/client'),
 				label: 'client assets',
 			},
 		],
@@ -101,8 +97,9 @@ test('missing worker maps fail the pipeline instead of silently skipping', async
 	const plan = planSentrySourcemapUploads({ root: fixture.root })
 	expect(plan.ok).toBe(false)
 	if (plan.ok) throw new Error('expected a missing-bundle failure')
-	for (const relPath of sentryWorkerBundleRelPaths) {
-		expect(plan.error).toContain(join(fixture.root, relPath))
-	}
+	expect(plan.error).toContain(join(fixture.root, 'dist/ssr'))
+	expect(plan.error).toContain(
+		join(fixture.root, 'packages/platform-worker/.wrangler/sentry-bundle'),
+	)
 	expect(plan.error).toContain('sibling deploys still use')
 })

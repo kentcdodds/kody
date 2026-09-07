@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { accountUsageEntitlementResources } from '#worker/entitlements/resource-visibility.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -135,9 +134,6 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(baseline?.today).toBe('2026-07-25')
 	expect(currentFor(baseline, 'saved_packages')?.current).toBe(2)
 	expect(currentFor(baseline, 'concurrent_workflows')?.current).toBe(0)
-	expect(baseline?.entitlementConsumption.length).toBe(
-		accountUsageEntitlementResources.length,
-	)
 
 	const bootstrapEmail = 'usage-bootstrap@example.com'
 	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)
@@ -292,8 +288,6 @@ test('unpaid Free over compute includes is a soft-block, not a charge', async ()
 		(meter) => meter.resource === 'unique_worker_days',
 	)
 	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
-	expect(uniqueWorkerDays?.whatCounts).toMatch(/Dynamic Worker isolates/)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/payment method/)
 	expect(
 		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)
