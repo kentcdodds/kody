@@ -181,14 +181,41 @@ export function onboardingSecondAgentConnectedStatusLabel(giftActive: boolean) {
 		: onboardingSecondAgentConnectedLabel
 }
 
+export type OnboardingConnectedAgentListItem = {
+	label: string
+	kind?: McpClientKind | null
+}
+
+export function uniqueOnboardingConnectedAgents(
+	agents: ReadonlyArray<OnboardingConnectedAgentListItem>,
+): Array<{ label: string; kind: McpClientKind | null }> {
+	const seen = new Set<string>()
+	const unique = new Array<{ label: string; kind: McpClientKind | null }>()
+	for (const agent of agents) {
+		const label = agent.label.trim()
+		if (!label || seen.has(label)) continue
+		seen.add(label)
+		unique.push({ label, kind: agent.kind ?? null })
+	}
+	return unique
+}
+
+export function onboardingConnectedListSeparator(
+	index: number,
+	length: number,
+): string {
+	if (index === 0) return ''
+	if (length === 2) return ' and '
+	if (index === length - 1) return ', and '
+	return ', '
+}
+
 export function onboardingConnectedAgentLabelsLine(
-	agents: ReadonlyArray<{ label: string }>,
+	agents: ReadonlyArray<OnboardingConnectedAgentListItem>,
 ) {
-	const labels = [
-		...new Set(
-			agents.map((agent) => agent.label.trim()).filter((label) => label),
-		),
-	]
+	const labels = uniqueOnboardingConnectedAgents(agents).map(
+		(agent) => agent.label,
+	)
 	if (labels.length === 0) return null
 	if (labels.length === 1) return `Connected: ${labels[0]}`
 	if (labels.length === 2) return `Connected: ${labels[0]} and ${labels[1]}`

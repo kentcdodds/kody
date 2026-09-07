@@ -46,7 +46,14 @@ test('step 3 picker prefetch uses second-agent hrefs and keeps search', async ()
 			search,
 			agentHref: onboardingSecondAgentHref,
 			greyedAgents: ['chatgpt', 'codex'],
-			greyedReason: 'Same ecosystem as Codex',
+			greyedReasons: {
+				chatgpt: 'same-ecosystem',
+				codex: 'same-ecosystem',
+			},
+			greyedTitles: {
+				chatgpt: 'Same ecosystem as Codex',
+				codex: 'Same ecosystem as Codex',
+			},
 		}),
 	)
 	expect(hrefs).toContain(`/onboarding/step-3/cursor${search}`)

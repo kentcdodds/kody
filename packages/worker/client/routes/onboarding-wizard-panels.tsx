@@ -11,6 +11,7 @@ import {
 	onboardingExplorePackagesHref,
 	onboardingPortabilityProofPrompt,
 	onboardingConnectedAgentLabelsLine,
+	onboardingConnectedListSeparator,
 	onboardingSecondAgentConnectedStatusLabel,
 	portabilityGuideHref,
 	onboardingSearchStartedLabel,
@@ -18,9 +19,11 @@ import {
 	onboardingSecondAgentHref,
 	onboardingSecondAgentLede,
 	onboardingUnconnectedNotice,
+	uniqueOnboardingConnectedAgents,
+	type OnboardingConnectedAgentListItem,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
-import { onboardingSameEcosystemDisabledReason } from '#universal/onboarding-agent-ecosystems.ts'
+import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 import {
 	AgentPickerMark,
@@ -184,11 +187,10 @@ export function renderSecondAgentPanel(
 		loggedIn: boolean
 		hasSecondMcpClient: boolean
 		secondAgentGiftActive?: boolean
-		connectedAgents?: ReadonlyArray<{ label: string }>
+		connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 		firstAgent: McpClientKind | null
 		selectedAgent: McpClientKind | null
 		selectedAgentLabel: string | null
-		greyedAgents: ReadonlyArray<McpClientKind>
 		agentChooser: OnboardingAgentChooserPick | null
 		mcpServerUrl: string
 		mcpHighlights: Record<string, HighlightedCode>
@@ -198,17 +200,19 @@ export function renderSecondAgentPanel(
 ) {
 	const firstLabel = props.firstAgent
 		? onboardingAgentLabel(props.firstAgent)
-		: 'your first agent'
-	const greyedReason = props.firstAgent
-		? onboardingSameEcosystemDisabledReason(props.firstAgent, firstLabel)
 		: null
+	const connectedAgents = props.connectedAgents ?? []
+	const greyed = onboardingSecondAgentGreyedPresentation(
+		props.firstAgent,
+		firstLabel,
+		connectedAgents,
+	)
 	const accessWinMade = onboardingAccessWinMadeLine({
 		memorySubject: props.accessWinMemorySubject,
 		packageName: props.persistedPackageName,
 	})
-	const connectedLabels = onboardingConnectedAgentLabelsLine(
-		props.connectedAgents ?? [],
-	)
+	const connectedItems = uniqueOnboardingConnectedAgents(connectedAgents)
+	const connectedLabels = onboardingConnectedAgentLabelsLine(connectedItems)
 	return (
 		<section
 			id="onboarding-step-3"
@@ -252,9 +256,30 @@ export function renderSecondAgentPanel(
 					props.secondAgentGiftActive === true,
 				),
 			})}
-			{connectedLabels ? (
-				<p mix={css(panelLedeCss)} data-testid="onboarding-connected-agents">
-					{connectedLabels}
+			{connectedItems.length > 0 ? (
+				<p
+					mix={css(connectedAgentsLineCss)}
+					data-testid="onboarding-connected-agents"
+					aria-label={connectedLabels ?? undefined}
+				>
+					<span aria-hidden="true">
+						Connected:{' '}
+						{connectedItems.map((agent, index) => (
+							<span key={agent.label}>
+								{onboardingConnectedListSeparator(index, connectedItems.length)}
+								<span
+									mix={css(connectedAgentItemCss)}
+									data-testid="onboarding-connected-agent"
+									data-agent-kind={agent.kind ?? 'unknown'}
+								>
+									{agent.kind && agent.kind !== 'other' ? (
+										<AgentPickerMark agent={agent.kind} size="inline" />
+									) : null}
+									{agent.label}
+								</span>
+							</span>
+						))}
+					</span>
 				</p>
 			) : null}
 			<OnboardingMcpClientTabs
@@ -265,8 +290,9 @@ export function renderSecondAgentPanel(
 				search={props.search ?? ''}
 				agentHref={onboardingSecondAgentHref}
 				pickerLede={onboardingSecondAgentLede}
-				greyedAgents={props.greyedAgents}
-				greyedReason={greyedReason}
+				greyedAgents={greyed.greyedAgents}
+				greyedReasons={greyed.greyedReasons}
+				greyedTitles={greyed.greyedTitles}
 			/>
 			{props.selectedAgent ? (
 				<div
@@ -512,6 +538,18 @@ const panelLedeCss = {
 	margin: 0,
 	color: colors.textMuted,
 	maxWidth: '68ch',
+}
+
+const connectedAgentsLineCss = {
+	...panelLedeCss,
+	lineHeight: 1.65,
+}
+
+const connectedAgentItemCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.3em',
+	whiteSpace: 'nowrap' as const,
 }
 
 const accessWinMadeCss = {
