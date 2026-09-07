@@ -195,6 +195,11 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'user_usage_campaigns' },
 	{ kind: 'user_id', table: 'user_usage_campaign_sends' },
 	{ kind: 'user_id', table: 'compute_overage_invoices' },
+	{
+		kind: 'user_columns',
+		table: 'referrals',
+		columns: ['referrer_stable_user_id', 'referee_stable_user_id'],
+	},
 	{ kind: 'user_id', table: 'feature_flag_exposure_rollups' },
 	{ kind: 'user_id', table: 'agent_package_conversation_uses' },
 	// Per-package codemod outcomes belong to the package owner. Delete before
@@ -784,6 +789,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 		'grantee_user_id',
 		'created_by_user_id',
 	],
+	referrals: ['referrer_stable_user_id', 'referee_stable_user_id'],
 }
 
 export const accountExportRedactedForeignUserId = '[redacted]'

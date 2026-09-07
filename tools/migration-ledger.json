@@ -193,16 +193,20 @@
 			"sha256": "c36bf33ecda407df550a712148c3c24f9938169ecb4d9a4ede9ae00d980933a0"
 		},
 		{
-			"filename": "0048-users-tips-emails-opted-out-at.sql",
-			"sha256": "a3bbd8a16a5400efd7c58c774c78b4b26b5e1e42efc8782125987754e6acaacf"
+			"filename": "0048-referral-program.sql",
+			"sha256": "27996f6591596eca494e762e060c32cc8408652dcca0c70a65d27f0c189ab8fd"
 		},
 		{
 			"filename": "0049-user-usage-campaigns.sql",
-			"sha256": "635dd63c02d971d8b5116a40f9c3bf8d5ebb36fd2dd23a73d76774e1d793c581"
+			"sha256": "f7b3c2338ff68fd0cedda4e90d27709524c4bcbf9fff26279ec547376b1f6333"
 		},
 		{
 			"filename": "0050-user-usage-campaigns-ever-activated.sql",
 			"sha256": "28d4be6fa0ca11aa4bb62d008bf04177926b89d3368c7c5ea1c7800c40b37339"
+		},
+		{
+			"filename": "0051-user-usage-campaigns-advocate.sql",
+			"sha256": "0d78e74505ec01960ec1912692a9e114ffc754c6a1371f3c71bad4df53fbcedb"
 		}
 	]
 }

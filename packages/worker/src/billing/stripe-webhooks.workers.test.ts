@@ -362,3 +362,315 @@ test('stripe webhook process failure returns 500 without recording the event', a
 
 	vi.unstubAllGlobals()
 })
+
+test('invoice.paid rewards both parties once and ignores $0 trial invoices', async () => {
+	const referrer = await seedUser({
+		email: 'referrer-invoice-paid@example.com',
+	})
+	const referee = await seedUser({
+		email: 'referee-invoice-paid@example.com',
+		stripeCustomerId: 'cus_referral_invoice_paid',
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status
+		) VALUES (?, ?, ?, 'pending')`,
+	)
+		.bind(
+			referrer.stableUserId,
+			referee.stableUserId,
+			new Date('2026-09-07T00:00:00.000Z').toISOString(),
+		)
+		.run()
+
+	vi.stubGlobal('fetch', async () => {
+		throw new Error('fetch should not run for invoice.paid')
+	})
+
+	const trialEvent = {
+		id: 'evt_invoice_trial',
+		type: 'invoice.paid',
+		created: 1_778_000_000,
+		data: {
+			object: {
+				id: 'in_trial',
+				object: 'invoice',
+				customer: 'cus_referral_invoice_paid',
+				subscription: 'sub_referral',
+				status: 'paid',
+				amount_paid: 0,
+				billing_reason: 'subscription_create',
+			},
+		},
+	}
+	const trial = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({ event: trialEvent }),
+		now,
+	})
+	expect(trial).toEqual({ status: 200, body: { ok: true } })
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string }>(),
+	).toEqual({ status: 'pending' })
+
+	const paidEvent = {
+		id: 'evt_invoice_paid',
+		type: 'invoice.paid',
+		created: 1_778_000_100,
+		data: {
+			object: {
+				id: 'in_paid',
+				object: 'invoice',
+				customer: 'cus_referral_invoice_paid',
+				subscription: 'sub_referral',
+				status: 'paid',
+				amount_paid: 2000,
+				billing_reason: 'subscription_create',
+			},
+		},
+	}
+	const paid = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({ event: paidEvent }),
+		now,
+	})
+	expect(paid).toEqual({ status: 200, body: { ok: true } })
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; reward_invoice_id: string | null }>(),
+	).toEqual({
+		status: 'rewarded',
+		reward_invoice_id: 'in_paid',
+	})
+	const afterFirst = await env.APP_DB.prepare(
+		`SELECT referral_standard_credit_expires_at FROM users WHERE id IN (?, ?)`,
+	)
+		.bind(referrer.id, referee.id)
+		.all<{ referral_standard_credit_expires_at: string }>()
+	expect(afterFirst.results).toHaveLength(2)
+	expect(
+		afterFirst.results.every(
+			(row) =>
+				row.referral_standard_credit_expires_at === '2026-08-24T12:00:00.000Z',
+		),
+	).toBe(true)
+
+	const replay = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				...paidEvent,
+				id: 'evt_invoice_paid_replay',
+				data: {
+					object: {
+						...paidEvent.data.object,
+						id: 'in_paid_later',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(replay).toEqual({ status: 200, body: { ok: true } })
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; reward_invoice_id: string | null }>(),
+	).toEqual({
+		status: 'rewarded',
+		reward_invoice_id: 'in_paid',
+	})
+
+	vi.unstubAllGlobals()
+})
+
+test('invoice.paid returns 500 when a qualifying invoice has no linked user', async () => {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	silenceExpectedConsoleErrors([
+		'stripe_webhook_process_failed',
+		'stripe_webhook_invoice_paid_user_not_linked',
+	])
+	vi.stubGlobal('fetch', async () => {
+		throw new Error('fetch should not run for an unlinked invoice.paid')
+	})
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_invoice_unlinked',
+				type: 'invoice.paid',
+				created: 1_778_000_200,
+				data: {
+					object: {
+						id: 'in_unlinked',
+						object: 'invoice',
+						customer: 'cus_not_linked_yet',
+						subscription: 'sub_unlinked',
+						status: 'paid',
+						amount_paid: 1200,
+						billing_reason: 'subscription_create',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({
+		status: 500,
+		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
+	})
+	vi.unstubAllGlobals()
+})
+
+test('invoice.paid returns 500 when the referrer paid period cannot be loaded', async () => {
+	silenceExpectedConsoleErrors([
+		'stripe_webhook_process_failed',
+		'stripe_api_error',
+	])
+	const referrer = await seedUser({
+		email: 'referrer-period-fail@example.com',
+		stripeCustomerId: 'cus_referrer_period_fail',
+		stripePlan: 'standard',
+	})
+	const referee = await seedUser({
+		email: 'referee-period-fail@example.com',
+		stripeCustomerId: 'cus_referee_period_fail',
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status
+		) VALUES (?, ?, ?, 'pending')`,
+	)
+		.bind(referrer.stableUserId, referee.stableUserId, now.toISOString())
+		.run()
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => jsonResponse({ error: 'stripe down' }, 500)),
+	)
+
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_invoice_referrer_period_fail',
+				type: 'invoice.paid',
+				created: 1_778_000_300,
+				data: {
+					object: {
+						id: 'in_referrer_period_fail',
+						object: 'invoice',
+						customer: 'cus_referee_period_fail',
+						subscription: 'sub_referrer_period_fail',
+						status: 'paid',
+						amount_paid: 2000,
+						billing_reason: 'subscription_create',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({
+		status: 500,
+		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
+	})
+	expect(await readWebhookEvent('evt_invoice_referrer_period_fail')).toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, credits_granted_at FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; credits_granted_at: string | null }>(),
+	).toEqual({ status: 'pending', credits_granted_at: null })
+
+	vi.unstubAllGlobals()
+})
+
+test('invoice.paid for a referrer retries held outgoing referrals', async () => {
+	const referrer = await seedUser({
+		email: 'referrer-held-retry@example.com',
+		stripeCustomerId: 'cus_referrer_held_retry',
+		stripePlan: 'standard',
+	})
+	const referee = await seedUser({
+		email: 'referee-held-retry@example.com',
+		stripeCustomerId: 'cus_referee_held_retry',
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status,
+			held_invoice_id, held_period_end_at
+		) VALUES (?, ?, ?, 'pending', 'in_held_retry', ?)`,
+	)
+		.bind(
+			referrer.stableUserId,
+			referee.stableUserId,
+			now.toISOString(),
+			'2026-08-01T00:00:00.000Z',
+		)
+		.run()
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_referrer_held_retry',
+					status: 'active',
+					cancel_at: null,
+					items: {
+						data: [
+							{
+								price: { id: 'price_pro' },
+								current_period_end: 1_781_568_000,
+							},
+						],
+					},
+				},
+			],
+		},
+	})
+
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_referrer_held_retry',
+				type: 'invoice.paid',
+				created: 1_778_000_400,
+				data: {
+					object: {
+						id: 'in_referrer_own',
+						object: 'invoice',
+						customer: 'cus_referrer_held_retry',
+						subscription: 'sub_referrer_held_retry',
+						status: 'paid',
+						amount_paid: 2000,
+						billing_reason: 'subscription_cycle',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({ status: 200, body: { ok: true } })
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; reward_invoice_id: string | null }>(),
+	).toEqual({
+		status: 'rewarded',
+		reward_invoice_id: 'in_held_retry',
+	})
+
+	vi.unstubAllGlobals()
+})

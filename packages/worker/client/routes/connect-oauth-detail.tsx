@@ -93,7 +93,7 @@ export function renderProviderInstructions(input: {
 	)
 }
 
-export function renderAllowedHosts(config: ConnectOauthConfig) {
+function renderAllowedHosts(config: ConnectOauthConfig) {
 	return (
 		<section mix={css(insetCardCss)}>
 			<h3 mix={css(sectionTitleCss)}>Allowed hosts</h3>
@@ -110,7 +110,7 @@ export function renderAllowedHosts(config: ConnectOauthConfig) {
 	)
 }
 
-export function renderProviderDetails(config: ConnectOauthConfig) {
+function renderProviderDetails(config: ConnectOauthConfig) {
 	return (
 		<section mix={css(insetCardCss)}>
 			<h3 mix={css(sectionTitleCss)}>Provider details</h3>
@@ -144,7 +144,7 @@ export function renderProviderDetails(config: ConnectOauthConfig) {
 	)
 }
 
-export function renderExistingIntegrationConfig(
+function renderExistingIntegrationConfig(
 	existingIntegrationConfig: StoredIntegrationConfig | null,
 ) {
 	if (!existingIntegrationConfig) return null

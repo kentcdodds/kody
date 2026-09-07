@@ -7,7 +7,7 @@ import {
 	formatPercentShare,
 } from './chart-theme.ts'
 
-export type DonutSlice = {
+type DonutSlice = {
 	label: string
 	value: number
 	color: string

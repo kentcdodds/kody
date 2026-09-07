@@ -12,7 +12,7 @@ import {
 
 export type PackageRepoNavActive = 'code' | 'settings'
 
-export function renderPackageVisibilityBadge(isPrivate: boolean) {
+function renderPackageVisibilityBadge(isPrivate: boolean) {
 	return (
 		<span
 			data-testid="package-visibility-badge"
@@ -24,7 +24,7 @@ export function renderPackageVisibilityBadge(isPrivate: boolean) {
 	)
 }
 
-export function renderPackageRepoNav(input: {
+function renderPackageRepoNav(input: {
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean

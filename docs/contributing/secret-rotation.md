@@ -70,22 +70,24 @@ the input) and then smoke-test unsealing offline. See
 ## Upgrading pre-AAD (2-part) ciphertexts
 
 Encrypt helpers write `v2.<iv>.<ciphertext>` bound to an AAD identity context.
-Rows that still store `<iv>.<ciphertext>` have no AAD. `decryptWithKey`
-dual-reads both shapes; user-facing reads never rewrite. The operator pass
-upgrades remaining 2-part rows in place without rotating `SECRET_STORE_KEY`.
+User-facing decrypt accepts only that shape. A 2-part payload
+(`<iv>.<ciphertext>`, no AAD) is invalid on read.
 
-`POST /__maintenance/reencrypt-secrets` (bearer `CAPABILITY_REINDEX_SECRET`).
-Operators with Actions access dispatch `.github/workflows/reencrypt-secrets.yml`
-(`dry_run` defaults to true) so the bearer never leaves GitHub Actions. Direct
-curl against `https://kody.codes` is equivalent when the secret is already on
-the operator machine.
+`POST /__maintenance/reencrypt-secrets` (bearer `CAPABILITY_REINDEX_SECRET`)
+rewrites 2-part rows in place without rotating `SECRET_STORE_KEY`. The
+maintenance path is the only decrypt that still accepts the unversioned shape,
+so a D1 export sealed before the 2026-08-17 format-upgrade pass can be restored
+and upgraded before serving. Operators with Actions access dispatch
+`.github/workflows/reencrypt-secrets.yml` (`dry_run` defaults to true) so the
+bearer never leaves GitHub Actions. Direct curl against `https://kody.codes` is
+equivalent when the secret is already on the operator machine.
 
 The pass:
 
 1. Keyset-pages `secret_entries.encrypted_value`,
    `platform_oauth_apps.client_secret_encrypted` where the payload is not
    `v2.%`.
-2. Decrypts via the existing dual-read, re-encrypts as v2 with
+2. Decrypts via the maintenance-only unversioned path, re-encrypts as v2 with
    `userSecretContext(userId)` or `platformOauthAppContext(slug)`, and writes
    back with `WHERE … AND <column> = <old>` so a concurrent user rotation wins.
 3. Counts decrypt failures and leaves those rows unchanged. The JSON result is
@@ -98,6 +100,10 @@ rows that failed decryption and stay 2-part). If `remaining` stalls and
 `decryptFailures` is non-empty after a run that did not hit the row budget,
 inspect those keys instead of looping. This is a production mutation; run it
 only after an explicit operator go-ahead.
+
+After restoring a D1 export sealed before the 2026-08-17 format-upgrade pass,
+run this pass to remaining 0 before serving. Prefer a later sealed day when one
+is available. See [Disaster recovery](./disaster-recovery.md).
 
 ## Backfilling integration-owned credentials
 

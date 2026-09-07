@@ -1,4 +1,4 @@
-export const fleetPackageErrorRateConcentrationKinds = [
+const fleetPackageErrorRateConcentrationKinds = [
 	'one_account',
 	'few_accounts',
 	'fleet',
@@ -8,7 +8,7 @@ export type FleetPackageErrorRateConcentrationKind =
 	(typeof fleetPackageErrorRateConcentrationKinds)[number]
 
 /** Share of recent-window errors that counts as concentrated. */
-export const fleetPackageErrorRateConcentrationShare = 0.8
+const fleetPackageErrorRateConcentrationShare = 0.8
 
 /** How many leading accounts can still count as "a few" rather than fleet-wide. */
 export const fleetPackageErrorRateFewAccountLimit = 3
@@ -16,11 +16,11 @@ export const fleetPackageErrorRateFewAccountLimit = 3
 export const fleetPackageErrorRateMaxNamedOwners = 3
 export const fleetPackageErrorRateMaxNamedPackages = 5
 
-export type FleetPackageErrorRateConcentrationPackage = {
+type FleetPackageErrorRateConcentrationPackage = {
 	kody_id: string
 }
 
-export type FleetPackageErrorRateConcentrationOwner = {
+type FleetPackageErrorRateConcentrationOwner = {
 	username: string
 	error_share: number
 	packages: Array<FleetPackageErrorRateConcentrationPackage>

@@ -4,6 +4,7 @@ import { verifyEmailToken } from '#app/email-verification.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { sendConnectAgentEmail } from '#app/user-account-emails.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
+import { maybeRewardHeldReferralAfterEmailVerified } from '#worker/entitlements/referral-program.ts'
 
 vi.mock('#app/email-verification.ts', () => ({
 	verifyEmailToken: vi.fn(),
@@ -21,6 +22,13 @@ vi.mock('#app/user-account-emails.ts', () => ({
 
 vi.mock('#worker/kit/subscriber-sync.ts', () => ({
 	scheduleKitSubscriberSync: vi.fn(),
+}))
+
+vi.mock('#worker/entitlements/referral-program.ts', () => ({
+	maybeRewardHeldReferralAfterEmailVerified: vi.fn(async () => ({
+		outcome: 'ignored',
+		reason: 'no_held',
+	})),
 }))
 
 test('verify-email handler wires success CTA from redirectTo and rejects open redirects', async () => {
@@ -83,6 +91,7 @@ test('verify-email handler wires success CTA from redirectTo and rejects open re
 	expect(renderAppPage).toHaveBeenCalled()
 	expect(sendConnectAgentEmail).not.toHaveBeenCalled()
 	expect(scheduleKitSubscriberSync).not.toHaveBeenCalled()
+	expect(maybeRewardHeldReferralAfterEmailVerified).not.toHaveBeenCalled()
 })
 
 test('verify-email sends the connect-agent mail only on newly verified accounts', async () => {
@@ -111,4 +120,10 @@ test('verify-email sends the connect-agent mail only on newly verified accounts'
 		email: 'verified@example.com',
 		stableUserId: 'user_verified',
 	})
+	expect(maybeRewardHeldReferralAfterEmailVerified).toHaveBeenCalledWith(
+		expect.objectContaining({
+			db: expect.anything(),
+			stableUserId: 'user_verified',
+		}),
+	)
 })

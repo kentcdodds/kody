@@ -55,8 +55,9 @@ https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun. Agents never
 paste the URL. Rotate with `webhookUrlRotate`, then update both the Kody user
 secret and the GitHub secret. See [setup manifest](./setup-manifest.md).
 
-If the secret is unset, the workflow still measures and upserts the issue. It
-skips the invoke so the weekly job stays green.
+If the secret is unset, blank, or not a valid `http(s)` URL, the workflow still
+measures and upserts the issue. It skips the invoke so the weekly job stays
+green.
 
 Retries of the same GitHub run reuse
 `Idempotency-Key: weekly-site-perf:<GITHUB_RUN_ID>` (and the same

@@ -17,7 +17,7 @@ export const communityListingCategories = [
 export type CommunityListingCategory =
 	(typeof communityListingCategories)[number]
 
-export const defaultCommunityListingCategory =
+const defaultCommunityListingCategory =
 	'other' satisfies CommunityListingCategory
 
 export const communityIndexOverviewLimitPerCategory = 6
@@ -99,7 +99,7 @@ const categoryTagHints: Record<
 	utilities: [],
 }
 
-export function isCommunityListingCategory(
+function isCommunityListingCategory(
 	value: string,
 ): value is CommunityListingCategory {
 	return communityListingCategorySet.has(value)

@@ -27,7 +27,7 @@ export const landingOrbitOgLights = [
 ]
 
 /** Cubic bézier control points matching the live hero tetherPath(). */
-export function landingOrbitTetherControls(
+function landingOrbitTetherControls(
 	x: number,
 	y: number,
 	hx: number,

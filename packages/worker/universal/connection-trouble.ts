@@ -14,7 +14,7 @@ export type IntegrationAuthFailureReason =
 
 export const connectionTroubleActors = ['you', 'kody', 'the-service'] as const
 
-export type ConnectionTroubleActor = (typeof connectionTroubleActors)[number]
+type ConnectionTroubleActor = (typeof connectionTroubleActors)[number]
 
 export type IntegrationAuthFailureView = {
 	reason: IntegrationAuthFailureReason
@@ -61,7 +61,7 @@ export function humanizeConnectionName(name: string) {
 		.join(' ')
 }
 
-export function integrationTroubleTitle(
+function integrationTroubleTitle(
 	name: string,
 	accountLabel: string | null | undefined,
 ) {
@@ -84,11 +84,11 @@ export function buildIntegrationReconnectHref(input: {
 	return `/connect/oauth?${params.toString()}`
 }
 
-export function buildIntegrationAccountHref(name: string) {
+function buildIntegrationAccountHref(name: string) {
 	return routes.accountIntegrationDetail.href({ integrationName: name })
 }
 
-export function buildExpiredSecretHref(name: string) {
+function buildExpiredSecretHref(name: string) {
 	return routes.accountSecretUserDetail.href({ secretName: name })
 }
 

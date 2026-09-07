@@ -39,7 +39,7 @@ export type LandingLoopPauseReason =
 	| 'manual'
 	| 'ended'
 
-export type LandingLoopScene = TranscriptScene | 'desk'
+type LandingLoopScene = TranscriptScene | 'desk'
 
 export type LandingLoopBeat =
 	| {

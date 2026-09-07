@@ -36,7 +36,7 @@ export const activityErrorReviewPrompt = [
 	'Explain each failure and recommend whether to ignore it, mark it resolved, or fix something.',
 ].join(' ')
 
-export const accountActivityApiPath = '/account/activity.json'
+const accountActivityApiPath = '/account/activity.json'
 export const activityRoute = createListDetailRoute('/account/activity')
 
 export const viewFilterOptions: Array<{

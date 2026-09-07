@@ -28,7 +28,7 @@ import {
 	type AccountPackagesLoaderData,
 } from '#universal/loader-data.ts'
 
-export function isPackageLocked(lockedAt: string | null | undefined) {
+function isPackageLocked(lockedAt: string | null | undefined) {
 	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
 }
 
@@ -356,7 +356,7 @@ export function AccountPackageOwnerDetails(
 	}
 }
 
-export function packageLockGlyph(locked: boolean) {
+function packageLockGlyph(locked: boolean) {
 	return (
 		<svg
 			viewBox="0 0 16 16"

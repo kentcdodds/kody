@@ -32,7 +32,7 @@ const DEFAULT_EARLY_POLL_DELAY_MS = 2_000
 const DEFAULT_POLL_DELAY_MS = 15_000
 const DEFAULT_MAX_EXPORT_RESTARTS = 3
 export const DEFAULT_BACKUP_MAX_SOURCE_BYTES = 4_500_000_000
-export const EXPORT_RESULT_EXPIRED_ERROR = 'Not currently exporting anything.'
+const EXPORT_RESULT_EXPIRED_ERROR = 'Not currently exporting anything.'
 
 function isObject(value: unknown): value is JsonObject {
 	return typeof value === 'object' && value !== null && !Array.isArray(value)

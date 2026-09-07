@@ -25,7 +25,7 @@ import { verifyBackupManifestSignature } from './manifest-signing.ts'
 import { readFullManifest } from './seal-full-backup.ts'
 import { assertSqlRestorable } from './sql-statement-stats.ts'
 
-export type DrRestoreChunkResponse = {
+type DrRestoreChunkResponse = {
 	done: boolean
 	nextCursor?: string
 	progress: unknown
@@ -37,7 +37,7 @@ export type ProductionRestorePayload = {
 	requestedAt: string
 }
 
-export type ProductionRestoreProgressValue =
+type ProductionRestoreProgressValue =
 	| string
 	| number
 	| boolean
@@ -349,7 +349,7 @@ export async function validateSealedDayForRestore(
 	}
 }
 
-export async function callProductionDrRestore(
+async function callProductionDrRestore(
 	env: BackupEnvironment,
 	input: { day: string; cursor?: string },
 	options: ApiOptions = {},
@@ -424,7 +424,7 @@ export async function callProductionDrRestore(
 	}
 }
 
-export async function capturePreRestoreSafetyExport(
+async function capturePreRestoreSafetyExport(
 	env: BackupEnvironment,
 	day: string,
 	now: Date = new Date(),

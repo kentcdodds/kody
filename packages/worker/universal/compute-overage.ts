@@ -28,7 +28,7 @@ const durableObjectRowsPerMillion = 1_000_000
  * the public ladder). `everyone` remains a later switch; it still cannot
  * invoice legacy while `chargeLegacy` is false.
  */
-export const computeOverageBillAudiences = ['public', 'everyone'] as const
+const computeOverageBillAudiences = ['public', 'everyone'] as const
 
 export type ComputeOverageBillAudience =
 	(typeof computeOverageBillAudiences)[number]
@@ -54,7 +54,7 @@ export type ComputeOverageDisposition =
 	| 'skip_audience'
 
 /** Stripe's USD charge minimum. Below this, `payInvoice` always fails. */
-export const stripeUsdMinimumChargeCents = 50
+const stripeUsdMinimumChargeCents = 50
 
 export const computeOverageWarningResources = [
 	'unique_worker_days',

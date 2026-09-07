@@ -609,6 +609,14 @@ test('auth handler login and signup workflow', async () => {
 	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
 		'allowed-jane',
 	)
+	expect(
+		allowedSignupResponse.headers
+			.getSetCookie()
+			.some(
+				(cookie) =>
+					cookie.startsWith('kody_ref=') && cookie.includes('Max-Age=0'),
+			),
+	).toBe(true)
 	// The signup context has no email sender configured, so the skipped
 	// verification send logs at info level in the non-production runtime.
 	expect(consoleInfo).toHaveBeenCalledWith(

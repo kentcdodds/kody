@@ -1,4 +1,5 @@
 import { toHex } from './hex.ts'
+import { timingSafeEqualBytes } from './timing-safe.ts'
 
 const passwordHashPrefix = 'pbkdf2_sha256'
 const passwordSaltBytes = 16
@@ -26,38 +27,6 @@ function fromHex(value: string): Uint8Array<ArrayBuffer> | null {
 		bytes[index / 2] = byte
 	}
 	return bytes
-}
-
-function padToLength(buffer: Uint8Array, length: number) {
-	if (buffer.length === length) return buffer
-	const padded = new Uint8Array(length)
-	padded.set(buffer)
-	return padded
-}
-
-function timingSafeEqual(left: Uint8Array, right: Uint8Array) {
-	const maxLength = Math.max(left.length, right.length)
-	const leftPadded = padToLength(left, maxLength)
-	const rightPadded = padToLength(right, maxLength)
-	const subtle = crypto.subtle as SubtleCrypto & {
-		timingSafeEqual?: (
-			a: ArrayBuffer | ArrayBufferView,
-			b: ArrayBuffer | ArrayBufferView,
-		) => boolean
-	}
-	const isEqual =
-		typeof subtle.timingSafeEqual === 'function'
-			? subtle.timingSafeEqual(leftPadded, rightPadded)
-			: (() => {
-					let result = 0
-					for (let index = 0; index < maxLength; index += 1) {
-						const leftValue = leftPadded[index] ?? 0
-						const rightValue = rightPadded[index] ?? 0
-						result |= leftValue ^ rightValue
-					}
-					return result === 0
-				})()
-	return isEqual && left.length === right.length
 }
 
 async function derivePasswordKey(
@@ -140,7 +109,7 @@ export async function verifyPassword(
 			iterations,
 			hash.length,
 		)
-		return timingSafeEqual(derived, hash)
+		return timingSafeEqualBytes(derived, hash)
 	}
 
 	return false

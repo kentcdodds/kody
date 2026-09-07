@@ -5,7 +5,7 @@
  * counts as both. A random pick never shows two hosts from the same company.
  */
 
-export type WalkthroughHostCompany =
+type WalkthroughHostCompany =
 	| 'spacexai'
 	| 'anthropic'
 	| 'github'
@@ -22,7 +22,7 @@ export type WalkthroughHostCompany =
 
 export type WalkthroughHostSlot = 'coding' | 'invoke' | 'notify'
 
-export type WalkthroughHostKind = 'coding' | 'chat' | 'both'
+type WalkthroughHostKind = 'coding' | 'chat' | 'both'
 
 export type WalkthroughHost = {
 	id: string
@@ -169,7 +169,7 @@ export const walkthroughHostCatalog = [
 
 export type WalkthroughRandomInt = (maxExclusive: number) => number
 
-export function randomWalkthroughInt(maxExclusive: number): number {
+function randomWalkthroughInt(maxExclusive: number): number {
 	if (maxExclusive <= 0) {
 		throw new Error('randomWalkthroughInt requires a positive maximum')
 	}
@@ -178,11 +178,11 @@ export function randomWalkthroughInt(maxExclusive: number): number {
 	return bytes[0]! % maxExclusive
 }
 
-export function walkthroughHostIsCoding(host: WalkthroughHost) {
+function walkthroughHostIsCoding(host: WalkthroughHost) {
 	return host.kind === 'coding' || host.kind === 'both'
 }
 
-export function walkthroughHostIsChat(host: WalkthroughHost) {
+function walkthroughHostIsChat(host: WalkthroughHost) {
 	return host.kind === 'chat' || host.kind === 'both'
 }
 
@@ -256,11 +256,11 @@ export function pickWalkthroughHosts(
 	}
 }
 
-export function walkthroughHostById(id: string): WalkthroughHost | undefined {
+function walkthroughHostById(id: string): WalkthroughHost | undefined {
 	return walkthroughHostCatalog.find((host) => host.id === id)
 }
 
-export function walkthroughHostSlotForAct(
+function walkthroughHostSlotForAct(
 	actId: string,
 ): WalkthroughHostSlot | undefined {
 	switch (actId) {

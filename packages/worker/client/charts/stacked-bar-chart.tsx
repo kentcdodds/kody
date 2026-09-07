@@ -7,7 +7,7 @@ import {
 	formatIntegerNumber,
 } from './chart-theme.ts'
 
-export type StackedBarSeries = {
+type StackedBarSeries = {
 	label: string
 	color: string
 	/** One value per x label, oldest first. */

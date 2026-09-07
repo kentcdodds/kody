@@ -1,7 +1,7 @@
 import { css, type Handle } from 'remix/ui'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
-export type ChartLegendItem = {
+type ChartLegendItem = {
 	label: string
 	color: string
 	value?: string

@@ -22,8 +22,8 @@ render rich display" failures fail locally. `npm run slop-ratchet:check` holds
 the client-route and node-test file-size allowlists and rejects decorative
 `========` / `----------` comment banners. `kody-custom/no-tautological-absence`
 rejects vanished-copy `not.toContain` leftovers in tests during `npm run lint`.
-`npm run knip` fails on unused files against the configured entrypoints. These
-run as part of `npm run validate`.
+`npm run knip` fails on unused files, exports, and types against the configured
+entrypoints. These run as part of `npm run validate`.
 
 Docs-like product copy follows the same rule: MCP server instructions, tool and
 schema descriptions, and user-visible UI strings should not read like release

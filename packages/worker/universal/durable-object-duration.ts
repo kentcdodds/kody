@@ -7,7 +7,7 @@
  * customer charges.
  */
 
-export const durableObjectDefaultMemoryGb = 0.128
+const durableObjectDefaultMemoryGb = 0.128
 
 export function durationMsToDurableObjectGbSeconds(durationMs: number): number {
 	const safeMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0

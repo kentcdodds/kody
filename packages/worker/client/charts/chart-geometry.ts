@@ -126,12 +126,7 @@ export function buildDonutSegments(
 	})
 }
 
-export function pointOnCircle(
-	cx: number,
-	cy: number,
-	radius: number,
-	angle: number,
-) {
+function pointOnCircle(cx: number, cy: number, radius: number, angle: number) {
 	return {
 		x: cx + radius * Math.sin(angle),
 		y: cy - radius * Math.cos(angle),

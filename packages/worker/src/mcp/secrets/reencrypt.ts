@@ -1,16 +1,13 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
-	decryptPlatformOauthClientSecret,
-	decryptSecretValue,
-	decryptUserOauthAccessToken,
-	decryptUserOauthClientSecret,
-	decryptUserOauthRefreshToken,
+	decryptUnversionedCiphertext,
 	encryptPlatformOauthClientSecret,
 	encryptSecretValue,
 	encryptUserOauthAccessToken,
 	encryptUserOauthClientSecret,
 	encryptUserOauthRefreshToken,
 	platformOauthAppContext,
+	secretCiphertextPurposes,
 	userIntegrationCredentialContext,
 	userOauthAppCredentialContext,
 	userSecretContext,
@@ -413,9 +410,10 @@ async function updateUserOauthApp(input: {
 
 /**
  * Format-upgrade pass for pre-AAD (2-part) secret ciphertexts. Decrypts via
- * the existing dual-read, re-encrypts as v2 with the owning identity AAD, and
- * writes back with an optimistic compare so a concurrent user rotation wins.
- * Rows that fail decryption are counted and left unchanged.
+ * the maintenance-only unversioned path, re-encrypts as v2 with the owning
+ * identity AAD, and writes back with an optimistic compare so a concurrent
+ * user rotation wins. Rows that fail decryption are counted and left
+ * unchanged. User-facing decrypt rejects 2-part payloads.
  */
 export async function reencryptLegacySecretCiphertexts(
 	input: ReencryptLegacySecretCiphertextsInput,
@@ -445,10 +443,10 @@ export async function reencryptLegacySecretCiphertexts(
 				dryRun,
 				previousPayload: row.encrypted_value,
 				decrypt: () =>
-					decryptSecretValue(
+					decryptUnversionedCiphertext(
 						input.env,
+						secretCiphertextPurposes.secretStore,
 						row.encrypted_value,
-						userSecretContext(row.user_id),
 					),
 				encrypt: (plaintext) =>
 					encryptSecretValue(
@@ -500,10 +498,10 @@ export async function reencryptLegacySecretCiphertexts(
 				dryRun,
 				previousPayload: row.client_secret_encrypted,
 				decrypt: () =>
-					decryptPlatformOauthClientSecret(
+					decryptUnversionedCiphertext(
 						input.env,
+						secretCiphertextPurposes.platformOauthClientSecret,
 						row.client_secret_encrypted,
-						platformOauthAppContext(row.slug),
 					),
 				encrypt: (plaintext) =>
 					encryptPlatformOauthClientSecret(
@@ -555,13 +553,13 @@ export async function reencryptLegacySecretCiphertexts(
 				{
 					column: 'access_token_encrypted' as const,
 					payload: row.access_token_encrypted,
-					decrypt: decryptUserOauthAccessToken,
+					purpose: secretCiphertextPurposes.userOauthAccessToken,
 					encrypt: encryptUserOauthAccessToken,
 				},
 				{
 					column: 'refresh_token_encrypted' as const,
 					payload: row.refresh_token_encrypted,
-					decrypt: decryptUserOauthRefreshToken,
+					purpose: secretCiphertextPurposes.userOauthRefreshToken,
 					encrypt: encryptUserOauthRefreshToken,
 				},
 			]
@@ -573,7 +571,12 @@ export async function reencryptLegacySecretCiphertexts(
 				const outcome = await rewritePayload({
 					dryRun,
 					previousPayload,
-					decrypt: () => column.decrypt(input.env, previousPayload, context),
+					decrypt: () =>
+						decryptUnversionedCiphertext(
+							input.env,
+							column.purpose,
+							previousPayload,
+						),
 					encrypt: (plaintext) => column.encrypt(input.env, plaintext, context),
 					write: (nextPayload, previous) =>
 						updateUserIntegrationCiphertext({
@@ -631,10 +634,10 @@ export async function reencryptLegacySecretCiphertexts(
 				dryRun,
 				previousPayload: row.client_secret_encrypted,
 				decrypt: () =>
-					decryptUserOauthClientSecret(
+					decryptUnversionedCiphertext(
 						input.env,
+						secretCiphertextPurposes.userOauthClientSecret,
 						row.client_secret_encrypted,
-						userOauthAppCredentialContext(row.user_id, row.slug),
 					),
 				encrypt: (plaintext) =>
 					encryptUserOauthClientSecret(

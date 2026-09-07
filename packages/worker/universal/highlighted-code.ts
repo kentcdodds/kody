@@ -4,7 +4,7 @@
  * `packages/highlight-worker` and `#app/highlight-code.ts` share it.
  */
 
-export const highlighterVersion = '1'
+const highlighterVersion = '1'
 
 export const shikiPreClass = 'shiki shiki-themes github-light github-dark'
 

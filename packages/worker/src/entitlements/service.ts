@@ -8,6 +8,7 @@ import {
 	type PlanName,
 	type UserEntitlement,
 } from '#universal/plans.ts'
+import { laterIsoTimestamp } from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
@@ -52,10 +53,11 @@ const publicFreeEntitlement: UserEntitlement = {
  * invalid stable ids still fail closed to public `free` without touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan, unexpired
- * second-agent Standard gift): the higher-ranked of the manual grant and
- * Stripe subscription plan, then a 14-day public Standard overlay when the
- * gift is active and the base plan is still free. `legacy` ceilings apply
- * only while that marker stays set and paid access remains continuous.
+ * Standard overlays): the higher-ranked of the manual grant and Stripe
+ * subscription plan, then a public Standard overlay when the later of the
+ * second-agent gift and stacked referral credit is still active and the
+ * base plan is still free. `legacy` ceilings apply only while that marker
+ * stays set and paid access remains continuous.
  */
 export async function getUserEntitlement(
 	db: D1Database,
@@ -67,8 +69,8 @@ export async function getUserEntitlement(
 	const row = await db
 		.prepare(
 			email
-				? `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at FROM users WHERE email = ? AND stable_user_id = ?`
-				: `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at FROM users WHERE stable_user_id = ?`,
+				? `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users WHERE email = ? AND stable_user_id = ?`
+				: `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users WHERE stable_user_id = ?`,
 		)
 		.bind(...(email ? [email, input.userId] : [input.userId]))
 		.first<{
@@ -76,12 +78,16 @@ export async function getUserEntitlement(
 			stripe_plan: string | null
 			entitlement_ladder: string | null
 			second_agent_standard_gift_expires_at: string | null
+			referral_standard_credit_expires_at: string | null
 		}>()
 	if (!row) return publicFreeEntitlement
 	const plan = resolveEffectivePlanWithSecondAgentGift(
 		parseStoredPlanName(row.plan),
 		row.stripe_plan,
-		row.second_agent_standard_gift_expires_at,
+		laterIsoTimestamp(
+			row.second_agent_standard_gift_expires_at,
+			row.referral_standard_credit_expires_at,
+		),
 	)
 	return {
 		plan,

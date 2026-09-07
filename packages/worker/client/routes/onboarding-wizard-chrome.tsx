@@ -128,7 +128,7 @@ const stepNumberCss = {
 }
 
 /* Feedback (checks appearing) borrows the waitlist's success-in pop. */
-export const wizardPopCss = {
+const wizardPopCss = {
 	'@media (prefers-reduced-motion: no-preference)': {
 		animation: `success-in 200ms ${transitions.easeOut} both`,
 	},
@@ -356,7 +356,7 @@ const wizardButtonDisabledCss = {
 	},
 }
 
-export const wizardNextButtonCss = {
+const wizardNextButtonCss = {
 	...getPillButtonCss(),
 	minWidth: '6.5rem',
 	...wizardButtonDisabledCss,

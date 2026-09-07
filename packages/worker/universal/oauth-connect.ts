@@ -1,6 +1,6 @@
 import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 
-export type ConnectOauthChooserKind = 'connection'
+type ConnectOauthChooserKind = 'connection'
 
 export type ConnectOauthChooserOption = {
 	id: string

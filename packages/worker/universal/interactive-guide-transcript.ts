@@ -127,7 +127,7 @@ export function conversationIdInput(conversationId: string) {
 const conversationIdReturnNote =
 	'Tool conversation id; pass it back on subsequent search/execute calls.'
 
-export function conversationIdReturn(conversationId: string) {
+function conversationIdReturn(conversationId: string) {
 	return `conversationId: ${conversationId}\n${conversationIdReturnNote}`
 }
 

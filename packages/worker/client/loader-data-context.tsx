@@ -44,7 +44,7 @@ export function AppLoaderDataProvider(
  * Consumption is irreversible; if a guard rejects after a successful read the
  * embedded payload is lost and the route can render a permanent loading state.
  */
-export function tryConsumeEmbeddedLoaderData<K extends keyof AppLoaderData>(
+function tryConsumeEmbeddedLoaderData<K extends keyof AppLoaderData>(
 	handle: Handle,
 	key: K,
 	currentHref: string,

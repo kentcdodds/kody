@@ -354,12 +354,19 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   overlay actually raises a free account (NULL means already paid / no-op). See
   [Entitlements](./entitlements.md#second-agent-standard-gift).
   `tips_emails_opted_out_at` is the durable Kody tips opt-out (usage-state
-  campaign mail only). The `d1_storage_reconciliation` lane sweeps users by
-  `stable_user_id` keyset from the platform-owned `d1_storage_reconcile_cursor`
-  singleton. UserMeter `storage_bytes_state` (schema v4) drives storage-byte
-  enforcement; see [Entitlements](./entitlements.md#usermeter). Inbound email
-  routing does not reverse-resolve stable ids — it uses the indexed username
-  lookup (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
+  campaign mail only). `referral_standard_credit_expires_at` is the stackable
+  Standard overlay from the uncapped referral program. Pre-signup attribution
+  lives in the last-wins one-week `kody_ref` cookie. `referrals` stores the
+  signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
+  invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
+  fields while email is unverified). See
+  [Entitlements](./entitlements.md#referral-standard-credit). The
+  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
+  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
+  `storage_bytes_state` (schema v4) drives storage-byte enforcement; see
+  [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
+  reverse-resolve stable ids — it uses the indexed username lookup
+  (`findPublicUserIdentityByUsername`) on the RFC 5233 base local
   (`resolveInboundMailboxRoute`). Plus-tags on user inbox hosts are aliases for
   that username, including tags that spell a reserved system local. Contextless
   paths resolve stable ids with one indexed point read on `users.stable_user_id`
@@ -535,12 +542,15 @@ Two D1 reporting projections deliberately remain:
   Analytics Engine recompute and D1 table remain unchanged.
 - `user_usage_campaigns` and `user_usage_campaign_sends` store one usage-state
   campaign row per user plus an idempotent send ledger
-  (`UNIQUE(user_id, state, send_index)`). The hourly `usage_entitlement_alert`
-  lane evaluates verified person accounts and mails from `kody@` with the
-  standard transactional template. Seed observations persist state without
-  mailing (backfill is out of scope). Activated and Paid are campaign-silent.
-  LimitAware shares the existing entitlement-warning mail. Kit stays exist-only
-  tags. See [Usage metering](./usage-metering.md#usage-campaign).
+  (`UNIQUE(user_id, state, send_index)`), plus `first_activated_at` /
+  `advocate_sent_at` and a partial unique index that caps
+  `advocate_referral_testimonial` at one send forever. The hourly
+  `usage_entitlement_alert` lane evaluates verified person accounts and mails
+  from `kody@` with the standard transactional template. Seed observations
+  persist state without mailing (backfill is out of scope). Activated and Paid
+  stay drip-silent except that one-shot advocate mail. LimitAware shares the
+  existing entitlement-warning mail. Kit stays exist-only tags. See
+  [Usage metering](./usage-metering.md#usage-campaign).
 - `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
   the homepage ticker (no `user_id`; not an account export/deletion target). The
   hourly `usage_aggregation` lane rewrites the current and previous UTC months

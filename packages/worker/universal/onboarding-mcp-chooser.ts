@@ -43,7 +43,7 @@ export const onboardingFeaturedMcpServerIds = [
 	'prisma',
 ] as const
 
-export type OnboardingFeaturedMcpServerId =
+type OnboardingFeaturedMcpServerId =
 	(typeof onboardingFeaturedMcpServerIds)[number]
 
 export type OnboardingFeaturedMcpServerOption = {

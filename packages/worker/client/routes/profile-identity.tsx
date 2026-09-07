@@ -67,7 +67,7 @@ export function renderProfileIdentity(shell: ProfileShellLoaderData) {
 	)
 }
 
-export function renderProfileLoggedOutCtas(returnTo: string) {
+function renderProfileLoggedOutCtas(returnTo: string) {
 	return (
 		<div mix={css(guestCtaCss)} data-testid="profile-guest-cta">
 			<p mix={css(guestCtaCopyCss)}>

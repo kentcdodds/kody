@@ -169,6 +169,12 @@ test('github sign-in creates a verified account, then signs it back in', async (
 				cookie.startsWith('kody_oauth_login=') && cookie.includes('Max-Age=0'),
 		),
 	).toBe(true)
+	expect(
+		setCookies.some(
+			(cookie) =>
+				cookie.startsWith('kody_ref=') && cookie.includes('Max-Age=0'),
+		),
+	).toBe(true)
 
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)

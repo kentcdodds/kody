@@ -10,7 +10,7 @@
  */
 
 /** Fundamentals shown first under Work with Kody. */
-export const guidesStartHereSlugs = [
+const guidesStartHereSlugs = [
 	'what-is-kody',
 	'onboarding',
 	'how-kody-works',
@@ -22,10 +22,7 @@ export const guidesStartHereSlugs = [
  * Path segments under `/guides/` reserved for index pages. Catalog guides
  * must not use these slugs — they would collide with the dedicated routes.
  */
-export const reservedGuideIndexSlugs = ['connect'] as const
-
-export type GuidesStartHereSlug = (typeof guidesStartHereSlugs)[number]
-export type ReservedGuideIndexSlug = (typeof reservedGuideIndexSlugs)[number]
+const reservedGuideIndexSlugs = ['connect'] as const
 
 export function isReservedGuideIndexSlug(slug: string): boolean {
 	return (reservedGuideIndexSlugs as ReadonlyArray<string>).includes(slug)

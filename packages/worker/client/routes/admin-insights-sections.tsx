@@ -28,7 +28,7 @@ import {
 	runtimeDurationMetricLabels,
 } from './admin-insights-shared.ts'
 
-export function renderConsumerTable(input: {
+function renderConsumerTable(input: {
 	ariaLabel: string
 	rows: Array<{
 		key: string
@@ -302,7 +302,7 @@ function formatErrorRate(counts: AdminInsightsPackageErrorRateCounts) {
 	return `${(counts.rate * 100).toFixed(1)}%`
 }
 
-export function renderPackageErrorRateSummary(input: {
+function renderPackageErrorRateSummary(input: {
 	label: string
 	counts: AdminInsightsPackageErrorRateCounts
 }) {

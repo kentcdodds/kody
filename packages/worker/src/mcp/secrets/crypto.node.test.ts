@@ -2,19 +2,18 @@ import { expect, test, vi } from 'vitest'
 import {
 	decryptPlatformOauthClientSecret,
 	decryptSecretValue,
-	decryptStringWithPurpose,
+	decryptUnversionedCiphertext,
 	encryptSecretValue,
 	encryptPlatformOauthClientSecret,
-	encryptStringWithPurpose,
 	platformOauthAppContext,
+	secretCiphertextPurposes,
 	userSecretContext,
 } from './crypto.ts'
 
 const primaryKey = 'primary-secret-store-key-at-least-32-chars!!'
-const cookieSecret = 'cookie-secret-value-at-least-32-characters!!'
 
-test('secret and purpose-based encryption round-trip and reject wrong keys or malformed payloads', async () => {
-	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
+test('secret encryption round-trips and rejects wrong keys or malformed payloads', async () => {
+	const env = { SECRET_STORE_KEY: primaryKey }
 	const context = userSecretContext('user-1')
 	const encrypted = await encryptSecretValue(env, 'my-secret-value', context)
 	expect(encrypted.startsWith('v2.')).toBe(true)
@@ -24,7 +23,6 @@ test('secret and purpose-based encryption round-trip and reject wrong keys or ma
 
 	const wrongEnv = {
 		SECRET_STORE_KEY: 'wrong-store-key-32-chars-minimum-value-here!!',
-		COOKIE_SECRET: cookieSecret,
 	}
 	await expect(
 		decryptSecretValue(wrongEnv, encrypted, context),
@@ -32,19 +30,10 @@ test('secret and purpose-based encryption round-trip and reject wrong keys or ma
 	await expect(
 		decryptSecretValue(env, 'no-dot-separator', context),
 	).rejects.toThrow('Unable to decrypt secret value.')
-
-	const purposeEncrypted = await encryptStringWithPurpose(
-		env,
-		'test-purpose',
-		'hello',
-	)
-	expect(
-		await decryptStringWithPurpose(env, 'test-purpose', purposeEncrypted),
-	).toBe('hello')
 })
 
-test('secret AAD/versioning binds identity context, platform OAuth slugs, and still decrypts legacy payloads', async () => {
-	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: primaryKey }
+test('secret AAD/versioning binds identity context, platform OAuth slugs, and rejects unversioned payloads', async () => {
+	const env = { SECRET_STORE_KEY: primaryKey }
 	const encrypted = await encryptSecretValue(
 		env,
 		'bound-value',
@@ -116,17 +105,24 @@ test('secret AAD/versioning binds identity context, platform OAuth slugs, and st
 			.replace(/=+$/, '')
 	const legacyPayload = `${toBase64Url(legacyIv)}.${toBase64Url(legacyCiphertext)}`
 
+	await expect(
+		decryptSecretValue(env, legacyPayload, userSecretContext('user-a')),
+	).rejects.toThrow('Unable to decrypt secret value.')
+	await expect(
+		decryptSecretValue(env, legacyPayload, userSecretContext('user-b')),
+	).rejects.toThrow('Unable to decrypt secret value.')
 	expect(
-		await decryptSecretValue(env, legacyPayload, userSecretContext('user-a')),
-	).toBe('legacy-value')
-	expect(
-		await decryptSecretValue(env, legacyPayload, userSecretContext('user-b')),
+		await decryptUnversionedCiphertext(
+			env,
+			secretCiphertextPurposes.secretStore,
+			legacyPayload,
+		),
 	).toBe('legacy-value')
 })
 
 test('secret store CryptoKey derivation is cached across encrypt and decrypt', async () => {
 	const cacheTestKey = 'cache-test-secret-store-key-32-chars-min!!'
-	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: cacheTestKey }
+	const env = { SECRET_STORE_KEY: cacheTestKey }
 	const derivedKeys: Array<CryptoKey> = []
 	const originalImportKey = crypto.subtle.importKey.bind(crypto.subtle)
 	const importKeySpy = vi
@@ -165,7 +161,7 @@ test('secret store CryptoKey derivation is cached across encrypt and decrypt', a
 
 test('failed secret store CryptoKey derivation is not cached', async () => {
 	const failureTestKey = 'failure-test-secret-store-key-32-chars-min!'
-	const env = { COOKIE_SECRET: cookieSecret, SECRET_STORE_KEY: failureTestKey }
+	const env = { SECRET_STORE_KEY: failureTestKey }
 	let attempts = 0
 	const originalImportKey = crypto.subtle.importKey.bind(crypto.subtle)
 	const importKeySpy = vi

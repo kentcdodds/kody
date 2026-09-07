@@ -1,8 +1,15 @@
-import { readBearerToken, timingSafeEqualString } from './timing-safe.ts'
+import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { type NxCacheEnv, type NxCacheStore } from './nx-cache-types.ts'
 
 const HASH_PATTERN = /^[a-fA-F0-9]{16,128}$/
 export const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
+
+function readBearerToken(request: Request): string | null {
+	const header = request.headers.get('authorization')
+	if (!header) return null
+	const match = /^Bearer\s+(\S+)$/i.exec(header.trim())
+	return match?.[1] ?? null
+}
 
 export function parseCacheHash(pathname: string): string | null {
 	const match = /^\/v1\/cache\/([^/]+)$/.exec(pathname)
@@ -18,11 +25,11 @@ function plainText(status: number, message: string): Response {
 	})
 }
 
-export type CacheAuthorization =
+type CacheAuthorization =
 	| { ok: true; canWrite: boolean }
 	| { ok: false; response: Response }
 
-export async function authorizeCacheRequest(
+async function authorizeCacheRequest(
 	request: Request,
 	tokens: { write?: string; read?: string },
 ): Promise<CacheAuthorization> {

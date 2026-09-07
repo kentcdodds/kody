@@ -13,19 +13,19 @@ import {
 	type PlanName,
 } from '#universal/plans.ts'
 
-export const secondAgentStandardGiftPlan = 'standard' satisfies PlanName
+const secondAgentStandardGiftPlan = 'standard' satisfies PlanName
 
 /** 14 days. Observed through grant `expires_at`, not this export alone. */
-export const secondAgentStandardGiftDurationMs = 14 * 24 * 60 * 60 * 1000
+const secondAgentStandardGiftDurationMs = 14 * 24 * 60 * 60 * 1000
 
-export const secondAgentStandardGiftStatuses = [
+const secondAgentStandardGiftStatuses = [
 	'none',
 	'active',
 	'expired',
 	'already_paid',
 ] as const
 
-export type SecondAgentStandardGiftStatus =
+type SecondAgentStandardGiftStatus =
 	(typeof secondAgentStandardGiftStatuses)[number]
 
 export type SecondAgentStandardGiftState = {
@@ -38,7 +38,7 @@ export type SecondAgentStandardGiftState = {
 	grantedAt: string | null
 }
 
-export function addSecondAgentStandardGiftDuration(now: Date): Date {
+function addSecondAgentStandardGiftDuration(now: Date): Date {
 	return new Date(now.getTime() + secondAgentStandardGiftDurationMs)
 }
 

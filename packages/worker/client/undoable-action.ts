@@ -2,7 +2,7 @@ import { type Handle } from 'remix/ui'
 
 const defaultUndoTimeoutMs = 8_000
 
-export type UndoableActionPending = {
+type UndoableActionPending = {
 	message: string
 	undoLabel: string
 }

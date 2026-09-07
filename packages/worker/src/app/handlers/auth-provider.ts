@@ -77,7 +77,12 @@ import {
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
 import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
+import {
+	resolveReferralCodeForSignup,
+	serializeReferralCookie,
+} from '#universal/referral-cookie.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import {
@@ -461,6 +466,8 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					 * so the new session must postdate that timestamp.
 					 */
 					issuedAt?: number
+					/** Drop the last-wins share cookie after a new account is created. */
+					clearReferralCookie?: boolean
 				} = {},
 			) {
 				const stableUserId = resolveUserStableId(user)
@@ -488,11 +495,15 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					const verifyPath = redirectTo
 						? `/verify?redirectTo=${encodeURIComponent(redirectTo)}`
 						: '/verify'
-					return redirect(verifyPath, [
+					const cookies = [
 						verifyCookie,
 						await destroyAuthCookie(secure),
 						clearStateCookie,
-					])
+					]
+					if (options.clearReferralCookie) {
+						cookies.push(serializeReferralCookie({ code: null, secure }))
+					}
+					return redirect(verifyPath, cookies)
 				}
 
 				const sessionCookie = await createAuthCookie(
@@ -511,7 +522,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason: `provider=${provider}`,
 				})
-				return redirect(postLoginPath, [sessionCookie, clearStateCookie])
+				const cookies = [sessionCookie, clearStateCookie]
+				if (options.clearReferralCookie) {
+					cookies.push(serializeReferralCookie({ code: null, secure }))
+				}
+				return redirect(postLoginPath, cookies)
 			}
 
 			const connection = await db.findOne(oauthConnectionsTable, {
@@ -897,6 +912,19 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				inviteCode: consumedInviteCode,
 				attribution: loginState.attribution,
 			})
+			try {
+				await attributeReferralAtSignup({
+					db: env.APP_DB,
+					refereeStableUserId: stableUserId,
+					refereeUsername: username,
+					referralCode: resolveReferralCodeForSignup({
+						searchParams: url.searchParams,
+						cookieHeader: request.headers.get('Cookie'),
+					}),
+				})
+			} catch (error) {
+				console.warn('referral-attribution-failed', error)
+			}
 
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),
@@ -924,6 +952,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				destination: withAccountCreatedQuery(
 					redirectTo ?? defaultPostVerificationRedirect,
 				),
+				clearReferralCookie: true,
 			})
 		},
 	} satisfies Action<typeof routes.authProviderCallback>

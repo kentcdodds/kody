@@ -71,14 +71,14 @@ export type ConnectOauthChooserOption = NonNullable<
 	ConnectOauthLoaderData['chooser']
 >['options'][number]
 
-export const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
+const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
 	ok: true,
 	provider: null,
 	integration: null,
 	chooser: { options: [] },
 }
 
-export const connectOauthConfigStorageKey = 'connect-oauth:config'
+const connectOauthConfigStorageKey = 'connect-oauth:config'
 
 const reservedAuthorizeParams = new Set([
 	'client_id',
@@ -283,7 +283,7 @@ export function getConnectOauthStateKey(providerKey: string) {
 	return `connect-oauth:${providerKey}`
 }
 
-export function getConnectOauthPkceKey(providerKey: string) {
+function getConnectOauthPkceKey(providerKey: string) {
 	return `connect-oauth:${providerKey}:pkce`
 }
 
@@ -305,7 +305,7 @@ export function readStoredConnectOauthConfig(): ConnectOauthConfig | null {
 	return parseSessionConnectOauthConfig(raw)
 }
 
-export function createConnectOauthState(key: string) {
+function createConnectOauthState(key: string) {
 	const value = crypto.randomUUID()
 	sessionStorage.setItem(key, value)
 	return value

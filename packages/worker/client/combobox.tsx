@@ -7,7 +7,7 @@ import { onComboboxChange } from 'remix/ui/combobox/primitives'
 import { colors, radius, shadows, spacing } from '#universal/styles/tokens.ts'
 import { fieldLabelCss, inputCss } from '#universal/styles/style-primitives.ts'
 
-export type ComboboxOption = {
+type ComboboxOption = {
 	id: string
 	label: string
 	description?: string | null

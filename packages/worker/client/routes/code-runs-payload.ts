@@ -3,7 +3,7 @@ import { type CodeRunsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
-export const codeRunsApiPath = routes.codeRunsApi.href()
+const codeRunsApiPath = routes.codeRunsApi.href()
 
 /** Retry after `updateAt` when origin still returns the same cached triple. */
 export const codeRunsWindowRefreshRetryMs = 60_000

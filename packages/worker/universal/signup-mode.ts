@@ -1,6 +1,6 @@
 export const signupModes = ['invite', 'open', 'waitlist'] as const
 export type SignupMode = (typeof signupModes)[number]
-export type SignupModeSource = 'kv' | 'env'
+type SignupModeSource = 'kv' | 'env'
 
 export type SignupModeSetting = {
 	mode: SignupMode

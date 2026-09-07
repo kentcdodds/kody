@@ -9,8 +9,8 @@ import { type PlanName } from './plans.ts'
  * list price) and do not subtract a share of the included bucket.
  */
 
-export const dynamicWorkerUsdPerUniqueDay = 0.002
-export const dynamicWorkersIncludedPerAccountMonth = 1000
+const dynamicWorkerUsdPerUniqueDay = 0.002
+const dynamicWorkersIncludedPerAccountMonth = 1000
 
 /**
  * Gross unique-worker-day cost at which a non-admin account pages operators.
@@ -18,7 +18,7 @@ export const dynamicWorkersIncludedPerAccountMonth = 1000
  * Free uses the account-wide included allotment ($2 = 1,000 unique days) so
  * one Free account eating that bucket is enough to look.
  */
-export const fleetDynamicWorkerCostAlertUsdByPlan = {
+const fleetDynamicWorkerCostAlertUsdByPlan = {
 	free: 2,
 	standard: 12,
 	pro: 49,
