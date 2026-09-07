@@ -120,8 +120,10 @@ test('verify-email sends the connect-agent mail only on newly verified accounts'
 		email: 'verified@example.com',
 		stableUserId: 'user_verified',
 	})
-	expect(maybeRewardHeldReferralAfterEmailVerified).toHaveBeenCalledWith({
-		db: expect.anything(),
-		stableUserId: 'user_verified',
-	})
+	expect(maybeRewardHeldReferralAfterEmailVerified).toHaveBeenCalledWith(
+		expect.objectContaining({
+			db: expect.anything(),
+			stableUserId: 'user_verified',
+		}),
+	)
 })

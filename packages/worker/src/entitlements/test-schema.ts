@@ -64,7 +64,8 @@ export async function ensureReferralProgramTestSchema(db: D1Database) {
 	reward_invoice_id TEXT,
 	reject_reason TEXT,
 	held_invoice_id TEXT,
-	held_period_end_at TEXT
+	held_period_end_at TEXT,
+	credits_granted_at TEXT
 )`,
 		)
 		.run()

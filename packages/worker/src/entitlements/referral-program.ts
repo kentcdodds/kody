@@ -7,12 +7,12 @@
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { computeOverageInvoiceMetadataKey } from '#worker/billing/stripe-client.ts'
 import {
-	addReferralStandardCreditDuration,
 	isReferralStandardCreditActive,
 	laterIsoTimestamp,
 	normalizeEmailForReferralFraud,
 	normalizeReferralCode,
 	referralSharePath,
+	referralStandardCreditDurationMs,
 	unixSecondsToIso,
 	type ReferralProgramListItem,
 	type ReferralProgramSummary,
@@ -49,6 +49,7 @@ type PendingReferralRow = {
 	reward_invoice_id: string | null
 	held_invoice_id: string | null
 	held_period_end_at: string | null
+	credits_granted_at: string | null
 }
 
 export function isQualifyingPaidReferralInvoice(invoice: {
@@ -248,27 +249,44 @@ async function markRejected(
 		.run()
 }
 
-async function grantStackedCredit(input: {
+function stackReferralCreditStatement(input: {
 	db: D1Database
 	stableUserId: string
-	currentExpiresAt: string | null
 	paidPeriodEndAt: string | null
+	referralId: number
+	invoiceId: string
 	now: Date
 }) {
-	const expiresAt = addReferralStandardCreditDuration({
-		now: input.now,
-		currentExpiresAt: input.currentExpiresAt,
-		paidPeriodEndAt: input.paidPeriodEndAt,
-	}).toISOString()
-	await input.db
+	return input.db
 		.prepare(
 			`UPDATE users
-			 SET referral_standard_credit_expires_at = ?,
+			 SET referral_standard_credit_expires_at = strftime(
+			       '%Y-%m-%dT%H:%M:%fZ',
+			       max(
+			         strftime('%s', ?),
+			         COALESCE(strftime('%s', referral_standard_credit_expires_at), 0),
+			         COALESCE(strftime('%s', ?), 0)
+			       ) + ?,
+			       'unixepoch'
+			     ),
 			     updated_at = ?
-			 WHERE stable_user_id = ?`,
+			 WHERE stable_user_id = ?
+			   AND EXISTS (
+			     SELECT 1 FROM referrals
+			     WHERE id = ?
+			       AND reward_invoice_id = ?
+			       AND credits_granted_at IS NULL
+			   )`,
 		)
-		.bind(expiresAt, utcSqliteTimestamp(input.now), input.stableUserId)
-		.run()
+		.bind(
+			input.now.toISOString(),
+			input.paidPeriodEndAt ?? '1970-01-01T00:00:00.000Z',
+			referralStandardCreditDurationMs / 1000,
+			utcSqliteTimestamp(input.now),
+			input.stableUserId,
+			input.referralId,
+			input.invoiceId,
+		)
 }
 
 export async function rewardReferralForPaidInvoice(input: {
@@ -287,15 +305,18 @@ export async function rewardReferralForPaidInvoice(input: {
 	const pending = await input.db
 		.prepare(
 			`SELECT id, referrer_stable_user_id, referee_stable_user_id, status,
-			        reward_invoice_id, held_invoice_id, held_period_end_at
+			        reward_invoice_id, held_invoice_id, held_period_end_at,
+			        credits_granted_at
 			 FROM referrals
 			 WHERE referee_stable_user_id = ?`,
 		)
 		.bind(input.refereeStableUserId)
 		.first<PendingReferralRow>()
 	if (!pending) return { outcome: 'ignored', reason: 'no_pending' }
-	if (pending.status === 'rewarded') return { outcome: 'already_rewarded' }
-	if (pending.status !== 'pending') {
+	if (pending.status === 'rewarded' && pending.credits_granted_at) {
+		return { outcome: 'already_rewarded' }
+	}
+	if (pending.status !== 'pending' && pending.status !== 'rewarded') {
 		return { outcome: 'ignored', reason: 'no_pending' }
 	}
 	if (!input.invoiceQualifies) {
@@ -327,36 +348,66 @@ export async function rewardReferralForPaidInvoice(input: {
 		return { outcome: 'held_unverified' }
 	}
 
-	const claimed = await input.db
+	const rewardedAt = now.toISOString()
+	const invoiceId =
+		pending.status === 'rewarded'
+			? (pending.reward_invoice_id ?? input.invoiceId)
+			: input.invoiceId
+	await input.db.batch([
+		input.db
+			.prepare(
+				`UPDATE referrals
+				 SET status = 'rewarded',
+				     rewarded_at = COALESCE(rewarded_at, ?),
+				     reward_invoice_id = COALESCE(reward_invoice_id, ?),
+				     held_invoice_id = NULL,
+				     held_period_end_at = NULL
+				 WHERE id = ? AND (status = 'pending' OR credits_granted_at IS NULL)`,
+			)
+			.bind(rewardedAt, invoiceId, pending.id),
+		stackReferralCreditStatement({
+			db: input.db,
+			stableUserId: referrer.stable_user_id,
+			paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
+			referralId: pending.id,
+			invoiceId,
+			now,
+		}),
+		stackReferralCreditStatement({
+			db: input.db,
+			stableUserId: referee.stable_user_id,
+			paidPeriodEndAt: input.paidPeriodEndAt ?? null,
+			referralId: pending.id,
+			invoiceId,
+			now,
+		}),
+		input.db
+			.prepare(
+				`UPDATE referrals
+				 SET credits_granted_at = ?
+				 WHERE id = ? AND credits_granted_at IS NULL`,
+			)
+			.bind(rewardedAt, pending.id),
+	])
+	const granted = await input.db
 		.prepare(
-			`UPDATE referrals
-			 SET status = 'rewarded',
-			     rewarded_at = ?,
-			     reward_invoice_id = ?,
-			     held_invoice_id = NULL,
-			     held_period_end_at = NULL
-			 WHERE id = ? AND status = 'pending'`,
+			`SELECT credits_granted_at, reward_invoice_id
+			 FROM referrals WHERE id = ?`,
 		)
-		.bind(now.toISOString(), input.invoiceId, pending.id)
-		.run()
-	if ((claimed.meta.changes ?? 0) === 0) {
+		.bind(pending.id)
+		.first<{
+			credits_granted_at: string | null
+			reward_invoice_id: string | null
+		}>()
+	if (
+		granted?.credits_granted_at &&
+		granted.reward_invoice_id !== input.invoiceId
+	) {
 		return { outcome: 'already_rewarded' }
 	}
-
-	await grantStackedCredit({
-		db: input.db,
-		stableUserId: referrer.stable_user_id,
-		currentExpiresAt: referrer.referral_standard_credit_expires_at,
-		paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
-		now,
-	})
-	await grantStackedCredit({
-		db: input.db,
-		stableUserId: referee.stable_user_id,
-		currentExpiresAt: referee.referral_standard_credit_expires_at,
-		paidPeriodEndAt: input.paidPeriodEndAt ?? null,
-		now,
-	})
+	if (!granted?.credits_granted_at) {
+		return { outcome: 'already_rewarded' }
+	}
 	return { outcome: 'rewarded' }
 }
 
@@ -364,34 +415,50 @@ export async function maybeRewardHeldReferralAfterEmailVerified(input: {
 	db: D1Database
 	stableUserId: string
 	referrerPaidPeriodEndAt?: string | null
+	resolveReferrerPaidPeriodEnd?: (
+		referrerStableUserId: string,
+	) => Promise<string | null>
 	now?: Date
 }): Promise<ReferralRewardOutcome | { outcome: 'ignored'; reason: 'no_held' }> {
 	if (typeof input.db.prepare !== 'function') {
 		return { outcome: 'ignored', reason: 'no_held' }
 	}
-	const pending = await input.db
+	const held = await input.db
 		.prepare(
 			`SELECT id, referrer_stable_user_id, referee_stable_user_id, status,
-			        reward_invoice_id, held_invoice_id, held_period_end_at
+			        reward_invoice_id, held_invoice_id, held_period_end_at,
+			        credits_granted_at
 			 FROM referrals
 			 WHERE (referee_stable_user_id = ? OR referrer_stable_user_id = ?)
 			   AND status = 'pending'
-			   AND held_invoice_id IS NOT NULL`,
+			   AND held_invoice_id IS NOT NULL
+			 ORDER BY created_at ASC`,
 		)
 		.bind(input.stableUserId, input.stableUserId)
-		.first<PendingReferralRow>()
-	if (!pending?.held_invoice_id) {
+		.all<PendingReferralRow>()
+	const rows = held.results ?? []
+	if (rows.length === 0) {
 		return { outcome: 'ignored', reason: 'no_held' }
 	}
-	return rewardReferralForPaidInvoice({
-		db: input.db,
-		refereeStableUserId: pending.referee_stable_user_id,
-		invoiceId: pending.held_invoice_id,
-		invoiceQualifies: true,
-		paidPeriodEndAt: pending.held_period_end_at,
-		referrerPaidPeriodEndAt: input.referrerPaidPeriodEndAt,
-		now: input.now,
-	})
+	let last: ReferralRewardOutcome = { outcome: 'ignored', reason: 'no_pending' }
+	for (const pending of rows) {
+		if (!pending.held_invoice_id) continue
+		const referrerPaidPeriodEndAt = input.resolveReferrerPaidPeriodEnd
+			? await input.resolveReferrerPaidPeriodEnd(
+					pending.referrer_stable_user_id,
+				)
+			: (input.referrerPaidPeriodEndAt ?? null)
+		last = await rewardReferralForPaidInvoice({
+			db: input.db,
+			refereeStableUserId: pending.referee_stable_user_id,
+			invoiceId: pending.held_invoice_id,
+			invoiceQualifies: true,
+			paidPeriodEndAt: pending.held_period_end_at,
+			referrerPaidPeriodEndAt,
+			now: input.now,
+		})
+	}
+	return last
 }
 
 export async function loadReferralProgramSummary(input: {
@@ -412,23 +479,35 @@ export async function loadReferralProgramSummary(input: {
 		.first<{ referral_standard_credit_expires_at: string | null }>()
 	const creditExpiresAt =
 		creditRow?.referral_standard_credit_expires_at?.trim() || null
-	const rows = await input.db
-		.prepare(
-			`SELECT r.status, r.created_at, r.rewarded_at, u.username AS referee_username
-			 FROM referrals r
-			 LEFT JOIN users u ON u.stable_user_id = r.referee_stable_user_id
-			 WHERE r.referrer_stable_user_id = ?
-			   AND r.status IN ('pending', 'rewarded')
-			 ORDER BY r.created_at DESC
-			 LIMIT 50`,
-		)
-		.bind(input.stableUserId)
-		.all<{
-			status: string
-			created_at: string
-			rewarded_at: string | null
-			referee_username: string | null
-		}>()
+	const [rows, counts] = await Promise.all([
+		input.db
+			.prepare(
+				`SELECT r.status, r.created_at, r.rewarded_at, u.username AS referee_username
+				 FROM referrals r
+				 LEFT JOIN users u ON u.stable_user_id = r.referee_stable_user_id
+				 WHERE r.referrer_stable_user_id = ?
+				   AND r.status IN ('pending', 'rewarded')
+				 ORDER BY r.created_at DESC
+				 LIMIT 50`,
+			)
+			.bind(input.stableUserId)
+			.all<{
+				status: string
+				created_at: string
+				rewarded_at: string | null
+				referee_username: string | null
+			}>(),
+		input.db
+			.prepare(
+				`SELECT status, COUNT(*) AS total
+				 FROM referrals
+				 WHERE referrer_stable_user_id = ?
+				   AND status IN ('pending', 'rewarded')
+				 GROUP BY status`,
+			)
+			.bind(input.stableUserId)
+			.all<{ status: string; total: number }>(),
+	])
 	const referrals: Array<ReferralProgramListItem> = (rows.results ?? []).map(
 		(row) => ({
 			refereeUsername: row.referee_username,
@@ -437,13 +516,17 @@ export async function loadReferralProgramSummary(input: {
 			rewardedAt: row.rewarded_at,
 		}),
 	)
+	const countFor = (status: string) => {
+		const total = counts.results?.find((row) => row.status === status)?.total
+		const parsed = typeof total === 'number' ? total : Number(total)
+		return Number.isFinite(parsed) ? parsed : 0
+	}
 	const sharePath = referralSharePath(input.username)
 	return {
 		sharePath,
 		shareUrl: new URL(sharePath, input.origin).toString(),
-		rewardedCount: referrals.filter((item) => item.status === 'rewarded')
-			.length,
-		pendingCount: referrals.filter((item) => item.status === 'pending').length,
+		rewardedCount: countFor('rewarded'),
+		pendingCount: countFor('pending'),
 		creditExpiresAt,
 		creditActive: isReferralStandardCreditActive(creditExpiresAt, now),
 		referrals,

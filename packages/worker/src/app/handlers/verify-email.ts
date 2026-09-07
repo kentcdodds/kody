@@ -10,7 +10,9 @@ import { sendConnectAgentEmail } from '#app/user-account-emails.ts'
 import { resolveVerifyEmailSuccessCta } from '#universal/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
+import { waitUntil } from 'cloudflare:workers'
 import { maybeRewardHeldReferralAfterEmailVerified } from '#worker/entitlements/referral-program.ts'
+import { latestReferrerPaidPeriodEnd } from '#worker/billing/stripe-webhooks.ts'
 
 function getVerifyEmailError(
 	reason: 'missing_token' | 'invalid_token' | 'expired_token',
@@ -85,12 +87,19 @@ export function createVerifyEmailHandler(env: Env) {
 					email: result.email,
 					stableUserId: result.stableUserId,
 				})
-				void maybeRewardHeldReferralAfterEmailVerified({
-					db: env.APP_DB,
-					stableUserId: result.stableUserId,
-				}).catch((error) => {
-					console.warn('referral-held-reward-failed', error)
-				})
+				waitUntil(
+					maybeRewardHeldReferralAfterEmailVerified({
+						db: env.APP_DB,
+						stableUserId: result.stableUserId,
+						resolveReferrerPaidPeriodEnd: (referrerStableUserId) =>
+							latestReferrerPaidPeriodEnd({
+								env,
+								referrerStableUserId,
+							}),
+					}).catch((error) => {
+						console.warn('referral-held-reward-failed', error)
+					}),
+				)
 			}
 			const cta = resolveVerifyEmailSuccessCta(
 				url.searchParams.get('redirectTo'),

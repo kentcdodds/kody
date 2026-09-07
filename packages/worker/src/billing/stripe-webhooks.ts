@@ -26,7 +26,10 @@ import {
 	linkStripeCustomerFromCheckoutSessionAttribution,
 	refreshStripePlanForStripeCustomer,
 } from './subscription-sync.ts'
-import { listSubscriptions } from './stripe-client.ts'
+import {
+	listSubscriptions,
+	readStripeSubscriptionPeriodEndUnix,
+} from './stripe-client.ts'
 import {
 	isQualifyingPaidReferralInvoice,
 	readStripeInvoiceCustomerId,
@@ -248,7 +251,7 @@ async function handleInvoicePaymentFailed(input: {
 	)
 }
 
-async function latestReferrerPaidPeriodEnd(input: {
+export async function latestReferrerPaidPeriodEnd(input: {
 	env: Env
 	referrerStableUserId: string
 }): Promise<string | null> {
@@ -265,7 +268,9 @@ async function latestReferrerPaidPeriodEnd(input: {
 		)
 		let latest: string | null = null
 		for (const subscription of subscriptions) {
-			const iso = unixSecondsToIso(subscription.current_period_end)
+			const iso = unixSecondsToIso(
+				readStripeSubscriptionPeriodEndUnix(subscription),
+			)
 			if (!iso) continue
 			if (!latest || Date.parse(iso) > Date.parse(latest)) latest = iso
 		}
@@ -287,13 +292,6 @@ async function handleInvoicePaid(input: {
 		console.error('stripe_webhook_invoice_paid_missing_ids')
 		return
 	}
-	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?`,
-	)
-		.bind(customerId)
-		.first<{ stable_user_id: string }>()
-	if (!user?.stable_user_id) return
-
 	const subscriptionId = readStripeInvoiceSubscriptionId(input.object)
 	const qualifies = isQualifyingPaidReferralInvoice({
 		status: input.object.status,
@@ -307,6 +305,15 @@ async function handleInvoicePaid(input: {
 				: null,
 	})
 	if (!qualifies) return
+
+	const user = await input.env.APP_DB.prepare(
+		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?`,
+	)
+		.bind(customerId)
+		.first<{ stable_user_id: string }>()
+	if (!user?.stable_user_id) {
+		throw new Error('stripe_webhook_invoice_paid_user_not_linked')
+	}
 
 	const pending = await input.env.APP_DB.prepare(
 		`SELECT referrer_stable_user_id

@@ -8,6 +8,7 @@ import { getUserEntitlement } from './service.ts'
 import {
 	attributeReferralAtSignup,
 	isQualifyingPaidReferralInvoice,
+	loadReferralProgramSummary,
 	maybeRewardHeldReferralAfterEmailVerified,
 	rewardReferralForPaidInvoice,
 } from './referral-program.ts'
@@ -344,4 +345,117 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 		status: 'rewarded',
 		reward_invoice_id: 'in_held',
 	})
+})
+
+test('held rewards release for every pending referee when the referrer verifies', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureReferralSchema(db)
+	const referrer = await insertUser(db, {
+		email: 'held-referrer@example.com',
+		username: 'heldreferrer',
+		verified: false,
+	})
+	const first = await insertUser(db, {
+		email: 'held-one@example.com',
+		username: 'heldone',
+	})
+	const second = await insertUser(db, {
+		email: 'held-two@example.com',
+		username: 'heldtwo',
+	})
+	await attributeReferralAtSignup({
+		db,
+		refereeStableUserId: first.stableUserId,
+		refereeUsername: 'heldone',
+		referralCode: 'heldreferrer',
+		now,
+	})
+	await attributeReferralAtSignup({
+		db,
+		refereeStableUserId: second.stableUserId,
+		refereeUsername: 'heldtwo',
+		referralCode: 'heldreferrer',
+		now,
+	})
+	expect(
+		await rewardReferralForPaidInvoice({
+			db,
+			refereeStableUserId: first.stableUserId,
+			invoiceId: 'in_held_one',
+			invoiceQualifies: true,
+			now,
+		}),
+	).toEqual({ outcome: 'held_unverified' })
+	expect(
+		await rewardReferralForPaidInvoice({
+			db,
+			refereeStableUserId: second.stableUserId,
+			invoiceId: 'in_held_two',
+			invoiceQualifies: true,
+			now,
+		}),
+	).toEqual({ outcome: 'held_unverified' })
+
+	await db
+		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
+		.bind(now.toISOString(), referrer.stableUserId)
+		.run()
+	expect(
+		await maybeRewardHeldReferralAfterEmailVerified({
+			db,
+			stableUserId: referrer.stableUserId,
+			now,
+		}),
+	).toEqual({ outcome: 'rewarded' })
+	expect(await referralRow(db, first.stableUserId)).toMatchObject({
+		status: 'rewarded',
+		reward_invoice_id: 'in_held_one',
+	})
+	expect(await referralRow(db, second.stableUserId)).toMatchObject({
+		status: 'rewarded',
+		reward_invoice_id: 'in_held_two',
+	})
+	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
+		secondCreditExpiresAt,
+	)
+})
+
+test('referral billing summary counts every row, not only the displayed page', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureReferralSchema(db)
+	const referrer = await insertUser(db, {
+		email: 'count-referrer@example.com',
+		username: 'countreferrer',
+	})
+	for (let index = 0; index < 52; index += 1) {
+		const referee = await insertUser(db, {
+			email: `count-ref-${index}@example.com`,
+			username: `countref${index}`,
+		})
+		await db
+			.prepare(
+				`INSERT INTO referrals (
+					referrer_stable_user_id, referee_stable_user_id, created_at, status
+				) VALUES (?, ?, ?, ?)`,
+			)
+			.bind(
+				referrer.stableUserId,
+				referee.stableUserId,
+				now.toISOString(),
+				index < 3 ? 'rewarded' : 'pending',
+			)
+			.run()
+	}
+	const summary = await loadReferralProgramSummary({
+		db,
+		stableUserId: referrer.stableUserId,
+		username: 'countreferrer',
+		origin: 'https://kody.codes',
+		now,
+	})
+	expect(summary.rewardedCount).toBe(3)
+	expect(summary.pendingCount).toBe(49)
+	expect(summary.referrals).toHaveLength(50)
 })

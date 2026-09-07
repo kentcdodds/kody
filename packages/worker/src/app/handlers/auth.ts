@@ -610,14 +610,16 @@ export function createAuthHandler(env: Env) {
 					inviteCode: consumedInviteCode,
 					attribution: signupAttribution,
 				})
-				void attributeReferralAtSignup({
-					db: env.APP_DB,
-					refereeStableUserId: record.stableUserId,
-					refereeUsername: normalizedUsername,
-					referralCode: signupAttribution?.referralCode,
-				}).catch((error) => {
+				try {
+					await attributeReferralAtSignup({
+						db: env.APP_DB,
+						refereeStableUserId: record.stableUserId,
+						refereeUsername: normalizedUsername,
+						referralCode: signupAttribution?.referralCode,
+					})
+				} catch (error) {
 					console.warn('referral-attribution-failed', error)
-				})
+				}
 
 				const cookie = await createAuthCookie(
 					{

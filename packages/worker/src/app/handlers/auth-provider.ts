@@ -898,14 +898,16 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				inviteCode: consumedInviteCode,
 				attribution: loginState.attribution,
 			})
-			void attributeReferralAtSignup({
-				db: env.APP_DB,
-				refereeStableUserId: stableUserId,
-				refereeUsername: username,
-				referralCode: loginState.attribution?.referralCode,
-			}).catch((error) => {
+			try {
+				await attributeReferralAtSignup({
+					db: env.APP_DB,
+					refereeStableUserId: stableUserId,
+					refereeUsername: username,
+					referralCode: loginState.attribution?.referralCode,
+				})
+			} catch (error) {
 				console.warn('referral-attribution-failed', error)
-			})
+			}
 
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),

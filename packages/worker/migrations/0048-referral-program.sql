@@ -16,7 +16,8 @@ CREATE TABLE referrals (
 	reward_invoice_id TEXT,
 	reject_reason TEXT,
 	held_invoice_id TEXT,
-	held_period_end_at TEXT
+	held_period_end_at TEXT,
+	credits_granted_at TEXT
 );
 
 CREATE UNIQUE INDEX idx_referrals_referee

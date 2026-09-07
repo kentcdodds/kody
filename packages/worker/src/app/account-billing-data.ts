@@ -148,6 +148,15 @@ export async function loadAccountBillingData(input: {
 					username: row.username,
 					origin,
 					now,
+				}).catch((referralError) => {
+					console.error('account_billing_referral_failed', {
+						userId: input.userId,
+						error:
+							referralError instanceof Error
+								? referralError.message
+								: String(referralError),
+					})
+					return null
 				})
 			: null
 

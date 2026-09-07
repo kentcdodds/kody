@@ -492,3 +492,41 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 
 	vi.unstubAllGlobals()
 })
+
+test('invoice.paid returns 500 when a qualifying invoice has no linked user', async () => {
+	await ensureEntitlementTestSchema(env.APP_DB)
+	silenceExpectedConsoleErrors([
+		'stripe_webhook_process_failed',
+		'stripe_webhook_invoice_paid_user_not_linked',
+	])
+	vi.stubGlobal('fetch', async () => {
+		throw new Error('fetch should not run for an unlinked invoice.paid')
+	})
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_invoice_unlinked',
+				type: 'invoice.paid',
+				created: 1_778_000_200,
+				data: {
+					object: {
+						id: 'in_unlinked',
+						object: 'invoice',
+						customer: 'cus_not_linked_yet',
+						subscription: 'sub_unlinked',
+						status: 'paid',
+						amount_paid: 1200,
+						billing_reason: 'subscription_create',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({
+		status: 500,
+		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
+	})
+	vi.unstubAllGlobals()
+})
