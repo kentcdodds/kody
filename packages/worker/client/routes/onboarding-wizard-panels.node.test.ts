@@ -51,7 +51,7 @@ function accessPanel(selected: {
 }
 
 function secondAgentPanel(selected: {
-	firstAgent: 'codex' | 'cursor' | null
+	firstAgent: 'codex' | 'cursor' | 'gemini' | null
 	agent: 'claude-code' | null
 	label: string | null
 	loggedIn?: boolean
@@ -60,6 +60,18 @@ function secondAgentPanel(selected: {
 	search?: string
 	accessWinMemorySubject?: string | null
 	persistedPackageName?: string | null
+	connectedAgents?: Array<{
+		label: string
+		kind?:
+			| 'chatgpt'
+			| 'claude-desktop'
+			| 'codex'
+			| 'copilot'
+			| 'cursor'
+			| 'devin'
+			| 'grok'
+			| 'grok-cli'
+	}>
 }) {
 	return renderSecondAgentPanel({
 		entrance: css({}),
@@ -68,15 +80,10 @@ function secondAgentPanel(selected: {
 		loggedIn: selected.loggedIn ?? true,
 		hasSecondMcpClient: selected.hasSecondMcpClient ?? false,
 		secondAgentGiftActive: selected.secondAgentGiftActive,
+		connectedAgents: selected.connectedAgents,
 		firstAgent: selected.firstAgent,
 		selectedAgent: selected.agent,
 		selectedAgentLabel: selected.label,
-		greyedAgents:
-			selected.firstAgent === 'codex'
-				? ['chatgpt', 'codex']
-				: selected.firstAgent === 'cursor'
-					? ['cursor']
-					: [],
 		agentChooser: null,
 		mcpServerUrl: defaultKodyMcpUrl,
 		mcpHighlights: {},
@@ -210,21 +217,69 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	)
 
 	const labeled = await renderToString(
+		secondAgentPanel({
+			firstAgent: 'gemini',
+			agent: null,
+			label: null,
+			hasSecondMcpClient: true,
+			connectedAgents: [
+				{ label: 'Devin', kind: 'devin' },
+				{ label: 'Claude Desktop', kind: 'claude-desktop' },
+				{ label: 'ChatGPT.com', kind: 'chatgpt' },
+				{ label: 'Codex', kind: 'codex' },
+				{ label: 'Cursor', kind: 'cursor' },
+				{ label: 'Grok.com', kind: 'grok' },
+				{ label: 'Kody' },
+				{ label: 'Copilot', kind: 'copilot' },
+				{ label: 'Grok CLI', kind: 'grok-cli' },
+				{ label: 'Zephyr' },
+			],
+		}),
+	)
+	expect(labeled).toContain('data-testid="onboarding-connected-agents"')
+	expect(labeled).toContain('aria-label="Connected: Devin, Claude Desktop')
+	expect(labeled).toContain('data-agent-kind="devin"')
+	expect(labeled).toContain('data-agent-kind="unknown"')
+	expect(labeled).toContain('/images/icons/devin.svg')
+	expect(labeled).toContain('/images/icons/claude.svg')
+	expect(labeled).toContain('/images/icons/chatgpt.svg')
+	expect(labeled).toContain('/images/icons/cursor.svg')
+	expect(labeled).toContain('/images/icons/githubcopilot.svg')
+	expect(labeled).toContain('data-greyed-reason="same-ecosystem"')
+	expect(labeled).toContain('data-greyed-reason="connected"')
+	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')
+	expect(labeled).toContain('data-testid="onboarding-agent-cursor"')
+	expect(labeled).toContain('data-testid="onboarding-agent-chatgpt"')
+	expect(labeled).toContain('data-testid="onboarding-agent-devin"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/gemini"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/cursor"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/chatgpt"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/devin"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/codex"')
+	expect(labeled).not.toContain('href="/onboarding/step-3/copilot"')
+	expect(labeled).toContain('href="/onboarding/step-3/claude-code"')
+	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
+	expect(labeled).toContain('href="/onboarding/step-3/not-listed"')
+	expect(labeled).toContain('Same ecosystem')
+
+	const notListed = await renderToString(
 		renderSecondAgentPanel({
 			entrance: css({}),
 			activeStep: 3,
 			onSelectStep() {},
 			loggedIn: true,
-			hasSecondMcpClient: true,
-			connectedAgents: [{ label: 'Cursor' }, { label: 'Claude Desktop' }],
-			firstAgent: 'codex',
-			selectedAgent: 'claude-code',
-			selectedAgentLabel: 'Claude Code',
-			greyedAgents: ['chatgpt', 'codex'],
+			hasSecondMcpClient: false,
+			connectedAgents: [{ label: 'Zephyr' }, { label: 'Kody' }],
+			firstAgent: 'other',
+			selectedAgent: null,
+			selectedAgentLabel: null,
 			agentChooser: null,
 			mcpServerUrl: defaultKodyMcpUrl,
 			mcpHighlights: {},
 		}),
 	)
-	expect(labeled).toContain('data-testid="onboarding-connected-agents"')
+	expect(notListed).toContain('href="/onboarding/step-3/not-listed"')
+	expect(notListed).toContain('data-testid="onboarding-agent-other"')
+	expect(notListed).toContain('data-agent-kind="unknown"')
+	expect(notListed).not.toContain('data-greyed="true"')
 })

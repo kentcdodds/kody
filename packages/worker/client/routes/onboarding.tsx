@@ -26,10 +26,7 @@ import {
 	parseOnboardingPathname,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
-import {
-	onboardingGreyedSecondAgents,
-	resolveOnboardingStep3SelectedAgent,
-} from '#universal/onboarding-agent-ecosystems.ts'
+import { resolveOnboardingStep3SelectedAgent } from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -63,8 +60,9 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
  * agent · Make something useful · Connect a second agent), one surface panel
  * at a time with hand-tilted mascot art. Step 1 picks one agent. Step 2 is
  * one prompt that tells the agent to retrieve the onboarding guide. Step 3
- * looks like Step 1 and greys the same-ecosystem family, then folds in a
- * portability proof that reuses what Step 2 made.
+ * looks like Step 1 and greys the same-ecosystem family plus every already
+ * connected named host, then folds in a portability proof that reuses what
+ * Step 2 made.
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
@@ -124,7 +122,8 @@ function sameConnectedAgents(
 		return (
 			current !== undefined &&
 			agent.clientId === current.clientId &&
-			agent.label === current.label
+			agent.label === current.label &&
+			agent.kind === current.kind
 		)
 	})
 }
@@ -434,7 +433,11 @@ export function OnboardingRoute(handle: Handle) {
 		const firstAgent = readRememberedOnboardingSelectedAgent()
 		const visibleSelectedAgent =
 			activeStep === 3
-				? resolveOnboardingStep3SelectedAgent(firstAgent, selectedAgent)
+				? resolveOnboardingStep3SelectedAgent(
+						firstAgent,
+						selectedAgent,
+						connectedAgents,
+					)
 				: selectedAgent
 		if (
 			activeStep === 3 &&
@@ -536,7 +539,6 @@ export function OnboardingRoute(handle: Handle) {
 									firstAgent,
 									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,
-									greyedAgents: onboardingGreyedSecondAgents(firstAgent),
 									agentChooser,
 									mcpServerUrl,
 									mcpHighlights: mcpHighlights ?? {},
