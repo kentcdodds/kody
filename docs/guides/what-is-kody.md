@@ -42,9 +42,11 @@ inspect, and each version converts to the Apache License 2.0 after two years.
 You do not chat with Kody directly: you connect the AI agent you already use
 (Claude, ChatGPT, Cursor, Codex, or any other MCP-capable host) to your Kody
 account, and that agent gains durable capabilities that outlive the conversation
-and keep running while your computer is off. Kody makes no inference calls of
-its own — your agent supplies the intelligence; Kody supplies memory,
-credentials, saved code, schedules, and execution.
+and keep running while your computer is off. Kody does not run its own
+chat-model agent loop or bill for chat tokens — your agent supplies the
+intelligence; Kody supplies memory, credentials, saved code, schedules, and
+execution. Search and indexing use a small embedding model; that is not a chat
+model and is not billed as inference.
 
 ## The agent reasons. Kody keeps it honest.
 

@@ -174,8 +174,9 @@ appear, the authorization did not finish — send them back to `/onboarding` to
 reconnect.
 
 **Nothing seems to happen on its own.** That is by design. Kody stores mail,
-memories, credentials, and code; it makes no inference calls of its own. Every
-step in this loop happens because an agent asked for it.
+memories, credentials, and code; it does not run its own chat-model agent loop.
+Search indexing uses a small embedding model. Every step in this loop happens
+because an agent asked for it.
 
 ## Try it
 

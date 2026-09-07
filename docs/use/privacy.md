@@ -73,14 +73,22 @@ Kody fetches data from a connected service only to fulfill a request you, or a
 job you saved, just made. Content a package or job persists (for example a saved
 summary) stays in your account under the same isolation rules. Kody does not
 sell that data, use it for advertising, share it with other Kody users, or use
-it to train a Kody model. Kody makes no inference calls of its own.
+it to train a Kody model. Kody does not run its own chat-model agent loop and
+does not bill for chat tokens. Search and indexing do call Cloudflare Workers AI
+for embeddings: the search query, plus indexed text for builtin capabilities,
+saved packages (manifest search fields, not full source), memories (subject,
+summary, details, and tags), jobs (name, description, and schedule), and public
+community listings (name, description, tags, and a short readme snippet). Secret
+values and OAuth tokens are never sent to that model. Connected-account provider
+content is embedded only if it was first saved as one of those indexed records.
 
 **Share, transfer, and disclose.** Provider data leaves your isolated account
-only to Cloudflare, which hosts the application, database, object storage, and
-network; the MCP host you connected (for example ChatGPT, Claude, or Cursor),
-when that host asks Kody to act and receives the result; the provider itself,
-when Kody calls its API with your token; and disclosure required by law. Kody
-does not hand connected-account data to other customers or advertisers.
+only to Cloudflare, which hosts the application, database, object storage,
+network, and Workers AI embeddings; the MCP host you connected (for example
+ChatGPT, Claude, or Cursor), when that host asks Kody to act and receives the
+result; the provider itself, when Kody calls its API with your token; and
+disclosure required by law. Kody does not hand connected-account data to other
+customers or advertisers.
 
 **Protection.** Tokens and OAuth grants are encrypted at rest, isolated per
 user, and sent only to hosts you approved. The admin role cannot read secret
@@ -94,7 +102,8 @@ Docs, Sheets, Gmail send, Contacts, Tasks, YouTube, and any other Google scopes
 you grant. Kody uses Google user data only to fulfill your request or saved job.
 Kody stores Google OAuth tokens encrypted on that Google connection and does not
 use Google user data for advertising. Kody shares, transfers, or discloses
-Google user data only with Cloudflare (hosting), the MCP host you connected when
+Google user data only with Cloudflare (hosting, including Workers AI embeddings
+for content first saved as an indexed record), the MCP host you connected when
 it asks Kody to act, Google when Kody calls Google APIs on your behalf, and when
 required by law.
 
@@ -292,7 +301,7 @@ Kody uses these subprocessors to run the hosted service. They process only the
 data needed for their role:
 
 - Cloudflare — application hosting, database, object storage, email delivery,
-  security, and network infrastructure
+  security, network infrastructure, and Workers AI embeddings for search
 - Stripe — paid subscriptions, billing, and payment records
 - Kit — waitlist and product email subscriptions when you submit your email for
   those purposes

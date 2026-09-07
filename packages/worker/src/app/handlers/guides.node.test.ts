@@ -256,6 +256,38 @@ test('provider and platform guide markdown details stay stable', async () => {
 	expect(missingApi.status).toBe(404)
 })
 
+test('what-is-kody and first-win distinguish chat-model inference from embeddings', async () => {
+	const whatIsKody = await callHandler(
+		createGuideDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/what-is-kody.md'),
+			params: { slug: 'what-is-kody' },
+		},
+	)
+	expect(whatIsKody.status).toBe(200)
+	const whatIsKodyBody = (await whatIsKody.text()).replace(/\s+/g, ' ')
+	expect(whatIsKodyBody).toContain(
+		'does not run its own chat-model agent loop or bill for chat tokens',
+	)
+	expect(whatIsKodyBody).toContain(
+		'Search and indexing use a small embedding model',
+	)
+
+	const firstWin = await callHandler(
+		createGuideDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/first-win.md'),
+			params: { slug: 'first-win' },
+		},
+	)
+	expect(firstWin.status).toBe(200)
+	const firstWinBody = (await firstWin.text()).replace(/\s+/g, ' ')
+	expect(firstWinBody).toContain(
+		'it does not run its own chat-model agent loop',
+	)
+	expect(firstWinBody).toContain('Search indexing uses a small embedding model')
+})
+
 test('interactive guide JSON includes walkthrough highlight tokens', async () => {
 	const howKodyWorksSnippets = uniqueHighlightSnippets(
 		collectHowKodyWorksSnippets(),
