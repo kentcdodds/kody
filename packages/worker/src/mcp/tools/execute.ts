@@ -63,6 +63,7 @@ import {
 	type RunRecord,
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
+import { scheduleFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
 
 export const executeTool = {
 	name: 'execute',
@@ -592,6 +593,13 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									passthrough.structuredResult,
 									responseLimitBytes,
 								)
+					const isError = passthrough?.isError ?? false
+					if (!isError) {
+						scheduleFleetExecuteLastSuccess({
+							waitUntil,
+							kv: env.BUNDLE_ARTIFACTS_KV,
+						})
+					}
 
 					return {
 						content: prependToolMetadataContent(resolvedConversationId, [
@@ -621,7 +629,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								: {}),
 							...buildMemoryStructuredContent(surfacedMemories),
 						},
-						isError: passthrough?.isError ?? false,
+						isError,
 					}
 				}
 
@@ -640,6 +648,13 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							responseLimitBytes,
 						)
 					: limitedResult
+				const isError = markerOnlyPassthrough?.isError ?? false
+				if (!isError) {
+					scheduleFleetExecuteLastSuccess({
+						waitUntil,
+						kv: env.BUNDLE_ARTIFACTS_KV,
+					})
+				}
 
 				return {
 					content: prependToolMetadataContent(resolvedConversationId, [
@@ -673,7 +688,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							: {}),
 						...buildMemoryStructuredContent(surfacedMemories),
 					},
-					isError: markerOnlyPassthrough?.isError ?? false,
+					isError,
 				}
 			}
 		},
