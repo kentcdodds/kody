@@ -62,6 +62,7 @@ test('settings loader 404s for listed packages the viewer does not own', async (
 		forkPrompt: '',
 		viewerInstall: null,
 		readmeContent: '# Demo',
+		hasAgentsDocs: true,
 		isPrivate: false,
 		ownerProfilePublic: true,
 		invocationUrlOrigin: 'https://example.com',
@@ -87,6 +88,42 @@ test('settings loader 404s for listed packages the viewer does not own', async (
 			ok: true,
 			viewerIsOwner: false,
 			kodyId: 'demo',
+			hasAgentsDocs: true,
+		},
+	})
+	vi.unstubAllGlobals()
+})
+
+test('listing loader hides Agent docs unless the payload confirms AGENTS.md', async () => {
+	const listedPublic = {
+		ok: true,
+		listing: { id: 'listing-1', kodyId: 'demo' },
+		viewerIsOwner: false,
+		ownerPackage: null,
+		username: 'owner',
+		kodyId: 'demo',
+		loggedIn: false,
+		viewerIsAdmin: false,
+		forkPrompt: '',
+		viewerInstall: null,
+		readmeContent: '# Demo',
+		isPrivate: false,
+		ownerProfilePublic: true,
+		invocationUrlOrigin: 'https://example.com',
+	}
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => jsonResponse(listedPublic, 200)),
+	)
+	await expect(
+		communityDetailRouteLoader(
+			new URL('https://example.com/@owner/demo'),
+			new AbortController().signal,
+		),
+	).resolves.toMatchObject({
+		communityDetailShell: {
+			ok: true,
+			hasAgentsDocs: false,
 		},
 	})
 	vi.unstubAllGlobals()

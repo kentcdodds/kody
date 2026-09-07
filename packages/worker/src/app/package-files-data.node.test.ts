@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
 	resolveArtifactSourceHead: vi.fn<() => Promise<unknown>>(),
 	readPublishedSourceSnapshot: vi.fn<() => Promise<unknown>>(),
+	readCommunitySnapshot: vi.fn<() => Promise<unknown>>(),
 	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
 	highlightMarkdownFences: vi.fn(async () => []),
 	highlightSnippets: vi.fn(async () => []),
@@ -34,6 +35,11 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 		mockModule.readPublishedSourceSnapshot(...args),
 }))
 
+vi.mock('#worker/community/snapshot.ts', () => ({
+	readCommunitySnapshot: (...args: Array<unknown>) =>
+		mockModule.readCommunitySnapshot(...args),
+}))
+
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
@@ -46,7 +52,7 @@ vi.mock('#app/highlight-code.ts', () => ({
 		mockModule.highlightSnippets(...args),
 }))
 
-const { loadCommunityPackageFilesData } =
+const { loadCommunityPackageFilesData, loadPackagePageHasAgentsDocs } =
 	await import('./package-files-data.ts')
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
@@ -109,4 +115,45 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		username: 'kentcdodds',
 		kodyId: 'sentry',
 	})
+})
+
+test('package page reports AGENTS.md only when a non-empty root file exists', async () => {
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		files: { 'README.md': '# Sentry\n' },
+	})
+	expect(
+		await loadPackagePageHasAgentsDocs({
+			env,
+			request: new Request('https://example.com/@kentcdodds/sentry'),
+			listingId: 'listing-1',
+			viewerIsOwner: false,
+		}),
+	).toBe(false)
+
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		files: {
+			'README.md': '# Sentry\n',
+			'AGENTS.md': '# Agents\n\nImport the root export.\n',
+		},
+	})
+	expect(
+		await loadPackagePageHasAgentsDocs({
+			env,
+			request: new Request('https://example.com/@kentcdodds/sentry'),
+			listingId: 'listing-1',
+			viewerIsOwner: false,
+		}),
+	).toBe(true)
+
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		files: { 'docs/AGENTS.md': 'Nested only.\n' },
+	})
+	expect(
+		await loadPackagePageHasAgentsDocs({
+			env,
+			request: new Request('https://example.com/@kentcdodds/sentry'),
+			listingId: 'listing-1',
+			viewerIsOwner: false,
+		}),
+	).toBe(false)
 })

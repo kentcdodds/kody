@@ -63,6 +63,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installOutcome: CommunityInstallOutcome | null = null
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
+	let hasAgentsDocs = false
 	let username = ''
 	let kodyId = ''
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
@@ -113,6 +114,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		installOutcome = null
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
+		hasAgentsDocs = snapshot.hasAgentsDocs
 		username = snapshot.username
 		kodyId = snapshot.kodyId
 		reportState = 'idle'
@@ -177,6 +179,7 @@ export function CommunityDetailRoute(handle: Handle) {
 					readmeContent:
 						payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 					readmeFences: payload.readmeFences,
+					hasAgentsDocs: payload.hasAgentsDocs === true,
 					ownerPackage: payload.ownerPackage,
 					username: payload.username,
 					kodyId:
@@ -488,7 +491,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				? ''
 				: 'Loading package details…'
 		const agentsDocsHref =
-			username && kodyId
+			hasAgentsDocs && username && kodyId
 				? getPackageTreeHref({
 						username,
 						kodyId,

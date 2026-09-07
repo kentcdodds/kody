@@ -208,6 +208,7 @@ export type CommunityDetailShellLoaderData = {
 	featured: boolean
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
+	hasAgentsDocs: boolean
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
 	username: string

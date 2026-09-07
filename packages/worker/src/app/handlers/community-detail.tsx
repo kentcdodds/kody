@@ -4,7 +4,10 @@ import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { loadPackagePage } from '#app/package-page.ts'
-import { loadOwnerPackageReadme } from '#app/package-files-data.ts'
+import {
+	loadOwnerPackageReadme,
+	loadPackagePageHasAgentsDocs,
+} from '#app/package-files-data.ts'
 import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
@@ -91,11 +94,25 @@ async function renderCommunityListingPage(input: {
 	}
 
 	const serverTiming: Array<ServerTimingEntry> = []
-	const readmeFences = await highlightReadmeFences(
-		input.env,
-		detail.listing.readmeContent,
-		serverTiming,
-	)
+	const [readmeFences, hasAgentsDocs] = await Promise.all([
+		highlightReadmeFences(
+			input.env,
+			detail.listing.readmeContent,
+			serverTiming,
+		),
+		recordServerTiming(
+			'agents-docs',
+			() =>
+				loadPackagePageHasAgentsDocs({
+					env: input.env,
+					request: input.request,
+					listingId: input.listingId,
+					ownerSourceId: detail.ownerPackage?.sourceId,
+					viewerIsOwner: detail.viewerIsOwner,
+				}),
+			input.request,
+		),
+	])
 
 	return renderAppPage({
 		request: input.request,
@@ -114,6 +131,7 @@ async function renderCommunityListingPage(input: {
 				featured: detail.listing.featured,
 				readmeContent: detail.listing.readmeContent,
 				readmeFences,
+				hasAgentsDocs,
 				viewerInstall: detail.viewerInstall,
 				ownerPackage: detail.ownerPackage,
 				username: detail.username,
@@ -259,16 +277,30 @@ export function createCommunityPackageHandler(env: Env) {
 
 			if (page.listing?.listing) {
 				const serverTiming: Array<ServerTimingEntry> = []
-				const readme = await readmeForPackagePage(
-					{
-						env,
+				const [readme, hasAgentsDocs] = await Promise.all([
+					readmeForPackagePage(
+						{
+							env,
+							request,
+							listingReadme: page.listing.listing.readmeContent,
+							ownerSourceId: page.ownerPackage?.sourceId,
+							viewerIsOwner: page.viewerIsOwner,
+						},
+						serverTiming,
+					),
+					recordServerTiming(
+						'agents-docs',
+						() =>
+							loadPackagePageHasAgentsDocs({
+								env,
+								request,
+								listingId: page.listing?.listing?.id,
+								ownerSourceId: page.ownerPackage?.sourceId,
+								viewerIsOwner: page.viewerIsOwner,
+							}),
 						request,
-						listingReadme: page.listing.listing.readmeContent,
-						ownerSourceId: page.ownerPackage?.sourceId,
-						viewerIsOwner: page.viewerIsOwner,
-					},
-					serverTiming,
-				)
+					),
+				])
 				return renderAppPage({
 					request,
 					env,
@@ -286,6 +318,7 @@ export function createCommunityPackageHandler(env: Env) {
 							featured: page.listing.listing.featured,
 							readmeContent: readme.readmeContent,
 							readmeFences: readme.readmeFences,
+							hasAgentsDocs,
 							viewerInstall: page.listing.viewerInstall,
 							ownerPackage: page.ownerPackage,
 							username: page.username,
@@ -303,16 +336,30 @@ export function createCommunityPackageHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const readme = await readmeForPackagePage(
-				{
-					env,
+			const [readme, hasAgentsDocs] = await Promise.all([
+				readmeForPackagePage(
+					{
+						env,
+						request,
+						listingReadme: null,
+						ownerSourceId: page.ownerPackage.sourceId,
+						viewerIsOwner: page.viewerIsOwner,
+					},
+					serverTiming,
+				),
+				recordServerTiming(
+					'agents-docs',
+					() =>
+						loadPackagePageHasAgentsDocs({
+							env,
+							request,
+							listingId: null,
+							ownerSourceId: page.ownerPackage?.sourceId,
+							viewerIsOwner: page.viewerIsOwner,
+						}),
 					request,
-					listingReadme: null,
-					ownerSourceId: page.ownerPackage.sourceId,
-					viewerIsOwner: page.viewerIsOwner,
-				},
-				serverTiming,
-			)
+				),
+			])
 			return renderAppPage({
 				request,
 				env,
@@ -331,6 +378,7 @@ export function createCommunityPackageHandler(env: Env) {
 						featured: false,
 						readmeContent: readme.readmeContent,
 						readmeFences: readme.readmeFences,
+						hasAgentsDocs,
 						viewerInstall: null,
 						ownerPackage: page.ownerPackage,
 						username: page.username,
@@ -360,6 +408,21 @@ export function createCommunityDetailApiHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
+			const [readmeFences, hasAgentsDocs] = await Promise.all([
+				highlightReadmeFences(env, detail.listing.readmeContent, serverTiming),
+				recordServerTiming(
+					'agents-docs',
+					() =>
+						loadPackagePageHasAgentsDocs({
+							env,
+							request,
+							listingId,
+							ownerSourceId: detail.ownerPackage?.sourceId,
+							viewerIsOwner: detail.viewerIsOwner,
+						}),
+					request,
+				),
+			])
 			return jsonResponse(
 				request,
 				{
@@ -367,11 +430,8 @@ export function createCommunityDetailApiHandler(env: Env) {
 					readmeContent: detail.listing.readmeContent,
 					kodyId: detail.listing.kodyId,
 					isPrivate: false,
-					readmeFences: await highlightReadmeFences(
-						env,
-						detail.listing.readmeContent,
-						serverTiming,
-					),
+					readmeFences,
+					hasAgentsDocs,
 				},
 				200,
 				serverTiming,
@@ -418,16 +478,30 @@ export function createCommunityPackageApiHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const readme = await readmeForPackagePage(
-				{
-					env,
+			const [readme, hasAgentsDocs] = await Promise.all([
+				readmeForPackagePage(
+					{
+						env,
+						request,
+						listingReadme: page.listing?.listing?.readmeContent,
+						ownerSourceId: page.ownerPackage?.sourceId,
+						viewerIsOwner: page.viewerIsOwner,
+					},
+					serverTiming,
+				),
+				recordServerTiming(
+					'agents-docs',
+					() =>
+						loadPackagePageHasAgentsDocs({
+							env,
+							request,
+							listingId: page.listing?.listing?.id,
+							ownerSourceId: page.ownerPackage?.sourceId,
+							viewerIsOwner: page.viewerIsOwner,
+						}),
 					request,
-					listingReadme: page.listing?.listing?.readmeContent,
-					ownerSourceId: page.ownerPackage?.sourceId,
-					viewerIsOwner: page.viewerIsOwner,
-				},
-				serverTiming,
-			)
+				),
+			])
 			return jsonResponse(
 				request,
 				{
@@ -441,6 +515,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					viewerInstall: page.listing?.viewerInstall ?? null,
 					readmeContent: readme.readmeContent,
 					readmeFences: readme.readmeFences,
+					hasAgentsDocs,
 					ownerPackage: page.ownerPackage,
 					username: page.username,
 					kodyId: page.kodyId,
@@ -502,6 +577,7 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						trusted: false,
 						featured: false,
 						readmeContent: null,
+						hasAgentsDocs: false,
 						viewerInstall: null,
 						ownerPackage: page.ownerPackage,
 						username: page.username,

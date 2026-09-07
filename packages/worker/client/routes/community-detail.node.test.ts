@@ -101,3 +101,11 @@ test('readme section keeps README as the default and links to AGENTS.md', async 
 	expect(html).toContain('href="/@jane/demo/tree/main/AGENTS.md"')
 	expect(html).toContain('Agent docs')
 })
+
+test('readme section omits the Agent docs link when AGENTS.md is absent', async () => {
+	const html = await renderToString(renderReadmeSection(['Human setup.']))
+	expect(html).toContain('id="readme-title"')
+	expect(html).toContain('README')
+	expect(html).not.toContain('data-testid="community-agents-docs-link"')
+	expect(html).not.toContain('Agent docs')
+})
