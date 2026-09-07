@@ -140,6 +140,9 @@ export async function attributeReferralAtSignup(input: {
 	referralCode: string | null | undefined
 	now?: Date
 }): Promise<ReferralAttributionOutcome> {
+	if (typeof input.db.prepare !== 'function') {
+		return { outcome: 'ignored', reason: 'missing_code' }
+	}
 	const code = normalizeReferralCode(input.referralCode)
 	if (!code) return { outcome: 'ignored', reason: 'missing_code' }
 	if (code === normalizeReferralCode(input.refereeUsername)) {
@@ -277,6 +280,9 @@ export async function rewardReferralForPaidInvoice(input: {
 	referrerPaidPeriodEndAt?: string | null
 	now?: Date
 }): Promise<ReferralRewardOutcome> {
+	if (typeof input.db.prepare !== 'function') {
+		return { outcome: 'ignored', reason: 'no_pending' }
+	}
 	const now = input.now ?? new Date()
 	const pending = await input.db
 		.prepare(
@@ -360,6 +366,9 @@ export async function maybeRewardHeldReferralAfterEmailVerified(input: {
 	referrerPaidPeriodEndAt?: string | null
 	now?: Date
 }): Promise<ReferralRewardOutcome | { outcome: 'ignored'; reason: 'no_held' }> {
+	if (typeof input.db.prepare !== 'function') {
+		return { outcome: 'ignored', reason: 'no_held' }
+	}
 	const pending = await input.db
 		.prepare(
 			`SELECT id, referrer_stable_user_id, referee_stable_user_id, status,
