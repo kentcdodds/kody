@@ -35,6 +35,8 @@ import {
 	resolveIntegrationAccessToken,
 } from '#worker/integrations/credentials.ts'
 import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
+import { getJoinedIntegration } from '#worker/integrations/service.ts'
+import { assertIntegrationHostAllowed } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	consumeDailyEntitlement,
@@ -512,6 +514,24 @@ export async function expandSecretPlaceholders(input: {
 					bulkApprovalUrl,
 				}),
 			)
+		}
+		if (userId && referencedIntegrationTokens.length > 0) {
+			for (const name of referencedIntegrationTokens) {
+				const joined = await getJoinedIntegration({
+					env: input.env,
+					userId,
+					name,
+				})
+				if (!joined) continue
+				assertIntegrationHostAllowed(
+					name,
+					{
+						requiredHosts: joined.connection.requiredHosts,
+						apiBaseUrl: joined.app.apiBaseUrl,
+					},
+					nextUrl,
+				)
+			}
 		}
 	}
 	const nextUrl = resolveRequestUrlForFetchGateway(

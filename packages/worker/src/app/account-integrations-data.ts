@@ -7,7 +7,6 @@ import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
-import { listSecrets } from '#mcp/secrets/service.ts'
 import {
 	findOauthAppForProviderSetup,
 	getJoinedIntegration,
@@ -469,10 +468,8 @@ export async function loadExistingConnectionSummary(
 }
 
 /**
- * True when the user already stores the client secret the connect page
- * would use for `name`: ciphertext on the user-lane app, or a leftover
- * secret-store row under the conventional `<providerKey>ClientSecret`
- * name from a setup that has not persisted ciphertext yet.
+ * True when the user-lane app already stores a client-secret ciphertext
+ * the connect page can reuse.
  */
 export async function hasStoredConnectClientSecret(
 	env: Env,
@@ -480,24 +477,13 @@ export async function hasStoredConnectClientSecret(
 	name: string,
 	record: AccountIntegrationRecord | null,
 ): Promise<boolean> {
+	void name
 	if (record?.hasClientSecret) return true
-	const secretName = `${normalizeProviderKey(name)}ClientSecret`
-	const [secrets, storedCiphertext] = await Promise.all([
-		listSecrets({
-			env,
-			userId: user.mcpUser.userId,
-			scope: 'user',
-		}),
-		record?.appSlug && !record.platform
-			? getOauthAppClientSecretCiphertext({
-					db: env.APP_DB,
-					userId: user.mcpUser.userId,
-					slug: record.appSlug,
-				})
-			: Promise.resolve(null),
-	])
-	if (storedCiphertext) return true
-	return secrets.some(
-		(secret) => secret.scope === 'user' && secret.name === secretName,
-	)
+	if (!record?.appSlug || record.platform) return false
+	const storedCiphertext = await getOauthAppClientSecretCiphertext({
+		db: env.APP_DB,
+		userId: user.mcpUser.userId,
+		slug: record.appSlug,
+	})
+	return Boolean(storedCiphertext)
 }

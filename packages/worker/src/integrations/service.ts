@@ -639,8 +639,8 @@ export type OauthAppSetupPrefill = {
  * derived via `providerFromSlug` (e.g. `google-calendar` → `google`).
  *
  * Family fallback merges field-by-field: a field is prefilled only when every
- * candidate agrees on it (e.g. shared `clientId` with differing secret names
- * still prefills the client id and leaves the secret name empty).
+ * candidate agrees on it (e.g. shared `clientId` with differing endpoints
+ * still prefills the client id and leaves disagreed fields empty).
  */
 export async function findOauthAppForProviderSetup(input: {
 	env: Pick<Env, 'APP_DB'>

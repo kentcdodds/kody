@@ -41,8 +41,8 @@ import {
 	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
+	findOauthAppForProviderSetup,
 	getJoinedIntegration,
-	getOauthApp,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
 } from '#worker/integrations/service.ts'
@@ -729,45 +729,51 @@ async function resolveConnectClientSecret(input: {
 }): Promise<string | null> {
 	const inline = input.clientSecret?.trim()
 	if (inline) return inline
-	const slug = canonicalIntegrationName(input.provider)
-	if (slug) {
+	const slugs = await listConnectClientSecretSlugs(input)
+	for (const slug of slugs) {
 		const fromApp = await resolveUserOauthAppClientSecret({
 			env: input.env,
 			userId: input.userId,
 			slug,
 		})
 		if (fromApp) return fromApp
-		const existing = await getOauthApp({
-			env: input.env,
-			userId: input.userId,
-			slug,
-		})
-		if (existing) {
-			const fromExisting = await resolveUserOauthAppClientSecret({
-				env: input.env,
-				userId: input.userId,
-				slug: existing.slug,
-			})
-			if (fromExisting) return fromExisting
-		}
 	}
-	const leftoverNames = [
-		input.clientSecretSecretName?.trim(),
-		slug ? `${slug}ClientSecret` : null,
-	].filter((name, index, names): name is string => {
-		return Boolean(name) && names.indexOf(name) === index
+	const leftoverName = input.clientSecretSecretName?.trim()
+	if (!leftoverName) return null
+	const resolved = await resolveSecret({
+		env: input.env,
+		userId: input.userId,
+		name: leftoverName,
+		scope: 'user',
+		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
-	for (const secretName of leftoverNames) {
-		const resolved = await resolveSecret({
-			env: input.env,
-			userId: input.userId,
-			name: secretName,
-			scope: 'user',
-			storageContext: { sessionId: null, appId: null, packageId: null },
-		})
-		if (resolved.found) return resolved.value ?? null
+	return resolved.found ? (resolved.value ?? null) : null
+}
+
+async function listConnectClientSecretSlugs(input: {
+	env: Env
+	userId: string
+	provider: string
+}): Promise<Array<string>> {
+	const slugs: Array<string> = []
+	const add = (slug: string | null | undefined) => {
+		const normalized = slug?.trim()
+		if (normalized && !slugs.includes(normalized)) slugs.push(normalized)
 	}
-	return null
+	add(canonicalIntegrationName(input.provider))
+	const joined = await getJoinedIntegration({
+		env: input.env,
+		userId: input.userId,
+		name: input.provider,
+	})
+	if (joined?.lane === 'user') add(joined.app.slug)
+	const setup = await findOauthAppForProviderSetup({
+		env: input.env,
+		userId: input.userId,
+		name: input.provider,
+	})
+	add(setup?.slug)
+	return slugs
 }
 
 async function deleteLeftoverConnectClientSecret(input: {
