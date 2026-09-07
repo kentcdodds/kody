@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	handleSecretMaintenanceRequest,
 	MaintenanceClientError,
-	timingSafeEqualString,
 } from './maintenance-handler.ts'
 
 function createRequest(
@@ -101,12 +100,4 @@ test('handleSecretMaintenanceRequest enforces auth and reports maintenance resul
 		ok: false,
 		error: 'bad cursor',
 	})
-})
-
-test('timingSafeEqualString accepts equal secrets and rejects mismatches', async () => {
-	await expect(timingSafeEqualString('secret', 'secret')).resolves.toBe(true)
-	await expect(timingSafeEqualString('secret', 'wrong')).resolves.toBe(false)
-	await expect(timingSafeEqualString('short', 'longer-secret')).resolves.toBe(
-		false,
-	)
 })

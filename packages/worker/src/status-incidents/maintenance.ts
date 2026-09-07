@@ -1,4 +1,4 @@
-import { timingSafeEqualString } from '#worker/maintenance-handler.ts'
+import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import { dispatchStatusIncidentSubscriptionEvent } from './package-subscriptions.ts'
 import { parseStatusIncidentEvent } from './parse-event.ts'
 
