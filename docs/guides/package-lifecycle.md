@@ -61,8 +61,9 @@ If a listing is close to the user's goal:
 1. Inspect it with `communityGet`.
 2. Fork with `communityFork` (or point the user at one-click install on the
    listing detail page).
-3. Review the forked source, adapt it to the user's intent (including the README
-   `## Intent` section), then publish.
+3. Review the forked source, adapt it to the user's intent (including human
+   `README.md` / `## Intent` and agent `AGENTS.md`), then publish. Publish
+   checks require both files.
 
 Do not reimplement from scratch when a public package is already close. Create a
 new package only when no suitable listing exists.
@@ -83,12 +84,12 @@ Recurring schedules belong on a saved package under `package.json#kody.jobs`.
 Deferred one-shot work uses `workflows.create({ runAt })` from `execute` or
 package runtime. See [Workflows](../use/workflows.md).
 
-Use `guide: "package_authoring"` for package shape, README `## Intent`,
-per-export JSDoc (search Purpose), visibility guidance (personal-details hygiene
-before going public), and the secret-using package approval checklist
-(`pending_secret_package_approvals` is non-null only for unadopted
-community-forked packages; prefer `communityForkAdopt` after review, or bulk
-approval URLs when present).
+Use `guide: "package_authoring"` for package shape, required `README.md` +
+`AGENTS.md`, README `## Intent`, per-export JSDoc (search Purpose), visibility
+guidance (personal-details hygiene before going public), and the secret-using
+package approval checklist (`pending_secret_package_approvals` is non-null only
+for unadopted community-forked packages; prefer `communityForkAdopt` after
+review, or bulk approval URLs when present).
 
 When the OAuth token is coarser than the intended export — Gmail can send
 whenever it can create a draft — publish a thin package that only performs the

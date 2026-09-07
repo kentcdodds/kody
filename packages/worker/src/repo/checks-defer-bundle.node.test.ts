@@ -119,6 +119,8 @@ test('runRepoChecks defers full esbuild when rebuild will validate the same targ
 				},
 			}),
 		],
+		['README.md', '# Deferred bundle\n\n## Intent\n\nTest package.\n'],
+		['AGENTS.md', '# Agents\n\nSmoke-test the root export.\n'],
 		['src/index.ts', 'export default async () => ({ ready: true })\n'],
 		['src/helper.ts', 'export const ready = true\n'],
 		[
@@ -259,6 +261,8 @@ test('deferred bundle check still typechecks in an isolate and does not start bu
 				},
 			}),
 		],
+		['README.md', '# Deferred isolated bundle\n\n## Intent\n\nTest package.\n'],
+		['AGENTS.md', '# Agents\n\nSmoke-test the exports.\n'],
 		['src/a.ts', 'export default async () => ({ a: true })\n'],
 		['src/b.ts', 'export default async () => ({ b: true })\n'],
 		['src/c.ts', 'export default async () => ({ c: true })\n'],

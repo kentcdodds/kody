@@ -67,14 +67,19 @@ import {
 	timePublishExternalPushPhase,
 	type PublishPhaseTimings,
 } from './publish-phase-timing.ts'
+import { validateRequiredPackageDocs } from './required-package-docs.ts'
 
-export type RepoCheckKind =
-	| 'manifest'
-	| 'dependencies'
-	| 'bundle'
-	| 'typecheck'
-	| 'lint'
-	| 'smoke'
+export const repoCheckKinds = [
+	'manifest',
+	'docs',
+	'dependencies',
+	'bundle',
+	'typecheck',
+	'lint',
+	'smoke',
+] as const
+
+export type RepoCheckKind = (typeof repoCheckKinds)[number]
 
 export type RepoCheckResult = {
 	kind: RepoCheckKind
@@ -1118,6 +1123,12 @@ export async function runRepoChecks(input: {
 	 * bundle `checks_failed` result.
 	 */
 	deferBundleCheckToRebuild?: boolean
+	/**
+	 * Publish and `repoRunChecks` require non-empty root README.md +
+	 * AGENTS.md. Community install and platform codemods skip this so
+	 * existing listings stay forkable and migratable.
+	 */
+	requirePackageDocs?: boolean
 }): Promise<RepoCheckRunResult> {
 	const manifestContent = await input.workspace.readFile(input.manifestPath)
 	if (manifestContent == null) {
@@ -1225,6 +1236,21 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
+	if (input.requirePackageDocs !== false) {
+		const docsCheck = validateRequiredPackageDocs(sourceFiles)
+		results.push({
+			kind: 'docs',
+			ok: docsCheck.ok,
+			message: docsCheck.message,
+		})
+		if (!docsCheck.ok) {
+			return toRepoCheckRunResult({
+				results,
+				manifest,
+				sourceFiles,
+			})
+		}
+	}
 	const lintCheck = buildLintCheck(sourceFiles)
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(

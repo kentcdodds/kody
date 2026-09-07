@@ -202,10 +202,30 @@ export function renderInstallStrip(props: InstallStripProps) {
 	)
 }
 
-export function renderReadmeSection(readme: Array<RemixNode>) {
+function renderReadmeHeading(agentsDocsHref?: string | null) {
+	return (
+		<div mix={css(readmeHeadingRowCss)}>
+			<h2 id="readme-title">README</h2>
+			{agentsDocsHref ? (
+				<a
+					href={agentsDocsHref}
+					data-testid="community-agents-docs-link"
+					mix={css(agentsDocsLinkCss)}
+				>
+					Agent docs
+				</a>
+			) : null}
+		</div>
+	)
+}
+
+export function renderReadmeSection(
+	readme: Array<RemixNode>,
+	agentsDocsHref?: string | null,
+) {
 	return (
 		<section aria-labelledby="readme-title" mix={css(readmeSectionCss)}>
-			<h2 id="readme-title">README</h2>
+			{renderReadmeHeading(agentsDocsHref)}
 			<div data-testid="community-readme" mix={css(readmeProseCss)}>
 				{readme}
 			</div>
@@ -213,10 +233,10 @@ export function renderReadmeSection(readme: Array<RemixNode>) {
 	)
 }
 
-export function renderEmptyReadme() {
+export function renderEmptyReadme(agentsDocsHref?: string | null) {
 	return (
 		<section aria-labelledby="readme-title" mix={css(readmeSectionCss)}>
-			<h2 id="readme-title">README</h2>
+			{renderReadmeHeading(agentsDocsHref)}
 			<p data-testid="community-readme-empty" mix={css(mutedTextCss)}>
 				This package has no README yet.
 			</p>
@@ -494,14 +514,29 @@ const mutedTextCss = {
 /* README as real prose (no scroll box), h3 subheads per DESIGN.md. */
 const readmeSectionCss = {
 	marginTop: 'clamp(2.4rem, 5vw, 3.2rem)',
+}
+
+const readmeHeadingRowCss = {
+	display: 'flex',
+	alignItems: 'baseline',
+	justifyContent: 'space-between',
+	gap: '1rem',
+	paddingBottom: '0.9rem',
+	borderBottom: `1px solid ${colors.border}`,
 	'& > h2': {
 		margin: 0,
 		fontSize: 'clamp(1.4rem, 2.4vw, 1.65rem)',
 		fontWeight: 720,
 		letterSpacing: '-0.016em',
-		paddingBottom: '0.9rem',
-		borderBottom: `1px solid ${colors.border}`,
 	},
+}
+
+const agentsDocsLinkCss = {
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	textDecorationThickness: '1.5px',
+	textUnderlineOffset: '3px',
+	flexShrink: 0,
 }
 
 const readmeProseCss = mergeCss(proseCss, {

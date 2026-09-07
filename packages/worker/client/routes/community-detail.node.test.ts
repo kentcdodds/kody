@@ -1,7 +1,10 @@
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import { decideCommunityInstallClick } from './community-detail-install.ts'
-import { renderInstallStrip } from './community-detail-sections.tsx'
+import {
+	renderInstallStrip,
+	renderReadmeSection,
+} from './community-detail-sections.tsx'
 
 test('decideCommunityInstallClick covers idle confirm, official submit, ignore gates, and error retry', () => {
 	expect(
@@ -85,4 +88,24 @@ test('install strip shows next steps after a successful install', async () => {
 	)
 	expect(confirmHtml).toContain('data-testid="community-install-warning"')
 	expect(confirmHtml).toContain('from another account')
+})
+
+test('readme section keeps README as the default and links to AGENTS.md', async () => {
+	const html = await renderToString(
+		renderReadmeSection(['Human setup.'], '/@jane/demo/tree/main/AGENTS.md'),
+	)
+	expect(html).toContain('id="readme-title"')
+	expect(html).toContain('README')
+	expect(html).toContain('Human setup.')
+	expect(html).toContain('data-testid="community-agents-docs-link"')
+	expect(html).toContain('href="/@jane/demo/tree/main/AGENTS.md"')
+	expect(html).toContain('Agent docs')
+})
+
+test('readme section omits the Agent docs link when AGENTS.md is absent', async () => {
+	const html = await renderToString(renderReadmeSection(['Human setup.']))
+	expect(html).toContain('id="readme-title"')
+	expect(html).toContain('README')
+	expect(html).not.toContain('data-testid="community-agents-docs-link"')
+	expect(html).not.toContain('Agent docs')
 })

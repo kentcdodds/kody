@@ -30,6 +30,7 @@ import { resolveCachedArtifactSourceHead } from '#worker/repo/artifact-head-cach
 import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -442,6 +443,46 @@ export async function loadAccessiblePackageFilesData(input: {
 		ref: input.ref,
 		serverTiming: input.serverTiming,
 	})
+}
+
+export async function loadPackagePageHasAgentsDocs(input: {
+	env: Env
+	request: Request
+	listingId?: string | null
+	ownerSourceId?: string | null
+	viewerIsOwner: boolean
+}): Promise<boolean> {
+	if (input.listingId && input.env.BUNDLE_ARTIFACTS_KV) {
+		try {
+			const snapshot = await readCommunitySnapshot(
+				input.env.BUNDLE_ARTIFACTS_KV,
+				input.listingId,
+			)
+			if (snapshot?.files) {
+				return findRootPackageDoc(snapshot.files, 'AGENTS.md') != null
+			}
+		} catch {
+			// Listing pages stay up when the snapshot read fails; hide the
+			// Agent docs link instead of 404ing visitors on a dead tree URL.
+		}
+	}
+	if (!input.viewerIsOwner || !input.ownerSourceId) return false
+	const user = await readAuthenticatedAppUser(input.request, input.env)
+	if (!user) return false
+	try {
+		const loaded = await loadPackageSourceBySourceId({
+			env: input.env,
+			baseUrl: getAppBaseUrl({
+				env: input.env,
+				requestUrl: input.request.url,
+			}),
+			userId: user.mcpUser.userId,
+			sourceId: input.ownerSourceId,
+		})
+		return findRootPackageDoc(loaded.files, 'AGENTS.md') != null
+	} catch {
+		return false
+	}
 }
 
 export async function loadOwnerPackageReadme(input: {

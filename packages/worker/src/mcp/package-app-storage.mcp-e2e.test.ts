@@ -66,6 +66,11 @@ function buildPackageFiles(username: string) {
 				'# App storage smoke\n\n## Intent\n\nProve package app fetch handlers can use packageStorage() end-to-end.\n',
 		},
 		{
+			path: 'AGENTS.md',
+			content:
+				'# Agents\n\nImport the app-storage smoke export and call packageAppFetch.\n',
+		},
+		{
 			path: 'src/index.ts',
 			content:
 				'export default async function main() {\n\treturn { ok: true }\n}\n',

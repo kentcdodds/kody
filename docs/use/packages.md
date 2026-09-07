@@ -477,11 +477,15 @@ only skips retention deletion.
 
 ## Save and edit packages
 
-When creating a package or materially changing an existing one, include or
-maintain a root `README.md` with a concise `## Intent` section. Use it to
-capture the user's goal, ask the user if the intent is unclear, and update it
-only when you are confident the goal changed or the user expands the scope. This
-is guidance, not a new Kody primitive or manifest field.
+When creating a package or publishing a new version, include non-empty root
+`README.md` and `AGENTS.md`. `README.md` is human-focused (what it does,
+prerequisites, setup, done-when) and includes a concise `## Intent` section.
+`AGENTS.md` is agent-focused (imports, smoke tests, edge cases). Publish checks
+fail if either file is missing or empty. Existing published packages keep
+running; the next publish must add both files. This is a file-layout contract,
+not a new Kody primitive or manifest field. Ask the user if intent is unclear,
+and update Intent only when you are confident the goal changed or the user
+expands the scope.
 
 Use:
 
@@ -659,9 +663,9 @@ publish checks run.
    ```
 
    Kody registers a private stub saved package (minimal `package.json`,
-   `README.md` with an Intent placeholder, and a stub root export) and returns
-   the minted remote in the same call. Replace the stub content in your first
-   push.
+   `README.md` with an Intent placeholder, `AGENTS.md` with import/smoke-test
+   placeholders, and a stub root export) and returns the minted remote in the
+   same call. Replace the stub content in your first push.
 
 2. Clone and edit:
 

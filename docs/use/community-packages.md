@@ -31,9 +31,10 @@ Ask your agent to set visibility with `packageUpdate`
 action.
 
 There are **no** MIT, logo, README Intent, or `package.json#private`
-**platform** gates. Tags, description, category, and an icon are optional
-(ranking can prefer filled-in cards). Agents still review the package for overly
-personal content before flipping public — see
+**platform** gates to flip visibility. Tags, description, category, and an icon
+are optional (ranking can prefer filled-in cards). Publishing a version requires
+non-empty root `README.md` and `AGENTS.md`. Agents still review the package for
+overly personal content before flipping public — see
 [Personal-details hygiene](../guides/package-authoring.md#personal-details-hygiene-before-going-public)
 in the package authoring guide. If anything looks personal or
 household-specific, the agent stops, tells you what it found, suggests how to

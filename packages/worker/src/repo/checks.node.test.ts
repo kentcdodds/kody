@@ -33,6 +33,7 @@ import {
 	repoChecksSourceMaxTotalBytes,
 	runRepoChecks,
 } from './checks.ts'
+import { withRequiredPackageDocs } from './checks-test-docs.ts'
 import {
 	isolatedBundleChunkConcurrency,
 	isolatedBundleChunkSize,
@@ -91,6 +92,7 @@ async function collectSnapshotFiles(
 
 async function runChecksOnWorkspaceFiles(files: Map<string, string>) {
 	setupDefaultBundleMocks()
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	return runRepoChecks({
@@ -181,6 +183,7 @@ async function runPackageJobTypecheckChecks(
 		},
 	})
 
+	withRequiredPackageDocs(files)
 	const result = await runRepoChecks({
 		workspace: {
 			async readFile(path: string) {
@@ -289,6 +292,7 @@ test('runRepoChecks keeps non-code source files for publish snapshots while excl
 		['public/icon.svg', '<svg />\n'],
 		['.git/config', '[remote "origin"]\n'],
 	])
+	withRequiredPackageDocs(files)
 	let globPattern = ''
 	let snapshotFiles = new Map<string, string>()
 	const snapshot = createSnapshotFromFiles(snapshotFiles)
@@ -319,6 +323,8 @@ test('runRepoChecks keeps non-code source files for publish snapshots while excl
 	expect(globPattern).toBe('**/*')
 	expect(result.sourceFiles).toEqual({
 		'package.json': files.get('package.json'),
+		'README.md': files.get('README.md'),
+		'AGENTS.md': files.get('AGENTS.md'),
 		'src/index.ts': files.get('src/index.ts'),
 		'styles/app.css': files.get('styles/app.css'),
 		'public/icon.svg': files.get('public/icon.svg'),
@@ -352,6 +358,7 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 		['/session/src/index.ts', 'export const ready = true\n'],
 		['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
 	])
+	withRequiredPackageDocs(files)
 	let snapshotFiles = new Map<string, string>()
 	const snapshot = createSnapshotFromFiles(snapshotFiles)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
@@ -396,6 +403,8 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 		'package.json',
 		'src/index.ts',
 		'src/job.ts',
+		'README.md',
+		'AGENTS.md',
 		'.__kody_repo_runtime__.d.ts',
 		'.__kody_repo_module_check__.ts',
 	])
@@ -638,6 +647,7 @@ export default async (params) => {
 		['src/search.ts', 'export default async (params) => ({ results: [] })\n'],
 		['src/subscription.ts', 'export default async (event) => event\n'],
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
 		...snapshot,
@@ -714,6 +724,7 @@ test('runRepoChecks still reports unknown globals for package-owned jobs', async
 		['src/index.ts', 'export const ready = true\n'],
 		['src/job.ts', 'export default async () => totallyMissingThing()\n'],
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
 		...snapshot,
@@ -796,6 +807,7 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 	] as const
 
 	async function runTsExtensionChecks(files: Map<string, string>) {
+		withRequiredPackageDocs(files)
 		const snapshot = createSnapshotFromFiles(files)
 		const typeScriptFileSystem: MockTypeScriptFileSystem = {
 			...snapshot,
@@ -1179,6 +1191,7 @@ test('runRepoChecks surfaces bundle validation failures when runtime bundling ca
 			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
 		],
 	])
+	withRequiredPackageDocs(unresolvedModuleFiles)
 	const unresolvedSnapshot = createSnapshotFromFiles(unresolvedModuleFiles)
 	const unresolvedTypeScriptFileSystem: MockTypeScriptFileSystem = {
 		...unresolvedSnapshot,
@@ -1262,6 +1275,7 @@ test('runRepoChecks surfaces bundle validation failures when runtime bundling ca
 			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
 		],
 	])
+	withRequiredPackageDocs(unresolvedVersionFiles)
 	const unresolvedVersionSnapshot = createSnapshotFromFiles(
 		unresolvedVersionFiles,
 	)
@@ -1334,6 +1348,7 @@ test('runRepoChecks fails before publish when an exported module artifact cannot
 		],
 		['src/index.ts', 'export const ready = true\n'],
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
 		...snapshot,
@@ -1417,6 +1432,7 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
 		],
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	const typeScriptFileSystem: MockTypeScriptFileSystem = {
 		...snapshot,
@@ -1460,6 +1476,8 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			entryPoint: 'src/index.ts',
 			sourceFiles: {
 				'package.json': files.get('package.json'),
+				'README.md': files.get('README.md'),
+				'AGENTS.md': files.get('AGENTS.md'),
 				'src/index.ts': files.get('src/index.ts'),
 			},
 		}),
@@ -1695,6 +1713,7 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 				] as const,
 		),
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 
@@ -1873,6 +1892,7 @@ test('an isolate reset during a check phase becomes a failed check, not a crash'
 			`export default async function main() {\n\treturn 'ok'\n}\n`,
 		],
 	])
+	withRequiredPackageDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 

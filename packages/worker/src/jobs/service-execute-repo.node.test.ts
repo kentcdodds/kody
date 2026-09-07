@@ -1024,6 +1024,11 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 				}),
 			],
 			['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
+			[
+				'/session/README.md',
+				'# Repo absolute path job\n\n## Intent\n\nTest package.\n',
+			],
+			['/session/AGENTS.md', '# Agents\n\nSmoke-test the scheduled wrapper.\n'],
 		])
 
 		const repoSessionRpcSpy = vi
