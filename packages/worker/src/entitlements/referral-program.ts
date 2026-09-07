@@ -104,6 +104,7 @@ export function readStripeInvoicePeriodEndIso(
 	object: Record<string, unknown>,
 ): string | null {
 	const lines = object.lines
+	const ends: Array<string> = []
 	if (lines && typeof lines === 'object' && 'data' in lines) {
 		const data = (lines as { data?: unknown }).data
 		if (Array.isArray(data)) {
@@ -111,11 +112,11 @@ export function readStripeInvoicePeriodEndIso(
 				if (!line || typeof line !== 'object') continue
 				const period = (line as { period?: { end?: unknown } }).period
 				const iso = unixSecondsToIso(period?.end)
-				if (iso) return iso
+				if (iso) ends.push(iso)
 			}
 		}
 	}
-	return null
+	return laterIsoTimestamp(...ends)
 }
 
 export function readStripeInvoiceSubscriptionId(

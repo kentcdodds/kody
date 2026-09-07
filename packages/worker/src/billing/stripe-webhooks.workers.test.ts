@@ -530,3 +530,67 @@ test('invoice.paid returns 500 when a qualifying invoice has no linked user', as
 	})
 	vi.unstubAllGlobals()
 })
+
+test('invoice.paid returns 500 when the referrer paid period cannot be loaded', async () => {
+	silenceExpectedConsoleErrors([
+		'stripe_webhook_process_failed',
+		'stripe_api_error',
+	])
+	const referrer = await seedUser({
+		email: 'referrer-period-fail@example.com',
+		stripeCustomerId: 'cus_referrer_period_fail',
+		stripePlan: 'standard',
+	})
+	const referee = await seedUser({
+		email: 'referee-period-fail@example.com',
+		stripeCustomerId: 'cus_referee_period_fail',
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status
+		) VALUES (?, ?, ?, 'pending')`,
+	)
+		.bind(referrer.stableUserId, referee.stableUserId, now.toISOString())
+		.run()
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async () => jsonResponse({ error: 'stripe down' }, 500)),
+	)
+
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_invoice_referrer_period_fail',
+				type: 'invoice.paid',
+				created: 1_778_000_300,
+				data: {
+					object: {
+						id: 'in_referrer_period_fail',
+						object: 'invoice',
+						customer: 'cus_referee_period_fail',
+						subscription: 'sub_referrer_period_fail',
+						status: 'paid',
+						amount_paid: 2000,
+						billing_reason: 'subscription_create',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({
+		status: 500,
+		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
+	})
+	expect(await readWebhookEvent('evt_invoice_referrer_period_fail')).toBeNull()
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, credits_granted_at FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; credits_granted_at: string | null }>(),
+	).toEqual({ status: 'pending', credits_granted_at: null })
+
+	vi.unstubAllGlobals()
+})

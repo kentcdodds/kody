@@ -143,7 +143,10 @@ receive one stacked month (30 days) of public Standard via
 `users.referral_standard_credit_expires_at`. There is no annual or lifetime cap
 on how many months a referrer can earn. Paid subscribers stack from the later of
 an existing credit and the current paid period end so the month starts after
-paid access rather than overlapping it. Stripe subscriptions are not mutated.
+paid access rather than overlapping it. Referee invoices use the latest line
+`period.end`. A failed Stripe lookup of the referrer's subscription fails the
+webhook so Stripe can retry instead of stacking from now. Stripe subscriptions
+are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (write-once at signup), no self-referral, no plus-tag / Gmail-dot email

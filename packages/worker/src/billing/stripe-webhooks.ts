@@ -262,23 +262,18 @@ export async function latestReferrerPaidPeriodEnd(input: {
 		.first<{ stripe_customer_id: string | null }>()
 	const customerId = row?.stripe_customer_id?.trim()
 	if (!customerId) return null
-	try {
-		const subscriptions = selectPlanRetainingSubscriptions(
-			await listSubscriptions(input.env, customerId),
+	const subscriptions = selectPlanRetainingSubscriptions(
+		await listSubscriptions(input.env, customerId),
+	)
+	let latest: string | null = null
+	for (const subscription of subscriptions) {
+		const iso = unixSecondsToIso(
+			readStripeSubscriptionPeriodEndUnix(subscription),
 		)
-		let latest: string | null = null
-		for (const subscription of subscriptions) {
-			const iso = unixSecondsToIso(
-				readStripeSubscriptionPeriodEndUnix(subscription),
-			)
-			if (!iso) continue
-			if (!latest || Date.parse(iso) > Date.parse(latest)) latest = iso
-		}
-		return latest
-	} catch (error) {
-		console.warn('referral-referrer-period-end-failed', error)
-		return null
+		if (!iso) continue
+		if (!latest || Date.parse(iso) > Date.parse(latest)) latest = iso
 	}
+	return latest
 }
 
 async function handleInvoicePaid(input: {

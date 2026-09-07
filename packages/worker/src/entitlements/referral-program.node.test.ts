@@ -9,6 +9,7 @@ import {
 	attributeReferralAtSignup,
 	isQualifyingPaidReferralInvoice,
 	loadReferralProgramSummary,
+	readStripeInvoicePeriodEndIso,
 	maybeRewardHeldReferralAfterEmailVerified,
 	rewardReferralForPaidInvoice,
 } from './referral-program.ts'
@@ -206,6 +207,16 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 			metadata: { kody_compute_overage: '1' },
 		}),
 	).toBe(false)
+	expect(
+		readStripeInvoicePeriodEndIso({
+			lines: {
+				data: [
+					{ period: { end: 1_778_000_000 } },
+					{ period: { end: 1_780_588_800 } },
+				],
+			},
+		}),
+	).toBe('2026-06-04T16:00:00.000Z')
 
 	expect(
 		await rewardReferralForPaidInvoice({
