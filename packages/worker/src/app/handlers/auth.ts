@@ -62,8 +62,13 @@ import {
 	firstTouchAttributionCreateFields,
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
+import {
+	resolveReferralCodeForSignup,
+	serializeReferralCookie,
+} from '#universal/referral-cookie.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -609,14 +614,29 @@ export function createAuthHandler(env: Env) {
 					inviteCode: consumedInviteCode,
 					attribution: signupAttribution,
 				})
+				try {
+					await attributeReferralAtSignup({
+						db: env.APP_DB,
+						refereeStableUserId: record.stableUserId,
+						refereeUsername: normalizedUsername,
+						referralCode: resolveReferralCodeForSignup({
+							body:
+								typeof body === 'object' && body !== null ? body : undefined,
+							cookieHeader: request.headers.get('Cookie'),
+						}),
+					})
+				} catch (error) {
+					console.warn('referral-attribution-failed', error)
+				}
 
+				const secure = isSecureRequest(request)
 				const cookie = await createAuthCookie(
 					{
 						stableUserId: record.stableUserId,
 						email: normalizedEmail,
 						rememberMe: false,
 					},
-					isSecureRequest(request),
+					secure,
 				)
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
@@ -639,11 +659,13 @@ export function createAuthHandler(env: Env) {
 						reason: `invite_code=${consumedInviteCode};stable_user_id=${record.stableUserId};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 					})
 				}
-				return Response.json(signupAcceptedBody(normalizedMode), {
-					headers: {
-						'Set-Cookie': cookie,
-					},
-				})
+				const headers = new Headers()
+				headers.append('Set-Cookie', cookie)
+				headers.append(
+					'Set-Cookie',
+					serializeReferralCookie({ code: null, secure }),
+				)
+				return Response.json(signupAcceptedBody(normalizedMode), { headers })
 			}
 
 			const userRecord = await db.findOne(usersTable, {

@@ -32,6 +32,12 @@ at `packages/worker/universal/plans.ts`.
   `describeSecondAgentStandardGift` is the flag for lifecycle email /
   PackagedSingleClient. Enforcement goes through `getUserEntitlement`; Stripe is
   not mutated.
+- `referral-program.ts` (universal + worker) — uncapped referral Standard
+  credit. Share links write a last-wins one-week `kody_ref` cookie; signup
+  persists a pending `referrals` row from that cookie. `invoice.paid` grants
+  both parties one stacked month after the first qualifying paid invoice.
+  Enforcement composes the later overlay with the second-agent gift in
+  `getUserEntitlement`; Stripe is not mutated.
 
 ## Plan model
 
@@ -125,6 +131,35 @@ clients are below 2 or listing failed, but still reads the persisted ledger so
 lifecycle email or PackagedSingleClient should read: `received`, `active`, and
 `status` (`none` | `active` | `expired` | `already_paid`). Onboarding loader and
 `/onboarding.json` expose that object as `secondAgentStandardGift`.
+
+### Referral Standard credit
+
+Shareable signup links (`/signup?ref=<username>`) set a last-wins `kody_ref`
+cookie that expires after one week. A later share link overwrites the previous
+referrer for the rest of that window. Signup (password and OAuth) persists a
+pending `referrals` row from the cookie or a same-request share link.
+First-touch UTMs stay write-once and do not carry the referral code. Reward runs
+on `invoice.paid` after the referee's first qualifying paid Stripe invoice
+(`amount_paid > 0`, not a $0 trial, not a compute-overage invoice). Both the
+referrer and the referee receive one stacked month (30 days) of public Standard
+via `users.referral_standard_credit_expires_at`. There is no annual or lifetime
+cap on how many months a referrer can earn. Paid subscribers stack from the
+later of an existing credit and the current paid period end so the month starts
+after paid access rather than overlapping it. Referee invoices use the latest
+line `period.end`. A failed Stripe lookup of the referrer's subscription fails
+the webhook so Stripe can retry instead of stacking from now. Email-verify
+leaves a held row pending if that lookup fails; the referrer’s later
+`invoice.paid` retries it. Stripe subscriptions are not mutated.
+
+Fraud basics before a reward: both emails verified, new-account attribution only
+(persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
+Gmail-dot email collapse, no shared Stripe customer, and no platform-account
+referrer. An unverified party holds the qualifying invoice id on the pending
+row; email verification retries the grant. `/account/billing` shows the share
+link and simple referrer status.
+
+`getUserEntitlement` overlays Standard through the later of the second-agent
+gift and this referral credit.
 
 ### `max` plan limits
 
@@ -972,6 +1007,8 @@ Handled event types:
   the user by `users.stripe_customer_id` and call `refreshStripePlanForUser`
 - `invoice.payment_failed` — same customer lookup + refresh (surfaces
   `subscriptionStatus` such as `past_due` for UX; does not email users)
+- `invoice.paid` — customer lookup, then the referral reward path when the
+  invoice is the referee's first qualifying paid subscription invoice
 - Unknown event types — acknowledge `200` after process+record
 
 Idempotency uses the `stripe_webhook_events` table from
@@ -1022,3 +1059,7 @@ wiring are documented in
   the granting subscription changes plan, price, product, or interval. Admin
   plan writes clear `legacy` when a remaining manual Pro grant is removed
   without a paid Stripe tier.
+- `users.referral_standard_credit_expires_at` and `referrals` — uncapped
+  referral program ledger. Attribution is persisted at signup from the last-wins
+  `kody_ref` cookie; reward is invoice-gated. See
+  [Referral Standard credit](#referral-standard-credit).

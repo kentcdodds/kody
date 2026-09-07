@@ -259,10 +259,12 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
+import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
 			remixCrossOriginProtection,
+			createReferralCookieMiddleware(),
 			createAccountWriteLeaseMiddleware(env),
 		],
 		async defaultHandler({ request }) {

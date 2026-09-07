@@ -46,13 +46,19 @@ function createBillingTestDb(input: {
 								void params
 								return {
 									plan: input.plan,
+									username: 'billing-user',
 									stable_user_id: 'stable-user-id',
 									stripe_plan: input.stripePlan ?? null,
 									stripe_customer_id: input.stripeCustomerId ?? null,
 									stripe_plan_refreshed_at: null,
+									second_agent_standard_gift_expires_at: null,
+									referral_standard_credit_expires_at: null,
 								} as T
 							}
 							return null
+						},
+						async all<T>() {
+							return { results: [] as Array<T> }
 						},
 						async run() {
 							return { success: true }
@@ -112,6 +118,16 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	expect(data.cancelAt).toBe('2026-08-01T00:00:00.000Z')
 	expect(data.usageHref).toBe('/account/usage')
 	expect(data.purchasablePlans).toEqual(['standard', 'pro'])
+	expect(data.referralProgram).toEqual(
+		expect.objectContaining({
+			sharePath: '/signup?ref=billing-user',
+			rewardedCount: 0,
+			pendingCount: 0,
+			creditExpiresAt: null,
+			creditActive: false,
+			referrals: [],
+		}),
+	)
 	expect(refreshStripePlanForUser).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 9,

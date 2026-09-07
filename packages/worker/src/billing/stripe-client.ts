@@ -90,12 +90,14 @@ const subscriptionItemSchema = object({
 	price: object({
 		id: string(),
 	}),
+	current_period_end: optional(nullable(number())),
 })
 
 const subscriptionSchema = object({
 	id: string(),
 	status: string(),
 	cancel_at: nullable(number()),
+	current_period_end: optional(nullable(number())),
 	metadata: optional(record(string(), string())),
 	items: object({
 		data: array(subscriptionItemSchema),
@@ -205,6 +207,24 @@ const creditNotePreviewSchema = object({
 
 export type StripeCheckoutSession = InferOutput<typeof checkoutSessionSchema>
 export type StripeSubscription = InferOutput<typeof subscriptionSchema>
+
+/** Newest period end from subscription items, then the top-level field. */
+export function readStripeSubscriptionPeriodEndUnix(
+	subscription: StripeSubscription,
+): number | null {
+	let latest: number | null = null
+	for (const item of subscription.items.data) {
+		const end = item.current_period_end
+		if (typeof end === 'number' && Number.isFinite(end) && end > 0) {
+			if (latest == null || end > latest) latest = end
+		}
+	}
+	const top = subscription.current_period_end
+	if (typeof top === 'number' && Number.isFinite(top) && top > 0) {
+		if (latest == null || top > latest) latest = top
+	}
+	return latest
+}
 export type StripePaidInvoice = InferOutput<typeof paidInvoiceSchema>
 export type StripeInvoiceLineItem = InferOutput<typeof invoiceLineItemSchema>
 export type StripeCreditNote = InferOutput<typeof creditNoteSchema>

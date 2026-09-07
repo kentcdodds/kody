@@ -1,7 +1,8 @@
 /**
  * Client helper: capture first-touch UTMs from the current URL (and optional
  * document referrer) into sessionStorage so SPA navigations to /signup keep
- * them, then read them back for signup POST / OAuth start.
+ * them, then read them back for signup POST / OAuth start. Referral share
+ * links use the last-wins `kody_ref` cookie, not this write-once store.
  */
 
 import {

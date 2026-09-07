@@ -8,13 +8,15 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
  * schema. Daily counters live only in UserMeter.
  *
  * Also provisions `user_storage_buckets` because entitlement suites that touch
- * StorageRunner writes register ownership through that table.
+ * StorageRunner writes register ownership through that table, and `referrals`
+ * for the invoice-gated Standard credit program.
  */
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
 		columns: [
 			'email_verified_at',
+			'account_type',
 			'stripe_customer_id',
 			'stripe_plan',
 			'stripe_price_id',
@@ -46,4 +48,44 @@ export async function ensureEntitlementTestSchema(db: D1Database) {
 		)
 		.run()
 	await ensureUserStorageBucketsTestSchema(db)
+	await ensureReferralProgramTestSchema(db)
+}
+
+export async function ensureReferralProgramTestSchema(db: D1Database) {
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS referrals (
+	id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+	referrer_stable_user_id TEXT NOT NULL,
+	referee_stable_user_id TEXT NOT NULL,
+	created_at TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'pending',
+	rewarded_at TEXT,
+	reward_invoice_id TEXT,
+	reject_reason TEXT,
+	held_invoice_id TEXT,
+	held_period_end_at TEXT,
+	credits_granted_at TEXT
+)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_referrals_referee
+			 ON referrals(referee_stable_user_id)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE INDEX IF NOT EXISTS idx_referrals_referrer
+			 ON referrals(referrer_stable_user_id)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_referrals_reward_invoice
+			 ON referrals(reward_invoice_id)
+			 WHERE reward_invoice_id IS NOT NULL`,
+		)
+		.run()
 }

@@ -83,4 +83,22 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 	expect(params.get('utm_source')).toBe('youtube')
 	expect(params.get('utm_medium')).toBe('video')
 	expect(params.get('landing_path')).toBe('/signup')
+
+	const fromRefOnly = parseFirstTouchAttribution({
+		searchParams: new URLSearchParams('ref=KentCDodds'),
+		landingPath: '/signup',
+	})
+	expect(fromRefOnly).toEqual({
+		utmSource: null,
+		utmMedium: null,
+		utmCampaign: null,
+		utmContent: null,
+		utmTerm: null,
+		landingPath: '/signup',
+		referrer: null,
+	})
+	expect(hasFirstTouchAttribution(fromRefOnly)).toBe(true)
+	const refParams = new URLSearchParams()
+	appendAttributionQueryParams(refParams, fromRefOnly)
+	expect(refParams.get('ref')).toBeNull()
 })
