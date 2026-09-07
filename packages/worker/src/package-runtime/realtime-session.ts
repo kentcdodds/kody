@@ -470,6 +470,10 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		return await buildPackageAppWorker({
 			env: this.env,
 			...buildInput,
+			surface: 'app_realtime',
+			waitUntil: (promise) => {
+				this.ctx.waitUntil(promise)
+			},
 		})
 	}
 

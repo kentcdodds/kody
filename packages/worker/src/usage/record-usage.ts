@@ -39,6 +39,8 @@ import {
 	type UsageEventType,
 } from '#universal/usage-event-types.ts'
 import { stampFirstExecute } from '#worker/identity/activation-stamps.ts'
+import { type DynamicWorkerDaySurface } from './dynamic-worker-day-surface.ts'
+import { type ExecuteThinGlueClass } from './execute-thin-glue.ts'
 
 export {
 	usageEventTypes,
@@ -77,6 +79,45 @@ export type UsageEvent = {
 	outcome: UsageOutcome
 	/** ISO 8601 timestamp. Defaults to the time of recording. */
 	timestamp?: string
+	/**
+	 * Closed surface tag for `dynamic_worker_day` (and optionally other
+	 * events). Written to Analytics Engine blob6. Empty when unset.
+	 */
+	surface?: DynamicWorkerDaySurface | null
+	/**
+	 * Host-side execute thin/glue class. Written to Analytics Engine blob7
+	 * on `execute` events. Never used for billing and not shown to agents.
+	 */
+	executeShape?: ExecuteThinGlueClass | null
+}
+
+/** Analytics Engine blob positions for `USAGE_EVENTS` data points. */
+export const usageEventBlobIndexes = {
+	userId: 0,
+	eventType: 1,
+	entityId: 2,
+	outcome: 3,
+	timestamp: 4,
+	surface: 5,
+	executeShape: 6,
+} as const
+
+export function usageEventBlobs(
+	event: Pick<
+		UsageEvent,
+		'userId' | 'eventType' | 'entityId' | 'outcome' | 'surface' | 'executeShape'
+	>,
+	timestamp: string,
+): [string, string, string, string, string, string, string] {
+	return [
+		event.userId,
+		event.eventType,
+		event.entityId ?? '',
+		event.outcome,
+		timestamp,
+		event.surface ?? '',
+		event.executeShape ?? '',
+	]
 }
 
 export type UsageEnv = {
@@ -184,6 +225,10 @@ function emitUsageSpan(event: UsageEvent) {
 				span.setAttribute('kody.duration_ms', event.durationMs)
 			}
 			if (event.bytes != null) span.setAttribute('kody.bytes', event.bytes)
+			if (event.surface) span.setAttribute('kody.surface', event.surface)
+			if (event.executeShape) {
+				span.setAttribute('kody.execute_shape', event.executeShape)
+			}
 		})
 	} catch (error) {
 		console.debug('usage-span-failed', error)
@@ -199,13 +244,7 @@ function writeUsageDataPoint(
 	try {
 		env.USAGE_EVENTS.writeDataPoint({
 			indexes: [event.userId],
-			blobs: [
-				event.userId,
-				event.eventType,
-				event.entityId ?? '',
-				event.outcome,
-				timestamp,
-			],
+			blobs: usageEventBlobs(event, timestamp),
 			doubles: [
 				event.durationMs ?? 0,
 				event.cpuMs ?? 0,

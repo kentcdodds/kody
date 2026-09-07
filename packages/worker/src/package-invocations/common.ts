@@ -188,6 +188,22 @@ export function resolveInvocationRuntimeSurface(input: {
 	}
 }
 
+/**
+ * Surface for UWD / execute-usage when the invocation itself does not own
+ * a run record. Package-workflow exports suppress the runtime surface so
+ * the workflow row is the only record; they still mint a Dynamic Worker
+ * and must tag that day as `workflow`.
+ */
+export function resolveInvocationMeteringSurface(input: {
+	selector: PackageModuleSelector
+	source: string | null
+}): RunSurface | null {
+	return (
+		resolveInvocationRuntimeSurface(input) ??
+		(input.source === packageWorkflowInvocationSource ? 'workflow' : null)
+	)
+}
+
 export function resolveInvocationRuntimeName(input: {
 	surface: RunSurface
 	invocationName: string

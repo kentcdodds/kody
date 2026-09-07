@@ -742,6 +742,211 @@ test('buildPackageAppWorker acquires a fresh stub per request while reusing the 
 	expect(factory?.()).toMatchObject(createDynamicWorkerCompatibilityOptions())
 })
 
+test('buildPackageAppWorker records a unique Dynamic Worker day with the app surface', async () => {
+	resetPackageAppRuntimeMocks()
+	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
+	const recordSpy = vi
+		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
+		.mockResolvedValue(undefined)
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-uwd',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("ok") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	try {
+		await buildPackageAppWorker({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-uwd-surface',
+			surface: 'app_realtime',
+			savedPackage: {
+				id: 'package-uwd-surface',
+				kodyId: 'example-uwd',
+				name: '@kody/example-uwd',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				manifestPath: 'package.json',
+				sourceRoot: '/',
+			},
+			source: createPackageAppTestSource(),
+			manifest: createPackageAppTestManifest(),
+			runtime: {
+				callerContext: {
+					user: {
+						userId: 'user-uwd-surface',
+						email: 'uwd@example.com',
+						displayName: 'Uwd User',
+					},
+				},
+			} as never,
+		})
+
+		expect(recordSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-uwd-surface',
+				surface: 'app_realtime',
+				workerId: expect.stringMatching(/^package-app-/),
+			}),
+		)
+	} finally {
+		recordSpy.mockRestore()
+	}
+})
+
+test('buildPackageAppWorker acquires the loader stub before claiming the day', async () => {
+	resetPackageAppRuntimeMocks()
+	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
+	const recordSpy = vi
+		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
+		.mockResolvedValue(undefined)
+	const { env } = createPackageAppTestEnv()
+	const loader = env.APP_LOADER as unknown as {
+		get: ReturnType<typeof vi.fn>
+	}
+	loader.get.mockImplementation(() => {
+		throw new Error('loader-get-failed')
+	})
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-uwd-fail',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("ok") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	try {
+		await expect(
+			buildPackageAppWorker({
+				env,
+				baseUrl: 'https://example.com',
+				userId: 'user-uwd-fail',
+				surface: 'app_fetch',
+				savedPackage: {
+					id: 'package-uwd-fail',
+					kodyId: 'example-uwd-fail',
+					name: '@kody/example-uwd-fail',
+					sourceId: 'source-1',
+					publishedCommit: 'commit-1',
+					manifestPath: 'package.json',
+					sourceRoot: '/',
+				},
+				source: createPackageAppTestSource(),
+				manifest: createPackageAppTestManifest(),
+				runtime: {
+					callerContext: {
+						user: {
+							userId: 'user-uwd-fail',
+							email: 'uwd-fail@example.com',
+							displayName: 'Uwd Fail',
+						},
+					},
+				} as never,
+			}),
+		).rejects.toThrow('loader-get-failed')
+		expect(recordSpy).not.toHaveBeenCalled()
+	} finally {
+		recordSpy.mockRestore()
+	}
+})
+
+test('buildPackageAppWorker schedules unique-worker-day off the stub path', async () => {
+	resetPackageAppRuntimeMocks()
+	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
+	let resolveClaim: (() => void) | undefined
+	const claimGate = new Promise<void>((resolve) => {
+		resolveClaim = resolve
+	})
+	const recordSpy = vi
+		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
+		.mockImplementation(async () => await claimGate)
+	const waitUntilTasks: Array<Promise<unknown>> = []
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-uwd-wait',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("ok") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	try {
+		const built = await buildPackageAppWorker({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-uwd-wait',
+			surface: 'app_fetch',
+			waitUntil: (promise) => {
+				waitUntilTasks.push(promise)
+			},
+			savedPackage: {
+				id: 'package-uwd-wait',
+				kodyId: 'example-uwd-wait',
+				name: '@kody/example-uwd-wait',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				manifestPath: 'package.json',
+				sourceRoot: '/',
+			},
+			source: createPackageAppTestSource(),
+			manifest: createPackageAppTestManifest(),
+			runtime: {
+				callerContext: {
+					user: {
+						userId: 'user-uwd-wait',
+						email: 'uwd-wait@example.com',
+						displayName: 'Uwd Wait',
+					},
+				},
+			} as never,
+		})
+
+		expect(built.stub).toBeTruthy()
+		expect(recordSpy).toHaveBeenCalledTimes(1)
+		expect(waitUntilTasks).toHaveLength(1)
+		resolveClaim?.()
+		await Promise.all(waitUntilTasks)
+	} finally {
+		recordSpy.mockRestore()
+	}
+})
+
 test('package app worker exposes its public mount and records fetch query and response status', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()

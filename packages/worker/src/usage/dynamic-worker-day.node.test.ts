@@ -15,18 +15,21 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
+		surface: 'execute',
 		now,
 	})
 	await recordUniqueDynamicWorkerDay({
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
+		surface: 'job',
 		now,
 	})
 	await recordUniqueDynamicWorkerDay({
 		env: meter.env,
 		userId: 'user-1',
 		workerId: 'kody-worker-b',
+		surface: 'package_export',
 		now,
 	})
 
@@ -37,6 +40,7 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		entityId: 'kody-worker-a',
 		outcome: 'success',
 		timestamp: now.toISOString(),
+		surface: 'execute',
 	})
 	expect(recordUsageSpy.mock.calls[1]?.[1]).toEqual({
 		userId: 'user-1',
@@ -44,6 +48,7 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		entityId: 'kody-worker-b',
 		outcome: 'success',
 		timestamp: now.toISOString(),
+		surface: 'package_export',
 	})
 	recordUsageSpy.mockRestore()
 })
@@ -56,6 +61,7 @@ test('recordUniqueDynamicWorkerDay skips when USER_METER is missing', async () =
 		env: {},
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
+		surface: 'execute',
 		now: new Date('2026-09-01T12:00:00.000Z'),
 	})
 
@@ -73,6 +79,7 @@ test('recordUniqueDynamicWorkerDay skips anonymous runs and never throws', async
 		env: meter.env,
 		userId: null,
 		workerId: 'kody-worker-a',
+		surface: 'execute',
 	})
 	await recordUniqueDynamicWorkerDay({
 		env: {
@@ -87,6 +94,7 @@ test('recordUniqueDynamicWorkerDay skips anonymous runs and never throws', async
 		},
 		userId: 'user-1',
 		workerId: 'kody-worker-a',
+		surface: 'job',
 	})
 
 	expect(spy).not.toHaveBeenCalled()

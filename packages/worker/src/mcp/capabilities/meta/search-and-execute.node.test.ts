@@ -26,6 +26,12 @@ vi.mock(
 
 const { executeCapability } = await import('./execute.ts')
 
+test('execute capability description states worker identity follows the module graph', () => {
+	expect(executeCapability.description).toMatch(/module graph/)
+	expect(executeCapability.description).toMatch(/isolate/)
+	expect(executeCapability.description).not.toMatch(/don't|do not|never wrap/i)
+})
+
 test('execute capability runs modules through the shared execute runtime', async () => {
 	vi.clearAllMocks()
 	mockModule.runModuleWithRegistry.mockResolvedValue({

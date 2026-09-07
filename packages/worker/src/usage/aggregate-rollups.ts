@@ -67,6 +67,29 @@ export function resolveUsageEventsDataset(env: {
 		: 'kody_usage_events'
 }
 
+/**
+ * Analytics Engine SQL for unique Dynamic Worker days this UTC month,
+ * grouped by `blob6` surface. Weight by `_sample_interval`. Empty blob6
+ * is historical events recorded before surface tagging.
+ */
+export function buildUniqueWorkerDayBySurfaceQuery(
+	dataset: string,
+	bounds: { monthStart: string; nextMonthStart: string },
+) {
+	return `
+SELECT
+	if(blob6 = '', 'unknown', blob6) AS surface,
+	sum(_sample_interval) AS unique_worker_days
+FROM ${dataset}
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
+	AND blob2 = 'dynamic_worker_day'
+GROUP BY surface
+ORDER BY unique_worker_days DESC
+FORMAT JSON
+`.trim()
+}
+
 const upsertBatchSize = 50
 
 /**

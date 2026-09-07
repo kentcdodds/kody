@@ -22,6 +22,11 @@ specified in [Export JSDoc](#export-jsdoc), and the smoke tests in
 surface). Publish checks fail when either file is missing or empty. Existing
 published packages keep running until their next publish.
 
+Unique Dynamic Worker days and how a stable module graph reuses one isolate are
+documented once in [Platform efficiency](./platform-efficiency.md)
+(`platform_efficiency:guide`). Package README and AGENTS.md files do not repeat
+that cost model.
+
 ## Choose an authoring lane
 
 There are two lanes for writing package source. Pick based on whether you have

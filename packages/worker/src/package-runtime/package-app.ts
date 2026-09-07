@@ -1,4 +1,8 @@
-import { WorkerEntrypoint, exports as workerExports } from 'cloudflare:workers'
+import {
+	WorkerEntrypoint,
+	exports as workerExports,
+	waitUntil as scheduleWorkerWaitUntil,
+} from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	getPackageAppEntryPath,
@@ -73,6 +77,7 @@ import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
 } from './package-app-synthetic.ts'
+import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -1864,6 +1869,13 @@ export async function buildPackageAppWorker(input: {
 		hostedOrigin?: string
 		mount?: PackageAppMount
 	}
+	/** LOADER mint surface. HTTP serve is `app_fetch`; realtime passes `app_realtime`. */
+	surface?: 'app_fetch' | 'app_realtime'
+	/**
+	 * Offload the unique-worker-day claim from the HTTP/realtime critical
+	 * path. Defaults to the invocation `waitUntil` from `cloudflare:workers`.
+	 */
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const publicContext = buildPackageAppPublicContext(input)
 	const cacheKey = createPackageAppWorkerCacheKey({
@@ -1879,6 +1891,7 @@ export async function buildPackageAppWorker(input: {
 			input.runtime.callerContext.user?.displayName ??
 			`package:${input.savedPackage.id}`,
 	})
+	const surface = input.surface ?? 'app_fetch'
 	if (!cacheKey) {
 		return {
 			stub: input.env.APP_LOADER.load(
@@ -1897,15 +1910,47 @@ export async function buildPackageAppWorker(input: {
 			}
 		},
 	})
+	// Acquire the request-bound stub before claiming the day. A failed
+	// `APP_LOADER.get()` must not persist a (day, workerId) that a retry
+	// would then skip without a `dynamic_worker_day` event.
+	const stub = build.workerId
+		? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
+		: input.env.APP_LOADER.load(build.workerOptions)
+	if (build.workerId) {
+		schedulePackageAppUniqueWorkerDay({
+			env: input.env,
+			userId: input.userId,
+			workerId: build.workerId,
+			surface,
+			waitUntil: input.waitUntil,
+		})
+	}
 	return {
 		// Stubs are request-bound, so acquire a fresh one per request. The stable
 		// worker id (derived from user + package + commit + caller identity) lets
 		// the loader reuse a warm isolate instead of compiling a new worker.
-		stub: build.workerId
-			? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
-			: input.env.APP_LOADER.load(build.workerOptions),
+		stub,
 		entrypointName: packageAppEntrypointName,
 	}
+}
+
+function schedulePackageAppUniqueWorkerDay(input: {
+	env: Env
+	userId: string
+	workerId: string
+	surface: 'app_fetch' | 'app_realtime'
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	const tracked = recordUniqueDynamicWorkerDay({
+		env: input.env,
+		userId: input.userId,
+		workerId: input.workerId,
+		surface: input.surface,
+	}).catch((error: unknown) => {
+		console.warn('package-app-dynamic-worker-day-record-failed', error)
+	})
+	const sink = input.waitUntil ?? scheduleWorkerWaitUntil
+	sink(tracked)
 }
 
 export async function createPackageAppCallerContext(input: {

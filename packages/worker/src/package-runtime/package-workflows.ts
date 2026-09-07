@@ -1606,6 +1606,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					packageContext: payload.packageContext,
 					packageInvokeTools,
 					executorTimeoutMs: workflowExecutorTimeoutMs,
+					runSurface: 'workflow',
 				},
 			)
 			logs = result.logs

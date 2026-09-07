@@ -5,6 +5,7 @@ import {
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import { type DynamicWorkerDaySurface } from './dynamic-worker-day-surface.ts'
 
 export type DynamicWorkerDayEnv = UsageEnv & UserMeterEnv
 
@@ -13,6 +14,10 @@ export type DynamicWorkerDayEnv = UsageEnv & UserMeterEnv
  * the current UTC day. Cloudflare bills unique Dynamic Worker ids per UTC
  * day, so repeats of the same id must not increment the usage metric.
  *
+ * `surface` tags the LOADER mint that claimed the day (execute, job,
+ * package_export, …). Uniqueness is still `(user, workerId, day)` — the
+ * first claim's surface is the one stored.
+ *
  * Never throws. Missing `USER_METER` skips the write so local/tests without
  * the binding cannot overcount unique days.
  */
@@ -20,6 +25,7 @@ export async function recordUniqueDynamicWorkerDay(input: {
 	env: DynamicWorkerDayEnv
 	userId: string | null | undefined
 	workerId: string
+	surface: DynamicWorkerDaySurface
 	now?: Date
 }): Promise<void> {
 	try {
@@ -41,6 +47,7 @@ export async function recordUniqueDynamicWorkerDay(input: {
 			entityId: input.workerId,
 			outcome: 'success',
 			timestamp: now.toISOString(),
+			surface: input.surface,
 		})
 	} catch (error) {
 		console.warn('dynamic-worker-day-record-failed', error)
