@@ -333,6 +333,14 @@ through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
 `ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
 Without that secret, alert sends are skipped and logged.
 
+MCP execute evidence on the status page is a timestamp-only last-success
+heartbeat from real authenticated execute completions, plus at most one hourly
+synthetic when the last organic success is older than a minute. Public status
+GETs and origin `GET /health` never trigger that execute. The optional origin
+Worker secret `MCP_EXECUTE_HEALTH_CANARY_ACCESS_TOKEN` is a dedicated canary
+OAuth access token for the synthetic; when it is unset the fallback stays
+unknown rather than impersonating a customer.
+
 An optional Worker secret `STATUS_INCIDENT_EVENT_SECRET` (synced from the
 same-named GitHub Actions secret when present) is shared with the main worker.
 On incident open or resolve the status worker POSTs metadata to

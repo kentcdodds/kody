@@ -38,7 +38,12 @@ owns the `MCP` Durable Object (`kody-platform`). Origin
 `POST /__maintenance/execute-smoke` is **origin-only**: it uses origin
 `ctx.exports` and returns `scope: "origin-only"`,
 `proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
-smoke does not prove MCP execute health.
+smoke does not prove MCP execute health. Authenticated MCP execute evidence is a
+timestamp-only fleet heartbeat from successful execute completion, shown on
+`status.kody.codes` with source and last-verified time. When no organic success
+landed in the previous minute, the status worker runs at most one authenticated
+`POST /__maintenance/mcp-execute-health` per hour. `GET /health` and status-page
+reads stay cheap and never trigger that execute.
 
 ## Core docs
 

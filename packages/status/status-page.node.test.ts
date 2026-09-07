@@ -43,6 +43,13 @@ function snapshot(overrides: Partial<StatusSnapshot> = {}): StatusSnapshot {
 		productionCommit: 'abc123def4567890abcdef1234567890abcdef12',
 		runtimeCommit: 'def4567890abcdef1234567890abcdef12345678',
 		jobsCommit: '7890abcdef1234567890abcdef1234567890abcd',
+		executeHealth: {
+			status: 'recent',
+			source: 'organic',
+			lastVerifiedAt: '2026-08-04T11:59:50.000Z',
+			freshnessMs: 10_000,
+			detail: 'Verified by organic MCP execute traffic 10s ago.',
+		},
 		...overrides,
 	}
 }
@@ -71,6 +78,11 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	expect(healthy).toContain('http-equiv="refresh"')
 	expect(healthy).toContain(`href="${statusFaviconPath('operational')}"`)
 	expect(healthy).toMatch(/operational|All systems/i)
+	expect(healthy).toContain('MCP execute')
+	expect(healthy).toContain('Recently verified')
+	expect(healthy).toContain('organic traffic')
+	expect(healthy).toContain('2026-08-04T11:59:50.000Z')
+	expect(healthy).toContain('Verified by organic MCP execute traffic 10s ago.')
 
 	const down = renderStatusPage(
 		snapshot({
@@ -128,6 +140,24 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	)
 	expect(unknown).toMatch(/not available|no data/i)
 	expect(unknown).toContain(`href="${statusFaviconPath('unknown')}"`)
+
+	const executeUnknown = renderStatusPage(
+		snapshot({
+			executeHealth: {
+				status: 'unknown',
+				source: null,
+				lastVerifiedAt: null,
+				freshnessMs: null,
+				detail:
+					'Not recently exercised. Missing or stale telemetry is not an outage and is not proof the path is freshly healthy.',
+			},
+		}),
+	)
+	expect(executeUnknown).toContain('Not recently exercised')
+	expect(executeUnknown).toContain('Last verified time is unknown')
+	expect(executeUnknown).toContain(
+		'Missing or stale telemetry is not an outage',
+	)
 
 	const unavailable = renderStatusUnavailablePage(
 		'Status data is temporarily unavailable.',

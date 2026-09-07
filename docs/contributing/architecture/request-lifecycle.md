@@ -102,7 +102,11 @@ Requests are handled in this order:
      `POST /__maintenance/execute-smoke` is **origin-only**: it uses origin
      `ctx.exports` and returns `scope: "origin-only"`,
      `proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
-     smoke does not prove MCP execute health.
+     smoke does not prove MCP execute health. Authenticated execute evidence is
+     the traffic-backed heartbeat plus the hourly
+     `POST /__maintenance/mcp-execute-health` fallback (legacy `/mcp` execute
+     with a dedicated canary token). Public health and status GETs do not run
+     that probe.
 7. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to

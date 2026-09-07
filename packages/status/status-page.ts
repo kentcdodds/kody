@@ -7,6 +7,7 @@ import {
 } from './provider-incidents.ts'
 import {
 	type ComponentSnapshot,
+	type ExecuteHealthSnapshot,
 	type IncidentView,
 	type ProviderIncident,
 	type StatusSnapshot,
@@ -183,6 +184,31 @@ function renderDayBars(component: ComponentSnapshot): string {
 		})
 		.join('')
 	return `<div class="bars">${bars}</div>`
+}
+
+function renderExecuteHealth(executeHealth: ExecuteHealthSnapshot): string {
+	const statusLabel =
+		executeHealth.status === 'recent'
+			? 'Recently verified'
+			: 'Not recently exercised'
+	const source =
+		executeHealth.source === 'organic'
+			? 'organic traffic'
+			: executeHealth.source === 'synthetic'
+				? 'hourly synthetic'
+				: 'no source yet'
+	const verified =
+		executeHealth.lastVerifiedAt === null
+			? 'Last verified time is unknown'
+			: `Last verified ${escapeHtml(executeHealth.lastVerifiedAt)}`
+	return `<div class="card component">
+	<div class="component-header">
+		<span class="component-name"><span class="dot ${executeHealth.status === 'recent' ? 'operational' : 'unknown'}"></span>MCP execute</span>
+		<span class="component-meta">${escapeHtml(statusLabel)} · ${escapeHtml(source)}</span>
+	</div>
+	<p class="component-meta">${escapeHtml(executeHealth.detail)}</p>
+	<p class="component-meta">${verified}</p>
+</div>`
 }
 
 function renderComponent(component: ComponentSnapshot): string {
@@ -371,6 +397,7 @@ ${renderFaviconLinks(snapshot.overallStatus)}
 		<span class="component-meta">Updated ${escapeHtml(snapshot.generatedAt)}</span>
 	</header>
 	<div class="banner ${banner.kind}">${escapeHtml(banner.label)}</div>
+	${renderExecuteHealth(snapshot.executeHealth)}
 	${components}
 	${openIncidents}
 	${providerIncidents}
