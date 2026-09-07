@@ -37,11 +37,11 @@ export interface DurableExportOptions {
 	api?: ApiOptions
 }
 
-export const DEFAULT_MAX_EXPORT_POLLS = 120
-export const DEFAULT_EXPORT_POLL_INTERVAL_SECONDS = 15
-export const DEFAULT_EARLY_POLL_COUNT = 5
-export const DEFAULT_EARLY_POLL_INTERVAL_SECONDS = 2
-export const DEFAULT_MAX_EXPORT_RESTARTS = 3
+const DEFAULT_MAX_EXPORT_POLLS = 120
+const DEFAULT_EXPORT_POLL_INTERVAL_SECONDS = 15
+const DEFAULT_EARLY_POLL_COUNT = 5
+const DEFAULT_EARLY_POLL_INTERVAL_SECONDS = 2
+const DEFAULT_MAX_EXPORT_RESTARTS = 3
 
 const API_STEP_CONFIG: DurableStepConfig = {
 	retries: { limit: 0, delay: '1 second' },

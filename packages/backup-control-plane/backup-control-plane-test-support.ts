@@ -196,8 +196,8 @@ export class MemoryBucket {
 
 export const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111'
 export const DATABASE_ID = '22222222-2222-4222-8222-222222222222'
-export const DRILL_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333'
-export const BASELINE_SHA256 = 'b'.repeat(64)
+const DRILL_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333'
+const BASELINE_SHA256 = 'b'.repeat(64)
 const manifestSigningKeys = generateKeyPairSync('ed25519')
 
 export function badSqlStatsFixture(

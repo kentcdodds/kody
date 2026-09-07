@@ -56,13 +56,13 @@ export interface ExportReady {
 	signedUrl: string
 }
 
-export interface ExportPending {
+interface ExportPending {
 	kind: 'pending'
 	bookmark: string
 }
 
 /** Polling result expired from D1's short retention window. */
-export interface ExportLost {
+interface ExportLost {
 	kind: 'lost'
 }
 

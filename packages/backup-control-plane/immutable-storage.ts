@@ -296,7 +296,7 @@ async function inspectExisting(
  * refreshable by starting a new export of a *newer* database state, so
  * re-downloading from D1 cannot be used to re-verify the stored object.
  */
-export async function verifyStoredObjectMatches(
+async function verifyStoredObjectMatches(
 	bucket: R2Bucket,
 	objectKey: string,
 	stored: StoredBackup,
