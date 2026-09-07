@@ -102,7 +102,8 @@ Docs, Sheets, Gmail send, Contacts, Tasks, YouTube, and any other Google scopes
 you grant. Kody uses Google user data only to fulfill your request or saved job.
 Kody stores Google OAuth tokens encrypted on that Google connection and does not
 use Google user data for advertising. Kody shares, transfers, or discloses
-Google user data only with Cloudflare (hosting), the MCP host you connected when
+Google user data only with Cloudflare (hosting, including Workers AI embeddings
+for content first saved as an indexed record), the MCP host you connected when
 it asks Kody to act, Google when Kody calls Google APIs on your behalf, and when
 required by law.
 

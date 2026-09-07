@@ -102,6 +102,9 @@ test('privacy page and usage doc distinguish chat-model inference from embedding
 	expect(html).toContain('Workers AI embeddings for search')
 	expect(html).toContain('train a Kody model')
 	expect(html).toContain('SECRET_STORE_KEY')
+	expect(html).toContain(
+		'Cloudflare (hosting, including Workers AI embeddings for content first saved as an indexed record)',
+	)
 
 	const privacyDoc = flatten(readFileSync(privacyDocPath, 'utf8'))
 	expect(privacyDoc).toContain(
@@ -119,5 +122,8 @@ test('privacy page and usage doc distinguish chat-model inference from embedding
 	)
 	expect(privacyDoc).toContain(
 		'network, and Workers AI embeddings; the MCP host you connected',
+	)
+	expect(privacyDoc).toContain(
+		'Cloudflare (hosting, including Workers AI embeddings for content first saved as an indexed record)',
 	)
 })
