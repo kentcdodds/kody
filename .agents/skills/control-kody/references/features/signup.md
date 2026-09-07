@@ -6,7 +6,8 @@ Create an account, then confirm email.
 
 `/signup` → verification email → `/verify-email` or `/pending-verification`.
 Email-change confirm is `/verify-email-change` (token from the change email).
-Former-address release confirm is `/verify-email-claim-release`.
+Former-address release confirm is `/verify-email-claim-release`. Kody tips
+opt-out is `/unsubscribe/tips` (signed token from campaign mail).
 
 ## Drive it
 

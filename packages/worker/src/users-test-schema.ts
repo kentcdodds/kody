@@ -95,6 +95,7 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	first_saved_package_at: { create: 'TEXT' },
 	mcp_client_name: { create: 'TEXT' },
 	last_active_at: { create: 'TEXT' },
+	tips_emails_opted_out_at: { create: 'TEXT' },
 }
 
 /**

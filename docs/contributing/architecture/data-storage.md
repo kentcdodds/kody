@@ -346,8 +346,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `first_touch_referrer`) store signup attribution when present. Activation and
   return columns (`first_mcp_connected_at`, `first_execute_at`,
   `first_search_at`, `first_saved_package_at`, `mcp_client_name`,
-  `last_active_at`) support product metrics; email verification delivery columns
-  track the latest transactional verify-mail outcome. The
+  `last_active_at`) support product metrics; `tips_emails_opted_out_at` is the
+  durable Kody tips opt-out (usage-state campaign mail only). Email verification
+  delivery columns track the latest transactional verify-mail outcome. The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see

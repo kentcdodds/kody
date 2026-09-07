@@ -103,6 +103,7 @@ export async function sendSystemEmail(input: {
 	text?: string | null
 	html?: string | null
 	replyTo?: string | null
+	headers?: Record<string, string>
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<SystemOutboundResult> {
@@ -159,6 +160,7 @@ export async function sendSystemEmail(input: {
 				html: html ?? htmlFromText(text ?? ''),
 				text: text ?? undefined,
 				...(replyTo ? { replyTo } : {}),
+				...(input.headers ? { headers: input.headers } : {}),
 			},
 		)
 	} catch (error) {

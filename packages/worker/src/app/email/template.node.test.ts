@@ -25,6 +25,10 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		},
 		afterAction: ['Expires soon.'],
 		footnote: 'Ignore if unexpected.',
+		unsubscribe: {
+			label: 'Unsubscribe from tips',
+			url: 'https://kody.codes/unsubscribe/tips?token=abc',
+		},
 	})
 
 	expect(email.html).not.toContain('<script>')
@@ -35,6 +39,11 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	)
 	expect(email.text).toContain(
 		'Do the thing: https://kody.codes/verify-email?token=a&redirectTo=/x',
+	)
+	expect(email.html).toContain('Unsubscribe from tips')
+	expect(email.html).toContain('https://kody.codes/unsubscribe/tips?token=abc')
+	expect(email.text).toContain(
+		'Unsubscribe from tips: https://kody.codes/unsubscribe/tips?token=abc',
 	)
 
 	const verificationUrl = 'https://kody.codes/verify-email?token=abc123'
@@ -96,6 +105,12 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(keep.subject).toBe('Keep what Cursor just figured out')
 	expect(keep.html).toContain('https://kody.codes/onboarding')
+	const keepFallback = buildKeepPackageEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+		clientLabel: 'your agent',
+	})
+	expect(keepFallback.text).toContain('Your agent already did the hard part')
 
 	const second = buildSecondAgentEmail({
 		appBaseUrl: 'https://kody.codes',

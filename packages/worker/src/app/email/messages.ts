@@ -155,9 +155,15 @@ function entitlementWarningCopy(kind: UserEntitlementWarningKind) {
 	}
 }
 
+type CampaignUnsubscribe = {
+	label: string
+	url: string
+}
+
 export function buildConnectAgentEmail(input: {
 	appBaseUrl: string
 	onboardingUrl: string
+	unsubscribe?: CampaignUnsubscribe
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
@@ -177,13 +183,20 @@ export function buildConnectAgentEmail(input: {
 		},
 		footnote:
 			"You're receiving this because you verified a Kody account and have not connected an agent yet.",
+		unsubscribe: input.unsubscribe,
 	})
+}
+
+function capitalizeCampaignLabel(label: string) {
+	if (label === '') return label
+	return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 export function buildKeepPackageEmail(input: {
 	appBaseUrl: string
 	onboardingUrl: string
 	clientLabel: string
+	unsubscribe?: CampaignUnsubscribe
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
@@ -191,7 +204,7 @@ export function buildKeepPackageEmail(input: {
 		preheader: 'Save one working answer as a package.',
 		heading: 'Keep what you just figured out',
 		body: [
-			`${input.clientLabel} already did the hard part. Save that working answer as a package so the next session does not start from zero.`,
+			`${capitalizeCampaignLabel(input.clientLabel)} already did the hard part. Save that working answer as a package so the next session does not start from zero.`,
 			'One durable package is enough. You can refine it later.',
 		],
 		action: { label: 'Save a package', url: input.onboardingUrl },
@@ -203,6 +216,7 @@ export function buildKeepPackageEmail(input: {
 		},
 		footnote:
 			"You're receiving this because you connected an agent to Kody and have not saved a package yet.",
+		unsubscribe: input.unsubscribe,
 	})
 }
 
@@ -210,6 +224,7 @@ export function buildSecondAgentEmail(input: {
 	appBaseUrl: string
 	portabilityUrl: string
 	trialUrl?: string
+	unsubscribe?: CampaignUnsubscribe
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
@@ -231,12 +246,14 @@ export function buildSecondAgentEmail(input: {
 		},
 		footnote:
 			"You're receiving this because you saved a Kody package and have connected one agent.",
+		unsubscribe: input.unsubscribe,
 	})
 }
 
 export function buildCoolingHomeEmail(input: {
 	appBaseUrl: string
 	onboardingUrl: string
+	unsubscribe?: CampaignUnsubscribe
 }) {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
@@ -256,6 +273,7 @@ export function buildCoolingHomeEmail(input: {
 		},
 		footnote:
 			"You're receiving this because your Kody account has been quiet. This is the only poke.",
+		unsubscribe: input.unsubscribe,
 	})
 }
 

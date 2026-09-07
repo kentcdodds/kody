@@ -39,6 +39,8 @@ export type TransactionalEmailContent = {
 	illustration?: EmailIllustration
 	/** Small muted line at the very bottom of the card. */
 	footnote?: string
+	/** Optional one-click opt-out for Kody tips campaign mail only. */
+	unsubscribe?: EmailAction
 }
 
 export type RenderedEmail = {
@@ -157,6 +159,13 @@ export function renderTransactionalEmail(
             </tr>`
 								: ''
 						}
+            ${
+							content.unsubscribe
+								? `<tr>
+              <td class="kody-muted" style="padding: ${content.footnote ? '8px' : '20px'} 8px 0; font-family: ${fontStack}; font-size: 13px; line-height: 1.6; color: ${colors.muted};"><a href="${escapeHtml(content.unsubscribe.url)}" class="kody-link" style="color: ${colors.muted}; text-decoration: underline;">${escapeHtml(content.unsubscribe.label)}</a></td>
+            </tr>`
+								: ''
+						}
           </table>
           <!--[if mso]></td></tr></table><![endif]-->
         </td>
@@ -171,6 +180,9 @@ export function renderTransactionalEmail(
 		...(action ? [`${action.label}: ${action.url}`] : []),
 		...(content.afterAction ?? []),
 		...(content.footnote ? [content.footnote] : []),
+		...(content.unsubscribe
+			? [`${content.unsubscribe.label}: ${content.unsubscribe.url}`]
+			: []),
 	].join('\n\n')
 
 	return { subject: content.subject, html, text }

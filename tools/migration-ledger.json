@@ -191,6 +191,10 @@
 		{
 			"filename": "0047-user-usage-campaigns.sql",
 			"sha256": "5f200642c12431e47725261f909e1d336b038bdfc13d130a31dc297ca48c5b09"
+		},
+		{
+			"filename": "0048-users-tips-emails-opted-out-at.sql",
+			"sha256": "a3bbd8a16a5400efd7c58c774c78b4b26b5e1e42efc8782125987754e6acaacf"
 		}
 	]
 }

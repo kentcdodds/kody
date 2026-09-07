@@ -32,7 +32,8 @@ platform-assigned sender address.
   user inbox: user mail lives exclusively on the configured platform domain (the
   `inbox.` subdomain by default), while the apex hosts only system mail — the
   transactional sender (`kody@<apex>`, used for verification, password-reset,
-  billing, entitlement warnings, usage-campaign nudges, and platform-feedback
+  billing, entitlement warnings, usage-campaign nudges (Kody tips, with an
+  unsubscribe footer and `List-Unsubscribe` headers), and platform-feedback
   resolve/dismiss mail) and the operator-owned system inboxes (`kody`,
   `support`, `abuse`, `postmaster`, `security`, `admin`, and `psl` at the apex
   route to Kody's system inbox, so replies to transactional mail land there).

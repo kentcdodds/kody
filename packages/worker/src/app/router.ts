@@ -240,6 +240,7 @@ import {
 	createTwoFactorVerifyApiHandler,
 	createVerifyHandler,
 } from '#app/handlers/verify.ts'
+import { createUnsubscribeTipsHandler } from '#app/handlers/unsubscribe-tips.ts'
 import { createVerifyEmailChangeHandler } from '#app/handlers/verify-email-change.ts'
 import { createVerifyEmailClaimReleaseHandler } from '#app/handlers/verify-email-claim-release.ts'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
@@ -332,6 +333,7 @@ export function createAppRouter(env: Env) {
 			verifyEmail: createVerifyEmailHandler(env),
 			verifyEmailChange: createVerifyEmailChangeHandler(env),
 			verifyEmailClaimRelease: createVerifyEmailClaimReleaseHandler(env),
+			unsubscribeTips: createUnsubscribeTipsHandler(env),
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			waitingList: createWaitingListHandler(env),

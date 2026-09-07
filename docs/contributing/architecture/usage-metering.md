@@ -572,3 +572,12 @@ First sweep of an existing user seeds the current state without mailing
 and 5 days between sends in the same state. The send ledger claim is
 `INSERT OR IGNORE` on `(user_id, state, send_index)` and is released if the
 Cloudflare send fails. Kit is not part of this machine.
+
+Campaign mail is the only surface gated by the **Kody tips** preference
+(`users.tips_emails_opted_out_at`). Each campaign send includes an “Unsubscribe
+from tips” footer and RFC `List-Unsubscribe` / `List-Unsubscribe-Post` one-click
+headers. The signed `/unsubscribe/tips` route sets that stamp; transactional
+verify, billing, and error-rate mail is never suppressed. Distinct inbound
+client counts come from `loadInboundMcpConnectionState`. A failed grant listing
+does not treat the count as 0 (no PackagedSingleClient send, no Activated
+demotion).

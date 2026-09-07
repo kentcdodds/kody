@@ -77,6 +77,7 @@ function createEnv(db: D1Database) {
 		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
+		COOKIE_SECRET: 'campaign-test-cookie-secret',
 	} as unknown as Env
 }
 
@@ -171,10 +172,19 @@ test('campaign sweep seeds without mailing, then event-origin sends are ledger-i
 		to: string
 		from: string
 		subject: string
+		html: string
+		headers?: Record<string, string>
 	}
 	expect(payload.to).toBe('event@example.com')
 	expect(payload.from).toBe('kody@kody.codes')
 	expect(payload.subject).toBe('Connect the agent you already use')
+	expect(payload.html).toContain('Unsubscribe from tips')
+	expect(payload.headers?.['List-Unsubscribe']).toMatch(
+		/^<https:\/\/kody\.codes\/unsubscribe\/tips\?token=/,
+	)
+	expect(payload.headers?.['List-Unsubscribe-Post']).toBe(
+		'List-Unsubscribe=One-Click',
+	)
 	expect((await listUsageCampaignSends(db, 'user-event')).length).toBe(2)
 	expect((await readUsageCampaign(db, 'user-event'))?.send_count).toBe(2)
 
@@ -277,6 +287,37 @@ test('failed campaign sends release the ledger claim so a later sweep can retry'
 		expect.objectContaining({
 			state: 'ConnectedNoPackage',
 			template: 'connected_no_package',
+			send_index: 1,
+		}),
+	])
+})
+
+test('tips opt-out skips campaign mail and does not consume a send slot', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-opted', email: 'opted@example.com' })
+	await db
+		.prepare(
+			`UPDATE users SET tips_emails_opted_out_at = ? WHERE stable_user_id = ?`,
+		)
+		.bind('2026-09-06T00:00:00.000Z', 'user-opted')
+		.run()
+	const env = createEnv(db)
+	await recordVerifiedNoMcpCampaignSend({
+		env,
+		userId: 'user-opted',
+		now,
+	})
+	const later = new Date('2026-09-13T12:00:00.000Z')
+	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot({ now: later }))
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now: later })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(await listUsageCampaignSends(db, 'user-opted')).toEqual([
+		expect.objectContaining({
+			state: 'VerifiedNoMcp',
 			send_index: 1,
 		}),
 	])

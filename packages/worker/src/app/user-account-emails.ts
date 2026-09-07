@@ -8,6 +8,12 @@ import {
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { recordVerifiedNoMcpCampaignSend } from '#app/user-usage-campaign-emails.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
+import {
+	isTipsEmailsOptedOut,
+	mintTipsUnsubscribeUrl,
+	tipsUnsubscribeHeaders,
+	tipsUnsubscribeLabel,
+} from '#worker/usage/tips-unsubscribe.ts'
 
 export const userAccountEmailKvKeyPrefix = 'account-email-user:v1'
 export const userAccountEmailClaimTtlSeconds = 30 * 24 * 60 * 60
@@ -35,11 +41,19 @@ async function claimAndSend(input: {
 	userId: string
 	kind: UserAccountEmailKind
 	suffix?: string
-	build: (config: EmailConfig) => {
-		subject: string
-		html: string
-		text: string
-	}
+	build: (config: EmailConfig) =>
+		| Promise<{
+				subject: string
+				html: string
+				text: string
+				headers?: Record<string, string>
+		  }>
+		| {
+				subject: string
+				html: string
+				text: string
+				headers?: Record<string, string>
+		  }
 }): Promise<boolean> {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
@@ -64,7 +78,7 @@ async function claimAndSend(input: {
 		return false
 	}
 
-	const email = input.build(emailConfig)
+	const email = await input.build(emailConfig)
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
 	try {
 		sendResult = await sendCloudflareEmail(
@@ -79,6 +93,7 @@ async function claimAndSend(input: {
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
+				headers: email.headers,
 			},
 		)
 	} catch (error) {
@@ -113,16 +128,35 @@ export async function sendConnectAgentEmail(input: {
 	email: string
 	userId: string
 }): Promise<boolean> {
+	if (
+		input.env.APP_DB &&
+		(await isTipsEmailsOptedOut({
+			db: input.env.APP_DB,
+			userId: input.userId,
+		}))
+	) {
+		return false
+	}
 	const sent = await claimAndSend({
 		env: input.env,
 		to: input.email,
 		userId: input.userId,
 		kind: 'connect_agent',
-		build: (config) =>
-			buildConnectAgentEmail({
+		build: async (config) => {
+			const unsubscribe = await mintConnectAgentUnsubscribe({
+				env: input.env,
 				appBaseUrl: config.appBaseUrl,
-				onboardingUrl: new URL('/onboarding', config.appBaseUrl).toString(),
-			}),
+				userId: input.userId,
+			})
+			return {
+				...buildConnectAgentEmail({
+					appBaseUrl: config.appBaseUrl,
+					onboardingUrl: new URL('/onboarding', config.appBaseUrl).toString(),
+					unsubscribe: unsubscribe?.unsubscribe,
+				}),
+				headers: unsubscribe?.headers,
+			}
+		},
 	})
 	if (sent) {
 		await recordVerifiedNoMcpCampaignSend({
@@ -193,4 +227,25 @@ export async function sendPastDueEmail(input: {
 				billingUrl: new URL('/account/billing', config.appBaseUrl).toString(),
 			}),
 	})
+}
+
+async function mintConnectAgentUnsubscribe(input: {
+	env: Env
+	appBaseUrl: string
+	userId: string
+}) {
+	try {
+		const url = await mintTipsUnsubscribeUrl({
+			env: input.env,
+			appBaseUrl: input.appBaseUrl,
+			userId: input.userId,
+		})
+		return {
+			unsubscribe: { label: tipsUnsubscribeLabel, url },
+			headers: tipsUnsubscribeHeaders(url),
+		}
+	} catch (error) {
+		console.warn('connect-agent-unsubscribe-mint-failed', error)
+		return null
+	}
 }

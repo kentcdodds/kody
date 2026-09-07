@@ -30,6 +30,12 @@ import {
 	usageCampaignSweepLimit,
 	type UsageCampaignMailTemplate,
 } from '#worker/usage/campaign-states.ts'
+import {
+	isTipsEmailsOptedOut,
+	mintTipsUnsubscribeUrl,
+	tipsUnsubscribeHeaders,
+	tipsUnsubscribeLabel,
+} from '#worker/usage/tips-unsubscribe.ts'
 
 export type UserUsageCampaignEmailResult =
 	| { status: 'skipped'; reason: 'no_email_config' }
@@ -46,6 +52,7 @@ export function buildUsageCampaignEmail(input: {
 	template: UsageCampaignMailTemplate
 	clientLabel: string
 	trialGiftLive: boolean
+	unsubscribe?: { label: string; url: string }
 }) {
 	const onboardingUrl = new URL('/onboarding', input.appBaseUrl).toString()
 	const portabilityUrl = new URL(
@@ -58,23 +65,27 @@ export function buildUsageCampaignEmail(input: {
 			return buildConnectAgentEmail({
 				appBaseUrl: input.appBaseUrl,
 				onboardingUrl,
+				unsubscribe: input.unsubscribe,
 			})
 		case 'connected_no_package':
 			return buildKeepPackageEmail({
 				appBaseUrl: input.appBaseUrl,
 				onboardingUrl,
 				clientLabel: input.clientLabel,
+				unsubscribe: input.unsubscribe,
 			})
 		case 'packaged_single_client':
 			return buildSecondAgentEmail({
 				appBaseUrl: input.appBaseUrl,
 				portabilityUrl,
 				trialUrl: input.trialGiftLive ? billingUrl : undefined,
+				unsubscribe: input.unsubscribe,
 			})
 		case 'cooling':
 			return buildCoolingHomeEmail({
 				appBaseUrl: input.appBaseUrl,
 				onboardingUrl,
+				unsubscribe: input.unsubscribe,
 			})
 		default: {
 			const exhaustive: never = input.template
@@ -233,6 +244,22 @@ async function evaluateAndMaybeSendOneUser(input: {
 			})
 			return false
 		}
+		if (
+			await isTipsEmailsOptedOut({
+				db: input.env.APP_DB,
+				userId: input.user.stable_user_id,
+			})
+		) {
+			await persistDecision({
+				db: input.env.APP_DB,
+				userId: input.user.stable_user_id,
+				decision,
+				persisted,
+				now: input.now,
+				sent: false,
+			})
+			return false
+		}
 		return await sendClaimedCampaignEmail({
 			env: input.env,
 			emailConfig: input.emailConfig,
@@ -282,11 +309,17 @@ async function sendClaimedCampaignEmail(input: {
 		return false
 	}
 
+	const unsubscribe = await mintCampaignUnsubscribe({
+		env: input.env,
+		appBaseUrl: input.emailConfig.appBaseUrl,
+		userId: input.user.stable_user_id,
+	})
 	const email = buildUsageCampaignEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		template,
 		clientLabel: campaignClientLabel(input.user.mcp_client_name),
 		trialGiftLive: isSecondAgentTrialGiftLive(input.env),
+		unsubscribe: unsubscribe?.unsubscribe,
 	})
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
 	try {
@@ -302,6 +335,7 @@ async function sendClaimedCampaignEmail(input: {
 				subject: email.subject,
 				html: email.html,
 				text: email.text,
+				headers: unsubscribe?.headers,
 			},
 		)
 	} catch (error) {
@@ -367,6 +401,27 @@ async function persistDecision(input: {
 		coolingTerminal: row.coolingTerminal,
 		now: input.now,
 	})
+}
+
+async function mintCampaignUnsubscribe(input: {
+	env: Env
+	appBaseUrl: string
+	userId: string
+}) {
+	try {
+		const url = await mintTipsUnsubscribeUrl({
+			env: input.env,
+			appBaseUrl: input.appBaseUrl,
+			userId: input.userId,
+		})
+		return {
+			unsubscribe: { label: tipsUnsubscribeLabel, url },
+			headers: tipsUnsubscribeHeaders(url),
+		}
+	} catch (error) {
+		console.warn('usage-campaign-unsubscribe-mint-failed', error)
+		return null
+	}
 }
 
 async function mapWithConcurrency<T>(

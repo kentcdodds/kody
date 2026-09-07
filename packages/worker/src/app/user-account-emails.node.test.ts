@@ -1,4 +1,7 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
@@ -53,6 +56,7 @@ function createEnv(kv?: KVNamespace) {
 		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
+		COOKIE_SECRET: 'account-email-test-cookie-secret',
 		BUNDLE_ARTIFACTS_KV: kv,
 	} as unknown as Env
 }
@@ -86,6 +90,8 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 	expect(payload.to).toBe('ada@example.com')
 	expect(payload.html).toContain('https://kody.codes/onboarding')
 	expect(payload.text).toContain('https://kody.codes/onboarding')
+	expect(payload.html).toContain('Unsubscribe from tips')
+	expect(payload.text).toContain('/unsubscribe/tips?token=')
 	expect(
 		store.get(
 			userAccountEmailKvKey({ userId: 'user-1', kind: 'connect_agent' }),
@@ -128,6 +134,29 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 		}),
 	).toBe(true)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(3)
+})
+
+test('connect-agent mail skips when the user opted out of Kody tips', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type, tips_emails_opted_out_at)
+			 VALUES ('ada', 'ada@example.com', 'x', 'user-1', 'free', 'person', '2026-09-06T00:00:00.000Z')`,
+		)
+		.run()
+	const { kv } = createKv()
+	const env = { ...createEnv(kv), APP_DB: db } as unknown as Env
+	sendCloudflareEmail.mockClear()
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-1',
+		}),
+	).toBe(false)
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 })
 
 test('account emails reserve the KV claim before sending and release it on send failure', async () => {
