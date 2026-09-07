@@ -6,6 +6,14 @@ const mockModule = vi.hoisted(() => ({
 	resolvePackageOwnerContext: vi.fn(),
 }))
 
+vi.mock('#worker/community/fork-listing-relation.ts', () => ({
+	applySavedPackageForkListingAncestry: async ({
+		records,
+	}: {
+		records: Array<unknown>
+	}) => records,
+}))
+
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
@@ -105,6 +113,7 @@ function stubSavedPackage(input?: {
 		listingPublishedAt:
 			selfAuthored || listingGone ? null : '2026-04-20T00:00:00.000Z',
 		listingAhead: selfAuthored ? null : false,
+		forkListingRelation: selfAuthored ? null : 'synced',
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -268,6 +277,7 @@ test('getPackageCapability projects export contracts from source and leaves them
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -344,6 +354,7 @@ export declare function listEvents(calendarId: string): Promise<string[]>
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -424,6 +435,7 @@ export default function calendar() {
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -484,6 +496,7 @@ export default function calendar() {
 		listingPinnedCommit: null,
 		listingPublishedAt: null,
 		listingAhead: null,
+		forkListingRelation: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { resolveViewerListingInstalls } from './viewer-install.ts'
 
-test('resolveViewerListingInstalls prefers kody matches, then forks, and marks listing-ahead only for fork pins', () => {
+test('resolveViewerListingInstalls prefers kody matches, then forks, and classifies outdated vs ahead from ancestry', () => {
 	const listings = [
 		{ id: 'listing-github', kodyId: 'github' },
 		{ id: 'listing-cloudflare', kodyId: 'cloudflare' },
@@ -72,6 +72,7 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 		sourceId: 'src-github',
 		packageId: 'pkg-github',
 		listingAhead: false,
+		forkAhead: false,
 		originCommit: null,
 		listingPinnedCommit: null,
 	})
@@ -81,6 +82,7 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 		sourceId: 'src-cf',
 		packageId: null,
 		listingAhead: false,
+		forkAhead: false,
 		originCommit: null,
 		listingPinnedCommit: null,
 	})
@@ -90,6 +92,7 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 		sourceId: 'src-notion',
 		packageId: 'pkg-notion-custom',
 		listingAhead: false,
+		forkAhead: false,
 		originCommit: null,
 		listingPinnedCommit: null,
 	})
@@ -100,11 +103,12 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 		sourceId: 'src-dropbox-new',
 		packageId: null,
 		listingAhead: false,
+		forkAhead: false,
 		originCommit: null,
 		listingPinnedCommit: null,
 	})
 
-	const ahead = resolveViewerListingInstalls({
+	const outdated = resolveViewerListingInstalls({
 		listings: [
 			{
 				id: 'listing-github',
@@ -131,15 +135,57 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 				originCommit: 'commit-old',
 			},
 		],
+		listingPinIsAncestorByListingId: new Map([['listing-github', false]]),
+	})
+	expect(outdated.get('listing-github')).toEqual({
+		status: 'installed',
+		targetName: '@burhan/github',
+		sourceId: 'src-github',
+		packageId: 'pkg-github',
+		listingAhead: true,
+		forkAhead: false,
+		originCommit: 'commit-old',
+		listingPinnedCommit: 'commit-new',
+	})
+
+	const ahead = resolveViewerListingInstalls({
+		listings: [
+			{
+				id: 'listing-github',
+				kodyId: 'github',
+				pinnedCommit: 'commit-pin',
+			},
+		],
+		packageScope: 'burhan',
+		savedPackages: [
+			{
+				id: 'pkg-github',
+				kodyId: 'github',
+				name: '@burhan/github',
+				sourceId: 'src-github',
+			},
+		],
+		forks: [
+			{
+				listingId: 'listing-github',
+				targetKodyId: 'github',
+				forkedPackageId: 'pkg-github',
+				forkedSourceId: 'src-github',
+				createdAt: '2026-08-01T00:00:00.000Z',
+				originCommit: 'commit-tip',
+			},
+		],
+		listingPinIsAncestorByListingId: new Map([['listing-github', true]]),
 	})
 	expect(ahead.get('listing-github')).toEqual({
 		status: 'installed',
 		targetName: '@burhan/github',
 		sourceId: 'src-github',
 		packageId: 'pkg-github',
-		listingAhead: true,
-		originCommit: 'commit-old',
-		listingPinnedCommit: 'commit-new',
+		listingAhead: false,
+		forkAhead: true,
+		originCommit: 'commit-tip',
+		listingPinnedCommit: 'commit-pin',
 	})
 
 	const selfAuthored = resolveViewerListingInstalls({
@@ -176,6 +222,7 @@ test('resolveViewerListingInstalls prefers kody matches, then forks, and marks l
 		sourceId: 'src-github',
 		packageId: 'pkg-github',
 		listingAhead: false,
+		forkAhead: false,
 		originCommit: null,
 		listingPinnedCommit: 'commit-new',
 	})

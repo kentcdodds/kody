@@ -6,6 +6,7 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
 import {
 	packageSummaryWithCommunityProvenanceSchema,
@@ -39,12 +40,15 @@ export const listPackagesCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const packages = await listSavedPackagesWithCommunityProvenanceByUserId(
-				ctx.env.APP_DB,
-				{
-					userId: owner.ownerUserId,
-				},
-			)
+			const packages = await applySavedPackageForkListingAncestry({
+				env: ctx.env,
+				records: await listSavedPackagesWithCommunityProvenanceByUserId(
+					ctx.env.APP_DB,
+					{
+						userId: owner.ownerUserId,
+					},
+				),
+			})
 			return {
 				packages: packages.map(toPackageSummaryWithCommunityProvenance),
 			}

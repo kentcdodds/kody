@@ -1,23 +1,69 @@
 import { expect, test } from 'vitest'
 import {
+	buildForkListingDiffHref,
 	buildListingAheadPrompt,
+	classifyForkListingRelation,
 	isCommunityListingAhead,
 	readListingAheadFlag,
 } from './community-listing-ahead.ts'
 
-test('listing-ahead helpers gate on commit mismatch and expose absorb contracts', () => {
+test('fork/listing relation is synced, ahead, or proven outdated', () => {
 	expect(
-		isCommunityListingAhead({
-			originCommit: 'commit-old',
-			listingPinnedCommit: 'commit-new',
+		classifyForkListingRelation({
+			originCommit: 'commit-same',
+			listingPinnedCommit: 'commit-same',
 		}),
-	).toBe(true)
+	).toBe('synced')
 	expect(
 		isCommunityListingAhead({
 			originCommit: 'commit-same',
 			listingPinnedCommit: 'commit-same',
 		}),
 	).toBe(false)
+
+	expect(
+		classifyForkListingRelation({
+			originCommit: 'commit-tip',
+			listingPinnedCommit: 'commit-pin',
+			listingPinIsAncestorOfForkTip: true,
+		}),
+	).toBe('ahead')
+	expect(
+		isCommunityListingAhead({
+			originCommit: 'commit-tip',
+			listingPinnedCommit: 'commit-pin',
+			listingPinIsAncestorOfForkTip: true,
+		}),
+	).toBe(false)
+
+	expect(
+		classifyForkListingRelation({
+			originCommit: 'commit-old',
+			listingPinnedCommit: 'commit-new',
+			listingPinIsAncestorOfForkTip: false,
+		}),
+	).toBe('outdated')
+	expect(
+		isCommunityListingAhead({
+			originCommit: 'commit-old',
+			listingPinnedCommit: 'commit-new',
+			listingPinIsAncestorOfForkTip: false,
+		}),
+	).toBe(true)
+
+	expect(
+		classifyForkListingRelation({
+			originCommit: 'commit-old',
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe('ahead')
+	expect(
+		isCommunityListingAhead({
+			originCommit: 'commit-old',
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe(false)
+
 	expect(
 		isCommunityListingAhead({
 			originCommit: 'commit-old',
@@ -53,4 +99,14 @@ test('listing-ahead helpers gate on commit mismatch and expose absorb contracts'
 	expect(prompt).toContain('repoPublishSession')
 	expect(prompt).toContain('absorbed_upstream_commit')
 	expect(prompt).toContain('communityGet')
+	expect(prompt).toContain('/@kentcdodds/github/tree/commit-new')
+
+	expect(
+		buildForkListingDiffHref({
+			listingId: 'listing-1',
+			listingName: '@kentcdodds/github',
+			listingKodyId: 'github',
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe('/@kentcdodds/github/tree/commit-new')
 })

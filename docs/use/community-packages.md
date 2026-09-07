@@ -79,10 +79,10 @@ The detail page opens with the README. The facts row shows **Version** from
 `package.json#version` when the author set a string (same label on catalog
 cards), plus license, last publish date, and the pinned commit. Next to
 **Featured** (when present) a pill says **Install**, **Installed**, **Forked**,
-or **Fork outdated**. When default-branch HEAD is newer than the last package
-publish, a **HEAD ahead of published** badge appears. Owners click that badge to
-review the unpublished file diff and publish HEAD. You can also ask your agent
-to use `communitySearch` or `communityGet`.
+or **Fork outdated** / **Fork ahead**. When default-branch HEAD is newer than
+the last package publish, a **HEAD ahead of published** badge appears. Owners
+click that badge to review the unpublished file diff and publish HEAD. You can
+also ask your agent to use `communitySearch` or `communityGet`.
 
 ## Forking a listing
 
@@ -123,13 +123,18 @@ Your agent should:
 Only after publish does the package become a live saved package in your account.
 
 If the listing owner later pushes to a public default branch, your fork keeps
-the snapshot you copied. `packageGet` / `packageList` set `listing_ahead` when
-origin HEAD differs from the commit your fork last absorbed (`origin_commit`).
-Your `/@username` profile and the listing page then replace Installed / Forked
-with a yellow **Fork outdated** button. Click it to copy a prompt: compare
-origin HEAD with your package, port useful changes, keep your customizations,
-then publish with `repoPublishSession` and `absorbed_upstream_commit` so the
-behind-upstream banner clears.
+the snapshot you copied. `packageGet` / `packageList` set `listing_ahead` only
+when the listing pin is not an ancestor of your fork tip (the fork is behind or
+diverged). SHA inequality alone is not enough — a fork that already contains the
+listing pin and has extra commits is **ahead**, not outdated. Agent search,
+package detail, and `packageGet` stay silent on fork-ahead; it is website UI
+only. Your `/@username` profile and the listing page replace Installed / Forked
+with a yellow **Fork outdated** control when the fork is behind (click copies an
+absorb prompt and links to the listing files at the pin) or a calm **Fork
+ahead** link to those files when the pin is already in the fork's history. For
+an outdated fork, compare origin HEAD with your package, port useful changes,
+keep your customizations, then publish with `repoPublishSession` and
+`absorbed_upstream_commit` so the behind-upstream banner clears.
 
 ## One-click install
 

@@ -1,7 +1,7 @@
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
-import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
+import { classifyForkListingRelation } from '#universal/community-listing-ahead.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
@@ -105,9 +105,13 @@ function mapSavedPackageWithCommunityProvenanceRow(
 			row['listing_published_at'] == null
 				? null
 				: String(row['listing_published_at']),
-		listingAhead: listingCurrent
-			? isCommunityListingAhead({ originCommit, listingPinnedCommit })
-			: false,
+		listingAhead:
+			listingCurrent &&
+			classifyForkListingRelation({ originCommit, listingPinnedCommit }) ===
+				'outdated',
+		forkListingRelation: listingCurrent
+			? classifyForkListingRelation({ originCommit, listingPinnedCommit })
+			: null,
 	}
 }
 
@@ -120,6 +124,7 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
 	listingPinnedCommit: null,
 	listingPublishedAt: null,
 	listingAhead: null,
+	forkListingRelation: null,
 }
 export async function insertSavedPackage(
 	db: D1Database,

@@ -40,6 +40,7 @@ import {
 	searchCommunityListings,
 } from '#worker/community/service.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
+import { resolveListingPinAncestry } from '#worker/community/fork-listing-relation.ts'
 import { resolveViewerListingInstalls } from '#worker/community/viewer-install.ts'
 import {
 	listSavedPackagesByIds,
@@ -538,11 +539,19 @@ async function loadViewerListingInstalls(input: {
 						userId: input.user.userId,
 						packageIds: missingPackageIds,
 					})
+		const listingPinIsAncestorByListingId = await resolveViewerListingAncestry({
+			env: input.env,
+			listings: input.listings,
+			packageScope,
+			savedPackages: [...savedByKody, ...savedByForkId],
+			forks,
+		})
 		const resolved = resolveViewerListingInstalls({
 			listings: input.listings,
 			packageScope,
 			savedPackages: [...savedByKody, ...savedByForkId],
 			forks,
+			listingPinIsAncestorByListingId,
 		})
 		const listingById = new Map(
 			input.listings.map((listing) => [listing.id, listing]),
@@ -565,4 +574,53 @@ async function loadViewerListingInstalls(input: {
 		console.error('Failed to load viewer listing installs:', error)
 		return new Map()
 	}
+}
+
+async function resolveViewerListingAncestry(input: {
+	env: Env
+	listings: Array<{
+		id: string
+		kodyId: string
+		name?: string
+		pinnedCommit?: string
+	}>
+	packageScope: string
+	savedPackages: Array<{
+		id: string
+		kodyId: string
+		name: string
+		sourceId: string
+	}>
+	forks: Array<{
+		listingId: string
+		targetKodyId: string
+		forkedPackageId: string
+		forkedSourceId: string
+		createdAt: string
+		originCommit?: string
+	}>
+}) {
+	const draft = resolveViewerListingInstalls(input)
+	const listingPinIsAncestorByListingId = new Map<string, boolean | null>()
+	await Promise.all(
+		[...draft.entries()].map(async ([listingId, install]) => {
+			if (
+				install.originCommit == null ||
+				install.listingPinnedCommit == null ||
+				install.originCommit === install.listingPinnedCommit
+			) {
+				return
+			}
+			listingPinIsAncestorByListingId.set(
+				listingId,
+				await resolveListingPinAncestry({
+					env: input.env,
+					sourceId: install.sourceId,
+					listingPinnedCommit: install.listingPinnedCommit,
+					originCommit: install.originCommit,
+				}),
+			)
+		}),
+	)
+	return listingPinIsAncestorByListingId
 }

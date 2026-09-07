@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { communityPackageCategories } from '#universal/community-categories.ts'
+import { type ForkListingRelation } from '#universal/community-listing-ahead.ts'
 
 export const kodyPackageIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -420,6 +421,7 @@ export type SavedPackageCommunityProvenance = {
 	listingPinnedCommit: string | null
 	listingPublishedAt: string | null
 	listingAhead: boolean | null
+	forkListingRelation: ForkListingRelation | null
 }
 
 export type SavedPackageWithCommunityProvenanceRecord = SavedPackageRecord &

@@ -1308,6 +1308,14 @@ export type AccountPackageListingAhead = {
 	listingPinnedCommit: string
 	listingPublishedAt: string | null
 	prompt: string
+	diffHref: string
+}
+
+export type AccountPackageForkAhead = {
+	listingId: string
+	listingName: string
+	listingHref: string
+	diffHref: string
 }
 
 export type AccountPackageListItem = {
@@ -1325,6 +1333,7 @@ export type AccountPackageListItem = {
 	isPrivate: boolean
 	hasCommunityListing: boolean
 	listingAhead: AccountPackageListingAhead | null
+	forkAhead: AccountPackageForkAhead | null
 }
 
 export type AccountPackageDetail = AccountPackageListItem & {

@@ -157,10 +157,12 @@ suggestions.
 Package entity detail is a slim index: summary, export subpaths with one-line
 purposes, job and retriever names, and the README `Intent` section. Structured
 content mirrors that index and does not contain a full export tree. When a
-community fork is behind its listing, detail includes `listingAhead: true` and a
-one-line absorb next step (`communityGet`, then `repoPublishSession` with
-`absorbed_upstream_commit`). Ranked package hits include that same notice only
-when the fork is behind. Follow the returned `packageGet` / `package_authoring`
+community fork is outdated (the listing pin is not an ancestor of the fork tip),
+detail includes `listingAhead: true` and a one-line absorb next step
+(`communityGet`, then `repoPublishSession` with `absorbed_upstream_commit`).
+Ranked package hits include that same notice only when the fork is outdated. A
+fork that is only ahead of the listing pin does not set `listingAhead` and does
+not add a search notice. Follow the returned `packageGet` / `package_authoring`
 pointer when you need types, external token URLs, the full README, source, or
 maintenance steps.
 

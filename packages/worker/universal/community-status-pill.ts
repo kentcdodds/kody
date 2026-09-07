@@ -1,5 +1,6 @@
 /**
- * Shared box for Trusted / Featured / Install / Installed / Fork outdated.
+ * Shared box for Trusted / Featured / Install / Installed / Fork outdated /
+ * Fork ahead.
  * Spans inherit a taller line-height than reset buttons, so adjacent pills
  * mismatch unless every variant uses the same flex box.
  */

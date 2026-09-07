@@ -9,6 +9,7 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { getSavedPackageWithCommunityProvenanceById } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
@@ -43,13 +44,19 @@ export const getPackageCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const saved = await getSavedPackageWithCommunityProvenanceById(
+			const loadedRecord = await getSavedPackageWithCommunityProvenanceById(
 				ctx.env.APP_DB,
 				{
 					userId: owner.ownerUserId,
 					packageId: args.package_id,
 				},
 			)
+			const [saved] = loadedRecord
+				? await applySavedPackageForkListingAncestry({
+						env: ctx.env,
+						records: [loadedRecord],
+					})
+				: [null]
 			if (!saved) {
 				const plainRepo = await findPlainRepoPromotionHint(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,

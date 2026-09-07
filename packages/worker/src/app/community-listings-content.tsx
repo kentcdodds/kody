@@ -20,6 +20,7 @@ import {
 	FORKED_COPY_TOOLTIP,
 	FORK_OUTDATED_COPY_TOOLTIP,
 	renderCopyPromptPill,
+	renderForkAheadPill,
 } from '#universal/fork-outdated-copy-button.tsx'
 import { routes } from '#universal/routes.ts'
 import {
@@ -315,6 +316,16 @@ export function renderCommunityViewerInstallBadge(input: {
 					: 'community-detail-listing-ahead-badge',
 			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
 			tone: 'outdated',
+			href: install.listingDiffHref,
+		})
+	}
+	if (install?.forkAhead && install.listingDiffHref) {
+		return renderForkAheadPill({
+			href: install.listingDiffHref,
+			testId:
+				input.variant === 'card'
+					? `community-listing-fork-ahead-${input.listing.id}`
+					: 'community-detail-listing-fork-ahead-badge',
 		})
 	}
 	if (install) {

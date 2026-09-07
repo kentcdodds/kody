@@ -1,8 +1,12 @@
-import { buildListingAheadPrompt } from '#universal/community-listing-ahead.ts'
+import {
+	buildForkListingDiffHref,
+	buildListingAheadPrompt,
+} from '#universal/community-listing-ahead.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	type AccountPackageDetail,
 	type AccountPackageListItem,
+	type AccountPackageForkAhead,
 	type AccountPackageListingAhead,
 	type AccountPackageToken,
 	type AccountPackagesAppFilter,
@@ -25,6 +29,7 @@ import {
 	listSavedPackageCommunityProvenanceByIds,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
@@ -114,12 +119,47 @@ function toListingAhead(
 			originCommit: record.originCommit,
 			listingPinnedCommit: record.listingPinnedCommit,
 		}),
+		diffHref: buildForkListingDiffHref({
+			listingId: record.sourceListingId,
+			listingName: record.listingName,
+			listingKodyId: record.listingKodyId,
+			listingPinnedCommit: record.listingPinnedCommit,
+		}),
+	}
+}
+
+function toForkAhead(
+	record: SavedPackageWithCommunityProvenanceRecord,
+): AccountPackageForkAhead | null {
+	if (
+		record.forkListingRelation !== 'ahead' ||
+		record.sourceListingId == null ||
+		record.listingName == null ||
+		record.listingPinnedCommit == null
+	) {
+		return null
+	}
+	return {
+		listingId: record.sourceListingId,
+		listingName: record.listingName,
+		listingHref: getCommunityListingHref({
+			listingId: record.sourceListingId,
+			listingName: record.listingName,
+			kodyId: record.listingKodyId,
+		}),
+		diffHref: buildForkListingDiffHref({
+			listingId: record.sourceListingId,
+			listingName: record.listingName,
+			listingKodyId: record.listingKodyId,
+			listingPinnedCommit: record.listingPinnedCommit,
+		}),
 	}
 }
 
 function toListItem(
 	record: SavedPackageRecord,
 	listingAhead: AccountPackageListingAhead | null = null,
+	forkAhead: AccountPackageForkAhead | null = null,
 ): AccountPackageListItem {
 	return {
 		id: record.id,
@@ -136,6 +176,7 @@ function toListItem(
 		isPrivate: record.isPrivate,
 		hasCommunityListing: false,
 		listingAhead,
+		forkAhead,
 	}
 }
 
@@ -195,7 +236,11 @@ async function toDetail(input: {
 		getEntitySourceById(input.env.APP_DB, input.record.sourceId),
 	])
 	return {
-		...toListItem(input.record, toListingAhead(input.record)),
+		...toListItem(
+			input.record,
+			toListingAhead(input.record),
+			toForkAhead(input.record),
+		),
 		hasCommunityListing: input.hasCommunityListing,
 		searchText: input.record.searchText,
 		exports,
@@ -238,12 +283,17 @@ export async function loadAccountPackageDetail(input: {
 				})
 			: null
 	if (!record) return null
+	const [enriched] = await applySavedPackageForkListingAncestry({
+		env: input.env,
+		records: [record],
+	})
+	if (!enriched) return null
 	return recordServerTiming('owner-package', () =>
 		toDetailWithListingState({
 			env: input.env,
 			requestUrl: input.requestUrl,
 			userId: input.userId,
-			record,
+			record: enriched,
 		}),
 	)
 }
@@ -311,14 +361,22 @@ export async function loadAccountPackagesData(input: {
 				})
 			: Promise.resolve(null),
 	])
+	const provenanceRecords = await applySavedPackageForkListingAncestry({
+		env: input.env,
+		records: await listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
+			userId,
+			packageIds: items.map((item) => item.id),
+		}),
+	})
 	const provenanceById = new Map(
-		(
-			await listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
-				userId,
-				packageIds: items.map((item) => item.id),
-			})
-		).map((record) => [record.id, record]),
+		provenanceRecords.map((record) => [record.id, record]),
 	)
+	const [enrichedSelected] = selectedRecord
+		? await applySavedPackageForkListingAncestry({
+				env: input.env,
+				records: [selectedRecord],
+			})
+		: [null]
 
 	return {
 		ok: true,
@@ -330,14 +388,18 @@ export async function loadAccountPackagesData(input: {
 		}),
 		packages: items.map((item) => {
 			const provenance = provenanceById.get(item.id)
-			return toListItem(item, provenance ? toListingAhead(provenance) : null)
+			return toListItem(
+				item,
+				provenance ? toListingAhead(provenance) : null,
+				provenance ? toForkAhead(provenance) : null,
+			)
 		}),
-		selectedPackage: selectedRecord
+		selectedPackage: enrichedSelected
 			? await toDetailWithListingState({
 					env: input.env,
 					requestUrl: input.request.url,
 					userId,
-					record: selectedRecord,
+					record: enrichedSelected,
 				})
 			: null,
 		page,

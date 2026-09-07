@@ -76,6 +76,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				packageId: 'pkg-1',
 				listingAhead: false,
 				listingAheadPrompt: null,
+				forkAhead: false,
+				listingDiffHref: null,
 			},
 		},
 		loggedIn: true,
@@ -132,6 +134,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				packageId: 'pkg-1',
 				listingAhead: false,
 				listingAheadPrompt: null,
+				forkAhead: false,
+				listingDiffHref: null,
 			},
 		},
 		viewerIsOwner: true,
@@ -158,6 +162,8 @@ test('community detail head covers install, installed, and listing-ahead badges'
 				packageId: 'pkg-1',
 				listingAhead: true,
 				listingAheadPrompt: aheadPrompt,
+				forkAhead: false,
+				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
 			},
 		},
 		returnTo: '/community',
@@ -172,6 +178,37 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		'data-testid="community-detail-viewer-install-badge"',
 	)
 	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
+	expect(aheadHtml).toContain(
+		'href="/@kentcdodds/github-triage/tree/commit-new"',
+	)
+
+	const forkAheadHtml = await renderCommunityDetailContentHtml({
+		...detailBase,
+		listing: {
+			...sampleListing,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@me/github-triage',
+				agentPrompt: 'Finish setup for @me/github-triage.',
+				packageId: 'pkg-1',
+				listingAhead: false,
+				listingAheadPrompt: null,
+				forkAhead: true,
+				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
+			},
+		},
+		returnTo: '/community',
+		loggedIn: true,
+	})
+	expect(forkAheadHtml).toContain(
+		'data-testid="community-detail-listing-fork-ahead-badge"',
+	)
+	expect(forkAheadHtml).toContain('Fork ahead')
+	expect(forkAheadHtml).toContain(
+		'href="/@kentcdodds/github-triage/tree/commit-pin"',
+	)
+	expect(forkAheadHtml).not.toContain('data-copy-prompt')
+	expect(forkAheadHtml).not.toContain('data-fork-outdated-copy')
 })
 
 test('package chrome is shared for public listings and private owner packages', async () => {
