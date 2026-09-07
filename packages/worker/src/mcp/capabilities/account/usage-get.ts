@@ -3,6 +3,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
+import { uniqueWorkerDayMechanic } from '#universal/compute-overage.ts'
 import { planNames } from '#universal/plans.ts'
 import {
 	computeOverageUsageWarningRows,
@@ -23,6 +24,7 @@ const usageResourceSchema = z.object({
 	limit: z.number().int().nonnegative(),
 	percent: z.number().nullable(),
 	overEightyPercent: z.boolean(),
+	mechanic: z.string().optional(),
 })
 
 export const usageGetCapability = defineDomainCapability(
@@ -111,6 +113,9 @@ export const usageGetCapability = defineDomainCapability(
 				limit: row.limit,
 				percent: row.percentOfLimit,
 				overEightyPercent: row.overEightyPercent,
+				...(row.resource === 'unique_worker_days' && row.overEightyPercent
+					? { mechanic: uniqueWorkerDayMechanic }
+					: {}),
 			})
 			const computeRows = toComputeOverageUsageRows(computeOverage)
 			return {

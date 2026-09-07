@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	aggregateUsageRollups,
 	analyticsEngineSqlRetryMaxAttempts,
+	buildUniqueWorkerDayBySurfaceQuery,
 	resolveUsageEventsDataset,
 	shouldRunUsageAggregationCron,
 } from './aggregate-rollups.ts'
@@ -769,4 +770,16 @@ test('aggregateUsageRollups retries transient Analytics Engine SQL failures and 
 	// Both month queries may start in parallel, but neither retries a 400.
 	expect(clientError.mock.calls.length).toBeLessThanOrEqual(2)
 	expect(noRetryDb.batches).toHaveLength(0)
+})
+
+test('buildUniqueWorkerDayBySurfaceQuery groups dynamic_worker_day by blob6', () => {
+	const query = buildUniqueWorkerDayBySurfaceQuery('kody_usage_events', {
+		monthStart: '2026-09-01 00:00:00',
+		nextMonthStart: '2026-10-01 00:00:00',
+	})
+	expect(query).toContain("blob2 = 'dynamic_worker_day'")
+	expect(query).toContain('blob6')
+	expect(query).toContain('sum(_sample_interval)')
+	expect(query).toContain("toDateTime('2026-09-01 00:00:00')")
+	expect(query).toContain("toDateTime('2026-10-01 00:00:00')")
 })

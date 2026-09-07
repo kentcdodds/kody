@@ -49,6 +49,8 @@ Read in order for a full tour, or jump to a topic.
   overlays and package imports
 - [Workflows](./workflows.md)
 - [Packages](./packages.md)
+- [Platform efficiency](../guides/platform-efficiency.md) — unique Dynamic
+  Worker days by surface, and how a stable module graph reuses one isolate
 - [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md)
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
   the owner operates a container or machine and the package calls it

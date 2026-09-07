@@ -742,6 +742,72 @@ test('buildPackageAppWorker acquires a fresh stub per request while reusing the 
 	expect(factory?.()).toMatchObject(createDynamicWorkerCompatibilityOptions())
 })
 
+test('buildPackageAppWorker records a unique Dynamic Worker day with the app surface', async () => {
+	resetPackageAppRuntimeMocks()
+	const usageModule = await import('#worker/usage/dynamic-worker-day.ts')
+	const recordSpy = vi
+		.spyOn(usageModule, 'recordUniqueDynamicWorkerDay')
+		.mockResolvedValue(undefined)
+	const { env } = createPackageAppTestEnv()
+	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
+		{
+			row: {
+				id: 'artifact-row-uwd',
+				artifactName: null,
+				entryPoint: 'app.js',
+			},
+			artifact: {
+				mainModule: 'dist/app.js',
+				modules: {
+					'dist/app.js':
+						'export default { fetch() { return new Response("ok") } }',
+				},
+				dependencies: [],
+				dynamicDependencies: [],
+			},
+		},
+	)
+
+	try {
+		await buildPackageAppWorker({
+			env,
+			baseUrl: 'https://example.com',
+			userId: 'user-uwd-surface',
+			surface: 'app_realtime',
+			savedPackage: {
+				id: 'package-uwd-surface',
+				kodyId: 'example-uwd',
+				name: '@kody/example-uwd',
+				sourceId: 'source-1',
+				publishedCommit: 'commit-1',
+				manifestPath: 'package.json',
+				sourceRoot: '/',
+			},
+			source: createPackageAppTestSource(),
+			manifest: createPackageAppTestManifest(),
+			runtime: {
+				callerContext: {
+					user: {
+						userId: 'user-uwd-surface',
+						email: 'uwd@example.com',
+						displayName: 'Uwd User',
+					},
+				},
+			} as never,
+		})
+
+		expect(recordSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-uwd-surface',
+				surface: 'app_realtime',
+				workerId: expect.stringMatching(/^package-app-/),
+			}),
+		)
+	} finally {
+		recordSpy.mockRestore()
+	}
+})
+
 test('package app worker exposes its public mount and records fetch query and response status', async () => {
 	resetPackageAppRuntimeMocks()
 	const { env } = createPackageAppTestEnv()

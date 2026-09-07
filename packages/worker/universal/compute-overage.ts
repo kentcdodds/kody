@@ -69,6 +69,13 @@ export const computeOverageWarningResourceLabels = {
 	durable_object_rows_read: 'Durable Object rows read',
 } as const satisfies Record<ComputeOverageWarningResource, string>
 
+/**
+ * Factual mechanic line for hot unique-worker-day entitlement/limit
+ * payloads. Meter name plus what a unique worker day is — not a playbook.
+ */
+export const uniqueWorkerDayMechanic =
+	'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.'
+
 export type ComputeOverageResourceVisibility = {
 	group: 'monthly'
 	kind: 'counter'

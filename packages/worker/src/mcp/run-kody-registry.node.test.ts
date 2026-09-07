@@ -1081,6 +1081,12 @@ test('runModuleWithRegistry records execute interpretable class only on execute-
 export default async function main() { return await kody.capability_id({}) }`
 		await runModuleWithRegistry(env, callerContext, glueCode)
 		expect(recordSpy).toHaveBeenCalledExactlyOnceWith(env, { source: glueCode })
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				surface: 'execute',
+				executeShape: 'glue',
+			}),
+		)
 
 		recordSpy.mockClear()
 		const packageCode = `import whatShipped from 'kody:@you/bot/whatShipped'

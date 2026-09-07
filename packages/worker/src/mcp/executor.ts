@@ -25,6 +25,8 @@ import {
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { type DynamicWorkerDaySurface } from '#worker/usage/dynamic-worker-day-surface.ts'
+import { type ExecuteThinGlueClass } from '#worker/usage/execute-thin-glue.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -164,6 +166,16 @@ type DynamicWorkerExecutorInput = {
 	 * runs (and ad-hoc executor callers) should emit `execute`.
 	 */
 	recordExecuteUsage?: boolean
+	/**
+	 * Surface that minted this Dynamic Worker. Defaults to `execute` for
+	 * ad-hoc executor callers. Nested surfaces pass the mapped UWD tag.
+	 */
+	surface?: DynamicWorkerDaySurface
+	/**
+	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
+	 * nested surfaces.
+	 */
+	executeShape?: ExecuteThinGlueClass | null
 	/**
 	 * When set, unique-worker-day metering and the first-execute activation
 	 * stamp run on `waitUntil` instead of the sandbox critical path. Without
@@ -475,6 +487,16 @@ export function createExecuteExecutor(input: {
 	 */
 	recordExecuteUsage?: boolean
 	/**
+	 * Surface that minted this Dynamic Worker. Defaults to `execute` for
+	 * ad-hoc executor callers. Nested surfaces pass the mapped UWD tag.
+	 */
+	surface?: DynamicWorkerDaySurface
+	/**
+	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
+	 * nested surfaces.
+	 */
+	executeShape?: ExecuteThinGlueClass | null
+	/**
 	 * When false, sandbox `fetch` is rejected. Retriever runs use this to stay
 	 * closed-world. Defaults to true.
 	 */
@@ -514,6 +536,8 @@ export function createExecuteExecutor(input: {
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
 		recordExecuteUsage: input.recordExecuteUsage,
+		surface: input.surface ?? 'execute',
+		executeShape: input.executeShape,
 		waitUntil: input.waitUntil,
 	})
 }
@@ -565,6 +589,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					env: input.usageEnv,
 					userId: input.gatewayProps.userId,
 					workerId,
+					surface: input.surface ?? 'execute',
 				}),
 				input.waitUntil,
 				'dynamic-worker-day-record-failed',
@@ -671,6 +696,10 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 							eventType: 'execute',
 							durationMs: Date.now() - startedAtMs,
 							outcome,
+							surface: 'execute',
+							...(input.executeShape
+								? { executeShape: input.executeShape }
+								: {}),
 						},
 						{ waitUntil: input.waitUntil },
 					)

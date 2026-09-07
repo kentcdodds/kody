@@ -43,6 +43,8 @@ type UsageEvent = {
 	eventCount?: number // coalesced units in one write; defaults to 1
 	outcome: 'success' | 'error'
 	timestamp?: string // ISO 8601; defaults to time of recording
+	surface?: string | null // closed UWD surface; AE blob6
+	executeShape?: string | null // execute thin/glue class; AE blob7
 }
 ```
 
@@ -68,7 +70,7 @@ events for the admin on/off cohort readout.
 | `outbound_fetch`            | one outbound fetch through the gateway                                                                                                                                                                                          | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                                                                                                                                                                                                                                                               | request host                   |
 | `email_send`                | one outbound email send attempt                                                                                                                                                                                                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                                                                                                                                                                                                                                                                       | email message id               |
 | `email_received`            | one inbound receive attempt for a routed inbox                                                                                                                                                                                  | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                                                                                                                                                                                                                                                               | email message id (when stored) |
-| `dynamic_worker_day`        | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                 | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId`, every surface; uniqueness via `UserMeter.claimDynamicWorkerDay`                                                                                                                                                                                                                                                                          | worker id                      |
+| `dynamic_worker_day`        | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                 | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId` (sandbox surfaces) and `packages/worker/src/package-runtime/package-app.ts` (`APP_LOADER` with a stable id); uniqueness via `UserMeter.claimDynamicWorkerDay`. Each event carries `surface` (Analytics Engine blob6).                                                                                                                     | worker id                      |
 | `durable_object_gb_seconds` | one typed per-user Durable Object RPC burst (wall-clock in `durationMs`; admin converts to GB-s at 128 MB). Same-outcome RPCs in one request coalesce into a single Analytics Engine point whose `eventCount` is the RPC count. | `createMeteredDurableObjectStub` on `storageRunnerRpc` when `USAGE_EVENTS` is bound. Other per-user RPC factories can adopt the same helper; UserMeter, Mailbox, RunLog, and RepoSessionIndex stay unwrapped so admin usage reads do not inflate the metric. Observe-only / unmetered: excluded from fleet event-count rankings, entitlement-pressure candidate selection, and customer usage emails. Never billed. | DO class name                  |
 | `durable_object_rows_read`  | StorageRunner SQLite `rowsRead` from one `sqlQuery` (skipped when `rowsRead < 1`). Same-outcome bursts coalesce; hourly rollups recover the unit count from Analytics Engine `double3`.                                         | `recordDurableObjectRowsRead` in `StorageRunner.sqlQuery` when `USAGE_EVENTS` is bound. Other customer Durable Objects are not instrumented, so this meter undercounts rather than overcharges. Observe-only for fleet event-count rankings and entitlement-pressure selection; monthly overage math and compute-include warning emails still read the rollup.                                                      | DO class name                  |
 
@@ -167,14 +169,58 @@ every sandbox surface that creates a worker.
 on `/pricing`. It is not in `entitlementResources` and does not replace the hard
 daily `execute` / `job_run` caps. `usageGet` and the account usage UI report
 this meter (and Durable Object rows-read) with `whatCounts` / `howToReduce` so
-the include is self-explanatory. Customer-facing monthly overage is unique
-worker days plus Durable Object rows-read, billed on the public ladder at
-`computeOverageRatesUsd` when `compute-overage-charging` is on. Unpaid Free is a
-soft-block, not a charge. Amounts below Stripe's $0.50 USD minimum are not
-invoiced. Legacy Standard/Pro is warned, not billed. Never add durations across
-different `eventType` values — that double counts nested layers. Within one
-`eventType`, each chokepoint records exactly one event per metered unit, so sums
-are safe.
+the include is self-explanatory. When unique-worker-day pressure is hot (limit
+denial or over 80%), those payloads also include a short `mechanic` line: meter
+name plus what a unique worker day is. Agent-facing package docs do not repeat
+the cost model; see [Platform efficiency](../../guides/platform-efficiency.md).
+
+### Unique worker days by surface
+
+Every `dynamic_worker_day` event carries a closed `surface` tag (Analytics
+Engine blob6): `execute`, `job`, `package_export`, `workflow`, `subscription`,
+`app_fetch`, `app_realtime`, `retriever`, `webhook`, or `unknown`.
+`package_export` is the usage name for run-record surface `export`. Call sites
+pass the mapped surface; `unknown` is only for a missing mapping.
+
+D1 `usage_rollups` stay keyed by `(user_id, metric, month)` — the monthly total
+is unchanged. Surface share is an Analytics Engine query. Hourly aggregation
+does not write a second rollup dimension. Use
+`buildUniqueWorkerDayBySurfaceQuery` in
+`packages/worker/src/usage/aggregate-rollups.ts`:
+
+```sql
+SELECT
+  if(blob6 = '', 'unknown', blob6) AS surface,
+  sum(_sample_interval) AS unique_worker_days
+FROM kody_usage_events
+WHERE timestamp >= toDateTime('2026-09-01 00:00:00')
+  AND timestamp < toDateTime('2026-10-01 00:00:00')
+  AND blob2 = 'dynamic_worker_day'
+GROUP BY surface
+ORDER BY unique_worker_days DESC
+```
+
+Empty `blob6` means the event has no surface tag. Preview uses
+`kody_usage_events_preview`. Execute share for the month is
+`sumIf(_sample_interval, blob6 = 'execute') / sum(_sample_interval)` on that
+same filter.
+
+Ad hoc execute events may also carry `executeShape` on blob7
+(`thin_single_export` | `thin_few_exports` | `glue`): a host-side best-effort
+class of the caller-authored source string. It is not used for billing and is
+not shown to agents. Unparseable source omits the field.
+
+APP_LOADER package-app isolates record UWD when the worker id is stable
+(`app_fetch` / `app_realtime`). One-off `APP_LOADER.load()` without a hashed id
+has no worker id to claim and does not emit `dynamic_worker_day`.
+
+Customer-facing monthly overage is unique worker days plus Durable Object
+rows-read, billed on the public ladder at `computeOverageRatesUsd` when
+`compute-overage-charging` is on. Unpaid Free is a soft-block, not a charge.
+Amounts below Stripe's $0.50 USD minimum are not invoiced. Legacy Standard/Pro
+is warned, not billed. Never add durations across different `eventType` values —
+that double counts nested layers. Within one `eventType`, each chokepoint
+records exactly one event per metered unit, so sums are safe.
 
 Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
 Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique
@@ -193,7 +239,9 @@ export does not list them.
    else — a per-event D1 upsert would serialize every metered request (execute,
    fetch, email, jobs, ...) on D1's single writer. Data point layout:
    - `indexes`: `[userId]`
-   - `blobs`: `[userId, eventType, entityId ?? '', outcome, timestamp]`
+   - `blobs`:
+     `[userId, eventType, entityId ?? '', outcome, timestamp, surface ?? '', executeShape ?? '']`
+     (`surface` is blob6, `executeShape` is blob7; both empty when unset)
    - `doubles`: `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0]`. Coalesced
      `durable_object_gb_seconds` and `durable_object_rows_read` points store the
      coalesced unit count in the third double instead of bytes so hourly rollups

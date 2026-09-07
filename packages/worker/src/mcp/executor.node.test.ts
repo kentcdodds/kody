@@ -1086,6 +1086,7 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id'
 		'dynamic_worker_day',
 	])
 	expect(dataPoints[0]?.indexes).toEqual(['usage-user-dw'])
+	expect(dataPoints[0]?.blobs?.[5]).toBe('execute')
 
 	const secondLoader = createFakeWorkerLoader()
 	await createExecuteExecutor({

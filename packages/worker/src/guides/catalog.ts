@@ -25,6 +25,7 @@ import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
+import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
@@ -64,6 +65,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
+	{ slug: 'platform-efficiency', raw: platformEfficiency },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
 	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'locked-mcp-server', raw: lockedMcpServer },

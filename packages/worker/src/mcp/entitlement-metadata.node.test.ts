@@ -110,6 +110,8 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		whatCounts: computeDenial.details.whatCounts,
 		upgradeHint: computeDenial.details.upgradeHint,
 		disposition: 'soft_block',
+		mechanic:
+			'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.',
 	})
 	expect(computeDenial.message).toMatch(/Dynamic Worker isolates/)
 	expect(computeDenial.message).toMatch(/Keep package code stable/)
@@ -123,6 +125,8 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 		whatCounts: computeDenial.details.whatCounts,
 		upgradeHint: computeDenial.details.upgradeHint,
 		disposition: 'soft_block',
+		mechanic:
+			'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.',
 	})
 
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()

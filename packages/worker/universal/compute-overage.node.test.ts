@@ -7,6 +7,7 @@ import {
 	computeOverageResourceVisibility,
 	previousUtcMonthKey,
 	resolveComputeOverageDisposition,
+	uniqueWorkerDayMechanic,
 	type ComputeOverageDisposition,
 } from './compute-overage.ts'
 import { computeOverageRatesUsd, planLimits } from './plans.ts'
@@ -262,6 +263,8 @@ test('unique worker days visibility explains the meter and next step', () => {
 	expect(visibility.whatCounts).toMatch(/UTC day/)
 	expect(visibility.howToReduce).toMatch(/Keep package code stable/)
 	expect(visibility.howToReduce).toMatch(/saved packages or jobs/)
+	expect(uniqueWorkerDayMechanic).toMatch(/Meter unique_worker_days/)
+	expect(uniqueWorkerDayMechanic).toMatch(/worker id/)
 	expect(
 		buildComputeOverageHowToReduce('unique_worker_days', 'soft_block'),
 	).toMatch(/add a payment method/)

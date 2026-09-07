@@ -58,7 +58,7 @@ export const executeCapability = defineDomainCapability(
 	{
 		name: 'execute',
 		description:
-			'Run one ephemeral ESM module string with a default export inside the Kody execute runtime. Use this inside package and execute runtimes when reusable code needs to call the same module execution surface as the public MCP execute tool.',
+			'Run one ephemeral ESM module string with a default export inside the Kody execute runtime. Use this inside package and execute runtimes when reusable code needs to call the same module execution surface as the public MCP execute tool. Dynamic Worker identity for the run follows that module graph, so the same graph reuses one isolate for the UTC day.',
 		keywords: ['execute', 'kody', 'module', 'sandbox', 'runtime'],
 		readOnly: false,
 		idempotent: false,

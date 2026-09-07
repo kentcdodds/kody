@@ -14,6 +14,11 @@ import {
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
 import { recordExecuteInterpretableEvent } from '#mcp/execute-interpretable.ts'
+import {
+	classifyExecuteThinGlue,
+	type ExecuteThinGlueClass,
+} from '#worker/usage/execute-thin-glue.ts'
+import { resolveDynamicWorkerDaySurface } from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import {
@@ -514,13 +519,12 @@ export async function runModuleWithRegistry(
 	const userId = callerContext.user?.userId ?? ''
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
-	if (
-		!options?.packageContext &&
-		shouldRecordExecuteUsageForRun({
-			surface: options?.runRecord?.surface,
-			hasPackageContext: false,
-		})
-	) {
+	const isAdHocExecute = shouldRecordExecuteUsageForRun({
+		surface: options?.runRecord?.surface,
+		hasPackageContext: Boolean(options?.packageContext),
+	})
+	const executeShape = isAdHocExecute ? classifyExecuteThinGlue(code) : null
+	if (isAdHocExecute && !options?.packageContext) {
 		recordExecuteInterpretableEvent(env, { source: code })
 	}
 	await reportExecutePhaseProgress(reportProgress, 'bundle')
@@ -567,6 +571,7 @@ export async function runModuleWithRegistry(
 		params,
 		{
 			...options,
+			executeShape,
 			packageContext: options?.packageContext ?? null,
 			workflowTools:
 				options?.workflowTools ??
@@ -672,6 +677,11 @@ export async function runBundledModuleWithRegistry(
 		 */
 		waitUntil?: (promise: Promise<unknown>) => void
 		reportProgress?: McpReportProgress
+		/**
+		 * Host-side thin/glue class for ad-hoc execute. Set by
+		 * `runModuleWithRegistry` from the caller-authored source string.
+		 */
+		executeShape?: ExecuteThinGlueClass | null
 	},
 ): Promise<
 	ExecuteResult & {
@@ -847,6 +857,11 @@ export async function runBundledModuleWithRegistry(
 				surface: options?.runRecord?.surface,
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
+			surface: resolveDynamicWorkerDaySurface({
+				surface: options?.runRecord?.surface,
+				hasPackageContext: Boolean(options?.packageContext),
+			}),
+			executeShape: options?.executeShape,
 			allowOutboundFetch: !closedWorldRetrieverRuntime,
 			waitUntil: options?.waitUntil,
 		})

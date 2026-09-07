@@ -74,12 +74,28 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 	expect(dataPoints).toHaveLength(4)
 	expect(dataPoints[0]).toEqual({
 		indexes: [userA],
-		blobs: [userA, 'execute', '', 'success', '2026-07-05T10:00:00.000Z'],
+		blobs: [
+			userA,
+			'execute',
+			'',
+			'success',
+			'2026-07-05T10:00:00.000Z',
+			'',
+			'',
+		],
 		doubles: [120, 0, 0],
 	})
 	expect(dataPoints[1]).toEqual({
 		indexes: [userA],
-		blobs: [userA, 'execute', 'pkg-1', 'error', '2026-07-05T11:00:00.000Z'],
+		blobs: [
+			userA,
+			'execute',
+			'pkg-1',
+			'error',
+			'2026-07-05T11:00:00.000Z',
+			'',
+			'',
+		],
 		doubles: [80, 0, 512],
 	})
 	expect(dataPoints[2]?.indexes).toEqual([userB])
@@ -91,6 +107,8 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 			'StorageRunner',
 			'success',
 			'2026-07-05T12:30:00.000Z',
+			'',
+			'',
 		],
 		doubles: [10_000, 0, 8],
 	})
@@ -258,4 +276,52 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 		'usage-rollup-failed',
 		expect.any(Error),
 	)
+})
+
+test('recordUsage writes surface and executeShape as trailing Analytics Engine blobs', async () => {
+	const userId = `usage-surface-${crypto.randomUUID()}`
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const usageEnv = {
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) dataPoints.push(point)
+			},
+		},
+	}
+
+	await recordUsage(usageEnv, {
+		userId,
+		eventType: 'dynamic_worker_day',
+		entityId: 'kody-worker-a',
+		outcome: 'success',
+		timestamp: '2026-09-01T12:00:00.000Z',
+		surface: 'job',
+	})
+	await recordUsage(usageEnv, {
+		userId,
+		eventType: 'execute',
+		outcome: 'success',
+		timestamp: '2026-09-01T12:01:00.000Z',
+		surface: 'execute',
+		executeShape: 'thin_single_export',
+	})
+
+	expect(dataPoints[0]?.blobs).toEqual([
+		userId,
+		'dynamic_worker_day',
+		'kody-worker-a',
+		'success',
+		'2026-09-01T12:00:00.000Z',
+		'job',
+		'',
+	])
+	expect(dataPoints[1]?.blobs).toEqual([
+		userId,
+		'execute',
+		'',
+		'success',
+		'2026-09-01T12:01:00.000Z',
+		'execute',
+		'thin_single_export',
+	])
 })

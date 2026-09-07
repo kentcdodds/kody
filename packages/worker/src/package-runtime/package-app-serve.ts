@@ -434,6 +434,7 @@ export async function servePackageAppRequest(input: {
 			env,
 			baseUrl,
 			userId: owner.userId,
+			surface: 'app_fetch',
 			savedPackage: {
 				id: savedPackage.id,
 				kodyId: savedPackage.kodyId,

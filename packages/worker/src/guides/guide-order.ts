@@ -27,6 +27,7 @@ const guideOrder: ReadonlyArray<string> = [
 	'first-win',
 	'package-authoring',
 	'package-lifecycle',
+	'platform-efficiency',
 	'integration-bootstrap',
 	'locked-gmail-drafts',
 	'locked-mcp-server',

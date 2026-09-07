@@ -200,6 +200,8 @@ test('usageGet warns on unique worker days with whatCounts and howToReduce', asy
 	expect(uniqueWorkerDays?.whatCounts).toMatch(/worker id \+ code/)
 	expect(uniqueWorkerDays?.howToReduce).toMatch(/saved packages or jobs/)
 	expect(uniqueWorkerDays?.howToReduce).toMatch(/payment method/)
+	expect(uniqueWorkerDays?.mechanic).toMatch(/Meter unique_worker_days/)
+	expect(uniqueWorkerDays?.mechanic).toMatch(/worker id/)
 	expect(
 		result.warnings.some((row) => row.resource === 'unique_worker_days'),
 	).toBe(true)

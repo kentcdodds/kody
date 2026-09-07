@@ -73,6 +73,7 @@ import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
 } from './package-app-synthetic.ts'
+import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
@@ -1864,6 +1865,8 @@ export async function buildPackageAppWorker(input: {
 		hostedOrigin?: string
 		mount?: PackageAppMount
 	}
+	/** LOADER mint surface. HTTP serve is `app_fetch`; realtime passes `app_realtime`. */
+	surface?: 'app_fetch' | 'app_realtime'
 }) {
 	const publicContext = buildPackageAppPublicContext(input)
 	const cacheKey = createPackageAppWorkerCacheKey({
@@ -1879,6 +1882,7 @@ export async function buildPackageAppWorker(input: {
 			input.runtime.callerContext.user?.displayName ??
 			`package:${input.savedPackage.id}`,
 	})
+	const surface = input.surface ?? 'app_fetch'
 	if (!cacheKey) {
 		return {
 			stub: input.env.APP_LOADER.load(
@@ -1897,6 +1901,14 @@ export async function buildPackageAppWorker(input: {
 			}
 		},
 	})
+	if (build.workerId) {
+		await recordUniqueDynamicWorkerDay({
+			env: input.env,
+			userId: input.userId,
+			workerId: build.workerId,
+			surface,
+		})
+	}
 	return {
 		// Stubs are request-bound, so acquire a fresh one per request. The stable
 		// worker id (derived from user + package + commit + caller identity) lets
