@@ -9,7 +9,7 @@
  * @see https://docs.stripe.com/webhooks#verify-manually
  */
 import { toHex } from '@kody-internal/shared/hex.ts'
-import { timingSafeEqualString } from '#worker/maintenance-handler.ts'
+import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 
 export const stripeWebhookDefaultToleranceSeconds = 300
 
