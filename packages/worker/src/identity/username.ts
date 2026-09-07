@@ -17,6 +17,18 @@ export function normalizeUsername(value: unknown) {
 	return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
+export function usernameTakenError(username: string) {
+	return `\`${username}\` is taken.`
+}
+
+export function usernameReservedClaimError(username: string) {
+	return `\`${username}\` is reserved.`
+}
+
+export function usernameNotPersistedError(username: string) {
+	return `Username was not changed to \`${username}\`.`
+}
+
 /**
  * Every username is a valid DNS label (`dnsSafeUsernamePattern` from
  * `@kody-internal/shared/public-urls.ts`): each user owns a `{username}.`

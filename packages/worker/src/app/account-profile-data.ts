@@ -20,6 +20,7 @@ function asProfileVisibility(
 export function buildAccountProfilePayload(
 	user: AuthenticatedUser,
 	profileFields?: {
+		username?: string | null
 		displayName?: string | null
 		bio?: string | null
 		avatarKey?: string | null
@@ -28,22 +29,23 @@ export function buildAccountProfilePayload(
 	},
 ): AccountProfileLoaderData {
 	const rawDisplayName = profileFields?.displayName
+	const username = profileFields?.username?.trim() || user.username
 	return {
 		ok: true,
 		email: user.email,
 		emailVerified: user.emailVerified,
 		emailVerificationDelivery: user.emailVerificationDelivery ?? null,
-		username: user.username,
+		username,
 		// Prefer an explicit community display name; otherwise fall back to the
 		// auth display name (username) so existing username-only clients keep a
 		// sensible value.
 		displayName:
 			rawDisplayName != null && rawDisplayName.trim().length > 0
 				? rawDisplayName.trim()
-				: user.displayName || user.username,
+				: user.displayName || username,
 		bio: profileFields?.bio ?? null,
 		avatarUrl: buildUserAvatarUrl({
-			username: user.username,
+			username,
 			avatarKey: profileFields?.avatarKey ?? null,
 		}),
 		profileVisibility: profileFields?.profileVisibility ?? 'public',
@@ -71,6 +73,7 @@ export async function loadAccountProfileData(
 	}
 
 	return buildAccountProfilePayload(user, {
+		username: row.username,
 		displayName: row.display_name,
 		bio: row.bio,
 		avatarKey: row.avatar_key,

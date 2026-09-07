@@ -16,6 +16,9 @@ import { type routes } from '#universal/routes.ts'
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
+	usernameNotPersistedError,
+	usernameReservedClaimError,
+	usernameTakenError,
 } from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { retireUsername } from '#worker/community/package-url.ts'
@@ -112,7 +115,16 @@ export function createAccountProfileApiHandler(env: Env) {
 					env,
 				)
 				if (usernameError) {
-					return jsonResponse({ ok: false, error: usernameError }, 400)
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								usernameError === 'This username is reserved.'
+									? usernameReservedClaimError(username)
+									: usernameError,
+						},
+						400,
+					)
 				}
 
 				const existingUsername = await db.findOne(usersTable, {
@@ -130,7 +142,7 @@ export function createAccountProfileApiHandler(env: Env) {
 						reason: 'username_exists',
 					})
 					return jsonResponse(
-						{ ok: false, error: 'Username already registered.' },
+						{ ok: false, error: usernameTakenError(username) },
 						409,
 					)
 				}
@@ -158,11 +170,21 @@ export function createAccountProfileApiHandler(env: Env) {
 							reason: 'username_exists',
 						})
 						return jsonResponse(
-							{ ok: false, error: 'Username already registered.' },
+							{ ok: false, error: usernameTakenError(username) },
 							409,
 						)
 					}
 					throw error
+				}
+
+				const claimed = await db.findOne(usersTable, {
+					where: { id: user.userId },
+				})
+				if (!claimed || claimed.username !== username) {
+					return jsonResponse(
+						{ ok: false, error: usernameNotPersistedError(username) },
+						500,
+					)
 				}
 
 				let packageUpdate
@@ -308,8 +330,19 @@ export function createAccountProfileApiHandler(env: Env) {
 				})
 			}
 
+			const persisted = await loadAccountProfileData(nextUser, env)
+			if (usernameChanged && persisted.username !== username) {
+				return jsonResponse(
+					{
+						ok: false,
+						error: usernameNotPersistedError(username),
+					},
+					500,
+				)
+			}
+
 			return jsonResponse({
-				...(await loadAccountProfileData(nextUser, env)),
+				...persisted,
 				...usernameChangeExtras,
 			})
 		},

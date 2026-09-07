@@ -49,7 +49,11 @@ type TestUser = {
 	updated_at: string
 }
 
-function createProfileTestDb(initialUsers: Array<TestUser>) {
+function createProfileTestDb(
+	initialUsers: Array<TestUser>,
+	options?: { persistUsernameUpdates?: boolean },
+) {
+	const persistUsernameUpdates = options?.persistUsernameUpdates !== false
 	const users = new Map(initialUsers.map((user) => [user.id, { ...user }]))
 	const db = {
 		prepare(query: string) {
@@ -83,7 +87,9 @@ function createProfileTestDb(initialUsers: Array<TestUser>) {
 						) {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
-						user.username = String(username)
+						if (persistUsernameUpdates) {
+							user.username = String(username)
+						}
 						user.updated_at = String(updatedAt)
 						return user
 					}
@@ -454,7 +460,7 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	expect(reservedResponse.status).toBe(400)
 	expect(await reservedResponse.json()).toEqual({
 		ok: false,
-		error: 'This username is reserved.',
+		error: '`kody` is reserved.',
 	})
 
 	const duplicateResponse = await runHandler(
@@ -468,7 +474,7 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 	expect(duplicateResponse.status).toBe(409)
 	expect(await duplicateResponse.json()).toEqual({
 		ok: false,
-		error: 'Username already registered.',
+		error: '`taken-jane` is taken.',
 	})
 	expect(testDb.users.get(1)?.username).toBe('current-user')
 	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
@@ -482,6 +488,34 @@ test('account profile API rejects invalid or duplicate usernames', async () => {
 			reason: 'username_exists',
 		}),
 	)
+})
+
+test('account profile API does not report success when the requested username did not persist', async () => {
+	const testDb = createProfileTestDb([createUser(1, 'jklotz08')], {
+		persistUsernameUpdates: false,
+	})
+	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
+
+	const response = await runHandler(
+		handler,
+		await createRequest({
+			session: {
+				stableUserId: testStableUserIdFromEmail('jklotz08@example.com'),
+				email: 'jklotz08@example.com',
+				rememberMe: false,
+			},
+			method: 'POST',
+			body: { username: 'jklotz' },
+		}),
+	)
+
+	expect(response.status).toBe(500)
+	expect(await response.json()).toEqual({
+		ok: false,
+		error: 'Username was not changed to `jklotz`.',
+	})
+	expect(testDb.users.get(1)?.username).toBe('jklotz08')
+	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
 })
 
 test('account profile API rounds trip displayName, bio, and visibility', async () => {
@@ -642,7 +676,7 @@ test('account profile username change consults KV reserved additions and removal
 	expect(addedResponse.status).toBe(400)
 	expect(await addedResponse.json()).toEqual({
 		ok: false,
-		error: 'This username is reserved.',
+		error: '`brandnew` is reserved.',
 	})
 
 	const unreservedResponse = await runHandler(
