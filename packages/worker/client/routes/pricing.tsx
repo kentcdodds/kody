@@ -344,7 +344,6 @@ function renderLimitCell(row: LimitRow, limits: PlanLimits) {
 	)
 }
 
-/** Exported so tests can derive expectations from `plans.ts` values. */
 function formatLimitBytes(value: number): string {
 	const kibibyte = 1024
 	const mebibyte = 1024 * kibibyte
