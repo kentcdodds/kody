@@ -27,7 +27,6 @@ export const relevantCloudflareComponentNames = [
 const relevantNameSet = new Set<string>(relevantCloudflareComponentNames)
 
 export const providerIncidentFetchTimeoutMs = 2500
-export const providerIncidentCacheTtlMs = 60_000
 /** Keep a slightly stale cache across one missed cron tick / flaky API. */
 export const providerIncidentCacheStaleMs = 5 * 60_000
 

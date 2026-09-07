@@ -8,14 +8,6 @@ import {
 	type TranscriptAct,
 } from './interactive-guide-transcript.ts'
 
-export type {
-	TranscriptAct,
-	TranscriptFile,
-	TranscriptInput,
-	TranscriptLine,
-	TranscriptTool,
-} from './interactive-guide-transcript.ts'
-
 const conversationId = '8g4q1n6m2s9t'
 
 const askMemoryContext = {

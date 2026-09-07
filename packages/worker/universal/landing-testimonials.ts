@@ -55,8 +55,6 @@ export const landingTestimonials = [
 	},
 ] as const satisfies ReadonlyArray<LandingTestimonial>
 
-export type LandingTestimonialEntry = (typeof landingTestimonials)[number]
-
 /** Fisher–Yates shuffle. Pass `random` in tests for a deterministic draw. */
 export function shuffleTestimonials<T>(
 	items: ReadonlyArray<T>,

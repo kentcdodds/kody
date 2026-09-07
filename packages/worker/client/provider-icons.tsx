@@ -365,10 +365,6 @@ const knownProviderIconIds = [
 
 export type ProviderIconId = (typeof knownProviderIconIds)[number]
 
-export function isKnownProviderIconId(id: string): id is ProviderIconId {
-	return (knownProviderIconIds as ReadonlyArray<string>).includes(id)
-}
-
 const providerIconRenderers: Record<
 	ProviderIconId,
 	(size: string) => JSX.Element

@@ -598,67 +598,6 @@ export const proseCss = {
 	},
 }
 
-/** Display-face section heading (the redesign's `section h2` voice). */
-export const sectionHeadingCss = {
-	margin: 0,
-	fontSize: 'clamp(1.9rem, 3.8vw, 2.8rem)',
-	fontWeight: 730,
-	letterSpacing: '-0.025em',
-	lineHeight: 1.08,
-	'@media (max-width: 800px)': {
-		fontSize: '2rem',
-	},
-}
-
-type BrandChipCssOptions = {
-	/**
-	 * `/images/icons/<name>.svg` brand mark, drawn in the chip's own ink via
-	 * a CSS mask so it works in both themes. Omit for a plain text chip.
-	 */
-	iconHref?: string
-	/** Dashed, muted trailing chip ("…and one thermostat"). */
-	muted?: boolean
-}
-
-/**
- * Pill chip for brand/host clouds (landing pitch hosts, world cloud,
- * onboarding wayfinding). Icon comes from a real SVG asset referenced with a
- * plain url() mask — never a data URI.
- */
-export function getBrandChipCss(options: BrandChipCssOptions = {}) {
-	return {
-		display: 'inline-flex',
-		alignItems: 'center',
-		gap: '0.55em',
-		fontSize: '0.95rem',
-		fontWeight: 550,
-		color: options.muted ? colors.textMuted : colors.text,
-		backgroundColor: options.muted ? 'transparent' : colors.surface,
-		border: `1px ${options.muted ? 'dashed' : 'solid'} ${colors.border}`,
-		borderRadius: radius.full,
-		padding: '0.45rem 1rem',
-		...(options.iconHref
-			? {
-					'&::before': {
-						content: '""',
-						width: '1.05em',
-						height: '1.05em',
-						flex: 'none',
-						background: 'currentColor',
-						maskImage: `url('${options.iconHref}')`,
-						maskPosition: 'center',
-						maskSize: 'contain',
-						maskRepeat: 'no-repeat',
-						WebkitMaskImage: `url('${options.iconHref}')`,
-						WebkitMaskPosition: 'center',
-						WebkitMaskSize: 'contain',
-						WebkitMaskRepeat: 'no-repeat',
-					},
-				}
-			: {}),
-	}
-}
-
 type SurfaceCardCssOptions = {
 	interactive?: boolean
 }
@@ -1026,12 +965,6 @@ export const textareaCss = {
 	...inputCss,
 	resize: 'vertical' as const,
 	minHeight: '7rem',
-}
-
-export const compactInputCss = {
-	...inputCss,
-	padding: `${spacing.xs} ${spacing.sm}`,
-	fontSize: typography.fontSize.sm,
 }
 
 export const listCss = {
