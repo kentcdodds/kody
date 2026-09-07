@@ -406,7 +406,7 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 	const trial = await handleStripeWebhookRequest({
 		env: createWebhookEnv(),
 		request: await signedWebhookRequest({ event: trialEvent }),
-		now: new Date('2026-09-07T12:00:00.000Z'),
+		now,
 	})
 	expect(trial).toEqual({ status: 200, body: { ok: true } })
 	expect(
@@ -436,7 +436,7 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 	const paid = await handleStripeWebhookRequest({
 		env: createWebhookEnv(),
 		request: await signedWebhookRequest({ event: paidEvent }),
-		now: new Date('2026-09-07T12:00:00.000Z'),
+		now,
 	})
 	expect(paid).toEqual({ status: 200, body: { ok: true } })
 	expect(
@@ -458,7 +458,7 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 	expect(
 		afterFirst.results.every(
 			(row) =>
-				row.referral_standard_credit_expires_at === '2026-10-07T12:00:00.000Z',
+				row.referral_standard_credit_expires_at === '2026-08-24T12:00:00.000Z',
 		),
 	).toBe(true)
 
@@ -476,7 +476,7 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 				},
 			},
 		}),
-		now: new Date('2026-09-07T12:00:00.000Z'),
+		now,
 	})
 	expect(replay).toEqual({ status: 200, body: { ok: true } })
 	expect(
