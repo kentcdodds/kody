@@ -116,8 +116,10 @@ payment-adjacent.
 and the base rank is still below Standard. The gift never lowers a paid or
 manual grant. Expiry is read-time (no sweeper). Authorize completion and
 grant-list pages (onboarding payload, Account → Connected agents) call
-`maybeEvaluateSecondAgentStandardGift`, which skips D1 when unique clients are
-below 2, listing failed, or `APP_DB.prepare` is missing.
+`maybeEvaluateSecondAgentStandardGift`, which skips the write when unique
+clients are below 2 or listing failed, but still reads the persisted ledger so
+`/onboarding.json` does not hide an already-granted gift. Missing
+`APP_DB.prepare` skips both write and read.
 
 `describeSecondAgentStandardGift` / `SecondAgentStandardGiftState` is the flag
 lifecycle email or PackagedSingleClient should read: `received`, `active`, and

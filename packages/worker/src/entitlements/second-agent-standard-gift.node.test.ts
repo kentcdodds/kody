@@ -172,17 +172,7 @@ test('first unique-client cross grants 14-day Standard; later events and paid ti
 	expect(replayPaid.outcome).toBe('already_granted')
 })
 
-test('maybeEvaluate skips DB below two unique clients and without prepare', async () => {
-	const prepare = vi.fn()
-	await expect(
-		maybeEvaluateSecondAgentStandardGift({
-			db: { prepare } as unknown as D1Database,
-			stableUserId: 'user-1',
-			uniqueClientCount: 1,
-		}),
-	).resolves.toEqual(describeSecondAgentStandardGift({}))
-	expect(prepare).not.toHaveBeenCalled()
-
+test('maybeEvaluate skips writes without prepare and keeps an existing gift below two clients', async () => {
 	const warn = vi.spyOn(console, 'warn')
 	await expect(
 		maybeEvaluateSecondAgentStandardGift({
@@ -193,4 +183,35 @@ test('maybeEvaluate skips DB below two unique clients and without prepare', asyn
 	).resolves.toEqual(describeSecondAgentStandardGift({}))
 	expect(warn).not.toHaveBeenCalled()
 	warn.mockRestore()
+
+	const gifted = await createGiftTestDb({
+		email: 'already-gifted@example.com',
+	})
+	await evaluateSecondAgentStandardGift({
+		db: gifted.db,
+		stableUserId: gifted.stableUserId,
+		uniqueClientCount: 2,
+		now,
+	})
+	const afterRevoke = await maybeEvaluateSecondAgentStandardGift({
+		db: gifted.db,
+		stableUserId: gifted.stableUserId,
+		uniqueClientCount: 1,
+		now,
+	})
+	expect(afterRevoke).toEqual({
+		received: true,
+		active: true,
+		status: 'active',
+		grantedAt: now.toISOString(),
+		expiresAt: giftExpiresAt,
+	})
+	const afterFailedListing = await maybeEvaluateSecondAgentStandardGift({
+		db: gifted.db,
+		stableUserId: gifted.stableUserId,
+		uniqueClientCount: 2,
+		listingFailed: true,
+		now,
+	})
+	expect(afterFailedListing.status).toBe('active')
 })

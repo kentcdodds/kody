@@ -34,8 +34,9 @@ type GiftUserRow = {
 
 /**
  * Safe evaluator for authorize completion and grant-list pages. Missing
- * DB or a failed unique-client listing skips the write; errors never
- * fail the caller.
+ * `prepare` skips both write and read. A failed listing or unique-client
+ * count below 2 skips the write but still returns the persisted ledger so
+ * `/onboarding.json` does not hide an already-granted gift.
  */
 export async function maybeEvaluateSecondAgentStandardGift(input: {
 	db?: D1Database
@@ -44,20 +45,21 @@ export async function maybeEvaluateSecondAgentStandardGift(input: {
 	listingFailed?: boolean
 	now?: Date
 }): Promise<SecondAgentStandardGiftState> {
-	if (
-		typeof input.db?.prepare !== 'function' ||
-		input.listingFailed ||
-		!hasSecondConnectedMcpClient(input.uniqueClientCount)
-	) {
+	if (typeof input.db?.prepare !== 'function') {
 		return describeSecondAgentStandardGift({})
 	}
 	try {
-		await evaluateSecondAgentStandardGift({
-			db: input.db,
-			stableUserId: input.stableUserId,
-			uniqueClientCount: input.uniqueClientCount,
-			now: input.now,
-		})
+		if (
+			!input.listingFailed &&
+			hasSecondConnectedMcpClient(input.uniqueClientCount)
+		) {
+			await evaluateSecondAgentStandardGift({
+				db: input.db,
+				stableUserId: input.stableUserId,
+				uniqueClientCount: input.uniqueClientCount,
+				now: input.now,
+			})
+		}
 		return await loadSecondAgentStandardGift(
 			input.db,
 			input.stableUserId,
