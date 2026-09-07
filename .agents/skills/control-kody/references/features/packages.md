@@ -32,7 +32,10 @@ node tools/control-kody.ts preview -- \
 ```
 
 `--head-ahead` pushes one unpublished commit so the Code tab can show **HEAD
-ahead of published**. To prove delete, create a package with `package-create`,
+ahead of published**. It needs a minted Artifacts write remote. If
+`packageGetGitRemote` fails with source-safety `account not found`, the stub
+package still exists (check `/@username/:kodyId`) but HEAD-ahead cannot be
+pushed on that preview. To prove delete, create a package with `package-create`,
 then delete it and assert the empty state.
 
 ## APIs

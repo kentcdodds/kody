@@ -1,3 +1,7 @@
+import {
+	Client as ModernClient,
+	StreamableHTTPClientTransport as ModernStreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
@@ -23,6 +27,7 @@ export type FetchLike = typeof fetch
 const defaultRedirectUri = 'http://127.0.0.1/oauth/callback'
 const defaultOAuthClientName = 'Kody MCP E2E Test Client'
 const defaultMcpClientName = 'kody-mcp-e2e-client'
+const defaultControlKodyClientName = 'kody-control-kody'
 
 export function usernameFromEmail(email: string) {
 	const local = email.split('@')[0]?.trim()
@@ -242,23 +247,58 @@ export async function connectAppMcpClient(
 		code,
 		fetchImpl,
 	)
-	let connection: McpConnection
+	// Preview and production Workers are multi-isolate: the legacy
+	// sessionful SDK v1 client initializes, then hangs on the next request.
+	// Pin the stateless 2026-07-28 lane so each tool call is self-contained.
+	let client: ModernClient
+	let transport: ModernStreamableHTTPClientTransport
 	try {
-		connection = await connectMcpClient(origin, {
-			Authorization: `Bearer ${accessToken}`,
-			...options.extraHeaders,
-		})
+		const connected = await connectStatelessMcpClient(
+			origin,
+			{
+				Authorization: `Bearer ${accessToken}`,
+				...options.extraHeaders,
+			},
+			{ name: options.clientName ?? defaultControlKodyClientName },
+		)
+		client = connected.client
+		transport = connected.transport
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
 		throw new Error(mcpAccountRejectedMessage(detail))
 	}
 	return {
 		cookieHeader,
-		client: connection.client,
+		client,
 		async [Symbol.asyncDispose]() {
-			await closeMcpConnection(connection)
+			await client.close().catch(() => undefined)
+			await transport.close().catch(() => undefined)
 		},
 	}
+}
+
+export async function connectStatelessMcpClient(
+	origin: string,
+	headers: Record<string, string>,
+	options: { name?: string; version?: string } = {},
+) {
+	const client = new ModernClient(
+		{
+			name: options.name ?? defaultControlKodyClientName,
+			version: options.version ?? '1.0.0',
+		},
+		{ versionNegotiation: { mode: { pin: '2026-07-28' } } },
+	)
+	const transport = new ModernStreamableHTTPClientTransport(
+		new URL('/mcp', origin),
+		{
+			requestInit: {
+				headers,
+			},
+		},
+	)
+	await client.connect(transport)
+	return { client, transport }
 }
 
 async function authenticateAppUser(

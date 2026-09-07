@@ -15,13 +15,36 @@ export const headAheadFileName = 'preview-head-ahead.txt'
 
 const packageCreateExecuteCode = `import { kody } from 'kody:runtime'
 export default async function main(input = {}) {
-	const remote = await kody.packageGetGitRemote({
-		create: true,
-		kody_id: input.kodyId,
-		...(input.description ? { description: input.description } : {}),
-	})
-	const detail = await kody.packageGet({ package_id: remote.package_id })
-	return { remote, detail }
+	let remote = null
+	let remoteError = null
+	try {
+		remote = await kody.packageGetGitRemote({
+			create: true,
+			kody_id: input.kodyId,
+			...(input.description ? { description: input.description } : {}),
+		})
+	} catch (error) {
+		remoteError = error instanceof Error ? error.message : String(error)
+	}
+	const listed = await kody.packageList({})
+	const match = (listed.packages ?? []).find(
+		(pkg) => pkg.kody_id === input.kodyId,
+	)
+	const packageId = remote?.package_id ?? match?.package_id
+	if (!packageId) {
+		throw new Error(
+			remoteError ??
+				\`Saved package \${input.kodyId} was not found after create.\`,
+		)
+	}
+	const detail = await kody.packageGet({ package_id: packageId })
+	if (!remote && input.requireRemote) {
+		throw new Error(
+			remoteError ??
+				'packageGetGitRemote did not return a minted remote for --head-ahead.',
+		)
+	}
+	return { remote, remoteError, detail }
 }
 `
 
@@ -40,10 +63,21 @@ export type PackageCreateReport = {
 	cookieHeader: string
 }
 
-export type PackageCreateCallTool = (params: {
-	name: string
-	arguments: Record<string, unknown>
-}) => Promise<unknown>
+export type PackageCreateCallToolOptions = {
+	timeout?: number
+	resetTimeoutOnProgress?: boolean
+	maxTotalTimeout?: number
+}
+
+export type PackageCreateCallTool = (
+	params: {
+		name: string
+		arguments: Record<string, unknown>
+	},
+	options?: PackageCreateCallToolOptions,
+) => Promise<unknown>
+
+const executeCallTimeoutMs = 180_000
 
 export type PackageCreateConnection = {
 	cookieHeader: string
@@ -114,17 +148,27 @@ export async function createPreviewPackage(input: {
 	const connect = input.connect ?? connectAppMcpClient
 	const connection = await connect(input.origin, user)
 	try {
-		const params: Record<string, unknown> = { kodyId: input.kodyId }
+		const params: Record<string, unknown> = {
+			kodyId: input.kodyId,
+			requireRemote: input.headAhead,
+		}
 		if (input.description && input.description.length > 0) {
 			params.description = input.description
 		}
-		const toolResult = await connection.client.callTool({
-			name: 'execute',
-			arguments: {
-				code: packageCreateExecuteCode,
-				params,
+		const toolResult = await connection.client.callTool(
+			{
+				name: 'execute',
+				arguments: {
+					code: packageCreateExecuteCode,
+					params,
+				},
 			},
-		})
+			{
+				timeout: executeCallTimeoutMs,
+				resetTimeoutOnProgress: true,
+				maxTotalTimeout: executeCallTimeoutMs,
+			},
+		)
 		const created = readCreatedPackage(toolResult)
 		const fetchImpl = input.fetchImpl ?? fetch
 		const username =
@@ -140,6 +184,12 @@ export async function createPreviewPackage(input: {
 			)
 		}
 		if (input.headAhead) {
+			if (!created.remote) {
+				throw new Error(
+					created.remoteError ??
+						'packageGetGitRemote did not return a minted remote for --head-ahead.',
+				)
+			}
 			const push = input.pushHeadAhead ?? pushHeadAheadCommit
 			await push(created.remote)
 		}
@@ -272,43 +322,60 @@ function readCreatedPackage(toolResult: unknown) {
 	}
 	const remoteValue = Reflect.get(result, 'remote')
 	const detailValue = Reflect.get(result, 'detail')
-	if (!remoteValue || typeof remoteValue !== 'object') {
-		throw new Error('execute result is missing packageGetGitRemote payload.')
-	}
+	const remoteErrorValue = Reflect.get(result, 'remoteError')
 	if (!detailValue || typeof detailValue !== 'object') {
 		throw new Error('execute result is missing packageGet payload.')
 	}
-	const remote = remoteValue as Record<string, unknown>
 	const detail = detailValue as Record<string, unknown>
-	const packageId = readRequiredString(remote, 'package_id')
-	const kodyId = readRequiredString(remote, 'kody_id')
+	const remote =
+		remoteValue && typeof remoteValue === 'object'
+			? (remoteValue as Record<string, unknown>)
+			: null
+	const packageId = remote
+		? readRequiredString(remote, 'package_id')
+		: readRequiredString(detail, 'package_id')
+	const kodyId = remote
+		? readRequiredString(remote, 'kody_id')
+		: readRequiredString(detail, 'kody_id')
 	const name = readRequiredString(detail, 'name')
-	const authenticatedRemote = readRequiredString(remote, 'authenticated_remote')
+	const remoteError =
+		typeof remoteErrorValue === 'string' && remoteErrorValue.length > 0
+			? remoteErrorValue
+			: null
+	return {
+		packageId,
+		kodyId,
+		name,
+		created: remote?.created === true,
+		remoteError,
+		remote: remote ? readGitRemoteResult(remote, packageId, kodyId) : null,
+	}
+}
+
+function readGitRemoteResult(
+	remote: Record<string, unknown>,
+	packageId: string,
+	kodyId: string,
+): GitRemoteResult {
 	const gitAuthorValue = remote.git_author
 	if (!gitAuthorValue || typeof gitAuthorValue !== 'object') {
 		throw new Error('packageGetGitRemote result is missing git_author.')
 	}
 	const gitAuthor = gitAuthorValue as Record<string, unknown>
 	return {
-		packageId,
-		kodyId,
-		name,
+		package_id: packageId,
+		kody_id: kodyId,
 		created: remote.created === true,
-		remote: {
-			package_id: packageId,
-			kody_id: kodyId,
-			created: remote.created === true,
-			authenticated_remote: authenticatedRemote,
-			git_author: {
-				name: readRequiredString(gitAuthor, 'name'),
-				email: readRequiredString(gitAuthor, 'email'),
-			},
-			setup_commands: Array.isArray(remote.setup_commands)
-				? remote.setup_commands.filter(
-						(command): command is string => typeof command === 'string',
-					)
-				: [],
-		} satisfies GitRemoteResult,
+		authenticated_remote: readRequiredString(remote, 'authenticated_remote'),
+		git_author: {
+			name: readRequiredString(gitAuthor, 'name'),
+			email: readRequiredString(gitAuthor, 'email'),
+		},
+		setup_commands: Array.isArray(remote.setup_commands)
+			? remote.setup_commands.filter(
+					(command): command is string => typeof command === 'string',
+				)
+			: [],
 	}
 }
 

@@ -37,8 +37,10 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 		connect: async () => ({
 			cookieHeader: 'kody_session=abc',
 			client: {
-				async callTool(params) {
+				async callTool(params, options) {
 					expect(params.name).toBe('execute')
+					expect(options?.timeout).toBeGreaterThan(60_000)
+					expect(options?.resetTimeoutOnProgress).toBe(true)
 					const args = params.arguments as {
 						code: string
 						params: { kodyId: string; description?: string }
@@ -48,6 +50,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					expect(args.params).toEqual({
 						kodyId: 'preview-pkg',
 						description: 'preview fixture',
+						requireRemote: true,
 					})
 					return {
 						isError: false,
@@ -96,6 +99,37 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 		cookieHeader: 'kody_session=abc',
 	})
 	expect(pushedRemote).toBe('https://x:token@artifacts.example/git/pkg-1')
+	const recovered = await createPreviewPackage({
+		origin: 'https://kody-pr-9.kody.workers.dev',
+		email: 'me@kentcdodds.com',
+		password: 'ilikecode',
+		kodyId: 'preview-pkg',
+		headAhead: false,
+		connect: async () => ({
+			cookieHeader: 'kody_session=abc',
+			client: {
+				async callTool() {
+					return {
+						isError: false,
+						structuredContent: {
+							result: {
+								remote: null,
+								remoteError: 'account not found',
+								detail: {
+									package_id: 'pkg-1',
+									kody_id: 'preview-pkg',
+									name: '@user-me/preview-pkg',
+								},
+							},
+						},
+					}
+				},
+			},
+		}),
+	})
+	expect(recovered.packageId).toBe('pkg-1')
+	expect(recovered.headAhead).toBe(false)
+
 	expect(formatPackageCreateReport(report)).toBe(
 		[
 			'packageId pkg-1',

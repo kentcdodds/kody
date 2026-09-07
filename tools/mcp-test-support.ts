@@ -6,10 +6,6 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { type Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
-import {
-	Client as ModernClient,
-	StreamableHTTPClientTransport as ModernStreamableHTTPClientTransport,
-} from '@modelcontextprotocol/client'
 import getPort from 'get-port'
 import { createTestHarness } from 'wrangler'
 import {
@@ -25,6 +21,7 @@ import {
 	authorizeOAuthClient,
 	closeMcpConnection,
 	connectMcpClient,
+	connectStatelessMcpClient,
 	exchangeAuthorizationCode,
 	loginToApp,
 	registerOAuthClient,
@@ -443,24 +440,16 @@ export async function createModernMcpClient(
 		clientRegistration,
 		code,
 	)
-	const client = new ModernClient(
-		{ name: 'kody-mcp-e2e-modern-client', version: '1.0.0' },
-		{ versionNegotiation: { mode: { pin: '2026-07-28' } } },
+	const connection = await connectStatelessMcpClient(
+		origin,
+		{ Authorization: `Bearer ${accessToken}` },
+		{ name: 'kody-mcp-e2e-modern-client' },
 	)
-	const transport = new ModernStreamableHTTPClientTransport(
-		new URL('/mcp', origin),
-		{
-			requestInit: {
-				headers: { Authorization: `Bearer ${accessToken}` },
-			},
-		},
-	)
-	await client.connect(transport)
 	return {
-		client,
+		client: connection.client,
 		async [Symbol.asyncDispose]() {
-			await client.close().catch(() => undefined)
-			await transport.close().catch(() => undefined)
+			await connection.client.close().catch(() => undefined)
+			await connection.transport.close().catch(() => undefined)
 		},
 	}
 }
