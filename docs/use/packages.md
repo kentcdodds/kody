@@ -481,9 +481,9 @@ When creating a package or publishing a new version, include non-empty root
 `README.md` and `AGENTS.md`. `README.md` is human-focused (what it does,
 prerequisites, setup, done-when) and includes a concise `## Intent` section.
 `AGENTS.md` is agent-focused (imports, smoke tests, edge cases). Publish checks
-fail if either file is missing or empty. Existing published packages keep
-running; the next publish must add both files. This is a file-layout contract,
-not a new Kody primitive or manifest field. Ask the user if intent is unclear,
+fail if either file is missing or empty. Already-published packages keep running
+as published; the next author-driven publish requires both files. This is a
+file-layout contract, not a manifest field. Ask the user if intent is unclear,
 and update Intent only when you are confident the goal changed or the user
 expands the scope.
 

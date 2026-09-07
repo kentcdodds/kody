@@ -27,7 +27,8 @@ Agent notes — for AI agents driving the optional email loop from this page:
   the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
   to go back to the Kody web page except to finish Step 2 at
-  `/onboarding/step-2` if they have not made something useful yet.
+  `/onboarding/step-2` if they have not made something useful yet, or Step 3 at
+  `/onboarding/step-3` to connect a second agent.
 - Work one step at a time and confirm each step out loud before moving on. Keep
   messages short — under roughly 120 words.
 - NEVER poll, sleep, retry on a timer, or "wait" for the reply to arrive. Tell
