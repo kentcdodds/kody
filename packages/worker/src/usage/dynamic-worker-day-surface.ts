@@ -76,15 +76,33 @@ export function dynamicWorkerDaySurfaceFromRunSurface(
 }
 
 /**
- * Prefer the run-record surface. A missing surface with package context
+ * Surface used for UWD / execute-usage when the registry may not own the
+ * run record. Prefer the begun record, then a pre-claimed handle, then an
+ * explicit `runSurface` from a caller that finishes the record itself
+ * (keyed package invocations, inline workflows).
+ */
+export function resolveObservedRunSurface(input: {
+	surface?: RunSurface | null
+	handleSurface?: RunSurface | null
+	runSurface?: RunSurface | null
+}): RunSurface | null {
+	return input.surface ?? input.handleSurface ?? input.runSurface ?? null
+}
+
+/**
+ * Prefer the observed run surface. A missing surface with package context
  * is a bundled package export; a missing surface without one is ad-hoc
  * execute — the same inference as `shouldRecordExecuteUsageForRun`.
  */
 export function resolveDynamicWorkerDaySurface(input: {
 	surface?: RunSurface | null
+	handleSurface?: RunSurface | null
+	runSurface?: RunSurface | null
 	hasPackageContext: boolean
 }): DynamicWorkerDaySurface {
-	const fromRun = dynamicWorkerDaySurfaceFromRunSurface(input.surface)
+	const fromRun = dynamicWorkerDaySurfaceFromRunSurface(
+		resolveObservedRunSurface(input),
+	)
 	if (fromRun !== 'unknown') return fromRun
 	if (input.hasPackageContext) return 'package_export'
 	return 'execute'

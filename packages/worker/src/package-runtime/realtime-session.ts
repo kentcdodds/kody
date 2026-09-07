@@ -471,6 +471,9 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 			env: this.env,
 			...buildInput,
 			surface: 'app_realtime',
+			waitUntil: (promise) => {
+				this.ctx.waitUntil(promise)
+			},
 		})
 	}
 

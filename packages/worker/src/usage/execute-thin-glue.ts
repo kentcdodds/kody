@@ -227,6 +227,39 @@ function isPassthroughDefaultExport(
 }
 
 /**
+ * `thin_single_export` is only the qualifying static `kody:@` import(s) and
+ * one passthrough default export. Extra top-level statements are glue.
+ */
+function isThinSingleExportProgram(source: string) {
+	const body = getProgramBody(source)
+	let sawQualifyingExport = false
+	for (const statement of body) {
+		const type = readNodeType(statement)
+		if (type === 'EmptyStatement') continue
+		if (type === 'ImportDeclaration') {
+			const specifier = readLiteralSpecifier(
+				(statement as { source?: unknown }).source,
+			)
+			if (!specifier || !isKodyPackageSpecifier(specifier)) return false
+			continue
+		}
+		if (type === 'ExportNamedDeclaration') {
+			if (!isReexportDefaultFromPackage(statement)) return false
+			if (sawQualifyingExport) return false
+			sawQualifyingExport = true
+			continue
+		}
+		if (type === 'ExportDefaultDeclaration') {
+			if (sawQualifyingExport) return false
+			sawQualifyingExport = true
+			continue
+		}
+		return false
+	}
+	return sawQualifyingExport
+}
+
+/**
  * Classify one ad-hoc execute module. Returns `null` when the source cannot
  * be parsed — callers omit the field rather than inventing a class.
  */
@@ -237,7 +270,14 @@ export function classifyExecuteThinGlue(
 		const packageImportCount = collectPackageImportCount(source)
 		const importedNames = collectImportedLocalNames(source)
 		const passthrough = isPassthroughDefaultExport(source, importedNames)
-		if (packageImportCount === 1 && passthrough) return 'thin_single_export'
+		if (
+			packageImportCount === 1 &&
+			passthrough &&
+			isThinSingleExportProgram(source)
+		) {
+			return 'thin_single_export'
+		}
+		if (packageImportCount === 1 && passthrough) return 'glue'
 		if (packageImportCount >= 1 && packageImportCount <= fewPackageImportMax) {
 			return 'thin_few_exports'
 		}

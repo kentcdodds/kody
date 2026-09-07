@@ -270,6 +270,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 				packageContext: null,
 				packageInvokeTools,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
+				runSurface: 'workflow',
 			},
 		)
 		expect(
@@ -521,6 +522,7 @@ test('package-created inline workflows retain package secret authorization conte
 			packageContext,
 			packageInvokeTools,
 			executorTimeoutMs: workflowExecutorTimeoutMs,
+			runSurface: 'workflow',
 		},
 	)
 })

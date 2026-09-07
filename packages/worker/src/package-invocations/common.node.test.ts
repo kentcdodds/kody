@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { packageWorkflowInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
 import {
+	resolveInvocationMeteringSurface,
 	resolveInvocationRuntimeName,
 	resolveInvocationRuntimeSurface,
 } from './common.ts'
@@ -24,6 +25,18 @@ test('invocation runtime surface and name map selectors without double-counting 
 			source: 'email',
 		}),
 	).toBe('subscription')
+	expect(
+		resolveInvocationMeteringSurface({
+			selector: { kind: 'export', exportName: './run' },
+			source: packageWorkflowInvocationSource,
+		}),
+	).toBe('workflow')
+	expect(
+		resolveInvocationMeteringSurface({
+			selector: { kind: 'export', exportName: './run' },
+			source: 'discord-gateway',
+		}),
+	).toBe('export')
 
 	expect(
 		resolveInvocationRuntimeName({

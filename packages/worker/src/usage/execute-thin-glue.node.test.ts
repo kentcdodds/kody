@@ -91,3 +91,23 @@ test('omits a class when the source cannot be parsed', () => {
 	expect(classifyExecuteThinGlue('export default function (')).toBeNull()
 	expect(classifyExecuteThinGlue('const =')).toBeNull()
 })
+
+test('rejects extra top-level statements before thin_single_export', () => {
+	expect(
+		classifyExecuteThinGlue(`import list from 'kody:@acme/github/listRepos'
+const note = 'orchestrate'
+export default list`),
+	).toBe('glue')
+	expect(
+		classifyExecuteThinGlue(`import list from 'kody:@acme/github/listRepos'
+console.log('wrap')
+export default async function main(input) {
+	return await list(input)
+}`),
+	).toBe('glue')
+	expect(
+		classifyExecuteThinGlue(`import { kody } from 'kody:runtime'
+import list from 'kody:@acme/github/listRepos'
+export default list`),
+	).toBe('glue')
+})

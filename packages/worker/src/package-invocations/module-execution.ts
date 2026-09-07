@@ -17,6 +17,7 @@ import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.t
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
+	resolveInvocationMeteringSurface,
 	resolveInvocationRuntimeName,
 	resolveInvocationRuntimeSurface,
 	type PackageInvocationActor,
@@ -212,7 +213,15 @@ export async function runSavedPackageModuleOnce(
 				// ambient use gets the structured runtime_helper_unbound hint.
 				// Keyed callers own their run record (claimed with the ledger row);
 				// the registry must not begin/finish a second one for this run.
+				// Still pass the observed surface so UWD is not inferred as
+				// package_export for subscription / webhook / retriever keyed runs.
 				runRecord: externalHandle ? null : runRecord,
+				runSurface:
+					runRecord?.surface ??
+					resolveInvocationMeteringSurface({
+						selector: input.moduleSelector,
+						source: input.source,
+					}),
 				emailTools: {
 					getMessage: async (messageId) => {
 						const loaded = await getEmailMessageWithAttachmentsById({

@@ -1102,6 +1102,36 @@ export default async function main() { return await whatShipped({}) }`
 			runRecord: { surface: 'execute' },
 		})
 		expect(recordSpy).not.toHaveBeenCalled()
+
+		createExecuteExecutorSpy.mockClear()
+		await runModuleWithRegistry(env, callerContext, packageCode, undefined, {
+			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+			runRecord: null,
+			runSurface: 'subscription',
+		})
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				surface: 'subscription',
+			}),
+		)
+
+		createExecuteExecutorSpy.mockClear()
+		await runModuleWithRegistry(env, callerContext, packageCode, undefined, {
+			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
+			runRecord: null,
+			runRecordHandle: {
+				id: 'run-keyed',
+				userId: 'user-1',
+				startedAt: '2026-09-07T00:00:00.000Z',
+				persistence: 'eager',
+				context: { surface: 'webhook' },
+			},
+		})
+		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				surface: 'webhook',
+			}),
+		)
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()

@@ -18,7 +18,10 @@ import {
 	classifyExecuteThinGlue,
 	type ExecuteThinGlueClass,
 } from '#worker/usage/execute-thin-glue.ts'
-import { resolveDynamicWorkerDaySurface } from '#worker/usage/dynamic-worker-day-surface.ts'
+import {
+	resolveDynamicWorkerDaySurface,
+	resolveObservedRunSurface,
+} from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import {
@@ -68,6 +71,7 @@ import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
 import {
 	type RunRecordContext,
 	type RunRecordHandle,
+	type RunSurface,
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
@@ -94,6 +98,22 @@ import {
 type ExecuteServerTimingEntry = {
 	name: string
 	durationMs: number
+}
+
+type ObservedRunSurfaceOptions = {
+	runRecord?: RunRecordContext | null
+	runRecordHandle?: RunRecordHandle | null
+	runSurface?: RunSurface | null
+}
+
+function observedRunSurface(
+	options?: ObservedRunSurfaceOptions,
+): RunSurface | null {
+	return resolveObservedRunSurface({
+		surface: options?.runRecord?.surface,
+		handleSurface: options?.runRecordHandle?.context.surface,
+		runSurface: options?.runSurface,
+	})
 }
 
 async function scheduleAgentPackageConversationUses(
@@ -498,6 +518,12 @@ export async function runModuleWithRegistry(
 		runRecord?: RunRecordContext | null
 		runRecordHandle?: RunRecordHandle | null
 		/**
+		 * Observed run surface when this call does not own a run record
+		 * (keyed package invocations, inline workflows). Used for UWD and
+		 * execute-usage attribution; does not begin or finish a record.
+		 */
+		runSurface?: RunSurface | null
+		/**
 		 * When set, post-terminal run-record side effects are scheduled on this
 		 * callback (typically `ctx.waitUntil`). The terminal Durable Object write
 		 * itself is always awaited so a completed invocation is not stranded as
@@ -520,7 +546,7 @@ export async function runModuleWithRegistry(
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
 	const isAdHocExecute = shouldRecordExecuteUsageForRun({
-		surface: options?.runRecord?.surface,
+		surface: observedRunSurface(options),
 		hasPackageContext: Boolean(options?.packageContext),
 	})
 	const executeShape = isAdHocExecute ? classifyExecuteThinGlue(code) : null
@@ -667,6 +693,12 @@ export async function runBundledModuleWithRegistry(
 		 * set, begin is skipped so the running row already owns the key.
 		 */
 		runRecordHandle?: RunRecordHandle | null
+		/**
+		 * Observed run surface when this call does not own a run record
+		 * (keyed package invocations, inline workflows). Used for UWD and
+		 * execute-usage attribution; does not begin or finish a record.
+		 */
+		runSurface?: RunSurface | null
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
 		conversationId?: string | null
@@ -854,11 +886,13 @@ export async function runBundledModuleWithRegistry(
 				? undefined
 				: options?.rawFetchHostSink,
 			recordExecuteUsage: shouldRecordExecuteUsageForRun({
-				surface: options?.runRecord?.surface,
+				surface: observedRunSurface(options),
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
 			surface: resolveDynamicWorkerDaySurface({
 				surface: options?.runRecord?.surface,
+				handleSurface: options?.runRecordHandle?.context.surface,
+				runSurface: options?.runSurface,
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
 			executeShape: options?.executeShape,

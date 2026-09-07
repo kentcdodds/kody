@@ -5,6 +5,7 @@ import {
 	dynamicWorkerDaySurfaces,
 	isDynamicWorkerDaySurface,
 	resolveDynamicWorkerDaySurface,
+	resolveObservedRunSurface,
 } from './dynamic-worker-day-surface.ts'
 
 test('every run surface maps to a documented UWD surface', () => {
@@ -50,4 +51,23 @@ test('resolveDynamicWorkerDaySurface infers package_export only when the run sur
 		}),
 	).toBe('execute')
 	expect(dynamicWorkerDaySurfaces).toContain('unknown')
+	expect(
+		resolveDynamicWorkerDaySurface({
+			surface: null,
+			handleSurface: 'subscription',
+			hasPackageContext: true,
+		}),
+	).toBe('subscription')
+	expect(
+		resolveDynamicWorkerDaySurface({
+			runSurface: 'webhook',
+			hasPackageContext: true,
+		}),
+	).toBe('webhook')
+	expect(
+		resolveObservedRunSurface({
+			handleSurface: 'retriever',
+			runSurface: 'export',
+		}),
+	).toBe('retriever')
 })

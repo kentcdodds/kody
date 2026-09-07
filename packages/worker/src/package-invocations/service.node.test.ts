@@ -307,7 +307,10 @@ test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay th
 		repoMockModule.runBundledModuleWithRegistry.mock.calls[0]?.[4]
 	// The keyed path owns its run record (claimed together with the ledger
 	// row in one DO call), so the registry must not open a second one.
-	expect(runOptions).toMatchObject({ runRecord: null })
+	expect(runOptions).toMatchObject({
+		runRecord: null,
+		runSurface: 'export',
+	})
 	const ledgerRow = db.runLog.ledgerRows.find(
 		(row) => row.idempotencyKey === 'evt-keyed-1',
 	)
@@ -1161,6 +1164,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 	expect(
 		(runOptions as { storageTools?: unknown }).storageTools,
 	).toBeUndefined()
+	expect(runOptions).toMatchObject({ runSurface: 'subscription' })
 
 	db.runLog.seedStaleInvocation(
 		'email:message-stale:pkg-1:email.message.received',

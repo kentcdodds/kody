@@ -180,7 +180,10 @@ Every `dynamic_worker_day` event carries a closed `surface` tag (Analytics
 Engine blob6): `execute`, `job`, `package_export`, `workflow`, `subscription`,
 `app_fetch`, `app_realtime`, `retriever`, `webhook`, or `unknown`.
 `package_export` is the usage name for run-record surface `export`. Call sites
-pass the mapped surface; `unknown` is only for a missing mapping.
+pass the mapped surface; `unknown` is only for a missing mapping. When the
+registry does not own the run record (keyed package invocations, inline
+workflows), callers pass `runSurface` so UWD is not inferred as
+`package_export`.
 
 D1 `usage_rollups` stay keyed by `(user_id, metric, month)` — the monthly total
 is unchanged. Surface share is an Analytics Engine query. Hourly aggregation
