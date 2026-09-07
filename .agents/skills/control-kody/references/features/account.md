@@ -34,3 +34,8 @@ node tools/control-kody.ts request GET /account/connected-agents.json
 
 - Seed users start empty. Profile fields exist; packages/secrets/jobs do not
   until you create them.
+- Connected agents lists inbound OAuth hosts (best-effort labels and revoke).
+  That list is not `users.mcp_client_name` and not minted MCP OAuth clients.
+- Former-address release is `POST /account/email-claim-release.json`, then
+  confirm at `/verify-email-claim-release`. It drops the claim without reminting
+  `users.stable_user_id`.

@@ -19,8 +19,9 @@ A package is not done until root `README.md` and `AGENTS.md` are both present
 and non-empty, README `## Intent` is current, every public export has JSDoc as
 specified in [Export JSDoc](#export-jsdoc), and the smoke tests in
 [Verify your publish](#verify-your-publish) pass (or the user explicitly skips a
-surface). Publish checks fail when either file is missing or empty. Existing
-published packages keep running until their next publish.
+surface). Publish checks fail when either file is missing or empty.
+Already-published packages keep running as published; the next author-driven
+publish requires both files.
 
 Unique Dynamic Worker days and how a stable module graph reuses one isolate are
 documented once in [Platform efficiency](./platform-efficiency.md)
