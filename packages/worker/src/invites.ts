@@ -1,4 +1,5 @@
 import { resolvePlanWrite, type PlanName } from '#universal/plans.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
 
 export type InviteRecord = {
 	code: string
@@ -103,8 +104,7 @@ export async function createInvite(input: {
 			)
 			.run()
 	} catch (error) {
-		const message = error instanceof Error ? error.message : ''
-		if (/unique constraint failed/i.test(message)) {
+		if (getUniqueConstraintField(error) === 'code') {
 			throw new Error(`Invite code ${code} already exists.`)
 		}
 		throw error

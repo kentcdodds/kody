@@ -201,6 +201,33 @@ test('normalizeInviteCode trims, uppercases, and rejects empty or non-string val
 	expect(normalizeInviteCode(12)).toBeNull()
 })
 
+test('createInvite maps wrapped D1 unique errors to a stable already-exists message', async () => {
+	const db = {
+		prepare() {
+			return {
+				bind() {
+					return {
+						async run() {
+							const error = new Error('D1_ERROR')
+							error.cause = new Error('UNIQUE constraint failed: invites.code')
+							throw error
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
+
+	await expect(
+		createInvite({
+			db,
+			code: 'kent-friend',
+			createdBy: 7,
+			maxUses: 1,
+		}),
+	).rejects.toThrow('Invite code KENT-FRIEND already exists.')
+})
+
 test('createInvite rejects a duplicate code', async () => {
 	const db = createInviteDb()
 	await createInvite({
