@@ -77,6 +77,7 @@
     "preview:e2e": "node tools/prepare-e2e-env.ts && npm run migrate:e2e && WRANGLER_PERSIST_TO=.wrangler/state/e2e npm run dev:vite",
     "preview:manual-test": "node tools/preview-manual-test.ts",
     "control-kody": "node tools/control-kody.ts",
+    "maintenance-mode": "node tools/maintenance-mode.ts",
     "site-perf": "node tools/site-perf/collect.ts",
     "generate-types": "node --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
     "typecheck": "nx run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json && tsc --noEmit -p packages/status/tsconfig.json && tsc --noEmit -p packages/jobs-worker/tsconfig.json && tsc --noEmit -p packages/highlight-worker/tsconfig.json && tsc --noEmit -p packages/nx-cache/tsconfig.json",

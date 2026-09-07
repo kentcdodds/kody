@@ -1,6 +1,10 @@
 import { expect, test } from 'vitest'
 import { faviconIcoRedirectLocation, statusFaviconPath } from './favicon.ts'
-import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
+import {
+	renderMaintenancePage,
+	renderStatusPage,
+	renderStatusUnavailablePage,
+} from './status-page.ts'
 import {
 	statusComponents,
 	type ComponentSnapshot,
@@ -246,4 +250,13 @@ test('status page keeps resolved incidents glanceable and expands a retrospectiv
 	expect(withWriteup).toContain('Two failed Jobs probes.')
 	expect(withWriteup).not.toContain('<script>alert(1)</script>')
 	expect(withWriteup).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+})
+
+test('maintenance page is static HTML with a link back to the status home', () => {
+	const html = renderMaintenancePage()
+	expect(html).toContain('Kody is in maintenance')
+	expect(html).toContain('We are restoring service; nothing you need to do.')
+	expect(html).toContain('href="https://status.kody.codes/"')
+	expect(html).toContain('status.kody.codes')
+	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)
 })
