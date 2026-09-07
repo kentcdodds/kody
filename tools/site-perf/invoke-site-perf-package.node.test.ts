@@ -3,6 +3,7 @@ import { type SitePerfReport } from './collect.ts'
 import {
 	buildInvokeBody,
 	invokeSitePerfPackage,
+	resolveWebhookUrl,
 	shouldInvokeSitePerfPackage,
 } from './invoke-site-perf-package.ts'
 
@@ -82,6 +83,46 @@ test('invoke gates on needs-fix and a webhook URL, and builds a params body', as
 			fetchImpl,
 		}),
 	).toEqual({ skipped: 'missing-webhook-url' })
+	expect(
+		await invokeSitePerfPackage({
+			report: needsFixReport,
+			webhookUrl: '   ',
+			repository: 'kentcdodds/kody',
+			startingRef: 'main',
+			runId: '1',
+			fetchImpl,
+		}),
+	).toEqual({ skipped: 'missing-webhook-url' })
+	expect(resolveWebhookUrl(undefined)).toEqual({
+		ok: false,
+		skipped: 'missing-webhook-url',
+	})
+	expect(resolveWebhookUrl('https://example.test/webhooks/run')).toEqual({
+		ok: true,
+		url: 'https://example.test/webhooks/run',
+	})
+	expect(resolveWebhookUrl('  https://example.test/webhooks/run  ')).toEqual({
+		ok: true,
+		url: 'https://example.test/webhooks/run',
+	})
+	expect(resolveWebhookUrl('not-a-url')).toEqual({
+		ok: false,
+		skipped: 'invalid-webhook-url',
+	})
+	expect(resolveWebhookUrl('ftp://example.test/webhooks/run')).toEqual({
+		ok: false,
+		skipped: 'invalid-webhook-url',
+	})
+	expect(
+		await invokeSitePerfPackage({
+			report: needsFixReport,
+			webhookUrl: 'not-a-url',
+			repository: 'kentcdodds/kody',
+			startingRef: 'main',
+			runId: '1',
+			fetchImpl,
+		}),
+	).toEqual({ skipped: 'invalid-webhook-url' })
 })
 
 test('invoke posts params to the webhook URL, treats replay/in-progress as launched, and surfaces API errors', async () => {

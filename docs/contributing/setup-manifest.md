@@ -596,7 +596,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   the Kody user secret `weeklySitePerfWebhookRun`
   (https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun); Kent
   copies it into GitHub. Agents never paste the URL. Not a Worker secret; the
-  weekly job skips invoke when this is unset.)
+  weekly job skips invoke when this is unset, blank, or not a valid `http(s)`
+  URL.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
