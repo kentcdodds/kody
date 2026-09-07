@@ -7,6 +7,7 @@ import {
 	type UsageCampaignSnapshot,
 } from './campaign-evaluator.ts'
 import {
+	usageCampaignAdvocateMinTenureMs,
 	usageCampaignCoolingStaleMs,
 	usageCampaignFirstSendDwellMs,
 	usageCampaignSendIntervalMs,
@@ -44,6 +45,8 @@ function persisted(
 		origin: null,
 		coolingTerminal: false,
 		everActivated: false,
+		firstActivatedAt: null,
+		advocateSentAt: null,
 		...overrides,
 	}
 }
@@ -739,5 +742,143 @@ test('failed inbound listing seeds PackagedSingleClient instead of Activated', (
 		action: 'persist',
 		origin: 'seed',
 		reason: 'seed_no_backfill',
+	})
+})
+
+test('advocate one-shot mails Activated or Paid after 7 days, once, without reopening drips', () => {
+	const enteredAt = new Date(
+		now.getTime() - usageCampaignAdvocateMinTenureMs,
+	).toISOString()
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				distinctInboundClientCount: 2,
+				lastActiveAt: now.toISOString(),
+				username: 'kentcdodds',
+			}),
+			persisted(),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				distinctInboundClientCount: 2,
+				lastActiveAt: now.toISOString(),
+				username: 'kentcdodds',
+			}),
+			persisted({
+				state: 'Activated',
+				enteredAt,
+				origin: 'seed',
+				everActivated: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'send',
+		template: 'advocate_referral_testimonial',
+		sendIndex: 1,
+		reason: 'advocate_one_shot',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				isStripePaid: true,
+				username: 'kentcdodds',
+			}),
+			persisted({
+				state: 'Paid',
+				enteredAt,
+				origin: 'event',
+				everActivated: true,
+				firstActivatedAt: enteredAt,
+			}),
+		),
+	).toMatchObject({
+		state: 'Paid',
+		action: 'send',
+		template: 'advocate_referral_testimonial',
+		sendIndex: 1,
+		reason: 'advocate_one_shot',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				distinctInboundClientCount: 2,
+				lastActiveAt: now.toISOString(),
+				username: 'kentcdodds',
+			}),
+			persisted({
+				state: 'Activated',
+				enteredAt,
+				origin: 'event',
+				everActivated: true,
+				advocateSentAt: enteredAt,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				distinctInboundClientCount: 2,
+				lastActiveAt: now.toISOString(),
+			}),
+			persisted({
+				state: 'Activated',
+				enteredAt,
+				origin: 'event',
+				everActivated: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+
+	const advocateDecision = evaluateUsageCampaign(
+		snapshot({
+			isStripePaid: true,
+			username: 'kentcdodds',
+		}),
+		persisted({
+			state: 'Paid',
+			enteredAt,
+			origin: 'event',
+			everActivated: true,
+			sendCount: 0,
+		}),
+	)
+	expect(
+		nextUsageCampaignRow({
+			decision: advocateDecision,
+			persisted: persisted({
+				state: 'Paid',
+				enteredAt,
+				origin: 'event',
+				everActivated: true,
+				sendCount: 0,
+			}),
+			now,
+			sent: true,
+		}),
+	).toMatchObject({
+		state: 'Paid',
+		sendCount: 0,
+		lastSentAt: null,
+		advocateSentAt: now.toISOString(),
+		firstActivatedAt: enteredAt,
 	})
 })

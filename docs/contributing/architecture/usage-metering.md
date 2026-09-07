@@ -557,10 +557,10 @@ stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
 | `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                              |
 | `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                                     |
 | `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Standard gift is still unreceived (`describeSecondAgentStandardGift` status `none`) |
-| `Activated`            | Campaign silence                                                                                                                                                    |
-| `Cooling`              | One “home’s still there” poke, then terminal quiet                                                                                                                  |
+| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                                       |
+| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                                   |
 | `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                           |
-| `Paid`                 | Campaign silence; billing transactional only                                                                                                                        |
+| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                                |
 
 `last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
 read separately so a quiet interactive user with a live schedule stays
@@ -581,6 +581,16 @@ dip does not become PackagedSingleClient mail. LimitAware from VerifiedNoMcp
 without those signals still leaves the flag off. Cooling is one lifetime poke:
 `cooling_terminal` is sticky, so a later re-entry does not retry send 1 or stall
 the sweep.
+
+The advocate mail is not a drip and does not reopen Activated or Paid campaign
+caps (those stay 0). Eligibility is current `Activated` or `Paid`, tenure of
+seven days from `first_activated_at` (or `entered_at` when that stamp is not set
+yet), a live referral `shareUrl` (`/signup?ref=<username>` from
+`referralSharePath`), and no prior `advocate_referral_testimonial` ledger row.
+Seed origin does not block it after tenure; first observation still only
+persists. Tips opt-out suppresses it. The CTA is the account's referral invite
+link; the secondary action is `mailto:me@kentcdodds.com` (the existing
+testimonial channel — the homepage carousel has no intake form).
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of

@@ -534,3 +534,76 @@ test('opening a verify-time event row lets the sweep send after a failed first m
 	expect((await readUsageCampaign(db, 'user-open'))?.send_count).toBe(1)
 	expect((await listUsageCampaignSends(db, 'user-open')).length).toBe(1)
 })
+
+test('advocate one-shot uses the live referral share URL and never repeats', async () => {
+	const { db } = createDb()
+	await insertUser(db, {
+		id: 'kentcdodds',
+		email: 'advocate@example.com',
+		stripePlan: 'pro',
+	})
+	const env = createEnv(db)
+	gatherUsageCampaignSnapshot.mockImplementation(
+		async (input: { user: UsageCampaignCandidate }) =>
+			snapshot({
+				isStripePaid: true,
+				username: input.user.username,
+			}),
+	)
+	expect(await sendUserUsageCampaignEmails({ env, now })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect((await readUsageCampaign(db, 'kentcdodds'))?.state).toBe('Paid')
+	expect(
+		(await readUsageCampaign(db, 'kentcdodds'))?.advocate_sent_at,
+	).toBeNull()
+
+	const due = new Date('2026-09-14T12:00:00.000Z')
+	gatherUsageCampaignSnapshot.mockImplementation(
+		async (input: { user: UsageCampaignCandidate }) =>
+			snapshot({
+				isStripePaid: true,
+				username: input.user.username,
+				now: due,
+			}),
+	)
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now: due })).toEqual({
+		status: 'notified',
+		evaluatedUsers: 1,
+		emailedUsers: 1,
+		emailsSent: 1,
+	})
+	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+		to: string
+		subject: string
+		html: string
+		text: string
+	}
+	expect(payload.to).toBe('advocate@example.com')
+	expect(payload.subject).toBe('Share Kody (and a free month)')
+	expect(payload.html).toContain('https://kody.codes/signup?ref=kentcdodds')
+	expect(payload.text).toContain(
+		'mailto:me@kentcdodds.com?subject=Kody%20testimonial',
+	)
+	expect(await listUsageCampaignSends(db, 'kentcdodds')).toEqual([
+		expect.objectContaining({
+			state: 'Paid',
+			template: 'advocate_referral_testimonial',
+			send_index: 1,
+		}),
+	])
+	const afterSend = await readUsageCampaign(db, 'kentcdodds')
+	expect(afterSend?.send_count).toBe(0)
+	expect(afterSend?.advocate_sent_at).toBe(due.toISOString())
+	expect(afterSend?.last_sent_at).toBeNull()
+
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now: due })).toEqual({
+		status: 'no_sends',
+		evaluatedUsers: 1,
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect((await listUsageCampaignSends(db, 'kentcdodds')).length).toBe(1)
+})

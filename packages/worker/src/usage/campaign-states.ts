@@ -24,6 +24,7 @@ export const usageCampaignMailTemplates = [
 	'connected_no_package',
 	'packaged_single_client',
 	'cooling',
+	'advocate_referral_testimonial',
 ] as const
 
 export type UsageCampaignMailTemplate =
@@ -68,6 +69,20 @@ export const usageCampaignFirstSendDwellMs = 24 * 60 * 60 * 1000
 
 /** Latest known activity older than this, with no enabled job. */
 export const usageCampaignCoolingStaleMs = 21 * 24 * 60 * 60 * 1000
+
+/**
+ * Activated or Paid (or first-activated + later Paid) tenure before the
+ * one-shot advocate / referral mail. Not a drip; send_index 1 forever.
+ */
+export const usageCampaignAdvocateMinTenureMs = 7 * 24 * 60 * 60 * 1000
+
+export const usageCampaignAdvocateSendIndex = 1
+
+export function isAdvocateCampaignTemplate(
+	template: UsageCampaignMailTemplate | null,
+) {
+	return template === 'advocate_referral_testimonial'
+}
 
 /** last_active_at window used with execute depth for "strong recent use". */
 export const usageCampaignStrongUseActiveMs = 7 * 24 * 60 * 60 * 1000

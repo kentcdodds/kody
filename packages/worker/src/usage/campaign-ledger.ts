@@ -17,6 +17,8 @@ export type UsageCampaignRow = {
 	origin: UsageCampaignOrigin
 	cooling_terminal: number
 	ever_activated: number
+	first_activated_at: string | null
+	advocate_sent_at: string | null
 	created_at: string
 	updated_at: string
 }
@@ -33,6 +35,8 @@ export function campaignRowToPersisted(
 			origin: null,
 			coolingTerminal: false,
 			everActivated: false,
+			firstActivatedAt: null,
+			advocateSentAt: null,
 		}
 	}
 	return {
@@ -43,6 +47,8 @@ export function campaignRowToPersisted(
 		origin: row.origin,
 		coolingTerminal: row.cooling_terminal === 1,
 		everActivated: row.ever_activated === 1,
+		firstActivatedAt: row.first_activated_at,
+		advocateSentAt: row.advocate_sent_at,
 	}
 }
 
@@ -54,6 +60,7 @@ export async function readUsageCampaign(
 		.prepare(
 			`SELECT user_id, state, entered_at, send_count, last_sent_at,
 			        last_evaluated_at, origin, cooling_terminal, ever_activated,
+			        first_activated_at, advocate_sent_at,
 			        created_at, updated_at
 			 FROM user_usage_campaigns WHERE user_id = ?`,
 		)
@@ -72,6 +79,8 @@ export async function upsertUsageCampaign(input: {
 	origin: UsageCampaignOrigin
 	coolingTerminal: boolean
 	everActivated: boolean
+	firstActivatedAt?: string | null
+	advocateSentAt?: string | null
 	now: Date
 }) {
 	const nowIso = input.now.toISOString()
@@ -80,8 +89,9 @@ export async function upsertUsageCampaign(input: {
 			`INSERT INTO user_usage_campaigns (
 				user_id, state, entered_at, send_count, last_sent_at,
 				last_evaluated_at, origin, cooling_terminal, ever_activated,
+				first_activated_at, advocate_sent_at,
 				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(user_id) DO UPDATE SET
 				state = excluded.state,
 				entered_at = excluded.entered_at,
@@ -114,6 +124,14 @@ export async function upsertUsageCampaign(input: {
 					user_usage_campaigns.ever_activated,
 					excluded.ever_activated
 				),
+				first_activated_at = COALESCE(
+					user_usage_campaigns.first_activated_at,
+					excluded.first_activated_at
+				),
+				advocate_sent_at = COALESCE(
+					user_usage_campaigns.advocate_sent_at,
+					excluded.advocate_sent_at
+				),
 				updated_at = excluded.updated_at`,
 		)
 		.bind(
@@ -126,6 +144,8 @@ export async function upsertUsageCampaign(input: {
 			input.origin,
 			input.coolingTerminal ? 1 : 0,
 			input.everActivated ? 1 : 0,
+			input.firstActivatedAt ?? null,
+			input.advocateSentAt ?? null,
 			nowIso,
 			nowIso,
 		)

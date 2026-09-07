@@ -1,4 +1,7 @@
 import {
+	isAdvocateCampaignTemplate,
+	usageCampaignAdvocateMinTenureMs,
+	usageCampaignAdvocateSendIndex,
 	usageCampaignCoolingStaleMs,
 	usageCampaignFirstSendDwellMs,
 	usageCampaignSendCaps,
@@ -24,6 +27,8 @@ export type UsageCampaignSnapshot = {
 	hasStrongRecentUse: boolean
 	isStripePaid: boolean
 	isNearEntitlementCap: boolean
+	/** Username used to mint the live referral share URL. */
+	username?: string | null
 	now: Date
 }
 
@@ -35,6 +40,8 @@ export type UsageCampaignPersisted = {
 	origin: UsageCampaignOrigin | null
 	coolingTerminal: boolean
 	everActivated: boolean
+	firstActivatedAt: string | null
+	advocateSentAt: string | null
 }
 
 export type UsageCampaignAction = 'send' | 'silence' | 'persist'
@@ -183,6 +190,15 @@ export function evaluateUsageCampaign(
 	}
 
 	if (cap === 0 || template == null) {
+		const advocate = maybeAdvocateDecision({
+			state,
+			snapshot,
+			persisted,
+			origin,
+			coolingTerminal,
+			everActivated,
+		})
+		if (advocate) return advocate
 		return {
 			state,
 			action: 'silence',
@@ -349,18 +365,32 @@ export function nextUsageCampaignRow(input: {
 	const enteredAt = stateChanged
 		? input.now.toISOString()
 		: (input.persisted.enteredAt ?? input.now.toISOString())
-	const sendCount = input.sent
+	const advocateSend =
+		input.sent && isAdvocateCampaignTemplate(input.decision.template)
+	const sendCount = advocateSend
 		? stateChanged
-			? 1
-			: input.persisted.sendCount + 1
-		: stateChanged
 			? 0
 			: input.persisted.sendCount
-	const lastSentAt = input.sent
-		? input.now.toISOString()
-		: stateChanged
+		: input.sent
+			? stateChanged
+				? 1
+				: input.persisted.sendCount + 1
+			: stateChanged
+				? 0
+				: input.persisted.sendCount
+	const lastSentAt = advocateSend
+		? stateChanged
 			? null
 			: input.persisted.lastSentAt
+		: input.sent
+			? input.now.toISOString()
+			: stateChanged
+				? null
+				: input.persisted.lastSentAt
+	const everActivated =
+		input.persisted.everActivated ||
+		input.decision.everActivated ||
+		marksActivatedHistory(input.decision.state)
 	return {
 		state: input.decision.state,
 		enteredAt,
@@ -371,11 +401,69 @@ export function nextUsageCampaignRow(input: {
 			input.persisted.coolingTerminal ||
 			input.decision.coolingTerminal ||
 			(input.sent && input.decision.state === 'Cooling'),
-		everActivated:
-			input.persisted.everActivated ||
-			input.decision.everActivated ||
-			marksActivatedHistory(input.decision.state),
+		everActivated,
+		firstActivatedAt: nextFirstActivatedAt({
+			persisted: input.persisted,
+			everActivated,
+			now: input.now,
+		}),
+		advocateSentAt:
+			input.persisted.advocateSentAt ??
+			(advocateSend ? input.now.toISOString() : null),
 	}
+}
+
+function maybeAdvocateDecision(input: {
+	state: UsageCampaignState
+	snapshot: UsageCampaignSnapshot
+	persisted: UsageCampaignPersisted
+	origin: UsageCampaignOrigin
+	coolingTerminal: boolean
+	everActivated: boolean
+}): UsageCampaignDecision | null {
+	if (input.state !== 'Activated' && input.state !== 'Paid') return null
+	if (input.persisted.advocateSentAt != null) return null
+	if (input.persisted.state == null) return null
+	const username = input.snapshot.username?.trim() ?? ''
+	if (username === '') return null
+	const tenureStart =
+		input.persisted.firstActivatedAt ?? input.persisted.enteredAt
+	if (tenureStart == null) return null
+	const tenureAt = Date.parse(tenureStart)
+	if (!Number.isFinite(tenureAt)) return null
+	if (
+		input.snapshot.now.getTime() - tenureAt <
+		usageCampaignAdvocateMinTenureMs
+	) {
+		return null
+	}
+	return {
+		state: input.state,
+		action: 'send',
+		template: 'advocate_referral_testimonial',
+		sendIndex: usageCampaignAdvocateSendIndex,
+		origin: input.origin,
+		coolingTerminal: input.coolingTerminal,
+		everActivated: input.everActivated,
+		reason: 'advocate_one_shot',
+	}
+}
+
+function nextFirstActivatedAt(input: {
+	persisted: UsageCampaignPersisted
+	everActivated: boolean
+	now: Date
+}) {
+	if (input.persisted.firstActivatedAt) return input.persisted.firstActivatedAt
+	if (!input.everActivated) return null
+	if (
+		input.persisted.state === 'Activated' ||
+		input.persisted.state === 'Cooling' ||
+		input.persisted.state === 'Paid'
+	) {
+		return input.persisted.enteredAt ?? input.now.toISOString()
+	}
+	return input.now.toISOString()
 }
 
 function silenceReason(state: UsageCampaignState) {

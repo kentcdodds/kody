@@ -19,6 +19,7 @@ import { type UsageCampaignSnapshot } from './campaign-evaluator.ts'
 
 export type UsageCampaignCandidate = {
 	stable_user_id: string
+	username: string
 	email: string
 	email_verified_at: string
 	first_mcp_connected_at: string | null
@@ -75,6 +76,7 @@ export async function gatherUsageCampaignSnapshot(input: {
 		}),
 		isStripePaid: isStripePaidPlan(input.user.stripe_plan),
 		isNearEntitlementCap: nearCap,
+		username: input.user.username,
 		now: input.now,
 	}
 }

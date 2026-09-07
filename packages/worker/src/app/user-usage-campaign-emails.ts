@@ -1,10 +1,15 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
+	buildAdvocateReferralEmail,
 	buildConnectAgentEmail,
 	buildCoolingHomeEmail,
 	buildKeepPackageEmail,
 	buildSecondAgentEmail,
 } from '#app/email/messages.ts'
+import {
+	normalizeReferralCode,
+	referralSharePath,
+} from '#universal/referral-program.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { portabilityGuideHref } from '#universal/onboarding-process.ts'
 import {
@@ -52,6 +57,7 @@ export function buildUsageCampaignEmail(input: {
 	template: UsageCampaignMailTemplate
 	clientLabel: string
 	trialGiftLive: boolean
+	shareUrl?: string
 	unsubscribe?: { label: string; url: string }
 }) {
 	const onboardingUrl = new URL('/onboarding', input.appBaseUrl).toString()
@@ -87,11 +93,29 @@ export function buildUsageCampaignEmail(input: {
 				onboardingUrl,
 				unsubscribe: input.unsubscribe,
 			})
+		case 'advocate_referral_testimonial':
+			if (input.shareUrl == null) {
+				throw new Error('Advocate campaign mail requires a referral share URL.')
+			}
+			return buildAdvocateReferralEmail({
+				appBaseUrl: input.appBaseUrl,
+				shareUrl: input.shareUrl,
+				unsubscribe: input.unsubscribe,
+			})
 		default: {
 			const exhaustive: never = input.template
 			throw new Error(`Unknown campaign template: ${String(exhaustive)}`)
 		}
 	}
+}
+
+function campaignReferralShareUrl(
+	appBaseUrl: string,
+	username: string | null | undefined,
+) {
+	const code = normalizeReferralCode(username)
+	if (!code) return null
+	return new URL(referralSharePath(code), appBaseUrl).toString()
 }
 
 export async function sendUserUsageCampaignEmails(input: {
@@ -237,7 +261,7 @@ export async function listUsersForUsageCampaignSweep(
 ) {
 	const result = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.email, u.email_verified_at,
+			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
 			        u.first_mcp_connected_at, u.first_saved_package_at,
 			        u.first_execute_at, u.mcp_client_name, u.last_active_at,
 			        u.second_agent_standard_gift_granted_at,
@@ -358,6 +382,19 @@ async function sendClaimedCampaignEmail(input: {
 		})
 		return false
 	}
+	const shareUrl = campaignReferralShareUrl(
+		input.emailConfig.appBaseUrl,
+		input.user.username,
+	)
+	if (template === 'advocate_referral_testimonial' && shareUrl == null) {
+		await releaseUsageCampaignSend({
+			db: input.env.APP_DB,
+			userId: input.user.stable_user_id,
+			state: input.decision.state,
+			sendIndex,
+		})
+		return false
+	}
 	const email = buildUsageCampaignEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		template,
@@ -367,6 +404,7 @@ async function sendClaimedCampaignEmail(input: {
 			expiresAt: input.user.second_agent_standard_gift_expires_at,
 			now: input.now,
 		}),
+		shareUrl: shareUrl ?? undefined,
 		unsubscribe: unsubscribe?.unsubscribe,
 	})
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
@@ -448,6 +486,8 @@ async function persistDecision(input: {
 		origin: row.origin,
 		coolingTerminal: row.coolingTerminal,
 		everActivated: row.everActivated,
+		firstActivatedAt: row.firstActivatedAt,
+		advocateSentAt: row.advocateSentAt,
 		now: input.now,
 	})
 }
