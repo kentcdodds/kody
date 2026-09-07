@@ -1,7 +1,18 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal } from '#client/reveal.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { formatMinJobInterval, planLimits } from '#universal/plans.ts'
+import {
+	publicInviteSignupHref,
+	publicSignupHref,
+	publicWaitlistHref,
+	publicWaitlistSignupHref,
+} from '#universal/public-signup-copy.ts'
 import { routes } from '#universal/routes.ts'
+import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	layoutMaxWidths,
 	nativeDisclosureCss,
@@ -214,51 +225,107 @@ const faqItems: ReadonlyArray<FaqItem> = [
 			</>
 		),
 	},
-	{
-		id: 'get-started',
-		question: 'How do I get started?',
-		answer: (
-			<>
-				<p>
-					Read <a href={whatIsKodyHref}>What is Kody?</a> — it needs no account.
-					Then open <a href={routes.onboarding.href()}>Get started</a>, pick the
-					agent you want to connect, and complete OAuth.
-				</p>
-				<p>
-					This deployment may require an invite. Without a code you can join the
-					waiting list from <a href={routes.signup.href()}>Sign up</a>.
-				</p>
-			</>
-		),
-	},
 ]
 
-export function FaqRoute(_handle: Handle) {
-	return () => (
-		<section mix={css(faqCss)}>
-			<header mix={css(pageHeadCss)}>
-				<h1 data-rise style={{ '--rise': '0' }}>
-					Questions
-					<br />
-					before you <em>connect</em>.
-				</h1>
-				<p>Straight answers about what Kody is — and what it is not.</p>
-			</header>
-
-			<div mix={css(faqListCss)}>
-				{faqItems.map((item, index) => (
-					<details
-						key={item.id}
-						data-faq={item.id}
-						mix={[css(nativeDisclosureCss), reveal(index * 40)]}
-					>
-						<summary>{item.question}</summary>
-						<div>{item.answer}</div>
-					</details>
-				))}
-			</div>
-		</section>
+function renderGetStartedAnswer(signupMode: SignupMode) {
+	return (
+		<>
+			<p>
+				Read <a href={whatIsKodyHref}>What is Kody?</a> — it needs no account.
+				Then open <a href={routes.onboarding.href()}>Get started</a>, pick the
+				agent you want to connect, and complete OAuth.
+			</p>
+			{renderGetStartedSignupGuidance(signupMode)}
+		</>
 	)
+}
+
+function renderGetStartedSignupGuidance(signupMode: SignupMode) {
+	switch (signupMode) {
+		case 'open':
+			return (
+				<p>
+					Create a free account from <a href={publicSignupHref}>Sign up</a>.
+				</p>
+			)
+		case 'invite':
+			return (
+				<p>
+					Kody is invite-only. If you have a code, open{' '}
+					<a href={publicSignupHref}>Sign up</a>. Without a code you can join
+					the waiting list from the <a href={publicWaitlistHref}>home page</a>.
+				</p>
+			)
+		case 'waitlist':
+			return (
+				<p>
+					Join the waiting list from{' '}
+					<a href={publicWaitlistSignupHref}>Sign up</a>. If you have a code,{' '}
+					<a href={publicInviteSignupHref}>redeem it</a>.
+				</p>
+			)
+		default: {
+			const exhaustive: never = signupMode
+			return exhaustive
+		}
+	}
+}
+
+function getFaqItems(signupMode: SignupMode): ReadonlyArray<FaqItem> {
+	return [
+		...faqItems,
+		{
+			id: 'get-started',
+			question: 'How do I get started?',
+			answer: renderGetStartedAnswer(signupMode),
+		},
+	]
+}
+
+export async function faqRouteLoader(
+	_url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const config = await fetchPublicAuthConfig(signal)
+	return { signupMode: parseSignupMode(config?.signupMode) }
+}
+
+export function FaqRoute(handle: Handle) {
+	let signupMode: SignupMode = 'invite'
+	return () => {
+		const href = readCurrentRouterHref(handle)
+		const loadedSignupMode = tryConsumeRouteLoaderData(
+			handle,
+			'signupMode',
+			href,
+		)
+		if (loadedSignupMode) signupMode = loadedSignupMode
+		return (
+			<section mix={css(faqCss)}>
+				<header mix={css(pageHeadCss)}>
+					<h1 data-rise style={{ '--rise': '0' }}>
+						Questions
+						<br />
+						before you <em>connect</em>.
+					</h1>
+					<p>Straight answers about what Kody is — and what it is not.</p>
+				</header>
+
+				<div mix={css(faqListCss)}>
+					{getFaqItems(signupMode).map((item, index) => (
+						<details
+							key={item.id}
+							data-faq={item.id}
+							mix={[css(nativeDisclosureCss), reveal(index * 40)]}
+						>
+							<summary>{item.question}</summary>
+							<div>{item.answer}</div>
+						</details>
+					))}
+				</div>
+			</section>
+		)
+	}
 }
 
 const faqCss = {

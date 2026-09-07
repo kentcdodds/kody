@@ -40,6 +40,7 @@ import {
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunityProfileRepo from '#worker/community/profile-repo.ts'
 import type * as PackageUrlModule from '#worker/community/package-url.ts'
+import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -218,7 +219,7 @@ function createTestEnv(db: D1Database) {
 		SECRET_STORE_KEY: 'LOCAL_TEST_SECRET_STORE_KEY_32_CHARS_MINIMUM',
 		...testOidcSigningEnv,
 		APP_DB: db,
-		BUNDLE_ARTIFACTS_KV: {},
+		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
 		JOB_MANAGER: {},
 		STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
@@ -1591,6 +1592,9 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	expect(html).toContain('<details')
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
+	expect(html).toContain('data-faq="get-started"')
+	expect(html).toContain('Kody is invite-only')
+	expect(html).toContain('href="/#invite"')
 })
 
 test('renderAppPage renders the public support page for anonymous visitors', async () => {

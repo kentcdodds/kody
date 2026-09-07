@@ -12,7 +12,11 @@ import {
 	planLimits,
 	type PlanLimits,
 } from '#universal/plans.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	publicSignupPrimaryCta,
+	type PublicSignupCta,
+} from '#universal/public-signup-copy.ts'
+import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -114,7 +118,7 @@ export async function pricingRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const config = await fetchPublicAuthConfig(signal)
-	return { signupMode: config?.signupMode ?? 'invite' }
+	return { signupMode: parseSignupMode(config?.signupMode) }
 }
 
 export function PricingRoute(handle: Handle) {
@@ -128,6 +132,7 @@ export function PricingRoute(handle: Handle) {
 			href,
 		)
 		if (loadedSignupMode) signupMode = loadedSignupMode
+		const signedOutCta = publicSignupPrimaryCta(signupMode)
 		return (
 			<section mix={css(pricingCss)}>
 				<header mix={css(pageHeadCss)}>
@@ -159,13 +164,9 @@ export function PricingRoute(handle: Handle) {
 							<a href="/account" mix={css(planPillButtonCss)}>
 								Open your account
 							</a>
-						) : signupMode === 'open' ? (
-							<a href="/signup" mix={css(planPillButtonCss)}>
-								Create a free account
-							</a>
 						) : (
-							<a href="/#invite" mix={css(planPillButtonCss)}>
-								Join the waiting list
+							<a href={signedOutCta.href} mix={css(planPillButtonCss)}>
+								{signedOutCta.label}
 							</a>
 						)}
 					</section>
@@ -190,7 +191,7 @@ export function PricingRoute(handle: Handle) {
 						<p mix={css(planCopyCss)}>
 							Same factory. More room for jobs, workflows, and daily volume.
 						</p>
-						{renderPaidPlanCta(isSignedIn)}
+						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
 
 					<section
@@ -208,7 +209,7 @@ export function PricingRoute(handle: Handle) {
 							Same factory. More room for storage, jobs, workflows, and daily
 							volume.
 						</p>
-						{renderPaidPlanCta(isSignedIn)}
+						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
 
 					{/*
@@ -300,13 +301,9 @@ export function PricingRoute(handle: Handle) {
 						<a href="/account" mix={css(limitsCtaButtonCss)}>
 							Open your account
 						</a>
-					) : signupMode === 'open' ? (
-						<a href="/signup" mix={css(limitsCtaButtonCss)}>
-							Create a free account
-						</a>
 					) : (
-						<a href="/#invite" mix={css(limitsCtaButtonCss)}>
-							Join the waiting list
+						<a href={signedOutCta.href} mix={css(limitsCtaButtonCss)}>
+							{signedOutCta.label}
 						</a>
 					)}
 				</p>
@@ -315,7 +312,7 @@ export function PricingRoute(handle: Handle) {
 	}
 }
 
-function renderPaidPlanCta(isSignedIn: boolean) {
+function renderPaidPlanCta(isSignedIn: boolean, signedOutCta: PublicSignupCta) {
 	if (isSignedIn) {
 		return (
 			<a href="/account/billing" mix={css(planGhostButtonCss)}>
@@ -324,8 +321,8 @@ function renderPaidPlanCta(isSignedIn: boolean) {
 		)
 	}
 	return (
-		<a href="/signup" mix={css(planGhostButtonCss)}>
-			Create a free account
+		<a href={signedOutCta.href} mix={css(planGhostButtonCss)}>
+			{signedOutCta.label}
 		</a>
 	)
 }

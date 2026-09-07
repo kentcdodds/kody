@@ -18,6 +18,9 @@ import {
 } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import { publicSignupPrimaryCta } from '#universal/public-signup-copy.ts'
+import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	colors,
 	radius,
@@ -78,10 +81,13 @@ export async function blogPostRouteLoader(
 		return routeLoaderRedirect(`${url.pathname}${url.search}`)
 	}
 
-	const response = await fetch(routes.blogPostApi.href({ slug }), {
-		headers: { Accept: 'application/json' },
-		signal,
-	})
+	const [response, config] = await Promise.all([
+		fetch(routes.blogPostApi.href({ slug }), {
+			headers: { Accept: 'application/json' },
+			signal,
+		}),
+		fetchPublicAuthConfig(signal),
+	])
 	if (response.status === 404) {
 		throw new Error('Blog post not found.')
 	}
@@ -89,12 +95,16 @@ export async function blogPostRouteLoader(
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load blog post.')
 	}
-	return { blogPost: payload }
+	return {
+		blogPost: payload,
+		signupMode: parseSignupMode(config?.signupMode),
+	}
 }
 
 export function BlogPostRoute(handle: Handle) {
 	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
 	let post: BlogPostLoaderData | null = null
+	let signupMode: SignupMode = 'invite'
 	/** Slug that `post` / `status` currently describe; used to hide stale UI. */
 	let loadedSlug: string | null = null
 	const loadLatch = createRouteLoadLatch()
@@ -121,11 +131,15 @@ export function BlogPostRoute(handle: Handle) {
 	async function loadPost(slug: string, signal: AbortSignal) {
 		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
-			const response = await fetch(routes.blogPostApi.href({ slug }), {
-				headers: { Accept: 'application/json' },
-				signal,
-			})
+			const [response, config] = await Promise.all([
+				fetch(routes.blogPostApi.href({ slug }), {
+					headers: { Accept: 'application/json' },
+					signal,
+				}),
+				fetchPublicAuthConfig(signal),
+			])
 			if (signal.aborted) return
+			signupMode = parseSignupMode(config?.signupMode)
 			if (response.status === 404) {
 				post = null
 				status = 'not-found'
@@ -158,6 +172,12 @@ export function BlogPostRoute(handle: Handle) {
 		}
 
 		const routeData = tryConsumeRouteLoaderData(handle, 'blogPost', currentHref)
+		const signupModeData = tryConsumeRouteLoaderData(
+			handle,
+			'signupMode',
+			currentHref,
+		)
+		if (signupModeData) signupMode = signupModeData
 		const appliedRouteData = Boolean(routeData?.ok)
 		if (routeData?.ok) {
 			post = routeData
@@ -204,6 +224,7 @@ export function BlogPostRoute(handle: Handle) {
 		const showError = status === 'error' && contentMatchesSlug
 		const showReady = status === 'ready' && post !== null && contentMatchesSlug
 		const showLoading = !showNotFound && !showError && !showReady
+		const signedOutCta = publicSignupPrimaryCta(signupMode)
 
 		if (showNotFound) {
 			return (
@@ -297,15 +318,19 @@ export function BlogPostRoute(handle: Handle) {
 									height={480}
 									alt=""
 								/>
-								<p>
-									Give your assistant a home of its own. Invite-only while we
-									grow the eucalyptus.
-								</p>
-								<a
-									href={`${routes.home.href()}#invite`}
-									mix={css(postCtaButtonCss)}
-								>
-									Join the waiting list
+								{signupMode === 'open' ? (
+									<p>
+										Give your assistant a home of its own. Create a free account
+										and start saving packages.
+									</p>
+								) : (
+									<p>
+										Give your assistant a home of its own. Invite-only while we
+										grow the eucalyptus.
+									</p>
+								)}
+								<a href={signedOutCta.href} mix={css(postCtaButtonCss)}>
+									{signedOutCta.label}
 								</a>
 							</div>
 						</footer>

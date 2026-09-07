@@ -1,4 +1,4 @@
-import { type SignupMode } from '#universal/signup-mode.ts'
+import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	appendAttributionQueryParams,
 	type FirstTouchAttribution,
@@ -49,10 +49,7 @@ export async function fetchPublicAuthConfig(
 				typeof (provider as AuthProviderInfo).id === 'string' &&
 				typeof (provider as AuthProviderInfo).label === 'string',
 		)
-		const signupMode: SignupMode =
-			payload.signupMode === 'open' || payload.signupMode === 'waitlist'
-				? payload.signupMode
-				: 'invite'
+		const signupMode = parseSignupMode(payload.signupMode)
 		const turnstileSiteKey =
 			typeof payload.turnstileSiteKey === 'string'
 				? payload.turnstileSiteKey

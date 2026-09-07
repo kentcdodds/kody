@@ -1,5 +1,6 @@
 import { type Action } from 'remix/router'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createFaqHandler(env: Env) {
@@ -9,6 +10,9 @@ export function createFaqHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
+				loaderData: {
+					signupMode: await resolveSignupMode(env),
+				},
 			})
 		},
 	} satisfies Action<typeof routes.faq>

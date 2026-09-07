@@ -324,6 +324,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		marketingArea,
 		(m) => m.pricingRouteLoader,
 	),
+	[routePattern(routes.faq)]: lazyRouteLoader(
+		marketingArea,
+		(m) => m.faqRouteLoader,
+	),
 }
 
 export const clientRoutes = {
