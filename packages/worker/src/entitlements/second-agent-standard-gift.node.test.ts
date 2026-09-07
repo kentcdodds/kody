@@ -4,7 +4,6 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { getUserEntitlement } from './service.ts'
-import { describeSecondAgentStandardGift } from '#universal/second-agent-standard-gift.ts'
 import {
 	evaluateSecondAgentStandardGift,
 	maybeEvaluateSecondAgentStandardGift,
@@ -180,7 +179,13 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 			stableUserId: 'user-1',
 			uniqueClientCount: 2,
 		}),
-	).resolves.toEqual(describeSecondAgentStandardGift({}))
+	).resolves.toEqual({
+		received: false,
+		active: false,
+		status: 'none',
+		expiresAt: null,
+		grantedAt: null,
+	})
 	expect(warn).not.toHaveBeenCalled()
 	warn.mockRestore()
 
