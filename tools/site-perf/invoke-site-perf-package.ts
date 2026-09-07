@@ -24,8 +24,13 @@ export function buildInvokeBody(input: {
 	}
 }
 
+export type InvokeSitePerfSkipReason =
+	| 'ok'
+	| 'missing-webhook-url'
+	| 'invalid-webhook-url'
+
 export type InvokeSitePerfPackageResult =
-	| { skipped: 'ok' | 'missing-webhook-url' }
+	| { skipped: InvokeSitePerfSkipReason }
 	| {
 			invoked: true
 			replayed?: true
@@ -33,6 +38,29 @@ export type InvokeSitePerfPackageResult =
 			agentUrl?: string
 			result: unknown
 	  }
+
+export function resolveWebhookUrl(
+	webhookUrl: string | undefined,
+):
+	| { ok: true; url: string }
+	| { ok: false; skipped: 'missing-webhook-url' | 'invalid-webhook-url' } {
+	if (!webhookUrl) {
+		return { ok: false, skipped: 'missing-webhook-url' }
+	}
+	const trimmed = webhookUrl.trim()
+	if (!trimmed) {
+		return { ok: false, skipped: 'missing-webhook-url' }
+	}
+	try {
+		const parsed = new URL(trimmed)
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+			return { ok: false, skipped: 'invalid-webhook-url' }
+		}
+		return { ok: true, url: trimmed }
+	} catch {
+		return { ok: false, skipped: 'invalid-webhook-url' }
+	}
+}
 
 function agentUrlFromResult(result: unknown): string | undefined {
 	if (!result || typeof result !== 'object') return undefined
@@ -59,12 +87,13 @@ export async function invokeSitePerfPackage(input: {
 	if (!shouldInvokeSitePerfPackage(input.report)) {
 		return { skipped: 'ok' }
 	}
-	if (!input.webhookUrl) {
-		return { skipped: 'missing-webhook-url' }
+	const webhook = resolveWebhookUrl(input.webhookUrl)
+	if (!webhook.ok) {
+		return { skipped: webhook.skipped }
 	}
 
 	const body = buildInvokeBody(input)
-	const response = await (input.fetchImpl ?? fetch)(input.webhookUrl, {
+	const response = await (input.fetchImpl ?? fetch)(webhook.url, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -160,6 +189,11 @@ export async function main(argv = process.argv.slice(2)) {
 		startingRef: process.env.SITE_PERF_STARTING_REF ?? 'main',
 		runId: process.env.GITHUB_RUN_ID ?? 'local',
 	})
+	if ('skipped' in result && result.skipped === 'invalid-webhook-url') {
+		process.stderr.write(
+			'KODY_WEBHOOK_URL_RUN is set but is not a valid http(s) URL. Skipping weekly-site-perf invoke.\n',
+		)
+	}
 	process.stdout.write(`${JSON.stringify(result)}\n`)
 	if (
 		'invoked' in result &&
