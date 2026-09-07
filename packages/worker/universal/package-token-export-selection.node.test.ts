@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	applyPackageTokenExportSelection,
+	formatPackageTokenExportChoiceLabel,
 	isPackageTokenWildcardSelected,
 	listPackageManifestExportNames,
 	listPackageTokenExportChoices,
@@ -92,4 +93,9 @@ test('package token export selection normalizes names, wildcard exclusivity, and
 	).toEqual(['.', './dispatch-message-created'])
 
 	expect(isPackageTokenWildcardSelected(['./process-video'])).toBe(false)
+
+	expect(formatPackageTokenExportChoiceLabel('.')).toBe('. (root export)')
+	expect(formatPackageTokenExportChoiceLabel('./dispatch-event')).toBe(
+		'./dispatch-event',
+	)
 })

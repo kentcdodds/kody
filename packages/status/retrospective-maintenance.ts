@@ -47,7 +47,7 @@ function timingSafeEqualDigests(
 }
 
 /** SHA-256 both sides, then compare digests so length does not short-circuit. */
-export async function timingSafeEqualString(
+async function timingSafeEqualString(
 	left: string,
 	right: string,
 ): Promise<boolean> {

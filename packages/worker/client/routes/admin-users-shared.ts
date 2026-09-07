@@ -11,7 +11,7 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 
-export const adminUsersApiPath = '/admin/users.json'
+const adminUsersApiPath = '/admin/users.json'
 export const adminUserUsageApiPath = '/admin/users/usage.json'
 
 const {
