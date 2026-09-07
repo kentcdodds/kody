@@ -1024,6 +1024,11 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 				}),
 			],
 			['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
+			[
+				'/session/README.md',
+				'# Repo-backed job\n\n## Intent\n\nRun from session files.\n',
+			],
+			['/session/AGENTS.md', '# Agent notes\n\nSmoke-test the job export.\n'],
 		])
 
 		const repoSessionRpcSpy = vi

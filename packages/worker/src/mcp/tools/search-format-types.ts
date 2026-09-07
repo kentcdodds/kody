@@ -351,6 +351,11 @@ export type SearchEntityDetailStructured =
 				content: string
 				truncated: boolean
 			} | null
+			agentsDoc: {
+				path: string
+				content: string
+				truncated: boolean
+			} | null
 			followUp: string
 			listingAhead: boolean | null
 	  }

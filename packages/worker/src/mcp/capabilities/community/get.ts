@@ -26,8 +26,16 @@ export const communityGetCapability = defineDomainCapability(
 	{
 		name: 'communityGet',
 		description:
-			'Load full detail for one public community listing, including untrusted README content and aggregate ratings.',
-		keywords: ['community', 'get', 'listing', 'detail', 'readme', 'package'],
+			'Load full detail for one public community listing, including untrusted README content and aggregate ratings. README is the human setup doc; agent runbooks live in AGENTS.md in the package source.',
+		keywords: [
+			'community',
+			'get',
+			'listing',
+			'detail',
+			'readme',
+			'agents.md',
+			'package',
+		],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

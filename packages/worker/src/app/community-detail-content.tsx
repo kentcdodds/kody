@@ -63,11 +63,20 @@ export function CommunityDetailContent(
 		publishCompareHref,
 	} = handle.props
 
+	const treeRefName =
+		listing?.defaultBranch ?? treeRef ?? fallbackDefaultBranchName
 	const filesHref = getPackageTreeHref({
 		username,
 		kodyId,
 		listingId: listing?.id,
-		ref: listing?.defaultBranch ?? treeRef ?? fallbackDefaultBranchName,
+		ref: treeRefName,
+	})
+	const agentsHref = getPackageTreeHref({
+		username,
+		kodyId,
+		listingId: listing?.id,
+		ref: treeRefName,
+		relativePath: 'AGENTS.md',
 	})
 
 	return () => (
@@ -134,6 +143,14 @@ export function CommunityDetailContent(
 					mix={css(filesLinkCss)}
 				>
 					Browse files
+				</a>
+				{' · '}
+				<a
+					href={agentsHref}
+					data-testid="community-agent-docs"
+					mix={css(filesLinkCss)}
+				>
+					Agent docs
 				</a>
 			</p>
 
@@ -274,6 +291,10 @@ export function buildSourceAheadPublishHref(input: {
 
 const filesLinkRowCss = {
 	margin: '0.9rem 0 0',
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'baseline',
+	gap: '0.35rem 0.5rem',
 }
 
 const filesLinkCss = {

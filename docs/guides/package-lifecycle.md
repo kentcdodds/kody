@@ -132,7 +132,9 @@ When a normal filesystem and git client are available:
 5. Publish the pushed head with `packagePublishExternalPush`.
 
 This lane supports binary assets, multi-file changes, local tests, and normal
-git review.
+git review. Publish requires non-empty root `README.md` (human setup) and
+`AGENTS.md` (imports, smoke tests, edge cases). See
+[package-authoring.md](./package-authoring.md#dual-package-docs).
 
 ### Tool-only lane
 

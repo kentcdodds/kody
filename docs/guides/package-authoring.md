@@ -3,10 +3,10 @@ id: package_authoring
 title: Package authoring guide
 summary:
   START HERE when creating or materially changing a Kody package: package
-  shape, README.md Intent section, per-export JSDoc (search Purpose),
-  personal-details hygiene before going public, secret-using package
-  approval checklist, and scope-update guidance without adding new
-  primitives.
+  shape, required README.md plus AGENTS.md, Intent section, per-export
+  JSDoc (search Purpose), personal-details hygiene before going public,
+  secret-using package approval checklist, and scope-update guidance
+  without adding new primitives.
 category: platform
 ---
 
@@ -15,8 +15,9 @@ category: platform
 Use this guide when creating a new Kody package or materially changing an
 existing one.
 
-A package is not done until README `## Intent` is current, every public export
-has JSDoc as specified in [Export JSDoc](#export-jsdoc), and the smoke tests in
+A package is not done until root `README.md` and `AGENTS.md` are both present
+and non-empty, README `## Intent` is current, every public export has JSDoc as
+specified in [Export JSDoc](#export-jsdoc), and the smoke tests in
 [Verify your publish](#verify-your-publish) pass (or the user explicitly skips a
 surface).
 
@@ -47,11 +48,32 @@ If a request needs binary assets, many-file changes, or local build/test loops
 and you are tool-only, tell the user the task fits a coding-capable agent better
 and confirm before proceeding.
 
+## Dual package docs
+
+Publish checks require two non-empty root files:
+
+- **`README.md`** — human-focused. What the package does, prerequisites, setup,
+  and how to tell it is working. Include a concise `## Intent` section. Do not
+  make this file an agent runbook (no smoke-test `import … from 'kody:…'` as the
+  main content).
+- **`AGENTS.md`** — agent-focused. Imports, smoke tests, edge cases, and other
+  runbook notes. Search package detail surfaces this file so agents do not treat
+  the human README as their playbook.
+
+`packageGetGitRemote` with `create: true` scaffolds both files. Empty or
+whitespace-only files fail publish with a `manifest` check naming the missing
+path. A package that already has a published commit keeps running. The next
+publish, including community-install auto-publish, fails unless both files are
+present and non-empty.
+
+The community listing page defaults to `README.md`. Agent docs are available
+from **Agent docs** (opens `AGENTS.md` in the file browser).
+
 ## README Intent section
 
 Package intent is human-authored guidance, not a Kody primitive. Keep it in the
-root `README.md` so agents see it during package creation, updates, and search
-detail review.
+root `README.md` so humans and agents see the user's goal during package
+creation, updates, and search detail review.
 
 When you create or materially change a package:
 
@@ -76,10 +98,42 @@ export's JSDoc, not from this section.
 ## Intent
 
 This package exists to ...
+
+## What it does
+
+…
+
+## Prerequisites
+
+…
+
+## Setup
+
+…
+
+## Done when
+
+…
 ```
 
-Keep the section concise. It should explain why the package exists and what
-success means for the user, not duplicate every implementation detail.
+```md
+# Package Name — agent notes
+
+## Imports
+
+import main from 'kody:@scope/id'
+
+## Smoke tests
+
+…
+
+## Edge cases
+
+…
+```
+
+Keep the README Intent section concise. It should explain why the package exists
+and what success means for the user, not duplicate every implementation detail.
 
 ## Export JSDoc
 
@@ -180,10 +234,11 @@ dump. Aim for about **80–120 characters** (hard max **200**). Prefer outcome
 phrasing such as “Send transactional email via Resend” over inventory lists of
 exports, auth, or APIs.
 
-Put feature lists, API surface, auth notes, and longer guidance in `README.md`
-(including `## Intent`), `kody.searchText`, and [export JSDoc](#export-jsdoc) —
-not in `kody.description`. Community listings and Open Graph share cards reuse
-this field, so keep it concise.
+Put feature lists, API surface, auth notes, and longer human guidance in
+`README.md` (including `## Intent`), `kody.searchText`, and
+[export JSDoc](#export-jsdoc) — not in `kody.description`. Put imports, smoke
+tests, and edge cases in `AGENTS.md`. Community listings and Open Graph share
+cards reuse `kody.description`, so keep it concise.
 
 ## `kody.category` (community browse)
 
@@ -208,8 +263,9 @@ New packages are always **private**. Visibility is a repo setting
 - Private is owner-only. Going private 404s public URLs; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
 - There are no MIT, logo, or README Intent **platform** gates to become public.
-  Agents still run a personal-details hygiene pass before flipping public
-  (below). The Worker does not scan or block on that review.
+  Publish still requires non-empty root `README.md` and `AGENTS.md`. Agents
+  still run a personal-details hygiene pass before flipping public (below). The
+  Worker does not scan or block on that review.
 
 ### Personal-details hygiene before going public
 
@@ -301,8 +357,9 @@ irreversible-side-effect guard when a smoke test should stay safe.
    one; synthetic app fetches do not replace browser verification for layout,
    OAuth redirects, or websocket facets.
 
-Only after README `## Intent`, per-export JSDoc, and these checks pass (or the
-user explicitly skips a surface) treat the package as ready to run.
+Only after `README.md` and `AGENTS.md`, README `## Intent`, per-export JSDoc,
+and these checks pass (or the user explicitly skips a surface) treat the package
+as ready to run.
 
 ## Package icon
 

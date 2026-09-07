@@ -1694,6 +1694,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-listing-icon-detail"')
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
 	expect(html).toContain('data-testid="community-readme"')
+	expect(html).toContain('data-testid="community-agent-docs"')
 	expect(html).toContain('data-testid="community-detail-install"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({

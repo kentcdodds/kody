@@ -31,9 +31,11 @@ Ask your agent to set visibility with `packageUpdate`
 action.
 
 There are **no** MIT, logo, README Intent, or `package.json#private`
-**platform** gates. Tags, description, category, and an icon are optional
-(ranking can prefer filled-in cards). Agents still review the package for overly
-personal content before flipping public — see
+**platform** gates to become public. Tags, description, category, and an icon
+are optional (ranking can prefer filled-in cards). Publish still requires
+non-empty root `README.md` (human setup) and `AGENTS.md` (agent notes). Agents
+still review the package for overly personal content before flipping public —
+see
 [Personal-details hygiene](../guides/package-authoring.md#personal-details-hygiene-before-going-public)
 in the package authoring guide. If anything looks personal or
 household-specific, the agent stops, tells you what it found, suggests how to
@@ -68,20 +70,22 @@ name** (usually `main`, whatever git reports — not hardcoded `master`), a SHA,
 or another branch. `HEAD` and leftover `/files` URLs 301 to
 `/tree/{defaultBranch}` (`main` when lookup misses). Private packages use the
 same tree URL; unauthenticated visitors get 404. Owner settings are
-`/@username/:name/settings`. The package home renders the README.
+`/@username/:name/settings`. The package home renders the README (human setup).
+Agent runbooks live in `AGENTS.md`, linked from **Agent docs**.
 
 The catalog defaults to **Best**. **Newest** orders by last community publish.
 **Featured** is editorial placement only — not a safety badge. There is no
 trusted-listing review mark.
 
-The detail page opens with the README. The facts row shows **Version** from
-`package.json#version` when the author set a string (same label on catalog
-cards), plus license, last publish date, and the pinned commit. Next to
-**Featured** (when present) a pill says **Install**, **Installed**, **Forked**,
-or **Fork outdated**. When default-branch HEAD is newer than the last package
-publish, a **HEAD ahead of published** badge appears. Owners click that badge to
-review the unpublished file diff and publish HEAD. You can also ask your agent
-to use `communitySearch` or `communityGet`.
+The detail page opens with the README. **Agent docs** opens `AGENTS.md` in the
+file browser. The facts row shows **Version** from `package.json#version` when
+the author set a string (same label on catalog cards), plus license, last
+publish date, and the pinned commit. Next to **Featured** (when present) a pill
+says **Install**, **Installed**, **Forked**, or **Fork outdated**. When
+default-branch HEAD is newer than the last package publish, a **HEAD ahead of
+published** badge appears. Owners click that badge to review the unpublished
+file diff and publish HEAD. You can also ask your agent to use `communitySearch`
+or `communityGet`.
 
 ## Forking a listing
 

@@ -18,6 +18,7 @@ import {
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
+import { buildPackageAgentsDetail } from '#worker/package-registry/package-docs.ts'
 import { buildPackageReadmeIntent } from '#worker/package-registry/package-readme.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
 import { webhookDefaultRateLimitPerMinute } from '#worker/package-registry/types.ts'
@@ -522,12 +523,15 @@ export const packageSearchEntityPlugin = {
 		const readmeIntent = buildPackageReadmeIntent({
 			files: detail.files,
 		})
+		const agentsDoc = buildPackageAgentsDetail({
+			files: detail.files,
+		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
 		const followUp = listingAhead
-			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
-			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
+			? `${listingAheadSearchNotice} If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README, AGENTS.md, and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
+			: `If you plan to invoke an export, call packageGet({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README, AGENTS.md, and source, or search({ entity: "package_authoring:guide" }) for types, inbound webhooks, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
@@ -611,6 +615,17 @@ export const packageSearchEntityPlugin = {
 					: []),
 			)
 		}
+		if (agentsDoc) {
+			lines.push(
+				'',
+				`## AGENTS.md (${formatMarkdownInlineCode(agentsDoc.path)})`,
+				'',
+				agentsDoc.content,
+				...(agentsDoc.truncated
+					? ['', '> AGENTS.md was truncated for this index.']
+					: []),
+			)
+		}
 		if (options?.includeBoilerplate ?? true) {
 			lines.push('', '## Follow up', '', followUp)
 		}
@@ -639,6 +654,7 @@ export const packageSearchEntityPlugin = {
 				retrievers,
 				webhooks,
 				readmeIntent,
+				agentsDoc,
 				followUp,
 				listingAhead: detail.listingAhead,
 			},

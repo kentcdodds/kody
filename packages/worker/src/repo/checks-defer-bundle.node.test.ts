@@ -35,7 +35,18 @@ type MockSnapshot = {
 	read: ReturnType<typeof vi.fn>
 }
 
+function withRequiredPublishDocs(files: Map<string, string>) {
+	if (!files.has('README.md')) {
+		files.set('README.md', '# Test\n\n## Intent\n\nA test package.\n')
+	}
+	if (!files.has('AGENTS.md')) {
+		files.set('AGENTS.md', '# Agent notes\n\nSmoke-test the default export.\n')
+	}
+	return files
+}
+
 function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
+	withRequiredPublishDocs(files)
 	return {
 		read: vi.fn((path: string) => files.get(path) ?? null),
 	}

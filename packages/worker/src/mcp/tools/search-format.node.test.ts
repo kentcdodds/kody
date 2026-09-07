@@ -1275,6 +1275,8 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			'package.json': '{}',
 			'README.md':
 				'# Notes helper\n\n## Intent\n\nKeep notes workflows safe and reusable.\n\n## Usage\n\nFull usage details.',
+			'AGENTS.md':
+				"# Agent notes\n\n## Imports\n\nimport notes from 'kody:@user/notes-helper'\n\n## Smoke tests\n\nCall the default export.",
 			'index.ts':
 				'/** Save a note. */\nexport default function main(input: { text: string }) { return input.text }',
 			'on-repo-pushed.ts': 'export default function handler() {}',
@@ -1287,6 +1289,8 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		'Keep notes workflows safe and reusable.',
 	)
 	expect(packageDetail.markdown).not.toContain('Full usage details.')
+	expect(packageDetail.markdown).toContain('## AGENTS.md')
+	expect(packageDetail.markdown).toContain('Call the default export.')
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
 		exports: [
@@ -1298,6 +1302,11 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		readmeIntent: {
 			path: 'README.md',
 			content: 'Keep notes workflows safe and reusable.',
+			truncated: false,
+		},
+		agentsDoc: {
+			path: 'AGENTS.md',
+			content: expect.stringContaining('Call the default export.'),
 			truncated: false,
 		},
 	})

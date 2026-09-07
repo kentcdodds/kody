@@ -76,8 +76,8 @@ Important fields:
 - `kody.description` — short public tagline for search, detail, community
   listings, and share cards (~80–120 characters ideal; max 200). Prefer outcome
   phrasing (“Send transactional email via Resend”) over feature lists; put API
-  surface, auth notes, and longer detail in README / Intent / `searchText` /
-  export docs
+  surface, auth notes, and longer human detail in README / Intent / `searchText`
+  / export docs
 - `kody.tags` — package tags
 - `kody.category` — optional community browse category (`integrations`,
   `examples`, `productivity`, `apps`, or `utilities`). Community publish stores
@@ -477,11 +477,18 @@ only skips retention deletion.
 
 ## Save and edit packages
 
-When creating a package or materially changing an existing one, include or
-maintain a root `README.md` with a concise `## Intent` section. Use it to
-capture the user's goal, ask the user if the intent is unclear, and update it
-only when you are confident the goal changed or the user expands the scope. This
-is guidance, not a new Kody primitive or manifest field.
+When creating a package or materially changing an existing one, include
+non-empty root `README.md` and `AGENTS.md`. Publish checks fail if either file
+is missing or empty.
+
+- `README.md` is human-focused: what it does, prerequisites, setup, done-when,
+  plus a concise `## Intent` section for the user's goal. Do not make it an
+  agent runbook.
+- `AGENTS.md` is agent-focused: imports, smoke tests, and edge cases.
+
+Ask the user if intent is unclear, and update Intent only when you are confident
+the goal changed or the user expands the scope. Intent is guidance, not a new
+Kody primitive or manifest field.
 
 Use:
 
@@ -659,9 +666,9 @@ publish checks run.
    ```
 
    Kody registers a private stub saved package (minimal `package.json`,
-   `README.md` with an Intent placeholder, and a stub root export) and returns
-   the minted remote in the same call. Replace the stub content in your first
-   push.
+   `README.md` with an Intent placeholder, `AGENTS.md` with import/smoke-test
+   placeholders, and a stub root export) and returns the minted remote in the
+   same call. Replace the stub content in your first push.
 
 2. Clone and edit:
 

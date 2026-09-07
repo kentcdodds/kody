@@ -49,6 +49,7 @@ type MockTypeScriptFileSystem = MockSnapshot & {
 }
 
 function createSnapshotFromFiles(files: Map<string, string>): MockSnapshot {
+	withRequiredPublishDocs(files)
 	return {
 		read: vi.fn((path: string) => files.get(path) ?? null),
 	}
@@ -89,8 +90,24 @@ async function collectSnapshotFiles(
 	return snapshotFiles
 }
 
+const requiredPublishDocs = {
+	'README.md': '# Test\n\n## Intent\n\nA test package.\n',
+	'AGENTS.md': '# Agent notes\n\nSmoke-test the default export.\n',
+} as const
+
+function withRequiredPublishDocs(files: Map<string, string>) {
+	if (!files.has('README.md')) {
+		files.set('README.md', requiredPublishDocs['README.md'])
+	}
+	if (!files.has('AGENTS.md')) {
+		files.set('AGENTS.md', requiredPublishDocs['AGENTS.md'])
+	}
+	return files
+}
+
 async function runChecksOnWorkspaceFiles(files: Map<string, string>) {
 	setupDefaultBundleMocks()
+	withRequiredPublishDocs(files)
 	const snapshot = createSnapshotFromFiles(files)
 	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
 	return runRepoChecks({
@@ -181,6 +198,7 @@ async function runPackageJobTypecheckChecks(
 		},
 	})
 
+	withRequiredPublishDocs(files)
 	const result = await runRepoChecks({
 		workspace: {
 			async readFile(path: string) {
@@ -285,6 +303,8 @@ test('runRepoChecks keeps non-code source files for publish snapshots while excl
 			}),
 		],
 		['src/index.ts', 'export const ready = true\n'],
+		['README.md', requiredPublishDocs['README.md']],
+		['AGENTS.md', requiredPublishDocs['AGENTS.md']],
 		['styles/app.css', 'body { color: red; }\n'],
 		['public/icon.svg', '<svg />\n'],
 		['.git/config', '[remote "origin"]\n'],
@@ -320,6 +340,8 @@ test('runRepoChecks keeps non-code source files for publish snapshots while excl
 	expect(result.sourceFiles).toEqual({
 		'package.json': files.get('package.json'),
 		'src/index.ts': files.get('src/index.ts'),
+		'README.md': files.get('README.md'),
+		'AGENTS.md': files.get('AGENTS.md'),
 		'styles/app.css': files.get('styles/app.css'),
 		'public/icon.svg': files.get('public/icon.svg'),
 	})
@@ -351,6 +373,8 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 		],
 		['/session/src/index.ts', 'export const ready = true\n'],
 		['/session/src/job.ts', 'export default async () => ({ ok: true })\n'],
+		['/session/README.md', requiredPublishDocs['README.md']],
+		['/session/AGENTS.md', requiredPublishDocs['AGENTS.md']],
 	])
 	let snapshotFiles = new Map<string, string>()
 	const snapshot = createSnapshotFromFiles(snapshotFiles)
@@ -396,6 +420,8 @@ test('runRepoChecks strips repo-session workspace prefixes from package snapshot
 		'package.json',
 		'src/index.ts',
 		'src/job.ts',
+		'README.md',
+		'AGENTS.md',
 		'.__kody_repo_runtime__.d.ts',
 		'.__kody_repo_module_check__.ts',
 	])
@@ -1461,6 +1487,8 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			sourceFiles: {
 				'package.json': files.get('package.json'),
 				'src/index.ts': files.get('src/index.ts'),
+				'README.md': files.get('README.md'),
+				'AGENTS.md': files.get('AGENTS.md'),
 			},
 		}),
 	)

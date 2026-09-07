@@ -206,6 +206,10 @@ export function renderReadmeSection(readme: Array<RemixNode>) {
 	return (
 		<section aria-labelledby="readme-title" mix={css(readmeSectionCss)}>
 			<h2 id="readme-title">README</h2>
+			<p mix={css(readmeAudienceCss)}>
+				Human setup. Agent runbooks (imports, smoke tests, edge cases) live in
+				AGENTS.md.
+			</p>
 			<div data-testid="community-readme" mix={css(readmeProseCss)}>
 				{readme}
 			</div>
@@ -489,6 +493,13 @@ const mutedTextCss = {
 	margin: '0.8rem 0 0',
 	color: colors.textMuted,
 	fontSize: '0.95rem',
+}
+
+const readmeAudienceCss = {
+	margin: '0.85rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.95rem',
+	maxWidth: '56ch',
 }
 
 /* README as real prose (no scroll box), h3 subheads per DESIGN.md. */

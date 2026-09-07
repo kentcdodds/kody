@@ -11,6 +11,7 @@ import {
 	formatStaticKodyDependencyCycleMessage,
 	loadReachableStaticKodyDependencyEdges,
 } from '#worker/package-registry/static-dependency-cycles.ts'
+import { validateRequiredPackageDocs } from '#worker/package-registry/package-docs.ts'
 import {
 	findPersonPackagePlatformReference,
 	formatPersonPackagePlatformDependencyMessage,
@@ -1225,6 +1226,19 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
+	const docsCheck = validateRequiredPackageDocs(sourceFiles)
+	if (!docsCheck.ok) {
+		results.push({
+			kind: 'manifest',
+			ok: false,
+			message: docsCheck.message,
+		})
+		return toRepoCheckRunResult({
+			results,
+			manifest,
+			sourceFiles,
+		})
+	}
 	const lintCheck = buildLintCheck(sourceFiles)
 	const { createFileSystemSnapshot } = await loadWorkerBundlerSnapshotTools()
 	const snapshot = await createFileSystemSnapshot(
