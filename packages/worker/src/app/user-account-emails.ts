@@ -6,7 +6,10 @@ import {
 	buildPaymentFailedEmail,
 } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import { recordVerifiedNoMcpCampaignSend } from '#app/user-usage-campaign-emails.ts'
+import {
+	openVerifiedNoMcpCampaignEvent,
+	recordVerifiedNoMcpCampaignSend,
+} from '#app/user-usage-campaign-emails.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import {
 	isTipsEmailsOptedOut,
@@ -144,7 +147,13 @@ export async function sendConnectAgentEmail(input: {
 		appBaseUrl: emailConfig.appBaseUrl,
 		userId: input.userId,
 	})
-	if (!unsubscribe) return false
+	if (!unsubscribe) {
+		await openVerifiedNoMcpCampaignEvent({
+			env: input.env,
+			userId: input.userId,
+		})
+		return false
+	}
 
 	const sent = await claimAndSend({
 		env: input.env,
@@ -165,8 +174,13 @@ export async function sendConnectAgentEmail(input: {
 			env: input.env,
 			userId: input.userId,
 		})
+		return true
 	}
-	return sent
+	await openVerifiedNoMcpCampaignEvent({
+		env: input.env,
+		userId: input.userId,
+	})
+	return false
 }
 
 export async function sendBillingSuccessEmail(input: {

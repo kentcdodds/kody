@@ -11,6 +11,8 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 		sendCloudflareEmail(...args),
 }))
 
+const { readUsageCampaign } = await import('#worker/usage/campaign-ledger.ts')
+
 const {
 	sendBillingSuccessEmail,
 	sendConnectAgentEmail,
@@ -232,4 +234,39 @@ test('account emails reserve the KV claim before sending and release it on send 
 			}),
 		),
 	).toBeUndefined()
+})
+
+test('failed verify-time connect-agent mail opens an event campaign row for the sweep', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
+			 VALUES ('ada', 'ada@example.com', 'x', 'user-open', 'free', 'person')`,
+		)
+		.run()
+	const { kv, store } = createKv()
+	const env = { ...createEnv(kv), APP_DB: db } as unknown as Env
+	env.COOKIE_SECRET = ''
+	sendCloudflareEmail.mockClear()
+	consoleWarn.mockImplementation(() => {})
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-open',
+		}),
+	).toBe(false)
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(
+		store.get(
+			userAccountEmailKvKey({ userId: 'user-open', kind: 'connect_agent' }),
+		),
+	).toBeUndefined()
+	expect(await readUsageCampaign(db, 'user-open')).toMatchObject({
+		state: 'VerifiedNoMcp',
+		origin: 'event',
+		send_count: 0,
+	})
 })

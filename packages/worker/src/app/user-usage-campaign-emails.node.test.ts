@@ -29,8 +29,11 @@ vi.mock('#worker/usage/campaign-inputs.ts', async (importOriginal) => {
 	}
 })
 
-const { recordVerifiedNoMcpCampaignSend, sendUserUsageCampaignEmails } =
-	await import('#app/user-usage-campaign-emails.ts')
+const {
+	openVerifiedNoMcpCampaignEvent,
+	recordVerifiedNoMcpCampaignSend,
+	sendUserUsageCampaignEmails,
+} = await import('#app/user-usage-campaign-emails.ts')
 
 const now = new Date('2026-09-07T12:00:00.000Z')
 
@@ -497,4 +500,35 @@ test('failed unsubscribe mint releases the claim and does not send campaign mail
 		'usage-campaign-unsubscribe-mint-failed',
 		expect.any(Error),
 	)
+})
+
+test('opening a verify-time event row lets the sweep send after a failed first mail', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-open', email: 'open@example.com' })
+	const env = createEnv(db)
+	expect(
+		await openVerifiedNoMcpCampaignEvent({
+			env,
+			userId: 'user-open',
+			now,
+		}),
+	).toBe(true)
+	expect(await readUsageCampaign(db, 'user-open')).toMatchObject({
+		state: 'VerifiedNoMcp',
+		origin: 'event',
+		send_count: 0,
+		last_sent_at: null,
+	})
+	expect(await listUsageCampaignSends(db, 'user-open')).toEqual([])
+
+	gatherUsageCampaignSnapshot.mockResolvedValue(snapshot())
+	sendCloudflareEmail.mockClear()
+	expect(await sendUserUsageCampaignEmails({ env, now })).toEqual({
+		status: 'notified',
+		evaluatedUsers: 1,
+		emailedUsers: 1,
+		emailsSent: 1,
+	})
+	expect((await readUsageCampaign(db, 'user-open'))?.send_count).toBe(1)
+	expect((await listUsageCampaignSends(db, 'user-open')).length).toBe(1)
 })

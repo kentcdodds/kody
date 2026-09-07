@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	evaluateUsageCampaign,
+	nextUsageCampaignRow,
 	resolveUsageCampaignState,
 	type UsageCampaignPersisted,
 	type UsageCampaignSnapshot,
@@ -162,6 +163,22 @@ test('evaluator walks usage stamps into states, caps, and Activated/Paid silence
 		template: 'verified_no_mcp',
 		sendIndex: 1,
 		reason: 'entered',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot(),
+			persisted({
+				state: 'VerifiedNoMcp',
+				enteredAt: now.toISOString(),
+				origin: 'event',
+			}),
+		),
+	).toMatchObject({
+		state: 'VerifiedNoMcp',
+		action: 'send',
+		template: 'verified_no_mcp',
+		sendIndex: 1,
+		reason: 'nudge',
 	})
 
 	const afterFirst = evaluateUsageCampaign(
@@ -615,6 +632,63 @@ test('Activated and Cooling history does not fall back into PackagedSingleClient
 		action: 'silence',
 		reason: 'cooling_terminal',
 		coolingTerminal: true,
+	})
+})
+
+test('LimitAware with activated usage keeps history after the cap eases', () => {
+	const nearCapActivated = evaluateUsageCampaign(
+		snapshot({
+			firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+			lastActiveAt: '2026-09-06T00:00:00.000Z',
+			distinctInboundClientCount: 2,
+			isNearEntitlementCap: true,
+		}),
+		persisted(),
+	)
+	expect(nearCapActivated).toMatchObject({
+		state: 'LimitAware',
+		action: 'silence',
+		everActivated: true,
+	})
+	expect(
+		nextUsageCampaignRow({
+			decision: nearCapActivated,
+			persisted: persisted(),
+			now,
+			sent: false,
+		}).everActivated,
+	).toBe(true)
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+			}),
+			persisted({
+				state: 'LimitAware',
+				enteredAt: now.toISOString(),
+				origin: 'seed',
+				everActivated: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				isNearEntitlementCap: true,
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+			}),
+			persisted(),
+		),
+	).toMatchObject({
+		state: 'LimitAware',
+		action: 'silence',
+		everActivated: false,
 	})
 })
 

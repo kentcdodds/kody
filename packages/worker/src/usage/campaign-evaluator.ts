@@ -46,6 +46,7 @@ export type UsageCampaignDecision = {
 	sendIndex: number | null
 	origin: UsageCampaignOrigin
 	coolingTerminal: boolean
+	everActivated: boolean
 	reason: string
 }
 
@@ -150,6 +151,10 @@ export function evaluateUsageCampaign(
 	const lastSentAt = stateChanged ? null : persisted.lastSentAt
 	const cap = usageCampaignSendCaps[state]
 	const template = usageCampaignTemplateByState[state]
+	const everActivated =
+		persisted.everActivated ||
+		marksActivatedHistory(state) ||
+		(state === 'LimitAware' && isActivatedUsage(snapshot))
 
 	if (state === 'PackagedSingleClient' && snapshot.inboundListingFailed) {
 		return {
@@ -159,6 +164,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal: false,
+			everActivated,
 			reason: 'inbound_listing_failed',
 		}
 	}
@@ -171,6 +177,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal: coolingTerminal,
+			everActivated,
 			reason: 'job_listing_failed',
 		}
 	}
@@ -183,6 +190,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal,
+			everActivated,
 			reason: silenceReason(state),
 		}
 	}
@@ -195,6 +203,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal: true,
+			everActivated,
 			reason: 'cooling_terminal',
 		}
 	}
@@ -207,6 +216,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal,
+			everActivated,
 			reason: 'seed_no_backfill',
 		}
 	}
@@ -219,6 +229,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal,
+			everActivated,
 			reason: 'cap_reached',
 		}
 	}
@@ -235,6 +246,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal: false,
+			everActivated,
 			reason: 'dwell',
 		}
 	}
@@ -247,6 +259,7 @@ export function evaluateUsageCampaign(
 			sendIndex: null,
 			origin,
 			coolingTerminal: false,
+			everActivated,
 			reason: 'interval',
 		}
 	}
@@ -258,6 +271,7 @@ export function evaluateUsageCampaign(
 		sendIndex: sendCount + 1,
 		origin,
 		coolingTerminal: false,
+		everActivated,
 		reason: stateChanged ? 'entered' : 'nudge',
 	}
 }
@@ -308,9 +322,9 @@ function hasCompletedInterval(lastSentAt: string, now: Date) {
 }
 
 /**
- * Verify-time VerifiedNoMcp send 1 is recorded as an event-origin row with
- * no prior send. The verify handler sends immediately; the evaluator used
- * from that path treats the first send as due.
+ * Verify-time VerifiedNoMcp send 1 is due immediately: either the evaluator
+ * is called before a row exists, or the verify path opened an event-origin
+ * row with send_count 0 after a failed first mail.
  */
 function isImmediateFirstSend(
 	state: UsageCampaignState,
@@ -318,8 +332,9 @@ function isImmediateFirstSend(
 ) {
 	return (
 		state === 'VerifiedNoMcp' &&
-		persisted.state == null &&
-		persisted.origin === 'event'
+		persisted.origin === 'event' &&
+		persisted.sendCount === 0 &&
+		(persisted.state == null || persisted.state === 'VerifiedNoMcp')
 	)
 }
 
@@ -357,6 +372,7 @@ export function nextUsageCampaignRow(input: {
 			(input.sent && input.decision.state === 'Cooling'),
 		everActivated:
 			input.persisted.everActivated ||
+			input.decision.everActivated ||
 			marksActivatedHistory(input.decision.state),
 	}
 }

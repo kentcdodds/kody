@@ -147,6 +147,46 @@ export async function sendUserUsageCampaignEmails(input: {
 }
 
 /**
+ * Open the VerifiedNoMcp event series without claiming a send. Used when
+ * verify-time connect-agent mail fails closed so the hourly sweep can retry
+ * instead of first-observing the user as seed.
+ */
+export async function openVerifiedNoMcpCampaignEvent(input: {
+	env: Env
+	userId: string
+	now?: Date
+}): Promise<boolean> {
+	const now = input.now ?? new Date()
+	if (!input.env.APP_DB) return false
+	try {
+		const existing = await readUsageCampaign(input.env.APP_DB, input.userId)
+		const persisted = campaignRowToPersisted(existing)
+		if (persisted.state != null && persisted.state !== 'VerifiedNoMcp') {
+			return false
+		}
+		if (persisted.origin === 'event' && persisted.sendCount > 0) {
+			return false
+		}
+		await upsertUsageCampaign({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			state: 'VerifiedNoMcp',
+			enteredAt: persisted.enteredAt ?? now.toISOString(),
+			sendCount: persisted.sendCount,
+			lastSentAt: persisted.lastSentAt,
+			origin: 'event',
+			coolingTerminal: persisted.coolingTerminal,
+			everActivated: persisted.everActivated,
+			now,
+		})
+		return true
+	} catch (error) {
+		console.warn('usage-campaign-verify-open-failed', error)
+		return false
+	}
+}
+
+/**
  * Verify-time VerifiedNoMcp send 1. Records the campaign row as event-origin
  * so later hourly nudges can send at most one more mail, then stop.
  */
