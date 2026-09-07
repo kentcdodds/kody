@@ -384,7 +384,7 @@ html.is-settled {
 	}
 }
 
-/* ---------- motion system (heykody.dev redesign) ----------
+/* ---------- motion system (2026 landing redesign) ----------
    Enhance-only: content is fully visible without JS; the `html.js` class
    (set pre-paint by page-init.js) gates initial-hidden states, and
    reduced-motion removes everything. One ease everywhere (--ease-out). */

@@ -11,7 +11,7 @@ export type SiteFooterProps = {
 }
 
 /**
- * Site footer from the heykody.dev redesign: brand, the tagline voice line,
+ * Site footer from the 2026 landing redesign: brand, the tagline voice line,
  * and footer nav. Color scheme follows the system preference.
  */
 export function SiteFooter(handle: Handle<SiteFooterProps>) {

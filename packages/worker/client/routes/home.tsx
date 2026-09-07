@@ -31,7 +31,7 @@ import { WaitlistForm } from './landing-waitlist-form.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
- * heykody.app landing page, ported from the redesign prototype
+ * Public landing page, ported from the redesign prototype
  * (`landing/landing.html`). Flat neutral canvas, one vibrant green accent,
  * centered single-column flow, mascot illustrations doing the explanatory
  * work. Motion is enhance-only (`html.js`) and fully off under

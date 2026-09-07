@@ -44,7 +44,7 @@ export function parseLegacyHosts(configured: string | null | undefined) {
 
 /**
  * Redirect safe browser navigation from a legacy app host (for example
- * `heykody.dev`) to the canonical origin (`APP_BASE_URL`) with a
+ * `legacy.example`) to the canonical origin (`APP_BASE_URL`) with a
  * path-and-query-preserving 308.
  *
  * Deliberately narrow: only GET/HEAD (a 308 preserves the method, and

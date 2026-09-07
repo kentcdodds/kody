@@ -324,8 +324,8 @@ export function joinAppUrl(input: {
 
 /**
  * Redirect safe browser GET/HEAD from a legacy package-app *user subdomain*
- * (`{username}.kodyapps.dev`) to the matching canonical subdomain with path
- * and query preserved.
+ * (`{username}.<legacy-apex>`) to the matching canonical subdomain
+ * (`{username}.kody.run`) with path and query preserved.
  *
  * Dual-serve is the default: `__Host-kody_pkg_session` is host-only, so
  * sessions, iframe embeds, and published package URLs on a dual-served

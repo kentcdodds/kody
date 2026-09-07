@@ -55,7 +55,7 @@ import {
 } from './login-sections.tsx'
 
 /**
- * heykody.dev login/signup, ported from the redesign prototype
+ * Login/signup page, ported from the redesign prototype
  * (`landing/login.html`): a standalone two-panel canvas. The brand panel
  * (hidden below 900px) carries the lantern stage over the shirt-pattern
  * whisper; the form panel holds the auth card, which rises in the page-open
