@@ -4,6 +4,7 @@ import {
 	type OwnerIndexEntry,
 } from '@kody-internal/shared/backup-staging.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
 import {
 	emailAttachmentBlobKey,
 	emailRawMimeKey,
@@ -22,10 +23,7 @@ import {
 	type MailboxThreadInput,
 	type MailboxThreadRecord,
 } from '#worker/email/mailbox-types.ts'
-import {
-	MaintenanceFailureError,
-	timingSafeEqualString,
-} from '#worker/maintenance-handler.ts'
+import { MaintenanceFailureError } from '#worker/maintenance-handler.ts'
 import {
 	createDrBackupS3Client,
 	readDrBackupS3Config,

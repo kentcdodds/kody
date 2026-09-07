@@ -6,6 +6,9 @@
     "test": "vitest run *.node.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "@kody-internal/shared": "file:../shared"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260904.1",
     "@types/node": "^26.4.1",
