@@ -68,7 +68,7 @@ export async function runAuthenticatedMcpExecuteHealthProbe(input: {
 			params: {},
 		}),
 	)
-	if (initialized.status >= 500) {
+	if (!initialized.ok) {
 		throw new MaintenanceFailureError(
 			`Authenticated MCP execute probe initialized notification failed: HTTP ${String(initialized.status)}`,
 			{ reason: 'initialized-failed' },

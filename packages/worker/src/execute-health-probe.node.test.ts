@@ -100,6 +100,31 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 			},
 		}),
 	).rejects.toBeInstanceOf(MaintenanceFailureError)
+
+	await expect(
+		runAuthenticatedMcpExecuteHealthProbe({
+			token: 'canary-token',
+			mcpOrigin: 'https://kody.codes',
+			callMcp: async (request) => {
+				const body = (await request.clone().json()) as { method?: string }
+				if (body.method === 'initialize') {
+					return new Response(
+						JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }),
+						{
+							headers: { 'mcp-session-id': 'session-1' },
+						},
+					)
+				}
+				if (body.method === 'notifications/initialized') {
+					return new Response('Unauthorized', { status: 401 })
+				}
+				return jsonRpcResult({
+					structuredContent: { result: executeHealthProbeExpectedResult },
+					isError: false,
+				})
+			},
+		}),
+	).rejects.toBeInstanceOf(MaintenanceFailureError)
 })
 
 test('maintenance route never runs execute on GET and public callers cannot trigger it', async () => {

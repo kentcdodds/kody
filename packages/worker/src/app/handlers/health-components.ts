@@ -147,17 +147,43 @@ export async function collectHealthComponents(
 				assets ? () => assets.head('health-component-probe') : null,
 			),
 		]),
-		readFleetExecuteLastSuccess({ kv: env.BUNDLE_ARTIFACTS_KV }),
+		readExecuteEvidence(env),
 	])
 	return {
 		ok: components.every((component) => component.ok),
 		commitSha: env.APP_COMMIT_SHA ?? null,
 		checkedAt: new Date().toISOString(),
 		components,
-		executeEvidence: {
-			lastSuccessAt:
-				lastSuccess === null ? null : new Date(lastSuccess.at).toISOString(),
-		},
+		executeEvidence: lastSuccess,
+	}
+}
+
+async function readExecuteEvidence(
+	env: HealthComponentsEnv,
+): Promise<HealthExecuteEvidence> {
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+	const timeout = new Promise<'timeout'>((resolve) => {
+		timeoutHandle = setTimeout(
+			() => resolve('timeout'),
+			componentCheckTimeoutMs,
+		)
+	})
+	try {
+		const outcome = await Promise.race([
+			readFleetExecuteLastSuccess({ kv: env.BUNDLE_ARTIFACTS_KV }),
+			timeout,
+		])
+		if (outcome === 'timeout' || outcome === null) {
+			if (outcome === 'timeout') {
+				console.warn('health-execute-evidence-timeout')
+			}
+			return { lastSuccessAt: null }
+		}
+		return { lastSuccessAt: new Date(outcome.at).toISOString() }
+	} catch {
+		return { lastSuccessAt: null }
+	} finally {
+		clearTimeout(timeoutHandle)
 	}
 }
 

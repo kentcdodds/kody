@@ -241,3 +241,17 @@ test('health components handler memoizes, coalesces in-flight work, and returns 
 		expect.any(String),
 	)
 })
+
+test('hung execute-evidence KV read fails open as unknown and does not block components', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const bindings = createHealthyBindings()
+	;(
+		bindings as typeof bindings & { BUNDLE_ARTIFACTS_KV: KVNamespace }
+	).BUNDLE_ARTIFACTS_KV = {
+		get: async () => await new Promise(() => {}),
+	} as unknown as KVNamespace
+	const report = await collectHealthComponents(bindings)
+	expect(report.ok).toBe(true)
+	expect(report.executeEvidence).toEqual({ lastSuccessAt: null })
+	expect(consoleWarn).toHaveBeenCalledWith('health-execute-evidence-timeout')
+})

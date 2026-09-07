@@ -115,4 +115,25 @@ test('public evidence reads stay cheap and treat missing or invalid telemetry as
 	await expect(readFleetExecuteLastSuccess({ kv: store })).resolves.toEqual({
 		at: 1_725_000_000_000,
 	})
+	await expect(
+		readFleetExecuteLastSuccess({
+			kv: kv(JSON.stringify({ at: 8_640_000_000_000_001 })),
+		}),
+	).resolves.toBeNull()
+})
+
+test('concurrent heartbeat calls in one isolate write once', async () => {
+	let puts = 0
+	const store = kv(null, {
+		onPut() {
+			puts += 1
+		},
+	})
+	const shared = memory()
+	const now = Date.parse('2026-09-07T17:00:00.000Z')
+	await Promise.all([
+		recordFleetExecuteLastSuccess({ kv: store, now, memory: shared }),
+		recordFleetExecuteLastSuccess({ kv: store, now, memory: shared }),
+	])
+	expect(puts).toBe(1)
 })

@@ -34,16 +34,24 @@ export async function recordFleetExecuteLastSuccess(input: {
 		const coalesceMs = input.coalesceMs ?? fleetExecuteHeartbeatCoalesceMs
 		const memory = input.memory ?? isolateMemory
 		if (now - memory.lastWriteAt < coalesceMs) return
-		const existing = await readFleetExecuteLastSuccess({ kv })
-		if (existing && now - existing.at < coalesceMs) {
-			memory.lastWriteAt = existing.at
-			return
-		}
-		await kv.put(
-			fleetExecuteLastSuccessKvKey,
-			JSON.stringify({ at: now } satisfies FleetExecuteLastSuccess),
-		)
+		const reservedAt = memory.lastWriteAt
+		// Reserve before the first await so concurrent isolate calls cannot
+		// all pass the coalesce check and each write KV.
 		memory.lastWriteAt = now
+		try {
+			const existing = await readFleetExecuteLastSuccess({ kv })
+			if (existing && now - existing.at < coalesceMs) {
+				memory.lastWriteAt = existing.at
+				return
+			}
+			await kv.put(
+				fleetExecuteLastSuccessKvKey,
+				JSON.stringify({ at: now } satisfies FleetExecuteLastSuccess),
+			)
+		} catch (error) {
+			memory.lastWriteAt = reservedAt
+			throw error
+		}
 	} catch (error) {
 		console.warn(
 			'fleet-execute-heartbeat-failed',
@@ -59,7 +67,11 @@ export async function readFleetExecuteLastSuccess(input: {
 		const raw = await input.kv?.get(fleetExecuteLastSuccessKvKey)
 		if (!raw) return null
 		const parsed = JSON.parse(raw) as Partial<FleetExecuteLastSuccess>
-		if (typeof parsed.at !== 'number' || !Number.isFinite(parsed.at)) {
+		if (
+			typeof parsed.at !== 'number' ||
+			!Number.isFinite(parsed.at) ||
+			Number.isNaN(new Date(parsed.at).getTime())
+		) {
 			return null
 		}
 		return { at: parsed.at }
