@@ -135,6 +135,19 @@ export function parseFirstTouchAttribution(input: {
 }
 
 /**
+ * UTMs stay first-touch write-once. A later `/signup?ref=` can still fill
+ * `referralCode` when the stored first-touch has none, so a homepage visit
+ * in the same tab does not drop the share link.
+ */
+export function mergeReferralCodeIntoFirstTouch(
+	firstTouch: FirstTouchAttribution,
+	later: FirstTouchAttribution,
+): FirstTouchAttribution {
+	if (firstTouch.referralCode || !later.referralCode) return firstTouch
+	return { ...firstTouch, referralCode: later.referralCode }
+}
+
+/**
  * Flatten attribution into JSON-safe fields for the OAuth login-state cookie
  * and signup POST body (camelCase, omit nulls).
  */

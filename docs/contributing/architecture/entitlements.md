@@ -134,7 +134,9 @@ lifecycle email or PackagedSingleClient should read: `received`, `active`, and
 ### Referral Standard credit
 
 Shareable signup links (`/signup?ref=<username>`) write a pending `referrals`
-row at account creation (password and OAuth). Reward runs on `invoice.paid`
+row at account creation (password and OAuth). First-touch UTMs stay write-once,
+but a later share link can still fill a missing `referralCode` in the same tab
+so a homepage visit does not drop attribution. Reward runs on `invoice.paid`
 after the referee's first qualifying paid Stripe invoice (`amount_paid > 0`, not
 a $0 trial, not a compute-overage invoice). Both the referrer and the referee
 receive one stacked month (30 days) of public Standard via

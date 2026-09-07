@@ -1,12 +1,14 @@
 /**
  * Client helper: capture first-touch UTMs from the current URL (and optional
  * document referrer) into sessionStorage so SPA navigations to /signup keep
- * them, then read them back for signup POST / OAuth start.
+ * them, then read them back for signup POST / OAuth start. A later
+ * `/signup?ref=` fills a missing referral code without overwriting UTMs.
  */
 
 import {
 	emptyFirstTouchAttribution,
 	hasFirstTouchAttribution,
+	mergeReferralCodeIntoFirstTouch,
 	parseFirstTouchAttribution,
 	type FirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
@@ -37,9 +39,15 @@ export function captureFirstTouchAttributionFromLocation(
 	}
 
 	// Prefer existing stored first-touch over later UTMs on the same browser.
+	// Fill a missing referral code from a later `/signup?ref=` so a homepage
+	// visit in this tab does not drop the share link.
 	const existing = readStoredFirstTouchAttribution()
 	if (existing && hasFirstTouchAttribution(existing)) {
-		return existing
+		const merged = mergeReferralCodeIntoFirstTouch(existing, fromUrl)
+		if (merged.referralCode !== existing.referralCode) {
+			writeStoredFirstTouchAttribution(merged)
+		}
+		return merged
 	}
 
 	writeStoredFirstTouchAttribution(fromUrl)

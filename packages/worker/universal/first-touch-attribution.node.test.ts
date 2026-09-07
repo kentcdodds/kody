@@ -1,8 +1,10 @@
 import { expect, test } from 'vitest'
 import {
 	appendAttributionQueryParams,
+	emptyFirstTouchAttribution,
 	firstTouchAttributionToUserColumns,
 	hasFirstTouchAttribution,
+	mergeReferralCodeIntoFirstTouch,
 	parseFirstTouchAttribution,
 	serializeFirstTouchAttributionForTransport,
 } from './first-touch-attribution.ts'
@@ -100,4 +102,21 @@ test('first-touch attribution parses query and body, rejects unsafe paths, and s
 	const refParams = new URLSearchParams()
 	appendAttributionQueryParams(refParams, fromRef)
 	expect(refParams.get('ref')).toBe('kentcdodds')
+
+	const homepageFirstTouch = parseFirstTouchAttribution({
+		landingPath: '/',
+	})
+	expect(mergeReferralCodeIntoFirstTouch(homepageFirstTouch, fromRef)).toEqual({
+		...homepageFirstTouch,
+		referralCode: 'kentcdodds',
+	})
+	expect(
+		mergeReferralCodeIntoFirstTouch(fromRef, {
+			...emptyFirstTouchAttribution,
+			referralCode: 'ada',
+		}),
+	).toEqual(fromRef)
+	expect(
+		mergeReferralCodeIntoFirstTouch(homepageFirstTouch, homepageFirstTouch),
+	).toBe(homepageFirstTouch)
 })
