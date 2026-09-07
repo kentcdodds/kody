@@ -19,6 +19,7 @@ export type ConnectedMcpAgentListItem = ConnectedMcpAgent & {
 export type InboundMcpConnectionState = {
 	uniqueClientCount: number
 	agents: Array<ConnectedMcpAgentListItem>
+	listingFailed?: boolean
 }
 
 export async function loadInboundMcpConnectionState(
@@ -32,7 +33,7 @@ export async function loadInboundMcpConnectionState(
 		const grants = await listUserOAuthGrants(helpers, userId)
 		return await labelInboundMcpGrants(helpers, grants)
 	} catch {
-		return { uniqueClientCount: 0, agents: [] }
+		return { uniqueClientCount: 0, agents: [], listingFailed: true }
 	}
 }
 
@@ -59,6 +60,7 @@ async function labelInboundMcpGrants(
 ): Promise<InboundMcpConnectionState> {
 	const byClient = new Map<string, Array<OAuthGrantListItem>>()
 	for (const grant of grants) {
+		if (!grant.clientId) continue
 		const existing = byClient.get(grant.clientId)
 		if (existing) existing.push(grant)
 		else byClient.set(grant.clientId, [grant])

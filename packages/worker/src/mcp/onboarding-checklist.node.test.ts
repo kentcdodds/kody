@@ -181,6 +181,25 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 	).toBe(null)
 })
 
+test('search onboarding notice stays quiet when grant listing fails', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	expect(
+		await buildOnboardingSearchNotice({
+			env: {
+				...env,
+				OAUTH_PROVIDER: {
+					listUserGrants: async () => {
+						throw new Error('provider unavailable')
+					},
+				},
+			},
+			userId,
+			baseUrl: 'https://kody.example',
+		}),
+	).toBe(null)
+})
+
 test('search onboarding notice stays quiet when grant helpers cannot be resolved', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)

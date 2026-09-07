@@ -109,7 +109,10 @@ test('listUserOAuthGrants keeps createdAt, redirectUri, and metadata across page
 			},
 			'user-1',
 		),
-	).resolves.toEqual([{ id: 'keep-me', clientId: 'client-c', scope: ['mcp'] }])
+	).resolves.toEqual([
+		{ id: 'skip-me', clientId: '', scope: ['mcp'] },
+		{ id: 'keep-me', clientId: 'client-c', scope: ['mcp'] },
+	])
 })
 
 test('revokeAllOAuthGrantsForUser pages grants and revokes every id', async () => {
@@ -135,6 +138,23 @@ test('revokeAllOAuthGrantsForUser pages grants and revokes every id', async () =
 	expect(
 		await listUserOAuthGrantsForClient(helpers, 'user-1', 'client-a'),
 	).toEqual([])
+})
+
+test('revokeAllOAuthGrantsForUser still revokes grants with a blank clientId', async () => {
+	const { helpers, revoked } = createPagingGrantHelpers({
+		pages: [
+			{
+				items: [
+					{ id: 'grant-blank', clientId: '', scope: ['profile'] },
+					{ id: 'grant-named', clientId: 'client-a', scope: ['profile'] },
+				],
+			},
+		],
+	})
+	await expect(
+		revokeAllOAuthGrantsForUser({ helpers, userId: 'user-1' }),
+	).resolves.toBe(2)
+	expect(revoked).toEqual(['grant-blank', 'grant-named'])
 })
 
 test('revokeAllOAuthGrantsForUser revokes a grant created during the first pass', async () => {

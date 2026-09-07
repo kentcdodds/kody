@@ -38,6 +38,7 @@ export async function buildOnboardingSearchNotice(input: {
 			loadInboundMcpConnectionState(helpers, input.userId),
 			loadOnboardingAccessWin(input.env, input.userId),
 		])
+		if (inbound.listingFailed) return null
 		const remaining = remainingOnboardingWizardLabels({
 			hasMcpClient: inbound.uniqueClientCount > 0,
 			hasAccessWin,

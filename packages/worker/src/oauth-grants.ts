@@ -42,8 +42,8 @@ export async function listUserOAuthGrants(
 	do {
 		const page = await helpers.listUserGrants(userId, { cursor })
 		for (const grant of page.items) {
-			const clientId = grant.clientId?.trim()
-			if (!grant.id || !clientId) continue
+			if (!grant.id) continue
+			const clientId = grant.clientId?.trim() ?? ''
 			grants.push({
 				id: grant.id,
 				clientId,

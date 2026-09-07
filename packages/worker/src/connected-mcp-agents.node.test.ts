@@ -154,6 +154,23 @@ test('inbound labels fall back when lookupClient is missing or throws', async ()
 		uniqueClientCount: 0,
 		agents: [],
 	})
+
+	const listingFailed = await loadInboundMcpConnectionState(
+		{
+			async listUserGrants() {
+				throw new Error('provider unavailable')
+			},
+			async revokeGrant() {
+				return
+			},
+		},
+		'user-1',
+	)
+	expect(listingFailed).toEqual({
+		uniqueClientCount: 0,
+		agents: [],
+		listingFailed: true,
+	})
 })
 
 test('revokeConnectedMcpAgent revokes every grant for that clientId', async () => {
