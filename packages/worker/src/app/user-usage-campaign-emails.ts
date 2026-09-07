@@ -180,7 +180,8 @@ export async function recordVerifiedNoMcpCampaignSend(input: {
 			sendCount: Math.max(persisted.sendCount, 1),
 			lastSentAt: now.toISOString(),
 			origin: 'event',
-			coolingTerminal: false,
+			coolingTerminal: persisted.coolingTerminal,
+			everActivated: persisted.everActivated,
 			now,
 		})
 		return true
@@ -406,6 +407,7 @@ async function persistDecision(input: {
 		lastSentAt: row.lastSentAt,
 		origin: row.origin,
 		coolingTerminal: row.coolingTerminal,
+		everActivated: row.everActivated,
 		now: input.now,
 	})
 }

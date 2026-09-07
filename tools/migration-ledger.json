@@ -199,6 +199,10 @@
 		{
 			"filename": "0049-user-usage-campaigns.sql",
 			"sha256": "635dd63c02d971d8b5116a40f9c3bf8d5ebb36fd2dd23a73d76774e1d793c581"
+		},
+		{
+			"filename": "0050-user-usage-campaigns-ever-activated.sql",
+			"sha256": "28d4be6fa0ca11aa4bb62d008bf04177926b89d3368c7c5ea1c7800c40b37339"
 		}
 	]
 }

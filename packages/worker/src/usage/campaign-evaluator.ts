@@ -34,6 +34,7 @@ export type UsageCampaignPersisted = {
 	lastSentAt: string | null
 	origin: UsageCampaignOrigin | null
 	coolingTerminal: boolean
+	everActivated: boolean
 }
 
 export type UsageCampaignAction = 'send' | 'silence' | 'persist'
@@ -57,7 +58,11 @@ export function resolveUsageCampaignState(
 
 	const packaged = snapshot.firstSavedPackageAt != null
 
-	if (packaged || isActivatedOrCoolingHistory(persisted)) {
+	if (
+		packaged ||
+		isActivatedOrCoolingHistory(persisted) ||
+		persisted.everActivated
+	) {
 		if (snapshot.jobListingFailed && persisted.state === 'Activated') {
 			return 'Activated'
 		}
@@ -66,7 +71,7 @@ export function resolveUsageCampaignState(
 		}
 		if (isUsageCampaignQuiet(snapshot)) return 'Cooling'
 		if (isActivatedUsage(snapshot)) return 'Activated'
-		if (persisted.state === 'Activated' || persisted.state === 'Cooling') {
+		if (hasActivatedHistory(persisted)) {
 			return 'Activated'
 		}
 		if (snapshot.inboundListingFailed) {
@@ -128,10 +133,10 @@ export function evaluateUsageCampaign(
 
 	const state = resolveUsageCampaignState(snapshot, persisted)
 	const coolingTerminal =
-		state === 'Cooling' &&
-		(persisted.coolingTerminal ||
-			(persisted.state === 'Cooling' &&
-				persisted.sendCount >= usageCampaignSendCaps.Cooling))
+		persisted.coolingTerminal ||
+		(state === 'Cooling' &&
+			persisted.state === 'Cooling' &&
+			persisted.sendCount >= usageCampaignSendCaps.Cooling)
 	const stateChanged = persisted.state !== state
 	const origin: UsageCampaignOrigin = stateChanged
 		? persisted.state == null
@@ -177,12 +182,12 @@ export function evaluateUsageCampaign(
 			template: null,
 			sendIndex: null,
 			origin,
-			coolingTerminal: state === 'Cooling' ? coolingTerminal : false,
+			coolingTerminal,
 			reason: silenceReason(state),
 		}
 	}
 
-	if (state === 'Cooling' && coolingTerminal && !stateChanged) {
+	if (state === 'Cooling' && coolingTerminal) {
 		return {
 			state,
 			action: 'silence',
@@ -201,7 +206,7 @@ export function evaluateUsageCampaign(
 			template: null,
 			sendIndex: null,
 			origin,
-			coolingTerminal: false,
+			coolingTerminal,
 			reason: 'seed_no_backfill',
 		}
 	}
@@ -213,7 +218,7 @@ export function evaluateUsageCampaign(
 			template: null,
 			sendIndex: null,
 			origin,
-			coolingTerminal: state === 'Cooling',
+			coolingTerminal,
 			reason: 'cap_reached',
 		}
 	}
@@ -263,6 +268,19 @@ function isActivatedOrCoolingHistory(persisted: UsageCampaignPersisted) {
 		persisted.state === 'Cooling' ||
 		persisted.state === 'PackagedSingleClient'
 	)
+}
+
+function hasActivatedHistory(persisted: UsageCampaignPersisted) {
+	return (
+		persisted.everActivated ||
+		persisted.state === 'Activated' ||
+		persisted.state === 'Cooling' ||
+		persisted.state === 'Paid'
+	)
+}
+
+function marksActivatedHistory(state: UsageCampaignState) {
+	return state === 'Activated' || state === 'Cooling' || state === 'Paid'
 }
 
 function isMissingOrStale(stamp: string | null, now: Date) {
@@ -334,8 +352,12 @@ export function nextUsageCampaignRow(input: {
 		lastSentAt,
 		origin: input.decision.origin,
 		coolingTerminal:
+			input.persisted.coolingTerminal ||
 			input.decision.coolingTerminal ||
 			(input.sent && input.decision.state === 'Cooling'),
+		everActivated:
+			input.persisted.everActivated ||
+			marksActivatedHistory(input.decision.state),
 	}
 }
 

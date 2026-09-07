@@ -42,6 +42,7 @@ function persisted(
 		lastSentAt: null,
 		origin: null,
 		coolingTerminal: false,
+		everActivated: false,
 		...overrides,
 	}
 }
@@ -556,12 +557,64 @@ test('Activated and Cooling history does not fall back into PackagedSingleClient
 				sendCount: 1,
 				origin: 'event',
 				coolingTerminal: true,
+				everActivated: true,
 			}),
 		),
 	).toMatchObject({
 		state: 'Activated',
 		action: 'silence',
 		reason: 'activated_silence',
+	})
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-08-01T00:00:00.000Z',
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+				distinctInboundClientCount: 1,
+			}),
+			persisted({
+				state: 'LimitAware',
+				enteredAt: '2026-09-05T00:00:00.000Z',
+				origin: 'event',
+				everActivated: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Activated',
+		action: 'silence',
+		reason: 'activated_silence',
+	})
+	expect(
+		resolveUsageCampaignState(
+			snapshot({
+				lastActiveAt: '2026-09-06T00:00:00.000Z',
+			}),
+			persisted({
+				state: 'LimitAware',
+				origin: 'event',
+				everActivated: false,
+			}),
+		),
+	).toBe('VerifiedNoMcp')
+	expect(
+		evaluateUsageCampaign(
+			snapshot({
+				firstSavedPackageAt: '2026-07-01T00:00:00.000Z',
+				lastActiveAt: '2026-07-01T00:00:00.000Z',
+			}),
+			persisted({
+				state: 'Activated',
+				enteredAt: '2026-09-06T00:00:00.000Z',
+				origin: 'event',
+				coolingTerminal: true,
+				everActivated: true,
+			}),
+		),
+	).toMatchObject({
+		state: 'Cooling',
+		action: 'silence',
+		reason: 'cooling_terminal',
+		coolingTerminal: true,
 	})
 })
 

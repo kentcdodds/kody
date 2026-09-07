@@ -343,6 +343,7 @@ test('a lost send-ledger race does not persist a stale campaign row', async () =
 		lastSentAt: null,
 		origin: 'event',
 		coolingTerminal: false,
+		everActivated: false,
 		now: new Date(enteredAt),
 	})
 	const claimed = await claimUsageCampaignSend({
@@ -404,6 +405,7 @@ test('a later seed persist cannot clobber a verify-time event row', async () => 
 		lastSentAt: null,
 		origin: 'seed',
 		coolingTerminal: false,
+		everActivated: false,
 		now: sweepAt,
 	})
 	const afterSweep = await readUsageCampaign(db, 'user-verify')
@@ -413,6 +415,41 @@ test('a later seed persist cannot clobber a verify-time event row', async () => 
 		origin: 'event',
 		last_sent_at: now.toISOString(),
 		last_evaluated_at: sweepAt.toISOString(),
+	})
+})
+
+test('campaign upsert never clears cooling_terminal or ever_activated', async () => {
+	const { db } = createDb()
+	await insertUser(db, { id: 'user-sticky', email: 'sticky@example.com' })
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-sticky',
+		state: 'Cooling',
+		enteredAt: now.toISOString(),
+		sendCount: 1,
+		lastSentAt: now.toISOString(),
+		origin: 'event',
+		coolingTerminal: true,
+		everActivated: true,
+		now,
+	})
+	const later = new Date('2026-09-07T12:00:05.000Z')
+	await upsertUsageCampaign({
+		db,
+		userId: 'user-sticky',
+		state: 'Activated',
+		enteredAt: later.toISOString(),
+		sendCount: 0,
+		lastSentAt: null,
+		origin: 'event',
+		coolingTerminal: false,
+		everActivated: false,
+		now: later,
+	})
+	expect(await readUsageCampaign(db, 'user-sticky')).toMatchObject({
+		state: 'Activated',
+		cooling_terminal: 1,
+		ever_activated: 1,
 	})
 })
 
@@ -430,6 +467,7 @@ test('failed unsubscribe mint releases the claim and does not send campaign mail
 		lastSentAt: now.toISOString(),
 		origin: 'event',
 		coolingTerminal: false,
+		everActivated: false,
 		now,
 	})
 	await claimUsageCampaignSend({

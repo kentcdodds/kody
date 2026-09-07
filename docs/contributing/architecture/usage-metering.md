@@ -573,7 +573,10 @@ observation still uses the stamp-based quiet check so a quiet packaged user
 seeds `Cooling` instead of a later event transition that would backfill the
 poke. Once a user has been `Activated` or `Cooling`, they do not fall back to
 `PackagedSingleClient` mail when strong-use or client count dips — recent
-activity returns them to Activated silence.
+activity returns them to Activated silence. `ever_activated` survives LimitAware
+and Paid so those silent states cannot erase that history. Cooling is one
+lifetime poke: `cooling_terminal` is sticky, so a later re-entry does not retry
+send 1 or stall the sweep.
 
 First sweep of an existing user seeds the current state without mailing
 (backfill is out of scope). Verify-time connect-agent mail is send 1 of

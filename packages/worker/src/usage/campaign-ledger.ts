@@ -16,6 +16,7 @@ export type UsageCampaignRow = {
 	last_evaluated_at: string
 	origin: UsageCampaignOrigin
 	cooling_terminal: number
+	ever_activated: number
 	created_at: string
 	updated_at: string
 }
@@ -31,6 +32,7 @@ export function campaignRowToPersisted(
 			lastSentAt: null,
 			origin: null,
 			coolingTerminal: false,
+			everActivated: false,
 		}
 	}
 	return {
@@ -40,6 +42,7 @@ export function campaignRowToPersisted(
 		lastSentAt: row.last_sent_at,
 		origin: row.origin,
 		coolingTerminal: row.cooling_terminal === 1,
+		everActivated: row.ever_activated === 1,
 	}
 }
 
@@ -50,7 +53,8 @@ export async function readUsageCampaign(
 	const row = await db
 		.prepare(
 			`SELECT user_id, state, entered_at, send_count, last_sent_at,
-			        last_evaluated_at, origin, cooling_terminal, created_at, updated_at
+			        last_evaluated_at, origin, cooling_terminal, ever_activated,
+			        created_at, updated_at
 			 FROM user_usage_campaigns WHERE user_id = ?`,
 		)
 		.bind(userId)
@@ -67,6 +71,7 @@ export async function upsertUsageCampaign(input: {
 	lastSentAt: string | null
 	origin: UsageCampaignOrigin
 	coolingTerminal: boolean
+	everActivated: boolean
 	now: Date
 }) {
 	const nowIso = input.now.toISOString()
@@ -74,8 +79,9 @@ export async function upsertUsageCampaign(input: {
 		.prepare(
 			`INSERT INTO user_usage_campaigns (
 				user_id, state, entered_at, send_count, last_sent_at,
-				last_evaluated_at, origin, cooling_terminal, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				last_evaluated_at, origin, cooling_terminal, ever_activated,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(user_id) DO UPDATE SET
 				state = excluded.state,
 				entered_at = excluded.entered_at,
@@ -100,7 +106,14 @@ export async function upsertUsageCampaign(input: {
 					WHEN user_usage_campaigns.origin = 'event' THEN 'event'
 					ELSE excluded.origin
 				END,
-				cooling_terminal = excluded.cooling_terminal,
+				cooling_terminal = MAX(
+					user_usage_campaigns.cooling_terminal,
+					excluded.cooling_terminal
+				),
+				ever_activated = MAX(
+					user_usage_campaigns.ever_activated,
+					excluded.ever_activated
+				),
 				updated_at = excluded.updated_at`,
 		)
 		.bind(
@@ -112,6 +125,7 @@ export async function upsertUsageCampaign(input: {
 			nowIso,
 			input.origin,
 			input.coolingTerminal ? 1 : 0,
+			input.everActivated ? 1 : 0,
 			nowIso,
 			nowIso,
 		)
@@ -192,5 +206,6 @@ function parseCampaignRow(row: UsageCampaignRow): UsageCampaignRow {
 		...row,
 		send_count: Number(row.send_count),
 		cooling_terminal: Number(row.cooling_terminal),
+		ever_activated: Number(row.ever_activated),
 	}
 }

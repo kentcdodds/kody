@@ -1673,8 +1673,9 @@ Current retention policies:
   raw Analytics Engine usage events follow platform retention. Months before the
   earliest `fleet_execute_days` row still feed the homepage ticker prefix.
 - `user_usage_campaigns` / `user_usage_campaign_sends`: usage-state campaign
-  machine and send ledger keyed by `stable_user_id`. Deleted and exported with
-  the account. Durable until deletion; no TTL.
+  machine and send ledger keyed by `stable_user_id`. `ever_activated` and
+  `cooling_terminal` are sticky. Deleted and exported with the account. Durable
+  until deletion; no TTL.
 - `compute_overage_invoices`: one ledger row per user per UTC month for unique
   worker-day and Durable Object rows-read overage. Status is the disposition
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
