@@ -6,7 +6,9 @@ import { listSecrets } from '#mcp/secrets/service.ts'
 import { getCachedMcpClientHubServers } from '#worker/mcp-client/hub-client.ts'
 import { type McpClientHubSnapshot } from '#worker/mcp-client/types.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
+import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
@@ -34,12 +36,7 @@ export type DeriveWaitingUser = {
 }
 
 type WaitingEnv = Env & {
-	OAUTH_PROVIDER?: {
-		listUserGrants(
-			userId: string,
-			options?: { cursor?: string },
-		): Promise<{ items: Array<unknown>; cursor?: string }>
-	}
+	OAUTH_PROVIDER?: OAuthGrantListHelpers
 }
 
 /**
@@ -161,10 +158,10 @@ export async function collectWaitingSignals(input: {
  */
 async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: string) {
 	try {
-		const helpers = await resolveOAuthHelpers(env)
+		const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(env)
 		if (!helpers) return false
-		const page = await helpers.listUserGrants(stableUserId)
-		return page.items.length > 0
+		const inbound = await loadInboundMcpConnectionState(helpers, stableUserId)
+		return inbound.uniqueClientCount > 0
 	} catch {
 		return false
 	}

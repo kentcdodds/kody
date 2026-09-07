@@ -202,4 +202,24 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(connected).toContain("You've connected a second agent.")
+
+	const labeled = await renderToString(
+		renderSecondAgentPanel({
+			entrance: css({}),
+			activeStep: 3,
+			onSelectStep() {},
+			loggedIn: true,
+			hasSecondMcpClient: true,
+			connectedAgents: [{ label: 'Cursor' }, { label: 'Claude Desktop' }],
+			firstAgent: 'codex',
+			selectedAgent: 'claude-code',
+			selectedAgentLabel: 'Claude Code',
+			greyedAgents: ['chatgpt', 'codex'],
+			agentChooser: null,
+			mcpServerUrl: defaultKodyMcpUrl,
+			mcpHighlights: {},
+		}),
+	)
+	expect(labeled).toContain('data-testid="onboarding-connected-agents"')
+	expect(labeled).toContain('Connected: Cursor and Claude Desktop')
 })

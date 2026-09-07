@@ -113,6 +113,22 @@ export async function onboardingRouteLoader(
 	}
 }
 
+function sameConnectedAgents(
+	left: OnboardingPayload['connectedAgents'] | undefined,
+	right: OnboardingPayload['connectedAgents'],
+) {
+	const incoming = left ?? []
+	if (incoming.length !== right.length) return false
+	return incoming.every((agent, index) => {
+		const current = right[index]
+		return (
+			current !== undefined &&
+			agent.clientId === current.clientId &&
+			agent.label === current.label
+		)
+	})
+}
+
 export function OnboardingRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let message: string | null = null
@@ -123,6 +139,7 @@ export function OnboardingRoute(handle: Handle) {
 	let hasMcpClient = false
 	let hasAccessWin = false
 	let hasSecondMcpClient = false
+	let connectedAgents: OnboardingPayload['connectedAgents'] = []
 	let accessWinMemorySubject: string | null = null
 	let persistedPackageName: string | null = null
 	let initializedStep = false
@@ -149,6 +166,10 @@ export function OnboardingRoute(handle: Handle) {
 			source === 'snapshot'
 				? hasSecondMcpClient || payload.hasSecondMcpClient
 				: payload.hasSecondMcpClient
+		connectedAgents =
+			source === 'live' || connectedAgents.length === 0
+				? (payload.connectedAgents ?? [])
+				: connectedAgents
 		hasMcpClient =
 			source === 'snapshot'
 				? hasMcpClient || payload.hasMcpClient
@@ -327,7 +348,8 @@ export function OnboardingRoute(handle: Handle) {
 				payload.hasAccessWin === hasAccessWin &&
 				payload.hasSecondMcpClient === hasSecondMcpClient &&
 				payload.accessWinMemorySubject === accessWinMemorySubject &&
-				payload.persistedPackageName === persistedPackageName
+				payload.persistedPackageName === persistedPackageName &&
+				sameConnectedAgents(payload.connectedAgents, connectedAgents)
 			) {
 				return
 			}
@@ -506,6 +528,7 @@ export function OnboardingRoute(handle: Handle) {
 									onSelectStep: selectStep,
 									loggedIn,
 									hasSecondMcpClient,
+									connectedAgents,
 									firstAgent,
 									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,

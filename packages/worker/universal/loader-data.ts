@@ -27,6 +27,7 @@ import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
+import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
@@ -966,11 +967,14 @@ export type OnboardingLoaderData = {
 	/** True when the account has a memory, execute, or saved package. */
 	hasAccessWin: boolean
 	/**
-	 * True when the account has two or more inbound MCP OAuth grants. That is
-	 * grant count, not "the selected Step 3 host connected."
+	 * True when the account has two or more unique inbound MCP OAuth
+	 * `clientId`s. That is unique hosts, not raw grant count and not "the
+	 * selected Step 3 host connected."
 	 */
 	hasSecondMcpClient: boolean
 	hasMcpClient: boolean
+	/** Best-effort labeled inbound MCP hosts, unique by `clientId`. */
+	connectedAgents: Array<ConnectedMcpAgent>
 	emailVerified: boolean
 	needsOnboarding: boolean
 	/** Admin-featured listings offered as one-click starter installs. */
@@ -1036,6 +1040,15 @@ export type AccountMcpOauthClientListItem = {
 export type AccountMcpOauthClientsLoaderData = {
 	ok: true
 	clients: Array<AccountMcpOauthClientListItem>
+}
+
+export type AccountConnectedAgentListItem = ConnectedMcpAgent & {
+	grantIds: Array<string>
+}
+
+export type AccountConnectedAgentsLoaderData = {
+	ok: true
+	agents: Array<AccountConnectedAgentListItem>
 }
 
 export type PendingVerificationLoaderData = {
@@ -1847,6 +1860,7 @@ export type AppLoaderData = {
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
 	accountConnections?: AccountConnectionsLoaderData
+	accountConnectedAgents?: AccountConnectedAgentsLoaderData
 	onboarding?: OnboardingLoaderData
 	connectOauth?: ConnectOauthLoaderData
 	pendingVerification?: PendingVerificationLoaderData

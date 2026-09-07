@@ -7,7 +7,6 @@ import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type OnboardingChecklistLoaderData,
-	type AccountConnectionsLoaderData,
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
@@ -34,6 +33,7 @@ import {
 	accountProfileApiPath,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { fetchAccountPagePayloads } from '#client/routes/account-page-data.ts'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
 import { renderAccountLogoutPanel } from '#client/routes/account-logout-panel.tsx'
 import {
@@ -51,63 +51,21 @@ import {
 	createAccountConnections,
 	readConnectionCallbackMessage,
 } from '#client/routes/account-connections-panel.tsx'
+import { createAccountConnectedAgents } from '#client/routes/account-connected-agents-panel.tsx'
 import { renderOnboardingBanner } from '#client/routes/onboarding-banner.tsx'
 import { shouldShowOnboardingChecklist } from '#client/routes/onboarding-checklist.tsx'
 import {
 	renderEmailVerificationPrompt,
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
-import {
-	fetchOnboardingPayload,
-	type OnboardingPayload,
-} from '#client/routes/onboarding-payload.ts'
-import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
+import { type OnboardingPayload } from '#client/routes/onboarding-payload.ts'
 
-const connectionsApiPath = '/account/connections.json'
 const accountAvatarApiPath = '/account/profile/avatar.json'
+
+export { accountRouteLoader } from '#client/routes/account-page-data.ts'
 
 function isAccountPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/account'
-}
-
-export async function accountRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const [profileResponse, connectionsResponse, onboarding] = await Promise.all([
-		fetch(`${accountProfileApiPath}${url.search}`, {
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-			signal,
-		}),
-		fetch(connectionsApiPath, {
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-			signal,
-		}),
-		fetchOnboardingPayload(signal),
-	])
-	if (profileResponse.status === 401 || connectionsResponse.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const [payload, connectionsPayload] = await Promise.all([
-		readJson<AccountProfileLoaderData>(profileResponse),
-		readJson<AccountConnectionsLoaderData>(connectionsResponse),
-	])
-	if (!profileResponse.ok || !payload?.ok) {
-		throw new Error('Unable to load your account.')
-	}
-	if (!connectionsResponse.ok || !connectionsPayload?.ok) {
-		throw new Error('Unable to load connected accounts.')
-	}
-	return {
-		accountProfile: payload,
-		accountConnections: connectionsPayload,
-		...(onboarding ? { onboarding } : {}),
-	}
 }
 
 export function AccountRoute(handle: Handle) {
@@ -137,6 +95,7 @@ export function AccountRoute(handle: Handle) {
 	let messageTone: 'error' | 'info' = 'info'
 	let usernameSaveError: string | null = null
 	const accountConnections = createAccountConnections(handle)
+	const accountConnectedAgents = createAccountConnectedAgents(handle)
 	const accountEmailClaims = createAccountEmailClaims(handle)
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
@@ -152,36 +111,21 @@ export function AccountRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		try {
 			const search = new URL(href, 'http://localhost').search
-			const [response, connectionsResponse, onboarding] = await Promise.all([
-				fetch(`${accountProfileApiPath}${search}`, {
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-					signal,
-				}),
-				fetch(connectionsApiPath, {
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-					signal,
-				}),
-				fetchOnboardingPayload(signal),
-			])
+			const result = await fetchAccountPagePayloads(search, signal)
 			if (signal.aborted) return
-			if (response.status === 401 || connectionsResponse.status === 401) {
+			if (result.kind === 'unauthorized') {
 				window.location.assign('/login')
 				return
 			}
-			const [payload, connectionsPayload] = await Promise.all([
-				readJson<AccountProfileLoaderData>(response),
-				readJson<AccountConnectionsLoaderData>(connectionsResponse),
-			])
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your account.')
-			}
-			if (!connectionsResponse.ok || !connectionsPayload?.ok) {
-				throw new Error('Unable to load connected accounts.')
-			}
+			const {
+				accountProfile: payload,
+				accountConnections: connectionsPayload,
+				accountConnectedAgents: connectedAgentsPayload,
+				onboarding,
+			} = result.payloads
 			applyOnboardingPayload(onboarding)
 			accountConnections.applyPayload(connectionsPayload)
+			accountConnectedAgents.applyPayload(connectedAgentsPayload)
 			email = payload.email
 			emailVerified = payload.emailVerified
 			emailVerificationDelivery = payload.emailVerificationDelivery ?? null
@@ -544,6 +488,13 @@ export function AccountRoute(handle: Handle) {
 		applyProfileFields(routeData)
 		accountEmailClaims.applyCurrentEmail(routeData.email)
 		accountConnections.applyPayload(connectionsData)
+		const connectedAgentsData = tryConsumeRouteLoaderData(
+			handle,
+			'accountConnectedAgents',
+			href,
+		)
+		if (!connectedAgentsData) return false
+		accountConnectedAgents.applyPayload(connectedAgentsData)
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (onboardingData) {
 			applyOnboardingPayload(onboardingData)
@@ -704,6 +655,7 @@ export function AccountRoute(handle: Handle) {
 							}}
 						/>
 						{accountConnections.render()}
+						{accountConnectedAgents.render()}
 						<AccountManagementPanel
 							title="Your data"
 							description="Download a portable JSON export of your Kody account data for backup or migration. Secret values are never included; secret entries export metadata such as names, hosts, and allowlists only."
@@ -720,7 +672,7 @@ export function AccountRoute(handle: Handle) {
 						</AccountManagementPanel>
 						<AccountManagementPanel
 							title="Advanced"
-							description="Optional tools for hosts that cannot finish dynamic OAuth on their own."
+							description="Optional tools for hosts that cannot finish dynamic OAuth on their own. This is not the list of agents already connected to your account."
 						>
 							<div mix={css(accountActionsCss)}>
 								<a

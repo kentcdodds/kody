@@ -16,6 +16,7 @@ const payload = {
 	hasAccessWin: false,
 	hasSecondMcpClient: false,
 	hasMcpClient: false,
+	connectedAgents: [],
 	emailVerified: false,
 	needsOnboarding: true,
 	featuredListings: [],

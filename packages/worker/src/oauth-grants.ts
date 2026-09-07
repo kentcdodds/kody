@@ -4,6 +4,16 @@ export type OAuthGrantListItem = {
 	id: string
 	clientId: string
 	scope: Array<string>
+	createdAt?: number
+	redirectUri?: string
+	metadata?: unknown
+}
+
+export type OAuthClientInfo = {
+	clientId: string
+	clientName?: string
+	redirectUris?: Array<string>
+	clientUri?: string
 }
 
 export type OAuthGrantPage = {
@@ -11,16 +21,20 @@ export type OAuthGrantPage = {
 	cursor?: string
 }
 
-export type OAuthGrantHelpers = {
+export type OAuthGrantListHelpers = {
 	listUserGrants(
 		userId: string,
 		options?: { cursor?: string },
 	): Promise<OAuthGrantPage>
+	lookupClient?(clientId: string): Promise<OAuthClientInfo | null>
+}
+
+export type OAuthGrantHelpers = OAuthGrantListHelpers & {
 	revokeGrant(grantId: string, userId: string): Promise<unknown>
 }
 
 export async function listUserOAuthGrants(
-	helpers: OAuthGrantHelpers,
+	helpers: OAuthGrantListHelpers,
 	userId: string,
 ): Promise<Array<OAuthGrantListItem>> {
 	const grants = new Array<OAuthGrantListItem>()
@@ -28,10 +42,19 @@ export async function listUserOAuthGrants(
 	do {
 		const page = await helpers.listUserGrants(userId, { cursor })
 		for (const grant of page.items) {
+			if (!grant.id) continue
+			const clientId = grant.clientId?.trim() ?? ''
 			grants.push({
 				id: grant.id,
-				clientId: grant.clientId,
+				clientId,
 				scope: Array.isArray(grant.scope) ? grant.scope : [],
+				...(typeof grant.createdAt === 'number'
+					? { createdAt: grant.createdAt }
+					: {}),
+				...(typeof grant.redirectUri === 'string' && grant.redirectUri
+					? { redirectUri: grant.redirectUri }
+					: {}),
+				...(grant.metadata === undefined ? {} : { metadata: grant.metadata }),
 			})
 		}
 		cursor = page.cursor
@@ -40,7 +63,7 @@ export async function listUserOAuthGrants(
 }
 
 export async function listUserOAuthGrantsForClient(
-	helpers: OAuthGrantHelpers,
+	helpers: OAuthGrantListHelpers,
 	userId: string,
 	clientId: string,
 ): Promise<Array<OAuthGrantListItem>> {

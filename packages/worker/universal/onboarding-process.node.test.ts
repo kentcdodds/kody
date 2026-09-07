@@ -6,6 +6,7 @@ import {
 	formatOnboardingSearchNotice,
 	onboardingAccessSelectedLede,
 	onboardingAccessWinMadeLine,
+	onboardingConnectedAgentLabelsLine,
 	onboardingAgentHref,
 	onboardingChecklistItemHref,
 	onboardingChecklistItems,
@@ -169,6 +170,16 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	).toBe(
 		'You made Family vault photo backup cannot use Cloudflare… and @you/family-vault',
 	)
+	expect(onboardingConnectedAgentLabelsLine([])).toBeNull()
+	expect(onboardingConnectedAgentLabelsLine([{ label: 'Cursor' }])).toBe(
+		'Connected: Cursor',
+	)
+	expect(
+		onboardingConnectedAgentLabelsLine([
+			{ label: 'Cursor' },
+			{ label: 'Claude Desktop' },
+		]),
+	).toBe('Connected: Cursor and Claude Desktop')
 	expect(onboardingSecondAgentLede).toContain('Reuse what you made in Step 2')
 	expect(onboardingSearchStartedLabel).toContain(
 		'started making something useful',

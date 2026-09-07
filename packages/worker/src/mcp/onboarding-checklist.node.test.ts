@@ -98,7 +98,9 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 		env: {
 			...env,
 			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({ items: [{}] }),
+				listUserGrants: async () => ({
+					items: [{ id: 'grant-1', clientId: 'client-a' }],
+				}),
 			},
 		},
 		userId,
@@ -106,6 +108,40 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 	})
 	expect(afterSearch).not.toContain('Make something useful')
 	expect(afterSearch).toContain('Connect a second agent')
+
+	const twoGrantsSameClient = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({
+					items: [
+						{ id: 'grant-1', clientId: 'client-a' },
+						{ id: 'grant-2', clientId: 'client-a' },
+					],
+				}),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(twoGrantsSameClient).toContain('Connect a second agent')
+
+	const twoUniqueClients = await buildOnboardingSearchNotice({
+		env: {
+			...env,
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({
+					items: [
+						{ id: 'grant-1', clientId: 'client-a' },
+						{ id: 'grant-2', clientId: 'client-b' },
+					],
+				}),
+			},
+		},
+		userId,
+		baseUrl: 'https://kody.example',
+	})
+	expect(twoUniqueClients).toBeNull()
 
 	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
 	await dismissOnboardingChecklist({ env, userId })
@@ -139,6 +175,25 @@ test('search onboarding notice lists remaining wizard steps without writing dism
 	expect(
 		await buildOnboardingSearchNotice({
 			env: envWithGrants,
+			userId,
+			baseUrl: 'https://kody.example',
+		}),
+	).toBe(null)
+})
+
+test('search onboarding notice stays quiet when grant listing fails', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	expect(
+		await buildOnboardingSearchNotice({
+			env: {
+				...env,
+				OAUTH_PROVIDER: {
+					listUserGrants: async () => {
+						throw new Error('provider unavailable')
+					},
+				},
+			},
 			userId,
 			baseUrl: 'https://kody.example',
 		}),

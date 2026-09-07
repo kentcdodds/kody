@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	listUserOAuthGrants,
 	listUserOAuthGrantsForClient,
 	revokeAllOAuthGrantsBestEffort,
 	revokeAllOAuthGrantsForUser,
@@ -34,6 +35,86 @@ function createPagingGrantHelpers(input: {
 	}
 }
 
+test('listUserOAuthGrants keeps createdAt, redirectUri, and metadata across pages', async () => {
+	const grants = await listUserOAuthGrants(
+		{
+			async listUserGrants(_userId, options) {
+				if (options?.cursor === 'page-2') {
+					return {
+						items: [
+							{
+								id: 'grant-2',
+								clientId: 'client-b',
+								scope: ['mcp'],
+								createdAt: 1_700_000_100,
+								redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+								metadata: { label: 'claude' },
+							},
+						],
+					}
+				}
+				return {
+					items: [
+						{
+							id: 'grant-1',
+							clientId: 'client-a',
+							scope: ['mcp'],
+							createdAt: 1_700_000_000,
+							redirectUri: 'https://chatgpt.com/callback',
+							metadata: { label: 'chatgpt' },
+						},
+					],
+					cursor: 'page-2',
+				}
+			},
+			async revokeGrant() {
+				return
+			},
+		},
+		'user-1',
+	)
+	expect(grants).toEqual([
+		{
+			id: 'grant-1',
+			clientId: 'client-a',
+			scope: ['mcp'],
+			createdAt: 1_700_000_000,
+			redirectUri: 'https://chatgpt.com/callback',
+			metadata: { label: 'chatgpt' },
+		},
+		{
+			id: 'grant-2',
+			clientId: 'client-b',
+			scope: ['mcp'],
+			createdAt: 1_700_000_100,
+			redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+			metadata: { label: 'claude' },
+		},
+	])
+
+	await expect(
+		listUserOAuthGrants(
+			{
+				async listUserGrants() {
+					return {
+						items: [
+							{ id: 'skip-me', clientId: '', scope: ['mcp'] },
+							{ id: 'keep-me', clientId: ' client-c ', scope: ['mcp'] },
+						],
+					}
+				},
+				async revokeGrant() {
+					return
+				},
+			},
+			'user-1',
+		),
+	).resolves.toEqual([
+		{ id: 'skip-me', clientId: '', scope: ['mcp'] },
+		{ id: 'keep-me', clientId: 'client-c', scope: ['mcp'] },
+	])
+})
+
 test('revokeAllOAuthGrantsForUser pages grants and revokes every id', async () => {
 	const { helpers, revoked } = createPagingGrantHelpers({
 		pages: [
@@ -57,6 +138,23 @@ test('revokeAllOAuthGrantsForUser pages grants and revokes every id', async () =
 	expect(
 		await listUserOAuthGrantsForClient(helpers, 'user-1', 'client-a'),
 	).toEqual([])
+})
+
+test('revokeAllOAuthGrantsForUser still revokes grants with a blank clientId', async () => {
+	const { helpers, revoked } = createPagingGrantHelpers({
+		pages: [
+			{
+				items: [
+					{ id: 'grant-blank', clientId: '', scope: ['profile'] },
+					{ id: 'grant-named', clientId: 'client-a', scope: ['profile'] },
+				],
+			},
+		],
+	})
+	await expect(
+		revokeAllOAuthGrantsForUser({ helpers, userId: 'user-1' }),
+	).resolves.toBe(2)
+	expect(revoked).toEqual(['grant-blank', 'grant-named'])
 })
 
 test('revokeAllOAuthGrantsForUser revokes a grant created during the first pass', async () => {

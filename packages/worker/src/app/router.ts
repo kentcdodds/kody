@@ -113,6 +113,7 @@ import {
 	createAccountMcpOauthClientsHandler,
 } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
+import { createAccountConnectedAgentsApiHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountAvatarApiPostHandler } from '#app/handlers/account-avatar.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
@@ -367,6 +368,9 @@ export function createAppRouter(env: Env) {
 			accountPackagesApiPost: createAccountPackagesApiHandler(env),
 			accountConnectionsApi: createAccountConnectionsApiHandler(env),
 			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
+			accountConnectedAgentsApi: createAccountConnectedAgentsApiHandler(env),
+			accountConnectedAgentsApiPost:
+				createAccountConnectedAgentsApiHandler(env),
 			accountPasskeys: createAccountPasskeysHandler(env),
 			accountPasskeysApi: createAccountPasskeysApiHandler(env),
 			accountPasskeysApiPost: createAccountPasskeysApiHandler(env),

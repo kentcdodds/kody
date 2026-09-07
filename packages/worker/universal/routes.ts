@@ -84,6 +84,8 @@ export const routes = route({
 	accountEmailApi: '/account/email.json',
 	accountConnectionsApi: '/account/connections.json',
 	accountConnectionsApiPost: post('/account/connections.json'),
+	accountConnectedAgentsApi: '/account/connected-agents.json',
+	accountConnectedAgentsApiPost: post('/account/connected-agents.json'),
 	accountPasskeys: '/account/passkeys',
 	accountPasskeysApi: '/account/passkeys.json',
 	accountPasskeysApiPost: post('/account/passkeys.json'),

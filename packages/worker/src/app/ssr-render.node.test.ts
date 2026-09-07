@@ -427,6 +427,10 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		availableProviders: [],
 		canSyncDiscordRoles: false,
 	})
+	expect(accountProps.loaderData?.accountConnectedAgents).toEqual({
+		ok: true,
+		agents: [],
+	})
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,
@@ -438,6 +442,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		hasAccessWin: false,
 		hasSecondMcpClient: false,
 		hasMcpClient: false,
+		connectedAgents: [],
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],

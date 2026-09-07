@@ -99,6 +99,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/export.json',
 			'/account/delete',
 			'/account/connections.json',
+			'/account/connected-agents.json',
 		],
 	},
 	{

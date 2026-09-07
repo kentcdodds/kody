@@ -35,3 +35,5 @@ node tools/control-kody.ts preview -- \
   `control-kody doctor` and `dev:ensure`. `dev:ensure` waits for a starting
   leftover instead of killing it mid-reload. Do not dump one onboarding
   component to static HTML.
+- Step 3 completion is unique inbound OAuth `clientId`s ≥ 2, not raw grant
+  count. Account → Connected agents is the labeled inbound list.
