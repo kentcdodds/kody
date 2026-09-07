@@ -104,6 +104,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 			files: expect.objectContaining({
 				'package.json': expect.stringContaining('"private": true'),
 				'README.md': expect.stringContaining('## Intent'),
+				'AGENTS.md': expect.stringContaining('## Imports'),
 			}),
 		}),
 	)

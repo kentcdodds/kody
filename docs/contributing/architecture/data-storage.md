@@ -1205,7 +1205,8 @@ calls `publishFromExternalRef(...)`.
 
 `publishFromExternalRef(...)` owns the post-receive publish transaction:
 
-- run manifest, dependency, bundle, typecheck, and lint checks before mutation
+- run manifest, docs (`README.md` + `AGENTS.md`), dependency, bundle, typecheck,
+  and lint checks before mutation
 - advance `entity_sources.published_commit`
 - write the `PublishedSourceSnapshot` and manifest snapshot to
   `BUNDLE_ARTIFACTS_KV`

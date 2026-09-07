@@ -514,6 +514,7 @@ async function runChecksOnFiles(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		requirePackageDocs: false,
 	})
 }
 

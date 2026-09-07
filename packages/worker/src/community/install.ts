@@ -151,6 +151,7 @@ export async function installCommunityListing(input: {
 		baseUrl: input.baseUrl,
 		userId: input.userId,
 		expectedPackageScope: input.expectedPackageScope,
+		requirePackageDocs: false,
 	})
 	// Overlap is safe only if both sides finish before we return. Promise.all
 	// would reject as soon as checks throw and abandon an in-flight persist,

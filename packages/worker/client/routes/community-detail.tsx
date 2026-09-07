@@ -1,5 +1,6 @@
 import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
+import { getPackageTreeHref } from '#universal/package-files.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import {
 	listenToRouterNavigation,
@@ -62,6 +63,8 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installOutcome: CommunityInstallOutcome | null = null
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
+	let username = ''
+	let kodyId = ''
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
 	let reportReason = ''
@@ -110,6 +113,8 @@ export function CommunityDetailRoute(handle: Handle) {
 		installOutcome = null
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
+		username = snapshot.username
+		kodyId = snapshot.kodyId
 		reportState = 'idle'
 		reportMessage = null
 		shellUnauthorized = false
@@ -482,6 +487,15 @@ export function CommunityDetailRoute(handle: Handle) {
 			: showShellReady
 				? ''
 				: 'Loading package details…'
+		const agentsDocsHref =
+			username && kodyId
+				? getPackageTreeHref({
+						username,
+						kodyId,
+						listingId: listingId ?? undefined,
+						relativePath: 'AGENTS.md',
+					})
+				: null
 
 		return (
 			<article
@@ -507,8 +521,11 @@ export function CommunityDetailRoute(handle: Handle) {
 							: null}
 
 						{readmeContent
-							? renderReadmeSection(renderReadme(readmeContent, readmeFences))
-							: renderEmptyReadme()}
+							? renderReadmeSection(
+									renderReadme(readmeContent, readmeFences),
+									agentsDocsHref,
+								)
+							: renderEmptyReadme(agentsDocsHref)}
 
 						{listingId && viewerIsAdmin
 							? renderAdminFeatureSection({

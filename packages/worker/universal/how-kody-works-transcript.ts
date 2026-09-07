@@ -116,6 +116,25 @@ Tell me what kody-bot shipped — published releases and new public repos —
 since I last asked. Email me only when that list is not empty.
 `
 
+const agentsWithMail = `# kody-bot-shipped
+
+## Imports
+
+\`\`\`ts
+import whatShipped from 'kody:@you/kody-bot-shipped/whatShipped'
+\`\`\`
+
+## Smoke tests
+
+Call \`whatShipped\` from \`execute\` after publish. The daily job wrapper
+sends mail only when that list is not empty.
+
+## Edge cases
+
+A quiet day must skip email. The \`lastSeenEventId\` cursor lives in
+\`packageStorage()\`.
+`
+
 const packageJsonAskOnly = `{
   "name": "@you/kody-bot-shipped",
   "private": true,
@@ -154,6 +173,7 @@ function packageJsonWithJob(enabled: boolean) {
 export const howKodyWorksPackageFiles = {
 	'package.json': packageJsonWithJob(true),
 	'README.md': readmeWithMail,
+	'AGENTS.md': agentsWithMail,
 	'src/what-shipped.ts': whatShippedSource,
 	'src/daily-digest.ts': dailyDigestSource,
 } as const

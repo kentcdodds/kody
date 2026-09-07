@@ -145,6 +145,7 @@ async function delay(ms: number, signal?: AbortSignal) {
 const checkSchema = z.object({
 	kind: z.enum([
 		'manifest',
+		'docs',
 		'dependencies',
 		'bundle',
 		'typecheck',

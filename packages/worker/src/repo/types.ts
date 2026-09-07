@@ -272,6 +272,7 @@ export type RepoSessionCheckStatus = {
 	results: Array<{
 		kind:
 			| 'manifest'
+			| 'docs'
 			| 'dependencies'
 			| 'bundle'
 			| 'typecheck'
@@ -287,6 +288,7 @@ export type RepoSessionCheckRun = {
 	results: Array<{
 		kind:
 			| 'manifest'
+			| 'docs'
 			| 'dependencies'
 			| 'bundle'
 			| 'typecheck'

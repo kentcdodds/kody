@@ -44,6 +44,19 @@ and the code disagree.
 
 The package manifest is `package.json`.
 
+## Required package docs
+
+Publish checks require two non-empty root files:
+
+- `README.md` — human-focused (what it does, prerequisites, setup, done-when,
+  plus `## Intent`)
+- `AGENTS.md` — agent-focused (imports, smoke tests, edge cases)
+
+`runRepoChecks(...)` fails with kind `docs` when either file is missing or
+empty. Community install and platform codemods skip this gate so existing
+listings stay forkable and migratable. The next author-driven publish must add
+both files. See [package-authoring](../guides/package-authoring.md).
+
 ## npm dependencies
 
 Saved packages may declare npm runtime dependencies in

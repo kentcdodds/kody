@@ -138,6 +138,8 @@ async function seedOwnerPackage(input: {
 	const files = {
 		'package.json': packageJson,
 		'README.md': readme,
+		'AGENTS.md':
+			'# Agents\n\nImport the community-flow export and smoke-test it.\n',
 		'src/index.ts': indexTs,
 	}
 	const now = new Date().toISOString()

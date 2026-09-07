@@ -525,6 +525,7 @@ export const repoDiscardSessionOutputSchema = z.object({
 export const repoCheckResultSchema = z.object({
 	kind: z.enum([
 		'manifest',
+		'docs',
 		'dependencies',
 		'bundle',
 		'typecheck',

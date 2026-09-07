@@ -121,6 +121,8 @@ function packageFileSummary(path: keyof typeof howKodyWorksPackageFiles) {
 			return 'Export plus a daily job'
 		case 'README.md':
 			return 'Why this package exists'
+		case 'AGENTS.md':
+			return 'Imports, smoke tests, and edge cases'
 		default: {
 			const exhaustive: never = path
 			return exhaustive

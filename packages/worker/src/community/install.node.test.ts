@@ -107,6 +107,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 			baseUrl: 'https://kody.test',
 			userId: 'user-b',
 			expectedPackageScope: 'userb',
+			requirePackageDocs: false,
 		}),
 	)
 	// The checks workspace serves the fork's rewritten snapshot files.

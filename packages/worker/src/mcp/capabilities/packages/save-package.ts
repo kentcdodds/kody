@@ -190,7 +190,7 @@ export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageSave',
-		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer packageGetGitRemote (pass create: true for new packages) to clone, edit, push, and publish with packagePublishExternalPush; tool-only agents use packageSave or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. When creating or materially changing a package, include or maintain README.md with a concise Intent section that captures the user-defined goal; ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
+		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer packageGetGitRemote (pass create: true for new packages) to clone, edit, push, and publish with packagePublishExternalPush; tool-only agents use packageSave or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. Publish requires non-empty root README.md (human-focused: what it does, prerequisites, setup, done-when, plus a concise Intent section) and AGENTS.md (agent-focused: imports, smoke tests, edge cases). Ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
 			'save',

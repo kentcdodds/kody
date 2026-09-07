@@ -14,7 +14,7 @@ export const packageFileSchema = z.object({
 	content: z
 		.string()
 		.describe(
-			'Full file contents for this package file. For README.md, maintain a concise Intent section when creating or materially changing a package.',
+			'Full file contents for this package file. Publish requires non-empty root README.md (human-focused, including a concise Intent section) and AGENTS.md (agent-focused: imports, smoke tests, edge cases).',
 		),
 })
 

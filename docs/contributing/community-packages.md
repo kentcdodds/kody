@@ -176,11 +176,13 @@ Core logic: `packages/worker/src/community/`
 | `types.ts`           | Shared record types                                                 |
 
 `publishCommunityListing` has no MIT, logo, Intent, or personal-content gates.
-Agents follow a hygiene pass in `package_authoring` before flipping public; the
-Worker does not scan or block on that review. It requires a published commit and
-that the owner is not community-banned. It upserts D1 metadata including
-optional browse `category` from `package.json#kody.category` or well-known tags,
-and writes a SHA-keyed source snapshot.
+Visibility is separate from package publish checks, which require non-empty root
+`README.md` and `AGENTS.md` before a new version can publish. Agents follow a
+hygiene pass in `package_authoring` before flipping public; the Worker does not
+scan or block on that review. It requires a published commit and that the owner
+is not community-banned. It upserts D1 metadata including optional browse
+`category` from `package.json#kody.category` or well-known tags, and writes a
+SHA-keyed source snapshot.
 
 `forkCommunityListing` reads the KV snapshot, rewrites `package.json` name/kody
 id to the forker's scope, scans cross-scope references, calls
