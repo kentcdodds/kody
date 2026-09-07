@@ -103,9 +103,11 @@ This project uses the following resources:
   - Queue: `kody-scheduled-dispatch`
   - Dead-letter queue: `kody-scheduled-dispatch-dlq`
   - The production consumer receives one lane message per invocation, permits up
-    to 16 concurrent lane invocations, retries three times, and routes exhausted
-    messages to the dedicated dead-letter queue. Production CI ensures both
-    resources.
+    to 16 concurrent lane invocations, and retries only replay-safe
+    `d1_lock_contention` outcomes three times (10s / 30s / 90s backoff) before
+    routing exhausted messages to the dedicated dead-letter queue. Other handled
+    lane failures and invalid bodies are acknowledged as terminal. Production CI
+    ensures both resources.
   - Preview and local runtimes without this production-only queue binding run
     the same registry inline so maintenance behavior remains testable.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)

@@ -39,6 +39,62 @@ export type ScheduledLaneMessage = {
 }
 
 /**
+ * Isolated lane results shared by the jobs-worker consumer and origin
+ * `JobsHost.runScheduledLane`. `d1_lock_contention` is the only replay-safe
+ * transient outcome: the D1 write did not commit. `failed` may include
+ * partial external side effects (alerts, billing, Kit, DR), so the queue
+ * consumer must not retry it.
+ */
+export type ScheduledLaneOutcome = 'completed' | 'd1_lock_contention' | 'failed'
+
+export const scheduledDispatchMaxRetries = 3
+const scheduledDispatchRetryBaseDelaySeconds = 10
+const scheduledDispatchRetryDelayFactor = 3
+const scheduledDispatchRetryDelayCapSeconds = 90
+
+export type ScheduledLaneQueueAction =
+	| { action: 'ack'; reason: 'completed' }
+	| { action: 'ack'; reason: 'terminal_failure' }
+	| {
+			action: 'retry'
+			reason: 'transient_failure' | 'retry_exhausted'
+			delaySeconds: number
+	  }
+
+function scheduledDispatchRetryDelaySeconds(attempts: number) {
+	return Math.min(
+		scheduledDispatchRetryBaseDelaySeconds *
+			scheduledDispatchRetryDelayFactor ** Math.max(attempts - 1, 0),
+		scheduledDispatchRetryDelayCapSeconds,
+	)
+}
+
+export function resolveScheduledLaneQueueAction(input: {
+	outcome: ScheduledLaneOutcome
+	attempts: number
+}): ScheduledLaneQueueAction {
+	switch (input.outcome) {
+		case 'completed':
+			return { action: 'ack', reason: 'completed' }
+		case 'failed':
+			return { action: 'ack', reason: 'terminal_failure' }
+		case 'd1_lock_contention':
+			return {
+				action: 'retry',
+				reason:
+					input.attempts > scheduledDispatchMaxRetries
+						? 'retry_exhausted'
+						: 'transient_failure',
+				delaySeconds: scheduledDispatchRetryDelaySeconds(input.attempts),
+			}
+		default: {
+			const exhaustive: never = input.outcome
+			throw new Error(`Unhandled scheduled lane outcome: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
  * Lanes the jobs worker executes locally (against its own database and
  * Durable Objects). Every other lane is forwarded to the main worker's
  * `JobsHost.runScheduledLane`.

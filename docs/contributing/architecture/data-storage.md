@@ -1281,12 +1281,18 @@ cleanup, system-email retention, general retention, job retention, hourly
 usage-rollup aggregation, and bounded USER inbound Mailbox reconciliation
 (active-user discovery from the users/config index followed by owner-point
 Mailbox due-work RPCs; no shared graph scan). Each production queue message
-preserves `scheduled_lane_failed` / D1 lock-contention log and Sentry context. A
-handled lane failure is acknowledged and retried by the next cron tick. A failed
+preserves `scheduled_lane_failed` / D1 lock-contention log and Sentry context.
+D1 lock contention is replay-safe (the write did not commit) and retries on
+`kody-scheduled-dispatch` with bounded backoff (`max_retries` 3, then the
+dedicated DLQ plus a `scheduled_lane_retry_exhausted` alert). Other handled lane
+failures are acknowledged as terminal so partial external side effects are not
+replayed; the next eligible cron cadence is the next automatic attempt. A failed
 enqueue is reported and runs through the inline fallback after all sibling
 enqueue attempts finish; multiple failed enqueues fall back sequentially to
-avoid D1 lock contention. Consumer transport failures retain the configured
-retry/DLQ behavior. No failure can abort or mask a sibling invocation.
+avoid D1 lock contention. Inline fallback is one-shot and logs a non-completed
+outcome; it does not invent extra retries. Consumer transport failures retain
+the configured retry/DLQ behavior. No failure can abort or mask a sibling
+invocation.
 
 Production note:
 

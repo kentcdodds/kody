@@ -4,7 +4,9 @@ import {
 	getScheduledLaneCadence,
 	isJobsWorkerLocalLane,
 	parseScheduledLaneMessage,
+	resolveScheduledLaneQueueAction,
 	type ScheduledLaneMessage,
+	type ScheduledLaneOutcome,
 } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
 import { type JobsWorkerEnv } from './env.ts'
 import { runJobScheduleWatchdogTick } from './watchdog.ts'
@@ -18,7 +20,7 @@ import { runJobScheduleWatchdogTick } from './watchdog.ts'
 export async function runScheduledLaneWithFailureIsolation(input: {
 	env: JobsWorkerEnv
 	message: ScheduledLaneMessage
-}): Promise<'completed' | 'd1_lock_contention' | 'failed'> {
+}): Promise<ScheduledLaneOutcome> {
 	const scheduledAt = new Date(input.message.scheduledTime)
 	try {
 		if (isJobsWorkerLocalLane(input.message.lane)) {
@@ -60,13 +62,14 @@ export async function dispatchScheduledLanes(input: {
 	const queue = input.env.SCHEDULED_DISPATCH_QUEUE
 	if (!queue) {
 		for (const lane of lanes) {
-			await runScheduledLaneWithFailureIsolation({
+			const message = {
+				lane,
+				scheduledTime: input.controller.scheduledTime,
+				cron: input.controller.cron,
+			} satisfies ScheduledLaneMessage
+			await runInlineScheduledLane({
 				env: input.env,
-				message: {
-					lane,
-					scheduledTime: input.controller.scheduledTime,
-					cron: input.controller.cron,
-				},
+				message,
 			})
 		}
 		return
@@ -99,11 +102,25 @@ export async function dispatchScheduledLanes(input: {
 	)
 	for (const message of failedMessages) {
 		if (!message) continue
-		await runScheduledLaneWithFailureIsolation({
+		await runInlineScheduledLane({
 			env: input.env,
 			message,
 		})
 	}
+}
+
+async function runInlineScheduledLane(input: {
+	env: JobsWorkerEnv
+	message: ScheduledLaneMessage
+}) {
+	const outcome = await runScheduledLaneWithFailureIsolation(input)
+	if (outcome === 'completed') return
+	console.error(`scheduled_lane_inline_${outcome}`, {
+		lane: input.message.lane,
+		scheduledTime: input.message.scheduledTime,
+		cron: input.message.cron,
+		outcome,
+	})
 }
 
 export async function handleScheduledDispatchQueue(
@@ -119,7 +136,50 @@ export async function handleScheduledDispatchQueue(
 			queueMessage.ack()
 			continue
 		}
-		await runScheduledLaneWithFailureIsolation({ env, message })
+		const outcome = await runScheduledLaneWithFailureIsolation({
+			env,
+			message,
+		})
+		const decision = resolveScheduledLaneQueueAction({
+			outcome,
+			attempts: queueMessage.attempts,
+		})
+		if (decision.action === 'retry') {
+			if (decision.reason === 'retry_exhausted') {
+				console.error('scheduled_lane_retry_exhausted', {
+					lane: message.lane,
+					scheduledTime: message.scheduledTime,
+					cron: message.cron,
+					attempts: queueMessage.attempts,
+					outcome,
+				})
+				Sentry.withScope((scope) => {
+					scope.setTag('scheduled.lane', message.lane)
+					scope.setTag('scheduled.queue_action', 'retry_exhausted')
+					scope.setContext('scheduled', {
+						lane: message.lane,
+						scheduledTime: new Date(message.scheduledTime).toISOString(),
+						cron: message.cron,
+						attempts: queueMessage.attempts,
+						outcome,
+					})
+					Sentry.captureMessage(
+						`scheduled_lane_retry_exhausted lane=${message.lane}`,
+					)
+				})
+			}
+			queueMessage.retry({ delaySeconds: decision.delaySeconds })
+			continue
+		}
+		if (decision.reason === 'terminal_failure') {
+			console.error('scheduled_lane_terminal_not_retried', {
+				lane: message.lane,
+				scheduledTime: message.scheduledTime,
+				cron: message.cron,
+				attempts: queueMessage.attempts,
+				outcome,
+			})
+		}
 		queueMessage.ack()
 	}
 }
