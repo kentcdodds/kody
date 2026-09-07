@@ -27,6 +27,11 @@ at `packages/worker/universal/plans.ts`.
   (UserMeter DO reserve with cold bootstrap), and
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
   `storage_bytes` and daily resources).
+- `second-agent-standard-gift.ts` (universal + worker) — one 14-day public
+  Standard overlay when unique inbound MCP OAuth `clientId`s first reach 2.
+  `describeSecondAgentStandardGift` is the flag for lifecycle email /
+  PackagedSingleClient. Enforcement goes through `getUserEntitlement`; Stripe is
+  not mutated.
 
 ## Plan model
 
@@ -93,6 +98,33 @@ Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 `stripe_plan` values contribute nothing. Admin user list/get (page and MCP)
 expose the grant, Stripe tier, effective plan, and whether a Stripe customer is
 linked. `plan` on those records remains the grant that Manage plan edits.
+
+### Second-agent Standard gift
+
+When a user first reaches two unique inbound MCP OAuth `clientId`s, Kody records
+one 14-day public Standard overlay. The gate is that second unique client
+(activation), not day-0 signup. `users.second_agent_standard_gift_granted_at` is
+the write-once ledger (one gift per user).
+`users.second_agent_standard_gift_expires_at` is set only when the base
+effective plan is still `free`; NULL means the account was already
+Standard/Pro/max and Stripe was not touched. There is no existing helper that
+extends a remaining Stripe period, and mutating `trial_end` / period end is
+payment-adjacent.
+
+`getUserEntitlement` overlays Standard through
+`resolveEffectivePlanWithSecondAgentGift` while `expires_at` is in the future
+and the base rank is still below Standard. The gift never lowers a paid or
+manual grant. Expiry is read-time (no sweeper). Authorize completion and
+grant-list pages (onboarding payload, Account → Connected agents) call
+`maybeEvaluateSecondAgentStandardGift`, which skips the write when unique
+clients are below 2 or listing failed, but still reads the persisted ledger so
+`/onboarding.json` does not hide an already-granted gift. Missing
+`APP_DB.prepare` skips both write and read.
+
+`describeSecondAgentStandardGift` / `SecondAgentStandardGiftState` is the flag
+lifecycle email or PackagedSingleClient should read: `received`, `active`, and
+`status` (`none` | `active` | `expired` | `already_paid`). Onboarding loader and
+`/onboarding.json` expose that object as `secondAgentStandardGift`.
 
 ### `max` plan limits
 

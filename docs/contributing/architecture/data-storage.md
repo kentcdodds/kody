@@ -347,7 +347,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   return columns (`first_mcp_connected_at`, `first_execute_at`,
   `first_search_at`, `first_saved_package_at`, `mcp_client_name`,
   `last_active_at`) support product metrics; email verification delivery columns
-  track the latest transactional verify-mail outcome. The
+  track the latest transactional verify-mail outcome.
+  `second_agent_standard_gift_granted_at` is the write-once ledger for the
+  14-day Standard overlay granted when unique inbound MCP OAuth `clientId`s
+  first reach 2; `second_agent_standard_gift_expires_at` is set only when that
+  overlay actually raises a free account (NULL means already paid / no-op). See
+  [Entitlements](./entitlements.md#second-agent-standard-gift). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see

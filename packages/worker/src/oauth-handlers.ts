@@ -35,6 +35,9 @@ import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
 import { listUserOAuthGrantsForClient } from '#worker/oauth-grants.ts'
+import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
+import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
 import {
 	markUserMcpOauthClientRevokedByClientId,
 	userOwnsMcpOauthClient,
@@ -76,6 +79,27 @@ function getValidOAuthUsername(value: unknown) {
 		!getUsernameFormatValidationError(value.trim())
 		? value.trim()
 		: null
+}
+
+async function evaluateSecondAgentGiftAfterAuthorize(
+	env: Env,
+	stableUserId: string,
+) {
+	const inbound = await loadInboundMcpConnectionState(
+		getOAuthHelpers(env),
+		stableUserId,
+	)
+	if (
+		!inbound.listingFailed &&
+		hasSecondConnectedMcpClient(inbound.uniqueClientCount)
+	) {
+		await maybeEvaluateSecondAgentStandardGift({
+			db: env.APP_DB,
+			stableUserId,
+			uniqueClientCount: inbound.uniqueClientCount,
+			listingFailed: inbound.listingFailed,
+		})
+	}
 }
 
 type OAuthClientResetVerification = {
@@ -1072,6 +1096,7 @@ async function tryHandleSilentOidcAuthorize(
 		ip: getRequestIp(request) ?? undefined,
 		clientId: authRequest.clientId,
 	})
+	await evaluateSecondAgentGiftAfterAuthorize(env, approvedUserId)
 	return Response.redirect(redirectTo, 302)
 }
 
@@ -1390,6 +1415,7 @@ export async function handleAuthorizeRequest(
 			ip: requestIp,
 			clientId: authRequest.clientId,
 		})
+		await evaluateSecondAgentGiftAfterAuthorize(env, userId)
 		if (wantsJson(request)) {
 			return jsonResponse(
 				{ ok: true, redirectTo },

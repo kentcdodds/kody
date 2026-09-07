@@ -28,6 +28,7 @@ import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
@@ -975,6 +976,12 @@ export type OnboardingLoaderData = {
 	hasMcpClient: boolean
 	/** Best-effort labeled inbound MCP hosts, unique by `clientId`. */
 	connectedAgents: Array<ConnectedMcpAgent>
+	/**
+	 * One-gift-per-user Standard overlay after unique inbound clients
+	 * first reach 2. Lifecycle email / PackagedSingleClient can read
+	 * `received` and `active` without re-deriving the ledger.
+	 */
+	secondAgentStandardGift: SecondAgentStandardGiftState
 	emailVerified: boolean
 	needsOnboarding: boolean
 	/** Admin-featured listings offered as one-click starter installs. */

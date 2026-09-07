@@ -44,6 +44,8 @@ export const usersTable = table({
 		first_saved_package_at: c.text(),
 		mcp_client_name: c.text(),
 		last_active_at: c.text(),
+		second_agent_standard_gift_granted_at: c.text(),
+		second_agent_standard_gift_expires_at: c.text(),
 		created_at: c.text(),
 		updated_at: c.text(),
 	},

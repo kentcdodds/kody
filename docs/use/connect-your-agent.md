@@ -134,7 +134,8 @@ short prompt you paste into the agent you just connected. The agent looks up
 helps you make something useful in your Kody account.
 
 Step 3 is **Connect a second agent** from a different ecosystem. Same-vendor
-hosts stay unavailable. After you pick one, copy the portability proof so the
+hosts stay unavailable. Connecting that second agent unlocks Standard free for 2
+weeks (once per account). After you pick one, copy the portability proof so the
 new agent looks up `search({ entity: "portability:guide" })` and reuses the
 memory, package, or ask you made in Step 2.
 

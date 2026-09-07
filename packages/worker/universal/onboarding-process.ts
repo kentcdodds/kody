@@ -149,8 +149,10 @@ export const onboardingSearchWaitingLabel =
 export const onboardingSearchStartedLabel =
 	"You've started making something useful"
 
-export const onboardingSecondAgentLede =
-	'Connect an agent from a different ecosystem. Reuse what you made in Step 2 so you can see it travel.'
+export const onboardingSecondAgentGiftAdvertise =
+	'Connect a second agent and get Standard free for 2 weeks.'
+
+export const onboardingSecondAgentLede = `Connect an agent from a different ecosystem. Reuse what you made in Step 2 so you can see it travel. ${onboardingSecondAgentGiftAdvertise}`
 
 export const onboardingPortabilityProofPrompt = [
 	'I just connected you as a second agent.',
@@ -192,6 +194,15 @@ export const onboardingCopyPortabilityProofLabel = 'Copy portability proof'
 
 export const onboardingSecondAgentConnectedLabel =
 	"You've connected a second agent."
+
+export const onboardingSecondAgentConnectedGiftLabel =
+	"You've connected a second agent. Standard is free for 2 weeks."
+
+export function onboardingSecondAgentConnectedStatusLabel(giftActive: boolean) {
+	return giftActive
+		? onboardingSecondAgentConnectedGiftLabel
+		: onboardingSecondAgentConnectedLabel
+}
 
 export function onboardingConnectedAgentLabelsLine(
 	agents: ReadonlyArray<{ label: string }>,
