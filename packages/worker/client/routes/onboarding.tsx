@@ -166,7 +166,10 @@ export function OnboardingRoute(handle: Handle) {
 			source === 'snapshot'
 				? hasSecondMcpClient || payload.hasSecondMcpClient
 				: payload.hasSecondMcpClient
-		connectedAgents = payload.connectedAgents ?? []
+		connectedAgents =
+			source === 'live' || connectedAgents.length === 0
+				? (payload.connectedAgents ?? [])
+				: connectedAgents
 		hasMcpClient =
 			source === 'snapshot'
 				? hasMcpClient || payload.hasMcpClient
