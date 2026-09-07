@@ -4,6 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureReferralProgramTestSchema } from './test-schema.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { getUserEntitlement } from './service.ts'
 import {
 	attributeReferralAtSignup,
@@ -430,6 +431,62 @@ test('held rewards release for every pending referee when the referrer verifies'
 	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
 		secondCreditExpiresAt,
 	)
+})
+
+test('held rewards stay pending when the referrer period resolver fails', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createD1FromSqlite(sqlite)
+	await ensureReferralSchema(db)
+	const referrer = await insertUser(db, {
+		email: 'held-fail-referrer@example.com',
+		username: 'heldfailref',
+		verified: false,
+	})
+	const referee = await insertUser(db, {
+		email: 'held-fail-referee@example.com',
+		username: 'heldfailree',
+	})
+	await attributeReferralAtSignup({
+		db,
+		refereeStableUserId: referee.stableUserId,
+		refereeUsername: 'heldfailree',
+		referralCode: 'heldfailref',
+		now,
+	})
+	expect(
+		await rewardReferralForPaidInvoice({
+			db,
+			refereeStableUserId: referee.stableUserId,
+			invoiceId: 'in_held_fail',
+			invoiceQualifies: true,
+			now,
+		}),
+	).toEqual({ outcome: 'held_unverified' })
+	await db
+		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
+		.bind(now.toISOString(), referrer.stableUserId)
+		.run()
+	consoleWarn.mockImplementation(() => {})
+	expect(
+		await maybeRewardHeldReferralAfterEmailVerified({
+			db,
+			stableUserId: referrer.stableUserId,
+			resolveReferrerPaidPeriodEnd: async () => {
+				throw new Error('stripe down')
+			},
+			now,
+		}),
+	).toEqual({ outcome: 'ignored', reason: 'no_pending' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'referral-held-referrer-period-end-failed',
+		expect.any(Error),
+	)
+	expect(await referralRow(db, referee.stableUserId)).toMatchObject({
+		status: 'pending',
+		held_invoice_id: 'in_held_fail',
+		credits_granted_at: null,
+	})
+	expect(await creditExpiry(db, referrer.stableUserId)).toBeNull()
 })
 
 test('referral billing summary counts every row, not only the displayed page', async () => {

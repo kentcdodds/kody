@@ -444,11 +444,17 @@ export async function maybeRewardHeldReferralAfterEmailVerified(input: {
 	let last: ReferralRewardOutcome = { outcome: 'ignored', reason: 'no_pending' }
 	for (const pending of rows) {
 		if (!pending.held_invoice_id) continue
-		const referrerPaidPeriodEndAt = input.resolveReferrerPaidPeriodEnd
-			? await input.resolveReferrerPaidPeriodEnd(
-					pending.referrer_stable_user_id,
-				)
-			: (input.referrerPaidPeriodEndAt ?? null)
+		let referrerPaidPeriodEndAt: string | null
+		try {
+			referrerPaidPeriodEndAt = input.resolveReferrerPaidPeriodEnd
+				? await input.resolveReferrerPaidPeriodEnd(
+						pending.referrer_stable_user_id,
+					)
+				: (input.referrerPaidPeriodEndAt ?? null)
+		} catch (error) {
+			console.warn('referral-held-referrer-period-end-failed', error)
+			continue
+		}
 		last = await rewardReferralForPaidInvoice({
 			db: input.db,
 			refereeStableUserId: pending.referee_stable_user_id,

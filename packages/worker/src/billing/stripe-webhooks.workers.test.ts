@@ -594,3 +594,83 @@ test('invoice.paid returns 500 when the referrer paid period cannot be loaded', 
 
 	vi.unstubAllGlobals()
 })
+
+test('invoice.paid for a referrer retries held outgoing referrals', async () => {
+	const referrer = await seedUser({
+		email: 'referrer-held-retry@example.com',
+		stripeCustomerId: 'cus_referrer_held_retry',
+		stripePlan: 'standard',
+	})
+	const referee = await seedUser({
+		email: 'referee-held-retry@example.com',
+		stripeCustomerId: 'cus_referee_held_retry',
+	})
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status,
+			held_invoice_id, held_period_end_at
+		) VALUES (?, ?, ?, 'pending', 'in_held_retry', ?)`,
+	)
+		.bind(
+			referrer.stableUserId,
+			referee.stableUserId,
+			now.toISOString(),
+			'2026-08-01T00:00:00.000Z',
+		)
+		.run()
+	stubStripeFetch({
+		subscriptions: {
+			data: [
+				{
+					id: 'sub_referrer_held_retry',
+					status: 'active',
+					cancel_at: null,
+					items: {
+						data: [
+							{
+								price: { id: 'price_pro' },
+								current_period_end: 1_781_568_000,
+							},
+						],
+					},
+				},
+			],
+		},
+	})
+
+	const result = await handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: await signedWebhookRequest({
+			event: {
+				id: 'evt_referrer_held_retry',
+				type: 'invoice.paid',
+				created: 1_778_000_400,
+				data: {
+					object: {
+						id: 'in_referrer_own',
+						object: 'invoice',
+						customer: 'cus_referrer_held_retry',
+						subscription: 'sub_referrer_held_retry',
+						status: 'paid',
+						amount_paid: 2000,
+						billing_reason: 'subscription_cycle',
+					},
+				},
+			},
+		}),
+		now,
+	})
+	expect(result).toEqual({ status: 200, body: { ok: true } })
+	expect(
+		await env.APP_DB.prepare(
+			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
+		)
+			.bind(referee.stableUserId)
+			.first<{ status: string; reward_invoice_id: string | null }>(),
+	).toEqual({
+		status: 'rewarded',
+		reward_invoice_id: 'in_held_retry',
+	})
+
+	vi.unstubAllGlobals()
+})

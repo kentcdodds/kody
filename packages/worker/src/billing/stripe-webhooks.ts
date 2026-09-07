@@ -317,22 +317,54 @@ async function handleInvoicePaid(input: {
 	)
 		.bind(user.stable_user_id)
 		.first<{ referrer_stable_user_id: string }>()
-	if (!pending) return
+	if (pending) {
+		const referrerPaidPeriodEndAt = await latestReferrerPaidPeriodEnd({
+			env: input.env,
+			referrerStableUserId: pending.referrer_stable_user_id,
+		})
+		await rewardReferralForPaidInvoice({
+			db: input.env.APP_DB,
+			refereeStableUserId: user.stable_user_id,
+			invoiceId,
+			invoiceQualifies: true,
+			paidPeriodEndAt: readStripeInvoicePeriodEndIso(input.object),
+			referrerPaidPeriodEndAt,
+			now: input.now,
+		})
+	}
+
+	const heldAsReferrer = await input.env.APP_DB.prepare(
+		`SELECT referee_stable_user_id, held_invoice_id, held_period_end_at
+		 FROM referrals
+		 WHERE referrer_stable_user_id = ?
+		   AND status = 'pending'
+		   AND held_invoice_id IS NOT NULL`,
+	)
+		.bind(user.stable_user_id)
+		.all<{
+			referee_stable_user_id: string
+			held_invoice_id: string | null
+			held_period_end_at: string | null
+		}>()
+	const heldRows = heldAsReferrer.results ?? []
+	if (heldRows.length === 0) return
 
 	const referrerPaidPeriodEndAt = await latestReferrerPaidPeriodEnd({
 		env: input.env,
-		referrerStableUserId: pending.referrer_stable_user_id,
+		referrerStableUserId: user.stable_user_id,
 	})
-
-	await rewardReferralForPaidInvoice({
-		db: input.env.APP_DB,
-		refereeStableUserId: user.stable_user_id,
-		invoiceId,
-		invoiceQualifies: true,
-		paidPeriodEndAt: readStripeInvoicePeriodEndIso(input.object),
-		referrerPaidPeriodEndAt,
-		now: input.now,
-	})
+	for (const row of heldRows) {
+		if (!row.held_invoice_id) continue
+		await rewardReferralForPaidInvoice({
+			db: input.env.APP_DB,
+			refereeStableUserId: row.referee_stable_user_id,
+			invoiceId: row.held_invoice_id,
+			invoiceQualifies: true,
+			paidPeriodEndAt: row.held_period_end_at,
+			referrerPaidPeriodEndAt,
+			now: input.now,
+		})
+	}
 }
 
 export async function processStripeWebhookEvent(input: {
