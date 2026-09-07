@@ -7,6 +7,7 @@ import {
 	deriveExecuteHealthView,
 	executeHealthOrganicFreshMs,
 	executeHealthSyntheticCooldownMs,
+	mergeExecuteLastSuccess,
 } from './execute-health.ts'
 
 const hourMs = executeHealthSyntheticCooldownMs
@@ -178,6 +179,71 @@ test('caller failures are not automatically a global outage, and one organic suc
 	expect(organic.source).toBe('organic')
 	expect(organic.lastVerifiedAt).toBe(new Date(start).toISOString())
 	expect(organic.detail).toMatch(/organic/i)
+})
+
+test('stale incoming last-success does not rewind a newer stored timestamp', () => {
+	expect(mergeExecuteLastSuccess(start, start + 10_000)).toBe(start + 10_000)
+	expect(mergeExecuteLastSuccess(start + 10_000, start)).toBe(start + 10_000)
+	expect(mergeExecuteLastSuccess(null, start)).toBe(start)
+	expect(mergeExecuteLastSuccess(start, null)).toBe(start)
+	expect(mergeExecuteLastSuccess(null, null)).toBeNull()
+})
+
+test('synthetic success plus heartbeat echo stays synthetic; later organic is organic', () => {
+	const syntheticAt = start
+	const heartbeatEchoAt = start + 2_000
+	const echoed = deriveExecuteHealthView({
+		now: start + 5_000,
+		lastSuccessAt: heartbeatEchoAt,
+		lastSyntheticAttemptAt: start,
+		lastSyntheticSuccessAt: syntheticAt,
+		lastSyntheticError: null,
+		syntheticConfigured: true,
+	})
+	expect(echoed.status).toBe('recent')
+	expect(echoed.source).toBe('synthetic')
+	expect(echoed.lastVerifiedAt).toBe(new Date(heartbeatEchoAt).toISOString())
+	expect(echoed.detail).toMatch(/hourly authenticated MCP execute probe/i)
+
+	const laterOrganic = deriveExecuteHealthView({
+		now: start + 3 * minuteMs,
+		lastSuccessAt: start + 2 * minuteMs,
+		lastSyntheticAttemptAt: start,
+		lastSyntheticSuccessAt: syntheticAt,
+		lastSyntheticError: null,
+		syntheticConfigured: true,
+	})
+	expect(laterOrganic.source).toBe('organic')
+	expect(laterOrganic.lastVerifiedAt).toBe(
+		new Date(start + 2 * minuteMs).toISOString(),
+	)
+})
+
+test('unconfigured fallback does not claim the hourly budget or hide the not-configured copy', async () => {
+	let runs = 0
+	const skipped = await applyExecuteHealthTick({
+		now: start + minuteMs,
+		lastSuccessAt: null,
+		lastSyntheticAttemptAt: null,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: null,
+		syntheticConfigured: false,
+		runSynthetic: async () => {
+			runs += 1
+			return { ok: false, error: 'not-configured' }
+		},
+	})
+	expect(runs).toBe(0)
+	expect(skipped.lastSyntheticAttemptAt).toBeNull()
+	expect(skipped.lastSyntheticError).toBeNull()
+
+	const view = deriveExecuteHealthView({
+		now: start + minuteMs,
+		...skipped,
+	})
+	expect(view.status).toBe('unknown')
+	expect(view.detail).toMatch(/not configured/i)
+	expect(view.detail).not.toMatch(/last synthetic attempt failed/i)
 })
 
 test('public reads do not run a synthetic; only a claimed tick can', async () => {

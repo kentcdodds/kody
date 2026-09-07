@@ -33,6 +33,13 @@ export type ExecuteHealthCoordinatorState = {
 	syntheticConfigured: boolean
 }
 
+export function mergeExecuteLastSuccess(
+	incoming: number | null,
+	stored: number | null,
+): number | null {
+	return newerTimestamp(incoming, stored)
+}
+
 export function decideExecuteHealthProbe(input: {
 	now: number
 	lastSuccessAt: number | null
@@ -101,6 +108,15 @@ export async function applyExecuteHealthTick(input: {
 	syntheticConfigured: boolean
 	runSynthetic: () => Promise<{ ok: boolean; error?: string | null }>
 }): Promise<ExecuteHealthCoordinatorState> {
+	if (!input.syntheticConfigured) {
+		return {
+			lastSuccessAt: input.lastSuccessAt,
+			lastSyntheticAttemptAt: input.lastSyntheticAttemptAt,
+			lastSyntheticSuccessAt: input.lastSyntheticSuccessAt,
+			lastSyntheticError: input.lastSyntheticError,
+			syntheticConfigured: false,
+		}
+	}
 	const claim = claimExecuteHealthSynthetic({
 		now: input.now,
 		lastSuccessAt: input.lastSuccessAt,
@@ -173,7 +189,18 @@ function executeHealthSource(
 	lastVerifiedAtMs: number | null,
 ): ExecuteHealthSource | null {
 	if (lastVerifiedAtMs === null) return null
-	if (input.lastSyntheticSuccessAt === lastVerifiedAtMs) return 'synthetic'
+	if (input.lastSyntheticSuccessAt !== null) {
+		if (input.lastSyntheticSuccessAt === lastVerifiedAtMs) return 'synthetic'
+		// The canary execute also writes the fleet heartbeat a moment later.
+		// That echo is still the synthetic, not organic traffic.
+		if (
+			input.lastSuccessAt === lastVerifiedAtMs &&
+			lastVerifiedAtMs - input.lastSyntheticSuccessAt <
+				executeHealthOrganicFreshMs
+		) {
+			return 'synthetic'
+		}
+	}
 	if (input.lastSuccessAt === lastVerifiedAtMs) return 'organic'
 	return null
 }
@@ -192,11 +219,14 @@ function executeHealthDetail(input: {
 	if (input.recent && input.source === 'synthetic') {
 		return `Verified by the hourly authenticated MCP execute probe ${formatFreshness(input.freshnessMs)}.`
 	}
+	if (
+		!input.syntheticConfigured ||
+		input.lastSyntheticError === 'not-configured'
+	) {
+		return 'Not recently exercised. Synthetic fallback is not configured. Missing telemetry is not an outage.'
+	}
 	if (input.lastSyntheticError) {
 		return `Not recently exercised. Last synthetic attempt failed; missing telemetry is not an outage. Caller-code errors are not a platform outage.`
-	}
-	if (!input.syntheticConfigured) {
-		return 'Not recently exercised. Synthetic fallback is not configured. Missing telemetry is not an outage.'
 	}
 	return 'Not recently exercised. Missing or stale telemetry is not an outage and is not proof the path is freshly healthy.'
 }

@@ -41,6 +41,7 @@ import {
 import {
 	applyExecuteHealthTick,
 	deriveExecuteHealthView,
+	mergeExecuteLastSuccess,
 	type ExecuteHealthCoordinatorState,
 } from './execute-health.ts'
 import { jobsProbeOrigin, runAllProbes } from './probes.ts'
@@ -251,11 +252,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	): ExecuteHealthCoordinatorState {
 		const storedSuccessAt = this.readEpochMeta(executeLastSuccessMetaKey)
 		return {
-			lastSuccessAt:
-				lastSuccessAt !== null &&
-				(storedSuccessAt === null || lastSuccessAt > storedSuccessAt)
-					? lastSuccessAt
-					: storedSuccessAt,
+			lastSuccessAt: mergeExecuteLastSuccess(lastSuccessAt, storedSuccessAt),
 			lastSyntheticAttemptAt: this.readEpochMeta(
 				executeLastSyntheticAttemptMetaKey,
 			),
@@ -651,9 +648,6 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		}
 		if (jobsCommitSha) {
 			this.setMeta(jobsCommitMetaKey, jobsCommitSha)
-		}
-		if (executeLastSuccessAt !== null) {
-			this.setMeta(executeLastSuccessMetaKey, String(executeLastSuccessAt))
 		}
 		for (const outcome of outcomes) {
 			this.recordOutcome(outcome, now)
