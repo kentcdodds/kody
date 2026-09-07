@@ -8,6 +8,7 @@ import { pruneUnverifiedAccounts } from '#worker/account/unverified-account-purg
 import { reconcileKitSubscribers } from '#worker/kit/subscriber-sync.ts'
 import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
 import { sendUserErrorRateEmails } from '#app/user-error-rate-emails.ts'
+import { sendUserUsageCampaignEmails } from '#app/user-usage-campaign-emails.ts'
 import { emitFleetEntitlementCrossingEvents } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -182,11 +183,23 @@ export async function runScheduledLane(input: {
 				console.warn('user-error-rate-emails-failed', error)
 				errorRateEmails = { status: 'failed' }
 			}
+			let usageCampaign:
+				| Awaited<ReturnType<typeof sendUserUsageCampaignEmails>>
+				| { status: 'failed' }
+			try {
+				usageCampaign = await sendUserUsageCampaignEmails({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('user-usage-campaign-emails-failed', error)
+				usageCampaign = { status: 'failed' }
+			}
 			const ops = await emitFleetEntitlementCrossingEvents({
 				env: input.env,
 				now: input.scheduledAt,
 			})
-			return { ...ops, userWarnings, errorRateEmails }
+			return { ...ops, userWarnings, errorRateEmails, usageCampaign }
 		}
 		case 'kit_subscriber_sync': {
 			try {

@@ -70,7 +70,8 @@ smoke does not prove MCP execute health.
   Analytics Engine is recorded in decision record
   [0002 — Data placement](../decisions/0002-data-placement.md).
 - [Usage Metering](./usage-metering.md): per-user usage events, the
-  `recordUsage()` helper contract, and the D1 rollup table.
+  `recordUsage()` helper contract, the D1 rollup table, and the usage-state
+  campaign machine.
 - [Worker startup budget](./startup-budget.md): what counts toward Cloudflare's
   startup CPU limit, how to profile it with `wrangler check startup`, the
   lazy-loading rules for capability domains and heavy libraries, and the

@@ -38,6 +38,12 @@ const inputSchema = z
 			.describe(
 				'Optional Reply-To. Replies to the system sender already land in the operator system inbox.',
 			),
+		headers: z
+			.record(z.string(), z.string())
+			.optional()
+			.describe(
+				'Optional extra MIME headers. Use for campaign previews that need List-Unsubscribe.',
+			),
 	})
 	.refine((value) => value.text || value.html, {
 		message: 'Email text or HTML body is required.',
@@ -83,6 +89,7 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 						text: args.text ?? null,
 						html: args.html ?? null,
 						replyTo: args.reply_to ?? null,
+						headers: args.headers,
 						waitUntil: ctx.waitUntil,
 					})
 					return {

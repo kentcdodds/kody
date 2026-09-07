@@ -1072,6 +1072,17 @@ export type EmailVerificationLoaderData =
 			error: string
 	  }
 
+export type TipsUnsubscribeLoaderData =
+	| {
+			ok: true
+			alreadyOptedOut: boolean
+			message: string
+	  }
+	| {
+			ok: false
+			error: string
+	  }
+
 export type AccountIntegrationListItem = {
 	name: string
 	appSlug: string
@@ -1882,6 +1893,7 @@ export type AppLoaderData = {
 	accountEmail?: AccountEmailLoaderData
 	authProviders?: AuthProvidersLoaderData
 	emailVerification?: EmailVerificationLoaderData
+	tipsUnsubscribe?: TipsUnsubscribeLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData

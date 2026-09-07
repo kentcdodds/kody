@@ -1,8 +1,12 @@
 import { expect, test } from 'vitest'
 import {
+	buildAdvocateReferralEmail,
 	buildBillingSuccessEmail,
 	buildConnectAgentEmail,
+	buildCoolingHomeEmail,
+	buildKeepPackageEmail,
 	buildPlatformFeedbackOutcomeEmail,
+	buildSecondAgentEmail,
 	buildUserEntitlementWarningEmail,
 	buildUserErrorRateEmail,
 	buildVerificationEmail,
@@ -22,6 +26,10 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		},
 		afterAction: ['Expires soon.'],
 		footnote: 'Ignore if unexpected.',
+		unsubscribe: {
+			label: 'Unsubscribe from tips',
+			url: 'https://kody.codes/unsubscribe/tips?token=abc',
+		},
 	})
 
 	expect(email.html).not.toContain('<script>')
@@ -32,6 +40,11 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	)
 	expect(email.text).toContain(
 		'Do the thing: https://kody.codes/verify-email?token=a&redirectTo=/x',
+	)
+	expect(email.html).toContain('Unsubscribe from tips')
+	expect(email.html).toContain('https://kody.codes/unsubscribe/tips?token=abc')
+	expect(email.text).toContain(
+		'Unsubscribe from tips: https://kody.codes/unsubscribe/tips?token=abc',
 	)
 
 	const verificationUrl = 'https://kody.codes/verify-email?token=abc123'
@@ -82,8 +95,59 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		appBaseUrl: 'https://kody.codes',
 		onboardingUrl: 'https://kody.codes/onboarding',
 	})
+	expect(connect.subject).toBe('Connect the agent you already use')
 	expect(connect.html).toContain('https://kody.codes/onboarding')
 	expect(connect.text).toContain('https://kody.codes/onboarding')
+
+	const keep = buildKeepPackageEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+		clientLabel: 'Cursor',
+	})
+	expect(keep.subject).toBe('Keep what Cursor just figured out')
+	expect(keep.html).toContain('https://kody.codes/onboarding')
+	const keepFallback = buildKeepPackageEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+		clientLabel: 'your agent',
+	})
+	expect(keepFallback.text).toContain(
+		'You got Your agent to use Kody to do something',
+	)
+	expect(keepFallback.text).toContain("Let's talk about how we can use Kody")
+	expect(keep.html).toContain('<blockquote')
+	expect(keep.html).toContain('Let&#39;s talk about how we can use Kody')
+
+	const second = buildSecondAgentEmail({
+		appBaseUrl: 'https://kody.codes',
+		portabilityUrl: 'https://kody.codes/guides/portability',
+	})
+	expect(second.html).toContain('https://kody.codes/guides/portability')
+	expect(second.text).not.toContain('/account/billing')
+
+	const secondWithTrial = buildSecondAgentEmail({
+		appBaseUrl: 'https://kody.codes',
+		portabilityUrl: 'https://kody.codes/guides/portability',
+		trialUrl: 'https://kody.codes/account/billing',
+	})
+	expect(secondWithTrial.text).toContain('https://kody.codes/account/billing')
+
+	const cooling = buildCoolingHomeEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+	})
+	expect(cooling.subject).toBe('Your home is still here')
+	expect(cooling.html).toContain('https://kody.codes/onboarding')
+
+	const advocate = buildAdvocateReferralEmail({
+		appBaseUrl: 'https://kody.codes',
+		shareUrl: 'https://kody.codes/signup?ref=kentcdodds',
+	})
+	expect(advocate.subject).toBe('Share Kody (and a free month)')
+	expect(advocate.html).toContain('https://kody.codes/signup?ref=kentcdodds')
+	expect(advocate.text).toContain(
+		'Email a short testimonial: mailto:me@kentcdodds.com?subject=Kody%20testimonial',
+	)
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',
