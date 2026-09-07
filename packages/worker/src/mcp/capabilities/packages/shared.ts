@@ -90,7 +90,7 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.boolean()
 			.nullable()
 			.describe(
-				'True only when this community fork is outdated: the listing pin is not an ancestor of the fork tip. Null for a self-authored package. False when the listing is unpublished, the absorb marker matches, or the fork is ahead of the listing pin. Fork-ahead is not signaled here.',
+				'True only when this community fork is outdated: the listing pin is not an ancestor of the fork tip. Null for a self-authored package. Otherwise false.',
 			),
 	})
 

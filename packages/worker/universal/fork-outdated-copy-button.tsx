@@ -17,8 +17,7 @@ export const FORKED_COPY_TOOLTIP =
 	'Click to copy a prompt to finish adapting this fork'
 export const COPY_PROMPT_COPIED_TOOLTIP = 'Copied'
 
-export const FORK_AHEAD_TOOLTIP =
-	'Review the listing snapshot this fork is ahead of'
+const FORK_AHEAD_TOOLTIP = 'Review the listing snapshot this fork is ahead of'
 
 type CopyPromptPillInput = {
 	label: string

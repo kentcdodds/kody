@@ -123,17 +123,16 @@ Your agent should:
 Only after publish does the package become a live saved package in your account.
 
 If the listing owner later pushes to a public default branch, your fork keeps
-the snapshot you copied. `packageGet` / `packageList` set `listing_ahead` only
-when the listing pin is not an ancestor of your fork tip (the fork is behind or
-diverged). SHA inequality alone is not enough — a fork that already contains the
-listing pin and has extra commits is **ahead**, not outdated. Agent search,
-package detail, and `packageGet` stay silent on fork-ahead; it is website UI
-only. Your `/@username` profile and the listing page replace Installed / Forked
-with a yellow **Fork outdated** control when the fork is behind (click copies an
-absorb prompt and links to the listing files at the pin) or a calm **Fork
-ahead** link to those files when the pin is already in the fork's history. For
-an outdated fork, compare origin HEAD with your package, port useful changes,
-keep your customizations, then publish with `repoPublishSession` and
+the snapshot you copied. `packageGet` / `packageList` / search set
+`listing_ahead` / `listingAhead` only when the listing pin is not an ancestor of
+your fork tip (the fork is behind or diverged). SHA inequality alone is not
+enough. Your `/@username` profile and the listing page replace Installed /
+Forked with a yellow **Fork outdated** control when the fork is behind (click
+copies an absorb prompt and links to the listing files at the pin) or a calm
+**Fork ahead** badge linking to those files when the pin is already in the
+fork's history — that ahead badge is website UI only. For an outdated fork,
+compare origin HEAD with your package, port useful changes, keep your
+customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
 
 ## One-click install
