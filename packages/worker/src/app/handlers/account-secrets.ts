@@ -21,7 +21,6 @@ import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import {
 	deleteSecret,
@@ -43,12 +42,14 @@ import {
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
 	getJoinedIntegration,
+	getOauthApp,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
 } from '#worker/integrations/service.ts'
 import {
 	persistIntegrationTokens,
 	persistUserOauthAppClientSecret,
+	resolveUserOauthAppClientSecret,
 } from '#worker/integrations/credentials.ts'
 import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -77,9 +78,6 @@ type ConnectOauthHostApprovalLink = {
 	host: string
 	approvalUrl: string
 }
-
-const maxConnectOauthApprovalHosts = 10
-const maxConnectOauthApprovalSecrets = 4
 
 type SecretApprovalAction = 'approve' | 'reject'
 
@@ -250,7 +248,6 @@ async function handleSaveOauthAppAction(input: {
 				flow: flow === 'confidential' ? 'confidential' : 'pkce',
 				...(usePkce == null ? {} : { usePkce }),
 				clientId,
-				clientSecretSecretName,
 				tokenExchangeStyle: resolveTokenExchangeStyle({
 					tokenUrl,
 					tokenExchangeStyle: readOptionalString(
@@ -268,13 +265,34 @@ async function handleSaveOauthAppAction(input: {
 					: null,
 			},
 		})
+		const clientSecret = await resolveConnectClientSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			provider,
+			clientSecret: readOptionalString(input.body, 'clientSecret'),
+			clientSecretSecretName,
+		})
+		if (clientSecret) {
+			await persistUserOauthAppClientSecret({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				slug: app.slug,
+				value: clientSecret,
+			})
+			await deleteLeftoverConnectClientSecret({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				provider,
+				clientSecretSecretName,
+			})
+		}
 		return jsonResponse({
 			ok: true,
 			app: {
 				slug: app.slug,
 				provider: app.provider,
 				clientId: app.clientId,
-				clientSecretSecretName: app.clientSecretSecretName,
+				hasClientSecret: Boolean(clientSecret) || app.hasClientSecret,
 				tokenUrl: app.tokenUrl,
 				authorizeUrl: app.authorizeUrl,
 				apiBaseUrl: app.apiBaseUrl,
@@ -325,11 +343,6 @@ async function handleConnectOauthAction(input: {
 		input.body,
 		'clientSecretSecretName',
 	)
-	const accessTokenSecretName = readString(input.body, 'accessTokenSecretName')
-	const refreshTokenSecretName = readOptionalString(
-		input.body,
-		'refreshTokenSecretName',
-	)
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
 	)
@@ -366,12 +379,6 @@ async function handleConnectOauthAction(input: {
 	if (!clientId) {
 		return jsonResponse({ ok: false, error: 'Client ID is required.' }, 400)
 	}
-	if (!accessTokenSecretName) {
-		return jsonResponse(
-			{ ok: false, error: 'Access token secret name is required.' },
-			400,
-		)
-	}
 	if (!tokenPayload || typeof tokenPayload !== 'object') {
 		return jsonResponse({ ok: false, error: 'Token payload is required.' }, 400)
 	}
@@ -384,48 +391,6 @@ async function handleConnectOauthAction(input: {
 			400,
 		)
 	}
-	const approvedHostsBySecretName = new Map(
-		(
-			await listSecrets({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
-				scope: 'user',
-				storageContext: null,
-				includeIntegrationOwned: true,
-			})
-		).map((secret) => [secret.name, new Set(secret.allowedHosts)]),
-	)
-	const accessSaved = await saveSecret({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		userEmail: input.user.mcpUser.email,
-		name: accessTokenSecretName,
-		value: accessToken,
-		scope: 'user',
-		description: `${provider} OAuth access token`,
-		storageContext: { sessionId: null, appId: null, packageId: null },
-	})
-
-	let refreshSaved = false
-	if (refreshToken && refreshTokenSecretName) {
-		await saveSecret({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			userEmail: input.user.mcpUser.email,
-			name: refreshTokenSecretName,
-			value: refreshToken,
-			scope: 'user',
-			description: `${provider} OAuth refresh token`,
-			storageContext: { sessionId: null, appId: null, packageId: null },
-		})
-		refreshSaved = true
-	}
-	const persistRefreshTokenSecretName =
-		refreshTokenSecretName &&
-		(refreshSaved || approvedHostsBySecretName.has(refreshTokenSecretName))
-			? refreshTokenSecretName
-			: null
-
 	const integrationName = await saveIntegrationConfig({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
@@ -435,9 +400,6 @@ async function handleConnectOauthAction(input: {
 		flow: flow === 'confidential' ? 'confidential' : 'pkce',
 		usePkce,
 		clientId,
-		clientSecretSecretName,
-		accessTokenSecretName,
-		refreshTokenSecretName: persistRefreshTokenSecretName,
 		tokenExchangeStyle: resolveTokenExchangeStyle({
 			tokenUrl,
 			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
@@ -455,65 +417,37 @@ async function handleConnectOauthAction(input: {
 	await persistIntegrationTokens({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
-		userEmail: input.user.mcpUser.email,
 		name: integrationName,
 		accessToken,
-		refreshToken:
-			refreshToken && persistRefreshTokenSecretName ? refreshToken : null,
-		accessTokenSecretName,
-		refreshTokenSecretName: persistRefreshTokenSecretName,
-		descriptionPrefix: provider,
+		refreshToken,
 	})
-	if (clientSecretSecretName) {
-		const resolvedClientSecret = await resolveSecret({
+	const clientSecret = await resolveConnectClientSecret({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		provider: integrationName,
+		clientSecret: readOptionalString(input.body, 'clientSecret'),
+		clientSecretSecretName,
+	})
+	const saved = await getJoinedIntegration({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: integrationName,
+	})
+	if (clientSecret && saved?.lane === 'user') {
+		await persistUserOauthAppClientSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
-			name: clientSecretSecretName,
-			scope: 'user',
-			storageContext: { sessionId: null, appId: null, packageId: null },
+			slug: saved.app.slug,
+			value: clientSecret,
 		})
-		const saved = await getJoinedIntegration({
+		await deleteLeftoverConnectClientSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
-			name: integrationName,
-		})
-		if (
-			resolvedClientSecret.found &&
-			resolvedClientSecret.value &&
-			saved?.lane === 'user'
-		) {
-			await persistUserOauthAppClientSecret({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
-				userEmail: input.user.mcpUser.email,
-				slug: saved.app.slug,
-				value: resolvedClientSecret.value,
-				secretName: clientSecretSecretName,
-				description: `${provider} OAuth client secret`,
-			})
-		}
-	}
-	const approvalSecretNames = [
-		accessTokenSecretName,
-		...(persistRefreshTokenSecretName ? [persistRefreshTokenSecretName] : []),
-	]
-	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
-	try {
-		hostApprovalLinks = await buildConnectOauthHostApprovalLinks({
-			env: input.env,
-			request: input.request,
-			userId: input.user.mcpUser.userId,
-			allowedHosts,
-			secretNames: approvalSecretNames,
-			approvedHostsBySecretName,
-		})
-	} catch (error) {
-		console.error('Failed to build OAuth host approval links.', {
-			userId: input.user.mcpUser.userId,
-			secretNames: approvalSecretNames,
-			error,
+			provider: integrationName,
+			clientSecretSecretName,
 		})
 	}
+	const hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 
 	const nextSteps = await loadConnectOauthNextSteps({
 		env: input.env,
@@ -554,8 +488,8 @@ async function handleConnectOauthAction(input: {
 
 	return jsonResponse({
 		ok: true,
-		accessTokenSaved: Boolean(accessSaved),
-		refreshTokenSaved: refreshSaved,
+		accessTokenSaved: true,
+		refreshTokenSaved: Boolean(refreshToken),
 		allowedHosts,
 		hostApprovalLinks,
 		integrationName,
@@ -596,68 +530,6 @@ async function emitConnectOauthAuthSucceeded(input: {
 			},
 		)
 	}
-}
-
-async function buildConnectOauthHostApprovalLinks(input: {
-	env: Env
-	request: Request
-	userId: string
-	allowedHosts: Array<string>
-	secretNames: Array<string>
-	approvedHostsBySecretName?: Map<string, Set<string>>
-}) {
-	const uniqueHosts = Array.from(new Set(input.allowedHosts)).slice(
-		0,
-		maxConnectOauthApprovalHosts,
-	)
-	const uniqueSecretNames = Array.from(new Set(input.secretNames)).slice(
-		0,
-		maxConnectOauthApprovalSecrets,
-	)
-	const approvedHostsBySecretName =
-		input.approvedHostsBySecretName ??
-		new Map(
-			(
-				await listSecrets({
-					env: input.env,
-					userId: input.userId,
-					scope: 'user',
-					storageContext: null,
-				})
-			).map((secret) => [secret.name, new Set(secret.allowedHosts)]),
-		)
-	const baseUrl = getAppBaseUrl({
-		env: input.env,
-		requestUrl: input.request.url,
-	})
-	const links = await Promise.all(
-		uniqueSecretNames.flatMap((secretName) =>
-			uniqueHosts.map(async (host) => {
-				if (approvedHostsBySecretName.get(secretName)?.has(host)) {
-					return null
-				}
-				return {
-					secretName,
-					host,
-					approvalUrl: buildSecretHostApprovalUrl({
-						baseUrl,
-						name: secretName,
-						scope: 'user',
-						requestedHost: host,
-						storageContext: null,
-					}),
-				} satisfies ConnectOauthHostApprovalLink
-			}),
-		),
-	)
-	return links
-		.filter((link): link is ConnectOauthHostApprovalLink => link !== null)
-		.sort((left, right) => {
-			return (
-				left.secretName.localeCompare(right.secretName) ||
-				left.host.localeCompare(right.host)
-			)
-		})
 }
 
 async function handleOAuthExchangeAction(input: {
@@ -714,23 +586,19 @@ async function handleOAuthExchangeAction(input: {
 	})
 
 	if (flow === 'confidential') {
-		if (!clientSecretSecretName) {
+		clientSecret = await resolveConnectClientSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			provider: readOptionalString(input.body, 'provider') ?? '',
+			clientSecret: readOptionalString(input.body, 'clientSecret'),
+			clientSecretSecretName,
+		})
+		if (!clientSecret) {
 			return jsonResponse(
-				{ ok: false, error: 'Client secret name is required.' },
+				{ ok: false, error: 'Client secret is required.' },
 				400,
 			)
 		}
-		const resolved = await resolveSecret({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			name: clientSecretSecretName,
-			scope: 'user',
-			storageContext: { sessionId: null, appId: null, packageId: null },
-		})
-		if (!resolved.found || !resolved.value) {
-			return jsonResponse({ ok: false, error: 'Client secret not found.' }, 400)
-		}
-		clientSecret = resolved.value
 	}
 
 	const params = new URLSearchParams(paramsRaw)
@@ -814,9 +682,6 @@ async function saveIntegrationConfig(input: {
 	flow: 'pkce' | 'confidential'
 	usePkce: boolean | null
 	clientId: string
-	clientSecretSecretName: string | null
-	accessTokenSecretName: string
-	refreshTokenSecretName: string | null
 	tokenExchangeStyle: TokenExchangeStyle | null
 	allowedHosts: Array<string>
 	authorization: {
@@ -837,12 +702,6 @@ async function saveIntegrationConfig(input: {
 		flow: input.flow,
 		...(input.usePkce == null ? {} : { usePkce: input.usePkce }),
 		clientId: input.clientId,
-		clientSecretSecretName:
-			input.flow === 'confidential'
-				? (input.clientSecretSecretName ?? `${providerKey}ClientSecret`)
-				: null,
-		accessTokenSecretName: input.accessTokenSecretName,
-		refreshTokenSecretName: input.refreshTokenSecretName,
 		requiredHosts: input.allowedHosts,
 		...(input.tokenExchangeStyle && input.tokenExchangeStyle !== 'form'
 			? { tokenExchangeStyle: input.tokenExchangeStyle }
@@ -859,6 +718,85 @@ async function saveIntegrationConfig(input: {
 		waitUntil,
 	})
 	return integration.name
+}
+
+async function resolveConnectClientSecret(input: {
+	env: Env
+	userId: string
+	provider: string
+	clientSecret?: string | null
+	clientSecretSecretName?: string | null
+}): Promise<string | null> {
+	const inline = input.clientSecret?.trim()
+	if (inline) return inline
+	const slug = canonicalIntegrationName(input.provider)
+	if (slug) {
+		const fromApp = await resolveUserOauthAppClientSecret({
+			env: input.env,
+			userId: input.userId,
+			slug,
+		})
+		if (fromApp) return fromApp
+		const existing = await getOauthApp({
+			env: input.env,
+			userId: input.userId,
+			slug,
+		})
+		if (existing) {
+			const fromExisting = await resolveUserOauthAppClientSecret({
+				env: input.env,
+				userId: input.userId,
+				slug: existing.slug,
+			})
+			if (fromExisting) return fromExisting
+		}
+	}
+	const leftoverNames = [
+		input.clientSecretSecretName?.trim(),
+		slug ? `${slug}ClientSecret` : null,
+	].filter((name, index, names): name is string => {
+		return Boolean(name) && names.indexOf(name) === index
+	})
+	for (const secretName of leftoverNames) {
+		const resolved = await resolveSecret({
+			env: input.env,
+			userId: input.userId,
+			name: secretName,
+			scope: 'user',
+			storageContext: { sessionId: null, appId: null, packageId: null },
+		})
+		if (resolved.found) return resolved.value ?? null
+	}
+	return null
+}
+
+async function deleteLeftoverConnectClientSecret(input: {
+	env: Env
+	userId: string
+	provider: string
+	clientSecretSecretName?: string | null
+}) {
+	const leftoverNames = [
+		input.clientSecretSecretName?.trim(),
+		canonicalIntegrationName(input.provider)
+			? `${canonicalIntegrationName(input.provider)}ClientSecret`
+			: null,
+	].filter((name, index, names): name is string => {
+		return Boolean(name) && names.indexOf(name) === index
+	})
+	for (const name of leftoverNames) {
+		try {
+			await deleteSecret({
+				env: input.env,
+				userId: input.userId,
+				name,
+				scope: 'user',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			})
+		} catch {
+			// Leftover name may already be gone.
+		}
+	}
 }
 
 function readTokenField(
@@ -919,7 +857,6 @@ async function handleApprovalAction(input: {
 					env: input.env,
 					userId: input.user.mcpUser.userId,
 					scope: 'user',
-					includeIntegrationOwned: true,
 				})
 				const byName = new Map(
 					current
@@ -980,7 +917,6 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
-					includeIntegrationOwned: true,
 				})
 				const secret = current.find(
 					(item) =>
@@ -1016,7 +952,6 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
-					includeIntegrationOwned: true,
 				})
 				const secret = current.find(
 					(item) =>
@@ -1054,7 +989,6 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
-					includeIntegrationOwned: true,
 				})
 				const byName = new Map(
 					current

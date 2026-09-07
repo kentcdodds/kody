@@ -1010,9 +1010,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 					flow: 'confidential',
 					usePkce: false,
 					clientId: 'google-client-id-value',
-					clientSecretSecretName: 'googleClientSecret',
-					accessTokenSecretName: 'googleAccessToken',
-					refreshTokenSecretName: 'googleRefreshToken',
+					hasClientSecret: true,
 					requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 					authorization: {
 						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -1057,9 +1055,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 					flow: 'confidential',
 					usePkce: true,
 					clientId: '',
-					clientSecretSecretName: null,
-					accessTokenSecretName: 'googleAccessToken',
-					refreshTokenSecretName: 'googleRefreshToken',
+					hasClientSecret: false,
 					requiredHosts: ['oauth2.googleapis.com'],
 					authorization: {
 						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -1286,9 +1282,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		flow: 'confidential' as const,
 		usePkce: false,
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: 'googleClientSecret',
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
+		hasClientSecret: true,
 		requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 		authorization: {
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -1304,7 +1298,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		provider: 'google',
 		label: 'Google',
 		clientId: 'google-client-id-value',
-		clientSecretSecretName: 'googleClientSecret',
+		hasClientSecret: true,
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		apiBaseUrl: 'https://www.googleapis.com',
@@ -1379,7 +1373,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	const builtInApp = {
 		...googleApp,
 		platform: true,
-		clientSecretSecretName: null,
+		hasClientSecret: false,
 		connectionCount: 2,
 		connections: [
 			{ name: 'google', accountLabel: 'me@example.com' },
@@ -1389,14 +1383,12 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	const builtInConnection = {
 		...googleConnection,
 		platform: true,
-		clientSecretSecretName: null,
 	}
 	const needsSetupConnection = {
 		...builtInConnection,
 		name: 'google-work',
 		accountLabel: 'work@example.com',
 		authorization: null,
-		accessTokenSecretName: 'googleWorkAccessToken',
 	}
 	const builtInResponse = await renderAppPage({
 		request: new Request('https://example.com/account/integrations/google', {

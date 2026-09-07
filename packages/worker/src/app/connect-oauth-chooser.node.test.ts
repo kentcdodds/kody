@@ -58,7 +58,6 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 		platformAppSlug: 'github',
 		name: 'github',
 		scopes: ['read:user'],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	await upsertIntegration({
 		env,
@@ -68,7 +67,6 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 			tokenUrl: 'https://accounts.spotify.com/api/token',
 			flow: 'pkce',
 			clientId: 'spotify-client',
-			accessTokenSecretName: 'spotifyHomeAccessToken',
 			requiredHosts: ['accounts.spotify.com'],
 			authorization: {
 				authorizeUrl: 'https://accounts.spotify.com/authorize',

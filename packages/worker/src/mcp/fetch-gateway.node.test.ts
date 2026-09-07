@@ -14,7 +14,7 @@ import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
-import * as ownedSecretNames from '#worker/integrations/owned-secret-names.ts'
+import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
@@ -388,7 +388,7 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 	const request = () =>
 		new Request('https://example.com/api', {
 			headers: {
-				Authorization: 'Bearer {{secret:googleAccessToken|scope=user}}',
+				Authorization: 'Bearer {{integration-token:google}}',
 			},
 		})
 	const packageProps = {
@@ -440,9 +440,9 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 			allowedHosts: ['example.com'],
 			allowedPackages: [],
 		})
-	const ownerSpy = vi
-		.spyOn(ownedSecretNames, 'findIntegrationOwningSecretName')
-		.mockResolvedValue({ name: 'google' })
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('oauth-access')
 	const grantSpy = vi
 		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
 		.mockResolvedValue(undefined)
@@ -460,13 +460,20 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 				packageId: 'pkg-1',
 			}),
 		)
+		expect(tokenSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-123',
+				name: 'google',
+			}),
+		)
+		expect(resolveSpy).not.toHaveBeenCalled()
 		expect(packageSpy).not.toHaveBeenCalled()
 		expect(forkSpy).not.toHaveBeenCalled()
 	} finally {
 		packageSpy.mockRestore()
 		forkSpy.mockRestore()
 		resolveSpy.mockRestore()
-		ownerSpy.mockRestore()
+		tokenSpy.mockRestore()
 		grantSpy.mockRestore()
 	}
 })

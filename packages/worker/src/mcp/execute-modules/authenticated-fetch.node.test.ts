@@ -10,8 +10,7 @@ import { assertIntegrationHostAllowed } from './integration-host-allowlist.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
 const fakeAccessToken = 'test-access-token-abc123'
-const spotifyAccessTokenPlaceholder =
-	'Bearer {{secret:spotifyAccessToken|scope=user}}'
+const spotifyAccessTokenPlaceholder = 'Bearer {{integration-token:spotify}}'
 
 const spotifyIntegration = {
 	name: 'spotify',
@@ -19,9 +18,6 @@ const spotifyIntegration = {
 	apiBaseUrl: 'https://api.spotify.com/v1',
 	flow: 'pkce' as const,
 	clientId: 'spotify-client-id',
-	clientSecretSecretName: null,
-	accessTokenSecretName: 'spotifyAccessToken',
-	refreshTokenSecretName: 'spotifyRefreshToken',
 	requiredHosts: ['api.spotify.com', 'cdn.spotify.com'],
 }
 

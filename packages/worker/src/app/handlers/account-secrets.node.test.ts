@@ -53,7 +53,7 @@ const mockModule = vi.hoisted(() => ({
 				clientId: string
 				tokenUrl: string
 				flow: 'pkce' | 'confidential'
-				clientSecretSecretName?: string | null
+				hasClientSecret?: boolean
 				apiBaseUrl?: string | null
 				usePkce?: boolean | null
 				tokenExchangeStyle?: string | null
@@ -67,7 +67,7 @@ const mockModule = vi.hoisted(() => ({
 				.split('-')[0],
 			label: null,
 			clientId: input.config.clientId,
-			clientSecretSecretName: input.config.clientSecretSecretName ?? null,
+			hasClientSecret: input.config.hasClientSecret === true,
 			tokenUrl: input.config.tokenUrl,
 			authorizeUrl: null,
 			apiBaseUrl: input.config.apiBaseUrl ?? null,
@@ -318,32 +318,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
 		allowedHosts: ['api.github.com', 'github.com'],
-		hostApprovalLinks: [
-			{
-				secretName: 'githubAccessToken',
-				host: 'api.github.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=api.github.com',
-			},
-			{
-				secretName: 'githubAccessToken',
-				host: 'github.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/githubAccessToken?allowed-host=github.com',
-			},
-			{
-				secretName: 'githubRefreshToken',
-				host: 'api.github.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=api.github.com',
-			},
-			{
-				secretName: 'githubRefreshToken',
-				host: 'github.com',
-				approvalUrl:
-					'https://example.com/account/secrets/user/githubRefreshToken?allowed-host=github.com',
-			},
-		],
+		hostApprovalLinks: [],
 		integrationName: 'github',
 		nextSteps: {
 			integrationName: 'github',
@@ -355,22 +330,15 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			},
 		},
 	})
-	expect(mockModule.buildSecretHostApprovalUrl).toHaveBeenCalledTimes(4)
+	expect(mockModule.buildSecretHostApprovalUrl).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
-	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
-			name: 'githubAccessToken',
-			value: 'access-token',
-			scope: 'user',
-		}),
-	)
-	expect(mockModule.saveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			name: 'githubRefreshToken',
-			value: 'refresh-token',
-			scope: 'user',
+			name: 'github',
+			accessToken: 'access-token',
+			refreshToken: 'refresh-token',
 		}),
 	)
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
@@ -382,9 +350,6 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 				apiBaseUrl: 'https://api.github.com',
 				flow: 'pkce',
 				clientId: 'github-client-id-value',
-				clientSecretSecretName: null,
-				accessTokenSecretName: 'githubAccessToken',
-				refreshTokenSecretName: 'githubRefreshToken',
 				requiredHosts: ['api.github.com', 'github.com'],
 				authorization: {
 					authorizeUrl: 'https://github.com/login/oauth/authorize',
@@ -450,8 +415,14 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			config: expect.objectContaining({
 				name: 'spotify',
 				clientId: 'spotify-client-id-value',
-				refreshTokenSecretName: null,
 			}),
+		}),
+	)
+	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			name: 'spotify',
+			accessToken: 'newly-scoped-access-token',
 		}),
 	)
 
@@ -508,8 +479,13 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		expect.objectContaining({
 			config: expect.objectContaining({
 				name: 'spotify',
-				refreshTokenSecretName: 'spotifyRefreshToken',
 			}),
+		}),
+	)
+	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'spotify',
+			accessToken: 'rotated-access-token',
 		}),
 	)
 
@@ -1572,9 +1548,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 				flow: 'confidential',
 				usePkce: true,
 				clientId: 'canva-client-id-value',
-				clientSecretSecretName: 'canvaClientSecret',
-				accessTokenSecretName: 'canvaAccessToken',
-				refreshTokenSecretName: 'canvaRefreshToken',
 				requiredHosts: ['api.canva.com'],
 				tokenExchangeStyle: 'basic-form',
 				authorization: {

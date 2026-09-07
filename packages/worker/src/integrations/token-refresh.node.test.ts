@@ -1,13 +1,14 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
-import {
-	saveSecret,
-	resolveSecret,
-	setSecretAllowedHosts,
-} from '#mcp/secrets/service.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import {
+	persistIntegrationTokens,
+	persistUserOauthAppClientSecret,
+	resolveIntegrationAccessToken,
+	resolveIntegrationRefreshToken,
+} from './credentials.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
 import { writeIntegrationAuthFailure } from './repo.ts'
 import {
@@ -49,8 +50,6 @@ function createHarness() {
 	return { sqlite, env }
 }
 
-const storageContext = { sessionId: null, appId: null, packageId: null }
-
 async function readAuthFailure(env: Env, userId: string, name: string) {
 	return env.APP_DB.prepare(
 		`SELECT auth_failed_reason, auth_failed_reconnectable, auth_failed_http_status
@@ -66,24 +65,13 @@ async function readAuthFailure(env: Env, userId: string, name: string) {
 		}>()
 }
 
-async function seedUserTokens(env: Env, userId: string, provider: string) {
-	await saveSecret({
+async function seedUserTokens(env: Env, userId: string, name: string) {
+	await persistIntegrationTokens({
 		env,
 		userId,
-		name: `${provider}AccessToken`,
-		value: 'stale-access-token',
-		scope: 'user',
-		description: '',
-		storageContext,
-	})
-	await saveSecret({
-		env,
-		userId,
-		name: `${provider}RefreshToken`,
-		value: 'current-refresh-token',
-		scope: 'user',
-		description: '',
-		storageContext,
+		name,
+		accessToken: 'stale-access-token',
+		refreshToken: 'current-refresh-token',
 	})
 }
 
@@ -120,8 +108,6 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		userId,
 		platformAppSlug: 'github',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
-		refreshTokenSecretName: 'githubRefreshToken',
 	})
 	await seedUserTokens(env, userId, 'github')
 
@@ -150,22 +136,20 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		expect(body).toContain('client_id=platform-github-client-id')
 		expect(body).toContain('client_secret=platform-github-client-secret-value')
 
-		const access = await resolveSecret({
-			env,
-			userId,
-			name: 'githubAccessToken',
-			scope: 'user',
-			storageContext,
-		})
-		expect(access.found && access.value).toBe('fresh-access-token')
-		const refresh = await resolveSecret({
-			env,
-			userId,
-			name: 'githubRefreshToken',
-			scope: 'user',
-			storageContext,
-		})
-		expect(refresh.found && refresh.value).toBe('rotated-refresh-token')
+		expect(
+			await resolveIntegrationAccessToken({
+				env,
+				userId,
+				name: 'github',
+			}),
+		).toBe('fresh-access-token')
+		expect(
+			await resolveIntegrationRefreshToken({
+				env,
+				userId,
+				name: 'github',
+			}),
+		).toBe('rotated-refresh-token')
 		expect(
 			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
 		).not.toHaveBeenCalled()
@@ -248,7 +232,6 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		userId: 'user-no-refresh',
 		platformAppSlug: 'github',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
 	})
 	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 	await expect(
@@ -261,7 +244,7 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		(error: unknown) =>
 			error instanceof IntegrationTokenRefreshCallerError &&
 			error.reason === 'missing_refresh_token' &&
-			error.message.includes('does not define a refresh token secret name') &&
+			error.message.includes('does not have a stored refresh token') &&
 			error.message.includes('/connect/oauth?provider=github') &&
 			error.message.includes(integrationTokenRefreshCallerMarker),
 	)
@@ -306,8 +289,6 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 		userId,
 		platformAppSlug: 'google',
 		scopes: [],
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
 	})
 	await seedUserTokens(env, userId, 'google')
 
@@ -427,53 +408,32 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 	}
 })
 
-async function approveSecretHosts(
-	env: Env,
-	userId: string,
-	name: string,
-	allowedHosts: Array<string>,
-) {
-	await setSecretAllowedHosts({
-		env,
-		userId,
-		name,
-		scope: 'user',
-		allowedHosts,
-		storageContext,
-	})
-}
-
-test('user-lane refresh resolves the client secret from the user secret store', async () => {
+test('user-lane refresh resolves the ciphertext client secret and enforces required hosts', async () => {
 	const { env } = createHarness()
 	const userId = 'user-lane-refresh'
-	await saveSecret({
-		env,
-		userId,
-		name: 'googleClientSecret',
-		value: 'user-google-client-secret',
-		scope: 'user',
-		description: '',
-		storageContext,
-	})
+	const googleConfig = {
+		name: 'google',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		flow: 'confidential' as const,
+		clientId: 'user-google-client-id',
+		requiredHosts: ['www.googleapis.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			scopes: ['openid'],
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+		},
+	}
 	await upsertIntegration({
 		env,
 		userId,
-		config: {
-			name: 'google',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			flow: 'confidential',
-			clientId: 'user-google-client-id',
-			clientSecretSecretName: 'googleClientSecret',
-			accessTokenSecretName: 'googleAccessToken',
-			refreshTokenSecretName: 'googleRefreshToken',
-			requiredHosts: ['www.googleapis.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: ['openid'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
-			},
-		},
+		config: googleConfig,
+	})
+	await persistUserOauthAppClientSecret({
+		env,
+		userId,
+		slug: 'google',
+		value: 'user-google-client-secret',
 	})
 	await seedUserTokens(env, userId, 'google')
 
@@ -487,7 +447,7 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 				error instanceof IntegrationTokenRefreshCallerError &&
 				error.reason === 'host_not_approved' &&
 				error.message.includes(
-					'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
+					'Integration "google" is not approved for host "oauth2.googleapis.com"',
 				) &&
 				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
@@ -504,12 +464,14 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 			}),
 		)
 
-		await approveSecretHosts(env, userId, 'googleRefreshToken', [
-			'oauth2.googleapis.com',
-		])
-		await approveSecretHosts(env, userId, 'googleClientSecret', [
-			'oauth2.googleapis.com',
-		])
+		await upsertIntegration({
+			env,
+			userId,
+			config: {
+				...googleConfig,
+				requiredHosts: ['www.googleapis.com', 'oauth2.googleapis.com'],
+			},
+		})
 		const result = await refreshIntegrationTokens({
 			env,
 			userId,
@@ -522,14 +484,13 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 			'client_secret=user-google-client-secret',
 		)
 
-		const access = await resolveSecret({
-			env,
-			userId,
-			name: 'googleAccessToken',
-			scope: 'user',
-			storageContext,
-		})
-		expect(access.found && access.value).toBe('fresh-google-token')
+		expect(
+			await resolveIntegrationAccessToken({
+				env,
+				userId,
+				name: 'google',
+			}),
+		).toBe('fresh-google-token')
 		expect(
 			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
 		).toHaveBeenCalledWith(
@@ -571,8 +532,6 @@ test('successful Google refresh persists userinfo email as account_label when mi
 		userId,
 		platformAppSlug: 'google',
 		scopes: ['openid', 'email'],
-		accessTokenSecretName: 'googleAccessToken',
-		refreshTokenSecretName: 'googleRefreshToken',
 	})
 	await seedUserTokens(env, userId, 'google')
 
@@ -612,8 +571,6 @@ test('successful Google refresh persists userinfo email as account_label when mi
 			userId,
 			platformAppSlug: 'google',
 			scopes: ['openid', 'email'],
-			accessTokenSecretName: 'googleAccessToken',
-			refreshTokenSecretName: 'googleRefreshToken',
 			accountLabel: 'Work',
 		})
 		await refreshIntegrationTokens({
@@ -661,8 +618,6 @@ test('in-flight refreshes of the same connection share one provider POST and one
 		userId,
 		platformAppSlug: 'github',
 		scopes: [],
-		accessTokenSecretName: 'githubAccessToken',
-		refreshTokenSecretName: 'githubRefreshToken',
 	})
 	await seedUserTokens(env, userId, 'github')
 
