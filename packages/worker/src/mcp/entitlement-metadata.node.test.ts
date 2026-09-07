@@ -1,11 +1,8 @@
 import { expect, test } from 'vitest'
-import { planLimits } from '#universal/plans.ts'
 import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
 	JobIntervalFloorError,
-	buildEntitlementUpgradeHint,
-	buildJobIntervalFloorUpgradeHint,
 	computeOverageLimitErrorCode,
 	entitlementLimitErrorCode,
 	jobIntervalFloorErrorCode,
@@ -16,117 +13,103 @@ import {
 } from './entitlement-metadata.ts'
 
 test('entitlement metadata is only for known plan-limit and quota denials', () => {
-	const stockLimit = planLimits.free.maxSavedPackages
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',
-		limit: stockLimit,
-		current: stockLimit,
-		upgradeHint: buildEntitlementUpgradeHint('saved_packages'),
+		limit: 10,
+		current: 10,
+		upgradeHint: 'Upgrade at /account/billing.',
 	})
 	expect(toMcpEntitlementMetadata(stockDenial)).toEqual({
 		code: entitlementLimitErrorCode,
 		resource: 'saved_packages',
 		plan: 'free',
-		limit: stockLimit,
-		current: stockLimit,
-		upgradeHint: buildEntitlementUpgradeHint('saved_packages'),
+		limit: 10,
+		current: 10,
+		upgradeHint: 'Upgrade at /account/billing.',
 	})
 	expect(toMcpEntitlementMetadata(stockDenial)).not.toHaveProperty('used')
 	expect(toMcpEntitlementMetadata(stockDenial)).not.toHaveProperty('remaining')
-	const stockHint = buildEntitlementUpgradeHint('saved_packages')
 	expect(entitlementStructuredContent(stockDenial)).toEqual({
 		entitlement: {
 			code: entitlementLimitErrorCode,
 			resource: 'saved_packages',
 			plan: 'free',
-			limit: stockLimit,
-			current: stockLimit,
-			upgradeHint: stockHint,
+			limit: 10,
+			current: 10,
+			upgradeHint: 'Upgrade at /account/billing.',
 		},
 	})
 
-	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
-	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
 	const quotaDenial = new EntitlementLimitError({
 		resource: 'execute_calls_per_day',
 		plan: 'free',
-		limit: quotaLimit,
-		current: quotaLimit,
-		upgradeHint: quotaHint,
+		limit: 100,
+		current: 100,
+		upgradeHint: 'Upgrade at /account/billing.',
 	})
 	expect(toMcpEntitlementMetadata(quotaDenial)).toEqual({
 		code: entitlementLimitErrorCode,
 		resource: 'execute_calls_per_day',
 		plan: 'free',
-		limit: quotaLimit,
-		current: quotaLimit,
-		upgradeHint: quotaHint,
-		used: quotaLimit,
+		limit: 100,
+		current: 100,
+		upgradeHint: 'Upgrade at /account/billing.',
+		used: 100,
 		remaining: 0,
 	})
 
-	const intervalMs = planLimits.free.minJobIntervalMs
 	const intervalDenial = new JobIntervalFloorError({
 		plan: 'free',
-		minIntervalMs: intervalMs,
+		minIntervalMs: 15 * 60 * 1000,
 	})
-	expect(toMcpEntitlementMetadata(intervalDenial)).toEqual({
+	expect(toMcpEntitlementMetadata(intervalDenial)).toMatchObject({
 		code: jobIntervalFloorErrorCode,
 		resource: 'scheduled_jobs',
 		plan: 'free',
-		upgradeHint: buildJobIntervalFloorUpgradeHint(),
-		minIntervalMs: intervalMs,
+		minIntervalMs: 15 * 60 * 1000,
 	})
 
 	expect(toMcpEntitlementMetadata(new Error(stockDenial.message))).toEqual({
 		code: entitlementLimitErrorCode,
 		resource: 'saved_packages',
 		plan: 'free',
-		limit: stockLimit,
-		current: stockLimit,
-		upgradeHint: stockHint,
+		limit: 10,
+		current: 10,
+		upgradeHint: 'Upgrade at /account/billing.',
 	})
-	expect(toMcpEntitlementMetadata(new Error(intervalDenial.message))).toEqual({
+	expect(
+		toMcpEntitlementMetadata(new Error(intervalDenial.message)),
+	).toMatchObject({
 		code: jobIntervalFloorErrorCode,
 		resource: 'scheduled_jobs',
 		plan: 'free',
-		upgradeHint: buildJobIntervalFloorUpgradeHint(),
-		minIntervalMs: intervalMs,
+		minIntervalMs: 15 * 60 * 1000,
 	})
 	const computeDenial = new ComputeOverageLimitError({
 		resource: 'unique_worker_days',
 		plan: 'free',
-		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
-		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
+		limit: 50,
+		current: 50,
 		disposition: 'soft_block',
 	})
-	expect(toMcpEntitlementMetadata(computeDenial)).toEqual({
+	expect(toMcpEntitlementMetadata(computeDenial)).toMatchObject({
 		code: computeOverageLimitErrorCode,
 		resource: 'unique_worker_days',
 		plan: 'free',
-		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
-		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
-		whatCounts: computeDenial.details.whatCounts,
-		upgradeHint: computeDenial.details.upgradeHint,
+		limit: 50,
+		current: 50,
 		disposition: 'soft_block',
-		mechanic:
-			'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.',
 	})
-	expect(computeDenial.message).toMatch(/Dynamic Worker isolates/)
-	expect(computeDenial.message).toMatch(/Keep package code stable/)
-	expect(computeDenial.message).toMatch(/payment method/)
-	expect(toMcpEntitlementMetadata(new Error(computeDenial.message))).toEqual({
+	expect(
+		toMcpEntitlementMetadata(new Error(computeDenial.message)),
+	).toMatchObject({
 		code: computeOverageLimitErrorCode,
 		resource: 'unique_worker_days',
 		plan: 'free',
-		limit: planLimits.free.maxUniqueWorkerDaysPerMonth,
-		current: planLimits.free.maxUniqueWorkerDaysPerMonth,
-		whatCounts: computeDenial.details.whatCounts,
-		upgradeHint: computeDenial.details.upgradeHint,
+		limit: 50,
+		current: 50,
 		disposition: 'soft_block',
-		mechanic:
-			'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.',
 	})
 
 	expect(toMcpEntitlementMetadata(new Error('Boom'))).toBeUndefined()

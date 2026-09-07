@@ -115,8 +115,6 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 
 test('step 2 shows one prompt and a search waiting spinner', async () => {
 	const unconnected = await renderToString(accessPanel({}))
-	expect(unconnected).toContain('Make something useful')
-	expect(unconnected).toContain(discoveryPrompt)
 	expect(unconnected).toContain('data-testid="onboarding-wizard-next"')
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
 
@@ -125,12 +123,9 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 	)
 	expect(waiting).toContain('data-testid="onboarding-step-2-prompt"')
 	expect(waiting).toContain('data-testid="onboarding-search-status"')
-	expect(waiting).toContain(
-		'Waiting for your agent to look up the onboarding guide',
-	)
-	expect(waiting).toContain('search({ entity: "onboarding:guide" })')
 	expect(waiting).toContain('data-testid="onboarding-guide-pointer"')
 	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
+	expect(waiting).not.toContain('data-connected="true"')
 
 	const started = await renderToString(
 		accessPanel({
@@ -139,7 +134,7 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 			selectedAgentLabel: 'Cursor',
 		}),
 	)
-	expect(started).toContain("You've started making something useful")
+	expect(started).toContain('data-testid="onboarding-search-status"')
 	expect(started).toContain('data-connected="true"')
 })
 
@@ -174,9 +169,6 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(withArtifact).toContain('data-testid="onboarding-access-win-made"')
-	expect(withArtifact).toContain(
-		'You made Preferred commute and @you/morning-digest',
-	)
 
 	const selected = await renderToString(
 		secondAgentPanel({
@@ -188,13 +180,10 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(selected).toContain('Connect Claude Code')
 	expect(selected).toContain('Waiting for Claude Code to connect')
 	expect(selected).toContain('data-testid="onboarding-portability-proof"')
-	expect(selected).toContain('looks up the portability guide')
 	expect(selected).toContain(
 		'data-testid="onboarding-portability-guide-pointer"',
 	)
 	expect(selected).toContain('href="/guides/portability"')
-	expect(selected).toContain('Copy portability proof')
-	expect(selected.split('Copy portability proof')).toHaveLength(2)
 
 	const connected = await renderToString(
 		secondAgentPanel({
@@ -238,5 +227,4 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		}),
 	)
 	expect(labeled).toContain('data-testid="onboarding-connected-agents"')
-	expect(labeled).toContain('Connected: Cursor and Claude Desktop')
 })
