@@ -7,11 +7,23 @@ import {
 	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
 import {
+	connectedAgentConnectionLabel,
+	groupConnectedAgents,
+} from '#universal/connected-mcp-agents.ts'
+import {
 	type AccountConnectedAgentListItem,
 	type AccountConnectedAgentsLoaderData,
 } from '#universal/loader-data.ts'
-import { colors, spacing, typography } from '#universal/styles/tokens.ts'
-import { getDangerPillCss } from '#universal/styles/style-primitives.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
+import {
+	getDangerPillCss,
+	getLogoWellCss,
+} from '#universal/styles/style-primitives.ts'
 
 export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
@@ -75,10 +87,11 @@ export function createAccountConnectedAgents(handle: Handle) {
 	return {
 		applyPayload,
 		render() {
+			const groups = groupConnectedAgents(agents)
 			return (
 				<AccountManagementPanel
 					title="Connected agents"
-					description="AI hosts that have authorized against this Kody account. Labels are best-effort from the host name or redirect."
+					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect."
 					ariaLabel="Connected agents"
 				>
 					{message ? (
@@ -92,7 +105,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 							{message.text}
 						</p>
 					) : null}
-					{agents.length > 0 ? (
+					{groups.length > 0 ? (
 						<ul
 							aria-busy={busy ? 'true' : undefined}
 							mix={css({
@@ -103,28 +116,39 @@ export function createAccountConnectedAgents(handle: Handle) {
 								gap: spacing.md,
 							})}
 						>
-							{agents.map((agent) => {
-								const revokeCheck = getRevokeCheck(agent.clientId)
-								return (
-									<li
-										key={agent.clientId}
-										mix={css({
-											display: 'flex',
-											justifyContent: 'space-between',
-											alignItems: 'center',
-											gap: spacing.md,
-											flexWrap: 'wrap',
-										})}
-									>
-										<span mix={css({ display: 'grid', gap: spacing.xs })}>
+							{groups.map((group) => (
+								<li
+									key={group.label}
+									data-testid="connected-agent-group"
+									data-agent-label={group.label}
+								>
+									<details mix={css(groupDetailsCss)}>
+										<summary mix={css(groupSummaryCss)}>
+											<ConnectedAgentMark icon={group.icon} />
 											<span
 												mix={css({
 													fontWeight: typography.fontWeight.medium,
 													color: colors.text,
 												})}
 											>
-												{agent.label}
+												{group.label}
 											</span>
+											{group.members.length > 1 ? (
+												<>
+													<span
+														aria-hidden="true"
+														mix={css({
+															color: colors.textMuted,
+															fontSize: typography.fontSize.sm,
+														})}
+													>
+														({group.members.length})
+													</span>
+													<span class="visually-hidden">
+														{`${group.members.length} connections`}
+													</span>
+												</>
+											) : null}
 											<span
 												mix={css({
 													color: colors.textMuted,
@@ -133,35 +157,99 @@ export function createAccountConnectedAgents(handle: Handle) {
 											>
 												Connected{' '}
 												<TimestampValue
-													value={agent.connectedAt}
+													value={group.connectedAt}
 													fallback="at an unknown time"
 												/>
 											</span>
-										</span>
-										<button
-											type="button"
-											disabled={busy}
-											aria-label={
-												revokeCheck.doubleCheck
-													? `Confirm revoke ${agent.label}`
-													: `Revoke ${agent.label}`
-											}
-											mix={[
-												css(dangerButtonCss),
-												...revokeCheck.getButtonMix({
-													on: {
-														click: () => {
-															void revokeAgent(agent.clientId)
-														},
-													},
-												}),
-											]}
+										</summary>
+										<ul
+											mix={css({
+												listStyle: 'none',
+												padding: 0,
+												margin: 0,
+												display: 'grid',
+												gap: spacing.sm,
+											})}
 										>
-											{revokeCheck.doubleCheck ? 'Confirm revoke' : 'Revoke'}
-										</button>
-									</li>
-								)
-							})}
+											{group.members.map((agent) => {
+												const revokeCheck = getRevokeCheck(agent.clientId)
+												const connectionLabel = connectedAgentConnectionLabel(
+													agent.clientId,
+												)
+												const revokeName =
+													group.members.length > 1
+														? `${agent.label} (${connectionLabel})`
+														: agent.label
+												return (
+													<li
+														key={agent.clientId}
+														data-testid="connected-agent-connection"
+														data-client-id={agent.clientId}
+														mix={css({
+															display: 'flex',
+															justifyContent: 'space-between',
+															alignItems: 'center',
+															gap: spacing.md,
+															flexWrap: 'wrap',
+															paddingInlineStart: spacing.lg,
+														})}
+													>
+														<span
+															mix={css({ display: 'grid', gap: spacing.xs })}
+														>
+															<code
+																title={agent.clientId}
+																mix={css({
+																	color: colors.text,
+																	fontSize: typography.fontSize.sm,
+																	overflowWrap: 'anywhere',
+																})}
+															>
+																{connectionLabel}
+															</code>
+															<span
+																mix={css({
+																	color: colors.textMuted,
+																	fontSize: typography.fontSize.sm,
+																})}
+															>
+																Connected{' '}
+																<TimestampValue
+																	value={agent.connectedAt}
+																	fallback="at an unknown time"
+																/>
+															</span>
+														</span>
+														<button
+															type="button"
+															disabled={busy}
+															aria-label={
+																revokeCheck.doubleCheck
+																	? `Confirm revoke ${revokeName}`
+																	: `Revoke ${revokeName}`
+															}
+															mix={[
+																css(dangerButtonCss),
+																...revokeCheck.getButtonMix({
+																	on: {
+																		click: () => {
+																			void revokeAgent(agent.clientId)
+																		},
+																	},
+																}),
+															]}
+														>
+															{revokeCheck.doubleCheck
+																? 'Confirm revoke'
+																: 'Revoke'}
+														</button>
+													</li>
+												)
+											})}
+										</ul>
+									</details>
+								</li>
+							))}
 						</ul>
 					) : (
 						<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -173,6 +261,70 @@ export function createAccountConnectedAgents(handle: Handle) {
 			)
 		},
 	}
+}
+
+function ConnectedAgentMark(handle: Handle<{ icon: string | null }>) {
+	return () => {
+		if (!handle.props.icon) {
+			return (
+				<span
+					aria-hidden="true"
+					data-testid="connected-agent-mark-fallback"
+					mix={css({
+						display: 'grid',
+						placeItems: 'center',
+						flex: 'none',
+						width: '1.75rem',
+						height: '1.75rem',
+						color: colors.textMuted,
+					})}
+				>
+					<svg
+						viewBox="0 0 24 24"
+						width="18"
+						height="18"
+						fill="currentColor"
+						aria-hidden="true"
+					>
+						<circle cx="6" cy="12" r="1.6" />
+						<circle cx="12" cy="12" r="1.6" />
+						<circle cx="18" cy="12" r="1.6" />
+					</svg>
+				</span>
+			)
+		}
+		return (
+			<span
+				aria-hidden="true"
+				mix={css(getLogoWellCss({ size: '1.75rem', radius: radius.md }))}
+			>
+				<img
+					src={`/images/icons/${handle.props.icon}.svg`}
+					alt=""
+					width={20}
+					height={20}
+					mix={css({
+						display: 'block',
+						width: '1.15rem',
+						height: '1.15rem',
+						objectFit: 'contain',
+					})}
+				/>
+			</span>
+		)
+	}
+}
+
+const groupDetailsCss = {
+	'&[open] > summary': { marginBottom: spacing.sm },
+}
+
+const groupSummaryCss = {
+	display: 'flex',
+	alignItems: 'center',
+	gap: spacing.sm,
+	cursor: 'pointer',
+	flexWrap: 'wrap' as const,
 }
 
 const dangerButtonCss = getDangerPillCss({ size: 'sm' })
