@@ -11,8 +11,16 @@ const httpStatusPattern =
 const httpStatusWordPattern =
 	/\b(\d{3})\s+(?:Forbidden|Unauthorized|Not Found|Bad Request|Internal Server Error|Too Many Requests|Service Unavailable)\b/i
 const bearerPattern = /\bBearer\s+\S+/gi
-const assignmentSecretPattern =
-	/\b(?:access_token|refresh_token|id_token|client_secret|authorization|password|secret|api[_-]?key|code)\s*[:=]\s*\S+/gi
+const secretFieldNames =
+	'access_token|refresh_token|id_token|client_secret|authorization|password|secret|api[_-]?key|code'
+const jsonQuotedSecretPattern = new RegExp(
+	`"(${secretFieldNames})"\\s*:\\s*"(?:\\\\.|[^"\\\\])*"`,
+	'gi',
+)
+const assignmentSecretPattern = new RegExp(
+	`\\b(?:${secretFieldNames})\\s*[:=]\\s*\\S+`,
+	'gi',
+)
 const jwtLikePattern =
 	/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g
 
@@ -39,8 +47,12 @@ export function sanitizeMcpErrorSnippet(
 	limit = mcpServerLastErrorBodySnippetLimit,
 ): string | null {
 	if (!value) return null
+	jsonQuotedSecretPattern.lastIndex = 0
+	assignmentSecretPattern.lastIndex = 0
+	bearerPattern.lastIndex = 0
 	const redacted = value
 		.replaceAll(bearerPattern, 'Bearer [redacted]')
+		.replaceAll(jsonQuotedSecretPattern, '"$1":"[redacted]"')
 		.replaceAll(assignmentSecretPattern, (match) => {
 			const separator = match.includes('=') ? '=' : ':'
 			const key = match.split(/[:=]/)[0]?.trim() ?? 'secret'

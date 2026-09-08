@@ -25,6 +25,18 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 		),
 	).not.toContain('secret-token')
 	expect(
+		sanitizeMcpErrorSnippet(
+			'{"access_token":"secret-token","refresh_token":"rt-secret","client_secret":"cs-secret"}',
+		),
+	).toBe(
+		'{"access_token":"[redacted]","refresh_token":"[redacted]","client_secret":"[redacted]"}',
+	)
+	expect(
+		sanitizeMcpErrorSnippet(
+			'{ "access_token" : "secret-token", "refresh_token" : "rt-secret" }',
+		),
+	).not.toMatch(/secret-token|rt-secret/)
+	expect(
 		parseHttpStatusFromMcpError('upstream HTTP 403: missing audience'),
 	).toBe(403)
 	expect(
