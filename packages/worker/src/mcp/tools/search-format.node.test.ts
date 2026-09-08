@@ -87,6 +87,14 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		id: 'package_authoring',
 		type: 'guide',
 	})
+	expect(parseEntityRef('package_subscriptions:guide#repo.pushed')).toEqual({
+		id: 'package_subscriptions',
+		type: 'guide',
+		section: 'repo.pushed',
+	})
+	expect(() => parseEntityRef('package_subscriptions:guide#')).toThrow(
+		/Section fragment/,
+	)
 
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',

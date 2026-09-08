@@ -1,9 +1,12 @@
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { guideMetadataList } from '#worker/guide-catalog-modules.ts'
+import { resolveMarkdownDocument } from '#worker/guides/document-sections.ts'
 import { type GuideMetadata } from '#worker/guides/guide-types.ts'
 import { lexicalScore } from '#worker/vectorize/scoring.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
+import { maxChars } from '../search-constants.ts'
 import { buildEntityRef, buildGuideUsage } from '../search-format-helpers.ts'
 import { buildCandidateBaseScore } from '../search-scoring.ts'
 import {
@@ -143,7 +146,7 @@ export const guideSearchEntityPlugin = {
 	},
 	formatEntityDetail(detail) {
 		const entityRef = buildEntityRef(detail.id, 'guide')
-		const lines = [
+		const headerLines = [
 			`# Guide — \`${detail.id}\``,
 			'',
 			detail.description,
@@ -157,25 +160,82 @@ export const guideSearchEntityPlugin = {
 			...(detail.lastVerified
 				? [`- Last verified: \`${detail.lastVerified}\``]
 				: []),
-			'',
-			detail.body,
 		]
+		const header = headerLines.join('\n')
+		let resolved
+		try {
+			resolved = resolveMarkdownDocument({
+				markdown: detail.body,
+				maxChars: Math.max(0, maxChars - header.length - 2),
+				entityRef,
+				...(detail.section ? { section: detail.section } : {}),
+			})
+		} catch (error) {
+			throw new McpCallerError(
+				error instanceof Error ? error.message : String(error),
+				{ cause: error },
+			)
+		}
+		const selectedRef = resolved.selected
+			? buildEntityRef(detail.id, 'guide', resolved.selected.slug)
+			: entityRef
+		const modeLines = guideDetailModeLines(resolved)
+		const bodyLines = [...headerLines, ...modeLines, '', resolved.markdown]
 		return {
-			markdown: lines.join('\n'),
+			markdown: bodyLines.join('\n'),
 			structured: {
 				kind: 'entity',
 				type: 'guide',
 				id: detail.id,
-				entityRef,
+				entityRef: selectedRef,
 				title: detail.title,
 				description: detail.description,
-				usage: buildGuideUsage(detail.id),
+				usage: resolved.selected
+					? `search({ entity: ${JSON.stringify(selectedRef)} })`
+					: buildGuideUsage(detail.id),
 				category: detail.category,
 				slug: detail.slug,
-				body: detail.body,
+				body: resolved.markdown,
+				bodyMode: resolved.mode,
+				section: resolved.selected
+					? {
+							title: resolved.selected.title,
+							slug: resolved.selected.slug,
+						}
+					: null,
+				sections: resolved.headings
+					.filter((heading) => heading.level >= 2)
+					.map((heading) => ({
+						title: heading.title,
+						slug: heading.slug,
+						level: heading.level,
+						entityRef: buildEntityRef(detail.id, 'guide', heading.slug),
+					})),
 				provider: detail.provider,
 				lastVerified: detail.lastVerified,
 			},
 		}
 	},
 } satisfies SearchEntityPlugin<'guide'>
+
+function guideDetailModeLines(resolved: {
+	mode: 'full' | 'toc' | 'section'
+	selected: { slug: string } | null
+}) {
+	switch (resolved.mode) {
+		case 'full':
+			return []
+		case 'toc':
+			return [
+				'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`',
+			]
+		case 'section':
+			return resolved.selected
+				? [`- Section: \`${resolved.selected.slug}\``]
+				: []
+		default: {
+			const exhaustive: never = resolved.mode
+			throw new Error(`Unsupported guide detail mode: ${exhaustive}`)
+		}
+	}
+}

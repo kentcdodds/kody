@@ -21,8 +21,13 @@ export function buildPackageHostedUrl(input: {
 	return resolveHostedPackageAppUrl(input)
 }
 
-export function buildEntityRef(id: string, type: SearchEntityType) {
-	return `${id}:${type}`
+export function buildEntityRef(
+	id: string,
+	type: SearchEntityType,
+	section?: string,
+) {
+	const ref = `${id}:${type}`
+	return section ? `${ref}#${section}` : ref
 }
 
 export function buildCapabilityUsage(spec: {
@@ -132,6 +137,16 @@ function isSearchEntityRefType(type: string): type is SearchEntityType {
 	return (searchEntityRefTypes as ReadonlyArray<string>).includes(type)
 }
 
+function decodeEntitySection(raw: string) {
+	const trimmed = raw.trim()
+	if (!trimmed) return undefined
+	try {
+		return decodeURIComponent(trimmed.replace(/\+/g, ' ')).trim() || undefined
+	} catch {
+		return trimmed
+	}
+}
+
 function formatOneLineSummary(value: string, maxLength = 180) {
 	const summary = value.replace(/\s+/g, ' ').trim()
 	if (summary.length <= maxLength) return summary
@@ -160,16 +175,24 @@ export function formatPackageSchedule(
 export function parseEntityRef(entity: string): {
 	id: string
 	type: SearchEntityType
+	section?: string
 } {
 	const trimmed = entity.trim()
-	const separator = trimmed.lastIndexOf(':')
-	if (separator <= 0 || separator === trimmed.length - 1) {
+	const hash = trimmed.lastIndexOf('#')
+	const colon = trimmed.lastIndexOf(':')
+	const hasSectionFragment = hash > colon && colon > 0
+	const section = hasSectionFragment
+		? decodeEntitySection(trimmed.slice(hash + 1))
+		: undefined
+	const withoutSection = hasSectionFragment ? trimmed.slice(0, hash) : trimmed
+	const separator = withoutSection.lastIndexOf(':')
+	if (separator <= 0 || separator === withoutSection.length - 1) {
 		throw new McpCallerError(
 			`Entity must use the format "{id}:{type}" where type is ${formatSearchEntityRefTypeList()}.`,
 		)
 	}
-	const id = trimmed.slice(0, separator).trim()
-	const type = trimmed.slice(separator + 1).trim()
+	const id = withoutSection.slice(0, separator).trim()
+	const type = withoutSection.slice(separator + 1).trim()
 	if (!isSearchEntityRefType(type)) {
 		throw new McpCallerError(
 			`Entity type must be one of: ${formatSearchEntityRefTypeList()}.`,
@@ -178,7 +201,12 @@ export function parseEntityRef(entity: string): {
 	if (!id) {
 		throw new McpCallerError('Entity id must not be empty.')
 	}
-	return { id, type }
+	if (hasSectionFragment && !section) {
+		throw new McpCallerError(
+			'Section fragment after "{id}:{type}#" must not be empty.',
+		)
+	}
+	return section ? { id, type, section } : { id, type }
 }
 
 export function formatList(items: Array<string>) {

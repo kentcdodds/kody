@@ -199,6 +199,31 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 	expect(detail.body.startsWith('#')).toBe(true)
 	expect(detail.title.length).toBeGreaterThan(0)
 
+	const sectionDetail = await resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: null,
+		username: null,
+		entity: 'package_subscriptions:guide#repo.pushed',
+		searchRows: emptySearchRows() as never,
+	})
+	expect(sectionDetail).toMatchObject({
+		type: 'guide',
+		id: 'package_subscriptions',
+		section: 'repo.pushed',
+	})
+
+	await expect(
+		resolveEntityDetail({
+			agent,
+			callerContext: agent.getCallerContext(),
+			userId: null,
+			username: null,
+			entity: 'search_docs:capability#repo.pushed',
+			searchRows: emptySearchRows() as never,
+		}),
+	).rejects.toThrow(/Section fragments are only supported on guide entities/)
+
 	await expect(
 		resolveEntityDetail({
 			agent,

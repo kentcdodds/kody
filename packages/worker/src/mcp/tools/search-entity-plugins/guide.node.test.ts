@@ -137,7 +137,57 @@ test('guide search entities rank advertised docs and open full markdown on entit
 		type: 'guide',
 		entityRef: 'package_authoring:guide',
 		body: loaded!.body,
+		bodyMode: 'full',
+		section: null,
 	})
+
+	const subscriptions =
+		guides.find((guide) => guide.id === 'package_subscriptions') ?? null
+	expect(subscriptions).not.toBeNull()
+	const subscriptionsDetail = formatEntityDetailMarkdown({
+		type: 'guide',
+		id: subscriptions!.id,
+		title: subscriptions!.title,
+		description: subscriptions!.summary,
+		body: subscriptions!.body,
+		slug: subscriptions!.slug,
+		category: subscriptions!.category,
+		provider: subscriptions!.provider,
+		lastVerified: subscriptions!.lastVerified,
+	})
+	expect(subscriptionsDetail.structured).toMatchObject({
+		type: 'guide',
+		bodyMode: 'toc',
+		section: null,
+	})
+	expect(subscriptionsDetail.markdown).toContain('## Contents')
+	expect(subscriptionsDetail.markdown).toContain(
+		'package_subscriptions:guide#repo.pushed',
+	)
+	expect(subscriptionsDetail.markdown).not.toContain('type RepoPushedEvent')
+
+	const repoSection = formatEntityDetailMarkdown({
+		type: 'guide',
+		id: subscriptions!.id,
+		title: subscriptions!.title,
+		description: subscriptions!.summary,
+		body: subscriptions!.body,
+		slug: subscriptions!.slug,
+		category: subscriptions!.category,
+		provider: subscriptions!.provider,
+		lastVerified: subscriptions!.lastVerified,
+		section: 'repo.pushed',
+	})
+	expect(repoSection.structured).toMatchObject({
+		type: 'guide',
+		bodyMode: 'section',
+		entityRef: 'package_subscriptions:guide#repo.pushed',
+		section: { slug: 'repo.pushed' },
+	})
+	expect(repoSection.markdown).toContain('type RepoPushedEvent')
+	expect(repoSection.markdown).not.toContain(
+		'type FleetEntitlementCrossedEvent',
+	)
 
 	expect(
 		buildSearchableEntityDescriptors({

@@ -73,7 +73,7 @@ export function buildRecommendedNextStep(
 		return `Inspect integration detail with \`search({ entity: "${topMatch.integrationName}:integration" })\` and then run a minimal authenticated \`execute\` smoke test before building or calling integration-backed code.`
 	}
 	if (topMatch?.type === 'guide') {
-		return `Open the official guide with \`search({ entity: "${topMatch.id}:guide" })\` to read the full markdown.`
+		return `Open the official guide with \`search({ entity: "${topMatch.id}:guide" })\`. Oversized guides return a table of contents; open a heading with \`{id}:guide#{slug}\`.`
 	}
 	if (topMatch?.type === 'capability') {
 		const accessor = buildKodyCapabilityAccessor(topMatch)
