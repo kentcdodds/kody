@@ -1,10 +1,10 @@
 /**
  * Browser-session store for the Step 1 agent the visitor actually picked.
  *
- * Step 2 and Step 3 URLs do not carry the first agent, and the onboarding
- * payload only has grant counts — not a step-1 display name. Remember the
- * explicit choice so Step 2 can say "Copy a prompt to Cursor…" and Step 3
- * can grey the same-ecosystem family.
+ * Step 2 and Step 3 URLs do not carry the first agent. The payload's
+ * `connectedAgents` can recover a named host on return visits; this session
+ * remembers the explicit picker choice so Step 2 can say "Copy a prompt to
+ * Cursor…" and Step 3 can grey the same-ecosystem family in the same tab.
  */
 
 import {

@@ -24,6 +24,7 @@ import {
 	onboardingWizardStepByNumber,
 	onboardingWizardStepHref,
 	parseOnboardingPathname,
+	resolveOnboardingFirstAgentKind,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
 import { resolveOnboardingStep3SelectedAgent } from '#universal/onboarding-agent-ecosystems.ts'
@@ -97,7 +98,13 @@ export async function onboardingRouteLoader(
 		)
 	}
 	if (url.pathname === onboardingStepPaths.index) {
-		return routeLoaderRedirect(onboardingIndexRedirectHref(url.search))
+		return routeLoaderRedirect(
+			onboardingIndexRedirectHref(url.search, {
+				hasMcpClient: payload.hasMcpClient,
+				hasAccessWin: payload.hasAccessWin,
+				hasSecondMcpClient: payload.hasSecondMcpClient,
+			}),
+		)
 	}
 	const location = parseOnboardingPathname(url.pathname)
 	if (location && !location.valid) {
@@ -109,6 +116,20 @@ export async function onboardingRouteLoader(
 		onboarding: payload,
 		onboardingAgentChooser: resolveOnboardingAgentChooser(),
 	}
+}
+
+function mergeConnectedAgents(
+	current: OnboardingPayload['connectedAgents'],
+	incoming: OnboardingPayload['connectedAgents'] | undefined,
+) {
+	const next = incoming ?? []
+	if (current.length === 0) return next
+	if (next.length === 0) return current
+	const byId = new Map(current.map((agent) => [agent.clientId, agent]))
+	for (const agent of next) {
+		byId.set(agent.clientId, agent)
+	}
+	return [...byId.values()]
 }
 
 function sameConnectedAgents(
@@ -168,9 +189,9 @@ export function OnboardingRoute(handle: Handle) {
 				: payload.hasSecondMcpClient
 		secondAgentGiftActive = payload.secondAgentStandardGift?.active === true
 		connectedAgents =
-			source === 'live' || connectedAgents.length === 0
+			source === 'live'
 				? (payload.connectedAgents ?? [])
-				: connectedAgents
+				: mergeConnectedAgents(connectedAgents, payload.connectedAgents)
 		hasMcpClient =
 			source === 'snapshot'
 				? hasMcpClient || payload.hasMcpClient
@@ -430,7 +451,11 @@ export function OnboardingRoute(handle: Handle) {
 		if (activeStep === 1 && selectedAgent) {
 			rememberOnboardingSelectedAgent(selectedAgent)
 		}
-		const firstAgent = readRememberedOnboardingSelectedAgent()
+		const firstAgent = resolveOnboardingFirstAgentKind(
+			readRememberedOnboardingSelectedAgent(),
+			connectedAgents,
+		)
+		if (firstAgent) rememberOnboardingSelectedAgent(firstAgent)
 		const visibleSelectedAgent =
 			activeStep === 3
 				? resolveOnboardingStep3SelectedAgent(
@@ -491,6 +516,7 @@ export function OnboardingRoute(handle: Handle) {
 									onSelectStep: selectStep,
 									hasMcpClient,
 									loggedIn,
+									connectedAgents,
 									selectedAgent: visibleSelectedAgent,
 									selectedAgentLabel,
 									agentChooser,
@@ -509,6 +535,7 @@ export function OnboardingRoute(handle: Handle) {
 									hasAccessWin,
 									discoveryPrompt,
 									selectedAgentLabel: connectedAgentLabel,
+									connectedAgents,
 									search: readRouterSearch(handle),
 								})
 							: null}

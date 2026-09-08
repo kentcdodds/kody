@@ -200,6 +200,31 @@ export function uniqueOnboardingConnectedAgents(
 	return unique
 }
 
+/**
+ * Step 1 identity for Step 2 copy and Step 3 greying. Prefer the explicit
+ * picker choice; on return visits fall back to the earliest dated named
+ * inbound host so a cleared session still names Cursor / Claude Desktop.
+ */
+export function resolveOnboardingFirstAgentKind(
+	remembered: McpClientKind | null | undefined,
+	connectedAgents: ReadonlyArray<{
+		kind?: McpClientKind | null
+		connectedAt?: string | null
+	}> = [],
+): McpClientKind | null {
+	if (remembered && remembered !== 'other') return remembered
+	let oldest: { kind: McpClientKind; connectedAt: string } | null = null
+	for (const agent of connectedAgents) {
+		const kind = agent.kind
+		const connectedAt = agent.connectedAt
+		if (!kind || kind === 'other' || !connectedAt) continue
+		if (!oldest || connectedAt < oldest.connectedAt) {
+			oldest = { kind, connectedAt }
+		}
+	}
+	return oldest?.kind ?? null
+}
+
 export function onboardingConnectedListSeparator(
 	index: number,
 	length: number,
@@ -222,11 +247,27 @@ export function onboardingConnectedAgentLabelsLine(
 	return `Connected: ${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`
 }
 
-export function remainingOnboardingWizardLabels(input: {
+export type OnboardingWizardProgress = {
 	hasMcpClient: boolean
 	hasAccessWin: boolean
 	hasSecondMcpClient: boolean
-}): Array<string> {
+}
+
+/**
+ * First unfinished wizard step. Finished accounts resume on Step 3 so the
+ * Connected list stays visible instead of a fresh Step 1 picker.
+ */
+export function resumeOnboardingWizardStep(
+	progress: OnboardingWizardProgress,
+): OnboardingWizardStepNumber {
+	if (!progress.hasMcpClient) return 1
+	if (!progress.hasAccessWin) return 2
+	return 3
+}
+
+export function remainingOnboardingWizardLabels(
+	input: OnboardingWizardProgress,
+): Array<string> {
 	const remaining: Array<string> = []
 	if (!input.hasMcpClient) {
 		remaining.push(onboardingWizardStepByNumber(1).label)
@@ -272,8 +313,12 @@ export function onboardingWizardStepHref(
 	return `${onboardingWizardStepByNumber(number).path}${search}`
 }
 
-export function onboardingIndexRedirectHref(search = '') {
-	return `${routes.onboardingStep1.href()}${search}`
+export function onboardingIndexRedirectHref(
+	search = '',
+	progress?: OnboardingWizardProgress,
+) {
+	const step = progress ? resumeOnboardingWizardStep(progress) : 1
+	return onboardingWizardStepHref(step, search)
 }
 
 export function onboardingChecklistItemHref(

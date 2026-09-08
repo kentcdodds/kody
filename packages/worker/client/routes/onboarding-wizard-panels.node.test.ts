@@ -17,6 +17,10 @@ function connectPanel(selected: {
 	loggedIn?: boolean
 	hasMcpClient?: boolean
 	search?: string
+	connectedAgents?: Array<{
+		label: string
+		kind?: 'claude-desktop' | 'cursor'
+	}>
 }) {
 	return renderConnectAgentPanel({
 		entrance: css({}),
@@ -24,6 +28,7 @@ function connectPanel(selected: {
 		onSelectStep() {},
 		loggedIn: selected.loggedIn ?? false,
 		hasMcpClient: selected.hasMcpClient ?? false,
+		connectedAgents: selected.connectedAgents,
 		selectedAgent: selected.agent,
 		selectedAgentLabel: selected.label,
 		agentChooser: null,
@@ -38,6 +43,10 @@ function accessPanel(selected: {
 	hasAccessWin?: boolean
 	selectedAgentLabel?: string | null
 	discoveryPrompt?: string
+	connectedAgents?: Array<{
+		label: string
+		kind?: 'claude-desktop' | 'cursor'
+	}>
 }) {
 	return renderAccessPanel({
 		entrance: css({}),
@@ -47,6 +56,7 @@ function accessPanel(selected: {
 		hasAccessWin: selected.hasAccessWin ?? false,
 		discoveryPrompt: selected.discoveryPrompt ?? discoveryPrompt,
 		selectedAgentLabel: selected.selectedAgentLabel ?? null,
+		connectedAgents: selected.connectedAgents,
 	})
 }
 
@@ -115,9 +125,18 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 			label: 'Cursor',
 			loggedIn: true,
 			hasMcpClient: true,
+			connectedAgents: [
+				{ label: 'Cursor', kind: 'cursor' },
+				{ label: 'Claude Desktop', kind: 'claude-desktop' },
+			],
 		}),
 	)
 	expect(connected).toContain('Cursor is connected')
+	expect(connected).toContain('data-testid="onboarding-connected-agents"')
+	expect(connected).toContain(
+		'aria-label="Connected: Cursor and Claude Desktop"',
+	)
+	expect(connected).toContain('data-agent-kind="claude-desktop"')
 })
 
 test('step 2 shows one prompt and a search waiting spinner', async () => {
@@ -126,13 +145,22 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
 
 	const waiting = await renderToString(
-		accessPanel({ hasMcpClient: true, selectedAgentLabel: 'Cursor' }),
+		accessPanel({
+			hasMcpClient: true,
+			selectedAgentLabel: 'Cursor',
+			connectedAgents: [
+				{ label: 'Cursor', kind: 'cursor' },
+				{ label: 'Claude Desktop', kind: 'claude-desktop' },
+			],
+		}),
 	)
 	expect(waiting).toContain('data-testid="onboarding-step-2-prompt"')
 	expect(waiting).toContain('data-testid="onboarding-search-status"')
 	expect(waiting).toContain('data-testid="onboarding-guide-pointer"')
 	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
 	expect(waiting).not.toContain('data-connected="true"')
+	expect(waiting).toContain('data-testid="onboarding-connected-agents"')
+	expect(waiting).toContain('aria-label="Connected: Cursor and Claude Desktop"')
 
 	const started = await renderToString(
 		accessPanel({

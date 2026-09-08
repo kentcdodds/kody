@@ -59,6 +59,7 @@ export function renderConnectAgentPanel(
 		entrance: MixValue
 		loggedIn: boolean
 		hasMcpClient: boolean
+		connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 		selectedAgent: McpClientKind | null
 		selectedAgentLabel: string | null
 		agentChooser: OnboardingAgentChooserPick | null
@@ -86,6 +87,7 @@ export function renderConnectAgentPanel(
 				tilt: '2deg',
 			})}
 			{renderConnectAgentStatus(props)}
+			{renderConnectedAgentsLine(props.connectedAgents)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
@@ -109,6 +111,7 @@ export function renderAccessPanel(
 		hasAccessWin: boolean
 		discoveryPrompt: string
 		selectedAgentLabel: string | null
+		connectedAgents?: ReadonlyArray<OnboardingConnectedAgentListItem>
 	},
 ) {
 	const accessLede = props.hasMcpClient
@@ -153,6 +156,7 @@ export function renderAccessPanel(
 					})}
 				</div>
 			) : null}
+			{renderConnectedAgentsLine(props.connectedAgents)}
 			<p mix={css(panelLedeCss)} data-testid="onboarding-access-lede">
 				{accessLede}
 			</p>
@@ -211,8 +215,6 @@ export function renderSecondAgentPanel(
 		memorySubject: props.accessWinMemorySubject,
 		packageName: props.persistedPackageName,
 	})
-	const connectedItems = uniqueOnboardingConnectedAgents(connectedAgents)
-	const connectedLabels = onboardingConnectedAgentLabelsLine(connectedItems)
 	return (
 		<section
 			id="onboarding-step-3"
@@ -256,32 +258,7 @@ export function renderSecondAgentPanel(
 					props.secondAgentGiftActive === true,
 				),
 			})}
-			{connectedItems.length > 0 ? (
-				<p
-					mix={css(connectedAgentsLineCss)}
-					data-testid="onboarding-connected-agents"
-					aria-label={connectedLabels ?? undefined}
-				>
-					<span aria-hidden="true">
-						Connected:{' '}
-						{connectedItems.map((agent, index) => (
-							<span key={agent.label}>
-								{onboardingConnectedListSeparator(index, connectedItems.length)}
-								<span
-									mix={css(connectedAgentItemCss)}
-									data-testid="onboarding-connected-agent"
-									data-agent-kind={agent.kind ?? 'unknown'}
-								>
-									{agent.kind && agent.kind !== 'other' ? (
-										<AgentPickerMark agent={agent.kind} size="inline" />
-									) : null}
-									{agent.label}
-								</span>
-							</span>
-						))}
-					</span>
-				</p>
-			) : null}
+			{renderConnectedAgentsLine(connectedAgents)}
 			<OnboardingMcpClientTabs
 				mcpServerUrl={props.mcpServerUrl}
 				highlights={props.mcpHighlights}
@@ -387,6 +364,40 @@ function renderAgentPanelHead(props: {
 				mix={css(panelArtCss)}
 			/>
 		</div>
+	)
+}
+
+function renderConnectedAgentsLine(
+	agents: ReadonlyArray<OnboardingConnectedAgentListItem> | undefined,
+) {
+	const connectedItems = uniqueOnboardingConnectedAgents(agents ?? [])
+	const connectedLabels = onboardingConnectedAgentLabelsLine(connectedItems)
+	if (connectedItems.length === 0) return null
+	return (
+		<p
+			mix={css(connectedAgentsLineCss)}
+			data-testid="onboarding-connected-agents"
+			aria-label={connectedLabels ?? undefined}
+		>
+			<span aria-hidden="true">
+				Connected:{' '}
+				{connectedItems.map((agent, index) => (
+					<span key={agent.label}>
+						{onboardingConnectedListSeparator(index, connectedItems.length)}
+						<span
+							mix={css(connectedAgentItemCss)}
+							data-testid="onboarding-connected-agent"
+							data-agent-kind={agent.kind ?? 'unknown'}
+						>
+							{agent.kind && agent.kind !== 'other' ? (
+								<AgentPickerMark agent={agent.kind} size="inline" />
+							) : null}
+							{agent.label}
+						</span>
+					</span>
+				))}
+			</span>
+		</p>
 	)
 }
 

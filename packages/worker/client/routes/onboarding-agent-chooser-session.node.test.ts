@@ -150,6 +150,48 @@ test('client loads of the selection step reuse the SSR agent order', async () =>
 	}
 })
 
+test('client /onboarding resume follows payload progress, not always step 1', async () => {
+	const originalFetch = globalThis.fetch
+	clearOnboardingPayloadCache()
+	const finished = {
+		...anonymousOnboardingPayload,
+		loggedIn: true,
+		emailVerified: true,
+		needsOnboarding: false,
+		hasMcpClient: true,
+		hasAccessWin: true,
+		hasSecondMcpClient: true,
+		connectedAgents: [
+			{
+				clientId: 'cursor-client',
+				label: 'Cursor',
+				kind: 'cursor' as const,
+				connectedAt: '2026-09-08T17:00:00.000Z',
+			},
+			{
+				clientId: 'claude-desktop-client',
+				label: 'Claude Desktop',
+				kind: 'claude-desktop' as const,
+				connectedAt: '2026-09-08T18:00:00.000Z',
+			},
+		],
+	} satisfies OnboardingPayload
+	globalThis.fetch = (async () => Response.json(finished)) as typeof fetch
+	try {
+		const indexRedirect = await onboardingRouteLoader(
+			new URL('https://example.com/onboarding'),
+			new AbortController().signal,
+		)
+		expect(isRouteLoaderRedirect(indexRedirect)).toBe(true)
+		if (isRouteLoaderRedirect(indexRedirect)) {
+			expect(indexRedirect.to).toBe('/onboarding/step-3')
+		}
+	} finally {
+		globalThis.fetch = originalFetch
+		clearOnboardingPayloadCache()
+	}
+})
+
 test('onboarding agent chooser session ignores invalid storage and does not persist on the server', () => {
 	installBrowserSession()
 	try {

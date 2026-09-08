@@ -7,6 +7,7 @@ optional first-win email guide share one contract:
 
 | Surface                                  | Role                                                                      |
 | ---------------------------------------- | ------------------------------------------------------------------------- |
+| Wizard index `/onboarding`               | Redirects to the first unfinished step (Step 3 once Step 2 is done)       |
 | Wizard Step 1 `/onboarding/step-1`       | Connect an MCP host                                                       |
 | Wizard Step 2 `/onboarding/step-2`       | Make something useful (one prompt + first `search` + `onboarding:guide`)  |
 | Wizard Step 3 `/onboarding/step-3`       | Connect a second agent (same-ecosystem hosts greyed; `portability:guide`) |
@@ -33,11 +34,14 @@ hidden if nothing sensible). `hasSecondMcpClient` is unique inbound OAuth
 the connected label stays "You've connected a second agent." When the
 second-agent Standard gift is active, that status adds "Standard is free for 2
 weeks." Step 3 copy advertises "Connect a second agent and get Standard free for
-2 weeks." Same-ecosystem greying stays picker UX only. Account → Connected
-agents lists those inbound hosts grouped by display name, with public logos for
-known kinds, newest-first sort, best-effort labels, and per-`clientId` revoke.
-That list is not `users.mcp_client_name` (first-touch) and not
-`/account/mcp-oauth-clients` (user-minted confidential clients).
+2 weeks." Same-ecosystem greying stays picker UX only. `/onboarding` resumes at
+that step instead of always opening the Step 1 picker, and every wizard step
+still lists already-connected hosts so a return visit cannot hide Cursor or
+Claude Desktop. Account → Connected agents lists those inbound hosts grouped by
+display name, with public logos for known kinds, newest-first sort, best-effort
+labels, and per-`clientId` revoke. That list is not `users.mcp_client_name`
+(first-touch) and not `/account/mcp-oauth-clients` (user-minted confidential
+clients).
 
 `first-win` is not a wizard step and is not a checklist item. Signed-in
 `/onboarding` does not probe Mailbox for that loop. MCP registers
