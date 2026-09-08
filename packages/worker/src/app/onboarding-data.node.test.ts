@@ -30,13 +30,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://preview.example/onboarding',
 		}),
-	).toContain('https://preview.example/guides/first-win')
+	).toContain('https://preview.example/docs/first-win')
 	expect(
 		buildPersistFirstPackagePrompt({
 			env: {},
 			requestUrl: 'https://preview.example/onboarding',
 		}),
-	).toContain('https://preview.example/guides/quick-example')
+	).toContain('https://preview.example/docs/quick-example')
 
 	const publicData = loadPublicOnboardingData({
 		env: { APP_BASE_URL: 'https://heykody.dev' },

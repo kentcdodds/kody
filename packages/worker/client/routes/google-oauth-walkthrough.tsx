@@ -3,7 +3,7 @@ import { googleOauthTranscriptActs } from './google-oauth-transcript.ts'
 import { renderInteractiveGuideWalkthrough } from './interactive-guide-walkthrough.tsx'
 
 /**
- * Interactive Google OAuth transcript for /guides/google-oauth.
+ * Interactive Google OAuth transcript for /docs/google-oauth.
  * Shared line/tool rendering lives in interactive-guide-walkthrough.tsx.
  */
 export function renderGoogleOauthWalkthrough(

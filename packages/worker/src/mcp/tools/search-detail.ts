@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { importGuideCatalog } from '#worker/guide-catalog-modules.ts'
+import { legacyGuideIdAliases } from '#universal/docs-nav.ts'
 import {
 	getJoinedIntegration,
 	toJoinedIntegrationConfig,
@@ -55,7 +56,12 @@ export async function resolveEntityDetail(input: {
 
 	if (ref.type === 'guide') {
 		const { guides } = await importGuideCatalog()
-		const guide = guides.find((candidate) => candidate.id === ref.id) ?? null
+		// Ids of docs merged into another doc keep resolving to the absorbing
+		// guide (scoped to the heading that took the content).
+		const alias = legacyGuideIdAliases[ref.id]
+		const guideId = alias?.id ?? ref.id
+		const section = ref.section ?? alias?.section
+		const guide = guides.find((candidate) => candidate.id === guideId) ?? null
 		if (!guide) {
 			throw new McpCallerError('Guide not found.')
 		}
@@ -69,7 +75,7 @@ export async function resolveEntityDetail(input: {
 			category: guide.category,
 			provider: guide.provider,
 			lastVerified: guide.lastVerified,
-			...(ref.section ? { section: ref.section } : {}),
+			...(section ? { section } : {}),
 		}
 	}
 

@@ -786,7 +786,7 @@ test('renderAppPage caches anonymous marketing HTML and keeps session pages priv
 		'public, max-age=60, stale-while-revalidate=300',
 	)
 	const anonymousGuide = await renderAppPage({
-		request: new Request('https://example.com/guides/how-kody-works'),
+		request: new Request('https://example.com/docs/how-kody-works'),
 		env,
 	})
 	expect(anonymousGuide.headers.get('Cache-Control')).toBe(
@@ -873,7 +873,7 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
 	expect(html).toContain('class="landing-loop"')
-	expect(html).toContain('/guides/how-kody-works')
+	expect(html).toContain('/docs/how-kody-works')
 	// Combined playing/pause control is on the teaser so the header does
 	// not shift when playback starts. Icons, not the word Pause.
 	expect(html).toContain('class="landing-loop-toggle-slot"')

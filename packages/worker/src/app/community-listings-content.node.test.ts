@@ -33,7 +33,7 @@ test('community listings render sort controls, categories, empty states, and for
 
 	expect(searchMissHtml).toContain('data-testid="community-create-prompt"')
 	expect(searchMissHtml).toContain('obsidian')
-	expect(searchMissHtml).toContain('href="/guides/package-authoring"')
+	expect(searchMissHtml).toContain('href="/docs/package-authoring"')
 	expect(searchMissHtml).toContain('href="/community?sort=newest"')
 	expect(searchMissHtml).toContain('data-testid="community-listings-sort"')
 	expect(searchMissHtml).toContain('aria-current="page"')

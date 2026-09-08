@@ -1,6 +1,6 @@
 ---
 id: google_oauth
-title: Google OAuth interactive guide
+title: Google OAuth walkthrough
 summary:
   Interactive transcript of a coding agent walking a naive user through
   Google OAuth for Gmail inbox reading: official guides first, one
@@ -9,12 +9,12 @@ summary:
 category: platform
 ---
 
-# Google OAuth interactive guide
+# Google OAuth walkthrough
 
 <!--
 Agent notes — for AI agents explaining or recreating this loop:
 
-- The web page at /guides/google-oauth is an interactive transcript of the
+- The web page at /docs/google-oauth is an interactive transcript of the
   same story. This markdown is the playbook.
 - Do not invent Google console UI, URLs, or scopes. Open
   `provider_google:guide`, `oauth:guide`, and `integration_bootstrap:guide`
@@ -49,7 +49,7 @@ then finishing on `/connect/oauth`. Inbox reading needs the `gmail.readonly`
 scope on that client.
 
 This page is the playbook. The same story is an interactive transcript at
-`/guides/google-oauth` on the origin you fetched this guide from.
+`/docs/google-oauth` on the origin you fetched this guide from.
 
 ## The loop
 

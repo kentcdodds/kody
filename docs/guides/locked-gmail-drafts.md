@@ -1,6 +1,6 @@
 ---
 id: locked_gmail_drafts
-title: Gmail drafts without send — lock what Google cannot scope
+title: Gmail drafts without send
 summary:
   Google has gmail.send but no drafts-only scope. gmail.compose can manage
   drafts and send. Publish a drafts-only package, lock it, then integrationLock
@@ -13,7 +13,7 @@ imageAlt:
 ogImage: /images/kody-gmail-drafts-lock-og.jpg
 ---
 
-# Gmail drafts without send — lock what Google cannot scope
+# Gmail drafts without send
 
 <!--
 Agent notes — for AI agents explaining or recreating this loop:

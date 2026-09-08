@@ -107,7 +107,7 @@ test('collectSitePerf keeps homepage classify when extra landing probes fail', a
 				},
 			})
 		}
-		if (pathname === '/guides/how-kody-works') {
+		if (pathname === '/docs/how-kody-works') {
 			return new Response('<html></html>', {
 				headers: {
 					'Cache-Control': 'no-store',
@@ -125,7 +125,7 @@ test('collectSitePerf keeps homepage classify when extra landing probes fail', a
 		})
 		expect(report.pages).toEqual([
 			{
-				url: 'https://kody.codes/guides/how-kody-works',
+				url: 'https://kody.codes/docs/how-kody-works',
 				htmlBytes: new TextEncoder().encode('<html></html>').byteLength,
 				cacheControl: 'no-store',
 				ttfbMs: expect.any(Number),

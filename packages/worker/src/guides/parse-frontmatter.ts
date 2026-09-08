@@ -1,6 +1,7 @@
-import { type Guide } from './guide-types.ts'
+import { type Guide, type GuideAudience } from './guide-types.ts'
 
 export type {
+	GuideAudience,
 	GuideCategory,
 	GuideFrontmatter,
 	Guide,
@@ -26,6 +27,8 @@ const GUIDE_IMAGE_PATTERN =
  * ogImage: /images/<file> (optional)
  * provider: <string, provider guides only>
  * lastVerified: YYYY-MM (required when category is provider)
+ * audience: everyone | agents (optional; agents = playbook the agent follows)
+ * unadvertised: true | false (optional)
  * ---
  * <markdown body>
  * ```
@@ -105,6 +108,13 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		}
 		unadvertised = unadvertisedField === 'true'
 	}
+	const audienceField = fields.get('audience') ?? 'everyone'
+	if (audienceField !== 'everyone' && audienceField !== 'agents') {
+		throw new Error(
+			`Guide "${slug}" has invalid frontmatter "audience" (expected "everyone" or "agents").`,
+		)
+	}
+	const audience: GuideAudience = audienceField
 
 	if (!id) {
 		throw new Error(`Guide "${slug}" is missing frontmatter "id".`)
@@ -173,6 +183,7 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		provider,
 		lastVerified,
 		unadvertised,
+		audience,
 		body,
 	}
 }

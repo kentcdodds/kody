@@ -45,7 +45,7 @@ export function buildGuideDetailHeaderLines(input) {
 		'',
 		`- Entity: \`${input.id}:guide\``,
 		`- Category: \`${input.category}\``,
-		`- Web: \`/guides/${input.slug}\``,
+		`- Web: \`${input.slug === 'what-is-kody' ? '/docs' : `/docs/${input.slug}`}\``,
 		...(input.provider ? [`- Provider: ${input.provider}`] : []),
 		...(input.lastVerified
 			? [`- Last verified: \`${input.lastVerified}\``]

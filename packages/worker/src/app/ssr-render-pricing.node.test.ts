@@ -84,6 +84,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Unique worker days per month')
 	expect(html).toContain('Durable Object rows read per month')
-	expect(html).toMatch(/<a[^>]*href="\/guides\/kody-factory"[^>]*>factory<\/a>/)
-	expect(html.match(/href="\/guides\/kody-factory"/g)?.length).toBe(3)
+	expect(html).toMatch(/<a[^>]*href="\/docs\/kody-factory"[^>]*>factory<\/a>/)
+	expect(html.match(/href="\/docs\/kody-factory"/g)?.length).toBe(3)
 })

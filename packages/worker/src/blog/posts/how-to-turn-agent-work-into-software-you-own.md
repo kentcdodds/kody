@@ -130,7 +130,7 @@ The agents change. The software you already paid to invent should not have to.
 
 ## Walk it once
 
-The playbook is [How Kody works](https://kody.codes/guides/how-kody-works): the
+The playbook is [How Kody works](https://kody.codes/docs/how-kody-works): the
 favorite-bot question, the export, the invoke from a second agent, the quiet
 daily email. That page is the interactive transcript. This post is the operator
 version of the same loop.

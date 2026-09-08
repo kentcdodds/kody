@@ -113,7 +113,7 @@ create your own OAuth app at the provider and connect it at
 https://kody.codes/connect/oauth. That costs you a few minutes of setup. What
 you get for those minutes: your app, your scopes, your rate limits, no
 middleman, and no fixed list of providers I got around to supporting.
-([OAuth guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md))
+([OAuth guide](https://kody.codes/docs/oauth))
 
 The community works the same way. When you install a package from
 https://kody.codes/community, that one click creates a published fork you own.

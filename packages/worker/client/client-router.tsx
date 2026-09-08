@@ -310,7 +310,7 @@ let clientRoutesRegistered = false
 
 /**
  * Page-route registry used to decide whether a same-origin click should stay
- * in the SPA. Companion documents (`/guides/:slug.md`, `/blog/rss.xml`) are
+ * in the SPA. Companion documents (`/docs/:slug.md`, `/blog/rss.xml`) are
  * not registered here — the worker serves those as raw responses.
  */
 export function registerClientRoutes(routes: Record<string, JSX.Element>) {

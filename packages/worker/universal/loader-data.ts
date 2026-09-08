@@ -87,31 +87,33 @@ export type BlogPostLoaderData = {
 	readNext: { slug: string; title: string } | null
 }
 
-export type GuideSummaryLoaderData = {
+export type DocSummaryLoaderData = {
 	slug: string
 	id: string
 	title: string
 	summary: string
 	category: 'platform' | 'provider'
+	audience: 'everyone' | 'agents'
+	/** `#universal/docs-nav.ts` section id; null for unadvertised docs. */
+	section: string | null
 	provider: string | null
 	lastVerified: string | null
 }
 
-export type GuidesLoaderData = {
+/** Provider connection index (`/docs/connect`). */
+export type DocsConnectLoaderData = {
 	ok: true
-	guides: Array<GuideSummaryLoaderData>
+	guides: Array<DocSummaryLoaderData>
 }
 
-/** Provider connection index (`/guides/connect`) — same summary shape. */
-export type GuidesConnectLoaderData = GuidesLoaderData
-
-export type GuideDetailLoaderData = {
+export type DocDetailLoaderData = {
 	ok: true
 	slug: string
 	id: string
 	title: string
 	summary: string
 	category: 'platform' | 'provider'
+	audience: 'everyone' | 'agents'
 	image: string | null
 	imageAlt: string | null
 	ogImage: string | null
@@ -1878,9 +1880,8 @@ export type DiscordPageLoaderData = {
 export type AppLoaderData = {
 	blog?: BlogLoaderData
 	blogPost?: BlogPostLoaderData
-	guides?: GuidesLoaderData
-	guidesConnect?: GuidesConnectLoaderData
-	guideDetail?: GuideDetailLoaderData
+	docsConnect?: DocsConnectLoaderData
+	docDetail?: DocDetailLoaderData
 	communityDetailShell?:
 		| CommunityDetailShellLoaderData
 		| CommunityPackageUnauthorizedLoaderData

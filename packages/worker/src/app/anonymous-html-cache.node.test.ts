@@ -89,23 +89,24 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 	})
 	expect(
 		resolveAppPageCacheControl({
-			pathname: '/guides',
+			pathname: '/docs',
 			session: null,
-			request: request('https://example.com/guides'),
+			request: request('https://example.com/docs'),
 			responseSetsCookie: false,
 		}).cacheControl,
 	).toBe(anonymousHtmlCacheControl)
 	expect(
 		resolveAppPageCacheControl({
-			pathname: '/guides/how-kody-works',
+			pathname: '/docs/how-kody-works',
 			session: null,
-			request: request('https://example.com/guides/how-kody-works'),
+			request: request('https://example.com/docs/how-kody-works'),
 			responseSetsCookie: false,
 		}).cacheControl,
 	).toBe(anonymousHtmlCacheControl)
 
-	expect(isCacheableAnonymousPath('/guides/how-kody-works.json')).toBe(true)
-	expect(isCacheableAnonymousPath('/guides/nested/path')).toBe(false)
+	expect(isCacheableAnonymousPath('/docs/how-kody-works.json')).toBe(true)
+	expect(isCacheableAnonymousPath('/docs/connect')).toBe(true)
+	expect(isCacheableAnonymousPath('/docs/nested/path')).toBe(false)
 
 	expect(
 		resolveAppPageCacheControl({

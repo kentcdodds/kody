@@ -1,6 +1,6 @@
 ---
 id: package_authoring
-title: Package authoring guide
+title: Package authoring
 summary:
   START HERE when creating or materially changing a Kody package: package
   shape, required README.md (human) and AGENTS.md (agent), README Intent
@@ -10,7 +10,7 @@ summary:
 category: platform
 ---
 
-# Package authoring guide
+# Package authoring
 
 Use this guide when creating a new Kody package or materially changing an
 existing one.

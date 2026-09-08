@@ -45,12 +45,16 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(sitemap).toContain(`<loc>${origin}/discord</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/faq</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/support</loc>`)
-	expect(sitemap).toContain(`<loc>${origin}/guides</loc>`)
-	expect(sitemap).toContain(`<loc>${origin}/guides/connect</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/docs</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/docs/connect</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/auth.md</loc>`)
 	for (const guide of listGuides()) {
-		expect(sitemap).toContain(`<loc>${origin}/guides/${guide.slug}</loc>`)
+		if (guide.slug === 'what-is-kody') continue
+		expect(sitemap).toContain(`<loc>${origin}/docs/${guide.slug}</loc>`)
 	}
+	// The introduction is canonical at /docs, so its slug URL stays out.
+	expect(sitemap).not.toContain(`<loc>${origin}/docs/what-is-kody</loc>`)
+	expect(sitemap).not.toContain('/guides')
 	for (const post of listBlogPosts()) {
 		expect(sitemap).toContain(`<loc>${origin}/blog/${post.slug}</loc>`)
 		expect(sitemap).toContain(`<lastmod>${post.date}</lastmod>`)
@@ -86,7 +90,8 @@ test('agent discovery documents describe the MCP server and public pages', async
 	const homeMd = buildHomeMarkdown(origin)
 	expect(homeMd.startsWith('# Kody\n')).toBe(true)
 	expect(homeMd).toContain(`${origin}${mcpResourcePath}`)
-	expect(homeMd).toContain(`${origin}/guides/what-is-kody.md`)
+	expect(homeMd).toContain(`${origin}/docs/what-is-kody.md`)
+	expect(homeMd).toContain(`${origin}/llms.txt`)
 
 	const now = new Date('2026-08-18T20:00:00.000Z')
 	const securityTxt = buildSecurityTxt(origin, now)

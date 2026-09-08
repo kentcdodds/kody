@@ -1,5 +1,6 @@
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
+import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 
 export const mcpResourcePath = '/mcp'
@@ -80,12 +81,12 @@ land on kody.codes and need to add the MCP server.
 3. Complete the host's OAuth flow. The person signs in to Kody if needed, then
    approves access. Their email must be verified before authorize can finish.
 4. After the connection works, call \`search\` before \`execute\`. Start with
-   \`search({ query: "what can you do" })\` or fetch
-   \`/guides/what-is-kody.md\` for a no-account capability tour.
+   \`search({ query: "what can you do" })\` or fetch \`/docs.md\` for the
+   introduction plus an index of every doc.
 
 Client-specific setup lives on \`/onboarding\` and in
-\`/guides/what-is-kody.md\`. Do not ask anyone to paste secrets, tokens, or
-passwords into chat.
+\`/docs/connect-your-agent.md\`. Do not ask anyone to paste secrets, tokens,
+or passwords into chat.
 `
 
 const whatIsKodySkillBody = `# What is Kody
@@ -101,8 +102,8 @@ connection. Do not set anything up during discovery.
 
 ## How to run discovery
 
-1. Fetch \`/guides/what-is-kody.md\` on the same origin (or
-   \`https://kody.codes/guides/what-is-kody.md\`).
+1. Fetch \`/docs/what-is-kody.md\` on the same origin (or
+   \`https://kody.codes/docs/what-is-kody.md\`).
 2. Interview conversationally: tools they use, chores they do by hand,
    automations they have wished for. Ask at most two short questions per
    message.
@@ -170,8 +171,8 @@ type SitemapEntry = {
 function staticPublicPages(): ReadonlyArray<SitemapEntry> {
 	return [
 		{ path: '/' },
-		{ path: '/guides' },
-		{ path: '/guides/connect' },
+		{ path: '/docs' },
+		{ path: '/docs/connect' },
 		{ path: '/blog' },
 		{ path: '/community' },
 		{ path: '/pricing' },
@@ -186,9 +187,10 @@ function staticPublicPages(): ReadonlyArray<SitemapEntry> {
 }
 
 export function listPublicSitemapEntries(): ReadonlyArray<SitemapEntry> {
-	const guides = listGuides().map((guide) => ({
-		path: `/guides/${guide.slug}`,
-	}))
+	// The introduction is canonical at `/docs` (already in the static list).
+	const guides = listGuides()
+		.filter((guide) => guide.slug !== docsIntroSlug)
+		.map((guide) => ({ path: docHref(guide.slug) }))
 	const posts = listBlogPosts().map((post) => ({
 		path: `/blog/${post.slug}`,
 		lastmod: post.date,
@@ -265,7 +267,7 @@ export function buildApiCatalog(origin: string) {
 						type: 'text/markdown',
 					},
 					{
-						href: `${origin}/guides/what-is-kody.md`,
+						href: `${origin}/docs/what-is-kody.md`,
 						type: 'text/markdown',
 					},
 				],
@@ -328,7 +330,8 @@ export function buildAuthMarkdown(origin: string): string {
 		'',
 		'Client-specific setup (Cursor, ChatGPT, Claude Desktop, Claude Code,',
 		'Codex, Copilot, Grok, OpenCode, OpenClaw) lives on `/onboarding`. A',
-		`no-account capability tour is at \`${origin}/guides/what-is-kody.md\`.`,
+		`no-account capability tour is at \`${origin}/docs/what-is-kody.md\`;`,
+		`the full docs index is \`${origin}/llms.txt\`.`,
 		'',
 		'## OAuth',
 		'',
@@ -361,10 +364,10 @@ export function buildHomeMarkdown(origin: string): string {
 		'',
 		'## Start here',
 		'',
-		`- [What is Kody?](${origin}/guides/what-is-kody.md) — capability tour, no account`,
+		`- [What is Kody?](${origin}/docs/what-is-kody.md) — capability tour, no account`,
 		`- [How to connect](${origin}${authMdPath}) — OAuth and host setup`,
-		`- [Guides](${origin}/guides.md) — Work with Kody`,
-		`- [Connection guides](${origin}/guides/connect.md) — Discord, GitHub, Google, and more`,
+		`- [Docs](${origin}/docs.md) — introduction plus the full index (compact: ${origin}/llms.txt)`,
+		`- [Connect a provider](${origin}/docs/connect.md) — Discord, GitHub, Google, and more`,
 		`- [Get started](${origin}/onboarding)`,
 		`- [Pricing](${origin}/pricing)`,
 		`- [FAQ](${origin}/faq)`,

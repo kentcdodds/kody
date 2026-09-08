@@ -124,9 +124,9 @@ creates a published fork you own and can edit
 OAuth connections use your own OAuth app, created at the provider and connected
 at https://kody.codes/connect/oauth: a few minutes of setup instead of one
 click, in exchange for your scopes, your rate limits, and no fixed provider list
-([guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md)).
-And the whole thing is Fair Source, with code available at
-https://github.com/kentcdodds/kody, so "trust me" never has to be the answer.
+([guide](https://kody.codes/docs/oauth)). And the whole thing is Fair Source,
+with code available at https://github.com/kentcdodds/kody, so "trust me" never
+has to be the answer.
 
 ## Honest trade-offs, both directions
 

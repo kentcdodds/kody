@@ -1,6 +1,6 @@
 ---
 id: package_lifecycle
-title: Durable package lifecycle guide
+title: Package lifecycle: reuse, execute, fork, or create
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
   forking a close public package, deferred workflows, and creating a durable
@@ -8,7 +8,7 @@ summary:
 category: platform
 ---
 
-# Durable package lifecycle
+# Package lifecycle: reuse, execute, fork, or create
 
 Use this guide to decide whether to reuse existing behavior, explore with
 `execute`, or create durable repo-backed package code. Use it before scheduling

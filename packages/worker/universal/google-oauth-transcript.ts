@@ -81,7 +81,7 @@ Verified walkthrough for connecting Google to Kody.
 
 - Entity: \`provider_google:guide\`
 - Category: \`provider\`
-- Web: \`/guides/google\`
+- Web: \`/docs/google\`
 
 # Connect Google (Gmail, Calendar, Drive)
 
@@ -99,7 +99,7 @@ START HERE for third-party OAuth: hosted \`/connect/oauth\`.
 
 - Entity: \`oauth:guide\`
 - Category: \`platform\`
-- Web: \`/guides/oauth\`
+- Web: \`/docs/oauth\`
 
 # OAuth guide
 
@@ -119,7 +119,7 @@ START HERE when a third-party integration must work before saving a dependent pa
 
 - Entity: \`integration_bootstrap:guide\`
 - Category: \`platform\`
-- Web: \`/guides/integration-bootstrap\`
+- Web: \`/docs/integration-bootstrap\`
 
 # Integration bootstrap guide
 

@@ -15,7 +15,7 @@ Agent notes — for AI agents explaining or recreating this loop:
 
 - The homepage plays this same transcript in a pause-on-explore player
   (hover or focus pauses so a person can open tool calls).
-- The web page at /guides/how-kody-works is the full interactive transcript of
+- The web page at /docs/how-kody-works is the full interactive transcript of
   the same story. This markdown is the playbook.
 - Do not create the example package unless the person asks you to build it
   for them. If they do, follow package_authoring and package_lifecycle.
@@ -57,7 +57,7 @@ already use does the thinking once. After that, asking is a package import, and
 a schedule can mail you only when something actually happened.
 
 This page is the playbook. The same story is an interactive transcript at
-`/guides/how-kody-works` on the origin you fetched this guide from.
+`/docs/how-kody-works` on the origin you fetched this guide from.
 
 ## The loop
 

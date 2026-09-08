@@ -2,7 +2,7 @@
  * Remix UI's `createStyleManager` calls `new CSSStyleSheet()` and pushes onto
  * `document.adoptedStyleSheets`. Constructable stylesheets shipped in Safari
  * 16.4 / iOS 16.4; older WebKit throws `TypeError: Illegal constructor`
- * (KODY-CLOUDFLARE-63 on `/guides/how-kody-works`). Install a `<style>`-backed
+ * (KODY-CLOUDFLARE-63 on `/docs/how-kody-works`). Install a `<style>`-backed
  * polyfill before `run()` so client css-mixin inserts still apply.
  *
  * This is not a full Constructable Stylesheets polyfill (no ShadowRoot

@@ -1,13 +1,13 @@
 ---
 id: connect_secret
-title: Account secret setup guide
+title: Secret setup URL reference
 summary:
   Hosted /account/secrets/new URL shape, query params, approval policy for API
   keys and PATs, and post-hoc package approval URLs including bulk approve.
 category: platform
 ---
 
-# Account secret setup guide
+# Secret setup URL reference
 
 Use the hosted **`/account/secrets/new`** page whenever the user needs to enter
 a secret value such as an API key or personal access token. The agent must never

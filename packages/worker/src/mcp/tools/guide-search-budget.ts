@@ -1,3 +1,5 @@
+import { docHref } from '#universal/docs-nav.ts'
+
 export const guideContentsModeLine =
 	'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`'
 
@@ -22,7 +24,7 @@ export function buildGuideDetailHeaderLines(input: {
 		'',
 		`- Entity: \`${input.id}:guide\``,
 		`- Category: \`${input.category}\``,
-		`- Web: \`/guides/${input.slug}\``,
+		`- Web: \`${docHref(input.slug)}\``,
 		...(input.provider ? [`- Provider: ${input.provider}`] : []),
 		...(input.lastVerified
 			? [`- Last verified: \`${input.lastVerified}\``]

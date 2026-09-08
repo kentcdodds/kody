@@ -1,6 +1,6 @@
 # What can Kody do?
 
-This page moved into the bundled guides catalog. Read
+This page moved into the bundled docs. Read
 [What is Kody?](../guides/what-is-kody.md) — also served at
-[kody.codes/guides/what-is-kody](https://kody.codes/guides/what-is-kody) (append
-`.md` for raw markdown).
+[kody.codes/docs](https://kody.codes/docs) (append `.md` for raw markdown, or
+read the whole index at [kody.codes/llms.txt](https://kody.codes/llms.txt)).

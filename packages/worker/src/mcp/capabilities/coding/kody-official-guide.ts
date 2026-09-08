@@ -12,7 +12,7 @@ import {
 /**
  * Guide markdown is bundled from `docs/guides/` at build time (see
  * `#worker/guides/catalog.ts` for the web-facing catalog), so this
- * capability, search `{id}:guide` entities, the `/guides` web pages, and
+ * capability, search `{id}:guide` entities, the `/docs` web pages, and
  * the raw `text/markdown` responses always serve the same deployed content
  * with no request-time GitHub dependency.
  *

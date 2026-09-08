@@ -8,7 +8,7 @@ test('landing loop highlight fetch reads walkthrough tokens from the guide JSON'
 	const key = highlightSnippetKey(snippet)
 	const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
 		expect(String(input)).toBe(
-			routes.guideDetailApi.href({ slug: 'how-kody-works' }),
+			routes.docDetailApi.href({ slug: 'how-kody-works' }),
 		)
 		return Response.json({
 			ok: true,

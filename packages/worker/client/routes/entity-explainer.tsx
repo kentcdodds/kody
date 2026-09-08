@@ -1,5 +1,6 @@
 import { css, type Handle } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { nativeDisclosureCss } from '#universal/styles/style-primitives.ts'
 
 type EntityExplainerLink = {
@@ -15,7 +16,7 @@ export type EntityExplainerCopy = {
 }
 
 const packagesIntegrationsMcpGuide = {
-	href: routes.guideDetail.href({ slug: 'packages-integrations-mcp' }),
+	href: docHref('packages-integrations-mcp'),
 	label: 'Packages, integrations, and MCP servers',
 } as const satisfies EntityExplainerLink
 
@@ -39,7 +40,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				href: docHref('how-kody-works'),
 				label: 'How Kody works',
 			},
 		],
@@ -54,7 +55,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				href: docHref('how-kody-works'),
 				label: 'How Kody works',
 			},
 		],
@@ -69,7 +70,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+				href: docHref('how-kody-works'),
 				label: 'How Kody works',
 			},
 		],
@@ -84,7 +85,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'account-secret-setup' }),
+				href: docHref('account-secret-setup'),
 				label: 'Secret setup guide',
 			},
 		],
@@ -101,7 +102,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		learnMore: [
 			packagesIntegrationsMcpGuide,
 			{
-				href: routes.guideDetail.href({ slug: 'integration-bootstrap' }),
+				href: docHref('integration-bootstrap'),
 				label: 'Integration bootstrap guide',
 			},
 		],
@@ -127,7 +128,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
+				href: docHref('what-is-kody'),
 				label: 'What is Kody?',
 			},
 		],
@@ -175,7 +176,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 		learnMore: [
 			{
-				href: routes.guideDetail.href({ slug: 'what-is-kody' }),
+				href: docHref('what-is-kody'),
 				label: 'What is Kody?',
 			},
 		],

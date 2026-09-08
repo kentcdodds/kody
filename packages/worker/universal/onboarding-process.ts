@@ -97,12 +97,12 @@ export const onboardingUnconnectedNotice =
 
 /** Agent-retrievable first-run guide (bundled + `search({ entity })`). */
 const onboardingGuideEntity = 'onboarding:guide'
-export const onboardingGuideHref = '/guides/onboarding'
+export const onboardingGuideHref = '/docs/onboarding'
 
 /** Agent-retrievable Step 3 reuse guide (bundled + `search({ entity })`). */
 export const portabilityGuideSlug = 'portability'
 export const portabilityGuideEntity = 'portability:guide'
-export const portabilityGuideHref = '/guides/portability'
+export const portabilityGuideHref = '/docs/portability'
 
 export const onboardingAccessLede =
 	'Kody is the home your agents share — memory, secrets, packages, jobs, workflows, and apps. Paste this prompt so your agent looks up the onboarding guide and helps you make something useful. It is not a service gateway.'
