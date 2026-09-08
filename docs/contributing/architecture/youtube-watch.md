@@ -1,7 +1,8 @@
 # YouTube watch overlay
 
 Site-wide `/?youtubeId=<id>` player for allowlisted YouTube videos. Banners can
-point at it.
+point at it by storing that relative href. Absolute YouTube watch URLs on a
+banner stay external and do not get rewritten to `/?youtubeId=`.
 
 ## Surfaces
 
@@ -52,7 +53,7 @@ document loads, so they still resolve playlist ids.
 
 ## Code
 
-- Parse / rewrite: `packages/worker/universal/youtube-watch.ts`
+- Parse / thumb rewrite: `packages/worker/universal/youtube-watch.ts`
 - Allowlist: `packages/worker/src/app/youtube-watch-allowlist.ts`
 - SSR snapshot: `packages/worker/src/app/youtube-watch-ssr.ts`
 - Thumb proxy: `packages/worker/src/app/handlers/youtube-thumb.ts`

@@ -82,22 +82,25 @@ test('applyYoutubeWatchToBannerDraft fills CTA and first-party thumb', () => {
 	})
 })
 
-test('draftToPreview fills untitled copy and first-party watch URLs', () => {
+test('draftToPreview keeps stored CTAs and derives first-party thumbs', () => {
 	const videoId = 'QA0xYMAMjEg'
+	const playlistWatchUrl = `https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`
 	const draft = {
 		...emptyDraft(),
 		body: 'Optional body',
-		ctaHref: `https://www.youtube.com/watch?v=${videoId}`,
+		ctaHref: playlistWatchUrl,
 		ctaLabel: 'Watch',
+		secondaryHref: `/?youtubeId=${videoId}`,
+		secondaryLabel: 'On-site player',
 	}
 	expect(draftToPreview(draft, 'promo')).toEqual({
 		id: 'preview-promo',
 		title: 'Untitled banner',
 		body: 'Optional body',
-		ctaHref: `/?youtubeId=${videoId}`,
+		ctaHref: playlistWatchUrl,
 		ctaLabel: 'Watch',
-		secondaryHref: null,
-		secondaryLabel: null,
+		secondaryHref: `/?youtubeId=${videoId}`,
+		secondaryLabel: 'On-site player',
 		severity: draft.severity,
 		look: 'promo',
 		icon: 'play',

@@ -12,7 +12,6 @@ import {
 import {
 	parseYoutubeVideoId,
 	resolveSiteBannerImageUrl,
-	rewriteBannerHrefForYoutubeWatch,
 	youtubeThumbPath,
 	youtubeWatchHref,
 } from '#universal/youtube-watch.ts'
@@ -175,11 +174,9 @@ export function draftToPreview(
 		id: draft.id ?? `preview-${look}`,
 		title: draft.title.trim() || 'Untitled banner',
 		body: draft.body,
-		ctaHref: rewriteBannerHrefForYoutubeWatch(draft.ctaHref.trim() || null),
+		ctaHref: draft.ctaHref.trim() || null,
 		ctaLabel: draft.ctaLabel.trim() || null,
-		secondaryHref: rewriteBannerHrefForYoutubeWatch(
-			draft.secondaryHref.trim() || null,
-		),
+		secondaryHref: draft.secondaryHref.trim() || null,
 		secondaryLabel: draft.secondaryLabel.trim() || null,
 		severity: draft.severity,
 		look,

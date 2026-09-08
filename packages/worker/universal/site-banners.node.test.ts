@@ -372,14 +372,40 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 	).toBe('Just you')
 })
 
-test('public banner views rewrite YouTube CTAs and derive first-party thumbs', () => {
+test('public banner views keep stored CTAs and derive first-party thumbs', () => {
 	const videoId = 'QA0xYMAMjEg'
-	const view = toSiteBannerView(
+	const playlistWatchUrl = `https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`
+	const onSiteWatchHref = `/?youtubeId=${videoId}`
+	const externalView = toSiteBannerView(
 		banner({
-			ctaHref: `https://www.youtube.com/watch?v=${videoId}`,
+			ctaHref: playlistWatchUrl,
+			secondaryHref: `https://youtu.be/${videoId}`,
 			imageUrl: null,
 		}),
 	)
-	expect(view.ctaHref).toBe(`/?youtubeId=${videoId}`)
-	expect(view.imageUrl).toBe(`/youtube-thumb/${videoId}`)
+	expect(externalView.ctaHref).toBe(playlistWatchUrl)
+	expect(externalView.secondaryHref).toBe(`https://youtu.be/${videoId}`)
+	expect(externalView.imageUrl).toBe(`/youtube-thumb/${videoId}`)
+
+	const onSiteView = toSiteBannerView(
+		banner({
+			ctaHref: onSiteWatchHref,
+			imageUrl: null,
+		}),
+	)
+	expect(onSiteView.ctaHref).toBe(onSiteWatchHref)
+	expect(onSiteView.imageUrl).toBe(`/youtube-thumb/${videoId}`)
+
+	const selected = resolveVisibleSiteBanner({
+		candidates: [
+			banner({
+				ctaHref: playlistWatchUrl,
+				imageUrl: null,
+			}),
+		],
+		dismissedIds: [],
+		pathname: '/',
+		viewer: guestViewer,
+	})
+	expect(selected?.ctaHref).toBe(playlistWatchUrl)
 })
