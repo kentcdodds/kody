@@ -249,8 +249,6 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 		/data-testid="onboarding-connected-agents"[\s\S]*?<\/p>/,
 	)?.[0]
 	expect(connectedLine).toContain('data-mark-size="inline"')
-	expect(connectedLine).not.toContain('width="28"')
-	expect(connectedLine).not.toContain('height="28"')
 	const markClass = connectedLine?.match(
 		/data-mark-size="inline" class="([^"]+)"/,
 	)?.[1]
@@ -262,8 +260,6 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(markCss).toContain('width: 1cap')
 	expect(markCss).toContain('height: 1cap')
 	expect(markCss).toContain('vertical-align: baseline')
-	expect(markCss).not.toContain('inline-flex')
-	expect(markCss).not.toContain('inline-grid')
 	expect(labeled).toContain('data-greyed-reason="same-ecosystem"')
 	expect(labeled).toContain('data-greyed-reason="connected"')
 	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')

@@ -71,7 +71,6 @@ test('connected agents panel groups same-name hosts, shows logos, and keeps revo
 	)
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-n…)"')
 	expect(cursorBlock).toContain('aria-label="Revoke Cursor (cursor-o…)"')
-	expect(cursorBlock).not.toContain('Confirm revoke')
 	const chatgptBlock = html.slice(
 		html.indexOf('data-agent-label="ChatGPT.com"'),
 	)

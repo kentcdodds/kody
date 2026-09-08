@@ -26,7 +26,7 @@ test('public signup destinations open the matching signup panel', () => {
 		`${routes.home.href()}#invite`,
 	)
 	expect(publicSignupPrimaryCta('waitlist').href).toBe(
-		publicSignupPrimaryCta('invite').href,
+		`${routes.home.href()}#invite`,
 	)
 })
 

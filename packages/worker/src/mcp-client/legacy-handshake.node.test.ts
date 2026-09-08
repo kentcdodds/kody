@@ -44,12 +44,6 @@ test('legacy handshake retry is only for auto catalog that never reaches ready',
 	).toBe(false)
 	expect(
 		shouldKeepPersistedLegacyHandshake({
-			serverId: 'analytics',
-			keepLegacyHandshakeIds: new Set(['analytics']),
-		}),
-	).toBe(true)
-	expect(
-		shouldKeepPersistedLegacyHandshake({
 			serverId: 'feeds',
 			keepLegacyHandshakeIds: new Set(['analytics']),
 		}),

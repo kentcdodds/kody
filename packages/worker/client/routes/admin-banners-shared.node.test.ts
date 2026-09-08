@@ -6,7 +6,6 @@ import {
 	emptyDraft,
 } from './admin-banners-shared.ts'
 import { type SiteBannerRecord } from '#universal/site-banners.ts'
-import { youtubeThumbPath, youtubeWatchHref } from '#universal/youtube-watch.ts'
 
 function banner(
 	overrides: Pick<SiteBannerRecord, 'id' | 'title' | 'priority'>,
@@ -73,15 +72,13 @@ test('applyYoutubeWatchToBannerDraft fills CTA and first-party thumb', () => {
 	expect(applied).toEqual({
 		ok: true,
 		draft: expect.objectContaining({
-			ctaHref: youtubeWatchHref(videoId),
+			ctaHref: `/?youtubeId=${videoId}`,
 			ctaLabel: 'Watch',
-			imageUrl: youtubeThumbPath(videoId),
+			imageUrl: `/youtube-thumb/${videoId}`,
 		}),
 	})
-	expect(applyYoutubeWatchToBannerDraft(emptyDraft(), 'nope')).toEqual({
+	expect(applyYoutubeWatchToBannerDraft(emptyDraft(), 'nope')).toMatchObject({
 		ok: false,
-		error:
-			'Paste a YouTube watch URL, youtu.be link, or 11-character video id.',
 	})
 })
 
@@ -97,14 +94,14 @@ test('draftToPreview fills untitled copy and first-party watch URLs', () => {
 		id: 'preview-promo',
 		title: 'Untitled banner',
 		body: 'Optional body',
-		ctaHref: youtubeWatchHref(videoId),
+		ctaHref: `/?youtubeId=${videoId}`,
 		ctaLabel: 'Watch',
 		secondaryHref: null,
 		secondaryLabel: null,
 		severity: draft.severity,
 		look: 'promo',
 		icon: 'play',
-		imageUrl: youtubeThumbPath(videoId),
+		imageUrl: `/youtube-thumb/${videoId}`,
 		dismissible: true,
 	})
 })

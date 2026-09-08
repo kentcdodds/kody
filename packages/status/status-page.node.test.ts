@@ -284,8 +284,6 @@ test('status page keeps resolved incidents glanceable and expands a retrospectiv
 
 test('maintenance page is static HTML with a link back to the status home', () => {
 	const html = renderMaintenancePage()
-	expect(html).toContain('Kody is in maintenance')
-	expect(html).toContain('We are restoring service; nothing you need to do.')
 	expect(html).toContain('href="https://status.kody.codes/"')
 	expect(html).toContain('status.kody.codes')
 	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)

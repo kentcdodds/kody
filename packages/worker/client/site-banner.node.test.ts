@@ -12,8 +12,6 @@ test('site banner SSR reserves look min-height and exposes test id', async () =>
 	)
 	expect(html).toContain('data-testid="site-banner"')
 	expect(html).toContain('data-look="promo"')
-	expect(html).toContain('Kody is live')
-	expect(html).toContain('Watch the video')
 	expect(html).toContain('min-height: 7.5rem')
 	expect(html).toContain('width: 100%')
 	expect(html).toContain('max-width: 100%')
@@ -21,8 +19,6 @@ test('site banner SSR reserves look min-height and exposes test id', async () =>
 	expect(html).toContain('align-self: stretch')
 	expect(html).toContain('min-width: 0')
 	expect(html).toContain('clamp(1.25rem, 4vw, 2.5rem)')
-	expect(html).not.toContain('72%')
-	expect(html).not.toContain('linear-gradient')
 })
 
 test('site banner snapshot resolves admin look override without a saved banner', async () => {

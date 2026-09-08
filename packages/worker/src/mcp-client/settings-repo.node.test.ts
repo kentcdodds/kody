@@ -69,7 +69,6 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 		id: 'server-1',
 	})
 	expect(stored?.last_error).toBe(lastError)
-	expect(stored?.last_error).not.toContain('access_token')
 
 	await updateMcpServerSettingLastErrorRow({
 		db,

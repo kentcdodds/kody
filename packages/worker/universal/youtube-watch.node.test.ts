@@ -118,7 +118,7 @@ test('banner hrefs and images rewrite YouTube hosts to first-party watch/thumb p
 		rewriteBannerHrefForYoutubeWatch(
 			`https://www.youtube.com/watch?v=${videoId}`,
 		),
-	).toBe(youtubeWatchHref(videoId))
+	).toBe(`/?youtubeId=${videoId}`)
 	expect(rewriteBannerHrefForYoutubeWatch('/blog?youtubeId=abc')).toBe(
 		'/blog?youtubeId=abc',
 	)
@@ -132,14 +132,14 @@ test('banner hrefs and images rewrite YouTube hosts to first-party watch/thumb p
 			ctaHref: youtubeWatchHref(videoId),
 			secondaryHref: null,
 		}),
-	).toBe(youtubeThumbPath(videoId))
+	).toBe(`/youtube-thumb/${videoId}`)
 	expect(
 		resolveSiteBannerImageUrl({
 			imageUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
 			ctaHref: null,
 			secondaryHref: null,
 		}),
-	).toBe(youtubeThumbPath(videoId))
+	).toBe(`/youtube-thumb/${videoId}`)
 	expect(
 		resolveSiteBannerImageUrl({
 			imageUrl: '/brand/launch.png',
@@ -147,8 +147,10 @@ test('banner hrefs and images rewrite YouTube hosts to first-party watch/thumb p
 			secondaryHref: null,
 		}),
 	).toBe('/brand/launch.png')
-	expect(youtubeThumbnailSourceUrl(videoId)).toContain(videoId)
-	expect(youtubeNocookieEmbedUrl(videoId)).toContain(
-		'youtube-nocookie.com/embed/',
+	expect(youtubeThumbnailSourceUrl(videoId)).toBe(
+		`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+	)
+	expect(youtubeNocookieEmbedUrl(videoId)).toBe(
+		`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`,
 	)
 })
