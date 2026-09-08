@@ -169,7 +169,9 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(earlyUsers?.title).toBe('Early Kody users')
 	expect(earlyUsers?.date).toBe('2026-09-08')
 	expect(earlyUsers?.placeholder).toBe(true)
-	const earlyUsersBody = (earlyUsers?.body ?? '').replace(/\s+/g, ' ')
+	const earlyUsersBody = (earlyUsers?.body ?? '')
+		.replaceAll(/^>\s?/gm, '')
+		.replace(/\s+/g, ' ')
 	expect(earlyUsersBody).toContain(
 		'funnels all my tools into one secure MCP I can manage myself',
 	)
