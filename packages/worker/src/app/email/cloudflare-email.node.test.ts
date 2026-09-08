@@ -236,14 +236,18 @@ test('sendCloudflareEmail defaults Reply-To to support@ when From is kody@ unles
 	expect(payloads).toHaveLength(4)
 	expect(payloads[0]).toMatchObject({
 		from: 'kody@kody.codes',
-		replyTo: 'support@kody.codes',
+		reply_to: 'support@kody.codes',
 	})
+	expect(payloads[0]).not.toHaveProperty('replyTo')
 	expect(payloads[1]).toMatchObject({
 		from: 'kody@kody.codes',
-		replyTo: 'abuse@kody.codes',
+		reply_to: 'abuse@kody.codes',
 	})
+	expect(payloads[1]).not.toHaveProperty('replyTo')
 	expect(payloads[2]).toMatchObject({ from: 'support@kody.codes' })
 	expect(payloads[2]).not.toHaveProperty('replyTo')
+	expect(payloads[2]).not.toHaveProperty('reply_to')
 	expect(payloads[3]).toMatchObject({ from: 'alice@inbox.kody.codes' })
 	expect(payloads[3]).not.toHaveProperty('replyTo')
+	expect(payloads[3]).not.toHaveProperty('reply_to')
 })

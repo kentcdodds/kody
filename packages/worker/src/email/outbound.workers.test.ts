@@ -750,12 +750,13 @@ test('sendOutboundEmail preserves reply headers and records failed fallback send
 	expect(fetchCalls[0]?.body).toMatchObject({
 		html: 'Body',
 		to: 'recipient@example.com',
-		replyTo: 'reply@example.com',
+		reply_to: 'reply@example.com',
 		headers: {
 			'In-Reply-To': inbound.messageIdHeader,
 			References: '<root@example.com>',
 		},
 	})
+	expect(fetchCalls[0]?.body).not.toHaveProperty('replyTo')
 	expect(fetchCalls[0]?.body.headers).not.toHaveProperty('Message-ID')
 	expect(fetchCalls[0]?.body.headers).not.toHaveProperty(
 		'X-Kody-Email-Message-Id',
