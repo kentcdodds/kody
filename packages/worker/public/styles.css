@@ -781,19 +781,6 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-.landing-hero-sub {
-	margin: 1.5rem auto 0;
-	font-size: clamp(1.05rem, 1.6vw, 1.2rem);
-	color: var(--color-text-muted);
-	max-width: 56ch;
-	text-wrap: pretty;
-}
-
-.landing-hero-sub strong {
-	font-weight: 700;
-	color: var(--color-text);
-}
-
 .landing-hero-runs {
 	margin: 0.85rem auto 0;
 	display: grid;
@@ -842,22 +829,38 @@ html.is-settled {
 .landing-hero-actions {
 	margin-top: 2.2rem;
 	display: flex;
-	align-items: center;
+	align-items: stretch;
 	justify-content: center;
-	flex-wrap: wrap;
-	gap: 0.8rem 1.6rem;
+	flex-wrap: nowrap;
+	gap: 0.8rem 1rem;
+	width: min(100%, 38rem);
+	margin-inline: auto;
 }
 
-.landing-hero-hint {
-	margin: 1.1rem auto 0;
-	font-size: 0.95rem;
-	color: var(--color-text-muted);
-	max-width: 52ch;
-	text-wrap: pretty;
+.landing-hero-actions > * {
+	flex: 1 1 0;
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
 }
 
-.landing-hero-hint-lead {
-	margin-top: 2rem;
+.landing-hero-copy {
+	display: flex;
+}
+
+.landing-hero-copy button {
+	width: 100%;
+}
+
+@media (max-width: 520px) {
+	.landing-hero-actions {
+		flex-wrap: wrap;
+		width: min(100%, 22rem);
+	}
+
+	.landing-hero-actions > * {
+		flex: 1 1 100%;
+	}
 }
 
 .landing-hero-art {

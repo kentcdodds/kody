@@ -696,6 +696,9 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml).toContain('name="description"')
 	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
 	expect(withoutAssetsHtml).toContain("and the ones you'll use tomorrow")
+	expect(withoutAssetsHtml).toContain('Stop')
+	expect(withoutAssetsHtml).toContain('Sweating')
+	expect(withoutAssetsHtml).toContain('Switching Agents')
 	// Hero stage: one agent list around Kody, every token tethered by a line.
 	expect(withoutAssetsHtml).toContain('landing-hero-agents')
 	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')
@@ -860,6 +863,86 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
+})
+
+function landingHeroMarkup(html: string) {
+	const match = html.match(
+		/<section[^>]*class="landing-hero"[\s\S]*?<\/section>/,
+	)
+	return match?.[0] ?? ''
+}
+
+function homepageOnboardingFixture(loggedIn: boolean) {
+	return {
+		ok: true as const,
+		loggedIn,
+		username: loggedIn ? 'home-user' : null,
+		mcpServerUrl: '',
+		setupPrompt: '',
+		discoveryPrompt: 'Ask your agent whether Kody would help. what-is-kody',
+		persistPrompt: '',
+		hasAccessWin: false,
+		hasSecondMcpClient: false,
+		hasMcpClient: false,
+		connectedAgents: [],
+		secondAgentStandardGift: {
+			received: false,
+			active: false,
+			status: 'none' as const,
+			expiresAt: null,
+			grantedAt: null,
+		},
+		emailVerified: loggedIn,
+		needsOnboarding: loggedIn,
+		featuredListings: [],
+		featuredMcpServers: [],
+		customMcpServers: [],
+		persistedPackageName: null,
+		accessWinMemorySubject: null,
+		checklist: null,
+	}
+}
+
+test('homepage hero headline and session-aware CTAs', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const anonymous = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+		loaderData: {
+			onboarding: homepageOnboardingFixture(false),
+			signupMode: 'open',
+		},
+	})
+	expect(anonymous.status).toBe(200)
+	const anonymousHero = landingHeroMarkup(await readResponseText(anonymous))
+	expect(anonymousHero).toContain('Stop')
+	expect(anonymousHero).toContain('Sweating')
+	expect(anonymousHero).toContain('Switching Agents')
+	expect(anonymousHero).toContain('landing-hero-actions')
+	expect(anonymousHero).toContain('Create a free account')
+	expect(anonymousHero).toContain('Copy the discovery prompt')
+	expect(anonymousHero).not.toContain('Connect your agent')
+	expect(anonymousHero).not.toContain('Open your account')
+
+	const signedIn = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+		loaderData: {
+			onboarding: homepageOnboardingFixture(true),
+			signupMode: 'open',
+		},
+	})
+	expect(signedIn.status).toBe(200)
+	const signedInHero = landingHeroMarkup(await readResponseText(signedIn))
+	expect(signedInHero).toContain('Switching Agents')
+	expect(signedInHero).not.toContain('landing-hero-actions')
+	expect(signedInHero).not.toContain('Create a free account')
+	expect(signedInHero).not.toContain('Copy the discovery prompt')
+	expect(signedInHero).not.toContain('Connect your agent')
+	expect(signedInHero).not.toContain('Verify your email')
 })
 
 test('renderAppPage embeds the homepage factory-loop conversation teaser', async () => {
