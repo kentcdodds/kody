@@ -4,6 +4,7 @@ import {
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildPersistFirstPackagePrompt,
+	loadHomePageOnboardingData,
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
@@ -68,6 +69,31 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	expect(publicData.setupPrompt.length).toBeGreaterThan(0)
 	expect(publicData.discoveryPrompt).toContain('https://heykody.dev')
 	expect(publicData.persistPrompt).toContain('https://heykody.dev')
+	const homeAnonymous = loadHomePageOnboardingData({
+		env: { APP_BASE_URL: 'https://heykody.dev' },
+		requestUrl: 'https://heykody.dev/',
+	})
+	expect(homeAnonymous.loggedIn).toBe(false)
+	expect(homeAnonymous.featuredMcpServers).toEqual([])
+	expect(homeAnonymous.setupPrompt).toBe('')
+	expect(homeAnonymous.persistPrompt).toBe('')
+	expect(homeAnonymous.discoveryPrompt).toContain('https://heykody.dev')
+
+	const homeSignedIn = loadHomePageOnboardingData({
+		env: { APP_BASE_URL: 'https://heykody.dev' },
+		requestUrl: 'https://heykody.dev/',
+		user: { username: 'kent', emailVerified: true },
+	})
+	expect(homeSignedIn).toMatchObject({
+		loggedIn: true,
+		username: 'kent',
+		emailVerified: true,
+		needsOnboarding: false,
+		featuredMcpServers: [],
+		setupPrompt: '',
+		persistPrompt: '',
+	})
+
 	expect(publicData.featuredMcpServers.map((server) => server.id)).toContain(
 		'notion',
 	)

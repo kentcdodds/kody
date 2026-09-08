@@ -107,6 +107,40 @@ export function loadPublicOnboardingData(input: {
 	}
 }
 
+/**
+ * Homepage SSR only needs login, email verification, and the discovery
+ * prompt. Listing inbound MCP grants (and labeling each client) is for
+ * `/onboarding`, not `/`.
+ */
+export function loadHomePageOnboardingData(input: {
+	env: Pick<OnboardingEnv, 'APP_BASE_URL'>
+	requestUrl: string | URL
+	user?: { username: string; emailVerified: boolean } | null
+}): OnboardingLoaderData {
+	const publicData = loadPublicOnboardingData({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	if (!input.user) {
+		return {
+			...publicData,
+			featuredMcpServers: [],
+			setupPrompt: '',
+			persistPrompt: '',
+		}
+	}
+	return {
+		...publicData,
+		loggedIn: true,
+		username: input.user.username,
+		emailVerified: input.user.emailVerified,
+		needsOnboarding: !input.user.emailVerified,
+		featuredMcpServers: [],
+		setupPrompt: '',
+		persistPrompt: '',
+	}
+}
+
 export async function loadOnboardingData(input: {
 	env: OnboardingEnv
 	requestUrl: string | URL

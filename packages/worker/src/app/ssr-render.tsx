@@ -20,6 +20,7 @@ import {
 	loadEnabledSiteBannersForSsr,
 	loadSiteBannerLoaderData,
 } from '#app/site-banner-ssr.ts'
+import { type SiteBannerRecord } from '#universal/site-banners.ts'
 import { loadYoutubeWatchLoaderData } from '#app/youtube-watch-ssr.ts'
 import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
@@ -77,6 +78,10 @@ export type RenderAppPageInput = {
 	extraSetCookies?: Array<string>
 	/** Loader phases already recorded for this request; session + ssr append. */
 	serverTiming?: Array<ServerTimingEntry>
+	/** Shared enabled-banner read started by the handler, if any. */
+	listedBanners?:
+		| Promise<ReadonlyArray<SiteBannerRecord>>
+		| ReadonlyArray<SiteBannerRecord>
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
@@ -100,7 +105,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
-	const listedBanners = loadEnabledSiteBannersForSsr(env)
+	const listedBanners = input.listedBanners ?? loadEnabledSiteBannersForSsr(env)
 	const [siteBanner, youtubeWatch] = await Promise.all([
 		pushServerTiming(serverTiming, 'siteBanner', () =>
 			loadSiteBannerLoaderData({
