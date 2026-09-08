@@ -193,8 +193,9 @@ documented metadata projection for activity on public community listings.
 reserved system sender (`kody@<apex>` by default) to arbitrary recipients, so
 the platform can answer a feedback report or a system-inbox message. It never
 touches a user mailbox, sender identity, or plan entitlement, and it carries its
-own per-sender daily cap. User mail keeps its own boundary: `emailSend` remains
-notify-self and `emailReply` remains reply-only.
+own per-sender daily cap. Mail from `kody@` sets Reply-To to `support@<apex>`
+unless `reply_to` is provided. User mail keeps its own boundary: `emailSend`
+remains notify-self and `emailReply` remains reply-only.
 
 Platform feedback list/get is the only admin capability surface that reviews
 user-authored private text, and only after explicit approval. Community activity

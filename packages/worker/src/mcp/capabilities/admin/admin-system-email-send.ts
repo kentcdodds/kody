@@ -36,7 +36,7 @@ const inputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Optional Reply-To. Replies to the system sender already land in the operator system inbox.',
+				'Optional Reply-To. Mail from kody@ defaults to support@ on the same apex; an explicit value wins. Other system senders do not default.',
 			),
 		headers: z
 			.record(z.string(), z.string())
@@ -62,7 +62,7 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminSystemEmailSend',
 		description:
-			'Send operator correspondence from a reserved system sender (kody@<apex> by default) to an external recipient. Admin-only and audit-logged; capped per sender per day. Replies land in the operator system inbox. Use emailSend/emailReply for user mail — this sender speaks for the platform, not for a user account.',
+			'Send operator correspondence from a reserved system sender (kody@<apex> by default) to an external recipient. Admin-only and audit-logged; capped per sender per day. Mail from kody@ sets Reply-To to support@<apex> unless reply_to is provided. Use emailSend/emailReply for user mail — this sender speaks for the platform, not for a user account.',
 		keywords: [
 			'admin',
 			'system email',

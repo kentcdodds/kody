@@ -1,3 +1,5 @@
+import { resolveTransactionalSenderReplyTo } from '@kody-internal/shared/transactional-sender-reply-to.ts'
+
 /**
  * Sends operator alert email through the Cloudflare Email REST API — the same
  * mechanism the main worker uses for ops alerts. When credentials are absent
@@ -20,6 +22,7 @@ export type AlertEmailMessage = {
 	subject: string
 	text: string
 	html: string
+	replyTo?: string | null
 }
 
 export type AlertEmailResult = {
@@ -47,6 +50,10 @@ export async function sendAlertEmail(
 		apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`,
 	)
 	const fetcher = config.fetcher ?? fetch
+	const replyTo = resolveTransactionalSenderReplyTo({
+		from: message.from,
+		replyTo: message.replyTo,
+	})
 	let response: Response
 	try {
 		response = await fetcher(endpoint.toString(), {
@@ -55,7 +62,14 @@ export async function sendAlertEmail(
 				Authorization: `Bearer ${apiToken}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(message),
+			body: JSON.stringify({
+				from: message.from,
+				to: message.to,
+				subject: message.subject,
+				text: message.text,
+				html: message.html,
+				...(replyTo ? { replyTo } : {}),
+			}),
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)
