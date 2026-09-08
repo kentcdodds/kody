@@ -122,6 +122,7 @@ export function BlogPostRoute(handle: Handle) {
 			renderedBody = renderMarkdownNodes(body, {
 				headingOffset: 0,
 				linkRel: 'noopener noreferrer',
+				headingIds: true,
 				fences: post?.bodyFences,
 			})
 		}

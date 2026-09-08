@@ -1659,6 +1659,9 @@ html.is-settled {
 }
 
 .landing-testimonial-person {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
 	margin: 1.35rem 0 0;
 }
 
@@ -1724,6 +1727,24 @@ html.is-settled {
 .landing-testimonial-title {
 	color: var(--color-text-muted);
 	font-size: 0.92rem;
+}
+
+.landing-testimonial-story {
+	margin-top: 0.75rem;
+	color: var(--color-primary-text);
+	font-size: 0.92rem;
+	font-weight: 550;
+	text-decoration: none;
+	border-radius: var(--radius-md);
+}
+
+.landing-testimonial-story:hover {
+	text-decoration: underline;
+}
+
+.landing-testimonial-story:focus-visible {
+	outline: 2.5px solid var(--color-primary);
+	outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: no-preference) {
