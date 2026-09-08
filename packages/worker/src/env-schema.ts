@@ -275,7 +275,7 @@ export const EnvSchema = object({
 	// analytics script is rendered.
 	FATHOM_SITE_ID: optionalNonEmptyStringSchema,
 	// Comma-separated YouTube playlist ids whose latest Atom-feed videos
-	// (typically ~15 each) may open in the site-wide `/?video=` overlay.
+	// (typically ~15 each) may open in the site-wide `/?youtubeId=` overlay.
 	// `none` disables playlists. Unset means no playlist fetch (tests).
 	YOUTUBE_ALLOWED_PLAYLIST_IDS: optionalNonEmptyStringSchema,
 	// Comma-separated extra YouTube video ids allowed by the overlay and

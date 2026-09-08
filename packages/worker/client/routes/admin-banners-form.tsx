@@ -294,7 +294,7 @@ export function AdminBannerForm(
 						</label>
 						<p mix={css({ ...descriptionCss, margin: 0 })}>
 							Paste a watch URL, youtu.be link, or video id. This sets the CTA
-							to <code>/?video=</code> and the image to the first-party
+							to <code>/?youtubeId=</code> and the image to the first-party
 							thumbnail. The player only opens for allowlisted videos
 							(playlists, extra ids, and enabled banner CTAs).
 						</p>

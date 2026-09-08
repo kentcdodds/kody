@@ -51,14 +51,14 @@ row so the strip spans the viewport. `card` stays inset. Each look reserves a
 ## Images and in-site video
 
 Banners can show a first-party image and a CTA. A YouTube watch URL or
-`/?video=<id>` CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty. Raw
-`i.ytimg.com` URLs are rewritten to that same-origin path so CSP can keep
+`/?youtubeId=<id>` CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty.
+Raw `i.ytimg.com` URLs are rewritten to that same-origin path so CSP can keep
 `img-src` first-party. The admin form has a paste helper that fills
-`ctaHref=/?video=<id>` and the thumb path. There is no hardcoded live launch
+`ctaHref=/?youtubeId=<id>` and the thumb path. There is no hardcoded live launch
 banner; operators create and enable content in D1.
 
-In-site playback is the site-wide `/?video=` overlay, not a banner-only player.
-See [YouTube watch overlay](./youtube-watch.md).
+In-site playback is the site-wide `/?youtubeId=` overlay, not a banner-only
+player. See [YouTube watch overlay](./youtube-watch.md).
 
 ## Code
 

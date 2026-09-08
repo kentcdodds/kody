@@ -37,8 +37,8 @@ test('parseYoutubeVideoId accepts watch, short, embed, thumb, and raw ids', () =
 	expect(parseYoutubeVideoId(`https://www.youtube.com/shorts/${videoId}`)).toBe(
 		videoId,
 	)
-	expect(parseYoutubeVideoId(`/?video=${videoId}`)).toBe(videoId)
-	expect(parseYoutubeVideoId(`/blog?video=${videoId}`)).toBe(videoId)
+	expect(parseYoutubeVideoId(`/?youtubeId=${videoId}`)).toBe(videoId)
+	expect(parseYoutubeVideoId(`/blog?youtubeId=${videoId}`)).toBe(videoId)
 	expect(parseYoutubeVideoId(youtubeThumbPath(videoId))).toBe(videoId)
 	expect(
 		parseYoutubeVideoId(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`),
@@ -47,13 +47,32 @@ test('parseYoutubeVideoId accepts watch, short, embed, thumb, and raw ids', () =
 	expect(parseYoutubeVideoId('not-a-video-id')).toBeNull()
 })
 
-test('watch search helpers read and strip only the video param', () => {
-	expect(parseYoutubeWatchSearch(`?video=${videoId}&utm=1`)).toBe(videoId)
+test('parseYoutubeVideoId ignores video ids on non-YouTube hosts', () => {
+	expect(
+		parseYoutubeVideoId(`https://example.test/?video=${videoId}`),
+	).toBeNull()
+	expect(
+		parseYoutubeVideoId(`https://example.test/?youtubeId=${videoId}`),
+	).toBeNull()
+	expect(
+		parseYoutubeVideoId(`https://notyoutube.com/watch?v=${videoId}`),
+	).toBeNull()
+	expect(
+		parseYoutubeVideoId(`https://kody.codes/?youtubeId=${videoId}`),
+	).toBeNull()
+	expect(parseYoutubeVideoId(`/?video=${videoId}`)).toBeNull()
+})
+
+test('watch search helpers read and strip only the youtubeId param', () => {
+	expect(parseYoutubeWatchSearch(`?youtubeId=${videoId}&utm=1`)).toBe(videoId)
 	expect(parseYoutubeWatchSearch('?utm=1')).toBeNull()
-	expect(stripYoutubeWatchSearch('/', `?video=${videoId}&utm=1`)).toBe(
+	expect(parseYoutubeWatchSearch(`?video=${videoId}`)).toBeNull()
+	expect(stripYoutubeWatchSearch('/', `?youtubeId=${videoId}&utm=1`)).toBe(
 		'/?utm=1',
 	)
-	expect(stripYoutubeWatchSearch('/blog', `?video=${videoId}`)).toBe('/blog')
+	expect(stripYoutubeWatchSearch('/blog', `?youtubeId=${videoId}`)).toBe(
+		'/blog',
+	)
 })
 
 test('playlist and extra-id lists ignore junk and treat none as empty', () => {
@@ -100,9 +119,12 @@ test('banner hrefs and images rewrite YouTube hosts to first-party watch/thumb p
 			`https://www.youtube.com/watch?v=${videoId}`,
 		),
 	).toBe(youtubeWatchHref(videoId))
-	expect(rewriteBannerHrefForYoutubeWatch('/blog?video=abc')).toBe(
-		'/blog?video=abc',
+	expect(rewriteBannerHrefForYoutubeWatch('/blog?youtubeId=abc')).toBe(
+		'/blog?youtubeId=abc',
 	)
+	expect(
+		rewriteBannerHrefForYoutubeWatch(`https://example.test/?video=${videoId}`),
+	).toBe(`https://example.test/?video=${videoId}`)
 	expect(rewriteBannerHrefForYoutubeWatch('/pricing')).toBe('/pricing')
 	expect(
 		resolveSiteBannerImageUrl({

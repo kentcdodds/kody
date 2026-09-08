@@ -1,4 +1,4 @@
-const youtubeWatchSearchParam = 'video'
+const youtubeWatchSearchParam = 'youtubeId'
 const youtubeThumbPathPrefix = '/youtube-thumb/'
 const youtubeVideoIdPattern = /^[A-Za-z0-9_-]{11}$/
 const youtubePlaylistIdPattern = /^PL[A-Za-z0-9_-]{10,}$/
@@ -48,6 +48,16 @@ export function parseYoutubeVideoId(input: string): string | null {
 	const url = parseAbsoluteOrRelativeUrl(trimmed)
 	if (!url) return null
 
+	const relative = isAppRelativeHref(trimmed)
+	if (!relative && !isYoutubeFamilyHost(url.hostname)) return null
+
+	if (relative) {
+		return (
+			readVideoIdParam(url.searchParams.get(youtubeWatchSearchParam)) ??
+			readYoutubeThumbPathId(url.pathname)
+		)
+	}
+
 	const fromQuery =
 		readVideoIdParam(url.searchParams.get('v')) ??
 		readVideoIdParam(url.searchParams.get(youtubeWatchSearchParam))
@@ -65,8 +75,7 @@ export function parseYoutubeVideoId(input: string): string | null {
 			segment === 'embed' ||
 			segment === 'shorts' ||
 			segment === 'live' ||
-			segment === 'vi' ||
-			segment === 'youtube-thumb'
+			segment === 'vi'
 		) {
 			const next = segments[index + 1]
 			const videoId = next?.replace(/\.(jpg|jpeg|png|webp)$/i, '')
@@ -186,9 +195,13 @@ function readVideoIdParam(value: string | null): string | null {
 	return isYoutubeVideoId(value) ? value : null
 }
 
+function isAppRelativeHref(value: string): boolean {
+	return value.startsWith('/') || value.startsWith('?')
+}
+
 function parseAbsoluteOrRelativeUrl(value: string): URL | null {
 	try {
-		if (value.startsWith('/')) {
+		if (isAppRelativeHref(value)) {
 			return new URL(value, 'https://kody.codes')
 		}
 		return new URL(value)
@@ -197,13 +210,21 @@ function parseAbsoluteOrRelativeUrl(value: string): URL | null {
 	}
 }
 
+function isYoutubeFamilyHost(hostname: string): boolean {
+	return youtubeHostSuffixes.some((suffix) => isYoutubeHost(hostname, suffix))
+}
+
 function isYoutubeHostedUrl(value: string): boolean {
-	if (value.startsWith('/')) return false
+	if (isAppRelativeHref(value)) return false
 	const url = parseAbsoluteOrRelativeUrl(value)
 	if (!url) return false
-	return youtubeHostSuffixes.some((suffix) =>
-		isYoutubeHost(url.hostname, suffix),
-	)
+	return isYoutubeFamilyHost(url.hostname)
+}
+
+function readYoutubeThumbPathId(pathname: string): string | null {
+	if (!pathname.startsWith(youtubeThumbPathPrefix)) return null
+	const id = pathname.slice(youtubeThumbPathPrefix.length).split('/')[0]
+	return id && isYoutubeVideoId(id) ? id : null
 }
 
 function isYoutubeHost(hostname: string, suffix: string): boolean {

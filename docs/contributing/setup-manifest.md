@@ -447,7 +447,7 @@ automatically:
   `packages/worker/wrangler.jsonc`; intentionally unset for local dev, preview,
   and tests — see [environment-variables.md](./environment-variables.md))
 - `YOUTUBE_ALLOWED_PLAYLIST_IDS` (optional public Wrangler var; comma-separated
-  playlist ids for the `/?video=` overlay. `none` disables playlists. Unset
+  playlist ids for the `/?youtubeId=` overlay. `none` disables playlists. Unset
   skips playlist fetch. Production and preview set Kent's public playlist in
   `packages/worker/wrangler.jsonc` — see
   [environment-variables.md](./environment-variables.md))

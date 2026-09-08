@@ -73,8 +73,8 @@ reads stay cheap and never trigger that execute.
 - [Site banners](./site-banners.md): operator-owned announcement banners with
   page targeting, audience, priority, dismiss, and SSR rendering, managed at
   `/admin/banners`.
-- [YouTube watch overlay](./youtube-watch.md): site-wide `/?video=` player and
-  first-party thumbnail proxy for allowlisted YouTube videos.
+- [YouTube watch overlay](./youtube-watch.md): site-wide `/?youtubeId=` player
+  and first-party thumbnail proxy for allowlisted YouTube videos.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects. The rubric for choosing between D1, a per-user Durable Object, and
   Analytics Engine is recorded in decision record

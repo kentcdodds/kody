@@ -99,7 +99,7 @@ Optional Wrangler vars (public, non-secret; see
 - `YOUTUBE_ALLOWED_VIDEO_IDS` — comma-separated extra video ids, merged with
   playlist items and ids extracted from enabled banner hrefs.
 
-The overlay itself is `/?video=<id>`. Thumbnails are proxied at
+The overlay itself is `/?youtubeId=<id>`. Thumbnails are proxied at
 `/youtube-thumb/<id>` so `img-src` can stay first-party.
 
 ## Build metadata

@@ -571,7 +571,7 @@
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",
 				// Public playlist whose latest Atom-feed videos may open in
-				// the site-wide `/?video=` overlay. Tests leave this unset.
+				// the site-wide `/?youtubeId=` overlay. Tests leave this unset.
 				"YOUTUBE_ALLOWED_PLAYLIST_IDS": "PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY",
 				// Public (non-secret) Stripe Price ids for production
 				// subscriptions. Coupled to the live Stripe account: if a
