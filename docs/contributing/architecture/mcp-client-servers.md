@@ -59,11 +59,11 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   modern-only server (`packages/worker/src/mcp-client/restore.ts`,
   `packages/worker/src/mcp-client/reconnect.ts`). A successful catalog-timeout
   fallback is remembered per server in hub DO storage so the next restore keeps
-  `legacy`; user reconnect forgets that mark and probes `auto` again.
-  Header-mismatch, unauthenticated, and `-32022` UnsupportedProtocolVersion
-  probe outcomes are not a 2025 verdict; after OAuth the hub retries
-  `server/discover` with the token, then the same catalog-timeout legacy retry
-  if discovery still does not finish.
+  `legacy`; user reconnect or replacing the server via `addServer` forgets that
+  mark and probes `auto` again. Header-mismatch, unauthenticated, and `-32022`
+  UnsupportedProtocolVersion probe outcomes are not a 2025 verdict; after OAuth
+  the hub retries `server/discover` with the token, then the same
+  catalog-timeout legacy retry if discovery still does not finish.
 
 ## OAuth flow
 

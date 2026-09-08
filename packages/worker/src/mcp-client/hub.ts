@@ -24,6 +24,7 @@ import {
 	isIncompleteDiscoverState,
 	readAttemptIdFromSettleMessage,
 	readOAuthDiscoveryUrls,
+	sanitizePublicUrl,
 } from './oauth-settle-error.ts'
 import {
 	outboundMcpClientOptions,
@@ -245,6 +246,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult> {
 		await this.ensureRestored()
+		await this.forgetLegacyHandshakeFallback(input.serverId)
 		const existing = this.manager.mcpConnections[input.serverId]
 		if (existing) {
 			await this.manager.removeServer(input.serverId)
@@ -681,7 +683,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		console.warn('mcp discover retrying legacy handshake', {
 			serverId,
-			mcpEndpoint: row.server_url,
+			mcpEndpoint: sanitizePublicUrl(row.server_url),
 		})
 
 		try {

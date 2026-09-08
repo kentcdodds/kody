@@ -951,7 +951,7 @@ test('healthy auto catalog stays on auto; modern-connect catalog timeout falls b
 	const added = await hub.addServer({
 		serverId: 'server-1',
 		name: 'analytics',
-		url: 'https://analytics.example/mcp',
+		url: 'https://user:secret@analytics.example/mcp?token=abc',
 		callbackUrl,
 	})
 	expect(added.state).toBe('ready')
@@ -1007,4 +1007,40 @@ test('healthy auto catalog stays on auto; modern-connect catalog timeout falls b
 		versionNegotiation: { mode: 'legacy' },
 	})
 	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
+})
+
+test('replacing a server forgets the catalog-timeout legacy mark and probes auto', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	manager.connectBehavior = 'connected'
+	manager.discoverSucceedsOn = 'legacy'
+
+	const added = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(added.state).toBe('ready')
+	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
+
+	manager.discoverSucceedsOn = 'always'
+	manager.registerCount = 0
+	manager.discoverCount = 0
+	const replaced = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://feeds.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(replaced.state).toBe('ready')
+	expect(manager.registerCount).toBe(1)
+	expect(manager.discoverCount).toBe(1)
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'auto' },
+	})
+	expect(values.has('mcp-legacy-handshake/server-1')).toBe(false)
 })
