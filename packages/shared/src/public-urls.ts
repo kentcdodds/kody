@@ -7,6 +7,20 @@ function buildRestPathSuffix(restPath: string | null | undefined) {
 	return trimmed ? `/${trimmed.replace(/^\/+/, '')}` : ''
 }
 
+/**
+ * Canonical saved-package page on the app origin: `/@{username}/{kodyId}`.
+ * Distinct from the hosted package-app mount, which needs a `/packages/`
+ * segment so it does not steal this two-segment public page.
+ */
+export function buildPackagePagePath(input: {
+	username: string
+	kodyId: string
+}) {
+	return `${buildUsernamePathPrefix(input.username)}/${encodeURIComponent(
+		input.kodyId.trim(),
+	)}`
+}
+
 export function buildPackageAppPath(input: {
 	username: string
 	kodyId: string
