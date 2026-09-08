@@ -1,4 +1,4 @@
-import { planNames, type PlanName } from '#universal/plans.ts'
+import { type PlanName } from '#universal/plans.ts'
 import {
 	type SiteBannerAudience,
 	type SiteBannerIcon,
@@ -18,7 +18,7 @@ import {
 } from '#universal/youtube-watch.ts'
 
 export const adminBannersApiPath = '/admin/banners.json'
-export const adminBannersPath = '/admin/banners'
+const adminBannersPath = '/admin/banners'
 
 export type BannerDraft = {
 	id: string | null
@@ -226,5 +226,3 @@ export function lookLabel(look: SiteBannerLook) {
 		}
 	}
 }
-
-export { planNames }

@@ -35,12 +35,12 @@ export type SiteBannerAudience = (typeof siteBannerAudiences)[number]
 export const siteBannerIcons = ['play', 'megaphone', 'sparkle', 'info'] as const
 export type SiteBannerIcon = (typeof siteBannerIcons)[number]
 
-export const siteBannerIdPattern =
+const siteBannerIdPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export const siteBannerPreviewLookParam = 'siteBannerLook'
 export const siteBannerPreviewIdParam = 'siteBannerPreview'
-export const launchVideoSampleBannerId = 'preview-launch-video'
+const launchVideoSampleBannerId = 'preview-launch-video'
 
 export const siteBannerLookMinHeights = {
 	strip: '3.75rem',
@@ -189,7 +189,7 @@ export function isSiteBannerId(value: unknown): value is string {
 	return typeof value === 'string' && siteBannerIdPattern.test(value)
 }
 
-export function normalizePathname(pathname: string): string {
+function normalizePathname(pathname: string): string {
 	const trimmed = pathname.trim()
 	const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
 	if (withSlash.length > 1 && withSlash.endsWith('/')) {
@@ -333,7 +333,7 @@ export function compareSiteBannerPriority(
 	return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
 }
 
-export function toPublicSiteBannerCandidate(
+function toPublicSiteBannerCandidate(
 	banner: SiteBannerRecord,
 	options?: { remapMatchedUsersAudience?: boolean },
 ): SiteBannerRecord {
@@ -491,9 +491,7 @@ export function parseBannerHref(value: unknown): string | null | false {
 	}
 }
 
-export function parseOptionalIsoTimestamp(
-	value: unknown,
-): string | null | false {
+function parseOptionalIsoTimestamp(value: unknown): string | null | false {
 	if (value === null || value === undefined || value === '') return null
 	if (typeof value !== 'string') return false
 	const trimmed = value.trim()

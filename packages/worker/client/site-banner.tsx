@@ -44,7 +44,7 @@ const emptyViewer = {
 	isAdmin: false,
 } as const
 
-export function emptySiteBannerSnapshot(): SiteBannerLoaderData {
+function emptySiteBannerSnapshot(): SiteBannerLoaderData {
 	return {
 		banner: null,
 		candidates: [],
