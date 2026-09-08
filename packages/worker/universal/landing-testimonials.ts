@@ -20,6 +20,15 @@ export type LandingTestimonial = {
 export const landingTestimonials = [
 	{
 		quote:
+			"Kody gives our agents durable and credentialed access to infrastructure. Agents own deployment automation, while Kody owns the secure execution layer. We operate in contested environments where a downed service could mean life or death for some of the world's most endangered species. Kody helps us keep that critical infrastructure running.",
+		name: 'Jett Hays',
+		photo: '/images/testimonials/jett-hays.webp',
+		href: 'https://sentala.org',
+		title: 'Head of Software',
+		company: 'Sentala',
+	},
+	{
+		quote:
 			'For me, Kody is unbeatable. Being able to write custom pages from my phone using Claude (or any LLM) is crazy. I recently made a simple API wrapper for a product I\'m working on that exposes a Scalar /api/docs page in about two minutes. Now I can just ask Claude "How many users logged in?" or "Reset user\'s password." It\'s awesome!',
 		name: 'Bradley Haveman',
 		photo: '/images/testimonials/bradley-haveman.webp',

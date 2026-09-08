@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	landingTestimonials,
@@ -5,6 +7,12 @@ import {
 	testimonialAttribution,
 	testimonialInitials,
 } from '#universal/landing-testimonials.ts'
+
+const testimonialsPhotoDir = join(
+	import.meta.dirname,
+	'../public/images/testimonials',
+)
+const testimonialsPhotoPrefix = '/images/testimonials/'
 
 test('shuffleTestimonials can grow to six entries and randomizes with the provided RNG', () => {
 	const fillers = [
@@ -61,4 +69,19 @@ test('testimonialAttribution joins verified role and employer and omits blanks',
 	)
 	expect(testimonialAttribution({})).toBeNull()
 	expect(testimonialAttribution({ title: '', company: '' })).toBeNull()
+})
+
+test('every hosted testimonial photo exists under public/images/testimonials', () => {
+	for (const entry of landingTestimonials) {
+		if (entry.photo == null) continue
+		expect(entry.photo.startsWith(testimonialsPhotoPrefix)).toBe(true)
+		expect(
+			existsSync(
+				join(
+					testimonialsPhotoDir,
+					entry.photo.slice(testimonialsPhotoPrefix.length),
+				),
+			),
+		).toBe(true)
+	}
 })
