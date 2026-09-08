@@ -95,26 +95,29 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    observable phase (`token exchange`, `resource metadata`, `mcp initialize`,
    `server/discover`, or `tools/list`), HTTP status and a short body snippet
    when present, the MCP / resource / authorization-server URLs without query
-   secrets, and an attempt id for log grep. The same payload is stored on
-   `mcp_server_settings.last_error` and shown under Status. The account UI maps
-   `connected` / `discovering` to "Discovering tools" only while that work is
-   still in flight; when `last_error` is present it says "Tool discovery didn't
-   finish" instead of echoing the raw `"connected"` state. After
-   `discoverIfConnected` times out still on `connected` or `discovering` (add,
-   reconnect, refresh, or OAuth settle), the hub first retries the 2025
-   initialize handshake on that same server. If catalog still does not finish,
-   it writes the same durable `last_error` (`tools/list` after a catalog
-   attempt, otherwise `server/discover`, plus attempt id and MCP URL) so Status
-   cannot stay silent. Used or missing OAuth `state` on the callback recover
-   without surfacing an internal state error: the hub restarts authorization
-   when needed. A Back/replay while the connection is still `connected`,
-   `discovering`, or `connecting` keeps the existing tokens and retries
-   discovery when the transport is `connected`, but it does not report
-   `auth=success` or clear `last_error` until the connection is `ready`. Origin
-   and redirect-URI rejection messages are enriched with Kody's
-   `oauthClientOrigin` and `oauthCallbackUrl`. Reconnect uses the same recovery
-   path (invalidate unusable tokens and request a fresh authorization URL). The
-   account page offers Reconnect when automatic recovery cannot finish.
+   secrets, and an attempt id for log grep (`mcp discover timeout incomplete`,
+   `mcp discover retrying legacy handshake`,
+   `mcp oauth callback settle incomplete`). Connection episodes do not store
+   that id. The same payload is stored on `mcp_server_settings.last_error` and
+   shown under Status. The account UI maps `connected` / `discovering` to
+   "Discovering tools" only while that work is still in flight; when
+   `last_error` is present it says "Tool discovery didn't finish" instead of
+   echoing the raw `"connected"` state. After `discoverIfConnected` times out
+   still on `connected` or `discovering` (add, reconnect, refresh, or OAuth
+   settle), the hub first retries the 2025 initialize handshake on that same
+   server. If catalog still does not finish, it writes the same durable
+   `last_error` (`tools/list` after a catalog attempt, otherwise
+   `server/discover`, plus attempt id and MCP URL) so Status cannot stay silent.
+   Used or missing OAuth `state` on the callback recover without surfacing an
+   internal state error: the hub restarts authorization when needed. A
+   Back/replay while the connection is still `connected`, `discovering`, or
+   `connecting` keeps the existing tokens and retries discovery when the
+   transport is `connected`, but it does not report `auth=success` or clear
+   `last_error` until the connection is `ready`. Origin and redirect-URI
+   rejection messages are enriched with Kody's `oauthClientOrigin` and
+   `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
+   unusable tokens and request a fresh authorization URL). The account page
+   offers Reconnect when automatic recovery cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

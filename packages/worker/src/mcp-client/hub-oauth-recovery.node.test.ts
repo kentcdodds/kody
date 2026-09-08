@@ -913,6 +913,43 @@ test('legacy retry that fails to connect keeps the catalog lastError', async () 
 	expect(added.error).toContain("tool discovery didn't finish")
 	expect(added.error).toContain('phase tools/list')
 	expect(manager.mcpConnections['server-1']?.connectionError).toBe(added.error)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp discover retrying legacy handshake',
+		expect.objectContaining({
+			serverId: 'server-1',
+			attemptId: added.lastError?.attemptId,
+		}),
+	)
+})
+
+test('a later failed add does not keep a stale catalog lastError', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	manager.connectBehaviors = ['connected', 'disconnected']
+	manager.connectBehavior = 'disconnected'
+
+	const timedOut = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(timedOut.lastError?.phase).toBe('tools/list')
+
+	manager.connectBehaviors = []
+	manager.connectBehavior = 'disconnected'
+	const failed = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(failed.state).toBe('disconnected')
+	expect(failed.lastError).toBeNull()
+	expect(failed.error).toBe('upstream closed')
 })
 
 test('healthy auto catalog stays on auto; modern-connect catalog timeout falls back to legacy and can reach ready', async () => {
@@ -962,10 +999,20 @@ test('healthy auto catalog stays on auto; modern-connect catalog timeout falls b
 		versionNegotiation: { mode: 'legacy' },
 	})
 	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'mcp discover retrying legacy handshake',
+	const timeoutCall = consoleWarn.mock.calls.find(
+		(call) => call[0] === 'mcp discover timeout incomplete',
+	)
+	const retryCall = consoleWarn.mock.calls.find(
+		(call) => call[0] === 'mcp discover retrying legacy handshake',
+	)
+	const timeoutAttemptId = (
+		timeoutCall?.[1] as { attemptId?: string } | undefined
+	)?.attemptId
+	expect(timeoutAttemptId).toBeTruthy()
+	expect(retryCall?.[1]).toEqual(
 		expect.objectContaining({
 			serverId: 'server-1',
+			attemptId: timeoutAttemptId,
 			mcpEndpoint: 'https://analytics.example/mcp',
 		}),
 	)

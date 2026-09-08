@@ -247,6 +247,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	}): Promise<McpServerConnectResult> {
 		await this.ensureRestored()
 		await this.forgetLegacyHandshakeFallback(input.serverId)
+		this.clearIncompleteDiscoverStamp(input.serverId)
 		const existing = this.manager.mcpConnections[input.serverId]
 		if (existing) {
 			await this.manager.removeServer(input.serverId)
@@ -301,6 +302,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			timeout: connectionSettleTimeoutMs,
 		})
 		await this.forgetLegacyHandshakeFallback(input.serverId)
+		this.clearIncompleteDiscoverStamp(input.serverId)
 		await this.restartServerAuthorization(input)
 		const row = this.manager
 			.listServers()
@@ -632,7 +634,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async runDiscoverIfConnected(
 		serverId: string,
-		options?: { allowLegacyFallback?: boolean },
+		options?: { allowLegacyFallback?: boolean; attemptId?: string | null },
 	): Promise<{
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
@@ -649,7 +651,10 @@ class McpClientHubBase extends DurableObject<Env> {
 		const afterAuto = this.applyIncompleteDiscoverFailure(
 			serverId,
 			discoverError,
-			{ catalogAttempted: true },
+			{
+				catalogAttempted: true,
+				attemptId: options?.attemptId,
+			},
 		)
 		if (
 			options?.allowLegacyFallback === false ||
@@ -683,6 +688,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		console.warn('mcp discover retrying legacy handshake', {
 			serverId,
+			attemptId: autoFailure.lastError?.attemptId ?? null,
 			mcpEndpoint: sanitizePublicUrl(row.server_url),
 		})
 
@@ -750,6 +756,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		}
 		const discovered = await this.runDiscoverIfConnected(serverId, {
 			allowLegacyFallback: false,
+			attemptId: autoFailure.lastError?.attemptId,
 		})
 		if (discovered.result.state === 'ready') {
 			await this.rememberLegacyHandshakeFallback(serverId)
@@ -773,6 +780,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			discoverError,
 			{
 				catalogAttempted: true,
+				attemptId: autoFailure.lastError?.attemptId,
 			},
 		)
 		if (stamped.lastError) return stamped
@@ -798,7 +806,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private applyIncompleteDiscoverFailure(
 		serverId: string,
 		discoverError: string | null,
-		options?: { catalogAttempted?: boolean },
+		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): {
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
@@ -863,6 +871,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			error: alreadyStamped ? discoverError : (result.error ?? discoverError),
 			phase: options?.catalogAttempted ? 'tools/list' : undefined,
 			mcpEndpoint: row?.server_url ?? null,
+			attemptId: options?.attemptId,
 		})
 		if (!lastError) {
 			return {
@@ -896,7 +905,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private rebuildStampedDiscoverLastError(
 		serverId: string,
 		result: McpServerConnectResult,
-		options?: { catalogAttempted?: boolean },
+		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): McpServerLastError | null {
 		const row = this.manager
 			.listServers()
@@ -908,7 +917,9 @@ class McpClientHubBase extends DurableObject<Env> {
 			phase: options?.catalogAttempted ? 'tools/list' : undefined,
 			mcpEndpoint: row?.server_url ?? null,
 			attemptId:
-				readAttemptIdFromSettleMessage(result.error) ?? crypto.randomUUID(),
+				options?.attemptId ??
+				readAttemptIdFromSettleMessage(result.error) ??
+				crypto.randomUUID(),
 		})
 	}
 
