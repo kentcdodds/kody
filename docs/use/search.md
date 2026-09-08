@@ -115,9 +115,10 @@ bundled body as the web `/guides` pages) when it fits the search response
 budget. Oversized guides return a table of contents instead of truncating
 mid-document. Open one heading with `"{id}:guide#{slug}"` (for example
 `package_subscriptions:guide#repo.pushed`). Official guide headings themselves
-must fit that budget (`kody-custom/no-oversized-guide-section`). Capability
-entities additionally include a ready-to-run **execute** snippet plus
-`inputTypeDefinition` / `outputTypeDefinition`.
+must fit the remaining budget after the search entity header
+(`kody-custom/no-oversized-guide-section`). Capability entities additionally
+include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
+`outputTypeDefinition`.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll MCP pair). Each ref resolves independently:

@@ -3,39 +3,87 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
-import { maxChars } from '../../packages/worker/src/mcp/tools/search-constants.ts'
+import { parseGuideMarkdown } from '../../packages/worker/src/guides/parse-frontmatter.ts'
 import {
 	parseDocumentHeadings as parseRuntimeHeadings,
 	slugifyDocumentHeading as slugifyRuntimeHeading,
 } from '../../packages/worker/src/guides/document-sections.ts'
+import { maxChars } from '../../packages/worker/src/mcp/tools/search-constants.ts'
+import {
+	buildGuideDetailHeaderLines as buildRuntimeHeaderLines,
+	guideContentsModeLine as runtimeContentsModeLine,
+	guideSearchBodyBudget as runtimeSearchBodyBudget,
+	guideSectionModeLine as runtimeSectionModeLine,
+} from '../../packages/worker/src/mcp/tools/guide-search-budget.ts'
 // @ts-expect-error - the oxlint helper is plain JS with no type declarations.
 import {
+	buildGuideDetailHeaderLines,
 	findOversizedDocumentSections,
 	findOversizedOfficialGuideSections,
+	guideContentsModeLine,
+	guideSearchBodyBudget,
+	guideSectionModeLine,
 	isOfficialGuideCatalogFile,
 	maxGuideSectionChars,
 	parseDocumentHeadings,
+	parseGuideLintMetadata,
 	slugifyDocumentHeading,
 	stripGuideFrontmatter,
 } from './guide-section-budget.js'
 
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 
-test('guide section budget matches search maxChars and the runtime heading parser', async () => {
+test('guide section budget matches search maxChars, header reserve, and heading parser', async () => {
 	expect(maxGuideSectionChars).toBe(maxChars)
+	expect(guideContentsModeLine).toBe(runtimeContentsModeLine)
+	expect(guideSectionModeLine('repo.pushed')).toBe(
+		runtimeSectionModeLine('repo.pushed'),
+	)
 	expect(slugifyDocumentHeading('`repo.pushed`')).toBe(
 		slugifyRuntimeHeading('`repo.pushed`'),
 	)
 
-	const subscriptions = stripGuideFrontmatter(
-		await readFile(
-			path.join(repoRoot, 'docs/guides/package-subscriptions.md'),
-			'utf8',
-		),
+	const raw = await readFile(
+		path.join(repoRoot, 'docs/guides/package-subscriptions.md'),
+		'utf8',
+	)
+	const parsed = parseGuideMarkdown('package-subscriptions', raw)
+	const lintMeta = parseGuideLintMetadata(raw, 'package-subscriptions')
+	expect(lintMeta).toMatchObject({
+		id: parsed.id,
+		description: parsed.summary,
+		category: parsed.category,
+		slug: parsed.slug,
+	})
+	expect(buildGuideDetailHeaderLines(lintMeta)).toEqual(
+		buildRuntimeHeaderLines({
+			id: parsed.id,
+			description: parsed.summary,
+			category: parsed.category,
+			slug: parsed.slug,
+			provider: parsed.provider,
+			lastVerified: parsed.lastVerified,
+		}),
 	)
 	expect(
-		parseDocumentHeadings(subscriptions).map((heading) => heading.slug),
-	).toEqual(parseRuntimeHeadings(subscriptions).map((heading) => heading.slug))
+		guideSearchBodyBudget({ ...lintMeta, section: 'repo.pushed' }),
+	).toBeLessThan(maxChars)
+	expect(guideSearchBodyBudget({ ...lintMeta, section: 'repo.pushed' })).toBe(
+		runtimeSearchBodyBudget({
+			id: parsed.id,
+			description: parsed.summary,
+			category: parsed.category,
+			slug: parsed.slug,
+			provider: parsed.provider,
+			lastVerified: parsed.lastVerified,
+			section: 'repo.pushed',
+			maxChars,
+		}),
+	)
+
+	expect(
+		parseDocumentHeadings(parsed.body).map((heading) => heading.slug),
+	).toEqual(parseRuntimeHeadings(parsed.body).map((heading) => heading.slug))
 
 	expect(findOversizedOfficialGuideSections(repoRoot)).toEqual([])
 	expect(
@@ -49,7 +97,7 @@ test('guide section budget matches search maxChars and the runtime heading parse
 	).toBe(false)
 })
 
-test('oversized official guide sections fail the budget helper and oxlint rule', async () => {
+test('oversized official guide sections fail the header-aware budget and oxlint rule', async () => {
 	const fixture = [
 		'---',
 		'id: oversized_fixture',
@@ -69,6 +117,25 @@ test('oversized official guide sections fail the budget helper and oxlint rule',
 		'x'.repeat(maxGuideSectionChars + 1),
 		'',
 	].join('\n')
+	const headerAwareLimit = guideSearchBodyBudget(
+		parseGuideLintMetadata(fixture, 'oversized-fixture'),
+		maxGuideSectionChars,
+	)
+	const justOverHeaderBudget = [
+		'---',
+		'id: header_budget_fixture',
+		'title: Header budget fixture',
+		'summary: A long enough summary to shrink the remaining body budget.',
+		'category: platform',
+		'---',
+		'',
+		'# Title',
+		'',
+		'## Almost',
+		'',
+		'y'.repeat(headerAwareLimit + 80),
+		'',
+	].join('\n')
 
 	expect(stripGuideFrontmatter(fixture).startsWith('# Title')).toBe(true)
 	expect(
@@ -82,17 +149,33 @@ test('oversized official guide sections fail the budget helper and oxlint rule',
 		await mkdir(path.join(cwd, 'docs/guides'), { recursive: true })
 		await writeFile(path.join(cwd, 'docs/guides/oversized-fixture.md'), fixture)
 		await writeFile(
+			path.join(cwd, 'docs/guides/header-budget-fixture.md'),
+			justOverHeaderBudget,
+		)
+		await writeFile(
 			path.join(cwd, 'docs/guides/README.md'),
 			'# Guides\n\nIndex pages are not official guide entities.\n',
 		)
-		expect(findOversizedOfficialGuideSections(cwd)).toEqual([
-			expect.objectContaining({
-				file: 'docs/guides/oversized-fixture.md',
-				slug: 'too-long',
-				chars: expect.any(Number),
-				limit: maxGuideSectionChars,
-			}),
-		])
+		const overflows = findOversizedOfficialGuideSections(cwd)
+		expect(overflows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					file: 'docs/guides/oversized-fixture.md',
+					slug: 'too-long',
+					chars: expect.any(Number),
+					limit: expect.any(Number),
+				}),
+				expect.objectContaining({
+					file: 'docs/guides/header-budget-fixture.md',
+					slug: 'almost',
+				}),
+			]),
+		)
+		const headerAware = overflows.find(
+			(section) => section.file === 'docs/guides/header-budget-fixture.md',
+		)
+		expect(headerAware?.limit).toBeLessThan(maxGuideSectionChars)
+		expect(headerAware?.chars).toBeLessThanOrEqual(maxGuideSectionChars)
 	} finally {
 		await rm(cwd, { recursive: true, force: true })
 	}

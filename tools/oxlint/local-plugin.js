@@ -289,12 +289,12 @@ const noOversizedGuideSectionRule = {
 		type: 'problem',
 		docs: {
 			description:
-				'Reject official guide sections that exceed the search response budget so {id}:guide#{slug} can return the full heading.',
+				'Reject official guide sections that exceed the search body budget (maxChars minus the entity header) so {id}:guide#{slug} can return the full heading.',
 		},
 		schema: [],
 		messages: {
 			oversizedSection:
-				'Official guide section "{{file}}#{{slug}}" is {{chars}} characters (limit {{limit}}). Split the heading or move detail so search({ entity: "{id}:guide#{slug}" }) can return the full section.',
+				'Official guide section "{{file}}#{{slug}}" is {{chars}} characters (limit {{limit}} after the search entity header). Split the heading or move detail so search({ entity: "{id}:guide#{slug}" }) can return the full section.',
 		},
 	},
 	createOnce(context) {

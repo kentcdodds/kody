@@ -7,6 +7,12 @@ import { lexicalScore } from '#worker/vectorize/scoring.ts'
 
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import { maxChars } from '../search-constants.ts'
+import {
+	buildGuideDetailHeaderLines,
+	guideContentsModeLine,
+	guideSearchBodyBudget,
+	guideSectionModeLine,
+} from '../guide-search-budget.ts'
 import { buildEntityRef, buildGuideUsage } from '../search-format-helpers.ts'
 import { buildCandidateBaseScore } from '../search-scoring.ts'
 import {
@@ -146,27 +152,15 @@ export const guideSearchEntityPlugin = {
 	},
 	formatEntityDetail(detail) {
 		const entityRef = buildEntityRef(detail.id, 'guide')
-		const headerLines = [
-			`# Guide — \`${detail.id}\``,
-			'',
-			detail.description,
-			'',
-			'## Summary',
-			'',
-			`- Entity: \`${entityRef}\``,
-			`- Category: \`${detail.category}\``,
-			`- Web: \`/guides/${detail.slug}\``,
-			...(detail.provider ? [`- Provider: ${detail.provider}`] : []),
-			...(detail.lastVerified
-				? [`- Last verified: \`${detail.lastVerified}\``]
-				: []),
-		]
-		const header = headerLines.join('\n')
+		const headerLines = buildGuideDetailHeaderLines(detail)
 		let resolved
 		try {
 			resolved = resolveMarkdownDocument({
 				markdown: detail.body,
-				maxChars: Math.max(0, maxChars - header.length - 2),
+				maxChars: guideSearchBodyBudget({
+					...detail,
+					maxChars,
+				}),
 				entityRef,
 				...(detail.section ? { section: detail.section } : {}),
 			})
@@ -226,12 +220,10 @@ function guideDetailModeLines(resolved: {
 		case 'full':
 			return []
 		case 'toc':
-			return [
-				'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`',
-			]
+			return [guideContentsModeLine]
 		case 'section':
 			return resolved.selected
-				? [`- Section: \`${resolved.selected.slug}\``]
+				? [guideSectionModeLine(resolved.selected.slug)]
 				: []
 		default: {
 			const exhaustive: never = resolved.mode

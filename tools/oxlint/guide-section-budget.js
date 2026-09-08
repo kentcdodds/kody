@@ -7,6 +7,8 @@ import { cwd as processCwd } from 'node:process'
  * `packages/worker/src/mcp/tools/search-constants.ts`.
  */
 export const maxGuideSectionChars = 6_000 * 4
+export const guideContentsModeLine =
+	'- Contents: oversized guide; open a heading with `{id}:guide#{slug}`'
 
 const headingLinePattern = /^(#{1,6})\s+(.+?)\s*$/
 const fencedBlockPattern = /^(`{3,}|~{3,})/
@@ -14,11 +16,50 @@ const officialGuideFilePattern = /\.md$/
 const skipGuideNames = new Set(['README.md'])
 
 export function stripGuideFrontmatter(raw) {
-	const normalized = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n')
-	if (!normalized.startsWith('---\n')) return normalized
-	const endIndex = normalized.indexOf('\n---\n', 4)
-	if (endIndex === -1) return normalized
-	return normalized.slice(endIndex + '\n---\n'.length).replace(/^\n/, '')
+	return parseGuideLintSource(raw).body
+}
+
+export function parseGuideLintMetadata(raw, slug) {
+	const parsed = parseGuideLintSource(raw)
+	return {
+		id: parsed.fields.get('id') || slug,
+		description: parsed.fields.get('summary') || '',
+		category: parsed.fields.get('category') || 'platform',
+		slug,
+		provider: parsed.fields.get('provider') ?? null,
+		lastVerified: parsed.fields.get('lastVerified') ?? null,
+	}
+}
+
+export function guideSectionModeLine(slug) {
+	return `- Section: \`${slug}\``
+}
+
+export function buildGuideDetailHeaderLines(input) {
+	return [
+		`# Guide — \`${input.id}\``,
+		'',
+		input.description,
+		'',
+		'## Summary',
+		'',
+		`- Entity: \`${input.id}:guide\``,
+		`- Category: \`${input.category}\``,
+		`- Web: \`/guides/${input.slug}\``,
+		...(input.provider ? [`- Provider: ${input.provider}`] : []),
+		...(input.lastVerified
+			? [`- Last verified: \`${input.lastVerified}\``]
+			: []),
+	]
+}
+
+export function guideSearchBodyBudget(input, maxChars = maxGuideSectionChars) {
+	const header = buildGuideDetailHeaderLines(input).join('\n')
+	const mode = Math.max(
+		guideContentsModeLine.length,
+		guideSectionModeLine(input.section ?? 'section').length,
+	)
+	return Math.max(0, maxChars - header.length - mode - 3)
 }
 
 export function slugifyDocumentHeading(title) {
@@ -78,30 +119,36 @@ export function findOversizedDocumentSections(
 	markdown,
 	limit = maxGuideSectionChars,
 ) {
+	const limitFor = typeof limit === 'function' ? limit : () => limit
 	const headings = parseDocumentHeadings(markdown)
 	const lines = markdown.split('\n')
 	const requestable = headings.filter((heading) => heading.level >= 2)
 	const toCheck = requestable.length > 0 ? requestable : headings
-	if (toCheck.length === 0 && markdown.length > limit) {
-		return [
-			{
-				slug: '(document)',
-				title: '(document)',
-				level: 0,
-				chars: markdown.length,
-				limit,
-			},
-		]
+	if (toCheck.length === 0) {
+		const documentLimit = limitFor({ slug: '(document)', title: '(document)' })
+		if (markdown.length > documentLimit) {
+			return [
+				{
+					slug: '(document)',
+					title: '(document)',
+					level: 0,
+					chars: markdown.length,
+					limit: documentLimit,
+				},
+			]
+		}
+		return []
 	}
 	return toCheck
 		.map((heading) => {
 			const chars = lines.slice(heading.start, heading.end).join('\n').length
+			const sectionLimit = limitFor(heading)
 			return {
 				slug: heading.slug,
 				title: heading.title,
 				level: heading.level,
 				chars,
-				limit,
+				limit: sectionLimit,
 			}
 		})
 		.filter((section) => section.chars > section.limit)
@@ -109,15 +156,19 @@ export function findOversizedDocumentSections(
 
 export function findOversizedOfficialGuideSections(
 	root = processCwd(),
-	limit = maxGuideSectionChars,
+	maxChars = maxGuideSectionChars,
 ) {
 	const guidesDir = path.join(root, 'docs/guides')
 	const overflows = []
 	for (const file of listOfficialGuideFiles(guidesDir)) {
 		const raw = readFileSync(file, 'utf8')
+		const slug = path.basename(file, '.md')
+		const meta = parseGuideLintMetadata(raw, slug)
 		const body = stripGuideFrontmatter(raw)
 		const relative = path.relative(root, file).replaceAll('\\', '/')
-		for (const section of findOversizedDocumentSections(body, limit)) {
+		for (const section of findOversizedDocumentSections(body, (heading) =>
+			guideSearchBodyBudget({ ...meta, section: heading.slug }, maxChars),
+		)) {
 			overflows.push({ file: relative, ...section })
 		}
 	}
@@ -145,6 +196,50 @@ function listOfficialGuideFiles(dir) {
 		files.push(next)
 	}
 	return files
+}
+
+function parseGuideLintSource(raw) {
+	const normalized = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n')
+	if (!normalized.startsWith('---\n')) {
+		return { fields: new Map(), body: normalized }
+	}
+	const endIndex = normalized.indexOf('\n---\n', 4)
+	if (endIndex === -1) {
+		return { fields: new Map(), body: normalized }
+	}
+	const frontmatterBlock = normalized.slice(4, endIndex)
+	const body = normalized.slice(endIndex + '\n---\n'.length).replace(/^\n/, '')
+	const fields = new Map()
+	let currentKey = null
+	const currentParts = []
+
+	function commitCurrentKey() {
+		if (currentKey === null) return
+		fields.set(currentKey, currentParts.join(' ').trim())
+		currentKey = null
+		currentParts.length = 0
+	}
+
+	for (const line of frontmatterBlock.split('\n')) {
+		if (line.trim() === '') continue
+		const indentedContinuation = /^(?: {2}|\t)\s*(.*)$/.exec(line)
+		if (indentedContinuation && currentKey !== null) {
+			const part = indentedContinuation[1]?.trim()
+			if (part) currentParts.push(part)
+			continue
+		}
+		const colonIndex = line.indexOf(':')
+		if (colonIndex === -1) continue
+		commitCurrentKey()
+		currentKey = line.slice(0, colonIndex).trim()
+		const inlineValue = line.slice(colonIndex + 1).trim()
+		if (inlineValue) {
+			currentParts.push(inlineValue)
+			commitCurrentKey()
+		}
+	}
+	commitCurrentKey()
+	return { fields, body }
 }
 
 function normalizeHeadingKey(value) {
