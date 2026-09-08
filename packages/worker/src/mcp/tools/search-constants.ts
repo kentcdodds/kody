@@ -1,8 +1,7 @@
 export const charsPerToken = 4
 export const maxTokens = 6_000
+/** Official-guide heading sections must stay under this budget (`kody-custom/no-oversized-guide-section`). */
 export const maxChars = maxTokens * charsPerToken
-// Official-guide heading sections must stay under `maxChars`. The checker is
-// `kody-custom/no-oversized-guide-section` (`tools/oxlint/guide-section-budget.js`).
 export const defaultSearchLimit = 15
 export const domainBrowseDefaultLimit = 100
 export const defaultMaxResponseSize = 4_000
