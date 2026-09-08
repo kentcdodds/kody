@@ -10,6 +10,11 @@ import {
 import { isOfficialCommunityListing } from '#universal/community-links.ts'
 import { type routes } from '#universal/routes.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import {
+	CommunityForkResourceLimitError,
+	communityForkResourceLimitLogFields,
+	isCommunityForkResourceLimitCause,
+} from '#worker/community/fork-resource-limit.ts'
 import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -136,6 +141,20 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					error instanceof EntitlementLimitError
 				) {
 					return jsonResponse({ ok: false, error: error.message }, 400)
+				}
+				if (
+					error instanceof CommunityForkResourceLimitError ||
+					isCommunityForkResourceLimitCause(error)
+				) {
+					const mapped =
+						error instanceof CommunityForkResourceLimitError
+							? error
+							: new CommunityForkResourceLimitError(error)
+					console.error(
+						'Community install failed:',
+						communityForkResourceLimitLogFields(mapped),
+					)
+					return jsonResponse({ ok: false, error: mapped.message }, 503)
 				}
 				console.error('Community install failed:', error)
 				return jsonResponse(

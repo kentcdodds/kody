@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
+import { communityForkResourceLimitMessage } from '#worker/community/fork-resource-limit.ts'
+import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import { createCommunityInstallApiPostHandler } from './community-install.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 
@@ -222,4 +224,21 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	})
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()
+
+	const resourceConsoleError = vi
+		.spyOn(console, 'error')
+		.mockImplementation(() => {})
+	mockModule.installCommunityListing.mockRejectedValue(
+		new Error(durableObjectIsolateMemoryResetMessage),
+	)
+	const resourceLimit = await handler.handler(
+		buildInstallRequest({ acknowledged: true }),
+	)
+	expect(resourceLimit.status).toBe(503)
+	expect(await resourceLimit.json()).toEqual({
+		ok: false,
+		error: communityForkResourceLimitMessage,
+	})
+	expect(resourceConsoleError).toHaveBeenCalled()
+	resourceConsoleError.mockRestore()
 })
