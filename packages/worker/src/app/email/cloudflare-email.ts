@@ -3,6 +3,7 @@ import {
 	outboundEmailSchema,
 	type OutboundEmail,
 } from '@kody-internal/shared/outbound-email.ts'
+import { resolveTransactionalSenderReplyTo } from '@kody-internal/shared/transactional-sender-reply-to.ts'
 import { redactEmailRecipient } from '#worker/audit-log.ts'
 
 type CloudflareEmailClientConfig = {
@@ -138,7 +139,10 @@ export async function sendCloudflareEmail(
 ): Promise<CloudflareSendResult> {
 	const normalized = normalizeEmailPayload({
 		...message,
-		replyTo: message.replyTo,
+		replyTo: resolveTransactionalSenderReplyTo({
+			from: message.from,
+			replyTo: message.replyTo,
+		}),
 		headers: message.headers,
 		attachments: message.attachments,
 	})

@@ -36,8 +36,10 @@ platform-assigned sender address.
   unsubscribe footer and `List-Unsubscribe` headers), and platform-feedback
   resolve/dismiss mail) and the operator-owned system inboxes (`kody`,
   `support`, `abuse`, `postmaster`, `security`, `admin`, and `psl` at the apex
-  route to Kody's system inbox, so replies to transactional mail land there).
-  All other apex mail is rejected.
+  route to Kody's system inbox). Mail from `kody@<apex>` sets
+  `Reply-To: support@<apex>` unless the caller supplies a different Reply-To, so
+  human replies land at support rather than at the transactional sender. All
+  other apex mail is rejected.
 - Reserved local parts never route to a user inbox and can never be registered
   as usernames.
 - User outbound mail always sends from `{username}@<platform domain>`. The from

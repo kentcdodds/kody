@@ -1,3 +1,4 @@
+import { resolveTransactionalSenderReplyTo } from '@kody-internal/shared/transactional-sender-reply-to.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizeEmailAddress } from './address.ts'
@@ -90,9 +91,11 @@ function resolveRecipients(to: string | Array<string>): Array<string> {
  * This is the operator correspondence channel, structurally separate from
  * user mail: it does not touch any user mailbox, sender identity, or plan
  * entitlement, and it is protected by its own per-sender daily cap so a
- * runaway caller cannot burn the apex domain's sending reputation. Callers
- * are responsible for the authorization check — today only admin-gated,
- * audit-logged capabilities and internal platform alerts reach it.
+ * runaway caller cannot burn the apex domain's sending reputation. Mail
+ * From `kody@<domain>` sets Reply-To to `support@<domain>` unless the
+ * caller passes an explicit `replyTo`. Callers are responsible for the
+ * authorization check — today only admin-gated, audit-logged capabilities
+ * and internal platform alerts reach it.
  */
 export async function sendSystemEmail(input: {
 	env: SystemOutboundEnv
@@ -128,10 +131,17 @@ export async function sendSystemEmail(input: {
 	if (!text && !html) {
 		throw new McpCallerError('Email text or HTML body is required.')
 	}
-	const replyTo = input.replyTo ? normalizeEmailAddress(input.replyTo) : null
-	if (input.replyTo && !replyTo) {
+	const explicitReplyTo = input.replyTo
+		? normalizeEmailAddress(input.replyTo)
+		: null
+	if (input.replyTo && !explicitReplyTo) {
 		throw new McpCallerError(`Invalid reply-to address: ${input.replyTo}`)
 	}
+	const replyTo =
+		resolveTransactionalSenderReplyTo({
+			from,
+			replyTo: explicitReplyTo,
+		}) ?? null
 
 	const now = input.now ?? new Date()
 	const consumed = await consumeSystemEmailDailySend({

@@ -101,6 +101,51 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 		}),
 	])
 	expect(await readSendCounter('kody', now)).toBe(1)
+
+	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
+	payloads.length = 0
+	const defaulted = await sendSystemEmail({
+		env: createSystemEnv(),
+		to: 'second@example.com',
+		subject: 'No explicit reply-to',
+		text: 'Default Reply-To please.',
+		now,
+	})
+	expect(defaulted.from).toBe('kody@kody.example.com')
+	expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			event: expect.objectContaining({
+				from: 'kody@kody.example.com',
+				reply_to: 'support@kody.example.com',
+			}),
+		}),
+	)
+	expect(payloads).toEqual([
+		expect.objectContaining({
+			from: 'kody@kody.example.com',
+			replyTo: 'support@kody.example.com',
+		}),
+	])
+
+	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
+	payloads.length = 0
+	await sendSystemEmail({
+		env: createSystemEnv(),
+		localPart: 'support',
+		to: 'third@example.com',
+		subject: 'Support sender',
+		text: 'No default Reply-To.',
+		now,
+	})
+	expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			event: expect.objectContaining({
+				from: 'support@kody.example.com',
+				reply_to: null,
+			}),
+		}),
+	)
+	expect(payloads[0]).not.toHaveProperty('replyTo')
 })
 
 test('sendSystemEmail rejects unusable senders, recipients, and bodies', async () => {

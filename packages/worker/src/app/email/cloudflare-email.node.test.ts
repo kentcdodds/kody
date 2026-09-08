@@ -179,3 +179,71 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 	expect(consoleInfo).toHaveBeenCalledTimes(1)
 }, 75_000)
+
+test('sendCloudflareEmail defaults Reply-To to support@ when From is kody@ unless overridden', async () => {
+	const payloads: Array<Record<string, unknown>> = []
+	using _server = createMswNodeServer(
+		[
+			http.post(
+				`https://api.cloudflare.test/client/v4/accounts/${mockAccountId}/email/sending/send`,
+				async ({ request }) => {
+					payloads.push((await request.json()) as Record<string, unknown>)
+					return HttpResponse.json({
+						success: true,
+						result: { message_id: 'reply-to-1' },
+					})
+				},
+			),
+		],
+		{ onUnhandledRequest: 'bypass' },
+	)
+	const config = {
+		accountId: mockAccountId,
+		apiBaseUrl: 'https://api.cloudflare.test',
+		apiToken: 'test-token',
+	}
+
+	await sendCloudflareEmail(config, {
+		to: 'user@example.com',
+		from: 'kody@kody.codes',
+		subject: 'Verify your email',
+		html: '<p>Verify</p>',
+		text: 'Verify',
+	})
+	await sendCloudflareEmail(config, {
+		to: 'user@example.com',
+		from: 'kody@kody.codes',
+		subject: 'Operator override',
+		html: '<p>Override</p>',
+		text: 'Override',
+		replyTo: 'abuse@kody.codes',
+	})
+	await sendCloudflareEmail(config, {
+		to: 'user@example.com',
+		from: 'support@kody.codes',
+		subject: 'Support sender',
+		html: '<p>Support</p>',
+		text: 'Support',
+	})
+	await sendCloudflareEmail(config, {
+		to: 'me@example.com',
+		from: 'alice@inbox.kody.codes',
+		subject: 'User mail',
+		html: '<p>User</p>',
+		text: 'User',
+	})
+
+	expect(payloads).toHaveLength(4)
+	expect(payloads[0]).toMatchObject({
+		from: 'kody@kody.codes',
+		replyTo: 'support@kody.codes',
+	})
+	expect(payloads[1]).toMatchObject({
+		from: 'kody@kody.codes',
+		replyTo: 'abuse@kody.codes',
+	})
+	expect(payloads[2]).toMatchObject({ from: 'support@kody.codes' })
+	expect(payloads[2]).not.toHaveProperty('replyTo')
+	expect(payloads[3]).toMatchObject({ from: 'alice@inbox.kody.codes' })
+	expect(payloads[3]).not.toHaveProperty('replyTo')
+})
