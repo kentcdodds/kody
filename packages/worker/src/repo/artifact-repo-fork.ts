@@ -88,11 +88,16 @@ export async function persistForkedArtifactRepoContents(input: {
 					},
 					files: input.files,
 				})
-				await updateEntitySource(input.env.APP_DB, {
+				const marked = await updateEntitySource(input.env.APP_DB, {
 					id: input.source.id,
 					userId: input.source.user_id,
 					publishedCommit: snapshot.published_commit,
 				})
+				if (!marked) {
+					throw new Error(
+						`Forked source "${input.source.id}" could not be marked at dest commit ${snapshot.published_commit}.`,
+					)
+				}
 				return {
 					copiedOriginCommit: input.originCommit,
 					destCommit: snapshot.published_commit,
@@ -111,11 +116,16 @@ export async function persistForkedArtifactRepoContents(input: {
 		)
 	}
 
-	await updateEntitySource(input.env.APP_DB, {
+	const marked = await updateEntitySource(input.env.APP_DB, {
 		id: input.source.id,
 		userId: input.source.user_id,
 		publishedCommit: destHead.commit,
 	})
+	if (!marked) {
+		throw new Error(
+			`Forked source "${input.source.id}" could not be marked at dest HEAD ${destHead.commit}.`,
+		)
+	}
 	const filesToSync =
 		destHead.commit === input.originCommit
 			? input.changedFiles

@@ -107,6 +107,7 @@ test('persistForkedArtifactRepoContents writes the full rewritten tree on loopba
 		published_commit: 'commit-loopback',
 		files: {},
 	})
+	mockModule.updateEntitySource.mockResolvedValue(true)
 
 	const persisted = await persistForkedArtifactRepoContents({
 		env,
@@ -150,6 +151,7 @@ test('persistForkedArtifactRepoContents syncs only changed files on production r
 		branch: 'main',
 		commit: 'commit-origin',
 	})
+	mockModule.updateEntitySource.mockResolvedValue(true)
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-edited')
 
 	const persisted = await persistForkedArtifactRepoContents({
@@ -209,6 +211,7 @@ test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest 
 	mockModule.readArtifactFileAtCommit.mockResolvedValue(
 		new TextEncoder().encode(destHeadManifest),
 	)
+	mockModule.updateEntitySource.mockResolvedValue(true)
 	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-rewritten')
 
 	const persisted = await persistForkedArtifactRepoContents({
@@ -293,5 +296,36 @@ test('persistForkedArtifactRepoContents rejects a forked dest with no HEAD', asy
 		}),
 	).rejects.toThrow(/default branch has no HEAD/)
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
+test('persistForkedArtifactRepoContents fails closed when dest published_commit cannot be stamped', async () => {
+	mockModule.syncArtifactSourceSnapshot.mockClear()
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: async () => ({
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-dest.git',
+		}),
+	})
+	mockModule.isLoopbackArtifactsRemote.mockReturnValue(false)
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-head',
+	})
+	mockModule.updateEntitySource.mockResolvedValue(false)
+
+	await expect(
+		persistForkedArtifactRepoContents({
+			env,
+			baseUrl: 'https://kody.test',
+			userId: 'user-1',
+			source,
+			originCommit: 'commit-head',
+			expectedPackageScope: 'jane',
+			targetKodyId: 'demo',
+			changedFiles: { 'package.json': '{"name":"@jane/demo"}' },
+			files: { 'package.json': '{"name":"@jane/demo"}' },
+		}),
+	).rejects.toThrow(/could not be marked at dest HEAD commit-head/)
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
