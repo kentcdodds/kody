@@ -71,7 +71,12 @@ const source = {
 	updated_at: '2026-09-08T00:00:00.000Z',
 }
 
+function resetArtifactRepoForkMocks() {
+	for (const mock of Object.values(mockModule)) mock.mockReset()
+}
+
 test('forkArtifactRepo delegates to the Artifacts binding fork', async () => {
+	resetArtifactRepoForkMocks()
 	const fork = vi.fn(async () => ({
 		id: 'repo_dest',
 		name: 'package-dest',
@@ -97,6 +102,7 @@ test('forkArtifactRepo delegates to the Artifacts binding fork', async () => {
 })
 
 test('persistForkedArtifactRepoContents writes the full rewritten tree on loopback remotes', async () => {
+	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: async () => ({
 			remote: 'http://127.0.0.1:1/git/default/package-dest.git',
@@ -140,6 +146,7 @@ test('persistForkedArtifactRepoContents writes the full rewritten tree on loopba
 })
 
 test('persistForkedArtifactRepoContents syncs only changed files on production remotes', async () => {
+	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: async () => ({
 			remote:
@@ -188,6 +195,7 @@ test('persistForkedArtifactRepoContents syncs only changed files on production r
 })
 
 test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest package.json when dest HEAD is not the listing pin', async () => {
+	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: async () => ({
 			remote:
@@ -268,8 +276,7 @@ test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest 
 })
 
 test('persistForkedArtifactRepoContents rejects a forked dest with no HEAD', async () => {
-	mockModule.updateEntitySource.mockClear()
-	mockModule.syncArtifactSourceSnapshot.mockClear()
+	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: async () => ({
 			remote:
@@ -300,7 +307,7 @@ test('persistForkedArtifactRepoContents rejects a forked dest with no HEAD', asy
 })
 
 test('persistForkedArtifactRepoContents fails closed when dest published_commit cannot be stamped', async () => {
-	mockModule.syncArtifactSourceSnapshot.mockClear()
+	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: async () => ({
 			remote:

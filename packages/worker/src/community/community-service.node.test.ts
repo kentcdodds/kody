@@ -1,7 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { communityIndexOverviewCandidateLimitPerCategory } from '#universal/community-categories.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import {
 	CommunityActionError,
 	CommunityForkResourceLimitError,
@@ -1278,6 +1281,7 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 	)
 	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
 	mockModule.deleteEntitySource.mockResolvedValue(true)
+	consoleWarn.mockImplementation(() => {})
 
 	await expect(
 		forkCommunityListing({
@@ -1290,6 +1294,9 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 		}),
 	).rejects.toThrow('sync failed')
 
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('community fork dest artifact repo cleanup failed'),
+	)
 	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
 		env: createEnv(),
 		userId: 'user-2',
@@ -1399,6 +1406,7 @@ test('forkCommunityListing maps isolate memory resets to CommunityForkResourceLi
 	)
 	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
 	mockModule.deleteEntitySource.mockResolvedValue(true)
+	consoleWarn.mockImplementation(() => {})
 
 	await expect(
 		forkCommunityListing({
