@@ -8,6 +8,11 @@ import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 import {
+	isPackageFilesMediaKind,
+	packageFileBaseName,
+	packageFileKindLabel,
+} from '#universal/package-file-media.ts'
+import {
 	buildPackageFilesAncestors,
 	joinPackageFilesPath,
 	listPackageFilesChildren,
@@ -37,11 +42,16 @@ function ancestorDirectories(path: string) {
 		.filter((candidate) => candidate !== path)
 }
 
-function formatBytes(value: string) {
-	const bytes = new TextEncoder().encode(value).length
+function formatBytes(bytes: number) {
 	if (bytes < 1024) return `${bytes} B`
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function fileByteLength(data: PackageFilesLoaderData) {
+	if (typeof data.contentByteLength === 'number') return data.contentByteLength
+	if (data.content) return new TextEncoder().encode(data.content).byteLength
+	return 0
 }
 
 function countLines(value: string) {
@@ -346,6 +356,12 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 
 	const heading = data.contentPath ?? data.selectedPath
 	const body = data.content ?? ''
+	const kindLabel =
+		packageFileKindLabel(data.contentPath, data.contentKind) ||
+		packageFileLanguageLabel(data.contentPath)
+	const byteLength = fileByteLength(data)
+	const showTextMeta =
+		Boolean(body) && !isPackageFilesMediaKind(data.contentKind)
 	return (
 		<div>
 			<div mix={css(contentToolbarCss)}>
@@ -354,16 +370,17 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 					<h2 mix={css(contentHeadingCss)} title={heading}>
 						{heading}
 					</h2>
-					{body ? (
+					{byteLength > 0 || kindLabel ? (
 						<span mix={css(contentMetaCss)}>
-							{countLines(body)} lines · {formatBytes(body)}
-							{packageFileLanguageLabel(data.contentPath)
-								? ` · ${packageFileLanguageLabel(data.contentPath)}`
-								: ''}
+							{showTextMeta ? `${countLines(body)} lines · ` : ''}
+							{byteLength > 0 ? formatBytes(byteLength) : ''}
+							{kindLabel ? `${byteLength > 0 ? ' · ' : ''}${kindLabel}` : ''}
 						</span>
 					) : null}
 				</div>
-				{body ? (
+				{body &&
+				data.contentKind !== 'binary' &&
+				!isPackageFilesMediaKind(data.contentKind) ? (
 					<CopyTextButton
 						value={body}
 						idleLabel="Copy"
@@ -373,7 +390,20 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 					/>
 				) : null}
 			</div>
-			{data.contentKind === 'markdown' ? (
+			{renderFilePreview(data, heading, body)}
+		</div>
+	)
+}
+
+function renderFilePreview(
+	data: PackageFilesLoaderData,
+	heading: string,
+	body: string,
+): RemixNode {
+	const contentKind = data.contentKind
+	switch (contentKind) {
+		case 'markdown':
+			return (
 				<div mix={css(markdownCss)} data-testid="package-files-markdown">
 					{renderMarkdownNodes(body, {
 						fences: data.contentFences,
@@ -381,16 +411,80 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 						imageFromDirectory: directoryOfPackageFilePath(data.contentPath),
 					})}
 				</div>
-			) : (
+			)
+		case 'image': {
+			if (!data.mediaHref) {
+				throw new Error(`Image preview is missing a raw href for ${heading}.`)
+			}
+			const name = packageFileBaseName(heading)
+			return (
+				<div mix={css(mediaPreviewCss)} data-testid="package-files-image">
+					{/* SVG is XSS-sensitive: preview only via <img src> to the
+					    allowlisted /raw/ route. Never inject SVG markup. */}
+					<img src={data.mediaHref} alt={name} mix={css(mediaImageCss)} />
+				</div>
+			)
+		}
+		case 'video': {
+			if (!data.mediaHref) {
+				throw new Error(`Video preview is missing a raw href for ${heading}.`)
+			}
+			return (
+				<div mix={css(mediaPreviewCss)} data-testid="package-files-video">
+					{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- repo videos have no sidecar captions; filename is the accessible name */}
+					<video
+						src={data.mediaHref}
+						controls
+						preload="metadata"
+						aria-label={packageFileBaseName(heading)}
+						mix={css(mediaVideoCss)}
+					>
+						Your browser cannot play this video.
+					</video>
+				</div>
+			)
+		}
+		case 'audio': {
+			if (!data.mediaHref) {
+				throw new Error(`Audio preview is missing a raw href for ${heading}.`)
+			}
+			return (
+				<div mix={css(mediaPreviewCss)} data-testid="package-files-audio">
+					{/* oxlint-disable-next-line jsx-a11y/media-has-caption -- repo audio has no sidecar captions; filename is the accessible name */}
+					<audio
+						src={data.mediaHref}
+						controls
+						preload="metadata"
+						aria-label={packageFileBaseName(heading)}
+						mix={css(mediaAudioCss)}
+					>
+						Your browser cannot play this audio.
+					</audio>
+				</div>
+			)
+		}
+		case 'binary':
+			return (
+				<p mix={css(binaryCss)} data-testid="package-files-binary">
+					This is a binary file and cannot be previewed.
+				</p>
+			)
+		case 'code':
+		case 'text':
+		case null:
+			return (
 				<div mix={css(codeCss)} data-testid="package-files-code">
 					{renderHighlightedCode(
 						data.contentHighlighted ??
 							plainHighlightedCode(body, data.language ?? 'plaintext'),
 					)}
 				</div>
-			)}
-		</div>
-	)
+			)
+		default: {
+			const exhaustive: never = contentKind
+			throw new Error(`Unknown package file content kind: ${exhaustive}`)
+		}
+	}
 }
 
 function arrowLeftIcon() {
@@ -889,6 +983,43 @@ const codeCss = {
 		opacity: 0.65,
 		userSelect: 'none' as const,
 	},
+}
+
+const mediaPreviewCss = {
+	display: 'flex',
+	justifyContent: 'center',
+	alignItems: 'center',
+	padding: spacing.lg,
+	minHeight: '12rem',
+	backgroundColor: colors.background,
+}
+
+const mediaImageCss = {
+	display: 'block',
+	maxWidth: '100%',
+	maxHeight: '36rem',
+	height: 'auto',
+	borderRadius: radius.sm,
+}
+
+const mediaVideoCss = {
+	display: 'block',
+	width: '100%',
+	maxWidth: '40rem',
+	maxHeight: '36rem',
+	backgroundColor: colors.surface,
+}
+
+const mediaAudioCss = {
+	width: '100%',
+	maxWidth: '28rem',
+}
+
+const binaryCss = {
+	margin: 0,
+	padding: spacing.lg,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
 }
 
 const emptyCss = {

@@ -114,8 +114,6 @@ async function renderCommunityListingPage(input: {
 			input.request,
 		),
 		resolvePackagePageReadmeImageBaseHref({
-			env: input.env,
-			request: input.request,
 			listingId: input.listingId,
 			ownerUsername: detail.username,
 			kodyId: detail.listing.kodyId,
@@ -311,13 +309,10 @@ export function createCommunityPackageHandler(env: Env) {
 						request,
 					),
 					resolvePackagePageReadmeImageBaseHref({
-						env,
-						request,
 						listingId: page.listing.listing.id,
 						ownerUsername: page.username,
 						kodyId: page.kodyId,
 						usedListingReadme: Boolean(page.listing.listing.readmeContent),
-						sourceId: page.ownerPackage?.sourceId,
 						publishedCommit: page.ownerPackage?.publishedCommit,
 						pinnedCommit: page.listing.listing.pinnedCommit,
 					}),
@@ -382,12 +377,9 @@ export function createCommunityPackageHandler(env: Env) {
 					request,
 				),
 				resolvePackagePageReadmeImageBaseHref({
-					env,
-					request,
 					ownerUsername: page.username,
 					kodyId: page.kodyId,
 					usedListingReadme: false,
-					sourceId: page.ownerPackage.sourceId,
 					publishedCommit: page.ownerPackage.publishedCommit,
 				}),
 			])
@@ -455,8 +447,6 @@ export function createCommunityDetailApiHandler(env: Env) {
 					request,
 				),
 				resolvePackagePageReadmeImageBaseHref({
-					env,
-					request,
 					listingId,
 					ownerUsername: detail.username,
 					kodyId: detail.listing.kodyId,
@@ -543,13 +533,10 @@ export function createCommunityPackageApiHandler(env: Env) {
 					request,
 				),
 				resolvePackagePageReadmeImageBaseHref({
-					env,
-					request,
 					listingId: page.listing?.listing?.id,
 					ownerUsername: page.username,
 					kodyId: page.kodyId,
 					usedListingReadme: Boolean(page.listing?.listing?.readmeContent),
-					sourceId: page.ownerPackage?.sourceId,
 					publishedCommit: page.ownerPackage?.publishedCommit,
 					pinnedCommit: page.listing?.listing?.pinnedCommit,
 				}),

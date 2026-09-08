@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
+import { writeArtifactSourceSnapshot } from './artifact-source-snapshot.ts'
 import { getArtifactsBinding } from './artifacts.ts'
 
 const mockAccountId = 'cf_account_mock_123'
@@ -63,4 +64,29 @@ test('Cloudflare mock implements the Artifacts REST workflow used in local dev',
 		artifactRepoCount?: number
 	}
 	expect(meta.artifactRepoCount).toBe(1)
+
+	const sourceFiles = {
+		'package.json': '{"name":"@owner/demo"}',
+		'poster.png': 'not-sent-over-rpc-in-production',
+	}
+	await writeArtifactSourceSnapshot({
+		env: {
+			...env,
+			CLOUDFLARE_API_SOURCE_SNAPSHOTS: 'true',
+		},
+		repoId: repoName,
+		files: sourceFiles,
+	})
+	const forkedName = `${repoName}-fork`
+	const forked = await binding.fork(repoName, forkedName, { readOnly: false })
+	expect(forked.name).toBe(forkedName)
+	const destSnapshot = await fetch(
+		`${mock.origin}/client/v4/accounts/${mockAccountId}/artifacts/namespaces/default/repos/${forkedName}/mock-source-snapshot`,
+		{ headers: { Authorization: `Bearer ${mock.token}` } },
+	)
+	expect(destSnapshot.status).toBe(200)
+	const destPayload = (await destSnapshot.json()) as {
+		result?: { files?: Record<string, string> }
+	}
+	expect(destPayload.result?.files).toEqual(sourceFiles)
 }, 75_000)

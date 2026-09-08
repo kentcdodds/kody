@@ -107,6 +107,60 @@ export function createArtifactsMswHandlers(input: {
 			return envelope(repo)
 		}),
 		http.post(
+			`${apiOrigin}${reposPath}/:repoName/fork`,
+			async ({ params, request }) => {
+				const sourceName = decodeURIComponent(String(params.repoName))
+				const source = repos.get(sourceName)
+				if (!source) {
+					return errorEnvelope(404, 1002, 'repo not found')
+				}
+				const body = (await request.json()) as {
+					name?: string
+					description?: string | null
+					read_only?: boolean
+				}
+				const targetName = body.name?.trim() ?? ''
+				if (!targetName) {
+					return errorEnvelope(400, 1001, 'target repo name is required')
+				}
+				if (repos.has(targetName)) {
+					return errorEnvelope(409, 1003, 'repo already exists')
+				}
+				const now = new Date().toISOString()
+				const repo: StoredRepo = {
+					id: `repo_${crypto.randomUUID()}`,
+					name: targetName,
+					description:
+						typeof body.description === 'string'
+							? body.description
+							: source.description,
+					default_branch: source.default_branch,
+					created_at: now,
+					updated_at: now,
+					last_push_at: source.last_push_at,
+					source: source.name,
+					read_only: body.read_only === true,
+					remote: `http://127.0.0.1:1/git/${namespace}/${targetName}.git`,
+				}
+				repos.set(targetName, repo)
+				const sourceSnapshot = snapshots.get(sourceName)
+				if (sourceSnapshot) {
+					snapshots.set(targetName, {
+						published_commit: sourceSnapshot.published_commit,
+						files: { ...sourceSnapshot.files },
+					})
+				}
+				return envelope({
+					id: repo.id,
+					name: repo.name,
+					description: repo.description,
+					default_branch: repo.default_branch,
+					remote: repo.remote,
+					token: `art_v1_${targetName}?expires=${Math.floor(Date.now() / 1000) + 3600}`,
+				})
+			},
+		),
+		http.post(
 			`${apiOrigin}${reposPath}/:repoName/mock-source-snapshot`,
 			async ({ params, request }) => {
 				const repoName = decodeURIComponent(String(params.repoName))

@@ -32,6 +32,7 @@ import {
 	pageHeadCss,
 	proseCss,
 } from '#universal/styles/style-primitives.ts'
+import { getSlugFromPathname } from './blog-post-path.ts'
 
 /**
  * Blog post, ported from the redesign prototype (`landing/blog-post.html`).
@@ -44,24 +45,6 @@ import {
  * frontmatter (`placeholder`, default true) until a human review turns it
  * off.
  */
-
-export function getSlugFromPathname(pathname: string) {
-	const prefix = `${routes.blog.href()}/`
-	if (!pathname.startsWith(prefix)) return null
-	let slug: string
-	try {
-		slug = decodeURIComponent(pathname.slice(prefix.length).replace(/\/$/, ''))
-	} catch {
-		// Malformed percent-encoding (`/blog/%`) throws. The shell calls this to
-		// classify every pathname, so a throw here would take the whole page
-		// down instead of just missing a post.
-		return null
-	}
-	// Dots mark non-post paths under /blog (rss.xml, .json APIs); real post
-	// slugs are kebab-case and never contain one.
-	if (!slug || slug.includes('/') || slug.includes('.')) return null
-	return slug
-}
 
 function isBlogPostPath(href: string) {
 	return (

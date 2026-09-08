@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { bytesToLatin1String } from './package-file-media.ts'
 import {
 	buildPackageFilesAncestors,
 	buildPackageFilesApiHref,
@@ -6,6 +7,7 @@ import {
 	findDirectoryReadmePath,
 	getAccountPackageFilesHref,
 	getCommunityPackageFilesHref,
+	getCommunityPackageRawHref,
 	getPackageSettingsHref,
 	getPackageTreeHref,
 	isReservedPackageFilesKodyId,
@@ -66,6 +68,43 @@ test('package files views normalize paths and distinguish root, directories, fil
 		contentPath: 'src/index.ts',
 		contentKind: 'code',
 		language: 'ts',
+	})
+
+	const pngBytes = Uint8Array.from([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
+	])
+	const png = bytesToLatin1String(pngBytes)
+	const image = buildPackageFilesView({
+		files: { ...files, 'docs/logo.png': png },
+		selectedPath: 'docs/logo.png',
+	})
+	expect(image).toMatchObject({
+		kind: 'file',
+		content: null,
+		contentKind: 'image',
+		language: null,
+		contentByteLength: pngBytes.byteLength,
+	})
+	expect(
+		buildPackageFilesView({
+			files: { 'app.wasm': 'wasm\0module' },
+			selectedPath: 'app.wasm',
+		}),
+	).toMatchObject({
+		kind: 'file',
+		content: null,
+		contentKind: 'binary',
+	})
+	expect(
+		buildPackageFilesView({
+			files: { 'evil.svg': '<!DOCTYPE html><script>alert(1)</script>' },
+			selectedPath: 'evil.svg',
+		}),
+	).toMatchObject({
+		kind: 'file',
+		content: '<!DOCTYPE html><script>alert(1)</script>',
+		contentKind: 'code',
+		language: 'xml',
 	})
 
 	expect(buildPackageFilesView({ files, selectedPath: 'missing' })).toBeNull()
@@ -156,4 +195,20 @@ test('files hrefs use the default-branch fallback and avoid reserved kody ids', 
 			'src/index.ts',
 		),
 	).toBe('/profiles/kentcdodds/packages/devin/files.json?path=src%2Findex.ts')
+	expect(
+		getCommunityPackageRawHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'devin',
+			relativePath: 'docs/logo.png',
+		}),
+	).toBe('/@kentcdodds/devin/raw/main/docs/logo.png')
+	expect(
+		getCommunityPackageRawHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'packages',
+			relativePath: 'docs/logo.png',
+		}),
+	).toBe('/community/listing-1/raw/docs/logo.png')
 })

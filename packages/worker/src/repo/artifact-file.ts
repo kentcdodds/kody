@@ -11,6 +11,11 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
+import {
+	bytesToLatin1String,
+	shouldStoreArtifactBlobAsLatin1,
+	snapshotStringToBytes,
+} from '#universal/package-file-media.ts'
 import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
 
 export async function readArtifactFileAtCommit(input: {
@@ -57,7 +62,10 @@ export async function readFirstArtifactFileAtCommit(input: {
 		for (const filePath of input.filePaths) {
 			const content = snapshot?.files[filePath]
 			if (content != null) {
-				return { path: filePath, bytes: new TextEncoder().encode(content) }
+				return {
+					path: filePath,
+					bytes: snapshotStringToBytes(content, filePath),
+				}
 			}
 		}
 		return null
@@ -198,7 +206,7 @@ export async function readArtifactTreeAtCommit(input: {
 					if ((await entry.type()) !== 'blob') return
 					const content = await entry.content()
 					if (content == null) return
-					files[filepath] = decodeArtifactBlob(content)
+					files[filepath] = decodeArtifactBlob(content, filepath)
 				},
 			})
 			return files
@@ -212,12 +220,15 @@ export async function readArtifactTreeAtCommit(input: {
 	}
 }
 
-function decodeArtifactBlob(content: Uint8Array | string) {
+function decodeArtifactBlob(content: Uint8Array | string, filePath: string) {
 	if (typeof content === 'string') return content
-	// Null-byte blobs stay byte-for-byte (latin1) so two binaries remain
-	// distinguishable. The publish diff still skips a text patch when the
-	// decoded string includes `\0`.
-	if (content.includes(0)) return new TextDecoder('latin1').decode(content)
+	// Null-byte blobs and allowlisted media/binaries stay byte-for-byte
+	// (latin1) so a later `/raw/` preview can recover the original bytes.
+	// The publish diff still skips a text patch when the decoded string
+	// includes `\0`.
+	if (content.includes(0) || shouldStoreArtifactBlobAsLatin1(filePath)) {
+		return bytesToLatin1String(content)
+	}
 	return new TextDecoder().decode(content)
 }
 

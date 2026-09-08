@@ -28,13 +28,24 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
+import {
+	cleanupArtifactReposForPackage,
+	deleteUserScopedArtifactRepo,
+} from '#worker/repo/artifact-repo-cleanup.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
 } from '#worker/repo/entity-sources.ts'
 import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
-import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import {
+	buildEntityRepoId,
+	resolveArtifactSourceHead,
+} from '#worker/repo/artifacts.ts'
+import {
+	forkArtifactRepo,
+	persistForkedArtifactRepoContents,
+	shouldFallbackFromArtifactFork,
+} from '#worker/repo/artifact-repo-fork.ts'
 import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -96,9 +107,11 @@ import {
 	insertCommunityActivityEvent,
 } from './profile-repo.ts'
 import {
+	collectChangedForkFiles,
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
+import { rethrowCommunityForkFailure } from './fork-resource-limit.ts'
 import {
 	deleteCommunitySnapshot,
 	readCommunitySnapshot,
@@ -301,6 +314,24 @@ async function cleanupFailedCommunityFork(input: {
 	sourceId: string
 	packageId: string
 }) {
+	const destDeleted = await deleteUserScopedArtifactRepo({
+		env: input.env,
+		userId: input.userId,
+		repoName: buildEntityRepoId({
+			entityKind: 'package',
+			entityId: input.packageId,
+		}),
+	})
+	if (!destDeleted) {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork dest artifact repo cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+			}),
+		)
+	}
 	await cleanupArtifactReposForPackage({
 		env: input.env,
 		userId: input.userId,
@@ -1199,7 +1230,10 @@ export type PreparedCommunityFork = {
 	packageId: string
 	targetKodyId: string
 	targetName: string
+	expectedPackageScope: string
+	originRepoId: string | null
 	files: Record<string, string>
+	changedFiles: Record<string, string>
 	crossScopeReferences: Array<CrossScopeReference>
 }
 
@@ -1356,9 +1390,13 @@ export async function prepareCommunityFork(
 		)
 	}
 
+	const originFiles = {
+		...files,
+		'package.json': packageJsonContent,
+	}
 	const rewrittenFiles = rewriteForkedPackageSelfReferences({
 		files: {
-			...files,
+			...originFiles,
 			'package.json': rewrittenManifest.content,
 		},
 		originPackageName: listing.name,
@@ -1381,14 +1419,21 @@ export async function prepareCommunityFork(
 		packageId: crypto.randomUUID(),
 		targetKodyId,
 		targetName: rewrittenManifest.targetName,
+		expectedPackageScope: input.expectedPackageScope,
+		originRepoId: source?.repo_id ?? null,
 		files: rewrittenFiles,
+		changedFiles: collectChangedForkFiles({
+			originFiles,
+			rewrittenFiles,
+		}),
 		crossScopeReferences,
 	}
 }
 
 /**
- * Create the Artifacts repo, sync the rewritten snapshot, and insert the
- * inert `community_forks` row. Callers that already hold a prepared fork
+ * Create the Artifacts repo, copy the origin tree at the storage layer when
+ * possible, apply only rewritten files, and insert the inert
+ * `community_forks` row. Callers that already hold a prepared fork
  * (one-click install) can overlap this with `runRepoChecks`.
  */
 export async function persistPreparedCommunityFork(
@@ -1397,25 +1442,77 @@ export async function persistPreparedCommunityFork(
 ): Promise<ForkCommunityListingResult> {
 	const persistStartedAt = Date.now()
 	const serverTiming = options?.serverTiming
-	const ensuredSource = await ensureEntitySource({
-		db: prepared.env.APP_DB,
-		env: prepared.env,
-		userId: prepared.userId,
+	const destRepoId = buildEntityRepoId({
 		entityKind: 'package',
 		entityId: prepared.packageId,
-		requirePersistence: true,
-		serverTiming,
 	})
+	let copiedAtStorageLayer = false
+	const originRepoId = prepared.originRepoId
+	if (originRepoId) {
+		try {
+			await pushServerTiming(serverTiming, 'artifacts-fork', () =>
+				forkArtifactRepo({
+					env: prepared.env,
+					sourceRepoId: originRepoId,
+					targetRepoId: destRepoId,
+				}),
+			)
+			copiedAtStorageLayer = true
+		} catch (error) {
+			if (!shouldFallbackFromArtifactFork(error)) {
+				rethrowCommunityForkFailure(error)
+			}
+		}
+	}
+	let ensuredSource
 	try {
-		await syncArtifactSourceSnapshot({
+		ensuredSource = await ensureEntitySource({
+			db: prepared.env.APP_DB,
 			env: prepared.env,
-			baseUrl: prepared.baseUrl,
 			userId: prepared.userId,
-			sourceId: ensuredSource.id,
-			files: prepared.files,
-			bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+			entityKind: 'package',
+			entityId: prepared.packageId,
+			requirePersistence: true,
 			serverTiming,
 		})
+	} catch (error) {
+		if (copiedAtStorageLayer) {
+			await deleteUserScopedArtifactRepo({
+				env: prepared.env,
+				userId: prepared.userId,
+				repoName: destRepoId,
+			})
+		}
+		rethrowCommunityForkFailure(error)
+	}
+	try {
+		let originCommit = prepared.originCommit
+		if (copiedAtStorageLayer) {
+			const persisted = await persistForkedArtifactRepoContents({
+				env: prepared.env,
+				baseUrl: prepared.baseUrl,
+				userId: prepared.userId,
+				source: ensuredSource,
+				originCommit: prepared.originCommit,
+				expectedPackageScope: prepared.expectedPackageScope,
+				targetKodyId: prepared.targetKodyId,
+				changedFiles: prepared.changedFiles,
+				files: prepared.files,
+				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+				serverTiming,
+			})
+			originCommit = persisted.copiedOriginCommit
+		} else {
+			await syncArtifactSourceSnapshot({
+				env: prepared.env,
+				baseUrl: prepared.baseUrl,
+				userId: prepared.userId,
+				sourceId: ensuredSource.id,
+				files: prepared.files,
+				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+				serverTiming,
+			})
+		}
 
 		const forkId = crypto.randomUUID()
 		await pushServerTiming(serverTiming, 'fork-row', async () => {
@@ -1423,7 +1520,7 @@ export async function persistPreparedCommunityFork(
 				id: forkId,
 				listing_id: prepared.listingId,
 				forker_user_id: prepared.userId,
-				origin_commit: prepared.originCommit,
+				origin_commit: originCommit,
 				forked_package_id: prepared.packageId,
 				forked_source_id: ensuredSource.id,
 				target_kody_id: prepared.targetKodyId,
@@ -1453,7 +1550,7 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			targetKodyId: prepared.targetKodyId,
 			targetName: prepared.targetName,
-			originCommit: prepared.originCommit,
+			originCommit,
 			crossScopeReferences: prepared.crossScopeReferences,
 			filesCount: Object.keys(prepared.files).length,
 			files: prepared.files,
@@ -1466,7 +1563,7 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			packageId: prepared.packageId,
 		})
-		throw error
+		rethrowCommunityForkFailure(error)
 	}
 }
 

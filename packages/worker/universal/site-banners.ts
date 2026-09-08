@@ -1,7 +1,6 @@
 import { parsePlanName, planNames, type PlanName } from '#universal/plans.ts'
 import {
 	resolveSiteBannerImageUrl,
-	rewriteBannerHrefForYoutubeWatch,
 	youtubeThumbPath,
 	youtubeWatchHref,
 	youtubeWatchSampleVideoId,
@@ -380,9 +379,9 @@ export function toSiteBannerView(
 		id: banner.id,
 		title: banner.title,
 		body: banner.body,
-		ctaHref: rewriteBannerHrefForYoutubeWatch(banner.ctaHref),
+		ctaHref: banner.ctaHref,
 		ctaLabel: banner.ctaLabel,
-		secondaryHref: rewriteBannerHrefForYoutubeWatch(banner.secondaryHref),
+		secondaryHref: banner.secondaryHref,
 		secondaryLabel: banner.secondaryLabel,
 		severity: banner.severity,
 		look: lookOverride ?? banner.look,

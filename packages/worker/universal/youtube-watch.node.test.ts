@@ -8,7 +8,6 @@ import {
 	parseYoutubeVideoIdList,
 	parseYoutubeWatchSearch,
 	resolveSiteBannerImageUrl,
-	rewriteBannerHrefForYoutubeWatch,
 	stripYoutubeWatchSearch,
 	youtubeNocookieEmbedUrl,
 	youtubeThumbPath,
@@ -113,19 +112,7 @@ test('allowlist merge includes playlist, extra ids, and banner hrefs', () => {
 	).toEqual([videoId])
 })
 
-test('banner hrefs and images rewrite YouTube hosts to first-party watch/thumb paths', () => {
-	expect(
-		rewriteBannerHrefForYoutubeWatch(
-			`https://www.youtube.com/watch?v=${videoId}`,
-		),
-	).toBe(`/?youtubeId=${videoId}`)
-	expect(rewriteBannerHrefForYoutubeWatch('/blog?youtubeId=abc')).toBe(
-		'/blog?youtubeId=abc',
-	)
-	expect(
-		rewriteBannerHrefForYoutubeWatch(`https://example.test/?video=${videoId}`),
-	).toBe(`https://example.test/?video=${videoId}`)
-	expect(rewriteBannerHrefForYoutubeWatch('/pricing')).toBe('/pricing')
+test('banner images rewrite YouTube hosts to first-party thumb paths', () => {
 	expect(
 		resolveSiteBannerImageUrl({
 			imageUrl: null,
