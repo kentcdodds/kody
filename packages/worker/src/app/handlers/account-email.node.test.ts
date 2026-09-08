@@ -141,6 +141,7 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	setEmailMessageClassification: vi.fn(async () => true),
+	deleteEmailMessage: vi.fn(async () => true),
 	prepare: vi.fn(),
 }))
 
@@ -226,6 +227,8 @@ vi.mock('#worker/email/owner-email-reader.ts', () => ({
 vi.mock('#worker/email/service.ts', () => ({
 	setEmailMessageClassification: (...args: Array<unknown>) =>
 		mockModule.setEmailMessageClassification(...args),
+	deleteEmailMessage: (...args: Array<unknown>) =>
+		mockModule.deleteEmailMessage(...args),
 }))
 
 const { createAccountEmailApiHandler } = await import('./account-email.ts')
@@ -564,10 +567,67 @@ test('email API lists classification filters and classifies inbound messages', a
 		request: new Request('https://example.com/account/email.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'delete' }),
+			body: JSON.stringify({ action: 'unknown' }),
 		}),
 	})
 	expect(invalidActionResponse.status).toBe(400)
+})
+
+test('email API deletes an owned message and refreshes usage without a selection', async () => {
+	mockModule.deleteEmailMessage.mockClear()
+	mockModule.deleteEmailMessage.mockResolvedValueOnce(true)
+	const env = createEnv({ messages: [] })
+	const handler = createAccountEmailApiHandler(env)
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/account/email.json?selected=msg-1',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					action: 'delete',
+					message_id: 'msg-1',
+				}),
+			},
+		),
+	})
+	expect(response.status).toBe(200)
+	expect(mockModule.deleteEmailMessage).toHaveBeenCalledWith({
+		env,
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'msg-1',
+	})
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		messages: [],
+		selectedMessage: null,
+		usage: expect.objectContaining({
+			stored_messages: expect.objectContaining({
+				count: expect.any(Number),
+				limit: 100,
+			}),
+		}),
+	})
+
+	mockModule.deleteEmailMessage.mockResolvedValueOnce(false)
+	const missingResponse = await handler.handler({
+		request: new Request('https://example.com/account/email.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete',
+				message_id: 'foreign-or-missing',
+			}),
+		}),
+	})
+	expect(missingResponse.status).toBe(404)
+	expect(mockModule.deleteEmailMessage).toHaveBeenLastCalledWith({
+		env,
+		db: env.APP_DB,
+		userId: 'stable-user-1',
+		messageId: 'foreign-or-missing',
+	})
 })
 
 test('email API gates unverified accounts and skips mailbox queries', async () => {

@@ -905,7 +905,10 @@ additionally validate the active storage lease, delivery/message identity, inbox
 identity, and expected attachment count in the same SQLite transaction as the
 graph write. Outbound terminal message/event updates are one SQLite transaction.
 Read, classification, explicit-delete, export, and effect-ledger RPCs reject
-cross-owner access and do not fall back to D1.
+cross-owner access and do not fall back to D1. Users delete their own stored
+messages with `emailMessageDelete` or the delete action on `/account/email`,
+both of which call owner-bound `deleteMessageWithBlobs` and then drop any
+`email_outbound_provider_index` row for that message.
 
 **Retention** is self-enforced inside the DO with alarms
 (`mailboxMessageRetentionDays = 365`, `mailboxDeliveryEventRetentionDays = 90`).

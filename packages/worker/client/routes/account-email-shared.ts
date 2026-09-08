@@ -20,6 +20,7 @@ import {
 
 export type PageStatus = 'loading' | 'ready' | 'error'
 export type ClassifyState = 'idle' | 'saving'
+export type DeleteState = 'idle' | 'deleting'
 export type ClassificationFilter = 'all' | 'quarantined'
 
 const accountEmailApiPath = '/account/email.json'

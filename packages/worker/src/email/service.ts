@@ -10,7 +10,10 @@ import { type InboundDelivery } from './inbound-delivery.ts'
 import { type UserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import { mailboxMessageToEmailMessageRecord } from './mailbox-record-mappers.ts'
-import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
+import {
+	deleteOutboundProviderIndexByMessageId,
+	getOutboundProviderIndexRow,
+} from './outbound-provider-index.ts'
 import { recordBoundedSystemEmailRejection } from './system-inbound-delivery-store.ts'
 import {
 	recordEmailReportingEvent,
@@ -483,6 +486,43 @@ export async function setEmailMessageClassification(input: {
 		updatedAt: input.now ?? nowIso(),
 	})
 	return result.status === 'accepted'
+}
+
+/**
+ * Delete one stored user-mailbox message (metadata + canonical blobs) owned by
+ * `userId`. Missing and foreign ids are indistinguishable from the owner's
+ * Mailbox and return false. System-inbox rows are not on this path.
+ */
+export async function deleteEmailMessage(input: {
+	env: MailboxEnv
+	db: D1Database
+	userId: string
+	messageId: string
+}) {
+	if (input.userId === systemEmailOwnerId) {
+		throw new Error(
+			'System inbox messages cannot be deleted through the user email store.',
+		)
+	}
+	await assertUserEmailGraphAuthority({
+		db: input.db,
+		ownerId: input.userId,
+	})
+	const result = await mailboxRpc({
+		env: input.env,
+		userId: input.userId,
+	}).deleteMessageWithBlobs({
+		ownerId: input.userId,
+		messageId: input.messageId,
+	})
+	if (result.status === 'missing') {
+		return false
+	}
+	await deleteOutboundProviderIndexByMessageId({
+		db: input.db,
+		messageId: input.messageId,
+	})
+	return true
 }
 
 /**

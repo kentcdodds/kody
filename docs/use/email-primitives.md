@@ -71,6 +71,10 @@ Use the MCP `email` domain:
   filters and limit caps as `emailMessageList`.
 - `emailMessageGet` returns parsed bodies, headers, thread metadata, and
   attachment metadata.
+- `emailMessageDelete` deletes one stored inbound or outbound message owned by
+  the signed-in user. Missing and foreign ids fail. Deleting frees a
+  `stored_email_messages` slot so new inbound mail can be accepted again. The
+  same delete is available on `/account/email`.
 - `emailMessageClassify` reclassifies a stored inbound message as `accepted` or
   `quarantined`. Reclassification never retroactively dispatches package
   subscription events.
@@ -118,7 +122,11 @@ Inbound storage is quota-gated per user:
   per attempt — they are already bounded by the daily receive quota and the
   detail helps debug a misbehaving sender.
 - Outbound sending stays limited by `email_sends_per_day` for plan users.
-- Check where you stand with `usageGet`.
+- Check where you stand with `usageGet`. When `stored_email_messages` is at the
+  cap, inbound mail is rejected at routing and `email.message.received`
+  subscriptions do not fire. Delete messages you no longer need with
+  `emailMessageDelete` or from `/account/email` to free slots. Mailbox retention
+  does not keep Free-tier inboxes under the stored-message cap.
 
 ## Safety model
 
