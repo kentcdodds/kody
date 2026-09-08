@@ -214,6 +214,50 @@ test('addMcpServer forwards bearer tokens as Authorization headers to the hub', 
 	expect(JSON.stringify(insertedRow)).not.toContain('secret-token')
 })
 
+test('addMcpServer persists lastError when discover times out still connected', async () => {
+	clearEnabledMcpServerRefsCacheForTests()
+	mockModule.getMcpServerSettingRowByName.mockResolvedValue(null)
+	mockModule.insertMcpServerSettingRow.mockResolvedValue(undefined)
+	mockModule.updateMcpServerSettingLastErrorRow.mockResolvedValue(true)
+	const lastError = {
+		message:
+			"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-add).",
+		phase: 'server/discover' as const,
+		httpStatus: null,
+		httpBodySnippet: null,
+		mcpEndpoint: 'https://mcp.example.com/mcp',
+		resource: null,
+		authServer: null,
+		attemptId: 'attempt-add',
+		at: '2026-09-08T00:00:00.000Z',
+	}
+	mockModule.hubClient.addServer.mockResolvedValue({
+		serverId: 'ignored',
+		state: 'connected',
+		authUrl: null,
+		error: lastError.message,
+		toolCount: 0,
+		lastError,
+	})
+
+	const result = await addMcpServer({
+		env: { APP_DB: {} } as Env,
+		userId: 'user-1',
+		name: 'posthog',
+		url: 'https://mcp.example.com/mcp',
+		baseUrl: 'https://kody.codes',
+	})
+
+	expect(result.connection.lastError?.phase).toBe('server/discover')
+	expect(result.setting.lastError).toContain("tool discovery didn't finish")
+	expect(mockModule.updateMcpServerSettingLastErrorRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-1',
+			lastError: expect.stringContaining('"phase":"server/discover"'),
+		}),
+	)
+})
+
 test('MCP server usage lock hides the server from execute and grants a package', async () => {
 	clearEnabledMcpServerRefsCacheForTests()
 	const env = { APP_DB: {} } as Env

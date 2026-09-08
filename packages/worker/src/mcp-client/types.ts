@@ -73,6 +73,7 @@ export type McpServerConnectResult = {
 	authUrl: string | null
 	error: string | null
 	toolCount: number
+	lastError?: McpServerLastError | null
 }
 
 export type McpServerOAuthCallbackOutcome = {

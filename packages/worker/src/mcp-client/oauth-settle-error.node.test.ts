@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	buildIncompleteDiscoverLastError,
 	buildMcpServerLastError,
 	inferMcpOAuthSettlePhase,
 	parseHttpStatusFromMcpError,
@@ -57,6 +58,30 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 			error: 'Protected resource metadata HTTP 401',
 		}),
 	).toBe('resource metadata')
+	expect(
+		buildIncompleteDiscoverLastError({
+			state: 'connected',
+			mcpEndpoint: 'https://mcp.example/mcp',
+			attemptId: 'attempt-discover',
+		})?.phase,
+	).toBe('server/discover')
+	expect(
+		buildIncompleteDiscoverLastError({
+			state: 'discovering',
+			mcpEndpoint: 'https://mcp.example/mcp',
+			attemptId: 'attempt-tools',
+		}),
+	).toMatchObject({
+		phase: 'tools/list',
+		attemptId: 'attempt-tools',
+		mcpEndpoint: 'https://mcp.example/mcp',
+	})
+	expect(
+		buildIncompleteDiscoverLastError({
+			state: 'ready',
+			mcpEndpoint: 'https://mcp.example/mcp',
+		}),
+	).toBeNull()
 
 	const lastError = buildMcpServerLastError({
 		state: 'connected',

@@ -168,6 +168,33 @@ export function formatMcpOAuthSettleErrorMessage(input: {
 	return `${lead}.`
 }
 
+export function isIncompleteDiscoverState(
+	state: McpServerConnectionState,
+): boolean {
+	return state === 'connected' || state === 'discovering'
+}
+
+export function buildIncompleteDiscoverLastError(input: {
+	state: McpServerConnectionState
+	authUrl?: string | null
+	error?: string | null
+	mcpEndpoint?: string | null
+	resource?: string | null
+	authServer?: string | null
+	attemptId?: string | null
+}): McpServerLastError | null {
+	if (!isIncompleteDiscoverState(input.state)) return null
+	return buildMcpServerLastError({
+		state: input.state,
+		authUrl: input.authUrl ?? null,
+		error: input.error,
+		mcpEndpoint: input.mcpEndpoint,
+		resource: input.resource,
+		authServer: input.authServer,
+		attemptId: input.attemptId?.trim() || crypto.randomUUID(),
+	})
+}
+
 export function buildMcpServerLastError(input: {
 	state: McpServerConnectionState
 	authUrl: string | null

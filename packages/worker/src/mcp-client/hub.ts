@@ -12,7 +12,10 @@ import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
-import { readOAuthDiscoveryUrls } from './oauth-settle-error.ts'
+import {
+	buildIncompleteDiscoverLastError,
+	readOAuthDiscoveryUrls,
+} from './oauth-settle-error.ts'
 import {
 	outboundMcpClientOptions,
 	reconnectMcpServerOptions,
@@ -35,6 +38,7 @@ import {
 	type McpClientHubSnapshot,
 	type McpServerConnectResult,
 	type McpServerConnectionState,
+	type McpServerLastError,
 	type McpServerOAuthCallbackOutcome,
 	type McpServerSnapshot,
 	type McpServerToolDescriptor,
@@ -235,15 +239,13 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.clearSessionBeforeConnect(input.serverId)
 		const connected = await this.manager.connectToServer(input.serverId)
 		if (connected.state === 'connected') {
-			await this.manager.discoverIfConnected(input.serverId, {
-				timeoutMs: discoverTimeoutMs,
-			})
+			await this.runDiscoverIfConnected(input.serverId)
 		}
 		await this.observeServer({
 			serverId: input.serverId,
 			serverName: input.name,
 		})
-		return this.buildConnectResult(input.serverId)
+		return this.finalizeConnectResult(input.serverId)
 	}
 
 	/**
@@ -272,7 +274,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return this.buildConnectResult(input.serverId)
+		return this.finalizeConnectResult(input.serverId)
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -283,9 +285,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
-		await this.manager.discoverIfConnected(input.serverId, {
-			timeoutMs: discoverTimeoutMs,
-		})
+		await this.runDiscoverIfConnected(input.serverId)
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === input.serverId)
@@ -295,7 +295,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return this.buildConnectResult(input.serverId)
+		return this.finalizeConnectResult(input.serverId)
 	}
 
 	async removeServer(input: { serverId: string }): Promise<void> {
@@ -554,9 +554,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.clearSessionBeforeConnect(input.serverId)
 		const result = await this.manager.connectToServer(input.serverId)
 		if (result.state === 'connected') {
-			await this.manager.discoverIfConnected(input.serverId, {
-				timeoutMs: discoverTimeoutMs,
-			})
+			return (await this.runDiscoverIfConnected(input.serverId)).result
 		}
 		return this.buildConnectResult(input.serverId)
 	}
@@ -581,9 +579,10 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
 	 * the live connection never reached `ready`.
 	 */
-	private async discoverAfterOAuthEstablish(
-		serverId: string,
-	): Promise<McpServerConnectResult> {
+	private async runDiscoverIfConnected(serverId: string): Promise<{
+		result: McpServerConnectResult
+		lastError: McpServerLastError | null
+	}> {
 		let discoverError: string | null = null
 		try {
 			await this.manager.discoverIfConnected(serverId, {
@@ -592,11 +591,70 @@ class McpClientHubBase extends DurableObject<Env> {
 		} catch (error) {
 			discoverError = error instanceof Error ? error.message : String(error)
 		}
+		return this.applyIncompleteDiscoverFailure(serverId, discoverError)
+	}
+
+	private finalizeConnectResult(serverId: string): McpServerConnectResult {
+		return this.applyIncompleteDiscoverFailure(serverId, null).result
+	}
+
+	private applyIncompleteDiscoverFailure(
+		serverId: string,
+		discoverError: string | null,
+	): {
+		result: McpServerConnectResult
+		lastError: McpServerLastError | null
+	} {
 		const result = this.buildConnectResult(serverId)
-		return {
-			...result,
-			error: result.error ?? discoverError,
+		const connection = this.manager.mcpConnections[serverId]
+		const alreadyStamped = Boolean(connection?.connectionError)
+		const error = alreadyStamped ? null : (result.error ?? discoverError)
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		const lastError = buildIncompleteDiscoverLastError({
+			state: result.state,
+			authUrl: result.authUrl,
+			error,
+			mcpEndpoint: row?.server_url ?? null,
+		})
+		if (!lastError) {
+			return {
+				result: {
+					...result,
+					error: result.error ?? discoverError,
+					lastError: null,
+				},
+				lastError: null,
+			}
 		}
+		if (connection && !alreadyStamped) {
+			connection.connectionError = lastError.message
+			console.warn('mcp discover timeout incomplete', {
+				attemptId: lastError.attemptId,
+				serverId,
+				phase: lastError.phase,
+				state: result.state,
+				mcpEndpoint: lastError.mcpEndpoint,
+			})
+		}
+		const message = alreadyStamped
+			? (result.error ?? lastError.message)
+			: lastError.message
+		return {
+			result: {
+				...this.buildConnectResult(serverId),
+				error: message,
+				lastError: { ...lastError, message },
+			},
+			lastError: { ...lastError, message },
+		}
+	}
+
+	private async discoverAfterOAuthEstablish(
+		serverId: string,
+	): Promise<McpServerConnectResult> {
+		return (await this.runDiscoverIfConnected(serverId)).result
 	}
 
 	private async resolveOAuthCallbackOutcome(input: {
@@ -686,9 +744,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.clearSessionBeforeConnect(serverId)
 		const result = await this.manager.connectToServer(serverId)
 		if (result.state === 'connected') {
-			await this.manager.discoverIfConnected(serverId, {
-				timeoutMs: discoverTimeoutMs,
-			})
+			return (await this.runDiscoverIfConnected(serverId)).result
 		}
 		return this.buildConnectResult(serverId)
 	}

@@ -300,6 +300,13 @@ async function handleConnectionAction(input: {
 			id: setting.id,
 			lastError: null,
 		}).catch(() => {})
+	} else if (result.lastError) {
+		await setMcpServerLastError({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			id: setting.id,
+			lastError: result.lastError,
+		}).catch(() => {})
 	}
 	const payload = await loadAccountMcpServersData({
 		env: input.env,

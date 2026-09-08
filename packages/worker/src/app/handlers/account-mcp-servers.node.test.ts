@@ -310,6 +310,46 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
 	})
 
+	mockModule.reconnectServer.mockResolvedValueOnce({
+		serverId: 'server-1',
+		state: 'connected',
+		authUrl: null,
+		error:
+			"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-reconnect).",
+		toolCount: 0,
+		lastError: {
+			message:
+				"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-reconnect).",
+			phase: 'server/discover',
+			httpStatus: null,
+			httpBodySnippet: null,
+			mcpEndpoint: 'https://mcp.example.com/mcp',
+			resource: null,
+			authServer: null,
+			attemptId: 'attempt-reconnect',
+			at: '2026-09-08T00:00:00.000Z',
+		},
+	})
+	const hungReconnect = await handler.handler({
+		request: new Request('https://example.com/account/mcp-servers.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'reconnect', id: 'server-1' }),
+		}),
+		params: {},
+	} as never)
+	expect(hungReconnect.status).toBe(200)
+	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			id: 'server-1',
+			lastError: expect.objectContaining({
+				phase: 'server/discover',
+				attemptId: 'attempt-reconnect',
+			}),
+		}),
+	)
+
 	const disableResponse = await handler.handler({
 		request: new Request('https://example.com/account/mcp-servers.json', {
 			method: 'POST',

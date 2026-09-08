@@ -94,10 +94,14 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    `mcp_server_settings.last_error` and shown under Status. The account UI maps
    `connected` / `discovering` to "Discovering tools" only while that work is
    still in flight; when `last_error` is present it says "Tool discovery didn't
-   finish" instead of echoing the raw `"connected"` state. Used or missing OAuth
-   `state` on the callback recover without surfacing an internal state error:
-   the hub restarts authorization when needed. A Back/replay while the
-   connection is still `connected`, `discovering`, or `connecting` keeps the
+   finish" instead of echoing the raw `"connected"` state. After
+   `discoverIfConnected` times out still on `connected` or `discovering` (add,
+   reconnect, refresh, or OAuth settle), the hub treats that as a failed
+   discover and writes the same durable `last_error` (`server/discover` or
+   `tools/list`, attempt id, MCP URL) so Status cannot stay silent. Used or
+   missing OAuth `state` on the callback recover without surfacing an internal
+   state error: the hub restarts authorization when needed. A Back/replay while
+   the connection is still `connected`, `discovering`, or `connecting` keeps the
    existing tokens and retries discovery when the transport is `connected`, but
    it does not report `auth=success` or clear `last_error` until the connection
    is `ready`. Origin and redirect-URI rejection messages are enriched with

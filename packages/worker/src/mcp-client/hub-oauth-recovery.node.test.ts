@@ -38,8 +38,8 @@ type FakeManager = {
 	rows: Array<FakeServerRow>
 	mcpConnections: Record<string, FakeConnection>
 	connectCount: number
-	connectBehavior: 'oauth' | 'ready' | 'disconnected'
-	connectBehaviors: Array<'oauth' | 'ready' | 'disconnected'>
+	connectBehavior: 'oauth' | 'ready' | 'disconnected' | 'connected'
+	connectBehaviors: Array<'oauth' | 'ready' | 'disconnected' | 'connected'>
 	registerFailuresRemaining: number
 	callbackMatches: boolean
 	callbackResult: {
@@ -116,8 +116,9 @@ vi.mock('agents/mcp/client', () => ({
 		rows: Array<FakeServerRow> = []
 		mcpConnections: Record<string, FakeConnection> = {}
 		connectCount = 0
-		connectBehavior: 'oauth' | 'ready' | 'disconnected' = 'oauth'
-		connectBehaviors: Array<'oauth' | 'ready' | 'disconnected'> = []
+		connectBehavior: 'oauth' | 'ready' | 'disconnected' | 'connected' = 'oauth'
+		connectBehaviors: Array<'oauth' | 'ready' | 'disconnected' | 'connected'> =
+			[]
 		registerFailuresRemaining = 0
 		callbackMatches = true
 		callbackResult = {
@@ -191,6 +192,11 @@ vi.mock('agents/mcp/client', () => ({
 				this.connectBehaviors.shift() ?? this.connectBehavior
 			if (connectBehavior === 'ready') {
 				connection.connectionState = 'ready'
+				connection.connectionError = null
+				return { state: 'connected' }
+			}
+			if (connectBehavior === 'connected') {
+				connection.connectionState = 'connected'
 				connection.connectionError = null
 				return { state: 'connected' }
 			}
@@ -782,4 +788,51 @@ test('replayed unusable callback after incomplete settle reports lastError inste
 	expect(manager.connectCount).toBe(0)
 	expect(manager.rows[0]?.client_id).toBe('client-1')
 	expect(values.get(tokenKey)).toEqual({ access_token: 'still-valid' })
+})
+
+test('add, reconnect, and refresh treat a discover timeout as a durable lastError', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	manager.connectBehavior = 'connected'
+
+	const added = await hub.addServer({
+		serverId: 'server-1',
+		name: 'mediarss',
+		url: 'https://mediarss.example/mcp',
+		callbackUrl,
+	})
+	expect(added.state).toBe('connected')
+	expect(added.lastError?.phase).toBe('server/discover')
+	expect(added.lastError?.mcpEndpoint).toBe('https://mediarss.example/mcp')
+	expect(added.lastError?.attemptId).toBeTruthy()
+	expect(added.error).toContain("tool discovery didn't finish")
+	expect(added.error).toContain('phase server/discover')
+	expect(manager.mcpConnections['server-1']?.connectionError).toBe(added.error)
+
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'discovering'
+	connection.connectionError = null
+	const refreshed = await hub.refreshServer({ serverId: 'server-1' })
+	expect(refreshed.state).toBe('discovering')
+	expect(refreshed.lastError?.phase).toBe('tools/list')
+	expect(refreshed.error).toContain("tool discovery didn't finish")
+	expect(refreshed.error).toContain('phase tools/list')
+
+	connection.connectionState = 'disconnected'
+	connection.connectionError = null
+	manager.connectBehavior = 'connected'
+	const reconnected = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(reconnected.state).toBe('connected')
+	expect(reconnected.lastError?.phase).toBe('server/discover')
+	expect(reconnected.lastError?.mcpEndpoint).toBe(
+		'https://mediarss.example/mcp',
+	)
 })
