@@ -700,6 +700,69 @@ function filterChromeExtensionCallStackExceededSentryEvent<
 }
 
 /**
+ * Chrome extensions that inject page-context executors sometimes throw a
+ * minified TypeError reading `M_ID` on an undefined object. Sentry's generic
+ * handler captures it on the host page, but every real frame is
+ * `chrome-extension://…/executors/…`. Signature from production issue
+ * 7717003182 / KODY-74 on `/` (`Cannot read properties of undefined (reading
+ * 'M_ID')`). Kody never references `M_ID`.
+ *
+ * Match is intentionally narrow: this exact Chromium TypeError wording
+ * (optional `TypeError:` preface; older "property 'M_ID' of undefined" form)
+ * AND every reported stack frame URL is `chrome-extension:` (anonymous /
+ * native frames allowed). Never blanket-drop undefined-property TypeErrors
+ * from app code or mixed stacks that include first-party frames.
+ */
+const chromeExtensionUndefinedMIdMessage =
+	/^(?:TypeError:\s*)?(?:Cannot read properties of undefined \(reading ['"]M_ID['"]\)|Cannot read property ['"]M_ID['"] of undefined)\.?$/
+
+function isChromeExtensionUndefinedMIdMessage(message: string) {
+	return chromeExtensionUndefinedMIdMessage.test(message.trim())
+}
+
+function isChromeExtensionUndefinedMIdError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionUndefinedMIdMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionUndefinedMIdMessage(error.message)
+}
+
+function isChromeExtensionUndefinedMIdSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasMIdMessage =
+		isChromeExtensionUndefinedMIdError(originalException) ||
+		event.exception?.values?.some(
+			(value) =>
+				value.type === 'TypeError' &&
+				typeof value.value === 'string' &&
+				isChromeExtensionUndefinedMIdMessage(value.value),
+		) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isChromeExtensionUndefinedMIdMessage(message),
+		)
+	if (!hasMIdMessage) return false
+	const frameUrls = sentryEventStackFrameUrls(event)
+	if (frameUrls.length === 0) return false
+	if (!frameUrls.some(isChromeExtensionStackFrameUrl)) return false
+	return frameUrls.every(isChromeExtensionOrAnonymousStackFrameUrl)
+}
+
+function filterChromeExtensionUndefinedMIdSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isChromeExtensionUndefinedMIdSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
  * Twitter/X iOS in-app browser chrome (`updateFooterPositions` /
  * `updateGapFiller`) references a host-page `CONFIG` global that Kody never
  * defines. WebKit reports it as an unhandled `ReferenceError` attributed to
@@ -1228,6 +1291,12 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 			event,
 			originalException,
 		) === null
+	) {
+		return null
+	}
+	if (
+		filterChromeExtensionUndefinedMIdSentryEvent(event, originalException) ===
+		null
 	) {
 		return null
 	}

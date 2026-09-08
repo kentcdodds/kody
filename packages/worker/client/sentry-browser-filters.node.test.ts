@@ -488,6 +488,123 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			exception: {
 				values: [
 					{
+						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'M_ID')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'E',
+									filename:
+										'chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js',
+								},
+								{
+									function: 'Y',
+									abs_path:
+										'chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [
+						{
+							type: 'TypeError',
+							value: "Cannot read property 'M_ID' of undefined",
+							stacktrace: {
+								frames: [
+									{
+										function: 'E',
+										filename: 'chrome-extension://abcd/executors/200.js',
+									},
+								],
+							},
+						},
+					],
+				},
+			},
+			new TypeError("Cannot read property 'M_ID' of undefined"),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'M_ID')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'readSession',
+									filename: 'https://kody.codes/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"TypeError: Cannot read properties of undefined (reading 'M_ID')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'Y',
+									filename:
+										'chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js',
+								},
+								{
+									function: 'boot',
+									filename: 'https://kody.codes/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'url')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'Y',
+									filename:
+										'chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
 						type: 'ReferenceError',
 						value: 'CONFIG is not defined',
 						stacktrace: {
