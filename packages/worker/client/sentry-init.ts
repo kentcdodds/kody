@@ -37,7 +37,9 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// found", MetaMask inpage connect failures, MetaMask plain-object
 		// "wallet must has at least one account" rejections, Chrome
 		// extension "Client has been destroyed" with exclusively
-		// chrome-extension frames, Twitter/X in-app browser chrome `CONFIG`
+		// chrome-extension frames, Chrome extension TypeError reading
+		// `M_ID` with exclusively chrome-extension frames, Twitter/X in-app
+		// browser chrome `CONFIG`
 		// ReferenceErrors / `sendScrollEvent`→ `window.webkit.messageHandlers`
 		// TypeErrors, injected unguarded `meta[property='og:type']` probes
 		// from `global code`, and optional Shiki `syntax-highlight-core`
@@ -51,7 +53,8 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// KODY-CLOUDFLARE-64 / KODY-6Z /
 		// issues 7639685398, 7648833360, 7648833403, 7653117289, 7655189301,
 		// 7658961865, 7659616372, 7660258027, 7662064169, 7677729361,
-		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937.
+		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937,
+		// 7717003182.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},
