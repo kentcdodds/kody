@@ -81,6 +81,16 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(session.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
 	expect(session.headers.get('Cache-Control')).toBe('no-store')
 
+	const dismissed = await workerFetch(
+		new Request(pricingUrl, {
+			headers: {
+				Cookie: 'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
+			},
+		}),
+	)
+	expect(dismissed.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
+	expect(dismissed.headers.get('Cache-Control')).toBe('no-store')
+
 	const authorized = await workerFetch(
 		new Request(pricingUrl, {
 			headers: { Authorization: 'Bearer not-a-token' },

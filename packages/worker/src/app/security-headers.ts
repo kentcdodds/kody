@@ -39,6 +39,10 @@ import { scrollRestorationInlineScriptCspHash } from '#universal/router-scroll-r
  *   `https://cloudflareinsights.com` (`connect-src`).
  * - Cloudflare Turnstile loads its explicit-render API and challenge iframe
  *   from `https://challenges.cloudflare.com` when both keys are configured.
+ * - `https://www.youtube-nocookie.com` in `frame-src` is the privacy-enhanced
+ *   YouTube player used by the site-wide `/?youtubeId=` overlay. Thumbnails stay
+ *   first-party via `/youtube-thumb/:videoId`; do not open `img-src` to
+ *   `i.ytimg.com`.
  * - `worker-src 'self' blob:` exists for Sentry Session Replay's compression
  *   Web Worker, which is created from a blob URL. Spawning a blob worker
  *   already requires script execution, which `script-src 'self'` still gates,
@@ -55,7 +59,7 @@ const contentSecurityPolicy = [
 	"style-src 'self' 'unsafe-inline'",
 	`script-src 'self' ${scrollRestorationInlineScriptCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,
 	"connect-src 'self' https://cloudflareinsights.com https://challenges.cloudflare.com",
-	'frame-src https://challenges.cloudflare.com',
+	'frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com',
 	"worker-src 'self' blob:",
 ].join('; ')
 

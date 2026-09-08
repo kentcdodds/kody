@@ -129,6 +129,18 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 		resolveAppPageCacheControl({
 			pathname: '/',
 			session: null,
+			request: request(
+				'https://example.com/',
+				'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
+			),
+			responseSetsCookie: false,
+		}),
+	).toEqual({ cacheControl: 'no-store' })
+
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/',
+			session: null,
 			request: request('https://example.com/', 'kody_session=stale'),
 			responseSetsCookie: false,
 		}),

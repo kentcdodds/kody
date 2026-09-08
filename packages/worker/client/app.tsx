@@ -44,6 +44,8 @@ import { isProfilePathname } from '#universal/profile-path.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { SiteBanner } from './site-banner.tsx'
+import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { WaitlistBanner } from './waitlist-banner.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
 import {
@@ -269,6 +271,7 @@ export function App(handle: Handle<AppProps>) {
 						>
 							Skip to content
 						</a>
+						<SiteBanner snapshot={handle.props.loaderData?.siteBanner} />
 						{hideWaitlistBanner ? null : <WaitlistBanner />}
 						{isAuthShellPath ? null : (
 							<SiteHeader
@@ -389,6 +392,9 @@ export function App(handle: Handle<AppProps>) {
 							<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
 						)}
 						<Toaster />
+						<YouTubeWatchOverlay
+							snapshot={handle.props.loaderData?.youtubeWatch}
+						/>
 					</div>
 				</AppSessionProvider>
 			</AppLoaderDataProvider>

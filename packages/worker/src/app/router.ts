@@ -22,6 +22,12 @@ import {
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
 import {
+	createAdminBannersApiHandler,
+	createAdminBannersHandler,
+} from '#app/handlers/admin-banners.ts'
+import { createSiteBannerDismissHandler } from '#app/handlers/site-banner-dismiss.ts'
+import { createYoutubeThumbHandler } from '#app/handlers/youtube-thumb.ts'
+import {
 	createAdminPlatformIntegrationsApiHandler,
 	createAdminPlatformIntegrationsHandler,
 } from '#app/handlers/admin-platform-integrations.ts'
@@ -339,6 +345,8 @@ export function createAppRouter(env: Env) {
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
 			waitingList: createWaitingListHandler(env),
+			siteBannerDismissPost: createSiteBannerDismissHandler(env),
+			youtubeThumb: createYoutubeThumbHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
@@ -450,6 +458,9 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
+			adminBanners: createAdminBannersHandler(env),
+			adminBannersApi: createAdminBannersApiHandler(env),
+			adminBannersApiPost: createAdminBannersApiHandler(env),
 			adminPlatformIntegrations: createAdminPlatformIntegrationsHandler(env),
 			adminPlatformIntegrationNew: createAdminPlatformIntegrationsHandler(env),
 			adminPlatformIntegrationDetail:

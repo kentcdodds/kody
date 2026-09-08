@@ -45,6 +45,11 @@ import {
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
 import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
+import {
+	type SiteBannerRecord,
+	type SiteBannerView,
+	type SiteBannerViewer,
+} from '#universal/site-banners.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -399,6 +404,23 @@ export type AdminReservedUsernamesLoaderData = {
 export type AdminFeatureFlagsLoaderData = {
 	ok: true
 	featureFlags: Array<AdminFeatureFlag>
+}
+
+export type AdminBannersLoaderData = {
+	ok: true
+	banners: Array<SiteBannerRecord>
+	savedBannerId?: string
+}
+
+export type SiteBannerLoaderData = {
+	banner: SiteBannerView | null
+	candidates: Array<SiteBannerRecord>
+	dismissedIds: Array<string>
+	viewer: SiteBannerViewer
+}
+
+export type YoutubeWatchLoaderData = {
+	allowedVideoIds: Array<string>
 }
 
 /**
@@ -1865,6 +1887,9 @@ export type AppLoaderData = {
 	adminInvites?: AdminInvitesLoaderData
 	adminReservedUsernames?: AdminReservedUsernamesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
+	adminBanners?: AdminBannersLoaderData
+	siteBanner?: SiteBannerLoaderData
+	youtubeWatch?: YoutubeWatchLoaderData
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData
 	adminCodemods?: AdminCodemodsLoaderData

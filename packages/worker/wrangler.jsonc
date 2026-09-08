@@ -570,6 +570,9 @@
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",
+				// Public playlist whose latest Atom-feed videos may open in
+				// the site-wide `/?youtubeId=` overlay. Tests leave this unset.
+				"YOUTUBE_ALLOWED_PLAYLIST_IDS": "PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY",
 				// Public (non-secret) Stripe Price ids for production
 				// subscriptions. Coupled to the live Stripe account: if a
 				// price is regenerated in Stripe, update the value in the
@@ -952,6 +955,7 @@
 				"SENTRY_ENVIRONMENT": "preview",
 				"SIGNUP_MODE": "invite",
 				"ARTIFACTS_NAMESPACE": "preview",
+				"YOUTUBE_ALLOWED_PLAYLIST_IDS": "PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY",
 				"DR_EXPORT_ENABLED": "",
 				"DR_BACKUP_ACCOUNT_ID": "",
 				"DR_BACKUP_BUCKET_NAME": "",
