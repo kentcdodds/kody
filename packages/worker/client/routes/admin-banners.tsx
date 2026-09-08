@@ -16,7 +16,7 @@ import {
 	descriptionCss,
 	getGhostButtonCss,
 } from '#universal/styles/style-primitives.ts'
-import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
@@ -238,16 +238,20 @@ export function AdminBannersRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				<div
-					mix={css({
-						display: 'grid',
-						gap: spacing.lg,
-						gridTemplateColumns: 'minmax(16rem, 18rem) minmax(0, 1fr)',
-						alignItems: 'start',
-						[mq.tablet]: {
-							gridTemplateColumns: 'minmax(0, 1fr)',
-						},
-					})}
+				<AdminBannerForm
+					draft={draft}
+					updatedAt={
+						banners.find((banner) => banner.id === draft.id)?.updatedAt ?? null
+					}
+					isMutating={actionState !== 'idle'}
+					actionState={actionState}
+					deleteCheck={deleteCheck}
+					onDraftChange={(next) => {
+						draft = next
+						handle.update()
+					}}
+					onSave={handleSaveSubmit}
+					onDelete={handleDelete}
 				>
 					<section mix={css(cardCss)}>
 						<div
@@ -346,23 +350,7 @@ export function AdminBannersRoute(handle: Handle) {
 							</ul>
 						)}
 					</section>
-					<AdminBannerForm
-						draft={draft}
-						updatedAt={
-							banners.find((banner) => banner.id === draft.id)?.updatedAt ??
-							null
-						}
-						isMutating={actionState !== 'idle'}
-						actionState={actionState}
-						deleteCheck={deleteCheck}
-						onDraftChange={(next) => {
-							draft = next
-							handle.update()
-						}}
-						onSave={handleSaveSubmit}
-						onDelete={handleDelete}
-					/>
-				</div>
+				</AdminBannerForm>
 			</AccountManagementShell>
 		)
 	}

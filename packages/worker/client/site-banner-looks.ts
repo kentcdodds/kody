@@ -24,6 +24,8 @@ export type SiteBannerSeverityTone = {
 }
 
 export const siteBannerStackMq = '@media (max-width: 720px)'
+export const siteBannerStageContainerName = 'siteBannerStage'
+export const siteBannerStageStackAt = `@container ${siteBannerStageContainerName} (max-width: 720px)`
 
 export function siteBannerSeverityTone(
 	severity: SiteBannerSeverity,

@@ -7,10 +7,11 @@ not jump after hydration.
 
 ## Surfaces
 
-- **Admin UI**: `/admin/banners` (+ `/admin/banners.json` API). The editor _is_
-  the banner: title, body, and button labels/hrefs edit in the live look. Switch
-  A/B/C to restyle before save. Targeting, schedule, YouTube paste, and enable
-  stay under the strip.
+- **Admin UI**: `/admin/banners` (+ `/admin/banners.json` API). A full-width
+  stage shows the live look: title, body, and button labels edit in the chrome.
+  CTA/secondary URLs and dismiss sit on a rail under the band. Switch A/B/C to
+  restyle before save. Targeting, schedule, YouTube paste, and enable stay in
+  the card under the stage.
 - **MCP**: `adminBannerList`, `adminBannerSave`, `adminBannerDelete`
   (`requiredRole: 'admin'`)
 - **Viewer dismiss**: `POST /site-banner-dismiss.json`
