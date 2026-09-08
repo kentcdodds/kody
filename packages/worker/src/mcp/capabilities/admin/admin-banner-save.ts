@@ -7,8 +7,8 @@ import { saveSiteBanner } from '#worker/site-banners/service.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	resolveActingAdminUserId,
 } from './admin-shared.ts'
-import { resolveActingAdminUserId } from './feature-flag-shared.ts'
 import {
 	siteBannerRecordSchema,
 	siteBannerSaveInputSchema,
