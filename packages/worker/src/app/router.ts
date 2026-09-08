@@ -111,6 +111,10 @@ import {
 	createCommunityPackageTreeHandler,
 } from '#app/handlers/package-files.ts'
 import {
+	createCommunityDetailRawHandler,
+	createCommunityPackageRawHandler,
+} from '#app/handlers/package-files-raw.ts'
+import {
 	createAccountPasskeysApiHandler,
 	createAccountPasskeysHandler,
 } from '#app/handlers/account-passkeys.ts'
@@ -494,11 +498,13 @@ export function createAppRouter(env: Env) {
 			communityDetailApi: createCommunityDetailApiHandler(env),
 			communityDetailFiles: createCommunityDetailFilesHandler(env),
 			communityDetailFilesApi: createCommunityDetailFilesApiHandler(env),
+			communityDetailRaw: createCommunityDetailRawHandler(env),
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
 			communityPackageSettings: createCommunityPackageSettingsHandler(env),
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
+			communityPackageRaw: createCommunityPackageRawHandler(env),
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),

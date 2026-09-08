@@ -43,6 +43,14 @@ test('router prefers static nested paths and package files over dynamic siblings
 		createStubHandler('community-files'),
 	)
 	router.get(
+		routePattern(routes.communityPackageRaw),
+		createStubHandler('community-raw'),
+	)
+	router.get(
+		routePattern(routes.communityDetailRaw),
+		createStubHandler('listing-uuid-raw'),
+	)
+	router.get(
 		routePattern(routes.communityPackageApprovePublish),
 		createStubHandler('community-approve-publish'),
 	)
@@ -112,6 +120,24 @@ test('router prefers static nested paths and package files over dynamic siblings
 			)
 		).text(),
 	).toBe('community-files')
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/@kentcdodds/devin/raw/main/docs/logo.png',
+				),
+			)
+		).text(),
+	).toBe('community-raw')
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/raw/docs/logo.png',
+				),
+			)
+		).text(),
+	).toBe('listing-uuid-raw')
 	expect(
 		await (
 			await router.fetch(

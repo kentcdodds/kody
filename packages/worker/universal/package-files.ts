@@ -1,11 +1,18 @@
 import { createMultiMatcher } from 'remix/route-pattern/match'
+import {
+	classifyPackageFileMedia,
+	type PackageFilesContentKind,
+} from '#universal/package-file-media.ts'
 import { routes } from '#universal/routes.ts'
+
+export type { PackageFilesContentKind }
 
 /**
  * Second-segment `/@username/…` namespaces claimed before the app router.
  * A package whose `kody.id` is one of these cannot use
- * `/@owner/:kodyId/files/…` because `/@owner/packages/files/…` is a hosted
- * package-app path. Fall back to `/community/:listingId/files/…`.
+ * `/@owner/:kodyId/files/…` or `/raw/…` because `/@owner/packages/files/…`
+ * is a hosted package-app path. Fall back to
+ * `/community/:listingId/files/…` and `/community/:listingId/raw/…`.
  */
 const reservedPackageFilesKodyIds = [
 	'packages',
@@ -15,8 +22,6 @@ const reservedPackageFilesKodyIds = [
 ] as const
 
 export type PackageFilesKind = 'file' | 'directory'
-
-type PackageFilesContentKind = 'markdown' | 'code' | 'text'
 
 type PackageFilesChild = {
 	name: string
@@ -37,6 +42,7 @@ export type PackageFilesView = {
 	contentPath: string | null
 	contentKind: PackageFilesContentKind | null
 	language: string | null
+	contentByteLength: number | null
 	children: Array<PackageFilesChild>
 }
 
@@ -299,6 +305,23 @@ export function buildPackageFilesView(input: {
 
 	if (isFile) {
 		const content = input.files[selectedPath] ?? ''
+		const media = classifyPackageFileMedia({
+			path: selectedPath,
+			content,
+		})
+		if (media) {
+			return {
+				paths,
+				selectedPath,
+				kind: 'file',
+				content: null,
+				contentPath: selectedPath,
+				contentKind: media.kind,
+				language: null,
+				contentByteLength: media.byteLength,
+				children: [],
+			}
+		}
 		const language = languageFromFilePath(selectedPath)
 		return {
 			paths,
@@ -308,6 +331,7 @@ export function buildPackageFilesView(input: {
 			contentPath: selectedPath,
 			contentKind: contentKindFromLanguage(language),
 			language,
+			contentByteLength: new TextEncoder().encode(content).byteLength,
 			children: [],
 		}
 	}
@@ -323,6 +347,9 @@ export function buildPackageFilesView(input: {
 		contentPath,
 		contentKind: language ? contentKindFromLanguage(language) : null,
 		language,
+		contentByteLength: content
+			? new TextEncoder().encode(content).byteLength
+			: null,
 		children: listPackageFilesChildren(paths, selectedPath),
 	}
 }
@@ -417,6 +444,57 @@ export function getPackageSettingsHref(input: {
 	return routes.communityPackageSettings.href({
 		username: input.username,
 		kodyId: input.kodyId,
+	})
+}
+
+export function getCommunityPackageRawHref(input: {
+	listingId: string
+	ownerUsername?: string | null
+	kodyId?: string | null
+	ref?: string
+	relativePath: string
+}) {
+	const relativePath = input.relativePath.trim()
+	const ref = publicTreeRefForHref(input.ref)
+	if (
+		input.ownerUsername &&
+		input.kodyId &&
+		!isReservedPackageFilesKodyId(input.kodyId)
+	) {
+		return relativePath
+			? routes.communityPackageRaw.href({
+					username: input.ownerUsername,
+					kodyId: input.kodyId,
+					ref,
+					relativePath,
+				})
+			: routes.communityPackageRaw.href({
+					username: input.ownerUsername,
+					kodyId: input.kodyId,
+					ref,
+				})
+	}
+	return relativePath
+		? routes.communityDetailRaw.href({
+				listingId: input.listingId,
+				relativePath,
+			})
+		: routes.communityDetailRaw.href({ listingId: input.listingId })
+}
+
+export function getPackageRawHref(input: {
+	username: string
+	kodyId: string
+	listingId?: string | null
+	ref?: string
+	relativePath: string
+}) {
+	return getCommunityPackageRawHref({
+		listingId: input.listingId ?? '',
+		ownerUsername: input.username,
+		kodyId: input.kodyId,
+		ref: input.ref,
+		relativePath: input.relativePath,
 	})
 }
 

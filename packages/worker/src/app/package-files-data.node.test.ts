@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
 	highlightMarkdownFences: vi.fn(async () => []),
 	highlightSnippets: vi.fn(async () => []),
+	readArtifactFileAtCommit: vi.fn<() => Promise<unknown>>(),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
@@ -52,8 +53,16 @@ vi.mock('#app/highlight-code.ts', () => ({
 		mockModule.highlightSnippets(...args),
 }))
 
-const { loadCommunityPackageFilesData, loadPackagePageHasAgentsDocs } =
-	await import('./package-files-data.ts')
+vi.mock('#worker/repo/artifact-file.ts', () => ({
+	readArtifactFileAtCommit: (...args: Array<unknown>) =>
+		mockModule.readArtifactFileAtCommit(...args),
+}))
+
+const {
+	loadCommunityPackageFileRaw,
+	loadCommunityPackageFilesData,
+	loadPackagePageHasAgentsDocs,
+} = await import('./package-files-data.ts')
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
 const listing = {
@@ -156,4 +165,96 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 			viewerIsOwner: false,
 		}),
 	).toBe(false)
+})
+
+test('opens a png as a media preview and an unknown binary without a code dump', async () => {
+	const pngBytes = Uint8Array.from([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
+	])
+	const png = String.fromCharCode(...pngBytes)
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: 'abc123',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: {
+			'README.md': '# Sentry\n',
+			'logo.png': png,
+			'app.wasm': 'wasm\0module',
+		},
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.readArtifactFileAtCommit.mockResolvedValue(pngBytes)
+
+	const image = await loadCommunityPackageFilesData({
+		env,
+		request: new Request(
+			'https://example.com/@kentcdodds/sentry/tree/main/logo.png',
+		),
+		listingId: 'listing-1',
+		selectedPath: 'logo.png',
+		ref: 'main',
+	})
+	expect(image).toMatchObject({
+		ok: true,
+		content: null,
+		contentKind: 'image',
+		mediaHref: '/@kentcdodds/sentry/raw/main/logo.png',
+		contentByteLength: pngBytes.byteLength,
+	})
+	expect(image?.content).toBeNull()
+	expect(mockModule.highlightSnippets).not.toHaveBeenCalled()
+
+	const binary = await loadCommunityPackageFilesData({
+		env,
+		request: new Request(
+			'https://example.com/@kentcdodds/sentry/tree/main/app.wasm',
+		),
+		listingId: 'listing-1',
+		selectedPath: 'app.wasm',
+		ref: 'main',
+	})
+	expect(binary).toMatchObject({
+		content: null,
+		contentKind: 'binary',
+		mediaHref: null,
+	})
+	expect(binary?.content).toBeNull()
+
+	const raw = await loadCommunityPackageFileRaw({
+		env,
+		request: new Request(
+			'https://example.com/@kentcdodds/sentry/raw/main/logo.png',
+		),
+		listingId: 'listing-1',
+		selectedPath: 'logo.png',
+		ref: 'main',
+	})
+	expect(raw).toEqual({
+		kind: 'ok',
+		bytes: pngBytes,
+		contentType: 'image/png',
+		filename: 'logo.png',
+		isPrivate: false,
+	})
+
+	mockModule.readArtifactFileAtCommit.mockResolvedValue(
+		new TextEncoder().encode('<!DOCTYPE html><script>alert(1)</script>'),
+	)
+	expect(
+		await loadCommunityPackageFileRaw({
+			env,
+			request: new Request(
+				'https://example.com/@kentcdodds/sentry/raw/main/logo.png',
+			),
+			listingId: 'listing-1',
+			selectedPath: 'logo.png',
+			ref: 'main',
+		}),
+	).toEqual({ kind: 'not-media' })
 })

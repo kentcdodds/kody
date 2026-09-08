@@ -181,6 +181,7 @@ export const routes = route({
 	communityDetailApi: '/community/:listingId.json',
 	communityDetailFiles: '/community/:listingId/files(/*relativePath)',
 	communityDetailFilesApi: '/community/:listingId/files.json',
+	communityDetailRaw: '/community/:listingId/raw(/*relativePath)',
 	communityDetailIcon: '/community/:listingId/icon/:iconCommit',
 	communityDetailOgImage: '/community/:listingId/og.png',
 	communityReportApiPost: post('/community/:listingId/report.json'),
@@ -195,6 +196,7 @@ export const routes = route({
 	communityPackage: '/@:username/:kodyId',
 	communityPackageFiles: '/@:username/:kodyId/files(/*relativePath)',
 	communityPackageTree: '/@:username/:kodyId/tree/:ref(/*relativePath)',
+	communityPackageRaw: '/@:username/:kodyId/raw/:ref(/*relativePath)',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
