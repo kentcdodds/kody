@@ -101,9 +101,12 @@ export function filterServers(
 }
 
 export function stateLabel(
-	server: Pick<McpServerListItem, 'state' | 'enabled'>,
+	server: Pick<McpServerListItem, 'state' | 'enabled' | 'error'>,
 ) {
 	if (!server.enabled) return 'Disabled'
+	if (isIncompleteToolDiscovery(server)) {
+		return "Tool discovery didn't finish"
+	}
 	switch (server.state) {
 		case 'ready':
 			return 'Connected'
@@ -122,19 +125,29 @@ export function stateLabel(
 }
 
 export function stateColor(
-	server: Pick<McpServerListItem, 'state' | 'enabled'>,
+	server: Pick<McpServerListItem, 'state' | 'enabled' | 'error'>,
 ) {
 	if (!server.enabled) return colors.textMuted
+	if (isIncompleteToolDiscovery(server) || server.state === 'failed') {
+		return colors.error
+	}
 	switch (server.state) {
 		case 'ready':
 			return colors.primary
-		case 'failed':
-			return colors.error
 		case 'authenticating':
 			return colors.textMuted
 		default:
 			return colors.textMuted
 	}
+}
+
+function isIncompleteToolDiscovery(
+	server: Pick<McpServerListItem, 'state' | 'error'>,
+) {
+	return (
+		Boolean(server.error) &&
+		(server.state === 'connected' || server.state === 'discovering')
+	)
 }
 
 export function readOAuthResultFromHref(href: string): {

@@ -13,8 +13,10 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 1. Open [`/account/mcp-servers`](https://kody.codes/account/mcp-servers), or ask
    your agent to use `mcpServerAdd` with a short kebab-case `name` and the
-   server `url` (https required).
-2. If the server authenticates with a static bearer token (or other
+   server `url` (https required). PostHog's documented endpoint is
+   `https://mcp.posthog.com/mcp` — the site root redirects to docs and will not
+   finish tool discovery. Kody rewrites that exact origin to `/mcp`.
+2. If the server authenticates with a static bearer token (or other))
    Authorization scheme), paste it in the optional Bearer token field — or pass
    `bearerToken` to `mcpServerAdd`. Bare tokens are sent as
    `Authorization: Bearer <token>`; scheme-prefixed values and full
@@ -23,7 +25,12 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
 4. Confirm with `mcpServerList` (or refresh the account page). Connected tools
-   show up in `search` under a `mcp:<name>` domain.
+   show up in `search` under a `mcp:<name>` domain. If the identity provider
+   approved access but tools never appear, Status on
+   `/account/mcp-servers/:serverId` shows the last sanitized settle error
+   (phase, HTTP status, URLs, and an attempt id). The same durable error is
+   written when add, reconnect, or refresh times out still discovering tools.
+   Reconnect from that page.
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
 lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the

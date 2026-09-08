@@ -33,6 +33,7 @@ function setting(
 		faviconSourceHost: null,
 		usageMode: 'any',
 		allowedPackageIds: [],
+		lastError: null,
 		...overrides,
 	}
 }
@@ -94,4 +95,40 @@ test('buildMcpServerStatusView defaults missing usage to any context', () => {
 	expect(view.usageMode).toBe('any')
 	expect(view.allowedPackageIds).toEqual([])
 	expect(view.connected).toBe(false)
+})
+
+test('buildMcpServerStatusView surfaces durable lastError when live connection error is missing', () => {
+	const lastError =
+		"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, id attempt-1)."
+	const hung = buildMcpServerStatusView({
+		setting: setting({ lastError }),
+		snapshot: {
+			serverId: 'server-1',
+			name: 'ha',
+			url: 'https://example.com/mcp',
+			state: 'connected',
+			authUrl: null,
+			error: null,
+			instructions: null,
+			tools: [],
+		},
+	})
+	expect(hung.connected).toBe(false)
+	expect(hung.error).toBe(lastError)
+
+	const ready = buildMcpServerStatusView({
+		setting: setting({ lastError }),
+		snapshot: {
+			serverId: 'server-1',
+			name: 'ha',
+			url: 'https://example.com/mcp',
+			state: 'ready',
+			authUrl: null,
+			error: null,
+			instructions: null,
+			tools: [{ name: 'ping', inputSchema: { type: 'object' } }],
+		},
+	})
+	expect(ready.connected).toBe(true)
+	expect(ready.error).toBeNull()
 })

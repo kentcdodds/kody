@@ -28,7 +28,7 @@ export const mcpServerListCapability = defineDomainCapability(
 	{
 		name: 'mcpServerList',
 		description:
-			"List the signed-in user's saved MCP servers with live connection status, pending OAuth authUrls, discovered tool names, and package usage (any context vs locked to listed packages).",
+			"List the signed-in user's saved MCP servers with live connection status, pending OAuth authUrls, discovered tool names, durable lastError when post-IdP settle did not reach ready, and package usage (any context vs locked to listed packages).",
 		keywords: [
 			'mcp',
 			'server',

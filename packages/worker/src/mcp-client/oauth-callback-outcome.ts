@@ -1,7 +1,26 @@
 import {
+	buildMcpServerLastError,
+	inferMcpOAuthSettlePhase,
+	parseHttpStatusFromMcpError,
+	sanitizeMcpErrorSnippet,
+	sanitizePublicUrl,
+	type McpServerLastError,
+} from './oauth-settle-error.ts'
+import {
 	type McpServerConnectionState,
 	type McpServerOAuthCallbackOutcome,
 } from './types.ts'
+
+export type McpOAuthCallbackConnection = {
+	state: McpServerConnectionState
+	authUrl: string | null
+	error: string | null
+	mcpEndpoint?: string | null
+	resource?: string | null
+	authServer?: string | null
+	httpStatus?: number | null
+	httpBodySnippet?: string | null
+}
 
 /**
  * Decide the user-facing OAuth callback outcome from the Agents SDK result
@@ -18,11 +37,8 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 	sdkAuthError: string | null
 	serverId: string | null
 	serverName: string | null
-	connection: {
-		state: McpServerConnectionState
-		authUrl: string | null
-		error: string | null
-	} | null
+	connection: McpOAuthCallbackConnection | null
+	attemptId?: string | null
 }): McpServerOAuthCallbackOutcome {
 	const { serverId, serverName } = input
 
@@ -33,6 +49,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			authError: input.sdkAuthError ?? 'Authorization failed.',
 			serverName,
 			authorizationNeeded: false,
+			lastError: null,
 		}
 	}
 
@@ -44,6 +61,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 				'Authorization completed, but Kody lost the MCP server connection. Try reconnecting from /account/mcp-servers.',
 			serverName,
 			authorizationNeeded: false,
+			lastError: null,
 		}
 	}
 
@@ -54,31 +72,54 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			authError: null,
 			serverName,
 			authorizationNeeded: false,
+			lastError: null,
 		}
 	}
 
+	const lastError = buildIncompleteMcpOAuthLastError({
+		connection: input.connection,
+		attemptId: input.attemptId,
+	})
 	return {
 		serverId,
 		authSuccess: false,
-		authError:
-			input.connection.error ??
-			describeIncompleteMcpOAuthConnection(input.connection),
+		authError: lastError.message,
 		serverName,
 		authorizationNeeded: false,
+		lastError,
 	}
 }
 
-export function describeIncompleteMcpOAuthConnection(connection: {
-	state: McpServerConnectionState
-	authUrl: string | null
-}): string {
-	if (connection.state === 'authenticating' && connection.authUrl) {
-		return 'Authorization completed at the identity provider, but the MCP server still requires authorization. Open the authorization link again from /account/mcp-servers.'
-	}
-	if (connection.state === 'authenticating') {
-		return 'Authorization completed, but Kody could not finish connecting. Reconnect the server from /account/mcp-servers and approve access once more.'
-	}
-	return `Authorization completed at the identity provider, but the MCP server is still "${connection.state}". Reconnect it from /account/mcp-servers.`
+export function describeIncompleteMcpOAuthConnection(
+	connection: McpOAuthCallbackConnection & { attemptId?: string | null },
+): string {
+	return buildIncompleteMcpOAuthLastError({
+		connection,
+		attemptId: connection.attemptId,
+	}).message
+}
+
+function buildIncompleteMcpOAuthLastError(input: {
+	connection: McpOAuthCallbackConnection
+	attemptId?: string | null
+}): McpServerLastError {
+	const error = input.connection.error
+	return buildMcpServerLastError({
+		state: input.connection.state,
+		authUrl: input.connection.authUrl,
+		error,
+		phase: inferMcpOAuthSettlePhase({
+			state: input.connection.state,
+			error,
+		}),
+		httpStatus:
+			input.connection.httpStatus ?? parseHttpStatusFromMcpError(error),
+		httpBodySnippet: sanitizeMcpErrorSnippet(input.connection.httpBodySnippet),
+		mcpEndpoint: sanitizePublicUrl(input.connection.mcpEndpoint),
+		resource: sanitizePublicUrl(input.connection.resource),
+		authServer: sanitizePublicUrl(input.connection.authServer),
+		attemptId: input.attemptId?.trim() || crypto.randomUUID(),
+	})
 }
 
 /**

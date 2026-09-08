@@ -38,7 +38,9 @@ export function buildMcpServerStatusView(input: {
 }): McpServerStatusView {
 	const { setting, snapshot } = input
 	const connected = snapshot?.state === 'ready'
-	const rawError = snapshot?.error ?? null
+	const rawError = connected
+		? null
+		: (snapshot?.error ?? setting.lastError ?? null)
 	const error =
 		rawError && input.oauthCallbackUrl && input.oauthClientOrigin
 			? enrichMcpOAuthProviderError(rawError, {

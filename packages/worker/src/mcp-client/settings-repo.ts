@@ -12,7 +12,7 @@ import {
 } from './usage-mode.ts'
 
 const selectColumns =
-	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json'
+	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json, last_error'
 
 export async function listMcpServerSettingRows(input: {
 	db: D1Database
@@ -165,6 +165,26 @@ export async function updateMcpServerSettingUsageRow(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function updateMcpServerSettingLastErrorRow(input: {
+	db: D1Database
+	userId: string
+	id: string
+	lastError: string | null
+	updatedAt?: string
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE mcp_server_settings
+			SET last_error = ?,
+				updated_at = ?
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(input.lastError, input.updatedAt ?? now, input.userId, input.id)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function deleteMcpServerSettingRow(input: {
 	db: D1Database
 	userId: string
@@ -210,5 +230,6 @@ function mapMcpServerSettingRow(
 				? null
 				: String(row['allowed_packages_json']),
 		),
+		last_error: row['last_error'] == null ? null : String(row['last_error']),
 	}
 }

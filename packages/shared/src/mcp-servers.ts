@@ -19,6 +19,30 @@ export function isValidMcpServerName(name: string): boolean {
 }
 
 const loopbackHostnames = new Set(['localhost', '127.0.0.1', '[::1]'])
+const posthogMcpEndpoint = 'https://mcp.posthog.com/mcp'
+
+/**
+ * Rewrite a few documented vendor roots that are not MCP endpoints.
+ * PostHog's site origin 302s to docs; the resource is `/mcp`.
+ */
+export function normalizeKnownMcpServerUrl(url: string): string {
+	const trimmed = url.trim()
+	try {
+		const parsed = new URL(trimmed)
+		if (
+			parsed.protocol === 'https:' &&
+			parsed.hostname === 'mcp.posthog.com' &&
+			(parsed.pathname === '' || parsed.pathname === '/') &&
+			parsed.search === '' &&
+			parsed.hash === ''
+		) {
+			return posthogMcpEndpoint
+		}
+	} catch {
+		return trimmed
+	}
+	return trimmed
+}
 
 /**
  * Remote MCP servers must be reachable over HTTP(S). Plain HTTP is only
@@ -31,7 +55,7 @@ export function validateMcpServerUrl(url: string): {
 	url?: string
 	error?: string
 } {
-	const trimmed = url.trim()
+	const trimmed = normalizeKnownMcpServerUrl(url)
 	if (!trimmed) {
 		return { ok: false, error: 'Server URL is required.' }
 	}
