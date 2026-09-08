@@ -20,6 +20,15 @@ export type LandingTestimonial = {
 export const landingTestimonials = [
 	{
 		quote:
+			"Been running Kody for a while. My personal agent for my family lives on a VPS, I run a local agent for work, and between my organization and myself we pay for six accounts over four different providers. I don't want my personal tokens spread over my work harnesses and I can't have my tokens for work spread across my personal devices. Kody provides a crucial layer of infrastructure that funnels all my tools into one secure MCP I can manage myself, instead of me wiring up each one across different apps and environments. The interoperability is the real magic - the same tools serve my family agent and the work agent I run separately, no duplicate setup. It just works.",
+		name: 'Josh Tomaino',
+		photo: '/images/testimonials/josh-tomaino.webp',
+		href: 'https://copyjosh.com/',
+		title: 'Engineering Manager',
+		company: 'Cloverleaf.me',
+	},
+	{
+		quote:
 			"Kody gives our agents durable and credentialed access to infrastructure. Agents own deployment automation, while Kody owns the secure execution layer. We operate in contested environments where a downed service could mean life or death for some of the world's most endangered species. Kody helps us keep that critical infrastructure running.",
 		name: 'Jett Hays',
 		photo: '/images/testimonials/jett-hays.webp',
