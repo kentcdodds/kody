@@ -193,6 +193,10 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 						css(accountInputCss),
 					]}
 				/>
+				<span mix={css(descriptionCss)}>
+					Use the MCP endpoint path, not the vendor&apos;s marketing site.
+					PostHog is https://mcp.posthog.com/mcp.
+				</span>
 			</label>
 
 			<label mix={css(fieldCss)}>

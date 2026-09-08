@@ -217,8 +217,12 @@
 			"sha256": "47c028697bc21976963cd1a0bf5825d3d48b7ba2640f93c7192e31d192aa2ea2"
 		},
 		{
-			"filename": "0054-site-banners.sql",
-			"sha256": "6fed49ce646913d2f6b026d3d429dad585813cc26be6c0b5699b1a86578d9f67"
+			"filename": "0054-mcp-server-last-error.sql",
+			"sha256": "6d160921b0689856a618233616ebc0fbc9955966cb1149ff1c611568c6dad5de"
+		},
+		{
+			"filename": "0055-site-banners.sql",
+			"sha256": "23db1c221bf740d3c4778aaebacbb7bbfcfe57da922721055a70d73fb8764d95"
 		}
 	]
 }

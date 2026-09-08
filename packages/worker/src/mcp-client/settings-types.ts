@@ -16,6 +16,7 @@ export type McpServerSettingRow = {
 	favicon_source_host: string | null
 	usage_mode: McpServerUsageMode
 	allowedPackageIds: Array<string>
+	last_error: string | null
 }
 
 export type McpServerSettingMetadata = {
@@ -31,4 +32,5 @@ export type McpServerSettingMetadata = {
 	faviconSourceHost: string | null
 	usageMode: McpServerUsageMode
 	allowedPackageIds: Array<string>
+	lastError: string | null
 }

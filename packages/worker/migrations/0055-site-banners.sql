@@ -1,7 +1,7 @@
 -- Operator-owned site announcement banners plus per-user dismissals.
 -- Banner rows are global config (no user_id). Dismissals are user-scoped.
 -- IF NOT EXISTS: preview D1 already applied this schema as 0042-site-banners.sql
--- before the migration was renumbered onto main's next free prefix.
+-- and later 0054-site-banners.sql before this file took the next free prefix.
 
 CREATE TABLE IF NOT EXISTS site_banners (
 	id TEXT PRIMARY KEY NOT NULL,

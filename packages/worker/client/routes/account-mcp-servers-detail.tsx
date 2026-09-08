@@ -237,9 +237,20 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 					{
 						label: 'Status',
 						value: (
-							<span mix={css({ color: stateColor(server) })}>
-								{stateLabel(server)}
-							</span>
+							<div
+								mix={css({
+									display: 'grid',
+									gap: spacing.xs,
+									color: stateColor(server),
+								})}
+							>
+								<span>{stateLabel(server)}</span>
+								{server.error ? (
+									<AccountManagementMessage tone="error">
+										{server.error}
+									</AccountManagementMessage>
+								) : null}
+							</div>
 						),
 					},
 					{
@@ -274,12 +285,6 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 					{server.url}
 				</code>
 			</div>
-
-			{server.error ? (
-				<AccountManagementMessage tone="error">
-					{server.error}
-				</AccountManagementMessage>
-			) : null}
 
 			{server.state === 'authenticating' && !server.authUrl ? (
 				<AccountManagementMessage tone="info">
