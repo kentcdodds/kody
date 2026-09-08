@@ -34,6 +34,7 @@ import {
 	siteBannerInnerCss,
 	siteBannerSeverityTone,
 	siteBannerShellCss,
+	siteBannerStackMq,
 	siteBannerStageContainerName,
 	siteBannerStageStackAt,
 	siteBannerTitleCss,
@@ -206,6 +207,9 @@ export function SiteBannerEditor(
 											maxHeight: '8.4rem',
 											overflowY: 'auto',
 											minHeight: look === 'strip' ? '1.25rem' : '2.5rem',
+											[siteBannerStackMq]: {
+												display: 'block',
+											},
 											[siteBannerStageStackAt]: {
 												display: 'block',
 											},

@@ -367,7 +367,7 @@ export function selectSiteBannersForClient(input: {
 		})
 		.map((banner) =>
 			toPublicSiteBannerCandidate(banner, {
-				remapMatchedUsersAudience: !input.includeUnmatched,
+				remapMatchedUsersAudience: bannerMatchesAudience(banner, input.viewer),
 			}),
 		)
 }

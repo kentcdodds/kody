@@ -26,3 +26,16 @@ test('empty promo draft is an editable banner, not untitled placeholder copy', a
 	expect(html).not.toContain('Untitled banner')
 	expect(html).not.toContain('Second button')
 })
+
+test('strip editor keeps the body field visible under the live stack query', async () => {
+	const html = await renderToString(
+		jsx(SiteBannerEditor, {
+			draft: { ...emptyDraft(), look: 'strip' },
+			onDraftChange: () => {},
+		}),
+	)
+	expect(html).toContain('data-testid="site-banner-preview-strip"')
+	expect(html).toContain('@media (max-width: 720px)')
+	expect(html).toContain('display: block')
+	expect(html).not.toMatch(/@media \(max-width: 720px\)\{[^}]*display:\s*none/)
+})

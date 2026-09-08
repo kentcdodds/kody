@@ -120,7 +120,7 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 
 	return {
 		banner: resolveVisibleSiteBanner({
-			candidates: listed,
+			candidates,
 			dismissedIds,
 			pathname: input.pathname,
 			searchParams: requestUrl.searchParams,

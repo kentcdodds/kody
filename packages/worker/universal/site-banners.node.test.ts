@@ -292,6 +292,7 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 		audience: 'users',
 		audienceUserIds: [adminStableUserId],
 		title: 'Just you',
+		priority: 50,
 		createdBy: 9,
 		updatedBy: 9,
 	})
@@ -342,6 +343,13 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 			audienceUserIds: [],
 		}),
 	)
+	expect(previewCandidates.find((item) => item.id === targeted.id)).toEqual(
+		expect.objectContaining({
+			audience: 'logged_in',
+			audienceUserIds: [],
+			title: 'Just you',
+		}),
+	)
 	expect(
 		resolveVisibleSiteBanner({
 			candidates: previewCandidates,
@@ -349,7 +357,16 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 			pathname: '/',
 			viewer: adminViewer,
 		})?.title,
-	).not.toBe('Someone else')
+	).toBe('Just you')
+	expect(
+		resolveVisibleSiteBanner({
+			candidates: previewCandidates,
+			dismissedIds: [],
+			pathname: '/',
+			searchParams: new URLSearchParams('siteBannerLook=promo'),
+			viewer: adminViewer,
+		})?.title,
+	).toBe('Just you')
 })
 
 test('public banner views rewrite YouTube CTAs and derive first-party thumbs', () => {
