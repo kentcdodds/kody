@@ -25,14 +25,14 @@ import { scrollRestorationInlineScriptCspHash } from '#universal/router-scroll-r
  *   of the OAuth consent screen and account pages.
  * - `base-uri`, `object-src`, and `form-action` are locked to prevent base-tag
  *   injection, plugin content, and form exfiltration to third-party origins.
- * - `connect-src 'self'` is safe because the first-party client only calls
- *   same-origin JSON endpoints; all third-party calls happen server-side.
- *   Browser Sentry envelopes stay same-origin too via the `/sentry-tunnel`
- *   route (see `handlers/sentry-tunnel.ts`).
- * - `https://cdn.usefathom.com` in `script-src` and `img-src` allows the
- *   Fathom Analytics tracker (rendered only when FATHOM_SITE_ID is set, see
- *   `ssr-document.tsx`): the script loads from that host and reports
- *   pageviews via an image beacon to the same host.
+ * - `connect-src` stays `'self'` for first-party JSON and the `/sentry-tunnel`
+ *   route (see `handlers/sentry-tunnel.ts`). The listed third-party hosts are
+ *   the only browser beacons that leave the origin.
+ * - `https://cdn.usefathom.com` in `script-src`, `img-src`, and `connect-src`
+ *   allows the Fathom Analytics tracker (rendered only when FATHOM_SITE_ID is
+ *   set, see `ssr-document.tsx`): the script loads from that host, reports
+ *   pageviews via an image beacon, and uses `navigator.sendBeacon` for
+ *   visit-duration pings and `trackEvent`.
  * - Cloudflare Web Analytics: injected at the edge by Cloudflare,
  *   privacy-preserving, no cookies. The beacon script loads from
  *   `https://static.cloudflareinsights.com` (`script-src`) and POSTs to
@@ -58,7 +58,7 @@ const contentSecurityPolicy = [
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
 	`script-src 'self' ${scrollRestorationInlineScriptCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,
-	"connect-src 'self' https://cloudflareinsights.com https://challenges.cloudflare.com",
+	"connect-src 'self' https://cdn.usefathom.com https://cloudflareinsights.com https://challenges.cloudflare.com",
 	'frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com',
 	"worker-src 'self' blob:",
 ].join('; ')

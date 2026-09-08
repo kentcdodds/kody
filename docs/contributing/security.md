@@ -133,11 +133,13 @@ package-app surfaces:
 
 - `Content-Security-Policy` with `script-src 'self' https://cdn.usefathom.com`
   (no `'unsafe-inline'`; the Fathom Analytics tracker is the only allowed
-  external script and its image beacon is also allowed in `img-src`; the
+  external script; its image pageview beacon is allowed in `img-src` and its
+  `sendBeacon` duration/event pings are allowed in `connect-src`; the
   scroll-restoration restore script is an inline classic script allowed only by
   its sha256 hash), `frame-ancestors 'none'`, `base-uri 'self'`,
   `object-src 'none'`, `form-action 'self'`, `worker-src 'self' blob:` (for
-  Sentry Session Replay), and same-origin `connect-src`. The client bundle loads
+  Sentry Session Replay), and `connect-src` limited to `'self'` plus the Fathom,
+  Cloudflare Web Analytics, and Turnstile beacon hosts. The client bundle loads
   as an external module. `style-src` allows `'unsafe-inline'` because
   SSR-streamed styles arrive as inline `<style>` tags; style injection is far
   lower risk than script injection.

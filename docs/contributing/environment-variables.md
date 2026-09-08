@@ -82,8 +82,11 @@ Optional Wrangler `var` (public, non-secret; see
   `packages/worker/wrangler.jsonc`; it is intentionally unset for local dev,
   preview, and tests so those environments never send pageviews. The CSP in
   `packages/worker/src/app/security-headers.ts` allowlists
-  `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
-  its image beacon.
+  `https://cdn.usefathom.com` in `script-src`, `img-src`, and `connect-src` for
+  the tracker, its image pageview beacon, and `sendBeacon` duration/event pings.
+  After a production domain change, also update the site's Allowed domains list
+  in the Fathom dashboard (Settings → Sites → site → Firewall); the API token
+  cannot read or write that list.
 
 ## YouTube watch overlay
 

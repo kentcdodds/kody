@@ -373,9 +373,14 @@ Privacy-first pageviews on production SSR pages only.
 Committed Wrangler var: `FATHOM_SITE_ID=WKKSDJGN`
 (`packages/worker/wrangler.jsonc`). Unset in local, preview, and test. Script:
 `https://cdn.usefathom.com/script.js` (`data-spa=auto`). CSP allowlist in
-`packages/worker/src/app/security-headers.ts`.
+`packages/worker/src/app/security-headers.ts` (`script-src`, `img-src`, and
+`connect-src`).
 
-Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret.
+Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret. After
+changing `APP_BASE_URL`, open Settings → Sites → **kody.codes** → Firewall and
+put the live hostname (`kody.codes`) on Allowed domains. A leftover
+`heykody.app` / `heykody.dev` allowlist drops every `kody.codes` pageview while
+still returning a 200 GIF. The API token cannot read or write firewall settings.
 
 Recovery: Fathom account login. Losing the site id only drops analytics; the app
 stays up.
