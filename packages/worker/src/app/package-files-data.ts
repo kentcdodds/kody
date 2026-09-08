@@ -31,7 +31,10 @@ import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapsho
 import { recordServerTiming } from '#worker/request-context.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
-import { getCommunityPackageAssetBaseHref } from '#universal/package-readme-images.ts'
+import {
+	getCommunityPackageAssetBaseHref,
+	getCommunityPackageAssetBaseHrefForViewedCommit,
+} from '#universal/package-readme-images.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -51,6 +54,8 @@ async function toLoaderData(input: {
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
 	listingId?: string | null
+	viewedCommit?: string | null
+	assetCommit?: string | null
 }): Promise<PackageFilesLoaderData> {
 	const content = input.view.content
 	const language = input.view.language
@@ -92,10 +97,12 @@ async function toLoaderData(input: {
 		kodyId: input.kodyId,
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
-		imageBaseHref: getCommunityPackageAssetBaseHref({
+		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
 			listingId: input.listingId,
 			ownerUsername: input.username,
 			kodyId: input.kodyId,
+			viewedCommit: input.viewedCommit,
+			assetCommit: input.assetCommit,
 		}),
 	}
 }
@@ -197,6 +204,8 @@ export async function loadCommunityPackageFilesData(input: {
 		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
 		listingId: listing.id,
+		viewedCommit: resolvedCommit,
+		assetCommit: listing.pinnedCommit,
 	})
 }
 
@@ -399,6 +408,8 @@ export async function loadAccountPackageFilesData(input: {
 		kodyId: record.kodyId,
 		viewerIsOwner: true,
 		isPrivate: record.isPrivate,
+		viewedCommit: resolved.commit,
+		assetCommit: source?.published_commit ?? '',
 	})
 }
 
@@ -490,6 +501,48 @@ export async function loadPackagePageHasAgentsDocs(input: {
 		return findRootPackageDoc(loaded.files, 'AGENTS.md') != null
 	} catch {
 		return false
+	}
+}
+
+/**
+ * README `<img>` opt-in. Listing README is the pin `/assets/` serves.
+ * Owner current-source README only opts in when HEAD is that pin.
+ */
+export async function resolvePackagePageReadmeImageBaseHref(input: {
+	env: Env
+	request: Request
+	listingId?: string | null
+	ownerUsername: string
+	kodyId: string
+	usedListingReadme: boolean
+	sourceId?: string | null
+	publishedCommit?: string | null
+}) {
+	if (input.usedListingReadme) {
+		return getCommunityPackageAssetBaseHref({
+			listingId: input.listingId,
+			ownerUsername: input.ownerUsername,
+			kodyId: input.kodyId,
+		})
+	}
+	const publishedCommit = input.publishedCommit?.trim() ?? ''
+	if (!publishedCommit || !input.sourceId) return null
+	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
+	if (!source?.repo_id) return null
+	try {
+		const head = await resolveCachedArtifactSourceHead(
+			input.env,
+			source.repo_id,
+			{ request: input.request },
+		)
+		return getCommunityPackageAssetBaseHrefForViewedCommit({
+			ownerUsername: input.ownerUsername,
+			kodyId: input.kodyId,
+			viewedCommit: head.commit,
+			assetCommit: publishedCommit,
+		})
+	} catch {
+		return null
 	}
 }
 

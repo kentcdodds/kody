@@ -29,6 +29,7 @@ export type CommunityDetailApiPayload = {
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
 	hasAgentsDocs?: boolean
+	imageBaseHref?: string | null
 	ownerPackage: AccountPackageDetail | null
 	username: string
 	kodyId: string
@@ -62,6 +63,7 @@ export type CommunityShellSnapshot = {
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode> | undefined
 	hasAgentsDocs: boolean
+	imageBaseHref: string | null
 	ownerPackage: AccountPackageDetail | null
 	username: string
 	kodyId: string
@@ -261,6 +263,7 @@ export async function communityDetailRouteLoader(
 				payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 			readmeFences: payload.readmeFences,
 			hasAgentsDocs: payload.hasAgentsDocs === true,
+			imageBaseHref: payload.imageBaseHref ?? null,
 			viewerInstall: payload.viewerInstall,
 			ownerPackage: payload.ownerPackage,
 			username: payload.username,

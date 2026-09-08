@@ -7,9 +7,10 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 `/@username` lists your packages, including private and unpublished packages
 when you view your own profile. Each package lives at `/@username/:kodyId`
 (README), `/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/assets/…`
-(README-relative images), `/@username/:kodyId/settings` (lock, visibility,
-delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD review).
-Legacy `/account/packages` HTML URLs only redirect to these canonical pages.
+(README-relative images from the published or pinned commit),
+`/@username/:kodyId/settings` (lock, visibility, delete), and
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Legacy
+`/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it
 

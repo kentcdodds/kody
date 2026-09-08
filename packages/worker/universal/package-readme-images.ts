@@ -108,6 +108,39 @@ export function getCommunityPackageAssetBaseHref(input: {
 	return getCommunityPackageAssetHref(input)
 }
 
+/**
+ * `/assets/` only reads the published or pinned blob. Opt in to `<img>`
+ * only when the markdown being viewed is that same revision, including
+ * abbreviated SHA prefixes used by tree URLs.
+ */
+export function packageReadmeAssetCommitMatchesView(
+	viewedCommit: string | null | undefined,
+	assetCommit: string | null | undefined,
+) {
+	const viewed = viewedCommit?.trim() ?? ''
+	const asset = assetCommit?.trim() ?? ''
+	if (!viewed || !asset) return false
+	return (
+		viewed === asset || viewed.startsWith(asset) || asset.startsWith(viewed)
+	)
+}
+
+/** Asset prefix when the viewed tree commit is the published/pinned one. */
+export function getCommunityPackageAssetBaseHrefForViewedCommit(input: {
+	listingId?: string | null
+	ownerUsername?: string | null
+	kodyId?: string | null
+	viewedCommit?: string | null
+	assetCommit?: string | null
+}) {
+	if (
+		!packageReadmeAssetCommitMatchesView(input.viewedCommit, input.assetCommit)
+	) {
+		return null
+	}
+	return getCommunityPackageAssetBaseHref(input)
+}
+
 export function joinPackageReadmeImageHref(
 	imageBaseHref: string,
 	relativePath: string,

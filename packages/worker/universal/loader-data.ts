@@ -212,6 +212,7 @@ type CommunityDetailShellLoaderData = {
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
 	hasAgentsDocs: boolean
+	imageBaseHref: string | null
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
 	username: string

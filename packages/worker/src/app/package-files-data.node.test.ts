@@ -52,8 +52,11 @@ vi.mock('#app/highlight-code.ts', () => ({
 		mockModule.highlightSnippets(...args),
 }))
 
-const { loadCommunityPackageFilesData, loadPackagePageHasAgentsDocs } =
-	await import('./package-files-data.ts')
+const {
+	loadCommunityPackageFilesData,
+	loadPackagePageHasAgentsDocs,
+	resolvePackagePageReadmeImageBaseHref,
+} = await import('./package-files-data.ts')
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
 const listing = {
@@ -118,6 +121,34 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 	})
 })
 
+test('listed package tree omits imageBaseHref when HEAD is not the pin', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: 'abc123',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'deadbeef',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: { 'README.md': '![poster](./docs/poster.png)\n' },
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+
+	const ahead = await loadCommunityPackageFilesData({
+		env,
+		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(ahead).toMatchObject({
+		ok: true,
+		imageBaseHref: null,
+	})
+})
+
 test('package page reports AGENTS.md only when a non-empty root file exists', async () => {
 	mockModule.readCommunitySnapshot.mockResolvedValue({
 		files: { 'README.md': '# Sentry\n' },
@@ -157,4 +188,53 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 			viewerIsOwner: false,
 		}),
 	).toBe(false)
+})
+
+test('package page README images follow the pin, not unpublished HEAD', async () => {
+	const request = new Request('https://example.com/@kentcdodds/sentry')
+	expect(
+		await resolvePackagePageReadmeImageBaseHref({
+			env,
+			request,
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: true,
+			sourceId: 'src-1',
+			publishedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
+
+	mockModule.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	expect(
+		await resolvePackagePageReadmeImageBaseHref({
+			env,
+			request,
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			sourceId: 'src-1',
+			publishedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
+
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'deadbeef',
+	})
+	expect(
+		await resolvePackagePageReadmeImageBaseHref({
+			env,
+			request,
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			sourceId: 'src-1',
+			publishedCommit: 'abc123',
+		}),
+	).toBe(null)
 })

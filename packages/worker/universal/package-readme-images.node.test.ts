@@ -2,7 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	directoryOfPackageFilePath,
 	getCommunityPackageAssetBaseHref,
+	getCommunityPackageAssetBaseHrefForViewedCommit,
 	getCommunityPackageAssetHref,
+	packageReadmeAssetCommitMatchesView,
 	isPackageReadmeImagePath,
 	joinPackageReadmeImageHref,
 	resolvePackageReadmeImagePath,
@@ -69,4 +71,33 @@ test('package README asset hrefs use the third-segment noun and reserved-id fall
 	expect(
 		joinPackageReadmeImageHref('/@kody/doom/assets', 'docs/poster.png'),
 	).toBe('/@kody/doom/assets/docs/poster.png')
+})
+
+test('package README images opt in only when the viewed commit is the asset pin', () => {
+	expect(packageReadmeAssetCommitMatchesView('abc1234', 'abc1234')).toBe(true)
+	expect(packageReadmeAssetCommitMatchesView('abc1234def', 'abc1234')).toBe(
+		true,
+	)
+	expect(packageReadmeAssetCommitMatchesView('abc1234', 'abc1234def')).toBe(
+		true,
+	)
+	expect(packageReadmeAssetCommitMatchesView('deadbeef', 'abc1234')).toBe(false)
+	expect(packageReadmeAssetCommitMatchesView('', 'abc1234')).toBe(false)
+	expect(packageReadmeAssetCommitMatchesView('abc1234', '')).toBe(false)
+	expect(
+		getCommunityPackageAssetBaseHrefForViewedCommit({
+			ownerUsername: 'kody',
+			kodyId: 'doom',
+			viewedCommit: 'abc1234',
+			assetCommit: 'abc1234',
+		}),
+	).toBe('/@kody/doom/assets')
+	expect(
+		getCommunityPackageAssetBaseHrefForViewedCommit({
+			ownerUsername: 'kody',
+			kodyId: 'doom',
+			viewedCommit: 'deadbeef',
+			assetCommit: 'abc1234',
+		}),
+	).toBe(null)
 })

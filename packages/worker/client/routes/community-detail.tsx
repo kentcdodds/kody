@@ -1,7 +1,6 @@
 import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { getPackageTreeHref } from '#universal/package-files.ts'
-import { getCommunityPackageAssetBaseHref } from '#universal/package-readme-images.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import {
 	listenToRouterNavigation,
@@ -65,6 +64,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
+	let readmeImageBaseHref: string | null = null
 	let username = ''
 	let kodyId = ''
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
@@ -127,6 +127,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
 		hasAgentsDocs = snapshot.hasAgentsDocs
+		readmeImageBaseHref = snapshot.imageBaseHref
 		username = snapshot.username
 		kodyId = snapshot.kodyId
 		reportState = 'idle'
@@ -192,6 +193,7 @@ export function CommunityDetailRoute(handle: Handle) {
 						payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 					readmeFences: payload.readmeFences,
 					hasAgentsDocs: payload.hasAgentsDocs === true,
+					imageBaseHref: payload.imageBaseHref ?? null,
 					ownerPackage: payload.ownerPackage,
 					username: payload.username,
 					kodyId:
@@ -511,15 +513,6 @@ export function CommunityDetailRoute(handle: Handle) {
 						relativePath: 'AGENTS.md',
 					})
 				: null
-		const readmeImageBaseHref =
-			username && kodyId
-				? getCommunityPackageAssetBaseHref({
-						listingId,
-						ownerUsername: username,
-						kodyId,
-					})
-				: null
-
 		return (
 			<article
 				mix={[css(detailArticleCss), on('click', handleCommunityInstallClick)]}
