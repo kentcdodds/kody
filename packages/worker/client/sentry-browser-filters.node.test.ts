@@ -584,6 +584,30 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 				values: [
 					{
 						type: 'TypeError',
+						value: "Cannot read properties of undefined (reading 'M_ID')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'Y',
+									filename:
+										'chrome-extension://eppiocemhmnlbhjplcgkofciiegomcon/executors/200.js',
+								},
+								{
+									function: 'boot',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
 						value: "Cannot read properties of undefined (reading 'url')",
 						stacktrace: {
 							frames: [

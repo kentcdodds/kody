@@ -38,16 +38,30 @@ function sentryEventMessages(event: SentryErrorEventLike) {
 	]
 }
 
-function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
-	const urls: Array<string> = []
+function sentryEventStackFrames(event: SentryErrorEventLike) {
+	const frames: Array<SentryStackFrame> = []
 	for (const value of event.exception?.values ?? []) {
 		for (const frame of value.stacktrace?.frames ?? []) {
-			for (const candidate of [frame.abs_path, frame.absPath, frame.filename]) {
-				if (typeof candidate === 'string' && candidate.length > 0) {
-					urls.push(candidate)
-				}
-			}
+			frames.push(frame)
 		}
+	}
+	return frames
+}
+
+function stackFrameUrls(frame: SentryStackFrame) {
+	const urls: Array<string> = []
+	for (const candidate of [frame.abs_path, frame.absPath, frame.filename]) {
+		if (typeof candidate === 'string' && candidate.length > 0) {
+			urls.push(candidate)
+		}
+	}
+	return urls
+}
+
+function sentryEventStackFrameUrls(event: SentryErrorEventLike) {
+	const urls: Array<string> = []
+	for (const frame of sentryEventStackFrames(event)) {
+		urls.push(...stackFrameUrls(frame))
 	}
 	return urls
 }
@@ -747,10 +761,27 @@ function isChromeExtensionUndefinedMIdSentryEvent(
 				isChromeExtensionUndefinedMIdMessage(message),
 		)
 	if (!hasMIdMessage) return false
-	const frameUrls = sentryEventStackFrameUrls(event)
-	if (frameUrls.length === 0) return false
-	if (!frameUrls.some(isChromeExtensionStackFrameUrl)) return false
-	return frameUrls.every(isChromeExtensionOrAnonymousStackFrameUrl)
+	return isChromeExtensionOnlyReportedStack(event)
+}
+
+/**
+ * Drop-safe only when every reported frame is present and is either
+ * `chrome-extension:` or an explicit anonymous/native marker. A URL-less
+ * frame is treated as unknown (possibly first-party) and keeps the event.
+ */
+function isChromeExtensionOnlyReportedStack(event: SentryErrorEventLike) {
+	const frames = sentryEventStackFrames(event)
+	if (frames.length === 0) return false
+	let hasChromeExtension = false
+	for (const frame of frames) {
+		const urls = stackFrameUrls(frame)
+		if (urls.length === 0) return false
+		if (!urls.every(isChromeExtensionOrAnonymousStackFrameUrl)) return false
+		if (urls.some(isChromeExtensionStackFrameUrl)) {
+			hasChromeExtension = true
+		}
+	}
+	return hasChromeExtension
 }
 
 function filterChromeExtensionUndefinedMIdSentryEvent<
