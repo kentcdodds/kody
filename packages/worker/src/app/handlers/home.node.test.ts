@@ -6,10 +6,7 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
-import {
-	loadOnboardingData,
-	loadPublicOnboardingData,
-} from '#app/onboarding-data.ts'
+import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -22,64 +19,14 @@ vi.mock('#worker/usage/code-runs-window.ts', () => ({
 	loadPublicCodeRunsWindow: vi.fn(async () => null),
 }))
 
-vi.mock('#app/onboarding-data.ts', () => ({
-	loadOnboardingData: vi.fn(async () => ({
-		ok: true,
-		loggedIn: true,
-		username: 'home-user',
-		mcpServerUrl: 'https://example.com/mcp',
-		setupPrompt: '',
-		discoveryPrompt: '',
-		persistPrompt: '',
-		hasAccessWin: false,
-		hasSecondMcpClient: false,
-		hasMcpClient: false,
-		connectedAgents: [],
-		secondAgentStandardGift: {
-			received: false,
-			active: false,
-			status: 'none',
-			expiresAt: null,
-			grantedAt: null,
-		},
-		emailVerified: false,
-		needsOnboarding: true,
-		featuredListings: [],
-		featuredMcpServers: [],
-		customMcpServers: [],
-		persistedPackageName: null,
-		accessWinMemorySubject: null,
-		checklist: null,
-	})),
-	loadPublicOnboardingData: vi.fn(() => ({
-		ok: true,
-		loggedIn: false,
-		username: null,
-		mcpServerUrl: 'https://example.com/mcp',
-		setupPrompt: '',
-		discoveryPrompt: '',
-		persistPrompt: '',
-		hasAccessWin: false,
-		hasSecondMcpClient: false,
-		hasMcpClient: false,
-		connectedAgents: [],
-		secondAgentStandardGift: {
-			received: false,
-			active: false,
-			status: 'none',
-			expiresAt: null,
-			grantedAt: null,
-		},
-		emailVerified: false,
-		needsOnboarding: true,
-		featuredListings: [],
-		featuredMcpServers: [],
-		customMcpServers: [],
-		persistedPackageName: null,
-		accessWinMemorySubject: null,
-		checklist: null,
-	})),
-}))
+vi.mock('#app/onboarding-data.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#app/onboarding-data.ts')>()
+	return {
+		...actual,
+		loadOnboardingData: vi.fn(actual.loadOnboardingData),
+	}
+})
 
 vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: vi.fn(),
@@ -239,18 +186,23 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'compute-overage-charging': true,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
-	expect(loadOnboardingData).toHaveBeenCalledWith(
-		expect.objectContaining({ featuredMcpServers: [] }),
-	)
+	expect(loadOnboardingData).not.toHaveBeenCalled()
+	const homeInput = vi.mocked(renderAppPage).mock.calls.at(-1)?.[0]
+	expect(homeInput?.listedBanners).toEqual(expect.any(Promise))
+	expect(homeInput?.loaderData?.onboarding).toMatchObject({
+		loggedIn: true,
+		username: 'home-user',
+		emailVerified: false,
+		featuredMcpServers: [],
+		setupPrompt: '',
+		persistPrompt: '',
+	})
+	expect(
+		homeInput?.loaderData?.onboarding?.discoveryPrompt.length,
+	).toBeGreaterThan(0)
 })
 
 test('anonymous home SSR omits the unused onboarding chooser catalog', async () => {
-	const actual = await vi.importActual<
-		typeof import('#app/onboarding-data.ts')
-	>('#app/onboarding-data.ts')
-	vi.mocked(loadPublicOnboardingData).mockImplementation(
-		actual.loadPublicOnboardingData,
-	)
 	vi.mocked(renderAppPage).mockResolvedValue(new Response('ok'))
 
 	setAuthSessionSecret(testCookieSecret)

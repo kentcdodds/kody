@@ -10,10 +10,8 @@ import {
 	prefersMarkdown,
 	withVaryAccept,
 } from '#app/markdown-negotiation.ts'
-import {
-	loadOnboardingData,
-	loadPublicOnboardingData,
-} from '#app/onboarding-data.ts'
+import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
+import { loadEnabledSiteBannersForSsr } from '#app/site-banner-ssr.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
@@ -38,6 +36,9 @@ export function createHomeHandler(env: Env) {
 
 			const serverTiming: Array<ServerTimingEntry> = []
 			const walkthroughHosts = pickWalkthroughHosts()
+			// Start the banner list with auth and code-runs so signed-in /
+			// (always no-store) does not pay that D1 after those finish.
+			const listedBanners = loadEnabledSiteBannersForSsr(env)
 			const [codeRunsWindow, signupMode, user] = await Promise.all([
 				pushServerTiming(serverTiming, 'code-runs', () =>
 					loadPublicCodeRunsWindow(env),
@@ -48,44 +49,10 @@ export function createHomeHandler(env: Env) {
 				}),
 			])
 			const codeRuns = { ok: true as const, window: codeRunsWindow }
-			if (!user) {
-				// Anonymous visits still embed discovery-prompt copy so the
-				// hero does not pop it in after /onboarding.json. The MCP
-				// chooser catalog and setup prompts stay off / — home does
-				// not render them, and they dominated rmx-data (~7 kB).
-				return withAgentDiscoveryLinkHeaders(
-					withVaryAccept(
-						await renderAppPage({
-							request,
-							env,
-							loaderData: {
-								onboarding: {
-									...loadPublicOnboardingData({
-										env,
-										requestUrl: request.url,
-									}),
-									featuredMcpServers: [],
-									setupPrompt: '',
-									persistPrompt: '',
-								},
-								codeRuns,
-								walkthroughHosts,
-								signupMode,
-							},
-							serverTiming,
-						}),
-					),
-					origin,
-				)
-			}
-
-			const onboarding = await loadOnboardingData({
+			const onboarding = loadHomePageOnboardingData({
 				env,
 				requestUrl: request.url,
-				stableUserId: user.mcpUser.userId,
-				username: user.username,
-				emailVerified: user.emailVerified,
-				featuredMcpServers: [],
+				user,
 			})
 			return withAgentDiscoveryLinkHeaders(
 				withVaryAccept(
@@ -98,6 +65,7 @@ export function createHomeHandler(env: Env) {
 							walkthroughHosts,
 							signupMode,
 						},
+						listedBanners,
 						serverTiming,
 					}),
 				),
