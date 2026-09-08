@@ -651,7 +651,9 @@ test('renderAppPage embeds the Fathom tracker only when FATHOM_SITE_ID is set', 
 		'https://cdn.usefathom.com https://static.cloudflareinsights.com',
 	)
 	expect(csp).toContain("img-src 'self' data: blob: https://cdn.usefathom.com")
-	expect(csp).toContain("connect-src 'self' https://cloudflareinsights.com")
+	expect(csp).toContain(
+		"connect-src 'self' https://cdn.usefathom.com https://cloudflareinsights.com",
+	)
 })
 
 test('renderAppPage emits a pre-hydration scroll restoration script in the document body', async () => {

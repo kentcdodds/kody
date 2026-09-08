@@ -373,9 +373,17 @@ Privacy-first pageviews on production SSR pages only.
 Committed Wrangler var: `FATHOM_SITE_ID=WKKSDJGN`
 (`packages/worker/wrangler.jsonc`). Unset in local, preview, and test. Script:
 `https://cdn.usefathom.com/script.js` (`data-spa=auto`). CSP allowlist in
-`packages/worker/src/app/security-headers.ts`.
+`packages/worker/src/app/security-headers.ts` (`script-src`, `img-src`, and
+`connect-src`).
 
-Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret.
+Dashboard: [app.usefathom.com](https://app.usefathom.com/). No secret. The
+collect GIF always returns 200, including for traffic Fathom later drops
+(datacenter / bot filter, or a Site Firewall allow/block list). After a domain
+change, reload the site dashboard and confirm hostname `https://kody.codes`
+appears; the toolbar bot icon shows how many requests were classified as
+non-human. Settings → Sites → **kody.codes** → Firewall → Domains is optional
+hygiene (empty list does not filter; if you use Allow, include `kody.codes`).
+The API token cannot read or write firewall settings.
 
 Recovery: Fathom account login. Losing the site id only drops analytics; the app
 stays up.

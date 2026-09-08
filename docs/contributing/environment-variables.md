@@ -82,8 +82,13 @@ Optional Wrangler `var` (public, non-secret; see
   `packages/worker/wrangler.jsonc`; it is intentionally unset for local dev,
   preview, and tests so those environments never send pageviews. The CSP in
   `packages/worker/src/app/security-headers.ts` allowlists
-  `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
-  its image beacon.
+  `https://cdn.usefathom.com` in `script-src`, `img-src`, and `connect-src` for
+  the tracker, its image pageview beacon, and `sendBeacon` duration/event pings.
+  A 200 collect GIF is not proof of ingest: Fathom still bot-filters datacenter
+  IPs. After a production domain change, confirm the dashboard shows the new
+  hostname and check the toolbar bot icon; Site Firewall Allowed domains is
+  optional (empty does not filter). The API token cannot read or write firewall
+  settings.
 
 ## YouTube watch overlay
 
