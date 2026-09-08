@@ -7,7 +7,8 @@ import {
 	handleForkOutdatedCopyPointerOut,
 } from './fork-outdated-copy.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
-import { getSlugFromPathname } from './routes/blog-post.tsx'
+// Path-only helper: importing blog-post.tsx would pull Shiki onto `/`.
+import { getSlugFromPathname } from './routes/blog-post-path.ts'
 import { isCommunityListingPathname } from './routes/community-detail-shared.ts'
 import {
 	listenToRouterMutations,
