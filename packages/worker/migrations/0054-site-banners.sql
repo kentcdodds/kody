@@ -1,7 +1,9 @@
 -- Operator-owned site announcement banners plus per-user dismissals.
 -- Banner rows are global config (no user_id). Dismissals are user-scoped.
+-- IF NOT EXISTS: preview D1 already applied this schema as 0042-site-banners.sql
+-- before the migration was renumbered onto main's next free prefix.
 
-CREATE TABLE site_banners (
+CREATE TABLE IF NOT EXISTS site_banners (
 	id TEXT PRIMARY KEY NOT NULL,
 	enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
 	priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 1000),
@@ -35,13 +37,13 @@ CREATE TABLE site_banners (
 	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 
-CREATE INDEX site_banners_enabled_priority_idx ON site_banners (enabled, priority DESC);
+CREATE INDEX IF NOT EXISTS site_banners_enabled_priority_idx ON site_banners (enabled, priority DESC);
 
-CREATE TABLE site_banner_dismissals (
+CREATE TABLE IF NOT EXISTS site_banner_dismissals (
 	banner_id TEXT NOT NULL REFERENCES site_banners (id) ON DELETE CASCADE,
 	user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
 	dismissed_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 	PRIMARY KEY (banner_id, user_id)
 );
 
-CREATE INDEX site_banner_dismissals_user_id_idx ON site_banner_dismissals (user_id);
+CREATE INDEX IF NOT EXISTS site_banner_dismissals_user_id_idx ON site_banner_dismissals (user_id);
