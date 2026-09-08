@@ -274,6 +274,9 @@ export async function addMcpServer(input: {
 		throw error
 	}
 	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
+	const lastErrorJson = connection.lastError
+		? stringifyMcpServerLastError(connection.lastError)
+		: null
 	if (connection.lastError) {
 		await setMcpServerLastError({
 			env: input.env,
@@ -281,7 +284,6 @@ export async function addMcpServer(input: {
 			id: row.id,
 			lastError: connection.lastError,
 		})
-		row.last_error = stringifyMcpServerLastError(connection.lastError)
 	}
 	await scheduleMcpServerFaviconFill({
 		db: input.env.APP_DB,
@@ -291,7 +293,10 @@ export async function addMcpServer(input: {
 		waitUntil: input.waitUntil,
 	})
 	return {
-		setting: toMetadata(row),
+		setting: toMetadata({
+			...row,
+			last_error: lastErrorJson,
+		}),
 		connection,
 	}
 }
