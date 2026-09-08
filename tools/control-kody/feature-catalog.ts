@@ -122,6 +122,7 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/account/packages/:packageId/approve-publish.json',
 			'/account/packages/:packageId/files.json',
 			'/profiles/:username/packages/:kodyId/approve-publish.json',
+			'/@:username/:kodyId/raw/:ref(/*relativePath)',
 		],
 	},
 	{
@@ -241,6 +242,8 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/community/:listingId/install.json',
 			'/profiles/:username.json',
 			'/profiles/:username/packages/:kodyId.json',
+			'/@:username/:kodyId/raw/:ref(/*relativePath)',
+			'/community/:listingId/raw(/*relativePath)',
 		],
 	},
 	{

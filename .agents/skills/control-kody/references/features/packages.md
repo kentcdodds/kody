@@ -8,8 +8,10 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 when you view your own profile. Each package lives at `/@username/:kodyId`
 (README), `/@username/:kodyId/tree/:ref` (files), `/@username/:kodyId/settings`
 (lock, visibility, delete), and `/@username/:kodyId/approve-publish`
-(published-vs-HEAD review). Legacy `/account/packages` HTML URLs only redirect
-to these canonical pages.
+(published-vs-HEAD review). Opening an allowlisted image or video in the tree
+renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
+authz as the tree). Legacy `/account/packages` HTML URLs only redirect to these
+canonical pages.
 
 ## Drive it
 
@@ -44,6 +46,7 @@ then delete it and assert the empty state.
   action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
+- `GET /@:username/:kodyId/raw/:ref(/*relativePath)` (allowlisted media bytes)
 - `GET /profiles/:username/packages/:kodyId/approve-publish.json`
 - `GET /account/packages/:packageId/files.json` (404 + `redirectTo` the tree)
 - `GET|POST /account/packages/:packageId/approve-publish.json`

@@ -25,6 +25,7 @@ import {
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
 import { type ReferralProgramSummary } from '#universal/referral-program.ts'
@@ -187,8 +188,10 @@ export type PackageFilesLoaderData = {
 	children: Array<PackageFilesChildLoaderData>
 	content: string | null
 	contentPath: string | null
-	contentKind: 'markdown' | 'code' | 'text' | null
+	contentKind: PackageFilesContentKind | null
 	language: string | null
+	contentByteLength?: number | null
+	mediaHref?: string | null
 	contentHighlighted?: HighlightedCode | null
 	contentFences?: Array<HighlightedCode>
 	username?: string

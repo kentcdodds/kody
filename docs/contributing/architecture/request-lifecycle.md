@@ -199,8 +199,9 @@ workerd honors `stale-while-revalidate` and persists `caches.default` under
 edit that changed it. The `workers-unit` suite still exercises the store.
 
 The public package surfaces (`/@:username/:kodyId`,
-`/@:username/:kodyId/tree/:ref/*`, `/community/:id`, `/community/:id/files/*`)
-and their JSON companions (`/profiles/:username/packages/:kodyId.json`,
+`/@:username/:kodyId/tree/:ref/*`, `/@:username/:kodyId/raw/:ref/*`,
+`/community/:id`, `/community/:id/files/*`, `/community/:id/raw/*`) and their
+JSON companions (`/profiles/:username/packages/:kodyId.json`,
 `/community/:id.json`, `.../files.json`) are shared too, but with
 `public, max-age=60` and no stale-while-revalidate: an owner can unpublish or
 make a package private and nothing purges shared caches, so a stale public

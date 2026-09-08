@@ -272,7 +272,18 @@ Client routes: `packages/worker/client/routes/community*`
   redirect at that URL
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
   (default-branch name from git, SHA, or another branch). `HEAD` and leftover
-  `/files` URLs 301 to `/tree/{defaultBranch}` (`main` when lookup misses)
+  `/files` URLs 301 to `/tree/{defaultBranch}` (`main` when lookup misses).
+  Allowlisted images, video, and audio preview in the blob pane via a
+  same-origin `/raw/` route (`<img>` / `<video>` / `<audio>`). SVG is served
+  only as `image/svg+xml` for `<img src>` — markup is never injected. Other
+  binaries show a non-preview message instead of a latin1 code dump.
+- `/@:username/:kodyId/raw/:ref(/*relativePath)` — allowlisted media bytes for
+  that preview (same authz and tree resolution as the explorer). A hex ref that
+  only falls back to the listing pin snapshot 404s, same as the tree.
+  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)`.
+  `Content-Type` comes from the extension allowlist plus a magic-byte sniff;
+  responses are `nosniff` + `Content-Disposition: inline` and never `text/html`
+  or JavaScript.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (requires login
   and a generic confirm), fork prompt, and report link (report requires login)
