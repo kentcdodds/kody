@@ -168,4 +168,21 @@ test('IdP success with connected state and null connection.error is a tool-disco
 	expect(discovering).toContain("tool discovery didn't finish")
 	expect(discovering).toContain('phase tools/list')
 	expect(discovering).not.toContain('still "discovering"')
+
+	const catalogTimeout = resolveMcpOAuthCallbackOutcome({
+		sdkAuthSuccess: true,
+		sdkAuthError: null,
+		serverId: 'server-catalog',
+		serverName: 'analytics',
+		attemptId: 'attempt-catalog',
+		connection: {
+			state: 'connected',
+			authUrl: null,
+			error: null,
+			phase: 'tools/list',
+			mcpEndpoint: 'https://analytics.example/mcp',
+		},
+	})
+	expect(catalogTimeout.lastError?.phase).toBe('tools/list')
+	expect(catalogTimeout.authError).toContain('phase tools/list')
 })

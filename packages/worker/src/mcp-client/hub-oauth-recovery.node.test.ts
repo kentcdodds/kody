@@ -38,6 +38,9 @@ type FakeManager = {
 	rows: Array<FakeServerRow>
 	mcpConnections: Record<string, FakeConnection>
 	connectCount: number
+	registerCount: number
+	discoverCount: number
+	discoverSucceedsOn: 'never' | 'always' | 'legacy'
 	connectBehavior: 'oauth' | 'ready' | 'disconnected' | 'connected'
 	connectBehaviors: Array<'oauth' | 'ready' | 'disconnected' | 'connected'>
 	registerFailuresRemaining: number
@@ -116,6 +119,9 @@ vi.mock('agents/mcp/client', () => ({
 		rows: Array<FakeServerRow> = []
 		mcpConnections: Record<string, FakeConnection> = {}
 		connectCount = 0
+		registerCount = 0
+		discoverCount = 0
+		discoverSucceedsOn: 'never' | 'always' | 'legacy' = 'never'
 		connectBehavior: 'oauth' | 'ready' | 'disconnected' | 'connected' = 'oauth'
 		connectBehaviors: Array<'oauth' | 'ready' | 'disconnected' | 'connected'> =
 			[]
@@ -160,6 +166,7 @@ vi.mock('agents/mcp/client', () => ({
 				this.registerFailuresRemaining -= 1
 				throw new Error('Replacement registration failed.')
 			}
+			this.registerCount += 1
 			this.rows.push({
 				id: serverId,
 				name: options.name,
@@ -219,7 +226,26 @@ vi.mock('agents/mcp/client', () => ({
 			}
 		}
 
-		async discoverIfConnected() {}
+		async discoverIfConnected(serverId: string) {
+			this.discoverCount += 1
+			const connection = this.mcpConnections[serverId]
+			if (!connection) return
+			const negotiation = Reflect.get(
+				connection.options.client,
+				'versionNegotiation',
+			)
+			const isLegacy =
+				negotiation != null &&
+				typeof negotiation === 'object' &&
+				Reflect.get(negotiation, 'mode') === 'legacy'
+			if (
+				this.discoverSucceedsOn === 'always' ||
+				(this.discoverSucceedsOn === 'legacy' && isLegacy)
+			) {
+				connection.connectionState = 'ready'
+				connection.connectionError = null
+			}
+		}
 
 		isCallbackRequest() {
 			return this.callbackMatches
@@ -698,6 +724,7 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 	if (!connection) throw new Error('Fake connection was not seeded.')
 	manager.callbackMatches = true
 	manager.callbackResult = { serverId: 'server-1', authSuccess: true }
+	manager.connectBehavior = 'connected'
 	connection.connectionState = 'connected'
 	connection.connectionError = null
 	values.set('/Kody/server-1/oauth_discovery', {
@@ -712,12 +739,12 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 
 	expect(result.authSuccess).toBe(false)
 	expect(result.authorizationNeeded).toBe(false)
-	expect(result.lastError?.phase).toBe('server/discover')
+	expect(result.lastError?.phase).toBe('tools/list')
 	expect(result.lastError?.mcpEndpoint).toBe('https://mediarss.example/mcp')
 	expect(result.lastError?.resource).toBe('https://mcp.posthog.com/')
 	expect(result.lastError?.authServer).toBe('https://auth.posthog.com/')
 	expect(result.authError).toContain("tool discovery didn't finish")
-	expect(result.authError).toContain('phase server/discover')
+	expect(result.authError).toContain('phase tools/list')
 	expect(result.authError).toContain(`id ${result.lastError?.attemptId}`)
 	expect(result.authError?.match(/authorization completed/gi)?.length).toBe(1)
 	expect(result.authError?.match(/\bphase\s/g)?.length).toBe(1)
@@ -730,7 +757,7 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 		expect.objectContaining({
 			attemptId: result.lastError?.attemptId,
 			serverId: 'server-1',
-			phase: 'server/discover',
+			phase: 'tools/list',
 			mcpEndpoint: 'https://mediarss.example/mcp',
 			resource: 'https://mcp.posthog.com/',
 			authServer: 'https://auth.posthog.com/',
@@ -755,8 +782,10 @@ test('replayed unusable callback after incomplete settle reports lastError inste
 		authUrl: 'https://auth.example/authorize?state=used.server-1',
 	})
 	manager.callbackMatches = false
-	const connection = manager.mcpConnections['server-1']
-	if (!connection) throw new Error('Fake connection was not seeded.')
+	manager.connectBehavior = 'connected'
+	if (!manager.mcpConnections['server-1']) {
+		throw new Error('Fake connection was not seeded.')
+	}
 	manager.rows[0]!.auth_url = null
 	const tokenKey = '/Kody/server-1/client-1/token'
 	values.set(tokenKey, { access_token: 'still-valid' })
@@ -766,6 +795,8 @@ test('replayed unusable callback after incomplete settle reports lastError inste
 	})
 
 	for (const inFlightState of ['connected', 'discovering', 'connecting']) {
+		const connection = manager.mcpConnections['server-1']
+		if (!connection) throw new Error('Fake connection was not seeded.')
 		connection.connectionState = inFlightState
 		connection.connectionError = null
 		const outcome = await hub.handleOAuthCallback({
@@ -789,7 +820,7 @@ test('replayed unusable callback after incomplete settle reports lastError inste
 		}
 	}
 
-	expect(manager.connectCount).toBe(0)
+	expect(manager.connectCount).toBe(1)
 	expect(manager.rows[0]?.client_id).toBe('client-1')
 	expect(values.get(tokenKey)).toEqual({ access_token: 'still-valid' })
 })
@@ -810,20 +841,27 @@ test('add, reconnect, and refresh treat a discover timeout as a durable lastErro
 		callbackUrl,
 	})
 	expect(added.state).toBe('connected')
-	expect(added.lastError?.phase).toBe('server/discover')
+	expect(added.lastError?.phase).toBe('tools/list')
 	expect(added.lastError?.mcpEndpoint).toBe('https://mediarss.example/mcp')
 	expect(added.lastError?.attemptId).toBeTruthy()
 	expect(added.error).toContain("tool discovery didn't finish")
-	expect(added.error).toContain('phase server/discover')
+	expect(added.error).toContain('phase tools/list')
 	expect(added.error).toContain(`id ${added.lastError?.attemptId}`)
 	expect(added.error?.match(/\bid\s/g)?.length).toBe(1)
 	expect(manager.mcpConnections['server-1']?.connectionError).toBe(added.error)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp discover retrying legacy handshake',
+		expect.objectContaining({
+			serverId: 'server-1',
+			mcpEndpoint: 'https://mediarss.example/mcp',
+		}),
+	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp discover timeout incomplete',
 		expect.objectContaining({
 			attemptId: added.lastError?.attemptId,
 			serverId: 'server-1',
-			phase: 'server/discover',
+			phase: 'tools/list',
 		}),
 	)
 
@@ -849,8 +887,102 @@ test('add, reconnect, and refresh treat a discover timeout as a durable lastErro
 		callbackUrl,
 	})
 	expect(reconnected.state).toBe('connected')
-	expect(reconnected.lastError?.phase).toBe('server/discover')
+	expect(reconnected.lastError?.phase).toBe('tools/list')
 	expect(reconnected.lastError?.mcpEndpoint).toBe(
 		'https://mediarss.example/mcp',
 	)
+})
+
+test('healthy auto catalog stays on auto; modern-connect catalog timeout falls back to legacy and can reach ready', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+
+	const { state: healthyState, values: healthyValues } =
+		createDurableObjectState()
+	const healthyHub = new McpClientHub(healthyState, {} as Env)
+	const healthy = mockModule.manager
+	if (!healthy) throw new Error('Fake manager was not constructed.')
+	healthy.connectBehavior = 'connected'
+	healthy.discoverSucceedsOn = 'always'
+	const healthyAdded = await healthyHub.addServer({
+		serverId: 'server-healthy',
+		name: 'feeds',
+		url: 'https://feeds.example/mcp',
+		callbackUrl,
+	})
+	expect(healthyAdded.state).toBe('ready')
+	expect(healthyAdded.lastError ?? null).toBeNull()
+	expect(healthy.registerCount).toBe(1)
+	expect(healthy.discoverCount).toBe(1)
+	expect(healthy.mcpConnections['server-healthy']?.options.client).toEqual({
+		versionNegotiation: { mode: 'auto' },
+	})
+	expect(healthyValues.has('mcp-legacy-handshake/server-healthy')).toBe(false)
+
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	manager.connectBehavior = 'connected'
+	manager.discoverSucceedsOn = 'legacy'
+
+	const added = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl,
+	})
+	expect(added.state).toBe('ready')
+	expect(added.lastError ?? null).toBeNull()
+	expect(manager.registerCount).toBe(2)
+	expect(manager.discoverCount).toBe(2)
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'legacy' },
+	})
+	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp discover retrying legacy handshake',
+		expect.objectContaining({
+			serverId: 'server-1',
+			mcpEndpoint: 'https://analytics.example/mcp',
+		}),
+	)
+
+	manager.discoverSucceedsOn = 'always'
+	const reconnected = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(reconnected.state).toBe('ready')
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'auto' },
+	})
+	expect(values.has('mcp-legacy-handshake/server-1')).toBe(false)
+
+	manager.discoverSucceedsOn = 'legacy'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.options.client = { versionNegotiation: { mode: 'auto' } }
+	connection.connectionState = 'connected'
+	manager.callbackMatches = true
+	manager.callbackResult = { serverId: 'server-1', authSuccess: true }
+	manager.registerCount = 0
+	manager.discoverCount = 0
+	const oauth = await hub.handleOAuthCallback({
+		url: `${callbackUrl}?code=abc&state=ok.server-1`,
+		callbackUrl,
+	})
+	expect(oauth.authSuccess).toBe(true)
+	expect(oauth.lastError).toBeNull()
+	expect(manager.registerCount).toBe(1)
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'legacy' },
+	})
+	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
 })

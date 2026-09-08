@@ -206,6 +206,7 @@ export function buildIncompleteDiscoverLastError(input: {
 	state: McpServerConnectionState
 	authUrl?: string | null
 	error?: string | null
+	phase?: McpOAuthSettlePhase | null
 	mcpEndpoint?: string | null
 	resource?: string | null
 	authServer?: string | null
@@ -216,6 +217,7 @@ export function buildIncompleteDiscoverLastError(input: {
 		state: input.state,
 		authUrl: input.authUrl ?? null,
 		error: input.error,
+		phase: input.phase,
 		mcpEndpoint: input.mcpEndpoint,
 		resource: input.resource,
 		authServer: input.authServer,
