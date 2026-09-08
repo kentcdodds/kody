@@ -1,4 +1,10 @@
 import { parsePlanName, planNames, type PlanName } from '#universal/plans.ts'
+import {
+	resolveSiteBannerImageUrl,
+	rewriteBannerHrefForYoutubeWatch,
+	youtubeThumbPath,
+	youtubeWatchHref,
+} from '#universal/youtube-watch.ts'
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/
 
@@ -35,10 +41,12 @@ export const siteBannerPreviewLookParam = 'siteBannerLook'
 export const siteBannerPreviewIdParam = 'siteBannerPreview'
 export const launchVideoSampleBannerId = 'preview-launch-video'
 
+export const siteBannerLookSampleVideoId = 'QA0xYMAMjEg'
+
 export const siteBannerLookMinHeights = {
-	strip: '3.25rem',
-	promo: '5.75rem',
-	card: '7.25rem',
+	strip: '3.75rem',
+	promo: '7.5rem',
+	card: '9rem',
 } as const satisfies Record<SiteBannerLook, string>
 
 const maxTitleLength = 120
@@ -373,14 +381,14 @@ export function toSiteBannerView(
 		id: banner.id,
 		title: banner.title,
 		body: banner.body,
-		ctaHref: banner.ctaHref,
+		ctaHref: rewriteBannerHrefForYoutubeWatch(banner.ctaHref),
 		ctaLabel: banner.ctaLabel,
-		secondaryHref: banner.secondaryHref,
+		secondaryHref: rewriteBannerHrefForYoutubeWatch(banner.secondaryHref),
 		secondaryLabel: banner.secondaryLabel,
 		severity: banner.severity,
 		look: lookOverride ?? banner.look,
 		icon: banner.icon,
-		imageUrl: banner.imageUrl,
+		imageUrl: resolveSiteBannerImageUrl(banner),
 		dismissible: banner.dismissible,
 	}
 }
@@ -392,14 +400,14 @@ export function createLaunchVideoSampleBanner(
 		id: launchVideoSampleBannerId,
 		title: 'Kody is live',
 		body: 'Watch the launch video — what Kody is, and why it exists.',
-		ctaHref: 'https://example.com/kody-launch-video',
+		ctaHref: youtubeWatchHref(siteBannerLookSampleVideoId),
 		ctaLabel: 'Watch the video',
 		secondaryHref: '/blog',
 		secondaryLabel: 'Read the announcement',
 		severity: 'promo',
 		look,
 		icon: 'play',
-		imageUrl: null,
+		imageUrl: youtubeThumbPath(siteBannerLookSampleVideoId),
 		dismissible: true,
 	}
 }

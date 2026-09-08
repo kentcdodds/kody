@@ -85,6 +85,23 @@ Optional Wrangler `var` (public, non-secret; see
   `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
   its image beacon.
 
+## YouTube watch overlay
+
+Optional Wrangler vars (public, non-secret; see
+`packages/worker/src/env-schema.ts` and
+[architecture/youtube-watch.md](./architecture/youtube-watch.md)):
+
+- `YOUTUBE_ALLOWED_PLAYLIST_IDS` — comma-separated playlist ids. The Worker
+  reads each playlist's public Atom feed (latest ~15 videos) and caches it about
+  an hour. `none` disables playlists. Unset skips playlist fetch so tests stay
+  offline. Production and preview set Kent's public playlist in
+  `packages/worker/wrangler.jsonc`.
+- `YOUTUBE_ALLOWED_VIDEO_IDS` — comma-separated extra video ids, merged with
+  playlist items and ids extracted from enabled banner hrefs.
+
+The overlay itself is `/?video=<id>`. Thumbnails are proxied at
+`/youtube-thumb/<id>` so `img-src` can stay first-party.
+
 ## Build metadata
 
 Optional Wrangler vars set by the production and preview deploy workflows (see

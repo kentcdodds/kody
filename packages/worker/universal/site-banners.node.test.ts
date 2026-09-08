@@ -11,9 +11,11 @@ import {
 	resolveVisibleSiteBanner,
 	selectSiteBannersForClient,
 	shouldHideSiteBanner,
+	toSiteBannerView,
 	type SiteBannerRecord,
 	type SiteBannerViewer,
 } from './site-banners.ts'
+import { youtubeThumbPath, youtubeWatchHref } from './youtube-watch.ts'
 
 const adminViewer: SiteBannerViewer = {
 	loggedIn: true,
@@ -348,4 +350,16 @@ test('public client candidates drop targeted user ids and unmatched audiences', 
 			viewer: adminViewer,
 		})?.title,
 	).not.toBe('Someone else')
+})
+
+test('public banner views rewrite YouTube CTAs and derive first-party thumbs', () => {
+	const videoId = 'QA0xYMAMjEg'
+	const view = toSiteBannerView(
+		banner({
+			ctaHref: `https://www.youtube.com/watch?v=${videoId}`,
+			imageUrl: null,
+		}),
+	)
+	expect(view.ctaHref).toBe(youtubeWatchHref(videoId))
+	expect(view.imageUrl).toBe(youtubeThumbPath(videoId))
 })

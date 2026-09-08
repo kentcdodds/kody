@@ -274,6 +274,14 @@ export const EnvSchema = object({
 	// the Fathom tracker script; when unset (local dev, preview, tests) no
 	// analytics script is rendered.
 	FATHOM_SITE_ID: optionalNonEmptyStringSchema,
+	// Comma-separated YouTube playlist ids whose latest Atom-feed videos
+	// (typically ~15 each) may open in the site-wide `/?video=` overlay.
+	// `none` disables playlists. Unset means no playlist fetch (tests).
+	YOUTUBE_ALLOWED_PLAYLIST_IDS: optionalNonEmptyStringSchema,
+	// Comma-separated extra YouTube video ids allowed by the overlay and
+	// first-party thumbnail proxy, in addition to playlist items and ids
+	// extracted from enabled banner hrefs.
+	YOUTUBE_ALLOWED_VIDEO_IDS: optionalNonEmptyStringSchema,
 	WRANGLER_IS_LOCAL_DEV: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_ID: optionalNonEmptyStringSchema,
 	GITHUB_CLIENT_SECRET: optionalNonEmptyStringSchema,

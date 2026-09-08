@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest'
-import { bannerAfterSave } from './admin-banners-shared.ts'
+import {
+	applyYoutubeWatchToBannerDraft,
+	bannerAfterSave,
+	emptyDraft,
+} from './admin-banners-shared.ts'
 import { type SiteBannerRecord } from '#universal/site-banners.ts'
+import { youtubeThumbPath, youtubeWatchHref } from '#universal/youtube-watch.ts'
 
 function banner(
 	overrides: Pick<SiteBannerRecord, 'id' | 'title' | 'priority'>,
@@ -47,4 +52,34 @@ test('bannerAfterSave selects the saved id, not the highest-priority row', () =>
 		'New launch',
 	)
 	expect(bannerAfterSave([existing, created], undefined)).toBeNull()
+})
+
+test('emptyDraft is a disabled promo banner with no hardcoded video', () => {
+	const draft = emptyDraft()
+	expect(draft.enabled).toBe(false)
+	expect(draft.look).toBe('promo')
+	expect(draft.title).toBe('')
+	expect(draft.ctaHref).toBe('')
+	expect(draft.imageUrl).toBe('')
+})
+
+test('applyYoutubeWatchToBannerDraft fills CTA and first-party thumb', () => {
+	const videoId = 'QA0xYMAMjEg'
+	const applied = applyYoutubeWatchToBannerDraft(
+		emptyDraft(),
+		`https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`,
+	)
+	expect(applied).toEqual({
+		ok: true,
+		draft: expect.objectContaining({
+			ctaHref: youtubeWatchHref(videoId),
+			ctaLabel: 'Watch',
+			imageUrl: youtubeThumbPath(videoId),
+		}),
+	})
+	expect(applyYoutubeWatchToBannerDraft(emptyDraft(), 'nope')).toEqual({
+		ok: false,
+		error:
+			'Paste a YouTube watch URL, youtu.be link, or 11-character video id.',
+	})
 })

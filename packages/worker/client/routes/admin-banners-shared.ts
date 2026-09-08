@@ -1,6 +1,5 @@
 import { planNames, type PlanName } from '#universal/plans.ts'
 import {
-	createLaunchVideoSampleBanner,
 	type SiteBannerAudience,
 	type SiteBannerIcon,
 	type SiteBannerInput,
@@ -10,6 +9,13 @@ import {
 	type SiteBannerSeverity,
 	type SiteBannerView,
 } from '#universal/site-banners.ts'
+import {
+	parseYoutubeVideoId,
+	resolveSiteBannerImageUrl,
+	rewriteBannerHrefForYoutubeWatch,
+	youtubeThumbPath,
+	youtubeWatchHref,
+} from '#universal/youtube-watch.ts'
 
 export const adminBannersApiPath = '/admin/banners.json'
 export const adminBannersPath = '/admin/banners'
@@ -43,19 +49,18 @@ export function isAdminBannersPath(href: string) {
 }
 
 export function emptyDraft(): BannerDraft {
-	const sample = createLaunchVideoSampleBanner('strip')
 	return {
 		id: null,
 		enabled: false,
 		priority: '10',
-		title: sample.title,
-		body: sample.body,
-		ctaHref: sample.ctaHref ?? '',
-		ctaLabel: sample.ctaLabel ?? '',
-		secondaryHref: sample.secondaryHref ?? '',
-		secondaryLabel: sample.secondaryLabel ?? '',
+		title: '',
+		body: '',
+		ctaHref: '',
+		ctaLabel: '',
+		secondaryHref: '',
+		secondaryLabel: '',
 		severity: 'promo',
-		look: 'strip',
+		look: 'promo',
 		icon: 'play',
 		imageUrl: '',
 		pageTargeting: 'all',
@@ -66,6 +71,33 @@ export function emptyDraft(): BannerDraft {
 		dismissible: true,
 		startsAt: '',
 		endsAt: '',
+	}
+}
+
+export type ApplyYoutubeWatchToBannerDraftResult =
+	| { ok: true; draft: BannerDraft }
+	| { ok: false; error: string }
+
+export function applyYoutubeWatchToBannerDraft(
+	draft: BannerDraft,
+	rawInput: string,
+): ApplyYoutubeWatchToBannerDraftResult {
+	const videoId = parseYoutubeVideoId(rawInput)
+	if (!videoId) {
+		return {
+			ok: false,
+			error:
+				'Paste a YouTube watch URL, youtu.be link, or 11-character video id.',
+		}
+	}
+	return {
+		ok: true,
+		draft: {
+			...draft,
+			ctaHref: youtubeWatchHref(videoId),
+			ctaLabel: draft.ctaLabel.trim() || 'Watch',
+			imageUrl: youtubeThumbPath(videoId),
+		},
 	}
 }
 
@@ -143,14 +175,20 @@ export function draftToPreview(
 		id: draft.id ?? `preview-${look}`,
 		title: draft.title.trim() || 'Untitled banner',
 		body: draft.body,
-		ctaHref: draft.ctaHref.trim() || null,
+		ctaHref: rewriteBannerHrefForYoutubeWatch(draft.ctaHref.trim() || null),
 		ctaLabel: draft.ctaLabel.trim() || null,
-		secondaryHref: draft.secondaryHref.trim() || null,
+		secondaryHref: rewriteBannerHrefForYoutubeWatch(
+			draft.secondaryHref.trim() || null,
+		),
 		secondaryLabel: draft.secondaryLabel.trim() || null,
 		severity: draft.severity,
 		look,
 		icon: draft.icon || null,
-		imageUrl: draft.imageUrl.trim() || null,
+		imageUrl: resolveSiteBannerImageUrl({
+			imageUrl: draft.imageUrl.trim() || null,
+			ctaHref: draft.ctaHref.trim() || null,
+			secondaryHref: draft.secondaryHref.trim() || null,
+		}),
 		dismissible: draft.dismissible,
 	}
 }

@@ -446,6 +446,13 @@ automatically:
   Fathom Analytics tracker script. Committed for production in
   `packages/worker/wrangler.jsonc`; intentionally unset for local dev, preview,
   and tests — see [environment-variables.md](./environment-variables.md))
+- `YOUTUBE_ALLOWED_PLAYLIST_IDS` (optional public Wrangler var; comma-separated
+  playlist ids for the `/?video=` overlay. `none` disables playlists. Unset
+  skips playlist fetch. Production and preview set Kent's public playlist in
+  `packages/worker/wrangler.jsonc` — see
+  [environment-variables.md](./environment-variables.md))
+- `YOUTUBE_ALLOWED_VIDEO_IDS` (optional public Wrangler var; extra YouTube video
+  ids allowed by the overlay and `/youtube-thumb/:videoId` proxy)
 - `APP_COMMIT_SHA` (used as the Sentry **release** when present, in addition to
   `/health` versioning)
 - `CLOUDFLARE_API_BASE_URL` (optional; defaults to `https://api.cloudflare.com`.

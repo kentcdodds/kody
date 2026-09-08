@@ -32,6 +32,7 @@ import {
 	accountTextareaCss,
 } from './account-management-components.tsx'
 import {
+	applyYoutubeWatchToBannerDraft,
 	audienceLabel,
 	draftToPreview,
 	lookLabel,
@@ -54,6 +55,8 @@ export function AdminBannerForm(
 ) {
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+	let youtubeInput = ''
+	let youtubeError: string | null = null
 
 	return () => {
 		const {
@@ -271,11 +274,68 @@ export function AdminBannerForm(
 							/>
 						</label>
 					</div>
+					<div mix={css({ display: 'grid', gap: spacing.sm })}>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>YouTube video (optional)</span>
+							<input
+								value={youtubeInput}
+								placeholder="https://www.youtube.com/watch?v=…"
+								mix={[
+									css(accountInputCss),
+									on('input', (event) => {
+										if (!(event.currentTarget instanceof HTMLInputElement))
+											return
+										youtubeInput = event.currentTarget.value
+										youtubeError = null
+										handle.update()
+									}),
+								]}
+							/>
+						</label>
+						<p mix={css({ ...descriptionCss, margin: 0 })}>
+							Paste a watch URL, youtu.be link, or video id. This sets the CTA
+							to <code>/?video=</code> and the image to the first-party
+							thumbnail. The player only opens for allowlisted videos
+							(playlists, extra ids, and enabled banner CTAs).
+						</p>
+						{youtubeError ? (
+							<p
+								mix={css({
+									...descriptionCss,
+									margin: 0,
+									color: colors.danger,
+								})}
+							>
+								{youtubeError}
+							</p>
+						) : null}
+						<button
+							type="button"
+							mix={[
+								css(primaryButtonCss),
+								on('click', () => {
+									const result = applyYoutubeWatchToBannerDraft(
+										draft,
+										youtubeInput,
+									)
+									if (!result.ok) {
+										youtubeError = result.error
+										handle.update()
+										return
+									}
+									youtubeError = null
+									onDraftChange(result.draft)
+								}),
+							]}
+						>
+							Use for this banner
+						</button>
+					</div>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Image URL (optional)</span>
 						<input
 							value={draft.imageUrl}
-							placeholder="https://…"
+							placeholder="/youtube-thumb/… or first-party path"
 							mix={[
 								css(accountInputCss),
 								on('input', (event) => {
@@ -518,8 +578,8 @@ export function AdminBannerForm(
 						Look spike
 					</h2>
 					<p mix={css({ ...descriptionCss, margin: 0 })}>
-						Three launch-video treatments using this draft. Open the homepage as
-						an admin with{' '}
+						Three look treatments using this draft. Promo (B) is the default for
+						new banners. Open the homepage as an admin with{' '}
 						<code>?{siteBannerPreviewLookParam}=strip|promo|card</code> to
 						preview on a live page without enabling a banner.
 					</p>

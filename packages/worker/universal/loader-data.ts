@@ -419,6 +419,11 @@ export type SiteBannerLoaderData = {
 	viewer: SiteBannerViewer
 }
 
+export type YoutubeWatchLoaderData = {
+	allowedVideoIds: Array<string>
+	requestedVideoId: string | null
+}
+
 /**
  * Operator view of one platform (built-in) OAuth app. Never carries secret
  * values — `hasClientSecret` is the only trace of the encrypted credential.
@@ -1885,6 +1890,7 @@ export type AppLoaderData = {
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminBanners?: AdminBannersLoaderData
 	siteBanner?: SiteBannerLoaderData
+	youtubeWatch?: YoutubeWatchLoaderData
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
 	adminProviderMarks?: AdminProviderMarksLoaderData
 	adminCodemods?: AdminCodemodsLoaderData

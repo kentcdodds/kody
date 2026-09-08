@@ -166,12 +166,13 @@ function renderMedia(
 	tone: SeverityTone,
 ) {
 	if (banner.imageUrl) {
+		const size = imagePixelSize(look)
 		return (
 			<img
 				src={banner.imageUrl}
 				alt=""
-				width={look === 'card' ? 72 : 40}
-				height={look === 'card' ? 72 : 40}
+				width={size.width}
+				height={size.height}
 				mix={css(imageCss(look))}
 			/>
 		)
@@ -416,16 +417,38 @@ function actionsCss(look: SiteBannerLook) {
 	}
 }
 
+function imagePixelSize(look: SiteBannerLook) {
+	switch (look) {
+		case 'card':
+			return { width: 192, height: 108 }
+		case 'promo':
+			return { width: 160, height: 90 }
+		case 'strip':
+			return { width: 72, height: 40 }
+		default: {
+			const exhaustive: never = look
+			return exhaustive
+		}
+	}
+}
+
 function imageCss(look: SiteBannerLook) {
-	const size =
-		look === 'card' ? '4.5rem' : look === 'promo' ? '3.25rem' : '2rem'
+	const width =
+		look === 'card' ? '12rem' : look === 'promo' ? '10rem' : '4.5rem'
 	return {
-		width: size,
-		height: size,
-		borderRadius: look === 'card' ? radius.md : radius.full,
+		width,
+		aspectRatio: '16 / 9',
+		height: 'auto',
+		borderRadius: radius.md,
 		objectFit: 'cover' as const,
 		flex: '0 0 auto',
 		backgroundColor: colors.surface,
+		[stackMq]:
+			look === 'promo'
+				? {
+						width: '7rem',
+					}
+				: {},
 	}
 }
 

@@ -22,7 +22,7 @@ not jump after hydration.
 3. Filter by schedule, page targeting, audience, and dismissals.
 4. Sort by priority (highest wins), then `updatedAt`, then `id`.
 5. Show one banner. If an admin passed `siteBannerLook` and nothing else
-   matches, show the launch-video sample.
+   matches, show the look-preview sample (not a live/enabled banner).
 6. The HTML snapshot only embeds candidates this viewer is eligible for, with
    `audienceUserIds` and actor ids stripped, so anonymous cache cannot leak
    targeted copy or stable user ids.
@@ -43,11 +43,22 @@ document that still contains the banner.
 ## Looks
 
 `look` is a first-class field: `strip` (slim top bar), `promo` (richer strip
-with a play badge), or `card` (inset announcement). `strip` and `promo` paint
-full-bleed chrome; gutters live on the inner row so the strip spans the
-viewport. `card` stays inset. Each look reserves a `minHeight` in the first
-paint. Do not lock a launch-video look until an operator picks one; preview all
-three from the admin page or the query params above.
+with optional 16:9 media), or `card` (inset announcement). New drafts default to
+`promo`. `strip` and `promo` paint full-bleed chrome; gutters live on the inner
+row so the strip spans the viewport. `card` stays inset. Each look reserves a
+`minHeight` in the first paint.
+
+## Images and in-site video
+
+Banners can show a first-party image and a CTA. A YouTube watch URL or
+`/?video=<id>` CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty. Raw
+`i.ytimg.com` URLs are rewritten to that same-origin path so CSP can keep
+`img-src` first-party. The admin form has a paste helper that fills
+`ctaHref=/?video=<id>` and the thumb path. There is no hardcoded live launch
+banner; operators create and enable content in D1.
+
+In-site playback is the site-wide `/?video=` overlay, not a banner-only player.
+See [YouTube watch overlay](./youtube-watch.md).
 
 ## Code
 

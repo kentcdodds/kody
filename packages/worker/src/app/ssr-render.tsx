@@ -17,6 +17,7 @@ import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { loadSiteBannerLoaderData } from '#app/site-banner-ssr.ts'
+import { loadYoutubeWatchLoaderData } from '#app/youtube-watch-ssr.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
@@ -95,15 +96,23 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
-	const siteBanner = await pushServerTiming(serverTiming, 'siteBanner', () =>
-		loadSiteBannerLoaderData({
-			request,
-			env,
-			session,
-			pathname: requestUrl.pathname,
-		}),
-	)
-	const pageLoaderData = { ...loaderData, siteBanner }
+	const [siteBanner, youtubeWatch] = await Promise.all([
+		pushServerTiming(serverTiming, 'siteBanner', () =>
+			loadSiteBannerLoaderData({
+				request,
+				env,
+				session,
+				pathname: requestUrl.pathname,
+			}),
+		),
+		pushServerTiming(serverTiming, 'youtubeWatch', () =>
+			loadYoutubeWatchLoaderData({
+				request,
+				env,
+			}),
+		),
+	])
+	const pageLoaderData = { ...loaderData, siteBanner, youtubeWatch }
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientAssets = getClientEntryAssets(requestUrl.pathname)
 	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'

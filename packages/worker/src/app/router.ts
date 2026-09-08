@@ -26,6 +26,7 @@ import {
 	createAdminBannersHandler,
 } from '#app/handlers/admin-banners.ts'
 import { createSiteBannerDismissHandler } from '#app/handlers/site-banner-dismiss.ts'
+import { createYoutubeThumbHandler } from '#app/handlers/youtube-thumb.ts'
 import {
 	createAdminPlatformIntegrationsApiHandler,
 	createAdminPlatformIntegrationsHandler,
@@ -345,6 +346,7 @@ export function createAppRouter(env: Env) {
 			signup: createSignupHandler(env),
 			waitingList: createWaitingListHandler(env),
 			siteBannerDismissPost: createSiteBannerDismissHandler(env),
+			youtubeThumb: createYoutubeThumbHandler(env),
 			account: createAccountHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),

@@ -14,7 +14,7 @@ test('site banner SSR reserves look min-height and exposes test id', async () =>
 	expect(html).toContain('data-look="promo"')
 	expect(html).toContain('Kody is live')
 	expect(html).toContain('Watch the video')
-	expect(html).toContain('min-height: 5.75rem')
+	expect(html).toContain('min-height: 7.5rem')
 	expect(html).toContain('width: 100%')
 	expect(html).toContain('max-width: 100%')
 	expect(html).toContain('padding-inline: 0')
@@ -47,9 +47,9 @@ test('site banner snapshot resolves admin look override without a saved banner',
 
 test('each launch look paints a reserved height', async () => {
 	for (const [look, minHeight] of [
-		['strip', '3.25rem'],
-		['promo', '5.75rem'],
-		['card', '7.25rem'],
+		['strip', '3.75rem'],
+		['promo', '7.5rem'],
+		['card', '9rem'],
 	] as const) {
 		const html = await renderToString(
 			jsx(SiteBannerFrame, {

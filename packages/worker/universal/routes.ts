@@ -133,6 +133,7 @@ export const routes = route({
 	adminBannersApi: '/admin/banners.json',
 	adminBannersApiPost: post('/admin/banners.json'),
 	siteBannerDismissPost: post('/site-banner-dismiss.json'),
+	youtubeThumb: '/youtube-thumb/:videoId',
 	adminPlatformIntegrations: '/admin/platform-integrations',
 	adminPlatformIntegrationNew: '/admin/platform-integrations/new',
 	adminPlatformIntegrationDetail: '/admin/platform-integrations/:slug',
