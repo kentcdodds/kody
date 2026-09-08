@@ -54,12 +54,15 @@ row so the strip spans the viewport. `card` stays inset. Each look reserves a
 
 ## Images and in-site video
 
-Banners can show a first-party image and a CTA. A YouTube watch URL or
-`/?youtubeId=<id>` CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty.
-Raw `i.ytimg.com` URLs are rewritten to that same-origin path so CSP can keep
-`img-src` first-party. The admin form has a paste helper that fills
-`ctaHref=/?youtubeId=<id>` and the thumb path. Operators create and enable
-content in D1.
+Banners can show a first-party image and a CTA. Stored `ctaHref` and
+`secondaryHref` values render as stored: an absolute YouTube (or other https)
+URL stays off-site, including playlist query params. A stored `/?youtubeId=<id>`
+path still opens the on-site overlay. A YouTube watch URL or `/?youtubeId=<id>`
+CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty. Raw `i.ytimg.com`
+URLs are rewritten to that same-origin path so CSP can keep `img-src`
+first-party. The admin form has a paste helper that fills
+`ctaHref=/?youtubeId=<id>` and the thumb path when the operator wants the
+overlay. Operators create and enable content in D1.
 
 In-site playback is the site-wide `/?youtubeId=` overlay, not a banner-only
 player. See [YouTube watch overlay](./youtube-watch.md).

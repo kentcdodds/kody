@@ -164,15 +164,6 @@ export function mergeYoutubeWatchAllowlist(input: {
 	])
 }
 
-export function rewriteBannerHrefForYoutubeWatch(
-	href: string | null,
-): string | null {
-	if (!href) return null
-	if (href.startsWith('/')) return href
-	const videoId = parseYoutubeVideoId(href)
-	return videoId ? youtubeWatchHref(videoId) : href
-}
-
 export function resolveSiteBannerImageUrl(banner: {
 	imageUrl: string | null
 	ctaHref: string | null

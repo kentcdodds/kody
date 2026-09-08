@@ -2,10 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'
 import { type BannerDraft } from '#client/routes/admin-banners-shared.ts'
-import {
-	resolveSiteBannerImageUrl,
-	rewriteBannerHrefForYoutubeWatch,
-} from '#universal/youtube-watch.ts'
+import { resolveSiteBannerImageUrl } from '#universal/youtube-watch.ts'
 import {
 	fieldLabelCss,
 	getGhostButtonCss,
@@ -114,9 +111,6 @@ export function SiteBannerEditor(
 			ctaHref: draft.ctaHref.trim() || null,
 			secondaryHref: draft.secondaryHref.trim() || null,
 		})
-		const ctaHref = rewriteBannerHrefForYoutubeWatch(
-			draft.ctaHref.trim() || null,
-		)
 		const showSecondary =
 			Boolean(draft.ctaLabel) ||
 			Boolean(draft.secondaryLabel) ||
@@ -315,7 +309,7 @@ export function SiteBannerEditor(
 						</span>
 						<input
 							value={draft.ctaHref}
-							placeholder={ctaHref ?? '/?youtubeId=… or /path'}
+							placeholder="/?youtubeId=… or https://…"
 							mix={[
 								css(railInputCss),
 								on('input', (event) => {
