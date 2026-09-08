@@ -1,10 +1,8 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { routes } from '#universal/routes.ts'
 import {
 	landingTestimonials,
-	landingTestimonialsStorySlug,
 	shuffleTestimonials,
 	testimonialAttribution,
 	testimonialInitials,
@@ -74,7 +72,7 @@ test('testimonialAttribution joins verified role and employer and omits blanks',
 	expect(testimonialAttribution({ title: '', company: '' })).toBeNull()
 })
 
-test('carousel story links share the early-users post and anchor featured vignettes', () => {
+test('carousel story links opt in only when a vignette heading exists', () => {
 	const josh = landingTestimonials.find(
 		(entry) => entry.name === 'Josh Tomaino',
 	)
@@ -87,14 +85,12 @@ test('carousel story links share the early-users post and anchor featured vignet
 	expect(jett.quote).toContain("when downtime isn't an option")
 	expect(testimonialStoryHref(josh)).toBe('/blog/early-kody-users#josh-tomaino')
 	expect(testimonialStoryHref(jett)).toBe('/blog/early-kody-users#jett-hays')
-	expect(testimonialStoryHref({})).toBe(
-		routes.blogPost.href({ slug: landingTestimonialsStorySlug }),
-	)
-	for (const entry of landingTestimonials) {
-		expect(
-			testimonialStoryHref(entry).startsWith('/blog/early-kody-users'),
-		).toBe(true)
-	}
+	expect(testimonialStoryHref({})).toBeNull()
+	expect(
+		landingTestimonials
+			.filter((entry) => testimonialStoryHref(entry) != null)
+			.map((entry) => entry.name),
+	).toEqual(['Josh Tomaino', 'Jett Hays'])
 })
 
 test('every hosted testimonial photo exists under public/images/testimonials', () => {

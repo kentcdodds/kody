@@ -19,7 +19,7 @@ export type LandingTestimonial = {
 	title?: string
 	/** Verified public employer — omit if unsure. */
 	company?: string
-	/** Heading id on the shared early-users post when this person has a vignette. */
+	/** Heading id on the shared early-users post. Omit when there is no vignette. */
 	storyAnchor?: string
 }
 
@@ -113,8 +113,10 @@ export function testimonialAttribution(entry: {
 	return parts.join(', ')
 }
 
-/** Shared early-users post, plus an in-page heading when this person has one. */
-export function testimonialStoryHref(entry: { storyAnchor?: string }): string {
-	const base = routes.blogPost.href({ slug: landingTestimonialsStorySlug })
-	return entry.storyAnchor ? `${base}#${entry.storyAnchor}` : base
+/** Early-users post + heading when this person has a vignette; otherwise no link. */
+export function testimonialStoryHref(entry: {
+	storyAnchor?: string
+}): string | null {
+	if (!entry.storyAnchor) return null
+	return `${routes.blogPost.href({ slug: landingTestimonialsStorySlug })}#${entry.storyAnchor}`
 }

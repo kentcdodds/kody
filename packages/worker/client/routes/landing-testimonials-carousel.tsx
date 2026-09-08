@@ -586,6 +586,7 @@ function renderChevron(direction: 'prev' | 'next') {
 
 function renderTestimonialCard(item: LandingTestimonial) {
 	const attribution = testimonialAttribution(item)
+	const storyHref = testimonialStoryHref(item)
 	return (
 		<article key={item.name} class="landing-testimonial-card">
 			<blockquote class="landing-testimonial-quote">
@@ -620,10 +621,12 @@ function renderTestimonialCard(item: LandingTestimonial) {
 						) : null}
 					</span>
 				</a>
-				<a href={testimonialStoryHref(item)} class="landing-testimonial-story">
-					Read the full story
-					<span class="visually-hidden"> from {item.name}</span>
-				</a>
+				{storyHref ? (
+					<a href={storyHref} class="landing-testimonial-story">
+						Read the full story
+						<span class="visually-hidden"> from {item.name}</span>
+					</a>
+				) : null}
 			</footer>
 		</article>
 	)
