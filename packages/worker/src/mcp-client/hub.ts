@@ -16,6 +16,7 @@ import {
 	mcpLegacyHandshakeFallback,
 	mcpLegacyHandshakeStorageKey,
 	mcpLegacyHandshakeStoragePrefix,
+	readMcpVersionNegotiationMode,
 	shouldRetryLegacyHandshake,
 } from './legacy-handshake.ts'
 import {
@@ -151,6 +152,17 @@ class McpClientHubBase extends DurableObject<Env> {
 			mcpLegacyHandshakeStorageKey(serverId),
 			mcpLegacyHandshakeFallback,
 		)
+	}
+
+	private async rememberLegacyHandshakeIfActive(serverId: string) {
+		if (
+			readMcpVersionNegotiationMode(
+				this.manager.mcpConnections[serverId]?.options.client,
+			) !== 'legacy'
+		) {
+			return
+		}
+		await this.rememberLegacyHandshakeFallback(serverId)
 	}
 
 	private async forgetLegacyHandshakeFallback(serverId: string) {
@@ -750,6 +762,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (connected.state !== 'connected') {
 			const result = this.buildConnectResult(serverId)
 			if (result.state === 'authenticating' && result.authUrl) {
+				await this.rememberLegacyHandshakeIfActive(serverId)
 				return { result, lastError: null }
 			}
 			return this.keepCatalogLastError(serverId, autoFailure, result.error)
@@ -759,7 +772,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			attemptId: autoFailure.lastError?.attemptId,
 		})
 		if (discovered.result.state === 'ready') {
-			await this.rememberLegacyHandshakeFallback(serverId)
+			await this.rememberLegacyHandshakeIfActive(serverId)
 		}
 		return discovered
 	}
@@ -926,7 +939,11 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async discoverAfterOAuthEstablish(
 		serverId: string,
 	): Promise<McpServerConnectResult> {
-		return (await this.runDiscoverIfConnected(serverId)).result
+		const result = (await this.runDiscoverIfConnected(serverId)).result
+		if (result.state === 'ready') {
+			await this.rememberLegacyHandshakeIfActive(serverId)
+		}
+		return result
 	}
 
 	private async resolveOAuthCallbackOutcome(input: {

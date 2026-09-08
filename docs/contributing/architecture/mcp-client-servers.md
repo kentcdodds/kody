@@ -58,7 +58,8 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   `legacy` mode cannot skip the modern probe or DELETE a session against a
   modern-only server (`packages/worker/src/mcp-client/restore.ts`,
   `packages/worker/src/mcp-client/reconnect.ts`). A successful catalog-timeout
-  fallback is remembered per server in hub DO storage so the next restore keeps
+  fallback is remembered per server in hub DO storage when that retry reaches
+  `ready` or parks on OAuth `authenticating`, so the next restore keeps
   `legacy`; user reconnect or replacing the server via `addServer` forgets that
   mark and probes `auto` again. Header-mismatch, unauthenticated, and `-32022`
   UnsupportedProtocolVersion probe outcomes are not a 2025 verdict; after OAuth

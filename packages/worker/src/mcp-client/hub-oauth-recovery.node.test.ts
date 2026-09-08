@@ -1091,3 +1091,44 @@ test('replacing a server forgets the catalog-timeout legacy mark and probes auto
 	})
 	expect(values.has('mcp-legacy-handshake/server-1')).toBe(false)
 })
+
+test('legacy fallback that parks on OAuth remembers the mark and keeps it after ready', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	manager.connectBehaviors = ['connected', 'oauth']
+	manager.connectBehavior = 'oauth'
+	manager.discoverSucceedsOn = 'never'
+
+	const added = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(added.state).toBe('authenticating')
+	expect(added.authUrl).toBeTruthy()
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'legacy' },
+	})
+	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
+
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'connected'
+	manager.discoverSucceedsOn = 'always'
+	manager.callbackMatches = true
+	manager.callbackResult = { serverId: 'server-1', authSuccess: true }
+	const oauth = await hub.handleOAuthCallback({
+		url: 'https://kody.codes/account/mcp-servers/oauth/callback?code=abc&state=ok.server-1',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(oauth.authSuccess).toBe(true)
+	expect(oauth.lastError).toBeNull()
+	expect(manager.mcpConnections['server-1']?.options.client).toEqual({
+		versionNegotiation: { mode: 'legacy' },
+	})
+	expect(values.get('mcp-legacy-handshake/server-1')).toBe('catalog-timeout')
+})
