@@ -79,10 +79,15 @@ test('admin can create a site banner and preview launch looks', async ({
 	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true', {
 		timeout: 15_000,
 	})
-	await expect(page.getByRole('heading', { name: 'Look spike' })).toBeVisible()
-	await expect(page.getByTestId('site-banner-preview-strip')).toBeVisible()
+	await expect(page.getByRole('heading', { name: 'New banner' })).toBeVisible()
 	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
+	await expect(page.getByLabel('Title', { exact: true })).toBeVisible()
+	await page.getByRole('button', { name: 'A · Slim strip' }).click()
+	await expect(page.getByTestId('site-banner-preview-strip')).toBeVisible()
+	await page.getByRole('button', { name: 'C · Card announcement' }).click()
 	await expect(page.getByTestId('site-banner-preview-card')).toBeVisible()
+	await page.getByRole('button', { name: 'B · Promo strip' }).click()
+	await expect(page.getByTestId('site-banner-preview-promo')).toBeVisible()
 	await deleteLeftoverE2eLaunchBanners(page)
 
 	if (screenshotDir) {
@@ -140,6 +145,12 @@ test('admin can create a site banner and preview launch looks', async ({
 	await page.getByLabel('Body').fill('Watch the launch video.')
 	await page.getByLabel('CTA URL').fill('https://example.com/kody-launch-video')
 	await page.getByLabel('CTA label').fill('Watch the video')
+	if (screenshotDir) {
+		await page.screenshot({
+			path: screenshotPath('admin_banner_editor_filled_promo.png'),
+			fullPage: true,
+		})
+	}
 	await page.getByRole('button', { name: 'Save banner' }).click()
 	await expect(page.getByText('Banner created.')).toBeVisible()
 	await expect(

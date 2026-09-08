@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	applyYoutubeWatchToBannerDraft,
 	bannerAfterSave,
+	draftToPreview,
 	emptyDraft,
 } from './admin-banners-shared.ts'
 import { type SiteBannerRecord } from '#universal/site-banners.ts'
@@ -81,5 +82,29 @@ test('applyYoutubeWatchToBannerDraft fills CTA and first-party thumb', () => {
 		ok: false,
 		error:
 			'Paste a YouTube watch URL, youtu.be link, or 11-character video id.',
+	})
+})
+
+test('draftToPreview fills untitled copy and first-party watch URLs', () => {
+	const videoId = 'QA0xYMAMjEg'
+	const draft = {
+		...emptyDraft(),
+		body: 'Optional body',
+		ctaHref: `https://www.youtube.com/watch?v=${videoId}`,
+		ctaLabel: 'Watch',
+	}
+	expect(draftToPreview(draft, 'promo')).toEqual({
+		id: 'preview-promo',
+		title: 'Untitled banner',
+		body: 'Optional body',
+		ctaHref: youtubeWatchHref(videoId),
+		ctaLabel: 'Watch',
+		secondaryHref: null,
+		secondaryLabel: null,
+		severity: draft.severity,
+		look: 'promo',
+		icon: 'play',
+		imageUrl: youtubeThumbPath(videoId),
+		dismissible: true,
 	})
 })

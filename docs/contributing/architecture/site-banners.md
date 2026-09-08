@@ -7,7 +7,10 @@ not jump after hydration.
 
 ## Surfaces
 
-- **Admin UI**: `/admin/banners` (+ `/admin/banners.json` API)
+- **Admin UI**: `/admin/banners` (+ `/admin/banners.json` API). The editor _is_
+  the banner: title, body, and button labels/hrefs edit in the live look. Switch
+  A/B/C to restyle before save. Targeting, schedule, YouTube paste, and enable
+  stay under the strip.
 - **MCP**: `adminBannerList`, `adminBannerSave`, `adminBannerDelete`
   (`requiredRole: 'admin'`)
 - **Viewer dismiss**: `POST /site-banner-dismiss.json`
@@ -65,5 +68,7 @@ player. See [YouTube watch overlay](./youtube-watch.md).
 - Types and matching: `packages/worker/universal/site-banners.ts`
 - D1 service: `packages/worker/src/site-banners/service.ts`
 - SSR load: `packages/worker/src/app/site-banner-ssr.ts`
+- Shared look CSS: `packages/worker/client/site-banner-looks.ts`
 - Client render: `packages/worker/client/site-banner.tsx`
+- In-place admin editor: `packages/worker/client/site-banner-editor.tsx`
 - Admin UI: `packages/worker/client/routes/admin-banners.tsx`

@@ -225,7 +225,7 @@ export function AdminBannersRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AdminPageHeader
 					title="Admin banners"
-					description="Create, target, and preview site announcement banners. Content is live without a deploy. Visual looks stay toggleable until a launch look is chosen."
+					description="Create, target, and enable site announcement banners. Edit the strip itself before you save. Content is live without a deploy."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' ? (
