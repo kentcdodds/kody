@@ -237,4 +237,39 @@ test('package page README images follow the pin, not unpublished HEAD', async ()
 			publishedCommit: 'abc123',
 		}),
 	).toBe(null)
+
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'published-ahead',
+	})
+	expect(
+		await resolvePackagePageReadmeImageBaseHref({
+			env,
+			request,
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			sourceId: 'src-1',
+			publishedCommit: 'published-ahead',
+			pinnedCommit: 'abc123',
+		}),
+	).toBe(null)
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	expect(
+		await resolvePackagePageReadmeImageBaseHref({
+			env,
+			request,
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			sourceId: 'src-1',
+			publishedCommit: 'published-ahead',
+			pinnedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
 })

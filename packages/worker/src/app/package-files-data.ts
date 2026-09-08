@@ -506,7 +506,9 @@ export async function loadPackagePageHasAgentsDocs(input: {
 
 /**
  * README `<img>` opt-in. Listing README is the pin `/assets/` serves.
- * Owner current-source README only opts in when HEAD is that pin.
+ * Owner current-source README only opts in when HEAD is that same blob:
+ * listing pin when the package is listed (public `/assets/` reads the pin),
+ * otherwise the owner's published commit.
  */
 export async function resolvePackagePageReadmeImageBaseHref(input: {
 	env: Env
@@ -517,6 +519,7 @@ export async function resolvePackagePageReadmeImageBaseHref(input: {
 	usedListingReadme: boolean
 	sourceId?: string | null
 	publishedCommit?: string | null
+	pinnedCommit?: string | null
 }) {
 	if (input.usedListingReadme) {
 		return getCommunityPackageAssetBaseHref({
@@ -525,8 +528,9 @@ export async function resolvePackagePageReadmeImageBaseHref(input: {
 			kodyId: input.kodyId,
 		})
 	}
-	const publishedCommit = input.publishedCommit?.trim() ?? ''
-	if (!publishedCommit || !input.sourceId) return null
+	const assetCommit =
+		input.pinnedCommit?.trim() || input.publishedCommit?.trim() || ''
+	if (!assetCommit || !input.sourceId) return null
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source?.repo_id) return null
 	try {
@@ -539,7 +543,7 @@ export async function resolvePackagePageReadmeImageBaseHref(input: {
 			ownerUsername: input.ownerUsername,
 			kodyId: input.kodyId,
 			viewedCommit: head.commit,
-			assetCommit: publishedCommit,
+			assetCommit,
 		})
 	} catch {
 		return null

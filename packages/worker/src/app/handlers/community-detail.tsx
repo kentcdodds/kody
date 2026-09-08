@@ -319,6 +319,7 @@ export function createCommunityPackageHandler(env: Env) {
 						usedListingReadme: Boolean(page.listing.listing.readmeContent),
 						sourceId: page.ownerPackage?.sourceId,
 						publishedCommit: page.ownerPackage?.publishedCommit,
+						pinnedCommit: page.listing.listing.pinnedCommit,
 					}),
 				])
 				return renderAppPage({
@@ -550,6 +551,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					usedListingReadme: Boolean(page.listing?.listing?.readmeContent),
 					sourceId: page.ownerPackage?.sourceId,
 					publishedCommit: page.ownerPackage?.publishedCommit,
+					pinnedCommit: page.listing?.listing?.pinnedCommit,
 				}),
 			])
 			return jsonResponse(
