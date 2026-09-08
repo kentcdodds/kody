@@ -189,16 +189,22 @@ is not community-banned. It upserts D1 metadata including optional browse
 `category` from `package.json#kody.category` or well-known tags, and writes a
 SHA-keyed source snapshot.
 
-`forkCommunityListing` reads the KV snapshot, rewrites `package.json` name/kody
-id to the forker's scope, scans cross-scope references, calls
-`ensureEntitySource` + `syncArtifactSourceSnapshot`, and records
-`community_forks` — **without** inserting `saved_packages`.
+`forkCommunityListing` reads the KV snapshot for rewrite/scan (Worker), then
+copies the origin Artifacts repo with `POST .../repos/{source}/fork` so the tree
+never enters a RepoSession isolate as `Record<path, string>` edits. Only
+rewritten files (`package.json` and self-reference text) are applied to the
+destination. When the origin Artifacts repo is missing, persist falls back to
+the older full-tree snapshot sync. Isolate memory / Artifacts `MEMORY_LIMIT`
+failures surface as `CommunityForkResourceLimitError` (honest UI/MCP copy; fork
+count does not increment). Records `community_forks` — **without** inserting
+`saved_packages`.
 
 `communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
-D1 or Analytics Engine. Nested `bootstrap-*` phases come from the RepoSession
-Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
-startup. Subtract the nested bootstrap phases from `bootstrap-source` to
+D1 or Analytics Engine. The storage-layer path records `artifacts-fork`. The
+legacy full-tree fallback may still include nested `bootstrap-*` phases from the
+RepoSession Durable Object; `bootstrap-source` is the RPC wall clock, including
+isolate startup. Subtract the nested bootstrap phases from `bootstrap-source` to
 estimate cold start. `Date.now()` in Workers only advances across I/O, so
 CPU-only steps may report `0`.
 

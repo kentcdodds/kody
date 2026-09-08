@@ -923,3 +923,63 @@ test('artifacts REST logs redact plaintext tokens on revoke', async () => {
 	info.mockRestore()
 	fetchMock.mockRestore()
 })
+
+test('artifacts REST client forks a repo without sending file contents', async () => {
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			expect(method).toBe('POST')
+			expect(url.pathname).toBe(
+				'/client/v4/accounts/acct/artifacts/namespaces/default/repos/package-origin/fork',
+			)
+			const body = JSON.parse(String(init?.body ?? '{}')) as Record<
+				string,
+				unknown
+			>
+			expect(body).toEqual({
+				name: 'package-dest',
+				read_only: false,
+				default_branch_only: true,
+			})
+			expect(JSON.stringify(body)).not.toContain('files')
+			return new Response(
+				JSON.stringify({
+					success: true,
+					result: {
+						id: 'repo_dest',
+						name: 'package-dest',
+						description: null,
+						default_branch: 'main',
+						remote:
+							'https://acct.artifacts.cloudflare.net/git/default/package-dest.git',
+						token: 'art_v1_fork?expires=1760000000',
+					},
+					errors: [],
+					messages: [],
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				},
+			)
+		})
+
+	const env = {
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+	} as Env
+	await expect(
+		getArtifactsBinding(env).fork('package-origin', 'package-dest', {
+			readOnly: false,
+			defaultBranchOnly: true,
+		}),
+	).resolves.toMatchObject({
+		id: 'repo_dest',
+		name: 'package-dest',
+		token: 'art_v1_fork?expires=1760000000',
+	})
+	fetchMock.mockRestore()
+})

@@ -1,7 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import { communityIndexOverviewCandidateLimitPerCategory } from '#universal/community-categories.ts'
+import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
-import { CommunityActionError } from './errors.ts'
+import {
+	CommunityActionError,
+	CommunityForkResourceLimitError,
+} from './errors.ts'
 import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
 
@@ -39,8 +43,11 @@ const mockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
+	forkArtifactRepo: vi.fn(),
+	persistForkedArtifactRepoContents: vi.fn(),
 	deleteEntitySource: vi.fn(),
 	cleanupArtifactReposForPackage: vi.fn(),
+	deleteUserScopedArtifactRepo: vi.fn(),
 	insertCommunityFork: vi.fn(),
 	deleteCommunityListing: vi.fn(),
 	deleteCommunityRatingsByListingId: vi.fn(),
@@ -93,6 +100,15 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 		mockModule.syncArtifactSourceSnapshot(...args),
 }))
 
+vi.mock('#worker/repo/artifact-repo-fork.ts', () => ({
+	forkArtifactRepo: (...args: Array<unknown>) =>
+		mockModule.forkArtifactRepo(...args),
+	persistForkedArtifactRepoContents: (...args: Array<unknown>) =>
+		mockModule.persistForkedArtifactRepoContents(...args),
+	shouldFallbackFromArtifactFork: (error: unknown) =>
+		error instanceof Error && /not found/i.test(error.message),
+}))
+
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	deleteEntitySource: (...args: Array<unknown>) =>
 		mockModule.deleteEntitySource(...args),
@@ -103,6 +119,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
 	cleanupArtifactReposForPackage: (...args: Array<unknown>) =>
 		mockModule.cleanupArtifactReposForPackage(...args),
+	deleteUserScopedArtifactRepo: (...args: Array<unknown>) =>
+		mockModule.deleteUserScopedArtifactRepo(...args),
 }))
 
 vi.mock('./repo.ts', async (importOriginal) => {
@@ -191,6 +209,7 @@ const {
 } = await import('./service.ts')
 
 const testBundleArtifactsKv = {
+	get: vi.fn(async () => null),
 	delete: vi.fn(async () => undefined),
 	list: vi.fn(async () => ({
 		keys: [{ name: 'derived-cache:v1:community-icon:v1:listing-1:commit-1' }],
@@ -1282,6 +1301,105 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 			id: 'fork-source-1',
 			userId: 'user-2',
 		},
+	)
+	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
+})
+
+test('forkCommunityListing copies at the Artifacts layer when the origin repo exists', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'origin-source-1',
+		repo_id: 'package-origin-1',
+		published_commit: 'commit-1',
+	})
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
+	mockModule.forkArtifactRepo.mockResolvedValue({
+		id: 'repo-fork',
+		name: 'package-dest',
+	})
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'fork-source-1',
+		repo_id: 'package-dest',
+		user_id: 'user-2',
+	})
+	mockModule.persistForkedArtifactRepoContents.mockResolvedValue(
+		'commit-fork-1',
+	)
+
+	const result = await forkCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-2',
+		expectedPackageScope: 'jane',
+		listingId: 'listing-1',
+		kodyId: 'my-discord-gateway',
+	})
+
+	expect(result.filesCount).toBeGreaterThan(0)
+	expect(mockModule.forkArtifactRepo).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceRepoId: 'package-origin-1',
+		}),
+	)
+	expect(mockModule.persistForkedArtifactRepoContents).toHaveBeenCalledWith(
+		expect.objectContaining({
+			originCommit: 'commit-1',
+			changedFiles: expect.objectContaining({
+				'package.json': expect.any(String),
+			}),
+		}),
+	)
+	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
+})
+
+test('forkCommunityListing maps isolate memory resets to CommunityForkResourceLimitError', async () => {
+	mockModule.getEntitySourceById.mockResolvedValue(undefined)
+	mockModule.forkArtifactRepo.mockReset()
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'fork-source-1',
+		bootstrapAccess: { token: 'bootstrap' },
+	})
+	mockModule.syncArtifactSourceSnapshot.mockRejectedValue(
+		new Error(durableObjectIsolateMemoryResetMessage),
+	)
+	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
+	mockModule.deleteEntitySource.mockResolvedValue(true)
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+			kodyId: 'my-discord-gateway',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityForkResourceLimitError &&
+			/too large to finish forking/.test(error.message) &&
+			!/isolate exceeded/.test(error.message),
 	)
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
 })

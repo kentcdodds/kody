@@ -190,6 +190,13 @@ export class MockCloudflareArtifactsDurableObject {
 					remote: command.payload.remote,
 				}
 				storage.repos[repo.name] = repo
+				const sourceSnapshot = storage.snapshots[source.name]
+				if (sourceSnapshot) {
+					storage.snapshots[repo.name] = {
+						published_commit: sourceSnapshot.published_commit,
+						files: { ...sourceSnapshot.files },
+					}
+				}
 				await this.writeStorage(storage)
 				return Response.json({ repo })
 			}

@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	collectChangedForkFiles,
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
 } from './fork-scan.ts'
@@ -165,4 +166,24 @@ import util from 'kody:@owner/util/helper'`,
 	expect(
 		withoutAllowlist.some((entry) => entry.specifier === 'kody:@kody/'),
 	).toBe(true)
+})
+
+test('collectChangedForkFiles returns only rewritten paths', () => {
+	expect(
+		collectChangedForkFiles({
+			originFiles: {
+				'package.json': '{"name":"@owner/demo"}',
+				'src/index.ts': 'export const n = "@owner/demo"\n',
+				'poster.png': 'binary-bytes',
+			},
+			rewrittenFiles: {
+				'package.json': '{"name":"@jane/demo"}',
+				'src/index.ts': 'export const n = "@jane/demo"\n',
+				'poster.png': 'binary-bytes',
+			},
+		}),
+	).toEqual({
+		'package.json': '{"name":"@jane/demo"}',
+		'src/index.ts': 'export const n = "@jane/demo"\n',
+	})
 })

@@ -69,6 +69,22 @@ export type ArtifactDeleteRepoResult = {
 	alreadyDeleted: boolean
 }
 
+export type ArtifactCreateRepoResult = {
+	id: string
+	name: string
+	description: string | null
+	defaultBranch: string
+	remote: string
+	token: string
+	expiresAt: string
+}
+
+export type ArtifactForkRepoOpts = {
+	description?: string
+	readOnly?: boolean
+	defaultBranchOnly?: boolean
+}
+
 export type ArtifactNamespaceBinding = {
 	create(
 		name: string,
@@ -77,15 +93,17 @@ export type ArtifactNamespaceBinding = {
 			readOnly?: boolean
 			setDefaultBranch?: string
 		},
-	): Promise<{
-		id: string
-		name: string
-		description: string | null
-		defaultBranch: string
-		remote: string
-		token: string
-		expiresAt: string
-	}>
+	): Promise<ArtifactCreateRepoResult>
+	/**
+	 * Copy `sourceName` to `targetName` at the Artifacts storage layer.
+	 * Blobs stay in the git object store — callers must not materialize the
+	 * tree in a Worker or Durable Object isolate.
+	 */
+	fork(
+		sourceName: string,
+		targetName: string,
+		opts?: ArtifactForkRepoOpts,
+	): Promise<ArtifactCreateRepoResult>
 	get(name: string): Promise<ArtifactGetRepoResult>
 	delete(name: string): Promise<ArtifactDeleteRepoResult>
 	list(opts?: { limit?: number; cursor?: string }): Promise<{
@@ -234,6 +252,12 @@ function artifactsBindingErrorCode(error: unknown) {
 	if (/^Import in progress(?::|\b)/i.test(message)) {
 		return 'IMPORT_IN_PROGRESS'
 	}
+	if (/^Fork in progress(?::|\b)/i.test(message)) {
+		return 'FORK_IN_PROGRESS'
+	}
+	if (/^Memory limit(?::|\b)/i.test(message)) {
+		return 'MEMORY_LIMIT'
+	}
 	return null
 }
 
@@ -380,10 +404,45 @@ function adaptNativeArtifactsBinding(
 				if (code === 'NOT_FOUND') {
 					return { status: 'not_found' as const }
 				}
-				if (code === 'IMPORT_IN_PROGRESS') {
+				if (code === 'IMPORT_IN_PROGRESS' || code === 'FORK_IN_PROGRESS') {
 					return { status: 'importing' as const, retryAfter: 5 }
 				}
 				throw error
+			}
+		},
+		fork: async (sourceName, targetName, opts) => {
+			if (rest) {
+				return await rest.fork(sourceName, targetName, opts)
+			}
+			const handle = await getNativeRepoOrThrow(native, sourceName)
+			if (typeof handle.fork !== 'function') {
+				throw new Error(
+					'Artifacts native fork is unavailable and no REST credentials are configured.',
+				)
+			}
+			const created = await handle.fork(targetName, {
+				...(opts?.description !== undefined
+					? { description: opts.description }
+					: {}),
+				...(opts?.readOnly !== undefined ? { readOnly: opts.readOnly } : {}),
+				...(opts?.defaultBranchOnly !== undefined
+					? { defaultBranchOnly: opts.defaultBranchOnly }
+					: {}),
+			})
+			return {
+				id: created.id,
+				name: created.name,
+				description: created.description,
+				defaultBranch: created.defaultBranch,
+				remote: created.remote,
+				token: created.token,
+				expiresAt: resolveCreatedTokenExpiry({
+					token: created.token,
+					tokenExpiresAt:
+						typeof created.tokenExpiresAt === 'string'
+							? created.tokenExpiresAt
+							: null,
+				}),
 			}
 		},
 		delete: async (name) => {
@@ -503,6 +562,34 @@ function createArtifactsRestBinding(env: Env, namespace: string) {
 			return {
 				status: 'ready' as const,
 				repo: repoHandle(name),
+			}
+		},
+		fork: async (sourceName, targetName, opts) => {
+			const result = await requestArtifactsApi<ArtifactRestCreateRepoResult>(
+				client,
+				{
+					method: 'POST',
+					path: `${basePath}/repos/${encodeURIComponent(sourceName)}/fork`,
+					body: {
+						name: targetName,
+						...(opts?.description ? { description: opts.description } : {}),
+						...(opts?.readOnly !== undefined
+							? { read_only: opts.readOnly }
+							: {}),
+						...(opts?.defaultBranchOnly !== undefined
+							? { default_branch_only: opts.defaultBranchOnly }
+							: {}),
+					},
+				},
+			)
+			return {
+				id: result.id,
+				name: result.name,
+				description: result.description,
+				defaultBranch: result.default_branch,
+				remote: result.remote,
+				token: result.token,
+				expiresAt: parseArtifactTokenExpiry(result.token),
 			}
 		},
 		delete: async (name) => {
@@ -851,6 +938,16 @@ export function isLoopbackArtifactsRemote(remote: string) {
 	} catch {
 		return false
 	}
+}
+
+export function isArtifactRepoNotFoundError(error: unknown) {
+	if (artifactsBindingErrorCode(error) === 'NOT_FOUND') {
+		return true
+	}
+	if (!(error instanceof Error)) {
+		return false
+	}
+	return /was not found|not found/i.test(error.message)
 }
 
 function isArtifactRepoAlreadyExistsError(error: unknown) {
