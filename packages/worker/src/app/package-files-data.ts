@@ -41,6 +41,10 @@ import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapsho
 import { recordServerTiming } from '#worker/request-context.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
+import {
+	getCommunityPackageAssetBaseHref,
+	getCommunityPackageAssetBaseHrefForViewedCommit,
+} from '#universal/package-readme-images.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -59,6 +63,9 @@ async function toLoaderData(input: {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	listingId?: string | null
+	viewedCommit?: string | null
+	assetCommit?: string | null
 	mediaHref?: string | null
 }): Promise<PackageFilesLoaderData> {
 	const contentKind = input.view.contentKind
@@ -107,6 +114,13 @@ async function toLoaderData(input: {
 		kodyId: input.kodyId,
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
+		imageBaseHref: getCommunityPackageAssetBaseHrefForViewedCommit({
+			listingId: input.listingId,
+			ownerUsername: input.username,
+			kodyId: input.kodyId,
+			viewedCommit: input.viewedCommit,
+			assetCommit: input.assetCommit,
+		}),
 	}
 }
 
@@ -149,7 +163,7 @@ export async function loadCommunityPackageFilesData(input: {
 		readOptionalViewerUserId({ env: input.env, request: input.request }),
 	])
 	if (!tree) return null
-	const { loaded, urlRef } = tree
+	const { loaded, urlRef, resolved } = tree
 	const files = loaded.files
 	const filesBasePath = getCommunityPackageFilesHref({
 		listingId: listing.id,
@@ -179,6 +193,9 @@ export async function loadCommunityPackageFilesData(input: {
 		kodyId: listing.kodyId,
 		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
+		listingId: listing.id,
+		viewedCommit: resolved.commit,
+		assetCommit: listing.pinnedCommit,
 		mediaHref: view.contentPath
 			? getCommunityPackageRawHref({
 					listingId: listing.id,
@@ -452,6 +469,8 @@ export async function loadAccountPackageFilesData(input: {
 		kodyId: record.kodyId,
 		viewerIsOwner: true,
 		isPrivate: record.isPrivate,
+		viewedCommit: resolved.commit,
+		assetCommit: source?.published_commit ?? '',
 		mediaHref: view.contentPath
 			? getPackageRawHref({
 					username: input.username,
@@ -552,6 +571,38 @@ export async function loadPackagePageHasAgentsDocs(input: {
 	} catch {
 		return false
 	}
+}
+
+/**
+ * README `<img>` opt-in. Listing README is the pin `/assets/` serves.
+ * Owner fallback README is the published snapshot (`loadOwnerPackageReadme`).
+ * Opt in only when that viewed README commit equals the blob `/assets/`
+ * serves: listing pin when listed, otherwise published.
+ */
+export function resolvePackagePageReadmeImageBaseHref(input: {
+	listingId?: string | null
+	ownerUsername: string
+	kodyId: string
+	usedListingReadme: boolean
+	publishedCommit?: string | null
+	pinnedCommit?: string | null
+}) {
+	if (input.usedListingReadme) {
+		return getCommunityPackageAssetBaseHref({
+			listingId: input.listingId,
+			ownerUsername: input.ownerUsername,
+			kodyId: input.kodyId,
+		})
+	}
+	const viewedReadmeCommit = input.publishedCommit?.trim() || ''
+	const assetCommit = input.pinnedCommit?.trim() || viewedReadmeCommit
+	return getCommunityPackageAssetBaseHrefForViewedCommit({
+		listingId: input.listingId,
+		ownerUsername: input.ownerUsername,
+		kodyId: input.kodyId,
+		viewedCommit: viewedReadmeCommit,
+		assetCommit,
+	})
 }
 
 export async function loadOwnerPackageReadme(input: {

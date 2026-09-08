@@ -64,6 +64,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let readmeContent: string | null = null
 	let readmeFences: Array<HighlightedCode> = []
 	let hasAgentsDocs = false
+	let readmeImageBaseHref: string | null = null
 	let username = ''
 	let kodyId = ''
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
@@ -82,12 +83,22 @@ export function CommunityDetailRoute(handle: Handle) {
 	// the rendered README per markdown string (same policy as MarkdownView).
 	let renderedForReadme: string | null = null
 	let renderedForReadmeFences: Array<HighlightedCode> | undefined
+	let renderedForReadmeImageBase: string | null = null
 	let renderedReadme: Array<RemixNode> = []
 
-	function renderReadme(markdown: string, fences?: Array<HighlightedCode>) {
-		if (renderedForReadme !== markdown || renderedForReadmeFences !== fences) {
+	function renderReadme(
+		markdown: string,
+		fences: Array<HighlightedCode> | undefined,
+		imageBaseHref: string | null,
+	) {
+		if (
+			renderedForReadme !== markdown ||
+			renderedForReadmeFences !== fences ||
+			renderedForReadmeImageBase !== imageBaseHref
+		) {
 			renderedForReadme = markdown
 			renderedForReadmeFences = fences
+			renderedForReadmeImageBase = imageBaseHref
 			// Third-party README in the page's prose voice: authored `##`
 			// sections land on h3 (DESIGN.md's "h3 subheads"; publishing
 			// requires a `## Intent` section), the page keeps its h1, and the
@@ -95,6 +106,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			renderedReadme = renderMarkdownNodes(markdown, {
 				headingOffset: 1,
 				fences,
+				imageBaseHref: imageBaseHref ?? undefined,
 			})
 		}
 		return renderedReadme
@@ -115,6 +127,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		readmeContent = snapshot.readmeContent
 		readmeFences = snapshot.readmeFences ?? []
 		hasAgentsDocs = snapshot.hasAgentsDocs
+		readmeImageBaseHref = snapshot.imageBaseHref
 		username = snapshot.username
 		kodyId = snapshot.kodyId
 		reportState = 'idle'
@@ -180,6 +193,7 @@ export function CommunityDetailRoute(handle: Handle) {
 						payload.readmeContent ?? payload.listing?.readmeContent ?? null,
 					readmeFences: payload.readmeFences,
 					hasAgentsDocs: payload.hasAgentsDocs === true,
+					imageBaseHref: payload.imageBaseHref ?? null,
 					ownerPackage: payload.ownerPackage,
 					username: payload.username,
 					kodyId:
@@ -499,7 +513,6 @@ export function CommunityDetailRoute(handle: Handle) {
 						relativePath: 'AGENTS.md',
 					})
 				: null
-
 		return (
 			<article
 				mix={[css(detailArticleCss), on('click', handleCommunityInstallClick)]}
@@ -525,7 +538,11 @@ export function CommunityDetailRoute(handle: Handle) {
 
 						{readmeContent
 							? renderReadmeSection(
-									renderReadme(readmeContent, readmeFences),
+									renderReadme(
+										readmeContent,
+										readmeFences,
+										readmeImageBaseHref,
+									),
 									agentsDocsHref,
 								)
 							: renderEmptyReadme(agentsDocsHref)}

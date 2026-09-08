@@ -62,6 +62,7 @@ const {
 	loadCommunityPackageFileRaw,
 	loadCommunityPackageFilesData,
 	loadPackagePageHasAgentsDocs,
+	resolvePackagePageReadmeImageBaseHref,
 } = await import('./package-files-data.ts')
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
@@ -109,6 +110,7 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		isPrivate: false,
 		backHref: '/@kentcdodds/sentry',
 		filesBasePath: '/@kentcdodds/sentry/tree/main',
+		imageBaseHref: '/@kentcdodds/sentry/assets',
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -123,6 +125,34 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		viewerIsOwner: false,
 		username: 'kentcdodds',
 		kodyId: 'sentry',
+	})
+})
+
+test('listed package tree omits imageBaseHref when HEAD is not the pin', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: 'abc123',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'deadbeef',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue({
+		files: { 'README.md': '![poster](./docs/poster.png)\n' },
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+
+	const ahead = await loadCommunityPackageFilesData({
+		env,
+		request: new Request('https://example.com/@kentcdodds/sentry/tree/main'),
+		listingId: 'listing-1',
+		selectedPath: '',
+		ref: 'main',
+	})
+	expect(ahead).toMatchObject({
+		ok: true,
+		imageBaseHref: null,
 	})
 })
 
@@ -165,6 +195,49 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 			viewerIsOwner: false,
 		}),
 	).toBe(false)
+})
+
+test('package page README images opt in only when the viewed README commit is the asset commit', () => {
+	expect(
+		resolvePackagePageReadmeImageBaseHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: true,
+			publishedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
+
+	expect(
+		resolvePackagePageReadmeImageBaseHref({
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			publishedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
+
+	expect(
+		resolvePackagePageReadmeImageBaseHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			publishedCommit: 'published-ahead',
+			pinnedCommit: 'abc123',
+		}),
+	).toBe(null)
+
+	expect(
+		resolvePackagePageReadmeImageBaseHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'sentry',
+			usedListingReadme: false,
+			publishedCommit: 'abc123',
+			pinnedCommit: 'abc123',
+		}),
+	).toBe('/@kentcdodds/sentry/assets')
 })
 
 test('opens a png as a media preview and an unknown binary without a code dump', async () => {

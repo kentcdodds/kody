@@ -118,6 +118,58 @@ test('markdown safety escapes raw HTML, never emits images, and drops unsafe lin
 	expect(html).toContain('https://example.com/auto</a>')
 })
 
+test('package README imageBaseHref emits img only for in-repo relative images', async () => {
+	const markdown = [
+		'![poster](./docs/poster.png)',
+		'',
+		'![nested](poster.png)',
+		'',
+		'![remote](https://img.example/badge.svg)',
+		'',
+		'![escape](../secret.png)',
+		'',
+		'![code](./src/index.ts)',
+	].join('\n')
+
+	const withAssets = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				imageBaseHref: '/@kody/doom/assets',
+				imageFromDirectory: '',
+			}),
+		}),
+	)
+	expect(withAssets).toContain(
+		'<img src="/@kody/doom/assets/docs/poster.png" alt="poster"',
+	)
+	expect(withAssets).toContain(
+		'<img src="/@kody/doom/assets/poster.png" alt="nested"',
+	)
+	expect(withAssets).not.toContain('<img src="https://img.example')
+	expect(withAssets).toContain(
+		'<a href="https://img.example/badge.svg" target="_blank" rel="noopener noreferrer nofollow ugc">remote</a>',
+	)
+	expect(withAssets).toContain('<span>escape</span>')
+	expect(withAssets).not.toContain('secret.png')
+	expect(withAssets).not.toContain('src/index.ts')
+
+	const fromDocs = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes('![poster](./poster.png)', {
+				imageBaseHref: '/@kody/doom/assets',
+				imageFromDirectory: 'docs',
+			}),
+		}),
+	)
+	expect(fromDocs).toContain(
+		'<img src="/@kody/doom/assets/docs/poster.png" alt="poster"',
+	)
+
+	const defaultPolicy = await renderMarkdown('![poster](./docs/poster.png)')
+	expect(defaultPolicy).not.toContain('<img')
+	expect(defaultPolicy).toContain('<span>poster</span>')
+})
+
 test('first-party render options keep authored heading levels and drop the ugc rel', async () => {
 	const markdown = [
 		'# Top',

@@ -198,6 +198,7 @@ export type PackageFilesLoaderData = {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	imageBaseHref?: string | null
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -214,6 +215,7 @@ type CommunityDetailShellLoaderData = {
 	readmeContent: string | null
 	readmeFences?: Array<HighlightedCode>
 	hasAgentsDocs: boolean
+	imageBaseHref: string | null
 	viewerInstall: ViewerListingInstall | null
 	ownerPackage: AccountPackageDetail | null
 	username: string

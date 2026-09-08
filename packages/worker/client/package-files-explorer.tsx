@@ -18,6 +18,7 @@ import {
 	listPackageFilesChildren,
 	packageFileLanguageLabel,
 } from '#universal/package-files.ts'
+import { directoryOfPackageFilePath } from '#universal/package-readme-images.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import {
@@ -106,7 +107,7 @@ export function PackageFilesExplorer(
 	return () => {
 		const { data } = handle.props
 		syncExpanded(data.selectedPath, data.kind === 'directory')
-		const contentKey = `${data.selectedPath}\n${data.contentPath ?? ''}`
+		const contentKey = `${data.selectedPath}\n${data.contentPath ?? ''}\n${data.imageBaseHref ?? ''}`
 		if (contentFor !== contentKey) {
 			contentFor = contentKey
 			contentNode = renderContent(data)
@@ -406,6 +407,8 @@ function renderFilePreview(
 				<div mix={css(markdownCss)} data-testid="package-files-markdown">
 					{renderMarkdownNodes(body, {
 						fences: data.contentFences,
+						imageBaseHref: data.imageBaseHref ?? undefined,
+						imageFromDirectory: directoryOfPackageFilePath(data.contentPath),
 					})}
 				</div>
 			)
@@ -933,6 +936,14 @@ const markdownCss = {
 	},
 	'& td code': {
 		whiteSpace: 'nowrap' as const,
+	},
+	'& img': {
+		display: 'block',
+		maxWidth: '100%',
+		height: 'auto',
+		margin: '1.15rem 0 0',
+		borderRadius: radius.md,
+		border: `1px solid ${colors.border}`,
 	},
 }
 

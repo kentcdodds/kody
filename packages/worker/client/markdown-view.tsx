@@ -11,11 +11,13 @@
  * - Fenced code paints pre-tokenized highlight data as JSX text and
  *   inline styles — never `innerHTML` — so highlighting cannot introduce
  *   markup. Missing tokens fall back to escaped plaintext.
- * - No resource-loading elements are emitted (`<img>`, `<iframe>`, media,
- *   etc.), so a README can never make a viewer's browser issue requests —
- *   including to hosted package endpoints (`/@username/packages/*` and the
- *   per-user subdomain mount `/packages/*`), which execute author-controlled
- *   code. Images render as plain links instead.
+ * - Resource-loading elements are not emitted by default (`<img>`,
+ *   `<iframe>`, media, etc.). Community READMEs may opt in to `<img>` only
+ *   for in-repo relative paths rewritten to this package's first-party
+ *   `/assets/` route. Remote, protocol-relative, and user-scope URLs stay
+ *   links (or plain text) so a README cannot hotlink arbitrary hosts or
+ *   point the browser at hosted package endpoints (`/@username/packages/*`
+ *   and `/packages/*`), which execute author-controlled code.
  * - Links must be absolute `http:`/`https:`/`mailto:` URLs. Relative URLs
  *   (which would resolve against this origin) and URLs whose path points at a
  *   hosted package surface (`/@...` or `/packages/...`) render as plain text.
@@ -38,6 +40,10 @@ import {
 	markdownTableCss,
 	mergeCss,
 } from '#universal/styles/style-primitives.ts'
+import {
+	joinPackageReadmeImageHref,
+	resolvePackageReadmeImagePath,
+} from '#universal/package-readme-images.ts'
 import {
 	colors,
 	radius,
@@ -85,6 +91,17 @@ export type RenderMarkdownOptions = {
 	 * so third-party READMEs do not grow extra attributes.
 	 */
 	headingIds?: boolean
+	/**
+	 * First-party `/assets/` prefix for this package. When set, relative
+	 * markdown images (`./docs/poster.png`) become `<img>` tags pointing at
+	 * that prefix. Empty keeps the default "images are links" policy.
+	 */
+	imageBaseHref?: string
+	/**
+	 * Directory of the markdown file, used to resolve `./` image hrefs.
+	 * Root READMEs leave this empty.
+	 */
+	imageFromDirectory?: string
 }
 
 type ResolvedRenderOptions = Required<Omit<RenderMarkdownOptions, 'fences'>> & {
@@ -100,6 +117,8 @@ const defaultRenderOptions = {
 	copyCodeBlocks: false,
 	headingIds: false,
 	fences: [] as Array<HighlightedCode>,
+	imageBaseHref: '',
+	imageFromDirectory: '',
 }
 
 /**
@@ -241,6 +260,19 @@ function decodeCharacterReferences(value: string): string {
 			return namedEntities[entity.toLowerCase()] ?? match
 		},
 	)
+}
+
+function resolveMarkdownImageSrc(
+	href: string,
+	options: ResolvedRenderOptions,
+): string | null {
+	if (!options.imageBaseHref) return null
+	const relativePath = resolvePackageReadmeImagePath(
+		href,
+		options.imageFromDirectory,
+	)
+	if (!relativePath) return null
+	return joinPackageReadmeImageHref(options.imageBaseHref, relativePath)
 }
 
 function renderLink(
@@ -421,10 +453,15 @@ function renderToken(
 				renderTokens(token.tokens, options),
 				options,
 			)
-		case 'image':
-			// Never emit <img>: auto-loading author-chosen URLs is exactly what
-			// this renderer exists to prevent. Offer the image as a link instead.
+		case 'image': {
+			const imageSrc = resolveMarkdownImageSrc(token.href, options)
+			if (imageSrc) {
+				return <img key={key} src={imageSrc} alt={token.text} />
+			}
+			// Remote / unsafe hrefs stay links (or plain text). Auto-loading
+			// author-chosen URLs is exactly what this renderer exists to prevent.
 			return renderLink(key, token.href, token.text || token.href, options)
+		}
 		case 'html':
 			// Comment-only tokens carry author/agent notes (guides embed agent
 			// steering in HTML comments); showing them as literal text would
@@ -544,6 +581,14 @@ const markdownCss = mergeCss(markdownTableCss, {
 	'& a': {
 		color: colors.primaryText,
 		textDecoration: 'underline',
+	},
+	'& img': {
+		display: 'block',
+		maxWidth: '100%',
+		height: 'auto',
+		margin: `${spacing.sm} 0`,
+		borderRadius: radius.md,
+		border: `1px solid ${colors.border}`,
 	},
 	'& hr': {
 		border: 'none',
