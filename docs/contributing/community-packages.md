@@ -278,10 +278,12 @@ Client routes: `packages/worker/client/routes/community*`
   only as `image/svg+xml` for `<img src>` — markup is never injected. Other
   binaries show a non-preview message instead of a latin1 code dump.
 - `/@:username/:kodyId/raw/:ref(/*relativePath)` — allowlisted media bytes for
-  that preview (same authz as the tree). Listing-uuid fallback:
-  `/community/:listingId/raw(/*relativePath)`. `Content-Type` comes from the
-  extension allowlist plus a magic-byte sniff; responses are `nosniff` +
-  `Content-Disposition: inline` and never `text/html` or JavaScript.
+  that preview (same authz and tree resolution as the explorer). A hex ref that
+  only falls back to the listing pin snapshot 404s, same as the tree.
+  Listing-uuid fallback: `/community/:listingId/raw(/*relativePath)`.
+  `Content-Type` comes from the extension allowlist plus a magic-byte sniff;
+  responses are `nosniff` + `Content-Disposition: inline` and never `text/html`
+  or JavaScript.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (requires login
   and a generic confirm), fork prompt, and report link (report requires login)

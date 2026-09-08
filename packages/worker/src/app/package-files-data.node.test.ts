@@ -258,3 +258,68 @@ test('opens a png as a media preview and an unknown binary without a code dump',
 		}),
 	).toEqual({ kind: 'not-media' })
 })
+
+test('community raw 404s a hex that only has the listing pin snapshot', async () => {
+	const pngBytes = Uint8Array.from([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1,
+	])
+	const png = String.fromCharCode(...pngBytes)
+	const missingHex = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+
+	mockModule.getCommunityListingById.mockResolvedValue(listing)
+	mockModule.getEntitySourceById.mockResolvedValue({
+		repo_id: 'repo-1',
+		published_commit: 'abc123',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'abc123',
+	})
+	mockModule.readPublishedSourceSnapshot.mockResolvedValue(null)
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		files: { 'logo.png': png },
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.readArtifactFileAtCommit.mockResolvedValue(null)
+
+	expect(
+		await loadCommunityPackageFilesData({
+			env,
+			request: new Request(
+				`https://example.com/@kentcdodds/sentry/tree/${missingHex}/logo.png`,
+			),
+			listingId: 'listing-1',
+			selectedPath: 'logo.png',
+			ref: missingHex,
+		}),
+	).toBeNull()
+
+	expect(
+		await loadCommunityPackageFileRaw({
+			env,
+			request: new Request(
+				`https://example.com/@kentcdodds/sentry/raw/${missingHex}/logo.png`,
+			),
+			listingId: 'listing-1',
+			selectedPath: 'logo.png',
+			ref: missingHex,
+		}),
+	).toEqual({ kind: 'not-found' })
+
+	const pinRaw = await loadCommunityPackageFileRaw({
+		env,
+		request: new Request(
+			'https://example.com/@kentcdodds/sentry/raw/abc123/logo.png',
+		),
+		listingId: 'listing-1',
+		selectedPath: 'logo.png',
+		ref: 'abc123',
+	})
+	expect(pinRaw).toMatchObject({
+		kind: 'ok',
+		contentType: 'image/png',
+		filename: 'logo.png',
+		isPrivate: false,
+	})
+	expect(pinRaw.kind === 'ok' && [...pinRaw.bytes]).toEqual([...pngBytes])
+})

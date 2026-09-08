@@ -139,44 +139,17 @@ export async function loadCommunityPackageFilesData(input: {
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
 	const treeRef = input.ref?.trim() ?? ''
-	// The source row and the viewer are independent reads.
-	const [source, viewerUserId] = await Promise.all([
-		getEntitySourceById(input.env.APP_DB, listing.sourceId),
+	const [tree, viewerUserId] = await Promise.all([
+		loadCommunityListingPublicTree({
+			env: input.env,
+			request: input.request,
+			listing,
+			treeRef,
+		}),
 		readOptionalViewerUserId({ env: input.env, request: input.request }),
 	])
-	const resolved = await resolvePublicTreeCommit({
-		env: input.env,
-		request: input.request,
-		sourceRepoId: source?.repo_id ?? null,
-		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
-		pinnedCommit: listing.pinnedCommit,
-		ref: treeRef,
-	})
-	const resolvedCommit = resolved.commit
-	const urlRef = isPublicTreeDefaultRefAlias(treeRef)
-		? resolved.defaultBranch
-		: treeRef
-	const loaded = await loadPublicTreeFiles({
-		env: input.env,
-		request: input.request,
-		listingId: listing.id,
-		sourceId: listing.sourceId,
-		sourceRepoId: source?.repo_id ?? null,
-		commit: resolvedCommit,
-		pinnedCommit: listing.pinnedCommit,
-	})
-	const requestedHex = /^[0-9a-f]{7,40}$/i.test(treeRef)
-	if (
-		requestedHex &&
-		loaded.fromListingSnapshot &&
-		resolvedCommit !== listing.pinnedCommit &&
-		!(
-			listing.pinnedCommit.startsWith(treeRef) ||
-			treeRef.startsWith(listing.pinnedCommit)
-		)
-	) {
-		return null
-	}
+	if (!tree) return null
+	const { loaded, urlRef } = tree
 	const files = loaded.files
 	const filesBasePath = getCommunityPackageFilesHref({
 		listingId: listing.id,
@@ -335,6 +308,68 @@ async function loadPublicTreeFilesUncached(input: {
 		}
 	}
 	return { files: {}, fromListingSnapshot: Boolean(input.listingId) }
+}
+
+function listingSnapshotMissesRequestedHex(input: {
+	treeRef: string
+	fromListingSnapshot: boolean
+	resolvedCommit: string | null
+	pinnedCommit: string
+}) {
+	if (!/^[0-9a-f]{7,40}$/i.test(input.treeRef)) return false
+	if (!input.fromListingSnapshot) return false
+	if (input.resolvedCommit === input.pinnedCommit) return false
+	return !(
+		input.pinnedCommit.startsWith(input.treeRef) ||
+		input.treeRef.startsWith(input.pinnedCommit)
+	)
+}
+
+async function loadCommunityListingPublicTree(input: {
+	env: Env
+	request: Request
+	listing: {
+		id: string
+		sourceId: string
+		pinnedCommit: string
+	}
+	treeRef: string
+}) {
+	const source = await getEntitySourceById(
+		input.env.APP_DB,
+		input.listing.sourceId,
+	)
+	const resolved = await resolvePublicTreeCommit({
+		env: input.env,
+		request: input.request,
+		sourceRepoId: source?.repo_id ?? null,
+		publishedCommit: source?.published_commit ?? input.listing.pinnedCommit,
+		pinnedCommit: input.listing.pinnedCommit,
+		ref: input.treeRef,
+	})
+	const loaded = await loadPublicTreeFiles({
+		env: input.env,
+		request: input.request,
+		listingId: input.listing.id,
+		sourceId: input.listing.sourceId,
+		sourceRepoId: source?.repo_id ?? null,
+		commit: resolved.commit,
+		pinnedCommit: input.listing.pinnedCommit,
+	})
+	if (
+		listingSnapshotMissesRequestedHex({
+			treeRef: input.treeRef,
+			fromListingSnapshot: loaded.fromListingSnapshot,
+			resolvedCommit: resolved.commit,
+			pinnedCommit: input.listing.pinnedCommit,
+		})
+	) {
+		return null
+	}
+	const urlRef = isPublicTreeDefaultRefAlias(input.treeRef)
+		? resolved.defaultBranch
+		: input.treeRef
+	return { source, resolved, loaded, urlRef }
 }
 
 export async function loadAccountPackageFilesData(input: {
@@ -620,25 +655,15 @@ export async function loadCommunityPackageFileRaw(input: {
 	})
 	if (!listing) return { kind: 'not-found' }
 
-	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
 	const treeRef = input.ref?.trim() ?? ''
-	const resolved = await resolvePublicTreeCommit({
+	const tree = await loadCommunityListingPublicTree({
 		env: input.env,
 		request: input.request,
-		sourceRepoId: source?.repo_id ?? null,
-		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
-		pinnedCommit: listing.pinnedCommit,
-		ref: treeRef,
+		listing,
+		treeRef,
 	})
-	const loaded = await loadPublicTreeFiles({
-		env: input.env,
-		request: input.request,
-		listingId: listing.id,
-		sourceId: listing.sourceId,
-		sourceRepoId: source?.repo_id ?? null,
-		commit: resolved.commit,
-		pinnedCommit: listing.pinnedCommit,
-	})
+	if (!tree) return { kind: 'not-found' }
+	const { source, resolved, loaded } = tree
 	const media = await readPackageFileMediaBytes({
 		env: input.env,
 		files: loaded.files,
