@@ -24,12 +24,18 @@ A video id is allowed when it appears in any of:
 1. The latest items from `YOUTUBE_ALLOWED_PLAYLIST_IDS` (YouTube playlist Atom
    feed, typically ~15 items per playlist, cached about an hour)
 2. `YOUTUBE_ALLOWED_VIDEO_IDS` (comma-separated extra ids)
-3. Enabled banner `ctaHref`, `secondaryHref`, or `imageUrl` values that parse as
+3. The look-preview sample id (`youtubeWatchSampleVideoId`) so
+   `?siteBannerLook=` thumbs and Watch CTAs work without an enabled banner
+4. Enabled banner `ctaHref`, `secondaryHref`, or `imageUrl` values that parse as
    a YouTube video (`/?youtubeId=`, watch/embed/short URLs, or
    `/youtube-thumb/<id>`). Absolute `https://kody.codes/?youtubeId=` is not
    parsed — admin and banners store the relative `/?youtubeId=` form.
    Third-party hosts are never treated as a YouTube id, even when they carry
    `?v=` or `?youtubeId=`.
+
+The overlay follows the live `youtubeId` search param only. Closing strips that
+param; it does not fall back to SSR loader data, so the dialog stays closed
+across client navigations.
 
 Unset playlist env means no playlist fetch (tests stay offline). `none` disables
 playlists explicitly. Production and preview set Kent's public playlist id in

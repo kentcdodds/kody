@@ -97,7 +97,8 @@ Optional Wrangler vars (public, non-secret; see
   offline. Production and preview set Kent's public playlist in
   `packages/worker/wrangler.jsonc`.
 - `YOUTUBE_ALLOWED_VIDEO_IDS` — comma-separated extra video ids, merged with
-  playlist items and ids extracted from enabled banner hrefs.
+  playlist items, the look-preview sample id, and ids extracted from enabled
+  banner hrefs.
 
 The overlay itself is `/?youtubeId=<id>`. Thumbnails are proxied at
 `/youtube-thumb/<id>` so `img-src` can stay first-party.

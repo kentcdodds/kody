@@ -5,6 +5,7 @@ import {
 	parseYoutubeVideoIdList,
 	youtubePlaylistFeedCacheSeconds,
 	youtubePlaylistFeedUrl,
+	youtubeWatchSampleVideoId,
 } from '#universal/youtube-watch.ts'
 import { listEnabledSiteBanners } from '#worker/site-banners/service.ts'
 
@@ -34,7 +35,7 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 	])
 	return mergeYoutubeWatchAllowlist({
 		playlistVideoIds,
-		extraVideoIds,
+		extraVideoIds: [...extraVideoIds, youtubeWatchSampleVideoId],
 		hrefs,
 	})
 }

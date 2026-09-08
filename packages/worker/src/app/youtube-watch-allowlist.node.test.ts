@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest'
+import { youtubeWatchSampleVideoId } from '#universal/youtube-watch.ts'
 import {
 	loadPlaylistVideoIds,
 	resolveYoutubeWatchAllowedVideoIds,
 } from './youtube-watch-allowlist.ts'
 
-const videoId = 'QA0xYMAMjEg'
+const videoId = youtubeWatchSampleVideoId
 const playlistId = 'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
 
 test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () => {
@@ -56,6 +57,18 @@ test('resolveYoutubeWatchAllowedVideoIds uses extra ids when playlists are none'
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 			YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
+		} as Env,
+		fetchImpl: async () => {
+			throw new Error('playlist fetch should not run')
+		},
+	})
+	expect(ids).toEqual([videoId])
+})
+
+test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id', async () => {
+	const ids = await resolveYoutubeWatchAllowedVideoIds({
+		env: {
+			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		} as Env,
 		fetchImpl: async () => {
 			throw new Error('playlist fetch should not run')

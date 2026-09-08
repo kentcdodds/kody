@@ -23,7 +23,6 @@ import {
 function emptyYoutubeWatchSnapshot(): YoutubeWatchLoaderData {
 	return {
 		allowedVideoIds: [],
-		requestedVideoId: null,
 	}
 }
 
@@ -52,8 +51,7 @@ export function YouTubeWatchOverlay(
 
 	return () => {
 		const snapshot = handle.props.snapshot ?? emptyYoutubeWatchSnapshot()
-		const fromSearch = parseYoutubeWatchSearch(readRouterSearch(handle))
-		const videoId = fromSearch ?? snapshot.requestedVideoId
+		const videoId = parseYoutubeWatchSearch(readRouterSearch(handle))
 		const allowed =
 			videoId !== null && snapshot.allowedVideoIds.includes(videoId)
 		if (!videoId || !allowed) return null

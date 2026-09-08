@@ -4,6 +4,7 @@ import {
 	rewriteBannerHrefForYoutubeWatch,
 	youtubeThumbPath,
 	youtubeWatchHref,
+	youtubeWatchSampleVideoId,
 } from '#universal/youtube-watch.ts'
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/
@@ -40,8 +41,6 @@ export const siteBannerIdPattern =
 export const siteBannerPreviewLookParam = 'siteBannerLook'
 export const siteBannerPreviewIdParam = 'siteBannerPreview'
 export const launchVideoSampleBannerId = 'preview-launch-video'
-
-export const siteBannerLookSampleVideoId = 'QA0xYMAMjEg'
 
 export const siteBannerLookMinHeights = {
 	strip: '3.75rem',
@@ -400,14 +399,14 @@ export function createLaunchVideoSampleBanner(
 		id: launchVideoSampleBannerId,
 		title: 'Kody is live',
 		body: 'Watch the launch video — what Kody is, and why it exists.',
-		ctaHref: youtubeWatchHref(siteBannerLookSampleVideoId),
+		ctaHref: youtubeWatchHref(youtubeWatchSampleVideoId),
 		ctaLabel: 'Watch the video',
 		secondaryHref: '/blog',
 		secondaryLabel: 'Read the announcement',
 		severity: 'promo',
 		look,
 		icon: 'play',
-		imageUrl: youtubeThumbPath(siteBannerLookSampleVideoId),
+		imageUrl: youtubeThumbPath(youtubeWatchSampleVideoId),
 		dismissible: true,
 	}
 }

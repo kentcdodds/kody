@@ -1,6 +1,7 @@
 const youtubeWatchSearchParam = 'youtubeId'
 const youtubeThumbPathPrefix = '/youtube-thumb/'
 const youtubeVideoIdPattern = /^[A-Za-z0-9_-]{11}$/
+export const youtubeWatchSampleVideoId = 'QA0xYMAMjEg'
 const youtubePlaylistIdPattern = /^PL[A-Za-z0-9_-]{10,}$/
 export const youtubePlaylistFeedCacheSeconds = 60 * 60
 

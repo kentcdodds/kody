@@ -107,7 +107,6 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		),
 		pushServerTiming(serverTiming, 'youtubeWatch', () =>
 			loadYoutubeWatchLoaderData({
-				request,
 				env,
 			}),
 		),

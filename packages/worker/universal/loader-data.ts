@@ -421,7 +421,6 @@ export type SiteBannerLoaderData = {
 
 export type YoutubeWatchLoaderData = {
 	allowedVideoIds: Array<string>
-	requestedVideoId: string | null
 }
 
 /**
