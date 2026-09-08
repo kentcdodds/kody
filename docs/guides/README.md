@@ -8,7 +8,8 @@ bundled into origin and `kody-platform` at build time so web `/guides` and
 guide deploys upload those two scripts and skip runtime and jobs:
 
 - **`search({ entity: "{id}:guide" })`** over MCP — pass the stable frontmatter
-  `id` (for example `package_authoring:guide`)
+  `id` (for example `package_authoring:guide`). Oversized guides return a table
+  of contents; open a heading with `{id}:guide#{slug}`
 - **`/guides`** on the web — Work with Kody index (Start here + more guides)
 - **`/guides/connect`** — connection (provider) walkthrough index
 - **Raw markdown** — `/guides/<slug>.md`, `/guides.md`, `/guides/connect.md`, or

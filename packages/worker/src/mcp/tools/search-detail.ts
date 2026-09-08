@@ -29,6 +29,11 @@ export async function resolveEntityDetail(input: {
 	searchRows: SearchRowsAndRegistry
 }) {
 	const ref = parseEntityRef(input.entity)
+	if (ref.section && ref.type !== 'guide') {
+		throw new McpCallerError(
+			'Section fragments are only supported on guide entities. Use "{id}:guide#{heading}".',
+		)
+	}
 	if (ref.type === 'capability') {
 		const spec = input.searchRows.registry.capabilitySpecs[ref.id]
 		if (!spec) {
@@ -64,6 +69,7 @@ export async function resolveEntityDetail(input: {
 			category: guide.category,
 			provider: guide.provider,
 			lastVerified: guide.lastVerified,
+			...(ref.section ? { section: ref.section } : {}),
 		}
 	}
 

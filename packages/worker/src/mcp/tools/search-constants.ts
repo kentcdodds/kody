@@ -1,5 +1,6 @@
 export const charsPerToken = 4
 export const maxTokens = 6_000
+/** Official-guide heading sections must stay under this budget (`kody-custom/no-oversized-guide-section`). */
 export const maxChars = maxTokens * charsPerToken
 export const defaultSearchLimit = 15
 export const domainBrowseDefaultLimit = 100

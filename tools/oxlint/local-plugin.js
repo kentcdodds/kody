@@ -1,4 +1,8 @@
 import {
+	findOversizedOfficialGuideSections,
+	isOfficialGuideCatalogFile,
+} from './guide-section-budget.js'
+import {
 	findTautologicalAbsenceMatches,
 	isTestPath,
 	loadTautologicalAbsenceCorpus,
@@ -271,6 +275,52 @@ function tautologicalAbsenceCorpusFor() {
 	return tautologicalAbsenceCorpus
 }
 
+let officialGuideSectionOverflows = null
+
+function officialGuideSectionOverflowsFor() {
+	if (!officialGuideSectionOverflows) {
+		officialGuideSectionOverflows = findOversizedOfficialGuideSections()
+	}
+	return officialGuideSectionOverflows
+}
+
+const noOversizedGuideSectionRule = {
+	meta: {
+		type: 'problem',
+		docs: {
+			description:
+				'Reject official guide sections that exceed the search body budget (maxChars minus the entity header) so {id}:guide#{slug} can return the full heading.',
+		},
+		schema: [],
+		messages: {
+			oversizedSection:
+				'Official guide section "{{file}}#{{slug}}" is {{chars}} characters (limit {{limit}} after the search entity header). Split the heading or move detail so search({ entity: "{id}:guide#{slug}" }) can return the full section.',
+		},
+	},
+	createOnce(context) {
+		return {
+			Program(node) {
+				// createOnce cannot read context.filename at setup. Official
+				// guides are markdown, so this visitor reports on the catalog
+				// TypeScript haystack after walking docs/guides/.
+				if (!isOfficialGuideCatalogFile(context.filename)) return
+				for (const overflow of officialGuideSectionOverflowsFor()) {
+					context.report({
+						node,
+						messageId: 'oversizedSection',
+						data: {
+							file: overflow.file,
+							slug: overflow.slug,
+							chars: String(overflow.chars),
+							limit: String(overflow.limit),
+						},
+					})
+				}
+			},
+		}
+	},
+}
+
 const noTautologicalAbsenceRule = {
 	meta: {
 		type: 'problem',
@@ -383,6 +433,7 @@ const plugin = {
 		'enforce-import-boundaries': enforceImportBoundariesRule,
 		'no-example-identifier': noExampleIdentifierRule,
 		'no-literal-frame-src': noLiteralFrameSrcRule,
+		'no-oversized-guide-section': noOversizedGuideSectionRule,
 		'no-tautological-absence': noTautologicalAbsenceRule,
 		'prefer-loader-data-types': preferLoaderDataTypesRule,
 	},

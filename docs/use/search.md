@@ -110,8 +110,13 @@ a tight size budget does not drop them.
 
 To inspect one hit, call **search** again with **`entity`** set to
 `"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
-`package`, or `secret`. Guide entities return the full official markdown (the
-same bundled body as the web `/guides` pages). Capability entities additionally
+`package`, or `secret`. Guide entities return the official markdown (the same
+bundled body as the web `/guides` pages) when it fits the search response
+budget. Oversized guides return a table of contents instead of truncating
+mid-document. Open one heading with `"{id}:guide#{slug}"` (for example
+`package_subscriptions:guide#repo.pushed`). Official guide headings themselves
+must fit the remaining budget after the search entity header
+(`kody-custom/no-oversized-guide-section`). Capability entities additionally
 include a ready-to-run **execute** snippet plus `inputTypeDefinition` /
 `outputTypeDefinition`.
 
@@ -123,6 +128,7 @@ every ref fails, the tool returns an error result.
 Examples:
 
 - `package_authoring:guide`
+- `package_subscriptions:guide#repo.pushed`
 - `["package_authoring:guide", "package_lifecycle:guide"]`
 - `codingGuideGet:capability`
 - `["mcp:linear:create_issue:capability", "mcp:linear:get_issue:capability"]`
@@ -133,10 +139,11 @@ Examples:
 - `githubPat:secret`
 
 Official guides are first-class entities. Ranked search can return `{id}:guide`
-hits; `search({ entity: "package_authoring:guide" })` returns the full bundled
-markdown. Prefer that over executing `codingGuideGet` just to read a guide.
-`codingGuideGet` is for execute-module code that needs the body
-programmatically.
+hits; `search({ entity: "package_authoring:guide" })` returns the bundled
+markdown, or a contents index when that file exceeds the response budget. Prefer
+that over executing `codingGuideGet` just to read a guide. `codingGuideGet` is
+for execute-module code that needs the body programmatically and accepts the
+same optional `section` heading.
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.

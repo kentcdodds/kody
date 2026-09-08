@@ -67,6 +67,15 @@ reports on the current test file.
 `tools/oxlint/tautological-absence.node.test.ts` asserts the heuristic without
 spawning the linter for every case.
 
+`kody-custom/no-oversized-guide-section` walks official guides under
+`docs/guides/` (not `README.md`) and reports on
+`packages/worker/src/guides/catalog.ts` when a requestable heading (`##` or
+deeper) exceeds the search body budget: `maxChars` minus the `{id}:guide` entity
+header and mode line. Helpers live in `guide-section-budget.js` so
+`tools/oxlint/guide-section-budget.node.test.ts` can assert the parser and
+budget against the runtime heading and header code without spawning oxlint for
+every case.
+
 Repo-wide syntactic bans that do not need a custom visitor live in the same
 config as built-in rules: `typescript/no-explicit-any` and
 `eslint/no-warning-comments` for `TODO` / `FIXME` / `HACK`. The Remix `on()`

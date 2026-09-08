@@ -15,7 +15,7 @@ Find built-in capabilities, official guides, saved packages, integrations, and s
 
 **query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown. Capability detail includes an execute snippet.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`guide\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Guide detail is the full markdown when it fits the response budget; oversized guides return a table of contents. Open a heading with \`{id}:guide#{slug}\` (for example \`package_subscriptions:guide#repo.pushed\`). Capability detail includes an execute snippet.
 
 Example arguments:
 - \`{ "query": "send a message" }\`
@@ -49,7 +49,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, package, or secret), or an array of 1–10 refs to batch related detail lookups.',
+			'Optional exact entity reference "{id}:{type}" (capability, guide, integration, package, or secret), or an array of 1–10 refs to batch related detail lookups. Guide refs accept "#{heading}" to open one section.',
 		),
 	domain: z
 		.string()

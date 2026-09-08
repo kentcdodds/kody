@@ -292,6 +292,17 @@ export type SearchEntityDetailStructured =
 			category: 'platform' | 'provider'
 			slug: string
 			body: string
+			bodyMode: 'full' | 'toc' | 'section'
+			section: {
+				title: string
+				slug: string
+			} | null
+			sections: Array<{
+				title: string
+				slug: string
+				level: number
+				entityRef: string
+			}>
 			provider: string | null
 			lastVerified: string | null
 	  }
@@ -407,6 +418,7 @@ export type SearchEntityDetail =
 			category: 'platform' | 'provider'
 			provider: string | null
 			lastVerified: string | null
+			section?: string
 	  }
 	| {
 			type: 'package'
