@@ -99,3 +99,64 @@ test('restore and live session sanitization clears stale 2025 state and keeps fr
 		transport: {},
 	})
 })
+
+test('restore keeps catalog-timeout legacy only for remembered servers', () => {
+	const unmarked = sanitizePersistedMcpServerOptions(
+		{
+			client: { versionNegotiation: { mode: 'legacy' } },
+			transport: { type: 'auto' },
+		},
+		{
+			serverId: 'feeds',
+			keepLegacyHandshakeIds: new Set(['analytics']),
+		},
+	)
+	expect(unmarked.client).toEqual({
+		versionNegotiation: { mode: 'auto' },
+	})
+
+	const marked = sanitizePersistedMcpServerOptions(
+		{
+			client: { versionNegotiation: { mode: 'legacy' } },
+			transport: { type: 'auto' },
+		},
+		{
+			serverId: 'analytics',
+			keepLegacyHandshakeIds: new Set(['analytics']),
+		},
+	)
+	expect(marked.client).toEqual({
+		versionNegotiation: { mode: 'legacy' },
+	})
+
+	const updates: Array<{ id: string; options: string }> = []
+	sanitizeStoredMcpSessions(
+		{
+			sql: {
+				exec(query: string, ...bindings: Array<unknown>) {
+					if (query.startsWith('SELECT')) {
+						return [
+							{
+								id: 'analytics',
+								server_options: JSON.stringify({
+									client: { versionNegotiation: { mode: 'legacy' } },
+									transport: { sessionId: 'stale-2025-session' },
+								}),
+							},
+						]
+					}
+					updates.push({
+						id: String(bindings[1]),
+						options: String(bindings[0]),
+					})
+					return []
+				},
+			},
+		},
+		{ keepLegacyHandshakeIds: new Set(['analytics']) },
+	)
+	expect(JSON.parse(updates[0]?.options ?? '{}')).toEqual({
+		client: { versionNegotiation: { mode: 'legacy' } },
+		transport: {},
+	})
+})

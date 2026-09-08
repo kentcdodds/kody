@@ -3,6 +3,7 @@ import {
 	classifyPersistedMcpSession,
 	shouldPersistLegacyMcpSession,
 } from './probe-outcome.ts'
+import { shouldKeepPersistedLegacyHandshake } from './legacy-handshake.ts'
 import { outboundMcpClientOptions } from './reconnect.ts'
 import {
 	isFreshModernDiscoverResult,
@@ -13,6 +14,10 @@ import {
 
 export function sanitizePersistedMcpServerOptions(
 	options: PersistedMcpServerOptions,
+	input?: {
+		serverId?: string
+		keepLegacyHandshakeIds?: ReadonlySet<string>
+	},
 ): PersistedMcpServerOptions {
 	const discoverResult = isFreshModernDiscoverResult(options.discoverResult)
 		? options.discoverResult
@@ -20,6 +25,12 @@ export function sanitizePersistedMcpServerOptions(
 	const keepLegacySession = shouldPersistLegacyMcpSession(
 		classifyPersistedMcpSession(options),
 	)
+	const keepCatalogTimeoutLegacy =
+		input?.serverId != null &&
+		shouldKeepPersistedLegacyHandshake({
+			serverId: input.serverId,
+			keepLegacyHandshakeIds: input.keepLegacyHandshakeIds,
+		})
 	const transport = withoutPersistedMcpSession(options.transport, {
 		keepModernProtocolVersion: discoverResult !== undefined,
 	})
@@ -31,7 +42,10 @@ export function sanitizePersistedMcpServerOptions(
 	}
 	const next: PersistedMcpServerOptions = {
 		...options,
-		client: outboundMcpClientOptions(options.client),
+		client: outboundMcpClientOptions(
+			options.client,
+			keepCatalogTimeoutLegacy ? 'legacy' : 'auto',
+		),
 		transport,
 	}
 	if (discoverResult !== undefined) {
@@ -66,9 +80,12 @@ export function parsePersistedMcpServerOptions(
  * `restoreConnectionsFromStorage`. A stored 2025-11-25 session skips the
  * modern probe and DELETEs on close against modern-only servers.
  */
-export function sanitizeStoredMcpSessions(storage: {
-	sql: { exec: (query: string, ...bindings: Array<unknown>) => unknown }
-}) {
+export function sanitizeStoredMcpSessions(
+	storage: {
+		sql: { exec: (query: string, ...bindings: Array<unknown>) => unknown }
+	},
+	input?: { keepLegacyHandshakeIds?: ReadonlySet<string> },
+) {
 	const rows = [
 		...asRows(
 			storage.sql.exec('SELECT id, server_options FROM cf_agents_mcp_servers'),
@@ -77,7 +94,10 @@ export function sanitizeStoredMcpSessions(storage: {
 	for (const row of rows) {
 		const parsed = parsePersistedMcpServerOptions(row.server_options)
 		if (!parsed) continue
-		const sanitized = sanitizePersistedMcpServerOptions(parsed)
+		const sanitized = sanitizePersistedMcpServerOptions(parsed, {
+			serverId: row.id,
+			keepLegacyHandshakeIds: input?.keepLegacyHandshakeIds,
+		})
 		if (JSON.stringify(sanitized) === JSON.stringify(parsed)) continue
 		storage.sql.exec(
 			'UPDATE cf_agents_mcp_servers SET server_options = ? WHERE id = ?',

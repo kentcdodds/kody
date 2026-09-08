@@ -81,6 +81,14 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 	})
 	expect(
 		buildIncompleteDiscoverLastError({
+			state: 'connected',
+			mcpEndpoint: 'https://mcp.example/mcp',
+			attemptId: 'attempt-catalog',
+			phase: 'tools/list',
+		})?.phase,
+	).toBe('tools/list')
+	expect(
+		buildIncompleteDiscoverLastError({
 			state: 'ready',
 			mcpEndpoint: 'https://mcp.example/mcp',
 		}),

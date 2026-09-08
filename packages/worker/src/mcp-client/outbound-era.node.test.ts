@@ -52,29 +52,64 @@ test('Kody-as-client lists tools on modern-only and 2025 initialize servers', as
 	expect(rpcMethods(legacy.recorded)).toContain('tools/list')
 })
 
+test('modern connect then catalog hang is recoverable on the same server via legacy initialize', async () => {
+	await using stalling = await startRecordedServer(
+		createModernCatalogHangHandler(),
+	)
+
+	const autoClient = await connectKodyAsClient(stalling.origin)
+	try {
+		await expect(
+			autoClient.client.listTools(undefined, { timeout: 250 }),
+		).rejects.toThrow()
+	} finally {
+		await autoClient.client.close().catch(() => undefined)
+		await autoClient.transport.close().catch(() => undefined)
+	}
+	expect(rpcMethods(stalling.recorded)).toContain('server/discover')
+	expect(rpcMethods(stalling.recorded)).toContain('tools/list')
+	expect(rpcMethods(stalling.recorded)).not.toContain('initialize')
+
+	const legacyClient = await connectKodyAsClient(stalling.origin, {
+		mode: 'legacy',
+	})
+	try {
+		const tools = await legacyClient.client.listTools()
+		expect(tools.tools.map((tool) => tool.name)).toEqual(['catalog_ping'])
+	} finally {
+		await legacyClient.client.close().catch(() => undefined)
+		await legacyClient.transport.close().catch(() => undefined)
+	}
+	expect(rpcMethods(stalling.recorded)).toContain('initialize')
+})
+
 async function connectKodyAsClient(
 	origin: string,
 	input?: {
 		headers?: Record<string, string>
 		staleSession?: { sessionId: string; protocolVersion: string }
+		mode?: 'auto' | 'legacy'
 	},
 ) {
-	const reconnected = reconnectMcpServerOptions({
-		transport: {
-			type: 'auto',
-			...input?.staleSession,
-			...(input?.headers ? { headers: input.headers } : {}),
+	const reconnected = reconnectMcpServerOptions(
+		{
+			transport: {
+				type: 'auto',
+				...input?.staleSession,
+				...(input?.headers ? { headers: input.headers } : {}),
+			},
+			discoverResult: input?.staleSession
+				? { supportedVersions: ['2025-11-25'] }
+				: undefined,
 		},
-		discoverResult: input?.staleSession
-			? { supportedVersions: ['2025-11-25'] }
-			: undefined,
-	})
+		input?.mode ?? 'auto',
+	)
 	expect(reconnected.transport.sessionId).toBeUndefined()
 	expect(reconnected.transport.protocolVersion).toBeUndefined()
 
 	const client = new Client(
 		{ name: 'Kody', version: '1.0.0' },
-		{ versionNegotiation: { mode: 'auto' } },
+		{ versionNegotiation: { mode: input?.mode ?? 'auto' } },
 	)
 	const headers = withStaticTransportHeaders(reconnected.transport)
 	const transport = new StreamableHTTPClientTransport(new URL('/mcp', origin), {
@@ -107,6 +142,75 @@ function createModernOnlyHandler() {
 			})
 		}
 		return mcpHandler.fetch(request)
+	}
+}
+
+function createModernCatalogHangHandler() {
+	let sawInitialize = false
+	return async (request: Request) => {
+		if (request.method === 'DELETE') {
+			return new Response(null, { status: 200 })
+		}
+		if (request.method !== 'POST') {
+			return new Response(null, { status: 405 })
+		}
+		const body = (await request.json()) as {
+			id?: string | number
+			method?: string
+		}
+		if (body.method === 'server/discover') {
+			return Response.json({
+				jsonrpc: '2.0',
+				id: body.id ?? null,
+				result: {
+					protocolVersion: '2026-07-28',
+					supportedVersions: ['2026-07-28'],
+					capabilities: { tools: {} },
+					serverInfo: { name: 'stalling', version: '1.0.0' },
+				},
+			})
+		}
+		if (body.method === 'initialize') {
+			sawInitialize = true
+			return Response.json(
+				{
+					jsonrpc: '2.0',
+					id: body.id ?? null,
+					result: {
+						protocolVersion: '2025-11-25',
+						capabilities: { tools: {} },
+						serverInfo: { name: 'stalling', version: '1.0.0' },
+					},
+				},
+				{ headers: { 'mcp-session-id': 'stalling-session-1' } },
+			)
+		}
+		if (body.method === 'notifications/initialized') {
+			return new Response(null, { status: 202 })
+		}
+		if (body.method === 'tools/list') {
+			if (!sawInitialize) {
+				await new Promise((resolve) => setTimeout(resolve, 400))
+				return new Response(null, { status: 504 })
+			}
+			return Response.json({
+				jsonrpc: '2.0',
+				id: body.id ?? null,
+				result: {
+					tools: [
+						{
+							name: 'catalog_ping',
+							inputSchema: { type: 'object', properties: {} },
+						},
+					],
+				},
+			})
+		}
+		return Response.json({
+			jsonrpc: '2.0',
+			id: body.id ?? null,
+			error: { code: -32601, message: 'Method not found' },
+		})
 	}
 }
 

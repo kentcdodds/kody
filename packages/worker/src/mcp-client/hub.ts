@@ -13,11 +13,19 @@ import {
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
 import {
+	mcpLegacyHandshakeFallback,
+	mcpLegacyHandshakeStorageKey,
+	mcpLegacyHandshakeStoragePrefix,
+	readMcpVersionNegotiationMode,
+	shouldRetryLegacyHandshake,
+} from './legacy-handshake.ts'
+import {
 	buildIncompleteDiscoverLastError,
 	isFormattedMcpOAuthSettleMessage,
 	isIncompleteDiscoverState,
 	readAttemptIdFromSettleMessage,
 	readOAuthDiscoveryUrls,
+	sanitizePublicUrl,
 } from './oauth-settle-error.ts'
 import {
 	outboundMcpClientOptions,
@@ -122,8 +130,43 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * sessions are dropped first because start restores connections.
 	 */
 	private async restoreSanitizedConnections() {
-		sanitizeStoredMcpSessions(this.ctx.storage)
+		sanitizeStoredMcpSessions(this.ctx.storage, {
+			keepLegacyHandshakeIds: await this.readLegacyHandshakeServerIds(),
+		})
 		await this.lifecycle.start()
+	}
+
+	private async readLegacyHandshakeServerIds() {
+		const entries = await this.ctx.storage.list({
+			prefix: mcpLegacyHandshakeStoragePrefix,
+		})
+		return new Set(
+			[...entries.keys()].map((key) =>
+				key.slice(mcpLegacyHandshakeStoragePrefix.length),
+			),
+		)
+	}
+
+	private async rememberLegacyHandshakeFallback(serverId: string) {
+		await this.ctx.storage.put(
+			mcpLegacyHandshakeStorageKey(serverId),
+			mcpLegacyHandshakeFallback,
+		)
+	}
+
+	private async rememberLegacyHandshakeIfActive(serverId: string) {
+		if (
+			readMcpVersionNegotiationMode(
+				this.manager.mcpConnections[serverId]?.options.client,
+			) !== 'legacy'
+		) {
+			return
+		}
+		await this.rememberLegacyHandshakeFallback(serverId)
+	}
+
+	private async forgetLegacyHandshakeFallback(serverId: string) {
+		await this.ctx.storage.delete(mcpLegacyHandshakeStorageKey(serverId))
 	}
 
 	private clearSessionBeforeConnect(serverId: string) {
@@ -215,6 +258,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult> {
 		await this.ensureRestored()
+		await this.forgetLegacyHandshakeFallback(input.serverId)
+		this.clearIncompleteDiscoverStamp(input.serverId)
 		const existing = this.manager.mcpConnections[input.serverId]
 		if (existing) {
 			await this.manager.removeServer(input.serverId)
@@ -268,6 +313,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
+		await this.forgetLegacyHandshakeFallback(input.serverId)
+		this.clearIncompleteDiscoverStamp(input.serverId)
 		await this.restartServerAuthorization(input)
 		const row = this.manager
 			.listServers()
@@ -305,9 +352,10 @@ class McpClientHubBase extends DurableObject<Env> {
 	async removeServer(input: { serverId: string }): Promise<void> {
 		await this.ensureRestored()
 		await this.manager.removeServer(input.serverId)
-		await this.ctx.storage.delete(
+		await this.ctx.storage.delete([
 			mcpConnectionEpisodeStorageKey(input.serverId),
-		)
+			mcpLegacyHandshakeStorageKey(input.serverId),
+		])
 	}
 
 	/**
@@ -596,7 +644,10 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.lastDiscoverErrors.delete(serverId)
 	}
 
-	private async runDiscoverIfConnected(serverId: string): Promise<{
+	private async runDiscoverIfConnected(
+		serverId: string,
+		options?: { allowLegacyFallback?: boolean; attemptId?: string | null },
+	): Promise<{
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
 	}> {
@@ -609,7 +660,156 @@ class McpClientHubBase extends DurableObject<Env> {
 		} catch (error) {
 			discoverError = error instanceof Error ? error.message : String(error)
 		}
-		return this.applyIncompleteDiscoverFailure(serverId, discoverError)
+		const afterAuto = this.applyIncompleteDiscoverFailure(
+			serverId,
+			discoverError,
+			{
+				catalogAttempted: true,
+				attemptId: options?.attemptId,
+			},
+		)
+		if (
+			options?.allowLegacyFallback === false ||
+			!shouldRetryLegacyHandshake({
+				state: afterAuto.result.state,
+				client: this.manager.mcpConnections[serverId]?.options.client,
+			})
+		) {
+			return afterAuto
+		}
+		return this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
+	}
+
+	private async retryDiscoverWithLegacyHandshake(
+		serverId: string,
+		autoFailure: {
+			result: McpServerConnectResult
+			lastError: McpServerLastError | null
+		},
+	): Promise<{
+		result: McpServerConnectResult
+		lastError: McpServerLastError | null
+	}> {
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		const existingOptions = this.manager.mcpConnections[serverId]?.options
+		if (!row || !existingOptions) {
+			return this.keepCatalogLastError(serverId, autoFailure, null)
+		}
+
+		console.warn('mcp discover retrying legacy handshake', {
+			serverId,
+			attemptId: autoFailure.lastError?.attemptId ?? null,
+			mcpEndpoint: sanitizePublicUrl(row.server_url),
+		})
+
+		try {
+			await this.manager.removeServer(serverId)
+			const authProvider = createMcpClientOAuthProvider(
+				this.ctx.storage,
+				row.callback_url,
+			)
+			authProvider.serverId = serverId
+			if (row.client_id) authProvider.clientId = row.client_id
+			const legacy = reconnectMcpServerOptions(existingOptions, 'legacy')
+			await this.manager.registerServer(serverId, {
+				url: row.server_url,
+				name: row.name,
+				callbackUrl: row.callback_url,
+				...(row.client_id ? { clientId: row.client_id } : {}),
+				client: legacy.client,
+				transport: withStaticTransportHeaders({
+					...legacy.transport,
+					type: legacy.transport.type ?? 'auto',
+					authProvider,
+				}),
+			})
+		} catch (error) {
+			try {
+				await this.manager.removeServer(serverId).catch(() => {})
+				const authProvider = createMcpClientOAuthProvider(
+					this.ctx.storage,
+					row.callback_url,
+				)
+				authProvider.serverId = serverId
+				if (row.client_id) authProvider.clientId = row.client_id
+				const restored = reconnectMcpServerOptions(existingOptions)
+				await this.manager.registerServer(serverId, {
+					url: row.server_url,
+					name: row.name,
+					callbackUrl: row.callback_url,
+					...(row.client_id ? { clientId: row.client_id } : {}),
+					client: restored.client,
+					transport: withStaticTransportHeaders({
+						...restored.transport,
+						type: restored.transport.type ?? 'auto',
+						authProvider,
+					}),
+				})
+			} catch {
+				// The incomplete auto discover lastError is the user-visible outcome.
+			}
+			return this.keepCatalogLastError(
+				serverId,
+				autoFailure,
+				error instanceof Error ? error.message : String(error),
+			)
+		}
+
+		this.clearSessionBeforeConnect(serverId)
+		const connected = await this.manager.connectToServer(serverId)
+		if (connected.state !== 'connected') {
+			const result = this.buildConnectResult(serverId)
+			if (result.state === 'authenticating' && result.authUrl) {
+				await this.rememberLegacyHandshakeIfActive(serverId)
+				return { result, lastError: null }
+			}
+			return this.keepCatalogLastError(serverId, autoFailure, result.error)
+		}
+		const discovered = await this.runDiscoverIfConnected(serverId, {
+			allowLegacyFallback: false,
+			attemptId: autoFailure.lastError?.attemptId,
+		})
+		if (discovered.result.state === 'ready') {
+			await this.rememberLegacyHandshakeIfActive(serverId)
+		}
+		return discovered
+	}
+
+	private keepCatalogLastError(
+		serverId: string,
+		autoFailure: {
+			result: McpServerConnectResult
+			lastError: McpServerLastError | null
+		},
+		discoverError: string | null,
+	): {
+		result: McpServerConnectResult
+		lastError: McpServerLastError | null
+	} {
+		const stamped = this.applyIncompleteDiscoverFailure(
+			serverId,
+			discoverError,
+			{
+				catalogAttempted: true,
+				attemptId: autoFailure.lastError?.attemptId,
+			},
+		)
+		if (stamped.lastError) return stamped
+		const lastError = autoFailure.lastError
+		if (!lastError) return stamped
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) connection.connectionError = lastError.message
+		this.lastDiscoverErrors.set(serverId, lastError)
+		return {
+			result: {
+				...this.buildConnectResult(serverId),
+				error: lastError.message,
+				lastError,
+			},
+			lastError,
+		}
 	}
 
 	private finalizeConnectResult(serverId: string): McpServerConnectResult {
@@ -619,6 +819,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private applyIncompleteDiscoverFailure(
 		serverId: string,
 		discoverError: string | null,
+		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): {
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
@@ -626,13 +827,30 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = this.buildConnectResult(serverId)
 		const connection = this.manager.mcpConnections[serverId]
 		if (!isIncompleteDiscoverState(result.state)) {
-			if (result.state === 'ready') this.clearIncompleteDiscoverStamp(serverId)
-			else this.lastDiscoverErrors.delete(serverId)
+			if (result.state === 'ready') {
+				this.clearIncompleteDiscoverStamp(serverId)
+				return {
+					result: { ...result, error: null, lastError: null },
+					lastError: null,
+				}
+			}
+			const existing = this.lastDiscoverErrors.get(serverId)
+			if (existing && result.state !== 'authenticating') {
+				if (connection) connection.connectionError = existing.message
+				return {
+					result: {
+						...this.buildConnectResult(serverId),
+						error: existing.message,
+						lastError: existing,
+					},
+					lastError: existing,
+				}
+			}
+			this.lastDiscoverErrors.delete(serverId)
 			return {
 				result: {
 					...result,
-					error:
-						result.state === 'ready' ? null : (result.error ?? discoverError),
+					error: result.error ?? discoverError,
 					lastError: null,
 				},
 				lastError: null,
@@ -643,7 +861,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (alreadyStamped && discoverError == null) {
 			const existing =
 				this.lastDiscoverErrors.get(serverId) ??
-				this.rebuildStampedDiscoverLastError(serverId, result)
+				this.rebuildStampedDiscoverLastError(serverId, result, options)
 			if (existing) {
 				this.lastDiscoverErrors.set(serverId, existing)
 				return {
@@ -664,7 +882,9 @@ class McpClientHubBase extends DurableObject<Env> {
 			state: result.state,
 			authUrl: result.authUrl,
 			error: alreadyStamped ? discoverError : (result.error ?? discoverError),
+			phase: options?.catalogAttempted ? 'tools/list' : undefined,
 			mcpEndpoint: row?.server_url ?? null,
+			attemptId: options?.attemptId,
 		})
 		if (!lastError) {
 			return {
@@ -698,6 +918,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private rebuildStampedDiscoverLastError(
 		serverId: string,
 		result: McpServerConnectResult,
+		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): McpServerLastError | null {
 		const row = this.manager
 			.listServers()
@@ -706,16 +927,23 @@ class McpClientHubBase extends DurableObject<Env> {
 			state: result.state,
 			authUrl: result.authUrl,
 			error: null,
+			phase: options?.catalogAttempted ? 'tools/list' : undefined,
 			mcpEndpoint: row?.server_url ?? null,
 			attemptId:
-				readAttemptIdFromSettleMessage(result.error) ?? crypto.randomUUID(),
+				options?.attemptId ??
+				readAttemptIdFromSettleMessage(result.error) ??
+				crypto.randomUUID(),
 		})
 	}
 
 	private async discoverAfterOAuthEstablish(
 		serverId: string,
 	): Promise<McpServerConnectResult> {
-		return (await this.runDiscoverIfConnected(serverId)).result
+		const result = (await this.runDiscoverIfConnected(serverId)).result
+		if (result.state === 'ready') {
+			await this.rememberLegacyHandshakeIfActive(serverId)
+		}
+		return result
 	}
 
 	private async resolveOAuthCallbackOutcome(input: {
@@ -755,6 +983,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				? {
 						...connection,
 						error: alreadyFormatted ? null : connectionError,
+						phase: stamped?.phase,
 						httpStatus: stamped?.httpStatus ?? null,
 						httpBodySnippet: stamped?.httpBodySnippet ?? null,
 						mcpEndpoint: row?.server_url ?? stamped?.mcpEndpoint ?? null,

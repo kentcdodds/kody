@@ -4,6 +4,7 @@ import {
 	parseHttpStatusFromMcpError,
 	sanitizeMcpErrorSnippet,
 	sanitizePublicUrl,
+	type McpOAuthSettlePhase,
 	type McpServerLastError,
 } from './oauth-settle-error.ts'
 import {
@@ -15,6 +16,7 @@ export type McpOAuthCallbackConnection = {
 	state: McpServerConnectionState
 	authUrl: string | null
 	error: string | null
+	phase?: McpOAuthSettlePhase | null
 	mcpEndpoint?: string | null
 	resource?: string | null
 	authServer?: string | null
@@ -108,10 +110,12 @@ function buildIncompleteMcpOAuthLastError(input: {
 		state: input.connection.state,
 		authUrl: input.connection.authUrl,
 		error,
-		phase: inferMcpOAuthSettlePhase({
-			state: input.connection.state,
-			error,
-		}),
+		phase:
+			input.connection.phase ??
+			inferMcpOAuthSettlePhase({
+				state: input.connection.state,
+				error,
+			}),
 		httpStatus:
 			input.connection.httpStatus ?? parseHttpStatusFromMcpError(error),
 		httpBodySnippet: sanitizeMcpErrorSnippet(input.connection.httpBodySnippet),
