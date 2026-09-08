@@ -24,3 +24,6 @@ node tools/control-kody.ts request GET /account/mcp-oauth-clients.json
 
 - App `/mcp` (Kody-as-server) is a different surface. Unauthenticated GET is 401
   by design.
+- After IdP success, Status on `/account/mcp-servers/:serverId` shows a
+  sanitized last settle error when tool discovery does not finish (including
+  after a 2025 handshake retry). Reconnect from that page.

@@ -58,8 +58,8 @@ Banners can show a first-party image and a CTA. A YouTube watch URL or
 `/?youtubeId=<id>` CTA derives `/youtube-thumb/<id>` when `imageUrl` is empty.
 Raw `i.ytimg.com` URLs are rewritten to that same-origin path so CSP can keep
 `img-src` first-party. The admin form has a paste helper that fills
-`ctaHref=/?youtubeId=<id>` and the thumb path. There is no hardcoded live launch
-banner; operators create and enable content in D1.
+`ctaHref=/?youtubeId=<id>` and the thumb path. Operators create and enable
+content in D1.
 
 In-site playback is the site-wide `/?youtubeId=` overlay, not a banner-only
 player. See [YouTube watch overlay](./youtube-watch.md).

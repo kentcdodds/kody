@@ -534,7 +534,7 @@ guarded by a bearer secret comparison.
   unchanged), and is the restore path after a D1 export sealed before the
   2026-08-17 format-upgrade pass. Integration-owned OAuth tokens and user-lane
   client secrets live only as ciphertext on `user_integrations` /
-  `user_oauth_apps`; they are not dual-written to `secret_entries`. A 2-part
+  `user_oauth_apps`; they are not stored in `secret_entries`. A 2-part
   ciphertext carries no AAD, so a copied row would decrypt under the maintenance
   helper until rewritten. Row swaps already require write access to the
   database, so this is defense-in-depth, not a standing hole.

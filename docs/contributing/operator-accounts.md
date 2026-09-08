@@ -438,8 +438,8 @@ Portal, update the Actions secrets, deploy. Guild/role snowflakes change only if
 the guild or roles are recreated.
 
 Recovery: Discord account that owns the application and the official guild.
-Login and billing still succeed when the bot secrets are unset; join/role writes
-and shipped-PR posts skip.
+Login and billing succeed when the bot secrets are unset; join/role writes and
+shipped-PR posts skip.
 
 `Password manager: Discord application name(s) for social login vs shipped-PR bot; guild name.`
 
@@ -456,8 +456,8 @@ Setup: [social-login.md](./social-login.md).
 Rotation: create a new client secret, update `OAUTH_GOOGLE_CLIENT_SECRET`,
 deploy.
 
-Recovery: Google account that owns the Cloud project. The GitHub login button
-still works if Google is unset.
+Recovery: Google account that owns the Cloud project. GitHub login succeeds when
+Google is unset.
 
 `Password manager: Google Cloud project name / OAuth client name.`
 
