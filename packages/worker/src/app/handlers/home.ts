@@ -37,32 +37,37 @@ export function createHomeHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const codeRunsWindow = await pushServerTiming(
-				serverTiming,
-				'code-runs',
-				() => loadPublicCodeRunsWindow(env),
-			)
-			const codeRuns = { ok: true as const, window: codeRunsWindow }
 			const walkthroughHosts = pickWalkthroughHosts()
-			const signupMode = await resolveSignupMode(env)
-
-			const user = await readAuthenticatedAppUser(request, env, {
-				prefetchFeatureFlags: true,
-			})
+			const [codeRunsWindow, signupMode, user] = await Promise.all([
+				pushServerTiming(serverTiming, 'code-runs', () =>
+					loadPublicCodeRunsWindow(env),
+				),
+				resolveSignupMode(env),
+				readAuthenticatedAppUser(request, env, {
+					prefetchFeatureFlags: true,
+				}),
+			])
+			const codeRuns = { ok: true as const, window: codeRunsWindow }
 			if (!user) {
-				// Anonymous visits still embed the public onboarding payload so
-				// the hero's discovery-prompt copy renders server-side instead
-				// of popping in after a client /onboarding.json fetch.
+				// Anonymous visits still embed discovery-prompt copy so the
+				// hero does not pop it in after /onboarding.json. The MCP
+				// chooser catalog and setup prompts stay off / — home does
+				// not render them, and they dominated rmx-data (~7 kB).
 				return withAgentDiscoveryLinkHeaders(
 					withVaryAccept(
 						await renderAppPage({
 							request,
 							env,
 							loaderData: {
-								onboarding: loadPublicOnboardingData({
-									env,
-									requestUrl: request.url,
-								}),
+								onboarding: {
+									...loadPublicOnboardingData({
+										env,
+										requestUrl: request.url,
+									}),
+									featuredMcpServers: [],
+									setupPrompt: '',
+									persistPrompt: '',
+								},
 								codeRuns,
 								walkthroughHosts,
 								signupMode,
@@ -80,6 +85,7 @@ export function createHomeHandler(env: Env) {
 				stableUserId: user.mcpUser.userId,
 				username: user.username,
 				emailVerified: user.emailVerified,
+				featuredMcpServers: [],
 			})
 			return withAgentDiscoveryLinkHeaders(
 				withVaryAccept(

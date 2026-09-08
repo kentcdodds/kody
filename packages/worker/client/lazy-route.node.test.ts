@@ -19,13 +19,6 @@ const eagerPatterns = new Set([
 	routePattern(routes.home),
 	routePattern(routes.profile),
 	oauthPaths.callback,
-	routePattern(routes.onboarding),
-	routePattern(routes.onboardingStep1),
-	routePattern(routes.onboardingStep1Agent),
-	routePattern(routes.onboardingStep2),
-	routePattern(routes.onboardingStep2Service),
-	routePattern(routes.onboardingStep3),
-	routePattern(routes.onboardingStep3Agent),
 ])
 
 function concretePathForPattern(pattern: string) {

@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
+import { routes } from '#universal/routes.ts'
 import {
 	landingTestimonials,
+	landingTestimonialsStorySlug,
 	shuffleTestimonials,
 	testimonialAttribution,
 	testimonialInitials,
+	testimonialStoryHref,
 } from '#universal/landing-testimonials.ts'
 
 const testimonialsPhotoDir = join(
@@ -69,6 +72,29 @@ test('testimonialAttribution joins verified role and employer and omits blanks',
 	)
 	expect(testimonialAttribution({})).toBeNull()
 	expect(testimonialAttribution({ title: '', company: '' })).toBeNull()
+})
+
+test('carousel story links share the early-users post and anchor featured vignettes', () => {
+	const josh = landingTestimonials.find(
+		(entry) => entry.name === 'Josh Tomaino',
+	)
+	const jett = landingTestimonials.find((entry) => entry.name === 'Jett Hays')
+	if (!josh || !jett) {
+		throw new Error('expected Josh and Jett testimonials')
+	}
+
+	expect(josh.quote).toContain('six accounts over four providers')
+	expect(jett.quote).toContain("when downtime isn't an option")
+	expect(testimonialStoryHref(josh)).toBe('/blog/early-kody-users#josh-tomaino')
+	expect(testimonialStoryHref(jett)).toBe('/blog/early-kody-users#jett-hays')
+	expect(testimonialStoryHref({})).toBe(
+		routes.blogPost.href({ slug: landingTestimonialsStorySlug }),
+	)
+	for (const entry of landingTestimonials) {
+		expect(
+			testimonialStoryHref(entry).startsWith('/blog/early-kody-users'),
+		).toBe(true)
+	}
 })
 
 test('every hosted testimonial photo exists under public/images/testimonials', () => {

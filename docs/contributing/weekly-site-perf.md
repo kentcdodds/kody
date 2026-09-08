@@ -26,8 +26,10 @@ payload, the preloaded LCP image, TTFB, and `Server-Timing` phases (`session`,
 also probes `/onboarding` and `/guides/how-kody-works` for the same timing
 snapshot. Those extra pages are observational and do not change the verdict. A
 failed extra probe is omitted so homepage classify still runs. Homepage HTML
-that lacks an app `ssr` phase is a finding. The collector then classifies
-against [`tools/site-perf/budget.json`](../../tools/site-perf/budget.json).
+that lacks an app `ssr` phase is a finding. A `syntax-highlight` modulepreload
+on `/` is a finding (Shiki belongs on guides and onboarding, not the landing
+entry). The collector then classifies against
+[`tools/site-perf/budget.json`](../../tools/site-perf/budget.json).
 
 [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)
 runs that collector on Mondays at 14:17 UTC and on `workflow_dispatch`.

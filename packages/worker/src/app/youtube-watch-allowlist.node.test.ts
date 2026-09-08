@@ -76,3 +76,46 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample
 	})
 	expect(ids).toEqual([videoId])
 })
+
+test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists is false', async () => {
+	const ids = await resolveYoutubeWatchAllowedVideoIds({
+		env: {
+			YOUTUBE_ALLOWED_PLAYLIST_IDS: playlistId,
+			YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
+		} as Env,
+		fetchImpl: async () => {
+			throw new Error('playlist fetch should not run')
+		},
+		loadPlaylists: false,
+		listedBanners: [
+			{
+				ctaHref: `/?youtubeId=${videoId}`,
+				secondaryHref: null,
+				imageUrl: null,
+			},
+		],
+	})
+	expect(ids).toEqual([videoId])
+})
+
+test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying D1', async () => {
+	const bannerVideoId = 'dQw4w9wgvcQ'
+	const ids = await resolveYoutubeWatchAllowedVideoIds({
+		env: {
+			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
+			APP_DB: {
+				prepare() {
+					throw new Error('site_banners should not be queried')
+				},
+			},
+		} as unknown as Env,
+		listedBanners: [
+			{
+				ctaHref: `/?youtubeId=${bannerVideoId}`,
+				secondaryHref: null,
+				imageUrl: null,
+			},
+		],
+	})
+	expect(ids).toEqual([videoId, bannerVideoId])
+})

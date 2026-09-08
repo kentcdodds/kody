@@ -86,6 +86,12 @@ export type RenderMarkdownOptions = {
 	 */
 	fences?: Array<HighlightedCode>
 	/**
+	 * When true, headings get kebab-case `id` attributes (unique within one
+	 * render) so first-party posts can deep-link to a section. Off by default
+	 * so third-party READMEs do not grow extra attributes.
+	 */
+	headingIds?: boolean
+	/**
 	 * First-party `/assets/` prefix for this package. When set, relative
 	 * markdown images (`./docs/poster.png`) become `<img>` tags pointing at
 	 * that prefix. Empty keeps the default "images are links" policy.
@@ -101,6 +107,7 @@ export type RenderMarkdownOptions = {
 type ResolvedRenderOptions = Required<Omit<RenderMarkdownOptions, 'fences'>> & {
 	fences: Array<HighlightedCode>
 	fenceCursor: { index: number }
+	headingSlugCounts: Map<string, number>
 }
 
 const defaultRenderOptions = {
@@ -108,6 +115,7 @@ const defaultRenderOptions = {
 	linkRel: 'noopener noreferrer nofollow ugc',
 	linkPolicy: 'untrusted' as const,
 	copyCodeBlocks: false,
+	headingIds: false,
 	fences: [] as Array<HighlightedCode>,
 	imageBaseHref: '',
 	imageFromDirectory: '',
@@ -192,6 +200,23 @@ function resolveMarkdownLink(
 	const safeHref = getSafeMarkdownLinkHref(href)
 	if (!safeHref) return null
 	return { href: safeHref, external: true }
+}
+
+function slugifyMarkdownHeading(text: string): string {
+	return text
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}._-]+/gu, '-')
+		.replace(/-+/g, '-')
+		.replace(/^-+|-+$/g, '')
+}
+
+function nextHeadingId(used: Map<string, number>, text: string): string {
+	const base = slugifyMarkdownHeading(text) || 'section'
+	const seen = used.get(base) ?? 0
+	used.set(base, seen + 1)
+	return seen === 0 ? base : `${base}-${seen + 1}`
 }
 
 /** True when raw HTML consists only of comments and whitespace. */
@@ -319,7 +344,18 @@ function renderToken(
 				6,
 			)
 			const Tag = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
-			return <Tag key={key}>{renderTokens(token.tokens, options)}</Tag>
+			const children = renderTokens(token.tokens, options)
+			if (!options.headingIds) {
+				return <Tag key={key}>{children}</Tag>
+			}
+			return (
+				<Tag
+					key={key}
+					id={nextHeadingId(options.headingSlugCounts, token.text)}
+				>
+					{children}
+				</Tag>
+			)
 		}
 		case 'paragraph':
 			return <p key={key}>{renderTokens(token.tokens, options)}</p>
@@ -478,6 +514,7 @@ export function renderMarkdownNodes(
 		...options,
 		fences: options?.fences ?? defaultRenderOptions.fences,
 		fenceCursor: { index: 0 },
+		headingSlugCounts: new Map(),
 	})
 }
 

@@ -44,6 +44,12 @@ banner. The Atom feed is not the full catalog.
 
 Failed playlist fetches fail open: env extra ids and banner hrefs still work.
 
+SSR documents without `?youtubeId=` skip the playlist fetch. They still merge
+env extras, the sample id, and enabled-banner hrefs (from the same
+`listEnabledSiteBanners` read as the site-banner loader). `?youtubeId=` HTML and
+`/youtube-thumb/:videoId` still load playlists. Shared watch links are full
+document loads, so they still resolve playlist ids.
+
 ## Code
 
 - Parse / rewrite: `packages/worker/universal/youtube-watch.ts`

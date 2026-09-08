@@ -48,7 +48,7 @@ test('classifySitePerf scores healthy landing signals and flags cache, LCP, Shik
 
 	const shikiAndJs = classifySitePerf({
 		url: 'https://kody.codes/',
-		html: `${healthyHtml}<link rel="modulepreload" href="/assets/syntax-highlight-core-abc.js" />`,
+		html: `${healthyHtml}<link rel="modulepreload" href="/assets/syntax-highlight-Bk0_PSZb.js" />`,
 		cacheControl: 'public, max-age=60',
 		vary: 'Cookie',
 		htmlBytes: 800,

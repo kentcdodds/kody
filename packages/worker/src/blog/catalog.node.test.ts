@@ -165,6 +165,22 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		expect(getBlogPost(post.slug)).toEqual(post)
 	}
 
+	const earlyUsers = getBlogPost('early-kody-users')
+	expect(earlyUsers?.title).toBe('Early Kody users')
+	expect(earlyUsers?.date).toBe('2026-09-08')
+	expect(earlyUsers?.placeholder).toBe(true)
+	const earlyUsersBody = (earlyUsers?.body ?? '')
+		.replaceAll(/^>\s?/gm, '')
+		.replace(/\s+/g, ' ')
+	expect(earlyUsersBody).toContain(
+		'funnels all my tools into one secure MCP I can manage myself',
+	)
+	expect(earlyUsersBody).toContain(
+		"life or death for some of the world's most endangered species",
+	)
+	expect(earlyUsersBody).toContain('## Josh Tomaino')
+	expect(earlyUsersBody).toContain('## Jett Hays')
+
 	const comparison = getBlogPost('kody-vs-executor')
 	expect(comparison?.title).toBe('Kody vs Executor?')
 	expect(comparison?.date).toBe('2026-08-20')

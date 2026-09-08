@@ -7,6 +7,7 @@ import {
 	youtubePlaylistFeedUrl,
 	youtubeWatchSampleVideoId,
 } from '#universal/youtube-watch.ts'
+import { type SiteBannerRecord } from '#universal/site-banners.ts'
 import { listEnabledSiteBanners } from '#worker/site-banners/service.ts'
 
 type YoutubeWatchFetch = (
@@ -14,10 +15,25 @@ type YoutubeWatchFetch = (
 	init?: { signal?: AbortSignal },
 ) => Promise<Response>
 
+export type YoutubeWatchBannerHrefs = Pick<
+	SiteBannerRecord,
+	'ctaHref' | 'secondaryHref' | 'imageUrl'
+>
+
 export async function resolveYoutubeWatchAllowedVideoIds(input: {
 	env: Env
 	fetchImpl?: YoutubeWatchFetch
 	cache?: Cache
+	/** Reuse the SSR banner list so / does not query `site_banners` twice. */
+	listedBanners?:
+		| Promise<ReadonlyArray<YoutubeWatchBannerHrefs>>
+		| ReadonlyArray<YoutubeWatchBannerHrefs>
+	/**
+	 * Playlist Atom fetch. Default true for thumbs and `?youtubeId=` SSR.
+	 * Plain documents skip it: env extras, the sample id, and banner hrefs
+	 * still allow Watch CTAs and look-preview.
+	 */
+	loadPlaylists?: boolean
 }): Promise<Array<string>> {
 	const playlistIds = parseYoutubePlaylistIdList(
 		input.env.YOUTUBE_ALLOWED_PLAYLIST_IDS,
@@ -25,13 +41,16 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 	const extraVideoIds = parseYoutubeVideoIdList(
 		input.env.YOUTUBE_ALLOWED_VIDEO_IDS,
 	)
+	const loadPlaylists = input.loadPlaylists !== false
 	const [playlistVideoIds, hrefs] = await Promise.all([
-		loadPlaylistVideoIds({
-			playlistIds,
-			fetchImpl: input.fetchImpl ?? fetch,
-			cache: input.cache ?? readDefaultCache(),
-		}),
-		listEnabledBannerWatchHrefs(input.env),
+		loadPlaylists
+			? loadPlaylistVideoIds({
+					playlistIds,
+					fetchImpl: input.fetchImpl ?? fetch,
+					cache: input.cache ?? readDefaultCache(),
+				})
+			: Promise.resolve([]),
+		listEnabledBannerWatchHrefs(input.env, input.listedBanners),
 	])
 	return mergeYoutubeWatchAllowlist({
 		playlistVideoIds,
@@ -102,15 +121,18 @@ async function loadOnePlaylistVideoIds(input: {
 
 async function listEnabledBannerWatchHrefs(
 	env: Env,
+	listedBanners?:
+		| Promise<ReadonlyArray<YoutubeWatchBannerHrefs>>
+		| ReadonlyArray<YoutubeWatchBannerHrefs>,
 ): Promise<Array<string | null>> {
+	if (listedBanners) {
+		const banners = await listedBanners
+		return bannerWatchHrefs(banners)
+	}
 	if (typeof env.APP_DB?.prepare !== 'function') return []
 	try {
 		const banners = await listEnabledSiteBanners(env.APP_DB)
-		return banners.flatMap((banner) => [
-			banner.ctaHref,
-			banner.secondaryHref,
-			banner.imageUrl,
-		])
+		return bannerWatchHrefs(banners)
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (
@@ -122,6 +144,16 @@ async function listEnabledBannerWatchHrefs(
 		console.error('youtube watch banner href load failed', error)
 		return []
 	}
+}
+
+function bannerWatchHrefs(
+	banners: ReadonlyArray<YoutubeWatchBannerHrefs>,
+): Array<string | null> {
+	return banners.flatMap((banner) => [
+		banner.ctaHref,
+		banner.secondaryHref,
+		banner.imageUrl,
+	])
 }
 
 function readDefaultCache(): Cache | undefined {

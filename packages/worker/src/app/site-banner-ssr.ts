@@ -36,11 +36,30 @@ export function emptySiteBannerLoaderData(): SiteBannerLoaderData {
 	}
 }
 
+/** Shared enabled-banner read for SSR. Missing schema is empty, not an error. */
+export async function loadEnabledSiteBannersForSsr(
+	env: Env,
+): Promise<Array<SiteBannerRecord>> {
+	if (typeof env.APP_DB?.prepare !== 'function') return []
+	try {
+		return await listEnabledSiteBanners(env.APP_DB)
+	} catch (error) {
+		if (!isMissingSiteBannerSchema(error)) {
+			console.error('site banner list failed', error)
+		}
+		return []
+	}
+}
+
 export async function loadSiteBannerLoaderData(input: {
 	request: Request
 	env: Env
 	session: SessionInfo | null
 	pathname: string
+	/** Shared enabled-banner list so YouTube allowlist SSR does not re-query. */
+	listedBanners?:
+		| Promise<ReadonlyArray<SiteBannerRecord>>
+		| ReadonlyArray<SiteBannerRecord>
 }): Promise<SiteBannerLoaderData> {
 	if (typeof input.env.APP_DB?.prepare !== 'function') {
 		return emptySiteBannerLoaderData()
@@ -68,6 +87,9 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 	env: Env
 	session: SessionInfo | null
 	pathname: string
+	listedBanners?:
+		| Promise<ReadonlyArray<SiteBannerRecord>>
+		| ReadonlyArray<SiteBannerRecord>
 }): Promise<SiteBannerLoaderData> {
 	const requestUrl = new URL(input.request.url)
 	const isAdmin = Boolean(input.session && userHasRole(input.session, 'admin'))
@@ -93,7 +115,10 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 
 	const listed: Array<SiteBannerRecord> = wantsPreview
 		? await listSiteBannersForAdmin(input.env.APP_DB)
-		: await listEnabledSiteBanners(input.env.APP_DB)
+		: [
+				...(await (input.listedBanners ??
+					listEnabledSiteBanners(input.env.APP_DB))),
+			]
 
 	const needsPlan =
 		Boolean(stableUserId) &&
