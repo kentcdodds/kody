@@ -2,13 +2,6 @@ import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { type YoutubeWatchLoaderData } from '#universal/loader-data.ts'
 import { resolveYoutubeWatchAllowedVideoIds } from '#app/youtube-watch-allowlist.ts'
 
-export function emptyYoutubeWatchLoaderData(): YoutubeWatchLoaderData {
-	return {
-		allowedVideoIds: [],
-		requestedVideoId: null,
-	}
-}
-
 export async function loadYoutubeWatchLoaderData(input: {
 	request: Request
 	env: Env

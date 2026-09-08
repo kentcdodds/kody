@@ -20,7 +20,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 
-export function emptyYoutubeWatchSnapshot(): YoutubeWatchLoaderData {
+function emptyYoutubeWatchSnapshot(): YoutubeWatchLoaderData {
 	return {
 		allowedVideoIds: [],
 		requestedVideoId: null,

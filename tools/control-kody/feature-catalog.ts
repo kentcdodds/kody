@@ -292,6 +292,7 @@ export function isHtmlUserPath(routePath: string) {
 	if (routePath.startsWith('/integrations/')) return false
 	if (routePath.startsWith('/webhooks/')) return false
 	if (routePath.startsWith('/og/')) return false
+	if (routePath.startsWith('/youtube-thumb/')) return false
 	if (routePath === '/health' || routePath.startsWith('/health/')) return false
 	if (routePath === '/session') return false
 	if (routePath === '/code-runs.json') return false

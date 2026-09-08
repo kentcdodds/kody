@@ -1,9 +1,7 @@
-export const youtubeWatchSearchParam = 'video'
-export const youtubeThumbPathPrefix = '/youtube-thumb/'
-export const youtubeVideoIdPattern = /^[A-Za-z0-9_-]{11}$/
-export const youtubePlaylistIdPattern = /^PL[A-Za-z0-9_-]{10,}$/
-export const defaultYoutubeAllowedPlaylistId =
-	'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
+const youtubeWatchSearchParam = 'video'
+const youtubeThumbPathPrefix = '/youtube-thumb/'
+const youtubeVideoIdPattern = /^[A-Za-z0-9_-]{11}$/
+const youtubePlaylistIdPattern = /^PL[A-Za-z0-9_-]{10,}$/
 export const youtubePlaylistFeedCacheSeconds = 60 * 60
 
 const youtubeHostSuffixes = [
@@ -17,7 +15,7 @@ export function isYoutubeVideoId(value: string): boolean {
 	return youtubeVideoIdPattern.test(value)
 }
 
-export function isYoutubePlaylistId(value: string): boolean {
+function isYoutubePlaylistId(value: string): boolean {
 	return youtubePlaylistIdPattern.test(value)
 }
 
