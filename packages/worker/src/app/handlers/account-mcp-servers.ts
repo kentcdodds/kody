@@ -188,7 +188,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				if (lastError) lastError = { ...lastError, message: authError }
 			}
 
-			if (serverId && authSuccess) {
+			if (serverId && authSuccess && !lastError) {
 				await setMcpServerLastError({
 					env,
 					userId: user.mcpUser.userId,

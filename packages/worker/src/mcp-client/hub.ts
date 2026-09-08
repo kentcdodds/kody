@@ -428,14 +428,24 @@ class McpClientHubBase extends DurableObject<Env> {
 			existingConnection.state === 'discovering' ||
 			existingConnection.state === 'connecting'
 		) {
-			return {
-				serverId: input.serverId,
-				authSuccess: true,
-				authError: null,
-				serverName,
-				authorizationNeeded: false,
-				lastError: null,
+			// IdP already succeeded. Keep tokens, but do not claim callback
+			// success or clear lastError until the connection is ready. A
+			// Back/replay after an incomplete settle used to wipe the durable
+			// reason and redirect with auth=success.
+			let settleError: string | null = null
+			if (existingConnection.state === 'connected') {
+				const discovered = await this.discoverAfterOAuthEstablish(
+					input.serverId,
+				)
+				settleError = discovered.error
 			}
+			return await this.resolveOAuthCallbackOutcome({
+				sdkAuthSuccess: true,
+				sdkAuthError: null,
+				serverId: input.serverId,
+				serverName,
+				settleError,
+			})
 		}
 		try {
 			const connection = await this.restartServerAuthorization(input)

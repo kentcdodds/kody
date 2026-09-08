@@ -452,21 +452,19 @@ test('replayed unusable callbacks leave past-OAuth server credentials intact', a
 	const tokenKey = '/Kody/server-1/client-1/token'
 	values.set(tokenKey, { access_token: 'still-valid' })
 
-	for (const pastOAuthState of ['connecting', 'ready']) {
-		connection.connectionState = pastOAuthState
-		const outcome = await hub.handleOAuthCallback({
-			url: `${callbackUrl}?code=abc&state=used.server-1`,
-			callbackUrl,
-		})
-		expect(outcome).toEqual({
-			serverId: 'server-1',
-			authSuccess: true,
-			authError: null,
-			serverName: 'mediarss',
-			authorizationNeeded: false,
-			lastError: null,
-		})
-	}
+	connection.connectionState = 'ready'
+	const readyOutcome = await hub.handleOAuthCallback({
+		url: `${callbackUrl}?code=abc&state=used.server-1`,
+		callbackUrl,
+	})
+	expect(readyOutcome).toEqual({
+		serverId: 'server-1',
+		authSuccess: true,
+		authError: null,
+		serverName: 'mediarss',
+		authorizationNeeded: false,
+		lastError: null,
+	})
 	expect(manager.connectCount).toBe(0)
 	expect(manager.rows[0]?.client_id).toBe('client-1')
 	expect(values.get(tokenKey)).toEqual({ access_token: 'still-valid' })
@@ -731,4 +729,57 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 	const logged = JSON.stringify(consoleWarn.mock.calls)
 	expect(logged).not.toContain('hidden')
 	expect(logged).not.toContain('client_secret')
+})
+
+test('replayed unusable callback after incomplete settle reports lastError instead of fake success', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=used.server-1',
+	})
+	manager.callbackMatches = false
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	manager.rows[0]!.auth_url = null
+	const tokenKey = '/Kody/server-1/client-1/token'
+	values.set(tokenKey, { access_token: 'still-valid' })
+	values.set('/Kody/server-1/oauth_discovery', {
+		resource: 'https://mcp.posthog.com/',
+		authorization_servers: ['https://auth.posthog.com/'],
+	})
+
+	for (const inFlightState of ['connected', 'discovering', 'connecting']) {
+		connection.connectionState = inFlightState
+		connection.connectionError = null
+		const outcome = await hub.handleOAuthCallback({
+			url: `${callbackUrl}?code=abc&state=used.server-1`,
+			callbackUrl,
+		})
+		expect(outcome.authSuccess).toBe(false)
+		expect(outcome.authorizationNeeded).toBe(false)
+		expect(outcome.lastError).toMatchObject({
+			mcpEndpoint: 'https://mediarss.example/mcp',
+			resource: 'https://mcp.posthog.com/',
+			authServer: 'https://auth.posthog.com/',
+		})
+		expect(outcome.authError).toBeTruthy()
+		expect(outcome.authError).not.toContain('still "connected"')
+		if (inFlightState === 'connecting') {
+			expect(outcome.lastError?.phase).toBe('mcp initialize')
+			expect(outcome.authError).toContain('did not become ready')
+		} else {
+			expect(outcome.authError).toContain("tool discovery didn't finish")
+		}
+	}
+
+	expect(manager.connectCount).toBe(0)
+	expect(manager.rows[0]?.client_id).toBe('client-1')
+	expect(values.get(tokenKey)).toEqual({ access_token: 'still-valid' })
 })
