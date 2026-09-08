@@ -135,8 +135,8 @@ reads stay cheap and never trigger that execute.
 - [OAuth integrations](./integrations.md): first-class OAuth apps and
   connections in D1 (`user_oauth_apps` / `user_integrations`), including
   operator-provisioned platform (built-in) apps (`platform_oauth_apps`),
-  secret-store credential references, dual host gates, `/connect/oauth`, and
-  `createAuthenticatedFetch`.
+  encrypted connection tokens and user-lane client secrets, dual host gates,
+  `/connect/oauth`, and `createAuthenticatedFetch`.
 
 ## OAuth integration host allowlist
 

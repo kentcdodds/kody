@@ -137,6 +137,7 @@ test.each([
 	],
 	['The D1 mirror was dropped by migration 0126.', 'dropped by migration'],
 	['Migration 0141 dropped the D1 leases table.', 'migration N dropped'],
+	['Migration `0049` dropped the soak columns.', 'migration N dropped'],
 	[
 		'Post-cutover unrestorable exports never receive a manifest.',
 		'post-cutover',

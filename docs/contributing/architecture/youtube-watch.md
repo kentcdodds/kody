@@ -1,7 +1,7 @@
 # YouTube watch overlay
 
 Site-wide `/?youtubeId=<id>` player for allowlisted YouTube videos. Banners can
-point at it; the overlay is not a hardcoded launch-video banner.
+point at it.
 
 ## Surfaces
 
@@ -40,8 +40,7 @@ across client navigations.
 Unset playlist env means no playlist fetch (tests stay offline). `none` disables
 playlists explicitly. Production and preview set Kent's public playlist id in
 `packages/worker/wrangler.jsonc` so shared `/?youtubeId=` links work without a
-banner. The Atom feed is not the full catalog; expand later with the YouTube
-Data API if operators need every playlist item.
+banner. The Atom feed is not the full catalog.
 
 Failed playlist fetches fail open: env extra ids and banner hrefs still work.
 

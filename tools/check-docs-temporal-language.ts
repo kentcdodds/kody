@@ -53,7 +53,7 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 		},
 		{
 			label: 'migration N dropped',
-			regex: /\bmigration\s+\d+\s+dropped\b/i,
+			regex: /\bmigration\s+(?:\d+\s+)?dropped\b/i,
 		},
 		{
 			label: 'post-cutover',

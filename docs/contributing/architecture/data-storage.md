@@ -1405,9 +1405,9 @@ on write unless a migration backfills existing rows.
   saved-package-id list respectively. Parsers in the integrations data-access
   layer own the shapes. Access and refresh token ciphertexts live on
   `user_integrations`; the user-lane client secret ciphertext lives on
-  `user_oauth_apps`. Account export redacts those columns. Migration `0049`
-  dropped the soak `*_secret_name` columns and leftover dual-written
-  `secret_entries`.
+  `user_oauth_apps`. Those columns are the only credential store — there are no
+  `*_secret_name` pointers and the values are not in `secret_entries`. Account
+  export redacts the ciphertext columns.
 - `user_openapi_bindings` / `user_openapi_binding_operations` JSON columns
   (`0001-squashed-init.sql`) are leftover squash-create shapes. Migration `0037`
   drops the tables. Do not add new parsers.

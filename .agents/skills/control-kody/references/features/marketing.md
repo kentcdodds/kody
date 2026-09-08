@@ -15,7 +15,9 @@ node tools/control-kody.ts request GET /guides.json --skip-login --origin https:
 ```
 
 Anonymous HTML on `/` and several marketing routes is short-CDN-cached. Weekly
-site-perf owns landing budgets.
+site-perf owns landing budgets. `/?youtubeId=<id>` opens the site-wide
+allowlisted YouTube overlay on those routes; unknown or disallowed ids do not
+open the player. Enabled site banners can appear in the first HTML.
 
 ## APIs
 
