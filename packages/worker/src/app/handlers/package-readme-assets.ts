@@ -4,12 +4,11 @@ import { resolveCommunityPackageUrl } from '#worker/community/package-url.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import {
 	buildPackageReadmeAssetHeaders,
+	loadPackageReadmeAssetBytes,
 	packageReadmeAssetCacheControl,
 	packageReadmeAssetPrivateCacheControl,
 	sniffPackageReadmeImageContentType,
 } from '#worker/community/package-readme-asset.ts'
-import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import {
 	isPackageReadmeImagePath,
 	resolvePackageReadmeImagePath,
@@ -31,27 +30,16 @@ async function servePublishedPackageReadmeAsset(input: {
 	commit: string
 	relativePath: string
 	cacheControl: string
+	listingId?: string | null
 }) {
 	if (!isPackageReadmeImagePath(input.relativePath)) return notFound()
-	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
-	if (!source?.repo_id || !input.commit) return notFound()
-	let bytes: Uint8Array | null
-	try {
-		bytes = await readArtifactFileAtCommit({
-			env: input.env,
-			repoId: source.repo_id,
-			commit: input.commit,
-			filePath: input.relativePath,
-		})
-	} catch (error) {
-		console.error(
-			'package-readme-asset-load-failed',
-			input.sourceId,
-			input.relativePath,
-			error,
-		)
-		return notFound()
-	}
+	const bytes = await loadPackageReadmeAssetBytes({
+		env: input.env,
+		sourceId: input.sourceId,
+		commit: input.commit,
+		relativePath: input.relativePath,
+		listingId: input.listingId,
+	})
 	if (!bytes) return notFound()
 	const contentType = sniffPackageReadmeImageContentType(
 		bytes,
@@ -92,6 +80,7 @@ export function createCommunityPackageAssetHandler(env: Env) {
 					sourceId: listing.sourceId,
 					commit: listing.pinnedCommit,
 					relativePath,
+					listingId: listing.id,
 					cacheControl: packageReadmeAssetCacheControl,
 				})
 			}
@@ -134,6 +123,7 @@ export function createCommunityDetailAssetHandler(env: Env) {
 				sourceId: listing.sourceId,
 				commit: listing.pinnedCommit,
 				relativePath,
+				listingId: listing.id,
 				cacheControl: packageReadmeAssetCacheControl,
 			})
 		},

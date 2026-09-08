@@ -2,12 +2,15 @@ import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { tinyPngBytes } from '#worker/test-support/images-binding.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
+import { bytesToLatin1String } from '#universal/package-file-media.ts'
 
 const mocks = vi.hoisted(() => ({
 	resolveCommunityPackageUrl: vi.fn<() => Promise<unknown>>(),
 	getCommunityListingById: vi.fn<() => Promise<unknown>>(),
 	getEntitySourceById: vi.fn<() => Promise<unknown>>(),
 	readArtifactFileAtCommit: vi.fn<() => Promise<unknown>>(),
+	readPublishedSourceSnapshot: vi.fn<() => Promise<unknown>>(),
+	readCommunitySnapshot: vi.fn<() => Promise<unknown>>(),
 	loadPackagePage: vi.fn<() => Promise<unknown>>(),
 }))
 
@@ -29,6 +32,16 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/repo/artifact-file.ts', () => ({
 	readArtifactFileAtCommit: (...args: Array<unknown>) =>
 		mocks.readArtifactFileAtCommit(...args),
+}))
+
+vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
+	readPublishedSourceSnapshot: (...args: Array<unknown>) =>
+		mocks.readPublishedSourceSnapshot(...args),
+}))
+
+vi.mock('#worker/community/snapshot.ts', () => ({
+	readCommunitySnapshot: (...args: Array<unknown>) =>
+		mocks.readCommunitySnapshot(...args),
 }))
 
 vi.mock('#app/package-page.ts', () => ({
@@ -74,7 +87,10 @@ function callPackageHandler(input: {
 	const username = input.username ?? 'kody'
 	const kodyId = input.kodyId ?? 'doom'
 	const relativePath = input.relativePath ?? 'docs/poster.png'
-	const handler = createCommunityPackageAssetHandler({ APP_DB: {} } as Env)
+	const handler = createCommunityPackageAssetHandler({
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+	} as Env)
 	const url = `https://kody.codes/@${username}/${kodyId}/assets/${relativePath}`
 	return handler.handler({
 		request: new Request(url),
@@ -84,7 +100,10 @@ function callPackageHandler(input: {
 }
 
 function callListingHandler(relativePath = 'docs/poster.png') {
-	const handler = createCommunityDetailAssetHandler({ APP_DB: {} } as Env)
+	const handler = createCommunityDetailAssetHandler({
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {},
+	} as Env)
 	const url = `https://kody.codes/community/${listing.id}/assets/${relativePath}`
 	return handler.handler({
 		request: new Request(url),
@@ -103,6 +122,8 @@ test('package README asset handlers serve published image bytes and refuse unsaf
 	mocks.getCommunityListingById.mockResolvedValue(listing)
 	mocks.getEntitySourceById.mockResolvedValue({ repo_id: 'repo-1' })
 	mocks.readArtifactFileAtCommit.mockResolvedValue(tinyPngBytes)
+	mocks.readPublishedSourceSnapshot.mockResolvedValue(null)
+	mocks.readCommunitySnapshot.mockResolvedValue(null)
 
 	const response = await callPackageHandler({})
 	expect(response.status).toBe(200)
@@ -147,6 +168,26 @@ test('package README asset handlers serve published image bytes and refuse unsaf
 		'docs/poster.png',
 		expect.any(Error),
 	)
+
+	mocks.readPublishedSourceSnapshot.mockResolvedValue({
+		files: { 'docs/poster.png': bytesToLatin1String(tinyPngBytes) },
+	})
+	const snapshotResponse = await callPackageHandler({})
+	expect(snapshotResponse.status).toBe(200)
+	expect(new Uint8Array(await snapshotResponse.arrayBuffer())).toEqual(
+		tinyPngBytes,
+	)
+
+	mocks.readPublishedSourceSnapshot.mockResolvedValue(null)
+	mocks.readCommunitySnapshot.mockResolvedValue({
+		files: { 'docs/poster.png': bytesToLatin1String(tinyPngBytes) },
+	})
+	const listingSnapshotResponse = await callListingHandler()
+	expect(listingSnapshotResponse.status).toBe(200)
+	expect(new Uint8Array(await listingSnapshotResponse.arrayBuffer())).toEqual(
+		tinyPngBytes,
+	)
+	mocks.readCommunitySnapshot.mockResolvedValue(null)
 
 	mocks.resolveCommunityPackageUrl.mockResolvedValue(null)
 	mocks.loadPackagePage.mockResolvedValue({
