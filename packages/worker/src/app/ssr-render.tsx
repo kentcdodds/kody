@@ -16,8 +16,12 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import { loadSiteBannerLoaderData } from '#app/site-banner-ssr.ts'
+import {
+	loadEnabledSiteBannersForSsr,
+	loadSiteBannerLoaderData,
+} from '#app/site-banner-ssr.ts'
 import { loadYoutubeWatchLoaderData } from '#app/youtube-watch-ssr.ts'
+import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
@@ -96,6 +100,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
+	const listedBanners = loadEnabledSiteBannersForSsr(env)
 	const [siteBanner, youtubeWatch] = await Promise.all([
 		pushServerTiming(serverTiming, 'siteBanner', () =>
 			loadSiteBannerLoaderData({
@@ -103,11 +108,14 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				env,
 				session,
 				pathname: requestUrl.pathname,
+				listedBanners,
 			}),
 		),
 		pushServerTiming(serverTiming, 'youtubeWatch', () =>
 			loadYoutubeWatchLoaderData({
 				env,
+				listedBanners,
+				loadPlaylists: parseYoutubeWatchSearch(requestUrl.search) !== null,
 			}),
 		),
 	])

@@ -6,7 +6,10 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
-import { loadOnboardingData } from '#app/onboarding-data.ts'
+import {
+	loadOnboardingData,
+	loadPublicOnboardingData,
+} from '#app/onboarding-data.ts'
 import { hasResolvedRequestFeatureFlags } from '#app/request-feature-flags-cache.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -236,4 +239,30 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 		'compute-overage-charging': true,
 	})
 	expect(counts.batchSizes).toEqual([2, 2])
+	expect(loadOnboardingData).toHaveBeenCalledWith(
+		expect.objectContaining({ featuredMcpServers: [] }),
+	)
+})
+
+test('anonymous home SSR omits the unused onboarding chooser catalog', async () => {
+	const actual = await vi.importActual<
+		typeof import('#app/onboarding-data.ts')
+	>('#app/onboarding-data.ts')
+	vi.mocked(loadPublicOnboardingData).mockImplementation(
+		actual.loadPublicOnboardingData,
+	)
+	vi.mocked(renderAppPage).mockResolvedValue(new Response('ok'))
+
+	setAuthSessionSecret(testCookieSecret)
+	const response = await createHomeHandler({
+		COOKIE_SECRET: testCookieSecret,
+	} as Env).handler(new RequestContext(new Request('https://example.com/')))
+	expect(response.status).toBe(200)
+	const input = vi.mocked(renderAppPage).mock.calls.at(-1)?.[0]
+	expect(input?.loaderData?.onboarding?.featuredMcpServers).toEqual([])
+	expect(input?.loaderData?.onboarding?.setupPrompt).toBe('')
+	expect(input?.loaderData?.onboarding?.persistPrompt).toBe('')
+	expect(input?.loaderData?.onboarding?.discoveryPrompt.length).toBeGreaterThan(
+		0,
+	)
 })
