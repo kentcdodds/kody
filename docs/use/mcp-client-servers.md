@@ -13,8 +13,10 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 1. Open [`/account/mcp-servers`](https://kody.codes/account/mcp-servers), or ask
    your agent to use `mcpServerAdd` with a short kebab-case `name` and the
-   server `url` (https required).
-2. If the server authenticates with a static bearer token (or other
+   server `url` (https required). PostHog's documented endpoint is
+   `https://mcp.posthog.com/mcp` — the site root redirects to docs and will not
+   finish tool discovery. Kody rewrites that exact origin to `/mcp`.
+2. If the server authenticates with a static bearer token (or other))
    Authorization scheme), paste it in the optional Bearer token field — or pass
    `bearerToken` to `mcpServerAdd`. Bare tokens are sent as
    `Authorization: Bearer <token>`; scheme-prefixed values and full

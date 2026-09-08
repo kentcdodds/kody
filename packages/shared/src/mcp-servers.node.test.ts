@@ -5,6 +5,7 @@ import {
 	mcpServerBearerTokenMaxLength,
 	normalizeMcpServerBearerToken,
 	normalizeMcpServerName,
+	normalizeKnownMcpServerUrl,
 	validateMcpServerUrl,
 } from './mcp-servers.ts'
 
@@ -30,6 +31,23 @@ test('MCP server URLs require https except for loopback hosts', () => {
 	expect(validateMcpServerUrl('').ok).toBe(false)
 	expect(validateMcpServerUrl('not a url').ok).toBe(false)
 	expect(validateMcpServerUrl('http://example.com/mcp').ok).toBe(false)
+
+	expect(normalizeKnownMcpServerUrl('https://mcp.posthog.com')).toBe(
+		'https://mcp.posthog.com/mcp',
+	)
+	expect(normalizeKnownMcpServerUrl('https://mcp.posthog.com/')).toBe(
+		'https://mcp.posthog.com/mcp',
+	)
+	expect(validateMcpServerUrl('https://mcp.posthog.com')).toEqual({
+		ok: true,
+		url: 'https://mcp.posthog.com/mcp',
+	})
+	expect(normalizeKnownMcpServerUrl('https://mcp.posthog.com/mcp')).toBe(
+		'https://mcp.posthog.com/mcp',
+	)
+	expect(normalizeKnownMcpServerUrl('https://mcp.example.com')).toBe(
+		'https://mcp.example.com',
+	)
 })
 
 test('MCP server bearer tokens normalize to Authorization header values', () => {
