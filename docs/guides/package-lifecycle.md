@@ -89,9 +89,10 @@ Use `guide: "package_authoring"` for package shape, required `README.md` +
 guidance (personal-details hygiene before going public), and the secret-using
 package approval checklist (`pending_secret_package_approvals` is non-null only
 for unadopted community-forked packages; prefer `communityForkAdopt` after
-review, or bulk approval URLs when present). Use `guide: "platform_efficiency"`
-for the unique Dynamic Worker day cost model (stated once; not copied into
-package docs).
+review, or bulk approval URLs when present). Use `guide: "package_apps"` when
+authoring or debugging a hosted package app, community fork of an app, or
+session handoff. Use `guide: "platform_efficiency"` for the unique Dynamic
+Worker day cost model (stated once; not copied into package docs).
 
 When the OAuth token is coarser than the intended export — Gmail can send
 whenever it can create a draft — publish a thin package that only performs the

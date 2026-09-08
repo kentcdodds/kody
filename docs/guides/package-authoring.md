@@ -187,6 +187,10 @@ same as a missing README `## Intent` section.
 
 ## Package app routing
 
+Hosted-app session handoff, `packageAppFetch` smoke tests, asset URLs, and lean
+forks are the [Package apps](./package-apps.md) playbook (`package_apps:guide`).
+This section is the mount-prefix recipe those pages share.
+
 Production-hosted package apps live at
 `https://{username}.kody.run/packages/<kody-id>/<path>` (the username is in the
 hostname; the path mount is `/packages/<kody-id>`). Confirmed non-production
@@ -341,7 +345,8 @@ irreversible-side-effect guard when a smoke test should stay safe.
 3. **Package apps** — `packageAppFetch({ kody_id })` with the path, method, and
    body your handler needs. Confirm `{ status, headers, body, truncated }` and
    any `packageStorage()` side effects. See
-   [Package app fetch](../use/package-app-fetch.md).
+   [Package app fetch](../use/package-app-fetch.md) and the
+   [Package apps](./package-apps.md) playbook (`package_apps:guide`).
 4. **Subscriptions** — `packageSubscriptionDispatch({ kody_id, topic, … })` with
    exactly one of `params` (fixture) or `email_message_id` (stored-mail replay)
    for each declared topic. See

@@ -277,6 +277,42 @@ test('guide search entities rank advertised docs and open full markdown on entit
 		),
 	).toBe(true)
 
+	const packageApps = await searchUnified({
+		env: {} as Env,
+		query: 'package apps',
+		limit: 10,
+		registry: { capabilitySpecs: {} } as never,
+		optionalRows: emptyOptionalRows,
+	})
+	expect(packageApps.matches[0]).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+	})
+
+	const packageAppsGuide =
+		guides.find((guide) => guide.id === 'package_apps') ?? null
+	expect(packageAppsGuide).not.toBeNull()
+	const assetUrls = formatEntityDetailMarkdown({
+		type: 'guide',
+		id: packageAppsGuide!.id,
+		title: packageAppsGuide!.title,
+		description: packageAppsGuide!.summary,
+		body: packageAppsGuide!.body,
+		slug: packageAppsGuide!.slug,
+		category: packageAppsGuide!.category,
+		provider: packageAppsGuide!.provider,
+		lastVerified: packageAppsGuide!.lastVerified,
+		section: 'asset-urls',
+	})
+	expect(assetUrls.structured).toMatchObject({
+		type: 'guide',
+		bodyMode: 'section',
+		entityRef: 'package_apps:guide#asset-urls',
+		section: { slug: 'asset-urls' },
+	})
+	expect(assetUrls.markdown).toContain('packageContext.appBasePath')
+	expect(assetUrls.markdown).not.toContain('Module.wasmBinary')
+
 	const stopwordInId = await searchUnified({
 		env: {} as Env,
 		query: 'what is kody',

@@ -44,6 +44,13 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		ogImage: '/images/kody-gmail-drafts-lock-og.jpg',
 	})
 
+	expect(getGuideById('package_apps')).toMatchObject({
+		slug: 'package-apps',
+		title: 'Package apps',
+	})
+	expect(getGuideById('package_apps')?.summary).toContain('session handoff')
+	expect(getGuideById('package_apps')?.summary).toContain('packageAppFetch')
+
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
 	expect(getGuideById('package_invocation_token_setup')?.unadvertised).toBe(

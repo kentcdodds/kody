@@ -111,4 +111,5 @@ account's own address.
 
 Load `how_kody_works` when someone asks how Kody works, what the factory loop
 is, or how an ad hoc question becomes an export and a quiet daily email. For
-authoring details, load `package_authoring` and `package_lifecycle` next.
+authoring details, load `package_authoring` and `package_lifecycle` next. For a
+hosted package app, load `package_apps`.

@@ -26,6 +26,7 @@ const guideOrder: ReadonlyArray<string> = [
 	'quick-example',
 	'first-win',
 	'package-authoring',
+	'package-apps',
 	'package-lifecycle',
 	'platform-efficiency',
 	'integration-bootstrap',
