@@ -24,7 +24,7 @@ const onboardingAgentEcosystems = {
 	other: ['other'],
 } as const satisfies Record<string, ReadonlyArray<McpClientKind>>
 
-export type OnboardingAgentEcosystemId = keyof typeof onboardingAgentEcosystems
+type OnboardingAgentEcosystemId = keyof typeof onboardingAgentEcosystems
 
 const ecosystemByAgent = new Map<McpClientKind, OnboardingAgentEcosystemId>(
 	(
@@ -36,7 +36,7 @@ const ecosystemByAgent = new Map<McpClientKind, OnboardingAgentEcosystemId>(
 	),
 )
 
-export function onboardingAgentEcosystem(
+function onboardingAgentEcosystem(
 	agent: McpClientKind,
 ): OnboardingAgentEcosystemId {
 	const ecosystem = ecosystemByAgent.get(agent)
@@ -46,7 +46,7 @@ export function onboardingAgentEcosystem(
 	return ecosystem
 }
 
-export function onboardingSameEcosystemAgents(
+function onboardingSameEcosystemAgents(
 	agent: McpClientKind,
 ): ReadonlyArray<McpClientKind> {
 	return onboardingAgentEcosystems[onboardingAgentEcosystem(agent)]
@@ -213,7 +213,7 @@ export function resolveOnboardingStep3SelectedAgent(
 	return selectedAgent
 }
 
-export function onboardingSameEcosystemDisabledReason(
+function onboardingSameEcosystemDisabledReason(
 	firstAgent: McpClientKind,
 	firstAgentLabel: string,
 ): string {

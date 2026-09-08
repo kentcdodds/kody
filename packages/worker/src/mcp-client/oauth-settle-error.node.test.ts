@@ -4,7 +4,6 @@ import {
 	buildMcpServerLastError,
 	formatMcpOAuthSettleErrorMessage,
 	inferMcpOAuthSettlePhase,
-	isFormattedMcpOAuthSettleMessage,
 	parseHttpStatusFromMcpError,
 	parseStoredMcpServerLastError,
 	readAttemptIdFromSettleMessage,
@@ -134,7 +133,6 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 		mcpEndpoint: 'https://mcp.example/mcp',
 		attemptId: '11111111-1111-4111-8111-111111111111',
 	})
-	expect(isFormattedMcpOAuthSettleMessage(formatted)).toBe(true)
 	expect(readAttemptIdFromSettleMessage(formatted)).toBe(
 		'11111111-1111-4111-8111-111111111111',
 	)

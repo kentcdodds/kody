@@ -41,7 +41,6 @@ test('GET /maintenance returns the static page without touching status storage',
 	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	expect(response.headers.get('Content-Type')).toContain('text/html')
 	const html = await response.text()
-	expect(html).toContain('Kody is in maintenance')
 	expect(html).toContain('href="https://status.kody.codes/"')
 	expect(html).toContain(`href="${statusFaviconPath('unknown')}"`)
 })

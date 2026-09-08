@@ -1,12 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { MaintenanceFailureError } from './maintenance-handler.ts'
 import {
-	executeHealthMaintenancePath,
-	executeHealthProbeClientName,
-	executeHealthProbeCode,
-	executeHealthProbeExpectedResult,
-	executeHealthProbeProves,
-	executeHealthProbeScope,
 	handleExecuteHealthProbeRequest,
 	runAuthenticatedMcpExecuteHealthProbe,
 } from './execute-health-probe.ts'
@@ -46,9 +40,9 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 		}
 		expect(body.method).toBe('tools/call')
 		expect(body.params?.name).toBe('execute')
-		expect(body.params?.arguments?.code).toBe(executeHealthProbeCode)
+		expect(body.params?.arguments?.code).toBe('export default async () => 1')
 		return jsonRpcResult({
-			structuredContent: { result: executeHealthProbeExpectedResult },
+			structuredContent: { result: 1 },
 			isError: false,
 		})
 	}
@@ -61,8 +55,8 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 		}),
 	).resolves.toEqual({
 		result: 1,
-		scope: executeHealthProbeScope,
-		proves: executeHealthProbeProves,
+		scope: 'authenticated-mcp-execute',
+		proves: 'platform-mcp-execute',
 	})
 	expect(requests).toHaveLength(3)
 	expect(new URL(requests[0]?.url ?? '').pathname).toBe('/mcp')
@@ -71,9 +65,7 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 		params: { clientInfo: { name: string }; protocolVersion: string }
 	}
 	expect(initializeBody.params.protocolVersion).toBe('2025-06-18')
-	expect(initializeBody.params.clientInfo.name).toBe(
-		executeHealthProbeClientName,
-	)
+	expect(initializeBody.params.clientInfo.name).toBe('kody-execute-health')
 	expect(requests[2]?.headers.get('mcp-session-id')).toBe('session-1')
 
 	await expect(
@@ -119,7 +111,7 @@ test('authenticated probe uses the legacy MCP execute path and rejects caller er
 					return new Response('Unauthorized', { status: 401 })
 				}
 				return jsonRpcResult({
-					structuredContent: { result: executeHealthProbeExpectedResult },
+					structuredContent: { result: 1 },
 					isError: false,
 				})
 			},
@@ -137,7 +129,7 @@ test('maintenance route never runs execute on GET and public callers cannot trig
 	const ctx = {} as ExecutionContext
 
 	const getResponse = await handleExecuteHealthProbeRequest(
-		new Request(`https://kody.codes${executeHealthMaintenancePath}`),
+		new Request('https://kody.codes/__maintenance/mcp-execute-health'),
 		env,
 		ctx,
 		fetchMcp,
@@ -146,7 +138,7 @@ test('maintenance route never runs execute on GET and public callers cannot trig
 	expect(fetchMcp).not.toHaveBeenCalled()
 
 	const unauthorized = await handleExecuteHealthProbeRequest(
-		new Request(`https://kody.codes${executeHealthMaintenancePath}`, {
+		new Request('https://kody.codes/__maintenance/mcp-execute-health', {
 			method: 'POST',
 		}),
 		env,
@@ -157,7 +149,7 @@ test('maintenance route never runs execute on GET and public callers cannot trig
 	expect(fetchMcp).not.toHaveBeenCalled()
 
 	const unconfigured = await handleExecuteHealthProbeRequest(
-		new Request(`https://kody.codes${executeHealthMaintenancePath}`, {
+		new Request('https://kody.codes/__maintenance/mcp-execute-health', {
 			method: 'POST',
 			headers: { Authorization: 'Bearer status-secret' },
 		}),

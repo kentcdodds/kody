@@ -4,7 +4,6 @@ import {
 	bannerMatchesAudience,
 	bannerMatchesPath,
 	compareSiteBannerPriority,
-	createLaunchVideoSampleBanner,
 	matchRoutePattern,
 	parseBannerHref,
 	parseSiteBannerInput,
@@ -15,7 +14,6 @@ import {
 	type SiteBannerRecord,
 	type SiteBannerViewer,
 } from './site-banners.ts'
-import { youtubeThumbPath, youtubeWatchHref } from './youtube-watch.ts'
 
 const adminViewer: SiteBannerViewer = {
 	loggedIn: true,
@@ -227,7 +225,12 @@ test('auth and oauth shells hide banners unless an admin look preview is set', (
 			searchParams: new URLSearchParams('siteBannerLook=promo'),
 			viewer: adminViewer,
 		}),
-	).toEqual(createLaunchVideoSampleBanner('promo'))
+	).toMatchObject({
+		look: 'promo',
+		title: 'Kody is live',
+		ctaHref: '/?youtubeId=QA0xYMAMjEg',
+		imageUrl: '/youtube-thumb/QA0xYMAMjEg',
+	})
 })
 
 test('parseSiteBannerInput accepts a launch-video banner and rejects bad hrefs', () => {
@@ -377,6 +380,6 @@ test('public banner views rewrite YouTube CTAs and derive first-party thumbs', (
 			imageUrl: null,
 		}),
 	)
-	expect(view.ctaHref).toBe(youtubeWatchHref(videoId))
-	expect(view.imageUrl).toBe(youtubeThumbPath(videoId))
+	expect(view.ctaHref).toBe(`/?youtubeId=${videoId}`)
+	expect(view.imageUrl).toBe(`/youtube-thumb/${videoId}`)
 })

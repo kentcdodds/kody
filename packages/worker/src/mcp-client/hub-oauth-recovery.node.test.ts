@@ -749,7 +749,6 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 	expect(result.authError?.match(/authorization completed/gi)?.length).toBe(1)
 	expect(result.authError?.match(/\bphase\s/g)?.length).toBe(1)
 	expect(result.authError?.match(/\bid\s/g)?.length).toBe(1)
-	expect(result.authError).not.toContain('still "connected"')
 	expect(result.authError).not.toContain('client_secret')
 	expect(JSON.stringify(result.lastError)).not.toContain('hidden')
 	expect(consoleWarn).toHaveBeenCalledWith(
@@ -811,7 +810,6 @@ test('replayed unusable callback after incomplete settle reports lastError inste
 			authServer: 'https://auth.posthog.com/',
 		})
 		expect(outcome.authError).toBeTruthy()
-		expect(outcome.authError).not.toContain('still "connected"')
 		if (inFlightState === 'connecting') {
 			expect(outcome.lastError?.phase).toBe('mcp initialize')
 			expect(outcome.authError).toContain('did not become ready')

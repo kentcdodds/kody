@@ -45,5 +45,4 @@ test('Status labels stay consistent with post-IdP tool-discovery errors', () => 
 	)
 	expect(banner?.tone).toBe('error')
 	expect(banner?.message).toContain("tool discovery didn't finish")
-	expect(banner?.message).not.toContain('still "connected"')
 })

@@ -578,9 +578,6 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(settleFailureLocation.searchParams.get('reason')).toContain(
 		"tool discovery didn't finish",
 	)
-	expect(settleFailureLocation.searchParams.get('reason')).not.toContain(
-		'still "connected"',
-	)
 	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',

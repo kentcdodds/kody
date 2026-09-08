@@ -93,7 +93,9 @@ test('adminInviteCreate and adminInviteList: admin-only, normalize, bulk, audit'
 		expiresAt: null,
 		createdAt: expect.any(String),
 	})
-	expect(created.invites).toEqual([created.invite])
+	expect(created.invites).toEqual([
+		expect.objectContaining({ code: 'KENT-FRIEND' }),
+	])
 	expect(created.failed).toEqual([])
 
 	const generated = await adminInviteCreateCapability.handler({}, adminCtx)

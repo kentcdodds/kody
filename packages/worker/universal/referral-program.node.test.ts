@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { resolveEffectivePlan } from './plans.ts'
 import {
 	addReferralStandardCreditDuration,
 	laterIsoTimestamp,
@@ -87,7 +86,7 @@ test('referral codes, share links, stacking, overlays, and fraud email collapse'
 			'2026-08-01T00:00:00.000Z',
 			now,
 		),
-	).toBe(resolveEffectivePlan('free', null))
+	).toBe('free')
 
 	expect(normalizeEmailForReferralFraud('Ada+1@Gmail.com')).toBe(
 		'ada@gmail.com',

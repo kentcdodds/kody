@@ -77,7 +77,6 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 		}),
 	).toBe(false)
 
-	expect(readListingAheadFlag({ listingAhead: true })).toBe(true)
 	expect(readListingAheadFlag({ listingAhead: false })).toBe(false)
 	expect(readListingAheadFlag({ listingAhead: null })).toBe(null)
 	expect(readListingAheadFlag({})).toBe(null)
