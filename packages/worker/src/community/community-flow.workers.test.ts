@@ -24,6 +24,8 @@ import {
 import { installCommunityListing } from '#worker/community/install.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { writePublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { writeArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapshot.ts'
+import { getArtifactsBinding } from '#worker/repo/artifacts.ts'
 import { insertEntitySource } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
@@ -181,6 +183,13 @@ async function seedOwnerPackage(input: {
 		source: entitySource,
 		files,
 	})
+	const artifacts = getArtifactsBinding(input.testEnv)
+	await artifacts.create(entitySource.repo_id, { readOnly: false })
+	await writeArtifactSourceSnapshot({
+		env: input.testEnv,
+		repoId: entitySource.repo_id,
+		files,
+	})
 	return { entitySource, files }
 }
 
@@ -321,6 +330,10 @@ test('public package flow works end-to-end through capability handlers', async (
 		expect.arrayContaining([
 			expect.objectContaining({
 				name: 'prepare',
+				durationMs: expect.any(Number),
+			}),
+			expect.objectContaining({
+				name: 'artifacts-fork',
 				durationMs: expect.any(Number),
 			}),
 			expect.objectContaining({

@@ -111,3 +111,21 @@ export function scanCrossScopeReferences(input: {
 		return left.specifier.localeCompare(right.specifier)
 	})
 }
+
+/**
+ * Files whose contents changed during fork rewrite (typically `package.json`
+ * plus any self-references). The storage-layer copy already has the origin
+ * tree; only these paths should be written back.
+ */
+export function collectChangedForkFiles(input: {
+	originFiles: Record<string, string>
+	rewrittenFiles: Record<string, string>
+}): Record<string, string> {
+	const changed: Record<string, string> = {}
+	for (const [path, content] of Object.entries(input.rewrittenFiles)) {
+		if (input.originFiles[path] !== content) {
+			changed[path] = content
+		}
+	}
+	return changed
+}
