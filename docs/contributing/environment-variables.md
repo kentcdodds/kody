@@ -84,11 +84,12 @@ Optional Wrangler `var` (public, non-secret; see
   `packages/worker/src/app/security-headers.ts` allowlists
   `https://cdn.usefathom.com` in `script-src`, `img-src`, and `connect-src` for
   the tracker, its image pageview beacon, and `sendBeacon` duration/event pings.
-  A 200 collect GIF is not proof of ingest: Fathom still bot-filters datacenter
-  IPs. After a production domain change, confirm the dashboard shows the new
-  hostname and check the toolbar bot icon; Site Firewall Allowed domains is
-  optional (empty does not filter). The API token cannot read or write firewall
-  settings.
+  After a production domain change, add the new hostname to the site's Firewall
+  → Domains **Allow** list (Settings → Sites → site → Firewall). A leftover
+  `heykody.*` Allow list discards `kody.codes` pageviews while the collect GIF
+  still returns 200. The API token cannot read or write that list. `connect-src`
+  is required for `sendBeacon` duration/events, not for the image pageview
+  beacon.
 
 ## YouTube watch overlay
 
