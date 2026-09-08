@@ -243,17 +243,21 @@ export function HomeRoute(handle: Handle) {
 							class="landing-hero-actions"
 						>
 							{signupMode === 'open' ? (
-								<a href={homepageSignupPath} class="landing-pill">
+								<a
+									href={homepageSignupPath}
+									class="landing-pill landing-hero-cta"
+								>
 									{publicCreateAccountLabel}
 								</a>
 							) : (
-								<a href="#invite" class="landing-pill">
+								<a href="#invite" class="landing-pill landing-hero-cta">
 									{publicJoinWaitlistLabel}
 								</a>
 							)}
 							{discoveryPrompt ? (
-								<span class="landing-hero-copy">
+								<span class="landing-hero-cta landing-hero-copy">
 									<CopyTextButton
+										class="landing-hero-copy-button"
 										value={discoveryPrompt}
 										idleLabel={landingHeroCopyPromptLabel}
 										variant="ghost"

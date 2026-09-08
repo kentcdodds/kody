@@ -837,7 +837,7 @@ html.is-settled {
 	margin-inline: auto;
 }
 
-.landing-hero-actions > * {
+.landing-hero-cta {
 	flex: 1 1 0;
 	width: 100%;
 	min-width: 0;
@@ -848,7 +848,8 @@ html.is-settled {
 	display: flex;
 }
 
-.landing-hero-copy button {
+.landing-hero-copy-button,
+.landing-hero-copy :where(button) {
 	width: 100%;
 }
 
@@ -858,7 +859,7 @@ html.is-settled {
 		width: min(100%, 22rem);
 	}
 
-	.landing-hero-actions > * {
+	.landing-hero-cta {
 		flex: 1 1 100%;
 	}
 }

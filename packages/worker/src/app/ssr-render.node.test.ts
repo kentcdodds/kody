@@ -695,7 +695,7 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
 	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
-	expect(withoutAssetsHtml).toContain("and the ones you'll use tomorrow")
+	expect(withoutAssetsHtml).toContain('and the ones you&#39;ll use tomorrow')
 	expect(withoutAssetsHtml).toContain('Stop')
 	expect(withoutAssetsHtml).toContain('Sweating')
 	expect(withoutAssetsHtml).toContain('Switching Agents')
