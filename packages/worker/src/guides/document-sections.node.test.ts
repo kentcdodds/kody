@@ -118,3 +118,20 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	expect(truncated.markdown).toContain('--- TRUNCATED ---')
 	expect(truncated.markdown.length).toBeLessThanOrEqual(160)
 })
+
+test('document sections keep info-string fence lines inside the open block', () => {
+	const nestedFence = [
+		'# Title',
+		'',
+		'```',
+		'```js',
+		'## Nested info-string fence',
+		'```',
+		'',
+		'## Real',
+		'',
+	].join('\n')
+	expect(
+		parseDocumentHeadings(nestedFence).map((heading) => heading.slug),
+	).toEqual(['title', 'real'])
+})

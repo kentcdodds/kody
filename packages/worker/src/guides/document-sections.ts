@@ -37,7 +37,11 @@ export function parseDocumentHeadings(
 			const marker = fenceMatch[1] ?? ''
 			if (fence == null) {
 				fence = marker
-			} else if (marker[0] === fence[0] && marker.length >= fence.length) {
+			} else if (
+				marker[0] === fence[0] &&
+				marker.length >= fence.length &&
+				line.slice(marker.length).trim() === ''
+			) {
 				fence = null
 			}
 			continue

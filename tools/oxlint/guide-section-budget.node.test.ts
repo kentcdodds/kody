@@ -43,6 +43,26 @@ test('guide section budget matches search maxChars, header reserve, and heading 
 		slugifyRuntimeHeading('`repo.pushed`'),
 	)
 
+	const nestedFence = [
+		'# Title',
+		'',
+		'```',
+		'```js',
+		'## Nested info-string fence',
+		'```',
+		'',
+		'## Real',
+		'',
+	].join('\n')
+	expect(
+		parseDocumentHeadings(nestedFence).map((heading) => heading.slug),
+	).toEqual(parseRuntimeHeadings(nestedFence).map((heading) => heading.slug))
+	expect(
+		parseDocumentHeadings(nestedFence).some((heading) =>
+			heading.title.includes('Nested info-string'),
+		),
+	).toBe(false)
+
 	const raw = await readFile(
 		path.join(repoRoot, 'docs/guides/package-subscriptions.md'),
 		'utf8',
