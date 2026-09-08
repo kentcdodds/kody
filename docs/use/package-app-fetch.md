@@ -99,6 +99,8 @@ marker the handler saw.
 - [Packages](./packages.md) — package apps and `hosted_app_url`
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — subscription
   handler smoke tests
+- [Package apps guide](../guides/package-apps.md) — session handoff,
+  `packageAppFetch` smoke, asset URLs, lean forks
 - [Package authoring guide](../guides/package-authoring.md#verify-your-publish)
 - Decision:
   [Synthetic package requests](../contributing/decisions/0013-synthetic-package-requests.md)

@@ -128,6 +128,7 @@ every ref fails, the tool returns an error result.
 Examples:
 
 - `package_authoring:guide`
+- `package_apps:guide#asset-urls`
 - `package_subscriptions:guide#repo.pushed`
 - `["package_authoring:guide", "package_lifecycle:guide"]`
 - `codingGuideGet:capability`

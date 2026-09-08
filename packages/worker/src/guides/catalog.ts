@@ -24,6 +24,7 @@ import lockedMcpServer from '../../../../docs/guides/locked-mcp-server.md'
 import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
+import packageApps from '../../../../docs/guides/package-apps.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
 import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
@@ -64,6 +65,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'quick-example', raw: quickExample },
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'package-authoring', raw: packageAuthoring },
+	{ slug: 'package-apps', raw: packageApps },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },

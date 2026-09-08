@@ -82,7 +82,11 @@ cards), plus license, last publish date, and the pinned commit. Next to
 or **Fork outdated** / **Fork ahead**. When default-branch HEAD is newer than
 the last package publish, a **HEAD ahead of published** badge appears. Owners
 click that badge to review the unpublished file diff and publish HEAD. You can
-also ask your agent to use `communitySearch` or `communityGet`.
+also ask your agent to use `communitySearch` or `communityGet`. After
+`communityPublish`, confirm `license`, `pinned_commit`, and the other listing
+fields match intent — see
+[Listing verification](../guides/package-apps.md#listing-verification) in the
+package apps guide.
 
 ## Forking a listing
 

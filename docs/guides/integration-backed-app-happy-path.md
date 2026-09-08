@@ -30,7 +30,9 @@ quickly.
 4. If the smoke test passes, proceed directly to building the package app.
    - Prefer a saved package with `package.json#kody.app.entry`.
    - Load `guide: "package_authoring"` and keep human `README.md` (including
-     `## Intent`) and agent `AGENTS.md` aligned with the user's goal.
+     `## Intent`) and agent `AGENTS.md` aligned with the user's goal. Load
+     `guide: "package_apps"` for session handoff, `packageAppFetch`, and
+     mount-prefixed asset URLs.
    - Keep provider API calls and durable coordination in package-owned backend
      modules or internal Worker/DO implementation details.
 5. Open the hosted package app and iterate.

@@ -63,6 +63,8 @@ Read in order for a full tour, or jump to a topic.
   sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch
   provider POSTs to a saved-package export
+- [Package apps](../guides/package-apps.md) — session handoff, `packageAppFetch`
+  smoke, absolute asset URLs, lean forks
 - [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked

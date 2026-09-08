@@ -315,8 +315,10 @@ callbacks against `packageContext.hostedUrl` and `packageContext.appBasePath`
 subdomain, `/@username/packages/<kody-id>` when served inline in
 non-production). See
 [Package app routing](../guides/package-authoring.md#package-app-routing) for
-the authoring example. Other saved-package runtime surfaces may omit these
-app-specific fields.
+the authoring example, and [Package apps](../guides/package-apps.md)
+(`package_apps:guide`) for session handoff, `packageAppFetch`, asset URLs, and
+lean forks. Other saved-package runtime surfaces may omit these app-specific
+fields.
 
 Use the package app model when the package needs:
 
