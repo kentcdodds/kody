@@ -10,7 +10,6 @@ import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
 import {
 	landingTestimonials,
 	landingTestimonialsStorySlug,
-	testimonialStoryHref,
 } from '#universal/landing-testimonials.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -61,7 +60,7 @@ function createTestEnv() {
 	} as unknown as Env
 }
 
-test('homepage carousel SSR keeps short quotes and links to the early-users post', async () => {
+test('homepage carousel SSR keeps short quotes and story links only for vignettes', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)
 	const response = await renderAppPage({
@@ -80,10 +79,12 @@ test('homepage carousel SSR keeps short quotes and links to the early-users post
 
 	expect(html).toContain(josh.quote)
 	expect(html).toContain(jett.quote)
+	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(2)
+	expect(html).toContain('href="/blog/early-kody-users#josh-tomaino"')
+	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
 	expect(html).toContain('Read the full story')
-	expect(html).toContain(`href="${testimonialStoryHref(josh)}"`)
-	expect(html).toContain(`href="${testimonialStoryHref(jett)}"`)
-	expect(html).toContain(`href="/blog/${landingTestimonialsStorySlug}"`)
+	expect(html).toContain('from Josh Tomaino')
+	expect(html).toContain('from Jett Hays')
 })
 
 test('early-users blog post SSR renders approved vignettes and heading anchors', async () => {
