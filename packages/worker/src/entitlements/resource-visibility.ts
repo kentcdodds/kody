@@ -86,7 +86,8 @@ export const entitlementResourceVisibility: Record<
 		group: 'counts',
 		kind: 'counter',
 		whatCounts: 'Email messages stored in your mailboxes.',
-		howToReduce: 'Delete old messages you no longer need.',
+		howToReduce:
+			'Delete messages you no longer need from /account/email, or with emailMessageDelete.',
 	},
 	email_message_bytes: {
 		group: 'limits',

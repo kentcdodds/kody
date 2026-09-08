@@ -7,7 +7,10 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { setEmailMessageClassification } from '#worker/email/service.ts'
+import {
+	deleteEmailMessage,
+	setEmailMessageClassification,
+} from '#worker/email/service.ts'
 import {
 	emailClassificationValues,
 	type EmailClassification,
@@ -61,7 +64,8 @@ export function createAccountEmailHandler(env: Env) {
 }
 
 /**
- * JSON API for `/account/email.json` (GET + POST). Actions: `classify`.
+ * JSON API for `/account/email.json` (GET + POST). Actions: `classify`,
+ * `delete`.
  */
 export function createAccountEmailApiHandler(env: Env) {
 	return {
@@ -86,7 +90,7 @@ export function createAccountEmailApiHandler(env: Env) {
 			}
 
 			const action = readTrimmedStringOrEmpty(body, 'action')
-			if (action !== 'classify') {
+			if (action !== 'classify' && action !== 'delete') {
 				return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 			}
 
@@ -95,6 +99,28 @@ export function createAccountEmailApiHandler(env: Env) {
 				return jsonResponse(
 					{ ok: false, error: 'Message id is required.' },
 					400,
+				)
+			}
+
+			if (action === 'delete') {
+				const deleted = await deleteEmailMessage({
+					env,
+					db: env.APP_DB,
+					userId: user.mcpUser.userId,
+					messageId,
+				})
+				if (!deleted) {
+					return jsonResponse({ ok: false, error: 'Message not found.' }, 404)
+				}
+
+				const listUrl = new URL(request.url, 'http://localhost')
+				listUrl.searchParams.delete('selected')
+				return jsonResponse(
+					await loadAccountEmailData({
+						env,
+						request: new Request(listUrl.toString(), { method: 'GET' }),
+						user,
+					}),
 				)
 			}
 

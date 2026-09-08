@@ -18,9 +18,11 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 } from '#universal/styles/style-primitives.ts'
+import { type createDoubleCheck } from '#client/double-check.ts'
 import { type AccountEmailMessageDetail } from '#universal/loader-data.ts'
 import {
 	type ClassifyState,
+	type DeleteState,
 	directionLabel,
 	messageDate,
 	quarantinedBadgeCss,
@@ -49,13 +51,24 @@ const emailHtmlPreviewIframeCss = css({
 export type AccountEmailDetailProps = {
 	selectedMessage: AccountEmailMessageDetail
 	classifyState: ClassifyState
+	deleteState: DeleteState
+	deleteCheck: ReturnType<typeof createDoubleCheck>
 	onClassify: (classification: 'accepted' | 'quarantined') => void
+	onDelete: () => void
 }
 
 export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
-	const { selectedMessage, classifyState, onClassify } = props
+	const {
+		selectedMessage,
+		classifyState,
+		deleteState,
+		deleteCheck,
+		onClassify,
+		onDelete,
+	} = props
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+	const isMutating = classifyState !== 'idle' || deleteState !== 'idle'
 
 	return (
 		<div mix={css(recordBodyCss)}>
@@ -104,18 +117,18 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 					</p>
 				) : null}
 			</div>
-			{selectedMessage.direction === 'inbound' ? (
-				<div
-					mix={css({
-						display: 'flex',
-						flexWrap: 'wrap',
-						gap: spacing.sm,
-					})}
-				>
-					{selectedMessage.classification === 'quarantined' ? (
+			<div
+				mix={css({
+					display: 'flex',
+					flexWrap: 'wrap',
+					gap: spacing.sm,
+				})}
+			>
+				{selectedMessage.direction === 'inbound' ? (
+					selectedMessage.classification === 'quarantined' ? (
 						<button
 							type="button"
-							disabled={classifyState !== 'idle'}
+							disabled={isMutating}
 							mix={[
 								on('click', () => {
 									onClassify('accepted')
@@ -128,7 +141,7 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 					) : (
 						<button
 							type="button"
-							disabled={classifyState !== 'idle'}
+							disabled={isMutating}
 							mix={[
 								on('click', () => {
 									onClassify('quarantined')
@@ -138,9 +151,38 @@ export function renderAccountEmailDetail(props: AccountEmailDetailProps) {
 						>
 							{classifyState === 'saving' ? 'Updating…' : 'Mark as spam'}
 						</button>
-					)}
-				</div>
-			) : null}
+					)
+				) : null}
+				<button
+					type="button"
+					disabled={isMutating}
+					aria-label={
+						deleteCheck.doubleCheck
+							? `Confirm delete message "${selectedMessage.subject || '(no subject)'}"`
+							: `Delete message "${selectedMessage.subject || '(no subject)'}"`
+					}
+					title={
+						deleteCheck.doubleCheck
+							? 'Click again to permanently delete this message'
+							: 'Delete this message and free a stored-message slot'
+					}
+					mix={[
+						...deleteCheck.getButtonMix({
+							on: {
+								click: onDelete,
+							},
+							resetAfterAction: false,
+						}),
+						css(dangerButtonCss),
+					]}
+				>
+					{deleteState === 'deleting'
+						? 'Deleting…'
+						: deleteCheck.doubleCheck
+							? 'Confirm delete'
+							: 'Delete'}
+				</button>
+			</div>
 			<MetadataGrid
 				items={[
 					{

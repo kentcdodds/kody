@@ -2,8 +2,9 @@ import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { on } from '#client/event-mixin.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -32,6 +33,7 @@ import { renderAccountEmailDetail } from './account-email-detail.tsx'
 import {
 	type ClassificationFilter,
 	type ClassifyState,
+	type DeleteState,
 	type PageStatus,
 	accountEmailRouteLoader,
 	buildEmailApiRequestUrl,
@@ -58,6 +60,8 @@ export function AccountEmailRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
 	let classifyState: ClassifyState = 'idle'
+	let deleteState: DeleteState = 'idle'
+	const deleteMessageCheck = createDoubleCheck(handle)
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
@@ -102,6 +106,7 @@ export function AccountEmailRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountEmailLoaderData, href: string) {
 		data = payload
+		deleteMessageCheck.reset()
 		const selectedId = emailRoute.getSelection(href).selectedId
 		message =
 			payload.emailVerified && selectedId && !payload.selectedMessage
@@ -139,6 +144,52 @@ export function AccountEmailRoute(handle: Handle) {
 		}
 	}
 
+	async function deleteSelectedMessage() {
+		const selected = data?.selectedMessage
+		if (!selected || classifyState !== 'idle' || deleteState !== 'idle') return
+		deleteState = 'deleting'
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildEmailApiRequestUrl(getCurrentHref()), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'delete',
+					message_id: selected.id,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountEmailLoaderData & { error?: string; ok?: boolean }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to delete message.')
+			}
+			const listHref = emailRoute.buildListHref(getCurrentSearch())
+			applyPayload(payload, listHref)
+			deleteState = 'idle'
+			message = 'Message deleted.'
+			messageTone = 'info'
+			handle.update()
+			navigate(listHref)
+		} catch (error) {
+			deleteState = 'idle'
+			deleteMessageCheck.reset()
+			message =
+				error instanceof Error ? error.message : 'Unable to delete message.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
 	async function classifySelectedMessage(
 		classification: 'accepted' | 'quarantined',
 	) {
@@ -146,7 +197,8 @@ export function AccountEmailRoute(handle: Handle) {
 		if (
 			!selected ||
 			selected.direction !== 'inbound' ||
-			classifyState !== 'idle'
+			classifyState !== 'idle' ||
+			deleteState !== 'idle'
 		)
 			return
 		classifyState = 'saving'
@@ -488,8 +540,13 @@ export function AccountEmailRoute(handle: Handle) {
 									? renderAccountEmailDetail({
 											selectedMessage,
 											classifyState,
+											deleteState,
+											deleteCheck: deleteMessageCheck,
 											onClassify: (classification) => {
 												void classifySelectedMessage(classification)
+											},
+											onDelete: () => {
+												void deleteSelectedMessage()
 											},
 										})
 									: null
