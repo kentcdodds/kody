@@ -1212,6 +1212,7 @@ export type PreparedCommunityFork = {
 	packageId: string
 	targetKodyId: string
 	targetName: string
+	expectedPackageScope: string
 	originRepoId: string | null
 	files: Record<string, string>
 	changedFiles: Record<string, string>
@@ -1400,6 +1401,7 @@ export async function prepareCommunityFork(
 		packageId: crypto.randomUUID(),
 		targetKodyId,
 		targetName: rewrittenManifest.targetName,
+		expectedPackageScope: input.expectedPackageScope,
 		originRepoId: source?.repo_id ?? null,
 		files: rewrittenFiles,
 		changedFiles: collectChangedForkFiles({
@@ -1466,18 +1468,22 @@ export async function persistPreparedCommunityFork(
 		rethrowCommunityForkFailure(error)
 	}
 	try {
+		let originCommit = prepared.originCommit
 		if (copiedAtStorageLayer) {
-			await persistForkedArtifactRepoContents({
+			const persisted = await persistForkedArtifactRepoContents({
 				env: prepared.env,
 				baseUrl: prepared.baseUrl,
 				userId: prepared.userId,
 				source: ensuredSource,
 				originCommit: prepared.originCommit,
+				expectedPackageScope: prepared.expectedPackageScope,
+				targetKodyId: prepared.targetKodyId,
 				changedFiles: prepared.changedFiles,
 				files: prepared.files,
 				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
 				serverTiming,
 			})
+			originCommit = persisted.copiedOriginCommit
 		} else {
 			await syncArtifactSourceSnapshot({
 				env: prepared.env,
@@ -1496,7 +1502,7 @@ export async function persistPreparedCommunityFork(
 				id: forkId,
 				listing_id: prepared.listingId,
 				forker_user_id: prepared.userId,
-				origin_commit: prepared.originCommit,
+				origin_commit: originCommit,
 				forked_package_id: prepared.packageId,
 				forked_source_id: ensuredSource.id,
 				target_kody_id: prepared.targetKodyId,
@@ -1526,7 +1532,7 @@ export async function persistPreparedCommunityFork(
 			sourceId: ensuredSource.id,
 			targetKodyId: prepared.targetKodyId,
 			targetName: prepared.targetName,
-			originCommit: prepared.originCommit,
+			originCommit,
 			crossScopeReferences: prepared.crossScopeReferences,
 			filesCount: Object.keys(prepared.files).length,
 			files: prepared.files,

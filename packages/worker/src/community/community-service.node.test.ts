@@ -1331,9 +1331,10 @@ test('forkCommunityListing copies at the Artifacts layer when the origin repo ex
 		repo_id: 'package-dest',
 		user_id: 'user-2',
 	})
-	mockModule.persistForkedArtifactRepoContents.mockResolvedValue(
-		'commit-fork-1',
-	)
+	mockModule.persistForkedArtifactRepoContents.mockResolvedValue({
+		copiedOriginCommit: 'commit-head',
+		destCommit: 'commit-rewritten',
+	})
 
 	const result = await forkCommunityListing({
 		env: createEnv(),
@@ -1353,13 +1354,21 @@ test('forkCommunityListing copies at the Artifacts layer when the origin repo ex
 	expect(mockModule.persistForkedArtifactRepoContents).toHaveBeenCalledWith(
 		expect.objectContaining({
 			originCommit: 'commit-1',
+			expectedPackageScope: 'jane',
+			targetKodyId: 'my-discord-gateway',
 			changedFiles: expect.objectContaining({
 				'package.json': expect.any(String),
 			}),
 		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
-	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
+	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			origin_commit: 'commit-head',
+		}),
+	)
+	expect(result.originCommit).toBe('commit-head')
 })
 
 test('forkCommunityListing maps isolate memory resets to CommunityForkResourceLimitError', async () => {
