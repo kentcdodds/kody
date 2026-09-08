@@ -16,6 +16,7 @@ import {
 	publicSignupPrimaryCta,
 	type PublicSignupCta,
 } from '#universal/public-signup-copy.ts'
+import { routes } from '#universal/routes.ts'
 import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
@@ -53,6 +54,7 @@ type LimitGroup = {
 
 const count = new Intl.NumberFormat('en-US')
 const size = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
+const factoryGuideHref = routes.guideDetail.href({ slug: 'kody-factory' })
 
 const limitGroups: ReadonlyArray<LimitGroup> = [
 	{
@@ -158,7 +160,8 @@ export function PricingRoute(handle: Handle) {
 						</h2>
 						<p mix={css(planPriceCss)}>$0</p>
 						<p mix={css(planCopyCss)}>
-							The whole factory. 5 jobs, no faster than every 15 minutes.
+							The whole {factoryGuideLink()}. 5 jobs, no faster than every 15
+							minutes.
 						</p>
 						{isSignedIn ? (
 							<a href="/account" mix={css(planPillButtonCss)}>
@@ -189,7 +192,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Same factory. More room for jobs, workflows, and daily volume.
+							Same {factoryGuideLink()}. More room for jobs, workflows, and
+							daily volume.
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
@@ -206,8 +210,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$40/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Same factory. More room for storage, jobs, workflows, and daily
-							volume.
+							Same {factoryGuideLink()}. More room for storage, jobs, workflows,
+							and daily volume.
 						</p>
 						{renderPaidPlanCta(isSignedIn, signedOutCta)}
 					</section>
@@ -310,6 +314,10 @@ export function PricingRoute(handle: Handle) {
 			</section>
 		)
 	}
+}
+
+function factoryGuideLink() {
+	return <a href={factoryGuideHref}>factory</a>
 }
 
 function renderPaidPlanCta(isSignedIn: boolean, signedOutCta: PublicSignupCta) {
@@ -442,6 +450,11 @@ const planCopyCss = {
 	fontSize: '0.98rem',
 	maxWidth: '34ch',
 	textWrap: 'pretty' as const,
+	'& a': {
+		color: colors.primaryText,
+		textDecoration: 'underline',
+		textUnderlineOffset: '0.15em',
+	},
 	'@media (max-width: 680px)': {
 		marginInline: 'auto',
 	},
