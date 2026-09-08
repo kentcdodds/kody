@@ -466,20 +466,6 @@ export function OnboardingRoute(handle: Handle) {
 					<h1 data-rise style={{ '--rise': '0' }}>
 						Get started with <em>Kody</em>
 					</h1>
-					<p
-						data-rise
-						style={{ '--rise': '1' }}
-						mix={css(discordInviteWrapCss)}
-					>
-						<a
-							href={routes.discord.href()}
-							mix={css(discordInviteLinkCss)}
-							data-testid="onboarding-join-discord"
-						>
-							<ProviderIcon providerId="discord" size="1.1em" />
-							Join the Discord
-						</a>
-					</p>
 				</header>
 
 				{message ? (
@@ -549,6 +535,17 @@ export function OnboardingRoute(handle: Handle) {
 							: null}
 					</>
 				) : null}
+
+				<p data-rise style={{ '--rise': '1' }} mix={css(discordInviteWrapCss)}>
+					<a
+						href={routes.discord.href()}
+						mix={css(discordInviteLinkCss)}
+						data-testid="onboarding-join-discord"
+					>
+						<ProviderIcon providerId="discord" size="1.1em" />
+						Join the Discord
+					</a>
+				</p>
 			</section>
 		)
 	}
@@ -593,12 +590,6 @@ const onboardHeadCss = {
 		fontStyle: 'normal',
 		color: colors.primaryText,
 	},
-	'& > p': {
-		margin: '0.9rem 0 0',
-		color: colors.textMuted,
-		fontSize: '1.08rem',
-		maxWidth: '52ch',
-	},
 }
 
 const errorMessageCss = {
@@ -608,7 +599,7 @@ const errorMessageCss = {
 
 /* Nested surfaces step down to the page ground so they read as wells. */
 const discordInviteWrapCss = {
-	margin: '1rem 0 0',
+	margin: 'clamp(2rem, 4.5vw, 2.8rem) 0 0',
 }
 
 const discordInviteLinkCss = {

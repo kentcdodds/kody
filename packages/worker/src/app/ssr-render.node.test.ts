@@ -571,6 +571,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
 		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
 	)
+	expect(
+		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
+	).toBeLessThan(anonymousOnboardingHtml.indexOf('onboarding-join-discord'))
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),
