@@ -12,6 +12,29 @@ export type McpServerConnectionState =
 	| 'disconnected'
 
 /**
+ * Observable post-IdP settle stages. Names match handshake / discovery
+ * methods this repo already uses.
+ */
+export type McpOAuthSettlePhase =
+	| 'token exchange'
+	| 'resource metadata'
+	| 'mcp initialize'
+	| 'server/discover'
+	| 'tools/list'
+
+export type McpServerLastError = {
+	message: string
+	phase: McpOAuthSettlePhase | null
+	httpStatus: number | null
+	httpBodySnippet: string | null
+	mcpEndpoint: string | null
+	resource: string | null
+	authServer: string | null
+	attemptId: string
+	at: string
+}
+
+/**
  * Tool metadata from a connected MCP server.
  *
  * Schemas use codemode's JSON Schema shape (JSONSchema7) so they line up with
@@ -58,4 +81,5 @@ export type McpServerOAuthCallbackOutcome = {
 	authError: string | null
 	serverName: string | null
 	authorizationNeeded: boolean
+	lastError: McpServerLastError | null
 }

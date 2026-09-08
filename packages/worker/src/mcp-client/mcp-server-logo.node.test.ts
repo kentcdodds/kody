@@ -92,6 +92,7 @@ async function provisionServer(harness: ReturnType<typeof createHarness>) {
 		favicon_source_host: null,
 		usage_mode: 'any' as const,
 		allowedPackageIds: [],
+		last_error: null,
 	}
 	await insertMcpServerSettingRow({ db: harness.db, row })
 	return row

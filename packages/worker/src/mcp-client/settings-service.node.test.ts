@@ -9,6 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	deleteMcpServerSettingRow: vi.fn(),
 	listMcpServerSettingRows: vi.fn(),
 	updateMcpServerSettingUsageRow: vi.fn(),
+	updateMcpServerSettingLastErrorRow: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	hubClient: {
 		addServer: vi.fn(),
@@ -33,6 +34,8 @@ vi.mock('./settings-repo.ts', () => ({
 		mockModule.listMcpServerSettingRows(...args),
 	updateMcpServerSettingUsageRow: (...args: Array<unknown>) =>
 		mockModule.updateMcpServerSettingUsageRow(...args),
+	updateMcpServerSettingLastErrorRow: (...args: Array<unknown>) =>
+		mockModule.updateMcpServerSettingLastErrorRow(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -71,6 +74,7 @@ function createSettingRow(input: { id: string; enabled?: boolean }) {
 		favicon_source_host: null,
 		usage_mode: 'any' as const,
 		allowedPackageIds: [],
+		last_error: null,
 	}
 }
 

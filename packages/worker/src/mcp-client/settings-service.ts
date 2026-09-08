@@ -19,6 +19,11 @@ import { createMcpClientHubClient } from './hub-client.ts'
 import { scheduleMcpServerFaviconFill } from './mcp-server-favicon.ts'
 import { deleteMcpServerLogoAsset } from './mcp-server-logo.ts'
 import {
+	mcpServerLastErrorDisplayMessage,
+	parseStoredMcpServerLastError,
+	stringifyMcpServerLastError,
+} from './oauth-settle-error.ts'
+import {
 	filterEnabledMcpServerRefsForCaller,
 	type EnabledMcpServerRef,
 } from './package-access.ts'
@@ -29,6 +34,7 @@ import {
 	insertMcpServerSettingRow,
 	listEnabledMcpServerSettingRows,
 	listMcpServerSettingRows,
+	updateMcpServerSettingLastErrorRow,
 	updateMcpServerSettingRow,
 	updateMcpServerSettingUsageRow,
 } from './settings-repo.ts'
@@ -36,7 +42,10 @@ import {
 	type McpServerSettingMetadata,
 	type McpServerSettingRow,
 } from './settings-types.ts'
-import { type McpServerConnectResult } from './types.ts'
+import {
+	type McpServerConnectResult,
+	type McpServerLastError,
+} from './types.ts'
 import {
 	normalizeMcpServerUsageMode,
 	type McpServerUsageMode,
@@ -87,6 +96,9 @@ function toMetadata(row: McpServerSettingRow): McpServerSettingMetadata {
 		faviconSourceHost: row.favicon_source_host,
 		usageMode: row.usage_mode,
 		allowedPackageIds: [...row.allowedPackageIds],
+		lastError: mcpServerLastErrorDisplayMessage(
+			parseStoredMcpServerLastError(row.last_error),
+		),
 	}
 }
 
@@ -232,6 +244,7 @@ export async function addMcpServer(input: {
 		favicon_source_host: null,
 		usage_mode: 'any',
 		allowedPackageIds: [],
+		last_error: null,
 	} satisfies McpServerSettingRow
 
 	const hub = createMcpClientHubClient({
@@ -433,5 +446,19 @@ export async function lockMcpServerToPackage(input: {
 		id: input.id,
 		usageMode: 'packages',
 		allowedPackageIds,
+	})
+}
+
+export async function setMcpServerLastError(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	id: string
+	lastError: McpServerLastError | null
+}): Promise<boolean> {
+	return updateMcpServerSettingLastErrorRow({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		id: input.id,
+		lastError: stringifyMcpServerLastError(input.lastError),
 	})
 }

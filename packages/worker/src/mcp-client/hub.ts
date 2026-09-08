@@ -12,6 +12,7 @@ import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
+import { readOAuthDiscoveryUrls } from './oauth-settle-error.ts'
 import {
 	outboundMcpClientOptions,
 	reconnectMcpServerOptions,
@@ -349,6 +350,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				authError: oauthRecoveryMessage,
 				serverName: null,
 				authorizationNeeded: true,
+				lastError: null,
 			}
 		}
 		const result = await this.manager.handleCallbackRequest(request)
@@ -374,8 +376,13 @@ class McpClientHubBase extends DurableObject<Env> {
 				timeout: connectionSettleTimeoutMs,
 			})
 			let connection = this.buildConnectResult(serverId)
+			let settleError: string | null = null
 			if (isStuckMcpAuthenticatingWithoutAuthUrl(connection)) {
 				connection = await this.recoverStuckAuthenticating(serverId)
+				settleError = connection.error
+			} else if (connection.state === 'connected') {
+				connection = await this.discoverAfterOAuthEstablish(serverId)
+				settleError = connection.error
 			}
 			if (serverName) {
 				await this.observeServer({
@@ -383,20 +390,19 @@ class McpClientHubBase extends DurableObject<Env> {
 					serverName,
 				})
 			}
-			return resolveMcpOAuthCallbackOutcome({
+			return await this.resolveOAuthCallbackOutcome({
 				sdkAuthSuccess: true,
 				sdkAuthError: result.authError ?? null,
 				serverId,
 				serverName,
-				connection: this.buildConnectResult(serverId),
+				settleError,
 			})
 		}
-		return resolveMcpOAuthCallbackOutcome({
+		return await this.resolveOAuthCallbackOutcome({
 			sdkAuthSuccess: result.authSuccess,
 			sdkAuthError: result.authError ?? null,
 			serverId,
 			serverName,
-			connection: serverId ? this.buildConnectResult(serverId) : null,
 		})
 	}
 
@@ -428,6 +434,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				authError: null,
 				serverName,
 				authorizationNeeded: false,
+				lastError: null,
 			}
 		}
 		try {
@@ -439,6 +446,7 @@ class McpClientHubBase extends DurableObject<Env> {
 					authError: null,
 					serverName,
 					authorizationNeeded: false,
+					lastError: null,
 				}
 			}
 		} catch {
@@ -450,6 +458,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			authError: oauthRecoveryMessage,
 			serverName,
 			authorizationNeeded: true,
+			lastError: null,
 		}
 	}
 
@@ -562,6 +571,93 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
 	 * the live connection never reached `ready`.
 	 */
+	private async discoverAfterOAuthEstablish(
+		serverId: string,
+	): Promise<McpServerConnectResult> {
+		let discoverError: string | null = null
+		try {
+			await this.manager.discoverIfConnected(serverId, {
+				timeoutMs: discoverTimeoutMs,
+			})
+		} catch (error) {
+			discoverError = error instanceof Error ? error.message : String(error)
+		}
+		const result = this.buildConnectResult(serverId)
+		return {
+			...result,
+			error: result.error ?? discoverError,
+		}
+	}
+
+	private async resolveOAuthCallbackOutcome(input: {
+		sdkAuthSuccess: boolean
+		sdkAuthError: string | null
+		serverId: string | null
+		serverName: string | null
+		settleError?: string | null
+	}): Promise<McpServerOAuthCallbackOutcome> {
+		const attemptId = crypto.randomUUID()
+		const connection = input.serverId
+			? this.buildConnectResult(input.serverId)
+			: null
+		const discovery = input.serverId
+			? await this.readOAuthDiscoveryUrls(input.serverId)
+			: { resource: null, authServer: null }
+		const row = input.serverId
+			? this.manager
+					.listServers()
+					.find((server) => server.id === input.serverId)
+			: null
+		const outcome = resolveMcpOAuthCallbackOutcome({
+			sdkAuthSuccess: input.sdkAuthSuccess,
+			sdkAuthError: input.sdkAuthError,
+			serverId: input.serverId,
+			serverName: input.serverName,
+			attemptId,
+			connection: connection
+				? {
+						...connection,
+						error: connection.error ?? input.settleError ?? null,
+						mcpEndpoint: row?.server_url ?? null,
+						resource: discovery.resource,
+						authServer: discovery.authServer,
+					}
+				: null,
+		})
+		if (outcome.lastError) {
+			console.warn('mcp oauth callback settle incomplete', {
+				attemptId: outcome.lastError.attemptId,
+				serverId: outcome.serverId,
+				phase: outcome.lastError.phase,
+				state: connection?.state ?? null,
+				httpStatus: outcome.lastError.httpStatus,
+				mcpEndpoint: outcome.lastError.mcpEndpoint,
+				resource: outcome.lastError.resource,
+				authServer: outcome.lastError.authServer,
+			})
+		}
+		return outcome
+	}
+
+	private async readOAuthDiscoveryUrls(serverId: string): Promise<{
+		resource: string | null
+		authServer: string | null
+	}> {
+		const prefix = `/${mcpClientName}/${serverId}/`
+		const entries = await this.ctx.storage.list({ prefix })
+		for (const [key, value] of entries) {
+			if (
+				!key.endsWith('/oauth_discovery') &&
+				!key.includes('oauth_discovery')
+			) {
+				continue
+			}
+			const parsed = readOAuthDiscoveryUrls(value)
+			if (parsed.resource || parsed.authServer) return parsed
+		}
+		return { resource: null, authServer: null }
+	}
+
 	private async recoverStuckAuthenticating(
 		serverId: string,
 	): Promise<McpServerConnectResult> {

@@ -97,12 +97,14 @@ signed in, user-scoped package results are empty.
 
 If tools from a connected MCP server appear missing, open
 [`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcpServerList`) and
-confirm the server is connected and authorized. When **Usage** is **Specific
-packages only**, ad hoc execute and other packages cannot see or call
-`kody.mcp["server-name"]` — only granted packages can. Home automation is a
-normal outbound MCP server (`kody.mcp["home"]`). See
-[Connect remote MCP servers](./mcp-client-servers.md) and
-[Lock an MCP server to a package](../guides/locked-mcp-server.md).
+confirm the server is connected and authorized. If authorization finished at the
+identity provider but Status stays on tool discovery, the Status field shows the
+last sanitized settle error (phase, HTTP status, URLs, and an attempt id).
+Reconnect from that page. When **Usage** is **Specific packages only**, ad hoc
+execute and other packages cannot see or call `kody.mcp["server-name"]` — only
+granted packages can. Home automation is a normal outbound MCP server
+(`kody.mcp["home"]`). See [Connect remote MCP servers](./mcp-client-servers.md)
+and [Lock an MCP server to a package](../guides/locked-mcp-server.md).
 
 After a password reset or an in-account password change, reconnect the MCP host:
 Kody revokes OAuth grants and rejects access tokens issued at or before the

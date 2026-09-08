@@ -83,6 +83,7 @@ const mockModule = vi.hoisted(() => ({
 		allowedPackageIds: ['pkg-drafts'],
 	})),
 	deleteMcpServer: vi.fn(async () => true),
+	setMcpServerLastError: vi.fn(async () => true),
 	getCachedMcpClientHubSnapshot: vi.fn(async () => ({
 		servers: [
 			{
@@ -106,6 +107,7 @@ const mockModule = vi.hoisted(() => ({
 		authError: null,
 		serverName: 'linear',
 		authorizationNeeded: false,
+		lastError: null,
 	})),
 	reconnectServer: vi.fn(async () => ({
 		serverId: 'server-1',
@@ -155,6 +157,8 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 		mockModule.setMcpServerUsage(...args),
 	deleteMcpServer: (...args: Array<unknown>) =>
 		mockModule.deleteMcpServer(...args),
+	setMcpServerLastError: (...args: Array<unknown>) =>
+		mockModule.setMcpServerLastError(...args),
 	resolveMcpServerOAuthClientUrls: (input: {
 		env: { APP_BASE_URL?: string | null }
 		requestUrl?: string | URL | null
@@ -198,6 +202,13 @@ vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 			mockModule.handleOAuthCallback(...args),
 		reconnectServer: (...args: Array<unknown>) =>
 			mockModule.reconnectServer(...args),
+		refreshServer: vi.fn(async () => ({
+			serverId: 'server-1',
+			state: 'ready',
+			authUrl: null,
+			error: null,
+			toolCount: 2,
+		})),
 	}),
 }))
 
@@ -374,6 +385,13 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(successLocation.pathname).toBe('/account/mcp-servers/server-1')
 	expect(successLocation.searchParams.get('auth')).toBe('success')
 	expect(successLocation.searchParams.get('server')).toBe('linear')
+	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			id: 'server-1',
+			lastError: null,
+		}),
+	)
 
 	const onboardingReturnResponse = await handler.handler({
 		request: new Request(
@@ -486,4 +504,51 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(unknownRecoveryLocation.pathname).toBe('/account/mcp-servers')
 	expect(unknownRecoveryLocation.searchParams.get('auth')).toBe('retry')
 	expect(unknownRecoveryLocation.searchParams.has('reason')).toBe(false)
+
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError:
+			"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-1). Reconnect it from /account/mcp-servers.",
+		serverName: 'linear',
+		authorizationNeeded: false,
+		lastError: {
+			message:
+				"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id attempt-1). Reconnect it from /account/mcp-servers.",
+			phase: 'server/discover',
+			httpStatus: null,
+			httpBodySnippet: null,
+			mcpEndpoint: 'https://mcp.example.com/mcp',
+			resource: null,
+			authServer: null,
+			attemptId: 'attempt-1',
+			at: '2026-09-08T00:00:00.000Z',
+		},
+	})
+	const settleFailureResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=ok.server-1',
+		),
+		params: {},
+	} as never)
+	const settleFailureLocation = new URL(
+		settleFailureResponse.headers.get('Location') ?? '',
+	)
+	expect(settleFailureLocation.searchParams.get('auth')).toBe('error')
+	expect(settleFailureLocation.searchParams.get('reason')).toContain(
+		"tool discovery didn't finish",
+	)
+	expect(settleFailureLocation.searchParams.get('reason')).not.toContain(
+		'still "connected"',
+	)
+	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			id: 'server-1',
+			lastError: expect.objectContaining({
+				phase: 'server/discover',
+				attemptId: 'attempt-1',
+			}),
+		}),
+	)
 })

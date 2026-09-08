@@ -23,7 +23,10 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
    in at the provider, and approve access.
 4. Confirm with `mcpServerList` (or refresh the account page). Connected tools
-   show up in `search` under a `mcp:<name>` domain.
+   show up in `search` under a `mcp:<name>` domain. If the identity provider
+   approved access but tools never appear, Status on
+   `/account/mcp-servers/:serverId` shows the last sanitized settle error
+   (phase, HTTP status, URLs, and an attempt id). Reconnect from that page.
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
 lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the

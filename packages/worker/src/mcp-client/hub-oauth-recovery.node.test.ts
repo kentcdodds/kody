@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 
 type FakeServerRow = {
@@ -463,6 +464,7 @@ test('replayed unusable callbacks leave past-OAuth server credentials intact', a
 			authError: null,
 			serverName: 'mediarss',
 			authorizationNeeded: false,
+			lastError: null,
 		})
 	}
 	expect(manager.connectCount).toBe(0)
@@ -672,4 +674,61 @@ test('handleOAuthCallback reports success after observe recovers a previously re
 	})
 	expect(result.authSuccess).toBe(true)
 	expect(result.authorizationNeeded).toBe(false)
+	expect(result.lastError).toBeNull()
+})
+
+test('handleOAuthCallback reports a durable tool-discovery lastError when IdP succeeds but settle stays connected', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	manager.callbackMatches = true
+	manager.callbackResult = { serverId: 'server-1', authSuccess: true }
+	connection.connectionState = 'connected'
+	connection.connectionError = null
+	values.set('/Kody/server-1/oauth_discovery', {
+		resource: 'https://mcp.posthog.com/',
+		authorization_servers: ['https://auth.posthog.com/?client_secret=hidden'],
+	})
+
+	const result = await hub.handleOAuthCallback({
+		url: `${callbackUrl}?code=abc&state=ok.server-1`,
+		callbackUrl,
+	})
+
+	expect(result.authSuccess).toBe(false)
+	expect(result.authorizationNeeded).toBe(false)
+	expect(result.lastError?.phase).toBe('server/discover')
+	expect(result.lastError?.mcpEndpoint).toBe('https://mediarss.example/mcp')
+	expect(result.lastError?.resource).toBe('https://mcp.posthog.com/')
+	expect(result.lastError?.authServer).toBe('https://auth.posthog.com/')
+	expect(result.authError).toContain("tool discovery didn't finish")
+	expect(result.authError).toContain('phase server/discover')
+	expect(result.authError).not.toContain('still "connected"')
+	expect(result.authError).not.toContain('client_secret')
+	expect(JSON.stringify(result.lastError)).not.toContain('hidden')
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp oauth callback settle incomplete',
+		expect.objectContaining({
+			attemptId: result.lastError?.attemptId,
+			serverId: 'server-1',
+			phase: 'server/discover',
+			mcpEndpoint: 'https://mediarss.example/mcp',
+			resource: 'https://mcp.posthog.com/',
+			authServer: 'https://auth.posthog.com/',
+		}),
+	)
+	const logged = JSON.stringify(consoleWarn.mock.calls)
+	expect(logged).not.toContain('hidden')
+	expect(logged).not.toContain('client_secret')
 })

@@ -23,8 +23,10 @@ import {
 	getMcpServerSettingById,
 	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
+	setMcpServerLastError,
 	setMcpServerUsage,
 } from '#worker/mcp-client/settings-service.ts'
+import { type McpServerLastError } from '#worker/mcp-client/types.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -161,6 +163,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			let serverName: string | null = null
 			let serverId: string | null = null
 			let authorizationNeeded = false
+			let lastError: McpServerLastError | null = null
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env,
 				requestUrl: request.url,
@@ -175,12 +178,30 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				serverName = outcome.serverName
 				serverId = outcome.serverId
 				authorizationNeeded = outcome.authorizationNeeded
+				lastError = outcome.lastError
 			} catch (error) {
 				authError = getErrorMessage(error)
 			}
 
 			if (authError) {
 				authError = enrichMcpOAuthProviderError(authError, oauth)
+				if (lastError) lastError = { ...lastError, message: authError }
+			}
+
+			if (serverId && authSuccess) {
+				await setMcpServerLastError({
+					env,
+					userId: user.mcpUser.userId,
+					id: serverId,
+					lastError: null,
+				}).catch(() => {})
+			} else if (serverId && lastError && !authorizationNeeded) {
+				await setMcpServerLastError({
+					env,
+					userId: user.mcpUser.userId,
+					id: serverId,
+					lastError,
+				}).catch(() => {})
 			}
 
 			const returnToOnboarding =
@@ -262,17 +283,23 @@ async function handleConnectionAction(input: {
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 	})
-	if (input.kind === 'reconnect') {
-		const oauth = resolveMcpServerOAuthClientUrls({
+	const result =
+		input.kind === 'reconnect'
+			? await hub.reconnectServer({
+					serverId: setting.id,
+					callbackUrl: resolveMcpServerOAuthClientUrls({
+						env: input.env,
+						requestUrl: input.request.url,
+					}).callbackUrl,
+				})
+			: await hub.refreshServer({ serverId: setting.id })
+	if (result.state === 'ready') {
+		await setMcpServerLastError({
 			env: input.env,
-			requestUrl: input.request.url,
-		})
-		await hub.reconnectServer({
-			serverId: setting.id,
-			callbackUrl: oauth.callbackUrl,
-		})
-	} else {
-		await hub.refreshServer({ serverId: setting.id })
+			userId: input.user.mcpUser.userId,
+			id: setting.id,
+			lastError: null,
+		}).catch(() => {})
 	}
 	const payload = await loadAccountMcpServersData({
 		env: input.env,

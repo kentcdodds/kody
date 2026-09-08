@@ -215,6 +215,10 @@
 		{
 			"filename": "0053-user-tips-email-opt-outs.sql",
 			"sha256": "47c028697bc21976963cd1a0bf5825d3d48b7ba2640f93c7192e31d192aa2ea2"
+		},
+		{
+			"filename": "0054-mcp-server-last-error.sql",
+			"sha256": "6d160921b0689856a618233616ebc0fbc9955966cb1149ff1c611568c6dad5de"
 		}
 	]
 }

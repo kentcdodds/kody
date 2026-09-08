@@ -19,18 +19,21 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   `purgeForAccountDeletion`.
 - **D1 `mcp_server_settings` table**
   (`packages/worker/migrations/0001-squashed-init.sql`, usage columns in
-  `0031-mcp-server-package-usage.sql`) — user-scoped metadata (id, name, url,
-  enabled, `usage_mode` / `allowed_packages_json`, plus optional favicon
-  columns). D1 answers "which servers does this user have enabled" without
-  waking the DO; the DO owns live connection state and tokens. `usage_mode` is
-  `any` (execute plus every package) or `packages` (only the listed saved
-  package ids; execute is denied). Account-page loads fetch the
-  registrable-domain favicon of `url` with the same HTTPS pipeline as user-lane
-  OAuth apps and store a raster under `user-mcp-server-logos/{userId}/{id}/`.
-  The signed-in owner loads it from `/account/mcp-servers/logos/:serverId`.
-  Display order matches OAuth integrations: operator-curated provider mark
-  (matched by server name or `url` host), then auto-favicon, then the letter
-  fallback.
+  `0031-mcp-server-package-usage.sql`, `last_error` in
+  `0054-mcp-server-last-error.sql`) — user-scoped metadata (id, name, url,
+  enabled, `usage_mode` / `allowed_packages_json`, optional favicon columns, and
+  a sanitized `last_error` JSON blob for incomplete post-IdP settle). D1 answers
+  "which servers does this user have enabled" without waking the DO; the DO owns
+  live connection state and tokens. Live `connectionError` on the hub is
+  ephemeral, so an IdP-success / not-ready settle writes `last_error` and the
+  account UI shows it under Status. `usage_mode` is `any` (execute plus every
+  package) or `packages` (only the listed saved package ids; execute is denied).
+  Account-page loads fetch the registrable-domain favicon of `url` with the same
+  HTTPS pipeline as user-lane OAuth apps and store a raster under
+  `user-mcp-server-logos/{userId}/{id}/`. The signed-in owner loads it from
+  `/account/mcp-servers/logos/:serverId`. Display order matches OAuth
+  integrations: operator-curated provider mark (matched by server name or `url`
+  host), then auto-favicon, then the letter fallback.
 - **Hub client with snapshot cache**
   (`packages/worker/src/mcp-client/hub-client.ts`) — worker-side facade over the
   DO stub. Snapshots are cached per user for 30 seconds and invalidated on every
@@ -80,15 +83,23 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    DO, and the SDK exchanges the code (matching the `state` parameter to the
    pending authorization) and establishes the connection.
 5. The hub only treats the callback as successful when the connection reaches
-   `ready`. If the Agents SDK reports `authSuccess` but the connection stays in
-   `authenticating` (including the stuck case with no stored auth URL after the
-   SDK clears it), the hub retries establish/discover and otherwise redirects
-   with `auth=error` and a concrete reason. Used or missing OAuth `state` on the
-   callback, and connections that are already settling toward `ready`, recover
-   without surfacing an internal state error: the hub restarts authorization
-   when needed, or accepts the in-flight connection. Origin and redirect-URI
-   rejection messages are enriched with Kody's `oauthClientOrigin` and
-   `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
+   `ready`. After the SDK accepts the authorization code, the hub establishes
+   the connection and, if the transport is `connected`, runs
+   `discoverIfConnected` the same way add/reconnect do. If that settle does not
+   reach `ready`, the callback fails with a sanitized reason that includes the
+   observable phase (`token exchange`, `resource metadata`, `mcp initialize`,
+   `server/discover`, or `tools/list`), HTTP status and a short body snippet
+   when present, the MCP / resource / authorization-server URLs without query
+   secrets, and an attempt id for log grep. The same payload is stored on
+   `mcp_server_settings.last_error` and shown under Status. The account UI maps
+   `connected` / `discovering` to "Discovering tools" only while that work is
+   still in flight; when `last_error` is present it says "Tool discovery didn't
+   finish" instead of echoing the raw `"connected"` state. Used or missing OAuth
+   `state` on the callback, and connections that are already settling toward
+   `ready`, recover without surfacing an internal state error: the hub restarts
+   authorization when needed, or accepts the in-flight connection. Origin and
+   redirect-URI rejection messages are enriched with Kody's `oauthClientOrigin`
+   and `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
    unusable tokens and request a fresh authorization URL). The account page
    offers Reconnect when automatic recovery cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
