@@ -1,6 +1,7 @@
 import { Frame, type Handle, type RemixNode, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { getPackageTreeHref } from '#universal/package-files.ts'
+import { getCommunityPackageAssetBaseHref } from '#universal/package-readme-images.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
 import {
 	listenToRouterNavigation,
@@ -82,12 +83,22 @@ export function CommunityDetailRoute(handle: Handle) {
 	// the rendered README per markdown string (same policy as MarkdownView).
 	let renderedForReadme: string | null = null
 	let renderedForReadmeFences: Array<HighlightedCode> | undefined
+	let renderedForReadmeImageBase: string | null = null
 	let renderedReadme: Array<RemixNode> = []
 
-	function renderReadme(markdown: string, fences?: Array<HighlightedCode>) {
-		if (renderedForReadme !== markdown || renderedForReadmeFences !== fences) {
+	function renderReadme(
+		markdown: string,
+		fences: Array<HighlightedCode> | undefined,
+		imageBaseHref: string | null,
+	) {
+		if (
+			renderedForReadme !== markdown ||
+			renderedForReadmeFences !== fences ||
+			renderedForReadmeImageBase !== imageBaseHref
+		) {
 			renderedForReadme = markdown
 			renderedForReadmeFences = fences
+			renderedForReadmeImageBase = imageBaseHref
 			// Third-party README in the page's prose voice: authored `##`
 			// sections land on h3 (DESIGN.md's "h3 subheads"; publishing
 			// requires a `## Intent` section), the page keeps its h1, and the
@@ -95,6 +106,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			renderedReadme = renderMarkdownNodes(markdown, {
 				headingOffset: 1,
 				fences,
+				imageBaseHref: imageBaseHref ?? undefined,
 			})
 		}
 		return renderedReadme
@@ -499,6 +511,14 @@ export function CommunityDetailRoute(handle: Handle) {
 						relativePath: 'AGENTS.md',
 					})
 				: null
+		const readmeImageBaseHref =
+			username && kodyId
+				? getCommunityPackageAssetBaseHref({
+						listingId,
+						ownerUsername: username,
+						kodyId,
+					})
+				: null
 
 		return (
 			<article
@@ -525,7 +545,11 @@ export function CommunityDetailRoute(handle: Handle) {
 
 						{readmeContent
 							? renderReadmeSection(
-									renderReadme(readmeContent, readmeFences),
+									renderReadme(
+										readmeContent,
+										readmeFences,
+										readmeImageBaseHref,
+									),
 									agentsDocsHref,
 								)
 							: renderEmptyReadme(agentsDocsHref)}

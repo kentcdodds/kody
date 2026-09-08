@@ -31,6 +31,7 @@ import { readArtifactSourceSnapshot } from '#worker/repo/artifact-source-snapsho
 import { recordServerTiming } from '#worker/request-context.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { findRootPackageDoc } from '#worker/repo/required-package-docs.ts'
+import { getCommunityPackageAssetBaseHref } from '#universal/package-readme-images.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -49,6 +50,7 @@ async function toLoaderData(input: {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	listingId?: string | null
 }): Promise<PackageFilesLoaderData> {
 	const content = input.view.content
 	const language = input.view.language
@@ -90,6 +92,11 @@ async function toLoaderData(input: {
 		kodyId: input.kodyId,
 		viewerIsOwner: input.viewerIsOwner,
 		isPrivate: input.isPrivate,
+		imageBaseHref: getCommunityPackageAssetBaseHref({
+			listingId: input.listingId,
+			ownerUsername: input.username,
+			kodyId: input.kodyId,
+		}),
 	}
 }
 
@@ -189,6 +196,7 @@ export async function loadCommunityPackageFilesData(input: {
 		kodyId: listing.kodyId,
 		viewerIsOwner: viewerUserId === listing.ownerUserId,
 		isPrivate: false,
+		listingId: listing.id,
 	})
 }
 

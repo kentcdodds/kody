@@ -48,6 +48,10 @@ test('machine namespaces claim only their multi-segment paths', () => {
 		mount: 'username-path',
 	})
 	expect(parsePackageAppPath('/@kody/devin')).toBeNull()
+	expect(
+		isNamespacedAppEndpointPath('/@kody/doom/assets/docs/poster.png'),
+	).toBe(false)
+	expect(parsePackageAppPath('/@kody/doom/assets/docs/poster.png')).toBeNull()
 
 	expect(
 		communityPackageMatcher.match(new URL('https://example.com/@kody/devin'))

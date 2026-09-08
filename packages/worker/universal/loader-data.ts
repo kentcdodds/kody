@@ -195,6 +195,7 @@ export type PackageFilesLoaderData = {
 	kodyId?: string
 	viewerIsOwner?: boolean
 	isPrivate?: boolean
+	imageBaseHref?: string | null
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */

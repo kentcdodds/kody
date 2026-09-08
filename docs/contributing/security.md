@@ -48,12 +48,14 @@ package-app surfaces:
    READMEs (and any future third-party-authored markdown shown on first-party
    pages) must go through `packages/worker/client/markdown-view.tsx`, which
    builds JSX from an allowlist of `marked` lexer tokens: raw HTML renders as
-   escaped text, no resource-loading elements are ever emitted (images become
-   links), and links are restricted to absolute `http:`/`https:`/`mailto:` URLs
-   with `/@...` user-scope paths and `/packages/...` package-app mount paths
-   refused on any host so a README can never point viewers at hosted package
-   endpoints. Never render third-party markdown via an HTML string, `innerHTML`,
-   or a markdown-to-HTML renderer.
+   escaped text, and links are restricted to absolute `http:`/`https:`/`mailto:`
+   URLs with `/@...` user-scope paths and `/packages/...` package-app mount
+   paths refused on any host so a README can never point viewers at hosted
+   package endpoints. `<img>` is emitted only for in-repo relative image paths
+   rewritten to that package's first-party `/assets/` route (published package
+   bytes, sniffed type, size-capped). Remote and other author-chosen URLs stay
+   links. Never render third-party markdown via an HTML string, `innerHTML`, or
+   a markdown-to-HTML renderer.
 9. **Package code never receives first-party credentials, and never executes on
    the app origin in production.** Every request handed to package code goes
    through `createPackageCodeRequest`

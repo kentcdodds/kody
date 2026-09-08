@@ -33,6 +33,9 @@ node tools/control-kody.ts request GET /community.json --skip-login
   graph, bookmark-star, or social timeline.
 - Files and tree URLs are public read for listed packages and owner-only for
   private ones.
+- README `![alt](./docs/poster.png)` images render from
+  `/@owner/kody-id/assets/…` (or `/community/:listingId/assets/…` when the
+  `kody.id` is a reserved ingress segment). Remote image URLs stay links.
 - Package settings 404 for anyone who is not the owner.
 - Official `@kody/*` listings skip the install confirm; third-party listings ask
   once (`acknowledged: true` or the install endpoint responds `409`).

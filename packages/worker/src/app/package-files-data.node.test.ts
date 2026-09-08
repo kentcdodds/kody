@@ -100,6 +100,7 @@ test('listed package tree marks the owner so Settings stays on the chrome', asyn
 		isPrivate: false,
 		backHref: '/@kentcdodds/sentry',
 		filesBasePath: '/@kentcdodds/sentry/tree/main',
+		imageBaseHref: '/@kentcdodds/sentry/assets',
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)

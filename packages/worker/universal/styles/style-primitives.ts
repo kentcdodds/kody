@@ -516,6 +516,14 @@ export const proseCss = {
 		textDecorationThickness: '1.5px',
 		textUnderlineOffset: '3px',
 	},
+	'& img': {
+		display: 'block',
+		maxWidth: '100%',
+		height: 'auto',
+		margin: '1.15rem 0 0',
+		borderRadius: radius.md,
+		border: `1px solid ${colors.border}`,
+	},
 	'& p': {
 		margin: '1.15rem 0 0',
 		maxWidth: '62ch',

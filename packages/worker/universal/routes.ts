@@ -181,6 +181,7 @@ export const routes = route({
 	communityDetailApi: '/community/:listingId.json',
 	communityDetailFiles: '/community/:listingId/files(/*relativePath)',
 	communityDetailFilesApi: '/community/:listingId/files.json',
+	communityDetailAsset: '/community/:listingId/assets(/*relativePath)',
 	communityDetailIcon: '/community/:listingId/icon/:iconCommit',
 	communityDetailOgImage: '/community/:listingId/og.png',
 	communityReportApiPost: post('/community/:listingId/report.json'),
@@ -195,6 +196,9 @@ export const routes = route({
 	communityPackage: '/@:username/:kodyId',
 	communityPackageFiles: '/@:username/:kodyId/files(/*relativePath)',
 	communityPackageTree: '/@:username/:kodyId/tree/:ref(/*relativePath)',
+	// First-party bytes for README-relative images. Third-segment noun so
+	// `/@:username/packages/…` stays the hosted package-app mount.
+	communityPackageAsset: '/@:username/:kodyId/assets(/*relativePath)',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
 	// JSON companion lives under `/profiles/…` with the other username-keyed

@@ -175,6 +175,10 @@ import {
 } from '#app/handlers/community-detail.tsx'
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
+import {
+	createCommunityDetailAssetHandler,
+	createCommunityPackageAssetHandler,
+} from '#app/handlers/package-readme-assets.ts'
 import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
 import { createProviderMarkLogoHandler } from '#app/handlers/provider-mark-logo.ts'
 import { createMcpServerLogoHandler } from '#app/handlers/mcp-server-logo.ts'
@@ -500,6 +504,8 @@ export function createAppRouter(env: Env) {
 			communityPackageFiles: createCommunityPackageFilesHandler(env),
 			communityPackageTree: createCommunityPackageTreeHandler(env),
 			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
+			communityPackageAsset: createCommunityPackageAssetHandler(env),
+			communityDetailAsset: createCommunityDetailAssetHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),
 			providerMarkLogo: createProviderMarkLogoHandler(env),
