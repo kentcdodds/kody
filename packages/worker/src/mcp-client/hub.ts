@@ -658,10 +658,16 @@ class McpClientHubBase extends DurableObject<Env> {
 		) {
 			return afterAuto
 		}
-		return this.retryDiscoverWithLegacyHandshake(serverId)
+		return this.retryDiscoverWithLegacyHandshake(serverId, afterAuto)
 	}
 
-	private async retryDiscoverWithLegacyHandshake(serverId: string): Promise<{
+	private async retryDiscoverWithLegacyHandshake(
+		serverId: string,
+		autoFailure: {
+			result: McpServerConnectResult
+			lastError: McpServerLastError | null
+		},
+	): Promise<{
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
 	}> {
@@ -670,9 +676,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			.find((server) => server.id === serverId)
 		const existingOptions = this.manager.mcpConnections[serverId]?.options
 		if (!row || !existingOptions) {
-			return this.applyIncompleteDiscoverFailure(serverId, null, {
-				catalogAttempted: true,
-			})
+			return this.keepCatalogLastError(serverId, autoFailure, null)
 		}
 
 		console.warn('mcp discover retrying legacy handshake', {
@@ -726,20 +730,21 @@ class McpClientHubBase extends DurableObject<Env> {
 			} catch {
 				// The incomplete auto discover lastError is the user-visible outcome.
 			}
-			return this.applyIncompleteDiscoverFailure(
+			return this.keepCatalogLastError(
 				serverId,
+				autoFailure,
 				error instanceof Error ? error.message : String(error),
-				{ catalogAttempted: true },
 			)
 		}
 
 		this.clearSessionBeforeConnect(serverId)
 		const connected = await this.manager.connectToServer(serverId)
 		if (connected.state !== 'connected') {
-			return {
-				result: this.buildConnectResult(serverId),
-				lastError: null,
+			const result = this.buildConnectResult(serverId)
+			if (result.state === 'authenticating' && result.authUrl) {
+				return { result, lastError: null }
 			}
+			return this.keepCatalogLastError(serverId, autoFailure, result.error)
 		}
 		const discovered = await this.runDiscoverIfConnected(serverId, {
 			allowLegacyFallback: false,
@@ -748,6 +753,40 @@ class McpClientHubBase extends DurableObject<Env> {
 			await this.rememberLegacyHandshakeFallback(serverId)
 		}
 		return discovered
+	}
+
+	private keepCatalogLastError(
+		serverId: string,
+		autoFailure: {
+			result: McpServerConnectResult
+			lastError: McpServerLastError | null
+		},
+		discoverError: string | null,
+	): {
+		result: McpServerConnectResult
+		lastError: McpServerLastError | null
+	} {
+		const stamped = this.applyIncompleteDiscoverFailure(
+			serverId,
+			discoverError,
+			{
+				catalogAttempted: true,
+			},
+		)
+		if (stamped.lastError) return stamped
+		const lastError = autoFailure.lastError
+		if (!lastError) return stamped
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) connection.connectionError = lastError.message
+		this.lastDiscoverErrors.set(serverId, lastError)
+		return {
+			result: {
+				...this.buildConnectResult(serverId),
+				error: lastError.message,
+				lastError,
+			},
+			lastError,
+		}
 	}
 
 	private finalizeConnectResult(serverId: string): McpServerConnectResult {
@@ -765,13 +804,30 @@ class McpClientHubBase extends DurableObject<Env> {
 		const result = this.buildConnectResult(serverId)
 		const connection = this.manager.mcpConnections[serverId]
 		if (!isIncompleteDiscoverState(result.state)) {
-			if (result.state === 'ready') this.clearIncompleteDiscoverStamp(serverId)
-			else this.lastDiscoverErrors.delete(serverId)
+			if (result.state === 'ready') {
+				this.clearIncompleteDiscoverStamp(serverId)
+				return {
+					result: { ...result, error: null, lastError: null },
+					lastError: null,
+				}
+			}
+			const existing = this.lastDiscoverErrors.get(serverId)
+			if (existing && result.state !== 'authenticating') {
+				if (connection) connection.connectionError = existing.message
+				return {
+					result: {
+						...this.buildConnectResult(serverId),
+						error: existing.message,
+						lastError: existing,
+					},
+					lastError: existing,
+				}
+			}
+			this.lastDiscoverErrors.delete(serverId)
 			return {
 				result: {
 					...result,
-					error:
-						result.state === 'ready' ? null : (result.error ?? discoverError),
+					error: result.error ?? discoverError,
 					lastError: null,
 				},
 				lastError: null,

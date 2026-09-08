@@ -893,6 +893,28 @@ test('add, reconnect, and refresh treat a discover timeout as a durable lastErro
 	)
 })
 
+test('legacy retry that fails to connect keeps the catalog lastError', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	manager.connectBehaviors = ['connected', 'disconnected']
+	manager.connectBehavior = 'disconnected'
+
+	const added = await hub.addServer({
+		serverId: 'server-1',
+		name: 'analytics',
+		url: 'https://analytics.example/mcp',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+	})
+	expect(added.state).toBe('disconnected')
+	expect(added.lastError?.phase).toBe('tools/list')
+	expect(added.error).toContain("tool discovery didn't finish")
+	expect(added.error).toContain('phase tools/list')
+	expect(manager.mcpConnections['server-1']?.connectionError).toBe(added.error)
+})
+
 test('healthy auto catalog stays on auto; modern-connect catalog timeout falls back to legacy and can reach ready', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
