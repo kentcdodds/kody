@@ -5,8 +5,6 @@ import {
 } from '#universal/package-file-media.ts'
 import { routes } from '#universal/routes.ts'
 
-export type { PackageFilesContentKind }
-
 /**
  * Second-segment `/@username/…` namespaces claimed before the app router.
  * A package whose `kody.id` is one of these cannot use

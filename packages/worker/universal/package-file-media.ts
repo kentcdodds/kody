@@ -12,7 +12,7 @@
  * filename alone is not enough to serve bytes as renderable media.
  */
 
-export type PackageFilesTextKind = 'markdown' | 'code' | 'text'
+type PackageFilesTextKind = 'markdown' | 'code' | 'text'
 export type PackageFilesMediaKind = 'image' | 'video' | 'audio'
 export type PackageFilesContentKind =
 	| PackageFilesTextKind
@@ -79,7 +79,7 @@ const binaryExtensions = new Set([
 	'zip',
 ])
 
-export function packageFileExtension(path: string) {
+function packageFileExtension(path: string) {
 	const name = path.split('/').pop() ?? ''
 	const separator = name.lastIndexOf('.')
 	if (separator <= 0) return ''
@@ -96,9 +96,7 @@ export function isPackageFilesMediaKind(
 	return kind === 'image' || kind === 'video' || kind === 'audio'
 }
 
-export function allowlistedPackageFileMedia(
-	path: string,
-): MediaType | undefined {
+function allowlistedPackageFileMedia(path: string): MediaType | undefined {
 	return mediaTypesByExtension[packageFileExtension(path)]
 }
 
@@ -144,7 +142,7 @@ export function snapshotStringToBytes(content: string, path: string) {
 	return new TextEncoder().encode(content)
 }
 
-export function measurePackageFileBytes(path: string, content: string) {
+function measurePackageFileBytes(path: string, content: string) {
 	return snapshotStringToBytes(content, path).byteLength
 }
 
