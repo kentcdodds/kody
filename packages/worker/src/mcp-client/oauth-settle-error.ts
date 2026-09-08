@@ -128,6 +128,33 @@ export function inferMcpOAuthSettlePhase(input: {
 	}
 }
 
+const settleAttemptIdPattern =
+	/\bid\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
+
+export function isFormattedMcpOAuthSettleMessage(
+	value: string | null | undefined,
+): boolean {
+	if (!value) return false
+	return (
+		/authorization completed/i.test(value) &&
+		/\bphase\s/.test(value) &&
+		/\bid\s/.test(value)
+	)
+}
+
+export function readAttemptIdFromSettleMessage(
+	value: string | null | undefined,
+): string | null {
+	if (!value) return null
+	return value.match(settleAttemptIdPattern)?.[1] ?? null
+}
+
+function rawMcpSettleError(
+	value: string | null | undefined,
+): string | null | undefined {
+	return isFormattedMcpOAuthSettleMessage(value) ? null : value
+}
+
 export function formatMcpOAuthSettleErrorMessage(input: {
 	state: McpServerConnectionState
 	authUrl: string | null
@@ -140,15 +167,16 @@ export function formatMcpOAuthSettleErrorMessage(input: {
 	authServer?: string | null
 	attemptId?: string | null
 }): string {
+	const error = rawMcpSettleError(input.error)
 	const phase =
 		input.phase ??
 		inferMcpOAuthSettlePhase({
 			state: input.state,
-			error: input.error,
+			error,
 		})
 	const details = formatMcpOAuthSettleDetails({
 		phase,
-		httpStatus: input.httpStatus ?? parseHttpStatusFromMcpError(input.error),
+		httpStatus: input.httpStatus ?? parseHttpStatusFromMcpError(error),
 		httpBodySnippet: sanitizeMcpErrorSnippet(input.httpBodySnippet),
 		mcpEndpoint: sanitizePublicUrl(input.mcpEndpoint),
 		resource: sanitizePublicUrl(input.resource),
@@ -158,7 +186,7 @@ export function formatMcpOAuthSettleErrorMessage(input: {
 	const lead = describeIncompleteMcpOAuthLead({
 		state: input.state,
 		authUrl: input.authUrl,
-		error: sanitizeMcpErrorSnippet(input.error, 240),
+		error: sanitizeMcpErrorSnippet(error, 240),
 		phase,
 	})
 	const reconnect = reconnectHint(input.state, input.authUrl)
@@ -208,23 +236,22 @@ export function buildMcpServerLastError(input: {
 	attemptId: string
 	at?: string
 }): McpServerLastError {
+	const error = rawMcpSettleError(input.error)
 	const phase =
 		input.phase ??
 		inferMcpOAuthSettlePhase({
 			state: input.state,
-			error: input.error,
+			error,
 		})
-	const httpStatus =
-		input.httpStatus ?? parseHttpStatusFromMcpError(input.error)
+	const httpStatus = input.httpStatus ?? parseHttpStatusFromMcpError(error)
 	const httpBodySnippet = sanitizeMcpErrorSnippet(
 		input.httpBodySnippet ??
-			(httpStatus && input.error && !input.httpBodySnippet
-				? input.error
-				: null),
+			(httpStatus && error && !input.httpBodySnippet ? error : null),
 	)
 	return {
 		message: formatMcpOAuthSettleErrorMessage({
 			...input,
+			error,
 			phase,
 			httpStatus,
 			httpBodySnippet,

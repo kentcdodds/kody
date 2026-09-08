@@ -135,6 +135,29 @@ test('IdP success with connected state and null connection.error is a tool-disco
 	expect(outcome.authError).not.toContain('still "connected"')
 	expect(outcome.authError).not.toContain('secret-token')
 	expect(outcome.authError).not.toContain('client_secret')
+	expect(outcome.authError?.match(/authorization completed/gi)?.length).toBe(1)
+	expect(outcome.authError?.match(/\bphase\s/g)?.length).toBe(1)
+
+	const alreadyFormatted = resolveMcpOAuthCallbackOutcome({
+		sdkAuthSuccess: true,
+		sdkAuthError: null,
+		serverId: 'server-posthog',
+		serverName: 'posthog',
+		attemptId: 'attempt-adam',
+		connection: {
+			state: 'connected',
+			authUrl: null,
+			error: outcome.authError,
+			mcpEndpoint: 'https://mcp.posthog.com/mcp',
+			resource: 'https://mcp.posthog.com/',
+			authServer: 'https://auth.posthog.com/',
+		},
+	})
+	expect(
+		alreadyFormatted.authError?.match(/authorization completed/gi)?.length,
+	).toBe(1)
+	expect(alreadyFormatted.authError?.match(/\bphase\s/g)?.length).toBe(1)
+	expect(alreadyFormatted.lastError?.attemptId).toBe('attempt-adam')
 
 	const discovering = describeIncompleteMcpOAuthConnection({
 		state: 'discovering',

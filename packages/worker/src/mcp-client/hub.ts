@@ -14,6 +14,9 @@ import {
 } from './oauth-callback-outcome.ts'
 import {
 	buildIncompleteDiscoverLastError,
+	isFormattedMcpOAuthSettleMessage,
+	isIncompleteDiscoverState,
+	readAttemptIdFromSettleMessage,
 	readOAuthDiscoveryUrls,
 } from './oauth-settle-error.ts'
 import {
@@ -80,6 +83,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private readonly manager: MCPClientManager
 	private readonly lifecycle: Lifecycle<Env>
 	private restored: Promise<void> | null = null
+	private readonly lastDiscoverErrors = new Map<string, McpServerLastError>()
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -377,12 +381,15 @@ class McpClientHubBase extends DurableObject<Env> {
 			})
 			let connection = this.buildConnectResult(serverId)
 			let settleError: string | null = null
+			let settleLastError: McpServerLastError | null = null
 			if (isStuckMcpAuthenticatingWithoutAuthUrl(connection)) {
 				connection = await this.recoverStuckAuthenticating(serverId)
 				settleError = connection.error
+				settleLastError = connection.lastError ?? null
 			} else if (connection.state === 'connected') {
 				connection = await this.discoverAfterOAuthEstablish(serverId)
 				settleError = connection.error
+				settleLastError = connection.lastError ?? null
 			}
 			if (serverName) {
 				await this.observeServer({
@@ -396,6 +403,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverId,
 				serverName,
 				settleError,
+				settleLastError,
 			})
 		}
 		return await this.resolveOAuthCallbackOutcome({
@@ -433,11 +441,13 @@ class McpClientHubBase extends DurableObject<Env> {
 			// Back/replay after an incomplete settle used to wipe the durable
 			// reason and redirect with auth=success.
 			let settleError: string | null = null
+			let settleLastError: McpServerLastError | null = null
 			if (existingConnection.state === 'connected') {
 				const discovered = await this.discoverAfterOAuthEstablish(
 					input.serverId,
 				)
 				settleError = discovered.error
+				settleLastError = discovered.lastError ?? null
 			}
 			return await this.resolveOAuthCallbackOutcome({
 				sdkAuthSuccess: true,
@@ -445,6 +455,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverId: input.serverId,
 				serverName,
 				settleError,
+				settleLastError,
 			})
 		}
 		try {
@@ -579,10 +590,17 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * auth URL. Needed when SQL `auth_url` was cleared on callback success but
 	 * the live connection never reached `ready`.
 	 */
+	private clearIncompleteDiscoverStamp(serverId: string) {
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) connection.connectionError = null
+		this.lastDiscoverErrors.delete(serverId)
+	}
+
 	private async runDiscoverIfConnected(serverId: string): Promise<{
 		result: McpServerConnectResult
 		lastError: McpServerLastError | null
 	}> {
+		this.clearIncompleteDiscoverStamp(serverId)
 		let discoverError: string | null = null
 		try {
 			await this.manager.discoverIfConnected(serverId, {
@@ -607,15 +625,45 @@ class McpClientHubBase extends DurableObject<Env> {
 	} {
 		const result = this.buildConnectResult(serverId)
 		const connection = this.manager.mcpConnections[serverId]
+		if (!isIncompleteDiscoverState(result.state)) {
+			if (result.state === 'ready') this.clearIncompleteDiscoverStamp(serverId)
+			else this.lastDiscoverErrors.delete(serverId)
+			return {
+				result: {
+					...result,
+					error:
+						result.state === 'ready' ? null : (result.error ?? discoverError),
+					lastError: null,
+				},
+				lastError: null,
+			}
+		}
+
 		const alreadyStamped = Boolean(connection?.connectionError)
-		const error = alreadyStamped ? null : (result.error ?? discoverError)
+		if (alreadyStamped && discoverError == null) {
+			const existing =
+				this.lastDiscoverErrors.get(serverId) ??
+				this.rebuildStampedDiscoverLastError(serverId, result)
+			if (existing) {
+				this.lastDiscoverErrors.set(serverId, existing)
+				return {
+					result: {
+						...result,
+						error: existing.message,
+						lastError: existing,
+					},
+					lastError: existing,
+				}
+			}
+		}
+
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === serverId)
 		const lastError = buildIncompleteDiscoverLastError({
 			state: result.state,
 			authUrl: result.authUrl,
-			error,
+			error: alreadyStamped ? discoverError : (result.error ?? discoverError),
 			mcpEndpoint: row?.server_url ?? null,
 		})
 		if (!lastError) {
@@ -628,27 +676,40 @@ class McpClientHubBase extends DurableObject<Env> {
 				lastError: null,
 			}
 		}
-		if (connection && !alreadyStamped) {
-			connection.connectionError = lastError.message
-			console.warn('mcp discover timeout incomplete', {
-				attemptId: lastError.attemptId,
-				serverId,
-				phase: lastError.phase,
-				state: result.state,
-				mcpEndpoint: lastError.mcpEndpoint,
-			})
-		}
-		const message = alreadyStamped
-			? (result.error ?? lastError.message)
-			: lastError.message
+		if (connection) connection.connectionError = lastError.message
+		console.warn('mcp discover timeout incomplete', {
+			attemptId: lastError.attemptId,
+			serverId,
+			phase: lastError.phase,
+			state: result.state,
+			mcpEndpoint: lastError.mcpEndpoint,
+		})
+		this.lastDiscoverErrors.set(serverId, lastError)
 		return {
 			result: {
 				...this.buildConnectResult(serverId),
-				error: message,
-				lastError: { ...lastError, message },
+				error: lastError.message,
+				lastError,
 			},
-			lastError: { ...lastError, message },
+			lastError,
 		}
+	}
+
+	private rebuildStampedDiscoverLastError(
+		serverId: string,
+		result: McpServerConnectResult,
+	): McpServerLastError | null {
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === serverId)
+		return buildIncompleteDiscoverLastError({
+			state: result.state,
+			authUrl: result.authUrl,
+			error: null,
+			mcpEndpoint: row?.server_url ?? null,
+			attemptId:
+				readAttemptIdFromSettleMessage(result.error) ?? crypto.randomUUID(),
+		})
 	}
 
 	private async discoverAfterOAuthEstablish(
@@ -663,8 +724,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		serverId: string | null
 		serverName: string | null
 		settleError?: string | null
+		settleLastError?: McpServerLastError | null
 	}): Promise<McpServerOAuthCallbackOutcome> {
-		const attemptId = crypto.randomUUID()
 		const connection = input.serverId
 			? this.buildConnectResult(input.serverId)
 			: null
@@ -676,6 +737,14 @@ class McpClientHubBase extends DurableObject<Env> {
 					.listServers()
 					.find((server) => server.id === input.serverId)
 			: null
+		const stamped = input.settleLastError
+		const connectionError = connection?.error ?? input.settleError ?? null
+		const alreadyFormatted =
+			Boolean(stamped) || isFormattedMcpOAuthSettleMessage(connectionError)
+		const attemptId =
+			stamped?.attemptId ??
+			readAttemptIdFromSettleMessage(connectionError) ??
+			crypto.randomUUID()
 		const outcome = resolveMcpOAuthCallbackOutcome({
 			sdkAuthSuccess: input.sdkAuthSuccess,
 			sdkAuthError: input.sdkAuthError,
@@ -685,14 +754,19 @@ class McpClientHubBase extends DurableObject<Env> {
 			connection: connection
 				? {
 						...connection,
-						error: connection.error ?? input.settleError ?? null,
-						mcpEndpoint: row?.server_url ?? null,
-						resource: discovery.resource,
-						authServer: discovery.authServer,
+						error: alreadyFormatted ? null : connectionError,
+						httpStatus: stamped?.httpStatus ?? null,
+						httpBodySnippet: stamped?.httpBodySnippet ?? null,
+						mcpEndpoint: row?.server_url ?? stamped?.mcpEndpoint ?? null,
+						resource: discovery.resource ?? stamped?.resource ?? null,
+						authServer: discovery.authServer ?? stamped?.authServer ?? null,
 					}
 				: null,
 		})
-		if (outcome.lastError) {
+		if (outcome.lastError && input.serverId) {
+			const live = this.manager.mcpConnections[input.serverId]
+			if (live) live.connectionError = outcome.lastError.message
+			this.lastDiscoverErrors.set(input.serverId, outcome.lastError)
 			console.warn('mcp oauth callback settle incomplete', {
 				attemptId: outcome.lastError.attemptId,
 				serverId: outcome.serverId,

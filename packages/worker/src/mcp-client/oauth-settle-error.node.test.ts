@@ -2,9 +2,12 @@ import { expect, test } from 'vitest'
 import {
 	buildIncompleteDiscoverLastError,
 	buildMcpServerLastError,
+	formatMcpOAuthSettleErrorMessage,
 	inferMcpOAuthSettlePhase,
+	isFormattedMcpOAuthSettleMessage,
 	parseHttpStatusFromMcpError,
 	parseStoredMcpServerLastError,
+	readAttemptIdFromSettleMessage,
 	readOAuthDiscoveryUrls,
 	sanitizeMcpErrorSnippet,
 	sanitizePublicUrl,
@@ -116,4 +119,27 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 		resource: 'https://mcp.example/',
 		authServer: 'https://auth.example/',
 	})
+
+	const formatted = formatMcpOAuthSettleErrorMessage({
+		state: 'connected',
+		authUrl: null,
+		mcpEndpoint: 'https://mcp.example/mcp',
+		attemptId: '11111111-1111-4111-8111-111111111111',
+	})
+	expect(isFormattedMcpOAuthSettleMessage(formatted)).toBe(true)
+	expect(readAttemptIdFromSettleMessage(formatted)).toBe(
+		'11111111-1111-4111-8111-111111111111',
+	)
+	const wrapped = formatMcpOAuthSettleErrorMessage({
+		state: 'connected',
+		authUrl: null,
+		error: formatted,
+		mcpEndpoint: 'https://mcp.example/mcp',
+		resource: 'https://mcp.example/',
+		attemptId: '11111111-1111-4111-8111-111111111111',
+	})
+	expect(wrapped.match(/authorization completed/gi)?.length).toBe(1)
+	expect(wrapped.match(/\bphase\s/g)?.length).toBe(1)
+	expect(wrapped.match(/\bid\s/g)?.length).toBe(1)
+	expect(wrapped).toContain('id 11111111-1111-4111-8111-111111111111')
 })

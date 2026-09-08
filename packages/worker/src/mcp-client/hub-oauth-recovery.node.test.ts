@@ -718,6 +718,10 @@ test('handleOAuthCallback reports a durable tool-discovery lastError when IdP su
 	expect(result.lastError?.authServer).toBe('https://auth.posthog.com/')
 	expect(result.authError).toContain("tool discovery didn't finish")
 	expect(result.authError).toContain('phase server/discover')
+	expect(result.authError).toContain(`id ${result.lastError?.attemptId}`)
+	expect(result.authError?.match(/authorization completed/gi)?.length).toBe(1)
+	expect(result.authError?.match(/\bphase\s/g)?.length).toBe(1)
+	expect(result.authError?.match(/\bid\s/g)?.length).toBe(1)
 	expect(result.authError).not.toContain('still "connected"')
 	expect(result.authError).not.toContain('client_secret')
 	expect(JSON.stringify(result.lastError)).not.toContain('hidden')
@@ -811,17 +815,31 @@ test('add, reconnect, and refresh treat a discover timeout as a durable lastErro
 	expect(added.lastError?.attemptId).toBeTruthy()
 	expect(added.error).toContain("tool discovery didn't finish")
 	expect(added.error).toContain('phase server/discover')
+	expect(added.error).toContain(`id ${added.lastError?.attemptId}`)
+	expect(added.error?.match(/\bid\s/g)?.length).toBe(1)
 	expect(manager.mcpConnections['server-1']?.connectionError).toBe(added.error)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'mcp discover timeout incomplete',
+		expect.objectContaining({
+			attemptId: added.lastError?.attemptId,
+			serverId: 'server-1',
+			phase: 'server/discover',
+		}),
+	)
 
 	const connection = manager.mcpConnections['server-1']
 	if (!connection) throw new Error('Fake connection was not seeded.')
+	const addedAttemptId = added.lastError?.attemptId
 	connection.connectionState = 'discovering'
-	connection.connectionError = null
 	const refreshed = await hub.refreshServer({ serverId: 'server-1' })
 	expect(refreshed.state).toBe('discovering')
 	expect(refreshed.lastError?.phase).toBe('tools/list')
+	expect(refreshed.lastError?.attemptId).toBeTruthy()
+	expect(refreshed.lastError?.attemptId).not.toBe(addedAttemptId)
 	expect(refreshed.error).toContain("tool discovery didn't finish")
 	expect(refreshed.error).toContain('phase tools/list')
+	expect(refreshed.error).toContain(`id ${refreshed.lastError?.attemptId}`)
+	expect(refreshed.error?.match(/\bid\s/g)?.length).toBe(1)
 
 	connection.connectionState = 'disconnected'
 	connection.connectionError = null
