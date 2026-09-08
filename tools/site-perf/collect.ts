@@ -92,13 +92,10 @@ export function classifySitePerf(input: {
 		})
 	}
 
-	if (
-		new URL(input.url).pathname === '/' &&
-		html.includes('syntax-highlight-core')
-	) {
+	if (new URL(input.url).pathname === '/' && /syntax-highlight/.test(html)) {
 		findings.push({
 			id: 'shiki-on-home',
-			message: 'Homepage HTML preloads syntax-highlight-core (Shiki on /).',
+			message: 'Homepage HTML preloads a syntax-highlight chunk (Shiki on /).',
 		})
 	}
 

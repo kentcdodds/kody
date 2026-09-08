@@ -41,6 +41,10 @@ export async function loadSiteBannerLoaderData(input: {
 	env: Env
 	session: SessionInfo | null
 	pathname: string
+	/** Shared enabled-banner list so YouTube allowlist SSR does not re-query. */
+	listedBanners?:
+		| Promise<ReadonlyArray<SiteBannerRecord>>
+		| ReadonlyArray<SiteBannerRecord>
 }): Promise<SiteBannerLoaderData> {
 	if (typeof input.env.APP_DB?.prepare !== 'function') {
 		return emptySiteBannerLoaderData()
@@ -68,6 +72,9 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 	env: Env
 	session: SessionInfo | null
 	pathname: string
+	listedBanners?:
+		| Promise<ReadonlyArray<SiteBannerRecord>>
+		| ReadonlyArray<SiteBannerRecord>
 }): Promise<SiteBannerLoaderData> {
 	const requestUrl = new URL(input.request.url)
 	const isAdmin = Boolean(input.session && userHasRole(input.session, 'admin'))
@@ -93,7 +100,10 @@ async function loadSiteBannerLoaderDataUnsafe(input: {
 
 	const listed: Array<SiteBannerRecord> = wantsPreview
 		? await listSiteBannersForAdmin(input.env.APP_DB)
-		: await listEnabledSiteBanners(input.env.APP_DB)
+		: [
+				...(await (input.listedBanners ??
+					listEnabledSiteBanners(input.env.APP_DB))),
+			]
 
 	const needsPlan =
 		Boolean(stableUserId) &&
