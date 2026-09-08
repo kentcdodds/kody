@@ -152,7 +152,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 							: new CommunityForkResourceLimitError(error)
 					console.error(
 						'Community install failed:',
-						communityForkResourceLimitLogFields(mapped),
+						communityForkResourceLimitLogFields(error),
 					)
 					return jsonResponse({ ok: false, error: mapped.message }, 503)
 				}

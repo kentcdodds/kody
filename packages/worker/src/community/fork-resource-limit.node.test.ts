@@ -28,6 +28,11 @@ test('isCommunityForkResourceLimitCause matches isolate reset and Artifacts MEMO
 		),
 	).toBe(true)
 	expect(
+		isCommunityForkResourceLimitCause(
+			new Error('ArtifactsError: Memory limit exceeded during import'),
+		),
+	).toBe(true)
+	expect(
 		isCommunityForkResourceLimitCause(new Error('artifacts unavailable')),
 	).toBe(false)
 })

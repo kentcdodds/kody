@@ -239,6 +239,12 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		ok: false,
 		error: communityForkResourceLimitMessage,
 	})
-	expect(resourceConsoleError).toHaveBeenCalled()
+	expect(resourceConsoleError).toHaveBeenCalledWith(
+		'Community install failed:',
+		expect.objectContaining({
+			error: durableObjectIsolateMemoryResetMessage,
+			userMessage: communityForkResourceLimitMessage,
+		}),
+	)
 	resourceConsoleError.mockRestore()
 })

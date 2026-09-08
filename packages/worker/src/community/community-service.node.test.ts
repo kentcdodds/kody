@@ -47,7 +47,7 @@ const mockModule = vi.hoisted(() => ({
 	persistForkedArtifactRepoContents: vi.fn(),
 	deleteEntitySource: vi.fn(),
 	cleanupArtifactReposForPackage: vi.fn(),
-	deleteUserScopedArtifactRepo: vi.fn(),
+	deleteUserScopedArtifactRepo: vi.fn(async () => false),
 	insertCommunityFork: vi.fn(),
 	deleteCommunityListing: vi.fn(),
 	deleteCommunityRatingsByListingId: vi.fn(),
@@ -1290,6 +1290,11 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 		}),
 	).rejects.toThrow('sync failed')
 
+	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
+		env: createEnv(),
+		userId: 'user-2',
+		repoName: expect.stringMatching(/^package-/),
+	})
 	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
 		env: createEnv(),
 		userId: 'user-2',

@@ -314,6 +314,24 @@ async function cleanupFailedCommunityFork(input: {
 	sourceId: string
 	packageId: string
 }) {
+	await deleteUserScopedArtifactRepo({
+		env: input.env,
+		userId: input.userId,
+		repoName: buildEntityRepoId({
+			entityKind: 'package',
+			entityId: input.packageId,
+		}),
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork dest artifact repo cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+				error: getErrorMessage(error),
+			}),
+		)
+	})
 	await cleanupArtifactReposForPackage({
 		env: input.env,
 		userId: input.userId,

@@ -236,7 +236,7 @@ function readArtifactsErrorMessage(error: unknown) {
 	return ''
 }
 
-function artifactsBindingErrorCode(error: unknown) {
+export function artifactsBindingErrorCode(error: unknown) {
 	if (isArtifactsBindingError(error)) return error.code
 	// JSRPC may flatten the class so `name` is Error and the message is
 	// `ArtifactsError: Repository not found: <repo>`. Strip that prefix,
@@ -947,7 +947,9 @@ export function isArtifactRepoNotFoundError(error: unknown) {
 	if (!(error instanceof Error)) {
 		return false
 	}
-	return /was not found|not found/i.test(error.message)
+	return /^(?:Artifacts repo "[^"]+" was not found\.?|Repo(?:sitory)? not found\b)/i.test(
+		error.message,
+	)
 }
 
 function isArtifactRepoAlreadyExistsError(error: unknown) {

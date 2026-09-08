@@ -19,8 +19,10 @@ const {
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
 	ensureArtifactRepoReady,
+	artifactsBindingErrorCode,
 	getArtifactsBinding,
 	getArtifactsNamespace,
+	isArtifactRepoNotFoundError,
 	parseArtifactTokenSecret,
 	resolveArtifactDefaultBranchHead,
 	resolveArtifactSourceHead,
@@ -982,4 +984,32 @@ test('artifacts REST client forks a repo without sending file contents', async (
 		token: 'art_v1_fork?expires=1760000000',
 	})
 	fetchMock.mockRestore()
+})
+
+test('isArtifactRepoNotFoundError matches repo-scoped messages only', () => {
+	expect(
+		isArtifactRepoNotFoundError(
+			new Error('Artifacts repo "package-origin" was not found.'),
+		),
+	).toBe(true)
+	expect(
+		isArtifactRepoNotFoundError(
+			new Error('Repository not found: package-origin'),
+		),
+	).toBe(true)
+	expect(isArtifactRepoNotFoundError(new Error('Repo not found'))).toBe(true)
+	expect(
+		artifactsBindingErrorCode(
+			new Error('ArtifactsError: Repository not found: package-origin'),
+		),
+	).toBe('NOT_FOUND')
+	expect(isArtifactRepoNotFoundError(new Error('Secret not found'))).toBe(false)
+	expect(
+		isArtifactRepoNotFoundError(
+			new Error('git: repository not found on the remote'),
+		),
+	).toBe(false)
+	expect(isArtifactRepoNotFoundError(new Error('User was not found'))).toBe(
+		false,
+	)
 })

@@ -3,6 +3,7 @@ import {
 	getErrorCauseChain,
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
+import { artifactsBindingErrorCode } from '#worker/repo/artifacts.ts'
 import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -15,8 +16,14 @@ export {
 } from './errors.ts'
 
 function isArtifactsMemoryLimitError(error: unknown) {
-	if (error === null || typeof error !== 'object') return false
-	return (error as { code?: unknown }).code === 'MEMORY_LIMIT'
+	if (
+		error !== null &&
+		typeof error === 'object' &&
+		(error as { code?: unknown }).code === 'MEMORY_LIMIT'
+	) {
+		return true
+	}
+	return artifactsBindingErrorCode(error) === 'MEMORY_LIMIT'
 }
 
 export function isCommunityForkResourceLimitCause(error: unknown) {
