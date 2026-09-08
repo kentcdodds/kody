@@ -1,3 +1,4 @@
+import { toCloudflareSendBody } from '@kody-internal/shared/cloudflare-send-body.ts'
 import { resolveTransactionalSenderReplyTo } from '@kody-internal/shared/transactional-sender-reply-to.ts'
 
 /**
@@ -62,14 +63,16 @@ export async function sendAlertEmail(
 				Authorization: `Bearer ${apiToken}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify({
-				from: message.from,
-				to: message.to,
-				subject: message.subject,
-				text: message.text,
-				html: message.html,
-				...(replyTo ? { replyTo } : {}),
-			}),
+			body: JSON.stringify(
+				toCloudflareSendBody({
+					from: message.from,
+					to: message.to,
+					subject: message.subject,
+					text: message.text,
+					html: message.html,
+					replyTo,
+				}),
+			),
 		})
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error)

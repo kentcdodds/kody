@@ -62,7 +62,7 @@ test('sendAlertEmail defaults Reply-To to support@ when From is kody@ unless ove
 			subject: 'Incident',
 			text: 'App is down',
 			html: '<p>App is down</p>',
-			replyTo: 'support@kody.codes',
+			reply_to: 'support@kody.codes',
 		},
 		{
 			from: 'kody@kody.codes',
@@ -70,7 +70,7 @@ test('sendAlertEmail defaults Reply-To to support@ when From is kody@ unless ove
 			subject: 'Override',
 			text: 'Still down',
 			html: '<p>Still down</p>',
-			replyTo: 'security@kody.codes',
+			reply_to: 'security@kody.codes',
 		},
 		{
 			from: 'status@example.com',
@@ -80,4 +80,8 @@ test('sendAlertEmail defaults Reply-To to support@ when From is kody@ unless ove
 			html: '<p>Ok</p>',
 		},
 	])
+	expect(payloads[0]).not.toHaveProperty('replyTo')
+	expect(payloads[1]).not.toHaveProperty('replyTo')
+	expect(payloads[2]).not.toHaveProperty('replyTo')
+	expect(payloads[2]).not.toHaveProperty('reply_to')
 })

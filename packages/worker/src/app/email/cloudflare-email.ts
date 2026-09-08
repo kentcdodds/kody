@@ -1,4 +1,5 @@
 import { parseSafe } from 'remix/data-schema'
+import { toCloudflareSendBody } from '@kody-internal/shared/cloudflare-send-body.ts'
 import {
 	outboundEmailSchema,
 	type OutboundEmail,
@@ -93,7 +94,7 @@ async function sendViaCloudflareApi(
 				Authorization: `Bearer ${config.apiToken}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(message),
+			body: JSON.stringify(toCloudflareSendBody(message)),
 		})
 	} catch (error) {
 		console.warn('cloudflare-email-api-request-failed', error)
