@@ -5,6 +5,7 @@ import {
 	landingTestimonials,
 	testimonialAttribution,
 	testimonialInitials,
+	testimonialStoryHref,
 	type LandingTestimonial,
 } from '#universal/landing-testimonials.ts'
 import {
@@ -618,6 +619,10 @@ function renderTestimonialCard(item: LandingTestimonial) {
 							<span class="landing-testimonial-title">{attribution}</span>
 						) : null}
 					</span>
+				</a>
+				<a href={testimonialStoryHref(item)} class="landing-testimonial-story">
+					Read the full story
+					<span class="visually-hidden"> from {item.name}</span>
 				</a>
 			</footer>
 		</article>

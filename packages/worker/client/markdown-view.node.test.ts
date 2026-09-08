@@ -154,6 +154,22 @@ test('first-party render options keep authored heading levels and drop the ugc r
 	expect(thirdParty).toContain('rel="noopener noreferrer nofollow ugc"')
 })
 
+test('first-party headingIds emit unique kebab-case heading ids', async () => {
+	const html = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(
+				['## Josh Tomaino', '', '## Josh Tomaino', '', '## Jett Hays'].join(
+					'\n',
+				),
+				{ headingOffset: 0, headingIds: true },
+			),
+		}),
+	)
+	expect(html).toContain('<h2 id="josh-tomaino">Josh Tomaino</h2>')
+	expect(html).toContain('<h2 id="josh-tomaino-2">Josh Tomaino</h2>')
+	expect(html).toContain('<h2 id="jett-hays">Jett Hays</h2>')
+})
+
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {
 	expect(getSafeMarkdownLinkHref('https://example.com/a')).toBe(
 		'https://example.com/a',

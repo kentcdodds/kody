@@ -1,4 +1,5 @@
 import { parseBlogPostMarkdown, type BlogPost } from './parse-frontmatter.ts'
+import earlyKodyUsers from './posts/early-kody-users.md'
 import everyInstallIsAForkYouOwn from './posts/every-install-is-a-fork-you-own.md'
 import gatewaysConnectHomesAccumulate from './posts/gateways-connect-homes-accumulate.md'
 import howToTurnAgentWorkIntoSoftwareYouOwn from './posts/how-to-turn-agent-work-into-software-you-own.md'
@@ -19,6 +20,7 @@ import zeroInferenceCalls from './posts/zero-inference-calls.md'
  * generated `/blog/:slug/og.png` card.
  */
 const postSources: Array<{ slug: string; raw: string }> = [
+	{ slug: 'early-kody-users', raw: earlyKodyUsers },
 	{ slug: 'your-assistants-home', raw: yourAssistantsHome },
 	{
 		slug: 'gateways-connect-homes-accumulate',
