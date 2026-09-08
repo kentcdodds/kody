@@ -347,6 +347,17 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	expect(
 		new URL(appOriginWithPackageCookie.headers.get('Location') ?? '').pathname,
 	).toBe('/login')
+
+	// 13. A signed-in visitor on the owner-only handoff mount is sent to the
+	// saved-package page (`/@{username}/{kodyId}`), not a "not found" 404.
+	const visitorOnHandoffMount = await workerFetch(
+		`${appOrigin}/@other-user/packages/demo/report`,
+		{ headers: { Cookie: sessionCookie } },
+	)
+	expect(visitorOnHandoffMount.status).toBe(302)
+	expect(visitorOnHandoffMount.headers.get('Location')).toBe(
+		`${appOrigin}/@other-user/demo`,
+	)
 })
 
 test('package apps stay inline on the app origin when no package-app origin is configured', async () => {

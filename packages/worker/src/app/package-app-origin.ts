@@ -3,12 +3,14 @@ import { createHtmlResponse } from 'remix/response/html'
 import {
 	buildPackageAppPath,
 	buildPackageAppSubdomainUrl,
+	buildPackagePagePath,
 } from '@kody-internal/shared/public-urls.ts'
 import {
 	getAppBaseUrl,
 	getPackageAppBaseUrl,
 	getPackageAppLegacySubdomainRedirect,
 	getPackageAppOriginConfigurationError,
+	joinAppUrl,
 	parsePackageAppRequestHost,
 } from '#worker/app-base-url.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
@@ -252,7 +254,21 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) return await redirectToLoginWhenUnauthenticated(request, env)
 	if (user.username !== packagePath.username) {
-		return new Response('Saved package app not found.', { status: 404 })
+		// `/@{username}/packages/{kodyId}` is the owner-only handoff mount.
+		// Everyone else belongs on the saved-package page, which is the
+		// two-segment `/@{username}/{kodyId}` route — not a 404 that reads
+		// like the package itself is missing.
+		return redirectResponse({
+			location: joinAppUrl({
+				env,
+				path: buildPackagePagePath({
+					username: packagePath.username,
+					kodyId: packagePath.kodyId,
+				}),
+				requestUrl: request.url,
+			}),
+			status: 302,
+		})
 	}
 
 	const parsedSession = await readParsedAuthSession(request)
