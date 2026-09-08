@@ -36,6 +36,21 @@ export function emptySiteBannerLoaderData(): SiteBannerLoaderData {
 	}
 }
 
+/** Shared enabled-banner read for SSR. Missing schema is empty, not an error. */
+export async function loadEnabledSiteBannersForSsr(
+	env: Env,
+): Promise<Array<SiteBannerRecord>> {
+	if (typeof env.APP_DB?.prepare !== 'function') return []
+	try {
+		return await listEnabledSiteBanners(env.APP_DB)
+	} catch (error) {
+		if (!isMissingSiteBannerSchema(error)) {
+			console.error('site banner list failed', error)
+		}
+		return []
+	}
+}
+
 export async function loadSiteBannerLoaderData(input: {
 	request: Request
 	env: Env
