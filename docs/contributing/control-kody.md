@@ -17,6 +17,11 @@ npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--he
 
 Same entry: `node tools/control-kody.ts`.
 
+`health --sha` succeeds when `/health` `commitSha` equals the argument, uniquely
+starts with it (git short SHA, 7+ characters), or is a descendant that contains
+it (`git merge-base --is-ancestor`). A later main HEAD deploy still counts as
+the merge being live.
+
 ## Feature Map
 
 [`.agents/skills/control-kody/references/features/`](../../.agents/skills/control-kody/references/features/README.md)

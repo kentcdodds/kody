@@ -73,6 +73,15 @@ export function getBlogPost(slug: string): BlogPost | null {
 	return postsBySlug.get(slug) ?? null
 }
 
+/**
+ * Collapse markdown blockquote markers and wrapping so phrase pins survive
+ * oxfmt reflow. Use this instead of `post.body.includes('exact sentence')`
+ * when the pin lives in a `>` blockquote.
+ */
+export function normalizeMarkdownPhraseSource(source: string) {
+	return source.replaceAll(/^>\s?/gm, '').replace(/\s+/g, ' ')
+}
+
 export function listBlogPosts(): ReadonlyArray<BlogPost> {
 	return blogPosts
 }

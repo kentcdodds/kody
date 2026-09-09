@@ -223,7 +223,9 @@ Format rules:
    and node labels; pull behavioral detail from architecture docs / the diff,
    not by rewriting map summaries. Choose the graph type using **Choosing a
    diagram**.
-5. Upsert it into the PR description:
+5. Upsert it into the PR description.
+
+   Validate mermaid and compute the merged body:
 
    ```bash
    node .agents/skills/visual-recap/scripts/upsert-recap-block.mjs <pr-number> <block-file>
@@ -232,6 +234,13 @@ Format rules:
    The script rejects mermaid GitHub cannot parse, then replaces the content
    between the markers, or appends the block to the end of the description on
    first run. It never touches text outside the markers.
+
+   **Cloud Agents:** `gh pr edit` fails with
+   `Resource not accessible by integration (updatePullRequest)`. Do not treat
+   that as a reason to skip the recap. Run the script anyway so mermaid is
+   checked; when it prints the merged PR body, apply that body with Cursor
+   **ManagePullRequest**. Do not have Kody, a Kody workflow, or Kody's GitHub
+   integration edit the PR.
 
 6. Re-run steps 2-5 after pushing significant new commits to the PR.
 

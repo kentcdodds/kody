@@ -1,10 +1,15 @@
 import { expect, test } from 'vitest'
 import {
+	appendDevOutputChunk,
 	collectAncestorPids,
 	collectKodyDevKillPids,
 	ensureDev,
+	ensureWorkerEnvFile,
 	envWithPreferredNode26,
+	formatMissingWranglerBindingHint,
 	isKodyDevProcess,
+	isMissingWranglerBindingOutput,
+	joinDevOutput,
 	isKodyDevSupervisor,
 	isWranglerStillStarting,
 	parseLsofListenPids,
@@ -308,6 +313,116 @@ test('envWithPreferredNode26 prepends nvm Node 26 only when the current runtime 
 		hasNodeBin: () => true,
 	})
 	expect(binDir).toBe('/home/agent/.nvm/versions/node/v26.7.0/bin')
+})
+
+test('ensureWorkerEnvFile copies .env.example once and refuses when both are missing', () => {
+	const copied: Array<string> = []
+	const present = new Set(['/repo/packages/worker/.env.example'])
+	const created = ensureWorkerEnvFile('/repo', {
+		exists: (file) => present.has(file),
+		copyFile: (from, to) => {
+			copied.push(`${from}->${to}`)
+			present.add(to)
+		},
+	})
+	expect(created).toEqual({
+		created: true,
+		path: '/repo/packages/worker/.env',
+	})
+	expect(copied).toEqual([
+		'/repo/packages/worker/.env.example->/repo/packages/worker/.env',
+	])
+	expect(
+		ensureWorkerEnvFile('/repo', {
+			exists: (file) => present.has(file),
+			copyFile: () => {
+				throw new Error('should not copy again')
+			},
+		}).created,
+	).toBe(false)
+	expect(() =>
+		ensureWorkerEnvFile('/empty', {
+			exists: () => false,
+			copyFile: () => {},
+		}),
+	).toThrow(/\.env\.example is not present/)
+})
+
+test('ensureDev fails immediately when wrangler logs missing bindings', async () => {
+	const stopped: Array<string> = []
+	await expect(
+		ensureDev({
+			ports: [3742],
+			probeHealth: async () => false,
+			listListenerPids: () => [],
+			readProcess: () => null,
+			protectedPids: new Set([1]),
+			killProcess: () => {},
+			startDev: () => ({
+				unref() {},
+				async stop() {
+					stopped.push('stop')
+				},
+				lastOutput: () =>
+					'Invalid environment variables: APP_DB: Missing APP_DB binding for database access',
+			}),
+			sleep: async () => {},
+			now: (() => {
+				let t = 0
+				return () => {
+					t += 1
+					return t
+				}
+			})(),
+			readyTimeoutMs: 180_000,
+			readyPollMs: 1,
+			log: () => {},
+		}),
+	).rejects.toThrow(/fails immediately instead of waiting 180s/)
+	expect(stopped).toEqual(['stop'])
+	expect(
+		isMissingWranglerBindingOutput(
+			'Invalid environment variables: APP_DB: Missing APP_DB binding',
+		),
+	).toBe(true)
+	expect(
+		formatMissingWranglerBindingHint('APP_DB missing').toLowerCase(),
+	).toContain('cloud agent')
+})
+
+test('dev output matching keeps a split fatal phrase across chunk boundaries', () => {
+	const buffered: Array<string> = []
+	const state = { pending: '' }
+	appendDevOutputChunk(buffered, state, 'Invalid environment vari')
+	expect(
+		isMissingWranglerBindingOutput(joinDevOutput(buffered, state.pending)),
+	).toBe(false)
+	appendDevOutputChunk(
+		buffered,
+		state,
+		'ables: APP_DB: Missing APP_DB binding for database access\n',
+	)
+	expect(
+		isMissingWranglerBindingOutput(joinDevOutput(buffered, state.pending)),
+	).toBe(true)
+})
+
+test('dev output matching keeps a split fatal phrase when stdout and stderr interleave', () => {
+	const buffered: Array<string> = []
+	const stdout = { pending: '' }
+	const stderr = { pending: '' }
+	appendDevOutputChunk(buffered, stdout, 'Invalid environment vari')
+	appendDevOutputChunk(buffered, stderr, 'vite optimizing deps...\n')
+	appendDevOutputChunk(
+		buffered,
+		stdout,
+		'ables: APP_DB: Missing APP_DB binding for database access\n',
+	)
+	expect(
+		isMissingWranglerBindingOutput(
+			joinDevOutput(buffered, stdout.pending, stderr.pending),
+		),
+	).toBe(true)
 })
 
 test('ensureDev stops the child and surfaces output when /health never becomes ready', async () => {

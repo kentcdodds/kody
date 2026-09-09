@@ -909,6 +909,11 @@ test('Cloudflare API requests retry gateway HTML/text blips then succeed', async
 	).toBe(true)
 	expect(isRetryableCloudflareFailure('Gateway Timeout [code: 504]')).toBe(true)
 	expect(
+		isRetryableCloudflareFailure(
+			'This Worker does not exist on your account [code: 10007]',
+		),
+	).toBe(false)
+	expect(
 		isRetryableCloudflareApiError(
 			new Error('Cloudflare API request failed (403): Authentication error'),
 		),

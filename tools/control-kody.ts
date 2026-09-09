@@ -518,10 +518,31 @@ export async function requestAsSession(input: {
 	}
 }
 
+export function isGitAncestor(
+	ancestor: string,
+	descendant: string,
+	options: {
+		execFile?: typeof execFileSync
+		cwd?: string
+	} = {},
+) {
+	const execFile = options.execFile ?? execFileSync
+	try {
+		execFile('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+			cwd: options.cwd ?? process.cwd(),
+			stdio: 'ignore',
+		})
+		return true
+	} catch {
+		return false
+	}
+}
+
 export async function readHealth(input: {
 	origin: string
 	expectedSha: string | null
 	fetchImpl?: typeof fetch
+	isAncestor?: (ancestor: string, descendant: string) => boolean
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const response = await fetchImpl(healthUrlForOrigin(input.origin))
@@ -531,7 +552,22 @@ export async function readHealth(input: {
 	} catch {
 		body = null
 	}
-	const evaluated = evaluateAppHealth(body, input.expectedSha)
+	let evaluated = evaluateAppHealth(body, input.expectedSha)
+	if (
+		!evaluated.ok &&
+		input.expectedSha &&
+		evaluated.commitSha &&
+		response.ok
+	) {
+		const isAncestor = input.isAncestor ?? isGitAncestor
+		if (isAncestor(input.expectedSha, evaluated.commitSha)) {
+			evaluated = {
+				ok: true,
+				commitSha: evaluated.commitSha,
+				detail: `ok, commitSha ${evaluated.commitSha} (descendant of ${input.expectedSha})`,
+			}
+		}
+	}
 	return {
 		ok: response.ok && evaluated.ok,
 		status: response.status,
