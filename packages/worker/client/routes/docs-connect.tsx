@@ -3,9 +3,10 @@ import { type DocsConnectLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -51,30 +52,20 @@ export async function docsConnectRouteLoader(
 }
 
 export function DocsConnectRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' = 'loading'
-	let guides: DocsConnectLoaderData['guides'] = []
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadGuides(signal: AbortSignal) {
-		try {
+	const guidesData = createRouteData({
+		key: 'docsConnect',
+		async load(_href, signal) {
 			const response = await fetch(docsConnectApiPath, {
 				headers: { Accept: 'application/json' },
 				signal,
 			})
 			const payload = await readJson<DocsConnectLoaderData>(response)
-			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load connection docs.')
 			}
-			guides = payload.guides
-			status = 'ready'
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -82,50 +73,18 @@ export function DocsConnectRoute(handle: Handle) {
 			return <section mix={css(connectPageCss)} />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'docsConnect',
-			currentHref,
-		)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			guides = routeData.guides
-			status = 'ready'
-			loadLatch.markLoaded(currentHref)
-		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadGuides(signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready') loadLatch.markLoaded(currentHref)
-					else loadLatch.markFailed(currentHref)
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
+		const snapshot = guidesData.read(handle, currentHref)
+		const guides = snapshot.data?.guides ?? null
+		const pending = snapshot.kind === 'pending'
 
 		return renderDocsShell({
 			current: 'connect',
 			children: (
-				<section mix={css(connectPageCss)}>
+				<section
+					mix={css(connectPageCss)}
+					aria-busy={pending ? 'true' : undefined}
+				>
+					{pending && guides !== null ? renderRoutePendingStatus() : null}
 					<header mix={css(connectHeadCss)}>
 						<p data-rise style={{ '--rise': '0' }} mix={css(connectEyebrowCss)}>
 							Docs
@@ -158,13 +117,17 @@ export function DocsConnectRoute(handle: Handle) {
 						</p>
 					</header>
 
-					{status === 'loading' ? (
-						<p mix={css(docsListStatusCss)}>Loading connection docs…</p>
+					{pending && guides === null ? (
+						<p mix={css(docsListStatusCss)} role="status">
+							Loading connection docs…
+						</p>
 					) : null}
-					{status === 'error' ? (
-						<p mix={css(docsListStatusCss)}>Unable to load connection docs.</p>
+					{snapshot.kind === 'error' ? (
+						<p mix={css(docsListStatusCss)} role="status">
+							Unable to load connection docs.
+						</p>
 					) : null}
-					{status === 'ready' ? (
+					{guides !== null ? (
 						<>
 							<section>
 								<h2 mix={css(docsGroupHeadingCss)}>Providers</h2>

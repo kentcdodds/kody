@@ -12,9 +12,10 @@ import {
 } from '#universal/docs-nav.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -165,62 +166,44 @@ function describeDoc(doc: DocDetailLoaderData): string {
 }
 
 export function DocDetailRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
-	let doc: DocDetailLoaderData | null = null
-	/** Slug that `doc` / `status` currently describe. */
-	let loadedSlug: string | null = null
-	const loadLatch = createRouteLoadLatch()
+	const docData = createRouteData({
+		key: 'docDetail',
+		async load(href, signal) {
+			const slug = getDocSlugFromPathname(
+				new URL(href, 'http://localhost').pathname,
+			)
+			if (!slug) return null
+			const response = await fetch(routes.docDetailApi.href({ slug }), {
+				headers: { Accept: 'application/json' },
+				signal,
+			})
+			if (response.status === 404) return null
+			const payload = await readJson<DocDetailLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load doc.')
+			}
+			return payload
+		},
+	})
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered body per markdown string (same policy as MarkdownView).
 	let renderedForBody: string | null = null
 	let renderedBody: Array<RemixNode> = []
 
-	function renderDocBody(body: string) {
-		if (renderedForBody !== body) {
-			renderedForBody = body
-			renderedBody = renderMarkdownNodes(stripLeadingH1(body), {
+	function renderDocBody(doc: DocDetailLoaderData) {
+		if (renderedForBody !== doc.body) {
+			renderedForBody = doc.body
+			renderedBody = renderMarkdownNodes(stripLeadingH1(doc.body), {
 				headingOffset: 0,
 				linkRel: 'noopener noreferrer',
 				linkPolicy: 'first-party',
 				copyCodeBlocks: true,
 				headingIds: true,
-				fences: doc?.bodyFences,
+				fences: doc.bodyFences,
 			})
 		}
 		return renderedBody
-	}
-
-	async function loadDoc(slug: string, signal: AbortSignal) {
-		// Do not call handle.update() before the first await — see blog.tsx.
-		try {
-			const response = await fetch(routes.docDetailApi.href({ slug }), {
-				headers: { Accept: 'application/json' },
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 404) {
-				doc = null
-				status = 'not-found'
-				loadedSlug = slug
-				handle.update()
-				return
-			}
-			const payload = await readJson<DocDetailLoaderData>(response)
-			if (signal.aborted) return
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load doc.')
-			}
-			doc = payload
-			status = 'ready'
-			loadedSlug = slug
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			loadedSlug = slug
-			handle.update()
-		}
 	}
 
 	return () => {
@@ -230,59 +213,9 @@ export function DocDetailRoute(handle: Handle) {
 			return <article mix={css(docPageCss)} />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'docDetail',
-			currentHref,
-		)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			doc = routeData
-			status = 'ready'
-			loadedSlug = routeData.slug
-			loadLatch.markLoaded(currentHref)
-		}
+		const snapshot = docData.read(handle, currentHref)
 
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadDoc(slug, signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready' || status === 'not-found') {
-						loadLatch.markLoaded(currentHref)
-					} else {
-						loadLatch.markFailed(currentHref)
-					}
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
-
-		// Never show another doc's content after a fast navigation.
-		const contentMatchesSlug = loadedSlug === slug
-		const showNotFound = status === 'not-found' && contentMatchesSlug
-		const showError = status === 'error' && contentMatchesSlug
-		const showReady = status === 'ready' && doc !== null && contentMatchesSlug
-		const showLoading = !showNotFound && !showError && !showReady
-		const section = findDocsNavSection(slug)
-
-		if (showNotFound) {
+		if (snapshot.kind === 'not-found') {
 			return renderDocsShell({
 				current: slug,
 				children: (
@@ -304,79 +237,101 @@ export function DocDetailRoute(handle: Handle) {
 			})
 		}
 
-		return renderDocsShell({
-			current: slug,
-			children: (
-				<article mix={css(docPageCss)}>
-					{showLoading ? (
-						<p mix={css(docStatusCss)} role="status">
-							Loading…
-						</p>
-					) : null}
-					{showError ? (
+		if (snapshot.kind === 'error') {
+			return renderDocsShell({
+				current: slug,
+				children: (
+					<article mix={css(docPageCss)}>
 						<p mix={css(docStatusCss)} role="status">
 							Unable to load this page.
 						</p>
+					</article>
+				),
+			})
+		}
+
+		const doc = snapshot.data
+		// Nothing has ever rendered here (SPA cold mount without SSR data), so
+		// there is no previous article to keep on screen while the fallback
+		// fetch runs. Every other path keeps the last article visible.
+		if (doc === null) {
+			return renderDocsShell({
+				current: slug,
+				children: (
+					<article mix={css(docPageCss)} aria-busy="true">
+						<p mix={css(docStatusCss)} role="status">
+							Loading…
+						</p>
+					</article>
+				),
+			})
+		}
+
+		const pending = snapshot.kind === 'pending'
+		// While a fallback fetch runs the sidebar already marks the destination
+		// and the article below is the previous doc (`snapshot.stale`); keep it
+		// on screen under `aria-busy` rather than blanking the column, and let
+		// the pager/eyebrow follow the doc actually shown.
+		return renderDocsShell({
+			current: slug,
+			children: (
+				<article mix={css(docPageCss)} aria-busy={pending ? 'true' : undefined}>
+					{pending ? renderRoutePendingStatus() : null}
+					<header mix={css(docHeadCss)}>
+						<p data-rise style={{ '--rise': '0' }} mix={css(docEyebrowCss)}>
+							{doc.category === 'provider' ? (
+								<a href={routes.docsConnect.href()}>Connect a provider</a>
+							) : (
+								(findDocsNavSection(doc.slug)?.label ?? 'Docs')
+							)}
+						</p>
+						<h1
+							data-docs-heading
+							tabIndex={-1}
+							data-rise
+							style={{ '--rise': '1' }}
+						>
+							{doc.title}
+						</h1>
+						<p data-rise style={{ '--rise': '2' }} mix={css(docMetaCss)}>
+							{describeDoc(doc)}
+						</p>
+					</header>
+
+					{doc.image && doc.imageAlt ? (
+						<img
+							src={doc.image}
+							alt={doc.imageAlt}
+							width={1024}
+							height={1024}
+							loading="eager"
+							decoding="async"
+							data-rise
+							style={{ '--rise': '3' }}
+							mix={css(docImageCss)}
+						/>
 					) : null}
-					{showReady && doc ? (
-						<>
-							<header mix={css(docHeadCss)}>
-								<p data-rise style={{ '--rise': '0' }} mix={css(docEyebrowCss)}>
-									{doc.category === 'provider' ? (
-										<a href={routes.docsConnect.href()}>Connect a provider</a>
-									) : (
-										(section?.label ?? 'Docs')
-									)}
-								</p>
-								<h1
-									data-docs-heading
-									tabIndex={-1}
-									data-rise
-									style={{ '--rise': '1' }}
-								>
-									{doc.title}
-								</h1>
-								<p data-rise style={{ '--rise': '2' }} mix={css(docMetaCss)}>
-									{describeDoc(doc)}
-								</p>
-							</header>
 
-							{doc.image && doc.imageAlt ? (
-								<img
-									src={doc.image}
-									alt={doc.imageAlt}
-									width={1024}
-									height={1024}
-									loading="eager"
-									decoding="async"
-									data-rise
-									style={{ '--rise': '3' }}
-									mix={css(docImageCss)}
-								/>
-							) : null}
+					{interactiveDocRenderers[doc.slug]?.(
+						doc.walkthroughHighlights,
+						doc.walkthroughHosts,
+					) ?? <div mix={css(docProseCss)}>{renderDocBody(doc)}</div>}
 
-							{interactiveDocRenderers[doc.slug]?.(
-								doc.walkthroughHighlights,
-								doc.walkthroughHosts,
-							) ?? <div mix={css(docProseCss)}>{renderDocBody(doc.body)}</div>}
+					{renderDocsPager(doc.slug)}
 
-							{renderDocsPager(doc.slug)}
-
-							<footer mix={css(docFootCss)}>
-								<p>
-									Working with an agent? This page is also plain markdown at{' '}
-									<a
-										href={routes.docDetailMarkdown.href({ slug: doc.slug })}
-										data-rmx-document
-									>
-										/docs/{doc.slug}.md
-									</a>
-									, or load it over MCP with{' '}
-									<code>{`search({ entity: '${doc.id}:guide' })`}</code>.
-								</p>
-							</footer>
-						</>
-					) : null}
+					<footer mix={css(docFootCss)}>
+						<p>
+							Working with an agent? This page is also plain markdown at{' '}
+							<a
+								href={routes.docDetailMarkdown.href({ slug: doc.slug })}
+								data-rmx-document
+							>
+								/docs/{doc.slug}.md
+							</a>
+							, or load it over MCP with{' '}
+							<code>{`search({ entity: '${doc.id}:guide' })`}</code>.
+						</p>
+					</footer>
 				</article>
 			),
 		})

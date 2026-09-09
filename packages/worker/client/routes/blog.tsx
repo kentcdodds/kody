@@ -10,10 +10,11 @@ import {
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { revealCard } from '#client/reveal.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
@@ -51,33 +52,20 @@ export async function blogRouteLoader(
 }
 
 export function BlogRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' = 'loading'
-	let posts: BlogLoaderData['posts'] = []
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadBlog(signal: AbortSignal) {
-		// Do not call handle.update() before the first await. Remix aborts this
-		// queueTask on re-render; an early update aborts the fetch, needsLoad
-		// re-queues, and the scheduler hits "infinite loop detected".
-		try {
+	const blogData = createRouteData({
+		key: 'blog',
+		async load(_href, signal) {
 			const response = await fetch(blogApiPath, {
 				headers: { Accept: 'application/json' },
 				signal,
 			})
 			const payload = await readJson<BlogLoaderData>(response)
-			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load blog posts.')
 			}
-			posts = payload.posts
-			status = 'ready'
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -85,46 +73,14 @@ export function BlogRoute(handle: Handle) {
 			return <section mix={css(blogPageCss)} />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(handle, 'blog', currentHref)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			posts = routeData.posts
-			status = 'ready'
-			loadLatch.markLoaded(currentHref)
-		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadBlog(signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready') loadLatch.markLoaded(currentHref)
-					else loadLatch.markFailed(currentHref)
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
-
-		const [featuredPost, ...listPosts] = posts
+		const snapshot = blogData.read(handle, currentHref)
+		const posts = snapshot.data?.posts ?? null
+		const pending = snapshot.kind === 'pending'
+		const [featuredPost, ...listPosts] = posts ?? []
 
 		return (
-			<section mix={css(blogPageCss)}>
+			<section mix={css(blogPageCss)} aria-busy={pending ? 'true' : undefined}>
+				{pending && posts !== null ? renderRoutePendingStatus() : null}
 				<header mix={css(blogHeadCss)}>
 					<h1 data-rise style={{ '--rise': '0' }}>
 						Notes from the <em>eucalyptus</em>
@@ -144,10 +100,12 @@ export function BlogRoute(handle: Handle) {
 					</a>
 				</header>
 
-				{status === 'loading' ? (
-					<p mix={css(listStatusCss)}>Loading posts…</p>
+				{pending && posts === null ? (
+					<p mix={css(listStatusCss)} role="status">
+						Loading posts…
+					</p>
 				) : null}
-				{status === 'error' ? (
+				{snapshot.kind === 'error' ? (
 					<div mix={css(listStatusCss)}>
 						<p mix={css({ margin: 0 })}>Unable to load blog posts.</p>
 						<button
@@ -161,13 +119,13 @@ export function BlogRoute(handle: Handle) {
 						</button>
 					</div>
 				) : null}
-				{status === 'ready' && featuredPost ? (
+				{posts !== null && featuredPost ? (
 					<ul mix={css(postListCss)}>
 						{renderFeaturedPostItem(featuredPost)}
 						{listPosts.map((post, index) => renderPostItem(post, index + 1))}
 					</ul>
 				) : null}
-				{status === 'ready' && !featuredPost ? (
+				{posts !== null && !featuredPost ? (
 					<p mix={css(listStatusCss)}>No posts yet.</p>
 				) : null}
 			</section>
