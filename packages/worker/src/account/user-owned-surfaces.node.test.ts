@@ -115,9 +115,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	).toBe(true)
 	expect(
 		accountUserOwnedKvKeySchemes.every(
-			(scheme) =>
-				!scheme.prefixTemplate?.startsWith('platform-settings:') &&
-				scheme.prefixTemplate !== 'public-code-runs:v2',
+			(scheme) => !scheme.prefixTemplate?.startsWith('platform-settings:'),
 		),
 	).toBe(true)
 	expect(accountExportSource).toContain("'user_meter'")

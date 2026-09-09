@@ -240,7 +240,6 @@ are:
 - `ssr` — route preload, stylesheet, and starting the HTML stream
 - `highlight` — token batch (`desc` is `hit`, `worker`, `miss`, or `fallback`)
 - `listings` — onboarding featured/chooser load
-- `code-runs` — homepage public ticker window
 - `package-page` — `loadPackagePage` (URL resolution, viewer, listing and owner
   detail), recorded once per request thanks to the memo; nested inside it:
   `resolve-url`, `auth`, `listing` (public listing + source row on a data-cache

@@ -15,10 +15,6 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-vi.mock('#worker/usage/code-runs-window.ts', () => ({
-	loadPublicCodeRunsWindow: vi.fn(async () => null),
-}))
-
 vi.mock('#app/onboarding-data.ts', async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import('#app/onboarding-data.ts')>()

@@ -15,12 +15,7 @@ import { loadEnabledSiteBannersForSsr } from '#app/site-banner-ssr.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
-import { loadPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
 import { type routes } from '#universal/routes.ts'
-import {
-	pushServerTiming,
-	type ServerTimingEntry,
-} from '#worker/server-timing.ts'
 
 export function createHomeHandler(env: Env) {
 	return {
@@ -34,21 +29,16 @@ export function createHomeHandler(env: Env) {
 				)
 			}
 
-			const serverTiming: Array<ServerTimingEntry> = []
 			const walkthroughHosts = pickWalkthroughHosts()
-			// Start the banner list with auth and code-runs so signed-in /
-			// (always no-store) does not pay that D1 after those finish.
+			// Start the banner list with auth so signed-in / (always
+			// no-store) does not pay that D1 after those finish.
 			const listedBanners = loadEnabledSiteBannersForSsr(env)
-			const [codeRunsWindow, signupMode, user] = await Promise.all([
-				pushServerTiming(serverTiming, 'code-runs', () =>
-					loadPublicCodeRunsWindow(env),
-				),
+			const [signupMode, user] = await Promise.all([
 				resolveSignupMode(env),
 				readAuthenticatedAppUser(request, env, {
 					prefetchFeatureFlags: true,
 				}),
 			])
-			const codeRuns = { ok: true as const, window: codeRunsWindow }
 			const onboarding = loadHomePageOnboardingData({
 				env,
 				requestUrl: request.url,
@@ -61,12 +51,10 @@ export function createHomeHandler(env: Env) {
 						env,
 						loaderData: {
 							onboarding,
-							codeRuns,
 							walkthroughHosts,
 							signupMode,
 						},
 						listedBanners,
-						serverTiming,
 					}),
 				),
 				origin,

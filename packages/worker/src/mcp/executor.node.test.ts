@@ -919,10 +919,7 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 					bind(...args: Array<unknown>) {
 						return {
 							async run() {
-								if (
-									sql.includes('usage_rollups') ||
-									sql.includes('fleet_execute_days')
-								) {
+								if (sql.includes('usage_rollups')) {
 									rollupWrites.push(args)
 								}
 								if (sql.includes('first_execute_at')) {

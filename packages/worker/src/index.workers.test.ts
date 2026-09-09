@@ -20,8 +20,6 @@ const mocks = vi.hoisted(() => ({
 		count: 0,
 	})),
 	aggregateUsageRollups: vi.fn(async () => ({ skipped: true })),
-	syncFleetExecuteDays: vi.fn(async () => ({ skipped: true })),
-	refreshPublicCodeRunsWindow: vi.fn(async () => ({ status: 'skipped' })),
 	backfillStorageBucketEstimates: vi.fn(async () => ({
 		scanned: 0,
 		updated: 0,
@@ -65,14 +63,6 @@ vi.mock('#app/auth-denial-alerts.ts', () => ({
 
 vi.mock('#worker/usage/aggregate-rollups.ts', () => ({
 	aggregateUsageRollups: mocks.aggregateUsageRollups,
-}))
-
-vi.mock('#worker/usage/fleet-execute-days.ts', () => ({
-	syncFleetExecuteDays: mocks.syncFleetExecuteDays,
-}))
-
-vi.mock('#worker/usage/code-runs-window.ts', () => ({
-	refreshPublicCodeRunsWindow: mocks.refreshPublicCodeRunsWindow,
 }))
 
 vi.mock('#worker/storage-buckets/estimate-backfill.ts', () => ({
@@ -133,11 +123,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		expect.objectContaining({ blobs: env.EMAIL_BLOBS }),
 	)
 	expect(mocks.aggregateUsageRollups).toHaveBeenCalledWith(env, scheduledAt)
-	expect(mocks.syncFleetExecuteDays).toHaveBeenCalledWith(env, scheduledAt)
-	expect(mocks.refreshPublicCodeRunsWindow).toHaveBeenCalledWith({
-		env,
-		now: scheduledAt,
-	})
 	expect(mocks.checkAuthDenialBurstAndNotify).toHaveBeenCalledWith(
 		expect.objectContaining({ now: scheduledAt }),
 	)

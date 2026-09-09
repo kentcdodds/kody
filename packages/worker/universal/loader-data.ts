@@ -23,7 +23,6 @@ import {
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
-import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
@@ -1936,15 +1935,9 @@ export type AppLoaderData = {
 	accountUsage?: AccountUsageLoaderData
 	accountWaiting?: AccountWaitingLoaderData
 	discord?: DiscordPageLoaderData
-	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
 	onboardingAgentChooser?: OnboardingAgentChooserPick
 	signupMode?: SignupMode
-}
-
-export type CodeRunsLoaderData = {
-	ok: true
-	window: PublicCodeRunsWindow | null
 }
 
 export type AccountBillingLoaderData = {
