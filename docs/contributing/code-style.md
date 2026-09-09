@@ -71,7 +71,10 @@ file style first, then run the formatter.
 - Articles and guides sit on `articleMeasure` (43rem). To let a block use more
   horizontal room when the viewport has it — code samples, transcripts — spread
   `getArticleBreakoutCss()` from the same primitives file into that child's css
-  object. It stays a no-op on a phone and grows up to the header measure.
+  object. It stays a no-op on a phone and grows up to the header measure. Do
+  **not** use it under the `/docs` sidebar shell: the breakout is
+  viewport-centered and paints over the nav. Docs walkthroughs stay in the
+  article column.
 
 ## Destructive actions
 

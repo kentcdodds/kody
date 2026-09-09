@@ -35,7 +35,7 @@ export function renderDocsShell(input: {
 	const { current, children } = input
 	const currentSection = resolveDocsNavSection(current)
 	return (
-		<div mix={css(docsLayoutCss)}>
+		<div data-docs-shell mix={css(docsLayoutCss)}>
 			<aside data-docs-nav mix={css(docsSidebarCss)}>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
 					{renderDocsNavSections(current, currentSection)}
@@ -175,6 +175,9 @@ const docsLayoutCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
 	paddingInline: pageGutter,
+	// Clicked sidebar links would otherwise become the scroll anchor; replacing
+	// the article then fights scroll restoration and the rail/content bump.
+	overflowAnchor: 'none' as const,
 	[mq.tablet]: {
 		display: 'block',
 	},
@@ -186,10 +189,14 @@ const docsSidebarCss = {
 	top: '4.5rem',
 	maxHeight: 'calc(100vh - 5.5rem)',
 	overflowY: 'auto' as const,
+	overflowAnchor: 'none' as const,
 	paddingBlock: 'clamp(2.5rem, 6vw, 4rem) 2rem',
 	paddingRight: '0.5rem',
 	borderRight: `1px solid ${colors.border}`,
 	scrollbarWidth: 'thin' as const,
+	// Lift out of `<main>` / `page` if a view transition still starts.
+	// Intra-docs clicks skip VT; leaving docs fades this name (styles.css).
+	viewTransitionName: 'docs-nav',
 	[mq.tablet]: {
 		display: 'none',
 	},
@@ -235,11 +242,14 @@ const docsNavSectionCss = {
 		color: colors.textMuted,
 		textDecoration: 'none',
 		lineHeight: 1.35,
+		// Same weight for every item so the active highlight cannot reflow
+		// the rail when aria-current moves.
+		fontWeight: 650,
+		overflowAnchor: 'none' as const,
 		transition: `color ${transitions.fast}, background ${transitions.fast}`,
 	},
 	'& li a[aria-current="page"]': {
 		color: colors.primaryText,
-		fontWeight: 650,
 		background: colors.primarySoftest,
 	},
 	[hoverMq]: {
@@ -290,6 +300,7 @@ const docsMobileMenuCurrentCss = {
 
 const docsMainCss = {
 	minWidth: 0,
+	overflowAnchor: 'none' as const,
 }
 
 const docsPagerCss = {
