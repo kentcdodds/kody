@@ -114,7 +114,7 @@ this" for the fifth time. That's your first job.
 
 If you have a Kody account,
 [connect the agent you already use](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)
-and describe that one thing. If you don't have an account yet, signup is
-invite-gated for now, so [join the waitlist](https://kody.codes/signup).
+and describe that one thing. If you don't have an account yet,
+[create one here](https://kody.codes/signup).
 
 The list has waited years. It only needs one conversation to start shrinking.

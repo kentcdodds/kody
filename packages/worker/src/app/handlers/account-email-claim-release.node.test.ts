@@ -64,7 +64,6 @@ function createAppEnv(db: D1Database) {
 		APP_BASE_URL: 'http://example.com',
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
-		SIGNUP_MODE: 'open',
 	} as unknown as Env
 }
 

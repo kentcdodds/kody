@@ -1116,7 +1116,7 @@ async function navigateInternal(to: string, options?: NavigationRunOptions) {
 	const currentPath = getCurrentPathWithSearchAndHash()
 
 	if (nextPath === currentPath) {
-		// Re-activating the current hash (hero "Join the waiting list" while
+		// Re-activating the current hash (hero CTA while
 		// already at `/#invite`) must still scroll to the target. Native
 		// fragment clicks do that; a no-op here would leave the viewport stuck.
 		if (destination.hash) {

@@ -127,8 +127,7 @@ stays with the agent you chose, the capability accumulates in an account you
 own, and nobody profits from putting a meter on your assistant's thoughts.
 
 If that's the kind of home you want your assistant to have,
-[kody.codes/signup](https://kody.codes/signup) is the place (invite-gated for
-now; the waitlist is right on that page). And either way, next time you evaluate
-an assistant product, ask the vendor one question: who pays for the inference,
-and what does that make them want? The answer tells you most of what you need to
-know.
+[kody.codes/signup](https://kody.codes/signup) is the place. And either way,
+next time you evaluate an assistant product, ask the vendor one question: who
+pays for the inference, and what does that make them want? The answer tells you
+most of what you need to know.

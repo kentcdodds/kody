@@ -124,104 +124,9 @@ export type LoginFormSharedProps = {
 	onFieldEdit: () => void
 }
 
-export function renderWaitingListForm(
-	props: LoginFormSharedProps & { onSubmit: (event: SubmitEvent) => void },
-) {
-	const statusId = `${props.handleId}-form-status`
-	const invalidFields = invalidFieldsForMessage(props.status, props.message, [
-		'firstName',
-		'email',
-	])
-	return (
-		<form
-			key="waiting-list"
-			data-rise
-			method="post"
-			style={{ '--rise': '1' }}
-			mix={[
-				css(authFormCss),
-				on('submit', props.onSubmit),
-				on('input', (event) => {
-					if (isTextEntryTarget(event.target)) props.onFieldEdit()
-				}),
-			]}
-		>
-			{renderHoneypot()}
-			<div mix={css(authFieldCss)}>
-				<label
-					for={`${props.handleId}-first-name`}
-					mix={css(authFieldLabelCss)}
-				>
-					First name
-				</label>
-				<input
-					id={`${props.handleId}-first-name`}
-					type="text"
-					name="firstName"
-					required
-					autoFocus
-					autoComplete="given-name"
-					maxLength={80}
-					placeholder="Ada"
-					data-field-ring
-					{...fieldErrorProps('firstName', invalidFields, statusId)}
-					mix={css(authInputCss)}
-				/>
-			</div>
-			<div mix={css(authFieldCss)}>
-				<label
-					for={`${props.handleId}-waitlist-email`}
-					mix={css(authFieldLabelCss)}
-				>
-					Email
-				</label>
-				<input
-					id={`${props.handleId}-waitlist-email`}
-					type="email"
-					name="email"
-					required
-					autoComplete="email"
-					placeholder="you@yourdomain.dev"
-					data-field-ring
-					{...fieldErrorProps('email', invalidFields, statusId)}
-					mix={css(authInputCss)}
-				/>
-			</div>
-			{props.turnstileSiteKey ? (
-				<div class={turnstileWidgetClassName}></div>
-			) : null}
-			{renderStatusMessage(props.handleId, props.status, props.message)}
-			<button
-				type={props.status === 'success' ? 'button' : 'submit'}
-				aria-disabled={
-					props.isSubmitting || props.status === 'success' ? 'true' : undefined
-				}
-				aria-busy={props.isSubmitting ? 'true' : undefined}
-				mix={css(authSubmitCss)}
-			>
-				<span
-					data-swap-label
-					data-active={props.isSubmitting ? undefined : true}
-					aria-hidden={props.isSubmitting ? 'true' : undefined}
-				>
-					Join the waiting list
-				</span>
-				<span
-					data-swap-label
-					data-active={props.isSubmitting ? true : undefined}
-					aria-hidden={props.isSubmitting ? undefined : 'true'}
-				>
-					Joining…
-				</span>
-			</button>
-		</form>
-	)
-}
-
 export function renderAuthForm(
 	props: LoginFormSharedProps & {
 		isSignup: boolean
-		showInviteSignup: boolean
 		prefillInviteCode: string
 		submitLabel: string
 		submitBusyLabel: string
@@ -328,13 +233,13 @@ export function renderAuthForm(
 					mix={css(authInputCss)}
 				/>
 			</div>
-			{props.showInviteSignup ? (
+			{props.isSignup ? (
 				<div mix={css(authFieldCss)}>
 					<label
 						for={`${props.handleId}-invite-code`}
 						mix={css(authFieldLabelCss)}
 					>
-						Invite code
+						Invite code <span mix={css(fieldAsideCss)}>(optional)</span>
 					</label>
 					<input
 						id={`${props.handleId}-invite-code`}
@@ -342,7 +247,7 @@ export function renderAuthForm(
 						name="inviteCode"
 						defaultValue={props.prefillInviteCode}
 						autoComplete="one-time-code"
-						placeholder="Enter your invite code"
+						placeholder="Gift or launch code"
 						data-field-ring
 						{...fieldErrorProps('inviteCode', invalidFields, statusId)}
 						mix={css(authInputCss)}
@@ -615,4 +520,4 @@ const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 	},
 })
 
-export const ghostButtonCss = getGhostButtonCss()
+const ghostButtonCss = getGhostButtonCss()

@@ -25,7 +25,6 @@ import {
 } from '#worker/test-support/audit-log-spy.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
-import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -62,11 +61,10 @@ function createMemoryKv(initial?: Record<string, string>) {
 
 function createAuthTestContext(
 	options: {
-		signupMode?: 'invite' | 'open' | 'waitlist'
-		kvSignupMode?: 'invite' | 'open' | 'waitlist'
 		failRoleAssignment?: boolean
 		emailConfigured?: boolean
 		kv?: KVNamespace
+		sentryEnvironment?: 'test' | 'preview' | 'production'
 	} = {},
 ) {
 	const testDb = createTestDb({
@@ -75,24 +73,8 @@ function createAuthTestContext(
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-		SIGNUP_MODE: options.signupMode ?? 'invite',
-		SENTRY_ENVIRONMENT:
-			options.signupMode === 'open' || options.kvSignupMode === 'open'
-				? ('test' as const)
-				: ('production' as const),
-		...(options.kv
-			? { BUNDLE_ARTIFACTS_KV: options.kv }
-			: options.kvSignupMode
-				? {
-						BUNDLE_ARTIFACTS_KV: createMemoryKv({
-							[signupModeKvKey]: JSON.stringify({
-								mode: options.kvSignupMode,
-								updatedAt: '2026-09-02T00:00:00.000Z',
-								updatedBy: 'admin-stable-id',
-							}),
-						}),
-					}
-				: {}),
+		SENTRY_ENVIRONMENT: options.sentryEnvironment ?? 'test',
+		...(options.kv ? { BUNDLE_ARTIFACTS_KV: options.kv } : {}),
 		...(options.emailConfigured
 			? {
 					CLOUDFLARE_ACCOUNT_ID: 'cf-account-test',
@@ -445,7 +427,7 @@ test('auth handler login and signup workflow', async () => {
 	// Production signups must actually deliver the verification email, so
 	// the production context gets a (stubbed) configured Cloudflare sender.
 	const productionContext = createAuthTestContext({ emailConfigured: true })
-	const signupContext = createAuthTestContext({ signupMode: 'open' })
+	const signupContext = createAuthTestContext()
 	stubCloudflareEmailFetch({ ok: true })
 
 	const invalidJsonResponse = await productionContext.request('{')
@@ -480,20 +462,23 @@ test('auth handler login and signup workflow', async () => {
 		}),
 	)
 
-	const blockedSignupResponse = await productionContext.request({
+	const openSignupResponse = await productionContext.request({
 		email: 'new@example.com',
 		username: 'newcomer',
 		password: 'password123',
 		mode: 'signup',
 	})
-	expect(blockedSignupResponse.status).toBe(400)
-	expect(await blockedSignupResponse.json()).toEqual({
-		error: 'Invite code is required.',
+	expect(openSignupResponse.status).toBe(200)
+	expect(await openSignupResponse.json()).toEqual({
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
 	})
-	expect(productionContext.testDb.users.has('new@example.com')).toBe(false)
+	expect(productionContext.testDb.users.has('new@example.com')).toBe(true)
 
-	// A registered address without a code fails exactly like an unregistered
-	// one, so invite mode does not leak which emails hold accounts.
+	// A registered address gets the accepted body and no session, so the
+	// endpoint does not confirm which addresses hold accounts.
 	await productionContext.testDb.addUser('taken@example.com', 'secret', 'taken')
 	const blockedExistingResponse = await productionContext.request({
 		email: 'taken@example.com',
@@ -501,9 +486,12 @@ test('auth handler login and signup workflow', async () => {
 		password: 'password123',
 		mode: 'signup',
 	})
-	expect(blockedExistingResponse.status).toBe(400)
+	expect(blockedExistingResponse.status).toBe(200)
 	expect(await blockedExistingResponse.json()).toEqual({
-		error: 'Invite code is required.',
+		ok: true,
+		mode: 'signup',
+		emailVerificationRequired: true,
+		message: 'Check your email to verify your account.',
 	})
 
 	productionContext.testDb.addInvite('PROD-INVITE')
@@ -746,14 +734,14 @@ test('auth handler login and signup workflow', async () => {
 		'Secure',
 	)
 	// The full workflow audits exactly these events, in order: the unknown
-	// login, the invite-less production signup, the invite-less and invited
+	// login, the invite-less signup, the invite-less and invited
 	// registered-email attempts, the invited signup (+ invite use), the
-	// weak-password rejection, the open signup, the six username
+	// weak-password rejection, the second open signup, the six username
 	// rejections, the duplicate-email rejection, and the three successful
 	// logins.
 	expect(auditEventSummaries()).toEqual([
 		'login:failure',
-		'signup:failure',
+		'signup:success',
 		'signup:failure',
 		'signup:failure',
 		'signup:success',
@@ -775,7 +763,7 @@ test('auth handler login and signup workflow', async () => {
 
 test('successful open signup schedules an admin user.created event', async () => {
 	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
-	const context = createAuthTestContext({ signupMode: 'open' })
+	const context = createAuthTestContext()
 	const email = 'newbie@example.com'
 	const response = await context.request({
 		email,
@@ -807,7 +795,7 @@ test('successful open signup schedules an admin user.created event', async () =>
 
 test('password signup persists first-touch UTMs on the account once', async () => {
 	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
-	const context = createAuthTestContext({ signupMode: 'open' })
+	const context = createAuthTestContext()
 	const email = 'attributed@example.com'
 	const response = await context.request({
 		email,
@@ -844,7 +832,6 @@ test('password signup persists first-touch UTMs on the account once', async () =
 
 test('signup fails when the default user role cannot be assigned', async () => {
 	const context = createAuthTestContext({
-		signupMode: 'open',
 		failRoleAssignment: true,
 	})
 
@@ -873,7 +860,6 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 	consoleError.mockImplementation(() => {})
 	consoleWarn.mockImplementation(() => {})
 	const context = createAuthTestContext({
-		signupMode: 'open',
 		emailConfigured: true,
 	})
 	stubCloudflareEmailFetch({ ok: false, message: 'delivery refused' })
@@ -907,7 +893,7 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 
 test('production signup fails closed when no verification email sender is configured', async () => {
 	consoleError.mockImplementation(() => {})
-	const context = createAuthTestContext()
+	const context = createAuthTestContext({ sentryEnvironment: 'production' })
 	context.testDb.addInvite('PROD-NO-EMAIL')
 
 	const response = await context.request({
@@ -1014,7 +1000,7 @@ test('signup rejects KV-added reserved usernames and accepts unreserved built-in
 			updatedBy: 'admin-stable-id',
 		}),
 	})
-	const context = createAuthTestContext({ signupMode: 'open', kv })
+	const context = createAuthTestContext({ kv })
 
 	const addedResponse = await context.request({
 		email: 'brandnew-holder@example.com',
@@ -1040,35 +1026,4 @@ test('signup rejects KV-added reserved usernames and accepts unreserved built-in
 		emailVerificationRequired: true,
 		message: 'Check your email to verify your account.',
 	})
-})
-
-test('password signup honors KV signup-mode override over the env default', async () => {
-	const openOverride = createAuthTestContext({
-		signupMode: 'invite',
-		kvSignupMode: 'open',
-	})
-	const openResponse = await openOverride.request({
-		email: 'kv-open@example.com',
-		username: 'kv-open',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(openResponse.status).toBe(200)
-	expect(openOverride.testDb.users.has('kv-open@example.com')).toBe(true)
-
-	const inviteOverride = createAuthTestContext({
-		signupMode: 'open',
-		kvSignupMode: 'invite',
-	})
-	const blockedResponse = await inviteOverride.request({
-		email: 'kv-invite@example.com',
-		username: 'kv-invite',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(blockedResponse.status).toBe(400)
-	expect(await blockedResponse.json()).toEqual({
-		error: 'Invite code is required.',
-	})
-	expect(inviteOverride.testDb.users.has('kv-invite@example.com')).toBe(false)
 })

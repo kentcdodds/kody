@@ -18,8 +18,8 @@ export const turnstileWidgetClassName = 'kody-turnstile'
  * Cloudflare's managed widget box. Keep `.kody-turnstile` in
  * `packages/worker/public/styles.css` in sync with these values.
  */
-export const turnstileWidgetWidthPx = 300
-export const turnstileWidgetHeightPx = 65
+const turnstileWidgetWidthPx = 300
+const turnstileWidgetHeightPx = 65
 
 type TurnstileApi = {
 	render(
@@ -190,7 +190,7 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
 		api = await loadTurnstileScript()
 	} catch {
 		// Script blocked or CDN blip — expected visitor-environment degradation
-		// (KODY-6D). Auth/waitlist POSTs still surface a server-side protection
+		// (KODY-6D). Auth POSTs still surface a server-side protection
 		// error if the user submits without a token; do not Sentry-noise this.
 		return
 	}

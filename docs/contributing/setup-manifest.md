@@ -435,10 +435,6 @@ automatically:
 - `SENTRY_ENVIRONMENT` (set per deploy via `packages/worker/wrangler.jsonc`
   `vars` as `production`, `preview`, or `test`; optional override via env for
   local dev)
-- `SIGNUP_MODE` (Wrangler var; default/bootstrap `invite` / `open` / `waitlist`.
-  Production and preview are `invite`; the Wrangler `test` env is `open`. The
-  runtime override lives in KV and is managed from `/admin/invites` — see
-  [environment-variables.md](./environment-variables.md))
 - `SENTRY_TRACES_SAMPLE_RATE` (optional `0`–`1`, defaults to **`1.0`** in code
   when unset; production pins `0` via a Wrangler var — see
   [environment-variables.md](./environment-variables.md))
@@ -590,11 +586,10 @@ Configure these GitHub Actions secrets and variables for workflows:
   Discord guild join and role sync. Synced to the Worker under the same names.
   The bot needs Create Instant Invite and Manage Roles.)
 - `KIT_API_KEY` (optional GitHub / Worker secret; Kit / kit.com API key for
-  `/waiting-list` signup and exist-only lifecycle tagging when the email already
-  exists in Kit. Production deploy syncs it when set; without it, production
-  waiting-list joins return 503 while the rest of the app still deploys (account
-  events skip Kit). Preview deploys intentionally omit the key so preview/E2E
-  joins do not write to the production Kit audience. Create a Kit API key at
+  exist-only lifecycle tagging when the email already exists in Kit. Production
+  deploy syncs it when set; without it, account events skip Kit. Preview deploys
+  intentionally omit the key so preview/E2E do not write to the production Kit
+  audience. Create a Kit API key at
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key

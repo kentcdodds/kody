@@ -3,7 +3,6 @@ import { expect } from 'vitest'
 import { createAuthProviderStartHandler } from '#app/handlers/auth-provider.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { signupModeKvKey } from '#worker/signup-mode-setting.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
@@ -59,7 +58,6 @@ export function createAppEnv(
 		APP_DB: db,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
-		SIGNUP_MODE: 'open',
 		GITHUB_CLIENT_ID: 'github-client-id-test',
 		GITHUB_CLIENT_SECRET: 'github-client-secret-test',
 		GOOGLE_CLIENT_ID: 'google-client-id-test',
@@ -85,16 +83,6 @@ export function createMemoryKv(initial?: Record<string, string>) {
 		},
 		store,
 	} as unknown as KVNamespace
-}
-
-export function createSignupModeKv(mode: 'invite' | 'open' | 'waitlist') {
-	return createMemoryKv({
-		[signupModeKvKey]: JSON.stringify({
-			mode,
-			updatedAt: '2026-09-02T00:00:00.000Z',
-			updatedBy: 'admin-stable-id',
-		}),
-	})
 }
 
 export async function runHandler(

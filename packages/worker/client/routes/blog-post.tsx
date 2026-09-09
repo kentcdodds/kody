@@ -9,7 +9,6 @@ import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	createRouteData,
 	renderRoutePendingStatus,
@@ -20,9 +19,7 @@ import {
 } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { publicSignupPrimaryCta } from '#universal/public-signup-copy.ts'
-import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	colors,
 	radius,
@@ -41,7 +38,7 @@ import { getSlugFromPathname } from './blog-post-path.ts'
  * A 43rem editorial measure: back link → post head (display title + meta,
  * page-open rise) → optional headline image → optional AI-placeholder
  * callout → `.prose` body rendered from the server's markdown catalog →
- * quiet foot (read-next pointer + Kody greeting + waitlist button). Nothing
+ * quiet foot (read-next pointer + Kody greeting + signup button). Nothing
  * here hardcodes post content — body, dates, artwork, and the read-next
  * pointer all come from the blog API. The placeholder callout is per-post
  * frontmatter (`placeholder`, default true) until a human review turns it
@@ -66,13 +63,10 @@ export async function blogPostRouteLoader(
 		return routeLoaderRedirect(`${url.pathname}${url.search}`)
 	}
 
-	const [response, config] = await Promise.all([
-		fetch(routes.blogPostApi.href({ slug }), {
-			headers: { Accept: 'application/json' },
-			signal,
-		}),
-		fetchPublicAuthConfig(signal),
-	])
+	const response = await fetch(routes.blogPostApi.href({ slug }), {
+		headers: { Accept: 'application/json' },
+		signal,
+	})
 	if (response.status === 404) {
 		throw new Error('Blog post not found.')
 	}
@@ -82,12 +76,10 @@ export async function blogPostRouteLoader(
 	}
 	return {
 		blogPost: payload,
-		signupMode: parseSignupMode(config?.signupMode),
 	}
 }
 
 export function BlogPostRoute(handle: Handle) {
-	let signupMode: SignupMode = 'invite'
 	const postData = createRouteData({
 		key: 'blogPost',
 		async load(href, signal) {
@@ -95,14 +87,10 @@ export function BlogPostRoute(handle: Handle) {
 				new URL(href, 'http://localhost').pathname,
 			)
 			if (!slug) return null
-			const [response, config] = await Promise.all([
-				fetch(routes.blogPostApi.href({ slug }), {
-					headers: { Accept: 'application/json' },
-					signal,
-				}),
-				fetchPublicAuthConfig(signal),
-			])
-			signupMode = parseSignupMode(config?.signupMode)
+			const response = await fetch(routes.blogPostApi.href({ slug }), {
+				headers: { Accept: 'application/json' },
+				signal,
+			})
 			if (response.status === 404) return null
 			const payload = await readJson<BlogPostLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
@@ -139,14 +127,8 @@ export function BlogPostRoute(handle: Handle) {
 			return <article mix={css(postCss)} />
 		}
 
-		const signupModeData = tryConsumeRouteLoaderData(
-			handle,
-			'signupMode',
-			currentHref,
-		)
-		if (signupModeData) signupMode = signupModeData
 		const snapshot = postData.read(handle, currentHref)
-		const signedOutCta = publicSignupPrimaryCta(signupMode)
+		const signedOutCta = publicSignupPrimaryCta()
 
 		if (snapshot.kind === 'not-found') {
 			return (
@@ -245,17 +227,10 @@ export function BlogPostRoute(handle: Handle) {
 									height={480}
 									alt=""
 								/>
-								{signupMode === 'open' ? (
-									<p>
-										Give your assistant a home of its own. Create a free account
-										and start saving packages.
-									</p>
-								) : (
-									<p>
-										Give your assistant a home of its own. Invite-only while we
-										grow the eucalyptus.
-									</p>
-								)}
+								<p>
+									Give your assistant a home of its own. Create a free account
+									and start saving packages.
+								</p>
 								<a href={signedOutCta.href} mix={css(postCtaButtonCss)}>
 									{signedOutCta.label}
 								</a>

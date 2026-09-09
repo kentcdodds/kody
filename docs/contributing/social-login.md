@@ -113,7 +113,7 @@ endpoint; `email_verified` gates account matching).
 3. Set the **Callback URI** to `https://<your-domain>/auth/x/callback` and the
    **Website URL** to your app origin.
 4. Enable **Request email from users** so `confirmed_email` is returned (this
-   makes email-based matching and invite-gated signup work for X).
+   makes email-based matching and account creation work for X).
 5. Save the OAuth 2.0 client id and secret as `X_CLIENT_ID` / `X_CLIENT_SECRET`.
 
 Scopes requested: `tweet.read users.read users.email` (PKCE S256 is mandatory;

@@ -502,8 +502,8 @@ jobs:
           echo "::add-mask::$PREVIEW_COOKIE_SECRET"
           extra_args+=(--set "COOKIE_SECRET=$PREVIEW_COOKIE_SECRET")
 
-          # Intentionally omit KIT_API_KEY so preview/E2E waiting-list joins use
-          # the non-production no-op path instead of writing to production Kit.
+          # Intentionally omit KIT_API_KEY so preview/E2E do not write to
+          # production Kit.
           node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
           # The runtime worker intentionally reuses the same dotenv-based sync
           # here (unlike production, which uses a strict runtime-lane

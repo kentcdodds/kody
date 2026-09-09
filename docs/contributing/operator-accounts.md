@@ -130,11 +130,9 @@ email.
 
 ### Turnstile
 
-Optional public-signup bot protection. `open` signup is refused unless both
-`TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are set. Production
-`SIGNUP_MODE` is `invite`, so these are unused until open signup is enabled.
-Dashboard: **Turnstile**. `.github/workflows/deploy.yml` does not sync these
-secrets.
+Optional public-signup bot protection. Signup uses Turnstile when both
+`TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are set. Dashboard:
+**Turnstile**. `.github/workflows/deploy.yml` does not sync these secrets.
 
 ### API tokens
 
@@ -393,15 +391,13 @@ stays up.
 
 ## Kit
 
-Waiting-list joins (`POST /waiting-list`) and exist-only lifecycle tags on
-account events. API: `https://api.kit.com/v4` (`X-Kit-Api-Key`).
+Exist-only lifecycle tags on account events. API: `https://api.kit.com/v4`
+(`X-Kit-Api-Key`).
 
-| Name                       | Kind                    | Purpose                                                                        |
-| -------------------------- | ----------------------- | ------------------------------------------------------------------------------ |
-| `KIT_API_KEY`              | Actions + Worker secret | Production waiting-list writes. Preview omits this so E2E cannot write         |
-| `KIT_WAITLIST_TAG_ID`      | optional Worker var     | Defaults to tag `waitlist::kody` id `21081721`                                 |
-| `KIT_WAITLIST_SEQUENCE_ID` | optional Worker var     | Defaults to “Kody Waitlist Welcome” id `2823893` (from `hello@kentcdodds.com`) |
-| `KIT_SIGNED_UP_TAG_ID`     | optional Worker var     | Defaults to `signed_up::kody` id `21252175`                                    |
+| Name                   | Kind                    | Purpose                                                                  |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `KIT_API_KEY`          | Actions + Worker secret | Production exist-only Kit writes. Preview omits this so E2E cannot write |
+| `KIT_SIGNED_UP_TAG_ID` | optional Worker var     | Defaults to `signed_up::kody` id `21252175`                              |
 
 Other lifecycle tag **names** (ids resolved in Kit, exist-only):
 `verified::kody`, `agent_connected::kody`, `activated::kody`, `standard::kody`,
@@ -412,8 +408,8 @@ Create keys at
 [Kit developer settings](https://app.kit.com/account_settings/developer_settings).
 The same value can be stored as the Kody user secret `kitApiKey`.
 
-Rotation: mint a new Kit API key, update `KIT_API_KEY`, deploy. Production
-`/waiting-list` returns 503 while the key is unset.
+Rotation: mint a new Kit API key, update `KIT_API_KEY`, deploy. Account events
+skip Kit while the key is unset.
 
 Recovery: Kit account login (`hello@kentcdodds.com` is the documented sequence
 sender). Subscriber list lives in Kit, not D1.

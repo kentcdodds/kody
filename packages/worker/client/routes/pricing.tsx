@@ -1,10 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { readAppSession } from '#client/app-session-context.tsx'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { reveal } from '#client/reveal.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
-import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
 	computeOverageRatesUsd,
 	formatDurableObjectRowsRead,
@@ -17,7 +14,6 @@ import {
 	type PublicSignupCta,
 } from '#universal/public-signup-copy.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -115,26 +111,14 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 	},
 ]
 
-export async function pricingRouteLoader(
-	_url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const config = await fetchPublicAuthConfig(signal)
-	return { signupMode: parseSignupMode(config?.signupMode) }
+export async function pricingRouteLoader(): Promise<RouteLoaderResult> {
+	return {}
 }
 
 export function PricingRoute(handle: Handle) {
-	let signupMode: SignupMode = 'invite'
 	return () => {
 		const isSignedIn = readAppSession(handle).session !== null
-		const href = readCurrentRouterHref(handle)
-		const loadedSignupMode = tryConsumeRouteLoaderData(
-			handle,
-			'signupMode',
-			href,
-		)
-		if (loadedSignupMode) signupMode = loadedSignupMode
-		const signedOutCta = publicSignupPrimaryCta(signupMode)
+		const signedOutCta = publicSignupPrimaryCta()
 		return (
 			<section mix={css(pricingCss)}>
 				<header mix={css(pageHeadCss)}>
@@ -217,7 +201,7 @@ export function PricingRoute(handle: Handle) {
 					</section>
 
 					{/*
-					 * Invite-only strip, not a fourth SKU. No price, no Max
+					 * Contact strip, not a fourth SKU. No price, no Max
 					 * column, no feature-matrix cells — Teams/Enterprise and
 					 * Max stay manual.
 					 */}

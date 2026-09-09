@@ -571,8 +571,7 @@ OAuth provider state is stored in `OAUTH_KV` through the
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
 platform-owned `platform-settings:v1:reserved-usernames` runtime
-reserved-username override, and the platform-owned
-`platform-settings:v1:signup-mode` runtime signup gating override.
+reserved-username override.
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1499,13 +1498,6 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   signup-facing checks fail closed to the code-defined built-in list. Admins
   manage it from `/admin/reserved-usernames` and the `adminReservedUsernameList`
   / `adminReservedUsernameAdd` / `adminReservedUsernameRemove` capabilities.
-- `platform-settings:v1:signup-mode` — platform-owned runtime signup gating
-  override (`{ mode, updatedAt, updatedBy }`, where `mode` is `invite`, `open`,
-  or `waitlist` and `updatedBy` is a stable user id). Not scoped by user id;
-  account deletion must not remove it. When the key is missing or invalid,
-  `resolveSignupMode` uses the `SIGNUP_MODE` Worker var. Admins manage it from
-  `/admin/invites` and the `adminSignupModeGet` / `adminSignupModeSet`
-  capabilities.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage

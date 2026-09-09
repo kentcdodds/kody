@@ -311,7 +311,7 @@ export function getChipButtonCss() {
 
 /**
  * Layout-stable label swap for buttons whose text changes with state
- * ("Copy" → "Copied", "Join the waiting list" → "Joining…"). Every label
+ * ("Copy" → "Copied", "Create account" → "Creating…"). Every label
  * renders grid-stacked in the same cell so the widest one reserves the width
  * — swapping never shifts layout. The outgoing label exits fast; the incoming
  * one lands slower and slightly delayed, through a light blur that masks the

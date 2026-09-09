@@ -102,7 +102,6 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		env,
 		loaderData: {
 			onboarding: homepageOnboardingFixture(env, requestUrl, false),
-			signupMode: 'open',
 		},
 	})
 	expect(anonymous.status).toBe(200)
@@ -116,7 +115,6 @@ test('homepage hero headline and session-aware CTAs', async () => {
 		env,
 		loaderData: {
 			onboarding: homepageOnboardingFixture(env, requestUrl, true),
-			signupMode: 'open',
 		},
 	})
 	expect(signedIn.status).toBe(200)

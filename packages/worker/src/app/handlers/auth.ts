@@ -57,7 +57,6 @@ import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
-import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import {
 	firstTouchAttributionCreateFields,
 	parseFirstTouchAttribution,
@@ -280,8 +279,7 @@ export function createAuthHandler(env: Env) {
 					consumedInvitePlan = null
 				}
 
-				const inviteRequired = (await resolveSignupMode(env)) !== 'open'
-				if (inviteRequired || normalizeInviteCode(inviteCode)) {
+				if (normalizeInviteCode(inviteCode)) {
 					const inviteResult = await consumeInviteCode({
 						db: env.APP_DB,
 						code: inviteCode,
@@ -299,23 +297,16 @@ export function createAuthHandler(env: Env) {
 						})
 						return Response.json(
 							{ error: getInviteFailureMessage(inviteResult.reason) },
-							{
-								status:
-									inviteResult.reason === 'missing' && inviteRequired
-										? 400
-										: 403,
-							},
+							{ status: 403 },
 						)
 					}
 					consumedInviteCode = inviteResult.invite.code
 					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
 				}
 
-				// Checked after invite validation so that, in invite and waitlist
-				// modes, a registered and an unregistered address fail the same
-				// way without a code. Same body and status as a fresh signup so
-				// the endpoint does not confirm which addresses hold accounts.
-				// Nothing is created or sent; the invite is handed back.
+				// Same body and status as a fresh signup so the endpoint does
+				// not confirm which addresses hold accounts. Nothing is created
+				// or sent; a consumed invite is handed back.
 				let existingUser: Awaited<ReturnType<typeof db.findOne>> | null
 				try {
 					existingUser = await db.findOne(usersTable, {
@@ -592,7 +583,7 @@ export function createAuthHandler(env: Env) {
 					}
 				}
 
-				// Best-effort: if this email is already in Kit (e.g. waitlist),
+				// Best-effort: if this email is already in Kit,
 				// add signed_up::kody without removing other tags.
 				await maybeTagKitSubscriberOnSignup({
 					env,

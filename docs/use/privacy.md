@@ -11,9 +11,9 @@ its own operator and data controller.
 
 Kody processes personal data to perform the contract for account and assistant
 features, on legitimate interests for security, abuse prevention, and analytics,
-and with consent for the waiting list and product email. Data is processed in
-the United States on Cloudflare's network. If you use Kody from outside the
-United States, you consent to that transfer.
+and with consent for product email. Data is processed in the United States on
+Cloudflare's network. If you use Kody from outside the United States, you
+consent to that transfer.
 
 ## What Kody stores per account
 
@@ -303,8 +303,8 @@ data needed for their role:
 - Cloudflare — application hosting, database, object storage, email delivery,
   security, network infrastructure, and Workers AI embeddings for search
 - Stripe — paid subscriptions, billing, and payment records
-- Kit — waitlist and product email subscriptions when you submit your email for
-  those purposes
+- Kit — product email subscriptions when you submit your email for those
+  purposes
 - Sentry — application error reporting and operational diagnostics
 - Fathom — privacy-focused website traffic analytics
 

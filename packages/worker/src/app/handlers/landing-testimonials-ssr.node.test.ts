@@ -63,7 +63,7 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	const response = await renderAppPage({
 		request: new Request('https://example.com/'),
 		env: createTestEnv(),
-		loaderData: { signupMode: 'invite' },
+		loaderData: {},
 	})
 	expect(response.status).toBe(200)
 	const html = await response.text()

@@ -38,7 +38,6 @@ import {
 	createAppEnv,
 	createMemoryKv,
 	createMigratedDb,
-	createSignupModeKv,
 	getCookiePair,
 	runHandler,
 	seedUser,
@@ -68,7 +67,6 @@ test('providers api lists only configured providers', async () => {
 	)
 	expect(await allEnabled.json()).toEqual({
 		ok: true,
-		signupMode: 'open',
 		turnstileSiteKey: null,
 		providers: [
 			{ id: 'github', label: 'GitHub' },
@@ -93,7 +91,6 @@ test('providers api lists only configured providers', async () => {
 	)
 	expect(await githubOnly.json()).toEqual({
 		ok: true,
-		signupMode: 'open',
 		turnstileSiteKey: null,
 		providers: [{ id: 'github', label: 'GitHub' }],
 	})
@@ -1218,11 +1215,9 @@ function mockGithubProfileExchange(email = 'octo@example.com') {
 	)
 }
 
-test('production OAuth signup is invite-gated while existing connections still log in', async () => {
+test('OAuth signup is open and still consumes an optional invite', async () => {
 	const missingInvite = createMigratedDb()
-	const missingInviteEnv = createAppEnv(missingInvite.db, {
-		SIGNUP_MODE: 'invite',
-	})
+	const missingInviteEnv = createAppEnv(missingInvite.db)
 	mockGithubProfileExchange()
 	const missingStart = await startProviderFlow(
 		missingInviteEnv,
@@ -1239,16 +1234,14 @@ test('production OAuth signup is invite-gated while existing connections still l
 	)
 	expect(missingCallback.status).toBe(302)
 	expect(missingCallback.headers.get('Location')).toBe(
-		'/login?oauthError=invite-required',
+		'/onboarding?accountCreated=1',
 	)
 	expect(
 		missingInvite.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 0 })
+	).toEqual({ count: 1 })
 
 	const invalidInvite = createMigratedDb()
-	const invalidInviteEnv = createAppEnv(invalidInvite.db, {
-		SIGNUP_MODE: 'invite',
-	})
+	const invalidInviteEnv = createAppEnv(invalidInvite.db)
 	mockGithubProfileExchange()
 	const invalidStart = await startProviderFlow(
 		invalidInviteEnv,
@@ -1272,9 +1265,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 	).toEqual({ count: 0 })
 
 	const invitedSignup = createMigratedDb()
-	const invitedEnv = createAppEnv(invitedSignup.db, {
-		SIGNUP_MODE: 'invite',
-	})
+	const invitedEnv = createAppEnv(invitedSignup.db)
 	seedInvite(invitedSignup.sqlite, 'SOCIAL-INVITE')
 	mockGithubProfileExchange('social-invited@example.com')
 	const invitedStart = await startProviderFlow(
@@ -1332,9 +1323,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 	})
 
 	const existingLogin = createMigratedDb()
-	const existingEnv = createAppEnv(existingLogin.db, {
-		SIGNUP_MODE: 'invite',
-	})
+	const existingEnv = createAppEnv(existingLogin.db)
 	await seedUser(existingLogin.sqlite, {
 		id: 11,
 		email: 'existing-oauth@example.com',
@@ -1427,7 +1416,7 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 		stableUserId: await createStableUserIdFromEmail(victimEmail),
 	})
 	seedInvite(sqlite, 'OAUTH-STABLE-ID')
-	const env = createAppEnv(db, { SIGNUP_MODE: 'invite' })
+	const env = createAppEnv(db)
 	mockGithubProfileExchange(victimEmail)
 
 	const start = await startProviderFlow(
@@ -1517,60 +1506,4 @@ test('github signup skips a KV-reserved provider handle', async () => {
 	expect(user.username).not.toBe('octo-cat')
 	expect(user.username.includes('octocat')).toBe(false)
 	expect(getUsernameValidationError(user.username)).toBeNull()
-})
-
-test('OAuth signup honors KV signup-mode override over the env default', async () => {
-	const openOverride = createMigratedDb()
-	const openEnv = createAppEnv(openOverride.db, {
-		SIGNUP_MODE: 'invite',
-		BUNDLE_ARTIFACTS_KV: createSignupModeKv('open'),
-	})
-	mockGithubProfileExchange('kv-open-oauth@example.com')
-	const openStart = await startProviderFlow(
-		openEnv,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const openCallback = await runHandler(
-		createAuthProviderCallbackHandler(openEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${openStart.state}`,
-			{ headers: { Cookie: openStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(openCallback.status).toBe(302)
-	expect(openCallback.headers.get('Location')).toBe(
-		'/onboarding?accountCreated=1',
-	)
-	expect(
-		openOverride.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 1 })
-
-	const inviteOverride = createMigratedDb()
-	const inviteEnv = createAppEnv(inviteOverride.db, {
-		SIGNUP_MODE: 'open',
-		BUNDLE_ARTIFACTS_KV: createSignupModeKv('invite'),
-	})
-	mockGithubProfileExchange('kv-invite-oauth@example.com')
-	const inviteStart = await startProviderFlow(
-		inviteEnv,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const inviteCallback = await runHandler(
-		createAuthProviderCallbackHandler(inviteEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${inviteStart.state}`,
-			{ headers: { Cookie: inviteStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(inviteCallback.status).toBe(302)
-	expect(inviteCallback.headers.get('Location')).toBe(
-		'/login?oauthError=invite-required',
-	)
-	expect(
-		inviteOverride.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 0 })
 })

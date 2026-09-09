@@ -7,17 +7,9 @@ import {
 	readRouterSearch,
 } from '#client/router-location.tsx'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
 
 export type AuthMode = 'login' | 'signup'
 export type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
-export type SignupPanel = 'waiting-list' | 'invite' | 'open'
-
-function shouldOpenInviteSignup(searchParams: URLSearchParams) {
-	if (searchParams.has('code') || searchParams.has('invite')) return true
-	const panel = searchParams.get('panel')
-	return panel === 'invite' || panel === 'code'
-}
 
 export function readPrefillInviteCode(searchParams: URLSearchParams) {
 	for (const key of ['code', 'invite'] as const) {
@@ -27,25 +19,9 @@ export function readPrefillInviteCode(searchParams: URLSearchParams) {
 	return ''
 }
 
-export function resolveSignupPanel(
-	searchParams: URLSearchParams,
-	signupMode: SignupMode,
-): SignupPanel {
-	if (shouldOpenInviteSignup(searchParams)) return 'invite'
-	if (searchParams.get('panel') === 'waiting-list') return 'waiting-list'
-	return signupMode === 'waitlist' ? 'waiting-list' : signupMode
-}
-
 export function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	const path = mode === 'signup' ? '/signup' : '/login'
 	return buildAuthLink(path, redirectTo)
-}
-
-export function buildInviteSignupPath(redirectTo: string | null) {
-	const params = new URLSearchParams()
-	if (redirectTo) params.set('redirectTo', redirectTo)
-	params.set('panel', 'invite')
-	return `/signup?${params.toString()}`
 }
 
 export function getAuthModeFromPathname(pathname: string): AuthMode {

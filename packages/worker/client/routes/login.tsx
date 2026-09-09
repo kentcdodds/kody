@@ -29,29 +29,23 @@ import {
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
 } from '#client/public-form-protection.ts'
-import { type SignupMode } from '#universal/signup-mode.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	type AuthStatus,
-	type SignupPanel,
 	buildAuthPath,
-	buildInviteSignupPath,
 	getAuthModeFromPathname,
 	getCurrentAuthMode,
 	getCurrentRedirectTo,
 	getSearchParams,
-	resolveSignupPanel,
 	readPrefillInviteCode,
 } from './login-shared.ts'
 import {
 	formMessageCss,
-	ghostButtonCss,
 	renderAuthForm,
 	renderLoginVisualPanel,
 	renderMobileBrand,
-	renderWaitingListForm,
 } from './login-sections.tsx'
 
 /**
@@ -68,7 +62,6 @@ export function LoginRoute(handle: Handle) {
 	let sessionStatus: SessionStatus = 'idle'
 	let sessionEmail = ''
 	let authProviders: Array<AuthProviderInfo> = []
-	let signupMode: SignupMode = 'invite'
 	let turnstileSiteKey: string | null = null
 	// True once the provider list came from SSR-embedded or SPA-preloaded
 	// loader data (the normal paths); the client fetch is a fallback only.
@@ -76,10 +69,6 @@ export function LoginRoute(handle: Handle) {
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
 	let activeSignupSearch = readRouterSearch(handle)
-	let signupPanel: SignupPanel = resolveSignupPanel(
-		getSearchParams(handle),
-		signupMode,
-	)
 	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
 	let signupStartedTracked = false
 
@@ -121,14 +110,7 @@ export function LoginRoute(handle: Handle) {
 	}
 
 	function applySignupSearch(searchParams: URLSearchParams) {
-		signupPanel = resolveSignupPanel(searchParams, signupMode)
 		prefillInviteCode = readPrefillInviteCode(searchParams)
-	}
-
-	function setSignupPanel(nextPanel: SignupPanel) {
-		signupPanel = nextPanel
-		resetAuthState()
-		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -160,7 +142,6 @@ export function LoginRoute(handle: Handle) {
 		sessionEmail = session?.email ?? ''
 		if (config && !authProvidersReady) {
 			authProviders = config.providers
-			signupMode = config.signupMode
 			turnstileSiteKey = config.turnstileSiteKey
 			applySignupSearch(getSearchParams(handle))
 			authProvidersReady = true
@@ -172,53 +153,6 @@ export function LoginRoute(handle: Handle) {
 			return
 		}
 		handle.update()
-	}
-
-	async function handleWaitingListSubmit(event: SubmitEvent) {
-		event.preventDefault()
-		if (status === 'submitting' || status === 'success') return
-		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const form = event.currentTarget
-
-		const formData = new FormData(form)
-		const firstName = String(formData.get('firstName') ?? '').trim()
-		const email = String(formData.get('email') ?? '').trim()
-		const protection = readPublicFormProtection(formData, form)
-
-		if (!firstName || !email) {
-			setState('error', 'First name and email are required.')
-			return
-		}
-
-		setState('submitting')
-
-		try {
-			const response = await fetch('/waiting-list', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				credentials: 'include',
-				body: JSON.stringify({ firstName, email, ...protection }),
-			})
-			const payload = await response.json().catch(() => null)
-
-			if (!response.ok) {
-				const errorMessage =
-					typeof payload?.error === 'string'
-						? payload.error
-						: 'Unable to join the waiting list.'
-				setSubmitError(errorMessage)
-				return
-			}
-
-			const successMessage =
-				typeof payload?.message === 'string'
-					? payload.message
-					: "You're on the list. We'll be in touch."
-			form.reset()
-			setState('success', successMessage)
-		} catch {
-			setSubmitError('Network error. Please try again.')
-		}
 	}
 
 	async function handleSubmit(event: SubmitEvent) {
@@ -436,7 +370,6 @@ export function LoginRoute(handle: Handle) {
 			)
 			if (routeData) {
 				authProviders = routeData.providers
-				signupMode = routeData.signupMode
 				turnstileSiteKey = routeData.turnstileSiteKey
 				applySignupSearch(getSearchParams(handle))
 				authProvidersReady = true
@@ -475,24 +408,14 @@ export function LoginRoute(handle: Handle) {
 				? getOauthLoginErrorMessage(getSearchParams(handle).get('oauthError'))
 				: null
 		const isSignup = mode === 'signup'
-		const showWaitingList = isSignup && signupPanel === 'waiting-list'
-		const showInviteSignup = isSignup && signupPanel === 'invite'
 		const isSubmitting = status === 'submitting'
-		const title = showWaitingList
-			? 'Join the waiting list'
-			: isSignup
-				? 'Create your account'
-				: 'Welcome back'
-		const description = showWaitingList
-			? 'Kody is built for people who want to own their automations. Join the waitlist for an invite.'
-			: isSignup
-				? showInviteSignup
-					? 'Use your invite code to create an account and start building automations you own.'
-					: 'Create an account and start building automations you own.'
-				: 'Sign in to pick up where you left off.'
+		const title = isSignup ? 'Create your account' : 'Welcome back'
+		const description = isSignup
+			? 'Create an account and start building automations you own.'
+			: 'Sign in to pick up where you left off.'
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const submitBusyLabel = isSignup ? 'Creating account…' : 'Signing in…'
-		const showSocial = !showWaitingList && authProviders.length > 0
+		const showSocial = authProviders.length > 0
 
 		return (
 			<div mix={css(authLayoutCss)}>
@@ -513,50 +436,20 @@ export function LoginRoute(handle: Handle) {
 							</p>
 						) : null}
 
-						{showWaitingList
-							? renderWaitingListForm({
-									handleId: handle.id,
-									turnstileSiteKey,
-									status,
-									message,
-									isSubmitting,
-									onSubmit: handleWaitingListSubmit,
-									onFieldEdit: clearFieldError,
-								})
-							: renderAuthForm({
-									handleId: handle.id,
-									turnstileSiteKey,
-									status,
-									message,
-									isSubmitting,
-									isSignup,
-									showInviteSignup,
-									prefillInviteCode,
-									submitLabel,
-									submitBusyLabel,
-									onSubmit: handleSubmit,
-									onPasskeySignIn: handlePasskeySignIn,
-									onFieldEdit: clearFieldError,
-								})}
-
-						{isSignup ? (
-							<button
-								type="button"
-								disabled={isSubmitting}
-								data-rise
-								style={{ '--rise': '2' }}
-								mix={[
-									css(ghostButtonCss),
-									on('click', () =>
-										setSignupPanel(showWaitingList ? 'invite' : 'waiting-list'),
-									),
-								]}
-							>
-								{showWaitingList
-									? 'I have a code'
-									: 'Join the waiting list instead'}
-							</button>
-						) : null}
+						{renderAuthForm({
+							handleId: handle.id,
+							turnstileSiteKey,
+							status,
+							message,
+							isSubmitting,
+							isSignup,
+							prefillInviteCode,
+							submitLabel,
+							submitBusyLabel,
+							onSubmit: handleSubmit,
+							onPasskeySignIn: handlePasskeySignIn,
+							onFieldEdit: clearFieldError,
+						})}
 
 						{showSocial ? (
 							<>
@@ -598,19 +491,13 @@ export function LoginRoute(handle: Handle) {
 									Already have an account?{' '}
 									<a href={buildAuthPath('login', redirectTo)}>Sign in</a>.
 								</p>
-							) : signupMode === 'open' ? (
+							) : (
 								<p>
 									New here?{' '}
 									<a href={buildAuthPath('signup', redirectTo)}>
 										Create an account
 									</a>
 									.
-								</p>
-							) : (
-								<p>
-									New here? Kody is invite-only:{' '}
-									<a href="/#invite">join the waiting list</a> or{' '}
-									<a href={buildInviteSignupPath(redirectTo)}>redeem a code</a>.
 								</p>
 							)}
 							<p mix={css(authLegalCss)}>

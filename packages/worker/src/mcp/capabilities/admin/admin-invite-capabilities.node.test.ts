@@ -198,10 +198,10 @@ test('adminInviteCreate and adminInviteList: admin-only, normalize, bulk, audit'
 	})
 	expect(listed.invites.some((invite) => 'created_by' in invite)).toBe(false)
 
-	const signupMode = sqlite
+	const inviteCount = sqlite
 		.prepare(`SELECT COUNT(*) AS total FROM invites`)
 		.get() as { total: number }
-	expect(signupMode.total).toBe(5)
+	expect(inviteCount.total).toBe(5)
 
 	expect(auditEventSummaries()).toEqual(
 		expect.arrayContaining([

@@ -242,8 +242,6 @@ rule.
 - `adminReservedUsernameList`
 - `adminReservedUsernameAdd`
 - `adminReservedUsernameRemove`
-- `adminSignupModeGet`
-- `adminSignupModeSet`
 - `adminInviteCreate`
 - `adminInviteList`
 - `adminSystemEmailList`
@@ -467,26 +465,23 @@ Use filename suffixes to choose the Vitest project:
   unless those terms are the stable user-facing concept forever.
 - Use singular nouns for single-entity operations (`packageGet`) and plural
   nouns only when the object being manipulated is itself plural.
-- Before open signup, fix bad names directly while Kent is the only user and can
-  manually update saved packages, jobs, and secret allowlists. After real users
-  exist, treat capability names as persisted contracts.
+- Treat capability names as persisted contracts. Real users can reference them
+  from saved packages, jobs, and secret allowlists.
 - Avoid introducing new public MCP tool names for individual capabilities.
 
 ## Compatibility and versioning policy
 
 Capability names, input field names, output field names, domain ids, and MCP
 synthesized names are compatibility contracts once real users can reference
-them. Treat every change as if it might affect saved user code. This policy is
-for the post-cleanup, pre-open-signup line in the sand; do not add
-alias/deprecation machinery for the current Kent-only cleanup.
+them. Treat every change as if it might affect saved user code. Do not add
+alias/deprecation machinery for a cleanup pass.
 
 - Inputs are additive-only. Add optional fields first; never make an existing
   optional field required for an existing capability name.
 - Outputs are additive-only. Never remove or rename an output field, even if the
   field looks awkward or inconsistently cased.
-- Capability renames after open signup need an explicit compatibility plan
-  before implementation. Do not straddle old and new names during the current
-  cleanup.
+- Capability renames need an explicit compatibility plan before implementation.
+  Do not straddle old and new names during a cleanup pass.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
 - MCP server capability entity ids use `mcp:<name>:<tool>` (for example

@@ -231,7 +231,7 @@ const headSubCss = {
 	},
 }
 
-/* Search: the waitlist pill grammar, one field + one verb. */
+/* Search: connected-pill grammar, one field + one verb. */
 const searchPillCss = {
 	marginTop: '1.8rem',
 	display: 'grid',

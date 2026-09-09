@@ -1,14 +1,14 @@
 /**
  * Kit (kit.com) signup tagging helpers.
  *
- * When someone creates a Kody account and already exists as a Kit subscriber
- * (for example from the public waitlist), tag them `signed_up::kody`. Existing
- * tags such as `waitlist::kody` are left alone — Kit tags are additive.
+ * When someone creates a Kody account and already exists as a Kit subscriber,
+ * tag them `signed_up::kody`. Existing tags are left alone — Kit tags are
+ * additive.
  *
  * Auth uses the `X-Kit-Api-Key` header against `https://api.kit.com/v4`.
  */
 
-import { KIT_API_BASE_URL } from '#app/kit-waitlist.ts'
+export const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 
 /** Kit tag `signed_up::kody` — override with `KIT_SIGNED_UP_TAG_ID` if needed. */
 export const DEFAULT_KIT_SIGNED_UP_TAG_ID = 21252175
@@ -118,7 +118,7 @@ async function kitFetch(
 
 /**
  * If the email already exists in Kit, apply the signed-up tag. Does not create
- * subscribers and does not remove other tags (including waitlist).
+ * subscribers and does not remove other tags.
  */
 export async function tagExistingKitSubscriberOnSignup(
 	input: TagExistingKitSubscriberOnSignupInput,

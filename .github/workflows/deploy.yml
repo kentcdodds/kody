@@ -531,7 +531,7 @@ jobs:
       # package runtime lane actually reads. COOKIE_SECRET/SECRET_STORE_KEY
       # (app-origin sessions + user secret store), AI_GATEWAY_ID (capability
       # embeddings), SENTRY_DSN (error reporting), CLOUDFLARE_API_TOKEN
-      # (Cloudflare REST capabilities). Billing (Stripe), waiting-list (Kit),
+      # (Cloudflare REST capabilities). Billing (Stripe), Kit subscriber tags,
       # OAuth client credentials, and maintenance secrets stay main-only so a
       # runtime-Worker compromise cannot reach them.
       # The runtime Worker's CLOUDFLARE_API_TOKEN comes from the narrower

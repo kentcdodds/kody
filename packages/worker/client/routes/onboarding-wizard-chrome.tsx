@@ -127,7 +127,7 @@ const stepNumberCss = {
 	transition: `background-color 160ms ${transitions.easeOut}`,
 }
 
-/* Feedback (checks appearing) borrows the waitlist's success-in pop. */
+/* Feedback (checks appearing) borrows the success-in pop. */
 const wizardPopCss = {
 	'@media (prefers-reduced-motion: no-preference)': {
 		animation: `success-in 200ms ${transitions.easeOut} both`,

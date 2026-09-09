@@ -1,4 +1,3 @@
-import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	appendAttributionQueryParams,
 	type FirstTouchAttribution,
@@ -11,7 +10,6 @@ import {
 export type AuthProviderInfo = { id: string; label: string }
 export type PublicAuthConfig = {
 	providers: Array<AuthProviderInfo>
-	signupMode: SignupMode
 	turnstileSiteKey: string | null
 }
 
@@ -49,12 +47,11 @@ export async function fetchPublicAuthConfig(
 				typeof (provider as AuthProviderInfo).id === 'string' &&
 				typeof (provider as AuthProviderInfo).label === 'string',
 		)
-		const signupMode = parseSignupMode(payload.signupMode)
 		const turnstileSiteKey =
 			typeof payload.turnstileSiteKey === 'string'
 				? payload.turnstileSiteKey
 				: null
-		return { providers, signupMode, turnstileSiteKey }
+		return { providers, turnstileSiteKey }
 	} catch {
 		return null
 	}
@@ -67,8 +64,8 @@ export async function fetchPublicAuthConfig(
  * nor a fetch-followed redirect may leave the origin — a top-level JS
  * navigation may. Returns an error message, or null when navigation started.
  *
- * Pass `inviteCode` when starting from the invite signup panel so production
- * can create the account on callback. Pass `attribution` so first-touch UTMs
+ * Pass `inviteCode` when the signup form includes an optional gift code so
+ * the callback can consume it. Pass `attribution` so first-touch UTMs
  * survive the OAuth round-trip in the signed login-state cookie.
  */
 export async function startSocialSignIn(

@@ -86,51 +86,18 @@ request so cookie signing and verification are available to handlers.
 
 ### Signup posture and invites
 
-Signup gating is the runtime setting `resolveSignupMode` reads from
-`packages/worker/src/signup-mode-setting.ts`. A valid JSON override at the
-platform KV key `platform-settings:v1:signup-mode` wins; otherwise the
-`SIGNUP_MODE` Worker var (`packages/worker/universal/signup-mode.ts`,
-`getSignupMode`) is the default. Password and social signup require a valid
-invite whenever the resolved mode is not `open` (`invite` and `waitlist` both
-gate). Wrangler sets `SIGNUP_MODE: 'invite'` for `production` and `preview`, and
-`'open'` for `test` (Playwright / `CLOUDFLARE_ENV=test`). Local `npm run dev`
-defaults to the `production` Wrangler env (`CLOUDFLARE_ENV` defaults to
-`production` in `wrangler-env.ts`), so invite gating applies unless an admin
-override is stored or you point at `test`. Admins change the override from
-`/admin/invites` or the `adminSignupModeGet` / `adminSignupModeSet`
-capabilities. Writes require `expectedCurrentMode` matching the stored mode; a
-mismatch is refused so a stale tab cannot clobber a newer override. Setting
-`open` is refused unless both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`
-are configured. `isNonProductionRuntime` is unrelated to invite gating (it still
-gates Kit waitlist soft-fail, email-send skip when no sender is configured, and
-similar non-production shortcuts).
-
-The public `/signup` page defaults to a waiting-list form (first name + email)
-backed by `POST /waiting-list`, which upserts a Kit subscriber and tags them
-`waitlist::kody`. An "I have a code" control reveals the invite signup form.
-`?code`, `?invite`, or `?panel=invite` also opens the invite form directly.
-
-Waiting-list Kit integration:
-
-- Worker secret `KIT_API_KEY` (Kit v4 `X-Kit-Api-Key`)
-- Optional `KIT_WAITLIST_TAG_ID` (defaults to the `waitlist::kody` tag id)
-- Optional `KIT_WAITLIST_SEQUENCE_ID` (defaults to the "Kody Waitlist Welcome"
-  sequence, which sends an immediate thank-you from `hello@kentcdodds.com`
-  asking what they hope to use Kody for)
-- Production fails closed with 503 when `KIT_API_KEY` is unset; non-production
-  accepts the join without calling Kit so local/preview UX stays usable. Preview
-  deploys intentionally omit `KIT_API_KEY` so they never write to the production
-  Kit audience.
-- Existing Kit subscribers are tagged/enrolled without overwriting their
-  `first_name`
-- Rate-limited per client IP (5 requests / 15 minutes)
+Anyone can create an account from `/signup` (password or social). An optional
+operator-minted invite code can still be supplied (`?code=` / `?invite=` or the
+optional field on the form); when present it is consumed and can grant the
+invite's stored plan. Referral share links (`?ref=`) are a separate growth
+program and do not use the `invites` table.
 
 Account signup Kit tagging (password and OAuth signup):
 
 - When `KIT_API_KEY` is set and the new account email already exists in Kit,
   apply `signed_up::kody` (optional override `KIT_SIGNED_UP_TAG_ID`)
-- Does not create Kit subscribers for people who were never on the list
-- Leaves existing tags alone (including `waitlist::kody`)
+- Does not create Kit subscribers for people who were never in Kit
+- Leaves existing tags alone
 - Best-effort only: Kit errors or a missing key never fail account creation
 
 Exist-only Kit subscriber sync (`packages/worker/src/kit/subscriber-sync.ts`)
@@ -161,11 +128,9 @@ The `invites` table stores operator-created invite codes:
   `free`. Admin invite creation validates plan names with strict
   `parsePlanName`. See [Entitlements](./entitlements.md).
 
-When invite gating is on, signup atomically consumes an invite with a single
-conditional `UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`;
-concurrent requests cannot over-use a code. The open `test` env skips the invite
-requirement when no code is supplied, but still consumes and validates a code
-when one is provided so E2E coverage can exercise the same path.
+When a code is supplied, signup atomically consumes it with a single conditional
+`UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
+requests cannot over-use a code. Signup without a code creates a free account.
 
 Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
 guard, not an owner-scoped content bypass. Invite creation (including optional

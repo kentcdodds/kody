@@ -3,7 +3,6 @@ import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import {
 	getBlogPost,
 	getReadNextBlogPost,
@@ -97,17 +96,13 @@ export function createBlogPostHandler(env: Env) {
 			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
-			const [blogPost, signupMode] = await Promise.all([
-				toBlogPostLoaderData(env, post, serverTiming),
-				resolveSignupMode(env),
-			])
+			const blogPost = await toBlogPostLoaderData(env, post, serverTiming)
 			return withVaryAccept(
 				await renderAppPage({
 					request,
 					env,
 					loaderData: {
 						blogPost,
-						signupMode,
 					},
 					serverTiming,
 				}),

@@ -502,6 +502,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
 		'package-retriever-index-entry:v1:user-bbb:search:pkg-2:notes',
 		'platform-settings:v1:reserved-usernames',
+		// Leftover unused platform KV key. App code no longer reads or writes
+		// it; account deletion still must leave platform keys alone.
 		'platform-settings:v1:signup-mode',
 	]
 	const kv = {

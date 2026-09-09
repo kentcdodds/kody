@@ -19,12 +19,11 @@ node tools/control-kody.ts request GET /admin 403
 403 on the seed account is success. Local `kody@example.com` is admin; do not
 use it unless the change is an admin surface. The users list accepts
 `verification=stalled` for unverified person accounts whose latest signup/verify
-send is still `accepted` after 60 minutes. `/admin/invites` also sets signup
-mode (`invite` / `open` / `waitlist`). Operators mint or list codes from MCP
-with `adminInviteCreate` (optional bulk `codes`) and `adminInviteList`.
-Operators run one bounded unverified-account purge pass with
-`adminUnverifiedAccountPurgeRun` (`dryRun` previews the next claim page; results
-carry stable user ids).
+send is still `accepted` after 60 minutes. `/admin/invites` mints optional gift
+or launch invite codes. Operators mint or list codes from MCP with
+`adminInviteCreate` (optional bulk `codes`) and `adminInviteList`. Operators run
+one bounded unverified-account purge pass with `adminUnverifiedAccountPurgeRun`
+(`dryRun` previews the next claim page; results carry stable user ids).
 
 ## APIs
 

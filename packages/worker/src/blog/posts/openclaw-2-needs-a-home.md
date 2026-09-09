@@ -171,8 +171,8 @@ If you already have a Claw, add Kody today:
 https://kody.codes/onboarding?agent=openclaw.
 
 If you don't have either yet, start with the conversation or the home, whichever
-pain you actually have. OpenClaw is at https://openclaw.ai. Kody signup is
-invite-gated, with a waitlist on https://kody.codes/signup. The source is at
+pain you actually have. OpenClaw is at https://openclaw.ai. Create a free Kody
+account at https://kody.codes/signup. The source is at
 https://github.com/kentcdodds/kody.
 
 Either way, notice what your assistant is accumulating that you don't want

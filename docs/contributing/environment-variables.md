@@ -228,19 +228,12 @@ non-production runtimes (used by local dev and E2E tests). In GitHub Actions the
 values live under `OAUTH_`-prefixed secret names because Actions reserves
 `GITHUB_*`; the deploy workflow maps them to the unprefixed Worker secrets.
 
-## Kit waiting list
+## Kit subscriber tags
 
-Optional Worker secrets / vars for the public `/signup` waiting-list form
-(`POST /waiting-list`):
+Optional Worker secrets / vars for exist-only Kit tagging on account events:
 
-- `KIT_API_KEY` — Kit v4 API key (`X-Kit-Api-Key`). Required for production
-  waiting-list joins to succeed; when unset, production returns 503 for the
-  endpoint while the rest of the app stays up. Preview deploys omit the key so
-  joins no-op instead of writing to the production Kit audience.
-- `KIT_WAITLIST_TAG_ID` — optional override for the Kit tag id (defaults to the
-  `waitlist::kody` tag).
-- `KIT_WAITLIST_SEQUENCE_ID` — optional override for the welcome sequence id
-  (defaults to "Kody Waitlist Welcome", from `hello@kentcdodds.com`).
+- `KIT_API_KEY` — Kit v4 API key (`X-Kit-Api-Key`). Preview deploys omit the key
+  so they never write to the production Kit audience.
 - `KIT_SIGNED_UP_TAG_ID` — optional override for the Kit tag applied on account
   signup when the email already exists in Kit (defaults to `signed_up::kody`).
   Account events never create Kit subscribers and never fail when Kit is unset.
@@ -248,21 +241,9 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
   (`signed_up::kody`, `verified::kody`, `agent_connected::kody`,
   `activated::kody`, plus `standard::kody` / `pro::kody` from Stripe). Paid tags
   are removed on cancel. The hourly `kit_subscriber_sync` lane reconciles the
-  same exist-only tags. Waitlist joins still create subscribers via
-  `POST /waiting-list`.
+  same exist-only tags.
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
-
-## Signup mode
-
-`SIGNUP_MODE` is a public Wrangler var (`invite` / `open` / `waitlist`) that
-supplies the default when no runtime override is stored. Production and preview
-are `invite`; the Wrangler `test` env is `open` for fixtures and E2E. The
-runtime override lives in `BUNDLE_ARTIFACTS_KV` at
-`platform-settings:v1:signup-mode` and is managed from `/admin/invites` (and the
-`adminSignupModeGet` / `adminSignupModeSet` capabilities). Setting `open` is
-refused unless both `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` are
-configured.
 
 ## Stripe billing
 
