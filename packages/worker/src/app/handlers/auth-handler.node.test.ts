@@ -64,6 +64,7 @@ function createAuthTestContext(
 		failRoleAssignment?: boolean
 		emailConfigured?: boolean
 		kv?: KVNamespace
+		sentryEnvironment?: 'test' | 'preview' | 'production'
 	} = {},
 ) {
 	const testDb = createTestDb({
@@ -72,7 +73,7 @@ function createAuthTestContext(
 	const handler = createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: testDb.db,
-		SENTRY_ENVIRONMENT: 'test' as const,
+		SENTRY_ENVIRONMENT: options.sentryEnvironment ?? 'test',
 		...(options.kv ? { BUNDLE_ARTIFACTS_KV: options.kv } : {}),
 		...(options.emailConfigured
 			? {
@@ -892,7 +893,7 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 
 test('production signup fails closed when no verification email sender is configured', async () => {
 	consoleError.mockImplementation(() => {})
-	const context = createAuthTestContext()
+	const context = createAuthTestContext({ sentryEnvironment: 'production' })
 	context.testDb.addInvite('PROD-NO-EMAIL')
 
 	const response = await context.request({
