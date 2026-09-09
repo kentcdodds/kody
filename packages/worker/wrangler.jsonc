@@ -520,6 +520,10 @@
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
 					"dataset": "kody_execute_interpretable_events",
 				},
+				{
+					"binding": "MCP_SEARCH_EVENTS",
+					"dataset": "kody_mcp_search_events",
+				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -937,6 +941,10 @@
 				{
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
 					"dataset": "kody_execute_interpretable_events_preview",
+				},
+				{
+					"binding": "MCP_SEARCH_EVENTS",
+					"dataset": "kody_mcp_search_events_preview",
 				},
 			],
 			"ai": {

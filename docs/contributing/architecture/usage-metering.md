@@ -451,6 +451,50 @@ ORDER BY executes DESC
 `q = interpretable / total` from that grouping, or
 `sumIf(_sample_interval, blob1 = 'interpretable') / sum(_sample_interval)`.
 
+## MCP search duration
+
+Measurement-only Analytics Engine dataset for MCP `search` wall clock and the
+exclusive tiles that should sum to it. This is **not** a `recordUsage()` event,
+does not enter `usage_rollups`, and is not a UWD surface. Search-scope and
+memory retrievers already mint `dynamic_worker_day` with surface `retriever`.
+The write path lives in `packages/worker/src/mcp/tools/search-observability.ts`.
+
+Production dataset `kody_mcp_search_events` (preview:
+`kody_mcp_search_events_preview`). Binding `MCP_SEARCH_EVENTS` on origin and
+platform (where MCP search runs). Schema:
+
+| Field     | Value                                     |
+| --------- | ----------------------------------------- |
+| `index1`  | `mcp_search` (shared sampling population) |
+| `blob1`   | `success` or `failure`                    |
+| `blob2`   | `list`, `entity`, or `entity-batch`       |
+| `blob3`   | intent task name, or empty                |
+| `blob4`   | `trimmed` or `intact`                     |
+| `blob5`   | `offline` or `online`                     |
+| `double1` | `durationMs`                              |
+| `double2` | `unaccountedMs`                           |
+| `double3` | `loadAndRankMs`                           |
+| `double4` | `waitingItemsMs`                          |
+| `double5` | `memoryEnrichmentMs`                      |
+| `double6` | `rowAndRegistryLoadMs`                    |
+| `double7` | `retrieversMs`                            |
+| `double8` | intent confidence (`-1` when unknown)     |
+| `double9` | `trimmedMatchCount`                       |
+
+No user, query, conversation, or request identity. Recording is a no-op without
+the binding. Query with `_sample_interval` weights:
+
+```sql
+SELECT
+  quantile(0.5)(double1) AS p50_ms,
+  quantile(0.95)(double1) AS p95_ms,
+  avg(double2) AS avg_unaccounted_ms,
+  avg(double4) AS avg_waiting_ms,
+  SUM(_sample_interval) AS calls
+FROM kody_mcp_search_events
+WHERE timestamp > NOW() - INTERVAL '1' HOUR
+```
+
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by

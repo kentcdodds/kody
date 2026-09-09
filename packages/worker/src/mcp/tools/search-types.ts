@@ -105,6 +105,23 @@ export type SearchPhaseTimings = {
 	memoryAcknowledgementTimedOut?: boolean
 	memoryEnrichmentFailed?: boolean
 	memoryAcknowledgementFailed?: boolean
+	/**
+	 * Exclusive wall-clock tiles. These do not overlap, so summing them and
+	 * comparing to `durationMs` is how an operator reconciles the published
+	 * phases against tool wall clock. Nested/overlapping detail phases
+	 * (retrievers, memory, candidate plugins) stay beside them and must not
+	 * be added into `exclusiveMs`.
+	 */
+	usernameLookupMs?: number
+	identityResolutionMs?: number
+	loadAndRankMs?: number
+	searchUnifiedMs?: number
+	entityResolveMs?: number
+	firstSearchStampMs?: number
+	onboardingNoticeMs?: number
+	waitingItemsMs?: number
+	exclusiveMs?: number
+	unaccountedMs?: number
 }
 
 export type SearchGuidanceContext = {

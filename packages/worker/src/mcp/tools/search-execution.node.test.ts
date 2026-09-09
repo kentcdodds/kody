@@ -210,13 +210,23 @@ test('executeSearchList shares one dynamic-worker budget across memory and searc
 	for (const release of state.releases.splice(0)) release()
 	await expect.poll(() => state.started).toBe(6)
 	for (const release of state.releases.splice(0)) release()
-	await searchPromise
+	const searchResult = await searchPromise
 
 	expect(state.started).toBe(6)
 	expect(state.active).toBe(0)
 	expect(state.maxActive).toBe(4)
 	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledTimes(1)
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledTimes(1)
+	expect(searchResult.phaseTimings).toEqual(
+		expect.objectContaining({
+			usernameLookupMs: expect.any(Number),
+			identityResolutionMs: expect.any(Number),
+			loadAndRankMs: expect.any(Number),
+			searchUnifiedMs: expect.any(Number),
+			retrieversMs: expect.any(Number),
+			rowAndRegistryLoadMs: expect.any(Number),
+		}),
+	)
 })
 
 test('executeSearchList embeds each distinct text once and starts the query embedding before rows resolve', async () => {

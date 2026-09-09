@@ -342,7 +342,16 @@ test('search tool returns compact query markdown while preserving structured aux
 		expect.objectContaining({
 			memoryEnrichmentTimedOut: false,
 			memoryEnrichmentMs: expect.any(Number),
+			usernameLookupMs: expect.any(Number),
+			identityResolutionMs: expect.any(Number),
+			loadAndRankMs: expect.any(Number),
+			waitingItemsMs: expect.any(Number),
+			exclusiveMs: expect.any(Number),
+			unaccountedMs: expect.any(Number),
 		}),
+	)
+	expect(result.phaseTimings?.exclusiveMs).toBeLessThanOrEqual(
+		successResponse.structuredContent.timing.durationMs,
 	)
 	expect(mockModule.acknowledgeToolMemories).not.toHaveBeenCalled()
 

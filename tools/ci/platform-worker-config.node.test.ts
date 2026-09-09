@@ -11,7 +11,9 @@ const platformBaseConfigPath = 'packages/platform-worker/wrangler.jsonc'
 
 test('platform worker owns remaining classes and binds runtime DOs cross-script', async () => {
 	const config = parseJsonc<{
-		migrations?: Array<{ transferred_classes?: Array<Record<string, unknown>> }>
+		migrations?: Array<{
+			transferred_classes?: Array<Record<string, unknown>>
+		}>
 		env?: Record<
 			string,
 			{
@@ -157,6 +159,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'EXECUTE_INTERPRETABLE_EVENTS',
 				dataset: 'kody_execute_interpretable_events_pr',
 			},
+			{
+				binding: 'MCP_SEARCH_EVENTS',
+				dataset: 'kody_mcp_search_events_pr',
+			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
@@ -237,6 +243,14 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		).toEqual({
 			binding: 'EXECUTE_INTERPRETABLE_EVENTS',
 			dataset: 'kody_execute_interpretable_events_pr',
+		})
+		expect(
+			previewEnv?.analytics_engine_datasets?.find(
+				(entry) => entry.binding === 'MCP_SEARCH_EVENTS',
+			),
+		).toEqual({
+			binding: 'MCP_SEARCH_EVENTS',
+			dataset: 'kody_mcp_search_events_pr',
 		})
 		expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 			binding: 'WEBHOOK_DISPATCH_QUEUE',
