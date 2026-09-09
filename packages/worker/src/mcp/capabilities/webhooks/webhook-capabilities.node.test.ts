@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	listWebhooksForUser: vi.fn(),
 	mintWebhookUrlForUser: vi.fn(),
 	rotateWebhookUrlForUser: vi.fn(),
+	applyWebhookUrlForUser: vi.fn(),
 	setWebhookEnabledForUser: vi.fn(),
 	resolveSavedPackage: vi.fn(),
 	getWebhookEndpointByKey: vi.fn(),
@@ -18,6 +19,8 @@ vi.mock('#worker/webhooks/service.ts', () => ({
 		mockModule.mintWebhookUrlForUser(...args),
 	rotateWebhookUrlForUser: (...args: Array<unknown>) =>
 		mockModule.rotateWebhookUrlForUser(...args),
+	applyWebhookUrlForUser: (...args: Array<unknown>) =>
+		mockModule.applyWebhookUrlForUser(...args),
 	setWebhookEnabledForUser: (...args: Array<unknown>) =>
 		mockModule.setWebhookEnabledForUser(...args),
 }))
@@ -42,6 +45,7 @@ const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
 const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
 const { webhookEnableCapability } = await import('./webhook-enable.ts')
 const { webhookDisableCapability } = await import('./webhook-disable.ts')
+const { webhookUrlApplyCapability } = await import('./webhook-url-apply.ts')
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
@@ -79,6 +83,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 				encoding: 'hex',
 			},
 			minted: true,
+			handle: 'whh_ep-1',
+			urlHost: 'heykody.dev',
 			enabled: true,
 			createdAt: '2026-07-24T00:00:00.000Z',
 			rotatedAt: '2026-07-24T00:00:00.000Z',
@@ -88,8 +94,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
-		url: 'https://heykody.dev/@user/webhooks/sentry-bridge/sentry/secret-once',
-		urlSecret: 'secret-once',
+		handle: 'whh_ep-1',
+		urlHost: 'heykody.dev',
 		enabled: true,
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T00:00:00.000Z',
@@ -98,8 +104,8 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
-		url: 'https://heykody.dev/@user/webhooks/sentry-bridge/sentry/new-secret',
-		urlSecret: 'new-secret',
+		handle: 'whh_ep-1',
+		urlHost: 'heykody.dev',
 		enabled: true,
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T01:00:00.000Z',
@@ -170,19 +176,53 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	const ctx = createCapabilityContext()
 	const listed = await webhookListCapability.handler({}, ctx)
 	expect(listed.webhooks[0]?.minted).toBe(true)
+	expect(listed.webhooks[0]?.handle).toBe('whh_ep-1')
 	expect(JSON.stringify(listed)).not.toContain('secret-once')
 
 	const minted = await webhookUrlMintCapability.handler(
 		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(minted.webhook.url_secret).toBe('secret-once')
+	expect(minted.webhook.handle).toBe('whh_ep-1')
+	expect(minted.webhook.url_host).toBe('heykody.dev')
+	expect(minted.webhook).not.toHaveProperty('url')
+	expect(minted.webhook).not.toHaveProperty('url_secret')
 
 	const rotated = await webhookUrlRotateCapability.handler(
 		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
 		ctx,
 	)
-	expect(rotated.webhook.url_secret).toBe('new-secret')
+	expect(rotated.webhook.handle).toBe('whh_ep-1')
+	expect(rotated.webhook).not.toHaveProperty('url_secret')
+
+	mockModule.applyWebhookUrlForUser.mockResolvedValue({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 201,
+		remoteId: '4242',
+		error: null,
+	})
+	await expect(
+		webhookUrlApplyCapability.handler(
+			{
+				handle: 'whh_ep-1',
+				destination: { type: 'github', owner: 'acme', repo: 'api' },
+			},
+			ctx,
+		),
+	).resolves.toEqual({
+		ok: true,
+		url_host: 'heykody.dev',
+		http_status: 201,
+		remote_id: '4242',
+		error: null,
+	})
+	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle: 'whh_ep-1',
+			destination: { type: 'github', owner: 'acme', repo: 'api' },
+		}),
+	)
 
 	await expect(
 		webhookDisableCapability.handler(

@@ -6,6 +6,7 @@ type WebhookEndpointRow = {
 	package_id: string
 	webhook_name: string
 	url_secret_hash: string
+	url_secret_encrypted?: string | null
 	enabled: number
 	created_at: string
 	rotated_at: string
@@ -18,6 +19,7 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		packageId: row.package_id,
 		webhookName: row.webhook_name,
 		urlSecretHash: row.url_secret_hash,
+		urlSecretEncrypted: row.url_secret_encrypted ?? null,
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
 		rotatedAt: row.rotated_at,
@@ -163,5 +165,27 @@ export async function setWebhookEndpointEnabled(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 		webhookName: input.webhookName,
+	})
+}
+
+export async function updateWebhookEndpointSecretCiphertext(input: {
+	db: D1Database
+	userId: string
+	endpointId: string
+	urlSecretEncrypted: string
+}): Promise<WebhookEndpointRecord | null> {
+	const result = await input.db
+		.prepare(
+			`UPDATE webhook_endpoints
+			SET url_secret_encrypted = ?
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(input.urlSecretEncrypted, input.endpointId, input.userId)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getWebhookEndpointByIdForUser({
+		db: input.db,
+		userId: input.userId,
+		endpointId: input.endpointId,
 	})
 }

@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { rotateWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
-	mintedWebhookUrlSchema,
+	mintedWebhookHandleSchema,
 	requirePackageRef,
 	toMintedWebhookCapability,
 	webhookPackageRefSchema,
@@ -15,8 +15,8 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlRotate',
 		description:
-			'Rotate the URL secret for a minted package webhook and return the new full URL once. The replaced URL stops working immediately.',
-		keywords: ['webhook', 'rotate', 'secret', 'credential', 'url'],
+			'Rotate the URL secret for a minted package webhook and return a new opaque handle. The replaced URL stops working immediately. Register the new URL with webhookUrlApply — the credential is never returned.',
+		keywords: ['webhook', 'rotate', 'secret', 'handle', 'url'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -38,7 +38,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 				}
 			}),
 		outputSchema: z.object({
-			webhook: mintedWebhookUrlSchema,
+			webhook: mintedWebhookHandleSchema,
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)

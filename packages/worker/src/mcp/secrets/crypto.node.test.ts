@@ -5,9 +5,12 @@ import {
 	decryptUnversionedCiphertext,
 	encryptSecretValue,
 	encryptPlatformOauthClientSecret,
+	encryptWebhookUrlSecret,
+	decryptWebhookUrlSecret,
 	platformOauthAppContext,
 	secretCiphertextPurposes,
 	userSecretContext,
+	userWebhookUrlSecretContext,
 } from './crypto.ts'
 
 const primaryKey = 'primary-secret-store-key-at-least-32-chars!!'
@@ -81,6 +84,23 @@ test('secret AAD/versioning binds identity context, platform OAuth slugs, and re
 			platformOauthAppContext('two'),
 		),
 	).rejects.toThrow('Unable to decrypt platform client secret.')
+
+	const webhookContext = userWebhookUrlSecretContext('user-a', 'endpoint-1')
+	const webhookEncrypted = await encryptWebhookUrlSecret(
+		env,
+		'webhook-url-secret',
+		webhookContext,
+	)
+	expect(
+		await decryptWebhookUrlSecret(env, webhookEncrypted, webhookContext),
+	).toBe('webhook-url-secret')
+	await expect(
+		decryptWebhookUrlSecret(
+			env,
+			webhookEncrypted,
+			userWebhookUrlSecretContext('user-a', 'endpoint-2'),
+		),
+	).rejects.toThrow('Unable to decrypt webhook URL secret.')
 
 	// Reproduce the pre-v2 format: AES-GCM with no AAD, `<iv>.<ciphertext>`.
 	const digest = await crypto.subtle.digest(

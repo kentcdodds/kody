@@ -44,6 +44,7 @@ export type WebhookEndpointRecord = {
 	packageId: string
 	webhookName: string
 	urlSecretHash: string
+	urlSecretEncrypted: string | null
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string

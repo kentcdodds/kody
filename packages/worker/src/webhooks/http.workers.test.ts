@@ -158,12 +158,22 @@ async function ensureSchema(db: D1Database) {
 				package_id TEXT NOT NULL,
 				webhook_name TEXT NOT NULL,
 				url_secret_hash TEXT NOT NULL,
+				url_secret_encrypted TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,
 				created_at TEXT NOT NULL,
 				rotated_at TEXT NOT NULL
 			)`,
 		)
 		.run()
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE webhook_endpoints ADD COLUMN url_secret_encrypted TEXT`,
+			)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
 }
 
 async function seedOwner() {

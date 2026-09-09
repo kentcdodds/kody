@@ -1,11 +1,17 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import {
+	decryptWebhookUrlSecret,
+	userWebhookUrlSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
+import { parseWebhookUrlHandle } from './handle.ts'
 import {
 	listWebhooksForUser,
 	mintWebhookUrlForUser,
+	revealWebhookUrlForWebsite,
 	rotateWebhookUrlForUser,
 	setWebhookEnabledForUser,
 } from './service.ts'
@@ -88,6 +94,7 @@ function createEnv(userId: string) {
 			package_id TEXT NOT NULL,
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
+			url_secret_encrypted TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
 			created_at TEXT NOT NULL,
 			rotated_at TEXT NOT NULL
@@ -149,8 +156,20 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 		kodyId: 'sentry-bridge',
 		webhookName: 'sentry',
 	})
-	expect(minted.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
-	expect(minted.urlSecret.length).toBeGreaterThan(10)
+	expect(minted.handle.startsWith('whh_')).toBe(true)
+	expect(minted.urlHost).toBe('heykody.dev')
+	expect(minted).not.toHaveProperty('url')
+	expect(minted).not.toHaveProperty('urlSecret')
+	expect(minted).not.toHaveProperty('url_secret')
+
+	const revealed = await revealWebhookUrlForWebsite({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+	})
+	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
+	expect(revealed.urlHost).toBe('heykody.dev')
 
 	const listed = await listWebhooksForUser({
 		env,
@@ -159,8 +178,13 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	})
 	expect(listed[0]?.minted).toBe(true)
 	expect(listed[0]?.enabled).toBe(true)
+	expect(listed[0]?.handle).toBe(minted.handle)
+	expect(listed[0]?.urlHost).toBe('heykody.dev')
 	expect(listed[0]).not.toHaveProperty('url')
-	expect(JSON.stringify(listed)).not.toContain(minted.urlSecret)
+	expect(JSON.stringify(listed)).not.toContain(revealed.url)
+	expect(JSON.stringify(listed)).not.toContain(
+		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
+	)
 
 	const otherList = await listWebhooksForUser({
 		env,
@@ -177,16 +201,31 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 		kodyId: 'sentry-bridge',
 		webhookName: 'sentry',
 	})
-	expect(rotated.urlSecret).not.toBe(minted.urlSecret)
+	expect(rotated.handle).toBe(minted.handle)
+	expect(rotated).not.toHaveProperty('url')
 	const stored = await db
 		.prepare(
-			`SELECT url_secret_hash FROM webhook_endpoints
+			`SELECT id, url_secret_hash, url_secret_encrypted FROM webhook_endpoints
 			WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'sentry'`,
 		)
 		.bind(userId)
-		.first<{ url_secret_hash: string }>()
+		.first<{
+			id: string
+			url_secret_hash: string
+			url_secret_encrypted: string
+		}>()
+	expect(stored?.id).toBe(parseWebhookUrlHandle(rotated.handle))
+	expect(stored?.url_secret_encrypted).toBeTruthy()
+	const rotatedSecret = await decryptWebhookUrlSecret(
+		env,
+		stored!.url_secret_encrypted,
+		userWebhookUrlSecretContext(userId, stored!.id),
+	)
 	expect(stored?.url_secret_hash).toBe(
-		await hashWebhookUrlSecret(rotated.urlSecret),
+		await hashWebhookUrlSecret(rotatedSecret),
+	)
+	expect(rotatedSecret).not.toBe(
+		revealed.url.slice(revealed.url.lastIndexOf('/') + 1),
 	)
 
 	const disabled = await setWebhookEnabledForUser({
@@ -215,5 +254,6 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 		webhookName: 'sentry',
 	})
 	expect(reminted.enabled).toBe(true)
-	expect(reminted.urlSecret).not.toBe(rotatedWhileDisabled.urlSecret)
+	expect(reminted.handle).toBe(rotatedWhileDisabled.handle)
+	expect(reminted).not.toHaveProperty('urlSecret')
 })

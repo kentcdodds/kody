@@ -135,13 +135,20 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   re-scopes by the owning user.
 - Account deletion/export include `webhook_endpoints` (minted URL state).
   Delivery history lives in run records and is covered with the rest of `RunLog`
-  export/deletion. Export redacts `url_secret_hash`.
+  export/deletion. Export redacts `url_secret_hash` and `url_secret_encrypted`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
-  are hashed; verification secrets stay in the secrets primitive.
+  are hashed for ingress and stored encrypted for `webhookUrlApply`. MCP mint,
+  rotate, list, and apply never return the credential URL. Verification secrets
+  stay in the secrets primitive.
 
 ## Storage
 
 Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
-`packages/worker/migrations/0001-squashed-init.sql`. Delivery history is in the
-per-user `RunLog` Durable Object (`webhook` surface), not in D1. See
+`packages/worker/migrations/0001-squashed-init.sql`, with `url_secret_encrypted`
+added in `0057-webhook-url-secret-encrypted.sql`. `webhookUrlMint` /
+`webhookUrlRotate` return an opaque `handle` (`whh_<id>`) and `url_host`.
+`webhookUrlApply` resolves the handle inside Kody, substitutes `{{webhookUrl}}`
+(or a first-class GitHub helper), and calls the destination through a user
+integration or host-approved secret. Delivery history is in the per-user
+`RunLog` Durable Object (`webhook` surface), not in D1. See
 [Data storage](./data-storage.md) and [Run records](./run-records.md).

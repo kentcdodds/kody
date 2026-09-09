@@ -1,3 +1,9 @@
+import { McpCallerError } from '#mcp/caller-error.ts'
+import {
+	decryptWebhookUrlSecret,
+	encryptWebhookUrlSecret,
+	userWebhookUrlSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
@@ -8,12 +14,28 @@ import { resolveSavedPackage } from '#worker/package-invocations/module-artifact
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { generateWebhookUrlSecret, hashWebhookUrlSecret } from './crypto.ts'
+import {
+	dispatchWebhookUrlApply,
+	type WebhookUrlApplyDestination,
+	type WebhookUrlApplyResult,
+} from './apply.ts'
+import {
+	generateWebhookUrlSecret,
+	hashWebhookUrlSecret,
+	webhookUrlSecretMatches,
+} from './crypto.ts'
+import {
+	formatWebhookUrlHandle,
+	parseWebhookUrlHandle,
+	webhookUrlHostFromOrigin,
+} from './handle.ts'
 import { buildWebhookEndpointUrl } from './public-url.ts'
 import {
+	getWebhookEndpointByIdForUser,
 	getWebhookEndpointByKey,
 	listWebhookEndpointsForUser,
 	setWebhookEndpointEnabled,
+	updateWebhookEndpointSecretCiphertext,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
 import { type WebhookEndpointRecord } from './types.ts'
@@ -31,21 +53,30 @@ export type ListedWebhook = {
 	verification: PackageWebhookManifestEntry['verification']
 	replay: PackageWebhookManifestEntry['replay']
 	minted: boolean
+	handle: string | null
+	urlHost: string | null
 	enabled: boolean | null
 	createdAt: string | null
 	rotatedAt: string | null
 }
 
-export type MintedWebhookUrl = {
+export type MintedWebhookHandle = {
 	packageId: string
 	packageKodyId: string
 	name: string
-	url: string
-	urlSecret: string
+	handle: string
+	urlHost: string
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
 }
+
+export type {
+	WebhookUrlApplyDestination,
+	WebhookUrlApplyGithubDestination,
+	WebhookUrlApplyHttpsDestination,
+	WebhookUrlApplyResult,
+} from './apply.ts'
 
 async function resolveOwnerUsername(input: {
 	db: D1Database
@@ -138,6 +169,7 @@ export async function listWebhooksForUser(input: {
 	}
 
 	const listed: Array<ListedWebhook> = []
+	const urlHost = webhookUrlHostFromOrigin(input.baseUrl)
 	for (const savedPackage of filteredPackages) {
 		const loaded = await loadPackageManifestBySourceId({
 			env: input.env,
@@ -168,6 +200,8 @@ export async function listWebhooksForUser(input: {
 				verification: webhook.verification,
 				replay: webhook.replay,
 				minted: mint !== undefined,
+				handle: mint ? formatWebhookUrlHandle(mint.id) : null,
+				urlHost: mint ? urlHost : null,
 				enabled: mint?.enabled ?? null,
 				createdAt: mint?.createdAt ?? null,
 				rotatedAt: mint?.rotatedAt ?? null,
@@ -193,7 +227,7 @@ export async function mintWebhookUrlForUser(input: {
 	requestUrl?: string | null
 	/** When false, rotate secret without forcing enabled=true on conflict. */
 	activate?: boolean
-}): Promise<MintedWebhookUrl> {
+}): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new Error('webhookName is required.')
 	const activate = input.activate !== false
@@ -228,26 +262,30 @@ export async function mintWebhookUrlForUser(input: {
 		updateEnabledOnConflict: activate,
 	})
 
-	const username = await resolveOwnerUsername({
+	const encrypted = await encryptWebhookUrlSecret(
+		input.env,
+		urlSecret,
+		userWebhookUrlSecretContext(input.userId, record.id),
+	)
+	const stored = await updateWebhookEndpointSecretCiphertext({
 		db: input.env.APP_DB,
-		email: input.email,
-		username: input.username,
+		userId: input.userId,
+		endpointId: record.id,
+		urlSecretEncrypted: encrypted,
 	})
+	if (!stored) {
+		throw new Error('Unable to persist webhook URL secret.')
+	}
+
 	return {
 		packageId: savedPackage.id,
 		packageKodyId: savedPackage.kodyId,
 		name: webhookName,
-		urlSecret,
-		url: buildWebhookEndpointUrl({
-			origin: baseUrl,
-			username,
-			packageKodyId: savedPackage.kodyId,
-			webhookName,
-			urlSecret,
-		}),
-		enabled: record.enabled,
-		createdAt: record.createdAt,
-		rotatedAt: record.rotatedAt,
+		handle: formatWebhookUrlHandle(stored.id),
+		urlHost: webhookUrlHostFromOrigin(baseUrl),
+		enabled: stored.enabled,
+		createdAt: stored.createdAt,
+		rotatedAt: stored.rotatedAt,
 	}
 }
 
@@ -260,7 +298,7 @@ export async function rotateWebhookUrlForUser(input: {
 	kodyId?: string
 	webhookName: string
 	requestUrl?: string | null
-}): Promise<MintedWebhookUrl> {
+}): Promise<MintedWebhookHandle> {
 	const webhookName = input.webhookName.trim()
 	if (!webhookName) throw new Error('webhookName is required.')
 	const savedPackage = await resolveOwnedPackage({
@@ -315,4 +353,121 @@ export async function setWebhookEnabledForUser(input: {
 		)
 	}
 	return updated
+}
+
+async function resolveMintedWebhookUrl(input: {
+	env: Env
+	userId: string
+	email?: string | null
+	username?: string | null
+	handle: string
+	requestUrl?: string | null
+}) {
+	const endpointId = parseWebhookUrlHandle(input.handle)
+	if (!endpointId) {
+		throw new McpCallerError('Invalid webhook URL handle.')
+	}
+	const endpoint = await getWebhookEndpointByIdForUser({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		endpointId,
+	})
+	if (!endpoint) {
+		throw new McpCallerError('Webhook handle was not found for this user.')
+	}
+	if (!endpoint.urlSecretEncrypted) {
+		throw new McpCallerError(
+			'Webhook URL secret is not recoverable from this mint. Call webhookUrlRotate, then webhookUrlApply.',
+		)
+	}
+	const urlSecret = await decryptWebhookUrlSecret(
+		input.env,
+		endpoint.urlSecretEncrypted,
+		userWebhookUrlSecretContext(input.userId, endpoint.id),
+	)
+	const matches = await webhookUrlSecretMatches({
+		candidate: urlSecret,
+		storedHash: endpoint.urlSecretHash,
+	})
+	if (!matches) {
+		throw new McpCallerError(
+			'Webhook URL secret is inconsistent. Call webhookUrlRotate, then webhookUrlApply.',
+		)
+	}
+	const savedPackage = await resolveOwnedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: endpoint.packageId,
+	})
+	const baseUrl = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	const username = await resolveOwnerUsername({
+		db: input.env.APP_DB,
+		email: input.email,
+		username: input.username,
+	})
+	const url = buildWebhookEndpointUrl({
+		origin: baseUrl,
+		username,
+		packageKodyId: savedPackage.kodyId,
+		webhookName: endpoint.webhookName,
+		urlSecret,
+	})
+	return {
+		endpoint,
+		savedPackage,
+		urlSecret,
+		url,
+		urlHost: webhookUrlHostFromOrigin(baseUrl),
+		baseUrl,
+	}
+}
+
+export async function applyWebhookUrlForUser(input: {
+	env: Env
+	userId: string
+	email?: string | null
+	username?: string | null
+	handle: string
+	destination: WebhookUrlApplyDestination
+	requestUrl?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<WebhookUrlApplyResult> {
+	const resolved = await resolveMintedWebhookUrl(input)
+	return dispatchWebhookUrlApply({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.email,
+		baseUrl: resolved.baseUrl,
+		packageId: resolved.savedPackage.id,
+		packageKodyId: resolved.savedPackage.kodyId,
+		webhookName: resolved.endpoint.webhookName,
+		savedPackage: resolved.savedPackage,
+		webhookUrl: resolved.url,
+		urlSecret: resolved.urlSecret,
+		urlHost: resolved.urlHost,
+		destination: input.destination,
+		waitUntil: input.waitUntil,
+	})
+}
+
+/**
+ * Website-only debug reveal. Do not expose this through MCP or execute.
+ */
+export async function revealWebhookUrlForWebsite(input: {
+	env: Env
+	userId: string
+	email?: string | null
+	username?: string | null
+	handle: string
+	requestUrl?: string | null
+}) {
+	const resolved = await resolveMintedWebhookUrl(input)
+	return {
+		handle: formatWebhookUrlHandle(resolved.endpoint.id),
+		urlHost: resolved.urlHost,
+		url: resolved.url,
+	}
 }

@@ -227,6 +227,10 @@
 		{
 			"filename": "0056-drop-fleet-execute-days.sql",
 			"sha256": "6706cd3841ea5efc255cd09cd7688cf042e9f9850488d0c0d5492f9ca355978f"
+		},
+		{
+			"filename": "0057-webhook-url-secret-encrypted.sql",
+			"sha256": "9894e2f5fc7be2cca807562ee7d8b705d724f1004d032f4f6f923759340260e5"
 		}
 	]
 }
