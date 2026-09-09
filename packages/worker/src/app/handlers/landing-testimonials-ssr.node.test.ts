@@ -67,9 +67,17 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	})
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(2)
+	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(3)
 	expect(html).toContain('href="/blog/early-kody-users#josh-tomaino"')
 	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
+	expect(html).toContain('href="/blog/early-kody-users#gabriel-alegria"')
+	expect(html).toContain('Gabriel Alegría')
+	expect(html).toContain(
+		'Railway health checks land in Discord, a personal task list replaced the Notion notes I always lost',
+	)
+	expect(html).toMatch(
+		/<div class="landing-testimonial-identity">[\s\S]*?Gabriel Alegría/,
+	)
 })
 
 test('early-users blog post SSR renders approved vignettes and heading anchors', async () => {
@@ -89,5 +97,11 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 
 	expect(html).toContain('id="josh-tomaino"')
 	expect(html).toContain('id="jett-hays"')
+	expect(html).toContain('id="gabriel-alegria"')
+	expect(html).toContain('Gabriel Alegría')
+	expect(html).toContain('Software Engineer, IB.')
+	expect(html.replace(/\s+/g, ' ')).toContain(
+		'a package that hits Railway and posts specific output to Discord',
+	)
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
 })

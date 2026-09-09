@@ -191,6 +191,9 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	)
 	expect(earlyUsersBody).toContain('## Josh Tomaino')
 	expect(earlyUsersBody).toContain('## Jett Hays')
+	expect(earlyUsersBody).toContain('## Gabriel Alegría')
+	expect(earlyUsersBody).toContain('leaving Linear behind for small projects')
+	expect(earlyUsersBody).toContain('the way I always did with Notion')
 
 	const comparison = getBlogPost('kody-vs-executor')
 	expect(comparison?.title).toBe('Kody vs Executor?')

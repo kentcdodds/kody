@@ -1,7 +1,8 @@
 /**
  * Homepage testimonials. Keep this list data-only — the carousel scales to
- * about six entries without a layout rewrite. Do not invent quotes or fill
- * empty slots; add real cleared quotes only.
+ * about seven entries without a layout rewrite. Do not invent quotes or fill
+ * empty slots; add real cleared quotes only. Opt a card into the early-users
+ * post with `storyAnchor` matching that heading id (accents strip to ASCII).
  */
 
 import { routes } from '#universal/routes.ts'
@@ -13,8 +14,8 @@ export type LandingTestimonial = {
 	name: string
 	/** Public profile photo under `/images/testimonials/`, or null for initials. */
 	photo: string | null
-	/** Personal site or primary public social profile. */
-	href: string
+	/** Personal site or primary public social profile, or null when none is published. */
+	href: string | null
 	/** Verified public occupation or role — omit if unsure. */
 	title?: string
 	/** Verified public employer — omit if unsure. */
@@ -43,6 +44,16 @@ export const landingTestimonials = [
 		title: 'Head of Software',
 		company: 'Sentala',
 		storyAnchor: 'jett-hays',
+	},
+	{
+		quote:
+			'Kody transformed how I work. Railway health checks land in Discord, a personal task list replaced the Notion notes I always lost, and everything I need lives in one place.',
+		name: 'Gabriel Alegría',
+		photo: null,
+		href: null,
+		title: 'Software Engineer',
+		company: 'IB',
+		storyAnchor: 'gabriel-alegria',
 	},
 	{
 		quote:

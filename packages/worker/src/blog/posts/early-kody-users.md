@@ -35,3 +35,16 @@ Head of Software, Sentala.
 > We operate in contested environments where a downed service could mean life or
 > death for some of the world's most endangered species. Kody helps us keep that
 > critical infrastructure running.
+
+## Gabriel Alegría
+
+Software Engineer, IB.
+
+> I started with jobs for my business health checks: a package that hits Railway
+> and posts specific output to Discord on a private server. Then the agent
+> suggested a task-list package tailored to me, and I built it. I am even
+> thinking about leaving Linear behind for small projects.
+>
+> I have only scratched the surface, and Kody already changed how I work.
+> Everything I need is condensed in one place. I can store wacky ideas and not
+> lose them the way I always did with Notion.
