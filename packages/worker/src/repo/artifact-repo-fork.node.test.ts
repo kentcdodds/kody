@@ -180,15 +180,11 @@ test('persistForkedArtifactRepoContents syncs only changed files on production r
 		copiedOriginCommit: 'commit-origin',
 		destCommit: 'commit-edited',
 	})
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		env.APP_DB,
-		expect.objectContaining({
-			publishedCommit: 'commit-origin',
-		}),
-	)
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			files: { 'package.json': '{"name":"@jane/demo"}' },
+			existingHeadCommit: 'commit-origin',
 		}),
 	)
 	expect(mockModule.readArtifactFileAtCommit).not.toHaveBeenCalled()
@@ -245,12 +241,7 @@ test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest 
 		copiedOriginCommit: 'commit-head',
 		destCommit: 'commit-rewritten',
 	})
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		env.APP_DB,
-		expect.objectContaining({
-			publishedCommit: 'commit-head',
-		}),
-	)
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.readArtifactFileAtCommit).toHaveBeenCalledWith({
 		env,
 		repoId: 'package-dest',
@@ -259,6 +250,7 @@ test('persistForkedArtifactRepoContents stamps dest HEAD and rewrites only dest 
 	})
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
+			existingHeadCommit: 'commit-head',
 			files: {
 				'package.json': `${JSON.stringify(
 					{
@@ -306,6 +298,46 @@ test('persistForkedArtifactRepoContents rejects a forked dest with no HEAD', asy
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
+test('persistForkedArtifactRepoContents stamps dest HEAD only when the rewrite is already a no-op', async () => {
+	resetArtifactRepoForkMocks()
+	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: async () => ({
+			remote:
+				'https://acct.artifacts.cloudflare.net/git/default/package-dest.git',
+		}),
+	})
+	mockModule.isLoopbackArtifactsRemote.mockReturnValue(false)
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-head',
+	})
+	mockModule.updateEntitySource.mockResolvedValue(true)
+
+	const persisted = await persistForkedArtifactRepoContents({
+		env,
+		baseUrl: 'https://kody.test',
+		userId: 'user-1',
+		source,
+		originCommit: 'commit-head',
+		expectedPackageScope: 'jane',
+		targetKodyId: 'demo',
+		changedFiles: {},
+		files: { 'package.json': '{"name":"@jane/demo"}' },
+	})
+
+	expect(persisted).toEqual({
+		copiedOriginCommit: 'commit-head',
+		destCommit: 'commit-head',
+	})
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		env.APP_DB,
+		expect.objectContaining({
+			publishedCommit: 'commit-head',
+		}),
+	)
+	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+})
+
 test('persistForkedArtifactRepoContents fails closed when dest published_commit cannot be stamped', async () => {
 	resetArtifactRepoForkMocks()
 	mockModule.resolveExistingArtifactSourceRepo.mockResolvedValue({
@@ -330,7 +362,7 @@ test('persistForkedArtifactRepoContents fails closed when dest published_commit 
 			originCommit: 'commit-head',
 			expectedPackageScope: 'jane',
 			targetKodyId: 'demo',
-			changedFiles: { 'package.json': '{"name":"@jane/demo"}' },
+			changedFiles: {},
 			files: { 'package.json': '{"name":"@jane/demo"}' },
 		}),
 	).rejects.toThrow(/could not be marked at dest HEAD commit-head/)

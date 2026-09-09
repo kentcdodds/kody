@@ -33,6 +33,12 @@ type SyncArtifactSourceInput = {
 	sourceId: string | null
 	files: Record<string, string>
 	bootstrapAccess?: ArtifactBootstrapAccess | null
+	/**
+	 * First-publish a storage-layer fork from dest HEAD. Applies `files` on
+	 * top of that commit through `bootstrapSource` instead of force-publishing
+	 * an already-stamped source (which hits the overwrite confirmation gate).
+	 */
+	existingHeadCommit?: string
 	destructiveOverwriteConfirmed?: boolean
 	privateVisibilityChangeConfirmed?: boolean
 	/**
@@ -155,6 +161,11 @@ export async function syncArtifactSourceSnapshot(
 			'Entity source ownership mismatch: refusing to sync a repo snapshot for another user.',
 		)
 	}
+	if (source.published_commit && input.existingHeadCommit) {
+		throw new Error(
+			`Source "${source.id}" already has a published commit; existingHeadCommit is only valid for first publish from a forked dest HEAD.`,
+		)
+	}
 	const sessionId = buildSyncSessionId(source.id)
 	const session = repoSessionRpc(input.env, sessionId)
 	const edits = Object.entries(input.files).map(([path, content]) => ({
@@ -172,7 +183,8 @@ export async function syncArtifactSourceSnapshot(
 			})
 			if (
 				input.bootstrapAccess?.remote &&
-				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)
+				isLoopbackArtifactsRemote(input.bootstrapAccess.remote) &&
+				input.existingHeadCommit == null
 			) {
 				return await pushServerTiming(
 					input.serverTiming,
@@ -244,6 +256,9 @@ export async function syncArtifactSourceSnapshot(
 						userId: input.userId,
 						edits,
 						bootstrapAccess: input.bootstrapAccess ?? null,
+						...(input.existingHeadCommit
+							? { existingHeadCommit: input.existingHeadCommit }
+							: {}),
 					})
 					if (input.serverTiming && result.serverTiming) {
 						input.serverTiming.push(...result.serverTiming)
@@ -251,11 +266,21 @@ export async function syncArtifactSourceSnapshot(
 					return result
 				},
 			)
+			const snapshotFiles = bootstrapResult.files ?? input.files
+			if (
+				input.existingHeadCommit &&
+				(bootstrapResult.files == null ||
+					Object.keys(bootstrapResult.files).length === 0)
+			) {
+				throw new Error(
+					`Source "${source.id}" first-publish from dest HEAD produced no workspace snapshot.`,
+				)
+			}
 			await pushServerTiming(input.serverTiming, 'published-snapshot', () =>
 				writePublishedSnapshotWithRevert({
 					env: input.env,
 					source,
-					files: input.files,
+					files: snapshotFiles,
 					publishedCommit: bootstrapResult.publishedCommit,
 				}),
 			)

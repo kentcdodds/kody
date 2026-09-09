@@ -383,6 +383,12 @@ export type RepoSourceBootstrapResult = {
 	sessionId: string
 	publishedCommit: string
 	message: string
+	/**
+	 * Workspace tree after bootstrap. Required for dest-HEAD first publish so
+	 * the published snapshot is the forked repo plus overlays, not just the
+	 * rewritten files passed into sync.
+	 */
+	files?: Record<string, string>
 	serverTiming?: Array<ServerTimingEntry>
 }
 
