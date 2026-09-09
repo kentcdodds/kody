@@ -407,6 +407,24 @@ test('dev output matching keeps a split fatal phrase across chunk boundaries', (
 	).toBe(true)
 })
 
+test('dev output matching keeps a split fatal phrase when stdout and stderr interleave', () => {
+	const buffered: Array<string> = []
+	const stdout = { pending: '' }
+	const stderr = { pending: '' }
+	appendDevOutputChunk(buffered, stdout, 'Invalid environment vari')
+	appendDevOutputChunk(buffered, stderr, 'vite optimizing deps...\n')
+	appendDevOutputChunk(
+		buffered,
+		stdout,
+		'ables: APP_DB: Missing APP_DB binding for database access\n',
+	)
+	expect(
+		isMissingWranglerBindingOutput(
+			joinDevOutput(buffered, stdout.pending, stderr.pending),
+		),
+	).toBe(true)
+})
+
 test('ensureDev stops the child and surfaces output when /health never becomes ready', async () => {
 	const stopped: Array<string> = []
 	await expect(

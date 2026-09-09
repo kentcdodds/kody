@@ -307,11 +307,12 @@ export function appendDevOutputChunk(
 
 export function joinDevOutput(
 	buffered: ReadonlyArray<string>,
-	pending: string,
+	...pendings: Array<string>
 ) {
-	if (!pending) return buffered.join('\n')
-	if (buffered.length === 0) return pending
-	return `${buffered.join('\n')}\n${pending}`
+	const tails = pendings.filter((part) => part.length > 0)
+	if (tails.length === 0) return buffered.join('\n')
+	if (buffered.length === 0) return tails.join('\n')
+	return `${buffered.join('\n')}\n${tails.join('\n')}`
 }
 
 export function isMissingWranglerBindingOutput(output: string) {
@@ -542,18 +543,20 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 		cwd: process.cwd(),
 	})
 	const buffered: Array<string> = []
-	const outputState = { pending: '' }
+	const stdoutState = { pending: '' }
+	const stderrState = { pending: '' }
 	let exited = false
-	const onChunk = (chunk: Buffer | string) => {
-		appendDevOutputChunk(buffered, outputState, chunk.toString())
-	}
-	child.stdout?.on('data', onChunk)
-	child.stderr?.on('data', onChunk)
+	child.stdout?.on('data', (chunk: Buffer | string) => {
+		appendDevOutputChunk(buffered, stdoutState, chunk.toString())
+	})
+	child.stderr?.on('data', (chunk: Buffer | string) => {
+		appendDevOutputChunk(buffered, stderrState, chunk.toString())
+	})
 	child.once('exit', (code, signal) => {
 		exited = true
 		if (code && code !== 0) {
 			console.error(
-				`npm run dev exited (${signal ?? `code ${code}`}). Last output:\n${buffered.join('\n')}`,
+				`npm run dev exited (${signal ?? `code ${code}`}). Last output:\n${joinDevOutput(buffered, stdoutState.pending, stderrState.pending)}`,
 			)
 		}
 	})
@@ -565,7 +568,8 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 	}
 	return {
 		hasExited: () => exited || child.exitCode !== null,
-		lastOutput: () => joinDevOutput(buffered, outputState.pending),
+		lastOutput: () =>
+			joinDevOutput(buffered, stdoutState.pending, stderrState.pending),
 		unref() {
 			detachPipes()
 			child.unref()
