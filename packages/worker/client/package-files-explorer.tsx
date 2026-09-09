@@ -961,8 +961,13 @@ const codeCss = {
 	// Padding lives on `code`, not the .line spans, so the fallback output
 	// (plaintext before the Shiki chunk resolves, or an oversized file) gets
 	// the same gutters as highlighted lines.
+	//
+	// Grid + min-width: 100% sizes `code` to the longest line (and at least
+	// the pane). Each `.line` stretches to that column so hover paint covers
+	// the full scroll width, not just the tokens on that row.
 	'& code': {
-		display: 'block',
+		display: 'grid',
+		minWidth: '100%',
 		paddingInline: spacing.md,
 		counterReset: 'package-file-line',
 	},
