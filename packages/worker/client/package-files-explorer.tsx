@@ -613,7 +613,6 @@ const headCss = {
 	viewTransitionName: 'files-head',
 	// The back link reads as part of this head, so it sits tight to the title.
 	marginTop: spacing.sm,
-	marginBottom: spacing.lg,
 	display: 'grid',
 	gap: spacing.xs,
 }
@@ -628,6 +627,7 @@ const titleCss = {
 // Two columns need room for both: below the tablet breakpoint the blob is too
 // narrow to read code in, so the tree moves above it and runs full width.
 const layoutCss = {
+	marginTop: spacing.lg,
 	display: 'grid',
 	gridTemplateColumns: '18.75rem minmax(0, 1fr)',
 	gap: spacing.lg,
