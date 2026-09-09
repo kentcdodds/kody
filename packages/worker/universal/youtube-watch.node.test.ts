@@ -140,4 +140,12 @@ test('banner images rewrite YouTube hosts to first-party thumb paths', () => {
 	expect(youtubeNocookieEmbedUrl(videoId)).toBe(
 		`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`,
 	)
+	expect(
+		youtubeNocookieEmbedUrl(videoId, { playlistId: 'PLXa53KPj2nlE' }),
+	).toBe(
+		`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0&listType=playlist&list=PLXa53KPj2nlE`,
+	)
+	expect(youtubeNocookieEmbedUrl(videoId, { playlistId: 'not-a-list' })).toBe(
+		`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`,
+	)
 })

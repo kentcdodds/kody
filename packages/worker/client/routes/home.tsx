@@ -28,6 +28,7 @@ import {
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
+import { LandingHeroVideo } from '#client/routes/landing-hero-video.tsx'
 import { LandingByokDemo } from './landing-byok-demo.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
@@ -40,9 +41,10 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning (public door): stop sweating switching agents. The hero stage
- * (Kody with the host agents tethered around it) names the agents; the H1
- * matches the home OG card. Factory / npm / packages stay below the fold.
+ * Positioning (public door): stop sweating switching agents. The top fold is
+ * H1 + CTAs beside the demo (lite YouTube player); Kody with the host agents
+ * tethered around the lantern sits under that row. The H1 matches the home
+ * OG card. Factory / npm / packages stay below the fold.
  * The factory closer is the ritual: ask once, save it, trigger it.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
@@ -178,36 +180,45 @@ export function HomeRoute(handle: Handle) {
 			<div aria-busy={busy ? 'true' : undefined}>
 				{busy ? renderRoutePendingStatus() : null}
 				<section data-parallax-scope class="landing-hero">
-					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
-						<br />
-						{landingHeroHeadlineRest}
-					</h1>
-					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
-					{isSignedIn ? null : (
-						<div
-							data-rise
-							style={{ '--rise': '2' }}
-							class="landing-hero-actions"
-						>
-							<a
-								href={homepageSignupPath}
-								class="landing-pill landing-hero-cta"
+					<div class="landing-hero-top">
+						<div class="landing-hero-intro">
+							<h1
+								data-rise
+								style={{ '--rise': '0' }}
+								class="landing-hero-title"
 							>
-								{publicCreateAccountLabel}
-							</a>
-							{discoveryPrompt ? (
-								<span class="landing-hero-cta landing-hero-copy">
-									<CopyTextButton
-										class="landing-hero-copy-button"
-										value={discoveryPrompt}
-										idleLabel={landingHeroCopyPromptLabel}
-										variant="ghost"
-									/>
-								</span>
-							) : null}
+								{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
+								<br />
+								{landingHeroHeadlineRest}
+							</h1>
+							{isSignedIn ? null : (
+								<div
+									data-rise
+									style={{ '--rise': '2' }}
+									class="landing-hero-actions"
+								>
+									<a
+										href={homepageSignupPath}
+										class="landing-pill landing-hero-cta"
+									>
+										{publicCreateAccountLabel}
+									</a>
+									{discoveryPrompt ? (
+										<span class="landing-hero-cta landing-hero-copy">
+											<CopyTextButton
+												class="landing-hero-copy-button"
+												value={discoveryPrompt}
+												idleLabel={landingHeroCopyPromptLabel}
+												variant="ghost"
+											/>
+										</span>
+									) : null}
+								</div>
+							)}
 						</div>
-					)}
+						<LandingHeroVideo />
+					</div>
+					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 				</section>
 
 				<section aria-labelledby="pitch-title" class="landing-pitch">
