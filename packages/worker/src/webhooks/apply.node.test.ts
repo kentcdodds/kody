@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
@@ -80,6 +81,44 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	})),
 }))
 
+function mockGithubIntegration() {
+	integrationMocks.getJoinedIntegration.mockResolvedValue({
+		lane: 'user',
+		app: {
+			apiBaseUrl: 'https://api.github.com',
+			requiredHosts: ['api.github.com'],
+		},
+		connection: {
+			name: 'github',
+			requiredHosts: ['api.github.com'],
+			usageMode: 'any',
+			allowedPackageIds: [],
+		},
+	})
+	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue('ghs_test')
+	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
+}
+
+async function mintOwnerWebhook() {
+	const userId = await createStableUserIdFromEmail('owner@example.com')
+	const { env, db } = createEnv(userId)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('owner', 'owner@example.com', 'hash', ?)`,
+		)
+		.bind(userId)
+		.run()
+	const minted = await mintWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+	return { userId, env, db, minted }
+}
+
 function createEnv(userId: string) {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
@@ -117,48 +156,18 @@ function createEnv(userId: string) {
 }
 
 test('webhookUrlApply registers a GitHub hook from a handle without exposing the URL', async () => {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
-	const { env, db } = createEnv(userId)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id)
-			VALUES ('owner', 'owner@example.com', 'hash', ?)`,
-		)
-		.bind(userId)
-		.run()
-
-	const minted = await mintWebhookUrlForUser({
-		env,
-		userId,
-		username: 'owner',
-		kodyId: 'sentry-bridge',
-		webhookName: 'sentry',
-	})
+	const { userId, env, db, minted } = await mintOwnerWebhook()
 	const revealed = await revealWebhookUrlForWebsite({
 		env,
 		userId,
 		username: 'owner',
 		handle: minted.handle,
 	})
-
-	integrationMocks.getJoinedIntegration.mockResolvedValue({
-		lane: 'user',
-		app: {
-			apiBaseUrl: 'https://api.github.com',
-			requiredHosts: ['api.github.com'],
-		},
-		connection: {
-			name: 'github',
-			requiredHosts: ['api.github.com'],
-			usageMode: 'any',
-			allowedPackageIds: [],
-		},
-	})
-	integrationMocks.resolveIntegrationAccessToken.mockResolvedValue('ghs_test')
-	integrationMocks.assertCanUseIntegration.mockResolvedValue(undefined)
+	mockGithubIntegration()
 
 	const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 		expect(url).toBe('https://api.github.com/repos/acme/api/hooks')
+		expect(init?.redirect).toBe('manual')
 		const body = JSON.parse(String(init?.body)) as {
 			config: { url: string }
 		}
@@ -224,4 +233,53 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 	).rejects.toThrow('not recoverable')
 
 	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply does not follow credential-bearing redirects', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	mockGithubIntegration()
+	const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+		expect(init?.redirect).toBe('manual')
+		return new Response(null, {
+			status: 307,
+			headers: { Location: 'https://attacker.example/exfil' },
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+
+	const applied = await applyWebhookUrlForUser({
+		env,
+		userId,
+		username: 'owner',
+		handle: minted.handle,
+		destination: { type: 'github', owner: 'acme', repo: 'api' },
+	})
+
+	expect(applied).toEqual({
+		ok: false,
+		urlHost: 'heykody.dev',
+		httpStatus: 307,
+		remoteId: null,
+		error: 'Destination redirected. Apply does not follow redirects.',
+	})
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply fails when the package manifest cannot be loaded', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	mockGithubIntegration()
+	vi.mocked(loadPackageManifestBySourceId).mockRejectedValueOnce(
+		new Error('Saved package source bindings are not available.'),
+	)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: { type: 'github', owner: 'acme', repo: 'api' },
+		}),
+	).rejects.toThrow('Could not load the package manifest')
 })

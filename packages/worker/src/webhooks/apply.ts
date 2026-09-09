@@ -42,8 +42,9 @@ export type WebhookUrlApplyResult = {
 	error: string | null
 }
 
-const applyResponseBodyMaxChars = 16_384
+const applyResponseBodyMaxBytes = 16_384
 const applyErrorSnippetMaxChars = 300
+const applyRequestTimeoutMs = 15_000
 const defaultGithubEvents = ['push'] as const
 
 function integrationAllowedHosts(joined: JoinedIntegration) {
@@ -88,13 +89,19 @@ async function loadDeclaredWebhookIfPresent(input: {
 	savedPackage: SavedPackageRecord
 	webhookName: string
 }): Promise<PackageWebhookManifestEntry | null> {
-	const loaded = await loadPackageManifestBySourceId({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: input.userId,
-		sourceId: input.savedPackage.sourceId,
-	}).catch(() => null)
-	if (!loaded) return null
+	let loaded
+	try {
+		loaded = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			sourceId: input.savedPackage.sourceId,
+		})
+	} catch {
+		throw new McpCallerError(
+			'Could not load the package manifest to read webhook verification. Retry after the package source is available.',
+		)
+	}
 	return (
 		listPackageWebhooks(loaded.manifest).find(
 			(webhook) => webhook.name === input.webhookName,
@@ -261,6 +268,75 @@ function parseJsonPayload(text: string): unknown {
 	}
 }
 
+function isRedirectStatus(status: number) {
+	return status >= 300 && status < 400
+}
+
+function applyFetchInit(input: {
+	method: string
+	headers: Headers
+	body?: string
+}): RequestInit {
+	return {
+		method: input.method,
+		headers: input.headers,
+		body: input.body,
+		redirect: 'manual',
+		signal: AbortSignal.timeout(applyRequestTimeoutMs),
+	}
+}
+
+async function fetchApplyDestination(input: {
+	url: string
+	method: string
+	headers: Headers
+	body?: string
+}): Promise<Response> {
+	try {
+		return await fetch(input.url, applyFetchInit(input))
+	} catch (error) {
+		if (error instanceof DOMException && error.name === 'TimeoutError') {
+			throw new McpCallerError('Destination request timed out.')
+		}
+		throw error
+	}
+}
+
+async function readApplyResponseBody(response: Response): Promise<string> {
+	if (response.body == null) {
+		const text = await response.text()
+		return text.length > applyResponseBodyMaxBytes
+			? text.slice(0, applyResponseBodyMaxBytes)
+			: text
+	}
+	const reader = response.body.getReader()
+	const decoder = new TextDecoder()
+	let body = ''
+	let totalBytes = 0
+	try {
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) break
+			if (!value || value.byteLength === 0) continue
+			if (totalBytes + value.byteLength > applyResponseBodyMaxBytes) {
+				const remaining = applyResponseBodyMaxBytes - totalBytes
+				if (remaining > 0) {
+					body += decoder.decode(value.slice(0, remaining), { stream: true })
+				}
+				void reader.cancel().catch(() => {})
+				break
+			}
+			totalBytes += value.byteLength
+			body += decoder.decode(value, { stream: true })
+		}
+		body += decoder.decode()
+		return body
+	} catch (error) {
+		void reader.cancel().catch(() => {})
+		throw error
+	}
+}
+
 async function sendAuthorizedApplyRequest(input: {
 	url: string
 	method: string
@@ -272,28 +348,46 @@ async function sendAuthorizedApplyRequest(input: {
 }): Promise<WebhookUrlApplyResult> {
 	const headers = new Headers(input.headers)
 	headers.set('Authorization', input.authorization)
-	let response = await fetch(input.url, {
+	let response = await fetchApplyDestination({
+		url: input.url,
 		method: input.method,
 		headers,
 		body: input.body,
 	})
+	if (isRedirectStatus(response.status)) {
+		await response.body?.cancel()
+		return {
+			ok: false,
+			urlHost: '',
+			httpStatus: response.status,
+			remoteId: null,
+			error: 'Destination redirected. Apply does not follow redirects.',
+		}
+	}
 	if (response.status === 401) {
 		await response.body?.cancel()
 		const retryHeaders = new Headers(input.headers)
 		retryHeaders.set('Authorization', await input.retryAuthorization())
-		response = await fetch(input.url, {
+		response = await fetchApplyDestination({
+			url: input.url,
 			method: input.method,
 			headers: retryHeaders,
 			body: input.body,
 		})
+		if (isRedirectStatus(response.status)) {
+			await response.body?.cancel()
+			return {
+				ok: false,
+				urlHost: '',
+				httpStatus: response.status,
+				remoteId: null,
+				error: 'Destination redirected. Apply does not follow redirects.',
+			}
+		}
 	}
-	const rawBody = await response.text()
-	const bounded =
-		rawBody.length > applyResponseBodyMaxChars
-			? rawBody.slice(0, applyResponseBodyMaxChars)
-			: rawBody
+	const rawBody = await readApplyResponseBody(response)
 	const redactedBody = String(
-		redactWebhookCredentials(bounded, input.secrets) ?? '',
+		redactWebhookCredentials(rawBody, input.secrets) ?? '',
 	)
 	const payload = parseJsonPayload(redactedBody)
 	const remoteId = extractRemoteId(payload)
