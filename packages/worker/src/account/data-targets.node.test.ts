@@ -193,6 +193,9 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	expect(accountExportRedactedColumnsByTable.user_oauth_apps).toEqual(
 		expect.arrayContaining(['client_secret_encrypted']),
 	)
+	expect(accountExportRedactedColumnsByTable.webhook_endpoints).toEqual(
+		expect.arrayContaining(['url_secret_hash', 'url_secret_encrypted']),
+	)
 	expect(
 		accountExportForeignUserIdColumnsByTable.community_activity_events,
 	).toEqual(expect.arrayContaining(['actor_user_id']))

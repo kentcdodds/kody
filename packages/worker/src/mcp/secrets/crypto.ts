@@ -136,6 +136,7 @@ const platformOauthClientSecretPurpose = 'platform-oauth-client-secret'
 const userOauthAccessTokenPurpose = 'user-oauth-access-token'
 const userOauthRefreshTokenPurpose = 'user-oauth-refresh-token'
 const userOauthClientSecretPurpose = 'user-oauth-client-secret'
+const webhookUrlSecretPurpose = 'webhook-url-secret'
 
 /** Purpose strings for the maintenance-only unversioned decrypt path. */
 export const secretCiphertextPurposes = {
@@ -144,6 +145,7 @@ export const secretCiphertextPurposes = {
 	userOauthAccessToken: userOauthAccessTokenPurpose,
 	userOauthRefreshToken: userOauthRefreshTokenPurpose,
 	userOauthClientSecret: userOauthClientSecretPurpose,
+	webhookUrlSecret: webhookUrlSecretPurpose,
 } as const
 
 export type SecretCiphertextPurpose =
@@ -301,6 +303,44 @@ export async function decryptUserOauthClientSecret(
 		)
 	} catch {
 		throw new Error('Unable to decrypt OAuth app client secret.')
+	}
+}
+
+/** AAD context for a minted webhook URL secret ciphertext. */
+export function userWebhookUrlSecretContext(
+	userId: string,
+	endpointId: string,
+) {
+	return `user:${userId}:webhook-endpoint:${endpointId}`
+}
+
+export async function encryptWebhookUrlSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		webhookUrlSecretPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptWebhookUrlSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			webhookUrlSecretPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt webhook URL secret.')
 	}
 }
 

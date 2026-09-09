@@ -240,7 +240,7 @@ curl --fail --silent \
 ```
 
 New first-party callers declare one webhook per export (`inputMode: "params"`),
-mint a URL with `webhookUrlMint`, and send `Idempotency-Key`. There is no `*`
+mint a handle with `webhookUrlMint`, and send `Idempotency-Key`. There is no `*`
 webhook. See [Inbound webhooks](../use/webhooks.md).
 
 ## Related

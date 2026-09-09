@@ -103,8 +103,9 @@ Kody dispatches the validated request to the package export that owns it.
    and the **name** of the signing secret in your secret store. One webhook name
    binds one export; there is no wildcard.
 2. Store the signing secret with `secretSet` under that name.
-3. Mint the URL with `webhookUrlMint` and paste it into the provider. The URL
-   secret is returned only on mint or rotate — treat the URL as a credential.
+3. Mint the URL with `webhookUrlMint` (returns a `handle`, not the credential)
+   and register it with `webhookUrlApply`. Treat the URL as a credential; tool
+   output never includes it.
 
 Declaring a webhook does not open ingress; minting does. Deliveries are
 rate-limited per webhook (default 60 per minute, at most 600), and body-only

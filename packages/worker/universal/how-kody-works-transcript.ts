@@ -494,7 +494,7 @@ const notifySearchMarkdown = `# Search results
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
 1. **guide** Durable package lifecycle guide — Choose reuse vs temporary execute vs a new durable package. Entity: \`package_lifecycle:guide\`
-2. **capability** \`webhookUrlMint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhookUrlMint:capability\`
+2. **capability** \`webhookUrlMint\` (\`webhooks\`) — Mint an inbound webhook URL handle for a package-declared webhook. Entity: \`webhookUrlMint:capability\`
 3. **capability** \`jobList\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`jobList:capability\``
 
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [

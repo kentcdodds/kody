@@ -1363,13 +1363,15 @@ on write unless a migration backfills existing rows.
   invocation replay lives in the RunLog Durable Object ledger (see
   [Run records](./run-records.md)); the current D1 schema has no
   `package_invocations` table.
-- `webhook_endpoints` (`0001-squashed-init.sql`) stores per-user minted URL
-  state for `package.json#kody.webhooks`, keyed by
-  `(user_id, package_id, webhook_name)`. URL secrets are SHA-256 hashed;
-  verification secrets stay in the secrets primitive (`secretName` at delivery
-  time). Delivery history is recorded as `webhook` surface run records (see
-  [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md)), not as
-  D1 rows.
+- `webhook_endpoints` (`0001-squashed-init.sql`,
+  `0057-webhook-url-secret-encrypted.sql`) stores per-user minted URL state for
+  `package.json#kody.webhooks`, keyed by `(user_id, package_id, webhook_name)`.
+  URL secrets are SHA-256 hashed for ingress and AES-GCM encrypted
+  (`url_secret_encrypted`) for server-side apply. MCP capabilities never return
+  the plaintext URL. Verification secrets stay in the secrets primitive
+  (`secretName` at delivery time). Delivery history is recorded as `webhook`
+  surface run records (see [Run records](./run-records.md) and
+  [Inbound webhooks](./webhooks.md)), not as D1 rows.
 - `system_email_daily_counters` (`0001-squashed-init.sql`) stores fixed
   per-local daily receive counters for operator-owned system inboxes. These
   counters are not user entitlements and are pruned by the system-email

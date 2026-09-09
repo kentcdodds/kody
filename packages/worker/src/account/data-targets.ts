@@ -774,7 +774,7 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	user_oauth_apps: ['client_secret_encrypted'],
 	users: ['password_hash'],
 	verifications: ['secret'],
-	webhook_endpoints: ['url_secret_hash'],
+	webhook_endpoints: ['url_secret_hash', 'url_secret_encrypted'],
 }
 
 // Cross-user export rows can include another user's stable id. Keep the

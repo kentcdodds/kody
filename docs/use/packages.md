@@ -223,8 +223,9 @@ Person-owned packages must not import a platform scope; `communityFork` first.
 
 There is no author-facing `packages.invoke`. External trusted clients that must
 call a named export over HTTP use inbound webhooks: declare one webhook per
-export, mint a URL with `webhookUrlMint`, and POST JSON (`inputMode: "params"`
-and `Idempotency-Key` for first-party clients). See
+export, mint a handle with `webhookUrlMint`, register it with `webhookUrlApply`
+when a provider needs the URL, and POST JSON (`inputMode: "params"` and
+`Idempotency-Key` for first-party clients). See
 [Inbound webhooks](./webhooks.md).
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
@@ -446,8 +447,9 @@ payloads and the distinction between live HEAD and package publish.
 
 Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
 to a package export. Declaring a webhook does not open ingress — mint a URL with
-`webhookUrlMint` first. Full contract, signature examples, and payload shape:
-[Inbound webhooks](./webhooks.md).
+`webhookUrlMint` first, then `webhookUrlApply` to register a first-class
+destination (GitHub repository hooks). Full contract, signature examples, and
+payload shape: [Inbound webhooks](./webhooks.md).
 
 ## Package-owned jobs
 

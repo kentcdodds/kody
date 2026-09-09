@@ -6,6 +6,7 @@ type WebhookEndpointRow = {
 	package_id: string
 	webhook_name: string
 	url_secret_hash: string
+	url_secret_encrypted?: string | null
 	enabled: number
 	created_at: string
 	rotated_at: string
@@ -18,6 +19,7 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 		packageId: row.package_id,
 		webhookName: row.webhook_name,
 		urlSecretHash: row.url_secret_hash,
+		urlSecretEncrypted: row.url_secret_encrypted ?? null,
 		enabled: row.enabled === 1,
 		createdAt: row.created_at,
 		rotatedAt: row.rotated_at,
@@ -25,12 +27,12 @@ function mapEndpointRow(row: WebhookEndpointRow): WebhookEndpointRecord {
 }
 
 /**
- * Insert or rotate a minted webhook URL secret.
- * Concurrent mints for the same (user, package, name) resolve via the unique
- * index instead of throwing a constraint error.
+ * Insert or rotate a minted webhook URL secret. Hash and ciphertext are written
+ * in the same statement. The caller encrypts with `id` as AAD, so `id` must be
+ * the existing endpoint id on update.
  *
- * When `updateEnabledOnConflict` is true (mint/activate), conflict updates also
- * set `enabled` from the insert row. Rotate passes false so disable state sticks.
+ * When `updateEnabledOnConflict` is true (mint/activate), updates also set
+ * `enabled`. Rotate passes false so disable state sticks.
  */
 export async function upsertWebhookEndpointSecret(input: {
 	db: D1Database
@@ -39,41 +41,77 @@ export async function upsertWebhookEndpointSecret(input: {
 	packageId: string
 	webhookName: string
 	urlSecretHash: string
+	urlSecretEncrypted: string
 	enabled?: boolean
 	updateEnabledOnConflict?: boolean
 	now?: string
 }): Promise<WebhookEndpointRecord> {
 	const now = input.now ?? new Date().toISOString()
 	const enabled = input.enabled === false ? 0 : 1
-	const conflictSql = input.updateEnabledOnConflict
-		? `ON CONFLICT(user_id, package_id, webhook_name)
-			DO UPDATE SET
-				url_secret_hash = excluded.url_secret_hash,
-				rotated_at = excluded.rotated_at,
-				enabled = excluded.enabled`
-		: `ON CONFLICT(user_id, package_id, webhook_name)
-			DO UPDATE SET
-				url_secret_hash = excluded.url_secret_hash,
-				rotated_at = excluded.rotated_at`
-	await input.db
-		.prepare(
-			`INSERT INTO webhook_endpoints (
-				id, user_id, package_id, webhook_name, url_secret_hash,
-				enabled, created_at, rotated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-			${conflictSql}`,
-		)
-		.bind(
-			input.id,
-			input.userId,
-			input.packageId,
-			input.webhookName,
-			input.urlSecretHash,
-			enabled,
-			now,
-			now,
-		)
-		.run()
+	const existing = await getWebhookEndpointByKey({
+		db: input.db,
+		userId: input.userId,
+		packageId: input.packageId,
+		webhookName: input.webhookName,
+	})
+	if (existing) {
+		if (existing.id !== input.id) {
+			throw new Error('Unable to upsert webhook endpoint.')
+		}
+		const result = input.updateEnabledOnConflict
+			? await input.db
+					.prepare(
+						`UPDATE webhook_endpoints
+						SET url_secret_hash = ?, url_secret_encrypted = ?, rotated_at = ?, enabled = ?
+						WHERE user_id = ? AND id = ?`,
+					)
+					.bind(
+						input.urlSecretHash,
+						input.urlSecretEncrypted,
+						now,
+						enabled,
+						input.userId,
+						existing.id,
+					)
+					.run()
+			: await input.db
+					.prepare(
+						`UPDATE webhook_endpoints
+						SET url_secret_hash = ?, url_secret_encrypted = ?, rotated_at = ?
+						WHERE user_id = ? AND id = ?`,
+					)
+					.bind(
+						input.urlSecretHash,
+						input.urlSecretEncrypted,
+						now,
+						input.userId,
+						existing.id,
+					)
+					.run()
+		if ((result.meta.changes ?? 0) === 0) {
+			throw new Error('Unable to upsert webhook endpoint.')
+		}
+	} else {
+		await input.db
+			.prepare(
+				`INSERT INTO webhook_endpoints (
+					id, user_id, package_id, webhook_name, url_secret_hash,
+					url_secret_encrypted, enabled, created_at, rotated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				input.id,
+				input.userId,
+				input.packageId,
+				input.webhookName,
+				input.urlSecretHash,
+				input.urlSecretEncrypted,
+				enabled,
+				now,
+				now,
+			)
+			.run()
+	}
 	const record = await getWebhookEndpointByKey({
 		db: input.db,
 		userId: input.userId,

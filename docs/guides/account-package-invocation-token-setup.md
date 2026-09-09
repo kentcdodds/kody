@@ -27,5 +27,5 @@ Discord gateways, YouTube WebSub, Raycast extensions, and social-launch clients
 mint one webhook URL per export and POST JSON. Vendor HMAC handlers stay on
 `inputMode: "request"`.
 
-See [Inbound webhooks](../use/webhooks.md). `webhookUrlMint` returns the
-credential URL once. Do not create new invocation tokens.
+See [Inbound webhooks](../use/webhooks.md). `webhookUrlMint` returns a `handle`;
+register the URL with `webhookUrlApply`. Do not create new invocation tokens.

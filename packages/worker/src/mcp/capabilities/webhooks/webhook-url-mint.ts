@@ -4,7 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { mintWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
-	mintedWebhookUrlSchema,
+	mintedWebhookHandleSchema,
 	requirePackageRef,
 	toMintedWebhookCapability,
 	webhookPackageRefSchema,
@@ -15,8 +15,8 @@ export const webhookUrlMintCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlMint',
 		description:
-			'Mint (or remint) the URL secret for a package-declared webhook and return the full ingress URL once. Treat the URL as a credential — it cannot be retrieved later (use webhookUrlRotate). Declaring kody.webhooks alone does not open ingress; minting does.',
-		keywords: ['webhook', 'mint', 'url', 'activate', 'credential', 'inbound'],
+			'Mint (or remint) the URL secret for a package-declared webhook and return an opaque handle plus url_host. The credential URL is never returned — register it with webhookUrlApply. Declaring kody.webhooks alone does not open ingress; minting does.',
+		keywords: ['webhook', 'mint', 'url', 'activate', 'handle', 'inbound'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -41,7 +41,7 @@ export const webhookUrlMintCapability = defineDomainCapability(
 				}
 			}),
 		outputSchema: z.object({
-			webhook: mintedWebhookUrlSchema,
+			webhook: mintedWebhookHandleSchema,
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)

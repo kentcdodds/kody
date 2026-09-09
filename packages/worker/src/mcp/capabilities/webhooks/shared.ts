@@ -50,6 +50,16 @@ export const listedWebhookSchema = z.object({
 	minted: z
 		.boolean()
 		.describe('True when a URL secret has been minted for this webhook.'),
+	handle: z
+		.string()
+		.nullable()
+		.describe(
+			'Opaque handle for webhookUrlApply. Null when not minted. Never a credential.',
+		),
+	url_host: z
+		.string()
+		.nullable()
+		.describe('Public hostname of the ingress origin. Null when not minted.'),
 	enabled: z
 		.boolean()
 		.nullable()
@@ -58,23 +68,29 @@ export const listedWebhookSchema = z.object({
 	rotated_at: z.string().nullable(),
 })
 
-export const mintedWebhookUrlSchema = z.object({
+export const mintedWebhookHandleSchema = z.object({
 	package_id: z.string(),
 	package_kody_id: z.string(),
 	name: z.string(),
-	url: z
+	handle: z
 		.string()
 		.describe(
-			'Full ingress URL including the URL secret. Treat as a credential; shown only on mint/rotate.',
+			'Opaque handle for webhookUrlApply. Does not contain the URL secret.',
 		),
-	url_secret: z
+	url_host: z
 		.string()
-		.describe(
-			'URL path secret. Shown only on mint/rotate; never retrievable later.',
-		),
+		.describe('Public hostname of the ingress origin (no path or secret).'),
 	enabled: z.boolean(),
 	created_at: z.string(),
 	rotated_at: z.string(),
+})
+
+export const webhookUrlApplyResultSchema = z.object({
+	ok: z.boolean(),
+	url_host: z.string(),
+	http_status: z.number().int(),
+	remote_id: z.string().nullable(),
+	error: z.string().nullable(),
 })
 
 export const webhookDeliverySchema = z.object({
@@ -110,6 +126,8 @@ export function toListedWebhookCapability(webhook: {
 	verification: z.infer<typeof webhookVerificationPublicSchema>
 	replay?: z.infer<typeof webhookReplayPublicSchema>
 	minted: boolean
+	handle: string | null
+	urlHost: string | null
 	enabled: boolean | null
 	createdAt: string | null
 	rotatedAt: string | null
@@ -127,6 +145,8 @@ export function toListedWebhookCapability(webhook: {
 		verification: webhook.verification,
 		replay: webhook.replay ?? null,
 		minted: webhook.minted,
+		handle: webhook.handle,
+		url_host: webhook.urlHost,
 		enabled: webhook.enabled,
 		created_at: webhook.createdAt,
 		rotated_at: webhook.rotatedAt,
@@ -137,8 +157,8 @@ export function toMintedWebhookCapability(minted: {
 	packageId: string
 	packageKodyId: string
 	name: string
-	url: string
-	urlSecret: string
+	handle: string
+	urlHost: string
 	enabled: boolean
 	createdAt: string
 	rotatedAt: string
@@ -147,11 +167,27 @@ export function toMintedWebhookCapability(minted: {
 		package_id: minted.packageId,
 		package_kody_id: minted.packageKodyId,
 		name: minted.name,
-		url: minted.url,
-		url_secret: minted.urlSecret,
+		handle: minted.handle,
+		url_host: minted.urlHost,
 		enabled: minted.enabled,
 		created_at: minted.createdAt,
 		rotated_at: minted.rotatedAt,
+	}
+}
+
+export function toAppliedWebhookCapability(applied: {
+	ok: boolean
+	urlHost: string
+	httpStatus: number
+	remoteId: string | null
+	error: string | null
+}) {
+	return {
+		ok: applied.ok,
+		url_host: applied.urlHost,
+		http_status: applied.httpStatus,
+		remote_id: applied.remoteId,
+		error: applied.error,
 	}
 }
 

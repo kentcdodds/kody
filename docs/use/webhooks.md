@@ -13,8 +13,10 @@ are an unadvertised drain; new callers use webhooks.
 
 There is no `*` / multi-export URL. One declared webhook name binds one export.
 
-Treat every minted URL as a **credential**. The URL secret is returned only on
-mint/rotate and is never stored in plaintext.
+Treat every minted URL as a **credential**. Mint and rotate return an opaque
+`handle` (and `url_host`), never the URL or `url_secret`. Register the URL with
+`webhookUrlApply` so the credential stays inside Kody. MCP and execute never
+return the URL.
 
 ## Declare a webhook in the package manifest
 
@@ -77,13 +79,46 @@ Use the MCP `webhooks` domain:
 2. Store the HMAC secret with `secretSet` under the name used in
    `verification.secretName` (for example `sentryWebhookSecret`).
 3. Call `webhookUrlMint` with the package id/kody id and `webhookName`.
-4. Store the returned `url` immediately and paste it into the provider.
+4. Call `webhookUrlApply` with the returned `handle` and a first-class
+   destination. GitHub repository hooks use the connected `github` integration
+   (or a host-approved GitHub token).
 
-Other capabilities: `webhookList` (declarations joined with minted/enabled
-state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
+Other capabilities: `webhookList` (declarations joined with minted handle /
+enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
 `webhookDeliveryList` (metadata only; bodies are never stored). The same
 delivery history also appears under [Activity](./activity.md)
-(`/account/activity` and the `runs` capabilities).
+(`/account/activity` and the `runs` capabilities). List, mint, rotate, and apply
+never return the credential URL.
+
+### Apply a handle to a destination
+
+`webhookUrlApply` resolves the handle inside Kody and registers the URL through
+a first-class destination adapter. The model never sees the secret. Apply does
+not accept an arbitrary outbound URL: substituting the credential into a
+caller-chosen request would let the model exfiltrate it.
+
+GitHub (creates `POST /repos/{owner}/{repo}/hooks` on `api.github.com`):
+
+```ts
+await kody.webhooks.webhookUrlApply({
+	handle,
+	destination: {
+		type: 'github',
+		owner: 'acme',
+		repo: 'api',
+		events: ['push', 'pull_request'],
+		integration: 'github',
+	},
+})
+```
+
+Authorize with the user's GitHub OAuth integration (default `github`) or a
+host-approved GitHub token (`secretName`). Additional vendor adapters can follow
+the same pattern (known host + known API). Other providers still POST to the
+minted ingress URL; apply does not register them.
+
+Returns `{ ok, url_host, http_status, remote_id, error }`. Remote bodies that
+echo the hook URL are stripped.
 
 ## Ingress URL
 
@@ -260,7 +295,8 @@ webhook declaration per export.
 Republishing a package that removes or renames a webhook deactivates that
 ingress (unknown name → 404). Disable with `webhookDisable` without deleting the
 mint; re-enable with `webhookEnable`. Rotate the URL secret with
-`webhookUrlRotate` when a credential may have leaked.
+`webhookUrlRotate` when a credential may have leaked, then call
+`webhookUrlApply` again with the same handle so providers get the new URL.
 
 ## Related
 
