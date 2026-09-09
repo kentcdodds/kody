@@ -455,7 +455,6 @@ export function OnboardingRoute(handle: Handle) {
 			readRememberedOnboardingSelectedAgent(),
 			connectedAgents,
 		)
-		if (firstAgent) rememberOnboardingSelectedAgent(firstAgent)
 		const visibleSelectedAgent =
 			activeStep === 3
 				? resolveOnboardingStep3SelectedAgent(
