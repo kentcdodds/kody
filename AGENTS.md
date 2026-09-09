@@ -42,6 +42,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/oxlint-js-plugins.md](./docs/contributing/oxlint-js-plugins.md)
   - [docs/contributing/remix.md](./docs/contributing/remix.md) and the
     repo-local [Remix skill](./.agents/skills/remix/SKILL.md)
+  - [docs/contributing/no-flash-navigation.md](./docs/contributing/no-flash-navigation.md)
+    (client routes keep the previous page until the next one is ready)
   - [docs/contributing/cloudflare-agents-sdk.md](./docs/contributing/cloudflare-agents-sdk.md)
 - MCP capabilities (search/execute graph, domains, registry):
   - [docs/contributing/adding-capabilities.md](./docs/contributing/adding-capabilities.md)
