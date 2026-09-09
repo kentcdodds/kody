@@ -26,6 +26,7 @@ const mockModule = vi.hoisted(() => ({
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
+	loadOnboardingAccessWin: vi.fn(async () => false),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -52,6 +53,16 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByUserId(...args),
 }))
+
+vi.mock('#mcp/onboarding-checklist.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#mcp/onboarding-checklist.ts')>()
+	return {
+		...actual,
+		loadOnboardingAccessWin: (...args: Array<unknown>) =>
+			mockModule.loadOnboardingAccessWin(...args),
+	}
+})
 
 vi.mock('#mcp/capabilities/mcp-servers/shared.ts', async (importOriginal) => {
 	const actual =
@@ -120,6 +131,71 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 	expect(anonymousPayload.setupPrompt.length).toBeGreaterThan(0)
 	expect(anonymousPayload.discoveryPrompt).toContain('https://example.com')
 	expectDisconnectedFeaturedCatalog(anonymousPayload.featuredMcpServers)
+})
+
+test('signed-in /onboarding resumes at the unfinished wizard step', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'greg',
+		emailVerified: true,
+		mcpUser: { userId: 'user-1' },
+	})
+	const grants = vi.fn(async () => ({
+		items: [] as Array<{ id: string; clientId: string }>,
+	}))
+	const env = {
+		COOKIE_SECRET: testCookieSecret,
+		OAUTH_PROVIDER: { listUserGrants: grants },
+	} as Env
+	const handler = createOnboardingHandler(env)
+
+	mockModule.loadOnboardingAccessWin.mockResolvedValue(false)
+	const freshAccount = await handler.handler(
+		new RequestContext(new Request('https://example.com/onboarding')),
+	)
+	expect(freshAccount.status).toBe(302)
+	expect(freshAccount.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-1',
+	)
+
+	grants.mockResolvedValue({
+		items: [
+			{ id: 'g1', clientId: 'cursor-client' },
+			{ id: 'g2', clientId: 'claude-desktop-client' },
+		],
+	})
+	const midOnboarding = await handler.handler(
+		new RequestContext(new Request('https://example.com/onboarding')),
+	)
+	expect(midOnboarding.status).toBe(302)
+	expect(midOnboarding.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-2',
+	)
+
+	mockModule.loadOnboardingAccessWin.mockResolvedValue(true)
+	const finishedTwoAgents = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/onboarding?redirectTo=%2F'),
+		),
+	)
+	expect(finishedTwoAgents.status).toBe(302)
+	expect(finishedTwoAgents.headers.get('Location')).toBe(
+		'https://example.com/onboarding/step-3?redirectTo=%2F',
+	)
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'greg',
+		emailVerified: false,
+		mcpUser: { userId: 'user-1' },
+	})
+	const unverified = await handler.handler(
+		new RequestContext(new Request('https://example.com/onboarding')),
+	)
+	expect(unverified.status).toBe(302)
+	expect(unverified.headers.get('Location')).toBe(
+		'https://example.com/pending-verification',
+	)
+	mockModule.loadOnboardingAccessWin.mockResolvedValue(false)
 })
 
 test('onboarding API includes the authenticated package-scope username', async () => {

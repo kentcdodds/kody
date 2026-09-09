@@ -7,6 +7,10 @@ import {
 	loadOnboardingAccessWinMemorySubject,
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
+import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
+import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
+import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
+import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -45,6 +49,7 @@ import {
 	onboardingStepPaths,
 	onboardingWizardStepHref,
 	parseOnboardingPathname,
+	type OnboardingWizardProgress,
 } from '#universal/onboarding-process.ts'
 import {
 	highlightResultsByKey,
@@ -241,6 +246,46 @@ async function loadOnboardingChooserFields(
 	}
 }
 
+async function loadOnboardingResumeProgress(
+	env: Env,
+	userId: string,
+): Promise<OnboardingWizardProgress> {
+	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(env)
+	const [inbound, hasAccessWin] = await Promise.all([
+		loadInboundMcpConnectionState(helpers, userId),
+		loadOnboardingAccessWin(env, userId),
+	])
+	return {
+		hasMcpClient: inbound.uniqueClientCount > 0,
+		hasAccessWin,
+		hasSecondMcpClient: hasSecondConnectedMcpClient(inbound.uniqueClientCount),
+	}
+}
+
+async function redirectOnboardingIndex(env: Env, request: Request) {
+	const requestUrl = new URL(request.url)
+	const user = await readAuthenticatedAppUser(request, env, {
+		prefetchFeatureFlags: true,
+	})
+	if (!user) {
+		return Response.redirect(
+			new URL(onboardingIndexRedirectHref(requestUrl.search), request.url),
+			302,
+		)
+	}
+	if (!user.emailVerified) {
+		return redirectUnverifiedToPending(request)
+	}
+	const progress = await loadOnboardingResumeProgress(env, user.mcpUser.userId)
+	return Response.redirect(
+		new URL(
+			onboardingIndexRedirectHref(requestUrl.search, progress),
+			request.url,
+		),
+		302,
+	)
+}
+
 function redirectUnverifiedToPending(request: Request) {
 	const requestUrl = new URL(request.url)
 	const redirectTo = normalizeRedirectTo(
@@ -275,10 +320,7 @@ export function createOnboardingHandler(env: Env) {
 		async handler({ request }) {
 			const requestUrl = new URL(request.url)
 			if (requestUrl.pathname === onboardingStepPaths.index) {
-				return Response.redirect(
-					new URL(onboardingIndexRedirectHref(requestUrl.search), request.url),
-					302,
-				)
+				return redirectOnboardingIndex(env, request)
 			}
 			const location = parseOnboardingPathname(requestUrl.pathname)
 			if (location && !location.valid) {

@@ -8,10 +8,11 @@ known memory subject or package name, shows a short "You made …" chip.
 
 ## How to get there
 
-Signed-in visit to `/onboarding`. Step 1 is `/onboarding/step-1` (optional
-`:agent`). Step 2 is `/onboarding/step-2`. Step 3 is `/onboarding/step-3`
-(optional `:agent`). Leftover `/onboarding/step-2/:service` URLs redirect to
-Step 2. Also linked from account.
+Signed-in visit to `/onboarding` (resumes at the first unfinished step; finished
+accounts land on Step 3 so connected agents stay visible). Step 1 is
+`/onboarding/step-1` (optional `:agent`). Step 2 is `/onboarding/step-2`. Step 3
+is `/onboarding/step-3` (optional `:agent`). Leftover
+`/onboarding/step-2/:service` URLs redirect to Step 2. Also linked from account.
 
 ## Drive it
 

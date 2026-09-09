@@ -23,6 +23,8 @@ import {
 	portabilityGuideEntity,
 	portabilityGuideSlug,
 	remainingOnboardingWizardLabels,
+	resolveOnboardingFirstAgentKind,
+	resumeOnboardingWizardStep,
 } from './onboarding-process.ts'
 
 const guidesDir = join(
@@ -48,6 +50,20 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 	expect(onboardingIndexRedirectHref('?redirectTo=%2F')).toBe(
 		'/onboarding/step-1?redirectTo=%2F',
 	)
+	expect(
+		onboardingIndexRedirectHref('?redirectTo=%2F', {
+			hasMcpClient: true,
+			hasAccessWin: false,
+			hasSecondMcpClient: false,
+		}),
+	).toBe('/onboarding/step-2?redirectTo=%2F')
+	expect(
+		onboardingIndexRedirectHref('', {
+			hasMcpClient: true,
+			hasAccessWin: true,
+			hasSecondMcpClient: true,
+		}),
+	).toBe('/onboarding/step-3')
 	expect(onboardingChecklistItemHref('install-starter', 'kentcdodds')).toBe(
 		'/@kentcdodds',
 	)
@@ -187,6 +203,56 @@ test('step 2 is one short prompt that retrieves the onboarding guide', () => {
 	expect(onboardingSecondAgentConnectedStatusLabel(true)).toBe(
 		"You've connected a second agent. Standard is free for 2 weeks.",
 	)
+})
+
+test('resume step is the first unfinished wizard step, else step 3', () => {
+	expect(
+		resumeOnboardingWizardStep({
+			hasMcpClient: false,
+			hasAccessWin: false,
+			hasSecondMcpClient: false,
+		}),
+	).toBe(1)
+	expect(
+		resumeOnboardingWizardStep({
+			hasMcpClient: true,
+			hasAccessWin: false,
+			hasSecondMcpClient: false,
+		}),
+	).toBe(2)
+	expect(
+		resumeOnboardingWizardStep({
+			hasMcpClient: true,
+			hasAccessWin: true,
+			hasSecondMcpClient: false,
+		}),
+	).toBe(3)
+	expect(
+		resumeOnboardingWizardStep({
+			hasMcpClient: true,
+			hasAccessWin: true,
+			hasSecondMcpClient: true,
+		}),
+	).toBe(3)
+	expect(
+		resolveOnboardingFirstAgentKind(null, [
+			{
+				kind: 'claude-desktop',
+				connectedAt: '2026-09-08T18:00:00.000Z',
+			},
+			{ kind: 'cursor', connectedAt: '2026-09-08T17:00:00.000Z' },
+		]),
+	).toBe('cursor')
+	expect(
+		resolveOnboardingFirstAgentKind('claude-desktop', [
+			{ kind: 'cursor', connectedAt: '2026-09-08T17:00:00.000Z' },
+		]),
+	).toBe('claude-desktop')
+	expect(
+		resolveOnboardingFirstAgentKind(null, [
+			{ kind: 'cursor', connectedAt: null },
+		]),
+	).toBeNull()
 })
 
 test('search leftover notice lists remaining wizard steps, not a quest', () => {
