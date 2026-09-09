@@ -151,6 +151,20 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		commitSha: 'abc',
 		detail: 'ok, commitSha abc',
 	})
+	expect(
+		evaluateAppHealth(
+			{
+				ok: true,
+				commitSha: '91bab582b2040e7b55a84f2415be82c1684ad565',
+			},
+			'91bab582',
+		),
+	).toEqual({
+		ok: true,
+		commitSha: '91bab582b2040e7b55a84f2415be82c1684ad565',
+		detail:
+			'ok, commitSha 91bab582b2040e7b55a84f2415be82c1684ad565 (matches 91bab582)',
+	})
 	expect(evaluateAppHealth({ ok: true, commitSha: 'old' }, 'new').ok).toBe(
 		false,
 	)

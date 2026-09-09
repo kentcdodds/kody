@@ -47,7 +47,8 @@ CI green is not enough for a user-visible account change. Prefer:
 1. `doctor` then `dev` or `preview`
 2. `request` / `--check` as the seed user **with data for this change**
 3. A computerUse video or screenshot of the same page
-4. After merge, `health --origin https://kody.codes --sha <merge>`
+4. After merge, `health --origin https://kody.codes --sha <merge>` (full SHA,
+   unique short SHA, or a later descendant HEAD that contains the merge)
 
 See
 [docs/contributing/control-kody.md](../../../docs/contributing/control-kody.md)

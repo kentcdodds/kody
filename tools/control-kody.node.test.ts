@@ -17,6 +17,7 @@ import {
 	localSeedEmail,
 	parseControlArgs,
 	playwrightBrowsersInstalled,
+	isGitAncestor,
 	readHealth,
 	repoRootFromHere,
 	requestAsSession,
@@ -284,6 +285,58 @@ test('control-kody parses commands, maps every required route, and drives a seed
 			expect(stale.ok).toBe(false)
 		},
 	)
+})
+
+test('readHealth accepts a unique short SHA and a descendant live SHA', async () => {
+	await withAuthServer(
+		(_request, response) => {
+			response.setHeader('Content-Type', 'application/json')
+			response.end(
+				JSON.stringify({
+					ok: true,
+					commitSha: '91bab582b2040e7b55a84f2415be82c1684ad565',
+				}),
+			)
+		},
+		async (origin) => {
+			const prefix = await readHealth({
+				origin,
+				expectedSha: '91bab582',
+			})
+			expect(prefix.ok).toBe(true)
+			expect(prefix.detail).toContain('matches 91bab582')
+
+			const descendant = await readHealth({
+				origin,
+				expectedSha: 'ab07b020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+				isAncestor: (ancestor, descendantSha) =>
+					ancestor === 'ab07b020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' &&
+					descendantSha === '91bab582b2040e7b55a84f2415be82c1684ad565',
+			})
+			expect(descendant.ok).toBe(true)
+			expect(descendant.detail).toContain('descendant of')
+
+			const unrelated = await readHealth({
+				origin,
+				expectedSha: 'ffffffffffffffffffffffffffffffffffffffff',
+				isAncestor: () => false,
+			})
+			expect(unrelated.ok).toBe(false)
+		},
+	)
+
+	expect(
+		isGitAncestor('missing', 'also-missing', {
+			execFile: () => {
+				throw new Error('not an ancestor')
+			},
+		}),
+	).toBe(false)
+	expect(
+		isGitAncestor('parent', 'child', {
+			execFile: () => Buffer.from(''),
+		}),
+	).toBe(true)
 })
 
 test('control-kody request stops when auto-login fails', async () => {

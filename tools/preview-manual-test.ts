@@ -460,6 +460,19 @@ export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
 	return parsed
 }
 
+export const minUniqueShaPrefixLength = 7
+
+export function shaEqualsOrUniquePrefix(actual: string, expected: string) {
+	if (actual === expected) return true
+	const actualLower = actual.toLowerCase()
+	const expectedLower = expected.toLowerCase()
+	if (actualLower === expectedLower) return true
+	return (
+		expectedLower.length >= minUniqueShaPrefixLength &&
+		actualLower.startsWith(expectedLower)
+	)
+}
+
 export function commitShaMatchesExpected(
 	commitSha: string | null,
 	expectedSha: string | null,
@@ -467,7 +480,11 @@ export function commitShaMatchesExpected(
 ) {
 	if (!expectedSha) return true
 	if (!commitSha) return false
-	return commitSha === expectedSha || commitParents.includes(expectedSha)
+	if (shaEqualsOrUniquePrefix(commitSha, expectedSha)) return true
+	return commitParents.some(
+		(parent) =>
+			parent === expectedSha || shaEqualsOrUniquePrefix(parent, expectedSha),
+	)
 }
 
 export function evaluateAppHealth(
@@ -607,9 +624,19 @@ function healthMatchDetail(
 	if (
 		expectedSha &&
 		commitSha !== expectedSha &&
-		commitParents.includes(expectedSha)
+		commitParents.some(
+			(parent) =>
+				parent === expectedSha || shaEqualsOrUniquePrefix(parent, expectedSha),
+		)
 	) {
 		return `ok, commitSha ${commitSha} (merge of ${expectedSha})`
+	}
+	if (
+		expectedSha &&
+		commitSha !== expectedSha &&
+		shaEqualsOrUniquePrefix(commitSha, expectedSha)
+	) {
+		return `ok, commitSha ${commitSha} (matches ${expectedSha})`
 	}
 	return `ok, commitSha ${commitSha}`
 }
