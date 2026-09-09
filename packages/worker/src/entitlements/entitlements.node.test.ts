@@ -905,8 +905,8 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 		plan: 'free',
 		limit: 1_000,
 		current: 1_000,
-		window: 'day',
 	})
+	expect(dailyDenied.details.window).toBeUndefined()
 
 	await meter.seed({
 		userId: legacyUserId,

@@ -1130,8 +1130,7 @@ export async function consumeDailyEntitlement(
 		}
 	}
 	if (!result.consumed) {
-		const deniedWindow = result.deniedWindow ?? 'day'
-		if (deniedWindow === 'week' && weekLimit !== null) {
+		if (result.deniedWindow === 'week' && weekLimit !== null) {
 			throw new EntitlementLimitError({
 				resource,
 				plan,
@@ -1146,7 +1145,6 @@ export async function consumeDailyEntitlement(
 			plan,
 			limit,
 			current: result.count,
-			window: 'day',
 			upgradeHint: buildEntitlementUpgradeHint(resource),
 		})
 	}
