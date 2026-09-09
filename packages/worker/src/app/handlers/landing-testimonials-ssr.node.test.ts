@@ -100,7 +100,7 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 	expect(html).toContain('id="gabriel-alegria"')
 	expect(html).toContain('Gabriel Alegría')
 	expect(html).toContain('Software Engineer, IB.')
-	expect(html).toContain(
+	expect(html.replace(/\s+/g, ' ')).toContain(
 		'a package that hits Railway and posts specific output to Discord',
 	)
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
