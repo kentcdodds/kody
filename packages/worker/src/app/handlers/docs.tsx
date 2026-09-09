@@ -328,11 +328,12 @@ export function createDocsConnectHandler(env: Env) {
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
 				return markdownResponse(buildDocsConnectMarkdown(baseUrl))
 			}
+			// Title comes from the document-head registry so a full load and an
+			// in-app navigation agree.
 			return withVaryAccept(
 				await renderAppPage({
 					request,
 					env,
-					title: 'Connect a provider',
 					loaderData: {
 						docsConnect: {
 							ok: true,
