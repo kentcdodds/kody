@@ -18,8 +18,8 @@ export const turnstileWidgetClassName = 'kody-turnstile'
  * Cloudflare's managed widget box. Keep `.kody-turnstile` in
  * `packages/worker/public/styles.css` in sync with these values.
  */
-export const turnstileWidgetWidthPx = 300
-export const turnstileWidgetHeightPx = 65
+const turnstileWidgetWidthPx = 300
+const turnstileWidgetHeightPx = 65
 
 type TurnstileApi = {
 	render(

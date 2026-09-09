@@ -520,4 +520,4 @@ const authSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
 	},
 })
 
-export const ghostButtonCss = getGhostButtonCss()
+const ghostButtonCss = getGhostButtonCss()
