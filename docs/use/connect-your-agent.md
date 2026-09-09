@@ -5,15 +5,12 @@ Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Devin, Gemini,
 GitHub Copilot (VS Code or CLI), the GitHub Copilot app, or any other AI agent
 that supports MCP — not from a separate Kody chat app.
 
+The three-step Get started flow lives in
+[Connect your agent](../guides/connect-your-agent.md) and on `/onboarding`. This
+page is the per-host install reference.
+
 Agents discovering this host can read `/auth.md` for the OAuth registration
 block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
-People following a host-specific walkthrough can stay on this page or use Get
-started (`/onboarding`).
-
-The in-app Get started page (`/onboarding`) asks which agent you want to connect
-first, then shows only that host's install steps. A second client is worth it
-later when you want the same [memories](./memory.md) and packages from another
-agent — you do not need every host on day one.
 
 ## Add the MCP server
 
@@ -119,27 +116,14 @@ you only have the MCP URL.
 
 ### Coding vs non-coding agents
 
-Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT.com, Grok.com, Grok Bot, Gemini, and the GitHub Copilot app. For
-creating or editing packages, a coding agent (Cursor, Claude Code, Codex /
-ChatGPT desktop, Grok CLI, Copilot, OpenCode, Devin, Pi, OpenClaw, and similar)
-is usually smoother because those hosts can edit files and iterate on code more
-easily.
-
-## Make something useful, then prove it travels
-
-After the connection works, Get started Step 2 is **Make something useful**: one
-short prompt you paste into the agent you just connected. The agent looks up
-`search({ entity: "onboarding:guide" })`, asks what it is for in your life, and
-helps you make something useful in your Kody account.
-
-Step 3 is **Connect a second agent** from a different ecosystem. Same-vendor
-hosts stay unavailable. Connecting that second agent unlocks Standard free for 2
-weeks (once per account). After you pick one, copy the portability proof so the
-new agent looks up `search({ entity: "portability:guide" })` and reuses the
-memory, package, or ask you made in Step 2.
+Using packages that already exist works well from non-coding agents. Creating or
+editing packages is smoother from a coding agent because those hosts edit files
+and iterate on code. Either kind can be first; see
+[Connect your agent](../guides/connect-your-agent.md#which-agent-should-go-first).
 
 ## Where to go next
 
+- [Connect your agent](../guides/connect-your-agent.md) — Steps 2 and 3 after
+  this host is connected
 - [First steps](./first-steps.md) — search-first habits and common goals
 - [Troubleshooting](./troubleshooting.md) — auth, empty results, and approvals

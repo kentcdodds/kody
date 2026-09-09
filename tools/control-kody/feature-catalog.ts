@@ -257,11 +257,12 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 			'/support',
 			'/privacy',
 			'/terms',
+			'/docs',
 			'/guides',
 			'/blog',
 			'/discord',
 		],
-		apis: ['/guides.json', '/blog.json', '/discord.json'],
+		apis: ['/docs.json', '/blog.json', '/discord.json'],
 	},
 ]
 
@@ -279,6 +280,7 @@ export const requiredHtmlPrefixes = [
 	'/connect/secrets',
 	'/community',
 	'/@:username',
+	'/docs',
 ] as const
 
 export function extractQuotedPaths(source: string) {

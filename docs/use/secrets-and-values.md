@@ -154,8 +154,8 @@ host or grant package write access.
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like
 `/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
-every pending secret and approves them in one click. Single-secret links still
-work for one-off grants. For community forks, reviewing the source and calling
+every pending secret and approves them in one click. A single-secret link grants
+one package on one secret. For community forks, reviewing the source and calling
 `communityForkAdopt` is an alternative to sending those approval links.
 
 ## Package config vs package storage
