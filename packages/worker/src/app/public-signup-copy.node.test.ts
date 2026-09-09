@@ -10,6 +10,7 @@ import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
+import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
 
@@ -139,7 +140,13 @@ async function renderMarketing(path: string, signupMode?: SignupMode) {
 			return renderAppPage({
 				request,
 				env,
-				loaderData: { signupMode: signupMode ?? 'invite' },
+				loaderData: {
+					signupMode: signupMode ?? 'invite',
+					onboarding: loadHomePageOnboardingData({
+						env,
+						requestUrl: request.url,
+					}),
+				},
 			})
 		default:
 			throw new Error(`unsupported path ${path}`)
@@ -226,16 +233,19 @@ test('FAQ, pricing, and home SSR copy follow invite, open, and waitlist destinat
 	expect(inviteHome).toContain('Join the waiting list')
 	expect(inviteHome).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 	expect(inviteHome).toContain('I have a code')
+	expect(inviteHome).toContain('Copy the discovery prompt')
 	expect(inviteHome).not.toContain('>Create a free account<')
 
 	expect(openHome).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 	expect(openHome).toContain('Create a free account')
+	expect(openHome).toContain('Copy the discovery prompt')
 	expect(openHome).not.toContain('href="#invite"')
 	expect(openHome).not.toContain('Join the waiting list')
 
 	expect(waitlistHome).toContain('href="#invite"')
 	expect(waitlistHome).toContain('Join the waiting list')
 	expect(waitlistHome).toContain('I have a code')
+	expect(waitlistHome).toContain('Copy the discovery prompt')
 	expect(waitlistHome).not.toContain('>Create a free account<')
 })
 

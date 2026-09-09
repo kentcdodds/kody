@@ -9,7 +9,6 @@ import {
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
-import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { CodeRunsTicker } from '#client/code-runs-ticker.tsx'
 import { fetchCodeRunsPayload } from '#client/routes/code-runs-payload.ts'
@@ -18,6 +17,12 @@ import { reveal, revealPop } from '#client/reveal.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
+import {
+	landingHeroCopyPromptLabel,
+	landingHeroHeadlineAccent,
+	landingHeroHeadlineLead,
+	landingHeroHeadlineRest,
+} from '#universal/landing-hero-copy.ts'
 import {
 	publicCreateAccountLabel,
 	publicHaveCodeLabel,
@@ -42,11 +47,10 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning (public door): Kody is the home your agents share — for the
- * agents you use today and the ones you'll use tomorrow. The hero stage
+ * Positioning (public door): stop sweating switching agents. The hero stage
  * (Kody with the host agents tethered around it) names the agents; the H1
- * matches the OG card. Factory / npm / packages stay below the fold. The
- * factory closer is the ritual: ask once, save it, trigger it.
+ * matches the home OG card. Factory / npm / packages stay below the fold.
+ * The factory closer is the ritual: ask once, save it, trigger it.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -142,8 +146,6 @@ export async function homeRouteLoader(
 }
 
 export function HomeRoute(handle: Handle) {
-	let needsOnboarding = false
-	let emailVerified = false
 	let loggedIn = false
 	let discoveryPrompt = ''
 	let codeRunsWindow: PublicCodeRunsWindow | null = null
@@ -153,8 +155,6 @@ export function HomeRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
-		needsOnboarding = payload?.needsOnboarding === true
-		emailVerified = payload?.emailVerified === true
 		loggedIn = payload?.loggedIn === true
 		discoveryPrompt = payload?.discoveryPrompt ?? ''
 		onboardingStatus = 'ready'
@@ -184,7 +184,6 @@ export function HomeRoute(handle: Handle) {
 			handle.update()
 		} catch {
 			if (signal.aborted) return
-			needsOnboarding = false
 			onboardingStatus = 'ready'
 			loadLatch.markFailed(href)
 			handle.update()
@@ -226,80 +225,47 @@ export function HomeRoute(handle: Handle) {
 		}
 
 		const isSignedIn = onboardingStatus === 'ready' && loggedIn
-		const needsEmailVerification =
-			isSignedIn && needsOnboarding && !emailVerified
 
 		return (
 			<div>
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						The Home Your Agents <em>Share</em>
-					</h1>
-					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						For all the agents you use today,
+						{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
 						<br />
-						and the ones you&apos;ll use tomorrow
-					</p>
+						{landingHeroHeadlineRest}
+					</h1>
 					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
-					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
-						{isSignedIn ? (
-							<>
-								{needsEmailVerification ? (
-									<a href={pendingVerificationPath} class="landing-pill">
-										Verify your email
-									</a>
-								) : (
-									<a href={onboardingPath} class="landing-pill">
-										Connect your agent
-									</a>
-								)}
-								<a href="/account" class="landing-code-link">
-									Open your account
-								</a>
-							</>
-						) : signupMode === 'open' ? (
-							<>
-								<a href={homepageSignupPath} class="landing-pill">
-									{publicCreateAccountLabel}
-								</a>
-								<a href="/login" class="landing-code-link">
-									I already have an account
-								</a>
-							</>
-						) : (
-							<>
-								<a href="#invite" class="landing-pill">
-									{publicJoinWaitlistLabel}
-								</a>
-								<a href={homepageSignupPath} class="landing-code-link">
-									{publicHaveCodeLabel}
-								</a>
-							</>
-						)}
-					</div>
-					<p
-						data-rise
-						style={{ '--rise': '3' }}
-						class="landing-hero-hint landing-hero-hint-lead"
-					>
-						Not sure yet? Ask the agent you already use whether Kody would help.
-						No account necessary.
-					</p>
-					{discoveryPrompt ? (
+					{isSignedIn ? null : (
 						<div
 							data-rise
-							style={{ '--rise': '3.2' }}
-							class="landing-hero-hint"
+							style={{ '--rise': '2' }}
+							class="landing-hero-actions"
 						>
-							<CopyTextButton
-								value={discoveryPrompt}
-								idleLabel="Copy the discovery prompt"
-								variant="ghost"
-								size="sm"
-							/>
+							{signupMode === 'open' ? (
+								<a
+									href={homepageSignupPath}
+									class="landing-pill landing-hero-cta"
+								>
+									{publicCreateAccountLabel}
+								</a>
+							) : (
+								<a href="#invite" class="landing-pill landing-hero-cta">
+									{publicJoinWaitlistLabel}
+								</a>
+							)}
+							{discoveryPrompt ? (
+								<span class="landing-hero-cta landing-hero-copy">
+									<CopyTextButton
+										class="landing-hero-copy-button"
+										value={discoveryPrompt}
+										idleLabel={landingHeroCopyPromptLabel}
+										variant="ghost"
+									/>
+								</span>
+							) : null}
 						</div>
-					) : null}
+					)}
 				</section>
 
 				<section aria-labelledby="pitch-title" class="landing-pitch">

@@ -14,6 +14,7 @@ import {
 type CopyTextButtonProps = {
 	value: string
 	idleLabel?: string
+	class?: string
 	/**
 	 * `pill` is the redesign's display-face pill (prompt-block copy);
 	 * `ghost` its bordered transparent sibling (snippet copy); `chip` the
@@ -134,6 +135,7 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 	return () => (
 		<button
 			type="button"
+			class={handle.props.class}
 			aria-label={handle.props.ariaLabel}
 			// The result is announced by the live region below rather than by the
 			// button's own name: `aria-label` overrides the label text, so a named
