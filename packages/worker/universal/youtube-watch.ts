@@ -36,8 +36,16 @@ export function youtubePlaylistFeedUrl(playlistId: string): string {
 	return `https://www.youtube.com/feeds/videos.xml?playlist_id=${encodeURIComponent(playlistId)}`
 }
 
-export function youtubeNocookieEmbedUrl(videoId: string): string {
+export function youtubeNocookieEmbedUrl(
+	videoId: string,
+	options?: { playlistId?: string },
+): string {
 	const params = new URLSearchParams({ autoplay: '1', rel: '0' })
+	const playlistId = options?.playlistId?.trim()
+	if (playlistId && isYoutubePlaylistId(playlistId)) {
+		params.set('listType', 'playlist')
+		params.set('list', playlistId)
+	}
 	return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`
 }
 

@@ -3,6 +3,10 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import {
+	landingHeroDemoVideoId,
+	landingHeroDemoVideos,
+} from '#universal/landing-hero-copy.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -109,6 +113,17 @@ test('homepage hero headline and session-aware CTAs', async () => {
 	expect(anonymousHero).toContain('landing-hero-actions')
 	expect(anonymousHero).toContain('Create a free account')
 	expect(anonymousHero).toContain('Copy the discovery prompt')
+	expect(anonymousHero).toContain('landing-hero-top')
+	expect(anonymousHero).toContain('landing-hero-video')
+	expect(anonymousHero).toContain(`/youtube-thumb/${landingHeroDemoVideoId}`)
+	expect(anonymousHero).toContain('role="listbox"')
+	for (const video of landingHeroDemoVideos) {
+		expect(anonymousHero).toContain(`/youtube-thumb/${video.videoId}`)
+	}
+	expect(anonymousHero).toContain('landing-hero-agents')
+	expect(anonymousHero.indexOf('landing-hero-top')).toBeLessThan(
+		anonymousHero.indexOf('landing-hero-agents'),
+	)
 
 	const signedIn = await renderAppPage({
 		request: new Request(requestUrl),
@@ -122,4 +137,6 @@ test('homepage hero headline and session-aware CTAs', async () => {
 	expect(signedInHero).not.toContain('landing-hero-actions')
 	expect(signedInHero).not.toContain('Create a free account')
 	expect(signedInHero).not.toContain('Copy the discovery prompt')
+	expect(signedInHero).toContain('landing-hero-video')
+	expect(signedInHero).toContain('landing-hero-agents')
 })

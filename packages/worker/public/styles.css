@@ -773,13 +773,30 @@ html.is-settled {
 	text-align: center;
 }
 
+.landing-hero-top {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+	gap: clamp(1.5rem, 4vw, 3rem);
+	align-items: center;
+	text-align: left;
+}
+
+.landing-hero-intro {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	align-self: start;
+	min-width: 0;
+}
+
 .landing-hero-title {
 	margin: 0;
-	font-size: clamp(2.7rem, 6.5vw, 5rem);
+	font-size: clamp(2.4rem, 5.2vw, 4.25rem);
 	font-weight: 760;
 	line-height: 1.02;
 	letter-spacing: -0.03em;
 	font-variation-settings: 'opsz' 96;
+	text-wrap: balance;
 }
 
 .landing-hero-title em {
@@ -788,20 +805,216 @@ html.is-settled {
 }
 
 .landing-hero-actions {
-	margin-top: 2.2rem;
+	margin-top: 1.6rem;
 	display: flex;
+	flex-direction: column;
 	align-items: stretch;
-	justify-content: center;
-	flex-wrap: nowrap;
-	gap: 0.8rem 1rem;
-	width: min(100%, 38rem);
-	margin-inline: auto;
+	gap: 0.75rem;
+	width: 100%;
+}
+
+.landing-hero-media {
+	min-width: 0;
+}
+
+.landing-hero-video {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	min-height: 12.5rem;
+	background-color: #000;
+	border-radius: var(--radius-card);
+	overflow: hidden;
+}
+
+/* Video chooser: a horizontally scrolling strip of small thumbnails that can
+   grow with the video list. One tab stop (the listbox); arrow keys move
+   `data-active` (wrapping) and scroll it into view; Enter picks. The strip
+   bleeds past the video's edges by `--chooser-bleed` (negative margin +
+   matching padding) so the zoomed thumb has room and the first/last thumb
+   still align with the player at rest. Edges fade only when there is more to
+   scroll to on that side (`data-overflow-*`, set from scroll position).
+   Each option reserves a title slot (padding-bottom) below its thumbnail; the
+   title rests *behind* the thumb (translated up, z-index 0, faded so it cannot
+   peek through the rounded corners) and slides down into    the slot on hover or
+   keyboard-active while the whole thumb zooms and its neighbours step aside. The listbox
+   draws no ring of its own — the active option carries it, so the indicator is
+   on the thing the arrows move. */
+.landing-hero-chooser {
+	--chooser-thumb-width: 6.75rem;
+	--chooser-title-slot: 3.4rem;
+	--chooser-zoom: 1.18;
+	/* Half the zoomed card's extra width, plus a breath: how far neighbours
+	   step aside so the zoomed card never covers them. */
+	--chooser-shift: calc(
+		var(--chooser-thumb-width) * (var(--chooser-zoom) - 1) / 2 + 0.15rem
+	);
+	/* Must hold a card that has stepped aside by --chooser-shift plus its
+	   focus ring, and must stay within the hero's smallest side padding
+	   (1.25rem) so the strip never widens the page on phones. */
+	--chooser-bleed: 1.2rem;
+	--chooser-fade: 2.75rem;
+	--chooser-fade-start: black;
+	--chooser-fade-end: black;
+	position: relative;
+	display: flex;
+	gap: 0.6rem;
+	margin: calc(0.85rem - var(--chooser-bleed)) calc(-1 * var(--chooser-bleed)) 0;
+	padding: var(--chooser-bleed) var(--chooser-bleed) 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	scroll-snap-type: x proximity;
+	scroll-padding-inline: var(--chooser-bleed);
+	scrollbar-width: none;
+}
+
+.landing-hero-chooser::-webkit-scrollbar {
+	display: none;
+}
+
+.landing-hero-chooser:focus-visible {
+	outline: none;
+}
+
+.landing-hero-chooser[data-overflow-start] {
+	--chooser-fade-start: transparent;
+}
+
+.landing-hero-chooser[data-overflow-end] {
+	--chooser-fade-end: transparent;
+}
+
+.landing-hero-chooser[data-overflow-start],
+.landing-hero-chooser[data-overflow-end] {
+	mask-image: linear-gradient(
+		to right,
+		var(--chooser-fade-start),
+		black var(--chooser-fade),
+		black calc(100% - var(--chooser-fade)),
+		var(--chooser-fade-end)
+	);
+}
+
+.landing-hero-chooser-option {
+	position: relative;
+	flex: 0 0 var(--chooser-thumb-width);
+	width: var(--chooser-thumb-width);
+	padding-bottom: var(--chooser-title-slot);
+	scroll-snap-align: center;
+	cursor: pointer;
+}
+
+.landing-hero-chooser-option:hover,
+.landing-hero-chooser:focus-visible .landing-hero-chooser-option[data-active] {
+	z-index: 2;
+}
+
+.landing-hero-chooser-thumb {
+	position: relative;
+	z-index: 1;
+	display: block;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	background-color: #000;
+	border-radius: var(--radius-md);
+	box-shadow: var(--shadow-sm);
+	scale: 1;
+}
+
+.landing-hero-chooser-thumb img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.landing-hero-chooser-option[aria-selected='true'] .landing-hero-chooser-thumb {
+	outline: 2.5px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
+.landing-hero-chooser:focus-visible
+	.landing-hero-chooser-option[data-active]
+	.landing-hero-chooser-thumb {
+	outline: 2.5px solid var(--color-primary);
+	outline-offset: 3px;
+}
+
+.landing-hero-chooser-title {
+	position: absolute;
+	inset: auto -0.6rem 0;
+	z-index: 0;
+	box-sizing: border-box;
+	height: var(--chooser-title-slot);
+	padding: 0.65rem 0.2rem 0;
+	font-size: 0.72rem;
+	line-height: 1.3;
+	color: var(--color-text-muted);
+	text-align: center;
+	text-wrap: balance;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	overflow: hidden;
+	translate: 0 -100%;
+	opacity: 0;
+}
+
+.landing-hero-chooser-option:hover .landing-hero-chooser-thumb,
+.landing-hero-chooser:focus-visible
+	.landing-hero-chooser-option[data-active]
+	.landing-hero-chooser-thumb {
+	scale: var(--chooser-zoom);
+	box-shadow: var(--shadow-md);
+}
+
+/* Neighbours make room for the zoomed card: everything before it slides
+   left, everything after slides right, by the card's horizontal overflow.
+   `:has(~ …)` reaches the preceding siblings, which plain combinators cannot.
+   Transform-only, so the strip's scroll geometry does not change under the
+   pointer; the outermost cards move into the bleed padding. */
+.landing-hero-chooser-option:has(~ .landing-hero-chooser-option:hover),
+.landing-hero-chooser:focus-visible
+	.landing-hero-chooser-option:has(
+		~ .landing-hero-chooser-option[data-active]
+	) {
+	translate: calc(-1 * var(--chooser-shift)) 0;
+}
+
+.landing-hero-chooser-option:hover ~ .landing-hero-chooser-option,
+.landing-hero-chooser:focus-visible
+	.landing-hero-chooser-option[data-active]
+	~ .landing-hero-chooser-option {
+	translate: var(--chooser-shift) 0;
+}
+.landing-hero-chooser-option:hover .landing-hero-chooser-title,
+.landing-hero-chooser:focus-visible
+	.landing-hero-chooser-option[data-active]
+	.landing-hero-chooser-title {
+	translate: 0 0;
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.landing-hero-chooser-option {
+		transition: translate 260ms var(--ease-out);
+	}
+
+	.landing-hero-chooser-thumb {
+		transition:
+			scale 260ms var(--ease-out),
+			box-shadow 260ms var(--ease-out);
+	}
+
+	.landing-hero-chooser-title {
+		transition:
+			translate 260ms var(--ease-out),
+			opacity 200ms var(--ease-out);
+	}
 }
 
 .landing-hero-cta {
-	flex: 1 1 0;
 	width: 100%;
-	min-width: 0;
 	box-sizing: border-box;
 }
 
@@ -814,14 +1027,15 @@ html.is-settled {
 	width: 100%;
 }
 
-@media (max-width: 520px) {
-	.landing-hero-actions {
-		flex-wrap: wrap;
-		width: min(100%, 22rem);
+@media (max-width: 800px) {
+	.landing-hero-top {
+		grid-template-columns: 1fr;
 	}
 
-	.landing-hero-cta {
-		flex: 1 1 100%;
+	/* Single column: the headline owns the full width, so scale with it
+	   instead of the two-column 5.2vw that assumed a ~45% column. */
+	.landing-hero-title {
+		font-size: clamp(2.5rem, 8.5vw, 4.25rem);
 	}
 }
 
@@ -946,7 +1160,7 @@ html.is-settled {
    travel them (frame-driven, shown only with JS + motion OK). */
 .landing-hero-agents {
 	width: min(100%, 40rem);
-	margin: 1.75rem auto 0;
+	margin: 2.5rem auto 0;
 }
 
 .landing-hero-agents-stage {
