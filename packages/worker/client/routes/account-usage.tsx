@@ -57,12 +57,33 @@ const entitlementGroupNotes: Partial<
 > = {
 	monthly:
 		'Included unique worker days and Durable Object rows-read this UTC month.',
-	daily: 'Counters reset at UTC midnight.',
+	daily:
+		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
 
 function formatUsagePercent(value: number | null) {
 	if (value === null) return '—'
 	return `${Math.round(value * 100)}%`
+}
+
+/** Whichever window is closer to its cap — daily or weekly — is what blocks. */
+export function hotterUsagePercent(
+	item: Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>,
+) {
+	const percents = [item.percentOfLimit, item.week?.percentOfLimit].filter(
+		(value): value is number => value != null,
+	)
+	if (percents.length === 0) return null
+	return Math.max(...percents)
+}
+
+export function formatEntitlementUsedPercent(
+	item: Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>,
+) {
+	if (item.week) {
+		return `${formatUsagePercent(item.percentOfLimit)} today · ${formatUsagePercent(item.week.percentOfLimit)} this week`
+	}
+	return formatUsagePercent(item.percentOfLimit)
 }
 
 function formatPlanLabel(plan: AdminPlanName) {
@@ -137,8 +158,9 @@ function formatLimitValue(item: AccountUsageEntitlementConsumption) {
 }
 
 function usageProgressPercent(item: AccountUsageEntitlementConsumption) {
-	if (item.percentOfLimit === null) return null
-	return Math.min(100, Math.round(item.percentOfLimit * 100))
+	const percent = hotterUsagePercent(item)
+	if (percent === null) return null
+	return Math.min(100, Math.round(percent * 100))
 }
 
 function groupEntitlementRows(rows: Array<AccountUsageEntitlementConsumption>) {
@@ -167,7 +189,7 @@ function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	return (
 		<div
 			role="img"
-			aria-label={`${item.label}: ${formatUsagePercent(item.percentOfLimit)} of plan limit`}
+			aria-label={`${item.label}: ${formatEntitlementUsedPercent(item)} of plan limit`}
 			mix={css({
 				height: '8px',
 				borderRadius: radius.md,
@@ -290,7 +312,12 @@ export function AccountUsageRoute(handle: Handle) {
 									/>
 								</>
 							) : null}
-							<p mix={css(descriptionCss)}>Usage day (UTC): {usage.today}</p>
+							<p mix={css(descriptionCss)}>
+								Usage day (UTC): {usage.today}
+								{usage.weekStart
+									? ` · Week starts (UTC Monday): ${usage.weekStart}`
+									: ''}
+							</p>
 							<p mix={css({ margin: 0 })}>
 								<a href={billingPath} mix={css(primaryLinkCss)}>
 									Manage billing
@@ -329,7 +356,7 @@ export function AccountUsageRoute(handle: Handle) {
 						) : null}
 						<AccountManagementPanel
 							title="Monthly compute"
-							description="Unique worker-days and Durable Object rows-read against this month's include. Execute stays on a hard daily cap. Durable Object duration is unmetered."
+							description="Unique worker-days and Durable Object rows-read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
 						>
 							<RecordTable
 								mode="none"
@@ -402,10 +429,11 @@ export function AccountUsageRoute(handle: Handle) {
 								>
 									{usage.warnings.map((item) => (
 										<li key={item.resource}>
-											<strong>{item.label}</strong>: {formatCurrentValue(item)}{' '}
-											/ {formatLimitValue(item)} (
-											{formatUsagePercent(item.percentOfLimit)}).{' '}
-											{item.howToReduce}{' '}
+											<strong>{item.label}</strong>:{' '}
+											{item.week
+												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
+												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
+											. {item.howToReduce}{' '}
 											<a href={billingPath} mix={css(primaryLinkCss)}>
 												Upgrade your plan
 											</a>
@@ -459,11 +487,18 @@ export function AccountUsageRoute(handle: Handle) {
 														})}
 													>
 														{item.whatCounts} {item.howToReduce}
+														{item.week
+															? ' High daily headroom for bursts; weekly total keeps it sustainable.'
+															: ''}
 													</span>
 												</span>
 											),
-											current: formatCurrentValue(item),
-											limit: formatLimitValue(item),
+											current: item.week
+												? `${formatCurrentValue(item)} today · ${formatIntegerNumber(item.week.current)} this week`
+												: formatCurrentValue(item),
+											limit: item.week
+												? `${formatLimitValue(item)} / day · ${formatIntegerNumber(item.week.limit)} / week`
+												: formatLimitValue(item),
 											used: (
 												<span
 													mix={css(
@@ -475,7 +510,7 @@ export function AccountUsageRoute(handle: Handle) {
 															: {},
 													)}
 												>
-													{formatUsagePercent(item.percentOfLimit)}
+													{formatEntitlementUsedPercent(item)}
 												</span>
 											),
 											progress: renderUsageProgressBar(item),

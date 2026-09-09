@@ -316,9 +316,13 @@ async function collectEntitlementCaps(
 		return snapshot.resources
 			.filter(
 				(row) =>
-					row.percentOfLimit != null &&
-					row.percentOfLimit >= 1 &&
-					row.limit > 0,
+					(row.percentOfLimit != null &&
+						row.percentOfLimit >= 1 &&
+						row.limit > 0) ||
+					(row.week != null &&
+						row.week.percentOfLimit != null &&
+						row.week.percentOfLimit >= 1 &&
+						row.week.limit > 0),
 			)
 			.map((row) => ({
 				resource: row.resource,

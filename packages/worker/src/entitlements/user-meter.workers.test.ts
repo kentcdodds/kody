@@ -400,6 +400,69 @@ test('next UTC day cold consume starts at zero independently', async () => {
 	expect(dailyPrepareCalls).toBe(0)
 }, 30_000)
 
+test('UserMeter consume denies public execute when the UTC week hits first', async () => {
+	const wednesday = new Date('2026-07-08T15:00:00.000Z')
+	const monday = new Date('2026-07-06T15:00:00.000Z')
+	const tuesday = new Date('2026-07-07T15:00:00.000Z')
+	const user = await seedFreeUser('meter-weekly-execute')
+	const meter = userMeterRpc({ env, userId: user.userId })
+	await meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(monday),
+		count: 150,
+		updatedAt: monday.toISOString(),
+	})
+	await meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(tuesday),
+		count: 150,
+		updatedAt: tuesday.toISOString(),
+	})
+	await meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(wednesday),
+		count: 99,
+		updatedAt: wednesday.toISOString(),
+	})
+	expect(
+		await meter.readRange({
+			resource: 'execute_calls_per_day',
+			startDay: utcDayKey(monday),
+			endDay: utcDayKey(wednesday),
+			now: wednesday.toISOString(),
+		}),
+	).toEqual({ outcome: 'ready', count: 399 })
+
+	await consumeDailyEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		resource: 'execute_calls_per_day',
+		now: wednesday,
+	})
+	const denied = await consumeDailyEntitlement({
+		db: env.APP_DB,
+		env,
+		userId: user.userId,
+		email: user.email,
+		resource: 'execute_calls_per_day',
+		now: wednesday,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(denied instanceof EntitlementLimitError)) {
+		throw new Error('Expected weekly EntitlementLimitError.')
+	}
+	expect(denied.details).toMatchObject({
+		resource: 'execute_calls_per_day',
+		limit: 400,
+		current: 400,
+		window: 'week',
+	})
+}, 30_000)
+
 test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
 	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)

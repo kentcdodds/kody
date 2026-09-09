@@ -157,8 +157,9 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					{count.format(freeLimits.maxSavedPackages)} saved packages,{' '}
 					{count.format(freeLimits.maxScheduledJobs)} scheduled jobs (no faster
 					than every {formatMinJobInterval(freeLimits.minJobIntervalMs)}),{' '}
-					{count.format(freeLimits.maxExecuteCallsPerDay)} execute calls per
-					day, and the rest of the entitlements on Pricing. Paid plans raise the
+					{count.format(freeLimits.maxExecuteCallsPerDay)} execute calls per day
+					({count.format(freeLimits.maxExecuteCallsPerWeek ?? 0)} this week),
+					and the rest of the entitlements on Pricing. Paid plans raise the
 					caps.
 				</p>
 				<p>

@@ -1,7 +1,9 @@
-import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
 import {
 	entitlementResourceLabels,
+	isWeeklyComputeWindowResource,
 	resolvePlanLimit,
+	resolveWeeklyPlanLimit,
 	type EntitlementLadder,
 	type EntitlementResource,
 	type PlanName,
@@ -12,10 +14,20 @@ import {
 	type EntitlementResourceGroup,
 	type EntitlementResourceVisibilityKind,
 } from './resource-visibility.ts'
-import { readCurrentEntitlementResourceUsage } from './service.ts'
+import {
+	readCurrentEntitlementResourceUsage,
+	readWeeklyEntitlementResourceUsage,
+} from './service.ts'
 import { listUserStorageBucketEstimates } from '#worker/storage-buckets/service.ts'
 
 export const entitlementUsageWarningThreshold = 0.8
+
+export type EntitlementUsageWeekWindow = {
+	current: number
+	limit: number
+	percentOfLimit: number | null
+	overEightyPercent: boolean
+}
 
 export type EntitlementUsageSnapshotRow = {
 	resource: EntitlementResource
@@ -28,11 +40,13 @@ export type EntitlementUsageSnapshotRow = {
 	limit: number
 	percentOfLimit: number | null
 	overEightyPercent: boolean
+	week?: EntitlementUsageWeekWindow
 }
 
 export type EntitlementUsageSnapshot = {
 	plan: PlanName
 	today: string
+	weekStart: string
 	resources: Array<EntitlementUsageSnapshotRow>
 	warnings: Array<EntitlementUsageSnapshotRow>
 }
@@ -92,6 +106,18 @@ export async function readEntitlementUsageSnapshot(input: {
 				visibility.kind === 'per_unit_max' || limit === 0
 					? null
 					: current / limit
+			const week = await readWeeklyUsageWindow({
+				env: input.env,
+				userId: input.usageUserId,
+				plan: input.plan,
+				ladder: input.ladder,
+				resource,
+				now,
+			})
+			const overEightyPercent =
+				(percentOfLimit !== null &&
+					percentOfLimit > entitlementUsageWarningThreshold) ||
+				(week?.overEightyPercent ?? false)
 			return {
 				resource,
 				label: entitlementResourceLabels[resource],
@@ -102,16 +128,44 @@ export async function readEntitlementUsageSnapshot(input: {
 				current,
 				limit,
 				percentOfLimit,
-				overEightyPercent:
-					percentOfLimit !== null &&
-					percentOfLimit > entitlementUsageWarningThreshold,
+				overEightyPercent,
+				...(week ? { week } : {}),
 			}
 		}),
 	)
 	return {
 		plan: input.plan,
 		today: utcDayKey(now),
+		weekStart: utcWeekStart(now),
 		resources,
 		warnings: resources.filter((row) => row.overEightyPercent),
+	}
+}
+
+async function readWeeklyUsageWindow(input: {
+	env: Env
+	userId: string
+	plan: PlanName
+	ladder: EntitlementLadder
+	resource: EntitlementResource
+	now: Date
+}): Promise<EntitlementUsageWeekWindow | undefined> {
+	if (!isWeeklyComputeWindowResource(input.resource)) return undefined
+	const limit = resolveWeeklyPlanLimit(input.plan, input.resource, input.ladder)
+	if (limit === null) return undefined
+	const current = await readWeeklyEntitlementResourceUsage({
+		env: input.env,
+		userId: input.userId,
+		resource: input.resource,
+		now: input.now,
+	})
+	const percentOfLimit = limit === 0 ? null : current / limit
+	return {
+		current,
+		limit,
+		percentOfLimit,
+		overEightyPercent:
+			percentOfLimit !== null &&
+			percentOfLimit > entitlementUsageWarningThreshold,
 	}
 }

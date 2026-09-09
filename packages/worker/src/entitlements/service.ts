@@ -1,9 +1,11 @@
-import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import {
+	isWeeklyComputeWindowResource,
 	parseEntitlementLadder,
 	parseStoredPlanName,
 	resolvePlanLimit,
+	resolveWeeklyPlanLimit,
 	type EntitlementResource,
 	type PlanName,
 	type UserEntitlement,
@@ -329,6 +331,30 @@ export async function readDailyEntitlementResourceUsage(input: {
 			)
 		}
 	}
+	return result.count
+}
+
+/**
+ * Sum UserMeter daily rows for the UTC week containing `now`. Missing days
+ * count as zero; does not bootstrap today's key.
+ */
+export async function readWeeklyEntitlementResourceUsage(input: {
+	env: UserMeterEnv
+	userId: string
+	resource: EntitlementResource
+	now?: Date
+}): Promise<number> {
+	const resource = assertDailyEntitlementResource(input.resource)
+	const now = input.now ?? new Date()
+	const startDay = utcWeekStart(now)
+	const endDay = utcDayKey(now)
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const result = await meter.readRange({
+		resource,
+		startDay,
+		endDay,
+		now: now.toISOString(),
+	})
 	return result.count
 }
 
@@ -1074,13 +1100,20 @@ export async function consumeDailyEntitlement(
 	})
 	const plan = entitlement.plan
 	const limit = resolvePlanLimit(plan, resource, entitlement.ladder)
+	const weekLimit = isWeeklyComputeWindowResource(resource)
+		? resolveWeeklyPlanLimit(plan, resource, entitlement.ladder)
+		: null
+	const weekStart = weekLimit === null ? undefined : utcWeekStart(now)
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
-	let result = await meter.consume({
+	const consumeInput = {
 		resource,
 		day,
 		limit,
 		updatedAt,
-	})
+		weekStart,
+		weekLimit,
+	}
+	let result = await meter.consume(consumeInput)
 	if (result.outcome === 'needs_bootstrap') {
 		await ensureUserMeterCounterInitializedAtZero({
 			env: input.env,
@@ -1089,12 +1122,7 @@ export async function consumeDailyEntitlement(
 			day,
 			updatedAt,
 		})
-		result = await meter.consume({
-			resource,
-			day,
-			limit,
-			updatedAt,
-		})
+		result = await meter.consume(consumeInput)
 		if (result.outcome === 'needs_bootstrap') {
 			throw new Error(
 				'UserMeter consume still needs bootstrap after initialize.',
@@ -1102,6 +1130,16 @@ export async function consumeDailyEntitlement(
 		}
 	}
 	if (!result.consumed) {
+		if (result.deniedWindow === 'week' && weekLimit !== null) {
+			throw new EntitlementLimitError({
+				resource,
+				plan,
+				limit: weekLimit,
+				current: result.weekCount ?? 0,
+				window: 'week',
+				upgradeHint: buildEntitlementUpgradeHint(resource),
+			})
+		}
 		throw new EntitlementLimitError({
 			resource,
 			plan,

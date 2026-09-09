@@ -228,6 +228,19 @@ test('entitlement limit messages always identify a known plan name', () => {
 	}
 	const message = buildEntitlementLimitMessage(details)
 	expect(parseEntitlementLimitMessage(message)).toEqual(details)
+
+	const weeklyDetails = {
+		code: 'entitlement_limit_exceeded' as const,
+		resource: 'execute_calls_per_day' as const,
+		plan: 'free' as const,
+		limit: 400,
+		current: 400,
+		window: 'week' as const,
+		upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day'),
+	}
+	expect(
+		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
+	).toEqual(weeklyDetails)
 	expect(
 		parseEntitlementLimitMessage(
 			'Plan limit reached: this deployment allows at most 100 concurrent workflows and you currently have 100. hint',
@@ -771,6 +784,175 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 			now,
 		}),
 	).toBe(limit)
+})
+
+test('public execute and outbound enforce daily and weekly windows; legacy and max stay daily-only', async () => {
+	const freeEmail = 'weekly-free@example.com'
+	const legacyEmail = 'weekly-legacy@example.com'
+	const maxEmail = 'weekly-max@example.com'
+	const freeUserId = await createStableUserIdFromEmail(freeEmail)
+	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
+	const maxUserId = await createStableUserIdFromEmail(maxEmail)
+	const { db } = createEntitlementsTestDb({
+		users: [
+			{ email: freeEmail, plan: 'free', stable_user_id: freeUserId },
+			{
+				email: legacyEmail,
+				plan: 'free',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'legacy',
+				stable_user_id: legacyUserId,
+			},
+			{ email: maxEmail, plan: 'max', stable_user_id: maxUserId },
+		],
+	})
+	const meter = createInMemoryUserMeterEnv()
+	const wednesday = new Date('2026-07-08T15:00:00.000Z')
+	const monday = new Date('2026-07-06T15:00:00.000Z')
+	const tuesday = new Date('2026-07-07T15:00:00.000Z')
+
+	await meter.seed({
+		userId: freeUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(monday),
+		count: 150,
+	})
+	await meter.seed({
+		userId: freeUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(tuesday),
+		count: 150,
+	})
+	await meter.seed({
+		userId: freeUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(wednesday),
+		count: 99,
+	})
+	await consumeDailyEntitlement({
+		db,
+		env: meter.env,
+		userId: freeUserId,
+		email: freeEmail,
+		resource: 'execute_calls_per_day',
+		now: wednesday,
+	})
+	expect(
+		await readMeterDailyCount({
+			env: meter.env,
+			userId: freeUserId,
+			resource: 'execute_calls_per_day',
+			now: wednesday,
+		}),
+	).toBe(100)
+	const weeklyDenied = await consumeDailyEntitlement({
+		db,
+		env: meter.env,
+		userId: freeUserId,
+		email: freeEmail,
+		resource: 'execute_calls_per_day',
+		now: wednesday,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(weeklyDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected weekly EntitlementLimitError.')
+	}
+	expect(weeklyDenied.details).toMatchObject({
+		resource: 'execute_calls_per_day',
+		plan: 'free',
+		limit: 400,
+		current: 400,
+		window: 'week',
+	})
+	expect(weeklyDenied.message).toContain('execute calls this week')
+
+	const dailyUserId = await createStableUserIdFromEmail(
+		'daily-first@example.com',
+	)
+	const { db: dailyDb } = createEntitlementsTestDb({
+		users: [
+			{
+				email: 'daily-first@example.com',
+				plan: 'free',
+				stable_user_id: dailyUserId,
+			},
+		],
+	})
+	await meter.seed({
+		userId: dailyUserId,
+		resource: 'outbound_fetches_per_day',
+		day: utcDayKey(wednesday),
+		count: 1_000,
+	})
+	const dailyDenied = await consumeDailyEntitlement({
+		db: dailyDb,
+		env: meter.env,
+		userId: dailyUserId,
+		email: 'daily-first@example.com',
+		resource: 'outbound_fetches_per_day',
+		now: wednesday,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(dailyDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected daily EntitlementLimitError.')
+	}
+	expect(dailyDenied.details).toMatchObject({
+		resource: 'outbound_fetches_per_day',
+		plan: 'free',
+		limit: 1_000,
+		current: 1_000,
+	})
+	expect(dailyDenied.details.window).toBeUndefined()
+
+	await meter.seed({
+		userId: legacyUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(monday),
+		count: 400,
+	})
+	await consumeDailyEntitlement({
+		db,
+		env: meter.env,
+		userId: legacyUserId,
+		email: legacyEmail,
+		resource: 'execute_calls_per_day',
+		now: wednesday,
+	})
+	expect(
+		await readMeterDailyCount({
+			env: meter.env,
+			userId: legacyUserId,
+			resource: 'execute_calls_per_day',
+			now: wednesday,
+		}),
+	).toBe(1)
+
+	await meter.seed({
+		userId: maxUserId,
+		resource: 'outbound_fetches_per_day',
+		day: utcDayKey(monday),
+		count: 10_000,
+	})
+	await consumeDailyEntitlement({
+		db,
+		env: meter.env,
+		userId: maxUserId,
+		email: maxEmail,
+		resource: 'outbound_fetches_per_day',
+		now: wednesday,
+	})
+	expect(
+		await readMeterDailyCount({
+			env: meter.env,
+			userId: maxUserId,
+			resource: 'outbound_fetches_per_day',
+			now: wednesday,
+		}),
+	).toBe(1)
 })
 
 test('refundDailyEntitlement decrements the user/day counter and floors at zero', async () => {

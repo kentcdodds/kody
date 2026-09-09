@@ -1,5 +1,9 @@
 import { cachified } from '@epic-web/cachified'
-import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import {
+	utcDayKey,
+	utcMonthKey,
+	utcWeekStart,
+} from '@kody-internal/shared/date-keys.ts'
 import { createKvCachifiedCache } from '#worker/kv-cachified.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { adminUsageMetrics } from '#worker/admin/user-usage-data.ts'
@@ -731,11 +735,7 @@ async function countQuery(db: D1Database, query: string) {
 	return Number(row?.n ?? 0)
 }
 
-/** UTC Monday day key of the week containing the given date. */
-export function utcWeekStart(date: Date) {
-	const daysSinceMonday = (date.getUTCDay() + 6) % 7
-	return utcDayKey(new Date(date.getTime() - daysSinceMonday * dayMs))
-}
+export { utcWeekStart }
 
 /** Oldest-first list of UTC Monday keys ending with the week containing now. */
 export function listUtcWeekStarts(now: Date, weeks: number) {

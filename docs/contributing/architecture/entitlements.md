@@ -196,8 +196,11 @@ other resources use the ordinary `planLimits.max` numbers.
 
 `execute_calls_per_day`, `outbound_fetches_per_day`, and `job_runs_per_day` are
 daily-counter resources (same mechanism as `email_sends_per_day`, consumed
-atomically with `consumeDailyEntitlement`). They close the metering →
-enforcement loop for the compute surfaces `usage-metering.md` already observes:
+atomically with `consumeDailyEntitlement`). Public Free/Standard/Pro also apply
+a UTC-week hard cap on execute and outbound fetches (Monday–Sunday, summed from
+the same UserMeter daily rows). Whichever window hits first blocks. `max` and
+legacy Standard/Pro stay daily-only. They close the metering → enforcement loop
+for the compute surfaces `usage-metering.md` already observes:
 
 - **Execute calls** are consumed at the top of the MCP `execute` tool handler
   (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
@@ -270,13 +273,14 @@ including an unexpired second-agent gift or referral Standard credit (the later
 of the two expiry columns, same helper as `getUserEntitlement`). There is no
 month-end plan snapshot; a plan or overlay that is expired when the job runs
 prices the prior month against the then-current includes. D1 evaluation failures
-fail closed (no charges). Execute is a hard daily cap with no overage
-(`computeMeteringPolicy.executeCallsPerDay`) — an execute overage would
-double-charge the same burn as unique worker days. Durable Object duration is
-unmetered; a later duration rate should stay list plus a thin markup. Overage is
-a heavy-tail safety valve only (`computeMeteringPolicy.overageRole`): included
-amounts and the public Pro $49 price are not sized to monetize via overage.
-Legacy Standard/Pro accounts are not cut and not billed on these allotments
+fail closed (no charges). Execute and outbound fetches are hard daily and weekly
+caps with no overage (`computeMeteringPolicy.executeCallsPerDay`) — an execute
+overage would double-charge the same burn as unique worker days. Durable Object
+duration is unmetered; a later duration rate should stay list plus a thin
+markup. Overage is a heavy-tail safety valve only
+(`computeMeteringPolicy.overageRole`): included amounts and the public Pro $49
+price are not sized to monetize via overage. Legacy Standard/Pro accounts are
+not cut and not billed on these allotments
 (`computeMeteringPolicy.legacyMonthlyMeters`); they get the same approaching and
 reached warnings. See [Usage metering](./usage-metering.md).
 
@@ -718,10 +722,11 @@ Rules:
   per-user UserMeter Durable Object** (UTC day keys). Call
   `consumeDailyEntitlement` on every attempt: it resolves the plan limit,
   atomically checks and increments inside the DO, and throws
-  `EntitlementLimitError` when over limit. Every resolved plan has a finite
-  numeric limit. Counting attempts rather than successes keeps the limit
-  abuse-resistant for permanent rejects (parse failures, entitlement/quota
-  rejects).
+  `EntitlementLimitError` when over limit. Public Free/Standard/Pro execute and
+  outbound also check a UTC-week sum of those same daily rows; whichever window
+  hits first blocks. Every resolved plan has a finite numeric limit. Counting
+  attempts rather than successes keeps the limit abuse-resistant for permanent
+  rejects (parse failures, entitlement/quota rejects).
 
   **Cold bootstrap:** missing `(resource, day)` rows trigger
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the

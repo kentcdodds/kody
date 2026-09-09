@@ -208,9 +208,16 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 	expect(currentFor(authoritative, 'email_sends_per_day')?.current).toBe(101)
 	expect(currentFor(authoritative, 'email_receives_per_day')?.current).toBe(202)
 	expect(currentFor(authoritative, 'execute_calls_per_day')?.current).toBe(303)
+	expect(currentFor(authoritative, 'execute_calls_per_day')?.week).toEqual({
+		current: 303,
+		limit: 4_000,
+		percentOfLimit: 303 / 4_000,
+		overEightyPercent: false,
+	})
 	expect(currentFor(authoritative, 'outbound_fetches_per_day')?.current).toBe(
 		404,
 	)
+	expect(authoritative?.weekStart).toBe('2026-07-20')
 	expect(currentFor(authoritative, 'concurrent_workflows')?.current).toBe(3)
 	expect(currentFor(authoritative, 'stored_email_messages')?.current).toBe(7)
 	expect(currentFor(authoritative, 'saved_packages')?.current).toBe(4)

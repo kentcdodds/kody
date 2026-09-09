@@ -5,6 +5,7 @@ import {
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
 	resolvePlanLimits,
+	resolveWeeklyPlanLimit,
 } from './plans.ts'
 
 test('formatDurableObjectRowsRead uses billion-scale labels', () => {
@@ -14,16 +15,19 @@ test('formatDurableObjectRowsRead uses billion-scale labels', () => {
 })
 
 test('resolvePlanLimit uses public numbers unless the legacy ladder applies', () => {
-	expect(resolvePlanLimit('standard', 'execute_calls_per_day')).toBe(150)
+	expect(resolvePlanLimit('free', 'execute_calls_per_day')).toBe(150)
+	expect(resolvePlanLimit('standard', 'execute_calls_per_day')).toBe(500)
 	expect(resolvePlanLimit('standard', 'execute_calls_per_day', 'public')).toBe(
-		150,
+		500,
 	)
 	expect(resolvePlanLimit('standard', 'execute_calls_per_day', 'legacy')).toBe(
 		500,
 	)
+	expect(resolvePlanLimit('pro', 'execute_calls_per_day')).toBe(1_500)
+	expect(resolvePlanLimit('pro', 'outbound_fetches_per_day')).toBe(50_000)
 	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'legacy')).toBe(150)
 	expect(resolvePlanLimit('pro', 'scheduled_jobs', 'public')).toBe(75)
-	expect(resolvePlanLimit('free', 'execute_calls_per_day', 'legacy')).toBe(100)
+	expect(resolvePlanLimit('free', 'execute_calls_per_day', 'legacy')).toBe(150)
 	expect(resolvePlanLimit('max', 'execute_calls_per_day', 'legacy')).toBe(
 		25_000,
 	)
@@ -31,6 +35,29 @@ test('resolvePlanLimit uses public numbers unless the legacy ladder applies', ()
 	expect(resolvePlanLimits('pro', 'public').minJobIntervalMs).toBe(
 		5 * 60 * 1000,
 	)
+})
+
+test('public Free/Standard/Pro have weekly execute and outbound windows; max and legacy do not', () => {
+	expect(resolveWeeklyPlanLimit('free', 'execute_calls_per_day')).toBe(400)
+	expect(resolveWeeklyPlanLimit('standard', 'execute_calls_per_day')).toBe(
+		1_200,
+	)
+	expect(resolveWeeklyPlanLimit('pro', 'execute_calls_per_day')).toBe(4_000)
+	expect(resolveWeeklyPlanLimit('free', 'outbound_fetches_per_day')).toBe(2_500)
+	expect(resolveWeeklyPlanLimit('standard', 'outbound_fetches_per_day')).toBe(
+		40_000,
+	)
+	expect(resolveWeeklyPlanLimit('pro', 'outbound_fetches_per_day')).toBe(
+		120_000,
+	)
+	expect(resolveWeeklyPlanLimit('max', 'execute_calls_per_day')).toBeNull()
+	expect(
+		resolveWeeklyPlanLimit('standard', 'execute_calls_per_day', 'legacy'),
+	).toBeNull()
+	expect(
+		resolveWeeklyPlanLimit('pro', 'outbound_fetches_per_day', 'legacy'),
+	).toBeNull()
+	expect(resolveWeeklyPlanLimit('free', 'job_runs_per_day')).toBeNull()
 })
 
 test('parseEntitlementLadder treats blank as public and rejects unknown names', () => {

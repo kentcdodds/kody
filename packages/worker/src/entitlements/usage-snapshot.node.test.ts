@@ -130,6 +130,16 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
 	)
+	expect(snapshot.weekStart).toBe('2026-07-20')
+	const execute = snapshot.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.week).toEqual({
+		current: 0,
+		limit: 400,
+		percentOfLimit: 0,
+		overEightyPercent: false,
+	})
 
 	const otherUserSnapshot = await readEntitlementUsageSnapshot({
 		db,
@@ -173,4 +183,56 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 			(row) => row.resource === 'execute_calls_per_day',
 		)?.limit,
 	).toBe(legacyPlanLimits.standard.maxExecuteCallsPerDay)
+	expect(
+		publicSnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.week?.limit,
+	).toBe(planLimits.standard.maxExecuteCallsPerWeek)
+	expect(
+		legacySnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.week,
+	).toBeUndefined()
+})
+
+test('readEntitlementUsageSnapshot warns when the weekly window is hotter than today', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const email = 'weekly-hot@example.com'
+	const { stableUserId, db } = createUsageTestDb({ email })
+	const env = withUsageEnv({ APP_DB: db })
+	await env.meter.seed({
+		userId: stableUserId,
+		resource: 'execute_calls_per_day',
+		day: '2026-07-20',
+		count: 330,
+	})
+	await env.meter.seed({
+		userId: stableUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(now),
+		count: 10,
+	})
+	const snapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: stableUserId,
+		plan: 'free',
+		ladder: 'public',
+		now,
+	})
+	const execute = snapshot.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.current).toBe(10)
+	expect(execute?.percentOfLimit).toBe(10 / 150)
+	expect(execute?.week).toEqual({
+		current: 340,
+		limit: 400,
+		percentOfLimit: 340 / 400,
+		overEightyPercent: true,
+	})
+	expect(execute?.overEightyPercent).toBe(true)
+	expect(
+		snapshot.warnings.some((row) => row.resource === 'execute_calls_per_day'),
+	).toBe(true)
 })

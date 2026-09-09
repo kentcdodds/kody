@@ -1,9 +1,19 @@
 const isoDayKeyLength = 'YYYY-MM-DD'.length
 const isoMonthKeyLength = 'YYYY-MM'.length
+const utcDayMs = 24 * 60 * 60 * 1000
 
 /** UTC calendar day key, for example `2026-07-08`. */
 export function utcDayKey(date: Date = new Date()) {
 	return date.toISOString().slice(0, isoDayKeyLength)
+}
+
+/**
+ * UTC Monday that starts the week containing `date`, for example
+ * `2026-07-06` for Sunday 2026-07-12.
+ */
+export function utcWeekStart(date: Date = new Date()) {
+	const daysSinceMonday = (date.getUTCDay() + 6) % 7
+	return utcDayKey(new Date(date.getTime() - daysSinceMonday * utcDayMs))
 }
 
 /** UTC calendar month key, for example `2026-07`. */
