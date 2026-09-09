@@ -360,11 +360,18 @@ test('syncArtifactSourceSnapshot first-publishes a forked dest HEAD without forc
 		repo_id: 'package-1',
 		manifest_path: 'package.json',
 	}
+	const destWorkspaceFiles = {
+		'package.json':
+			'{"name":"@jane/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"},"private":true}',
+		'src/index.ts': 'export const ready = true\n',
+		'README.md': 'forked dest tree',
+	}
 	const bootstrapClient = {
 		bootstrapSource: vi.fn(async () => ({
 			sessionId: 'source-sync-source-1-session',
 			publishedCommit: 'commit-fork-rewrite',
 			message: 'Bootstrapped source source-1 in package-1.',
+			files: destWorkspaceFiles,
 		})),
 		openSession: vi.fn(),
 		applyEdits: vi.fn(),
@@ -401,6 +408,39 @@ test('syncArtifactSourceSnapshot first-publishes a forked dest HEAD without forc
 	)
 	expect(bootstrapClient.openSession).not.toHaveBeenCalled()
 	expect(bootstrapClient.publishSession).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			files: destWorkspaceFiles,
+			source: expect.objectContaining({
+				published_commit: 'commit-fork-rewrite',
+			}),
+		}),
+	)
+
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.writePublishedSourceSnapshot.mockReset()
+	const overlayOnlyClient = {
+		...bootstrapClient,
+		bootstrapSource: vi.fn(async () => ({
+			sessionId: 'source-sync-source-1-session',
+			publishedCommit: 'commit-fork-rewrite',
+			message: 'Bootstrapped source source-1 in package-1.',
+		})),
+	}
+	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
+	mockModule.repoSessionRpc.mockReturnValueOnce(overlayOnlyClient as never)
+
+	await expect(
+		syncArtifactSourceSnapshot({
+			...createSyncEnv(),
+			existingHeadCommit: 'commit-dest-head',
+			files: {
+				'package.json': destWorkspaceFiles['package.json'],
+			},
+		}),
+	).rejects.toThrow(/produced no workspace snapshot/)
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.repoSessionRpc.mockReset()

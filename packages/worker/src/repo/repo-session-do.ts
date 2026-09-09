@@ -1532,6 +1532,16 @@ class RepoSessionBase extends DurableObject<Env> {
 				return commit
 			},
 		)
+		const snapshotFiles = await pushServerTiming(
+			serverTiming,
+			'bootstrap-workspace-snapshot',
+			() => this.collectWorkspaceFiles(),
+		)
+		if (input.existingHeadCommit && Object.keys(snapshotFiles).length === 0) {
+			throw new Error(
+				`Source "${source.id}" first-publish from dest HEAD produced an empty workspace snapshot.`,
+			)
+		}
 		await pushServerTiming(serverTiming, 'bootstrap-git-push', () =>
 			this.git.push({
 				dir: repoSessionWorkspacePrefix,
@@ -1566,6 +1576,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionId: input.sessionId,
 			publishedCommit,
 			message: `Bootstrapped source ${source.id} in ${source.repo_id}.`,
+			files: snapshotFiles,
 			serverTiming,
 		}
 	}

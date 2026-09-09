@@ -266,11 +266,21 @@ export async function syncArtifactSourceSnapshot(
 					return result
 				},
 			)
+			const snapshotFiles = bootstrapResult.files ?? input.files
+			if (
+				input.existingHeadCommit &&
+				(bootstrapResult.files == null ||
+					Object.keys(bootstrapResult.files).length === 0)
+			) {
+				throw new Error(
+					`Source "${source.id}" first-publish from dest HEAD produced no workspace snapshot.`,
+				)
+			}
 			await pushServerTiming(input.serverTiming, 'published-snapshot', () =>
 				writePublishedSnapshotWithRevert({
 					env: input.env,
 					source,
-					files: input.files,
+					files: snapshotFiles,
 					publishedCommit: bootstrapResult.publishedCommit,
 				}),
 			)

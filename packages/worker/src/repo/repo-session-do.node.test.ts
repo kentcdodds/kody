@@ -1328,8 +1328,23 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 		expiresAt: '2025-10-09T08:53:20.000Z',
 	}
 	const jobManifest = '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
+	const destWorkspaceFiles = {
+		'kody.json': jobManifest,
+		'src/job.ts':
+			'export default async function main() { return { ok: true } }',
+		'README.md': 'forked dest tree',
+	}
 	mockModule.getEntitySourceById.mockResolvedValue(unpublishedSource)
-	mockModule.workspaceReadFile.mockResolvedValue(jobManifest)
+	mockModule.workspaceGlob.mockResolvedValue(
+		Object.keys(destWorkspaceFiles).map((path) => ({
+			type: 'file' as const,
+			path: `/session/${path}`,
+		})),
+	)
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		const relative = path.replace(/^\/session\//, '')
+		return destWorkspaceFiles[relative] ?? null
+	})
 	mockModule.gitState.headCommit = 'commit-dest-head'
 	mockModule.gitState.statusEntries = [{ status: 'modified' }]
 	mockModule.git.clone.mockClear()
@@ -1349,6 +1364,7 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 	})
 
 	expect(cloned.publishedCommit).toBe('commit-dest-head')
+	expect(cloned.files).toEqual(destWorkspaceFiles)
 	expect(mockModule.git.clone).toHaveBeenCalledWith(
 		expect.objectContaining({
 			branch: 'main',
