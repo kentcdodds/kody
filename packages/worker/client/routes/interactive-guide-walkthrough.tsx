@@ -19,10 +19,7 @@ import {
 	transcriptFileLang,
 } from './interactive-guide-transcript.ts'
 import { renderWalkthroughKicker } from './walkthrough-ask-kicker.tsx'
-import {
-	getAccentCalloutCss,
-	getArticleBreakoutCss,
-} from '#universal/styles/style-primitives.ts'
+import { getAccentCalloutCss } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -400,9 +397,12 @@ const leadCss = {
 }
 
 export const interactiveGuideActCss = {
-	...getArticleBreakoutCss(),
+	// Stay in the docs article column. Viewport-centered `getArticleBreakoutCss`
+	// was for the old standalone guide page; inside the sidebar shell it
+	// paints over the nav.
 	marginTop: 'clamp(2.4rem, 6vw, 3.4rem)',
 	minWidth: 0,
+	maxWidth: '100%',
 	'& h2': {
 		margin: '0.2rem 0 0',
 		fontSize: '1.55rem',

@@ -9,7 +9,12 @@ Discord invite.
 `/docs/:slug`, `/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`, `/discord`.
 Legacy `/guides*` URLs 308 to `/docs*`. Intra-docs navigation (doc to doc, or a
 doc to `/docs` / `/docs/connect`) is an instant shell swap — no page
-view-transition — so the sidebar does not re-animate.
+view-transition — so the sidebar does not re-animate. How Kody works (and other
+interactive walkthroughs) stay in the article column; they do not break out over
+the nav. The docs shell opts out of overflow anchoring so replacing the article
+does not bump the rail. After hydrate it independently prefetches every sidebar
+href (one loader request per slug, including `/docs/connect`) so a click adopts
+a warm payload instead of waiting on a cold fetch.
 
 ## Drive it
 

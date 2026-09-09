@@ -12,6 +12,7 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 		}),
 	)
 
+	expect(html).toContain('data-docs-shell')
 	expect(html).toContain('data-docs-nav')
 	expect(html).toContain('href="/docs/oauth"')
 	expect(html).toContain('aria-current="page"')

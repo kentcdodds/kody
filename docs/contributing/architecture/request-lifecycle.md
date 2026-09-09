@@ -334,6 +334,9 @@ lands, the navigation adopts the in-flight or freshly settled prefetch instead
 of starting the loader from scratch; results expire after a short TTL and
 failures fall back to a normal loader run. Form POSTs abort any pending prefetch
 so pre-mutation data is never shown. Opt a link out with `data-prefetch="none"`.
+Rendered lists can also warm many destinations at once (`prefetchRouteHrefs`).
+Onboarding chips share one `/onboarding.json` payload; docs sidebar slugs do
+not, so they pass `{ independent: true }` and run one loader per href.
 
 A thin top-of-viewport **navigation progress bar** listens for `navigationstart`
 / `navigationend` on `routerEvents` and appears only when a navigation is still

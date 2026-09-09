@@ -1,11 +1,12 @@
-import { type RemixNode, css, ref } from 'remix/ui'
-import { routerEvents } from '#client/client-router.tsx'
+import { type Handle, type RemixNode, css, ref } from 'remix/ui'
+import { prefetchRouteHrefs, routerEvents } from '#client/client-router.tsx'
 import { type DocSummaryLoaderData } from '#universal/loader-data.ts'
 import {
 	docHref,
 	docsCurrentPageLabel,
 	docsNav,
 	findDocsNavNeighbors,
+	listDocsPrefetchHrefs,
 	resolveDocsNavSection,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
@@ -35,7 +36,8 @@ export function renderDocsShell(input: {
 	const { current, children } = input
 	const currentSection = resolveDocsNavSection(current)
 	return (
-		<div mix={css(docsLayoutCss)}>
+		<div data-docs-shell mix={css(docsLayoutCss)}>
+			<DocsNavPrefetch />
 			<aside data-docs-nav mix={css(docsSidebarCss)}>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
 					{renderDocsNavSections(current, currentSection)}
@@ -66,6 +68,25 @@ export function renderDocsShell(input: {
 			<div mix={css(docsMainCss)}>{children}</div>
 		</div>
 	)
+}
+
+/**
+ * Render-warm every sidebar destination. Hover/focus already prefetch one
+ * href (`prefetch="intent"`). Docs slugs share a matcher, not a payload, so
+ * each request stays independent.
+ */
+function DocsNavPrefetch(handle: Handle) {
+	let warmedKey = ''
+	return () => {
+		handle.queueTask(() => {
+			const hrefs = listDocsPrefetchHrefs()
+			const key = hrefs.join('\0')
+			if (key === warmedKey) return
+			warmedKey = key
+			prefetchRouteHrefs(hrefs, { independent: true })
+		})
+		return null
+	}
 }
 
 function renderDocsNavSections(
@@ -175,6 +196,9 @@ const docsLayoutCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
 	paddingInline: pageGutter,
+	// Clicked sidebar links would otherwise become the scroll anchor; replacing
+	// the article then fights scroll restoration and the rail/content bump.
+	overflowAnchor: 'none' as const,
 	[mq.tablet]: {
 		display: 'block',
 	},
@@ -186,10 +210,14 @@ const docsSidebarCss = {
 	top: '4.5rem',
 	maxHeight: 'calc(100vh - 5.5rem)',
 	overflowY: 'auto' as const,
+	overflowAnchor: 'none' as const,
 	paddingBlock: 'clamp(2.5rem, 6vw, 4rem) 2rem',
 	paddingRight: '0.5rem',
 	borderRight: `1px solid ${colors.border}`,
 	scrollbarWidth: 'thin' as const,
+	// Lift out of `<main>` / `page` if a view transition still starts.
+	// Intra-docs clicks skip VT; leaving docs fades this name (styles.css).
+	viewTransitionName: 'docs-nav',
 	[mq.tablet]: {
 		display: 'none',
 	},
@@ -235,11 +263,14 @@ const docsNavSectionCss = {
 		color: colors.textMuted,
 		textDecoration: 'none',
 		lineHeight: 1.35,
+		// Same weight for every item so the active highlight cannot reflow
+		// the rail when aria-current moves.
+		fontWeight: 650,
+		overflowAnchor: 'none' as const,
 		transition: `color ${transitions.fast}, background ${transitions.fast}`,
 	},
 	'& li a[aria-current="page"]': {
 		color: colors.primaryText,
-		fontWeight: 650,
 		background: colors.primarySoftest,
 	},
 	[hoverMq]: {
@@ -290,6 +321,7 @@ const docsMobileMenuCurrentCss = {
 
 const docsMainCss = {
 	minWidth: 0,
+	overflowAnchor: 'none' as const,
 }
 
 const docsPagerCss = {

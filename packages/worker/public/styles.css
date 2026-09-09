@@ -450,9 +450,10 @@ html.is-settled {
 	   Pinning old/new (`animation: none`) froze that leftover rail on top
 	   of the destination. Old/new fade; only the group stays still so
 	   account↔admin (rail on both sides) does not morph/squash. Intra-docs
-	   guide switches skip this API entirely (client-router shell areas) so
-	   the sidebar inside `page` does not fade. Browsers without the API
-	   never match these pseudos — the swap is instant. */
+	   guide switches skip this API entirely (client-router shell areas).
+	   The docs sidebar is also named `docs-nav` so a leftover transition
+	   cannot slide the rail. Browsers without the API never match these
+	   pseudos — the swap is instant. */
 	::view-transition-old(root),
 	::view-transition-new(root) {
 		animation: none;
@@ -476,6 +477,7 @@ html.is-settled {
 	::view-transition-new(nav-progress),
 	::view-transition-group(nav-progress),
 	::view-transition-group(account-nav),
+	::view-transition-group(docs-nav),
 	::view-transition-group(files-back),
 	::view-transition-group(files-head),
 	::view-transition-group(files-tree),
@@ -491,6 +493,7 @@ html.is-settled {
 	   than being pinned outright: none of these are on screen outside
 	   `/files`, and pinning old/new strands the leftover snapshot. */
 	::view-transition-old(account-nav),
+	::view-transition-old(docs-nav),
 	::view-transition-old(files-back),
 	::view-transition-old(files-head),
 	::view-transition-old(files-tree),
@@ -499,6 +502,7 @@ html.is-settled {
 	}
 
 	::view-transition-new(account-nav),
+	::view-transition-new(docs-nav),
 	::view-transition-new(files-back),
 	::view-transition-new(files-head),
 	::view-transition-new(files-tree),

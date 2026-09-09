@@ -212,6 +212,14 @@ export function listDocsNavSlugs(): ReadonlyArray<string> {
 	return docsNav.flatMap((section) => section.items.map((item) => item.slug))
 }
 
+/**
+ * Same-origin hrefs the docs sidebar can navigate to. Used to render-prefetch
+ * every guide (and `/docs/connect`) so a click does not wait on a cold loader.
+ */
+export function listDocsPrefetchHrefs(): ReadonlyArray<string> {
+	return [...listDocsNavSlugs().map(docHref), '/docs/connect']
+}
+
 export function findDocsNavSection(slug: string): DocsNavSection | null {
 	return (
 		docsNav.find((section) =>

@@ -2,7 +2,10 @@ import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import { googleOauthTranscriptActs } from './google-oauth-transcript.ts'
 import { renderGoogleOauthWalkthrough } from './google-oauth-walkthrough.tsx'
-import { renderInteractiveGuideLine } from './interactive-guide-walkthrough.tsx'
+import {
+	interactiveGuideActCss,
+	renderInteractiveGuideLine,
+} from './interactive-guide-walkthrough.tsx'
 
 test('google oauth connect bubbles wrap the prefilled url instead of overflowing', async () => {
 	const connectLine = googleOauthTranscriptActs
@@ -26,4 +29,11 @@ test('google oauth connect bubbles wrap the prefilled url instead of overflowing
 	const guide = await renderToString(renderGoogleOauthWalkthrough())
 	expect(guide).toContain('/connect/oauth?provider=google')
 	expect(guide).toContain('Connect and verify')
+})
+
+test('walkthrough acts stay in the article column instead of breaking out', () => {
+	const serialized = JSON.stringify(interactiveGuideActCss)
+	expect(serialized).not.toContain('100vw')
+	expect(serialized).not.toContain('50vw')
+	expect(interactiveGuideActCss.maxWidth).toBe('100%')
 })

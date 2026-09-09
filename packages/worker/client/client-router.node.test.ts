@@ -497,3 +497,58 @@ test('prefetchRouteHrefs warms every registered destination so click skips a col
 		globalThis.window = previousWindow
 	}
 })
+
+test('prefetchRouteHrefs independent warms each docs slug with its own request', async () => {
+	abortIntentPrefetch()
+	const previousWindow = globalThis.window
+	globalThis.window = {
+		location: {
+			href: 'https://kody.local/docs/memory',
+			origin: 'https://kody.local',
+			pathname: '/docs/memory',
+			search: '',
+			hash: '',
+		},
+	} as unknown as Window & typeof globalThis
+
+	const calls: Array<string> = []
+	const loader: RouteLoader = async (url) => {
+		const href = `${url.pathname}${url.search}`
+		calls.push(href)
+		return { docDetail: { ok: true, slug: href } as never }
+	}
+	registerRouteLoaders({
+		[routePattern(routes.docDetail)]: loader,
+		[routePattern(routes.docsConnect)]: loader,
+		[routePattern(routes.docs)]: loader,
+	})
+
+	try {
+		prefetchRouteHrefs(
+			['/docs/oauth', '/docs/memory', '/docs/secrets', '/docs/connect'],
+			{ independent: true },
+		)
+		expect(calls).toEqual(['/docs/oauth', '/docs/secrets', '/docs/connect'])
+		await Promise.resolve()
+
+		const oauth = takePrefetchedRouteResult('/docs/oauth')
+		expect(oauth).not.toBeNull()
+		await expect(oauth).resolves.toEqual({
+			docDetail: { ok: true, slug: '/docs/oauth' },
+		})
+		expect(takePrefetchedRouteResult('/docs/oauth')).toBeNull()
+
+		const secrets = takePrefetchedRouteResult('/docs/secrets')
+		expect(secrets).not.toBeNull()
+		await expect(secrets).resolves.toEqual({
+			docDetail: { ok: true, slug: '/docs/secrets' },
+		})
+		expect(takePrefetchedRouteResult('/docs/connect')).not.toBeNull()
+		expect(takePrefetchedRouteResult('/docs/memory')).toBeNull()
+		expect(calls).toHaveLength(3)
+	} finally {
+		abortIntentPrefetch()
+		registerRouteLoaders({})
+		globalThis.window = previousWindow
+	}
+})
