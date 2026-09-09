@@ -1,6 +1,31 @@
 import { expect, test } from 'vitest'
-import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
-import { computeAccountUsageOverageNotice } from './account-usage.tsx'
+import {
+	type AccountUsageComputeOverage,
+	type AccountUsageEntitlementConsumption,
+} from '#universal/loader-data.ts'
+import {
+	computeAccountUsageOverageNotice,
+	formatEntitlementUsedPercent,
+	hotterUsagePercent,
+} from './account-usage.tsx'
+
+function entitlement(
+	overrides: Partial<AccountUsageEntitlementConsumption> = {},
+): AccountUsageEntitlementConsumption {
+	return {
+		resource: 'execute_calls_per_day',
+		label: 'execute calls per day',
+		group: 'daily',
+		kind: 'counter',
+		whatCounts: 'Execute calls today (UTC).',
+		howToReduce: 'Run fewer execute calls today or this week.',
+		current: 30,
+		limit: 150,
+		percentOfLimit: 0.2,
+		overEightyPercent: false,
+		...overrides,
+	}
+}
 
 function overage(
 	overrides: Partial<AccountUsageComputeOverage> & {
@@ -56,4 +81,52 @@ test('approaching notice mentions billing only while charging is enabled', () =>
 	).toMatchObject({
 		title: 'Compute overage billing is paused',
 	})
+})
+
+test('hotterUsagePercent uses the closer of daily and weekly windows', () => {
+	expect(hotterUsagePercent(entitlement())).toBe(0.2)
+	expect(
+		hotterUsagePercent(
+			entitlement({
+				week: {
+					current: 360,
+					limit: 400,
+					percentOfLimit: 0.9,
+					overEightyPercent: true,
+				},
+			}),
+		),
+	).toBe(0.9)
+	expect(
+		hotterUsagePercent(
+			entitlement({
+				percentOfLimit: 0.95,
+				week: {
+					current: 100,
+					limit: 400,
+					percentOfLimit: 0.25,
+					overEightyPercent: false,
+				},
+			}),
+		),
+	).toBe(0.95)
+	expect(
+		hotterUsagePercent(entitlement({ percentOfLimit: null, week: undefined })),
+	).toBeNull()
+})
+
+test('formatEntitlementUsedPercent shows today and this week', () => {
+	expect(formatEntitlementUsedPercent(entitlement())).toBe('20%')
+	expect(
+		formatEntitlementUsedPercent(
+			entitlement({
+				week: {
+					current: 360,
+					limit: 400,
+					percentOfLimit: 0.9,
+					overEightyPercent: true,
+				},
+			}),
+		),
+	).toBe('20% today · 90% this week')
 })

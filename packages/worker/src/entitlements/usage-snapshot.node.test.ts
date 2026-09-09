@@ -194,3 +194,45 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 		)?.week,
 	).toBeUndefined()
 })
+
+test('readEntitlementUsageSnapshot warns when the weekly window is hotter than today', async () => {
+	const now = new Date('2026-07-25T12:00:00.000Z')
+	const email = 'weekly-hot@example.com'
+	const { stableUserId, db } = createUsageTestDb({ email })
+	const env = withUsageEnv({ APP_DB: db })
+	await env.meter.seed({
+		userId: stableUserId,
+		resource: 'execute_calls_per_day',
+		day: '2026-07-20',
+		count: 330,
+	})
+	await env.meter.seed({
+		userId: stableUserId,
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(now),
+		count: 10,
+	})
+	const snapshot = await readEntitlementUsageSnapshot({
+		db,
+		env: env as Env,
+		usageUserId: stableUserId,
+		plan: 'free',
+		ladder: 'public',
+		now,
+	})
+	const execute = snapshot.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.current).toBe(10)
+	expect(execute?.percentOfLimit).toBe(10 / 150)
+	expect(execute?.week).toEqual({
+		current: 340,
+		limit: 400,
+		percentOfLimit: 340 / 400,
+		overEightyPercent: true,
+	})
+	expect(execute?.overEightyPercent).toBe(true)
+	expect(
+		snapshot.warnings.some((row) => row.resource === 'execute_calls_per_day'),
+	).toBe(true)
+})

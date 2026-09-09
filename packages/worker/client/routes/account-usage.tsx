@@ -66,6 +66,26 @@ function formatUsagePercent(value: number | null) {
 	return `${Math.round(value * 100)}%`
 }
 
+/** Whichever window is closer to its cap — daily or weekly — is what blocks. */
+export function hotterUsagePercent(
+	item: Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>,
+) {
+	const percents = [item.percentOfLimit, item.week?.percentOfLimit].filter(
+		(value): value is number => value != null,
+	)
+	if (percents.length === 0) return null
+	return Math.max(...percents)
+}
+
+export function formatEntitlementUsedPercent(
+	item: Pick<AccountUsageEntitlementConsumption, 'percentOfLimit' | 'week'>,
+) {
+	if (item.week) {
+		return `${formatUsagePercent(item.percentOfLimit)} today · ${formatUsagePercent(item.week.percentOfLimit)} this week`
+	}
+	return formatUsagePercent(item.percentOfLimit)
+}
+
 function formatPlanLabel(plan: AdminPlanName) {
 	return plan.charAt(0).toUpperCase() + plan.slice(1)
 }
@@ -138,8 +158,9 @@ function formatLimitValue(item: AccountUsageEntitlementConsumption) {
 }
 
 function usageProgressPercent(item: AccountUsageEntitlementConsumption) {
-	if (item.percentOfLimit === null) return null
-	return Math.min(100, Math.round(item.percentOfLimit * 100))
+	const percent = hotterUsagePercent(item)
+	if (percent === null) return null
+	return Math.min(100, Math.round(percent * 100))
 }
 
 function groupEntitlementRows(rows: Array<AccountUsageEntitlementConsumption>) {
@@ -168,7 +189,7 @@ function renderUsageProgressBar(item: AccountUsageEntitlementConsumption) {
 	return (
 		<div
 			role="img"
-			aria-label={`${item.label}: ${formatUsagePercent(item.percentOfLimit)} of plan limit`}
+			aria-label={`${item.label}: ${formatEntitlementUsedPercent(item)} of plan limit`}
 			mix={css({
 				height: '8px',
 				borderRadius: radius.md,
@@ -408,10 +429,11 @@ export function AccountUsageRoute(handle: Handle) {
 								>
 									{usage.warnings.map((item) => (
 										<li key={item.resource}>
-											<strong>{item.label}</strong>: {formatCurrentValue(item)}{' '}
-											/ {formatLimitValue(item)} (
-											{formatUsagePercent(item.percentOfLimit)}).{' '}
-											{item.howToReduce}{' '}
+											<strong>{item.label}</strong>:{' '}
+											{item.week
+												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
+												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
+											. {item.howToReduce}{' '}
 											<a href={billingPath} mix={css(primaryLinkCss)}>
 												Upgrade your plan
 											</a>
@@ -488,7 +510,7 @@ export function AccountUsageRoute(handle: Handle) {
 															: {},
 													)}
 												>
-													{formatUsagePercent(item.percentOfLimit)}
+													{formatEntitlementUsedPercent(item)}
 												</span>
 											),
 											progress: renderUsageProgressBar(item),
