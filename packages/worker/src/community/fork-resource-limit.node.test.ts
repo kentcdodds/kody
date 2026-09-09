@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import {
 	CommunityForkResourceLimitError,
-	communityForkResourceLimitMessage,
 	isCommunityForkResourceLimitCause,
 	rethrowCommunityForkFailure,
 } from './fork-resource-limit.ts'
@@ -10,7 +9,9 @@ import {
 test('isCommunityForkResourceLimitCause matches isolate reset and Artifacts MEMORY_LIMIT', () => {
 	expect(
 		isCommunityForkResourceLimitCause(
-			new Error(durableObjectIsolateMemoryResetMessage),
+			new Error(
+				"Durable Object's isolate exceeded its memory limit and was reset",
+			),
 		),
 	).toBe(true)
 	expect(
@@ -45,7 +46,7 @@ test('rethrowCommunityForkFailure wraps resource limits without leaking isolate 
 		throw new Error('expected rethrow')
 	} catch (error) {
 		expect(error).toBeInstanceOf(CommunityForkResourceLimitError)
-		expect((error as Error).message).toBe(communityForkResourceLimitMessage)
+		expect((error as Error).message).toMatch(/too large to finish forking/)
 		expect((error as Error).message).not.toMatch(/isolate exceeded/)
 	}
 

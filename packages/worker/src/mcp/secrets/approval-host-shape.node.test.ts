@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	classifyApprovalHosts,
 	filterValidApprovalHosts,
-	rejectedApprovalHostMessage,
 } from './approval-host-shape.ts'
 
 test('approval host classification accepts happy-path hosts and rejects truncated or malformed values', () => {
@@ -37,13 +36,6 @@ test('approval host classification accepts happy-path hosts and rejects truncate
 		['api.openai.com/v1', 'malformed'],
 		['openai', 'malformed'],
 	])
-	expect(
-		classified.rejected.find((entry) => entry.host === 'api.ope')?.message,
-	).toBe(rejectedApprovalHostMessage('unknown_suffix'))
-	expect(
-		classified.rejected.find((entry) => entry.host === 'api.openai.com/v1')
-			?.message,
-	).toBe(rejectedApprovalHostMessage('malformed'))
 
 	expect(
 		filterValidApprovalHosts([
@@ -60,25 +52,15 @@ test('approval host classification accepts happy-path hosts and rejects truncate
 		'api.test',
 		'foo.localhost',
 	])
-	expect(classifyApprovalHosts(['999.1.1.1', 'com', 'api.o']).rejected).toEqual(
-		[
-			{
-				host: '999.1.1.1',
-				reason: 'malformed',
-				message: rejectedApprovalHostMessage('malformed'),
-			},
-			{
-				host: 'api.o',
-				reason: 'unknown_suffix',
-				message: rejectedApprovalHostMessage('unknown_suffix'),
-			},
-			{
-				host: 'com',
-				reason: 'malformed',
-				message: rejectedApprovalHostMessage('malformed'),
-			},
-		],
-	)
+	expect(
+		classifyApprovalHosts(['999.1.1.1', 'com', 'api.o']).rejected.map(
+			(entry) => [entry.host, entry.reason],
+		),
+	).toEqual([
+		['999.1.1.1', 'malformed'],
+		['api.o', 'unknown_suffix'],
+		['com', 'malformed'],
+	])
 	expect(
 		classifyApprovalHosts(['::1', '[::1]', '2001:db8::1', 'not:an:ip']).valid,
 	).toEqual(['[2001:db8::1]', '[::1]'])

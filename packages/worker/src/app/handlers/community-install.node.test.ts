@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { communityForkResourceLimitMessage } from '#worker/community/fork-resource-limit.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import { createCommunityInstallApiPostHandler } from './community-install.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
@@ -237,13 +236,13 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(resourceLimit.status).toBe(503)
 	expect(await resourceLimit.json()).toEqual({
 		ok: false,
-		error: communityForkResourceLimitMessage,
+		error: expect.stringMatching(/too large to finish forking/),
 	})
 	expect(resourceConsoleError).toHaveBeenCalledWith(
 		'Community install failed:',
 		expect.objectContaining({
-			error: durableObjectIsolateMemoryResetMessage,
-			userMessage: communityForkResourceLimitMessage,
+			error: expect.stringMatching(/memory limit/),
+			userMessage: expect.stringMatching(/too large to finish forking/),
 		}),
 	)
 	resourceConsoleError.mockRestore()

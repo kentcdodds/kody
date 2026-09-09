@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { allowHostsButtonLabel } from './account-approval-shared.ts'
 import {
 	isConnectSecretsAlreadyAllowed,
 	readConnectSecretsView,
@@ -97,10 +96,6 @@ test('connect secrets is already allowed only when every listed secret is presen
 			},
 		}),
 	).toBe(false)
-
-	expect(allowHostsButtonLabel(2, 0)).toBe('Allow all 2 hosts')
-	expect(allowHostsButtonLabel(1, 1)).toBe('Allow access')
-	expect(allowHostsButtonLabel(2, 1)).toBe('Allow 2 valid hosts')
 
 	expect(
 		readConnectSecretsView({

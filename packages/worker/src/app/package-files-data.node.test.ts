@@ -197,23 +197,15 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 	).toBe(false)
 })
 
-test('package page README images opt in only when the viewed README commit is the asset commit', () => {
+test('package page README images opt in for listing README and only matching owner commits', () => {
 	expect(
 		resolvePackagePageReadmeImageBaseHref({
 			listingId: 'listing-1',
 			ownerUsername: 'kentcdodds',
 			kodyId: 'sentry',
 			usedListingReadme: true,
-			publishedCommit: 'abc123',
-		}),
-	).toBe('/@kentcdodds/sentry/assets')
-
-	expect(
-		resolvePackagePageReadmeImageBaseHref({
-			ownerUsername: 'kentcdodds',
-			kodyId: 'sentry',
-			usedListingReadme: false,
-			publishedCommit: 'abc123',
+			publishedCommit: 'published-ahead',
+			pinnedCommit: 'abc123',
 		}),
 	).toBe('/@kentcdodds/sentry/assets')
 

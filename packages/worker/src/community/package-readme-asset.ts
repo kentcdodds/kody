@@ -7,8 +7,7 @@ import { readCommunitySnapshot } from './snapshot.ts'
 
 export const packageReadmeAssetCacheControl = 'public, max-age=3600'
 export const packageReadmeAssetPrivateCacheControl = 'private, no-store'
-export const packageReadmeAssetSvgContentSecurityPolicy =
-	"default-src 'none'; sandbox"
+const packageReadmeAssetSvgContentSecurityPolicy = "default-src 'none'; sandbox"
 
 export type PackageReadmeImageContentType =
 	| 'image/png'

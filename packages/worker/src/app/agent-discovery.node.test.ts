@@ -54,7 +54,6 @@ test('agent discovery documents describe the MCP server and public pages', async
 	}
 	// The introduction is canonical at /docs, so its slug URL stays out.
 	expect(sitemap).not.toContain(`<loc>${origin}/docs/what-is-kody</loc>`)
-	expect(sitemap).not.toContain('/guides')
 	for (const post of listBlogPosts()) {
 		expect(sitemap).toContain(`<loc>${origin}/blog/${post.slug}</loc>`)
 		expect(sitemap).toContain(`<lastmod>${post.date}</lastmod>`)

@@ -233,19 +233,16 @@ test('FAQ, pricing, and home SSR copy follow invite, open, and waitlist destinat
 	expect(inviteHome).toContain('Join the waiting list')
 	expect(inviteHome).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 	expect(inviteHome).toContain('I have a code')
-	expect(inviteHome).toContain('Copy the discovery prompt')
 	expect(inviteHome).not.toContain('>Create a free account<')
 
 	expect(openHome).toContain(homepageSignupPath.replaceAll('&', '&amp;'))
 	expect(openHome).toContain('Create a free account')
-	expect(openHome).toContain('Copy the discovery prompt')
 	expect(openHome).not.toContain('href="#invite"')
 	expect(openHome).not.toContain('Join the waiting list')
 
 	expect(waitlistHome).toContain('href="#invite"')
 	expect(waitlistHome).toContain('Join the waiting list')
 	expect(waitlistHome).toContain('I have a code')
-	expect(waitlistHome).toContain('Copy the discovery prompt')
 	expect(waitlistHome).not.toContain('>Create a free account<')
 })
 

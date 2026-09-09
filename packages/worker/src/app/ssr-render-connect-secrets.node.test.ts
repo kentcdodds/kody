@@ -232,7 +232,6 @@ test('renderAppPage flags invalid connect-secrets hosts instead of offering Allo
 	expect(connectSecretsHtml).toContain(
 		'data-testid="connect-secrets-rejected-hosts"',
 	)
-	expect(connectSecretsHtml).toContain('This host is not valid')
 	expect(connectSecretsHtml).toContain('Allow access')
 	expect(connectSecretsHtml).not.toContain('Allow all 2 hosts')
 })

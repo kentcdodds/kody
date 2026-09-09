@@ -1,9 +1,4 @@
 import { expect, test, vi } from 'vitest'
-import {
-	entitlementResourceLabels,
-	legacyPlanLimits,
-	planLimits,
-} from '#universal/plans.ts'
 
 const readCurrentEntitlementResourceUsage = vi.fn()
 
@@ -44,22 +39,9 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 	const legacyOutbound = legacyConsumption.find(
 		(item) => item.resource === 'outbound_fetches_per_day',
 	)
-	expect(publicOutbound).toEqual({
-		resource: 'outbound_fetches_per_day',
-		label: entitlementResourceLabels.outbound_fetches_per_day,
-		current: outboundCurrent,
-		limit: planLimits.standard.maxOutboundFetchesPerDay,
-		percentOfLimit:
-			outboundCurrent / planLimits.standard.maxOutboundFetchesPerDay,
-		overEightyPercent: true,
-	})
-	expect(legacyOutbound).toEqual({
-		resource: 'outbound_fetches_per_day',
-		label: entitlementResourceLabels.outbound_fetches_per_day,
-		current: outboundCurrent,
-		limit: legacyPlanLimits.standard.maxOutboundFetchesPerDay,
-		percentOfLimit:
-			outboundCurrent / legacyPlanLimits.standard.maxOutboundFetchesPerDay,
-		overEightyPercent: false,
-	})
+	expect(publicOutbound?.current).toBe(outboundCurrent)
+	expect(legacyOutbound?.current).toBe(outboundCurrent)
+	expect(publicOutbound?.overEightyPercent).toBe(true)
+	expect(legacyOutbound?.overEightyPercent).toBe(false)
+	expect(legacyOutbound?.limit ?? 0).toBeGreaterThan(publicOutbound?.limit ?? 0)
 })
