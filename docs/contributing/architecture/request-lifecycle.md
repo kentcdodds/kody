@@ -417,6 +417,17 @@ line and never reach Sentry; genuine platform failures still do. New "not found
 / bad argument" throw sites in `packages/worker/src/mcp/**` should use
 `McpCallerError`.
 
+`search` also publishes exclusive wall-clock tiles (`usernameLookupMs`,
+`identityResolutionMs`, `loadAndRankMs`, suffix stamps, `waitingItemsMs`,
+`formattingMs`) plus `exclusiveMs` / `unaccountedMs` so named phases reconcile
+against `timing.durationMs`. Overlapping detail (memory, retrievers, candidate
+plugins) stays beside those tiles and is not summed. Each call writes one
+privacy-safe point to `MCP_SEARCH_EVENTS` (see
+[Usage metering — MCP search duration](./usage-metering.md#mcp-search-duration)).
+Operators asking "is search slow this hour?" query that dataset; UWD `retriever`
+surface attribution is unchanged and does not measure search latency.
+`/admin/insights` has no search-latency chart.
+
 Authentication and authorization denials are deliberately **not**
 `McpCallerError`. `/mcp` rejects anonymous callers at the transport before any
 capability runs, so a denial reaching a handler means an internal caller built a

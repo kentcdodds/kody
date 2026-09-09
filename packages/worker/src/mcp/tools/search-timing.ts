@@ -1,5 +1,49 @@
+import { type SearchPhaseTimings } from './search-types.ts'
+
 export function elapsedMs(startedAt: number): number {
 	return Math.max(0, Math.round(performance.now() - startedAt))
+}
+
+/**
+ * Exclusive tiles that partition search wall clock. Overlapping detail
+ * phases (memory, retrievers, candidate plugins) are published beside
+ * these and must not be summed into `exclusiveMs`.
+ */
+export const searchExclusivePhaseKeys = [
+	'usernameLookupMs',
+	'identityResolutionMs',
+	'loadAndRankMs',
+	'entityResolveMs',
+	'firstSearchStampMs',
+	'onboardingNoticeMs',
+	'waitingItemsMs',
+	'formattingMs',
+] as const satisfies ReadonlyArray<keyof SearchPhaseTimings>
+
+export function reconcileSearchPhaseTimings<
+	T extends Partial<SearchPhaseTimings>,
+>(input: {
+	durationMs: number
+	phaseTimings: T
+}): T & Pick<SearchPhaseTimings, 'exclusiveMs' | 'unaccountedMs'> {
+	let exclusiveMs = 0
+	for (const key of searchExclusivePhaseKeys) {
+		const value = input.phaseTimings[key]
+		if (typeof value === 'number') exclusiveMs += value
+	}
+	// List mode folds registry load into `loadAndRankMs`. Entity lookups
+	// have no load-and-rank wave, so the registry read is its own tile.
+	if (
+		typeof input.phaseTimings.loadAndRankMs !== 'number' &&
+		typeof input.phaseTimings.rowAndRegistryLoadMs === 'number'
+	) {
+		exclusiveMs += input.phaseTimings.rowAndRegistryLoadMs
+	}
+	return {
+		...input.phaseTimings,
+		exclusiveMs,
+		unaccountedMs: Math.max(0, input.durationMs - exclusiveMs),
+	}
 }
 
 export async function settleWithBudget<T>(

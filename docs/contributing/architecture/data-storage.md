@@ -1160,6 +1160,10 @@ script owns no Durable Object classes.
   only; one point per MCP execute-tool module classifying whether it is
   interpretable pure glue for fleet `q`; see
   [Usage metering](./usage-metering.md#execute-interpretable-share-q))
+- `MCP_SEARCH_EVENTS` (Analytics Engine dataset, production/preview only; one
+  point per MCP `search` call with wall clock, exclusive-tile remainder, and
+  intent/trim signals; see
+  [Usage metering](./usage-metering.md#mcp-search-duration))
 
 `packages/worker/wrangler.jsonc` also configures the `EMAIL` send binding,
 dispatch queues, worker loaders (`LOADER` / `APP_LOADER`), the `AI` binding, and

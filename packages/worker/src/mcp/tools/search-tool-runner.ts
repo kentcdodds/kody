@@ -40,7 +40,8 @@ import {
 	applyMaxResponseSize,
 	truncateSearchText,
 } from './search-response-size.ts'
-import { elapsedMs } from './search-timing.ts'
+import { recordSearchObservabilityEvent } from './search-observability.ts'
+import { elapsedMs, reconcileSearchPhaseTimings } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 import { buildOnboardingSearchNotice } from './search-onboarding-notice.ts'
@@ -162,16 +163,96 @@ export async function runSearchTool(input: {
 			username = execution.username
 			warnings = execution.warnings
 			Object.assign(endToEndPhaseTimings, execution.phaseTimings)
+			const stampStart = performance.now()
+			await stampFirstSearchIfAuthenticated(agent, userId)
+			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
+			const structuredWarnings = [...warnings]
+			const onboardingStart = performance.now()
+			const onboardingNoticeConversationIds = Array.isArray(
+				statefulAgent.state?.onboardingNoticeConversationIds,
+			)
+				? (statefulAgent.state?.onboardingNoticeConversationIds ?? [])
+				: []
+			const onboardingNoticeLastShownAtMs =
+				typeof statefulAgent.state?.onboardingNoticeLastShownAtMs === 'number'
+					? statefulAgent.state.onboardingNoticeLastShownAtMs
+					: null
+			const withinNoticeCooldown =
+				onboardingNoticeLastShownAtMs !== null &&
+				Date.now() - onboardingNoticeLastShownAtMs < onboardingNoticeCooldownMs
+			const considerOnboardingNotice =
+				userId !== null &&
+				!withinNoticeCooldown &&
+				!onboardingNoticeConversationIds.includes(conversationId)
+			if (considerOnboardingNotice) {
+				const notice = await buildOnboardingSearchNotice({
+					env: agent.getEnv(),
+					userId,
+					baseUrl,
+				})
+				if (notice) {
+					structuredWarnings.push(notice)
+					if (typeof statefulAgent.setState === 'function') {
+						statefulAgent.setState({
+							...statefulAgent.state,
+							onboardingNoticeConversationIds: [
+								...onboardingNoticeConversationIds,
+								conversationId,
+							].slice(-maxOnboardingNoticeConversationIds),
+							onboardingNoticeLastShownAtMs: Date.now(),
+						})
+					}
+				}
+			}
+			endToEndPhaseTimings.onboardingNoticeMs = elapsedMs(onboardingStart)
+			const returnsDomainIndex =
+				execution.result.matches.length > 0 &&
+				execution.result.matches.every((match) => match.type === 'domain')
+			const shouldInjectWaiting =
+				userId !== null &&
+				trimmedQuery.length > 0 &&
+				!domainFilter &&
+				!returnsDomainIndex
+			const waitingStart = performance.now()
+			let waitingMarkdown: string | null = null
+			let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
+			if (shouldInjectWaiting) {
+				try {
+					const waitingItems = await deriveWaitingItemsForStableUser({
+						env: agent.getEnv(),
+						stableUserId: userId,
+						email: callerContext.user?.email ?? '',
+					})
+					const origin = baseUrl.replace(/\/+$/, '')
+					waitingMarkdown = formatSearchWaitingMarkdown({
+						items: waitingItems,
+						origin,
+					})
+					waitingStructured = toSearchWaitingStructured({
+						items: waitingItems,
+						origin,
+					})
+				} catch {
+					waitingMarkdown = null
+					waitingStructured = null
+				}
+			}
+			endToEndPhaseTimings.waitingItemsMs = elapsedMs(waitingStart)
 			return {
 				mode: 'list' as const,
 				execution,
+				structuredWarnings,
+				waitingMarkdown,
+				waitingStructured,
 			}
 		}
+		const usernameStart = performance.now()
 		username = await resolvePublicUsername({
 			db: agent.getEnv().APP_DB,
 			username: callerContext.user?.username ?? null,
 			email: callerContext.user?.email ?? null,
 		})
+		endToEndPhaseTimings.usernameLookupMs = elapsedMs(usernameStart)
 		const rowAndRegistryLoadStart = performance.now()
 		const rowsPromise = loadSearchRowsAndRegistry({
 			env: agent.getEnv(),
@@ -188,6 +269,7 @@ export async function runSearchTool(input: {
 		warnings = searchRows.warnings
 
 		if (Array.isArray(args.entity)) {
+			const entityResolveStart = performance.now()
 			const batchResults = await Promise.all(
 				args.entity.map(async (entityRef) => {
 					try {
@@ -216,21 +298,25 @@ export async function runSearchTool(input: {
 					}
 				}),
 			)
+			endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
 			return {
 				mode: 'entity-batch' as const,
 				results: batchResults,
 			}
 		}
+		const entityResolveStart = performance.now()
+		const detail = await resolveEntityDetail({
+			agent,
+			callerContext,
+			userId,
+			username,
+			entity: args.entity,
+			searchRows,
+		})
+		endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
 		return {
 			mode: 'entity' as const,
-			detail: await resolveEntityDetail({
-				agent,
-				callerContext,
-				userId,
-				username,
-				entity: args.entity,
-				searchRows,
-			}),
+			detail,
 		}
 	}
 
@@ -239,6 +325,9 @@ export async function runSearchTool(input: {
 			| {
 					mode: 'list'
 					execution: SearchListExecutionResult
+					structuredWarnings: Array<string>
+					waitingMarkdown: string | null
+					waitingStructured: ReturnType<typeof toSearchWaitingStructured>
 			  }
 			| {
 					mode: 'entity'
@@ -275,7 +364,14 @@ export async function runSearchTool(input: {
 				includeBoilerplate: includePreamble,
 			})
 			rememberConversationPreamble()
+			const stampStart = performance.now()
+			await stampFirstSearchIfAuthenticated(agent, userId)
+			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
 			const timing = finishToolTiming(timingStart)
+			const phaseTimings = reconcileSearchPhaseTimings({
+				durationMs: timing.durationMs,
+				phaseTimings: endToEndPhaseTimings,
+			})
 			logMcpEvent({
 				category: 'mcp',
 				tool: 'search',
@@ -283,8 +379,14 @@ export async function runSearchTool(input: {
 				outcome: 'success',
 				durationMs: timing.durationMs,
 				...mcpCallerFields,
+				context: { phaseTimings },
 			})
-			await stampFirstSearchIfAuthenticated(agent, userId)
+			recordSearchObservabilityEvent(agent.getEnv(), {
+				outcome: 'success',
+				mode: 'entity',
+				durationMs: timing.durationMs,
+				phaseTimings,
+			})
 			return {
 				content: prependToolMetadataContent(conversationId, [
 					{
@@ -301,7 +403,6 @@ export async function runSearchTool(input: {
 		}
 
 		if (outcome.mode === 'entity-batch') {
-			const timing = finishToolTiming(timingStart)
 			const structuredResults: Array<
 				SearchEntityDetailStructured | { entityRef: string; error: string }
 			> = []
@@ -357,6 +458,16 @@ export async function runSearchTool(input: {
 				error: entry.error,
 				callerError: entry.callerError,
 			}))
+			if (!allFailed) {
+				const stampStart = performance.now()
+				await stampFirstSearchIfAuthenticated(agent, userId)
+				endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
+			}
+			const timing = finishToolTiming(timingStart)
+			const phaseTimings = reconcileSearchPhaseTimings({
+				durationMs: timing.durationMs,
+				phaseTimings: endToEndPhaseTimings,
+			})
 			logMcpEvent({
 				category: 'mcp',
 				tool: 'search',
@@ -388,13 +499,17 @@ export async function runSearchTool(input: {
 							context: {
 								failurePhase: 'handler',
 								entityFailures,
+								phaseTimings,
 							},
 						}
-					: {}),
+					: { context: { phaseTimings } }),
 			})
-			if (!allFailed) {
-				await stampFirstSearchIfAuthenticated(agent, userId)
-			}
+			recordSearchObservabilityEvent(agent.getEnv(), {
+				outcome: allFailed ? 'failure' : 'success',
+				mode: 'entity-batch',
+				durationMs: timing.durationMs,
+				phaseTimings,
+			})
 			return {
 				content: prependToolMetadataContent(conversationId, [
 					{
@@ -414,7 +529,9 @@ export async function runSearchTool(input: {
 
 		const execution = outcome.execution
 		const searchMemories = execution.memorySettlement.memories
-		const structuredWarnings = [...warnings]
+		const structuredWarnings = outcome.structuredWarnings
+		const waitingMarkdown = outcome.waitingMarkdown
+		const waitingStructured = outcome.waitingStructured
 
 		const payload: {
 			matches: Array<SearchMatch>
@@ -424,50 +541,6 @@ export async function runSearchTool(input: {
 			offline: execution.result.offline,
 		}
 		rememberConversationPreamble()
-		await stampFirstSearchIfAuthenticated(agent, userId)
-		// Onboarding reminder: at most once per conversation, only while the
-		// user's onboarding wizard steps are incomplete and undismissed. Stamp
-		// first so this search does not tell the agent Step 2 is still left.
-		// A session cooldown backstops hosts that never send a conversationId
-		// (each of their calls resolves a fresh server id, so the id list
-		// alone would repeat the notice every call), and the id list is
-		// capped so long-lived agent sessions cannot grow state unboundedly.
-		const onboardingNoticeConversationIds = Array.isArray(
-			statefulAgent.state?.onboardingNoticeConversationIds,
-		)
-			? (statefulAgent.state?.onboardingNoticeConversationIds ?? [])
-			: []
-		const onboardingNoticeLastShownAtMs =
-			typeof statefulAgent.state?.onboardingNoticeLastShownAtMs === 'number'
-				? statefulAgent.state.onboardingNoticeLastShownAtMs
-				: null
-		const withinNoticeCooldown =
-			onboardingNoticeLastShownAtMs !== null &&
-			Date.now() - onboardingNoticeLastShownAtMs < onboardingNoticeCooldownMs
-		const considerOnboardingNotice =
-			userId !== null &&
-			!withinNoticeCooldown &&
-			!onboardingNoticeConversationIds.includes(conversationId)
-		if (considerOnboardingNotice) {
-			const notice = await buildOnboardingSearchNotice({
-				env: agent.getEnv(),
-				userId,
-				baseUrl,
-			})
-			if (notice) {
-				structuredWarnings.push(notice)
-				if (typeof statefulAgent.setState === 'function') {
-					statefulAgent.setState({
-						...statefulAgent.state,
-						onboardingNoticeConversationIds: [
-							...onboardingNoticeConversationIds,
-							conversationId,
-						].slice(-maxOnboardingNoticeConversationIds),
-						onboardingNoticeLastShownAtMs: Date.now(),
-					})
-				}
-			}
-		}
 		const memorySummary = searchMemories
 			? {
 					memories: searchMemories.surfaced,
@@ -482,37 +555,6 @@ export async function runSearchTool(input: {
 			if (block.type !== 'text' || !('text' in block)) return total
 			return total + (total > 0 ? 1 : 0) + block.text.length
 		}, 0)
-		const returnsDomainIndex =
-			execution.result.matches.length > 0 &&
-			execution.result.matches.every((match) => match.type === 'domain')
-		const shouldInjectWaiting =
-			userId !== null &&
-			trimmedQuery.length > 0 &&
-			!domainFilter &&
-			!returnsDomainIndex
-		let waitingMarkdown: string | null = null
-		let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
-		if (shouldInjectWaiting) {
-			try {
-				const waitingItems = await deriveWaitingItemsForStableUser({
-					env: agent.getEnv(),
-					stableUserId: userId,
-					email: callerContext.user?.email ?? '',
-				})
-				const origin = baseUrl.replace(/\/+$/, '')
-				waitingMarkdown = formatSearchWaitingMarkdown({
-					items: waitingItems,
-					origin,
-				})
-				waitingStructured = toSearchWaitingStructured({
-					items: waitingItems,
-					origin,
-				})
-			} catch {
-				waitingMarkdown = null
-				waitingStructured = null
-			}
-		}
 		const reservedWaitingChars = waitingMarkdown?.length ?? 0
 		const formattingStartMs = performance.now()
 		const { payload: trimmedPayload, serialized } = applyMaxResponseSize(
@@ -539,7 +581,23 @@ export async function runSearchTool(input: {
 			0,
 			execution.result.matches.length - trimmedPayload.matches.length,
 		)
+		const slimMatches = toSlimStructuredMatches({
+			matches: trimmedPayload.matches,
+			baseUrl,
+			packageAppBaseUrl: getPackageAppBaseUrl({ env: agent.getEnv() }),
+			username,
+		})
 		const formattingMs = elapsedMs(formattingStartMs)
+		endToEndPhaseTimings.formattingMs = formattingMs
+		const timing = finishToolTiming(timingStart)
+		const mergedPhaseTimings: SearchPhaseTimings = {
+			...execution.result.phaseTimings,
+			...endToEndPhaseTimings,
+		}
+		const phaseTimings = reconcileSearchPhaseTimings({
+			durationMs: timing.durationMs,
+			phaseTimings: mergedPhaseTimings,
+		})
 		const result: SearchResultStructuredContent = {
 			offline: trimmedPayload.offline,
 			warnings: structuredWarnings,
@@ -556,11 +614,7 @@ export async function runSearchTool(input: {
 				trimmedMatchCount,
 				responseTrimmed: trimmedMatchCount > 0,
 			},
-			phaseTimings: {
-				...execution.result.phaseTimings,
-				...endToEndPhaseTimings,
-				formattingMs,
-			},
+			phaseTimings,
 			...(searchMemories
 				? {
 						memories: searchMemories,
@@ -571,14 +625,8 @@ export async function runSearchTool(input: {
 						waiting: waitingStructured,
 					}
 				: {}),
-			matches: toSlimStructuredMatches({
-				matches: trimmedPayload.matches,
-				baseUrl,
-				packageAppBaseUrl: getPackageAppBaseUrl({ env: agent.getEnv() }),
-				username,
-			}),
+			matches: slimMatches,
 		}
-		const timing = finishToolTiming(timingStart)
 		logMcpEvent({
 			category: 'mcp',
 			tool: 'search',
@@ -599,8 +647,19 @@ export async function runSearchTool(input: {
 				trimmedMatchCount,
 				offline: execution.result.offline,
 				warningsCount: warnings.length,
-				phaseTimings: result.phaseTimings,
+				phaseTimings,
 			},
+		})
+		recordSearchObservabilityEvent(agent.getEnv(), {
+			outcome: 'success',
+			mode: 'list',
+			durationMs: timing.durationMs,
+			phaseTimings,
+			task: execution.result.intent.task.name,
+			intentConfidence: execution.result.intent.confidence,
+			responseTrimmed: result.telemetry?.responseTrimmed ?? false,
+			trimmedMatchCount,
+			offline: execution.result.offline,
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [
@@ -628,6 +687,10 @@ export async function runSearchTool(input: {
 		const timing = finishToolTiming(timingStart)
 		const error = cause instanceof Error ? cause : new Error(String(cause))
 		const { errorName, errorMessage } = errorFields(error)
+		const phaseTimings = reconcileSearchPhaseTimings({
+			durationMs: timing.durationMs,
+			phaseTimings: endToEndPhaseTimings,
+		})
 		logMcpEvent({
 			category: 'mcp',
 			tool: 'search',
@@ -639,6 +702,17 @@ export async function runSearchTool(input: {
 			errorName,
 			errorMessage,
 			cause: error,
+			context: { phaseTimings },
+		})
+		recordSearchObservabilityEvent(agent.getEnv(), {
+			outcome: 'failure',
+			mode: args.entity
+				? Array.isArray(args.entity)
+					? 'entity-batch'
+					: 'entity'
+				: 'list',
+			durationMs: timing.durationMs,
+			phaseTimings,
 		})
 		return {
 			content: prependToolMetadataContent(conversationId, [

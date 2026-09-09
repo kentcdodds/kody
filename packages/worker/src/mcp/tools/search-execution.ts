@@ -67,13 +67,17 @@ async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
 	const domainFilter = input.domain?.trim() || undefined
+	const phaseTimings: Partial<SearchPhaseTimings> = {}
+	const usernameStart = performance.now()
 	const username = await resolvePublicUsername({
 		db: input.env.APP_DB,
 		username: input.callerContext.user?.username ?? null,
 		email: input.callerContext.user?.email ?? null,
 	})
+	phaseTimings.usernameLookupMs = elapsedMs(usernameStart)
 	// Domain-scoped searches rank capabilities only; exact package identity
 	// resolution does not apply.
+	const identityStart = performance.now()
 	const identityResolution =
 		input.query && !domainFilter
 			? await resolvePackageIdentitySearch({
@@ -88,6 +92,7 @@ async function executeSearchListWithinBudget(
 					includeHiddenPackages: input.includeHiddenPackages,
 				})
 			: { recognized: false as const }
+	phaseTimings.identityResolutionMs = elapsedMs(identityStart)
 	let preloadedSearchRows: Awaited<
 		ReturnType<typeof loadSearchRowsAndRegistry>
 	> | null = null
@@ -120,6 +125,7 @@ async function executeSearchListWithinBudget(
 	)
 	const embeddingCache = createTextEmbeddingCache(input.env)
 	const normalizedQuery = normalizeSearchText(input.query).trim()
+	const loadAndRankStart = willRankSearch ? performance.now() : null
 	if (
 		willRankSearch &&
 		searchQueryUsesRankingEmbedding({
@@ -143,7 +149,6 @@ async function executeSearchListWithinBudget(
 		: null
 	const memoryEnrichmentPromise = memoryLaunch?.promise ?? Promise.resolve(null)
 	const memoryEnrichmentLaunchedAtMs = memoryLaunch?.launchedAtMs
-	const phaseTimings: Partial<SearchPhaseTimings> = {}
 	let warnings: Array<string> = []
 	let result: SearchUnifiedResult
 	let capabilityGuidance: string | undefined
@@ -209,6 +214,7 @@ async function executeSearchListWithinBudget(
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
+	const searchUnifiedStart = performance.now()
 	result = await searchUnified({
 		env: input.env,
 		query: input.query,
@@ -220,6 +226,7 @@ async function executeSearchListWithinBudget(
 		embedText: embeddingCache.embedText,
 		...(domainFilter ? { domain: domainFilter } : {}),
 	})
+	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	capabilityGuidance = result.guidance
 	const returnsDomainIndex =
 		result.matches.length > 0 &&
@@ -237,6 +244,9 @@ async function executeSearchListWithinBudget(
 				} satisfies SearchMemoryEnrichmentSettlement)
 	Object.assign(phaseTimings, memorySettlement.phaseTimings)
 	warnings.push(...memorySettlement.warnings)
+	if (loadAndRankStart != null) {
+		phaseTimings.loadAndRankMs = elapsedMs(loadAndRankStart)
+	}
 
 	return {
 		result,

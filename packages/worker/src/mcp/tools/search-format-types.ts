@@ -92,6 +92,16 @@ export type SearchResultStructuredContent = {
 		memoryAcknowledgementTimedOut?: boolean
 		memoryEnrichmentFailed?: boolean
 		memoryAcknowledgementFailed?: boolean
+		usernameLookupMs?: number
+		identityResolutionMs?: number
+		loadAndRankMs?: number
+		searchUnifiedMs?: number
+		entityResolveMs?: number
+		firstSearchStampMs?: number
+		onboardingNoticeMs?: number
+		waitingItemsMs?: number
+		exclusiveMs?: number
+		unaccountedMs?: number
 	}
 	memories?: {
 		surfaced: Array<{
