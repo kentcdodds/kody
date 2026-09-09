@@ -82,7 +82,13 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   the flow is important enough to justify the maintenance cost.
 - Avoid tests that only assert a string blob contains a description or other
   incidental copy. Favor behavior-focused assertions (structured output,
-  user-visible outcomes, or stable public contracts) instead.
+  user-visible outcomes, or stable public contracts) instead. When a blog
+  catalog pin must quote an approved sentence, run the source through
+  `normalizeMarkdownPhraseSource` in
+  [`packages/worker/src/blog/catalog.ts`](../../packages/worker/src/blog/catalog.ts)
+  first. oxfmt reflows markdown blockquotes onto continuation `>` lines, so a
+  raw `post.body.includes('exact phrase')` fails after format even though the
+  words are still there.
 - Do not add tests whose only value is pinning configuration-style strings such
   as tool descriptions, usage hints, warnings, or other instructional copy. If
   the behavior matters, test the behavior or stable structured contract rather

@@ -1,7 +1,20 @@
 import { expect, test } from 'vitest'
-import { getBlogPost, getReadNextBlogPost, listBlogPosts } from './catalog.ts'
+import {
+	getBlogPost,
+	getReadNextBlogPost,
+	listBlogPosts,
+	normalizeMarkdownPhraseSource,
+} from './catalog.ts'
 import { parseBlogPostMarkdown } from './parse-frontmatter.ts'
 import { buildBlogRssXml } from './rss.ts'
+
+test('normalizeMarkdownPhraseSource strips blockquote markers and wrapping', () => {
+	expect(
+		normalizeMarkdownPhraseSource(
+			'> funnels all my tools into one secure MCP\n> I can manage myself\n',
+		),
+	).toBe('funnels all my tools into one secure MCP I can manage myself ')
+})
 
 test('parseBlogPostMarkdown reads frontmatter and rejects invalid input', () => {
 	const post = parseBlogPostMarkdown(
@@ -169,9 +182,7 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(earlyUsers?.title).toBe('Early Kody users')
 	expect(earlyUsers?.date).toBe('2026-09-08')
 	expect(earlyUsers?.placeholder).toBe(true)
-	const earlyUsersBody = (earlyUsers?.body ?? '')
-		.replaceAll(/^>\s?/gm, '')
-		.replace(/\s+/g, ' ')
+	const earlyUsersBody = normalizeMarkdownPhraseSource(earlyUsers?.body ?? '')
 	expect(earlyUsersBody).toContain(
 		'funnels all my tools into one secure MCP I can manage myself',
 	)
