@@ -142,8 +142,8 @@ test(
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const userId = 'user-console-capture-reuse'
-		// Identical code + modules => same dynamic-worker id when APP_COMMIT_SHA
-		// is set. Per-run labels arrive through RPC dispatchers, not baked code.
+		// Identical code + modules + acting user => same dynamic-worker id.
+		// Per-run labels arrive through RPC dispatchers, not baked code.
 		const bundle = await buildEntryBundle({
 			env: reuseEnv,
 			userId,

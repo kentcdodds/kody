@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { landingHeroDemoVideoIds } from '#universal/landing-hero-copy.ts'
 import { youtubeWatchSampleVideoId } from '#universal/youtube-watch.ts'
 import {
 	loadPlaylistVideoIds,
@@ -6,6 +7,7 @@ import {
 } from './youtube-watch-allowlist.ts'
 
 const videoId = youtubeWatchSampleVideoId
+const builtInVideoIds = [...new Set([videoId, ...landingHeroDemoVideoIds])]
 const playlistId = 'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
 
 test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () => {
@@ -62,7 +64,7 @@ test('resolveYoutubeWatchAllowedVideoIds uses extra ids when playlists are none'
 			throw new Error('playlist fetch should not run')
 		},
 	})
-	expect(ids).toEqual([videoId])
+	expect(ids).toEqual(builtInVideoIds)
 })
 
 test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id', async () => {
@@ -74,7 +76,7 @@ test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample
 			throw new Error('playlist fetch should not run')
 		},
 	})
-	expect(ids).toEqual([videoId])
+	expect(ids).toEqual(builtInVideoIds)
 })
 
 test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists is false', async () => {
@@ -95,7 +97,7 @@ test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists
 			},
 		],
 	})
-	expect(ids).toEqual([videoId])
+	expect(ids).toEqual(builtInVideoIds)
 })
 
 test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying D1', async () => {
@@ -117,5 +119,5 @@ test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying 
 			},
 		],
 	})
-	expect(ids).toEqual([videoId, bannerVideoId])
+	expect(ids).toEqual([...builtInVideoIds, bannerVideoId])
 })

@@ -9,8 +9,6 @@ import { type YoutubeWatchLoaderData } from '#universal/loader-data.ts'
 import {
 	parseYoutubeWatchSearch,
 	stripYoutubeWatchSearch,
-	youtubeNocookieEmbedUrl,
-	youtubeThumbPath,
 } from '#universal/youtube-watch.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
 import {
@@ -19,6 +17,7 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
+import { YouTubeLightPlayer } from './youtube-light-player.tsx'
 
 function emptyYoutubeWatchSnapshot(): YoutubeWatchLoaderData {
 	return {
@@ -29,11 +28,9 @@ function emptyYoutubeWatchSnapshot(): YoutubeWatchLoaderData {
 export function YouTubeWatchOverlay(
 	handle: Handle<{ snapshot?: YoutubeWatchLoaderData }>,
 ) {
-	let playing = false
 	let dialogNode: HTMLDialogElement | null = null
 
 	function closeWatch() {
-		playing = false
 		dialogNode?.close()
 		const pathname = readRouterPathname(handle)
 		const search = readRouterSearch(handle)
@@ -41,11 +38,6 @@ export function YouTubeWatchOverlay(
 		if (next !== `${pathname}${search}`) {
 			navigate(next)
 		}
-		handle.update()
-	}
-
-	function startPlayback() {
-		playing = true
 		handle.update()
 	}
 
@@ -91,33 +83,10 @@ export function YouTubeWatchOverlay(
 					<h2 id={titleId} mix={css(visuallyHiddenCss)}>
 						Watch video
 					</h2>
-					{playing ? (
-						<iframe
-							title="YouTube video"
-							src={youtubeNocookieEmbedUrl(videoId)}
-							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-							allowFullScreen
-							mix={css(frameCss)}
-						/>
-					) : (
-						<button
-							type="button"
-							data-testid="youtube-watch-play"
-							mix={[css(posterButtonCss), on('click', startPlayback)]}
-						>
-							<img
-								src={youtubeThumbPath(videoId)}
-								alt=""
-								width={1280}
-								height={720}
-								mix={css(posterImageCss)}
-							/>
-							<span mix={css(playBadgeCss)} aria-hidden="true">
-								▶
-							</span>
-							<span mix={css(visuallyHiddenCss)}>Play video</span>
-						</button>
-					)}
+					<YouTubeLightPlayer
+						videoId={videoId}
+						playTestId="youtube-watch-play"
+					/>
 					<button
 						type="button"
 						aria-label="Close video"
@@ -150,45 +119,6 @@ const stageCss = {
 	backgroundColor: '#000',
 	borderRadius: radius.card,
 	overflow: 'hidden' as const,
-}
-
-const frameCss = {
-	width: '100%',
-	height: '100%',
-	border: 'none',
-}
-
-const posterButtonCss = {
-	appearance: 'none',
-	display: 'block',
-	width: '100%',
-	height: '100%',
-	padding: 0,
-	border: 'none',
-	backgroundColor: '#000',
-	cursor: 'pointer',
-	position: 'relative' as const,
-}
-
-const posterImageCss = {
-	width: '100%',
-	height: '100%',
-	objectFit: 'cover' as const,
-}
-
-const playBadgeCss = {
-	position: 'absolute' as const,
-	inset: 0,
-	margin: 'auto',
-	width: '4.5rem',
-	height: '4.5rem',
-	borderRadius: radius.full,
-	backgroundColor: 'rgba(0, 0, 0, 0.72)',
-	color: colors.onPrimary,
-	display: 'grid',
-	placeItems: 'center',
-	fontSize: '1.5rem',
-	lineHeight: 1,
 }
 
 const closeCss = {

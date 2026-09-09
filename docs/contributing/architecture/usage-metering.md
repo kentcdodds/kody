@@ -206,6 +206,32 @@ APP_LOADER package-app isolates record UWD when the worker id is stable
 (`app_fetch` / `app_realtime`). One-off `APP_LOADER.load()` without a hashed id
 has no worker id to claim and does not emit `dynamic_worker_day`.
 
+### LOADER worker identity
+
+`createStableDynamicWorkerId` in `packages/worker/src/mcp/dynamic-worker-id.ts`
+mints the execute-sandbox worker id. The hash is the sandbox-contract version
+(`dynamicWorkerCacheKeyVersion`, bumped only when the executor or identity
+contract changes), the `LOADER` binding name, the acting `userId` and
+`storageContext`, compatibility date/flags, the main module name, and the module
+graph (agent code plus the generated executor harness).
+
+Timeout, `allowOutboundFetch`, and the excluded fetch hostname are baked into
+that harness text, so they are not hashed again. Deploy SHA (`APP_COMMIT_SHA`),
+email, and other request-only `gatewayProps` fields are not part of the key: a
+parent deploy remints ids only when the harness or module graph actually
+changes.
+
+`userId` and `storageContext` stay in the key because `LOADER.get` reuses the
+first factory's WorkerCode for a given id, including the `KodyFetchGateway`
+`globalOutbound` stub. Those props authorize outbound fetch, secrets, and quota,
+so two users (or two storage contexts) with the same module graph still get
+distinct ids. UWD metering stays `(userId, workerId, day)` via
+`claimDynamicWorkerDay` and is independent of this hash.
+
+When modules are not deterministically hashable, the id is a UUID and is not
+reused. Hashable modules still produce a stable id when `userId` is null or
+`APP_COMMIT_SHA` is unset.
+
 Customer-facing monthly overage is unique worker days plus Durable Object
 rows-read, billed on the public ladder at `computeOverageRatesUsd` when
 `compute-overage-charging` is on. Unpaid Free is a soft-block, not a charge.

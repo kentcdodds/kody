@@ -11,6 +11,7 @@ export const localOriginDevVarKeys = [
 	'CLOUDFLARE_ACCOUNT_ID',
 	'CLOUDFLARE_API_SOURCE_SNAPSHOTS',
 	'APP_BASE_URL',
+	'SIGNUP_MODE',
 ] as const
 
 /**

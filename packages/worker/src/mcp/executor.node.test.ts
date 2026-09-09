@@ -7,6 +7,7 @@ import {
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
+import { type StorageContext } from '#mcp/storage.ts'
 import {
 	ComputeOverageLimitError,
 	EntitlementLimitError,
@@ -100,11 +101,19 @@ function createExecutorTestExports() {
 	} as never
 }
 
-function createGatewayProps(userId: string) {
+function createGatewayProps(
+	userId: string,
+	overrides?: {
+		email?: string | null
+		storageContext?: StorageContext | null
+	},
+) {
 	return {
 		baseUrl: 'https://heykody.dev',
 		userId,
-		storageContext: null,
+		email: overrides?.email ?? `${userId}@example.com`,
+		storageContext:
+			overrides?.storageContext === undefined ? null : overrides.storageContext,
 	}
 }
 
@@ -749,7 +758,9 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 	const second = await createExecuteExecutor({
 		env,
 		exports,
-		gatewayProps: createGatewayProps('user-1'),
+		gatewayProps: createGatewayProps('user-1', {
+			email: 'other-address@example.com',
+		}),
 	}).execute('async () => "ok"', [
 		{
 			name: 'kody',
@@ -813,24 +824,23 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		}).execute('async () => "ok"', scopedProviders)
 	}
 	expect(noUserLoader.ids).toHaveLength(2)
-	expect(new Set(noUserLoader.ids).size).toBe(2)
-	expect(noUserLoader.factoryCallCount).toBe(2)
+	expect(new Set(noUserLoader.ids).size).toBe(1)
+	expect(noUserLoader.factoryCallCount).toBe(1)
 
-	const noCommitLoader = createFakeWorkerLoader()
-	const noCommitEnv = {
-		...createExecutorTestEnv(noCommitLoader.loader),
-		APP_COMMIT_SHA: undefined,
-	} as Env
-	for (let index = 0; index < 2; index += 1) {
+	const commitShaLoader = createFakeWorkerLoader()
+	for (const commitSha of ['commit-aaa', 'commit-bbb', undefined]) {
 		await createExecuteExecutor({
-			env: noCommitEnv,
+			env: {
+				...createExecutorTestEnv(commitShaLoader.loader),
+				APP_COMMIT_SHA: commitSha,
+			} as Env,
 			exports,
 			gatewayProps: createGatewayProps('user-1'),
 		}).execute('async () => "ok"', scopedProviders)
 	}
-	expect(noCommitLoader.ids).toHaveLength(2)
-	expect(new Set(noCommitLoader.ids).size).toBe(2)
-	expect(noCommitLoader.factoryCallCount).toBe(2)
+	expect(commitShaLoader.ids).toHaveLength(3)
+	expect(new Set(commitShaLoader.ids).size).toBe(1)
+	expect(commitShaLoader.factoryCallCount).toBe(1)
 
 	const bundledLoader = createFakeWorkerLoader()
 	for (let index = 0; index < 2; index += 1) {
@@ -871,10 +881,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		await createExecuteExecutor({
 			env: createExecutorTestEnv(differentStorageLoader.loader),
 			exports,
-			gatewayProps: {
-				...createGatewayProps('user-1'),
-				storageContext,
-			},
+			gatewayProps: createGatewayProps('user-1', { storageContext }),
 			modules: {
 				'entry.js': 'export default async function main() { return "ok" }',
 			},
