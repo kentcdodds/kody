@@ -1,10 +1,8 @@
 # Memory and conversation context
 
-Kody is the system of record for the signed-in user's durable assistant state.
-Long-term memories are the primary store for facts and preferences. Memories
-saved in Kody are available from every connected host for that user. Facts saved
-only in the host (Claude memory, Codex notes, Cursor rules that are not also
-Kody memories) are invisible to the user's other agents.
+What a memory is, what does not belong in one, and the verify-first write
+workflow live in [Shared memory](../guides/memory.md). This page is the
+MCP-level reference: `conversationId`, `memoryContext`, and retrieval behavior.
 
 Kody supports two related memory features:
 
@@ -62,21 +60,10 @@ That retrieval is:
 
 ## Verify-first rule for memory writes
 
-Agents must treat long-term memory writes as an explicit workflow.
-
-If the agent believes durable memory should be created, updated, or deleted, it
-should:
-
-1. call **`metaMemoryVerify`** first
-2. review the related memories returned by verify
-3. decide whether to:
-   - upsert a memory
-   - delete a memory
-   - do both
-   - do nothing
-
-Kody helps retrieve related memories, but the **consuming agent** is responsible
-for deciding what those related memories mean.
+Before creating, updating, or deleting a memory, call **`metaMemoryVerify`**,
+review the related memories it returns, then upsert, delete, do both, or do
+nothing. Kody retrieves the related memories; the consuming agent decides what
+they mean. See [Shared memory](../guides/memory.md#writing-memory-verify-first).
 
 ## Memory capabilities
 
@@ -93,21 +80,8 @@ Use these through **`execute`**:
 Memory records can also include optional **`source_uris`** — opaque canonical
 document URLs such as GitHub files, R2 object URLs, or Notion pages.
 
-## Account download
+## Account download and categories
 
-The signed-in user can download their own memories as JSON from
-`/account/memories`. The file is memories only: no credentials or other account
-primitives. Deleted memories are included only when **Include deleted** is on.
-
-## Categories
-
-Memory categories are freeform strings. Kody does not force a closed list.
-
-Suggested examples:
-
-- `preference`
-- `identifier`
-- `relationship`
-- `workflow`
-- `project`
-- `profile`
+Download memories as JSON from `/account/memories`. Categories are freeform;
+suggested values and the account-download details are in
+[Shared memory](../guides/memory.md).

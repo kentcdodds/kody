@@ -98,6 +98,6 @@ per account.
   Step 2 prompt.
 - [Shared memory](./memory.md) — what travels between your agents and how to
   keep it honest.
-- [The factory map](./kody-factory.md) — every primitive your agents now share.
+- [The factory map](./kody-factory.md) — every primitive your agents share.
 - [Troubleshooting](../use/troubleshooting.md) — auth loops, empty results, and
   approvals.

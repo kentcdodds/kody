@@ -222,10 +222,11 @@ Saved integrations and the `integration_*` capabilities live in the
 OAuth apps, and `integrationTokenRefresh` for host-side metadata-only refresh).
 For a new provider, load `integration_bootstrap` and prefer `communitySearch`
 for a close helpers package before writing fetch code. For integrations.sh
-registry lookup, `communityFork` `@kody/integrations-sh`. See the OpenAPI
-integrations guide under `docs/guides/` when the API publishes a spec. For a
-named bind-and-call surface, `communityFork` `@kody/openapi` into the user's
-account — person accounts cannot import `@kody/*` live.
+registry lookup, `communityFork` `@kody/integrations-sh`. See
+`search({ entity: "openapi_integrations:guide" })` (also at
+`/docs/openapi-integrations`) when the API publishes a spec. For a named
+bind-and-call surface, `communityFork` `@kody/openapi` into the user's account —
+person accounts cannot import `@kody/*` live.
 
 For integration-backed packages, package apps, or workflows, pair that discovery
 with `search({ entity: "integration_bootstrap:guide" })`. Inspect the relevant

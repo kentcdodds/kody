@@ -907,9 +907,8 @@ manual plans only. `STRIPE_STANDARD_PRICE_ID` /
 corresponding tier and interval; an unset price id only disables purchase of
 that interval. Production checkout uses Standard $12 / $120 and Pro $49 /
 $480.
-Previous Pro list prices stay active in Stripe for existing subscribers and
-resolve through `retiredProPriceIds`. Yearly price ids and historical monthly
-price ids resolve to `standard` / `pro` entitlements.
+`retiredProPriceIds` map historical Pro Stripe price ids to `standard` / `pro`
+entitlements. Yearly price ids resolve the same way.
 
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body

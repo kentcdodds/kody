@@ -20,9 +20,9 @@ admin UI.
 
 In this repo, that means the user must approve host access through the
 authenticated **`/connect/secrets`** page (query params `name` / `names` and
-`hosts`). The account secrets editor at `/account/secrets` can still show an
-"Allow access" card for older single-host links. Package grants stay on
-`/account/secrets/approve`.
+`hosts`). Package grants live on `/account/secrets/approve`. `/account/secrets`
+also renders an approval card when the request includes host or package approval
+query params.
 
 ## What agents should assume
 
@@ -120,7 +120,7 @@ Package apps may:
 
 - collect secret values from the user
 - save those values as secrets
-- save and read back non-secret values for public configuration
+- save and read public configuration from package storage or the package repo
 - inspect secret metadata, including current allowed hosts
 - present approval links returned from blocked requests
 
@@ -136,11 +136,16 @@ When a package app hits a recoverable runtime problem, it should:
 2. Include the next action the user should take, such as approving a host,
    providing a missing non-secret value, or retrying after a fix.
 
-For OAuth and similar flows, prefer this sequence:
+OAuth client credentials and tokens live on the integration, not in the secret
+store. Send the user to **`/connect/oauth`** and use
+**`createAuthenticatedFetch`** / **`integrationTokenRefresh`** after connect.
+See [OAuth: bring your own app](../guides/oauth.md).
 
-1. Save the client credentials as secrets.
-2. Use a hosted package app as the callback page when helpful.
-3. Attempt the token exchange with secret placeholders.
-4. If the exchange is blocked on host approval, send the user to the admin UI
-   approval page.
-5. Retry after approval.
+For secret-backed fetches (API keys, PATs, webhook HMAC secrets), prefer this
+sequence:
+
+1. Save the credential as a secret (`/account/secrets/new` or `secretSet`).
+2. Attempt the outbound request with secret placeholders.
+3. If the request is blocked on host approval, send the user to
+   `/connect/secrets`.
+4. Retry after approval.
