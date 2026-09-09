@@ -504,8 +504,10 @@ ORDER BY executes DESC
   (execute + job_run + workflow_run), top-10 event counts (excluding
   observe-only `durable_object_gb_seconds`), per-metric duration leaders, and an
   entitlement-pressure panel that reuses `readAdminEntitlementConsumption` for
-  the top ~15 users by those same customer event counts. Queries are
-  `LIMIT`-bounded; entitlement reads run with modest concurrency.
+  the top ~15 users by those same customer event counts, passing each row's
+  `users.entitlement_ladder` so legacy Standard/Pro is scored against
+  `legacyPlanLimits`. Queries are `LIMIT`-bounded; entitlement reads run with
+  modest concurrency.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
   same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages

@@ -329,10 +329,12 @@ the same cold zero-init path):
   `storage_bytes` from UserMeter)
 - Admin fleet entitlement-pressure panel and `usage_entitlement_alert` lane —
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
-  ~15 active users by current-month event count. The lane emits one
-  `fleet.entitlement.crossed` event per 80% or 100% crossing (and per first
-  over-threshold runtime-duration month, unique Dynamic Worker cost month, or
-  three-of-seven execute-cap train) to admin-owned packages. Staying over the
+  ~15 active users by current-month event count. The sweep selects
+  `users.entitlement_ladder` and passes it through so legacy Standard/Pro is
+  scored against `legacyPlanLimits` (the same table enforcement uses). The lane
+  emits one `fleet.entitlement.crossed` event per 80% or 100% crossing (and per
+  first over-threshold runtime-duration month, unique Dynamic Worker cost month,
+  or three-of-seven execute-cap train) to admin-owned packages. Staying over the
   same threshold does not emit again; dropping below and climbing back is a new
   instance. KV prefix `fleet-entitlement-crossing:v1` stores
   `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock limits,

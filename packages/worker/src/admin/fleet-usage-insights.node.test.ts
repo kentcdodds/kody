@@ -13,6 +13,7 @@ vi.mock('#worker/admin/entitlement-consumption.ts', () => ({
 const {
 	detectFleetUsagePressure,
 	fleetRuntimeDurationAlertThresholdMs,
+	loadFleetEntitlementCrossingSnapshots,
 	loadFleetUsageInsights,
 } = await import('#worker/admin/fleet-usage-insights.ts')
 
@@ -38,6 +39,7 @@ function createFleetDb(input: {
 		username: string
 		plan: string
 		stripe_plan: string | null
+		entitlement_ladder: string | null
 		event_count: number
 	}>
 	runtimeByUser?: Record<string, number>
@@ -203,6 +205,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 				username: 'alice',
 				plan: 'free',
 				stripe_plan: null,
+				entitlement_ladder: 'public',
 				event_count: 50,
 			},
 		],
@@ -317,6 +320,7 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 				username: 'alice',
 				plan: 'free',
 				stripe_plan: null,
+				entitlement_ladder: 'public',
 				event_count: 50,
 			},
 			{
@@ -324,6 +328,7 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 				username: 'bob',
 				plan: 'pro',
 				stripe_plan: null,
+				entitlement_ladder: 'public',
 				event_count: 40,
 			},
 			{
@@ -331,6 +336,7 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 				username: 'kentcdodds',
 				plan: 'max',
 				stripe_plan: null,
+				entitlement_ladder: 'public',
 				event_count: 90,
 			},
 		],
@@ -392,5 +398,142 @@ test('detectFleetUsagePressure flags entitlement, runtime, and unique-worker cos
 		'execute',
 		'job_run',
 		'workflow_run',
+	])
+	expect(
+		entitlementMocks.readAdminEntitlementConsumption.mock.calls.map(
+			([input]) => ({
+				usageUserId: input.usageUserId,
+				plan: input.plan,
+				ladder: input.ladder,
+			}),
+		),
+	).toEqual(
+		expect.arrayContaining([
+			{ usageUserId: 'user-a', plan: 'free', ladder: 'public' },
+			{ usageUserId: 'user-b', plan: 'pro', ladder: 'public' },
+			{ usageUserId: 'user-admin', plan: 'max', ladder: 'public' },
+		]),
+	)
+})
+
+test('fleet entitlement pressure scores legacy Standard against the legacy outbound ceiling', async () => {
+	const outboundCurrent = 15_016
+	const publicStandardOutboundLimit = 5_000
+	const legacyStandardOutboundLimit = 20_000
+	entitlementMocks.readAdminEntitlementConsumption.mockImplementation(
+		async (input) => {
+			const limit =
+				input.ladder === 'legacy'
+					? legacyStandardOutboundLimit
+					: publicStandardOutboundLimit
+			const percentOfLimit = outboundCurrent / limit
+			return [
+				{
+					resource: 'outbound_fetches_per_day',
+					label: 'outbound fetches / day',
+					current: outboundCurrent,
+					limit,
+					percentOfLimit,
+					overEightyPercent: percentOfLimit > 0.8,
+				},
+			]
+		},
+	)
+	const db = createFleetDb({
+		activeUsers: [
+			{
+				stable_user_id: 'grant',
+				username: 'grant',
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'legacy',
+				event_count: 80,
+			},
+			{
+				stable_user_id: 'pat',
+				username: 'pat',
+				plan: 'standard',
+				stripe_plan: 'standard',
+				entitlement_ladder: 'public',
+				event_count: 70,
+			},
+		],
+	})
+	const now = new Date('2026-07-08T12:00:00.000Z')
+	const env = { APP_DB: db } as Env
+	const [snapshots, issues, insights] = await Promise.all([
+		loadFleetEntitlementCrossingSnapshots({ db, env, now }),
+		detectFleetUsagePressure({ db, env, now }),
+		loadFleetUsageInsights({ db, env, now }),
+	])
+	expect(
+		entitlementMocks.readAdminEntitlementConsumption.mock.calls.map(
+			([input]) => ({
+				usageUserId: input.usageUserId,
+				plan: input.plan,
+				ladder: input.ladder,
+			}),
+		),
+	).toEqual(
+		expect.arrayContaining([
+			{ usageUserId: 'grant', plan: 'standard', ladder: 'legacy' },
+			{ usageUserId: 'pat', plan: 'standard', ladder: 'public' },
+		]),
+	)
+	expect(snapshots).toEqual([
+		expect.objectContaining({
+			stableUserId: 'grant',
+			plan: 'standard',
+			ladder: 'legacy',
+			entitlements: [
+				expect.objectContaining({
+					resource: 'outbound_fetches_per_day',
+					current: outboundCurrent,
+					limit: legacyStandardOutboundLimit,
+					overEightyPercent: false,
+				}),
+			],
+		}),
+		expect.objectContaining({
+			stableUserId: 'pat',
+			plan: 'standard',
+			ladder: 'public',
+			entitlements: [
+				expect.objectContaining({
+					resource: 'outbound_fetches_per_day',
+					current: outboundCurrent,
+					limit: publicStandardOutboundLimit,
+					overEightyPercent: true,
+				}),
+			],
+		}),
+	])
+	expect(issues).toEqual([
+		{
+			kind: 'entitlement',
+			stableUserId: 'pat',
+			username: 'pat',
+			resource: 'outbound_fetches_per_day',
+			label: 'outbound fetches / day',
+			current: outboundCurrent,
+			limit: publicStandardOutboundLimit,
+			percentOfLimit: outboundCurrent / publicStandardOutboundLimit,
+		},
+	])
+	expect(insights.entitlementPressure).toEqual([
+		{
+			stableUserId: 'pat',
+			username: 'pat',
+			plan: 'standard',
+			pressuredResources: [
+				{
+					resource: 'outbound_fetches_per_day',
+					label: 'outbound fetches / day',
+					current: outboundCurrent,
+					limit: publicStandardOutboundLimit,
+					percentOfLimit: outboundCurrent / publicStandardOutboundLimit,
+				},
+			],
+		},
 	])
 })
