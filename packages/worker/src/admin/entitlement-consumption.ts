@@ -28,13 +28,15 @@ export const entitlementWarningThreshold = 0.8
 /**
  * Current entitlement consumption for one account. `storage_bytes` is read from
  * UserMeter via `readCurrentEntitlementResourceUsage`, matching the signed-in
- * account usage page.
+ * account usage page. `ladder` must be the account's stored
+ * `users.entitlement_ladder` so legacy Standard/Pro is scored against
+ * `legacyPlanLimits`, matching `consumeDailyEntitlement`.
  */
 export async function readAdminEntitlementConsumption(input: {
 	env: Env
 	usageUserId: string
 	plan: PlanName
-	ladder?: EntitlementLadder
+	ladder: EntitlementLadder
 	now: Date
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
@@ -46,11 +48,7 @@ export async function readAdminEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			const limit = resolvePlanLimit(
-				input.plan,
-				resource,
-				input.ladder ?? 'public',
-			)
+			const limit = resolvePlanLimit(input.plan, resource, input.ladder)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {
 				resource,

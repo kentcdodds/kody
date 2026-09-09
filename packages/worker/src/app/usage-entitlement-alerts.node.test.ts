@@ -78,6 +78,7 @@ function snapshot(input: {
 		stableUserId: input.stableUserId ?? 'user-a',
 		username: input.username ?? 'alice',
 		plan: input.plan ?? 'free',
+		ladder: 'public',
 		isAdmin: input.isAdmin ?? false,
 		entitlements: [
 			{

@@ -5,8 +5,10 @@ import {
 	toAdminDynamicWorkerCost,
 } from '#universal/dynamic-worker-cost.ts'
 import {
+	parseEntitlementLadder,
 	parseStoredPlanName,
 	resolveEffectivePlan,
+	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
@@ -65,6 +67,7 @@ type ActiveUserRow = {
 	username: string
 	plan: string
 	stripe_plan: string | null
+	entitlement_ladder: string | null
 	event_count: number
 }
 
@@ -104,6 +107,7 @@ export type FleetEntitlementCrossingSnapshot = {
 	stableUserId: string
 	username: string
 	plan: PlanName
+	ladder: EntitlementLadder
 	isAdmin: boolean
 	entitlements: Array<{
 		resource: AdminUsageEntitlementResource
@@ -185,16 +189,19 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 				parseStoredPlanName(user.plan),
 				user.stripe_plan,
 			)
+			const ladder = parseEntitlementLadder(user.entitlement_ladder)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
 				plan,
+				ladder,
 				now: input.now,
 			})
 			snapshots.push({
 				stableUserId: user.stable_user_id,
 				username: user.username,
 				plan,
+				ladder,
 				isAdmin: adminUserIds.has(user.stable_user_id),
 				entitlements: consumption.map((item) => ({
 					resource: item.resource,
@@ -455,10 +462,12 @@ async function buildEntitlementPressurePanel(input: {
 			const plan = toAdminPlanName(
 				resolveEffectivePlan(parseStoredPlanName(user.plan), user.stripe_plan),
 			)
+			const ladder = parseEntitlementLadder(user.entitlement_ladder)
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
 				plan,
+				ladder,
 				now: input.now,
 			})
 			const pressuredResources = consumption
@@ -493,13 +502,13 @@ async function listActiveUsersForEntitlementSweep(
 ): Promise<Array<ActiveUserRow>> {
 	const rows = await db
 		.prepare(
-			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, SUM(r.event_count) AS event_count
+			`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL
-			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan
+			 GROUP BY u.stable_user_id, u.username, u.plan, u.stripe_plan, u.entitlement_ladder
 			 ORDER BY event_count DESC
 			 LIMIT ?`,
 		)
