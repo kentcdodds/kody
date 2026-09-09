@@ -15,6 +15,7 @@ import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import { landingWorldBrands } from '#universal/landing-world-brands.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import {
 	landingHeroCopyPromptLabel,
@@ -101,22 +102,6 @@ const honestRows = [
 		from: 'Context stuck in one host',
 		to: 'Memories that follow the account.',
 	},
-] as const
-
-const worldBrands = [
-	{ label: 'Spotify', icon: 'spotify' },
-	{ label: 'Stripe', icon: 'stripe' },
-	{ label: 'Resend', icon: 'resend' },
-	{ label: 'Kit', icon: 'kit' },
-	{ label: 'Cal.com', icon: 'caldotcom' },
-	{ label: 'PayPal', icon: 'paypal' },
-	{ label: 'x.com', icon: 'x' },
-	{ label: 'Bluesky', icon: 'bluesky' },
-	{ label: 'Twitch', icon: 'twitch' },
-	{ label: 'Sentry', icon: 'sentry' },
-	{ label: 'Fly.io', icon: 'flydotio' },
-	{ label: 'Raycast', icon: 'raycast' },
-	{ label: 'GroupMe', icon: 'groupme' },
 ] as const
 
 function isHomePath(href: string) {
@@ -436,17 +421,17 @@ export function HomeRoute(handle: Handle) {
 
 				<section aria-labelledby="world-title" class="landing-world">
 					<h2 id="world-title" class="landing-section-heading">
-						It already speaks <em>your stack</em>
+						It already speaks <em>your tools</em>
 					</h2>
 					<p class="landing-world-lead">
-						Public packages cover the tools you live in. Browse what other
-						people built, fork it with your agent, and make it yours.
+						Works with the agents and services you already use. Browse public
+						packages, fork them with your agent, and make them yours.
 					</p>
 					<ul
-						aria-label="Services covered by public packages"
+						aria-label="Agents and developer services that work with Kody"
 						class="landing-world-cloud"
 					>
-						{worldBrands.map((brand, index) => (
+						{landingWorldBrands.map((brand, index) => (
 							<li
 								key={brand.label}
 								class="landing-chip landing-chip-icon"
@@ -458,9 +443,9 @@ export function HomeRoute(handle: Handle) {
 						))}
 						<li
 							class="landing-chip landing-chip-muted"
-							mix={revealPop(worldBrands.length * 35)}
+							mix={revealPop(landingWorldBrands.length * 35)}
 						>
-							…and one thermostat
+							…and yours
 						</li>
 					</ul>
 				</section>
