@@ -10,8 +10,10 @@ import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -85,36 +87,14 @@ export async function blogPostRouteLoader(
 }
 
 export function BlogPostRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
-	let post: BlogPostLoaderData | null = null
 	let signupMode: SignupMode = 'invite'
-	/** Slug that `post` / `status` currently describe; used to hide stale UI. */
-	let loadedSlug: string | null = null
-	const loadLatch = createRouteLoadLatch()
-
-	// Re-lexing markdown on every handle.update() would be wasted work; cache
-	// the rendered body per markdown string (same policy as MarkdownView).
-	let renderedForBody: string | null = null
-	let renderedBody: Array<RemixNode> = []
-
-	function renderPostBody(body: string) {
-		if (renderedForBody !== body) {
-			renderedForBody = body
-			// First-party prose: headings keep their authored h2 rhythm and
-			// Kent's outbound links are not tagged as user-generated content.
-			renderedBody = renderMarkdownNodes(body, {
-				headingOffset: 0,
-				linkRel: 'noopener noreferrer',
-				headingIds: true,
-				fences: post?.bodyFences,
-			})
-		}
-		return renderedBody
-	}
-
-	async function loadPost(slug: string, signal: AbortSignal) {
-		// Do not call handle.update() before the first await — see blog.tsx.
-		try {
+	const postData = createRouteData({
+		key: 'blogPost',
+		async load(href, signal) {
+			const slug = getSlugFromPathname(
+				new URL(href, 'http://localhost').pathname,
+			)
+			if (!slug) return null
 			const [response, config] = await Promise.all([
 				fetch(routes.blogPostApi.href({ slug }), {
 					headers: { Accept: 'application/json' },
@@ -122,30 +102,34 @@ export function BlogPostRoute(handle: Handle) {
 				}),
 				fetchPublicAuthConfig(signal),
 			])
-			if (signal.aborted) return
 			signupMode = parseSignupMode(config?.signupMode)
-			if (response.status === 404) {
-				post = null
-				status = 'not-found'
-				loadedSlug = slug
-				handle.update()
-				return
-			}
+			if (response.status === 404) return null
 			const payload = await readJson<BlogPostLoaderData>(response)
-			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load blog post.')
 			}
-			post = payload
-			status = 'ready'
-			loadedSlug = slug
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			loadedSlug = slug
-			handle.update()
+			return payload
+		},
+	})
+
+	// Re-lexing markdown on every handle.update() would be wasted work; cache
+	// the rendered body per markdown string (same policy as MarkdownView).
+	let renderedForBody: string | null = null
+	let renderedBody: Array<RemixNode> = []
+
+	function renderPostBody(post: BlogPostLoaderData) {
+		if (renderedForBody !== post.body) {
+			renderedForBody = post.body
+			// First-party prose: headings keep their authored h2 rhythm and
+			// Kent's outbound links are not tagged as user-generated content.
+			renderedBody = renderMarkdownNodes(post.body, {
+				headingOffset: 0,
+				linkRel: 'noopener noreferrer',
+				headingIds: true,
+				fences: post.bodyFences,
+			})
 		}
+		return renderedBody
 	}
 
 	return () => {
@@ -155,62 +139,16 @@ export function BlogPostRoute(handle: Handle) {
 			return <article mix={css(postCss)} />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(handle, 'blogPost', currentHref)
 		const signupModeData = tryConsumeRouteLoaderData(
 			handle,
 			'signupMode',
 			currentHref,
 		)
 		if (signupModeData) signupMode = signupModeData
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			post = routeData
-			status = 'ready'
-			loadedSlug = routeData.slug
-			loadLatch.markLoaded(currentHref)
-		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadPost(slug, signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready' || status === 'not-found') {
-						loadLatch.markLoaded(currentHref)
-					} else {
-						loadLatch.markFailed(currentHref)
-					}
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
-
-		// Never show another post's content: mismatched loadedSlug means the
-		// URL already moved on while this closure still holds prior state.
-		const contentMatchesSlug = loadedSlug === slug
-		const showNotFound = status === 'not-found' && contentMatchesSlug
-		const showError = status === 'error' && contentMatchesSlug
-		const showReady = status === 'ready' && post !== null && contentMatchesSlug
-		const showLoading = !showNotFound && !showError && !showReady
+		const snapshot = postData.read(handle, currentHref)
 		const signedOutCta = publicSignupPrimaryCta(signupMode)
 
-		if (showNotFound) {
+		if (snapshot.kind === 'not-found') {
 			return (
 				<article mix={css(postCss)}>
 					<a href={routes.blog.href()} mix={css(postBackCss)}>
@@ -226,8 +164,11 @@ export function BlogPostRoute(handle: Handle) {
 			)
 		}
 
+		const post = snapshot.data
+		const pending = snapshot.kind === 'pending'
+
 		return (
-			<article mix={css(postCss)}>
+			<article mix={css(postCss)} aria-busy={pending ? 'true' : undefined}>
 				<a
 					data-rise
 					style={{ '--rise': '0' }}
@@ -237,17 +178,19 @@ export function BlogPostRoute(handle: Handle) {
 					← All posts
 				</a>
 
-				{showLoading ? (
-					<p mix={css(postStatusCss)} role="status">
-						Loading post…
-					</p>
-				) : null}
-				{showError ? (
+				{snapshot.kind === 'error' ? (
 					<p mix={css(postStatusCss)} role="status">
 						Unable to load this blog post.
 					</p>
 				) : null}
-				{showReady && post ? (
+				{/* Only the SPA cold path has no previous post to keep on screen. */}
+				{pending && post === null ? (
+					<p mix={css(postStatusCss)} role="status">
+						Loading post…
+					</p>
+				) : null}
+				{pending && post !== null ? renderRoutePendingStatus() : null}
+				{post !== null ? (
 					<>
 						<header mix={css(postHeadCss)}>
 							<h1 data-rise style={{ '--rise': '1' }}>
@@ -283,7 +226,7 @@ export function BlogPostRoute(handle: Handle) {
 							</aside>
 						) : null}
 
-						<div mix={css(proseCss)}>{renderPostBody(post.body)}</div>
+						<div mix={css(proseCss)}>{renderPostBody(post)}</div>
 
 						<footer mix={css(postFootCss)}>
 							{post.readNext ? (

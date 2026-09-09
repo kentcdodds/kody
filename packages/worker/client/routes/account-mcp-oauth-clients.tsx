@@ -1,9 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -38,14 +36,9 @@ import {
 import { type AccountMcpOauthClientsLoaderData } from '#universal/loader-data.ts'
 
 const clientsApiPath = '/account/mcp-oauth-clients.json'
-const clientsPath = '/account/mcp-oauth-clients'
 
 type CreatedClient = AccountMcpOauthClientsLoaderData['clients'][number] & {
 	clientSecret: string
-}
-
-function isClientsPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === clientsPath
 }
 
 export async function accountMcpOauthClientsRouteLoader(
@@ -68,7 +61,6 @@ export async function accountMcpOauthClientsRouteLoader(
 }
 
 export function AccountMcpOauthClientsRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionStatus: 'idle' | 'busy' = 'idle'
 	let clients: AccountMcpOauthClientsLoaderData['clients'] = []
 	let message: string | null = null
@@ -76,7 +68,25 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 	let labelDraft = 'Open WebUI'
 	let redirectUrisDraft = ''
 	let createdClient: CreatedClient | null = null
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountMcpOauthClientsLoaderData | null = null
+	let appliedError: Error | null = null
+	const clientsData = createRouteData({
+		key: 'accountMcpOauthClients',
+		async load(_href, signal) {
+			const response = await fetch(clientsApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountMcpOauthClientsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load MCP OAuth clients.')
+			}
+			return payload
+		},
+	})
 	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 
@@ -89,42 +99,6 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 	}
 	const ghostButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
-
-	async function loadClients(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
-			const response = await fetch(clientsApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountMcpOauthClientsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load MCP OAuth clients.')
-			}
-			clients = payload.clients
-			status = 'ready'
-			message = null
-			messageTone = 'info'
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load MCP OAuth clients.'
-			messageTone = 'error'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
 
 	async function handleCreate(event: Event) {
 		event.preventDefault()
@@ -228,39 +202,34 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isClientsPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'accountMcpOauthClients',
-			href,
-		)
-		if (!routeData) return false
-		clients = routeData.clients
-		status = 'ready'
-		message = null
-		messageTone = 'info'
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadClients)
+		const snapshot = clientsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			clients = snapshot.data.clients
+			message = null
+			messageTone = 'info'
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isBusy = actionStatus === 'busy'
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell
+				maxWidth={layoutMaxWidths.content}
+				busy={pending && appliedPayload !== null}
+			>
 				<AccountPageHeader
 					title="MCP OAuth clients"
 					description="Pre-register a confidential client when a host cannot finish dynamic OAuth registration. Most hosts do not need this."

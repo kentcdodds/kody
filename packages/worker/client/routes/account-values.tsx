@@ -3,10 +3,8 @@ import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { replaceLocation } from '#client/replace-location.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	type AccountStatus,
@@ -148,16 +146,34 @@ export async function accountValuesRouteLoader(
 }
 
 export function AccountValuesRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let saveState: 'idle' | 'deleting' = 'idle'
 	let values: Array<AccountValueListItem> = []
 	let selectedValue: AccountValueDetail | null = null
 	let editorState = createEmptyEditorState()
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountValuesLoaderData | null = null
+	let appliedError: Error | null = null
 	const deleteValueCheck = createDoubleCheck(handle)
 	let syncedSelectionKey: string | null = null
+	const valuesData = createRouteData({
+		key: 'accountValues',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildValuesApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountValuesLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load values.')
+			}
+			return payload
+		},
+	})
 
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
@@ -233,42 +249,6 @@ export function AccountValuesRoute(handle: Handle) {
 		syncEditorToSelection(valuesRoute.getSelection(getCurrentHref()))
 	}
 
-	async function loadValues(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildValuesApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountValuesLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load values.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			applyPayload(payload)
-			if (messageTone === 'error') setMessage(null)
-			status = 'ready'
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			setMessage(
-				error instanceof Error ? error.message : 'Unable to load values.',
-				'error',
-			)
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
-	}
-
 	async function deleteValueEntry() {
 		if (!selectedValue || saveState !== 'idle') return
 		saveState = 'deleting'
@@ -322,30 +302,25 @@ export function AccountValuesRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!valuesRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountValues', href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		status = 'ready'
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
-	}
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const latchKey = getDataLatchKey(currentHref)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadValues)
+		const snapshot = valuesData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
+			if (messageTone === 'error') setMessage(null)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			setMessage(snapshot.error.message, 'error')
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const selection = valuesRoute.getSelection(currentHref)
 		syncEditorToSelection(selection)
@@ -356,14 +331,14 @@ export function AccountValuesRoute(handle: Handle) {
 		const isLoadingSelection =
 			selection.selectedId != null &&
 			(detail == null || detail.id !== selection.selectedId) &&
-			needsLoad
+			pending
 		const showEditor =
 			selection.selectedId != null && detail != null && !isLoadingSelection
 		const showValueNotFound =
 			selection.selectedId != null &&
 			detail == null &&
 			status === 'ready' &&
-			!needsLoad
+			!pending
 		const selectedLabel = detail?.name ?? selection.selectedId ?? 'Value'
 
 		const monospaceValueCss = {
@@ -374,7 +349,7 @@ export function AccountValuesRoute(handle: Handle) {
 		}
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Values"
 					description="Leftover named rows from an older storage model. New work uses secrets and package storage."

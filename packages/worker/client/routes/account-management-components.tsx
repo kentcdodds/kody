@@ -16,6 +16,7 @@ import {
 	layoutMaxWidths,
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
+import { renderRoutePendingStatus } from '#client/route-data.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 
 /*
@@ -146,6 +147,14 @@ type AccountManagementShellProps = {
 	 * pages whose forms read better on a narrower measure.
 	 */
 	maxWidth?: string
+	/**
+	 * The route is refetching this location while its last good content stays
+	 * on screen (`createRouteData` snapshot `pending` with data). Marks the
+	 * shell `aria-busy` and announces it to assistive tech without moving
+	 * layout. Leave unset on the cold path where the route shows its own
+	 * loading copy.
+	 */
+	busy?: boolean
 	children: AccountManagementSlot
 }
 
@@ -162,6 +171,7 @@ export function AccountManagementShell(
 	return () => (
 		<section
 			data-account-shell
+			aria-busy={handle.props.busy ? 'true' : undefined}
 			mix={css({
 				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
@@ -220,6 +230,7 @@ export function AccountManagementShell(
 					: {}),
 			})}
 		>
+			{handle.props.busy ? renderRoutePendingStatus() : null}
 			{handle.props.children}
 		</section>
 	)

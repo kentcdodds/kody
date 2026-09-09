@@ -1,4 +1,43 @@
-import { expect, test } from './playwright-utils.ts'
+import {
+	expectSingleCommitTransition,
+	observeMainTransitions,
+	readMainTransitions,
+} from './main-transitions.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
+
+test('docs guide switches keep the current article on screen until the next one is ready (no loading flash)', async ({
+	page,
+}) => {
+	await page.context().clearCookies()
+	await page.goto('/docs/memory')
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Shared memory' }),
+	).toBeVisible()
+
+	const docRequests: Array<string> = []
+	page.on('request', (request) => {
+		if (request.url().includes('/docs/') && request.url().endsWith('.json')) {
+			docRequests.push(new URL(request.url()).pathname)
+		}
+	})
+
+	await observeMainTransitions(page)
+	const sidebar = page.getByRole('navigation', { name: 'Docs' }).first()
+	await sidebar.getByRole('link', { name: 'Secrets', exact: true }).click()
+	await expect(page).toHaveURL(/\/docs\/secrets$/)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Secrets' }),
+	).toBeVisible()
+
+	expectSingleCommitTransition(await readMainTransitions(page), {
+		fromHeading: 'Shared memory',
+		toHeading: 'Secrets',
+	})
+	// The router preloads the destination once; the route must not refetch
+	// the payload it was just handed (that refetch was the loading flash).
+	expect(docRequests).toEqual(['/docs/secrets.json'])
+})
 
 test('docs site: header says Docs, /docs opens the introduction with a sidebar, and legacy /guides redirects', async ({
 	page,

@@ -27,10 +27,6 @@ export type TokenExchangeStyleOption =
 	| 'basic-json'
 	| 'basic-form'
 
-export function isAdminPlatformIntegrationsPath(href: string) {
-	return platformIntegrationsRoute.isRoutePath(href)
-}
-
 export function readSearchFilter(href: string) {
 	return new URL(href, 'http://localhost').searchParams.get('q')?.trim() ?? ''
 }

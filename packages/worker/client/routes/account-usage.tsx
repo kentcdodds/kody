@@ -7,13 +7,8 @@ import {
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import {
-	type AccountStatus,
-	readJson,
-} from '#client/routes/account-approval-shared.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
+import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -40,7 +35,6 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const usageApiPath = '/account/usage.json'
-const usagePath = '/account/usage'
 const billingPath = '/account/billing'
 
 const entitlementGroupOrder: Array<
@@ -147,10 +141,6 @@ function usageProgressPercent(item: AccountUsageEntitlementConsumption) {
 	return Math.min(100, Math.round(item.percentOfLimit * 100))
 }
 
-function isUsagePath(href: string) {
-	return new URL(href, 'http://localhost').pathname === usagePath
-}
-
 function groupEntitlementRows(rows: Array<AccountUsageEntitlementConsumption>) {
 	const grouped = new Map<
 		AccountUsageEntitlementConsumption['group'],
@@ -217,70 +207,29 @@ export async function accountUsageRouteLoader(
 }
 
 export function AccountUsageRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
-	let data: AccountUsageLoaderData | null = null
-	let message: string | null = null
-	const loadLatch = createRouteLoadLatch()
-
-	function applyPayload(payload: AccountUsageLoaderData) {
-		data = payload
-		status = 'ready'
-		message = null
-	}
-
-	async function loadUsage(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
+	const usageData = createRouteData({
+		key: 'accountUsage',
+		async load(_href, signal) {
 			const response = await fetch(usageApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountUsageLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load usage.')
 			}
-			applyPayload(payload)
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message = error instanceof Error ? error.message : 'Unable to load usage.'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!isUsagePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountUsage', href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		loadLatch.markLoaded(href)
-		return true
-	}
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadUsage)
-		}
-
-		const usage = status === 'ready' ? data : null
+		const snapshot = usageData.read(handle, currentHref)
+		const usage = snapshot.data
+		const pending = snapshot.kind === 'pending'
+		const message = snapshot.error?.message ?? null
 		const groupedRows = usage
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
@@ -289,7 +238,7 @@ export function AccountUsageRoute(handle: Handle) {
 			: null
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && usage !== null}>
 				<AccountPageHeader
 					title="Usage"
 					description="Plan limits, current consumption, and what counts toward each resource."
@@ -300,7 +249,7 @@ export function AccountUsageRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				{status === 'loading' ? (
+				{pending && usage === null ? (
 					<p mix={css(descriptionCss)}>Loading usage…</p>
 				) : null}
 				{usage ? (

@@ -1,8 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	type LiveRunItem,
@@ -13,7 +12,6 @@ import {
 	adminCodemodsRunApiPath,
 	adminCodemodsRunStopApiPath,
 	formatSummaryCounts,
-	isAdminCodemodsPath,
 	maxRunSteps,
 	mergeSummaryCounts,
 	parseCommaSeparatedIds,
@@ -51,15 +49,32 @@ import {
 const selectCss = getSelectCss()
 
 export function AdminCodemodsRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let codemods: Array<AdminCodemodListItem> = []
 	let runs: Array<AdminCodemodRunListItem> = []
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
-	let loadRequestId = 0
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminCodemodsLoaderData | null = null
+	let appliedError: Error | null = null
+	const codemodsData = createRouteData({
+		key: 'adminCodemods',
+		async load(_href, signal) {
+			const response = await fetch(adminCodemodsApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error('You do not have permission to view package codemods.')
+			}
+			const payload = await readJson<AdminCodemodsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load package codemods.')
+			}
+			return payload
+		},
+	})
 
 	let selectedCodemodId = ''
 	let selectedMode: RunMode = 'scan'
@@ -90,54 +105,8 @@ export function AdminCodemodsRoute(handle: Handle) {
 		) {
 			selectedCodemodId = codemods[0]?.id ?? ''
 		}
-		status = 'ready'
 		message = null
 		messageTone = 'info'
-	}
-
-	async function loadCodemods() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(adminCodemodsApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view package codemods.'
-				messageTone = 'error'
-				lastFailedHref = href
-				handle.update()
-				return
-			}
-			const payload = await readJson<AdminCodemodsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load package codemods.')
-			}
-			applyData(payload)
-			lastLoadedHref = href
-			lastFailedHref = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load package codemods.'
-			messageTone = 'error'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
 	}
 
 	async function refreshRuns() {
@@ -446,27 +415,23 @@ export function AdminCodemodsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const routeData = isAdminCodemodsPath(currentHref)
-			? tryConsumeRouteLoaderData(handle, 'adminCodemods', currentHref)
-			: undefined
-		if (routeData) {
-			applyData(routeData)
-			lastLoadedHref = currentHref
-			lastFailedHref = null
+		const snapshot = codemodsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyData(snapshot.data)
 		}
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !routeData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadCodemods)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const isRunning = runPhase === 'running'
 		const canMutate = !isRunning && status === 'ready'
@@ -476,7 +441,7 @@ export function AdminCodemodsRoute(handle: Handle) {
 			pendingConfirmKey === getConfirmKey('revert-form', selectedCodemodId)
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin codemods"
 					description="Scan, dry-run, apply, and revert package codemods across the fleet."

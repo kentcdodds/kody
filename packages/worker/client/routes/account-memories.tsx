@@ -2,10 +2,8 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -169,14 +167,32 @@ function formatOptional(value: string | null | undefined) {
 }
 
 export function AccountMemoriesRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let memories: Array<AccountMemoryListItem> = []
 	let selectedMemory: AccountMemoryDetail | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
 	let deleteMode: DeleteMode = null
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountMemoriesLoaderData | null = null
+	let appliedError: Error | null = null
+	const memoriesData = createRouteData({
+		key: 'accountMemories',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildMemoriesApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountMemoriesLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load memories.')
+			}
+			return payload
+		},
+	})
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
@@ -213,42 +229,6 @@ export function AccountMemoriesRoute(handle: Handle) {
 		memories = payload.memories
 		selectedMemory = payload.selectedMemory
 		deleteMode = null
-	}
-
-	async function loadMemories(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildMemoriesApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountMemoriesLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load memories.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			applyPayload(payload)
-			if (messageTone === 'error') setMessage(null)
-			status = 'ready'
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			setMessage(
-				error instanceof Error ? error.message : 'Unable to load memories.',
-				'error',
-			)
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
 	}
 
 	async function postDelete(input: { memoryId: string; force: boolean }) {
@@ -298,30 +278,25 @@ export function AccountMemoriesRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!memoriesRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountMemories', href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		status = 'ready'
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
-	}
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadMemories)
+		const snapshot = memoriesData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
+			if (messageTone === 'error') setMessage(null)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			setMessage(snapshot.error.message, 'error')
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = memoriesRoute.getSelection(currentHref)
 		const search = readSearchFilter(currentHref)
@@ -334,7 +309,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 		const waitingForDetail =
 			selection.selectedId != null &&
 			!detailMemory &&
-			(needsLoad || listMatch != null || status === 'loading')
+			(pending || listMatch != null || status === 'loading')
 		const showMemoryNotFound =
 			selection.selectedId != null &&
 			!detailMemory &&
@@ -342,7 +317,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 			status === 'ready'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Memories"
 					description="Long-term memories Kody stores for your account. Agents create and update them; you can browse, filter, and delete here."

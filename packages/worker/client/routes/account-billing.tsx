@@ -6,9 +6,7 @@ import {
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -58,7 +56,6 @@ const jsonRequestHeaders = {
 }
 const billingCancellationFeedbackApiPath =
 	'/account/billing/cancellation-feedback.json'
-const billingPath = '/account/billing'
 const billingPortalPath = '/account/billing/portal'
 
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
@@ -67,10 +64,6 @@ type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
 
 const multipleSubscriptionsMessage =
 	'You have more than one active Stripe subscription, so plan changes are handled in the Stripe portal. Opening Stripe…'
-
-function isBillingPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === billingPath
-}
 
 /** Stripe missing → "None"; manual/effective compatibility missing → "Free". */
 function formatPlanLabel(
@@ -203,8 +196,6 @@ export async function accountBillingRouteLoader(
 }
 
 export function AccountBillingRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
-	let data: AccountBillingLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
 	let checkoutPending: CheckoutPending = null
@@ -216,11 +207,27 @@ export function AccountBillingRoute(handle: Handle) {
 		standard: 'month',
 		pro: 'month',
 	}
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountBillingLoaderData | null = null
+	let appliedError: Error | null = null
+	const billingData = createRouteData({
+		key: 'accountBilling',
+		async load(_href, signal) {
+			const response = await fetch(billingApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountBillingLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load billing.')
+			}
+			return payload
+		},
+	})
 
 	function applyPayload(payload: AccountBillingLoaderData) {
-		data = payload
-		status = 'ready'
 		message = payload.error ?? payload.notice ?? null
 		messageTone = payload.error ? 'error' : 'info'
 	}
@@ -305,61 +312,27 @@ export function AccountBillingRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function loadBilling(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
-			const response = await fetch(billingApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountBillingLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load billing.')
-			}
-			applyPayload(payload)
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load billing.'
-			messageTone = 'error'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!isBillingPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountBilling', href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadBilling)
+		const snapshot = billingData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
-		const billing = status === 'ready' ? data : null
+		const billing = snapshot.data
 		const subscriptionStatus = billing?.subscriptionStatus?.trim() || null
 		const statusInfo = subscriptionStatus
 			? describeSubscriptionStatus(subscriptionStatus)
@@ -387,7 +360,10 @@ export function AccountBillingRoute(handle: Handle) {
 			: []
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell
+				maxWidth={layoutMaxWidths.content}
+				busy={pending && appliedPayload !== null}
+			>
 				<AccountPageHeader
 					title="Billing"
 					description="View your plan, subscribe to Standard or Pro, manage your Stripe subscription, and share your referral link."

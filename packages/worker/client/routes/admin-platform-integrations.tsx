@@ -3,9 +3,8 @@ import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { replaceLocation } from '#client/replace-location.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { renderIntegrationForm } from '#client/routes/admin-platform-integrations-form.tsx'
 import {
@@ -16,7 +15,6 @@ import {
 	filterApps,
 	getCurrentSearch,
 	getDataKey,
-	isAdminPlatformIntegrationsPath,
 	parseExtraAuthorizeParams,
 	platformIntegrationsRoute,
 	readSearchFilter,
@@ -39,33 +37,52 @@ import {
 import {
 	type AdminPlatformIntegrationApp,
 	type AdminPlatformIntegrationsLoaderData,
-	type AppLoaderData,
 } from '#universal/loader-data.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
 export function AdminPlatformIntegrationsRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let apps: Array<AdminPlatformIntegrationApp> = []
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let actionState: ActionState = 'idle'
 	/** Slug of the row an action is running against, for per-row labels. */
 	let pendingSlug: string | null = null
-	let lastLoadedDataKey = ''
-	let loadingDataKey: string | null = null
-	let lastFailedDataKey: string | null = null
-	let loadRequestId = 0
 	let pendingLogoBase64: string | undefined = undefined
 	let removeLogoChecked = false
 	/** Bumped after a successful edit save so uncontrolled fields remount. */
 	let formRevision = 0
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminPlatformIntegrationsLoaderData | null = null
+	let appliedError: Error | null = null
+	const integrationsData = createRouteData({
+		key: 'adminPlatformIntegrations',
+		locationKey: getDataKey,
+		async load(_href, signal) {
+			const response = await fetch(adminPlatformIntegrationsApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error(
+					'You do not have permission to view platform integrations.',
+				)
+			}
+			const payload =
+				await readJson<AdminPlatformIntegrationsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load platform integrations.')
+			}
+			return payload
+		},
+	})
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 
 	function applyData(payload: AdminPlatformIntegrationsLoaderData) {
 		apps = payload.apps
-		status = 'ready'
 		message = null
 		messageTone = 'info'
 	}
@@ -79,53 +96,6 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 		resetFormState()
 		message = null
 		messageTone = 'info'
-	}
-
-	async function loadPlatformIntegrations() {
-		const href = readCurrentRouterHref(handle)
-		const dataKey = getDataKey(href)
-		loadingDataKey = dataKey
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(adminPlatformIntegrationsApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view platform integrations.'
-				messageTone = 'error'
-				lastFailedDataKey = dataKey
-				handle.update()
-				return
-			}
-			const payload =
-				await readJson<AdminPlatformIntegrationsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load platform integrations.')
-			}
-			applyData(payload)
-			lastLoadedDataKey = dataKey
-			lastFailedDataKey = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load platform integrations.'
-			messageTone = 'error'
-			lastFailedDataKey = dataKey
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingDataKey = null
-		}
 	}
 
 	async function submitAdminAction(
@@ -368,36 +338,23 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const currentDataKey = getDataKey(currentHref)
-		const routeData = isAdminPlatformIntegrationsPath(currentHref)
-			? (tryConsumeRouteLoaderData(
-					handle,
-					'adminPlatformIntegrations' as keyof AppLoaderData,
-					currentHref,
-				) as AdminPlatformIntegrationsLoaderData | undefined)
-			: undefined
-		if (routeData) {
-			applyData(routeData)
-			lastLoadedDataKey = currentDataKey
-			lastFailedDataKey = null
+		const snapshot = integrationsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyData(snapshot.data)
 		}
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !routeData
-		const needsLoad =
-			(status === 'loading' ||
-				currentDataKey !== lastLoadedDataKey ||
-				needsStaleRefresh) &&
-			currentDataKey !== lastFailedDataKey &&
-			loadingDataKey !== currentDataKey
-		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			// Keep the table mounted during search/selection navigations; only
-			// show the page-level loading line on the first fetch.
-			if (lastLoadedDataKey === '') {
-				status = 'loading'
-			}
-			loadingDataKey = currentDataKey
-			handle.queueTask(loadPlatformIntegrations)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const selection = platformIntegrationsRoute.getSelection(currentHref)
 		const search = readSearchFilter(currentHref)
@@ -413,13 +370,13 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			editingApp == null &&
 			status === 'ready'
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin platform integrations"
 					description="Manage operator-provisioned OAuth apps stored in the platform_oauth_apps table."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' && lastLoadedDataKey === '' ? (
+				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading platform integrations…
 					</p>
@@ -429,10 +386,10 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				{status === 'ready' || lastLoadedDataKey !== '' ? (
+				{status === 'ready' || appliedPayload !== null ? (
 					<RecordTable
 						mode="expand"
-						busy={status === 'loading'}
+						busy={pending}
 						ariaLabel="Platform integrations"
 						selectedId={selection.selectedId}
 						createRow={

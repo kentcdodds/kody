@@ -2,9 +2,8 @@ import { type Handle, css } from 'remix/ui'
 import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
 import { AccountAvatarEditor } from '#client/routes/account-avatar-editor.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type OnboardingChecklistLoaderData,
 	type AccountProfileLoaderData,
@@ -33,7 +32,10 @@ import {
 	accountProfileApiPath,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
-import { fetchAccountPagePayloads } from '#client/routes/account-page-data.ts'
+import {
+	type AccountPagePayloads,
+	fetchAccountPagePayloads,
+} from '#client/routes/account-page-data.ts'
 import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
 import { renderAccountLogoutPanel } from '#client/routes/account-logout-panel.tsx'
 import {
@@ -69,7 +71,6 @@ function isAccountPath(href: string) {
 }
 
 export function AccountRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let saveStatus: 'idle' | 'saving' = 'idle'
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
@@ -100,55 +101,72 @@ export function AccountRoute(handle: Handle) {
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
 	let onboardingChecklist: OnboardingChecklistLoaderData | null = null
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountPagePayloads | null = null
+	let appliedError: Error | null = null
+	const accountData = createRouteData<'accountProfile', AccountPagePayloads>({
+		consume(handle, href) {
+			if (!isAccountPath(href)) return null
+			const accountProfile = tryConsumeRouteLoaderData(
+				handle,
+				'accountProfile',
+				href,
+			)
+			if (!accountProfile) return null
+			const accountConnections = tryConsumeRouteLoaderData(
+				handle,
+				'accountConnections',
+				href,
+			)
+			if (!accountConnections) return null
+			const accountConnectedAgents = tryConsumeRouteLoaderData(
+				handle,
+				'accountConnectedAgents',
+				href,
+			)
+			if (!accountConnectedAgents) return null
+			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
+			return {
+				accountProfile,
+				accountConnections,
+				accountConnectedAgents,
+				onboarding: onboarding ?? null,
+			}
+		},
+		async load(href, signal) {
+			const search = new URL(href, 'http://localhost').search
+			const result = await fetchAccountPagePayloads(search, signal)
+			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
+			return result.payloads
+		},
+	})
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		needsOnboarding = payload?.needsOnboarding === true
 		onboardingChecklist = payload?.checklist ?? null
 	}
 
-	async function loadAccountProfile(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
-			const search = new URL(href, 'http://localhost').search
-			const result = await fetchAccountPagePayloads(search, signal)
-			if (signal.aborted) return
-			if (result.kind === 'unauthorized') {
-				window.location.assign('/login')
-				return
-			}
-			const {
-				accountProfile: payload,
-				accountConnections: connectionsPayload,
-				accountConnectedAgents: connectedAgentsPayload,
-				onboarding,
-			} = result.payloads
-			applyOnboardingPayload(onboarding)
-			accountConnections.applyPayload(connectionsPayload)
-			accountConnectedAgents.applyPayload(connectedAgentsPayload)
-			email = payload.email
-			emailVerified = payload.emailVerified
-			emailVerificationDelivery = payload.emailVerificationDelivery ?? null
-			username = payload.username
-			if (!usernameSaveError) {
-				draftUsername = payload.username
-				message = null
-				messageTone = 'info'
-			}
-			applyProfileFields(payload)
-			accountEmailClaims.applyCurrentEmail(payload.email)
-			status = 'ready'
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load your account.'
-			messageTone = 'error'
-			loadLatch.markFailed(href)
-			handle.update()
+	function applyPayload(payloads: AccountPagePayloads) {
+		const {
+			accountProfile: payload,
+			accountConnections: connectionsPayload,
+			accountConnectedAgents: connectedAgentsPayload,
+			onboarding,
+		} = payloads
+		applyOnboardingPayload(onboarding)
+		accountConnections.applyPayload(connectionsPayload)
+		accountConnectedAgents.applyPayload(connectedAgentsPayload)
+		email = payload.email
+		emailVerified = payload.emailVerified
+		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
+		username = payload.username
+		if (!usernameSaveError) {
+			draftUsername = payload.username
+			message = null
+			messageTone = 'info'
 		}
+		applyProfileFields(payload)
+		accountEmailClaims.applyCurrentEmail(payload.email)
 	}
 
 	function applyProfileFields(payload: AccountProfileLoaderData) {
@@ -466,59 +484,25 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isAccountPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountProfile', href)
-		if (!routeData) return false
-		const connectionsData = tryConsumeRouteLoaderData(
-			handle,
-			'accountConnections',
-			href,
-		)
-		if (!connectionsData) return false
-		email = routeData.email
-		emailVerified = routeData.emailVerified
-		emailVerificationDelivery = routeData.emailVerificationDelivery ?? null
-		username = routeData.username
-		if (!usernameSaveError) {
-			draftUsername = routeData.username
-			message = null
-			messageTone = 'info'
-		}
-		applyProfileFields(routeData)
-		accountEmailClaims.applyCurrentEmail(routeData.email)
-		accountConnections.applyPayload(connectionsData)
-		const connectedAgentsData = tryConsumeRouteLoaderData(
-			handle,
-			'accountConnectedAgents',
-			href,
-		)
-		if (!connectedAgentsData) return false
-		accountConnectedAgents.applyPayload(connectedAgentsData)
-		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
-		if (onboardingData) {
-			applyOnboardingPayload(onboardingData)
-		}
-		status = 'ready'
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// href change; the stale marker forces the fallback refetch.
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadAccountProfile)
+		const snapshot = accountData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		// Apply the OAuth flash on both SSR and client from the URL so the
 		// first client render matches the server HTML. A client-only message
 		// mismatched SSR and duplicated the connections list during hydration.
@@ -543,7 +527,7 @@ export function AccountRoute(handle: Handle) {
 		const usernameFieldError = usernameSaveError ?? liveUsernameFormatError
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Account"
 					description="Manage your profile, security settings, connected accounts, and data."

@@ -2,10 +2,8 @@ import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -64,12 +62,7 @@ const clampedCellCss = css(recordCellClamp(28))
 
 type MessageTone = 'info' | 'error'
 
-function tryConsumeAccountJobsLoaderData(handle: Handle, href: string) {
-	return tryConsumeRouteLoaderData(handle, 'accountJobs', href)
-}
-
 export function AccountJobsRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let username = ''
 	let jobs: Array<AccountJobListItem> = []
@@ -91,8 +84,27 @@ export function AccountJobsRoute(handle: Handle) {
 	}
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountJobsLoaderData | null = null
+	let appliedError: Error | null = null
 	const deleteJobCheck = createDoubleCheck(handle)
+	const jobsData = createRouteData({
+		key: 'accountJobs',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildJobsApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountJobsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load scheduled jobs.')
+			}
+			return payload
+		},
+	})
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
@@ -138,44 +150,6 @@ export function AccountJobsRoute(handle: Handle) {
 		selectedJob = payload.selectedJob
 		applyRetention(payload.retention)
 		deleteJobCheck.reset()
-	}
-
-	async function loadJobs(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildJobsApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountJobsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load scheduled jobs.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			applyPayload(payload)
-			if (messageTone === 'error') setMessage(null)
-			status = 'ready'
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			setMessage(
-				error instanceof Error
-					? error.message
-					: 'Unable to load scheduled jobs.',
-				'error',
-			)
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
 	}
 
 	async function postAction(input: {
@@ -226,30 +200,25 @@ export function AccountJobsRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!jobsRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeAccountJobsLoaderData(handle, href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		status = 'ready'
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
-	}
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadJobs)
+		const snapshot = jobsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
+			if (messageTone === 'error') setMessage(null)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			setMessage(snapshot.error.message, 'error')
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = jobsRoute.getSelection(currentHref)
 		const search = readJobsSearchFilter(currentHref)
@@ -273,7 +242,7 @@ export function AccountJobsRoute(handle: Handle) {
 		const waitingForDetail =
 			selection.selectedId != null &&
 			!detail &&
-			(needsLoad || listMatch != null || status === 'loading')
+			(pending || listMatch != null || status === 'loading')
 		const showJobNotFound =
 			selection.selectedId != null &&
 			!detail &&
@@ -281,7 +250,7 @@ export function AccountJobsRoute(handle: Handle) {
 			status === 'ready'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Jobs"
 					description="Inspect scheduled package jobs, toggle kill switch or Preserve, and run jobs now. Completed one-off jobs are cleaned up automatically after your retention windows; longer retention uses more scheduled job slots and storage."

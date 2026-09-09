@@ -284,7 +284,11 @@ full examples.
   Node apps. Do not use it on the origin Worker; Kody owns `renderToStream` plus
   Workers Assets
 - `remix/spa` — client-only `run(router)` for apps with no server document. Kody
-  keeps a custom client router on top of server-rendered HTML
+  keeps a custom client router on top of server-rendered HTML: it runs the
+  destination's loader before committing the URL, and route components read the
+  payload through `createRouteData` (`#client/route-data.tsx`) so the previous
+  page stays until the next one is ready — see
+  `docs/contributing/no-flash-navigation.md` before adding a client route
 - `remix/headers` — typed header parsers and builders. Use when reading
   `Accept`, `Cookie`, or setting `CacheControl`, `Vary`, etc., instead of
   hand-formatting strings

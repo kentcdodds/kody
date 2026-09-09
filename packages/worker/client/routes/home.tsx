@@ -1,9 +1,11 @@
 import { type Handle, type RemixNode } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import {
 	fetchOnboardingPayload,
 	type OnboardingPayload,
@@ -145,19 +147,64 @@ export async function homeRouteLoader(
 	return result
 }
 
+type HomePagePayloads = {
+	onboarding: OnboardingPayload | null
+	codeRuns: { window: PublicCodeRunsWindow | null } | null
+	walkthroughHosts?: WalkthroughHostPick
+	signupMode?: SignupMode
+}
+
 export function HomeRoute(handle: Handle) {
 	let loggedIn = false
 	let discoveryPrompt = ''
 	let codeRunsWindow: PublicCodeRunsWindow | null = null
-	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	let walkthroughHosts: WalkthroughHostPick | null = null
 	let signupMode: SignupMode = 'invite'
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: HomePagePayloads | null = null
+	const homeData = createRouteData<'onboarding', HomePagePayloads>({
+		consume(handle, href) {
+			if (!isHomePath(href)) return null
+			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
+			const codeRuns = tryConsumeRouteLoaderData(handle, 'codeRuns', href)
+			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
+			const signupModeData = tryConsumeRouteLoaderData(
+				handle,
+				'signupMode',
+				href,
+			)
+			// The optional keys stand on their own (a document may embed the
+			// ticker window without an onboarding payload); apply them even
+			// when the required key is missing and the fallback fetch runs.
+			if (hosts) walkthroughHosts = hosts
+			applyCodeRunsPayload(codeRuns ?? null)
+			if (signupModeData) signupMode = signupModeData
+			if (!onboarding) return null
+			return {
+				onboarding,
+				codeRuns: codeRuns ?? null,
+				walkthroughHosts: hosts,
+				signupMode: signupModeData,
+			}
+		},
+		async load(_href, signal) {
+			const [onboarding, codeRuns, authConfig] = await Promise.all([
+				fetchOnboardingPayload(signal),
+				fetchCodeRunsPayload(signal),
+				fetchPublicAuthConfig(signal),
+			])
+			return {
+				onboarding,
+				codeRuns,
+				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
+				signupMode: parseSignupMode(authConfig?.signupMode),
+			}
+		},
+	})
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
 		loggedIn = payload?.loggedIn === true
 		discoveryPrompt = payload?.discoveryPrompt ?? ''
-		onboardingStatus = 'ready'
 	}
 
 	function applyCodeRunsPayload(
@@ -167,67 +214,30 @@ export function HomeRoute(handle: Handle) {
 		codeRunsWindow = payload.window
 	}
 
-	async function loadHomePayload(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
-			const [payload, codeRuns, authConfig] = await Promise.all([
-				fetchOnboardingPayload(signal),
-				fetchCodeRunsPayload(signal),
-				fetchPublicAuthConfig(signal),
-			])
-			if (signal.aborted) return
-			applyOnboardingPayload(payload)
-			applyCodeRunsPayload(codeRuns)
-			signupMode = parseSignupMode(authConfig?.signupMode)
-			if (!walkthroughHosts) walkthroughHosts = pickWalkthroughHosts()
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			onboardingStatus = 'ready'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!isHomePath(href)) return false
-		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
-		const codeRunsData = tryConsumeRouteLoaderData(handle, 'codeRuns', href)
-		const hostsData = tryConsumeRouteLoaderData(
-			handle,
-			'walkthroughHosts',
-			href,
-		)
-		const signupModeData = tryConsumeRouteLoaderData(handle, 'signupMode', href)
-		if (hostsData) walkthroughHosts = hostsData
-		if (codeRunsData) applyCodeRunsPayload(codeRunsData)
-		if (signupModeData) signupMode = signupModeData
-		if (!onboardingData) return false
-		applyOnboardingPayload(onboardingData)
-		loadLatch.markLoaded(href)
-		return true
+	function applyHomePayload(payload: HomePagePayloads) {
+		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
+		applyCodeRunsPayload(payload.codeRuns)
+		if (payload.signupMode) signupMode = payload.signupMode
+		applyOnboardingPayload(payload.onboarding)
 	}
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			onboardingStatus = 'loading'
-			handle.queueTask(loadHomePayload)
+		const snapshot = homeData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyHomePayload(snapshot.data)
 		}
+		const pending = snapshot.kind === 'pending'
+		const busy = pending && appliedPayload !== null
 
-		const isSignedIn = onboardingStatus === 'ready' && loggedIn
+		// A failed fallback fetch still settles the door for a visitor.
+		const onboardingReady = appliedPayload !== null || snapshot.kind === 'error'
+		const isSignedIn = onboardingReady && loggedIn
 
 		return (
-			<div>
+			<div aria-busy={busy ? 'true' : undefined}>
+				{busy ? renderRoutePendingStatus() : null}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
 						{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>

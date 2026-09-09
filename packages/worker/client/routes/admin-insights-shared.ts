@@ -41,10 +41,6 @@ export const authCategoryColors: Record<string, string> = {
 	oauth: chartColor.violet,
 }
 
-export function isAdminInsightsPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/insights'
-}
-
 /** `2026-06-29` -> `Jun 29` */
 export function formatDayLabel(dayKey: string) {
 	const monthIndex = Number(dayKey.slice(5, 7)) - 1

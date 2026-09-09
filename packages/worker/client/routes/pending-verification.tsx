@@ -1,9 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { type AccountStatus } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementHeader,
@@ -16,10 +14,7 @@ import {
 	requestResendVerification,
 } from '#client/routes/email-verification-prompt.tsx'
 import { resolveContinueVerificationFeedback } from '#client/routes/pending-verification-continue.ts'
-import {
-	pendingVerificationPath,
-	resolvePostVerificationRedirect,
-} from '#client/routes/pending-verification-path.ts'
+import { resolvePostVerificationRedirect } from '#client/routes/pending-verification-path.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -34,10 +29,6 @@ import {
 } from '#universal/email-verification-delivery.ts'
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
-
-function isPendingVerificationPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === pendingVerificationPath
-}
 
 function readPendingRedirectTo(handle: Handle) {
 	return normalizeRedirectTo(
@@ -78,55 +69,40 @@ export async function pendingVerificationRouteLoader(
 }
 
 export function PendingVerificationRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let email = ''
 	let emailVerificationDelivery: EmailVerificationDelivery | null = null
 	let message: string | null = null
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
-	const loadLatch = createRouteLoadLatch()
 	let deliveryPollScheduled = false
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: PendingVerificationLoaderData | null = null
+	let appliedError: Error | null = null
+	const pendingData = createRouteData({
+		key: 'pendingVerification',
+		async load(_href, signal) {
+			const session = await fetchSessionInfo(signal)
+			if (!session) {
+				return routeDataRedirect(buildLoginRedirectForPending(handle))
+			}
+			if (session.emailVerified) {
+				return routeDataRedirect(
+					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
+				)
+			}
+			return {
+				ok: true as const,
+				email: session.email,
+				emailVerificationDelivery: session.emailVerificationDelivery,
+			}
+		},
+	})
 
 	function applyPayload(payload: PendingVerificationLoaderData) {
 		email = payload.email
 		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
-		status = 'ready'
 		message = null
-	}
-
-	async function loadPending(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
-			const session = await fetchSessionInfo(signal)
-			if (signal.aborted) return
-			if (!session) {
-				window.location.assign(buildLoginRedirectForPending(handle))
-				return
-			}
-			if (session.emailVerified) {
-				window.location.assign(
-					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
-				)
-				return
-			}
-			applyPayload({
-				ok: true,
-				email: session.email,
-				emailVerificationDelivery: session.emailVerificationDelivery,
-			})
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load verification status.'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
 	}
 
 	async function pollVerificationDelivery() {
@@ -198,32 +174,24 @@ export function PendingVerificationRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isPendingVerificationPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'pendingVerification',
-			href,
-		)
-		if (!routeData) return false
-		applyPayload(routeData)
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadPending)
+		const snapshot = pendingData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		if (
 			status === 'ready' &&
 			!deliveryPollScheduled &&
@@ -238,7 +206,10 @@ export function PendingVerificationRoute(handle: Handle) {
 		}
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell
+				maxWidth={layoutMaxWidths.content}
+				busy={pending && appliedPayload !== null}
+			>
 				<AccountManagementHeader
 					title="Check your email"
 					description="Your Kody account is ready. Verify your email before connecting an AI agent or using MCP."

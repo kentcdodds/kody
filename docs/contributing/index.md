@@ -41,6 +41,8 @@ style, tests, MCP capabilities, and runtime architecture.
   (`typescript/no-explicit-any`, `TODO`/`FIXME`/`HACK`, file-size ratchet,
   vanished-copy `kody-custom/no-tautological-absence`, knip)
 - [Remix skills and page checklist](./remix.md), [frames](./frames.md)
+- [No-flash navigation](./no-flash-navigation.md) (load-before-commit router,
+  `createRouteData` keeps the previous page until the next one is ready)
 - [Cloudflare Agents SDK usage](./cloudflare-agents-sdk.md)
 
 ## Testing

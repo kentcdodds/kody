@@ -6,9 +6,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -50,12 +48,7 @@ type AccountPasskeysPayload = {
 }
 
 const passkeysApiPath = '/account/passkeys.json'
-const passkeysPath = '/account/passkeys'
 const webauthnRegistrationPath = '/webauthn/registration'
-
-function isPasskeysPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === passkeysPath
-}
 
 export async function accountPasskeysRouteLoader(
 	_url: URL,
@@ -83,48 +76,31 @@ function describeDeviceType(deviceType: string) {
 }
 
 export function AccountPasskeysRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionStatus: 'idle' | 'busy' = 'idle'
 	let passkeys: Array<PasskeyListItem> = []
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
 	let renamingPasskeyId: string | null = null
 	let renameDraft = ''
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadPasskeys(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountPasskeysPayload | null = null
+	let appliedError: Error | null = null
+	const passkeysData = createRouteData({
+		key: 'accountPasskeys',
+		async load(_href, signal) {
 			const response = await fetch(passkeysApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountPasskeysPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load passkeys.')
 			}
-			passkeys = payload.passkeys
-			status = 'ready'
-			message = null
-			messageTone = 'info'
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load passkeys.'
-			messageTone = 'error'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	async function handleRegisterPasskey() {
 		actionStatus = 'busy'
@@ -309,35 +285,34 @@ export function AccountPasskeysRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isPasskeysPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountPasskeys', href)
-		if (!routeData) return false
-		passkeys = routeData.passkeys
-		status = 'ready'
-		message = null
-		messageTone = 'info'
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadPasskeys)
+		const snapshot = passkeysData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			passkeys = snapshot.data.passkeys
+			message = null
+			messageTone = 'info'
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isBusy = actionStatus === 'busy'
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell
+				maxWidth={layoutMaxWidths.content}
+				busy={pending && appliedPayload !== null}
+			>
 				<AccountPageHeader
 					title="Passkeys"
 					description="Sign in with your device's screen lock, a hardware key, or a synced passkey instead of your password."

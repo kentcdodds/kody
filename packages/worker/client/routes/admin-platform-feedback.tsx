@@ -1,14 +1,12 @@
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { replaceLocation } from '#client/replace-location.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
-import { readRouterSearch } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -70,13 +68,6 @@ const untrustedTextCss = css({
 	overflowWrap: 'anywhere',
 	fontFamily: 'inherit',
 })
-
-function isAdminPlatformFeedbackPath(href: string) {
-	return (
-		new URL(href, 'http://localhost').pathname ===
-		routes.adminPlatformFeedback.href()
-	)
-}
 
 function readFilterState(href: string): FeedbackFilterState {
 	const url = new URL(href, 'http://localhost')
@@ -158,104 +149,57 @@ export async function adminPlatformFeedbackRouteLoader(
 }
 
 export function AdminPlatformFeedbackRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let data: AdminPlatformFeedbackLoaderData | null = null
 	let message: string | null = null
-	let loadRequestId = 0
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
-
-	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-
-	function applyData(payload: AdminPlatformFeedbackLoaderData, href: string) {
-		data = payload
-		status = 'ready'
-		message = null
-		lastLoadedHref = href
-		lastFailedHref = null
-	}
-
-	async function loadPlatformFeedback() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminPlatformFeedbackLoaderData | null = null
+	let appliedError: Error | null = null
+	const feedbackData = createRouteData({
+		key: 'adminPlatformFeedback',
+		async load(href, signal) {
 			const response = await fetch(
 				routes.adminPlatformFeedbackApi.href(null, {
-					searchParams: new URLSearchParams(readRouterSearch(handle)),
+					searchParams: new URL(href, 'http://localhost').searchParams,
 				}),
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
+					signal,
 				},
 			)
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign(routes.login.href())
-				return
-			}
+			if (response.status === 401) return routeDataRedirect(routes.login.href())
 			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view platform feedback.'
-				lastFailedHref = href
-				handle.update()
-				return
+				throw new Error('You do not have permission to view platform feedback.')
 			}
 			const payload = await readJson<AdminPlatformFeedbackLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load platform feedback.')
 			}
-			applyData(payload, href)
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load platform feedback.'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
-	}
+			return payload
+		},
+	})
 
-	function applyRouteLoaderData(href: string) {
-		if (!isAdminPlatformFeedbackPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'adminPlatformFeedback',
-			href,
-		)
-		if (!routeData) return false
-		applyData(routeData, href)
-		return true
-	}
-
-	let lastSeenHref = ''
+	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		if (currentHref !== lastSeenHref) {
-			lastSeenHref = currentHref
-			lastFailedHref = null
+		const snapshot = feedbackData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			data = snapshot.data
+			message = null
 		}
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadPlatformFeedback)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const selectedFeedback = data?.selectedFeedback ?? null
 		const selectedFeedbackId = readSelectedFeedbackId(currentHref)
@@ -268,14 +212,17 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 		const hasActiveFilters = Boolean(filters.status || filters.category)
 
 		return (
-			<AccountManagementShell maxWidth="min(100%, 92rem)">
+			<AccountManagementShell
+				maxWidth="min(100%, 92rem)"
+				busy={pending && appliedPayload !== null}
+			>
 				<AdminPageHeader
 					title="Platform feedback"
 					description="Read attributed feedback that users explicitly approved for admin review."
 					currentHref={currentHref}
 				/>
 
-				{status === 'loading' && lastLoadedHref === '' ? (
+				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading platform feedback…
 					</p>
@@ -311,7 +258,7 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 
 						<RecordTable
 							mode="expand"
-							busy={status === 'loading'}
+							busy={pending}
 							ariaLabel="Platform feedback queue"
 							selectedId={selectedFeedbackId}
 							countLabel={`${data.total} submission${data.total === 1 ? '' : 's'}`}

@@ -2,9 +2,12 @@ import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { discardRenderPrefetches } from '#client/intent-prefetch.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+	routeDataRedirect,
+} from '#client/route-data.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { type AccountStatus } from '#client/routes/account-approval-shared.ts'
 import {
@@ -67,6 +70,13 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
  */
 
 type OnboardingStep = OnboardingWizardStepNumber
+
+type OnboardingPagePayloads = {
+	onboarding: OnboardingPayload
+	onboardingAgentChooser?: OnboardingAgentChooserPick
+	/** Router/SSR snapshots merge into progress already seen; live fetches replace it. */
+	source: 'live' | 'snapshot'
+}
 
 function isOnboardingPath(href: string) {
 	return isOnboardingPagePath(new URL(href, 'http://localhost').pathname)
@@ -168,7 +178,40 @@ export function OnboardingRoute(handle: Handle) {
 	// Panel entrances only play for real step changes, never on the first
 	// paint — the page-open choreography belongs to the head's data-rise.
 	let panelAnimationArmed = false
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: OnboardingPagePayloads | null = null
+	let appliedError: Error | null = null
+	const onboardingData = createRouteData<'onboarding', OnboardingPagePayloads>({
+		locationKey: onboardingDataHref,
+		consume(handle, href) {
+			if (!isOnboardingPath(href)) return null
+			const chooserData = tryConsumeRouteLoaderData(
+				handle,
+				'onboardingAgentChooser',
+				href,
+			)
+			const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
+			if (!routeData) return null
+			return {
+				onboarding: routeData,
+				onboardingAgentChooser: chooserData,
+				source: 'snapshot',
+			}
+		},
+		async load(_href, signal) {
+			const redirectTo = readOnboardingRedirectTo(handle)
+			const payload = await fetchOnboardingPayload(signal)
+			if (!payload) {
+				throw new Error('Unable to load onboarding.')
+			}
+			if (payload.loggedIn && !payload.emailVerified) {
+				return routeDataRedirect(
+					resolveOnboardingPendingVerificationPath(redirectTo),
+				)
+			}
+			return { onboarding: payload, source: 'live' }
+		},
+	})
 
 	function applyPayload(
 		payload: OnboardingPayload,
@@ -308,36 +351,6 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
-	async function loadOnboarding(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		const redirectTo = readOnboardingRedirectTo(handle)
-		try {
-			const payload = await fetchOnboardingPayload(signal)
-			if (signal.aborted) return
-			if (!payload) {
-				throw new Error('Unable to load onboarding.')
-			}
-			if (payload.loggedIn && !payload.emailVerified) {
-				window.location.assign(
-					resolveOnboardingPendingVerificationPath(redirectTo),
-				)
-				return
-			}
-			applyPayload(payload, 'live')
-			flushPendingAdvanceToAccess(false)
-			if (!agentChooser) agentChooser = resolveOnboardingAgentChooser()
-			loadLatch.markLoaded(onboardingDataHref(href))
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load onboarding.'
-			loadLatch.markFailed(onboardingDataHref(href))
-			handle.update()
-		}
-	}
-
 	// Users typically keep this page open while their MCP client connects
 	// or a Step 2 first-search / second grant lands, so poll the same JSON
 	// endpoint until those signals arrive without a manual refresh.
@@ -400,46 +413,36 @@ export function OnboardingRoute(handle: Handle) {
 		}, handle.signal)
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isOnboardingPath(href)) return false
-		const chooserData = tryConsumeRouteLoaderData(
-			handle,
-			'onboardingAgentChooser',
-			href,
-		)
-		if (chooserData) {
-			rememberOnboardingAgentChooser(chooserData)
-			agentChooser = chooserData
-		}
-		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
-		if (!routeData) return false
-		if (routeData.loggedIn && !routeData.emailVerified) {
-			window.location.assign(
-				resolveOnboardingPendingVerificationPath(
-					readOnboardingRedirectTo(handle),
-				),
-			)
-			return true
-		}
-		applyPayload(routeData)
-		loadLatch.markLoaded(onboardingDataHref(href))
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		flushPendingAdvanceToAccess(true)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: onboardingDataHref(currentHref),
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadOnboarding)
+		const snapshot = onboardingData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			const { onboarding, onboardingAgentChooser, source } = snapshot.data
+			if (onboardingAgentChooser) {
+				rememberOnboardingAgentChooser(onboardingAgentChooser)
+				agentChooser = onboardingAgentChooser
+			}
+			if (onboarding.loggedIn && !onboarding.emailVerified) {
+				window.location.assign(
+					resolveOnboardingPendingVerificationPath(
+						readOnboardingRedirectTo(handle),
+					),
+				)
+			} else {
+				applyPayload(onboarding, source)
+				if (source === 'live' && !agentChooser) {
+					agentChooser = resolveOnboardingAgentChooser()
+				}
+			}
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			status = 'error'
+			message = snapshot.error.message
+		}
+		const busy = snapshot.kind === 'pending' && appliedPayload !== null
+		flushPendingAdvanceToAccess(true)
 
 		const location = readOnboardingLocation(currentHref)
 		const activeStep: OnboardingStep = location?.valid
@@ -485,7 +488,8 @@ export function OnboardingRoute(handle: Handle) {
 				: null
 
 		return (
-			<section mix={css(onboardCss)}>
+			<section mix={css(onboardCss)} aria-busy={busy ? 'true' : undefined}>
+				{busy ? renderRoutePendingStatus() : null}
 				<header mix={css(onboardHeadCss)}>
 					<h1 data-rise style={{ '--rise': '0' }}>
 						Get started with <em>Kody</em>

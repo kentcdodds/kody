@@ -32,10 +32,6 @@ export const runModes = [
 	'revert',
 ] as const satisfies ReadonlyArray<RunMode>
 
-export function isAdminCodemodsPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/codemods'
-}
-
 export function parseCommaSeparatedIds(value: string): Array<string> {
 	return value
 		.split(',')

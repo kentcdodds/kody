@@ -5,7 +5,7 @@ import {
 
 export { resolvePostVerificationRedirect }
 
-export const pendingVerificationPath = '/pending-verification'
+const pendingVerificationPath = '/pending-verification'
 
 /**
  * Pending-verification URL, optionally carrying a safe post-verify redirect

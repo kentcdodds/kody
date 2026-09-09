@@ -80,9 +80,12 @@ the narrowest owners. The core route-wiring path is five files:
    Use the helpers in `#app/page-auth.ts` (`requireAuthenticatedPageUser`,
    `requirePageSession`, `requirePageUserWithRole`) for page auth, and use
    `#app/request-body.ts` helpers when the page reads structured request bodies.
-4. `packages/worker/client/routes/<page>.tsx` — add the route component and,
-   when the page participates in SPA preload navigation, its route loader.
-   Import shared loader payload types from `#universal/loader-data.ts`
+4. `packages/worker/client/routes/<page>.tsx` — add the route component and its
+   route loader, and read the payload through `createRouteData` from
+   `#client/route-data.tsx` so navigations replace the previous page in one
+   commit with no loading state (see
+   [no-flash navigation](./no-flash-navigation.md)). Import shared loader
+   payload types from `#universal/loader-data.ts`
    (`kody-custom/prefer-loader-data-types` enforces this). Keep UI-only state
    types local.
 5. `packages/worker/client/routes/index.tsx` — register the component in

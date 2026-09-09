@@ -3,13 +3,14 @@ import { type Handle, css } from 'remix/ui'
 import { createMatcher } from 'remix/route-pattern/match'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+	routeDataRedirect,
+} from '#client/route-data.tsx'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	type AccountPackageDetail,
-	type AppLoaderData,
-} from '#universal/loader-data.ts'
+import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { routes } from '#universal/routes.ts'
 import {
@@ -29,6 +30,19 @@ import {
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
 
+/** Shell payload for the settings page, normalized from either source. */
+type PackageSettingsShell =
+	| { kind: 'unauthorized' }
+	| {
+			kind: 'owner'
+			ownerPackage: AccountPackageDetail
+			username: string
+			kodyId: string
+			isPrivate: boolean
+			/** Only the detail API reports this; SSR shell data leaves it as is. */
+			ownerProfilePublic?: boolean
+	  }
+
 export function PackageSettingsRoute(handle: Handle) {
 	let ownerPackage: AccountPackageDetail | null = null
 	let username = ''
@@ -36,12 +50,77 @@ export function PackageSettingsRoute(handle: Handle) {
 	let isPrivate = false
 	let ownerProfilePublic = true
 	let ownerDetailsMessage: string | null = null
-	let shellStatus: 'loading' | 'ready' | 'error' | 'missing' = 'loading'
-	let shellLoadRequestId = 0
-	let shellLoadedForPathname: string | null = null
-	let shellRequestedForPathname: string | null = null
-	let shellUnauthorized = false
+	/** Payload last applied to the closure state above. */
+	let appliedShell: PackageSettingsShell | null = null
 	const lockInFlight = new Map<string, string | null>()
+	const settingsData = createRouteData<
+		'communityDetailShell',
+		PackageSettingsShell
+	>({
+		consume(routeHandle, href) {
+			const routeData = tryConsumeRouteLoaderData(
+				routeHandle,
+				'communityDetailShell',
+				href,
+			)
+			if (!routeData) return null
+			if (!routeData.ok) return { kind: 'unauthorized' }
+			const pathname = new URL(href, 'http://localhost').pathname
+			if (routeData.listingId) {
+				rememberListingId(pathname, routeData.listingId)
+			}
+			if (!routeData.ownerPackage || !routeData.viewerIsOwner) return null
+			return {
+				kind: 'owner',
+				ownerPackage: routeData.ownerPackage,
+				username: routeData.username,
+				kodyId: routeData.kodyId || routeData.ownerPackage.kodyId,
+				isPrivate: routeData.isPrivate,
+			}
+		},
+		async load(href, signal) {
+			const ref = getPackageSettingsPageRef(
+				new URL(href, 'http://localhost').pathname,
+			)
+			if (!ref) return null
+			const response = await fetch(ref.detailApiHref, {
+				headers: { Accept: 'application/json' },
+				signal,
+			})
+			const payload = await readJson<
+				CommunityDetailApiPayload | CommunityPackageMovedPayload
+			>(response)
+			if (response.status === 401) return { kind: 'unauthorized' }
+			if (response.status === 404) {
+				const movedTo = payload && !payload.ok ? payload.redirectTo : null
+				if (movedTo) {
+					return routeDataRedirect(
+						packageMoveDestination(ref.pathname, movedTo),
+					)
+				}
+				return null
+			}
+			if (
+				!response.ok ||
+				!payload?.ok ||
+				!payload.ownerPackage ||
+				!payload.viewerIsOwner
+			) {
+				return null
+			}
+			if (payload.listing) {
+				rememberListingId(ref.pathname, payload.listing.id)
+			}
+			return {
+				kind: 'owner',
+				ownerPackage: payload.ownerPackage,
+				username: payload.username,
+				kodyId: payload.kodyId || payload.ownerPackage.kodyId,
+				isPrivate: payload.isPrivate ?? payload.ownerPackage.isPrivate,
+				ownerProfilePublic: payload.ownerProfilePublic,
+			}
+		},
+	})
 
 	function applyOwnerPackageLock(packageId: string, lockedAt: string | null) {
 		if (ownerPackage?.id === packageId) {
@@ -84,127 +163,13 @@ export function PackageSettingsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function loadSettingsShell() {
-		const ref = getPackageSettingsPageRef(readRouterPathname(handle))
-		if (!ref) return
-
-		const requestId = ++shellLoadRequestId
-		if (shellLoadedForPathname !== ref.pathname) {
-			shellStatus = 'loading'
-			handle.update()
-		}
-
-		try {
-			const response = await fetch(ref.detailApiHref, {
-				headers: { Accept: 'application/json' },
-			})
-			if (requestId !== shellLoadRequestId) return
-			const payload = await readJson<
-				CommunityDetailApiPayload | CommunityPackageMovedPayload
-			>(response)
-			if (response.status === 401) {
-				shellLoadedForPathname = ref.pathname
-				shellUnauthorized = true
-				shellStatus = 'ready'
-				handle.update()
-				return
-			}
-			if (response.status === 404) {
-				const movedTo = payload && !payload.ok ? payload.redirectTo : null
-				if (movedTo) {
-					window.location.assign(packageMoveDestination(ref.pathname, movedTo))
-					return
-				}
-				shellLoadedForPathname = ref.pathname
-				shellStatus = 'missing'
-				handle.update()
-				return
-			}
-			if (
-				!response.ok ||
-				!payload?.ok ||
-				!payload.ownerPackage ||
-				!payload.viewerIsOwner
-			) {
-				shellLoadedForPathname = ref.pathname
-				shellStatus = 'missing'
-				handle.update()
-				return
-			}
-			if (payload.listing) {
-				rememberListingId(ref.pathname, payload.listing.id)
-			}
-			ownerPackage = payload.ownerPackage
-			username = payload.username
-			kodyId = payload.kodyId || payload.ownerPackage.kodyId
-			isPrivate = payload.isPrivate ?? payload.ownerPackage.isPrivate
-			ownerProfilePublic = payload.ownerProfilePublic
-			ownerDetailsMessage = null
-			shellUnauthorized = false
-			shellLoadedForPathname = ref.pathname
-			shellStatus = 'ready'
-			handle.update()
-		} catch {
-			if (requestId !== shellLoadRequestId) return
-			shellLoadedForPathname = ref.pathname
-			shellStatus = 'error'
-			handle.update()
-		}
-	}
-
-	function applyRouteShellData(
-		routeData: AppLoaderData['communityDetailShell'],
-		pathname: string,
-	) {
-		if (!routeData) return false
-		if (!routeData.ok) {
-			shellUnauthorized = true
-			shellLoadedForPathname = pathname
-			shellStatus = 'ready'
-			return true
-		}
-		if (!routeData.ownerPackage || !routeData.viewerIsOwner) {
-			shellLoadedForPathname = pathname
-			shellStatus = 'missing'
-			return true
-		}
-		ownerPackage = routeData.ownerPackage
-		username = routeData.username
-		kodyId = routeData.kodyId || routeData.ownerPackage.kodyId
-		isPrivate = routeData.isPrivate
-		ownerDetailsMessage = null
-		shellUnauthorized = false
-		shellLoadedForPathname = pathname
-		shellStatus = 'ready'
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const pathname = readRouterPathname(handle)
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'communityDetailShell',
-			currentHref,
-		)
-		if (routeData?.ok && routeData.listingId) {
-			rememberListingId(pathname, routeData.listingId)
-		}
 		const ref = getPackageSettingsPageRef(pathname)
 		const urlParams = settingsMatcher.match(
 			new URL(pathname, 'http://localhost'),
 		)?.params
-
-		if (
-			(routeData && !routeData.ok) ||
-			(shellUnauthorized && shellLoadedForPathname === pathname)
-		) {
-			applyRouteShellData(routeData, pathname)
-			return renderMissingListing(
-				'Unauthorized',
-				'You are not allowed to view this page.',
-			)
-		}
 
 		if (!ref) {
 			return renderMissingListing(
@@ -213,29 +178,36 @@ export function PackageSettingsRoute(handle: Handle) {
 			)
 		}
 
-		const appliedShellData = applyRouteShellData(routeData, pathname)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedShellData
-		if (
-			(needsStaleRefresh ||
-				(shellLoadedForPathname !== pathname &&
-					shellRequestedForPathname !== pathname)) &&
-			typeof document !== 'undefined'
-		) {
-			if (shellLoadedForPathname !== pathname) {
-				shellStatus = 'loading'
+		const snapshot = settingsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedShell) {
+			appliedShell = snapshot.data
+			if (snapshot.data.kind === 'owner') {
+				ownerPackage = snapshot.data.ownerPackage
+				username = snapshot.data.username
+				kodyId = snapshot.data.kodyId
+				isPrivate = snapshot.data.isPrivate
+				if (snapshot.data.ownerProfilePublic !== undefined) {
+					ownerProfilePublic = snapshot.data.ownerProfilePublic
+				}
+				ownerDetailsMessage = null
 			}
-			shellRequestedForPathname = pathname
-			handle.queueTask(loadSettingsShell)
 		}
 
-		const shellMatches = shellLoadedForPathname === pathname
-		const showReady = shellStatus === 'ready' && shellMatches
-		const showError = shellStatus === 'error' && shellMatches
-		const showMissing = shellStatus === 'missing' && shellMatches
-		if (showMissing) {
+		if (snapshot.data?.kind === 'unauthorized' && !snapshot.stale) {
+			return renderMissingListing(
+				'Unauthorized',
+				'You are not allowed to view this page.',
+			)
+		}
+		if (snapshot.kind === 'not-found') {
 			return renderMissingListing('Not Found', 'We could not find that page.')
 		}
+
+		const pending = snapshot.kind === 'pending'
+		// The previous package's settings (`snapshot.stale`) stay on screen
+		// while a fallback fetch runs; the loading copy is for the cold path.
+		const showReady = snapshot.data?.kind === 'owner'
+		const showError = snapshot.kind === 'error'
 		const statusMessage = showError
 			? 'Unable to load package settings.'
 			: showReady
@@ -246,7 +218,12 @@ export function PackageSettingsRoute(handle: Handle) {
 		const chromeKodyId = kodyId || urlParams?.kodyId || ''
 
 		return (
-			<article mix={css(detailArticleCss)} data-testid="package-settings">
+			<article
+				mix={css(detailArticleCss)}
+				data-testid="package-settings"
+				aria-busy={pending && showReady ? 'true' : undefined}
+			>
+				{pending && showReady ? renderRoutePendingStatus() : null}
 				{chromeUsername && chromeKodyId
 					? renderPackageRepoChrome({
 							username: chromeUsername,
