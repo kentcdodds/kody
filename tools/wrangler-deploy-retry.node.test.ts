@@ -1,8 +1,10 @@
+import { Writable } from 'node:stream'
 import { expect, test } from 'vitest'
 import {
 	isRetryableWorkersDevSubdomainRace,
 	isRetryableWranglerDeployFailure,
 	runWranglerDeployWithRetry,
+	spawnWranglerDeploy,
 } from './wrangler-deploy-retry.ts'
 
 test('isRetryableWorkersDevSubdomainRace requires a successful upload then 10007', () => {
@@ -74,4 +76,25 @@ test('runWranglerDeployWithRetry does not retry a genuine missing worker', async
 	})
 	expect(result.status).toBe(1)
 	expect(attempts).toEqual([1])
+})
+
+test('spawnWranglerDeploy captures more than spawnSync maxBuffer without killing', async () => {
+	const oversizedBytes = 2 * 1024 * 1024
+	const sink = new Writable({
+		write(_chunk, _encoding, callback) {
+			callback()
+		},
+	})
+	const result = await spawnWranglerDeploy(
+		process.execPath,
+		[
+			'-e',
+			`process.stdout.write('x'.repeat(${String(oversizedBytes)})); process.stderr.write('Uploaded kody\\n')`,
+		],
+		undefined,
+		{ stdout: sink, stderr: sink },
+	)
+	expect(result.status).toBe(0)
+	expect(result.output.includes('Uploaded kody')).toBe(true)
+	expect(result.output.length).toBeGreaterThan(1024 * 1024)
 })
