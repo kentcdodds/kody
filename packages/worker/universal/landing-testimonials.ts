@@ -49,8 +49,8 @@ export const landingTestimonials = [
 		quote:
 			'Kody transformed how I work. Railway health checks land in Discord, a personal task list replaced the Notion notes I always lost, and everything I need lives in one place.',
 		name: 'Gabriel Alegría',
-		photo: null,
-		href: null,
+		photo: '/images/testimonials/gabriel-alegria.webp',
+		href: 'https://www.linkedin.com/in/gabriel-alegria-mx',
 		title: 'Software Engineer',
 		company: 'IB',
 		storyAnchor: 'gabriel-alegria',
