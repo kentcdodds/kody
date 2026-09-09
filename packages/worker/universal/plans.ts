@@ -216,12 +216,26 @@ export type PlanLimits = {
 	/** Maximum MCP execute-tool runs per UTC day. */
 	maxExecuteCallsPerDay: number
 	/**
+	 * Maximum MCP execute-tool runs per UTC week (Monday–Sunday). `null`
+	 * means no weekly window — daily is the only hard cap. Public
+	 * Free/Standard/Pro set a weekly total so a 1–2 day burst cannot spend
+	 * a full week of daily headroom. `max` and legacy Standard/Pro leave
+	 * this unset so their daily-only behavior stays unchanged.
+	 */
+	maxExecuteCallsPerWeek: number | null
+	/**
 	 * Maximum sandbox outbound fetches (through the fetch gateway) per UTC
 	 * day. Bounds cost abuse and third-party hammering from user code; the
 	 * shared Worker egress identity means one user's fetch flood can burn
 	 * reputation for the whole deployment.
 	 */
 	maxOutboundFetchesPerDay: number
+	/**
+	 * Maximum sandbox outbound fetches per UTC week (Monday–Sunday).
+	 * `null` means no weekly window. Same public-vs-legacy/`max` rule as
+	 * {@link PlanLimits.maxExecuteCallsPerWeek}.
+	 */
+	maxOutboundFetchesPerWeek: number | null
 	/**
 	 * Maximum scheduled-job executions per UTC day (cron, interval, and
 	 * run-now). Separate from `maxScheduledJobs` (how many job rows you may
@@ -355,11 +369,13 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Concurrent active runs (not lifetime or daily). One at a time on
 		// free; a second deferred workflow is the upgrade nudge.
 		maxConcurrentWorkflows: 1,
-		// Unique execute is the Dynamic Worker bill. 100/day covers a real
-		// agent morning (~70 observed) without pricing a free account at
-		// Standard's unique-execute ceiling.
-		maxExecuteCallsPerDay: 100,
-		maxOutboundFetchesPerDay: 500,
+		// Unique execute is the Dynamic Worker bill. Daily headroom covers a
+		// bursty agent morning; the weekly total keeps a free account from
+		// spending a full week of that headroom every day.
+		maxExecuteCallsPerDay: 150,
+		maxExecuteCallsPerWeek: 400,
+		maxOutboundFetchesPerDay: 1_000,
+		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 50,
@@ -377,11 +393,13 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 10,
-		// Public Standard execute is a try-paid rung, not the old 500/day
-		// ceiling. Continuous pre-cut subscribers keep
-		// {@link legacyPlanLimits}.
-		maxExecuteCallsPerDay: 150,
-		maxOutboundFetchesPerDay: 5_000,
+		// Public Standard execute is a try-paid rung with bursty daily
+		// headroom and a weekly total. Continuous pre-cut subscribers keep
+		// {@link legacyPlanLimits} (daily-only, no weekly window).
+		maxExecuteCallsPerDay: 500,
+		maxExecuteCallsPerWeek: 1_200,
+		maxOutboundFetchesPerDay: 15_000,
+		maxOutboundFetchesPerWeek: 40_000,
 		maxJobRunsPerDay: 1_500,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 350,
@@ -399,12 +417,14 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
-		// Execute is a hard daily cap with no overage. Unique-worker-day
-		// overage is a heavy-tail safety valve
+		// Execute is a hard daily + weekly cap with no overage.
+		// Unique-worker-day overage is a heavy-tail safety valve
 		// ({@link computeOverageRatesUsd}), not a reason to shrink this
 		// include or the public $49 Pro price.
-		maxExecuteCallsPerDay: 750,
-		maxOutboundFetchesPerDay: 25_000,
+		maxExecuteCallsPerDay: 1_500,
+		maxExecuteCallsPerWeek: 4_000,
+		maxOutboundFetchesPerDay: 50_000,
+		maxOutboundFetchesPerWeek: 120_000,
 		maxJobRunsPerDay: 8_000,
 		minJobIntervalMs: 5 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 2_000,
@@ -435,8 +455,10 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// peak is not stored; 25,000 is at least 2× a ~12,500 peak (~3×
 		// August avg). Unique-DW ceiling is $50/day ($0.002 × 25,000).
 		maxExecuteCallsPerDay: 25_000,
+		maxExecuteCallsPerWeek: null,
 		// 2× pro (40_000). Today's fetch spike (~17,000) stays well under.
 		maxOutboundFetchesPerDay: 80_000,
+		maxOutboundFetchesPerWeek: null,
 		// 2× the previous public Pro (20_000). Busy days are ~1,500–1,700
 		// job runs. `max` ceilings stay on that earlier Pro table; they
 		// still dominate every paid plan.
@@ -471,7 +493,9 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
 		maxExecuteCallsPerDay: 500,
+		maxExecuteCallsPerWeek: null,
 		maxOutboundFetchesPerDay: 20_000,
+		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 10_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 350,
@@ -490,7 +514,9 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
 		maxExecuteCallsPerDay: 800,
+		maxExecuteCallsPerWeek: null,
 		maxOutboundFetchesPerDay: 40_000,
+		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 20_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 2_000,
@@ -515,8 +541,8 @@ export const cloudflareComputeListUsd = {
  * amounts or the public Pro $49 price to monetize via overage. When
  * invoicing is enabled, public-ladder usage above the include is priced
  * at these rates (`computeMeteringPolicy.publicMonthlyMeters`). Execute
- * has no overage (hard daily cap — an execute overage would double-charge
- * the same burn as unique worker days). Durable Object duration is
+ * has no overage (hard daily + weekly cap — an execute overage would
+ * double-charge the same burn as unique worker days). Durable Object duration is
  * unmetered. Legacy Standard/Pro is not cut and not billed on these
  * allotments. Who is invoiced is {@link computeOverageBillingPolicy},
  * not this table.
@@ -529,7 +555,8 @@ export const computeOverageRatesUsd = {
 export const computeMeteringPolicy = {
 	uniqueWorkerDays: 'included_then_overage',
 	durableObjectRowsRead: 'included_then_overage',
-	executeCallsPerDay: 'hard_daily_cap',
+	executeCallsPerDay: 'hard_daily_and_weekly_cap',
+	outboundFetchesPerDay: 'hard_daily_and_weekly_cap',
 	durableObjectDuration: 'unmetered',
 	publicMonthlyMeters: 'charge_list_rates',
 	legacyMonthlyMeters: 'no_cut_no_bill',
@@ -627,6 +654,70 @@ export function resolvePlanLimit(
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** Daily resources that also have a public-ladder weekly hard cap. */
+export const weeklyComputeWindowResources = [
+	'execute_calls_per_day',
+	'outbound_fetches_per_day',
+] as const satisfies ReadonlyArray<EntitlementResource>
+
+export type WeeklyComputeWindowResource =
+	(typeof weeklyComputeWindowResources)[number]
+
+export function isWeeklyComputeWindowResource(
+	resource: EntitlementResource,
+): resource is WeeklyComputeWindowResource {
+	return (weeklyComputeWindowResources as ReadonlyArray<string>).includes(
+		resource,
+	)
+}
+
+/**
+ * One-liner for pricing and /account usage next to execute / outbound
+ * daily+weekly meters.
+ */
+export const weeklyComputeWindowNote =
+	'High daily headroom for bursts; weekly total keeps it sustainable.'
+
+/**
+ * Weekly hard cap for execute or outbound on the public ladder.
+ * Returns `null` when the plan/ladder has no weekly window (`max`,
+ * legacy Standard/Pro, or any other resource).
+ */
+export function resolveWeeklyPlanLimit(
+	plan: PlanName,
+	resource: EntitlementResource,
+	ladder: EntitlementLadder = 'public',
+): number | null {
+	if (!isWeeklyComputeWindowResource(resource)) return null
+	const limits = resolvePlanLimits(plan, ladder)
+	switch (resource) {
+		case 'execute_calls_per_day':
+			return limits.maxExecuteCallsPerWeek
+		case 'outbound_fetches_per_day':
+			return limits.maxOutboundFetchesPerWeek
+		default: {
+			const exhaustive: never = resource
+			throw new Error(`Unknown weekly compute resource: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** Human label for a weekly execute/outbound denial. */
+export function weeklyEntitlementResourceLabel(
+	resource: WeeklyComputeWindowResource,
+): string {
+	switch (resource) {
+		case 'execute_calls_per_day':
+			return 'execute calls this week'
+		case 'outbound_fetches_per_day':
+			return 'outbound fetches this week'
+		default: {
+			const exhaustive: never = resource
+			throw new Error(`Unknown weekly compute resource: ${String(exhaustive)}`)
 		}
 	}
 }

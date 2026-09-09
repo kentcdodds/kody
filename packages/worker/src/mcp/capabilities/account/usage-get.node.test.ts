@@ -137,6 +137,17 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 	)
 	expect(saved?.current).toBe(1)
 	expect(saved?.limit).toBeGreaterThan(0)
+	const execute = result.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.limit).toBe(1_500)
+	expect(execute?.week).toEqual({
+		current: 0,
+		limit: 4_000,
+		percent: 0,
+		overEightyPercent: false,
+	})
+	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
 test('usageGet reports legacy Standard ceilings for grandfathered accounts', async () => {
@@ -160,7 +171,8 @@ test('usageGet reports legacy Standard ceilings for grandfathered accounts', asy
 		(row) => row.resource === 'execute_calls_per_day',
 	)
 	expect(execute?.limit).toBe(500)
-	expect(execute?.limit).not.toBe(150)
+	expect(execute?.week).toBeUndefined()
+	expect(result.weekStart).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 })
 
 test('usageGet warns on unique worker days with whatCounts and howToReduce', async () => {

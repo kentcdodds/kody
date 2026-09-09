@@ -25,7 +25,8 @@ export const entitlementResourceGroupNotes: Partial<
 > = {
 	monthly:
 		'Included unique worker days and Durable Object rows-read this UTC month. Public-ladder overage invoices when a payment method is on file; unpaid Free is asked to upgrade.',
-	daily: 'Counters reset at UTC midnight.',
+	daily:
+		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
 
 export type EntitlementResourceVisibility = {
@@ -120,15 +121,18 @@ export const entitlementResourceVisibility: Record<
 	execute_calls_per_day: {
 		group: 'daily',
 		kind: 'counter',
-		whatCounts: 'MCP execute tool runs today (UTC), including failed attempts.',
-		howToReduce: 'Run fewer execute calls today, or upgrade your plan.',
+		whatCounts:
+			'MCP execute tool runs today (UTC), including failed attempts. Public plans also cap the UTC week.',
+		howToReduce:
+			'Run fewer execute calls today or this week, or upgrade your plan.',
 	},
 	outbound_fetches_per_day: {
 		group: 'daily',
 		kind: 'counter',
 		whatCounts:
-			'Sandbox outbound HTTP fetches through the fetch gateway today (UTC).',
-		howToReduce: 'Fetch less from user code today, or upgrade your plan.',
+			'Sandbox outbound HTTP fetches through the fetch gateway today (UTC). Public plans also cap the UTC week.',
+		howToReduce:
+			'Fetch less from user code today or this week, or upgrade your plan.',
 	},
 	job_runs_per_day: {
 		group: 'daily',

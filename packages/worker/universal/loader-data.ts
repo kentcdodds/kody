@@ -1962,6 +1962,13 @@ export type AccountBillingSuccessLoaderData = {
 	needsOnboarding: boolean
 }
 
+export type AccountUsageWeekWindow = {
+	current: number
+	limit: number
+	percentOfLimit: number | null
+	overEightyPercent: boolean
+}
+
 export type AccountUsageEntitlementConsumption = {
 	resource: string
 	label: string
@@ -1973,6 +1980,7 @@ export type AccountUsageEntitlementConsumption = {
 	limit: number
 	percentOfLimit: number | null
 	overEightyPercent: boolean
+	week?: AccountUsageWeekWindow
 }
 
 type AccountUsageComputeMeter = {
@@ -2001,6 +2009,7 @@ export type AccountUsageLoaderData = {
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	today: string
+	weekStart: string
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
 	computeOverage: AccountUsageComputeOverage

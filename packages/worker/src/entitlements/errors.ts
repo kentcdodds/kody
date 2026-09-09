@@ -8,12 +8,17 @@ import {
 import {
 	entitlementResourceLabels,
 	formatMinJobInterval,
+	isWeeklyComputeWindowResource,
 	parsePlanName,
+	weeklyEntitlementResourceLabel,
 	type EntitlementResource,
 	type PlanName,
+	type WeeklyComputeWindowResource,
 } from '#universal/plans.ts'
 
 export const entitlementLimitErrorCode = 'entitlement_limit_exceeded' as const
+
+export type EntitlementLimitWindow = 'day' | 'week'
 
 export type EntitlementLimitErrorDetails = {
 	code: typeof entitlementLimitErrorCode
@@ -23,6 +28,8 @@ export type EntitlementLimitErrorDetails = {
 	limit: number
 	current: number
 	upgradeHint: string
+	/** Which hard window blocked. Omit for stock/count resources. */
+	window?: EntitlementLimitWindow
 }
 
 export function buildEntitlementUpgradeHint(resource: EntitlementResource) {
@@ -35,21 +42,46 @@ export function buildEntitlementUpgradeHint(resource: EntitlementResource) {
  * MCP and UI surfaces. Keep changes here only; enforcement points must not
  * compose their own messages.
  */
+function entitlementLimitLabel(
+	resource: EntitlementResource,
+	window: EntitlementLimitWindow | undefined,
+) {
+	if (window === 'week' && isWeeklyComputeWindowResource(resource)) {
+		return weeklyEntitlementResourceLabel(resource)
+	}
+	return entitlementResourceLabels[resource]
+}
+
 export function buildEntitlementLimitMessage(
 	details: EntitlementLimitErrorDetails,
 ) {
-	const label = entitlementResourceLabels[details.resource]
+	const label = entitlementLimitLabel(details.resource, details.window)
 	return `Plan limit reached: your "${details.plan}" plan allows at most ${details.limit} ${label} and you currently have ${details.current}. ${details.upgradeHint}`
 }
 
 export function parseEntitlementLimitMessage(
 	message: string,
 ): EntitlementLimitErrorDetails | null {
-	for (const [resource, label] of Object.entries(
-		entitlementResourceLabels,
-	) as Array<[EntitlementResource, string]>) {
+	const weeklyLabels = (
+		['execute_calls_per_day', 'outbound_fetches_per_day'] as const
+	).map((resource) => ({
+		resource: resource satisfies WeeklyComputeWindowResource,
+		label: weeklyEntitlementResourceLabel(resource),
+		window: 'week' as const,
+	}))
+	const dailyLabels = (
+		Object.entries(entitlementResourceLabels) as Array<
+			[EntitlementResource, string]
+		>
+	).map(([resource, label]) => ({
+		resource,
+		label,
+		window: undefined as EntitlementLimitWindow | undefined,
+	}))
+	// Weekly labels first so "this week" is not swallowed by "per day".
+	for (const entry of [...weeklyLabels, ...dailyLabels]) {
 		const match = new RegExp(
-			`^Plan limit reached: your "([^"]+)" plan allows at most (\\d+) ${escapeRegex(label)} and you currently have (\\d+)\\. (.+)$`,
+			`^Plan limit reached: your "([^"]+)" plan allows at most (\\d+) ${escapeRegex(entry.label)} and you currently have (\\d+)\\. (.+)$`,
 		).exec(message)
 		if (!match) continue
 
@@ -63,11 +95,12 @@ export function parseEntitlementLimitMessage(
 
 		return {
 			code: entitlementLimitErrorCode,
-			resource,
+			resource: entry.resource,
 			plan,
 			limit,
 			current,
 			upgradeHint: match[4] ?? '',
+			...(entry.window ? { window: entry.window } : {}),
 		}
 	}
 	return null

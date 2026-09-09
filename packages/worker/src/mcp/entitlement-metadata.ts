@@ -31,6 +31,7 @@ export type McpEntitlementMetadata =
 			upgradeHint: string
 			used?: number
 			remaining?: number
+			window?: 'day' | 'week'
 	  }
 	| {
 			code: typeof jobIntervalFloorErrorCode
@@ -94,6 +95,7 @@ function toEntitlementLimitMetadata(
 		limit: details.limit,
 		current: details.current,
 		upgradeHint: details.upgradeHint,
+		...(details.window ? { window: details.window } : {}),
 	} as const
 	if (!isDailyEntitlementResource(details.resource)) return metadata
 	return {

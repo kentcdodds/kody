@@ -155,12 +155,13 @@ Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
 every sandbox surface that creates a worker.
 `PlanLimits.maxUniqueWorkerDaysPerMonth` is the public included allotment shown
 on `/pricing`. It is not in `entitlementResources` and does not replace the hard
-daily `execute` / `job_run` caps. `usageGet` and the account usage UI report
-this meter (and Durable Object rows-read) with `whatCounts` / `howToReduce` so
-the include is self-explanatory. When unique-worker-day pressure is hot (limit
-denial or over 80%), those payloads also include a short `mechanic` line: meter
-name plus what a unique worker day is. Agent-facing package docs do not repeat
-the cost model; see [Platform efficiency](../../guides/platform-efficiency.md).
+daily `execute` / `job_run` caps, or the public-ladder weekly execute and
+outbound-fetch windows. `usageGet` and the account usage UI report this meter
+(and Durable Object rows-read) with `whatCounts` / `howToReduce` so the include
+is self-explanatory. When unique-worker-day pressure is hot (limit denial or
+over 80%), those payloads also include a short `mechanic` line: meter name plus
+what a unique worker day is. Agent-facing package docs do not repeat the cost
+model; see [Platform efficiency](../../guides/platform-efficiency.md).
 
 ### Unique worker days by surface
 

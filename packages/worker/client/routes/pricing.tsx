@@ -7,6 +7,7 @@ import {
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
 	planLimits,
+	weeklyComputeWindowNote,
 	type PlanLimits,
 } from '#universal/plans.ts'
 import {
@@ -45,6 +46,7 @@ type LimitRow = {
 
 type LimitGroup = {
 	title: string
+	note?: string
 	rows: ReadonlyArray<LimitRow>
 }
 
@@ -69,10 +71,13 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 	},
 	{
 		title: 'Compute',
+		note: weeklyComputeWindowNote,
 		rows: [
 			{ label: 'Concurrent workflows', key: 'maxConcurrentWorkflows' },
 			{ label: 'Execute calls per day', key: 'maxExecuteCallsPerDay' },
+			{ label: 'Execute calls per week', key: 'maxExecuteCallsPerWeek' },
 			{ label: 'Outbound fetches per day', key: 'maxOutboundFetchesPerDay' },
+			{ label: 'Outbound fetches per week', key: 'maxOutboundFetchesPerWeek' },
 			{ label: 'Job runs per day', key: 'maxJobRunsPerDay' },
 			{
 				label: 'Unique worker days per month',
@@ -264,6 +269,13 @@ export function PricingRoute(handle: Handle) {
 											{renderLimitCell(row, planLimits.pro)}
 										</tr>
 									)),
+									...(group.note
+										? [
+												<tr key={`${group.title}-note`} data-note>
+													<td colspan={4}>{group.note}</td>
+												</tr>,
+											]
+										: []),
 								])}
 							</tbody>
 						</table>
@@ -279,8 +291,10 @@ export function PricingRoute(handle: Handle) {
 						Stripe customer are invoiced like other public-ladder accounts.
 						Those allotments are not hard-cut. Grandfathered legacy Standard/Pro
 						accounts are not billed for these meters until they leave the legacy
-						ladder. Execute is a hard daily cap. Durable Object duration is
-						unmetered.
+						ladder. Execute and outbound fetches are hard daily and weekly caps
+						on public plans (whichever window hits first blocks). Grandfathered
+						legacy Standard/Pro and Max stay daily-only. Durable Object duration
+						is unmetered.
 					</p>
 				</section>
 
@@ -321,6 +335,9 @@ function renderPaidPlanCta(isSignedIn: boolean, signedOutCta: PublicSignupCta) {
 
 function renderLimitCell(row: LimitRow, limits: PlanLimits) {
 	const value = limits[row.key]
+	if (value == null) {
+		return <td>—</td>
+	}
 	const cell = row.format ? row.format(value) : { text: count.format(value) }
 	return (
 		<td>
@@ -604,6 +621,13 @@ const limitsTableCss = {
 		fontWeight: 450,
 		color: colors.text,
 		textAlign: 'left' as const,
+	},
+	'& tr[data-note] td': {
+		padding: '0.45rem 0.2rem 0.85rem',
+		color: colors.textMuted,
+		fontSize: '0.88rem',
+		whiteSpace: 'normal' as const,
+		borderBottom: `1px solid ${colors.border}`,
 	},
 	'& td': {
 		textAlign: 'left' as const,

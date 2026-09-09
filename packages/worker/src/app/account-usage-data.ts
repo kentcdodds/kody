@@ -14,6 +14,7 @@ import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
+	type AccountUsageWeekWindow,
 } from '#universal/loader-data.ts'
 
 type UsageUserRow = {
@@ -85,6 +86,7 @@ export async function loadAccountUsageData(input: {
 		manualPlan,
 		stripePlan: parseStripePlanName(row.stripe_plan),
 		today: snapshot.today,
+		weekStart: snapshot.weekStart,
 		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
 		warnings: [
 			...computeOverageUsageWarningRows(computeOverage).map(toAccountUsageRow),
@@ -105,6 +107,7 @@ function toAccountUsageRow(row: {
 	limit: number
 	percentOfLimit: number | null
 	overEightyPercent: boolean
+	week?: AccountUsageWeekWindow
 }): AccountUsageEntitlementConsumption {
 	return {
 		resource: row.resource,
@@ -117,5 +120,6 @@ function toAccountUsageRow(row: {
 		limit: row.limit,
 		percentOfLimit: row.percentOfLimit,
 		overEightyPercent: row.overEightyPercent,
+		...(row.week ? { week: row.week } : {}),
 	}
 }

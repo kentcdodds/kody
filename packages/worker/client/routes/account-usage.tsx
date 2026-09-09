@@ -57,7 +57,8 @@ const entitlementGroupNotes: Partial<
 > = {
 	monthly:
 		'Included unique worker days and Durable Object rows-read this UTC month.',
-	daily: 'Counters reset at UTC midnight.',
+	daily:
+		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
 
 function formatUsagePercent(value: number | null) {
@@ -290,7 +291,12 @@ export function AccountUsageRoute(handle: Handle) {
 									/>
 								</>
 							) : null}
-							<p mix={css(descriptionCss)}>Usage day (UTC): {usage.today}</p>
+							<p mix={css(descriptionCss)}>
+								Usage day (UTC): {usage.today}
+								{usage.weekStart
+									? ` · Week starts (UTC Monday): ${usage.weekStart}`
+									: ''}
+							</p>
 							<p mix={css({ margin: 0 })}>
 								<a href={billingPath} mix={css(primaryLinkCss)}>
 									Manage billing
@@ -329,7 +335,7 @@ export function AccountUsageRoute(handle: Handle) {
 						) : null}
 						<AccountManagementPanel
 							title="Monthly compute"
-							description="Unique worker-days and Durable Object rows-read against this month's include. Execute stays on a hard daily cap. Durable Object duration is unmetered."
+							description="Unique worker-days and Durable Object rows-read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
 						>
 							<RecordTable
 								mode="none"
@@ -459,11 +465,18 @@ export function AccountUsageRoute(handle: Handle) {
 														})}
 													>
 														{item.whatCounts} {item.howToReduce}
+														{item.week
+															? ' High daily headroom for bursts; weekly total keeps it sustainable.'
+															: ''}
 													</span>
 												</span>
 											),
-											current: formatCurrentValue(item),
-											limit: formatLimitValue(item),
+											current: item.week
+												? `${formatCurrentValue(item)} today · ${formatIntegerNumber(item.week.current)} this week`
+												: formatCurrentValue(item),
+											limit: item.week
+												? `${formatLimitValue(item)} / day · ${formatIntegerNumber(item.week.limit)} / week`
+												: formatLimitValue(item),
 											used: (
 												<span
 													mix={css(

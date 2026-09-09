@@ -130,6 +130,16 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	expect(snapshot.resources.map((row) => row.resource)).toEqual(
 		accountUsageEntitlementResources,
 	)
+	expect(snapshot.weekStart).toBe('2026-07-20')
+	const execute = snapshot.resources.find(
+		(row) => row.resource === 'execute_calls_per_day',
+	)
+	expect(execute?.week).toEqual({
+		current: 0,
+		limit: 400,
+		percentOfLimit: 0,
+		overEightyPercent: false,
+	})
 
 	const otherUserSnapshot = await readEntitlementUsageSnapshot({
 		db,
@@ -173,4 +183,14 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 			(row) => row.resource === 'execute_calls_per_day',
 		)?.limit,
 	).toBe(legacyPlanLimits.standard.maxExecuteCallsPerDay)
+	expect(
+		publicSnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.week?.limit,
+	).toBe(planLimits.standard.maxExecuteCallsPerWeek)
+	expect(
+		legacySnapshot.resources.find(
+			(row) => row.resource === 'execute_calls_per_day',
+		)?.week,
+	).toBeUndefined()
 })

@@ -27,7 +27,11 @@ export function isDailyEntitlementResource(
 	return (dailyEntitlementResources as ReadonlyArray<string>).includes(resource)
 }
 
-/** Retention window for UserMeter daily rows (enforcement needs today only). */
+/**
+ * Retention window for UserMeter daily rows. Enforcement needs today and,
+ * for execute/outbound, the current UTC week (Monday–Sunday). Seven days
+ * covers that week.
+ */
 export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
@@ -78,9 +82,15 @@ export type UserMeterBootstrapState = {
 	outcome: 'needs_bootstrap'
 }
 
+export type UserMeterDeniedWindow = 'day' | 'week'
+
 export type UserMeterConsumeResult =
 	| UserMeterBootstrapState
-	| (UserMeterReadyState & { consumed: boolean })
+	| (UserMeterReadyState & {
+			consumed: boolean
+			deniedWindow?: UserMeterDeniedWindow
+			weekCount?: number
+	  })
 
 export type UserMeterReadResult = UserMeterBootstrapState | UserMeterReadyState
 
@@ -694,6 +704,24 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
+	private sumRange(
+		resource: DailyEntitlementResource,
+		startDay: string,
+		endDay: string,
+	): number {
+		const row = this.ctx.storage.sql
+			.exec<{ total: number }>(
+				`SELECT COALESCE(SUM(count), 0) AS total
+				FROM daily_counters
+				WHERE resource = ? AND day >= ? AND day <= ?`,
+				resource,
+				startDay,
+				endDay,
+			)
+			.toArray()[0]
+		return Math.max(0, Number(row?.total ?? 0))
+	}
+
 	/** Cold-key seed at zero; INSERT OR IGNORE is concurrency-safe. */
 	async initialize(input: {
 		resource: string
@@ -731,6 +759,8 @@ class UserMeterBase extends DurableObject<Env> {
 		day: string
 		limit: number
 		updatedAt: string
+		weekStart?: string
+		weekLimit?: number | null
 	}): Promise<UserMeterConsumeResult> {
 		const resource = assertDailyResource(input.resource)
 		const day = assertUtcDayKey(input.day)
@@ -742,10 +772,34 @@ class UserMeterBase extends DurableObject<Env> {
 			return { outcome: 'needs_bootstrap' }
 		}
 
+		const weekLimit =
+			typeof input.weekLimit === 'number' && Number.isFinite(input.weekLimit)
+				? input.weekLimit
+				: null
+		const weekStart = input.weekStart ? assertUtcDayKey(input.weekStart) : null
+		const weekCount =
+			weekStart && weekLimit !== null
+				? this.sumRange(resource, weekStart, day)
+				: undefined
+
 		if (input.limit < 1 || existing.count + 1 > input.limit) {
 			return {
 				...readyState(existing.count, existing.revision),
 				consumed: false,
+				deniedWindow: 'day',
+				weekCount,
+			}
+		}
+		if (
+			weekStart &&
+			weekLimit !== null &&
+			(weekLimit < 1 || (weekCount ?? 0) + 1 > weekLimit)
+		) {
+			return {
+				...readyState(existing.count, existing.revision),
+				consumed: false,
+				deniedWindow: 'week',
+				weekCount,
 			}
 		}
 
@@ -771,6 +825,28 @@ class UserMeterBase extends DurableObject<Env> {
 		return {
 			...readyState(row.count, row.revision),
 			consumed: row.count === nextCount && row.revision === nextRevision,
+			weekCount: weekCount === undefined ? undefined : weekCount + 1,
+		}
+	}
+
+	/**
+	 * Sum daily counts for `resource` from `startDay` through `endDay`
+	 * inclusive. Missing days count as zero.
+	 */
+	async readRange(input: {
+		resource: string
+		startDay: string
+		endDay: string
+		now?: string
+	}): Promise<{ outcome: 'ready'; count: number }> {
+		const resource = assertDailyResource(input.resource)
+		const startDay = assertUtcDayKey(input.startDay)
+		const endDay = assertUtcDayKey(input.endDay)
+		const now = input.now ? new Date(input.now) : new Date()
+		this.deleteStaleCounters(Number.isNaN(now.valueOf()) ? new Date() : now)
+		return {
+			outcome: 'ready',
+			count: this.sumRange(resource, startDay, endDay),
 		}
 	}
 
@@ -1611,7 +1687,15 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		day: string
 		limit: number
 		updatedAt: string
+		weekStart?: string
+		weekLimit?: number | null
 	}) => Promise<UserMeterConsumeResult>
+	readRange: (input: {
+		resource: string
+		startDay: string
+		endDay: string
+		now?: string
+	}) => Promise<{ outcome: 'ready'; count: number }>
 	consumeInboundDelivery: (input: {
 		deliveryId: string
 		resource: string

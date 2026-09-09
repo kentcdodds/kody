@@ -84,5 +84,14 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Unique worker days per month')
 	expect(html).toContain('Durable Object rows read per month')
+	expect(html).toContain('Execute calls per week')
+	expect(html).toContain('Outbound fetches per week')
+	expect(html).toContain(
+		'High daily headroom for bursts; weekly total keeps it sustainable.',
+	)
+	expect(html).toContain('1,500')
+	expect(html).toContain('4,000')
+	expect(html).toContain('50,000')
+	expect(html).toContain('120,000')
 	expect(html).toMatch(/<a[^>]*href="\/docs\/kody-factory"[^>]*>factory<\/a>/)
 })

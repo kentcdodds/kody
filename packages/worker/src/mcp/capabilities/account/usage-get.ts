@@ -13,6 +13,13 @@ import {
 import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
 
+const usageWeekWindowSchema = z.object({
+	current: z.number().int().nonnegative(),
+	limit: z.number().int().nonnegative(),
+	percent: z.number().nullable(),
+	overEightyPercent: z.boolean(),
+})
+
 const usageResourceSchema = z.object({
 	resource: z.string(),
 	label: z.string(),
@@ -25,6 +32,7 @@ const usageResourceSchema = z.object({
 	percent: z.number().nullable(),
 	overEightyPercent: z.boolean(),
 	mechanic: z.string().optional(),
+	week: usageWeekWindowSchema.optional(),
 })
 
 export const usageGetCapability = defineDomainCapability(
@@ -51,6 +59,8 @@ export const usageGetCapability = defineDomainCapability(
 			plan: z.enum(planNames),
 			/** UTC day for daily-rate counters (YYYY-MM-DD). */
 			day: z.string(),
+			/** UTC Monday that starts the week for execute/outbound weekly windows. */
+			weekStart: z.string(),
 			resources: z.array(usageResourceSchema),
 			warnings: z.array(usageResourceSchema),
 		}),
@@ -102,6 +112,12 @@ export const usageGetCapability = defineDomainCapability(
 				limit: number
 				percentOfLimit: number | null
 				overEightyPercent: boolean
+				week?: {
+					current: number
+					limit: number
+					percentOfLimit: number | null
+					overEightyPercent: boolean
+				}
 			}) => ({
 				resource: row.resource,
 				label: row.label,
@@ -116,11 +132,22 @@ export const usageGetCapability = defineDomainCapability(
 				...(row.resource === 'unique_worker_days' && row.overEightyPercent
 					? { mechanic: uniqueWorkerDayMechanic }
 					: {}),
+				...(row.week
+					? {
+							week: {
+								current: row.week.current,
+								limit: row.week.limit,
+								percent: row.week.percentOfLimit,
+								overEightyPercent: row.week.overEightyPercent,
+							},
+						}
+					: {}),
 			})
 			const computeRows = toComputeOverageUsageRows(computeOverage)
 			return {
 				plan: snapshot.plan,
 				day: snapshot.today,
+				weekStart: snapshot.weekStart,
 				resources: [
 					...computeRows.map(mapRow),
 					...snapshot.resources.map(mapRow),
