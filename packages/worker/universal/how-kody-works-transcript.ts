@@ -455,7 +455,7 @@ START HERE when creating or materially changing a Kody package.
 
 - Entity: \`package_authoring:guide\`
 - Category: \`platform\`
-- Web: \`/guides/package-authoring\`
+- Web: \`/docs/package-authoring\`
 
 # Package authoring guide
 
@@ -473,7 +473,7 @@ Choose between invoking existing behavior, temporary execute exploration, and cr
 
 - Entity: \`package_lifecycle:guide\`
 - Category: \`platform\`
-- Web: \`/guides/package-lifecycle\`
+- Web: \`/docs/package-lifecycle\`
 
 # Durable package lifecycle
 

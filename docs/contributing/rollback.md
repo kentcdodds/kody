@@ -120,7 +120,7 @@ five-minute cron on `kody-jobs` is the scheduler; `jobRunNow` from MCP can
 trigger an existing package job immediately. Check `/admin/insights` as well.
 
 After a **highlight** rollback: fetch a code-bearing page (guides, blog,
-onboarding — for example `https://kody.codes/guides/how-kody-works`) and require
+onboarding — for example `https://kody.codes/docs/how-kody-works`) and require
 an HTTP `Server-Timing` `highlight` phase whose `desc` is `hit`, `worker`, or
 `miss`
 ([request lifecycle](./architecture/request-lifecycle.md#page-server-timing)).

@@ -111,9 +111,9 @@ a tight size budget does not drop them.
 To inspect one hit, call **search** again with **`entity`** set to
 `"{id}:{type}"` where **`type`** is `capability`, `guide`, `integration`,
 `package`, or `secret`. Guide entities return the official markdown (the same
-bundled body as the web `/guides` pages) when it fits the search response
-budget. Oversized guides return a table of contents instead of truncating
-mid-document. Open one heading with `"{id}:guide#{slug}"` (for example
+bundled body as the web `/docs` pages) when it fits the search response budget.
+Oversized guides return a table of contents instead of truncating mid-document.
+Open one heading with `"{id}:guide#{slug}"` (for example
 `package_subscriptions:guide#repo.pushed`). Official guide headings themselves
 must fit the remaining budget after the search entity header
 (`kody-custom/no-oversized-guide-section`). Capability entities additionally

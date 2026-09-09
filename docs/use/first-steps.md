@@ -46,8 +46,8 @@ guides load with `search({ entity: "{id}:guide" })` — not execute.
   [Secrets and host approval](./secrets-and-values.md). Per-provider connect
   guides are available: `search({ entity: "provider_<name>:guide" })` (for
   example `provider_github`) or browse
-  [https://kody.codes/guides](https://kody.codes/guides) (each page also serves
-  raw markdown at `/guides/<slug>.md`).
+  [https://kody.codes/docs/connect](https://kody.codes/docs/connect) (each page
+  also serves raw markdown at `/docs/<slug>.md`).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor
   Cloud Agents. See [Mutating actions and confirmations](./mutating-actions.md).
 - **Verify before changing memory.** If you think something should become

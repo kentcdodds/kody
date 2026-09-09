@@ -9,7 +9,7 @@ import {
 } from './onboarding-wizard-panels.tsx'
 
 const discoveryPrompt =
-	"I'm deciding whether Kody (https://example.com) would be useful for me. Read https://example.com/guides/what-is-kody and then interview me to find out what Kody could do for me."
+	"I'm deciding whether Kody (https://example.com) would be useful for me. Read https://example.com/docs/what-is-kody and then interview me to find out what Kody could do for me."
 
 function connectPanel(selected: {
 	agent: 'cursor' | null
@@ -190,7 +190,7 @@ test('step 3 greys the first-agent ecosystem and folds in a portability proof', 
 	expect(selected).toContain(
 		'data-testid="onboarding-portability-guide-pointer"',
 	)
-	expect(selected).toContain('href="/guides/portability"')
+	expect(selected).toContain('href="/docs/portability"')
 
 	const connected = await renderToString(
 		secondAgentPanel({

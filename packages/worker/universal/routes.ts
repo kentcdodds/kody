@@ -163,18 +163,28 @@ export const routes = route({
 	blogPostApi: '/blog/:slug.json',
 	blogPostMarkdown: '/blog/:slug.md',
 	blogPostOgImage: '/blog/:slug/og.png',
-	guides: '/guides',
-	guidesApi: '/guides.json',
-	guidesMarkdown: '/guides.md',
-	// Static connect index must win over `/guides/:slug` so `connect` is not
-	// treated as a missing guide slug.
-	guidesConnect: '/guides/connect',
-	guidesConnectApi: '/guides/connect.json',
-	guidesConnectMarkdown: '/guides/connect.md',
-	guideDetail: '/guides/:slug',
-	guideDetailApi: '/guides/:slug.json',
-	guideDetailMarkdown: '/guides/:slug.md',
-	guideDetailOgImage: '/guides/:slug/og.png',
+	// `/docs` renders the introduction article (`what-is-kody`); the other
+	// docs live at `/docs/:slug`. Every HTML page has `.md` and `.json` twins.
+	docs: '/docs',
+	docsApi: '/docs.json',
+	docsMarkdown: '/docs.md',
+	// Static companions must win over `/docs/:slug` so `connect` and
+	// `llms.txt` are not treated as missing doc slugs.
+	docsLlmsTxt: '/docs/llms.txt',
+	docsConnect: '/docs/connect',
+	docsConnectApi: '/docs/connect.json',
+	docsConnectMarkdown: '/docs/connect.md',
+	docDetail: '/docs/:slug',
+	docDetailApi: '/docs/:slug.json',
+	docDetailMarkdown: '/docs/:slug.md',
+	docDetailOgImage: '/docs/:slug/og.png',
+	llmsTxt: '/llms.txt',
+	// The docs used to live under `/guides`. Everything there 308s to `/docs`
+	// (see `#app/handlers/legacy-guides-redirect.ts`).
+	legacyGuides: '/guides',
+	legacyGuidesApi: '/guides.json',
+	legacyGuidesMarkdown: '/guides.md',
+	legacyGuidesPath: '/guides/*rest',
 	community: '/community',
 	communityApi: '/community.json',
 	communityDetail: '/community/:listingId',

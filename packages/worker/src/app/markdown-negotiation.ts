@@ -1,6 +1,6 @@
 /**
  * Content negotiation for pages that also exist as raw markdown documents
- * (`/guides/:slug`, `/blog/:slug`). Agents and tools can either request the
+ * (`/docs/:slug`, `/blog/:slug`). Agents and tools can either request the
  * explicit `.md` route or send `Accept: text/markdown` to the HTML route.
  */
 

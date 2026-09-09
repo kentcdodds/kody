@@ -1,5 +1,6 @@
 import { type AccountIntegrationsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -222,9 +223,7 @@ export function renderIntegrationsSetupSections(setupIntro: string) {
 											})}
 										>
 											<a
-												href={routes.guideDetail.href({
-													slug: provider.guideSlug,
-												})}
+												href={docHref(provider.guideSlug)}
 												mix={css(primaryLinkCss)}
 											>
 												Setup guide

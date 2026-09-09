@@ -1,12 +1,12 @@
 export const kodyOverviewInstructions = `Kody is a multi-user personal assistant. Each signed-in user gets a fully isolated assistant (packages, jobs, secrets, memories, connectors, email, storage) exposed through two MCP tools: \`search\` and \`execute\`.`
 
-export const endUserDocumentationInstructions = `End-user documentation (workflows, secrets, troubleshooting):
+export const endUserDocumentationInstructions = `End-user documentation: https://kody.codes/docs (plain markdown at /docs/<slug>.md; compact index at https://kody.codes/llms.txt). Reference detail for MCP usage (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use`
 
 export const quickStartInstructions = `Start here
 - Almost every task: \`search({ query })\` first; pass \`domain\` to narrow (domain ids listed below).
 - One-off work / smoke tests: \`execute\`. Durable reusable behavior: a package (after \`communitySearch\` when nothing in-account fits).
-- Official guides: \`search({ entity: "{id}:guide" })\` for a known id (\`package_authoring\`, \`package_apps\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, or a resolved \`provider_<slug>\`). Discover with \`search({ query: "… guide" })\`, then open that exact entity ref. Oversized guides return a table of contents; open a heading with \`{id}:guide#{slug}\`. Skip \`codingGuideGet\` unless execute-module code needs the markdown body.
+- Official docs (guides): \`search({ entity: "{id}:guide" })\` for a known id (\`package_authoring\`, \`package_apps\`, \`package_lifecycle\`, \`integration_bootstrap\`, \`oauth\`, \`memory\`, \`secrets\`, \`triggers\`, or a resolved \`provider_<slug>\`). Discover with \`search({ query: "… guide" })\`, then open that exact entity ref. Oversized guides return a table of contents; open a heading with \`{id}:guide#{slug}\`. Skip \`codingGuideGet\` unless execute-module code needs the markdown body.
 - Blockers the signed-in human must clear (expired OAuth, expired secrets, MCP reconnects): \`waitingSummary\` or \`/account/waiting\`.`
 
 export const packageLifecycleInstructions = `Package lifecycle (primary mental model):

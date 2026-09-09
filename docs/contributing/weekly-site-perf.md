@@ -23,7 +23,7 @@ npm run site-perf -- --url https://kody.codes/ --json
 homepage, records HTML weight, `Cache-Control`, the largest same-origin JS
 payload, the preloaded LCP image, TTFB, and `Server-Timing` phases (`session`,
 `ssr`, plus loader phases such as `code-runs`). When the primary URL is `/`, it
-also probes `/onboarding` and `/guides/how-kody-works` for the same timing
+also probes `/onboarding` and `/docs/how-kody-works` for the same timing
 snapshot. Those extra pages are observational and do not change the verdict. A
 failed extra probe is omitted so homepage classify still runs. Homepage HTML
 that lacks an app `ssr` phase is a finding. A `syntax-highlight` modulepreload
@@ -70,10 +70,10 @@ the step.
 
 ## What the homepage already does
 
-Anonymous `/`, `/pricing`, `/blog`, `/community`, `/onboarding`, `/guides`, and
-`/guides/:slug` HTML is `public, max-age=60, stale-while-revalidate=300` with
+Anonymous `/`, `/pricing`, `/blog`, `/community`, `/onboarding`, `/docs`, and
+`/docs/:slug` HTML is `public, max-age=60, stale-while-revalidate=300` with
 `Vary: Cookie`. Anonymous `/onboarding.json` uses the same cache with
-`Vary: Cookie`. Guide JSON (`/guides/:slug.json`) is shared publicly without a
+`Vary: Cookie`. Doc JSON (`/docs/:slug.json`) is shared publicly without a
 cookie vary because the body is the same for every visitor. Any `kody_session`
 cookie, a resolved session, or a `Set-Cookie` response stays `no-store` on HTML.
 Auth, OAuth, and account pages never use the short CDN cache.

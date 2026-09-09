@@ -273,23 +273,24 @@ test('same-origin hash links are intercepted so scroll restoration can reach the
 	}
 })
 
-test('guide and blog markdown twins leave the SPA instead of rendering a 404', () => {
+test('doc and blog markdown twins leave the SPA instead of rendering a 404', () => {
 	const guidePage = 'guide-page' as unknown as JSX.Element
 	const blogPage = 'blog-page' as unknown as JSX.Element
 	const pageRoutes = {
-		[routePattern(routes.guideDetail)]: guidePage,
+		[routePattern(routes.docDetail)]: guidePage,
 		[routePattern(routes.blogPost)]: blogPage,
-		[routePattern(routes.guides)]: guidePage,
+		[routePattern(routes.docs)]: guidePage,
 		[routePattern(routes.home)]: guidePage,
 	}
 
-	expect(matchRoute('/guides/oauth', pageRoutes)).toBe(guidePage)
-	expect(matchRoute('/guides/oauth.md', pageRoutes)).toBeNull()
-	expect(matchRoute('/guides/oauth.json', pageRoutes)).toBeNull()
+	expect(matchRoute('/docs/oauth', pageRoutes)).toBe(guidePage)
+	expect(matchRoute('/docs/oauth.md', pageRoutes)).toBeNull()
+	expect(matchRoute('/docs/oauth.json', pageRoutes)).toBeNull()
+	expect(matchRoute('/docs/llms.txt', pageRoutes)).toBeNull()
 	expect(matchRoute('/blog/your-assistants-home.md', pageRoutes)).toBeNull()
 	expect(matchRoute(routes.blogRss.href(), pageRoutes)).toBeNull()
-	expect(routes.guideDetailMarkdown.href({ slug: 'oauth' })).toBe(
-		'/guides/oauth.md',
+	expect(routes.docDetailMarkdown.href({ slug: 'oauth' })).toBe(
+		'/docs/oauth.md',
 	)
 	expect(routes.blogRss.href()).toBe('/blog/rss.xml')
 
@@ -298,9 +299,9 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 	const assign = vi.fn<() => void>()
 	globalThis.window = {
 		location: {
-			href: 'https://kody.local/guides/oauth',
+			href: 'https://kody.local/docs/oauth',
 			origin: 'https://kody.local',
-			pathname: '/guides/oauth',
+			pathname: '/docs/oauth',
 			search: '',
 			hash: '',
 			assign,
@@ -308,11 +309,15 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 	} as unknown as Window & typeof globalThis
 
 	try {
-		expect(shouldLeaveDocumentForPath('/guides/oauth')).toBe(false)
-		expect(shouldLeaveDocumentForPath('/guides/connect')).toBe(false)
-		expect(shouldLeaveDocumentForPath('/guides/oauth.md')).toBe(true)
-		expect(shouldLeaveDocumentForPath('/guides.md')).toBe(true)
-		expect(shouldLeaveDocumentForPath('/guides/connect.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/docs')).toBe(false)
+		expect(shouldLeaveDocumentForPath('/docs/oauth')).toBe(false)
+		expect(shouldLeaveDocumentForPath('/docs/connect')).toBe(false)
+		expect(shouldLeaveDocumentForPath('/docs/oauth.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/docs.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/docs/connect.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/docs/llms.txt')).toBe(true)
+		// Legacy URLs are worker 308s, never SPA pages.
+		expect(shouldLeaveDocumentForPath('/guides/oauth')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/auth.md')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/robots.txt')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/missing-page')).toBe(true)
@@ -330,7 +335,7 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 			target: '',
 			hasAttribute: () => false,
 			getAttribute: (name: string) =>
-				name === 'href' ? '/guides/oauth.md' : null,
+				name === 'href' ? '/docs/oauth.md' : null,
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, markdownAnchor)).toBe(false)
 
@@ -338,7 +343,7 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 			target: '',
 			hasAttribute: (name: string) => name === 'data-rmx-document',
 			getAttribute: (name: string) =>
-				name === 'href' ? '/guides/oauth.md' : null,
+				name === 'href' ? '/docs/oauth.md' : null,
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, documentAnchor)).toBe(false)
 
@@ -353,13 +358,12 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 		const pageAnchor = {
 			target: '',
 			hasAttribute: () => false,
-			getAttribute: (name: string) =>
-				name === 'href' ? '/guides/oauth' : null,
+			getAttribute: (name: string) => (name === 'href' ? '/docs/oauth' : null),
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, pageAnchor)).toBe(true)
 
-		navigate('/guides/how-kody-works.md')
-		expect(assign).toHaveBeenCalledWith('/guides/how-kody-works.md')
+		navigate('/docs/how-kody-works.md')
+		expect(assign).toHaveBeenCalledWith('/docs/how-kody-works.md')
 		navigate(routes.blogRss.href())
 		expect(assign).toHaveBeenCalledWith(routes.blogRss.href())
 	} finally {

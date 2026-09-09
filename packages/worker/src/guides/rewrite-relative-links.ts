@@ -1,3 +1,5 @@
+import { docHref, resolveLegacyDocSlug } from '#universal/docs-nav.ts'
+
 const GITHUB_BLOB_BASE = 'https://github.com/kentcdodds/kody/blob/main'
 
 /** Directory of a guide file inside the repo, relative to the repo root. */
@@ -23,9 +25,11 @@ function resolveRepoPath(baseDir: string, target: string): string | null {
  * links. The files on GitHub keep their authored relative form; this runs on
  * the bundled copy only.
  *
- * - Links to other bundled guides (`./oauth.md`, `providers/google.md`)
- *   become root-relative web routes (`/guides/oauth`), which resolve against
- *   the deployment origin on every surface.
+ * - Links to other bundled docs (`./oauth.md`, `providers/google.md`)
+ *   become root-relative web routes (`/docs/oauth`; the introduction maps to
+ *   `/docs`), which resolve against the deployment origin on every surface.
+ *   A file that was merged into another doc resolves through
+ *   `legacyDocSlugAliases` to the absorbing page and heading.
  * - Other repo-relative links (`../use/packages.md`) become absolute GitHub
  *   blob URLs, since those documents are not served on the web app.
  * - Absolute URLs, `mailto:`, anchors, and root-relative app links pass
@@ -34,7 +38,7 @@ function resolveRepoPath(baseDir: string, target: string): string | null {
 export function rewriteRelativeGuideLinks(input: {
 	body: string
 	sourceDir: GuideSourceDir
-	/** Known guide slugs, used to map guide files onto `/guides/:slug`. */
+	/** Known guide slugs, used to map guide files onto `/docs/:slug`. */
 	knownSlugs: ReadonlySet<string>
 }): string {
 	const { body, sourceDir, knownSlugs } = input
@@ -45,16 +49,21 @@ export function rewriteRelativeGuideLinks(input: {
 				return match
 			}
 			const [path = '', fragment] = rawTarget.split('#', 2)
-			const suffix = fragment ? `#${fragment}` : ''
 			const resolved = resolveRepoPath(sourceDir, path)
 			if (!resolved) return match
 
 			const guideFile = /^docs\/guides\/(?:providers\/)?([a-z0-9-]+)\.md$/.exec(
 				resolved,
 			)
-			if (guideFile && knownSlugs.has(guideFile[1]!)) {
-				return `](/guides/${guideFile[1]}${suffix}${title})`
+			if (guideFile) {
+				const alias = resolveLegacyDocSlug(guideFile[1]!)
+				if (knownSlugs.has(alias.slug)) {
+					const resolvedFragment = fragment ?? alias.fragment
+					const suffix = resolvedFragment ? `#${resolvedFragment}` : ''
+					return `](${docHref(alias.slug)}${suffix}${title})`
+				}
 			}
+			const suffix = fragment ? `#${fragment}` : ''
 			return `](${GITHUB_BLOB_BASE}/${resolved}${suffix}${title})`
 		},
 	)

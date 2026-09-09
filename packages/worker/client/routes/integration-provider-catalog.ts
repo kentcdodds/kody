@@ -11,7 +11,7 @@ export type IntegrationProviderSuggestion = {
 	name: string
 	tagline: string
 	scopeHint: string
-	/** Web slug for the bundled provider setup guide at `/guides/:slug`. */
+	/** Web slug for the bundled provider setup doc at `/docs/:slug`. */
 	guideSlug?: string
 }
 

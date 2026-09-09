@@ -5,19 +5,22 @@ import {
 	type GuideSourceDir,
 } from './rewrite-relative-links.ts'
 import {
-	isGuidesStartHereSlug,
-	isReservedGuideIndexSlug,
-} from '#universal/guide-sections.ts'
+	docsIntroSlug,
+	docsNav,
+	isReservedDocsIndexSlug,
+	type DocsNavSection,
+} from '#universal/docs-nav.ts'
 import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
+import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
 import firstWin from '../../../../docs/guides/first-win.md'
 import howKodyWorks from '../../../../docs/guides/how-kody-works.md'
 import googleOauth from '../../../../docs/guides/google-oauth.md'
 import kodyFactory from '../../../../docs/guides/kody-factory.md'
 import localMcpTunnels from '../../../../docs/guides/local-mcp-tunnels.md'
 import heavyWorkOffload from '../../../../docs/guides/heavy-work-offload.md'
+import memory from '../../../../docs/guides/memory.md'
 import quickExample from '../../../../docs/guides/quick-example.md'
-import integrationBackedAppHappyPath from '../../../../docs/guides/integration-backed-app-happy-path.md'
 import integrationBootstrap from '../../../../docs/guides/integration-bootstrap.md'
 import lockedGmailDrafts from '../../../../docs/guides/locked-gmail-drafts.md'
 import lockedMcpServer from '../../../../docs/guides/locked-mcp-server.md'
@@ -39,61 +42,65 @@ import providerSalesforce from '../../../../docs/guides/providers/salesforce.md'
 import providerSlack from '../../../../docs/guides/providers/slack.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
+import secrets from '../../../../docs/guides/secrets.md'
+import triggers from '../../../../docs/guides/triggers.md'
 import values from '../../../../docs/guides/values.md'
 import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 import onboarding from '../../../../docs/guides/onboarding.md'
 import portability from '../../../../docs/guides/portability.md'
 
 /**
- * Static guide sources. The canonical markdown lives in `docs/guides/` (also
- * readable on GitHub); this catalog bundles it so MCP `{id}:guide` search
- * capability, the `/guides` web pages, and the raw `text/markdown` responses
- * all serve exactly the same deployed content. When adding a guide, drop a
- * `.md` file with the frontmatter contract (see `parse-frontmatter.ts`) under
- * `docs/guides/` and add one import + entry here. Slug = filename minus `.md`.
+ * Static doc sources. The canonical markdown lives in `docs/guides/` (also
+ * readable on GitHub); this catalog bundles it so the MCP `{id}:guide`
+ * search entity, the `/docs` web pages, and the raw `text/markdown`
+ * responses all serve exactly the same deployed content. When adding a doc,
+ * drop a `.md` file with the frontmatter contract (see
+ * `parse-frontmatter.ts`) under `docs/guides/`, add one import + entry
+ * here, and place it in `#universal/docs-nav.ts`. Slug = filename minus
+ * `.md`.
  */
 const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
-	{ slug: 'onboarding', raw: onboarding },
-	{ slug: 'portability', raw: portability },
 	{ slug: 'how-kody-works', raw: howKodyWorks },
 	{ slug: 'kody-factory', raw: kodyFactory },
-	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
-	{ slug: 'local-mcp-tunnels', raw: localMcpTunnels },
-	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },
-	{ slug: 'google-oauth', raw: googleOauth },
+	{ slug: 'connect-your-agent', raw: connectYourAgent },
+	{ slug: 'onboarding', raw: onboarding },
 	{ slug: 'quick-example', raw: quickExample },
+	{ slug: 'portability', raw: portability },
 	{ slug: 'first-win', raw: firstWin },
+	{ slug: 'memory', raw: memory },
+	{ slug: 'secrets', raw: secrets },
+	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
+	{ slug: 'triggers', raw: triggers },
+	{ slug: 'platform-efficiency', raw: platformEfficiency },
+	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-apps', raw: packageApps },
-	{ slug: 'package-lifecycle', raw: packageLifecycle },
-	{ slug: 'platform-efficiency', raw: platformEfficiency },
-	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
-	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
-	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
-	{ slug: 'secret-backed-integration', raw: secretBackedIntegration },
-	{
-		slug: 'integration-backed-app-happy-path',
-		raw: integrationBackedAppHappyPath,
-	},
-	{ slug: 'oauth', raw: oauth },
-	{ slug: 'account-secret-setup', raw: accountSecretSetup },
-	{
-		slug: 'account-package-invocation-token-setup',
-		raw: accountPackageInvocationTokenSetup,
-	},
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
-	{ slug: 'platform-friction', raw: platformFriction },
-	{ slug: 'values', raw: values },
+	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },
+	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
+	{ slug: 'oauth', raw: oauth },
+	{ slug: 'google-oauth', raw: googleOauth },
+	{ slug: 'secret-backed-integration', raw: secretBackedIntegration },
+	{ slug: 'account-secret-setup', raw: accountSecretSetup },
 	{ slug: 'openapi-integrations', raw: openapiIntegrations },
-	{ slug: 'google', raw: providerGoogle },
+	{ slug: 'local-mcp-tunnels', raw: localMcpTunnels },
+	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
+	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
+	{ slug: 'discord', raw: providerDiscord },
 	{ slug: 'github', raw: providerGithub },
+	{ slug: 'google', raw: providerGoogle },
 	{ slug: 'notion', raw: providerNotion },
 	{ slug: 'origin', raw: providerOrigin },
 	{ slug: 'salesforce', raw: providerSalesforce },
 	{ slug: 'slack', raw: providerSlack },
 	{ slug: 'spotify', raw: providerSpotify },
-	{ slug: 'discord', raw: providerDiscord },
+	{ slug: 'platform-friction', raw: platformFriction },
+	{ slug: 'values', raw: values },
+	{
+		slug: 'account-package-invocation-token-setup',
+		raw: accountPackageInvocationTokenSetup,
+	},
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {
@@ -106,9 +113,9 @@ function buildCatalog(): ReadonlyArray<Guide> {
 			throw new Error(`Duplicate guide id "${guide.id}".`)
 		}
 		ids.add(guide.id)
-		if (isReservedGuideIndexSlug(guide.slug)) {
+		if (isReservedDocsIndexSlug(guide.slug)) {
 			throw new Error(
-				`Guide slug "${guide.slug}" is reserved for a /guides index route.`,
+				`Guide slug "${guide.slug}" is reserved for a /docs index route.`,
 			)
 		}
 	}
@@ -127,7 +134,7 @@ function buildCatalog(): ReadonlyArray<Guide> {
 			}),
 		}
 	})
-	// `guideSources` above is already written in authored order, but sorting
+	// `guideSources` above is already written in reading order, but sorting
 	// through the shared `guide-order.ts` helper (rather than relying on that
 	// literal array order) makes the order an explicit, enforced invariant
 	// shared with the generated catalog modules — see guide-order.ts.
@@ -147,7 +154,16 @@ export function getGuideById(id: string): Guide | null {
 	return guidesById.get(id) ?? null
 }
 
-/** Advertised platform guides in authored order. */
+/** The introduction article rendered at `/docs`. */
+export function getIntroGuide(): Guide {
+	const intro = guidesBySlug.get(docsIntroSlug)
+	if (!intro) {
+		throw new Error(`Missing introduction doc "${docsIntroSlug}".`)
+	}
+	return intro
+}
+
+/** Advertised platform docs in reading order. */
 export function listPlatformGuides(): ReadonlyArray<Guide> {
 	return guides.filter(
 		(guide) => !guide.unadvertised && guide.category === 'platform',
@@ -155,25 +171,8 @@ export function listPlatformGuides(): ReadonlyArray<Guide> {
 }
 
 /**
- * Fundamentals for the `/guides` "Start here" group (authored order among
- * the start-here slug set).
- */
-export function listStartHereGuides(): ReadonlyArray<Guide> {
-	return listPlatformGuides().filter((guide) =>
-		isGuidesStartHereSlug(guide.slug),
-	)
-}
-
-/** Remaining platform guides after Start here, still in authored order. */
-export function listMorePlatformGuides(): ReadonlyArray<Guide> {
-	return listPlatformGuides().filter(
-		(guide) => !isGuidesStartHereSlug(guide.slug),
-	)
-}
-
-/**
- * Advertised provider (connection) guides, alphabetically by provider name —
- * the order `/guides/connect` renders.
+ * Advertised provider (connection) docs, alphabetically by provider name —
+ * the order `/docs/connect` renders.
  */
 export function listProviderGuides(): ReadonlyArray<Guide> {
 	return guides
@@ -182,12 +181,27 @@ export function listProviderGuides(): ReadonlyArray<Guide> {
 }
 
 /**
- * Platform guides in authored order, then provider guides alphabetically by
- * provider name. Used by sitemap and surfaces that need every advertised
- * guide; the web `/guides` index uses the section helpers above instead.
+ * Every advertised doc in reading order (sidebar order: platform sections,
+ * then providers, then help). Used by sitemap, `llms.txt`, and surfaces that
+ * need every advertised doc.
  */
 export function listGuides(): ReadonlyArray<Guide> {
-	return [...listPlatformGuides(), ...listProviderGuides()]
+	return guides.filter((guide) => !guide.unadvertised)
+}
+
+export type GuidesBySection = {
+	section: DocsNavSection
+	guides: ReadonlyArray<Guide>
+}
+
+/** Advertised docs grouped by docs-nav section, in reading order. */
+export function listGuidesBySection(): ReadonlyArray<GuidesBySection> {
+	return docsNav.map((section) => ({
+		section,
+		guides: section.items
+			.map((item) => guidesBySlug.get(item.slug))
+			.filter((guide): guide is Guide => Boolean(guide && !guide.unadvertised)),
+	}))
 }
 
 /** Index / API summary shape (no markdown body). */
@@ -197,17 +211,24 @@ export type GuideSummary = {
 	title: string
 	summary: string
 	category: Guide['category']
+	audience: Guide['audience']
+	section: string | null
 	provider: string | null
 	lastVerified: string | null
 }
 
 export function toGuideSummary(guide: Guide): GuideSummary {
+	const section = docsNav.find((candidate) =>
+		candidate.items.some((item) => item.slug === guide.slug),
+	)
 	return {
 		slug: guide.slug,
 		id: guide.id,
 		title: guide.title,
 		summary: guide.summary,
 		category: guide.category,
+		audience: guide.audience,
+		section: section?.id ?? null,
 		provider: guide.provider,
 		lastVerified: guide.lastVerified,
 	}

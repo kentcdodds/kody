@@ -12,6 +12,7 @@ import {
 	publicWaitlistSignupHref,
 } from '#universal/public-signup-copy.ts'
 import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	layoutMaxWidths,
@@ -28,7 +29,7 @@ type FaqItem = {
 
 const count = new Intl.NumberFormat('en-US')
 const freeLimits = planLimits.free
-const whatIsKodyHref = routes.guideDetail.href({ slug: 'what-is-kody' })
+const whatIsKodyHref = docHref('what-is-kody')
 
 const faqItems: ReadonlyArray<FaqItem> = [
 	{

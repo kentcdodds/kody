@@ -1,6 +1,6 @@
 ---
 id: first_win
-title: Email and memories — welcome email, reply, memories
+title: Email and memories: the welcome-email loop
 summary:
   Optional agent playbook: send a welcome email, point the person at their own
   inbox to reply, look the reply up when they say it is sent, save what matters
@@ -10,9 +10,10 @@ summary:
   quick-example. Load this when someone wants the email loop. Includes the
   no-polling rule and troubleshooting for missing mail and unbound tools.
 category: platform
+audience: agents
 ---
 
-# Email and memories — welcome email, reply, memories
+# Email and memories: the welcome-email loop
 
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
@@ -22,7 +23,7 @@ Agent notes — for AI agents driving the optional email loop from this page:
   `search({ entity: "onboarding:guide" })`. Step 3 is Connect a second agent
   (`/onboarding/step-3`) and reuses what Step 2 made via
   `search({ entity: "portability:guide" })`. Hosted OAuth is not the
-  onboarding path. The optional climax after that is /guides/quick-example
+  onboarding path. The optional climax after that is /docs/quick-example
   (ad hoc execute → persist → own). Use this guide only when the person wants
   the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
@@ -183,5 +184,5 @@ because an agent asked for it.
 Paste this into the agent connected to your Kody account, swapping in your
 deployment's origin if it is not kody.codes:
 
-> Ask the connected Kody server to read https://kody.codes/guides/first-win and
+> Ask the connected Kody server to read https://kody.codes/docs/first-win and
 > then walk me through the optional email-and-memories loop, one step at a time.

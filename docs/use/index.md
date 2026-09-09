@@ -15,15 +15,24 @@ home works from a second agent. People with a Kody account can also
 
 Read in order for a full tour, or jump to a topic.
 
-## Guides
+## Docs
 
-- [Official guides](https://kody.codes/guides) — Work with Kody (fundamentals
-  and recipes); MCP `search({ entity: "{id}:guide" })`, web index, and raw `.md`
-  per page
-- [Connection guides](https://kody.codes/guides/connect) — verified walkthroughs
+The user-facing docs site is [kody.codes/docs](https://kody.codes/docs): an
+introduction, Get started, Concepts, Packages, Integrations, and per-provider
+connection walkthroughs. Every page is also raw markdown (`/docs/<slug>.md`),
+indexed at [kody.codes/llms.txt](https://kody.codes/llms.txt), and available to
+connected agents as `search({ entity: "{id}:guide" })`. The pages below are the
+MCP-level reference detail those docs link into.
+
+- [What is Kody?](../guides/what-is-kody.md) — the introduction: what Kody is
+  and is not, what you cannot get elsewhere, the building blocks
+- [Connect your agent](../guides/connect-your-agent.md) — the three-step Get
+  started flow for people
+- [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md), and
+  [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
+  primitives every connected agent shares
+- [Connect a provider](https://kody.codes/docs/connect) — verified walkthroughs
   for connecting Discord, GitHub, Google, and other providers to Kody
-- [What is Kody?](../guides/what-is-kody.md) — capability tour and discovery
-  prompt for people (and agents) deciding whether Kody fits, before any setup
 - [How Kody works](../guides/how-kody-works.md) — ask once, save an export,
   daily email only when something shipped
 - [The Kody factory map](../guides/kody-factory.md) — the primitives your
@@ -38,8 +47,8 @@ Read in order for a full tour, or jump to a topic.
   process (vault, CLI, or home devices), publish it with Tunnel and Access, and
   connect it to Kody. Starter:
   [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter)
-- [Connect your agent](./connect-your-agent.md) — choose one host on Get
-  started, complete OAuth, and use the setup prompt. Machine-readable twin:
+- [Connect your agent (host notes)](./connect-your-agent.md) — per-host install
+  steps and the setup prompt. Machine-readable twin:
   [`/auth.md`](https://kody.codes/auth.md)
 - [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
   servers so Kody can call their tools (`kody.mcp[...]`)
@@ -49,7 +58,7 @@ Read in order for a full tour, or jump to a topic.
   overlays and package imports
 - [Workflows](./workflows.md)
 - [Packages](./packages.md)
-- [Platform efficiency](../guides/platform-efficiency.md) — unique Dynamic
+- [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic
   Worker days by surface, and how a stable module graph reuses one isolate
 - [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md)
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;

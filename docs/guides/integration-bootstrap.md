@@ -1,15 +1,16 @@
 ---
 id: integration_bootstrap
-title: Integration bootstrap guide
+title: Integration bootstrap
 summary:
   START HERE when a third-party integration must work before saving a
   dependent package or package app: inspect integration/secret state, stop
   for setup, run an authenticated smoke test, then use connect nextSteps or
   communitySearch before building from scratch.
 category: platform
+audience: agents
 ---
 
-# Integration bootstrap guide
+# Integration bootstrap
 
 **Read this guide first** when a user wants a package, package app, or workflow
 that depends on a third-party integration such as Spotify, GitHub, Slack,
@@ -117,7 +118,7 @@ If those conditions are not met, stop and fix the integration first.
      state, secret names, allowed hosts, and provider contract are already clear
      enough.
    - For the default package-app structure after bootstrap, open
-     `search({ entity: "integration_backed_app:guide" })`.
+     `search({ entity: "package_apps:guide#after-an-integration-smoke-test" })`.
 6. If the smoke test fails, keep working on integration setup. Do not treat the
    downstream artifact as ready.
 

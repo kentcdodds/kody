@@ -63,9 +63,8 @@ Flip every one of those. Create the OAuth app yourself and:
   vendor building integrations one at a time, there's no menu. Anything with
   OAuth works. Your bank's obscure API, some regional service no vendor would
   prioritize, the internal tool at your company: if it speaks OAuth, you can
-  connect it. The
-  [OAuth guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md)
-  walks through the setup.
+  connect it. The [OAuth guide](https://kody.codes/docs/oauth) walks through the
+  setup.
 
 The same principle covers plain API keys and personal access tokens. Those go
 into the server-side secret store via
@@ -101,9 +100,8 @@ throttled by a stranger's traffic, or limited to scopes someone else chose.
 
 If you'd rather own your assistant's access than rent it, the path is short:
 pick one provider you actually use, follow the
-[OAuth guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md)
-to create your app, and connect it. After the first one, the second takes half
-the time.
+[OAuth guide](https://kody.codes/docs/oauth) to create your app, and connect it.
+After the first one, the second takes half the time.
 
 Kody is invite-gated right now, so if you're not in yet,
 [join the waitlist on the signup page](https://kody.codes/signup). The whole

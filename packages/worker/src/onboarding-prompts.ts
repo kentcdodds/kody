@@ -52,7 +52,7 @@ export function buildDiscoveryPrompt(input: {
 	})
 	return [
 		`I'm deciding whether Kody (${origin}) would be useful for me.`,
-		`Read ${origin}/guides/what-is-kody and then interview me to find out what Kody could do for me.`,
+		`Read ${origin}/docs/what-is-kody and then interview me to find out what Kody could do for me.`,
 	].join(' ')
 }
 
@@ -74,7 +74,7 @@ export function buildFirstWinPrompt(input: {
 		requestUrl: input.requestUrl,
 	})
 	return [
-		`Ask the connected Kody server to read ${origin}/guides/first-win and then walk me through the optional email-and-memories loop, one step at a time.`,
+		`Ask the connected Kody server to read ${origin}/docs/first-win and then walk me through the optional email-and-memories loop, one step at a time.`,
 		'Start by sending the welcome email, then tell me exactly what to do in my own inbox.',
 		"Do not poll or wait for my reply — I'll come back to this chat and tell you when I have replied.",
 	].join(' ')
@@ -106,7 +106,7 @@ export function buildPersistFirstPackagePrompt(input: {
 			? `Use execute or a static import for one useful call against ${input.installedExampleName}.`
 			: 'Use execute for one useful call (search Notion, list Linear issues, or ask me what I want if I skipped).'
 	return [
-		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build.`,
+		`Ask the connected Kody server to read ${origin}/docs/quick-example and help me with my first build.`,
 		step2Context,
 		`${executeHint} Show the result, then persist that working code with packageSave.`,
 		'Explain that I own the package. Ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',

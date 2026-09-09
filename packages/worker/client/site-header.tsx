@@ -30,13 +30,13 @@ export type SiteHeaderProps = {
 
 /**
  * Sticky site header from the 2026 landing redesign: brand, marketing nav
- * (Community · Guides · Pricing · Blog), and the session corner (Account
+ * (Community · Docs · Pricing · Blog), and the session corner (Account
  * then the avatar on desktop). The bottom hairline is a static CSS border so
  * it paints before JS.
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
-	{ href: '/guides', label: 'Guides' },
+	{ href: '/docs', label: 'Docs' },
 	{ href: '/pricing', label: 'Pricing' },
 	{ href: '/blog', label: 'Blog' },
 ] as const

@@ -1,4 +1,5 @@
 import { type ConnectOauthExistingConnection } from '#universal/loader-data.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { buildIncompleteConnectOauthPrompt } from '#universal/oauth-scopes.ts'
@@ -195,7 +196,7 @@ export function renderChooser(input: {
 			)}
 			<p mix={css(descriptionCss)}>
 				Need a service that is not listed?{' '}
-				<a href="/guides/oauth" mix={css(primaryLinkCss)}>
+				<a href={docHref('oauth')} mix={css(primaryLinkCss)}>
 					Bring your own OAuth app
 				</a>
 				.

@@ -207,7 +207,7 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(factoryLoop?.ogImage).toBe('/images/kody-factory-map-og.jpg')
 	const factoryLoopBody = (factoryLoop?.body ?? '').replace(/\s+/g, ' ')
 	expect(factoryLoopBody).toContain('I call that the factory loop')
-	expect(factoryLoopBody).toContain('https://kody.codes/guides/how-kody-works')
+	expect(factoryLoopBody).toContain('https://kody.codes/docs/how-kody-works')
 	expect(factoryLoopBody).toContain('https://kody.codes/onboarding')
 	expect(factoryLoopBody).toContain(
 		'https://kody.codes/blog/your-assistants-home',

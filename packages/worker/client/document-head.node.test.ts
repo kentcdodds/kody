@@ -38,16 +38,17 @@ test('every client route resolves a document title other than Not found', () => 
 	expect(missing, 'client routes missing document-head entries').toEqual([])
 })
 
-test('guide artwork and blog posts route Open Graph cards through generated paths', () => {
+test('doc artwork and blog posts route Open Graph cards through generated paths', () => {
 	const guide = absolutizeDocumentHead(
-		resolveDocumentHead('/guides/kody-factory', {
-			guideDetail: {
+		resolveDocumentHead('/docs/kody-factory', {
+			docDetail: {
 				ok: true,
 				slug: 'kody-factory',
 				id: 'kody_factory',
 				title: 'The Kody factory map',
 				summary: 'Map the software factory.',
 				category: 'platform',
+				audience: 'everyone',
 				image: '/images/kody-factory-map.webp',
 				imageAlt: 'Kody presenting a map of the software factory',
 				ogImage: '/images/kody-factory-map-og.jpg',
@@ -58,10 +59,34 @@ test('guide artwork and blog posts route Open Graph cards through generated path
 		}),
 		'https://kody.codes',
 	)
-	expect(guide.canonicalUrl).toBe('https://kody.codes/guides/kody-factory')
-	expect(guide.og.imageUrl).toBe(
-		'https://kody.codes/guides/kody-factory/og.png',
-	)
+	expect(guide.canonicalUrl).toBe('https://kody.codes/docs/kody-factory')
+	expect(guide.og.imageUrl).toBe('https://kody.codes/docs/kody-factory/og.png')
+
+	// The introduction is canonical at /docs whether it was requested there or
+	// at its slug URL.
+	const intro = {
+		ok: true as const,
+		slug: 'what-is-kody',
+		id: 'what_is_kody',
+		title: 'What is Kody?',
+		summary: 'Start here.',
+		category: 'platform' as const,
+		audience: 'everyone' as const,
+		image: null,
+		imageAlt: null,
+		ogImage: null,
+		provider: null,
+		lastVerified: null,
+		body: '# What is Kody?',
+	}
+	for (const pathname of ['/docs', '/docs/what-is-kody']) {
+		const head = absolutizeDocumentHead(
+			resolveDocumentHead(pathname, { docDetail: intro }),
+			'https://kody.codes',
+		)
+		expect(head.title).toBe('Kody Docs')
+		expect(head.canonicalUrl).toBe('https://kody.codes/docs')
+	}
 
 	const blogBase = {
 		ok: true as const,

@@ -6,6 +6,7 @@ import {
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import {
 	buildCommunityIndexHref,
 	type CommunityListingSort,
@@ -53,10 +54,7 @@ export function renderCommunityEmptyState(
 					</div>
 				</details>
 				<p mix={css(secondaryCtaCss)}>
-					<a
-						href={routes.guideDetail.href({ slug: 'package-authoring' })}
-						mix={css(getGhostButtonCss())}
-					>
+					<a href={docHref('package-authoring')} mix={css(getGhostButtonCss())}>
 						Read the package authoring guide
 					</a>
 					<a

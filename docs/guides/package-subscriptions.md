@@ -1,6 +1,6 @@
 ---
 id: package_subscriptions
-title: Package subscription guide
+title: Package subscriptions and events
 summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with packageSubscriptionsList; smoke-test handlers with
@@ -21,7 +21,7 @@ summary:
 category: platform
 ---
 
-# Package subscription guide
+# Package subscriptions and events
 
 Use package subscriptions when a saved package should react to Kody-owned event
 topics. The saved package remains the top-level entity; subscriptions are nested

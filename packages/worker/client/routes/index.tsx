@@ -247,17 +247,17 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		blogArea,
 		(m) => m.blogPostRouteLoader,
 	),
-	[routePattern(routes.guides)]: lazyRouteLoader(
+	[routePattern(routes.docs)]: lazyRouteLoader(
 		blogArea,
-		(m) => m.guidesRouteLoader,
+		(m) => m.docsIntroRouteLoader,
 	),
-	[routePattern(routes.guidesConnect)]: lazyRouteLoader(
+	[routePattern(routes.docsConnect)]: lazyRouteLoader(
 		blogArea,
-		(m) => m.guidesConnectRouteLoader,
+		(m) => m.docsConnectRouteLoader,
 	),
-	[routePattern(routes.guideDetail)]: lazyRouteLoader(
+	[routePattern(routes.docDetail)]: lazyRouteLoader(
 		blogArea,
-		(m) => m.guideDetailRouteLoader,
+		(m) => m.docDetailRouteLoader,
 	),
 	[routePattern(routes.community)]: lazyRouteLoader(
 		communityArea,
@@ -521,14 +521,14 @@ export const clientRoutes = {
 	[routePattern(routes.blogPost)]: (
 		<LazyBlogRoute render={(m) => <m.BlogPostRoute />} />
 	),
-	[routePattern(routes.guides)]: (
-		<LazyBlogRoute render={(m) => <m.GuidesRoute />} />
+	[routePattern(routes.docs)]: (
+		<LazyBlogRoute render={(m) => <m.DocDetailRoute />} />
 	),
-	[routePattern(routes.guidesConnect)]: (
-		<LazyBlogRoute render={(m) => <m.GuidesConnectRoute />} />
+	[routePattern(routes.docsConnect)]: (
+		<LazyBlogRoute render={(m) => <m.DocsConnectRoute />} />
 	),
-	[routePattern(routes.guideDetail)]: (
-		<LazyBlogRoute render={(m) => <m.GuideDetailRoute />} />
+	[routePattern(routes.docDetail)]: (
+		<LazyBlogRoute render={(m) => <m.DocDetailRoute />} />
 	),
 	[routePattern(routes.community)]: (
 		<LazyCommunityRoute render={(m) => <m.CommunityRoute />} />

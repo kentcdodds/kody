@@ -1,6 +1,6 @@
 ---
 id: openapi_integrations
-title: OpenAPI integrations guide
+title: OpenAPI integrations
 summary:
   Prefer a close community helpers package, then fork `@kody/openapi` to bind
   and call selected operations.

@@ -19,7 +19,7 @@ sessions, and other platform objects for a content edit.
 
 Official guide markdown (`docs/guides/`) is also statically imported into the
 MCP Durable Object (`codingGuideGet`). Those edits must upload `kody-platform`
-as well as origin so web `/guides` and MCP stay on the same bundle; they still
+as well as origin so web `/docs` and MCP stay on the same bundle; they still
 skip `kody-runtime` and `kody-jobs`.
 
 A second origin-facing content worker (`kody-app`) that forwards every page

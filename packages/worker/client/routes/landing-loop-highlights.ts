@@ -9,7 +9,7 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 export async function fetchLandingLoopHighlights(signal?: AbortSignal) {
 	try {
 		const response = await fetch(
-			routes.guideDetailApi.href({ slug: 'how-kody-works' }),
+			routes.docDetailApi.href({ slug: 'how-kody-works' }),
 			{
 				headers: { Accept: 'application/json' },
 				signal,

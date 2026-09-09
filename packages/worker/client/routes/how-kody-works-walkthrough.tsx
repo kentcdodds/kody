@@ -28,7 +28,7 @@ import {
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
- * Interactive factory-loop transcript for /guides/how-kody-works.
+ * Interactive factory-loop transcript for /docs/how-kody-works.
  * Shared line/tool rendering lives in interactive-guide-walkthrough.tsx.
  * Host selects live in the lead so changing an agent updates the
  * conversation marks and the package-title marks together.

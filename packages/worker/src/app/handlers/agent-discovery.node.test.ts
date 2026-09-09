@@ -59,7 +59,7 @@ test('agent discovery handlers serve robots, sitemap, cards, auth.md, and skills
 		'application/xml; charset=utf-8',
 	)
 	expect(await sitemap.text()).toContain(
-		'https://kody.example/guides/what-is-kody',
+		'https://kody.example/docs/how-kody-works',
 	)
 
 	const card = await call(

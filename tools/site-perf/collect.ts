@@ -185,7 +185,7 @@ async function byteLengthOf(url: string): Promise<number | null> {
 	}
 }
 
-const extraLandingPaths = ['/onboarding', '/guides/how-kody-works'] as const
+const extraLandingPaths = ['/onboarding', '/docs/how-kody-works'] as const
 
 async function probePage(url: string): Promise<SitePerfPageProbe | null> {
 	try {

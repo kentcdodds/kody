@@ -1,5 +1,12 @@
 export type GuideCategory = 'platform' | 'provider'
 
+/**
+ * Who the page is written for. `agents` marks a playbook the connected
+ * agent follows step by step (people can read it, but it addresses the
+ * agent); `everyone` is ordinary documentation.
+ */
+export type GuideAudience = 'everyone' | 'agents'
+
 export type GuideFrontmatter = {
 	/** Stable MCP guide id (snake_case), e.g. `integration_bootstrap`. */
 	id: string
@@ -29,10 +36,11 @@ export type GuideFrontmatter = {
 	 * web/agent listings and `{id}:guide` search advertisements.
 	 */
 	unadvertised: boolean
+	audience: GuideAudience
 }
 
 export type Guide = GuideFrontmatter & {
-	/** URL slug on the web (`/guides/:slug`), derived from the filename. */
+	/** URL slug on the web (`/docs/:slug`), derived from the filename. */
 	slug: string
 	/** Markdown body without the frontmatter block. */
 	body: string

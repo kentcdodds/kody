@@ -1,13 +1,14 @@
 ---
 id: portability
-title: Portability — reuse what already exists
+title: Second agent: reuse what already exists
 summary:
   Second-agent proof after a first win. Find what the account already has, reuse
   it once, and stop. Retrieved as portability:guide from Step 3.
 category: platform
+audience: agents
 ---
 
-# Portability — reuse what already exists
+# Second agent: reuse what already exists
 
 This page is the second-agent briefing. People paste one short prompt on
 `/onboarding/step-3`. Agents retrieve this guide with

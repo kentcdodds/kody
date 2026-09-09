@@ -3,6 +3,7 @@ import { type AppLoaderData } from '#universal/loader-data.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
+import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
 import { publicOgPages, type PublicOgPageId } from '#universal/og-pages.ts'
 
 const DEFAULT_DOCUMENT_TITLE = 'kody'
@@ -134,6 +135,35 @@ function publicPageHead(
 }
 
 /**
+ * `/docs` and `/docs/:slug` share one head: the introduction is canonical at
+ * `/docs` itself, every other doc at its own `/docs/:slug`.
+ */
+function docDetailHead({
+	loaderData,
+}: DocumentHeadContext): DocumentHeadDescriptor {
+	const doc = loaderData?.docDetail
+	if (!doc?.ok) {
+		return titleOnly('Docs')
+	}
+	const title =
+		doc.slug === docsIntroSlug ? 'Kody Docs' : `${doc.title} — Kody Docs`
+	return {
+		title,
+		description: doc.summary,
+		canonicalPath: docHref(doc.slug),
+		...(doc.ogImage
+			? {
+					og: {
+						title,
+						description: doc.summary,
+						imagePath: routes.docDetailOgImage.href({ slug: doc.slug }),
+					},
+				}
+			: {}),
+	}
+}
+
+/**
  * Single registry for document head metadata (title, OG/Twitter, canonical,
  * alternate links). SSR and the client router both resolve from here so SPA
  * navigations keep `<head>` in sync without per-route wiring.
@@ -236,31 +266,14 @@ const routeDocumentHeads = {
 			},
 		}
 	},
-	[routePattern(routes.guides)]: titleOnly('Guides'),
-	[routePattern(routes.guidesConnect)]: titleOnly('Connect a provider'),
-	[routePattern(routes.guideDetail)]: ({ loaderData, pathname }) => {
-		const guide = loaderData?.guideDetail
-		if (!guide?.ok) {
-			return titleOnly('Guides')
-		}
-		const title = `${guide.title} — Kody guide`
-		return {
-			title,
-			description: guide.summary,
-			canonicalPath: pathname,
-			...(guide.ogImage
-				? {
-						og: {
-							title,
-							description: guide.summary,
-							imagePath: routes.guideDetailOgImage.href({
-								slug: guide.slug,
-							}),
-						},
-					}
-				: {}),
-		}
-	},
+	[routePattern(routes.docs)]: docDetailHead,
+	[routePattern(routes.docsConnect)]: ({ pathname }) => ({
+		title: 'Connect a provider — Kody Docs',
+		description:
+			'Verified walkthroughs for connecting Discord, GitHub, Google, Notion, Origin, Salesforce, Slack, or Spotify to Kody.',
+		canonicalPath: pathname,
+	}),
+	[routePattern(routes.docDetail)]: docDetailHead,
 	[routePattern(routes.community)]: publicPageHead(
 		'community',
 		'Public packages',

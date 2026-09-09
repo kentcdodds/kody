@@ -31,7 +31,7 @@ Those two doors lead to a set of user-isolated primitives.
 
 **Secrets** are private credentials stored for your Kody account. Runtime code
 refers to them by placeholder or an approved package mount; Kody does not return
-the saved secret value to the assistant.
+the saved secret value to the assistant. See [Secrets](./secrets.md).
 
 **Integrations** are saved connections to external services. OAuth-backed
 integrations keep their token bundles server-side. Remote MCP servers expose
@@ -60,7 +60,7 @@ package declares recurring schedules under `kody.jobs` so the schedule travels
 with the package behavior. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime. Package-job
 runs stay on `/account/jobs`. Deferred workflow runs stay on
-`/account/workflows`.
+`/account/workflows`. See [Jobs, workflows, and webhooks](./triggers.md).
 
 ### Apps and webhooks
 
@@ -77,8 +77,8 @@ inbound event doors.
 
 **Memories** are durable facts and preferences attached to your Kody account.
 Search can retrieve relevant memories as context for a task. Memory is for
-information worth carrying between conversations, not package state, source
-configuration, or credentials.
+information worth carrying between conversations and between agents, not package
+state, source configuration, or credentials. See [Shared memory](./memory.md).
 
 ## The boundary around the factory
 

@@ -23,4 +23,4 @@ node tools/control-kody.ts request GET /account/integrations.json
 
 - Cloud Agents cannot complete a third-party OAuth dance without credentials in
   the environment. HTTP list/empty-state is the usual proof.
-- `/guides/connect` is the public how-to, not the account page.
+- `/docs/connect` is the public how-to, not the account page.

@@ -12,18 +12,20 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 import {
 	getGuideBySlug,
-	listPlatformGuides,
+	listGuides,
 	listProviderGuides,
-	listStartHereGuides,
 } from '#worker/guides/catalog.ts'
+import { docsNav, listDocsNavSlugs } from '#universal/docs-nav.ts'
 import {
-	createGuideDetailApiHandler,
-	createGuideDetailMarkdownHandler,
-	createGuidesApiHandler,
-	createGuidesConnectApiHandler,
-	createGuidesConnectMarkdownHandler,
-	createGuidesMarkdownHandler,
-} from './guides.tsx'
+	createDocDetailApiHandler,
+	createDocDetailMarkdownHandler,
+	createDocsApiHandler,
+	createDocsConnectApiHandler,
+	createDocsConnectMarkdownHandler,
+	createDocsMarkdownHandler,
+	createLlmsTxtHandler,
+} from './docs.tsx'
+import { resolveLegacyGuidesLocation } from './legacy-guides-redirect.ts'
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
 
@@ -36,39 +38,50 @@ function callHandler(
 	return action.handler(args)
 }
 
-test('guides API and markdown lead with Work with Kody, not the provider dump', async () => {
-	const apiResponse = await callHandler(createGuidesApiHandler(env) as never, {
-		request: new Request('https://kody.example/guides.json'),
+test('docs API lists every advertised doc by section and the markdown root is intro plus index', async () => {
+	const apiResponse = await callHandler(createDocsApiHandler(env) as never, {
+		request: new Request('https://kody.example/docs.json'),
 		params: { slug: '' },
 	})
 	expect(apiResponse.status).toBe(200)
 	const payload = (await apiResponse.json()) as {
 		ok: boolean
-		guides: Array<{ slug: string; id: string; title: string; category: string }>
+		intro: string
+		sections: Array<{ id: string; label: string; slugs: Array<string> }>
+		guides: Array<{
+			slug: string
+			id: string
+			title: string
+			category: string
+			section: string | null
+			audience: string
+		}>
 	}
 	expect(payload.ok).toBe(true)
-	expect(payload.guides.length).toBe(listPlatformGuides().length)
-	expect(payload.guides.every((guide) => guide.category === 'platform')).toBe(
-		true,
-	)
+	expect(payload.intro).toBe('what-is-kody')
+	expect(payload.guides.length).toBe(listGuides().length)
+	expect(payload.guides.map((guide) => guide.slug)).toEqual(listDocsNavSlugs())
 	expect(payload.guides.some((guide) => guide.id === 'values')).toBe(false)
 	expect(
 		payload.guides.some(
 			(guide) => guide.id === 'package_invocation_token_setup',
 		),
 	).toBe(false)
-	expect(payload.guides.some((guide) => guide.slug === 'github')).toBe(false)
+	expect(payload.guides.every((guide) => guide.section !== null)).toBe(true)
+	expect(payload.sections.map((section) => section.id)).toEqual(
+		docsNav.map((section) => section.id),
+	)
+	expect(payload.guides[0]?.slug).toBe('what-is-kody')
+	expect(
+		payload.guides.find((guide) => guide.slug === 'onboarding')?.audience,
+	).toBe('agents')
 	// Bodies stay out of the index payload.
 	expect(JSON.stringify(payload)).not.toContain('## ')
 
-	const startHere = listStartHereGuides()
-	expect(startHere[0]?.slug).toBe('what-is-kody')
-	expect(payload.guides[0]?.slug).toBe(startHere[0]?.slug)
-
 	const markdownIndex = await callHandler(
-		createGuidesMarkdownHandler(env) as never,
+		createDocsMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides.md'),
+			request: new Request('https://kody.example/docs.md'),
 			params: { slug: '' },
 		},
 	)
@@ -76,34 +89,98 @@ test('guides API and markdown lead with Work with Kody, not the provider dump', 
 		'text/markdown; charset=utf-8',
 	)
 	const indexBody = await markdownIndex.text()
-	expect(indexBody.startsWith('#')).toBe(true)
-	expect(indexBody).toContain('https://kody.example/guides/connect.md')
-	expect(indexBody).toContain('https://kody.example/guides/what-is-kody.md')
-	expect(indexBody).toContain('https://kody.example/guides/how-kody-works.md')
-	expect(indexBody.indexOf('### Start here')).toBeLessThan(
-		indexBody.indexOf('### More guides'),
+	expect(indexBody.startsWith('# What is Kody?')).toBe(true)
+	expect(indexBody).toContain('# All Kody docs')
+	expect(indexBody).toContain('https://kody.example/llms.txt')
+	for (const section of docsNav) {
+		expect(indexBody).toContain(`## ${section.label}`)
+	}
+	expect(indexBody.indexOf('## Introduction')).toBeLessThan(
+		indexBody.indexOf('## Get started'),
 	)
-	expect(indexBody.indexOf('## Work with Kody')).toBeLessThan(
+	expect(indexBody.indexOf('## Concepts')).toBeLessThan(
 		indexBody.indexOf('## Connect a provider'),
 	)
-	// Full provider dump stays off the main index.
-	expect(indexBody).not.toContain('https://kody.example/guides/github.md')
-	expect(indexBody).not.toContain('https://kody.example/guides/discord.md')
-	expect(indexBody).not.toContain('https://kody.example/guides/values.md')
-	expect(indexBody).not.toContain(
-		'https://kody.example/guides/account-package-invocation-token-setup.md',
-	)
-	expect(getGuideBySlug('values')?.unadvertised).toBe(true)
-	expect(
-		getGuideBySlug('account-package-invocation-token-setup')?.unadvertised,
-	).toBe(true)
+	for (const guide of listGuides()) {
+		expect(indexBody).toContain(`https://kody.example/docs/${guide.slug}.md`)
+	}
+	expect(indexBody).not.toContain('https://kody.example/docs/values.md')
+	expect(indexBody).not.toContain('/guides/')
+
+	const llms = await callHandler(createLlmsTxtHandler(env) as never, {
+		request: new Request('https://kody.example/llms.txt'),
+		params: { slug: '' },
+	})
+	expect(llms.status).toBe(200)
+	expect(llms.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+	const llmsBody = await llms.text()
+	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
+	for (const guide of listGuides()) {
+		expect(llmsBody).toContain(
+			`[${guide.title}](https://kody.example/docs/${guide.slug}.md)`,
+		)
+	}
+	expect(llmsBody).not.toContain('/docs/values.md')
 })
 
-test('guides connect index serves HTML twins, JSON, and markdown without colliding with guide slugs', async () => {
-	const apiResponse = await callHandler(
-		createGuidesConnectApiHandler(env) as never,
+test('legacy /guides URLs resolve to their /docs twins', () => {
+	const cases: Array<[string, string]> = [
+		['/guides', '/docs'],
+		['/guides.md', '/docs.md'],
+		['/guides.json', '/docs.json'],
+		['/guides/connect', '/docs/connect'],
+		['/guides/connect.md', '/docs/connect.md'],
+		['/guides/connect.json', '/docs/connect.json'],
+		['/guides/what-is-kody', '/docs/what-is-kody'],
+		['/guides/what-is-kody.md', '/docs/what-is-kody.md'],
+		['/guides/oauth', '/docs/oauth'],
+		['/guides/oauth.md', '/docs/oauth.md'],
+		['/guides/oauth.json', '/docs/oauth.json'],
+		['/guides/kody-factory/og.png', '/docs/kody-factory/og.png'],
+		['/guides/oauth?utm=x', '/docs/oauth?utm=x'],
+		[
+			'/guides/integration-backed-app-happy-path',
+			'/docs/package-apps#after-an-integration-smoke-test',
+		],
+		['/guides/integration-backed-app-happy-path.md', '/docs/package-apps.md'],
+		['/guides/nope', '/docs/nope'],
+	]
+	expect(
+		cases.map(([from]) => [
+			from,
+			resolveLegacyGuidesLocation(new URL(from, 'https://kody.example')),
+		]),
+	).toEqual(cases)
+})
+
+test('merged doc slugs 308 to the absorbing doc on every twin', async () => {
+	const html = await callHandler(createDocDetailApiHandler(env) as never, {
+		request: new Request(
+			'https://kody.example/docs/integration-backed-app-happy-path.json',
+		),
+		params: { slug: 'integration-backed-app-happy-path' },
+	})
+	expect(html.status).toBe(308)
+	expect(html.headers.get('Location')).toBe('/docs/package-apps.json')
+
+	const markdown = await callHandler(
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/connect.json'),
+			request: new Request(
+				'https://kody.example/docs/integration-backed-app-happy-path.md',
+			),
+			params: { slug: 'integration-backed-app-happy-path' },
+		},
+	)
+	expect(markdown.status).toBe(308)
+	expect(markdown.headers.get('Location')).toBe('/docs/package-apps.md')
+})
+
+test('docs connect index serves JSON and markdown without colliding with doc slugs', async () => {
+	const apiResponse = await callHandler(
+		createDocsConnectApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/docs/connect.json'),
 			params: { slug: '' },
 		},
 	)
@@ -128,9 +205,9 @@ test('guides connect index serves HTML twins, JSON, and markdown without collidi
 	)
 
 	const markdown = await callHandler(
-		createGuidesConnectMarkdownHandler(env) as never,
+		createDocsConnectMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/connect.md'),
+			request: new Request('https://kody.example/docs/connect.md'),
 			params: { slug: '' },
 		},
 	)
@@ -140,32 +217,33 @@ test('guides connect index serves HTML twins, JSON, and markdown without collidi
 	)
 	const body = await markdown.text()
 	expect(body.startsWith('#')).toBe(true)
-	expect(body).toContain('https://kody.example/guides.md')
-	expect(body).toContain('https://kody.example/guides/how-kody-works.md')
-	expect(body).toContain('https://kody.example/guides/local-mcp-tunnels.md')
+	expect(body).toContain('https://kody.example/docs.md')
+	expect(body).toContain('https://kody.example/docs/how-kody-works.md')
+	expect(body).toContain('https://kody.example/docs/local-mcp-tunnels.md')
+	expect(body).toContain('https://kody.example/docs/integration-bootstrap.md')
 	for (const guide of listProviderGuides()) {
-		expect(body).toContain(`https://kody.example/guides/${guide.slug}.md`)
+		expect(body).toContain(`https://kody.example/docs/${guide.slug}.md`)
 	}
 
 	// Reserved `connect` is an index route, not a guide detail slug.
 	expect(getGuideBySlug('connect')).toBeNull()
 	const connectAsDetail = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/connect.md'),
+			request: new Request('https://kody.example/docs/connect.md'),
 			params: { slug: 'connect' },
 		},
 	)
 	// The dedicated markdown handler is what routers register for
-	// `/guides/connect.md`; the detail handler would 404 if somehow matched.
+	// `/docs/connect.md`; the detail handler would 404 if somehow matched.
 	expect(connectAsDetail.status).toBe(404)
 })
 
-test('provider and platform guide markdown details stay stable', async () => {
+test('provider and platform doc markdown details stay stable', async () => {
 	const valuesDetail = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/values.md'),
+			request: new Request('https://kody.example/docs/values.md'),
 			params: { slug: 'values' },
 		},
 	)
@@ -173,9 +251,9 @@ test('provider and platform guide markdown details stay stable', async () => {
 	expect((await valuesDetail.text()).startsWith('#')).toBe(true)
 
 	const detail = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/oauth.md'),
+			request: new Request('https://kody.example/docs/oauth.md'),
 			params: { slug: 'oauth' },
 		},
 	)
@@ -188,27 +266,27 @@ test('provider and platform guide markdown details stay stable', async () => {
 	expect(detailBody).not.toContain('\nid: oauth\n')
 
 	const githubMd = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/github.md'),
+			request: new Request('https://kody.example/docs/github.md'),
 			params: { slug: 'github' },
 		},
 	)
 	expect(githubMd.status).toBe(200)
 
 	const googleOauthMd = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/google-oauth.md'),
+			request: new Request('https://kody.example/docs/google-oauth.md'),
 			params: { slug: 'google-oauth' },
 		},
 	)
 	expect(googleOauthMd.status).toBe(200)
 
 	const googleOauthApi = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/google-oauth.json'),
+			request: new Request('https://kody.example/docs/google-oauth.json'),
 			params: { slug: 'google-oauth' },
 		},
 	)
@@ -225,9 +303,9 @@ test('provider and platform guide markdown details stay stable', async () => {
 	})
 
 	const factoryApi = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/kody-factory.json'),
+			request: new Request('https://kody.example/docs/kody-factory.json'),
 			params: { slug: 'kody-factory' },
 		},
 	)
@@ -238,18 +316,18 @@ test('provider and platform guide markdown details stay stable', async () => {
 	})
 
 	const missing = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/nope.md'),
+			request: new Request('https://kody.example/docs/nope.md'),
 			params: { slug: 'nope' },
 		},
 	)
 	expect(missing.status).toBe(404)
 
 	const missingApi = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/nope.json'),
+			request: new Request('https://kody.example/docs/nope.json'),
 			params: { slug: 'nope' },
 		},
 	)
@@ -258,25 +336,25 @@ test('provider and platform guide markdown details stay stable', async () => {
 
 test('what-is-kody and first-win distinguish chat-model inference from embeddings', async () => {
 	const whatIsKody = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/what-is-kody.md'),
+			request: new Request('https://kody.example/docs/what-is-kody.md'),
 			params: { slug: 'what-is-kody' },
 		},
 	)
 	expect(whatIsKody.status).toBe(200)
 	const whatIsKodyBody = (await whatIsKody.text()).replace(/\s+/g, ' ')
 	expect(whatIsKodyBody).toContain(
-		'does not run its own chat-model agent loop or bill for chat tokens',
+		'Kody runs no chat-model agent loop and bills no chat tokens',
 	)
 	expect(whatIsKodyBody).toContain(
 		'Search and indexing use a small embedding model',
 	)
 
 	const firstWin = await callHandler(
-		createGuideDetailMarkdownHandler(env) as never,
+		createDocDetailMarkdownHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/first-win.md'),
+			request: new Request('https://kody.example/docs/first-win.md'),
 			params: { slug: 'first-win' },
 		},
 	)
@@ -288,7 +366,7 @@ test('what-is-kody and first-win distinguish chat-model inference from embedding
 	expect(firstWinBody).toContain('Search indexing uses a small embedding model')
 })
 
-test('interactive guide JSON includes walkthrough highlight tokens', async () => {
+test('interactive doc JSON includes walkthrough highlight tokens', async () => {
 	const howKodyWorksSnippets = uniqueHighlightSnippets(
 		collectHowKodyWorksSnippets(),
 	)
@@ -321,9 +399,9 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 	} as Env
 
 	const howKodyWorksResponse = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/how-kody-works.json'),
+			request: new Request('https://kody.example/docs/how-kody-works.json'),
 			params: { slug: 'how-kody-works' },
 		},
 	)
@@ -360,9 +438,9 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 	).toBe(true)
 
 	const googleOauthResponse = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/google-oauth.json'),
+			request: new Request('https://kody.example/docs/google-oauth.json'),
 			params: { slug: 'google-oauth' },
 		},
 	)
@@ -384,9 +462,9 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 	expect(googleOauthPayload.walkthroughHosts).toBeUndefined()
 
 	const oauthResponse = await callHandler(
-		createGuideDetailApiHandler(env) as never,
+		createDocDetailApiHandler(env) as never,
 		{
-			request: new Request('https://kody.example/guides/oauth.json'),
+			request: new Request('https://kody.example/docs/oauth.json'),
 			params: { slug: 'oauth' },
 		},
 	)

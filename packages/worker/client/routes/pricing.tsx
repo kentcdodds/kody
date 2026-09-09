@@ -16,7 +16,7 @@ import {
 	publicSignupPrimaryCta,
 	type PublicSignupCta,
 } from '#universal/public-signup-copy.ts'
-import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
@@ -54,7 +54,7 @@ type LimitGroup = {
 
 const count = new Intl.NumberFormat('en-US')
 const size = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
-const factoryGuideHref = routes.guideDetail.href({ slug: 'kody-factory' })
+const factoryGuideHref = docHref('kody-factory')
 
 const limitGroups: ReadonlyArray<LimitGroup> = [
 	{

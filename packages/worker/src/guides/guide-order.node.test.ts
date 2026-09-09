@@ -12,21 +12,21 @@ test('sortGuidesByAuthoredOrder reproduces the web catalog order from an arbitra
 	)
 })
 
-test('sortGuidesByAuthoredOrder throws when a guide is missing from guideOrder', () => {
+test('sortGuidesByAuthoredOrder throws when a guide is missing from the docs nav', () => {
 	const guidesWithUnknownSlug = [
 		...webGuides,
 		{ ...webGuides[0]!, slug: 'not-in-guide-order' },
 	]
 	expect(() => sortGuidesByAuthoredOrder(guidesWithUnknownSlug)).toThrow(
-		/guide-order\.ts is missing guideOrder entr(?:y|ies) for: not-in-guide-order/,
+		/docs-nav\.ts is missing nav \(or unadvertisedDocSlugs\) entr(?:y|ies) for: not-in-guide-order/,
 	)
 })
 
-test('sortGuidesByAuthoredOrder throws when guideOrder names a slug with no matching guide', () => {
+test('sortGuidesByAuthoredOrder throws when the docs nav names a slug with no matching guide', () => {
 	const guidesMissingOneEntry = webGuides.filter(
 		(guide) => guide.slug !== 'values',
 	)
 	expect(() => sortGuidesByAuthoredOrder(guidesMissingOneEntry)).toThrow(
-		/guide-order\.ts lists guideOrder entr(?:y|ies) with no matching guide: values/,
+		/docs-nav\.ts lists entr(?:y|ies) with no matching guide: values/,
 	)
 })

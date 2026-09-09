@@ -7,6 +7,7 @@ import {
 	resolveEntityExplainer,
 } from '#client/routes/entity-explainer.tsx'
 import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 
 test('entity explainers resolve on entity pages, render collapsed, and skip settings-only routes', async () => {
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
@@ -23,9 +24,7 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 		),
 	).toBeNull()
 
-	const comparisonHref = routes.guideDetail.href({
-		slug: 'packages-integrations-mcp',
-	})
+	const comparisonHref = docHref('packages-integrations-mcp')
 	const integrationsCopy = resolveEntityExplainer(
 		routes.accountIntegrations.href(),
 	)

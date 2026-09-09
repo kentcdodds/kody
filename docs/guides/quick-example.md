@@ -1,15 +1,16 @@
 ---
 id: quick_example
-title: First build — ad hoc execute, then persist
+title: First build: ad hoc execute, then persist
 summary:
   Agent playbook after Make something useful (`/onboarding/step-2`) or Connect
   your agent (`/onboarding/step-1`): run one useful ad hoc execute, show the result,
   persist that working code as a package they own, and offer optional triggers
   without recommending one.
 category: platform
+audience: agents
 ---
 
-# First build — ad hoc execute, then persist
+# First build: ad hoc execute, then persist
 
 <!--
 Agent notes — for AI agents driving the first build from this page:

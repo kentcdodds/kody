@@ -3,7 +3,7 @@ import { rewriteRelativeGuideLinks } from './rewrite-relative-links.ts'
 
 const knownSlugs = new Set(['oauth', 'integration-bootstrap', 'google'])
 
-test('rewriteRelativeGuideLinks maps guide files to /guides routes and repo docs to GitHub', () => {
+test('rewriteRelativeGuideLinks maps guide files to /docs routes and repo docs to GitHub', () => {
 	const body = [
 		'Read [integration-bootstrap.md](./integration-bootstrap.md) first.',
 		'Also [oauth](oauth.md#redirect-uri) and [google](providers/google.md).',
@@ -19,9 +19,9 @@ test('rewriteRelativeGuideLinks maps guide files to /guides routes and repo docs
 		knownSlugs,
 	})
 
-	expect(rewritten).toContain('](/guides/integration-bootstrap)')
-	expect(rewritten).toContain('](/guides/oauth#redirect-uri)')
-	expect(rewritten).toContain('](/guides/google)')
+	expect(rewritten).toContain('](/docs/integration-bootstrap)')
+	expect(rewritten).toContain('](/docs/oauth#redirect-uri)')
+	expect(rewritten).toContain('](/docs/google)')
 	expect(rewritten).toContain(
 		'](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md#ambient-storage-in-package-code)',
 	)
@@ -36,14 +36,33 @@ test('rewriteRelativeGuideLinks maps guide files to /guides routes and repo docs
 		sourceDir: 'docs/guides',
 		knownSlugs,
 	})
-	expect(withTitles).toContain('](/guides/oauth "OAuth guide")')
-	expect(withTitles).toContain("](/guides/google 'G')")
+	expect(withTitles).toContain('](/docs/oauth "OAuth guide")')
+	expect(withTitles).toContain("](/docs/google 'G')")
 
 	const fromProviderDir = rewriteRelativeGuideLinks({
 		body: 'See [oauth](../oauth.md) and [google](./google.md).',
 		sourceDir: 'docs/guides/providers',
 		knownSlugs,
 	})
-	expect(fromProviderDir).toContain('](/guides/oauth)')
-	expect(fromProviderDir).toContain('](/guides/google)')
+	expect(fromProviderDir).toContain('](/docs/oauth)')
+	expect(fromProviderDir).toContain('](/docs/google)')
+})
+
+test('rewriteRelativeGuideLinks sends the introduction to /docs and merged files to their alias', () => {
+	const rewritten = rewriteRelativeGuideLinks({
+		body: [
+			'Start with [What is Kody?](./what-is-kody.md).',
+			'Then [happy path](./integration-backed-app-happy-path.md)',
+			'or [one heading](./integration-backed-app-happy-path.md#avoid-this-detour).',
+		].join('\n'),
+		sourceDir: 'docs/guides',
+		knownSlugs: new Set(['what-is-kody', 'package-apps']),
+	})
+	expect(rewritten).toContain('](/docs)')
+	expect(rewritten).not.toContain('](/docs/what-is-kody)')
+	expect(rewritten).toContain(
+		'](/docs/package-apps#after-an-integration-smoke-test)',
+	)
+	// An authored fragment wins over the alias default.
+	expect(rewritten).toContain('](/docs/package-apps#avoid-this-detour)')
 })

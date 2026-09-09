@@ -2,22 +2,61 @@
 id: package_apps
 title: Package apps
 summary:
-  Package apps: session handoff, smoke with packageAppFetch, absolute asset
-  URLs, lean forks.
+  Give a package a hosted HTTP and browser surface. Covers the default app shape
+  after an integration smoke test, session handoff to the `*.kody.run`
+  subdomain, smoke tests with packageAppFetch, absolute asset URLs, the
+  same-origin proxy, lean forks, compiled clients, and listing verification.
 category: platform
 ---
 
 # Package apps
 
-Use this guide when authoring or debugging a package **app**, a community fork
-of an app, or a hosted-app load. Package shape, README / AGENTS.md, Intent, and
+Use this doc when authoring or debugging a package **app**, a community fork of
+an app, or a hosted-app load. Package shape, README / AGENTS.md, Intent, and
 export JSDoc stay in [Package authoring](./package-authoring.md)
-(`package_authoring:guide`). Integration smoke tests stay in
-[Integration-backed package app happy path](./integration-backed-app-happy-path.md)
-(`integration_backed_app:guide`).
+(`package_authoring:guide`). Proving the integration first stays in
+[Integration bootstrap](./integration-bootstrap.md)
+(`integration_bootstrap:guide`).
 
 Open a heading with `search({ entity: "package_apps:guide#asset-urls" })` (or
 another slug below) when you need one recipe.
+
+## After an integration smoke test
+
+Once `integration_bootstrap` proves the integration works — or integration and
+secret state are already clear enough to verify quickly — go straight to the
+app. Do not spelunk the local repo first unless you specifically need repo
+conventions, shared helpers, or an existing package to extend.
+
+1. Discover integration and secret state with `search`. Read full integration
+   metadata only when you need exact names, hosts, or the API base URL.
+2. Verify the required connection exists. For OAuth, confirm the integration
+   name, required hosts, and API base URL match the app you are about to build
+   (tokens live on the connection). For secret-backed auth, confirm the secret
+   names and allowed hosts match.
+3. Run one cheap authenticated smoke test in `execute` — a small read-only
+   request such as `GET /me`, `GET /viewer`, or `GET /v1/me`.
+4. If it passes, build the app as a saved package with
+   `package.json#kody.app.entry`. Keep human `README.md` (including `## Intent`)
+   and agent `AGENTS.md` aligned with the person's goal. Keep provider API calls
+   and durable coordination in package-owned backend modules.
+5. Save with `packageSave` (or push through the git lane), reopen the hosted
+   package URL, and iterate there instead of pasting large inline HTML blobs
+   back into model context.
+
+### Default app shape
+
+For non-trivial or integration-backed apps, prefer this split:
+
+- **app entry** — a Worker-style fetch surface declared by
+  `package.json#kody.app.entry`
+- **exports** — reusable modules and callable default exports declared in
+  `package.json#exports`
+- **durable data** — `packageStorage()` for the shared package bucket
+- **internal backend modules / Durable Objects / facets** — app-internal
+  realtime and coordination details (integration lookups, provider calls,
+  validation, mutations), not the persistence mechanism
+- **inline HTML renders** — fine for a quick prototype, not the default pattern
 
 ## Session handoff
 

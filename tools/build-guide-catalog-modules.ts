@@ -31,7 +31,7 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * capability, from the canonical markdown in `docs/guides/`.
  *
  * Why: `#worker/guides/catalog.ts` statically imports every guide's raw
- * markdown and parses its frontmatter at module scope so the web `/guides`
+ * markdown and parses its frontmatter at module scope so the web `/docs`
  * pages always have the full catalog ready. Merely *registering* the MCP
  * `codingGuideGet` capability must not pay that same cost on every
  * platform/runtime Worker isolate cold start — the capability module only
@@ -284,6 +284,12 @@ async function buildStampContent(filePaths: ReadonlyArray<string>) {
 		path.join(repoRoot, 'packages/worker/src/guides/guide-order.ts'),
 		'utf8',
 	)
+	// The order itself comes from the docs nav, so a reordering there must
+	// invalidate the stamp too.
+	const docsNavSource = await readFile(
+		path.join(repoRoot, 'packages/worker/universal/docs-nav.ts'),
+		'utf8',
+	)
 	const guideFileContents = await Promise.all(
 		filePaths.map(async (filePath) => ({
 			filePath: path.relative(repoRoot, filePath),
@@ -295,6 +301,7 @@ async function buildStampContent(filePaths: ReadonlyArray<string>) {
 		.update(parseFrontmatterSource)
 		.update(rewriteLinksSource)
 		.update(guideOrderSource)
+		.update(docsNavSource)
 		.update(JSON.stringify(guideFileContents))
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')

@@ -5,7 +5,7 @@ import {
 } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import { routes } from '#universal/routes.ts'
+import { docHref } from '#universal/docs-nav.ts'
 import {
 	walkthroughHostForAct,
 	type WalkthroughHostPick,
@@ -428,9 +428,7 @@ export function LandingLoopPlayer(
 						: renderTeaser(handle.props.hosts)}
 				</div>
 				<p class="landing-loop-foot">
-					<a href={routes.guideDetail.href({ slug: 'how-kody-works' })}>
-						Read the walkthrough
-					</a>
+					<a href={docHref('how-kody-works')}>Read the walkthrough</a>
 				</p>
 			</div>
 		)

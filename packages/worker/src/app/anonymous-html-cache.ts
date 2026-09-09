@@ -32,7 +32,8 @@ const cacheableAnonymousExactPaths = new Set([
 	'/blog',
 	'/community',
 	'/onboarding',
-	'/guides',
+	'/docs',
+	'/docs/connect',
 ])
 
 // Public package surfaces: home, tree, and the listing-uuid shapes they
@@ -57,8 +58,8 @@ export function isVisibilityGatedAnonymousPath(pathname: string) {
 export function isCacheableAnonymousPath(pathname: string) {
 	if (cacheableAnonymousExactPaths.has(pathname)) return true
 	if (pathname.startsWith('/onboarding/step-')) return true
-	if (pathname.startsWith('/guides/')) {
-		const rest = pathname.slice('/guides/'.length)
+	if (pathname.startsWith('/docs/')) {
+		const rest = pathname.slice('/docs/'.length)
 		return rest.length > 0 && !rest.includes('/')
 	}
 	return isVisibilityGatedAnonymousPath(pathname)

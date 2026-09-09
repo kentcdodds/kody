@@ -37,7 +37,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 				<nav aria-label="Footer" mix={css(footerNavCss)}>
 					<a href="/community">Community</a>
 					<a href="/discord">Discord</a>
-					<a href="/guides">Guides</a>
+					<a href="/docs">Docs</a>
 					<a href="/pricing">Pricing</a>
 					<a href="/faq">FAQ</a>
 					<a href="/support">Support</a>

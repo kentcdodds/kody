@@ -1,6 +1,6 @@
 ---
 id: platform_efficiency
-title: Platform efficiency
+title: Runtime and efficiency
 summary:
   How unique Dynamic Worker days work across execute, jobs, package exports, and
   other surfaces, and how a stable module graph reuses one isolate for the UTC
@@ -8,11 +8,14 @@ summary:
 category: platform
 ---
 
-# Platform efficiency
+# Runtime and efficiency
 
-Kody meters unique Dynamic Worker days so Cloudflare isolate cost is visible by
-surface. This page states that cost model once. Package README and AGENTS.md
-files do not repeat it.
+Everything your agent runs in Kody — an ad hoc `execute`, a package export, a
+job, a workflow step, a package app request — runs server-side in a Cloudflare
+Dynamic Worker isolate, not on your laptop and not inside a chat model. Kody
+meters unique Dynamic Worker days so that isolate cost is visible by surface.
+This page states that cost model once. Package README and AGENTS.md files do not
+repeat it.
 
 ## Unique worker days
 
@@ -64,6 +67,7 @@ lives in a package so later runs share that package's module graph.
 
 ## Related
 
+- [Jobs, workflows, and webhooks](./triggers.md) — which surface starts a run
 - [Execute and workflows](../use/execute.md)
 - [Plans and pricing](https://kody.codes/pricing)
 - Contributor metering schema:

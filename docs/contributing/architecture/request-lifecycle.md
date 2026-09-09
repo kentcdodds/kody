@@ -177,7 +177,7 @@ session, logout, password reset, health).
 `renderAppPage` sets
 `Cache-Control: public, max-age=60, stale-while-revalidate=300` and
 `Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
-`/onboarding`, `/guides`, and `/guides/:slug`. Origin `fetch` stores those
+`/onboarding`, `/docs`, and `/docs/:slug`. Origin `fetch` stores those
 cookie-less `GET`/`HEAD` responses in the Cache API (`caches.default`), keyed on
 the canonical origin + pathname + search and a `__accept=html` marker. Requests
 whose `Accept` prefers `text/markdown` (`prefersMarkdown`) skip the store. A
@@ -210,9 +210,9 @@ response is bounded to one minute. They are shared only when the document is a
 public takes effect at once) and, for JSON, when the request has no session
 cookie and the payload carries no viewer state. JSON companions are not stored
 in the Cache API (the store is HTML-only). Anonymous `/onboarding.json` uses the
-marketing policy. `/guides/:slug.json` is publicly cacheable without a cookie
-vary (the payload is identical for every visitor). The response stays `no-store`
-when the request carries a `kody_session` cookie, `loadSessionInfo` resolves a
+marketing policy. `/docs/:slug.json` is publicly cacheable without a cookie vary
+(the payload is identical for every visitor). The response stays `no-store` when
+the request carries a `kody_session` cookie, `loadSessionInfo` resolves a
 session, or the response sets a cookie. Auth, OAuth, account, and every other
 HTML path stay `no-store`.
 

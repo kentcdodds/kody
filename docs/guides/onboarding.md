@@ -1,15 +1,16 @@
 ---
 id: onboarding
-title: Onboarding — the home your agents share
+title: First run: the onboarding briefing
 summary:
   First-run guide for a connected agent. Teach lightly what Kody is and is not,
   ask 1–2 questions to find the person's use, help them take advantage of the
   right features, and set up integrations with clear difficulty. One small win,
   then Step 3.
 category: platform
+audience: agents
 ---
 
-# Onboarding — the home your agents share
+# First run: the onboarding briefing
 
 <!--
 Agent notes — for AI agents driving first-run from a copied onboarding prompt:

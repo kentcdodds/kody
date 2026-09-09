@@ -1,6 +1,6 @@
 ---
 id: oauth
-title: OAuth guide (standard path)
+title: OAuth: bring your own app
 summary:
   START HERE for third-party OAuth: hosted /connect/oauth, the exact
   redirect URI (https://kody.codes/connect/oauth), required query params,
@@ -9,7 +9,7 @@ summary:
 category: platform
 ---
 
-# OAuth guide
+# OAuth: bring your own app
 
 Read this guide first for third-party OAuth (GitHub, Linear, Spotify, and
 similar providers).

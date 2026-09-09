@@ -338,9 +338,9 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.blog),
 		routePattern(routes.blogPost),
-		routePattern(routes.guides),
-		routePattern(routes.guidesConnect),
-		routePattern(routes.guideDetail),
+		routePattern(routes.docs),
+		routePattern(routes.docsConnect),
+		routePattern(routes.docDetail),
 	],
 	{ name: 'blog-area', load: blogArea.load, getCached: blogArea.getCached },
 )

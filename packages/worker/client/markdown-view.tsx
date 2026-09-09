@@ -179,7 +179,7 @@ type ResolvedMarkdownLink = { href: string; external: boolean }
 
 /**
  * Resolves a link under the render options' policy. Under `first-party`,
- * root-relative links (`/guides/oauth`, `/connect/oauth?...`) resolve as
+ * root-relative links (`/docs/oauth`, `/connect/oauth?...`) resolve as
  * internal same-tab navigations — still refusing user-scope paths, which are
  * never linkable from rendered markdown regardless of trust level.
  */
