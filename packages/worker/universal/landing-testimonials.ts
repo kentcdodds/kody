@@ -1,6 +1,6 @@
 /**
  * Homepage testimonials. Keep this list data-only — the carousel scales to
- * about seven entries without a layout rewrite. Do not invent quotes or fill
+ * about eight entries without a layout rewrite. Do not invent quotes or fill
  * empty slots; add real cleared quotes only. Opt a card into the early-users
  * post with `storyAnchor` matching that heading id (accents strip to ASCII).
  */
@@ -54,6 +54,13 @@ export const landingTestimonials = [
 		title: 'Software Engineer',
 		company: 'IB',
 		storyAnchor: 'gabriel-alegria',
+	},
+	{
+		quote:
+			'Kody rocks. Been a user for several hours now and will convert to paid.',
+		name: 'Erik Rasmussen',
+		photo: '/images/testimonials/erik-rasmussen.webp',
+		href: 'https://x.com/erikras/status/2097720067316203941',
 	},
 	{
 		quote:

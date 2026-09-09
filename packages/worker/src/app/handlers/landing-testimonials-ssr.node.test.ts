@@ -79,6 +79,14 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	expect(html).toContain(
 		'href="https://www.linkedin.com/in/gabriel-alegria-mx"',
 	)
+	expect(html).toContain('Erik Rasmussen')
+	expect(html).toContain(
+		'Kody rocks. Been a user for several hours now and will convert to paid.',
+	)
+	expect(html).toContain('src="/images/testimonials/erik-rasmussen.webp"')
+	expect(html).toContain(
+		'href="https://x.com/erikras/status/2097720067316203941"',
+	)
 	expect(html).not.toContain('landing-testimonial-initials')
 })
 
