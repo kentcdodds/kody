@@ -1,3 +1,4 @@
+import { WebhookEndpointIdRaceError } from './errors.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 type WebhookEndpointRow = {
@@ -56,7 +57,7 @@ export async function upsertWebhookEndpointSecret(input: {
 	})
 	if (existing) {
 		if (existing.id !== input.id) {
-			throw new Error('Unable to upsert webhook endpoint.')
+			throw new WebhookEndpointIdRaceError(existing.id)
 		}
 		const result = input.updateEnabledOnConflict
 			? await input.db

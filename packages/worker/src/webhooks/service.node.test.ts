@@ -7,7 +7,9 @@ import {
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
+import { WebhookEndpointIdRaceError } from './errors.ts'
 import { parseWebhookUrlHandle } from './handle.ts'
+import * as webhookRepo from './repo.ts'
 import {
 	listWebhooksForUser,
 	mintWebhookUrlForUser,
@@ -256,4 +258,104 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	expect(reminted.enabled).toBe(true)
 	expect(reminted.handle).toBe(rotatedWhileDisabled.handle)
 	expect(reminted).not.toHaveProperty('urlSecret')
+})
+
+test('first mint that loses the id race retries with the persisted endpoint id', async () => {
+	const userId = await createStableUserIdFromEmail('race@example.com')
+	const { env, db } = createEnv(userId)
+	const winnerId = '11111111-1111-1111-1111-111111111111'
+	await db
+		.prepare(
+			`INSERT INTO webhook_endpoints (
+				id, user_id, package_id, webhook_name, url_secret_hash,
+				url_secret_encrypted, enabled, created_at, rotated_at
+			) VALUES (?, ?, 'pkg-1', 'sentry', 'stale-hash', 'stale-ciphertext', 1, ?, ?)`,
+		)
+		.bind(
+			winnerId,
+			userId,
+			'2026-09-01T00:00:00.000Z',
+			'2026-09-01T00:00:00.000Z',
+		)
+		.run()
+
+	try {
+		await webhookRepo.upsertWebhookEndpointSecret({
+			db,
+			id: '22222222-2222-2222-2222-222222222222',
+			userId,
+			packageId: 'pkg-1',
+			webhookName: 'sentry',
+			urlSecretHash: 'unused-hash',
+			urlSecretEncrypted: 'unused-ciphertext',
+		})
+		throw new Error('expected WebhookEndpointIdRaceError')
+	} catch (error) {
+		expect(error).toBeInstanceOf(WebhookEndpointIdRaceError)
+		if (!(error instanceof WebhookEndpointIdRaceError)) throw error
+		expect(error.existingId).toBe(winnerId)
+	}
+
+	const getByKey = vi.spyOn(webhookRepo, 'getWebhookEndpointByKey')
+	const upsert = vi.spyOn(webhookRepo, 'upsertWebhookEndpointSecret')
+	getByKey.mockImplementationOnce(async () => null)
+
+	const minted = await mintWebhookUrlForUser({
+		env,
+		userId,
+		email: 'race@example.com',
+		username: 'racer',
+		kodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+	})
+
+	expect(upsert).toHaveBeenCalledTimes(2)
+	expect(parseWebhookUrlHandle(minted.handle)).toBe(winnerId)
+	expect(minted.handle).toBe(`whh_${winnerId}`)
+
+	const stored = await db
+		.prepare(
+			`SELECT url_secret_hash, url_secret_encrypted FROM webhook_endpoints
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(userId, winnerId)
+		.first<{
+			url_secret_hash: string
+			url_secret_encrypted: string
+		}>()
+	expect(stored?.url_secret_encrypted).toBeTruthy()
+	expect(stored?.url_secret_encrypted).not.toBe('stale-ciphertext')
+	const mintedSecret = await decryptWebhookUrlSecret(
+		env,
+		stored!.url_secret_encrypted,
+		userWebhookUrlSecretContext(userId, winnerId),
+	)
+	expect(stored?.url_secret_hash).toBe(await hashWebhookUrlSecret(mintedSecret))
+
+	getByKey.mockRestore()
+	upsert.mockRestore()
+})
+
+test('concurrent first mints converge on one handle', async () => {
+	const userId = await createStableUserIdFromEmail('parallel@example.com')
+	const { env } = createEnv(userId)
+	const [first, second] = await Promise.all([
+		mintWebhookUrlForUser({
+			env,
+			userId,
+			username: 'parallel',
+			kodyId: 'sentry-bridge',
+			webhookName: 'sentry',
+		}),
+		mintWebhookUrlForUser({
+			env,
+			userId,
+			username: 'parallel',
+			kodyId: 'sentry-bridge',
+			webhookName: 'sentry',
+		}),
+	])
+	expect(first.handle).toBe(second.handle)
+	expect(first.urlHost).toBe('heykody.dev')
+	expect(second).not.toHaveProperty('url')
 })
