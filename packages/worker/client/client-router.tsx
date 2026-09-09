@@ -7,6 +7,7 @@ import { applyDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import {
 	abortIntentPrefetch,
+	prefetchEachRouteOnRender,
 	prefetchRouteOnIntent,
 	prefetchRoutesOnRender,
 	takePrefetchedRouteResult,
@@ -465,10 +466,14 @@ function runIntentPrefetch(destination: URL) {
 
 /**
  * Render prefetch for a list of same-origin hrefs. Destinations that share a
- * loader share one request. Remix 3 in this repo has no `<Link prefetch>` —
+ * loader share one request unless `independent` is set (docs slugs share a
+ * matcher, not a payload). Remix 3 in this repo has no `<Link prefetch>` —
  * this is the client-router equivalent of `prefetch="render"`.
  */
-export function prefetchRouteHrefs(hrefs: ReadonlyArray<string>): void {
+export function prefetchRouteHrefs(
+	hrefs: ReadonlyArray<string>,
+	options?: { independent?: boolean },
+): void {
 	const groups = new Map<RouteLoader, Array<string>>()
 	const seen = new Set<string>()
 	const currentPath = getCurrentPathWithSearchAndHash()
@@ -498,12 +503,11 @@ export function prefetchRouteHrefs(hrefs: ReadonlyArray<string>): void {
 		groups.set(loader, group)
 	}
 
+	const warm = options?.independent
+		? prefetchEachRouteOnRender
+		: prefetchRoutesOnRender
 	for (const [loader, groupHrefs] of groups) {
-		prefetchRoutesOnRender(
-			groupHrefs,
-			loader,
-			(href) => new URL(href, prefetchBaseHref()),
-		)
+		warm(groupHrefs, loader, (href) => new URL(href, prefetchBaseHref()))
 	}
 }
 

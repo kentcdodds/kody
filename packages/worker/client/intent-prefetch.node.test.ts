@@ -3,6 +3,7 @@ import {
 	abortIntentPrefetch,
 	discardRenderPrefetches,
 	maxPrefetchAgeMs,
+	prefetchEachRouteOnRender,
 	prefetchRouteOnIntent,
 	prefetchRoutesOnRender,
 	takePrefetchedRouteResult,
@@ -174,6 +175,42 @@ test('render prefetch keeps every chip warm so click adopts without a cold loade
 	expect(
 		takePrefetchedRouteResult('/onboarding/step-2/not-listed'),
 	).not.toBeNull()
+})
+
+test('independent render prefetch runs one loader per href and keeps siblings after adopt', async () => {
+	abortIntentPrefetch()
+	const calls: Array<{ href: string; signal: AbortSignal }> = []
+	const resolvers = new Map<
+		string,
+		(value: Awaited<ReturnType<RouteLoader>>) => void
+	>()
+	const loader: RouteLoader = (url, signal) => {
+		const href = `${url.pathname}${url.search}`
+		calls.push({ href, signal })
+		return new Promise((resolve) => {
+			resolvers.set(href, resolve)
+		})
+	}
+
+	prefetchEachRouteOnRender(['/docs/oauth', '/docs/memory'], loader)
+	prefetchEachRouteOnRender(['/docs/oauth', '/docs/memory'], loader)
+	expect(calls.map((call) => call.href)).toEqual([
+		'/docs/oauth',
+		'/docs/memory',
+	])
+
+	const navigation = new AbortController()
+	const oauth = takePrefetchedRouteResult('/docs/oauth', navigation.signal)
+	expect(oauth).not.toBeNull()
+	navigation.abort()
+	expect(calls[0]?.signal.aborted).toBe(false)
+
+	const memory = takePrefetchedRouteResult('/docs/memory')
+	expect(memory).not.toBeNull()
+	expect(calls[1]?.signal.aborted).toBe(false)
+	resolvers.get('/docs/memory')?.({ docDetail: { ok: true } as never })
+	await expect(memory).resolves.toEqual({ docDetail: { ok: true } })
+	expect(takePrefetchedRouteResult('/docs/memory')).toBeNull()
 })
 
 test('discardRenderPrefetches drops chip snapshots so a later click cannot rewind', async () => {

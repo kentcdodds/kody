@@ -181,6 +181,10 @@ where content goes.
 - **Cache**: intent prefetch already starts the loader on hover/focus.
   `prefetchRouteHrefs` warms a list of destinations on render (the equivalent of
   `prefetch="render"`) for links the visitor is likely to click next.
+  Destinations that share a **matcher** and not a payload (every `/docs/:slug`)
+  must pass `{ independent: true }` — a shared warmup would attach one article
+  JSON to every slug. The docs shell does that for every sidebar href after
+  hydrate (`DocsNavPrefetch`).
 - **Stream / defer**: when one region is genuinely slow and the rest is not,
   split it into its own loader key or a Remix `<Frame>` (see
   [frames](./frames.md)) with a `fallback` that reserves the region's height, so

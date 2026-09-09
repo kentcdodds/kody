@@ -9,18 +9,23 @@ test('docs guide switches keep the current article on screen until the next one 
 	page,
 }) => {
 	await page.context().clearCookies()
-	await page.goto('/docs/memory')
-	await waitForClientHydration(page)
-	await expect(
-		page.getByRole('heading', { level: 1, name: 'Shared memory' }),
-	).toBeVisible()
-
 	const docRequests: Array<string> = []
 	page.on('request', (request) => {
 		if (request.url().includes('/docs/') && request.url().endsWith('.json')) {
 			docRequests.push(new URL(request.url()).pathname)
 		}
 	})
+
+	await page.goto('/docs/memory')
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Shared memory' }),
+	).toBeVisible()
+	await expect
+		.poll(
+			() => docRequests.filter((path) => path === '/docs/secrets.json').length,
+		)
+		.toBe(1)
 
 	await observeMainTransitions(page)
 	const sidebar = page.getByRole('navigation', { name: 'Docs' }).first()
@@ -34,9 +39,11 @@ test('docs guide switches keep the current article on screen until the next one 
 		fromHeading: 'Shared memory',
 		toHeading: 'Secrets',
 	})
-	// The router preloads the destination once; the route must not refetch
-	// the payload it was just handed (that refetch was the loading flash).
-	expect(docRequests).toEqual(['/docs/secrets.json'])
+	// Render-prefetch already warmed every sidebar href. Click must adopt
+	// that snapshot — a second /docs/secrets.json is the loading-flash refetch.
+	expect(docRequests.filter((path) => path === '/docs/secrets.json')).toEqual([
+		'/docs/secrets.json',
+	])
 })
 
 test('docs site: header says Docs, /docs opens the introduction with a sidebar, and legacy /guides redirects', async ({

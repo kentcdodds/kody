@@ -157,6 +157,36 @@ export function prefetchRoutesOnRender(
 }
 
 /**
+ * Like `prefetchRoutesOnRender`, but each href runs its own loader. Use this
+ * when destinations share a matcher (every `/docs/:slug`) and not a payload.
+ */
+export function prefetchEachRouteOnRender(
+	hrefs: ReadonlyArray<string>,
+	loader: RouteLoader,
+	urlForHref: (href: string) => URL = (href) => new URL(href, routerHrefOrigin),
+): void {
+	const seen = new Set<string>()
+	for (const href of hrefs) {
+		const normalized = normalizePrefetchHref(href)
+		if (seen.has(normalized)) continue
+		seen.add(normalized)
+		if (isUsablePrefetch(renderSlots.get(normalized))) continue
+		if (isUsablePrefetch(slot) && slot?.href === normalized) continue
+		const controller = new AbortController()
+		const record: PrefetchSlot = {
+			href: normalized,
+			promise: loader(urlForHref(normalized), controller.signal),
+			controller,
+			settledAt: null,
+			failed: false,
+			retainRequest: true,
+		}
+		renderSlots.set(normalized, record)
+		attachSettleHandlers([record])
+	}
+}
+
+/**
  * Consumes the prefetched loader result for `href`. Returns the in-flight or
  * fresh settled promise, or `null` when there is no usable prefetch (wrong
  * href, expired, or failed — failures let the navigation retry the loader).

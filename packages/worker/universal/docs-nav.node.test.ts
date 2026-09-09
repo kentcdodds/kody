@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import {
+	docHref,
 	docsCurrentPageLabel,
 	docsIntroSlug,
 	isDocsPagePath,
+	listDocsNavSlugs,
+	listDocsPrefetchHrefs,
 	resolveDocsNavSection,
 } from './docs-nav.ts'
 
@@ -28,4 +31,15 @@ test('resolveDocsNavSection maps connect to providers and slugs to their section
 test('docsCurrentPageLabel uses the connect branch and falls back for unknown slugs', () => {
 	expect(docsCurrentPageLabel('connect')).toBe('Connect a provider')
 	expect(docsCurrentPageLabel('missing-doc')).toBe('Docs')
+})
+
+test('listDocsPrefetchHrefs covers the intro, every advertised slug, and connect', () => {
+	const hrefs = listDocsPrefetchHrefs()
+	expect(hrefs).toContain('/docs')
+	expect(hrefs).toContain('/docs/how-kody-works')
+	expect(hrefs).toContain('/docs/oauth')
+	expect(hrefs).toContain('/docs/connect')
+	expect(hrefs).not.toContain('/docs/what-is-kody')
+	expect(hrefs).toEqual([...listDocsNavSlugs().map(docHref), '/docs/connect'])
+	expect(new Set(hrefs).size).toBe(hrefs.length)
 })

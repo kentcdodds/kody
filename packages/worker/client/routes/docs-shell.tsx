@@ -1,11 +1,12 @@
-import { type RemixNode, css, ref } from 'remix/ui'
-import { routerEvents } from '#client/client-router.tsx'
+import { type Handle, type RemixNode, css, ref } from 'remix/ui'
+import { prefetchRouteHrefs, routerEvents } from '#client/client-router.tsx'
 import { type DocSummaryLoaderData } from '#universal/loader-data.ts'
 import {
 	docHref,
 	docsCurrentPageLabel,
 	docsNav,
 	findDocsNavNeighbors,
+	listDocsPrefetchHrefs,
 	resolveDocsNavSection,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
@@ -36,6 +37,7 @@ export function renderDocsShell(input: {
 	const currentSection = resolveDocsNavSection(current)
 	return (
 		<div data-docs-shell mix={css(docsLayoutCss)}>
+			<DocsNavPrefetch />
 			<aside data-docs-nav mix={css(docsSidebarCss)}>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
 					{renderDocsNavSections(current, currentSection)}
@@ -66,6 +68,25 @@ export function renderDocsShell(input: {
 			<div mix={css(docsMainCss)}>{children}</div>
 		</div>
 	)
+}
+
+/**
+ * Render-warm every sidebar destination. Hover/focus already prefetch one
+ * href (`prefetch="intent"`). Docs slugs share a matcher, not a payload, so
+ * each request stays independent.
+ */
+function DocsNavPrefetch(handle: Handle) {
+	let warmedKey = ''
+	return () => {
+		handle.queueTask(() => {
+			const hrefs = listDocsPrefetchHrefs()
+			const key = hrefs.join('\0')
+			if (key === warmedKey) return
+			warmedKey = key
+			prefetchRouteHrefs(hrefs, { independent: true })
+		})
+		return null
+	}
 }
 
 function renderDocsNavSections(
