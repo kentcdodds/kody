@@ -5,7 +5,7 @@ import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -38,7 +38,6 @@ import {
 	accountEmailRouteLoader,
 	buildEmailApiRequestUrl,
 	clampedCellCss,
-	consumeAccountEmailPayload,
 	directionLabel,
 	emailRoute,
 	getDataKey,
@@ -55,7 +54,6 @@ import {
 export { accountEmailRouteLoader }
 
 export function AccountEmailRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let data: AccountEmailLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
@@ -66,10 +64,26 @@ export function AccountEmailRoute(handle: Handle) {
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
 	let resendAccepted = false
-	let loadRequestId = 0
-	let lastLoadedDataKey = ''
-	let loadingDataKey: string | null = null
-	let lastFailedDataKey: string | null = null
+	/** Payload last applied from the route data snapshot (mutations update `data` directly). */
+	let appliedPayload: AccountEmailLoaderData | null = null
+	let appliedError: Error | null = null
+	const emailData = createRouteData({
+		key: 'accountEmail',
+		locationKey: getDataKey,
+		async load(href, signal) {
+			const response = await fetch(buildEmailApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountEmailLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load your email inbox.')
+			}
+			return payload
+		},
+	})
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
@@ -113,9 +127,6 @@ export function AccountEmailRoute(handle: Handle) {
 				? 'Message not found.'
 				: null
 		messageTone = selectedId && !payload.selectedMessage ? 'error' : 'info'
-		status = 'ready'
-		lastLoadedDataKey = getDataKey(href)
-		lastFailedDataKey = null
 	}
 
 	async function handleResendVerification() {
@@ -249,83 +260,25 @@ export function AccountEmailRoute(handle: Handle) {
 		}
 	}
 
-	async function loadAccountEmail() {
-		const href = getCurrentHref()
-		const dataKey = getDataKey(href)
-		loadingDataKey = dataKey
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(buildEmailApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (
-				requestId !== loadRequestId ||
-				getDataKey(getCurrentHref()) !== dataKey
-			)
-				return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountEmailLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your email inbox.')
-			}
-			applyPayload(payload, href)
-			handle.update()
-		} catch (error) {
-			if (
-				requestId !== loadRequestId ||
-				getDataKey(getCurrentHref()) !== dataKey
-			)
-				return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load your email inbox.'
-			messageTone = 'error'
-			lastFailedDataKey = dataKey
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId && loadingDataKey === dataKey) {
-				loadingDataKey = null
-			}
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!emailRoute.isRoutePath(href)) return false
-		const routeData = consumeAccountEmailPayload(handle, href)
-		if (!routeData) return false
-		applyPayload(routeData, href)
-		return true
-	}
-
-	let lastSeenDataKey = ''
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const currentDataKey = getDataKey(currentHref)
-		if (currentDataKey !== lastSeenDataKey) {
-			lastSeenDataKey = currentDataKey
-			lastFailedDataKey = null
+		const snapshot = emailData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data, currentHref)
 		}
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad =
-			(status === 'loading' ||
-				currentDataKey !== lastLoadedDataKey ||
-				needsStaleRefresh) &&
-			currentDataKey !== lastFailedDataKey &&
-			loadingDataKey !== currentDataKey
-		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingDataKey = currentDataKey
-			handle.queueTask(loadAccountEmail)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && data === null
+					? 'loading'
+					: 'ready'
 
 		const selectedMessageId = emailRoute.getSelection(currentHref).selectedId
 		const selectedMessage: AccountEmailMessageDetail | null =
@@ -342,13 +295,16 @@ export function AccountEmailRoute(handle: Handle) {
 		const showUnverified = data != null && !data.emailVerified
 
 		return (
-			<AccountManagementShell maxWidth="min(100%, 92rem)">
+			<AccountManagementShell
+				maxWidth="min(100%, 92rem)"
+				busy={pending && data !== null}
+			>
 				<AccountPageHeader
 					title="Email inbox"
 					description="Browse inbound and outbound messages for your platform email address. Compose and reply through Kody agents."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' && lastLoadedDataKey === '' ? (
+				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading email inbox…
 					</p>
@@ -400,7 +356,7 @@ export function AccountEmailRoute(handle: Handle) {
 						) : null}
 						<RecordTable
 							mode="expand"
-							busy={status === 'loading'}
+							busy={pending}
 							ariaLabel="Inbox messages"
 							selectedId={selectedMessageId}
 							countLabel={

@@ -3,10 +3,8 @@ import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -217,20 +215,34 @@ function statusColor(status: AccountWorkflowRunStatus | null) {
 	}
 }
 
-function tryConsumeAccountWorkflowsLoaderData(handle: Handle, href: string) {
-	return tryConsumeRouteLoaderData(handle, 'accountWorkflows', href)
-}
-
 export function AccountWorkflowsRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let username = ''
 	let workflows: Array<AccountWorkflowListItem> = []
 	let selectedWorkflow: AccountWorkflowDetail | null = null
 	let message: string | null = null
 	let messageTone: MessageTone = 'info'
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountWorkflowsLoaderData | null = null
+	let appliedError: Error | null = null
 	const cancelWorkflowCheck = createDoubleCheck(handle)
+	const workflowsData = createRouteData({
+		key: 'accountWorkflows',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildWorkflowsApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountWorkflowsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load workflow runs.')
+			}
+			return payload
+		},
+	})
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
@@ -267,44 +279,6 @@ export function AccountWorkflowsRoute(handle: Handle) {
 		workflows = payload.workflows
 		selectedWorkflow = payload.selectedWorkflow
 		cancelWorkflowCheck.reset()
-	}
-
-	async function loadWorkflows(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildWorkflowsApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountWorkflowsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load workflow runs.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			applyPayload(payload)
-			if (messageTone === 'error') setMessage(null)
-			status = 'ready'
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			setMessage(
-				error instanceof Error
-					? error.message
-					: 'Unable to load workflow runs.',
-				'error',
-			)
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
 	}
 
 	async function postAction(input: {
@@ -366,30 +340,25 @@ export function AccountWorkflowsRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!workflowsRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeAccountWorkflowsLoaderData(handle, href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		status = 'ready'
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
-	}
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadWorkflows)
+		const snapshot = workflowsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
+			if (messageTone === 'error') setMessage(null)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			setMessage(snapshot.error.message, 'error')
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const selection = workflowsRoute.getSelection(currentHref)
 		const search = readWorkflowsSearchFilter(currentHref)
@@ -413,7 +382,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 		const waitingForDetail =
 			selection.selectedId != null &&
 			!detail &&
-			(needsLoad || listMatch != null || status === 'loading')
+			(pending || listMatch != null || status === 'loading')
 		const showWorkflowNotFound =
 			selection.selectedId != null &&
 			!detail &&
@@ -422,7 +391,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 		const canCancel = detail ? isActiveAccountWorkflow(detail) : false
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Workflows"
 					description="Inspect deferred and long-running workflow runs — inline or package-backed — including status, schedule time, and errors. Cancel a run that has not finished yet."

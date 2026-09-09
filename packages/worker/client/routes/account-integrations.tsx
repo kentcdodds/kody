@@ -9,10 +9,12 @@ import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createUndoableAction } from '#client/undoable-action.ts'
 import { UndoToast } from '#client/undo-toast.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	type RouteDataSnapshot,
+	createRouteData,
+	routeDataRedirect,
+} from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -56,7 +58,6 @@ import {
 export { accountIntegrationsRouteLoader } from '#client/routes/account-integrations-shared.ts'
 
 export function AccountIntegrationsRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let integrations: Array<AccountIntegrationListItem> = []
 	let apps: Array<AccountOauthAppListItem> = []
 	let savedPackages: Array<{ id: string; kodyId: string }> = []
@@ -65,7 +66,28 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	let usageSavingName: string | null = null
 	let approvalSubmitting = false
 	let message: string | null = null
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountIntegrationsLoaderData | null = null
+	let appliedError: Error | null = null
+	let lastSnapshot: RouteDataSnapshot<AccountIntegrationsLoaderData> | null =
+		null
+	const integrationsData = createRouteData({
+		key: 'accountIntegrations',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildIntegrationsApiHref(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountIntegrationsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load integrations.')
+			}
+			return payload
+		},
+	})
 	const disconnectChecks = new Map<
 		string,
 		ReturnType<typeof createDoubleCheck>
@@ -348,83 +370,39 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function loadIntegrations(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildIntegrationsApiHref(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountIntegrationsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load integrations.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			integrations = payload.integrations
-			apps = payload.apps ?? []
-			savedPackages = payload.savedPackages ?? []
-			approval = payload.approval ?? null
-			status = 'ready'
-			message = null
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load integrations.'
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (isHoldingOptimisticRemoval()) return false
-		if (!integrationsRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'accountIntegrations',
-			href,
-		)
-		if (!routeData) return false
-		integrations = routeData.integrations
-		apps = routeData.apps ?? []
-		savedPackages = routeData.savedPackages ?? []
-		approval = routeData.approval ?? null
-		status = 'ready'
+	function applyPayload(payload: AccountIntegrationsLoaderData) {
+		integrations = payload.integrations
+		apps = payload.apps ?? []
+		savedPackages = payload.savedPackages ?? []
+		approval = payload.approval ?? null
 		message = null
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
 	}
 
 	return () => {
 		const currentHref = getCurrentHref()
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// Hold optimistic list state for the undo window. Do not consume a
-		// stale-refresh or latch a load — both would clobber the removal or
-		// block the next fetch after undo.
-		const needsStaleRefresh =
-			!isHoldingOptimisticRemoval() &&
-			consumeStaleNavigationData(currentHref) &&
-			!appliedRouteData
-		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad =
-			!isHoldingOptimisticRemoval() &&
-			loadLatch.needsLoad({
-				currentHref: latchKey,
-				appliedRouteData,
-				needsStaleRefresh,
-			})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadIntegrations)
+		// Hold optimistic list state for the undo window. Do not consume loader
+		// data or a stale-refresh, and do not latch a load — all would clobber
+		// the removal or block the next fetch after undo.
+		const snapshot =
+			isHoldingOptimisticRemoval() && lastSnapshot
+				? lastSnapshot
+				: integrationsData.read(handle, currentHref)
+		lastSnapshot = snapshot
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const search = readSearchFilter(currentHref)
 		const setupIntro =
@@ -453,7 +431,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			: null
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Integrations"
 					description="Services you connect so Kody can use them."

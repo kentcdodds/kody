@@ -3,10 +3,8 @@ import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -69,12 +67,7 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(30))
 
-function tryConsumeAccountActivityLoaderData(handle: Handle, href: string) {
-	return tryConsumeRouteLoaderData(handle, 'accountActivity', href)
-}
-
 export function AccountActivityRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let runs: Array<AccountActivityRunListItem> = []
 	let selectedRun: AccountActivityRunDetail | null = null
 	let summary: AccountActivitySummary | null = null
@@ -82,7 +75,26 @@ export function AccountActivityRoute(handle: Handle) {
 	let retentionDays = 30
 	let message: string | null = null
 	let loadingMore = false
-	const loadLatch = createRouteLoadLatch()
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountActivityLoaderData | null = null
+	let appliedError: Error | null = null
+	const activityData = createRouteData({
+		key: 'accountActivity',
+		locationKey: getDataLatchKey,
+		async load(href, signal) {
+			const response = await fetch(buildActivityApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountActivityLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load activity.')
+			}
+			return payload
+		},
+	})
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	function getCurrentHref() {
@@ -107,41 +119,6 @@ export function AccountActivityRoute(handle: Handle) {
 		summary = payload.summary
 		nextCursor = payload.nextCursor
 		retentionDays = payload.retentionDays
-	}
-
-	async function loadActivity(signal: AbortSignal) {
-		const href = getCurrentHref()
-		const latchKey = getDataLatchKey(href)
-		try {
-			const response = await fetch(buildActivityApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<AccountActivityLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load activity.')
-			}
-			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
-			applyPayload(payload)
-			setMessage(null)
-			status = 'ready'
-			loadLatch.markLoaded(latchKey)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			setMessage(
-				error instanceof Error ? error.message : 'Unable to load activity.',
-			)
-			loadLatch.markFailed(latchKey)
-			handle.update()
-		}
 	}
 
 	async function loadMoreRuns() {
@@ -179,16 +156,6 @@ export function AccountActivityRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!activityRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeAccountActivityLoaderData(handle, href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		status = 'ready'
-		loadLatch.markLoaded(getDataLatchKey(href))
-		return true
-	}
-
 	function updateFilters(input: {
 		view?: AccountActivityViewFilter
 		status?: AccountActivityStatusFilter
@@ -223,18 +190,23 @@ export function AccountActivityRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = getCurrentHref()
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadActivity)
+		const snapshot = activityData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data)
+			setMessage(null)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			setMessage(snapshot.error.message)
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const selection = activityRoute.getSelection(currentHref)
 		const viewFilter = readViewFilter(currentHref)
@@ -256,7 +228,7 @@ export function AccountActivityRoute(handle: Handle) {
 		const waitingForDetail =
 			selection.selectedId != null &&
 			!detail &&
-			(needsLoad || listMatch != null || status === 'loading')
+			(pending || listMatch != null || status === 'loading')
 		const showRunNotFound =
 			selection.selectedId != null &&
 			!detail &&
@@ -272,7 +244,7 @@ export function AccountActivityRoute(handle: Handle) {
 		})
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Activity"
 					description="Open failures first, plus a Recent runs week of jobs, executes, package apps, webhooks, and workflows — with the logs you need to diagnose them."

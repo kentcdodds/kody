@@ -3,9 +3,7 @@ import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { readRouterSearch } from '#client/router-location.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
@@ -60,9 +58,6 @@ const emailHtmlPreviewIframeCss = css({
 	background: colors.surface,
 })
 
-function isAdminSystemEmailPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/system-email'
-}
 function formatByteCount(value: number) {
 	return new Intl.NumberFormat().format(value)
 }
@@ -94,98 +89,53 @@ export async function adminSystemEmailRouteLoader(
 }
 
 export function AdminSystemEmailRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let data: AdminSystemEmailLoaderData | null = null
 	let message: string | null = null
-	let loadRequestId = 0
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
-
-	function applyData(payload: AdminSystemEmailLoaderData, href: string) {
-		data = payload
-		status = 'ready'
-		message = null
-		lastLoadedHref = href
-		lastFailedHref = null
-	}
-
-	async function loadSystemEmail() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminSystemEmailLoaderData | null = null
+	let appliedError: Error | null = null
+	const systemEmailData = createRouteData({
+		key: 'adminSystemEmail',
+		async load(href, signal) {
 			const response = await fetch(
-				`${adminSystemEmailApiPath}${readRouterSearch(handle)}`,
+				`${adminSystemEmailApiPath}${new URL(href, 'http://localhost').search}`,
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
+					signal,
 				},
 			)
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view system email.'
-				lastFailedHref = href
-				handle.update()
-				return
+				throw new Error('You do not have permission to view system email.')
 			}
 			const payload = await readJson<AdminSystemEmailLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load system email.')
 			}
-			applyData(payload, href)
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load system email.'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!isAdminSystemEmailPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'adminSystemEmail',
-			href,
-		)
-		if (!routeData) return false
-		applyData(routeData, href)
-		return true
-	}
-
-	let lastSeenHref = ''
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		if (currentHref !== lastSeenHref) {
-			lastSeenHref = currentHref
-			lastFailedHref = null
+		const snapshot = systemEmailData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			data = snapshot.data
+			message = null
 		}
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadSystemEmail)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const totalPages = data
 			? Math.max(1, Math.ceil(data.total / data.pageSize))
@@ -193,13 +143,16 @@ export function AdminSystemEmailRoute(handle: Handle) {
 		const selectedMessage = data?.selectedMessage ?? null
 
 		return (
-			<AccountManagementShell maxWidth="min(100%, 92rem)">
+			<AccountManagementShell
+				maxWidth="min(100%, 92rem)"
+				busy={pending && appliedPayload !== null}
+			>
 				<AdminPageHeader
 					title="Admin system email"
 					description="Operator-owned inboxes for reserved platform addresses. These messages are not user account data."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' && lastLoadedHref === '' ? (
+				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading system email…
 					</p>
@@ -223,7 +176,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 						>
 							<RecordTable
 								mode="expand"
-								busy={status === 'loading'}
+								busy={pending}
 								ariaLabel="System inbox messages"
 								selectedId={selectedMessage?.id ?? null}
 								countLabel={`${data.total} stored`}

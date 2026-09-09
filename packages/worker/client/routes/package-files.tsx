@@ -5,9 +5,7 @@ import { type Handle, css } from 'remix/ui'
 import { createMatcher } from 'remix/route-pattern/match'
 import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -171,51 +169,29 @@ const messageCss = {
 }
 
 export function PackageFilesRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
-	let data: PackageFilesLoaderData | null = null
-	let loadedHref = ''
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadFiles(apiHref: string, href: string, signal: AbortSignal) {
-		try {
-			const response = await fetch(apiHref, {
+	const filesData = createRouteData({
+		key: 'packageFiles',
+		async load(href, signal) {
+			const location = readFilesLocation(new URL(href, 'http://localhost'))
+			if (!location) return null
+			const response = await fetch(location.apiHref, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			if (response.status === 404) {
 				const moved = await readJson<MovedPayload>(response)
-				if (moved?.redirectTo) {
-					window.location.assign(moved.redirectTo)
-					return
-				}
-				data = null
-				status = 'not-found'
-				loadedHref = href
-				handle.update()
-				return
+				if (moved?.redirectTo) return routeDataRedirect(moved.redirectTo)
+				return null
 			}
 			const payload = await readJson<PackageFilesLoaderData>(response)
-			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load package files.')
 			}
-			data = payload
-			status = 'ready'
-			loadedHref = href
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			loadedHref = href
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
@@ -224,57 +200,15 @@ export function PackageFilesRoute(handle: Handle) {
 			return <article />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'packageFiles',
-			currentHref,
-		)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			data = routeData
-			status = 'ready'
-			loadedHref = currentHref
-			loadLatch.markLoaded(currentHref)
-		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadFiles(location.apiHref, currentHref, signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready' || status === 'not-found') {
-						loadLatch.markLoaded(currentHref)
-					} else {
-						loadLatch.markFailed(currentHref)
-					}
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
+		const snapshot = filesData.read(handle, currentHref)
 
 		// A miss or a failure replaces the explorer — there is nothing to keep
 		// showing, and the visitor has to be told.
-		if (status === 'not-found' || status === 'error') {
+		if (snapshot.kind === 'not-found' || snapshot.kind === 'error') {
 			return (
 				<article mix={css(messageCss)}>
 					<p>
-						{status === 'not-found'
+						{snapshot.kind === 'not-found'
 							? 'Those files were not found.'
 							: 'Unable to load package files.'}
 					</p>
@@ -284,6 +218,7 @@ export function PackageFilesRoute(handle: Handle) {
 
 		// Only the very first load has nothing to show; a server-rendered visit
 		// arrives with data already applied, so this is the SPA cold path.
+		const data = snapshot.data
 		if (!data) {
 			return (
 				<article mix={css(messageCss)}>
@@ -297,11 +232,10 @@ export function PackageFilesRoute(handle: Handle) {
 		// under the new URL would render the wrong tree with the wrong links.
 		const currentPathname = new URL(currentHref, 'http://localhost').pathname
 		if (
-			data &&
+			snapshot.stale &&
 			currentPathname !== data.filesBasePath &&
 			!currentPathname.startsWith(`${data.filesBasePath}/`)
 		) {
-			data = null
 			return (
 				<article mix={css(messageCss)}>
 					<p>Loading files…</p>
@@ -314,10 +248,7 @@ export function PackageFilesRoute(handle: Handle) {
 		// between renders blinked the whole tree out and back, and made the
 		// page transition run twice per click.
 		return (
-			<PackageFilesExplorer
-				data={data}
-				busy={status === 'loading' || loadedHref !== currentHref}
-			/>
+			<PackageFilesExplorer data={data} busy={snapshot.kind === 'pending'} />
 		)
 	}
 }

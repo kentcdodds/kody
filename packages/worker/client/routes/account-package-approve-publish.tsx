@@ -3,9 +3,7 @@ import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementMessage,
@@ -32,6 +30,8 @@ const approvePublishMatcher = createMatcher(
 )
 
 type PageStatus = 'loading' | 'ready' | 'error' | 'promoting'
+
+const loadFailureMessage = 'Unable to load this publish approval.'
 
 function isApprovePublishPath(href: string) {
 	return approvePublishMatcher.match(new URL(href, 'http://localhost')) !== null
@@ -74,47 +74,31 @@ export async function accountPackageApprovePublishRouteLoader(
 }
 
 export function AccountPackageApprovePublishRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
+	/** Payload last applied from the route data; also read by `promoteCommit`. */
 	let payload: AccountPackageApprovePublishLoaderData | null = null
+	let promoting = false
 	let message: string | null = null
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadPage(href: string) {
-		// Do not call handle.update() before the first await — see blog.tsx.
-		try {
+	let appliedError: Error | null = null
+	const approvePublishData = createRouteData({
+		key: 'accountPackageApprovePublish',
+		async load(href, signal) {
 			const response = await fetch(buildApprovePublishApiUrl(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+				signal,
+			}).catch(() => null)
+			if (!response) throw new Error(loadFailureMessage)
+			if (response.status === 401) return routeDataRedirect('/login')
 			const next =
 				await readJson<AccountPackageApprovePublishLoaderData>(response)
-			if (!response.ok || !next?.ok) {
-				status = 'error'
-				message = 'Unable to load this publish approval.'
-				loadLatch.markFailed(href)
-				handle.update()
-				return
-			}
-			payload = next
-			status = 'ready'
-			message = null
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch {
-			status = 'error'
-			message = 'Unable to load this publish approval.'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
+			if (!response.ok || !next?.ok) throw new Error(loadFailureMessage)
+			return next
+		},
+	})
 
 	async function promoteCommit() {
 		if (!payload?.pendingCommit) return
-		status = 'promoting'
+		promoting = true
 		message = null
 		handle.update()
 		try {
@@ -133,14 +117,14 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 			})
 			const body = await readJson<{ ok?: boolean; error?: string }>(response)
 			if (!response.ok || body?.ok === false) {
-				status = 'ready'
+				promoting = false
 				message = body?.error ?? 'Could not promote this commit.'
 				handle.update()
 				return
 			}
 			window.location.assign(payload.packageHref)
 		} catch {
-			status = 'ready'
+			promoting = false
 			message = 'Could not promote this commit.'
 			handle.update()
 		}
@@ -152,38 +136,27 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 			return <AccountManagementShell>{null}</AccountManagementShell>
 		}
 
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'accountPackageApprovePublish',
-			currentHref,
-		)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			payload = routeData
-			status = 'ready'
+		const snapshot = approvePublishData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== payload) {
+			payload = snapshot.data
 			message = null
-			loadLatch.markLoaded(currentHref)
 		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			handle.queueTask(async () => {
-				try {
-					await loadPage(currentHref)
-				} catch {
-					loadLatch.markFailed(currentHref)
-				}
-			})
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && payload === null
+					? 'loading'
+					: promoting
+						? 'promoting'
+						: 'ready'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && payload !== null}>
 				<AccountPageHeader
 					title={
 						payload?.package.lockedAt

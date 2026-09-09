@@ -3,14 +3,12 @@ import { type Handle, css, ref } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	adminProviderMarksApiPath,
 	filterMarks,
 	groupMarks,
-	isAdminProviderMarksPath,
 	markGroupKey,
 	splitAliasInput,
 } from '#client/routes/admin-provider-marks-shared.ts'
@@ -24,7 +22,6 @@ import { RecordTableSearch } from './record-table.tsx'
 import {
 	type AdminProviderMark,
 	type AdminProviderMarksLoaderData,
-	type AppLoaderData,
 } from '#universal/loader-data.ts'
 import {
 	colors,
@@ -90,7 +87,6 @@ const markTileCss = {
 }
 
 export function AdminProviderMarksRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let marks: Array<AdminProviderMark> = []
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
@@ -98,16 +94,34 @@ export function AdminProviderMarksRoute(handle: Handle) {
 	let search = ''
 	let selectedSlug: string | null = null
 	let creating = false
-	let lastLoadedHref = ''
-	let loadingHref: string | null = null
-	let lastFailedHref: string | null = null
-	let loadRequestId = 0
 	let pendingLogoBase64: string | undefined = undefined
 	let logoReadRevision = 0
 	let removeLogoChecked = false
 	let formRevision = 0
 	const openGroups = new Set<string>()
 	const deleteCheck = createDoubleCheck(handle)
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminProviderMarksLoaderData | null = null
+	let appliedError: Error | null = null
+	const marksData = createRouteData({
+		key: 'adminProviderMarks',
+		async load(_href, signal) {
+			const response = await fetch(adminProviderMarksApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error('You do not have permission to view provider marks.')
+			}
+			const payload = await readJson<AdminProviderMarksLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load provider marks.')
+			}
+			return payload
+		},
+	})
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const ghostButtonCss = getGhostButtonCss({ size: 'sm' })
@@ -115,7 +129,6 @@ export function AdminProviderMarksRoute(handle: Handle) {
 
 	function applyData(payload: AdminProviderMarksLoaderData) {
 		marks = payload.marks
-		status = 'ready'
 		message = null
 		messageTone = 'info'
 	}
@@ -132,51 +145,6 @@ export function AdminProviderMarksRoute(handle: Handle) {
 		if (slug) openGroups.add(markGroupKey(slug))
 		resetFormState()
 		formRevision += 1
-	}
-
-	async function loadMarks() {
-		const href = readCurrentRouterHref(handle)
-		loadingHref = href
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(adminProviderMarksApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view provider marks.'
-				messageTone = 'error'
-				lastFailedHref = href
-				handle.update()
-				return
-			}
-			const payload = await readJson<AdminProviderMarksLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load provider marks.')
-			}
-			applyData(payload)
-			lastLoadedHref = href
-			lastFailedHref = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load provider marks.'
-			messageTone = 'error'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (loadingHref === href) loadingHref = null
-		}
 	}
 
 	function handleLogoFileChange(event: Event) {
@@ -484,30 +452,23 @@ export function AdminProviderMarksRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const routeData = isAdminProviderMarksPath(currentHref)
-			? (tryConsumeRouteLoaderData(
-					handle,
-					'adminProviderMarks' as keyof AppLoaderData,
-					currentHref,
-				) as AdminProviderMarksLoaderData | undefined)
-			: undefined
-		if (routeData) {
-			applyData(routeData)
-			lastLoadedHref = currentHref
-			lastFailedHref = null
+		const snapshot = marksData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyData(snapshot.data)
 		}
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !routeData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingHref !== currentHref
-		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			if (lastLoadedHref === '') status = 'loading'
-			handle.queueTask(loadMarks)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const filteredMarks = filterMarks(marks, search)
 		const groups = groupMarks(filteredMarks)
@@ -518,7 +479,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 		const isMutating = actionState !== 'idle'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin provider marks"
 					description="Operator-owned brand marks for saved integrations. Open a letter, pick a mark, and edit it in that group. Login and onboarding keep their inline icons."
@@ -529,9 +490,7 @@ export function AdminProviderMarksRoute(handle: Handle) {
 						{message}
 					</AccountManagementMessage>
 				) : null}
-				{status === 'loading' && lastLoadedHref === '' ? (
-					<p>Loading provider marks…</p>
-				) : null}
+				{status === 'loading' ? <p>Loading provider marks…</p> : null}
 				<RecordTableSearch
 					label="Filter marks"
 					placeholder="Filter marks"

@@ -1,6 +1,4 @@
-import { type Handle } from 'remix/ui'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
@@ -143,8 +141,4 @@ export function directionLabel(
 	direction: AccountEmailMessageListItem['direction'],
 ) {
 	return direction === 'outbound' ? 'Outbound' : 'Inbound'
-}
-
-export function consumeAccountEmailPayload(handle: Handle, href: string) {
-	return tryConsumeRouteLoaderData(handle, 'accountEmail', href)
 }

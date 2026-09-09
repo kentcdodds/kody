@@ -8,8 +8,7 @@ import {
 	type InfiniteListSnapshot,
 } from '#client/infinite-list.ts'
 import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
@@ -31,7 +30,6 @@ import {
 	getDataKey,
 	getListKey,
 	getSelection,
-	isAdminUsersPath,
 	parseSelectedStableUserId,
 	readFilterState,
 } from './admin-users-shared.ts'
@@ -86,11 +84,30 @@ export function AdminUsersRoute(handle: Handle) {
 	// edits it. Null stored plan values are shown/saved as `free`.
 	let selectedPlanChoice: AdminPlanName = 'free'
 	let planDraftStableUserId: string | null = null
-	let loadRequestId = 0
-	let lastLoadedDataKey = ''
 	let lastLoadedListKey = ''
-	let loadingDataKey: string | null = null
-	let lastFailedDataKey: string | null = null
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminUsersLoaderData | null = null
+	let appliedError: Error | null = null
+	const usersData = createRouteData({
+		key: 'adminUsers',
+		locationKey: getDataKey,
+		async load(href, signal) {
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error('You do not have permission to view admin users.')
+			}
+			const payload = await readJson<AdminUsersLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load admin users.')
+			}
+			return payload
+		},
+	})
 	let usageStatus: UsageStatus = 'loading'
 	let usageData: AdminUserUsageLoaderData | null = null
 	let usageMessage: string | null = null
@@ -146,9 +163,6 @@ export function AdminUsersRoute(handle: Handle) {
 			getSelectedStableUserIdFromHref(href) != null && !payload.selectedUser
 				? 'User not found.'
 				: null
-		status = 'ready'
-		lastLoadedDataKey = getDataKey(href)
-		lastFailedDataKey = null
 	}
 
 	function buildHrefWithUpdatedFilters(
@@ -212,56 +226,6 @@ export function AdminUsersRoute(handle: Handle) {
 	// refreshed record.
 	function resetPlanDraft() {
 		planDraftStableUserId = null
-	}
-
-	async function loadAdminUsers() {
-		const href = getCurrentHref()
-		const dataKey = getDataKey(href)
-		loadingDataKey = dataKey
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (
-				requestId !== loadRequestId ||
-				getDataKey(getCurrentHref()) !== dataKey
-			)
-				return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view admin users.'
-				lastFailedDataKey = dataKey
-				handle.update()
-				return
-			}
-			const payload = await readJson<AdminUsersLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load admin users.')
-			}
-			applyPayload(payload, href)
-			handle.update()
-		} catch (error) {
-			if (
-				requestId !== loadRequestId ||
-				getDataKey(getCurrentHref()) !== dataKey
-			)
-				return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load admin users.'
-			lastFailedDataKey = dataKey
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId && loadingDataKey === dataKey) {
-				loadingDataKey = null
-			}
-		}
 	}
 
 	async function loadMoreUsers() {
@@ -392,12 +356,10 @@ export function AdminUsersRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to update user roles.')
 			}
 			applyMutationPayload(payload, href)
-			lastLoadedDataKey = getDataKey(href)
 			message =
 				action === 'assign_role'
 					? `Assigned ${selectedRoleToAssign} role.`
 					: `Removed ${selectedRoleToAssign} role.`
-			status = 'ready'
 			actionState = 'idle'
 			handle.update()
 		} catch (error) {
@@ -444,9 +406,7 @@ export function AdminUsersRoute(handle: Handle) {
 			}
 			applyMutationPayload(payload, href)
 			invalidateUsage()
-			lastLoadedDataKey = getDataKey(href)
 			message = `Updated admin grant to ${plan}.`
-			status = 'ready'
 			actionState = 'idle'
 			handle.update()
 		} catch (error) {
@@ -490,7 +450,6 @@ export function AdminUsersRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to update verification.')
 			}
 			applyMutationPayload(payload, href)
-			lastLoadedDataKey = getDataKey(href)
 			if (action === 'mint_verify_url' && payload.verifyUrl) {
 				mintedVerifyUrl = payload.verifyUrl
 				mintedVerifyUrlForStableUserId = selectedUser.stableUserId
@@ -501,7 +460,6 @@ export function AdminUsersRoute(handle: Handle) {
 				mintedVerifyUrlForStableUserId = null
 				message = 'Marked email verified.'
 			}
-			status = 'ready'
 			actionState = 'idle'
 			handle.update()
 		} catch (error) {
@@ -549,14 +507,12 @@ export function AdminUsersRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to update the account.')
 			}
 			applyMutationPayload(payload, href)
-			lastLoadedDataKey = getDataKey(href)
 			message =
 				action === 'suspend_user'
 					? 'Account suspended.'
 					: action === 'unsuspend_user'
 						? 'Account suspension cleared.'
 						: 'Outbound email resumed.'
-			status = 'ready'
 			actionState = 'idle'
 			handle.update()
 		} catch (error) {
@@ -569,44 +525,27 @@ export function AdminUsersRoute(handle: Handle) {
 
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
-	function applyRouteLoaderData(href: string) {
-		if (!isAdminUsersPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'adminUsers', href)
-		if (!routeData) return false
-		applyPayload(routeData, href)
-		return true
-	}
-
-	let lastSeenDataKey = ''
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const currentDataKey = getDataKey(currentHref)
-		// The failure latch only guards retry loops for the location that
-		// failed; leaving it (or coming back) must allow a fresh attempt.
-		if (currentDataKey !== lastSeenDataKey) {
-			lastSeenDataKey = currentDataKey
-			lastFailedDataKey = null
-		}
-		// Consume route-loader data before deriving the list snapshot and
+		// Apply route data before deriving the list snapshot and
 		// `selectedUser`; deriving first would render this pass from the
 		// stale pre-navigation closure state.
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// data-key change; the stale marker forces the fallback refetch.
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad =
-			(status === 'loading' ||
-				currentDataKey !== lastLoadedDataKey ||
-				needsStaleRefresh) &&
-			currentDataKey !== lastFailedDataKey &&
-			loadingDataKey !== currentDataKey
-		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingDataKey = currentDataKey
-			handle.queueTask(loadAdminUsers)
+		const snapshot = usersData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyPayload(snapshot.data, currentHref)
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+		}
+		const pending = snapshot.kind === 'pending'
+		status =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		const { items: users, hasMore, totalCount, isLoadingMore } = usersSnapshot
 		const filters = readFilterState(currentHref)
@@ -645,13 +584,13 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin users"
 					description="Review account metadata and manage role assignments and entitlement plans. User content is never shown here."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' && lastLoadedDataKey === '' ? (
+				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading users…
 					</p>
@@ -670,7 +609,7 @@ export function AdminUsersRoute(handle: Handle) {
 				) : null}
 				<RecordTable
 					mode="expand"
-					busy={status === 'loading'}
+					busy={pending}
 					ariaLabel="User accounts"
 					selectedId={selectedStableUserId}
 					// Unconditional: the snapshot keeps the previous window during a

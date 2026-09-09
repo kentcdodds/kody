@@ -2,9 +2,7 @@ import { toDataURL } from 'qrcode'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -50,11 +48,6 @@ type TwoFactorSetup = {
 }
 
 const twoFactorApiPath = '/account/two-factor.json'
-const twoFactorPath = '/account/two-factor'
-
-function isTwoFactorPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === twoFactorPath
-}
 
 export async function accountTwoFactorRouteLoader(
 	_url: URL,
@@ -76,7 +69,6 @@ export async function accountTwoFactorRouteLoader(
 }
 
 export function AccountTwoFactorRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let actionStatus: 'idle' | 'busy' = 'idle'
 	let enabled = false
 	let setup: TwoFactorSetup | null = null
@@ -84,43 +76,25 @@ export function AccountTwoFactorRoute(handle: Handle) {
 	let disableCode = ''
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadStatus(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountTwoFactorPayload | null = null
+	let appliedError: Error | null = null
+	const twoFactorData = createRouteData({
+		key: 'accountTwoFactor',
+		async load(_href, signal) {
 			const response = await fetch(twoFactorApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountTwoFactorPayload>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load two-factor status.')
 			}
-			enabled = payload.enabled
-			status = 'ready'
-			message = null
-			messageTone = 'info'
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load two-factor status.'
-			messageTone = 'error'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	async function postTwoFactorAction(body: Record<string, unknown>) {
 		const response = await fetch(twoFactorApiPath, {
@@ -285,39 +259,34 @@ export function AccountTwoFactorRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isTwoFactorPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'accountTwoFactor',
-			href,
-		)
-		if (!routeData) return false
-		enabled = routeData.enabled
-		status = 'ready'
-		message = null
-		messageTone = 'info'
-		loadLatch.markLoaded(href)
-		return true
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadStatus)
+		const snapshot = twoFactorData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			enabled = snapshot.data.enabled
+			message = null
+			messageTone = 'info'
 		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isBusy = actionStatus === 'busy'
 
 		return (
-			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
+			<AccountManagementShell
+				maxWidth={layoutMaxWidths.content}
+				busy={pending && appliedPayload !== null}
+			>
 				<AccountPageHeader
 					title="Two-factor authentication"
 					description="Add a one-time code from an authenticator app as a second step when signing in."

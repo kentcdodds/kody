@@ -2,9 +2,7 @@ import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { readRouterSearch } from '#client/router-location.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -61,12 +59,6 @@ const statusOptions = [
 	{ value: 'all', label: 'All' },
 ] as const
 
-function isAdminCommunityReportsPath(href: string) {
-	return (
-		new URL(href, 'http://localhost').pathname === '/admin/community-reports'
-	)
-}
-
 function buildReportsHref(handle: Handle, status: string) {
 	const url = new URL(readCurrentRouterHref(handle), 'http://localhost')
 	if (status === 'open') url.searchParams.delete('status')
@@ -97,17 +89,37 @@ export async function adminCommunityReportsRouteLoader(
 }
 
 export function AdminCommunityReportsRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let reports: Array<AdminCommunityReportListItem> = []
 	let statusFilter = 'open'
 	let message: string | null = null
 	let actionState: 'idle' | 'acting' = 'idle'
 	let noteByReportId = new Map<string, string>()
 	let pendingDoubleCheckKey: string | null = null
-	let loadRequestId = 0
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminCommunityReportsLoaderData | null = null
+	let appliedError: Error | null = null
+	const reportsData = createRouteData({
+		key: 'adminCommunityReports',
+		async load(href, signal) {
+			const response = await fetch(
+				`${adminCommunityReportsApiPath}${new URL(href, 'http://localhost').search}`,
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					signal,
+				},
+			)
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error('You do not have permission to view community reports.')
+			}
+			const payload = await readJson<AdminCommunityReportsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load community reports.')
+			}
+			return payload
+		},
+	})
 
 	function getDoubleCheckKey(reportId: string, intent: ReportIntent) {
 		return `${reportId}:${intent}`
@@ -152,55 +164,6 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function loadReports() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(
-				`${adminCommunityReportsApiPath}${readRouterSearch(handle)}`,
-				{
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-				},
-			)
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view community reports.'
-				lastFailedHref = href
-				handle.update()
-				return
-			}
-			const payload = await readJson<AdminCommunityReportsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load community reports.')
-			}
-			reports = payload.reports
-			statusFilter = payload.statusFilter
-			status = 'ready'
-			message = null
-			lastLoadedHref = href
-			lastFailedHref = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load community reports.'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
-	}
-
 	async function submitReportAction(reportId: string, intent: ReportIntent) {
 		if (actionState !== 'idle') return
 		actionState = 'acting'
@@ -230,8 +193,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 				throw new Error(payload?.error ?? 'Unable to complete action.')
 			}
 			actionState = 'idle'
-			status = 'loading'
-			handle.update()
+			reportsData.reload(handle, readCurrentRouterHref(handle))
 		} catch (error) {
 			actionState = 'idle'
 			message =
@@ -240,57 +202,33 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 		}
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!isAdminCommunityReportsPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(
-			handle,
-			'adminCommunityReports',
-			href,
-		)
-		if (!routeData) return false
-		reports = routeData.reports
-		statusFilter = routeData.statusFilter
-		status = 'ready'
-		message = null
-		lastLoadedHref = href
-		lastFailedHref = null
-		return true
-	}
-
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
-
-	let lastSeenHref = ''
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const isMutating = actionState !== 'idle'
-		// The failure latch only guards retry loops for the location that
-		// failed; leaving it (or coming back) must allow a fresh attempt.
-		if (currentHref !== lastSeenHref) {
-			lastSeenHref = currentHref
-			lastFailedHref = null
+		const snapshot = reportsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			reports = snapshot.data.reports
+			statusFilter = snapshot.data.statusFilter
+			message = null
 		}
-
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// href change; the stale marker forces the fallback refetch.
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!appliedRouteData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadReports)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Community reports"
 					description="Review open reports and moderate community listings."

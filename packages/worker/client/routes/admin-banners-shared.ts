@@ -17,7 +17,6 @@ import {
 } from '#universal/youtube-watch.ts'
 
 export const adminBannersApiPath = '/admin/banners.json'
-const adminBannersPath = '/admin/banners'
 
 export type BannerDraft = {
 	id: string | null
@@ -41,10 +40,6 @@ export type BannerDraft = {
 	dismissible: boolean
 	startsAt: string
 	endsAt: string
-}
-
-export function isAdminBannersPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === adminBannersPath
 }
 
 export function emptyDraft(): BannerDraft {

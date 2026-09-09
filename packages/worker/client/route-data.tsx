@@ -74,7 +74,7 @@ function isRouteDataRedirect(value: unknown): value is RouteDataRedirect {
 	return typeof value === 'object' && value !== null && redirectMarker in value
 }
 
-export type RouteDataLoadResult<T> = T | null | RouteDataRedirect
+type RouteDataLoadResult<T> = T | null | RouteDataRedirect
 
 type RouteDataSource<K extends keyof AppLoaderData, T> =
 	| {

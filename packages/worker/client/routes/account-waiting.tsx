@@ -1,12 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import {
-	type AccountStatus,
-	readJson,
-} from '#client/routes/account-approval-shared.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
+import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -28,11 +23,6 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const waitingApiPath = routes.accountWaitingApi.href()
-const waitingPath = routes.accountWaiting.href()
-
-function isWaitingPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === waitingPath
-}
 
 const severityAccent: Record<WaitingSeverity, string> = {
 	block: colors.danger,
@@ -60,88 +50,47 @@ export async function accountWaitingRouteLoader(
 }
 
 export function AccountWaitingRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
-	let data: AccountWaitingLoaderData | null = null
-	let message: string | null = null
-	const loadLatch = createRouteLoadLatch()
-
-	function applyPayload(payload: AccountWaitingLoaderData) {
-		data = payload
-		status = 'ready'
-		message = null
-	}
-
-	async function loadWaiting(signal: AbortSignal) {
-		const href = readCurrentRouterHref(handle)
-		try {
+	const waitingData = createRouteData({
+		key: 'accountWaiting',
+		async load(_href, signal) {
 			const response = await fetch(waitingApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
-			if (signal.aborted) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			const payload = await readJson<AccountWaitingLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load waiting items.')
 			}
-			applyPayload(payload)
-			loadLatch.markLoaded(href)
-			handle.update()
-		} catch (error) {
-			if (signal.aborted) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load waiting items.'
-			loadLatch.markFailed(href)
-			handle.update()
-		}
-	}
-
-	function applyRouteLoaderData(href: string) {
-		if (!isWaitingPath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountWaiting', href)
-		if (!routeData) return false
-		applyPayload(routeData)
-		loadLatch.markLoaded(href)
-		return true
-	}
+			return payload
+		},
+	})
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			handle.queueTask(loadWaiting)
-		}
+		const snapshot = waitingData.read(handle, currentHref)
+		const data = snapshot.data
+		const pending = snapshot.kind === 'pending'
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && data !== null}>
 				<AccountPageHeader
 					title="Waiting"
 					description="Things that need you."
 					currentHref={currentHref}
 				/>
-				{status === 'loading' ? (
+				{pending && data === null ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
 						Loading waiting items…
 					</p>
 				) : null}
-				{status === 'error' && message ? (
+				{snapshot.error ? (
 					<AccountManagementMessage tone="error">
-						{message}
+						{snapshot.error.message}
 					</AccountManagementMessage>
 				) : null}
-				{status === 'ready' && data ? renderWaitingBody(data.items) : null}
+				{data ? renderWaitingBody(data.items) : null}
 			</AccountManagementShell>
 		)
 	}

@@ -14,11 +14,7 @@ import {
 const adminUsersApiPath = '/admin/users.json'
 export const adminUserUsageApiPath = '/admin/users/usage.json'
 
-const {
-	isRoutePath: isAdminUsersListDetailPath,
-	getSelection,
-	buildDetailHref,
-} = createListDetailRoute('/admin/users')
+const { getSelection, buildDetailHref } = createListDetailRoute('/admin/users')
 
 export { getSelection }
 
@@ -29,11 +25,6 @@ export function formatUsageLimit(limit: number) {
 export function formatUsagePercent(value: number | null) {
 	if (value === null) return '—'
 	return `${Math.round(value * 100)}%`
-}
-
-export function isAdminUsersPath(href: string) {
-	const path = new URL(href, 'http://localhost').pathname
-	return path === '/admin' || isAdminUsersListDetailPath(href)
 }
 
 export type AdminUserFilterState = {

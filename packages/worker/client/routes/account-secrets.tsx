@@ -9,8 +9,7 @@ import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-rou
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { type ListDetailSelection } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -69,7 +68,6 @@ export { accountSecretsRouteLoader }
 const clampedCellCss = css(recordCellClamp(26))
 
 export function AccountSecretsRoute(handle: Handle) {
-	let status: AccountStatus = 'loading'
 	let packageOptions: Array<PackageOption> = []
 	let packagesById = new Map<string, { kodyId: string; name: string }>()
 	let secrets: Array<AccountSecretListItem> = []
@@ -79,13 +77,33 @@ export function AccountSecretsRoute(handle: Handle) {
 	let message: string | null = null
 	let submittingApprovalAction: ApprovalAction | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
-	let lastLoadedDataKey = ''
-	let lastFailedDataKey: string | null = null
-	let loadingDataKey: string | null = null
-	let loadRequestId = 0
 	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AccountSecretsLoaderData | null = null
+	let appliedError: Error | null = null
 	const deleteSecretCheck = createDoubleCheck(handle)
+	const secretsData = createRouteData({
+		key: 'accountSecrets',
+		locationKey: getDataRefreshKey,
+		async load(href, signal) {
+			const requestUrl = buildSecretsApiRequestUrl(href)
+			const response = await fetch(
+				`${requestUrl.pathname}${requestUrl.search}`,
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+					signal,
+				},
+			)
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountSecretsLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load your secrets.')
+			}
+			return payload
+		},
+	})
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -165,7 +183,6 @@ export function AccountSecretsRoute(handle: Handle) {
 			(selection.selectedId && !payload.selectedSecret && !payload.approval
 				? 'Secret not found.'
 				: null)
-		status = 'ready'
 		submittingApprovalAction = null
 		saveState = 'idle'
 	}
@@ -177,74 +194,23 @@ export function AccountSecretsRoute(handle: Handle) {
 			: `Unknown package (${packageId})`
 	}
 
-	async function loadAccountSecrets() {
-		const href = getCurrentHref()
-		const selection = secretsRoute.getSelection(href)
-		const dataKey = getDataRefreshKey(href)
-		const requestId = ++loadRequestId
-		loadingDataKey = dataKey
-		try {
-			const requestUrl = buildSecretsApiRequestUrl(href)
-
-			const response = await fetch(
-				`${requestUrl.pathname}${requestUrl.search}`,
-				{
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-				},
-			)
-			if (
-				requestId !== loadRequestId ||
-				getDataRefreshKey(getCurrentHref()) !== dataKey
-			)
-				return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-
-			const payload = await readJson<AccountSecretsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your secrets.')
-			}
-
-			lastLoadedDataKey = dataKey
-			lastFailedDataKey = null
-			if (retryTimeout) {
-				clearTimeout(retryTimeout)
-				retryTimeout = null
-			}
-			applyPayload(payload, selection, null)
-			handle.update()
-		} catch (error) {
-			if (
-				requestId !== loadRequestId ||
-				getDataRefreshKey(getCurrentHref()) !== dataKey
-			)
-				return
-			lastFailedDataKey = dataKey
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load your secrets.'
-			handle.update()
-			if (typeof window !== 'undefined') {
-				if (retryTimeout) {
-					clearTimeout(retryTimeout)
-					retryTimeout = null
-				}
-				retryTimeout = window.setTimeout(() => {
-					retryTimeout = null
-					if (lastFailedDataKey !== dataKey) return
-					if (getDataRefreshKey(getCurrentHref()) !== dataKey) return
-					lastFailedDataKey = null
-					handle.update()
-				}, 3000)
-			}
-		} finally {
-			if (requestId === loadRequestId && loadingDataKey === dataKey) {
-				loadingDataKey = null
-			}
+	function clearRetryTimeout() {
+		if (retryTimeout) {
+			clearTimeout(retryTimeout)
+			retryTimeout = null
 		}
+	}
+
+	/** A failed load retries after a pause while the route stays on that location. */
+	function scheduleRetry(dataKey: string) {
+		if (typeof window === 'undefined') return
+		clearRetryTimeout()
+		retryTimeout = window.setTimeout(() => {
+			retryTimeout = null
+			const href = getCurrentHref()
+			if (getDataRefreshKey(href) !== dataKey) return
+			secretsData.reload(handle, href)
+		}, 3000)
 	}
 
 	async function submitApproval(action: ApprovalAction) {
@@ -306,10 +272,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				nextUrl.searchParams.delete('names')
 				nextUrl.searchParams.delete('name')
 				// `navigate` is async (preload-then-commit); the commit render
-				// consumes its preloaded data and updates `lastLoadedDataKey`.
-				// Pre-setting it to the destination here would make interim
-				// renders (current URL unchanged) look like a location change
-				// and fire a spurious refetch for the pre-approval URL.
+				// consumes its preloaded data through `secretsData`.
 				navigate(`${nextUrl.pathname}${nextUrl.search}`)
 			}
 		} catch (error) {
@@ -500,45 +463,34 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applyRouteLoaderData(href: string) {
-		if (!secretsRoute.isRoutePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'accountSecrets', href)
-		if (!routeData) return false
-		const selection = secretsRoute.getSelection(href)
-		applyPayload(routeData, selection, routeData.approvalError)
-		lastLoadedDataKey = getDataRefreshKey(href)
-		lastFailedDataKey = null
-		return true
-	}
-
 	return () => {
 		const currentHref = getCurrentHref()
-		const currentDataKey = getDataRefreshKey(currentHref)
-		// Consume route-loader data before deriving list state below; deriving
-		// first would render this pass from the stale pre-navigation `secrets`
-		// (an empty list on SPA navigation) with no follow-up refetch queued.
-		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// data-key change; the stale marker forces the fallback refetch.
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
-		const isRefreshingForLocationChange =
-			status !== 'loading' &&
-			currentDataKey !== lastLoadedDataKey &&
-			currentDataKey !== lastFailedDataKey
-		const isLoadingCurrentLocation = loadingDataKey === currentDataKey
-		if (
-			!appliedRouteData &&
-			(status === 'loading' ||
-				isRefreshingForLocationChange ||
-				needsStaleRefresh) &&
-			!isLoadingCurrentLocation &&
-			typeof document !== 'undefined'
-		) {
-			handle.queueTask(loadAccountSecrets)
-		}
-
 		const selection = secretsRoute.getSelection(currentHref)
+		// Read route data before deriving list state below; deriving first
+		// would render this pass from the stale pre-navigation `secrets` (an
+		// empty list on SPA navigation).
+		const snapshot = secretsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			clearRetryTimeout()
+			applyPayload(snapshot.data, selection, null)
+		}
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			scheduleRetry(getDataRefreshKey(currentHref))
+		}
+		const pending = snapshot.kind === 'pending'
+		const status: AccountStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
+		// The previous location's payload stays on screen while the new
+		// selection loads; only the detail column shows its placeholder.
+		const isRefreshingForLocationChange = pending && snapshot.stale
+
 		const filters = readFilterState(currentHref, packageOptions)
 		const filteredSecrets = filterSecrets(secrets, filters, packagesById)
 		const packageSelectOptions = packageOptions.map((packageOption) => {
@@ -580,7 +532,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				? approval
 				: null
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AccountPageHeader
 					title="Secrets"
 					description="Passwords and tokens Kody can use for you."

@@ -11,10 +11,6 @@ import {
 
 export const adminProviderMarksApiPath = '/admin/provider-marks.json'
 
-export function isAdminProviderMarksPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/provider-marks'
-}
-
 export function splitAliasInput(raw: string): Array<string> {
 	return raw
 		.split(/[\s,]+/)

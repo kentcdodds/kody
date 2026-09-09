@@ -1,8 +1,7 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -32,13 +31,6 @@ type PageStatus = 'loading' | 'ready' | 'error'
 type ActionState = 'idle' | 'adding' | 'removing'
 
 const adminReservedUsernamesApiPath = '/admin/reserved-usernames.json'
-const adminReservedUsernamesPath = '/admin/reserved-usernames'
-
-function isAdminReservedUsernamesPath(href: string) {
-	return (
-		new URL(href, 'http://localhost').pathname === adminReservedUsernamesPath
-	)
-}
 
 export async function adminReservedUsernamesRouteLoader(
 	url: URL,
@@ -66,7 +58,6 @@ export async function adminReservedUsernamesRouteLoader(
 }
 
 export function AdminReservedUsernamesRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let builtIn: Array<string> = []
 	let added: Array<string> = []
 	let removed: Array<string> = []
@@ -75,64 +66,38 @@ export function AdminReservedUsernamesRoute(handle: Handle) {
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let actionState: ActionState = 'idle'
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
-	let loadRequestId = 0
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminReservedUsernamesLoaderData | null = null
+	let appliedError: Error | null = null
+	const reservedUsernamesData = createRouteData({
+		key: 'adminReservedUsernames',
+		async load(_href, signal) {
+			const response = await fetch(adminReservedUsernamesApiPath, {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			if (response.status === 403) {
+				throw new Error(
+					'You do not have permission to view reserved usernames.',
+				)
+			}
+			const payload = await readJson<AdminReservedUsernamesLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load reserved usernames.')
+			}
+			return payload
+		},
+	})
 
 	function applyData(payload: AdminReservedUsernamesLoaderData) {
 		builtIn = payload.builtIn
 		added = payload.added
 		removed = payload.removed
 		conflicts = payload.conflicts
-		status = 'ready'
 		message = null
 		messageTone = 'info'
-	}
-
-	async function loadReservedUsernames() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
-			const response = await fetch(adminReservedUsernamesApiPath, {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view reserved usernames.'
-				messageTone = 'error'
-				lastFailedHref = href
-				handle.update()
-				return
-			}
-			const payload = await readJson<AdminReservedUsernamesLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load reserved usernames.')
-			}
-			applyData(payload)
-			lastLoadedHref = href
-			lastFailedHref = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error
-					? error.message
-					: 'Unable to load reserved usernames.'
-			messageTone = 'error'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
 	}
 
 	async function submitAdminAction(body: Record<string, unknown>) {
@@ -196,27 +161,23 @@ export function AdminReservedUsernamesRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const routeData = isAdminReservedUsernamesPath(currentHref)
-			? tryConsumeRouteLoaderData(handle, 'adminReservedUsernames', currentHref)
-			: undefined
-		if (routeData) {
-			applyData(routeData)
-			lastLoadedHref = currentHref
-			lastFailedHref = null
+		const snapshot = reservedUsernamesData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyData(snapshot.data)
 		}
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !routeData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadReservedUsernames)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const normalizedQuery = builtInQuery.trim().toLowerCase()
 		const visibleBuiltIn = normalizedQuery
@@ -224,7 +185,7 @@ export function AdminReservedUsernamesRoute(handle: Handle) {
 			: builtIn
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Reserved usernames"
 					description="Usernames become {username}.kody.run subdomains and {username}@ mail locals. Built-in names stay locked unless explicitly unreserved; system-email locals and kody-prefixed names cannot be unreserved."

@@ -1,9 +1,10 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { createRouteLoadLatch } from '#client/route-load-latch.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import {
+	createRouteData,
+	renderRoutePendingStatus,
+} from '#client/route-data.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -92,33 +93,25 @@ export async function discordRouteLoader(
 }
 
 export function DiscordRoute(handle: Handle) {
-	let status: 'loading' | 'ready' | 'error' = 'loading'
+	/** Last good payload; the action handlers read it between renders. */
 	let page: DiscordPageLoaderData | null = null
 	let busy = false
 	let actionMessage: { text: string; tone: 'error' | 'info' } | null = null
-	const loadLatch = createRouteLoadLatch()
-
-	async function loadPage(signal: AbortSignal) {
-		try {
+	const pageData = createRouteData({
+		key: 'discord',
+		async load(_href, signal) {
 			const response = await fetch(discordApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
 			})
 			const payload = await readJson<DiscordPageLoaderData>(response)
-			if (signal.aborted) return
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load Discord connection status.')
 			}
-			page = payload
-			status = 'ready'
-			handle.update()
-		} catch {
-			if (signal.aborted) return
-			status = 'error'
-			handle.update()
-		}
-	}
+			return payload
+		},
+	})
 
 	async function handleConnectDiscord() {
 		busy = true
@@ -209,41 +202,18 @@ export function DiscordRoute(handle: Handle) {
 			return <section mix={css(pageCss)} />
 		}
 
-		const routeData = tryConsumeRouteLoaderData(handle, 'discord', currentHref)
-		const appliedRouteData = Boolean(routeData?.ok)
-		if (routeData?.ok) {
-			page = routeData
-			status = 'ready'
-			loadLatch.markLoaded(currentHref)
+		const snapshot = pageData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== page) {
+			page = snapshot.data
 		}
-
-		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
-		if (needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			const loadAttempt = loadLatch.getPendingAttempt()
-			handle.queueTask(async (signal) => {
-				try {
-					await loadPage(signal)
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					if (status === 'ready') loadLatch.markLoaded(currentHref)
-					else loadLatch.markFailed(currentHref)
-				} catch {
-					if (signal.aborted) {
-						loadLatch.clearPending(currentHref, loadAttempt)
-						return
-					}
-					loadLatch.markFailed(currentHref)
-				}
-			})
-		}
+		const pending = snapshot.kind === 'pending'
+		const status: 'loading' | 'ready' | 'error' =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && page === null
+					? 'loading'
+					: 'ready'
+		const routeBusy = pending && page !== null
 
 		const callbackMessage = readCallbackMessage(currentHref)
 		const message = actionMessage ?? callbackMessage
@@ -263,7 +233,8 @@ export function DiscordRoute(handle: Handle) {
 			(!page.signedIn || !page.discordConnected)
 
 		return (
-			<section mix={css(pageCss)}>
+			<section mix={css(pageCss)} aria-busy={routeBusy ? 'true' : undefined}>
+				{routeBusy ? renderRoutePendingStatus() : null}
 				<header mix={css(pageHeaderCss)}>
 					<h1 mix={css(titleCss)}>
 						<ProviderIcon providerId="discord" size="1em" />

@@ -2,8 +2,7 @@ import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -51,10 +50,6 @@ type ActionState =
 	| 'deleting-stale'
 
 const adminFeatureFlagsApiPath = '/admin/feature-flags.json'
-
-function isAdminFeatureFlagsPath(href: string) {
-	return new URL(href, 'http://localhost').pathname === '/admin/feature-flags'
-}
 
 function formatMeasureLabel(measure: FeatureFlagSuccessMetricMeasure): string {
 	switch (measure) {
@@ -137,64 +132,37 @@ export async function adminFeatureFlagsRouteLoader(
 }
 
 export function AdminFeatureFlagsRoute(handle: Handle) {
-	let status: PageStatus = 'loading'
 	let featureFlags: Array<AdminFeatureFlag> = []
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let actionState: ActionState = 'idle'
-	let lastLoadedHref = ''
-	let loadingForHref: string | null = null
-	let lastFailedHref: string | null = null
-	let loadRequestId = 0
-
-	function applyData(payload: AdminFeatureFlagsLoaderData) {
-		featureFlags = payload.featureFlags
-		status = 'ready'
-		message = null
-		messageTone = 'info'
-	}
-
-	async function loadFeatureFlags() {
-		const href = readCurrentRouterHref(handle)
-		loadingForHref = href
-		const requestId = ++loadRequestId
-		try {
+	/** Payload last applied to the closure state above. */
+	let appliedPayload: AdminFeatureFlagsLoaderData | null = null
+	let appliedError: Error | null = null
+	const featureFlagsData = createRouteData({
+		key: 'adminFeatureFlags',
+		async load(_href, signal) {
 			const response = await fetch(adminFeatureFlagsApiPath, {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				signal,
 			})
-			if (requestId !== loadRequestId) return
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
+			if (response.status === 401) return routeDataRedirect('/login')
 			if (response.status === 403) {
-				status = 'error'
-				message = 'You do not have permission to view feature flags.'
-				messageTone = 'error'
-				lastFailedHref = href
-				handle.update()
-				return
+				throw new Error('You do not have permission to view feature flags.')
 			}
 			const payload = await readJson<AdminFeatureFlagsLoaderData>(response)
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load feature flags.')
 			}
-			applyData(payload)
-			lastLoadedHref = href
-			lastFailedHref = null
-			handle.update()
-		} catch (error) {
-			if (requestId !== loadRequestId) return
-			status = 'error'
-			message =
-				error instanceof Error ? error.message : 'Unable to load feature flags.'
-			messageTone = 'error'
-			lastFailedHref = href
-			handle.update()
-		} finally {
-			if (requestId === loadRequestId) loadingForHref = null
-		}
+			return payload
+		},
+	})
+
+	function applyData(payload: AdminFeatureFlagsLoaderData) {
+		featureFlags = payload.featureFlags
+		message = null
+		messageTone = 'info'
 	}
 
 	async function submitAdminAction(
@@ -293,33 +261,29 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const routeData = isAdminFeatureFlagsPath(currentHref)
-			? tryConsumeRouteLoaderData(handle, 'adminFeatureFlags', currentHref)
-			: undefined
-		if (routeData) {
-			applyData(routeData)
-			lastLoadedHref = currentHref
-			lastFailedHref = null
+		const snapshot = featureFlagsData.read(handle, currentHref)
+		if (snapshot.data && snapshot.data !== appliedPayload) {
+			appliedPayload = snapshot.data
+			applyData(snapshot.data)
 		}
-		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !routeData
-		const needsLoad =
-			(status === 'loading' ||
-				currentHref !== lastLoadedHref ||
-				needsStaleRefresh) &&
-			currentHref !== lastFailedHref &&
-			loadingForHref !== currentHref
-		if (!routeData && needsLoad && typeof document !== 'undefined') {
-			status = 'loading'
-			loadingForHref = currentHref
-			handle.queueTask(loadFeatureFlags)
+		if (snapshot.error && snapshot.error !== appliedError) {
+			appliedError = snapshot.error
+			message = snapshot.error.message
+			messageTone = 'error'
 		}
+		const pending = snapshot.kind === 'pending'
+		const status: PageStatus =
+			snapshot.kind === 'error'
+				? 'error'
+				: pending && appliedPayload === null
+					? 'loading'
+					: 'ready'
 		const isMutating = actionState !== 'idle'
 		const registryFlags = featureFlags.filter((flag) => !flag.stale)
 		const staleFlags = featureFlags.filter((flag) => flag.stale)
 
 		return (
-			<AccountManagementShell>
+			<AccountManagementShell busy={pending && appliedPayload !== null}>
 				<AdminPageHeader
 					title="Admin feature flags"
 					description="Toggle registry feature flags, set percentage rollouts, and manage per-user overrides."
