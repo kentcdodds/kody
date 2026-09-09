@@ -79,4 +79,16 @@ test('host approval URLs use /connect/secrets and support multiple hosts', () =>
 			hosts: ['api.ope', 'api.openai.com/v1'],
 		}),
 	).toThrow('At least one host is required for host approval.')
+
+	expect(
+		buildSecretHostApprovalUrl({
+			baseUrl: 'https://example.com',
+			name: 'localToken',
+			scope: 'user',
+			requestedHost: '::1',
+			storageContext: null,
+		}),
+	).toBe(
+		'https://example.com/connect/secrets?name=localToken&hosts=%5B%3A%3A1%5D',
+	)
 })

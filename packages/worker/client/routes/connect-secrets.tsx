@@ -143,14 +143,14 @@ export function ConnectSecretsRoute(handle: Handle) {
 			})
 		const hosts = approval ? approvalRequestedHosts(approval) : []
 		const names = approval?.names.length ? approval.names : []
-		const onlyInvalid =
-			hosts.length === 0 && rejectedHosts.length > 0 && completed !== 'reject'
-		const fullyAllowed =
-			(completed === 'approve' || alreadyAllowed) &&
-			rejectedHosts.length === 0 &&
-			!onlyInvalid
-		const leftoverInvalid =
-			rejectedHosts.length > 0 && (completed === 'approve' || alreadyAllowed)
+		const view = readConnectSecretsView({
+			hostCount: hosts.length,
+			rejectedCount: rejectedHosts.length,
+			completed,
+			alreadyAllowed,
+		})
+		const { onlyInvalid, fullyAllowed, leftoverInvalid, showBackToSecrets } =
+			view
 
 		return (
 			<section mix={css(connectSecretsPageCss)} data-testid="connect-secrets">
@@ -278,7 +278,7 @@ export function ConnectSecretsRoute(handle: Handle) {
 								</div>
 							) : null}
 						</div>
-						{fullyAllowed || alreadyAllowed || completed === 'reject' ? (
+						{showBackToSecrets ? (
 							<a
 								href={routes.accountSecrets.href()}
 								mix={css(connectSecretsSecondaryButtonCss)}
@@ -330,6 +330,35 @@ export function ConnectSecretsRoute(handle: Handle) {
 				) : null}
 			</section>
 		)
+	}
+}
+
+export function readConnectSecretsView(input: {
+	hostCount: number
+	rejectedCount: number
+	completed: ApprovalAction | null
+	alreadyAllowed: boolean
+}) {
+	const onlyInvalid =
+		input.hostCount === 0 &&
+		input.rejectedCount > 0 &&
+		input.completed !== 'reject'
+	const fullyAllowed =
+		(input.completed === 'approve' || input.alreadyAllowed) &&
+		input.rejectedCount === 0 &&
+		!onlyInvalid
+	const leftoverInvalid =
+		input.rejectedCount > 0 &&
+		(input.completed === 'approve' || input.alreadyAllowed)
+	return {
+		onlyInvalid,
+		fullyAllowed,
+		leftoverInvalid,
+		showBackToSecrets:
+			fullyAllowed ||
+			leftoverInvalid ||
+			input.alreadyAllowed ||
+			input.completed === 'reject',
 	}
 }
 

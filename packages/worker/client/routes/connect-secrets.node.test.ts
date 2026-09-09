@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import { allowHostsButtonLabel } from './account-approval-shared.ts'
-import { isConnectSecretsAlreadyAllowed } from './connect-secrets.tsx'
+import {
+	isConnectSecretsAlreadyAllowed,
+	readConnectSecretsView,
+} from './connect-secrets.tsx'
 
 const secret = {
 	id: 'user:googleAccessToken',
@@ -98,4 +101,18 @@ test('connect secrets is already allowed only when every listed secret is presen
 	expect(allowHostsButtonLabel(2, 0)).toBe('Allow all 2 hosts')
 	expect(allowHostsButtonLabel(1, 1)).toBe('Allow access')
 	expect(allowHostsButtonLabel(2, 1)).toBe('Allow 2 valid hosts')
+
+	expect(
+		readConnectSecretsView({
+			hostCount: 1,
+			rejectedCount: 1,
+			completed: 'approve',
+			alreadyAllowed: false,
+		}),
+	).toEqual({
+		onlyInvalid: false,
+		fullyAllowed: false,
+		leftoverInvalid: true,
+		showBackToSecrets: true,
+	})
 })

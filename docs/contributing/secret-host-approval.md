@@ -60,7 +60,8 @@ lowercase, strip `http(s)://` and take `URL.hostname` for full URLs), it is:
   RFC 2606 special-use suffix (`test`, `example`, `invalid`)
 - `localhost` or a `*.localhost` name
 - an IPv4 or IPv6 address (shape only — not a policy allow/deny for private
-  networks)
+  networks). IPv6 is stored as `URL.hostname` serializes it (`[::1]`), so Allow
+  and later fetch matching use the same token
 
 A host is **rejected** (shown as invalid, never written) when it is:
 

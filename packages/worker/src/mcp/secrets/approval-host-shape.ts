@@ -47,15 +47,15 @@ export function classifyApprovalHosts(
 	const valid: Array<string> = []
 	const rejected: Array<RejectedApprovalHost> = []
 	for (const host of limited) {
-		const reason = classifyNormalizedApprovalHost(host)
-		if (reason == null) {
-			valid.push(host)
+		const classified = classifyNormalizedApprovalHost(host)
+		if (classified.reason == null) {
+			if (!valid.includes(classified.host)) valid.push(classified.host)
 			continue
 		}
 		rejected.push({
 			host,
-			reason,
-			message: rejectedApprovalHostMessage(reason),
+			reason: classified.reason,
+			message: rejectedApprovalHostMessage(classified.reason),
 		})
 	}
 	return { valid, rejected }
@@ -65,32 +65,39 @@ export function filterValidApprovalHosts(hosts: Array<string>) {
 	return classifyApprovalHosts(hosts).valid
 }
 
-function classifyNormalizedApprovalHost(
-	host: string,
-): RejectedApprovalHostReason | null {
-	if (host.length === 0 || host.length > maxHostnameLength) return 'malformed'
-	if (containsForbiddenHostChars(host)) return 'malformed'
+function classifyNormalizedApprovalHost(host: string): {
+	host: string
+	reason: RejectedApprovalHostReason | null
+} {
+	const ipv6 = canonicalizeIpv6Host(host)
+	if (ipv6) return { host: ipv6, reason: null }
+	if (host.length === 0 || host.length > maxHostnameLength) {
+		return { host, reason: 'malformed' }
+	}
+	if (containsForbiddenHostChars(host)) return { host, reason: 'malformed' }
 	if (host.startsWith('.') || host.endsWith('.') || host.includes('..')) {
-		return 'malformed'
+		return { host, reason: 'malformed' }
 	}
-	if (isIpAddress(host)) return null
-	if (looksLikeInvalidIpv4(host)) return 'malformed'
+	if (isIpv4Address(host)) return { host, reason: null }
+	if (looksLikeInvalidIpv4(host)) return { host, reason: 'malformed' }
 	if (host === 'localhost' || host.endsWith('.localhost')) {
-		return isDnsLabelList(host) ? null : 'malformed'
+		return { host, reason: isDnsLabelList(host) ? null : 'malformed' }
 	}
-	if (!host.includes('.')) return 'malformed'
-	if (!isHostnameToken(host)) return 'malformed'
+	if (!host.includes('.')) return { host, reason: 'malformed' }
+	if (!isHostnameToken(host)) return { host, reason: 'malformed' }
 
 	const parsed = parse(host, { detectIp: false, validateHostname: true })
-	if (parsed.hostname !== host) return 'malformed'
-	if (parsed.isIcann === true || parsed.isPrivate === true) return null
+	if (parsed.hostname !== host) return { host, reason: 'malformed' }
+	if (parsed.isIcann === true || parsed.isPrivate === true) {
+		return { host, reason: null }
+	}
 	if (
 		parsed.publicSuffix != null &&
 		specialUsePublicSuffixes.has(parsed.publicSuffix)
 	) {
-		return null
+		return { host, reason: null }
 	}
-	return 'unknown_suffix'
+	return { host, reason: 'unknown_suffix' }
 }
 
 function containsForbiddenHostChars(host: string) {
@@ -114,11 +121,6 @@ function isDnsLabelList(host: string) {
 	})
 }
 
-function isIpAddress(host: string) {
-	if (isIpv4Address(host)) return true
-	return isIpv6Address(host)
-}
-
 function isIpv4Address(host: string) {
 	const parts = host.split('.')
 	if (parts.length !== 4) return false
@@ -135,13 +137,19 @@ function looksLikeInvalidIpv4(host: string) {
 	return parts.every((part) => /^\d+$/.test(part))
 }
 
-function isIpv6Address(host: string) {
+/**
+ * `URL.hostname` in this runtime serializes IPv6 as a bracketed host (`[::1]`),
+ * including compressed forms. Compare against that serialization rather than
+ * the unbracketed input, and persist the same form fetch matching uses.
+ */
+function canonicalizeIpv6Host(host: string) {
 	const inner =
 		host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-	if (!inner.includes(':')) return false
+	if (!inner.includes(':')) return null
 	try {
-		return new URL(`http://[${inner}]/`).hostname === inner
+		const hostname = new URL(`http://[${inner}]/`).hostname
+		return hostname.startsWith('[') && hostname.endsWith(']') ? hostname : null
 	} catch {
-		return false
+		return null
 	}
 }

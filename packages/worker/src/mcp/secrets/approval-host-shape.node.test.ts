@@ -79,4 +79,16 @@ test('approval host classification accepts happy-path hosts and rejects truncate
 			},
 		],
 	)
+	expect(
+		classifyApprovalHosts(['::1', '[::1]', '2001:db8::1', 'not:an:ip']).valid,
+	).toEqual(['[2001:db8::1]', '[::1]'])
+	expect(
+		classifyApprovalHosts(['not:an:ip', '::1/128', '[::1]:443']).rejected.map(
+			(entry) => [entry.host, entry.reason],
+		),
+	).toEqual([
+		['::1/128', 'malformed'],
+		['[::1]:443', 'malformed'],
+		['not:an:ip', 'malformed'],
+	])
 })
