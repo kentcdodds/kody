@@ -1,10 +1,12 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css, ref } from 'remix/ui'
+import { routerEvents } from '#client/client-router.tsx'
 import { type DocSummaryLoaderData } from '#universal/loader-data.ts'
 import {
 	docHref,
+	docsCurrentPageLabel,
 	docsNav,
 	findDocsNavNeighbors,
-	findDocsNavSection,
+	resolveDocsNavSection,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
 import { routes } from '#universal/routes.ts'
@@ -31,20 +33,30 @@ export function renderDocsShell(input: {
 	children: RemixNode
 }) {
 	const { current, children } = input
-	const currentSection = findDocsNavSection(current)
+	const currentSection = resolveDocsNavSection(current)
 	return (
 		<div mix={css(docsLayoutCss)}>
-			<aside mix={css(docsSidebarCss)}>
+			<aside data-docs-nav mix={css(docsSidebarCss)}>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
 					{renderDocsNavSections(current, currentSection)}
 				</nav>
 			</aside>
-			<details mix={css(docsMobileMenuCss)}>
+			<details
+				mix={[
+					css(docsMobileMenuCss),
+					ref((node, signal) => {
+						if (!(node instanceof HTMLDetailsElement)) return
+						const close = () => {
+							node.open = false
+						}
+						routerEvents.addEventListener('navigate', close, { signal })
+					}),
+				]}
+			>
 				<summary>
 					<span>Docs</span>
 					<span mix={css(docsMobileMenuCurrentCss)}>
-						{currentSection?.label ??
-							(current === 'connect' ? 'Connect a provider' : '')}
+						{docsCurrentPageLabel(current)}
 					</span>
 				</summary>
 				<nav aria-label="Docs" mix={css(docsSidebarNavCss)}>
@@ -104,17 +116,13 @@ export function renderDocsPager(slug: string) {
 					<span>Previous</span>
 					<strong>{prev.label}</strong>
 				</a>
-			) : (
-				<span />
-			)}
+			) : null}
 			{next ? (
 				<a href={docHref(next.slug)} mix={css(docsPagerNextLinkCss)}>
 					<span>Next</span>
 					<strong>{next.label}</strong>
 				</a>
-			) : (
-				<span />
-			)}
+			) : null}
 		</nav>
 	)
 }
@@ -209,6 +217,9 @@ const docsNavSectionCss = {
 	'& h2 a[aria-current="page"]': {
 		color: colors.primaryText,
 	},
+	'&:has(a[data-section-current]) h2': {
+		color: colors.text,
+	},
 	'& ul': {
 		listStyle: 'none',
 		margin: 0,
@@ -282,12 +293,13 @@ const docsMainCss = {
 }
 
 const docsPagerCss = {
-	display: 'grid',
-	gridTemplateColumns: '1fr 1fr',
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	justifyContent: 'space-between',
 	gap: '1rem',
 	marginTop: 'clamp(2.5rem, 6vw, 3.5rem)',
 	[mq.mobile]: {
-		gridTemplateColumns: '1fr',
+		flexDirection: 'column' as const,
 	},
 }
 
@@ -316,7 +328,12 @@ const docsPagerLinkCss = {
 }
 
 const docsPagerNextLinkCss = mergeCss(docsPagerLinkCss, {
+	marginInlineStart: 'auto',
 	textAlign: 'right' as const,
+	[mq.mobile]: {
+		marginInlineStart: 0,
+		textAlign: 'left' as const,
+	},
 })
 
 export const docListCss = {

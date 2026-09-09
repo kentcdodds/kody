@@ -180,6 +180,33 @@ export function isReservedDocsIndexSlug(slug: string): boolean {
 	return (reservedDocsIndexSlugs as ReadonlyArray<string>).includes(slug)
 }
 
+/**
+ * HTML docs chrome: `/docs`, `/docs/connect`, and `/docs/:slug`. Companion
+ * twins (`.md` / `.json` / `llms.txt`) match too; the SPA leaves those.
+ */
+export function isDocsPagePath(pathname: string): boolean {
+	return pathname === '/docs' || pathname.startsWith('/docs/')
+}
+
+/**
+ * Sidebar section for the current page. `/docs/connect` is the providers
+ * index (not a catalog slug), so it resolves to that section.
+ */
+export function resolveDocsNavSection(current: string): DocsNavSection | null {
+	if (current === 'connect') {
+		return docsNav.find((section) => section.id === 'providers') ?? null
+	}
+	return findDocsNavSection(current)
+}
+
+/** Short label for the open page — mobile menu current, focus target copy. */
+export function docsCurrentPageLabel(current: string): string {
+	if (current === 'connect') return 'Connect a provider'
+	const section = findDocsNavSection(current)
+	const item = section?.items.find((entry) => entry.slug === current)
+	return item?.label ?? section?.label ?? 'Docs'
+}
+
 /** Every advertised slug in reading order (sidebar order). */
 export function listDocsNavSlugs(): ReadonlyArray<string> {
 	return docsNav.flatMap((section) => section.items.map((item) => item.slug))

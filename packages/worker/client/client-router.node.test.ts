@@ -112,9 +112,9 @@ test('package approve-publish is not swallowed by the package detail route', () 
 })
 
 test('view transitions skip shell tab switches, including when from-path was never recorded', () => {
-	// Tab switching inside the account/admin shell: the rail is unchanged and
-	// full-height, so a snapshot transition would squash it between two page
-	// heights. These swap instantly.
+	// Tab switching inside a persistent shell (account/admin rail, docs
+	// sidebar): the chrome is unchanged and full-height, so a snapshot
+	// transition would squash or fade it. These swap instantly.
 	expect(isSameShellAreaNavigation('/account', '/account/secrets')).toBe(true)
 	expect(
 		isSameShellAreaNavigation('/account/jobs?view=failed', '/account/values'),
@@ -122,9 +122,14 @@ test('view transitions skip shell tab switches, including when from-path was nev
 	expect(
 		isSameShellAreaNavigation('/admin/users', '/admin/feature-flags'),
 	).toBe(true)
+	expect(isSameShellAreaNavigation('/docs', '/docs/oauth')).toBe(true)
+	expect(isSameShellAreaNavigation('/docs/oauth', '/docs/connect')).toBe(true)
+	expect(isSameShellAreaNavigation('/docs/how-kody-works', '/docs')).toBe(true)
 	expect(isSameShellAreaNavigation('/pricing', '/account')).toBe(false)
 	expect(isSameShellAreaNavigation('/account', '/pricing')).toBe(false)
 	expect(isSameShellAreaNavigation('/account', '/admin/users')).toBe(false)
+	expect(isSameShellAreaNavigation('/docs', '/pricing')).toBe(false)
+	expect(isSameShellAreaNavigation('/docs', '/documentation')).toBe(false)
 	expect(isSameShellAreaNavigation(null, '/account')).toBe(false)
 	expect(isSameShellAreaNavigation('/account', '/accounts-payable')).toBe(false)
 
@@ -160,6 +165,17 @@ test('view transitions skip shell tab switches, including when from-path was nev
 	expect(animate({ from: '/account/usage', to: '/account/activity' })).toBe(
 		false,
 	)
+	expect(animate({ from: '/docs', to: '/docs/oauth' })).toBe(false)
+	expect(animate({ from: '/docs/oauth', to: '/docs/connect' })).toBe(false)
+	expect(
+		animate({
+			from: null,
+			to: '/docs/how-kody-works',
+			hasPersistentShell: true,
+		}),
+	).toBe(false)
+	expect(animate({ from: '/pricing', to: '/docs' })).toBe(true)
+	expect(animate({ from: '/docs/oauth', to: '/blog' })).toBe(true)
 
 	// Leaving, entering, or crossing shells is still a real page change.
 	expect(

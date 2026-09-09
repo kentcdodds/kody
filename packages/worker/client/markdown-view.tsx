@@ -87,8 +87,8 @@ export type RenderMarkdownOptions = {
 	fences?: Array<HighlightedCode>
 	/**
 	 * When true, headings get kebab-case `id` attributes (unique within one
-	 * render) so first-party posts can deep-link to a section. Off by default
-	 * so third-party READMEs do not grow extra attributes.
+	 * render) so first-party posts and docs can deep-link to a section. Off
+	 * by default so third-party READMEs do not grow extra attributes.
 	 */
 	headingIds?: boolean
 	/**

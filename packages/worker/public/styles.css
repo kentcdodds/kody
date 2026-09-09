@@ -449,8 +449,10 @@ html.is-settled {
 	   leaving `/account` or `/admin` has an old snapshot and no new one.
 	   Pinning old/new (`animation: none`) froze that leftover rail on top
 	   of the destination. Old/new fade; only the group stays still so
-	   account↔admin (rail on both sides) does not morph/squash. Browsers
-	   without the API never match these pseudos — the swap is instant. */
+	   account↔admin (rail on both sides) does not morph/squash. Intra-docs
+	   guide switches skip this API entirely (client-router shell areas) so
+	   the sidebar inside `page` does not fade. Browsers without the API
+	   never match these pseudos — the swap is instant. */
 	::view-transition-old(root),
 	::view-transition-new(root) {
 		animation: none;

@@ -39,6 +39,7 @@ import {
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
 import { Toaster } from './toaster.tsx'
+import { isDocsPagePath } from '#universal/docs-nav.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageFilesPathname } from '#universal/package-files.ts'
 import { isProfilePathname } from '#universal/profile-path.ts'
@@ -161,9 +162,18 @@ export function App(handle: Handle<AppProps>) {
 			if (nextPathname === lastFocusManagedPathname) return
 			lastFocusManagedPathname = nextPathname
 			handle.queueTask(() => {
+				// Docs guide changes: announce the new article title, not the
+				// shared `<main>` landmark that already had focus.
+				const heading = document.querySelector('[data-docs-heading]')
 				const main = document.getElementById('main')
-				if (!(main instanceof HTMLElement)) return
-				main.focus({ preventScroll: true })
+				const target =
+					heading instanceof HTMLElement
+						? heading
+						: main instanceof HTMLElement
+							? main
+							: null
+				if (!target) return
+				target.focus({ preventScroll: true })
 			})
 		})
 		// Router form POSTs mutate server state, which may include auth (e.g.
@@ -203,6 +213,7 @@ export function App(handle: Handle<AppProps>) {
 			currentPathname === '/community' ||
 			currentPathname === '/onboarding' ||
 			currentPathname.startsWith('/onboarding/step-') ||
+			isDocsPagePath(currentPathname) ||
 			isProfilePathname(currentPathname) ||
 			isCommunityListingPathname(currentPathname) ||
 			getSlugFromPathname(currentPathname) !== null

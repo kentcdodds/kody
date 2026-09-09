@@ -142,6 +142,7 @@ export function buildDocsConnectMarkdown(baseUrl: string): string {
 		`- [Integration bootstrap](${baseUrl}${docMarkdownHref('integration-bootstrap')}) — the sequence before any provider-backed package`,
 		`- [OAuth (bring your own app)](${baseUrl}${docMarkdownHref('oauth')}) — the standard \`/connect/oauth\` path for providers without a walkthrough`,
 		`- [Connect a home MCP server](${baseUrl}${docMarkdownHref('local-mcp-tunnels')}) — run a local MCP process and connect it to Kody`,
+		`- [Lock an MCP server to a package](${baseUrl}${docMarkdownHref('locked-mcp-server')}) — keep a connected server's tools off execute and other packages`,
 		'',
 	)
 	return lines.join('\n')
