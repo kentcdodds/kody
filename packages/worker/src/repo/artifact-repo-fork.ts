@@ -45,12 +45,14 @@ export type PersistForkedArtifactRepoResult = {
  * dest contents match production's "fork + small commit" outcome without
  * opening a RepoSession.
  *
- * Production remotes stamp `published_commit` to dest HEAD (the default
- * branch tip Artifacts copied), then apply edits through the existing-source
- * session path. When dest HEAD matches the listing pin used in prepare,
- * `changedFiles` apply. When dest HEAD is ahead of that pin, only dest
- * HEAD's `package.json` is rewritten so pin-relative edits cannot revert
- * later origin commits.
+ * Production remotes apply the rewrite as a first publish from dest HEAD
+ * (the default-branch tip Artifacts copied). They must not stamp
+ * `published_commit` before that rewrite: doing so opens the existing-source
+ * session path and `publishSession({ force: true })`, which the overwrite
+ * gate correctly rejects for a brand-new fork. When dest HEAD matches the
+ * listing pin used in prepare, `changedFiles` apply. When dest HEAD is
+ * ahead of that pin, only dest HEAD's `package.json` is rewritten so
+ * pin-relative edits cannot revert later origin commits.
  */
 export async function persistForkedArtifactRepoContents(input: {
 	env: Env
@@ -116,16 +118,6 @@ export async function persistForkedArtifactRepoContents(input: {
 		)
 	}
 
-	const marked = await updateEntitySource(input.env.APP_DB, {
-		id: input.source.id,
-		userId: input.source.user_id,
-		publishedCommit: destHead.commit,
-	})
-	if (!marked) {
-		throw new Error(
-			`Forked source "${input.source.id}" could not be marked at dest HEAD ${destHead.commit}.`,
-		)
-	}
 	const filesToSync =
 		destHead.commit === input.originCommit
 			? input.changedFiles
@@ -137,6 +129,16 @@ export async function persistForkedArtifactRepoContents(input: {
 					targetKodyId: input.targetKodyId,
 				})
 	if (Object.keys(filesToSync).length === 0) {
+		const marked = await updateEntitySource(input.env.APP_DB, {
+			id: input.source.id,
+			userId: input.source.user_id,
+			publishedCommit: destHead.commit,
+		})
+		if (!marked) {
+			throw new Error(
+				`Forked source "${input.source.id}" could not be marked at dest HEAD ${destHead.commit}.`,
+			)
+		}
 		return {
 			copiedOriginCommit: destHead.commit,
 			destCommit: destHead.commit,
@@ -148,6 +150,7 @@ export async function persistForkedArtifactRepoContents(input: {
 		userId: input.userId,
 		sourceId: input.source.id,
 		files: filesToSync,
+		existingHeadCommit: destHead.commit,
 		bootstrapAccess: input.bootstrapAccess ?? null,
 		serverTiming: input.serverTiming,
 	})

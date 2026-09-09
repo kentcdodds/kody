@@ -132,6 +132,7 @@ export type RepoSessionRpc = {
 		userId: string
 		edits: Array<Exclude<RepoSessionEdit, { kind: 'delete' | 'move' }>>
 		bootstrapAccess?: ArtifactBootstrapAccess | null
+		existingHeadCommit?: string
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string

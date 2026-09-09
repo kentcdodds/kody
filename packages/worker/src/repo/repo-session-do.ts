@@ -1402,6 +1402,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		sourceId: string
 		userId: string
 		bootstrapAccess?: ArtifactBootstrapAccess | null
+		existingHeadCommit?: string
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -1468,23 +1469,45 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.bootstrapAccess?.defaultBranch ??
 			remoteSetup.sourceInfo?.defaultBranch ??
 			defaultSessionBranch
-		await pushServerTiming(serverTiming, 'bootstrap-git-init', async () => {
-			await this.resetWorkspace()
-			await this.workspace.mkdir(repoSessionWorkspacePrefix, {
-				recursive: true,
-			})
-			await this.git.init({
-				dir: repoSessionWorkspacePrefix,
-				defaultBranch: targetBranch,
-			})
-			await this.ensureRemote({
-				name: 'source',
-				url: buildAuthenticatedArtifactsRemote({
+		const sourceRemoteUrl = buildAuthenticatedArtifactsRemote({
+			remote: remoteSetup.remote,
+			token: remoteSetup.token,
+		})
+		if (input.existingHeadCommit) {
+			await pushServerTiming(serverTiming, 'bootstrap-git-clone', async () => {
+				await this.cloneArtifactsRepoWithRetry({
 					remote: remoteSetup.remote,
 					token: remoteSetup.token,
-				}),
+					branch: targetBranch,
+					resetBeforeFirstAttempt: true,
+				})
+				const head = await this.getHeadCommit()
+				if (head !== input.existingHeadCommit) {
+					throw new Error(
+						`Forked dest HEAD "${head ?? 'none'}" does not match expected "${input.existingHeadCommit}".`,
+					)
+				}
+				await this.ensureRemote({
+					name: 'source',
+					url: sourceRemoteUrl,
+				})
 			})
-		})
+		} else {
+			await pushServerTiming(serverTiming, 'bootstrap-git-init', async () => {
+				await this.resetWorkspace()
+				await this.workspace.mkdir(repoSessionWorkspacePrefix, {
+					recursive: true,
+				})
+				await this.git.init({
+					dir: repoSessionWorkspacePrefix,
+					defaultBranch: targetBranch,
+				})
+				await this.ensureRemote({
+					name: 'source',
+					url: sourceRemoteUrl,
+				})
+			})
+		}
 		await pushServerTiming(serverTiming, 'bootstrap-write-files', () =>
 			this.applyWorkspaceEdits({
 				edits: input.edits as Array<RepoSessionEdit>,

@@ -1302,3 +1302,105 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 		content: 'export default {}',
 	})
 })
+
+test('bootstrapSource first-publishes from dest HEAD without replacing the forked tree', async () => {
+	consoleWarn.mockImplementation(() => {})
+	restoreRepoSessionMockBaseline()
+	const unpublishedSource = {
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'job' as const,
+		entity_id: 'job-1',
+		repo_id: 'job-1',
+		published_commit: null,
+		indexed_commit: null,
+		manifest_path: 'kody.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: '2026-04-16T00:00:00.000Z',
+		updated_at: '2026-04-16T00:00:00.000Z',
+	}
+	const bootstrapAccess = {
+		defaultBranch: 'main',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/job-1.git',
+		token: 'art_v1_bootstrap?expires=1760000000',
+		expiresAt: '2025-10-09T08:53:20.000Z',
+	}
+	const jobManifest = '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedSource)
+	mockModule.workspaceReadFile.mockResolvedValue(jobManifest)
+	mockModule.gitState.headCommit = 'commit-dest-head'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.git.clone.mockClear()
+	mockModule.git.init.mockClear()
+	mockModule.updateEntitySource.mockClear()
+
+	const cloned = await new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	).bootstrapSource({
+		sessionId: 'session-bootstrap-fork',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		existingHeadCommit: 'commit-dest-head',
+		bootstrapAccess,
+		edits: [{ kind: 'write', path: 'kody.json', content: jobManifest }],
+	})
+
+	expect(cloned.publishedCommit).toBe('commit-dest-head')
+	expect(mockModule.git.clone).toHaveBeenCalledWith(
+		expect.objectContaining({
+			branch: 'main',
+			singleBranch: true,
+		}),
+	)
+	expect(mockModule.git.init).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-dest-head',
+		}),
+	)
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedSource)
+	mockModule.gitState.headCommit = 'commit-other'
+	mockModule.git.clone.mockClear()
+	mockModule.updateEntitySource.mockClear()
+
+	await expect(
+		new RepoSession(createDurableObjectState(), createEnv()).bootstrapSource({
+			sessionId: 'session-bootstrap-mismatch',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			existingHeadCommit: 'commit-dest-head',
+			bootstrapAccess,
+			edits: [{ kind: 'write', path: 'kody.json', content: jobManifest }],
+		}),
+	).rejects.toThrow(/does not match expected "commit-dest-head"/)
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	restoreRepoSessionMockBaseline()
+	mockModule.getEntitySourceById.mockResolvedValue(unpublishedSource)
+	mockModule.workspaceReadFile.mockResolvedValue(jobManifest)
+	mockModule.gitState.headCommit = 'commit-empty-bootstrap'
+	mockModule.gitState.statusEntries = [{ status: 'modified' }]
+	mockModule.git.clone.mockClear()
+	mockModule.git.init.mockClear()
+
+	await new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	).bootstrapSource({
+		sessionId: 'session-bootstrap-empty',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		bootstrapAccess,
+		edits: [{ kind: 'write', path: 'kody.json', content: jobManifest }],
+	})
+
+	expect(mockModule.git.init).toHaveBeenCalled()
+	expect(mockModule.git.clone).not.toHaveBeenCalled()
+})

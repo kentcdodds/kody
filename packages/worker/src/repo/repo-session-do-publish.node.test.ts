@@ -1375,3 +1375,31 @@ test('runChecks forwards expectedPackageScope for a still-plain repo so promote 
 		}),
 	)
 })
+
+test('publishSession still requires overwrite confirmation for forced publishes of already-published packages', async () => {
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-base',
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.git.push.mockClear()
+	mockModule.updateEntitySource.mockClear()
+
+	await expect(
+		new RepoSession(createDurableObjectState(), createEnv()).publishSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			force: true,
+		}),
+	).rejects.toThrow(
+		'repo forced publish would overwrite existing package source "source-1"',
+	)
+	expect(mockModule.git.push).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+})
