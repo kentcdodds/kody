@@ -210,9 +210,15 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 	const html = await renderToString(
 		jsx('div', {
 			children: renderMarkdownNodes(
-				['## Josh Tomaino', '', '## Josh Tomaino', '', '## Jett Hays'].join(
-					'\n',
-				),
+				[
+					'## Josh Tomaino',
+					'',
+					'## Josh Tomaino',
+					'',
+					'## Jett Hays',
+					'',
+					'## Gabriel Alegría',
+				].join('\n'),
 				{ headingOffset: 0, headingIds: true },
 			),
 		}),
@@ -220,6 +226,7 @@ test('first-party headingIds emit unique kebab-case heading ids', async () => {
 	expect(html).toContain('<h2 id="josh-tomaino">Josh Tomaino</h2>')
 	expect(html).toContain('<h2 id="josh-tomaino-2">Josh Tomaino</h2>')
 	expect(html).toContain('<h2 id="jett-hays">Jett Hays</h2>')
+	expect(html).toContain('<h2 id="gabriel-alegria">Gabriel Alegría</h2>')
 })
 
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {

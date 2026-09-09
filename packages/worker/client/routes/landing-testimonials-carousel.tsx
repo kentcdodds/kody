@@ -584,43 +584,56 @@ function renderChevron(direction: 'prev' | 'next') {
 	)
 }
 
-function renderTestimonialCard(item: LandingTestimonial) {
+function renderTestimonialIdentity(item: LandingTestimonial) {
 	const attribution = testimonialAttribution(item)
+	return (
+		<>
+			{item.photo ? (
+				<img
+					src={item.photo}
+					alt=""
+					width={56}
+					height={56}
+					class="landing-testimonial-photo"
+					decoding="async"
+					loading="lazy"
+				/>
+			) : (
+				<span class="landing-testimonial-initials" aria-hidden="true">
+					{testimonialInitials(item.name)}
+				</span>
+			)}
+			<span class="landing-testimonial-meta">
+				<span class="landing-testimonial-name">{item.name}</span>
+				{attribution ? (
+					<span class="landing-testimonial-title">{attribution}</span>
+				) : null}
+			</span>
+		</>
+	)
+}
+
+function renderTestimonialCard(item: LandingTestimonial) {
 	const storyHref = testimonialStoryHref(item)
+	const identity = renderTestimonialIdentity(item)
 	return (
 		<article key={item.name} class="landing-testimonial-card">
 			<blockquote class="landing-testimonial-quote">
 				<p>{item.quote}</p>
 			</blockquote>
 			<footer class="landing-testimonial-person">
-				<a
-					href={item.href}
-					class="landing-testimonial-link"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					{item.photo ? (
-						<img
-							src={item.photo}
-							alt=""
-							width={56}
-							height={56}
-							class="landing-testimonial-photo"
-							decoding="async"
-							loading="lazy"
-						/>
-					) : (
-						<span class="landing-testimonial-initials" aria-hidden="true">
-							{testimonialInitials(item.name)}
-						</span>
-					)}
-					<span class="landing-testimonial-meta">
-						<span class="landing-testimonial-name">{item.name}</span>
-						{attribution ? (
-							<span class="landing-testimonial-title">{attribution}</span>
-						) : null}
-					</span>
-				</a>
+				{item.href ? (
+					<a
+						href={item.href}
+						class="landing-testimonial-identity landing-testimonial-link"
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						{identity}
+					</a>
+				) : (
+					<div class="landing-testimonial-identity">{identity}</div>
+				)}
 				{storyHref ? (
 					<a href={storyHref} class="landing-testimonial-story">
 						Read the full story

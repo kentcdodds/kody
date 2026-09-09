@@ -52,10 +52,17 @@ test('shuffleTestimonials can grow to six entries and randomizes with the provid
 test('testimonialInitials falls back to two letters from the public name', () => {
 	expect(testimonialInitials('Maciek Sitkowski')).toBe('MS')
 	expect(testimonialInitials('Justin Elias')).toBe('JE')
+	expect(testimonialInitials('Gabriel Alegría')).toBe('GA')
 	expect(testimonialInitials('Ada')).toBe('A')
 })
 
 test('testimonialAttribution joins verified role and employer and omits blanks', () => {
+	expect(
+		testimonialAttribution({
+			title: 'Software Engineer',
+			company: 'IB',
+		}),
+	).toBe('Software Engineer, IB')
 	expect(
 		testimonialAttribution({
 			title: 'Lead Developer',
@@ -77,18 +84,26 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 		(entry) => entry.name === 'Josh Tomaino',
 	)
 	const jett = landingTestimonials.find((entry) => entry.name === 'Jett Hays')
-	if (!josh || !jett) {
-		throw new Error('expected Josh and Jett testimonials')
+	const gabriel = landingTestimonials.find(
+		(entry) => entry.name === 'Gabriel Alegría',
+	)
+	if (!josh || !jett || !gabriel) {
+		throw new Error('expected Josh, Jett, and Gabriel testimonials')
 	}
 
 	expect(testimonialStoryHref(josh)).toBe('/blog/early-kody-users#josh-tomaino')
 	expect(testimonialStoryHref(jett)).toBe('/blog/early-kody-users#jett-hays')
+	expect(testimonialStoryHref(gabriel)).toBe(
+		'/blog/early-kody-users#gabriel-alegria',
+	)
+	expect(gabriel.photo).toBeNull()
+	expect(gabriel.href).toBeNull()
 	expect(testimonialStoryHref({})).toBeNull()
 	expect(
 		landingTestimonials
 			.filter((entry) => testimonialStoryHref(entry) != null)
 			.map((entry) => entry.name),
-	).toEqual(['Josh Tomaino', 'Jett Hays'])
+	).toEqual(['Josh Tomaino', 'Jett Hays', 'Gabriel Alegría'])
 })
 
 test('every hosted testimonial photo exists under public/images/testimonials', () => {
