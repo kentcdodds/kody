@@ -101,11 +101,18 @@ function getCurrentDocumentPath() {
  * and the rail is a full-height element whose box tracks the page — so a
  * transition would scale its snapshot between two different heights and the
  * rail would visibly squash. These navigations swap instantly.
+ *
+ * `/docs` is the same kind of shell: the sidebar lives inside `<main>`
+ * (`view-transition-name: page`), so a page transition would fade and slide
+ * unchanged nav chrome on every guide click.
  */
-const shellAreas = ['/account', '/admin']
+const shellAreas = ['/account', '/admin', '/docs']
 
-/** Live account/admin rail. Present only while a shell page is on screen. */
-export const persistentShellNavSelector = '[data-account-nav]'
+/**
+ * Live persistent-shell chrome. Present only while a shell page is on
+ * screen — account/admin rail or the docs sidebar.
+ */
+export const persistentShellNavSelector = '[data-account-nav], [data-docs-nav]'
 
 function isWithinArea(pathname: string, area: string) {
 	return pathname === area || pathname.startsWith(`${area}/`)

@@ -220,6 +220,7 @@ test('docs connect index serves JSON and markdown without colliding with doc slu
 	expect(body).toContain('https://kody.example/docs.md')
 	expect(body).toContain('https://kody.example/docs/how-kody-works.md')
 	expect(body).toContain('https://kody.example/docs/local-mcp-tunnels.md')
+	expect(body).toContain('https://kody.example/docs/locked-mcp-server.md')
 	expect(body).toContain('https://kody.example/docs/integration-bootstrap.md')
 	for (const guide of listProviderGuides()) {
 		expect(body).toContain(`https://kody.example/docs/${guide.slug}.md`)

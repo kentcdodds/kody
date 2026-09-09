@@ -6,7 +6,9 @@ Logged-out landing, pricing, FAQ, support, legal, guides, blog, Discord invite.
 
 `/`, `/pricing`, `/faq`, `/support`, `/privacy`, `/terms`, `/docs`,
 `/docs/:slug`, `/docs/connect`, `/llms.txt`, `/blog`, `/blog/:slug`, `/discord`.
-Legacy `/guides*` URLs 308 to `/docs*`.
+Legacy `/guides*` URLs 308 to `/docs*`. Intra-docs navigation (guide to guide,
+or guide to `/docs` / `/docs/connect`) is an instant shell swap — no page
+view-transition — so the sidebar does not re-animate.
 
 ## Drive it
 

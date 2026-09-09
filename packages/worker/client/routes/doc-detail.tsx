@@ -58,7 +58,8 @@ const interactiveDocRenderers: Readonly<
  * code blocks → previous/next → a quiet foot with the raw markdown twin for
  * agents (`data-rmx-document` so the SPA does not intercept
  * `/docs/:slug.md`). Interactive slugs (how-kody-works, google-oauth) swap
- * the prose body for a transcript walkthrough.
+ * the prose body for a transcript walkthrough. Body headings get kebab-case
+ * ids so in-doc and legacy fragment links land.
  */
 
 /**
@@ -183,6 +184,7 @@ export function DocDetailRoute(handle: Handle) {
 				linkRel: 'noopener noreferrer',
 				linkPolicy: 'first-party',
 				copyCodeBlocks: true,
+				headingIds: true,
 				fences: doc?.bodyFences,
 			})
 		}
@@ -289,7 +291,9 @@ export function DocDetailRoute(handle: Handle) {
 							<p mix={css(docEyebrowCss)}>
 								<a href={routes.docs.href()}>Docs</a>
 							</p>
-							<h1>Doc not found</h1>
+							<h1 data-docs-heading tabIndex={-1}>
+								Doc not found
+							</h1>
 							<p mix={css(docMetaCss)}>
 								That page does not exist or may have moved. Start from{' '}
 								<a href={routes.docs.href()}>What is Kody?</a>.
@@ -324,7 +328,12 @@ export function DocDetailRoute(handle: Handle) {
 										(section?.label ?? 'Docs')
 									)}
 								</p>
-								<h1 data-rise style={{ '--rise': '1' }}>
+								<h1
+									data-docs-heading
+									tabIndex={-1}
+									data-rise
+									style={{ '--rise': '1' }}
+								>
 									{doc.title}
 								</h1>
 								<p data-rise style={{ '--rise': '2' }} mix={css(docMetaCss)}>

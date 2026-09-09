@@ -130,7 +130,12 @@ export function DocsConnectRoute(handle: Handle) {
 						<p data-rise style={{ '--rise': '0' }} mix={css(connectEyebrowCss)}>
 							Docs
 						</p>
-						<h1 data-rise style={{ '--rise': '1' }}>
+						<h1
+							data-docs-heading
+							tabIndex={-1}
+							data-rise
+							style={{ '--rise': '1' }}
+						>
 							Connect a provider
 						</h1>
 						<p data-rise style={{ '--rise': '2' }}>
