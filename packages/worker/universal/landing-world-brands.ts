@@ -19,5 +19,3 @@ export const landingWorldBrands = [
 	{ label: 'Cloudflare', icon: 'cloudflare' },
 	{ label: 'Slack', icon: 'slack' },
 ] as const
-
-export type LandingWorldBrand = (typeof landingWorldBrands)[number]
