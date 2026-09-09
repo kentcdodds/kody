@@ -799,6 +799,115 @@ test('host bulk approval adds every requested host to each listed secret', async
 	)
 })
 
+test('host approval rejects truncated and malformed hosts instead of writing them', async () => {
+	mockModule.setSecretAllowedHosts.mockClear()
+	const secret = {
+		name: 'openaiApiKey',
+		scope: 'user' as const,
+		description: 'OpenAI API key',
+		packageId: null,
+		allowedHosts: [] as Array<string>,
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	}
+	mockModule.listSecrets.mockResolvedValue([secret])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const mixedView = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=hooks.slack.com,api.ope',
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+	expect(mixedView.status).toBe(200)
+	await expect(mixedView.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			name: 'openaiApiKey',
+			names: ['openaiApiKey'],
+			requestedHost: 'hooks.slack.com',
+			requestedHosts: ['hooks.slack.com'],
+			rejectedHosts: [
+				{
+					host: 'api.ope',
+					reason: 'unknown_suffix',
+				},
+			],
+		},
+	})
+
+	const mixedApprove = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=hooks.slack.com,api.ope',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(mixedApprove.status).toBe(200)
+	await expect(mixedApprove.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			requestedHosts: ['hooks.slack.com'],
+			rejectedHosts: [{ host: 'api.ope', reason: 'unknown_suffix' }],
+		},
+	})
+	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'openaiApiKey',
+			allowedHosts: ['hooks.slack.com'],
+		}),
+	)
+
+	mockModule.setSecretAllowedHosts.mockClear()
+	const invalidOnlyView = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=api.openai.com/v1,%20%20,api.ope',
+			{ method: 'GET' },
+		),
+		params: {},
+	} as never)
+	expect(invalidOnlyView.status).toBe(200)
+	await expect(invalidOnlyView.json()).resolves.toMatchObject({
+		ok: true,
+		approval: {
+			requestedHosts: [],
+			rejectedHosts: [
+				{ host: 'api.ope', reason: 'unknown_suffix' },
+				{ host: 'api.openai.com/v1', reason: 'malformed' },
+			],
+		},
+	})
+
+	const invalidOnlyApprove = await handler.handler({
+		request: new Request(
+			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=api.ope',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'approve' }),
+			},
+		),
+		params: {},
+	} as never)
+	expect(invalidOnlyApprove.status).toBe(400)
+	await expect(invalidOnlyApprove.json()).resolves.toMatchObject({
+		ok: false,
+		error:
+			'None of the requested hosts are valid. The approval link may have been truncated — copy it again.',
+	})
+	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
+})
+
 test('approval requests reject invalid targets and ignore stale capability query params', async () => {
 	const handler = createAccountSecretsApiHandler(createEnv())
 

@@ -1566,6 +1566,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 					scope: 'user',
 					requestedHost: 'gmail.googleapis.com',
 					requestedHosts: ['gmail.googleapis.com'],
+					rejectedHosts: [],
 					requestedPackageId: null,
 					currentAllowedHosts: ['oauth2.googleapis.com'],
 					currentAllowedPackages: [],

@@ -61,4 +61,34 @@ test('host approval URLs use /connect/secrets and support multiple hosts', () =>
 	).toBe(
 		'https://example.com/connect/secrets?name=onlyOne&hosts=api.example.com%2Coauth.example.com',
 	)
+
+	expect(
+		buildSecretHostBulkApprovalUrl({
+			baseUrl: 'https://example.com',
+			names: ['openaiApiKey'],
+			hosts: ['hooks.slack.com', 'api.ope', 'api.openai.com/v1'],
+		}),
+	).toBe(
+		'https://example.com/connect/secrets?name=openaiApiKey&hosts=hooks.slack.com',
+	)
+
+	expect(() =>
+		buildSecretHostBulkApprovalUrl({
+			baseUrl: 'https://example.com',
+			names: ['openaiApiKey'],
+			hosts: ['api.ope', 'api.openai.com/v1'],
+		}),
+	).toThrow('At least one host is required for host approval.')
+
+	expect(
+		buildSecretHostApprovalUrl({
+			baseUrl: 'https://example.com',
+			name: 'localToken',
+			scope: 'user',
+			requestedHost: '::1',
+			storageContext: null,
+		}),
+	).toBe(
+		'https://example.com/connect/secrets?name=localToken&hosts=%5B%3A%3A1%5D',
+	)
 })

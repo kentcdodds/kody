@@ -1,13 +1,22 @@
 import { type StorageContext } from '#mcp/storage.ts'
-import { normalizeAllowedHosts } from './allowed-hosts.ts'
+import {
+	classifyApprovalHosts,
+	type ClassifiedApprovalHosts,
+} from './approval-host-shape.ts'
 import { normalizeBulkPackageSecretApprovalNames } from './package-approval-url.ts'
 import { type SecretScope } from './types.ts'
 
 const connectSecretsPath = '/connect/secrets'
 const maxBulkHostApprovalHosts = 20
 
+export function classifyBulkApprovalHosts(
+	hosts: Array<string>,
+): ClassifiedApprovalHosts {
+	return classifyApprovalHosts(hosts, { limit: maxBulkHostApprovalHosts })
+}
+
 export function normalizeBulkHostApprovalHosts(hosts: Array<string>) {
-	return normalizeAllowedHosts(hosts).slice(0, maxBulkHostApprovalHosts)
+	return classifyBulkApprovalHosts(hosts).valid
 }
 
 export function buildSecretHostApprovalUrl(input: {

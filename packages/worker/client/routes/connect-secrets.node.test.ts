@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { isConnectSecretsAlreadyAllowed } from './connect-secrets.tsx'
+import { allowHostsButtonLabel } from './account-approval-shared.ts'
+import {
+	isConnectSecretsAlreadyAllowed,
+	readConnectSecretsView,
+} from './connect-secrets.tsx'
 
 const secret = {
 	id: 'user:googleAccessToken',
@@ -22,6 +26,7 @@ const approval = {
 	scope: 'user' as const,
 	requestedHost: 'gmail.googleapis.com',
 	requestedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
+	rejectedHosts: [],
 	requestedPackageId: null,
 	currentAllowedHosts: ['oauth2.googleapis.com'],
 	currentAllowedPackages: [],
@@ -53,4 +58,61 @@ test('connect secrets is already allowed only when every listed secret is presen
 			approval,
 		}),
 	).toBe(false)
+
+	expect(
+		isConnectSecretsAlreadyAllowed({
+			secrets: [
+				{
+					...secret,
+					allowedHosts: ['gmail.googleapis.com', 'oauth2.googleapis.com'],
+				},
+			],
+			approval: {
+				...approval,
+				rejectedHosts: [
+					{
+						host: 'api.ope',
+						reason: 'unknown_suffix',
+						message: 'truncated',
+					},
+				],
+			},
+		}),
+	).toBe(true)
+
+	expect(
+		isConnectSecretsAlreadyAllowed({
+			secrets: [secret],
+			approval: {
+				...approval,
+				requestedHost: '',
+				requestedHosts: [],
+				rejectedHosts: [
+					{
+						host: 'api.ope',
+						reason: 'unknown_suffix',
+						message: 'truncated',
+					},
+				],
+			},
+		}),
+	).toBe(false)
+
+	expect(allowHostsButtonLabel(2, 0)).toBe('Allow all 2 hosts')
+	expect(allowHostsButtonLabel(1, 1)).toBe('Allow access')
+	expect(allowHostsButtonLabel(2, 1)).toBe('Allow 2 valid hosts')
+
+	expect(
+		readConnectSecretsView({
+			hostCount: 1,
+			rejectedCount: 1,
+			completed: 'approve',
+			alreadyAllowed: false,
+		}),
+	).toEqual({
+		onlyInvalid: false,
+		fullyAllowed: false,
+		leftoverInvalid: true,
+		showBackToSecrets: true,
+	})
 })

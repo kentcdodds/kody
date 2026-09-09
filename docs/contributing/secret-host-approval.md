@@ -46,6 +46,40 @@ URL (`/connect/secrets?names=...&hosts=...`) or the bulk package approval URL
 (`/account/secrets/approve?package_id=...&names=...`) over one link per secret.
 Agents must never auto-approve host or package access.
 
+## Host shape
+
+`/connect/secrets` (and the Allow write) treat each `hosts` value as a hostname
+token, not free-form text. The same helper classifies hosts on the approval read
+path and again before `allowedHosts` is written, so the UI and persistence
+cannot diverge.
+
+A host is **valid** when, after the existing `normalizeHost` cleanup (trim,
+lowercase, strip `http(s)://` and take `URL.hostname` for full URLs), it is:
+
+- a dotted DNS hostname whose public suffix is ICANN, a private PSL entry, or an
+  RFC 2606 special-use suffix (`test`, `example`, `invalid`)
+- `localhost` or a `*.localhost` name
+- an IPv4 or IPv6 address (shape only — not a policy allow/deny for private
+  networks). IPv6 is stored as `URL.hostname` serializes it (`[::1]`), so Allow
+  and later fetch matching use the same token
+
+A host is **rejected** (shown as invalid, never written) when it is:
+
+- empty or whitespace-only (dropped before classification)
+- path-bearing or otherwise malformed (`api.openai.com/v1`, embedded spaces,
+  userinfo, a leftover path or query, a bare label such as `openai`)
+- a dotted name whose public suffix is not in the lists above (`api.ope`,
+  `api.o`) — the usual leftover when a terminal soft-wraps a long approval URL
+
+Rejected hosts appear on the approval page with an explanation that the link may
+have been truncated. **Allow** only grants the valid hosts. **Allow all N
+hosts** is offered only when every listed host is valid; mixed lists use **Allow
+N valid hosts** and never report unqualified success while rejected hosts
+remain.
+
+This is host-shape validation only. Look-alike FQDNs, homoglyphs, and
+first-party API allow/deny lists are out of scope.
+
 ## What agents must not do
 
 Do not design or document any MCP capability, package app helper, or client

@@ -12,7 +12,8 @@ import {
 	resolveSecret,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { normalizeBulkHostApprovalHosts } from '#mcp/secrets/host-approval.ts'
+import { type RejectedApprovalHost } from '#mcp/secrets/approval-host-shape.ts'
+import { classifyBulkApprovalHosts } from '#mcp/secrets/host-approval.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
@@ -60,6 +61,7 @@ type SecretApprovalView = {
 	scope: SecretScope
 	requestedHost: string
 	requestedHosts: Array<string>
+	rejectedHosts: Array<RejectedApprovalHost>
 	requestedPackageId: string | null
 	currentAllowedHosts: Array<string>
 	currentAllowedPackages: Array<string>
@@ -111,6 +113,7 @@ async function buildAccountSecretsPayload(input: {
 }): Promise<AccountSecretsLoaderData> {
 	const url = new URL(input.request.url)
 	const requestedApprovalHosts = readApprovalHosts(url)
+	const rejectedApprovalHosts = requestedApprovalHosts.rejected
 	const requestedPackageId = readRequestedPackageId(url)
 	const requestedSecretNames = readRequestedSecretNames(url)
 	const requestedHostScope = readHostApprovalScope(url)
@@ -139,7 +142,9 @@ async function buildAccountSecretsPayload(input: {
 	let approval: SecretApprovalView | null = null
 	let approvalError: string | null = null
 	const hasApprovalTarget = Boolean(
-		requestedApprovalHosts.length > 0 || requestedPackageId,
+		requestedApprovalHosts.valid.length > 0 ||
+		rejectedApprovalHosts.length > 0 ||
+		requestedPackageId,
 	)
 	const hasApprovalSubject = Boolean(
 		input.selectedSecretId || requestedSecretNames.length > 0,
@@ -150,7 +155,8 @@ async function buildAccountSecretsPayload(input: {
 				env: input.env,
 				userId: input.user.mcpUser.userId,
 				secretId: input.selectedSecretId ?? null,
-				requestedHosts: requestedApprovalHosts,
+				requestedHosts: requestedApprovalHosts.valid,
+				rejectedHosts: rejectedApprovalHosts,
 				requestedPackageId,
 				requestedSecretNames,
 				requestedHostScope,
@@ -227,12 +233,14 @@ type ResolvedSecretApproval =
 			name: string
 			scope: SecretScope
 			requestedHost: string
+			rejectedHosts: Array<RejectedApprovalHost>
 			storageContext: StorageContext | null
 	  }
 	| {
 			kind: 'host_bulk'
 			names: Array<string>
 			hosts: Array<string>
+			rejectedHosts: Array<RejectedApprovalHost>
 			scope: SecretScope
 			storageContext: StorageContext | null
 	  }
@@ -254,6 +262,7 @@ type ResolvedSecretApproval =
 function resolveApprovalRequest(input: {
 	secretId: string | null
 	requestedHosts: Array<string>
+	rejectedHosts?: Array<RejectedApprovalHost>
 	requestedPackageId: string | null
 	requestedSecretNames?: Array<string>
 	requestedHostScope?: SecretScope
@@ -262,8 +271,13 @@ function resolveApprovalRequest(input: {
 	const requestedSecretNames = normalizeBulkPackageSecretApprovalNames(
 		input.requestedSecretNames ?? [],
 	)
-	const requestedHosts = normalizeBulkHostApprovalHosts(input.requestedHosts)
-	if (requestedHosts.length > 0 && input.requestedPackageId) {
+	const classified = classifyBulkApprovalHosts(input.requestedHosts)
+	const requestedHosts = classified.valid
+	const rejectedHosts = input.rejectedHosts ?? classified.rejected
+	if (
+		(requestedHosts.length > 0 || rejectedHosts.length > 0) &&
+		input.requestedPackageId
+	) {
 		throw new Error('Approval request contains both host and package.')
 	}
 	if (requestedSecretNames.length > 0) {
@@ -281,13 +295,14 @@ function resolveApprovalRequest(input: {
 				storageContext: null,
 			}
 		}
-		if (requestedHosts.length === 0) {
+		if (requestedHosts.length === 0 && rejectedHosts.length === 0) {
 			throw new Error('Bulk secret approval requires a package_id or hosts.')
 		}
 		return {
 			kind: 'host_bulk',
 			names: requestedSecretNames,
 			hosts: requestedHosts,
+			rejectedHosts,
 			scope: input.requestedHostScope ?? 'user',
 			storageContext: input.requestedHostStorageContext ?? null,
 		}
@@ -309,7 +324,7 @@ function resolveApprovalRequest(input: {
 			storageContext,
 		}
 	}
-	if (requestedHosts.length === 1) {
+	if (requestedHosts.length === 1 && rejectedHosts.length === 0) {
 		const requestedHost = requestedHosts[0]
 		if (!requestedHost) {
 			throw new Error('Invalid approval request host.')
@@ -319,14 +334,16 @@ function resolveApprovalRequest(input: {
 			name: parsed.name,
 			scope: parsed.scope,
 			requestedHost,
+			rejectedHosts,
 			storageContext,
 		}
 	}
-	if (requestedHosts.length > 1) {
+	if (requestedHosts.length > 0 || rejectedHosts.length > 0) {
 		return {
 			kind: 'host_bulk',
 			names: [parsed.name],
 			hosts: requestedHosts,
+			rejectedHosts,
 			scope: parsed.scope,
 			storageContext,
 		}
@@ -339,6 +356,7 @@ async function resolveSecretApprovalView(input: {
 	userId: string
 	secretId: string | null
 	requestedHosts: Array<string>
+	rejectedHosts: Array<RejectedApprovalHost>
 	requestedPackageId: string | null
 	requestedSecretNames: Array<string>
 	requestedHostScope: SecretScope
@@ -348,6 +366,7 @@ async function resolveSecretApprovalView(input: {
 	const approval = resolveApprovalRequest({
 		secretId: input.secretId,
 		requestedHosts: input.requestedHosts,
+		rejectedHosts: input.rejectedHosts,
 		requestedPackageId: input.requestedPackageId,
 		requestedSecretNames: input.requestedSecretNames,
 		requestedHostScope: input.requestedHostScope,
@@ -387,6 +406,7 @@ async function resolveSecretApprovalView(input: {
 				scope: 'user',
 				requestedHost: '',
 				requestedHosts: [],
+				rejectedHosts: [],
 				requestedPackageId: approval.packageId,
 				currentAllowedHosts: [],
 				currentAllowedPackages: [approval.packageId],
@@ -400,6 +420,7 @@ async function resolveSecretApprovalView(input: {
 			scope: 'user',
 			requestedHost: '',
 			requestedHosts: [],
+			rejectedHosts: [],
 			requestedPackageId: approval.packageId,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
@@ -431,6 +452,7 @@ async function resolveSecretApprovalView(input: {
 			scope: approval.scope,
 			requestedHost: approval.hosts[0] ?? '',
 			requestedHosts: approval.hosts,
+			rejectedHosts: approval.rejectedHosts,
 			requestedPackageId: null,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
@@ -460,6 +482,7 @@ async function resolveSecretApprovalView(input: {
 		scope: approval.scope,
 		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
 		requestedHosts: approval.kind === 'host' ? [approval.requestedHost] : [],
+		rejectedHosts: approval.kind === 'host' ? approval.rejectedHosts : [],
 		requestedPackageId: approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
 		currentAllowedPackages: secret.allowedPackages,
@@ -592,9 +615,7 @@ function readApprovalHosts(url: URL) {
 		...url.searchParams.getAll('allowed-host'),
 		...url.searchParams.getAll('allowedHosts'),
 	]
-	return normalizeBulkHostApprovalHosts(
-		values.flatMap((value) => value.split(',')),
-	)
+	return classifyBulkApprovalHosts(values.flatMap((value) => value.split(',')))
 }
 
 function readHostApprovalScope(url: URL): SecretScope {

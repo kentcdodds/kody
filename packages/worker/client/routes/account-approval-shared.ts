@@ -10,9 +10,32 @@ export type ApprovalView = {
 	scope: ApprovalScope
 	requestedHost: string
 	requestedHosts: Array<string>
+	rejectedHosts: Array<{
+		host: string
+		reason: 'malformed' | 'unknown_suffix'
+		message: string
+	}>
 	currentAllowedHosts: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
+}
+
+export function approvalRequestedHosts(approval: ApprovalView) {
+	if (approval.requestedHosts.length > 0) return approval.requestedHosts
+	return approval.requestedHost ? [approval.requestedHost] : []
+}
+
+export function approvalRejectedHosts(approval: ApprovalView) {
+	return approval.rejectedHosts ?? []
+}
+
+export function allowHostsButtonLabel(
+	validCount: number,
+	rejectedCount: number,
+) {
+	if (validCount <= 1) return 'Allow access'
+	if (rejectedCount > 0) return `Allow ${validCount} valid hosts`
+	return `Allow all ${validCount} hosts`
 }
 
 export const accountSecretsApiPath = '/account/secrets.json'
