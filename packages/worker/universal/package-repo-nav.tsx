@@ -214,14 +214,12 @@ const navCss = {
 	alignItems: 'center',
 	gap: spacing.sm,
 	marginTop: '1.1rem',
-	borderBottom: `1px solid ${colors.border}`,
 }
 
 const tabCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	padding: '0.55rem 0.15rem',
-	marginBottom: '-1px',
 	borderBottom: '2px solid transparent',
 	color: colors.textMuted,
 	fontSize: '0.95rem',
