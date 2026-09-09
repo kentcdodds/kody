@@ -102,13 +102,73 @@ Snapshot meanings:
   failed, after a stale refresh (a form POST redirecting back to the same URL),
   or on a cold SPA mount without SSR data.
 - `not-found` / `error`: the fallback fetch for the current location settled
-  that way.
+  that way (`load` returned `null`, or threw — the thrown error is
+  `snapshot.error`).
+
+`load` may also return `routeDataRedirect('/login')` when the fetch answered
+401: the route keeps its current content while the browser leaves for the login
+document.
 
 Register the component and its loader in
 `packages/worker/client/routes/index.tsx` under the same `routePattern(...)`
 key; the loader is what lets the router load-before-commit. Reuse one component
 for sibling patterns (list and detail, `/docs` and `/docs/:slug`) so remix/ui
 keeps the instance and its last-good payload across the switch.
+
+### Routes that own state (account, admin)
+
+Account and admin pages hold forms, selections, and action feedback in their
+closure and mutate that state from POST responses. They use the same helper and
+apply a payload into that state when its identity changes:
+
+```tsx
+let appliedPayload: AccountJobsLoaderData | null = null
+let appliedError: Error | null = null
+const jobsData = createRouteData({
+	key: 'accountJobs',
+	locationKey: getDataLatchKey, // list and detail hrefs share one payload
+	async load(href, signal) {
+		const response = await fetch(buildJobsApiRequestUrl(href), { signal })
+		if (response.status === 401) return routeDataRedirect('/login')
+		const payload = await readJson<AccountJobsLoaderData>(response)
+		if (!response.ok || !payload?.ok)
+			throw new Error('Unable to load scheduled jobs.')
+		return payload
+	},
+})
+
+return () => {
+	const currentHref = readCurrentRouterHref(handle)
+	const snapshot = jobsData.read(handle, currentHref)
+	if (snapshot.data && snapshot.data !== appliedPayload) {
+		appliedPayload = snapshot.data
+		applyPayload(snapshot.data)
+	}
+	if (snapshot.error && snapshot.error !== appliedError) {
+		appliedError = snapshot.error
+		setMessage(snapshot.error.message, 'error')
+	}
+	const pending = snapshot.kind === 'pending'
+	return (
+		<AccountManagementShell busy={pending && appliedPayload !== null}>
+			{/* header, message, and the page — rendered from closure state */}
+		</AccountManagementShell>
+	)
+}
+```
+
+- `AccountManagementShell busy` sets `aria-busy` and renders the hidden live
+  region for every account/admin page in one place.
+- Loaders that return several keys assemble them with a `consume(handle, href)`
+  option instead of `key` (all-or-nothing: return `null` when a required key is
+  missing so the fallback fetch loads the full set).
+- `locationKey(href)` names which hrefs share one payload (a list page and its
+  detail pages, filters that the payload ignores).
+- `reload(handle, currentHref)` refetches the current location after a mutation
+  the route wants to reconcile with the server; the current payload stays on
+  screen under `pending` until the fresh one lands.
+- A standalone "Loading…" paragraph is only correct when
+  `appliedPayload === null` — nothing has ever rendered here.
 
 ## When a section is slow
 
@@ -133,11 +193,10 @@ where content goes.
   `route-load-latch.node.test.ts` pin the data-continuity contract: preloaded
   payloads are applied without a refetch, previous payloads stay while a
   fallback runs, aborted fetches re-arm, and late completions are dropped.
-- `e2e/docs.spec.ts` observes `<main>` through a guide-to-guide click and fails
-  on any intermediate DOM state without an `<h1>`, any `role="status"` loading
-  copy, or a second request for the payload the router already loaded.
-
-Routes that still hand-roll `createRouteLoadLatch` follow the same latch
-contract (the latch records applied route data itself), so they get the
-single-commit navigation; migrate them to `createRouteData` when touching them
-so they also keep their last-good content on the fallback path.
+- `e2e/docs.spec.ts` and `e2e/account-navigation.spec.ts` observe `<main>`
+  through guide-to-guide and account/admin section clicks
+  (`e2e/main-transitions.ts`) and fail on any intermediate DOM state without an
+  `<h1>`, any loading copy where content was, or a repeated request for a
+  payload the router already loaded.
+- `createRouteLoadLatch` is the helper's internal latch; client routes read
+  through `createRouteData` and do not hand-roll load bookkeeping.
