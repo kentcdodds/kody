@@ -334,6 +334,10 @@ test('search tool returns compact query markdown while preserving structured aux
 			type: 'capability',
 			entityRef: 'search_docs:capability',
 		}),
+		expect.objectContaining({
+			type: 'guide',
+			entityRef: 'search_and_execute:guide',
+		}),
 	])
 	expect(result.memories?.surfaced).toEqual([
 		expect.objectContaining({ id: 'memory-1' }),

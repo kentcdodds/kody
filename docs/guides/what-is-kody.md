@@ -131,7 +131,7 @@ exists. Everything in the next section is supporting cast.
   and [Integration bootstrap](./integration-bootstrap.md).
 - **Ad hoc execution** — your agent runs sandboxed code against those
   integrations immediately, no deploy step. See
-  [Execute and workflows](../use/execute.md).
+  [Search and execute](./search-and-execute.md).
 - **Packages** — reusable saved code your agent writes and improves over time.
   Packages expose exports, own scheduled jobs, receive webhooks, and can serve a
   small web app. See [Package lifecycle](./package-lifecycle.md) and
@@ -180,6 +180,8 @@ Concrete examples that combine the blocks:
 - **Get started** — [Connect your agent](./connect-your-agent.md) walks through
   the in-app flow: connect one host, make something useful, then prove it
   travels to a second agent.
+- **Meet the two tools** — [Search and execute](./search-and-execute.md) is the
+  playbook for the MCP surface: find the right thing, then run it.
 - **See the loop** — [How Kody works](./how-kody-works.md) plays one
   conversation from ad hoc question to owned export to quiet daily email.
 - **Learn the primitives** — [The factory map](./kody-factory.md), then

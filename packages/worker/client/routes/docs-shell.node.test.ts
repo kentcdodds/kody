@@ -19,6 +19,13 @@ test('docs shell marks the sidebar and highlights the open page', async () => {
 	expect(html).toContain('data-section-current="true"')
 	expect(html).not.toContain('href="/docs/what-is-kody"')
 	expect(html).toContain('href="/docs"')
+	expect(html.indexOf('What is Kody?')).toBeLessThan(
+		html.indexOf('Search and execute'),
+	)
+	expect(html.indexOf('Search and execute')).toBeLessThan(
+		html.indexOf('How Kody works'),
+	)
+	expect(html).toContain('href="/docs/search-and-execute"')
 })
 
 test('docs shell treats /docs/connect as the providers section', async () => {
@@ -36,7 +43,7 @@ test('docs shell treats /docs/connect as the providers section', async () => {
 
 test('docs pager omits empty placeholders and links neighbors', async () => {
 	const first = await renderToString(renderDocsPager(docsIntroSlug))
-	expect(first).toContain('href="/docs/how-kody-works"')
+	expect(first).toContain('href="/docs/search-and-execute"')
 	expect(first).not.toContain('<span></span>')
 	expect(first).not.toContain('Previous')
 

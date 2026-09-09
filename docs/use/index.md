@@ -26,6 +26,8 @@ MCP-level reference detail those docs link into.
 
 - [What is Kody?](../guides/what-is-kody.md) — the introduction: what Kody is
   and is not, what you cannot get elsewhere, the building blocks
+- [Search and execute](../guides/search-and-execute.md) — the two MCP tools:
+  find the right thing, then run it
 - [Connect your agent](../guides/connect-your-agent.md) — the three-step Get
   started flow for people
 - [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md), and

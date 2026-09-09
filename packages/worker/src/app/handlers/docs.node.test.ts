@@ -84,6 +84,12 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	expect(indexBody.indexOf('## Introduction')).toBeLessThan(
 		indexBody.indexOf('## Get started'),
 	)
+	expect(indexBody.indexOf('/docs/what-is-kody.md')).toBeLessThan(
+		indexBody.indexOf('/docs/search-and-execute.md'),
+	)
+	expect(indexBody.indexOf('/docs/search-and-execute.md')).toBeLessThan(
+		indexBody.indexOf('/docs/how-kody-works.md'),
+	)
 	expect(indexBody.indexOf('## Concepts')).toBeLessThan(
 		indexBody.indexOf('## Connect a provider'),
 	)
@@ -98,6 +104,13 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	const llmsBody = await llms.text()
 	expect(llmsBody.startsWith('# Kody\n')).toBe(true)
 	expect(llmsBody).not.toContain('/docs/values.md')
+	expect(llmsBody).toContain('/docs/search-and-execute.md')
+	expect(llmsBody.indexOf('/docs/what-is-kody.md')).toBeLessThan(
+		llmsBody.indexOf('/docs/search-and-execute.md'),
+	)
+	expect(llmsBody.indexOf('/docs/search-and-execute.md')).toBeLessThan(
+		llmsBody.indexOf('/docs/how-kody-works.md'),
+	)
 })
 
 test('legacy /guides URLs resolve to their /docs twins', () => {

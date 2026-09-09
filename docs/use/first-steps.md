@@ -56,6 +56,8 @@ guides load with `search({ entity: "{id}:guide" })` — not execute.
 
 ## Where to go next
 
+- [Search and execute](../guides/search-and-execute.md) — the two-tool playbook
+  with copy-pasteable agent inputs
 - [Search](./search.md) — discovery, ranked results, and `entity` lookups
 - [Execute and workflows](./execute.md) — module-based execution with
   `kody:runtime`
