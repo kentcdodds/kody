@@ -53,9 +53,11 @@ Saving a secret does not by itself let anything use it.
 - **Host approval** decides which destinations a secret may be sent to. A secret
   with an empty host allowlist blocks every placeholder fetch, including from
   packages you wrote yourself. Approve hosts on `/connect/secrets` — one link
-  can cover several secrets and several hosts at once. Kody never approves a
-  host automatically; an ad hoc smoke test that happened to work does not widen
-  the allowlist.
+  can cover several secrets and several hosts at once. Hosts that are not valid
+  hostname shapes (truncated tokens, paths, empty values) are flagged on that
+  page and are not written to the allowlist. Kody never approves a host
+  automatically; an ad hoc smoke test that happened to work does not widen the
+  allowlist.
 - **Package approval** decides which saved packages may read and use a
   user-scoped secret. Packages you authored and community forks you adopted
   after reviewing the source get read/use automatically. Unadopted forks need an

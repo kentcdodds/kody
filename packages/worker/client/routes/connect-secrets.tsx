@@ -7,6 +7,9 @@ import {
 	type ApprovalAction,
 	type ApprovalView,
 	accountSecretsApiPath,
+	allowHostsButtonLabel,
+	approvalRejectedHosts,
+	approvalRequestedHosts,
 	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
 import {
@@ -16,6 +19,7 @@ import {
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
+	getAccentCalloutCss,
 	getPrimaryButtonCss,
 	getSecondaryButtonCss,
 	pageDescriptionCss,
@@ -129,6 +133,7 @@ export function ConnectSecretsRoute(handle: Handle) {
 		const currentHref = getCurrentHref()
 		applyRouteLoaderData(currentHref)
 		const approval = data?.approval ?? null
+		const rejectedHosts = approval ? approvalRejectedHosts(approval) : []
 		const alreadyAllowed =
 			approval != null &&
 			completed !== 'reject' &&
@@ -136,32 +141,44 @@ export function ConnectSecretsRoute(handle: Handle) {
 				secrets: data?.secrets ?? [],
 				approval,
 			})
-		const hosts = approval?.requestedHosts?.length
-			? approval.requestedHosts
-			: approval?.requestedHost
-				? [approval.requestedHost]
-				: []
+		const hosts = approval ? approvalRequestedHosts(approval) : []
 		const names = approval?.names.length ? approval.names : []
+		const onlyInvalid =
+			hosts.length === 0 && rejectedHosts.length > 0 && completed !== 'reject'
+		const fullyAllowed =
+			(completed === 'approve' || alreadyAllowed) &&
+			rejectedHosts.length === 0 &&
+			!onlyInvalid
+		const leftoverInvalid =
+			rejectedHosts.length > 0 && (completed === 'approve' || alreadyAllowed)
 
 		return (
 			<section mix={css(connectSecretsPageCss)} data-testid="connect-secrets">
 				<header mix={css(connectSecretsHeaderCss)}>
 					<span mix={css(pageEyebrowCss)}>Allow secret hosts</span>
 					<h1 mix={css(pageTitleCss)}>
-						{completed === 'approve' || alreadyAllowed
+						{fullyAllowed
 							? 'Access allowed'
-							: completed === 'reject'
-								? 'Request rejected'
-								: 'Allow this secret at these hosts'}
+							: leftoverInvalid
+								? 'Some hosts could not be allowed'
+								: onlyInvalid
+									? 'These hosts are not valid'
+									: completed === 'reject'
+										? 'Request rejected'
+										: 'Allow this secret at these hosts'}
 					</h1>
 					<p mix={css(pageDescriptionCss)}>
-						{completed === 'approve' || alreadyAllowed
+						{fullyAllowed
 							? 'Kody can send this saved secret to the hosts below.'
-							: completed === 'reject'
-								? 'No hosts were added. You can approve later from this same link.'
-								: approval
-									? 'Kody only sends a saved secret to hosts you approve. Saving a secret does not do this automatically.'
-									: 'Open an approval link from Kody to allow a saved secret at a host.'}
+							: leftoverInvalid
+								? 'Valid hosts were allowed. Invalid hosts from this link were not written to the allowlist — copy the approval link again if it was truncated.'
+								: onlyInvalid
+									? 'Kody did not treat these values as hosts you can allow. Copy the approval link again if it was truncated.'
+									: completed === 'reject'
+										? 'No hosts were added. You can approve later from this same link.'
+										: approval
+											? 'Kody only sends a saved secret to hosts you approve. Saving a secret does not do this automatically.'
+											: 'Open an approval link from Kody to allow a saved secret at a host.'}
 					</p>
 				</header>
 
@@ -183,7 +200,7 @@ export function ConnectSecretsRoute(handle: Handle) {
 					<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
 				) : null}
 
-				{approval && hosts.length > 0 ? (
+				{approval && (hosts.length > 0 || rejectedHosts.length > 0) ? (
 					<section mix={css(cardCss)} data-testid="connect-secrets-card">
 						<div mix={css({ display: 'grid', gap: spacing.sm })}>
 							<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -205,29 +222,63 @@ export function ConnectSecretsRoute(handle: Handle) {
 									))}
 								</ul>
 							</div>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<span mix={css({ color: colors.textMuted })}>
-									{hosts.length === 1 ? 'Host' : 'Hosts'}
-								</span>
-								<ul
-									mix={css({
-										margin: 0,
-										paddingLeft: spacing.lg,
-										display: 'grid',
-										gap: spacing.xs,
-									})}
+							{hosts.length > 0 ? (
+								<div mix={css({ display: 'grid', gap: spacing.xs })}>
+									<span mix={css({ color: colors.textMuted })}>
+										{hosts.length === 1 ? 'Host' : 'Hosts'}
+									</span>
+									<ul
+										mix={css({
+											margin: 0,
+											paddingLeft: spacing.lg,
+											display: 'grid',
+											gap: spacing.xs,
+										})}
+									>
+										{hosts.map((host) => (
+											<li key={host}>
+												<strong mix={css({ color: colors.text })}>
+													{host}
+												</strong>
+											</li>
+										))}
+									</ul>
+								</div>
+							) : null}
+							{rejectedHosts.length > 0 ? (
+								<div
+									mix={css(getAccentCalloutCss({ accentColor: colors.danger }))}
+									data-testid="connect-secrets-rejected-hosts"
 								>
-									{hosts.map((host) => (
-										<li key={host}>
-											<strong mix={css({ color: colors.text })}>{host}</strong>
-										</li>
-									))}
-								</ul>
-							</div>
+									<span mix={css({ color: colors.danger, fontWeight: 600 })}>
+										{rejectedHosts.length === 1
+											? 'This host is not valid'
+											: `${rejectedHosts.length} hosts are not valid`}
+									</span>
+									<ul
+										mix={css({
+											margin: 0,
+											paddingLeft: spacing.lg,
+											display: 'grid',
+											gap: spacing.xs,
+										})}
+									>
+										{rejectedHosts.map((entry) => (
+											<li key={entry.host}>
+												<strong mix={css({ color: colors.text })}>
+													{entry.host}
+												</strong>
+												<span mix={css({ color: colors.textMuted })}>
+													{' '}
+													— {entry.message}
+												</span>
+											</li>
+										))}
+									</ul>
+								</div>
+							) : null}
 						</div>
-						{completed === 'approve' ||
-						alreadyAllowed ||
-						completed === 'reject' ? (
+						{fullyAllowed || alreadyAllowed || completed === 'reject' ? (
 							<a
 								href={routes.accountSecrets.href()}
 								mix={css(connectSecretsSecondaryButtonCss)}
@@ -242,22 +293,25 @@ export function ConnectSecretsRoute(handle: Handle) {
 									flexWrap: 'wrap',
 								})}
 							>
-								<button
-									type="button"
-									disabled={submittingAction != null}
-									mix={[
-										on('click', () => {
-											void submitApproval('approve')
-										}),
-										css(connectSecretsPrimaryButtonCss),
-									]}
-								>
-									{submittingAction === 'approve'
-										? 'Allowing access…'
-										: hosts.length > 1
-											? `Allow all ${hosts.length} hosts`
-											: 'Allow access'}
-								</button>
+								{hosts.length > 0 && completed !== 'approve' ? (
+									<button
+										type="button"
+										disabled={submittingAction != null}
+										mix={[
+											on('click', () => {
+												void submitApproval('approve')
+											}),
+											css(connectSecretsPrimaryButtonCss),
+										]}
+									>
+										{submittingAction === 'approve'
+											? 'Allowing access…'
+											: allowHostsButtonLabel(
+													hosts.length,
+													rejectedHosts.length,
+												)}
+									</button>
+								) : null}
 								<button
 									type="button"
 									disabled={submittingAction != null}
@@ -283,6 +337,7 @@ export function isConnectSecretsAlreadyAllowed(input: {
 	secrets: AccountSecretsLoaderData['secrets']
 	approval: ApprovalView
 }) {
+	if (approvalRequestedHosts(input.approval).length === 0) return false
 	const pendingPairs = collectPendingHostPairs(input.secrets, input.approval)
 	if (pendingPairs.length > 0) return false
 	return input.approval.names.every((name) =>
@@ -296,11 +351,7 @@ function collectPendingHostPairs(
 	secrets: AccountSecretsLoaderData['secrets'],
 	approval: ApprovalView,
 ) {
-	const hosts = approval.requestedHosts.length
-		? approval.requestedHosts
-		: approval.requestedHost
-			? [approval.requestedHost]
-			: []
+	const hosts = approvalRequestedHosts(approval)
 	const pairs: Array<{ name: string; host: string }> = []
 	for (const name of approval.names) {
 		const secret = secrets.find(

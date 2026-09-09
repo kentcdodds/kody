@@ -1,0 +1,82 @@
+import { expect, test } from 'vitest'
+import {
+	classifyApprovalHosts,
+	filterValidApprovalHosts,
+	rejectedApprovalHostMessage,
+} from './approval-host-shape.ts'
+
+test('approval host classification accepts happy-path hosts and rejects truncated or malformed values', () => {
+	const classified = classifyApprovalHosts([
+		'api.openai.com',
+		'hooks.slack.com',
+		'api.ope',
+		'api.openai.com/v1',
+		'  ',
+		'',
+		'api. openai.com',
+		'openai',
+		'https://api.github.com/path',
+		'localhost',
+		'127.0.0.1',
+		'API.Cloudflare.com',
+	])
+
+	expect(classified.valid).toEqual([
+		'127.0.0.1',
+		'api.cloudflare.com',
+		'api.github.com',
+		'api.openai.com',
+		'hooks.slack.com',
+		'localhost',
+	])
+	expect(
+		classified.rejected.map((entry) => [entry.host, entry.reason]),
+	).toEqual([
+		['api. openai.com', 'malformed'],
+		['api.ope', 'unknown_suffix'],
+		['api.openai.com/v1', 'malformed'],
+		['openai', 'malformed'],
+	])
+	expect(
+		classified.rejected.find((entry) => entry.host === 'api.ope')?.message,
+	).toBe(rejectedApprovalHostMessage('unknown_suffix'))
+	expect(
+		classified.rejected.find((entry) => entry.host === 'api.openai.com/v1')
+			?.message,
+	).toBe(rejectedApprovalHostMessage('malformed'))
+
+	expect(
+		filterValidApprovalHosts([
+			'hooks.slack.com',
+			'api.ope',
+			'api.openai.com/v1',
+		]),
+	).toEqual(['hooks.slack.com'])
+	expect(classifyApprovalHosts(['', '   '])).toEqual({
+		valid: [],
+		rejected: [],
+	})
+	expect(classifyApprovalHosts(['api.test', 'foo.localhost']).valid).toEqual([
+		'api.test',
+		'foo.localhost',
+	])
+	expect(classifyApprovalHosts(['999.1.1.1', 'com', 'api.o']).rejected).toEqual(
+		[
+			{
+				host: '999.1.1.1',
+				reason: 'malformed',
+				message: rejectedApprovalHostMessage('malformed'),
+			},
+			{
+				host: 'api.o',
+				reason: 'unknown_suffix',
+				message: rejectedApprovalHostMessage('unknown_suffix'),
+			},
+			{
+				host: 'com',
+				reason: 'malformed',
+				message: rejectedApprovalHostMessage('malformed'),
+			},
+		],
+	)
+})

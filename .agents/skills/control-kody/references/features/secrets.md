@@ -27,3 +27,6 @@ https://kody.codes/account/secrets” note with no body is not proof.
 
 - Never paste secret values into chat, PRs, or execute params.
 - Preview seed starts with zero secrets.
+- `/connect/secrets` rejects hosts that are not hostname-shaped (truncated
+  tokens, paths, empty values). Those must not appear as a successful Allow
+  target, and they must not land in `allowedHosts`.

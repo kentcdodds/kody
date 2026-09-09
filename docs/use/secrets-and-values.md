@@ -119,8 +119,11 @@ approval path the error provides. Host approval lives on the dedicated
 **`/connect/oauth`**. A link looks like
 `/connect/secrets?name=cloudflareToken&hosts=api.cloudflare.com`. When several
 hosts (or several secrets) need approval together, Kody can send one link with
-comma-separated **`names`** and **`hosts`**. That page lists every host and
-approves them in one click.
+comma-separated **`names`** and **`hosts`**. That page lists every valid host
+and approves them in one click. Values that are not hostname-shaped (a truncated
+token such as `api.ope`, a path such as `api.openai.com/v1`, empty or
+whitespace) are shown as invalid and are not written to the allowlist — copy the
+link again if a client wrapped it.
 
 Saving a secret does not by itself approve new hosts. Self-authored and adopted
 packages do not skip this gate: an empty host allowlist blocks secret-bearing

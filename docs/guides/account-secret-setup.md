@@ -57,6 +57,8 @@ so the user can paste immediately.
 - The account form prefills the requested hosts and packages for review.
 - Host approval uses the dedicated **`/connect/secrets`** page (`name` / `names`
   and `hosts`). Package grants use `/account/secrets/approve`.
+- `hosts` must be hostname-shaped. Truncated or path-bearing values are rejected
+  on that page and are not written to `allowedHosts`.
 
 ## Package approval URLs (after a package exists)
 

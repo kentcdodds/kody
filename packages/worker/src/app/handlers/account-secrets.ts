@@ -35,6 +35,7 @@ import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type routes } from '#universal/routes.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
+import { filterValidApprovalHosts } from '#mcp/secrets/approval-host-shape.ts'
 import {
 	canonicalIntegrationName,
 	normalizeIntegrationConfig,
@@ -795,9 +796,11 @@ async function handleApprovalAction(input: {
 }) {
 	try {
 		const url = new URL(input.request.url)
+		const classifiedHosts = readApprovalHosts(url)
 		const approval = resolveApprovalRequest({
 			secretId: readAccountSecretsSelectedSecretId(input.request.url),
-			requestedHosts: readApprovalHosts(url),
+			requestedHosts: classifiedHosts.valid,
+			rejectedHosts: classifiedHosts.rejected,
 			requestedPackageId: readRequestedPackageId(url),
 			requestedSecretNames: readRequestedSecretNames(url),
 			requestedHostScope: readHostApprovalScope(url),
@@ -912,6 +915,17 @@ async function handleApprovalAction(input: {
 
 		if (approval.kind === 'host') {
 			if (input.action === 'approve') {
+				const hostsToGrant = filterValidApprovalHosts([approval.requestedHost])
+				if (hostsToGrant.length === 0) {
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								'None of the requested hosts are valid. The approval link may have been truncated — copy it again.',
+						},
+						400,
+					)
+				}
 				const current = await listSecrets({
 					env: input.env,
 					userId: input.user.mcpUser.userId,
@@ -932,7 +946,7 @@ async function handleApprovalAction(input: {
 					scope: approval.scope,
 					allowedHosts: normalizeAllowedHosts([
 						...secret.allowedHosts,
-						approval.requestedHost,
+						...hostsToGrant,
 					]),
 					storageContext: approval.storageContext,
 				})
@@ -949,6 +963,17 @@ async function handleApprovalAction(input: {
 
 		if (approval.kind === 'host_bulk') {
 			if (input.action === 'approve') {
+				const hostsToGrant = filterValidApprovalHosts(approval.hosts)
+				if (hostsToGrant.length === 0) {
+					return jsonResponse(
+						{
+							ok: false,
+							error:
+								'None of the requested hosts are valid. The approval link may have been truncated — copy it again.',
+						},
+						400,
+					)
+				}
 				const current = await listSecrets({
 					env: input.env,
 					userId: input.user.mcpUser.userId,
@@ -974,7 +999,7 @@ async function handleApprovalAction(input: {
 						scope: approval.scope,
 						allowedHosts: normalizeAllowedHosts([
 							...secret.allowedHosts,
-							...approval.hosts,
+							...hostsToGrant,
 						]),
 						storageContext: approval.storageContext,
 					})

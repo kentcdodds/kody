@@ -3,6 +3,9 @@ import { on } from '#client/event-mixin.ts'
 import {
 	type ApprovalAction,
 	type ApprovalView,
+	allowHostsButtonLabel,
+	approvalRejectedHosts,
+	approvalRequestedHosts,
 	getScopeLabel,
 } from '#client/routes/account-approval-shared.ts'
 import {
@@ -12,6 +15,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
+	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
@@ -24,6 +28,8 @@ export function renderSecretApprovalCard(props: {
 	onSubmit: (action: ApprovalAction) => void
 }) {
 	const { approvalCard, packagesById, disabled, onSubmit } = props
+	const hosts = approvalHosts(approvalCard)
+	const rejectedHosts = approvalRejectedHosts(approvalCard)
 	const requestedPackageMetadata = approvalCard.requestedPackageId
 		? packagesById.get(approvalCard.requestedPackageId)
 		: null
@@ -93,17 +99,17 @@ export function renderSecretApprovalCard(props: {
 				) : (
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							{approvalHosts(approvalCard).length > 1
+							{hosts.length > 1
 								? 'Let Kody use this secret at these hosts.'
-								: 'Let Kody use this connection at '}
-							{approvalHosts(approvalCard).length === 1 ? (
-								<strong mix={css({ color: colors.text })}>
-									{approvalHosts(approvalCard)[0]}
-								</strong>
+								: hosts.length === 1
+									? 'Let Kody use this connection at '
+									: 'This approval link did not include a valid host.'}
+							{hosts.length === 1 ? (
+								<strong mix={css({ color: colors.text })}>{hosts[0]}</strong>
 							) : null}
-							{approvalHosts(approvalCard).length === 1 ? '.' : null}
+							{hosts.length === 1 ? '.' : null}
 						</p>
-						{approvalHosts(approvalCard).length > 1 ? (
+						{hosts.length > 1 ? (
 							<ul
 								mix={css({
 									margin: 0,
@@ -112,12 +118,44 @@ export function renderSecretApprovalCard(props: {
 									gap: spacing.xs,
 								})}
 							>
-								{approvalHosts(approvalCard).map((host) => (
+								{hosts.map((host) => (
 									<li key={host}>
 										<strong mix={css({ color: colors.text })}>{host}</strong>
 									</li>
 								))}
 							</ul>
+						) : null}
+						{rejectedHosts.length > 0 ? (
+							<div
+								mix={css(getAccentCalloutCss({ accentColor: colors.danger }))}
+								data-testid="secret-approval-rejected-hosts"
+							>
+								<span mix={css({ color: colors.danger, fontWeight: 600 })}>
+									{rejectedHosts.length === 1
+										? 'This host is not valid'
+										: `${rejectedHosts.length} hosts are not valid`}
+								</span>
+								<ul
+									mix={css({
+										margin: 0,
+										paddingLeft: spacing.lg,
+										display: 'grid',
+										gap: spacing.xs,
+									})}
+								>
+									{rejectedHosts.map((entry) => (
+										<li key={entry.host}>
+											<strong mix={css({ color: colors.text })}>
+												{entry.host}
+											</strong>
+											<span mix={css({ color: colors.textMuted })}>
+												{' '}
+												— {entry.message}
+											</span>
+										</li>
+									))}
+								</ul>
+							</div>
 						) : null}
 					</div>
 				)}
@@ -171,22 +209,22 @@ export function renderSecretApprovalCard(props: {
 				)}
 			</div>
 			<div mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}>
-				<button
-					type="button"
-					disabled={disabled}
-					mix={[
-						on('click', () => onSubmit('approve')),
-						css(secretApprovalPrimaryButtonCss),
-					]}
-				>
-					{approvalCard.requestedPackageId && approvalCard.names.length > 1
-						? `Approve all (${approvalCard.names.length})`
-						: approvalHosts(approvalCard).length > 1
-							? `Allow all ${approvalHosts(approvalCard).length} hosts`
-							: approvalCard.requestedHost && !approvalCard.requestedPackageId
-								? 'Allow access'
-								: 'Approve'}
-				</button>
+				{approvalCard.requestedPackageId || hosts.length > 0 ? (
+					<button
+						type="button"
+						disabled={disabled}
+						mix={[
+							on('click', () => onSubmit('approve')),
+							css(secretApprovalPrimaryButtonCss),
+						]}
+					>
+						{approvalCard.requestedPackageId && approvalCard.names.length > 1
+							? `Approve all (${approvalCard.names.length})`
+							: approvalCard.requestedPackageId
+								? 'Approve'
+								: allowHostsButtonLabel(hosts.length, rejectedHosts.length)}
+					</button>
+				) : null}
 				<button
 					type="button"
 					disabled={disabled}
@@ -203,8 +241,7 @@ export function renderSecretApprovalCard(props: {
 }
 
 function approvalHosts(approvalCard: ApprovalView) {
-	if (approvalCard.requestedHosts.length > 0) return approvalCard.requestedHosts
-	return approvalCard.requestedHost ? [approvalCard.requestedHost] : []
+	return approvalRequestedHosts(approvalCard)
 }
 
 export function renderAlreadyAddedNotice(items: Array<string>) {
