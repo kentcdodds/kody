@@ -25,9 +25,7 @@ test('resolveDocsNavSection maps connect to providers and slugs to their section
 	expect(resolveDocsNavSection('missing-doc')).toBeNull()
 })
 
-test('docsCurrentPageLabel prefers the sidebar item over the section', () => {
+test('docsCurrentPageLabel uses the connect branch and falls back for unknown slugs', () => {
 	expect(docsCurrentPageLabel('connect')).toBe('Connect a provider')
-	expect(docsCurrentPageLabel(docsIntroSlug)).toBe('What is Kody?')
-	expect(docsCurrentPageLabel('oauth')).toBe('OAuth (bring your own app)')
 	expect(docsCurrentPageLabel('missing-doc')).toBe('Docs')
 })

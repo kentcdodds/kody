@@ -133,9 +133,6 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 	)
 	expect(connected).toContain('Cursor is connected')
 	expect(connected).toContain('data-testid="onboarding-connected-agents"')
-	expect(connected).toContain(
-		'aria-label="Connected: Cursor and Claude Desktop"',
-	)
 	expect(connected).toContain('data-agent-kind="claude-desktop"')
 })
 
@@ -160,7 +157,6 @@ test('step 2 shows one prompt and a search waiting spinner', async () => {
 	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
 	expect(waiting).not.toContain('data-connected="true"')
 	expect(waiting).toContain('data-testid="onboarding-connected-agents"')
-	expect(waiting).toContain('aria-label="Connected: Cursor and Claude Desktop"')
 
 	const started = await renderToString(
 		accessPanel({

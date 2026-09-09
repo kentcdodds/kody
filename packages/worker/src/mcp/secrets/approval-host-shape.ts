@@ -22,7 +22,7 @@ const specialUsePublicSuffixes = new Set(['example', 'invalid', 'test'])
 
 const maxHostnameLength = 253
 
-export function rejectedApprovalHostMessage(
+function rejectedApprovalHostMessage(
 	reason: RejectedApprovalHostReason,
 ): string {
 	switch (reason) {

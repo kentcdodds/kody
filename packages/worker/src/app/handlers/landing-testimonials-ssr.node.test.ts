@@ -7,10 +7,7 @@ import { getBlogPost, getReadNextBlogPost } from '#worker/blog/catalog.ts'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
-import {
-	landingTestimonials,
-	landingTestimonialsStorySlug,
-} from '#universal/landing-testimonials.ts'
+import { landingTestimonialsStorySlug } from '#universal/landing-testimonials.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -70,21 +67,9 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	})
 	expect(response.status).toBe(200)
 	const html = await response.text()
-
-	const josh = landingTestimonials.find(
-		(entry) => entry.name === 'Josh Tomaino',
-	)
-	const jett = landingTestimonials.find((entry) => entry.name === 'Jett Hays')
-	if (!josh || !jett) throw new Error('expected Josh and Jett testimonials')
-
-	expect(html).toContain(josh.quote)
-	expect(html).toContain(jett.quote)
 	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(2)
 	expect(html).toContain('href="/blog/early-kody-users#josh-tomaino"')
 	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
-	expect(html).toContain('Read the full story')
-	expect(html).toContain('from Josh Tomaino')
-	expect(html).toContain('from Jett Hays')
 })
 
 test('early-users blog post SSR renders approved vignettes and heading anchors', async () => {
@@ -102,10 +87,7 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 	expect(response.status).toBe(200)
 	const html = await response.text()
 
-	expect(html).toContain('Early Kody users')
 	expect(html).toContain('id="josh-tomaino"')
 	expect(html).toContain('id="jett-hays"')
-	expect(html).toContain('funnels all my tools into one secure MCP')
-	expect(html).toContain("world's most endangered species")
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
 })

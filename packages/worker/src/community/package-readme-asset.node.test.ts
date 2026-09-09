@@ -5,7 +5,6 @@ import {
 } from '#worker/test-support/images-binding.ts'
 import {
 	buildPackageReadmeAssetHeaders,
-	packageReadmeAssetSvgContentSecurityPolicy,
 	sniffPackageReadmeImageContentType,
 } from './package-readme-asset.ts'
 import { packageReadmeImageMaxBytes } from '#universal/package-readme-images.ts'
@@ -65,9 +64,7 @@ test('package README image sniffing requires matching magic bytes and size', () 
 		etag: '"abc:diagram.svg:1"',
 		cacheControl: 'public, max-age=3600',
 	})
-	expect(headers['Content-Security-Policy']).toBe(
-		packageReadmeAssetSvgContentSecurityPolicy,
-	)
+	expect(headers['Content-Security-Policy']).toBe("default-src 'none'; sandbox")
 	expect(headers['Cross-Origin-Resource-Policy']).toBe('same-origin')
 	expect(headers['X-Content-Type-Options']).toBe('nosniff')
 })

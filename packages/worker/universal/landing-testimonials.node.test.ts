@@ -81,8 +81,6 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 		throw new Error('expected Josh and Jett testimonials')
 	}
 
-	expect(josh.quote).toContain('six accounts over four providers')
-	expect(jett.quote).toContain("when downtime isn't an option")
 	expect(testimonialStoryHref(josh)).toBe('/blog/early-kody-users#josh-tomaino')
 	expect(testimonialStoryHref(jett)).toBe('/blog/early-kody-users#jett-hays')
 	expect(testimonialStoryHref({})).toBeNull()

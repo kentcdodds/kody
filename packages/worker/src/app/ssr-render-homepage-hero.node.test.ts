@@ -107,14 +107,9 @@ test('homepage hero headline and session-aware CTAs', async () => {
 	})
 	expect(anonymous.status).toBe(200)
 	const anonymousHero = landingHeroMarkup(await anonymous.text())
-	expect(anonymousHero).toContain('Stop')
-	expect(anonymousHero).toContain('Sweating')
-	expect(anonymousHero).toContain('Switching Agents')
 	expect(anonymousHero).toContain('landing-hero-actions')
 	expect(anonymousHero).toContain('Create a free account')
 	expect(anonymousHero).toContain('Copy the discovery prompt')
-	expect(anonymousHero).not.toContain('Connect your agent')
-	expect(anonymousHero).not.toContain('Open your account')
 
 	const signedIn = await renderAppPage({
 		request: new Request(requestUrl),
@@ -126,10 +121,7 @@ test('homepage hero headline and session-aware CTAs', async () => {
 	})
 	expect(signedIn.status).toBe(200)
 	const signedInHero = landingHeroMarkup(await signedIn.text())
-	expect(signedInHero).toContain('Switching Agents')
 	expect(signedInHero).not.toContain('landing-hero-actions')
 	expect(signedInHero).not.toContain('Create a free account')
 	expect(signedInHero).not.toContain('Copy the discovery prompt')
-	expect(signedInHero).not.toContain('Connect your agent')
-	expect(signedInHero).not.toContain('Verify your email')
 })

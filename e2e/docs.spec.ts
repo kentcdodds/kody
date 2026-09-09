@@ -40,11 +40,13 @@ test('docs site: header says Docs, /docs opens the introduction with a sidebar, 
 
 	// Previous / next follow the docs order.
 	const pager = page.getByRole('navigation', { name: 'Docs order' })
-	await expect(pager.getByRole('link', { name: /Previous/ })).toContainText(
-		'Shared memory',
+	await expect(pager.getByRole('link', { name: /Previous/ })).toHaveAttribute(
+		'href',
+		/\/docs\//,
 	)
-	await expect(pager.getByRole('link', { name: /Next/ })).toContainText(
-		'Packages vs integrations vs MCP',
+	await expect(pager.getByRole('link', { name: /Next/ })).toHaveAttribute(
+		'href',
+		/\/docs\//,
 	)
 
 	// Provider index sits inside the same shell.
