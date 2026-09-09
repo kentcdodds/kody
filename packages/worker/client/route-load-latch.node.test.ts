@@ -78,6 +78,47 @@ test('load, fail, navigate, and stale-refresh workflows share one latch', () => 
 	).toBe(true)
 })
 
+test('applied route data on a new location is a completed load, so the corrective render does not refetch', () => {
+	const latch = createRouteLoadLatch()
+	// Full document load of /docs/memory: SSR data applied.
+	latch.markLoaded('/docs/memory')
+	expect(
+		latch.needsLoad({
+			...baseInput,
+			currentHref: '/docs/memory',
+			appliedRouteData: true,
+		}),
+	).toBe(false)
+
+	// SPA navigation to /docs/secrets: the router preloaded the payload, the
+	// route applies it and (as every route does) calls markLoaded before
+	// needsLoad — while the latch still thinks the location is /docs/memory.
+	latch.markLoaded('/docs/secrets')
+	expect(
+		latch.needsLoad({
+			...baseInput,
+			currentHref: '/docs/secrets',
+			appliedRouteData: true,
+		}),
+	).toBe(false)
+	expect(latch.isLoadedFor('/docs/secrets')).toBe(true)
+
+	// The consume helper schedules one corrective render with nothing left to
+	// apply. It must not queue a fetch for data the route already rendered.
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/docs/secrets' })).toBe(
+		false,
+	)
+
+	// A stale refresh for the same location still forces a real reload.
+	expect(
+		latch.needsLoad({
+			...baseInput,
+			currentHref: '/docs/secrets',
+			needsStaleRefresh: true,
+		}),
+	).toBe(true)
+})
+
 test('applied route data and in-page hashes do not force a new load', () => {
 	const latch = createRouteLoadLatch()
 	expect(

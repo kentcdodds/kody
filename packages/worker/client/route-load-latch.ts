@@ -35,13 +35,16 @@ export function createRouteLoadLatch() {
 	let lastSeenHref = ''
 
 	return {
-		/** Record a successful load (or applied preloaded data) for `href`. */
+		/**
+		 * Record a successful fallback load for `href`. Applied route data does
+		 * not need this: `needsLoad({ appliedRouteData: true })` records the
+		 * location itself (calling this first is harmless).
+		 */
 		markLoaded(href: string) {
 			const key = toLatchKey(href)
 			// Ignore late completions after navigating away so they cannot
 			// clobber the active location's loaded/pending markers. Allow
-			// markLoaded before the first needsLoad (applied route data is
-			// often recorded in the same render pass before needsLoad runs).
+			// markLoaded before the first needsLoad (initial render).
 			if (lastSeenHref !== '' && key !== lastSeenHref) return
 			lastLoadedHref = key
 			lastFailedHref = null
@@ -118,7 +121,20 @@ export function createRouteLoadLatch() {
 				lastFailedHref = null
 				lastPendingHref = null
 			}
+			// Applied route data (SSR-embedded or preloaded by the router before
+			// commit) is a completed load for this location. Record it here
+			// rather than relying on the route's own `markLoaded` call: that call
+			// usually runs earlier in the same render pass, while `lastSeenHref`
+			// still names the previous location, so `markLoaded` treats it as a
+			// late completion and ignores it. Without this the corrective render
+			// scheduled by the consume helper sees `currentHref !== lastLoadedHref`,
+			// re-queues a fetch for data the route already has, and the route
+			// flashes its loading state for a full network round trip on every
+			// same-component navigation (docs guide -> guide, post -> post).
 			if (input.appliedRouteData) {
+				lastLoadedHref = currentHref
+				lastFailedHref = null
+				lastPendingHref = null
 				return false
 			}
 			const shouldLoad =
