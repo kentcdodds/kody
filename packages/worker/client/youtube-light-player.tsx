@@ -13,8 +13,27 @@ import { colors, radius, typography } from '#universal/styles/tokens.ts'
  * one exception is `autoplay`, which callers set only after the visitor has
  * already picked a video (a click is the gesture). When `videoId` changes the
  * player re-derives its state for the new video instead of carrying the old
- * one over.
+ * one over. The same `videoId` still starts when `autoplay` becomes true so
+ * the hero chooser can play the already-selected clip.
  */
+export function nextLightPlayerPlaying(input: {
+	playing: boolean
+	renderedVideoId: string
+	videoId: string
+	autoplay: boolean
+}) {
+	if (input.videoId !== input.renderedVideoId) {
+		return {
+			renderedVideoId: input.videoId,
+			playing: input.autoplay,
+		}
+	}
+	return {
+		renderedVideoId: input.renderedVideoId,
+		playing: input.playing || input.autoplay,
+	}
+}
+
 export function YouTubeLightPlayer(
 	handle: Handle<{
 		videoId: string
@@ -29,10 +48,14 @@ export function YouTubeLightPlayer(
 
 	return () => {
 		const videoId = handle.props.videoId
-		if (videoId !== renderedVideoId) {
-			renderedVideoId = videoId
-			playing = handle.props.autoplay === true
-		}
+		const next = nextLightPlayerPlaying({
+			playing,
+			renderedVideoId,
+			videoId,
+			autoplay: handle.props.autoplay === true,
+		})
+		renderedVideoId = next.renderedVideoId
+		playing = next.playing
 		const title = handle.props.title ?? 'YouTube video'
 		if (playing) {
 			return (
