@@ -10,7 +10,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
  * disposed" failures (communityPublish / communitySearch / repo publish
  * capabilities intermittently failing on repeated calls).
  *
- * Execute uses stable dynamic-worker ids when `APP_COMMIT_SHA` is set, so two
+ * Execute uses a stable dynamic-worker id for a hashable module graph, so two
  * executes with identical code reuse one sandbox isolate — and the isolate's
  * ES module cache survives between them. The `kody:runtime` virtual module
  * used to freeze the first run's `kody` capability proxy into module scope;
@@ -19,8 +19,9 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
  * later execute with the same code (including from a brand-new conversation)
  * then called capabilities through disposed stubs.
  *
- * `APP_COMMIT_SHA` is unset in local dev and tests, which is why this only
- * reproduced in deployed environments before this suite pinned it.
+ * Reuse no longer depends on `APP_COMMIT_SHA`. This suite still pins one so
+ * the fixture matches deployed env shape; the regression is the stale
+ * dispatcher stubs on a reused isolate.
  */
 
 const reuseEnv = {

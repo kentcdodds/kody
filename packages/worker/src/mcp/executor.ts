@@ -5,12 +5,10 @@ import {
 	type ExecuteResult,
 	type ResolvedProvider,
 } from '@cloudflare/codemode'
-import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import {
 	getErrorCauseChain,
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
-import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import {
@@ -73,6 +71,7 @@ import {
 } from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
+import { createStableDynamicWorkerId } from '#mcp/dynamic-worker-id.ts'
 import {
 	createEvaluationSideEffectTracker,
 	createHostSideEffectProvider,
@@ -89,8 +88,6 @@ export { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-eva
 export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
 const dynamicWorkerMainModule = 'executor.js'
-const dynamicWorkerIdPrefix = 'kody-'
-const dynamicWorkerCacheKeyVersion = 4
 const hostEvaluationDrainGraceMs = 100
 const reservedProviderNames = new Set([
 	'__dispatchers',
@@ -157,7 +154,6 @@ type DynamicWorkerExecutorInput = {
 	globalOutbound: Fetcher | null
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
-	appCommitSha?: string | null
 	usageEnv: UsageEnv & UserMeterEnv
 	rawFetchHostSink?: RawFetchHostSink
 	/**
@@ -182,14 +178,6 @@ type DynamicWorkerExecutorInput = {
 	 * an execution context the writes stay awaited so they are not dropped.
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
-}
-
-type DynamicWorkerExecutorOptions = {
-	compatibilityDate: string
-	compatibilityFlags: Array<string>
-	mainModule: string
-	modules: WorkerLoaderModules
-	globalOutbound: Fetcher | null
 }
 
 type DynamicWorkerEntrypoint = {
@@ -532,7 +520,6 @@ export function createExecuteExecutor(input: {
 		}),
 		modules: input.modules,
 		gatewayProps,
-		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
 		recordExecuteUsage: input.recordExecuteUsage,
@@ -579,9 +566,8 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				globalOutbound: input.globalOutbound,
 			}
 			const workerId = await createStableDynamicWorkerId({
-				appCommitSha: input.appCommitSha ?? null,
-				gatewayProps: input.gatewayProps,
-				timeoutMs: input.timeout,
+				userId: input.gatewayProps.userId,
+				storageContext: input.gatewayProps.storageContext,
 				workerOptions,
 			})
 			await runExecuteBookkeeping(
@@ -959,146 +945,6 @@ function removeReservedExecutorModule(
 ) {
 	const { [dynamicWorkerMainModule]: _ignored, ...safeModules } = modules ?? {}
 	return safeModules
-}
-
-async function createStableDynamicWorkerId(input: {
-	appCommitSha: string | null
-	gatewayProps: FetchGatewayProps
-	timeoutMs: number
-	workerOptions: DynamicWorkerExecutorOptions
-}) {
-	if (!canReuseDynamicWorkerId(input)) {
-		return `${dynamicWorkerIdPrefix}${crypto.randomUUID()}`
-	}
-	const hash = await sha256Base64Url(
-		canonicalJsonStringify({
-			version: dynamicWorkerCacheKeyVersion,
-			binding: 'LOADER',
-			appCommitSha: input.appCommitSha,
-			gatewayProps: input.gatewayProps,
-			timeoutMs: input.timeoutMs,
-			compatibilityDate: input.workerOptions.compatibilityDate,
-			compatibilityFlags: input.workerOptions.compatibilityFlags,
-			mainModule: input.workerOptions.mainModule,
-			modules: input.workerOptions.modules,
-		}),
-	)
-	return `${dynamicWorkerIdPrefix}${hash.slice(0, 43)}`
-}
-
-function canReuseDynamicWorkerId(input: {
-	appCommitSha: string | null
-	gatewayProps: FetchGatewayProps
-	workerOptions: DynamicWorkerExecutorOptions
-}) {
-	if (!input.gatewayProps.userId) return false
-	if (!input.appCommitSha) return false
-	return areWorkerModulesDeterministicallyHashable(input.workerOptions.modules)
-}
-
-function areWorkerModulesDeterministicallyHashable(
-	modules: WorkerLoaderModules,
-) {
-	for (const moduleValue of Object.values(modules)) {
-		if (!isDeterministicallyHashableWorkerModule(moduleValue)) {
-			return false
-		}
-	}
-	return true
-}
-
-function isDeterministicallyHashableWorkerModule(
-	moduleValue: WorkerLoaderModules[string],
-) {
-	if (typeof moduleValue === 'string') return true
-	if (moduleValue === null || typeof moduleValue !== 'object') return false
-	const record = moduleValue as Record<string, unknown>
-	for (const key of ['js', 'cjs', 'text'] as const) {
-		const value = record[key]
-		if (value !== undefined && typeof value !== 'string') return false
-	}
-	if (record.data !== undefined && !(record.data instanceof ArrayBuffer)) {
-		return false
-	}
-	if (
-		record.json !== undefined &&
-		!isDeterministicallyHashableValue(record.json)
-	) {
-		return false
-	}
-	for (const [key, value] of Object.entries(record)) {
-		if (
-			key !== 'js' &&
-			key !== 'cjs' &&
-			key !== 'text' &&
-			key !== 'data' &&
-			key !== 'json'
-		) {
-			return false
-		}
-		if (key === 'data' || key === 'json') continue
-		if (value !== undefined && typeof value !== 'string') return false
-	}
-	return true
-}
-
-function isDeterministicallyHashableValue(value: unknown): boolean {
-	if (value === null) return true
-	const valueType = typeof value
-	if (
-		valueType === 'string' ||
-		valueType === 'number' ||
-		valueType === 'boolean'
-	) {
-		return true
-	}
-	if (valueType === 'bigint' || valueType === 'undefined') return true
-	if (valueType === 'function' || valueType === 'symbol') return false
-	if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true
-	if (Array.isArray(value)) {
-		return value.every((entry) => isDeterministicallyHashableValue(entry))
-	}
-	if (valueType === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.values(record).every((entry) =>
-			isDeterministicallyHashableValue(entry),
-		)
-	}
-	return false
-}
-
-function canonicalJsonStringify(value: unknown) {
-	return JSON.stringify(canonicalizeForHash(value))
-}
-
-function canonicalizeForHash(value: unknown): unknown {
-	if (value === undefined) return { __kodyType: 'undefined' }
-	if (value === null) return null
-	if (typeof value === 'bigint')
-		return { __kodyType: 'bigint', value: String(value) }
-	if (typeof value !== 'object') return value
-	if (value instanceof ArrayBuffer) {
-		return {
-			__kodyType: 'arrayBuffer',
-			value: bytesToBase64Url(new Uint8Array(value)),
-		}
-	}
-	if (ArrayBuffer.isView(value)) {
-		return {
-			__kodyType: 'arrayBuffer',
-			value: bytesToBase64Url(
-				new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
-			),
-		}
-	}
-	if (Array.isArray(value))
-		return value.map((entry) => canonicalizeForHash(entry))
-	const record = value as Record<string, unknown>
-	return Object.fromEntries(
-		Object.keys(record)
-			.sort((left, right) => left.localeCompare(right))
-			.map((key) => [key, canonicalizeForHash(record[key])]),
-	)
 }
 
 export type ExecutionErrorDetails =
