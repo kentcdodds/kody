@@ -25,8 +25,9 @@ meter.
 
 - The first use of a given worker id on a UTC day counts once for that user.
 - Repeating the same worker id on the same UTC day does not add another day.
-- Worker identity follows the **module graph** for that run: the same published
-  graph reuses one isolate; a different graph is a different isolate.
+- Worker identity follows the acting user plus the **module graph** for that
+  run: the same user and published graph reuse one isolate; a different graph or
+  a different user is a different isolate.
 
 Each plan includes a monthly unique-worker-day allotment. Public-ladder overage
 uses the published unique-worker-day rate on

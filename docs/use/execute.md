@@ -273,9 +273,10 @@ limit, current usage, upgrade hint). Daily quota denials add compact `used` and
 (meter name and what a unique worker day is). Ordinary successful execute
 results omit `entitlement`.
 
-Dynamic Worker identity for an execute run follows that module graph, so the
-same graph reuses one isolate for the UTC day. The cost model is documented once
-in [Platform efficiency](../guides/platform-efficiency.md).
+Dynamic Worker identity for an execute run follows the acting user and that
+module graph, so the same user and graph reuse one isolate for the UTC day. The
+cost model is documented once in
+[Platform efficiency](../guides/platform-efficiency.md).
 
 For memory mutations, the workflow is explicit and strict:
 
