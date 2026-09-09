@@ -45,7 +45,8 @@ const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
 const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
 const { webhookEnableCapability } = await import('./webhook-enable.ts')
 const { webhookDisableCapability } = await import('./webhook-disable.ts')
-const { webhookUrlApplyCapability } = await import('./webhook-url-apply.ts')
+const { webhookUrlApplyCapability, webhookUrlApplyDestinationSchema } =
+	await import('./webhook-url-apply.ts')
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
@@ -223,6 +224,20 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 			destination: { type: 'github', owner: 'acme', repo: 'api' },
 		}),
 	)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'https',
+			url: 'https://attacker.example/exfil',
+			body: '{"url":"{{webhookUrl}}"}',
+		}).success,
+	).toBe(false)
+	expect(
+		webhookUrlApplyDestinationSchema.safeParse({
+			type: 'github',
+			owner: 'acme',
+			repo: 'api',
+		}).success,
+	).toBe(true)
 
 	await expect(
 		webhookDisableCapability.handler(

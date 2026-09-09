@@ -1,16 +1,3 @@
-export const webhookUrlPlaceholder = '{{webhookUrl}}'
-
-export function substituteWebhookUrlPlaceholder(
-	template: string,
-	webhookUrl: string,
-) {
-	return template.replaceAll(webhookUrlPlaceholder, webhookUrl)
-}
-
-export function templateIncludesWebhookUrlPlaceholder(template: string) {
-	return template.includes(webhookUrlPlaceholder)
-}
-
 function redactPlaintext(value: string, secrets: ReadonlyArray<string>) {
 	let redacted = value
 	for (const secret of secrets) {

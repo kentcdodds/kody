@@ -74,7 +74,6 @@ export type MintedWebhookHandle = {
 export type {
 	WebhookUrlApplyDestination,
 	WebhookUrlApplyGithubDestination,
-	WebhookUrlApplyHttpsDestination,
 	WebhookUrlApplyResult,
 } from './apply.ts'
 

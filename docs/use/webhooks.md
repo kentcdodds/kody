@@ -79,9 +79,9 @@ Use the MCP `webhooks` domain:
 2. Store the HMAC secret with `secretSet` under the name used in
    `verification.secretName` (for example `sentryWebhookSecret`).
 3. Call `webhookUrlMint` with the package id/kody id and `webhookName`.
-4. Call `webhookUrlApply` with the returned `handle` and a destination (`github`
-   helper or generic `https` with `{{webhookUrl}}` substituted server-side). Use
-   a connected integration or a host-approved token secret.
+4. Call `webhookUrlApply` with the returned `handle` and a first-class
+   destination. GitHub repository hooks use the connected `github` integration
+   (or a host-approved GitHub token).
 
 Other capabilities: `webhookList` (declarations joined with minted handle /
 enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
@@ -92,10 +92,12 @@ never return the credential URL.
 
 ### Apply a handle to a destination
 
-`webhookUrlApply` resolves the handle inside Kody and registers the URL. The
-model never sees the secret.
+`webhookUrlApply` resolves the handle inside Kody and registers the URL through
+a first-class destination adapter. The model never sees the secret. Apply does
+not accept an arbitrary outbound URL: substituting the credential into a
+caller-chosen request would let the model exfiltrate it.
 
-GitHub (first-class helper — creates `POST /repos/{owner}/{repo}/hooks`):
+GitHub (creates `POST /repos/{owner}/{repo}/hooks` on `api.github.com`):
 
 ```ts
 await kody.webhooks.webhookUrlApply({
@@ -110,26 +112,10 @@ await kody.webhooks.webhookUrlApply({
 })
 ```
 
-Generic HTTPS (must include `{{webhookUrl}}` in `url`, `headers`, or `body`).
-Authorize with a connected integration or a host-approved secret — not a raw
-unauthenticated POST:
-
-```ts
-await kody.webhooks.webhookUrlApply({
-	handle,
-	destination: {
-		type: 'https',
-		integration: 'github',
-		url: 'https://api.github.com/repos/acme/api/hooks',
-		headers: { Accept: 'application/vnd.github+json' },
-		body: JSON.stringify({
-			name: 'web',
-			config: { url: '{{webhookUrl}}', content_type: 'json' },
-			events: ['push'],
-		}),
-	},
-})
-```
+Authorize with the user's GitHub OAuth integration (default `github`) or a
+host-approved GitHub token (`secretName`). Additional vendor adapters can follow
+the same pattern (known host + known API). Other providers still POST to the
+minted ingress URL; apply does not register them.
 
 Returns `{ ok, url_host, http_status, remote_id, error }`. Remote bodies that
 echo the hook URL are stripped.

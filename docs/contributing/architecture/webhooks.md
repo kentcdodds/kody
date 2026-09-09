@@ -147,8 +147,10 @@ Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
 `packages/worker/migrations/0001-squashed-init.sql`, with `url_secret_encrypted`
 added in `0057-webhook-url-secret-encrypted.sql`. `webhookUrlMint` /
 `webhookUrlRotate` return an opaque `handle` (`whh_<id>`) and `url_host`.
-`webhookUrlApply` resolves the handle inside Kody, substitutes `{{webhookUrl}}`
-(or a first-class GitHub helper), and calls the destination through a user
-integration or host-approved secret. Delivery history is in the per-user
-`RunLog` Durable Object (`webhook` surface), not in D1. See
-[Data storage](./data-storage.md) and [Run records](./run-records.md).
+`webhookUrlApply` resolves the handle inside Kody and registers the URL through
+a first-class destination adapter (GitHub repository hooks via the user GitHub
+integration or a host-approved GitHub token). The credential is injected into
+the provider API field; apply does not accept an arbitrary outbound URL.
+Delivery history is in the per-user `RunLog` Durable Object (`webhook` surface),
+not in D1. See [Data storage](./data-storage.md) and
+[Run records](./run-records.md).

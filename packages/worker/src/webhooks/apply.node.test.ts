@@ -2,7 +2,6 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { webhookUrlPlaceholder } from './redact.ts'
 import {
 	applyWebhookUrlForUser,
 	mintWebhookUrlForUser,
@@ -206,21 +205,6 @@ test('webhookUrlApply registers a GitHub hook from a handle without exposing the
 			packageId: 'pkg-1',
 		}),
 	)
-
-	await expect(
-		applyWebhookUrlForUser({
-			env,
-			userId,
-			username: 'owner',
-			handle: minted.handle,
-			destination: {
-				type: 'https',
-				url: 'https://api.github.com/repos/acme/api/hooks',
-				body: '{"url":"missing-placeholder"}',
-				integration: 'github',
-			},
-		}),
-	).rejects.toThrow(webhookUrlPlaceholder)
 
 	await db
 		.prepare(

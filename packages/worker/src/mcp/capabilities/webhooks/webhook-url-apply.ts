@@ -2,12 +2,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import {
-	webhookUrlApplyGithubContentTypes,
-	webhookUrlApplyHttpsMethods,
-} from '#worker/webhooks/apply.ts'
+import { webhookUrlApplyGithubContentTypes } from '#worker/webhooks/apply.ts'
 import { applyWebhookUrlForUser } from '#worker/webhooks/service.ts'
-import { webhookUrlPlaceholder } from '#worker/webhooks/redact.ts'
 import {
 	toAppliedWebhookCapability,
 	webhookUrlApplyResultSchema,
@@ -18,37 +14,7 @@ const githubSlugSchema = z
 	.min(1)
 	.regex(/^[A-Za-z0-9_.-]+$/, 'Must be a GitHub owner or repository slug.')
 
-const httpsDestinationSchema = z.object({
-	type: z.literal('https'),
-	url: z
-		.string()
-		.url()
-		.describe(
-			`Destination URL. Include ${webhookUrlPlaceholder} here or in headers/body.`,
-		),
-	method: z.enum(webhookUrlApplyHttpsMethods).optional(),
-	headers: z.record(z.string(), z.string()).optional(),
-	body: z
-		.string()
-		.optional()
-		.describe(`Request body. Substitute ${webhookUrlPlaceholder} server-side.`),
-	integration: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'OAuth integration name for Authorization. Mutually exclusive with secretName.',
-		),
-	secretName: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Host-approved secret used as a Bearer token. Mutually exclusive with integration.',
-		),
-})
-
-const githubDestinationSchema = z.object({
+export const webhookUrlApplyDestinationSchema = z.object({
 	type: z.literal('github'),
 	owner: githubSlugSchema,
 	repo: githubSlugSchema,
@@ -83,13 +49,12 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 	{
 		name: 'webhookUrlApply',
 		description:
-			'Register a minted webhook URL at a destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Use type github for GitHub repo hooks, or type https with {{webhookUrl}} substituted server-side via a user integration or host-approved secret. Returns ok, remote_id, and url_host only.',
+			'Register a minted webhook URL at a first-class destination without exposing the credential. Pass the handle from webhookUrlMint, webhookUrlRotate, or webhookList. Destination type github creates the repo hook via the user GitHub integration (or a host-approved GitHub token) and injects the URL server-side. Returns ok, remote_id, and url_host only.',
 		keywords: [
 			'webhook',
 			'apply',
 			'register',
 			'github',
-			'stripe',
 			'handle',
 			'destination',
 		],
@@ -103,10 +68,7 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 				.describe(
 					'Opaque handle from webhookUrlMint, webhookUrlRotate, or webhookList.',
 				),
-			destination: z.discriminatedUnion('type', [
-				httpsDestinationSchema,
-				githubDestinationSchema,
-			]),
+			destination: webhookUrlApplyDestinationSchema,
 		}),
 		outputSchema: webhookUrlApplyResultSchema,
 		async handler(args, ctx) {

@@ -16,23 +16,9 @@ import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	collectWebhookCredentialSecrets,
 	redactWebhookCredentials,
-	substituteWebhookUrlPlaceholder,
-	templateIncludesWebhookUrlPlaceholder,
-	webhookUrlPlaceholder,
 } from './redact.ts'
 
-export const webhookUrlApplyHttpsMethods = ['POST', 'PUT', 'PATCH'] as const
 export const webhookUrlApplyGithubContentTypes = ['json', 'form'] as const
-
-export type WebhookUrlApplyHttpsDestination = {
-	type: 'https'
-	url: string
-	method?: (typeof webhookUrlApplyHttpsMethods)[number]
-	headers?: Record<string, string>
-	body?: string
-	integration?: string
-	secretName?: string
-}
 
 export type WebhookUrlApplyGithubDestination = {
 	type: 'github'
@@ -46,9 +32,7 @@ export type WebhookUrlApplyGithubDestination = {
 	hookSecretName?: string
 }
 
-export type WebhookUrlApplyDestination =
-	| WebhookUrlApplyHttpsDestination
-	| WebhookUrlApplyGithubDestination
+export type WebhookUrlApplyDestination = WebhookUrlApplyGithubDestination
 
 export type WebhookUrlApplyResult = {
 	ok: boolean
@@ -335,73 +319,6 @@ async function sendAuthorizedApplyRequest(input: {
 	}
 }
 
-function requireHttpsPlaceholder(input: {
-	url: string
-	headers?: Record<string, string>
-	body?: string
-}) {
-	const headerValues = Object.values(input.headers ?? {}).join('\n')
-	const haystack = `${input.url}\n${headerValues}\n${input.body ?? ''}`
-	if (templateIncludesWebhookUrlPlaceholder(haystack)) return
-	throw new McpCallerError(
-		`HTTPS apply must include ${webhookUrlPlaceholder} in url, headers, or body so Kody can substitute the credential server-side.`,
-	)
-}
-
-async function dispatchHttpsApply(input: {
-	env: Env
-	userId: string
-	userEmail?: string | null
-	baseUrl: string
-	packageId: string
-	packageKodyId: string
-	webhookUrl: string
-	urlSecret: string
-	destination: WebhookUrlApplyHttpsDestination
-	waitUntil?: (promise: Promise<unknown>) => void
-}): Promise<WebhookUrlApplyResult> {
-	requireHttpsPlaceholder(input.destination)
-	const url = substituteWebhookUrlPlaceholder(
-		input.destination.url,
-		input.webhookUrl,
-	)
-	const headers: Record<string, string> = {}
-	for (const [key, value] of Object.entries(input.destination.headers ?? {})) {
-		headers[key] = substituteWebhookUrlPlaceholder(value, input.webhookUrl)
-	}
-	const body =
-		input.destination.body === undefined
-			? undefined
-			: substituteWebhookUrlPlaceholder(
-					input.destination.body,
-					input.webhookUrl,
-				)
-	const auth = await authorizeApplyRequest({
-		env: input.env,
-		userId: input.userId,
-		userEmail: input.userEmail,
-		baseUrl: input.baseUrl,
-		packageId: input.packageId,
-		packageKodyId: input.packageKodyId,
-		url,
-		integration: input.destination.integration,
-		secretName: input.destination.secretName,
-		waitUntil: input.waitUntil,
-	})
-	return sendAuthorizedApplyRequest({
-		url,
-		method: input.destination.method ?? 'POST',
-		headers,
-		body,
-		authorization: auth.authorization,
-		retryAuthorization: auth.retryAuthorization,
-		secrets: collectWebhookCredentialSecrets({
-			url: input.webhookUrl,
-			urlSecret: input.urlSecret,
-		}),
-	})
-}
-
 async function dispatchGithubApply(input: {
 	env: Env
 	userId: string
@@ -500,45 +417,20 @@ export async function dispatchWebhookUrlApply(input: {
 	destination: WebhookUrlApplyDestination
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WebhookUrlApplyResult> {
-	let result: WebhookUrlApplyResult
-	switch (input.destination.type) {
-		case 'https':
-			result = await dispatchHttpsApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
-		case 'github':
-			result = await dispatchGithubApply({
-				env: input.env,
-				userId: input.userId,
-				userEmail: input.userEmail,
-				baseUrl: input.baseUrl,
-				packageId: input.packageId,
-				packageKodyId: input.packageKodyId,
-				webhookName: input.webhookName,
-				savedPackage: input.savedPackage,
-				webhookUrl: input.webhookUrl,
-				urlSecret: input.urlSecret,
-				destination: input.destination,
-				waitUntil: input.waitUntil,
-			})
-			break
-		default: {
-			const exhaustive: never = input.destination
-			throw new Error(
-				`Unhandled webhook apply destination: ${String(exhaustive)}`,
-			)
-		}
-	}
+	const result = await dispatchGithubApply({
+		env: input.env,
+		userId: input.userId,
+		userEmail: input.userEmail,
+		baseUrl: input.baseUrl,
+		packageId: input.packageId,
+		packageKodyId: input.packageKodyId,
+		webhookName: input.webhookName,
+		savedPackage: input.savedPackage,
+		webhookUrl: input.webhookUrl,
+		urlSecret: input.urlSecret,
+		destination: input.destination,
+		waitUntil: input.waitUntil,
+	})
 	const secrets = collectWebhookCredentialSecrets({
 		url: input.webhookUrl,
 		urlSecret: input.urlSecret,
