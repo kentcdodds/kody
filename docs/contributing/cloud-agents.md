@@ -103,11 +103,19 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
   3742–3751, prints `App running at http://localhost:<port>` and exits 0 when a
   server is already up, waits for a kody/workerd leftover that accepts TCP but
   does not serve `/health` before replacing it, then starts `npm run dev` and
-  waits until `/health` is actually ok before printing the resolved URL. If the
-  latest wrangler line is Reloading and `/health` still misses the budget, the
-  process is left running so a retry can reuse it. UI verification opens that
-  real origin (for example `/onboarding`); do not substitute a `renderToString`
-  dump of one component.
+  waits until `/health` is actually ok before printing the resolved URL. If
+  `packages/worker/.env` is missing, it copies `.env.example` first so
+  `npm run dev` (`--env-file=packages/worker/.env`) can start. If wrangler
+  accepts TCP but Remix logs `Invalid environment variables` /
+  `Missing APP_DB binding` (or the same for `BUNDLE_ARTIFACTS_KV`,
+  `STORAGE_RUNNER`, `PACKAGE_REALTIME_SESSION`, `MCP_CLIENT_HUB`), `dev:ensure`
+  exits immediately with that hint instead of waiting 180s. Those bindings come
+  from `wrangler.jsonc` via the Vite Cloudflare plugin, not from `.env`; a
+  snapshot that cannot provide local D1/KV/DO persist cannot serve `/` or
+  `/blog/*`. If the latest wrangler line is Reloading and `/health` still misses
+  the budget, the process is left running so a retry can reuse it. UI
+  verification opens that real origin (for example `/onboarding`); do not
+  substitute a `renderToString` dump of one component.
 - `npm run dev` starts the optional Cloudflare API mock, then Vite so origin SSR
   and the client hydrate in one workerd graph. Generated platform, runtime,
   jobs, and highlight configs join as Vite auxiliary workers (local D1/KV/DO
@@ -127,7 +135,9 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 ## Environment file
 
 Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
-`COOKIE_SECRET` and `SECRET_STORE_KEY` are required for local dev.
+`dev:ensure` does this copy itself. `COOKIE_SECRET` and `SECRET_STORE_KEY` are
+required for local dev. The file does not create D1, KV, or Durable Object
+bindings.
 
 ## Seeding a test account
 

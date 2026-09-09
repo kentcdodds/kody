@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -266,6 +266,51 @@ export function formatAppRunning(origin: string) {
 	return `App running at ${origin}`
 }
 
+export const workerEnvRelativePath = 'packages/worker/.env'
+export const workerEnvExampleRelativePath = 'packages/worker/.env.example'
+
+export function ensureWorkerEnvFile(
+	root = process.cwd(),
+	options: {
+		copyFile?: (from: string, to: string) => void
+		exists?: (file: string) => boolean
+	} = {},
+) {
+	const exists = options.exists ?? existsSync
+	const copyFile = options.copyFile ?? copyFileSync
+	const envPath = path.join(root, workerEnvRelativePath)
+	const examplePath = path.join(root, workerEnvExampleRelativePath)
+	if (exists(envPath)) return { created: false, path: envPath }
+	if (!exists(examplePath)) {
+		throw new Error(
+			`${workerEnvRelativePath} is missing and ${workerEnvExampleRelativePath} is not present. See docs/contributing/cloud-agents.md.`,
+		)
+	}
+	copyFile(examplePath, envPath)
+	return { created: true, path: envPath }
+}
+
+export function isMissingWranglerBindingOutput(output: string) {
+	const lower = output.toLowerCase()
+	return (
+		lower.includes('invalid environment variables') ||
+		lower.includes('missing app_db binding') ||
+		lower.includes('missing bundle_artifacts_kv') ||
+		lower.includes('missing storage_runner') ||
+		lower.includes('missing package_realtime_session') ||
+		lower.includes('missing mcp_client_hub')
+	)
+}
+
+export function formatMissingWranglerBindingHint(output: string) {
+	return (
+		'Local wrangler accepted TCP but Remix has no D1/KV/DO bindings (Missing APP_DB / BUNDLE_ARTIFACTS_KV / STORAGE_RUNNER / …). ' +
+		'Copying packages/worker/.env from .env.example is not enough; those bindings come from wrangler.jsonc via the Vite Cloudflare plugin, not from .env. ' +
+		'On a Cloud Agent this fails immediately instead of waiting 180s. See docs/contributing/cloud-agents.md.' +
+		(output.trim() ? `\n${output.trim()}` : '')
+	)
+}
+
 export async function waitForHealthyOrigin(input: {
 	ports: ReadonlyArray<number>
 	probeHealth: (origin: string) => Promise<boolean>
@@ -274,18 +319,24 @@ export async function waitForHealthyOrigin(input: {
 	now?: () => number
 	sleep?: (ms: number) => Promise<void>
 	isCancelled?: () => boolean
+	getOutput?: () => string
+	fatalOutput?: (output: string) => string | null
 }) {
 	const now = input.now ?? Date.now
 	const sleep = input.sleep ?? delay
 	const deadline = now() + input.timeoutMs
 	while (now() < deadline) {
 		if (input.isCancelled?.()) return null
+		const fatal = input.fatalOutput?.(input.getOutput?.() ?? '')
+		if (fatal) throw new Error(fatal)
 		const origin = await findHealthyWorkerOrigin(input.ports, {
 			probe: input.probeHealth,
 		})
 		if (origin) return origin
 		await sleep(input.pollMs)
 	}
+	const fatal = input.fatalOutput?.(input.getOutput?.() ?? '')
+	if (fatal) throw new Error(fatal)
 	return findHealthyWorkerOrigin(input.ports, { probe: input.probeHealth })
 }
 
@@ -368,15 +419,27 @@ export async function ensureDev(deps: EnsureDevDeps): Promise<EnsureDevResult> {
 
 	const replacedPids = await replaceStaleKodyListeners(deps)
 	const started = deps.startDev()
-	const origin = await waitForHealthyOrigin({
-		ports: deps.ports,
-		probeHealth: deps.probeHealth,
-		timeoutMs: deps.readyTimeoutMs,
-		pollMs: deps.readyPollMs,
-		now: deps.now,
-		sleep: deps.sleep,
-		isCancelled: started.hasExited,
-	})
+	const fatalBindingOutput = (output: string) =>
+		isMissingWranglerBindingOutput(output)
+			? formatMissingWranglerBindingHint(output)
+			: null
+	let origin: string | null
+	try {
+		origin = await waitForHealthyOrigin({
+			ports: deps.ports,
+			probeHealth: deps.probeHealth,
+			timeoutMs: deps.readyTimeoutMs,
+			pollMs: deps.readyPollMs,
+			now: deps.now,
+			sleep: deps.sleep,
+			isCancelled: started.hasExited,
+			getOutput: started.lastOutput,
+			fatalOutput: fatalBindingOutput,
+		})
+	} catch (error) {
+		await started.stop()
+		throw error
+	}
 	if (!origin) {
 		const output = started.lastOutput?.()?.trim() ?? ''
 		const stillStarting = Boolean(
@@ -443,6 +506,12 @@ function defaultKillProcess(pid: number, signal: NodeJS.Signals) {
 }
 
 function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
+	const envFile = ensureWorkerEnvFile()
+	if (envFile.created) {
+		console.log(
+			`Created ${workerEnvRelativePath} from ${workerEnvExampleRelativePath}`,
+		)
+	}
 	const child = spawnInOwnProcessGroup(resolveNpmCommand(), ['run', 'dev'], {
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env,
