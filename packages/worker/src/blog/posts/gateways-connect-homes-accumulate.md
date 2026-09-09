@@ -153,7 +153,7 @@ missing, is it a connection or a place? A catalog or a runtime?
 If it's a connection, go evaluate gateways. Sincerely. Good tooling in that
 space makes the whole ecosystem better.
 
-If it's a place, that's what I built. Signup is invite-gated for now, with a
-waitlist on the signup page: https://kody.codes/signup. Poke at the source first
-if that's more your style. Either way, you'll know your own pain better after
-asking the question than after reading any comparison post, including this one.
+If it's a place, that's what I built. Create a free account at
+https://kody.codes/signup. Poke at the source first if that's more your style.
+Either way, you'll know your own pain better after asking the question than
+after reading any comparison post, including this one.

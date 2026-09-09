@@ -15,10 +15,6 @@ import {
 	type OnboardingFeaturedMcpServer,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
-	type SignupMode,
-	type SignupModeSetting,
-} from '#universal/signup-mode.ts'
-import {
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
@@ -389,7 +385,6 @@ export type AdminInvitesLoaderData = {
 	ok: true
 	invites: Array<AdminInviteListItem>
 	availablePlans: Array<AdminPlanName>
-	signupMode: SignupModeSetting
 }
 
 type AdminReservedUsernameConflict = {
@@ -1850,7 +1845,6 @@ export type AccountEmailLoaderData = {
 type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
-	signupMode: SignupMode
 	turnstileSiteKey: string | null
 }
 
@@ -1937,7 +1931,6 @@ export type AppLoaderData = {
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick
 	onboardingAgentChooser?: OnboardingAgentChooserPick
-	signupMode?: SignupMode
 }
 
 export type AccountBillingLoaderData = {

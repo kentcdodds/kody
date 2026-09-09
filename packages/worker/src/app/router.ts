@@ -276,7 +276,6 @@ import {
 } from '#app/handlers/password-reset.ts'
 import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
-import { createWaitingListHandler } from '#app/handlers/waiting-list.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
@@ -364,7 +363,6 @@ export function createAppRouter(env: Env) {
 			unsubscribeTips: createUnsubscribeTipsHandler(env),
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
-			waitingList: createWaitingListHandler(env),
 			siteBannerDismissPost: createSiteBannerDismissHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
 			account: createAccountHandler(env),

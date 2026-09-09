@@ -4,16 +4,9 @@ import {
 	honeypotFieldName,
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
-import { getSignupMode } from '#universal/signup-mode.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
-	expect(getSignupMode({} as Pick<Env, 'SIGNUP_MODE'>)).toBe('invite')
-	expect(
-		getSignupMode({
-			SIGNUP_MODE: 'open',
-		} as Pick<Env, 'SIGNUP_MODE'>),
-	).toBe('open')
 	expect(
 		getTurnstileSiteKey({
 			TURNSTILE_SITE_KEY: 'site-key',

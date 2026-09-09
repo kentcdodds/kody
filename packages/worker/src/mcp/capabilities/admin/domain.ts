@@ -7,8 +7,6 @@ import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-overrid
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
 import { adminInviteCreateCapability } from './admin-invite-create.ts'
 import { adminInviteListCapability } from './admin-invite-list.ts'
-import { adminSignupModeGetCapability } from './admin-signup-mode-get.ts'
-import { adminSignupModeSetCapability } from './admin-signup-mode-set.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
@@ -56,7 +54,7 @@ import { adminUnverifiedAccountPurgeRunCapability } from './admin-unverified-acc
 export const adminDomain = defineDomain({
 	name: capabilityDomainNames.admin,
 	description:
-		'Admin-only operator tools for accounts, flags, signup gating, maintenance, and community metadata.',
+		'Admin-only operator tools for accounts, flags, maintenance, and community metadata.',
 	keywords: [
 		'admin',
 		'rbac',
@@ -68,7 +66,6 @@ export const adminDomain = defineDomain({
 		'verify',
 		'audit',
 		'feature flags',
-		'signup mode',
 		'invite',
 		'invites',
 		'system email',
@@ -135,8 +132,6 @@ export const adminDomain = defineDomain({
 		adminReservedUsernameListCapability,
 		adminReservedUsernameAddCapability,
 		adminReservedUsernameRemoveCapability,
-		adminSignupModeGetCapability,
-		adminSignupModeSetCapability,
 		adminInviteCreateCapability,
 		adminInviteListCapability,
 		adminSystemEmailListCapability,

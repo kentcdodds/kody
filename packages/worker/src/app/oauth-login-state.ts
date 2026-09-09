@@ -13,7 +13,7 @@ import {
 /**
  * Short-lived signed cookie that carries the social-login round-trip state:
  * the CSRF `state` value, the PKCE code verifier, the post-login redirect
- * target, an optional invite code for production social signup, and optional
+ * target, an optional invite code that can grant a stored plan, and optional
  * first-touch UTM attribution so social sign-in does not drop the query.
  * Written when the flow starts and cleared by the callback.
  */

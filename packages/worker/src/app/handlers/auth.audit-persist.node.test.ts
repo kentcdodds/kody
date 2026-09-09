@@ -64,7 +64,6 @@ function createHandler(appDb: D1Database, auditDb: D1Database) {
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: appDb,
 		AUDIT_DB: auditDb,
-		SIGNUP_MODE: 'invite',
 		SENTRY_ENVIRONMENT: 'production',
 	} as unknown as Parameters<typeof createAuthHandler>[0])
 }

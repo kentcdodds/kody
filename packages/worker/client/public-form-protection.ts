@@ -190,7 +190,7 @@ export async function renderTurnstileWidgets(siteKey: string | null) {
 		api = await loadTurnstileScript()
 	} catch {
 		// Script blocked or CDN blip — expected visitor-environment degradation
-		// (KODY-6D). Auth/waitlist POSTs still surface a server-side protection
+		// (KODY-6D). Auth POSTs still surface a server-side protection
 		// error if the user submits without a token; do not Sentry-noise this.
 		return
 	}

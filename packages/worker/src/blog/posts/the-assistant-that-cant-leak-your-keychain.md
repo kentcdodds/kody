@@ -143,9 +143,8 @@ and the code behind every claim in this post is in
 [the repo](https://github.com/kentcdodds/kody).
 
 If you'd rather own your assistant than rent one,
-[kody.codes/signup](https://kody.codes/signup) is where to start (signup is
-invite-gated right now, and the waitlist is on that page). And whether or not
-Kody is your thing, take the question with you: for every system holding your
-keys, ask whether the safety property is enforced by structure or by hope.
+[kody.codes/signup](https://kody.codes/signup) is where to start. And whether or
+not Kody is your thing, take the question with you: for every system holding
+your keys, ask whether the safety property is enforced by structure or by hope.
 You'll never look at a system prompt that says "never reveal secrets" the same
 way again.

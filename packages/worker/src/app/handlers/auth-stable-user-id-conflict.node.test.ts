@@ -63,12 +63,11 @@ function seedInvite(sqlite: DatabaseSync, code: string) {
 	`)
 }
 
-function createHandler(db: D1Database, signupMode: 'open' | 'invite') {
+function createHandler(db: D1Database) {
 	return createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
 		APP_DB: db,
-		SIGNUP_MODE: signupMode,
-		SENTRY_ENVIRONMENT: signupMode === 'open' ? 'test' : 'production',
+		SENTRY_ENVIRONMENT: 'test',
 	} as unknown as Parameters<typeof createAuthHandler>[0])
 }
 
@@ -97,7 +96,7 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 		username: 'attacker',
 		stableUserId: victimStableUserId,
 	})
-	const openHandler = createHandler(db, 'open')
+	const openHandler = createHandler(db)
 
 	const openResponse = await signup(openHandler, {
 		email: victimEmail,
@@ -124,7 +123,7 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 	)
 
 	seedInvite(sqlite, 'STABLE-ID-INVITE')
-	const inviteHandler = createHandler(db, 'invite')
+	const inviteHandler = createHandler(db)
 	const invitedResponse = await signup(inviteHandler, {
 		email: victimEmail,
 		username: 'victim-invited',

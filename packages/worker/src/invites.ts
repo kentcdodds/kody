@@ -189,7 +189,6 @@ export async function consumeInviteCode(input: {
 export function getInviteFailureMessage(reason: InviteConsumeFailureReason) {
 	switch (reason) {
 		case 'missing':
-			return 'Invite code is required.'
 		case 'not_found':
 			return 'Invite code is invalid.'
 		case 'revoked':

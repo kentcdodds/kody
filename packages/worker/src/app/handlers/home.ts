@@ -13,7 +13,6 @@ import {
 import { loadHomePageOnboardingData } from '#app/onboarding-data.ts'
 import { loadEnabledSiteBannersForSsr } from '#app/site-banner-ssr.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
 import { type routes } from '#universal/routes.ts'
 
@@ -33,12 +32,9 @@ export function createHomeHandler(env: Env) {
 			// Start the banner list with auth so signed-in / (always
 			// no-store) does not pay that D1 after those finish.
 			const listedBanners = loadEnabledSiteBannersForSsr(env)
-			const [signupMode, user] = await Promise.all([
-				resolveSignupMode(env),
-				readAuthenticatedAppUser(request, env, {
-					prefetchFeatureFlags: true,
-				}),
-			])
+			const user = await readAuthenticatedAppUser(request, env, {
+				prefetchFeatureFlags: true,
+			})
 			const onboarding = loadHomePageOnboardingData({
 				env,
 				requestUrl: request.url,
@@ -52,7 +48,6 @@ export function createHomeHandler(env: Env) {
 						loaderData: {
 							onboarding,
 							walkthroughHosts,
-							signupMode,
 						},
 						listedBanners,
 					}),

@@ -858,7 +858,6 @@ test('signup social buttons are icon-only with accessible names', async () => {
 		loaderData: {
 			authProviders: {
 				ok: true,
-				signupMode: 'open',
 				turnstileSiteKey: null,
 				providers: [
 					{ id: 'github', label: 'GitHub' },
@@ -1560,8 +1559,8 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	expect(html).toContain('<summary>')
 	expect(html).toContain('href="/faq">FAQ</a>')
 	expect(html).toContain('data-faq="get-started"')
-	expect(html).toContain('Kody is invite-only')
-	expect(html).toContain('href="/#invite"')
+	expect(html).toContain('Create a free account from')
+	expect(html).toContain('href="/signup"')
 })
 
 test('renderAppPage renders the public support page for anonymous visitors', async () => {

@@ -13,7 +13,6 @@ import {
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
-import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import {
@@ -22,12 +21,7 @@ import {
 	landingHeroHeadlineLead,
 	landingHeroHeadlineRest,
 } from '#universal/landing-hero-copy.ts'
-import {
-	publicCreateAccountLabel,
-	publicHaveCodeLabel,
-	publicJoinWaitlistLabel,
-} from '#universal/public-signup-copy.ts'
-import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
+import { publicCreateAccountLabel } from '#universal/public-signup-copy.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
@@ -36,7 +30,6 @@ import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingByokDemo } from './landing-byok-demo.tsx'
 import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
-import { WaitlistForm } from './landing-waitlist-form.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
@@ -131,13 +124,9 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [onboarding, authConfig] = await Promise.all([
-		fetchOnboardingPayload(signal),
-		fetchPublicAuthConfig(signal),
-	])
+	const onboarding = await fetchOnboardingPayload(signal)
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
-	result.signupMode = parseSignupMode(authConfig?.signupMode)
 	result.walkthroughHosts = pickWalkthroughHosts()
 	return result
 }
@@ -145,14 +134,12 @@ export async function homeRouteLoader(
 type HomePagePayloads = {
 	onboarding: OnboardingPayload | null
 	walkthroughHosts?: WalkthroughHostPick
-	signupMode?: SignupMode
 }
 
 export function HomeRoute(handle: Handle) {
 	let loggedIn = false
 	let discoveryPrompt = ''
 	let walkthroughHosts: WalkthroughHostPick | null = null
-	let signupMode: SignupMode = 'invite'
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: HomePagePayloads | null = null
 	const homeData = createRouteData<'onboarding', HomePagePayloads>({
@@ -160,31 +147,20 @@ export function HomeRoute(handle: Handle) {
 			if (!isHomePath(href)) return null
 			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
-			const signupModeData = tryConsumeRouteLoaderData(
-				handle,
-				'signupMode',
-				href,
-			)
 			// Optional keys stand on their own; apply them even when the
 			// required onboarding key is missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			if (signupModeData) signupMode = signupModeData
 			if (!onboarding) return null
 			return {
 				onboarding,
 				walkthroughHosts: hosts,
-				signupMode: signupModeData,
 			}
 		},
 		async load(_href, signal) {
-			const [onboarding, authConfig] = await Promise.all([
-				fetchOnboardingPayload(signal),
-				fetchPublicAuthConfig(signal),
-			])
+			const onboarding = await fetchOnboardingPayload(signal)
 			return {
 				onboarding,
 				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
-				signupMode: parseSignupMode(authConfig?.signupMode),
 			}
 		},
 	})
@@ -196,7 +172,6 @@ export function HomeRoute(handle: Handle) {
 
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
-		if (payload.signupMode) signupMode = payload.signupMode
 		applyOnboardingPayload(payload.onboarding)
 	}
 
@@ -230,18 +205,12 @@ export function HomeRoute(handle: Handle) {
 							style={{ '--rise': '2' }}
 							class="landing-hero-actions"
 						>
-							{signupMode === 'open' ? (
-								<a
-									href={homepageSignupPath}
-									class="landing-pill landing-hero-cta"
-								>
-									{publicCreateAccountLabel}
-								</a>
-							) : (
-								<a href="#invite" class="landing-pill landing-hero-cta">
-									{publicJoinWaitlistLabel}
-								</a>
-							)}
+							<a
+								href={homepageSignupPath}
+								class="landing-pill landing-hero-cta"
+							>
+								{publicCreateAccountLabel}
+							</a>
 							{discoveryPrompt ? (
 								<span class="landing-hero-cta landing-hero-copy">
 									<CopyTextButton
@@ -511,7 +480,7 @@ export function HomeRoute(handle: Handle) {
 								</a>
 							</p>
 						</div>
-					) : signupMode === 'open' ? (
+					) : (
 						<div>
 							<p class="landing-invite-lead">
 								Create a free account and connect the agent you already use.
@@ -522,19 +491,6 @@ export function HomeRoute(handle: Handle) {
 								</a>
 							</p>
 						</div>
-					) : (
-						<>
-							<p class="landing-invite-lead">
-								Invite-only while we grow the eucalyptus. Join the waiting list,
-								or jump the queue with a code.
-							</p>
-							<WaitlistForm />
-							<p class="landing-invite-code">
-								<a href={homepageSignupPath} class="landing-code-link">
-									{publicHaveCodeLabel}
-								</a>
-							</p>
-						</>
 					)}
 				</section>
 			</div>

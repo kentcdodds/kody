@@ -1,6 +1,6 @@
 /**
  * Exist-only Kit subscriber sync. Never creates Kit subscribers from account
- * events — waitlist joins stay on {@link subscribeToKitWaitlist}. Account
+ * events. Account
  * lifecycle only adds/removes tags when the email already exists in Kit.
  */
 

@@ -143,9 +143,8 @@ nothing.
 
 ## Your move
 
-Signup is invite-gated right now, but there's a waitlist right on the signup
-page: https://kody.codes/signup. If you'd rather kick the tires on the code
-first, it's all at https://github.com/kentcdodds/kody.
+Create a free account at https://kody.codes/signup. If you'd rather kick the
+tires on the code first, it's all at https://github.com/kentcdodds/kody.
 
 Either way, start noticing what your assistant accumulates that's worth keeping.
 Once you see it, you won't want to leave it locked inside somebody else's agent.

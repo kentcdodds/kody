@@ -103,10 +103,10 @@ pick one provider you actually use, follow the
 [OAuth guide](https://kody.codes/docs/oauth) to create your app, and connect it.
 After the first one, the second takes half the time.
 
-Kody is invite-gated right now, so if you're not in yet,
-[join the waitlist on the signup page](https://kody.codes/signup). The whole
-thing is [Fair Source](https://github.com/kentcdodds/kody) if you want to verify
-any of this yourself, which, given the subject of this post, seems fitting.
+If you don't have an account yet,
+[create one at kody.codes/signup](https://kody.codes/signup). The whole thing is
+[Fair Source](https://github.com/kentcdodds/kody) if you want to verify any of
+this yourself, which, given the subject of this post, seems fitting.
 
 A few minutes of setup, and the door into your own data has your name on it.
 That's the feature.

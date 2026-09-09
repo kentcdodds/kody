@@ -188,8 +188,8 @@ lid closes, add Executor's MCP server to Kody with code mode off.
 
 Executor lives at [executor.sh](https://executor.sh), with source at
 [github.com/UsefulSoftwareCo/executor](https://github.com/UsefulSoftwareCo/executor).
-Kody is invite-gated right now, with a waitlist on
-[kody.codes/signup](https://kody.codes/signup), and the source is at
+Create a free Kody account at [kody.codes/signup](https://kody.codes/signup).
+The source is at
 [github.com/kentcdodds/kody](https://github.com/kentcdodds/kody).
 
 Connect the gateway to the runtime. Leave one `execute`. That's the stack.

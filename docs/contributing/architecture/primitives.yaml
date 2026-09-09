@@ -140,8 +140,6 @@ primitives:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
       - packages/worker/src/app/handlers/auth-provider.ts
-      - packages/worker/src/app/handlers/waiting-list.ts
-      - packages/worker/src/app/kit-waitlist.ts
       - packages/worker/src/app/kit-signup.ts
       - packages/worker/src/kit/subscriber-sync.ts
       - packages/worker/src/app/kit-subscriber-sync.ts
@@ -154,7 +152,6 @@ primitives:
       - packages/worker/src/app/handlers/account-two-factor.ts
       - packages/worker/src/app/handlers/account-passkeys.ts
       - packages/worker/src/invites.ts
-      - packages/worker/src/signup-mode-setting.ts
       - packages/worker/src/app/email-verification.ts
       - packages/worker/src/app/onboarding-data.ts
       - packages/worker/src/app/two-factor.ts

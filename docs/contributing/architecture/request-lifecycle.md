@@ -354,11 +354,11 @@ while that Y is still unreachable, so a clamped early `scrollTo` cannot
 overwrite the intended position. `history.scrollRestoration` is `manual` so the
 browser does not fight the restorer. SPA back/forward still restores the saved
 position, hash targets scroll into view, and new navigations go to the top after
-the destination route commits. Same-document hash links (for example the landing
-page's `#invite` waitlist CTA) are intercepted like other same-origin links so
-restoration can scroll to the target. Preserve the current scroll for a specific
-intercepted link or form with `data-prevent-scroll-reset`, or for programmatic
-navigation with `navigate(to, { preventScrollReset: true })`.
+the destination route commits. Same-document hash links are intercepted like
+other same-origin links so restoration can scroll to the target. Preserve the
+current scroll for a specific intercepted link or form with
+`data-prevent-scroll-reset`, or for programmatic navigation with
+`navigate(to, { preventScrollReset: true })`.
 
 Full page navigations occur for:
 

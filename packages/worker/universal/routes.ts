@@ -258,7 +258,6 @@ export const routes = route({
 	unsubscribeTips: '/unsubscribe/tips',
 	pendingVerification: '/pending-verification',
 	signup: '/signup',
-	waitingList: post('/waiting-list'),
 	account: '/account',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),

@@ -1,19 +1,10 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { reveal } from '#client/reveal.ts'
-import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { formatMinJobInterval, planLimits } from '#universal/plans.ts'
-import {
-	publicInviteSignupHref,
-	publicSignupHref,
-	publicWaitlistHref,
-	publicWaitlistSignupHref,
-} from '#universal/public-signup-copy.ts'
+import { publicSignupHref } from '#universal/public-signup-copy.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { parseSignupMode, type SignupMode } from '#universal/signup-mode.ts'
 import {
 	layoutMaxWidths,
 	nativeDisclosureCss,
@@ -228,7 +219,7 @@ const faqItems: ReadonlyArray<FaqItem> = [
 	},
 ]
 
-function renderGetStartedAnswer(signupMode: SignupMode) {
+function renderGetStartedAnswer() {
 	return (
 		<>
 			<p>
@@ -236,71 +227,30 @@ function renderGetStartedAnswer(signupMode: SignupMode) {
 				Then open <a href={routes.onboarding.href()}>Get started</a>, pick the
 				agent you want to connect, and complete OAuth.
 			</p>
-			{renderGetStartedSignupGuidance(signupMode)}
+			<p>
+				Create a free account from <a href={publicSignupHref}>Sign up</a>.
+			</p>
 		</>
 	)
 }
 
-function renderGetStartedSignupGuidance(signupMode: SignupMode) {
-	switch (signupMode) {
-		case 'open':
-			return (
-				<p>
-					Create a free account from <a href={publicSignupHref}>Sign up</a>.
-				</p>
-			)
-		case 'invite':
-			return (
-				<p>
-					Kody is invite-only. If you have a code, open{' '}
-					<a href={publicSignupHref}>Sign up</a>. Without a code you can join
-					the waiting list from the <a href={publicWaitlistHref}>home page</a>.
-				</p>
-			)
-		case 'waitlist':
-			return (
-				<p>
-					Join the waiting list from{' '}
-					<a href={publicWaitlistSignupHref}>Sign up</a>. If you have a code,{' '}
-					<a href={publicInviteSignupHref}>redeem it</a>.
-				</p>
-			)
-		default: {
-			const exhaustive: never = signupMode
-			return exhaustive
-		}
-	}
-}
-
-function getFaqItems(signupMode: SignupMode): ReadonlyArray<FaqItem> {
+function getFaqItems(): ReadonlyArray<FaqItem> {
 	return [
 		...faqItems,
 		{
 			id: 'get-started',
 			question: 'How do I get started?',
-			answer: renderGetStartedAnswer(signupMode),
+			answer: renderGetStartedAnswer(),
 		},
 	]
 }
 
-export async function faqRouteLoader(
-	_url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const config = await fetchPublicAuthConfig(signal)
-	return { signupMode: parseSignupMode(config?.signupMode) }
+export async function faqRouteLoader(): Promise<RouteLoaderResult> {
+	return {}
 }
 
 export function FaqRoute(handle: Handle) {
-	let signupMode: SignupMode = 'invite'
 	return () => {
-		const href = readCurrentRouterHref(handle)
-		const loadedSignupMode = tryConsumeRouteLoaderData(
-			handle,
-			'signupMode',
-			href,
-		)
-		if (loadedSignupMode) signupMode = loadedSignupMode
 		return (
 			<section mix={css(faqCss)}>
 				<header mix={css(pageHeadCss)}>
@@ -313,7 +263,7 @@ export function FaqRoute(handle: Handle) {
 				</header>
 
 				<div mix={css(faqListCss)}>
-					{getFaqItems(signupMode).map((item, index) => (
+					{getFaqItems().map((item, index) => (
 						<details
 							key={item.id}
 							data-faq={item.id}

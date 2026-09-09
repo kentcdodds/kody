@@ -113,6 +113,6 @@ cover the details, and the whole platform is
 [Fair Source](https://github.com/kentcdodds/kody) if you want to go deeper than
 that.
 
-Kody is invite-gated right now, so if you don't have an account yet,
-[join the waitlist on the signup page](https://kody.codes/signup). And once
-you're in: don't stop at rung one. The code is yours. Read it.
+If you don't have an account yet,
+[create one at kody.codes/signup](https://kody.codes/signup). And once you're
+in: don't stop at rung one. The code is yours. Read it.

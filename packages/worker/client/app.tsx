@@ -48,7 +48,6 @@ import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
-import { WaitlistBanner } from './waitlist-banner.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
 import {
 	captureFirstTouchAttributionFromLocation,
@@ -203,8 +202,8 @@ export function App(handle: Handle<AppProps>) {
 		const loginHref = buildAuthLink('/login', oauthRedirectTo)
 		// Redesigned pages own their own layout (gutters, measures, max-width
 		// container), so `<main>` must not add its generic padding on top. The
-		// landing page also owns its own waitlist close (the "Give your agents
-		// a home" section), so the compact strip would double up there.
+		// landing page also owns its own signup close (the "Give your agents
+		// a home" section).
 		const isRedesignedMarketingPath =
 			currentPathname === '/' ||
 			currentPathname === '/pricing' ||
@@ -227,17 +226,8 @@ export function App(handle: Handle<AppProps>) {
 		// that already does), so `<main>` must not pad it — the generic padding
 		// stacks on the route's own and pushes it in past the site header. Kept
 		// separate from the marketing predicate: only the padding changes, the
-		// waitlist banner still belongs on these pages.
 		const routeOwnsItsGutters =
 			isRedesignedMarketingPath || isPackageFilesPathname(currentPathname)
-		const hideWaitlistBanner =
-			!showAuthLinks ||
-			isRedesignedMarketingPath ||
-			currentPathname === '/signup' ||
-			currentPathname === '/login' ||
-			currentPathname === '/oauth/authorize' ||
-			currentPathname === '/connect/oauth' ||
-			currentPathname === '/connect/secrets'
 
 		return (
 			<AppLoaderDataProvider loaderData={handle.props.loaderData}>
@@ -284,7 +274,6 @@ export function App(handle: Handle<AppProps>) {
 							Skip to content
 						</a>
 						<SiteBanner snapshot={handle.props.loaderData?.siteBanner} />
-						{hideWaitlistBanner ? null : <WaitlistBanner />}
 						{isAuthShellPath ? null : (
 							<SiteHeader
 								loggedIn={isLoggedIn}

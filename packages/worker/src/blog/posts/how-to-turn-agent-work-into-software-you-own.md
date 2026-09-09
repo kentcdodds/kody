@@ -144,8 +144,7 @@ a tweak after the first real run. A job you forgot about is still code running
 on your behalf, which is why I wanted these to be packages you can open, not
 toggles in someone else's dashboard.
 
-Signup is invite-gated; the waitlist is on
-[kody.codes/signup](https://kody.codes/signup). The source is
-[Fair Source](https://github.com/kentcdodds/kody).
+Create a free account at [kody.codes/signup](https://kody.codes/signup). The
+source is [Fair Source](https://github.com/kentcdodds/kody).
 
 You already know the question. Ask it once. Keep the software.

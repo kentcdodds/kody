@@ -41,8 +41,7 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					Kody processes personal data to perform the contract for account and
 					assistant features, on legitimate interests for security, abuse
-					prevention, and analytics, and with consent for the waiting list and
-					product email.
+					prevention, and analytics, and with consent for product email.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Data is processed in the United States on Cloudflare&apos;s network.
@@ -377,8 +376,8 @@ export function PrivacyRoute(_handle: Handle) {
 					</li>
 					<li>Stripe — paid subscriptions, billing, and payment records</li>
 					<li>
-						Kit — waitlist and product email subscriptions when you submit your
-						email for those purposes
+						Kit — product email subscriptions when you submit your email for
+						those purposes
 					</li>
 					<li>
 						Sentry — application error reporting and operational diagnostics

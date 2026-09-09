@@ -70,7 +70,6 @@ import {
 	verifyPublicFormProtection,
 } from '#app/public-form-protection.ts'
 import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
-import { resolveSignupMode } from '#app/signup-mode-setting.ts'
 import {
 	firstTouchAttributionCreateFields,
 	hasFirstTouchAttribution,
@@ -191,7 +190,6 @@ function inviteFailureToOauthError(
 ): OauthLoginErrorCode {
 	switch (reason) {
 		case 'missing':
-			return 'invite-required'
 		case 'not_found':
 			return 'invite-invalid'
 		case 'revoked':
@@ -213,7 +211,6 @@ export function createAuthProvidersApiHandler(env: Env) {
 		async handler() {
 			return jsonResponse({
 				ok: true,
-				signupMode: await resolveSignupMode(env),
 				turnstileSiteKey: getTurnstileSiteKey(env),
 				providers: getEnabledOauthProviders(env).map((provider) => ({
 					id: provider,
@@ -733,10 +730,8 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				})
 			}
 
-			// 4. New account. Production requires a valid invite carried in the
-			// signed OAuth state cookie (started from the invite signup panel).
-			// Non-production stays open without an invite, but still consumes
-			// one when supplied — same posture as password signup.
+			// 4. New account. An optional invite code in the signed OAuth
+			// state cookie still grants the stored plan when supplied.
 			let consumedInviteCode: string | null = null
 			let consumedInvitePlan: PlanName | null = null
 			async function releaseConsumedInvite() {
@@ -749,9 +744,8 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				consumedInvitePlan = null
 			}
 
-			const inviteRequired = (await resolveSignupMode(env)) !== 'open'
 			const inviteCodeFromState = loginState.inviteCode
-			if (inviteRequired || normalizeInviteCode(inviteCodeFromState)) {
+			if (normalizeInviteCode(inviteCodeFromState)) {
 				const inviteResult = await consumeInviteCode({
 					db: env.APP_DB,
 					code: inviteCodeFromState,
@@ -890,7 +884,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				}
 			}
 
-			// Best-effort: if this email is already in Kit (e.g. waitlist),
+			// Best-effort: if this email is already in Kit,
 			// add signed_up::kody without removing other tags.
 			await maybeTagKitSubscriberOnSignup({
 				env,

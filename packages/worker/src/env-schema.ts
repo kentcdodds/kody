@@ -5,7 +5,6 @@ import {
 	string,
 	type InferOutput,
 } from 'remix/data-schema'
-import { signupModes, type SignupMode } from '#universal/signup-mode.ts'
 
 const d1DatabaseSchema = createSchema<unknown, D1Database>((value, context) => {
 	if (value) {
@@ -71,17 +70,6 @@ const optionalNonEmptyStringSchema = createSchema<unknown, string | undefined>(
 		return { value: trimmed.length > 0 ? trimmed : undefined }
 	},
 )
-
-const signupModeSchema = createSchema<unknown, SignupMode>((value, context) => {
-	if (value === undefined || value === '') return { value: 'invite' }
-	if (typeof value === 'string' && signupModes.includes(value as SignupMode)) {
-		return { value: value as SignupMode }
-	}
-	return fail(
-		`SIGNUP_MODE must be one of: ${signupModes.join(', ')}`,
-		context.path,
-	)
-})
 
 const optionalUrlStringSchema = createSchema<unknown, string | undefined>(
 	(value, context) => {
@@ -218,9 +206,6 @@ export const EnvSchema = object({
 	// (/mcp, OAuth, well-known, webhooks, email) are never redirected. Leave
 	// unset to dual-serve legacy hosts without redirecting browser navigation.
 	APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
-	// Public account creation posture. `invite` is the safe default; switching
-	// to `open` is an explicit deployment configuration change.
-	SIGNUP_MODE: signupModeSchema,
 	// Turnstile remains disabled unless both keys are configured, preserving
 	// local development, preview deployments, and tests.
 	TURNSTILE_SITE_KEY: optionalNonEmptyStringSchema,
@@ -316,14 +301,10 @@ export const EnvSchema = object({
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,
 	JOB_REINDEX_SECRET: optionalNonEmptyStringSchema,
-	// Kit (kit.com) waitlist — optional; production waiting-list submits fail
-	// closed without KIT_API_KEY. Non-production skips Kit when unset.
-	// Account signup also uses KIT_API_KEY to best-effort tag existing Kit
-	// subscribers with signed_up::kody (never creates subscribers; never fails
-	// signup when Kit is unset or errors).
+	// Kit (kit.com) — optional. Account signup uses KIT_API_KEY to best-effort
+	// tag existing Kit subscribers with signed_up::kody (never creates
+	// subscribers; never fails signup when Kit is unset or errors).
 	KIT_API_KEY: optionalNonEmptyStringSchema,
-	KIT_WAITLIST_TAG_ID: optionalNonEmptyStringSchema,
-	KIT_WAITLIST_SEQUENCE_ID: optionalNonEmptyStringSchema,
 	KIT_SIGNED_UP_TAG_ID: optionalNonEmptyStringSchema,
 	// Stripe billing — optional; when STRIPE_SECRET_KEY is unset, billing
 	// surfaces render a "not configured" notice and sync/cron/portal skip.
