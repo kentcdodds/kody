@@ -75,9 +75,11 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	expect(html).toContain(
 		'Railway health checks land in Discord, a personal task list replaced the Notion notes I always lost',
 	)
-	expect(html).toMatch(
-		/<div class="landing-testimonial-identity">[\s\S]*?Gabriel Alegría/,
+	expect(html).toContain('src="/images/testimonials/gabriel-alegria.webp"')
+	expect(html).toContain(
+		'href="https://www.linkedin.com/in/gabriel-alegria-mx"',
 	)
+	expect(html).not.toContain('landing-testimonial-initials')
 })
 
 test('early-users blog post SSR renders approved vignettes and heading anchors', async () => {

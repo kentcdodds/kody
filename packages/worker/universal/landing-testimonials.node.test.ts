@@ -96,8 +96,8 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	expect(testimonialStoryHref(gabriel)).toBe(
 		'/blog/early-kody-users#gabriel-alegria',
 	)
-	expect(gabriel.photo).toBeNull()
-	expect(gabriel.href).toBeNull()
+	expect(gabriel.photo).toBe('/images/testimonials/gabriel-alegria.webp')
+	expect(gabriel.href).toBe('https://www.linkedin.com/in/gabriel-alegria-mx')
 	expect(testimonialStoryHref({})).toBeNull()
 	expect(
 		landingTestimonials
