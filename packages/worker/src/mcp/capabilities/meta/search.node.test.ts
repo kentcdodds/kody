@@ -225,6 +225,10 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			type: 'capability',
 			entityRef: 'search_docs:capability',
 		}),
+		expect.objectContaining({
+			type: 'guide',
+			entityRef: 'search_and_execute:guide',
+		}),
 	])
 
 	const unauthenticated = await searchCapability.handler(
