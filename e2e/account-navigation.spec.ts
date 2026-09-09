@@ -48,9 +48,16 @@ async function clickThroughSections(
 
 test('account section switches keep the current page on screen (no loading flash, no refetch)', async ({
 	page,
+	seedE2eUser,
 	login,
 }) => {
-	await login()
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `account-nav-${runId}@example.com`,
+		username: `account-nav-${runId}`,
+		password: 'account-nav-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/jobs')
 	await waitForClientHydration(page)
 	await expect(
