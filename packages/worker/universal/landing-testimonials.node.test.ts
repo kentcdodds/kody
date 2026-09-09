@@ -98,6 +98,18 @@ test('carousel story links opt in only when a vignette heading exists', () => {
 	)
 	expect(gabriel.photo).toBe('/images/testimonials/gabriel-alegria.webp')
 	expect(gabriel.href).toBe('https://www.linkedin.com/in/gabriel-alegria-mx')
+	const erik = landingTestimonials.find(
+		(entry) => entry.name === 'Erik Rasmussen',
+	)
+	if (!erik) {
+		throw new Error('expected Erik Rasmussen testimonial')
+	}
+	expect(erik.quote).toBe(
+		'Kody rocks. Been a user for several hours now and will convert to paid.',
+	)
+	expect(erik.photo).toBe('/images/testimonials/erik-rasmussen.webp')
+	expect(erik.href).toBe('https://x.com/erikras/status/2097720067316203941')
+	expect(testimonialStoryHref(erik)).toBeNull()
 	expect(testimonialStoryHref({})).toBeNull()
 	expect(
 		landingTestimonials
