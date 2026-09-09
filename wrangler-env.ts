@@ -22,6 +22,7 @@ import {
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { patchWranglerProxyWorkerErrors } from './tools/patch-wrangler-proxy-worker-errors.ts'
+import { runWranglerDeployWithRetry } from './tools/wrangler-deploy-retry.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -268,6 +269,15 @@ const wranglerCommand =
 // workers-sdk#14926: one ProxyWorker fetch failure must not exit `wrangler
 // dev`. Apply the pending upstream exemption before every local launch.
 patchWranglerProxyWorkerErrors()
+
+if (args[0] === 'deploy') {
+	const deployResult = await runWranglerDeployWithRetry({
+		command: wranglerCommand,
+		args: commandArgs,
+		env: processEnv,
+	})
+	process.exit(deployResult.status)
+}
 
 const proc = spawnChildProcess(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],

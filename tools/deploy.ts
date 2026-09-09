@@ -13,6 +13,7 @@ import {
 	readConfigFlag,
 	readNameFlag,
 } from './origin-worker-config.ts'
+import { runWranglerDeployWithRetry } from './wrangler-deploy-retry.ts'
 
 function run(
 	command: string,
@@ -129,10 +130,15 @@ export async function deploy(args: ReadonlyArray<string>) {
 		originViteWranglerConfigPath,
 		`${JSON.stringify(emittedConfig, null, '\t')}\n`,
 	)
-	run(resolveWranglerCommand(), originViteDeployArgs(args, workerName), {
-		...process.env,
-		...(cloudflareEnv ? { CLOUDFLARE_ENV: cloudflareEnv } : {}),
+	const result = await runWranglerDeployWithRetry({
+		command: resolveWranglerCommand(),
+		args: originViteDeployArgs(args, workerName),
+		env: {
+			...process.env,
+			...(cloudflareEnv ? { CLOUDFLARE_ENV: cloudflareEnv } : {}),
+		},
 	})
+	if (result.status !== 0) process.exit(result.status)
 }
 
 if (isExecutedDirectly(import.meta.url)) {
