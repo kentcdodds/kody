@@ -962,11 +962,12 @@ const codeCss = {
 	// (plaintext before the Shiki chunk resolves, or an oversized file) gets
 	// the same gutters as highlighted lines.
 	//
-	// Grid + min-width: 100% sizes `code` to the longest line (and at least
-	// the pane). Each `.line` stretches to that column so hover paint covers
-	// the full scroll width, not just the tokens on that row.
+	// `fit-content` + min-width: 100% sizes `code` to the longest line (and
+	// at least the pane). Block `.line` children stretch to that box so
+	// hover paint covers the full scroll width, not just the tokens.
 	'& code': {
-		display: 'grid',
+		display: 'block',
+		width: 'fit-content',
 		minWidth: '100%',
 		paddingInline: spacing.md,
 		counterReset: 'package-file-line',
