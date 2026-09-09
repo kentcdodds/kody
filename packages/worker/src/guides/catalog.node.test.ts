@@ -97,6 +97,12 @@ test('docs nav covers every advertised doc exactly once and nothing else', () =>
 	expect(new Set(navSlugs).size).toBe(navSlugs.length)
 	expect(navSlugs[0]).toBe(docsIntroSlug)
 	expect(getIntroGuide().slug).toBe(docsIntroSlug)
+	expect(docsNav[0]?.items.map((item) => item.slug)).toEqual([
+		'what-is-kody',
+		'search-and-execute',
+		'how-kody-works',
+		'kody-factory',
+	])
 
 	const advertised = listGuides().map((guide) => guide.slug)
 	expect([...navSlugs].toSorted()).toEqual([...advertised].toSorted())

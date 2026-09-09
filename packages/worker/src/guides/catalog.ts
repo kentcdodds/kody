@@ -15,6 +15,7 @@ import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
 import firstWin from '../../../../docs/guides/first-win.md'
 import howKodyWorks from '../../../../docs/guides/how-kody-works.md'
+import searchAndExecute from '../../../../docs/guides/search-and-execute.md'
 import googleOauth from '../../../../docs/guides/google-oauth.md'
 import kodyFactory from '../../../../docs/guides/kody-factory.md'
 import localMcpTunnels from '../../../../docs/guides/local-mcp-tunnels.md'
@@ -61,6 +62,7 @@ import portability from '../../../../docs/guides/portability.md'
  */
 const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'what-is-kody', raw: whatIsKody },
+	{ slug: 'search-and-execute', raw: searchAndExecute },
 	{ slug: 'how-kody-works', raw: howKodyWorks },
 	{ slug: 'kody-factory', raw: kodyFactory },
 	{ slug: 'connect-your-agent', raw: connectYourAgent },

@@ -44,9 +44,11 @@ export const docsNav: ReadonlyArray<DocsNavSection> = [
 	{
 		id: 'introduction',
 		label: 'Introduction',
-		description: 'What Kody is, what your agents share, and the loop it runs.',
+		description:
+			'What Kody is, the two MCP tools, and the loop those tools run.',
 		items: [
 			{ slug: 'what-is-kody', label: 'What is Kody?' },
+			{ slug: 'search-and-execute', label: 'Search and execute' },
 			{ slug: 'how-kody-works', label: 'How Kody works' },
 			{ slug: 'kody-factory', label: 'The factory map' },
 		],

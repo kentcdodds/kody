@@ -36,7 +36,7 @@ test('docs shell treats /docs/connect as the providers section', async () => {
 
 test('docs pager omits empty placeholders and links neighbors', async () => {
 	const first = await renderToString(renderDocsPager(docsIntroSlug))
-	expect(first).toContain('href="/docs/how-kody-works"')
+	expect(first).toContain('href="/docs/search-and-execute"')
 	expect(first).not.toContain('<span></span>')
 	expect(first).not.toContain('Previous')
 
