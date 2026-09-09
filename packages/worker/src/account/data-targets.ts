@@ -126,12 +126,6 @@ export const accountOperatorOwnedD1Surfaces = [
 			'Platform-owned storage-bucket inventory cursor across RepoSessionIndex owners (one singleton row). Not user data; account deletion does not touch it.',
 	},
 	{
-		table: 'fleet_execute_days',
-		surface: 'fleet_execute_days',
-		reason:
-			'Platform-owned UTC-day fleet execute totals for the homepage ticker. No user_id; account deletion and export must not touch it.',
-	},
-	{
 		table: 'site_banners',
 		surface: 'site_banners',
 		reason:

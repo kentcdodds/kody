@@ -19,14 +19,6 @@ forked or rated a deliberately public community listing and when, plus rating
 scores. This boundary never exposes forked package source, rating notes,
 secrets, or unrelated account content.
 
-The homepage code-runs ticker is a fifth narrow exception. Anonymous visitors
-and signed-in users see the same delayed fleet total: cumulative `execute`
-counts through completed UTC days, with no user ids. The official
-`{ start, end, updateAt }` triple lives at the platform KV key
-`public-code-runs:v2`. Homepage GET may fill that cache from D1 when the key is
-missing or `updateAt` has passed; it does not persist a high-water mark. See
-[Usage metering](./usage-metering.md).
-
 For browser and MCP authentication mechanics, see
 [Authentication](./authentication.md).
 

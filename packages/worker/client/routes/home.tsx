@@ -12,9 +12,6 @@ import {
 } from '#client/routes/onboarding-payload.ts'
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
-import { CodeRunsTicker } from '#client/code-runs-ticker.tsx'
-import { fetchCodeRunsPayload } from '#client/routes/code-runs-payload.ts'
-import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
@@ -134,14 +131,12 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [onboarding, codeRuns, authConfig] = await Promise.all([
+	const [onboarding, authConfig] = await Promise.all([
 		fetchOnboardingPayload(signal),
-		fetchCodeRunsPayload(signal),
 		fetchPublicAuthConfig(signal),
 	])
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
-	if (codeRuns) result.codeRuns = codeRuns
 	result.signupMode = parseSignupMode(authConfig?.signupMode)
 	result.walkthroughHosts = pickWalkthroughHosts()
 	return result
@@ -149,7 +144,6 @@ export async function homeRouteLoader(
 
 type HomePagePayloads = {
 	onboarding: OnboardingPayload | null
-	codeRuns: { window: PublicCodeRunsWindow | null } | null
 	walkthroughHosts?: WalkthroughHostPick
 	signupMode?: SignupMode
 }
@@ -157,7 +151,6 @@ type HomePagePayloads = {
 export function HomeRoute(handle: Handle) {
 	let loggedIn = false
 	let discoveryPrompt = ''
-	let codeRunsWindow: PublicCodeRunsWindow | null = null
 	let walkthroughHosts: WalkthroughHostPick | null = null
 	let signupMode: SignupMode = 'invite'
 	/** Payload last applied to the closure state above. */
@@ -166,36 +159,30 @@ export function HomeRoute(handle: Handle) {
 		consume(handle, href) {
 			if (!isHomePath(href)) return null
 			const onboarding = tryConsumeRouteLoaderData(handle, 'onboarding', href)
-			const codeRuns = tryConsumeRouteLoaderData(handle, 'codeRuns', href)
 			const hosts = tryConsumeRouteLoaderData(handle, 'walkthroughHosts', href)
 			const signupModeData = tryConsumeRouteLoaderData(
 				handle,
 				'signupMode',
 				href,
 			)
-			// The optional keys stand on their own (a document may embed the
-			// ticker window without an onboarding payload); apply them even
-			// when the required key is missing and the fallback fetch runs.
+			// Optional keys stand on their own; apply them even when the
+			// required onboarding key is missing and the fallback fetch runs.
 			if (hosts) walkthroughHosts = hosts
-			applyCodeRunsPayload(codeRuns ?? null)
 			if (signupModeData) signupMode = signupModeData
 			if (!onboarding) return null
 			return {
 				onboarding,
-				codeRuns: codeRuns ?? null,
 				walkthroughHosts: hosts,
 				signupMode: signupModeData,
 			}
 		},
 		async load(_href, signal) {
-			const [onboarding, codeRuns, authConfig] = await Promise.all([
+			const [onboarding, authConfig] = await Promise.all([
 				fetchOnboardingPayload(signal),
-				fetchCodeRunsPayload(signal),
 				fetchPublicAuthConfig(signal),
 			])
 			return {
 				onboarding,
-				codeRuns,
 				walkthroughHosts: walkthroughHosts ?? pickWalkthroughHosts(),
 				signupMode: parseSignupMode(authConfig?.signupMode),
 			}
@@ -207,16 +194,8 @@ export function HomeRoute(handle: Handle) {
 		discoveryPrompt = payload?.discoveryPrompt ?? ''
 	}
 
-	function applyCodeRunsPayload(
-		payload: { window: PublicCodeRunsWindow | null } | null,
-	) {
-		if (!payload) return
-		codeRunsWindow = payload.window
-	}
-
 	function applyHomePayload(payload: HomePagePayloads) {
 		if (payload.walkthroughHosts) walkthroughHosts = payload.walkthroughHosts
-		applyCodeRunsPayload(payload.codeRuns)
 		if (payload.signupMode) signupMode = payload.signupMode
 		applyOnboardingPayload(payload.onboarding)
 	}
@@ -245,7 +224,6 @@ export function HomeRoute(handle: Handle) {
 						{landingHeroHeadlineRest}
 					</h1>
 					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
-					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					{isSignedIn ? null : (
 						<div
 							data-rise

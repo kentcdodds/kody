@@ -787,51 +787,6 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-.landing-hero-runs {
-	margin: 0.85rem auto 0;
-	display: grid;
-	justify-items: center;
-	row-gap: 0.28rem;
-	font-size: clamp(1.3rem, 2.2vw, 1.65rem);
-	color: var(--color-text-muted);
-}
-
-.landing-hero-runs-line {
-	display: flex;
-	align-items: baseline;
-	justify-content: center;
-	column-gap: 0.45em;
-	white-space: nowrap;
-}
-
-.landing-hero-runs-count {
-	display: inline-block;
-	box-sizing: content-box;
-	min-width: var(--runs-ch, 1ch);
-	text-align: end;
-	font-family: var(--font-mono);
-	font-weight: 600;
-	font-variant-numeric: tabular-nums lining-nums;
-	font-feature-settings:
-		'tnum' 1,
-		'lnum' 1;
-	color: var(--color-text);
-}
-
-.landing-hero-runs-label {
-	font-weight: 500;
-}
-
-.landing-hero-runs-caption {
-	max-width: 28ch;
-	font-size: 0.82rem;
-	font-weight: 500;
-	line-height: 1.35;
-	text-wrap: pretty;
-	text-align: center;
-	color: var(--color-text-muted);
-}
-
 .landing-hero-actions {
 	margin-top: 2.2rem;
 	display: flex;

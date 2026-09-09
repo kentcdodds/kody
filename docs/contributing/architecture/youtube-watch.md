@@ -48,8 +48,8 @@ Failed playlist fetches fail open: env extra ids and banner hrefs still work.
 SSR documents without `?youtubeId=` skip the playlist fetch. They still merge
 env extras, the sample id, and enabled-banner hrefs (from the same
 `listEnabledSiteBanners` read as the site-banner loader). Home starts that
-shared read next to auth and code-runs so signed-in `/` (always `no-store`) does
-not wait for banners only after those finish. `?youtubeId=` HTML and
+shared read next to auth so signed-in `/` (always `no-store`) does not wait for
+banners only after those finish. `?youtubeId=` HTML and
 `/youtube-thumb/:videoId` still load playlists. Shared watch links are full
 document loads, so they still resolve playlist ids.
 

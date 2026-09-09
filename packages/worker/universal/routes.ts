@@ -230,7 +230,6 @@ export const routes = route({
 	stripeWebhook: post('/webhooks/stripe'),
 	health: '/health',
 	healthComponents: '/health/components',
-	codeRunsApi: '/code-runs.json',
 	sentryTunnel: post('/sentry-tunnel'),
 	login: '/login',
 	ogPageImage: '/og/:page.png',

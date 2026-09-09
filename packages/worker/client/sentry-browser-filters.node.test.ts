@@ -473,7 +473,7 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 							frames: [
 								{
 									function: 'scheduleNext',
-									filename: '../client/code-runs-ticker.tsx',
+									filename: '../client/copy-text-button.tsx',
 								},
 							],
 						},

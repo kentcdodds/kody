@@ -558,12 +558,6 @@ Two D1 reporting projections deliberately remain:
   stay drip-silent except that one-shot advocate mail. LimitAware shares the
   existing entitlement-warning mail. Kit stays exist-only tags. See
   [Usage metering](./usage-metering.md#usage-campaign).
-- `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
-  the homepage ticker (no `user_id`; not an account export/deletion target). The
-  hourly `usage_aggregation` lane rewrites the current and previous UTC months
-  from Analytics Engine. Public reads use only completed days (through
-  yesterday); older monthly `usage_rollups` fill months before the daily series
-  starts.
 - `agent_package_conversation_uses` is read while building MCP server
   instructions to provide popular-package hints. That request path is
   latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
@@ -576,8 +570,7 @@ OAuth provider state is stored in `OAUTH_KV` through the
 `@cloudflare/workers-oauth-provider` integration. Published package/job source
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
-platform-owned `public-code-runs:v2` delayed daily window for the homepage
-ticker, the platform-owned `platform-settings:v1:reserved-usernames` runtime
+platform-owned `platform-settings:v1:reserved-usernames` runtime
 reserved-username override, and the platform-owned
 `platform-settings:v1:signup-mode` runtime signup gating override.
 
@@ -1494,11 +1487,6 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   serialized queue message would exceed 120 KB. Immediate account-deletion
   cleanup is not required because KV enforces the TTL; the queue consumer
   deletes the key after a terminal delivery.
-- `public-code-runs:v2` — platform-owned delayed fleet `execute` window for the
-  homepage ticker (`{ start, end, updateAt }`). Not scoped by user id; account
-  deletion must not remove it. Homepage GET fills the cache from D1 when the key
-  is missing or `updateAt` has passed; the `usage_aggregation` lane syncs daily
-  D1 rows and refreshes the triple.
 - `platform-settings:v1:reserved-usernames` — platform-owned runtime reserved
   username override (`{ added, removed, updatedAt, updatedBy }`, where
   `updatedBy` is a stable user id). Not scoped by user id; account deletion must
@@ -1698,8 +1686,7 @@ Current retention policies:
   (`userMeterDailyCounterRetentionDays`); `adminUserMeterParity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
-  raw Analytics Engine usage events follow platform retention. Months before the
-  earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+  raw Analytics Engine usage events follow platform retention.
 - `user_usage_campaigns` / `user_usage_campaign_sends`: usage-state campaign
   machine and send ledger keyed by `stable_user_id`. `ever_activated` and
   `cooling_terminal` are sticky. Deleted and exported with the account. Durable
@@ -1711,11 +1698,6 @@ Current retention policies:
   (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
   `failed`. Stripe invoice ids stay null on non-invoice rows. Durable forever
   until account deletion/export; `user_id` is the stable user id.
-- `fleet_execute_days`: platform-owned UTC-day fleet `execute` totals (no
-  `user_id`). Rows are rewritten hourly for the current and previous UTC months;
-  older days remain so the delayed lifetime total can climb. The official replay
-  triple is the platform KV key `public-code-runs:v2` and is independent of
-  account deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the

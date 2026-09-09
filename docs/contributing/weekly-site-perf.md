@@ -22,7 +22,7 @@ npm run site-perf -- --url https://kody.codes/ --json
 [`tools/site-perf/collect.ts`](../../tools/site-perf/collect.ts) fetches the
 homepage, records HTML weight, `Cache-Control`, the largest same-origin JS
 payload, the preloaded LCP image, TTFB, and `Server-Timing` phases (`session`,
-`ssr`, plus loader phases such as `code-runs`). When the primary URL is `/`, it
+`ssr`, plus loader phases such as `listings`). When the primary URL is `/`, it
 also probes `/onboarding` and `/docs/how-kody-works` for the same timing
 snapshot. Those extra pages are observational and do not change the verdict. A
 failed extra probe is omitted so homepage classify still runs. Homepage HTML
