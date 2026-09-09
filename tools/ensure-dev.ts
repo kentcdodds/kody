@@ -290,6 +290,30 @@ export function ensureWorkerEnvFile(
 	return { created: true, path: envPath }
 }
 
+export function appendDevOutputChunk(
+	buffered: Array<string>,
+	state: { pending: string },
+	chunk: string,
+	maxLines = 80,
+) {
+	const parts = `${state.pending}${chunk}`.split(/\r?\n/)
+	state.pending = parts.pop() ?? ''
+	for (const line of parts) {
+		if (!line) continue
+		buffered.push(line)
+		if (buffered.length > maxLines) buffered.shift()
+	}
+}
+
+export function joinDevOutput(
+	buffered: ReadonlyArray<string>,
+	pending: string,
+) {
+	if (!pending) return buffered.join('\n')
+	if (buffered.length === 0) return pending
+	return `${buffered.join('\n')}\n${pending}`
+}
+
 export function isMissingWranglerBindingOutput(output: string) {
 	const lower = output.toLowerCase()
 	return (
@@ -518,17 +542,13 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 		cwd: process.cwd(),
 	})
 	const buffered: Array<string> = []
+	const outputState = { pending: '' }
 	let exited = false
-	const onLine = (chunk: Buffer | string) => {
-		const text = chunk.toString()
-		for (const line of text.split(/\r?\n/)) {
-			if (!line) continue
-			buffered.push(line)
-			if (buffered.length > 80) buffered.shift()
-		}
+	const onChunk = (chunk: Buffer | string) => {
+		appendDevOutputChunk(buffered, outputState, chunk.toString())
 	}
-	child.stdout?.on('data', onLine)
-	child.stderr?.on('data', onLine)
+	child.stdout?.on('data', onChunk)
+	child.stderr?.on('data', onChunk)
 	child.once('exit', (code, signal) => {
 		exited = true
 		if (code && code !== 0) {
@@ -545,7 +565,7 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 	}
 	return {
 		hasExited: () => exited || child.exitCode !== null,
-		lastOutput: () => buffered.join('\n'),
+		lastOutput: () => joinDevOutput(buffered, outputState.pending),
 		unref() {
 			detachPipes()
 			child.unref()

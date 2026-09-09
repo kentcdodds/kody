@@ -96,7 +96,8 @@ function main() {
 			)
 			process.stdout.write(nextBody)
 			if (!nextBody.endsWith('\n')) process.stdout.write('\n')
-			process.exit(2)
+			process.exitCode = 2
+			return
 		}
 		throw error
 	}

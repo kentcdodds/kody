@@ -138,7 +138,7 @@ export async function deploy(args: ReadonlyArray<string>) {
 			...(cloudflareEnv ? { CLOUDFLARE_ENV: cloudflareEnv } : {}),
 		},
 	})
-	if (result.status !== 0) process.exit(result.status)
+	if (result.status !== 0) process.exitCode = result.status
 }
 
 if (isExecutedDirectly(import.meta.url)) {

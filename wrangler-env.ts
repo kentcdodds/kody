@@ -276,59 +276,63 @@ if (args[0] === 'deploy') {
 		args: commandArgs,
 		env: processEnv,
 	})
-	process.exit(deployResult.status)
+	process.exitCode = deployResult.status
+} else {
+	await runAttachedWranglerProcess()
 }
 
-const proc = spawnChildProcess(wranglerCommand, commandArgs, {
-	stdio: ['inherit', 'inherit', 'inherit'],
-	env: processEnv,
-})
-const procExited = createExitPromise(proc)
+async function runAttachedWranglerProcess() {
+	const proc = spawnChildProcess(wranglerCommand, commandArgs, {
+		stdio: ['inherit', 'inherit', 'inherit'],
+		env: processEnv,
+	})
+	const procExited = createExitPromise(proc)
 
-let isShuttingDown = false
+	let isShuttingDown = false
 
-process.once('exit', () => {
-	signalChildProcessTree(proc, 'SIGTERM')
-})
+	process.once('exit', () => {
+		signalChildProcessTree(proc, 'SIGTERM')
+	})
 
-function handleSignal(signal: NodeJS.Signals) {
-	if (isShuttingDown) return
-	isShuttingDown = true
-	void (async () => {
-		await stopChildProcessTree(proc, {
-			sigintTimeoutMs: signal === 'SIGINT' ? 5000 : 0,
-			sigtermTimeoutMs: 5000,
-			sigkillTimeoutMs: 1000,
-		})
-		// A signal-initiated shutdown is a normal stop (Ctrl+C, supervisor
-		// stop), not a failure; exiting 1 here fails CI steps that stop the
-		// dev server deliberately.
-		process.exit(0)
-	})()
-}
-
-process.on('SIGINT', () => handleSignal('SIGINT'))
-process.on('SIGTERM', () => handleSignal('SIGTERM'))
-
-let exitCode: number | null
-try {
-	exitCode = await procExited
-} catch (error) {
-	console.error(error instanceof Error ? error.message : String(error))
-	process.exit(1)
-}
-if (isDevCommand && resolvedPort) {
-	const didFreePort = await waitForPortFree(
-		Number.parseInt(resolvedPort, 10),
-		portWaitTimeoutMs,
-	)
-	if (!didFreePort) {
-		console.warn(
-			`Timed out waiting for port ${resolvedPort} to free up before exit.`,
-		)
+	function handleSignal(signal: NodeJS.Signals) {
+		if (isShuttingDown) return
+		isShuttingDown = true
+		void (async () => {
+			await stopChildProcessTree(proc, {
+				sigintTimeoutMs: signal === 'SIGINT' ? 5000 : 0,
+				sigtermTimeoutMs: 5000,
+				sigkillTimeoutMs: 1000,
+			})
+			// A signal-initiated shutdown is a normal stop (Ctrl+C, supervisor
+			// stop), not a failure; exiting 1 here fails CI steps that stop the
+			// dev server deliberately.
+			process.exit(0)
+		})()
 	}
+
+	process.on('SIGINT', () => handleSignal('SIGINT'))
+	process.on('SIGTERM', () => handleSignal('SIGTERM'))
+
+	let exitCode: number | null
+	try {
+		exitCode = await procExited
+	} catch (error) {
+		console.error(error instanceof Error ? error.message : String(error))
+		process.exit(1)
+	}
+	if (isDevCommand && resolvedPort) {
+		const didFreePort = await waitForPortFree(
+			Number.parseInt(resolvedPort, 10),
+			portWaitTimeoutMs,
+		)
+		if (!didFreePort) {
+			console.warn(
+				`Timed out waiting for port ${resolvedPort} to free up before exit.`,
+			)
+		}
+	}
+	process.exitCode = exitCode ?? 1
 }
-process.exit(exitCode)
 
 function createExitPromise(proc: ChildProcess) {
 	return new Promise<number | null>((resolve, reject) => {

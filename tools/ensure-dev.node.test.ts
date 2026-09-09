@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	appendDevOutputChunk,
 	collectAncestorPids,
 	collectKodyDevKillPids,
 	ensureDev,
@@ -8,6 +9,7 @@ import {
 	formatMissingWranglerBindingHint,
 	isKodyDevProcess,
 	isMissingWranglerBindingOutput,
+	joinDevOutput,
 	isKodyDevSupervisor,
 	isWranglerStillStarting,
 	parseLsofListenPids,
@@ -386,6 +388,23 @@ test('ensureDev fails immediately when wrangler logs missing bindings', async ()
 	expect(
 		formatMissingWranglerBindingHint('APP_DB missing').toLowerCase(),
 	).toContain('cloud agent')
+})
+
+test('dev output matching keeps a split fatal phrase across chunk boundaries', () => {
+	const buffered: Array<string> = []
+	const state = { pending: '' }
+	appendDevOutputChunk(buffered, state, 'Invalid environment vari')
+	expect(
+		isMissingWranglerBindingOutput(joinDevOutput(buffered, state.pending)),
+	).toBe(false)
+	appendDevOutputChunk(
+		buffered,
+		state,
+		'ables: APP_DB: Missing APP_DB binding for database access\n',
+	)
+	expect(
+		isMissingWranglerBindingOutput(joinDevOutput(buffered, state.pending)),
+	).toBe(true)
 })
 
 test('ensureDev stops the child and surfaces output when /health never becomes ready', async () => {
