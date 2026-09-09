@@ -20,7 +20,7 @@ import { createRouteLoadLatch } from '#client/route-load-latch.ts'
  * This helper owns everything around that path so a route cannot reintroduce
  * a flash loader by accident:
  *
- * - consume-once of the route's loader-data key for the current location
+ * - consume-once of the route's loader-data key(s) for the current location
  * - the href latch that decides when a *fallback* fetch is needed (the
  *   router's loader failed, a stale refresh after a form POST, a cold SPA
  *   mount without SSR data) and never re-queues an in-flight one
@@ -34,6 +34,10 @@ import { createRouteLoadLatch } from '#client/route-load-latch.ts'
  * `aria-busy` while `pending`, see `renderRoutePendingStatus`); reserve a
  * standalone loading message for `data === null`, which only happens when
  * there has never been anything to show.
+ *
+ * Routes that keep their own closure state (forms, selections, action
+ * feedback) apply `snapshot.data` into that state when its identity changes
+ * and otherwise leave their state model alone.
  */
 
 export type RouteDataSnapshot<T> = {
@@ -49,22 +53,68 @@ export type RouteDataSnapshot<T> = {
 	data: T | null
 	/** `data` belongs to a different location than the one being rendered. */
 	stale: boolean
+	/** The failure behind `kind: 'error'`; null otherwise. */
+	error: Error | null
 }
 
-type RouteDataOptions<K extends keyof AppLoaderData, T> = {
-	/** Loader-data key the route's loader returns (`#universal/loader-data.ts`). */
-	key: K
+const redirectMarker = Symbol('route-data-redirect')
+
+type RouteDataRedirect = { [redirectMarker]: true; to: string }
+
+/**
+ * Return from `load` when the fetch answered with a session problem (401)
+ * and the browser must leave for a full document (login). The route stays
+ * on its current content while the document navigates away.
+ */
+export function routeDataRedirect(to: string): RouteDataRedirect {
+	return { [redirectMarker]: true, to }
+}
+
+function isRouteDataRedirect(value: unknown): value is RouteDataRedirect {
+	return typeof value === 'object' && value !== null && redirectMarker in value
+}
+
+export type RouteDataLoadResult<T> = T | null | RouteDataRedirect
+
+type RouteDataSource<K extends keyof AppLoaderData, T> =
+	| {
+			/** Loader-data key the route's loader returns (`#universal/loader-data.ts`). */
+			key: K
+			/**
+			 * Map a consumed loader payload to route data. Defaults to the
+			 * payload itself when it does not carry `ok: false`.
+			 */
+			fromLoaderData?: (payload: NonNullable<AppLoaderData[K]>) => T | null
+			consume?: never
+	  }
+	| {
+			key?: never
+			fromLoaderData?: never
+			/**
+			 * Routes whose loader returns several keys assemble them here with
+			 * `tryConsumeRouteLoaderData` (all-or-nothing: return null when a
+			 * required key is missing so the fallback fetch loads the full set).
+			 */
+			consume: (handle: Handle, href: string) => T | null
+	  }
+
+type RouteDataOptions<K extends keyof AppLoaderData, T> = RouteDataSource<
+	K,
+	T
+> & {
 	/**
-	 * Fallback fetch for `href`. Return `null` for a 404; throw for any other
-	 * failure. Do not call `handle.update()` inside — the helper schedules the
-	 * render once the result is applied.
+	 * Fallback fetch for `href`. Return `null` for a 404, `routeDataRedirect`
+	 * for a session redirect, and throw for any other failure (the message
+	 * surfaces as `snapshot.error`). Do not call `handle.update()` inside —
+	 * the helper schedules the render once the result is applied.
 	 */
-	load: (href: string, signal: AbortSignal) => Promise<T | null>
+	load: (href: string, signal: AbortSignal) => Promise<RouteDataLoadResult<T>>
 	/**
-	 * Map a consumed loader payload to route data. Defaults to the payload
-	 * itself when it does not carry `ok: false`.
+	 * Which locations share one payload. Defaults to pathname + search. A
+	 * list/detail route whose detail pages reuse the list payload maps them to
+	 * the same key so moving between them is not a new load.
 	 */
-	fromLoaderData?: (payload: NonNullable<AppLoaderData[K]>) => T | null
+	locationKey?: (href: string) => string
 }
 
 function defaultFromLoaderData<T>(payload: unknown): T | null {
@@ -84,30 +134,33 @@ export function createRouteData<
 	T = NonNullable<AppLoaderData[K]>,
 >(options: RouteDataOptions<K, T>) {
 	const latch = createRouteLoadLatch()
-	const fromLoaderData =
-		options.fromLoaderData ??
-		((payload: NonNullable<AppLoaderData[K]>) =>
-			defaultFromLoaderData<T>(payload))
+	const toLocationKey = options.locationKey ?? normalizeRouterHref
 
-	let data: T | null = null
-	/** Location (pathname + search) `data` / `outcome` describe. */
-	let dataHref: string | null = null
-	let outcome: 'ready' | 'not-found' | 'error' | null = null
-	/** Location a fallback fetch is in flight for. */
-	let pendingHref: string | null = null
-	/** Location of the latest render; late completions for others are dropped. */
-	let renderedHref: string | null = null
-
-	function applyLoaded(href: string, result: T | null) {
-		dataHref = href
-		data = result
-		outcome = result === null ? 'not-found' : 'ready'
+	function consume(handle: Handle, currentHref: string): T | null {
+		if (options.consume) return options.consume(handle, currentHref)
+		const payload = tryConsumeRouteLoaderData(handle, options.key, currentHref)
+		if (payload === undefined) return null
+		const fromLoaderData =
+			options.fromLoaderData ??
+			((value: NonNullable<AppLoaderData[K]>) =>
+				defaultFromLoaderData<T>(value))
+		return fromLoaderData(payload as NonNullable<AppLoaderData[K]>)
 	}
 
+	let data: T | null = null
+	/** Location key `data` / `outcome` describe. */
+	let dataKey: string | null = null
+	let outcome: 'ready' | 'not-found' | 'error' | null = null
+	let error: Error | null = null
+	/** Location key a fallback fetch is in flight for. */
+	let pendingKey: string | null = null
+	/** Location key of the latest render; late completions for others are dropped. */
+	let renderedKey: string | null = null
+
 	function queueFallbackLoad(handle: Handle, currentHref: string) {
-		const href = normalizeRouterHref(currentHref)
+		const key = toLocationKey(currentHref)
 		const attempt = latch.getPendingAttempt()
-		pendingHref = href
+		pendingKey = key
 
 		// remix/ui aborts a queued task's signal whenever the component
 		// re-renders for any reason (a shell session refresh, for example).
@@ -115,8 +168,8 @@ export function createRouteData<
 		// route is still on this location, schedule that render ourselves —
 		// otherwise nothing would, and the route would sit in `pending`.
 		function handleAbort() {
-			latch.clearPending(currentHref, attempt)
-			if (renderedHref === href && pendingHref === href) {
+			latch.clearPending(key, attempt)
+			if (renderedKey === key && pendingKey === key) {
 				void handle.update()
 			}
 		}
@@ -128,22 +181,31 @@ export function createRouteData<
 					handleAbort()
 					return
 				}
-				if (renderedHref !== href) return
-				applyLoaded(href, result)
-				pendingHref = null
-				latch.markLoaded(currentHref)
+				if (renderedKey !== key) return
+				if (isRouteDataRedirect(result)) {
+					// Leave the page as is; the document is about to change.
+					window.location.assign(result.to)
+					return
+				}
+				data = result
+				dataKey = key
+				outcome = result === null ? 'not-found' : 'ready'
+				error = null
+				pendingKey = null
+				latch.markLoaded(key)
 				void handle.update()
-			} catch {
+			} catch (caught) {
 				if (signal.aborted) {
 					handleAbort()
 					return
 				}
-				if (renderedHref !== href) return
+				if (renderedKey !== key) return
 				data = null
-				dataHref = href
+				dataKey = key
 				outcome = 'error'
-				pendingHref = null
-				latch.markFailed(currentHref)
+				error = caught instanceof Error ? caught : new Error(String(caught))
+				pendingKey = null
+				latch.markFailed(key)
 				void handle.update()
 			}
 		})
@@ -152,31 +214,22 @@ export function createRouteData<
 	return {
 		/** Call once per render with the router href the route is rendering. */
 		read(handle: Handle, currentHref: string): RouteDataSnapshot<T> {
-			const href = normalizeRouterHref(currentHref)
-			renderedHref = href
+			const key = toLocationKey(currentHref)
+			renderedKey = key
 
-			const payload = tryConsumeRouteLoaderData(
-				handle,
-				options.key,
-				currentHref,
-			)
-			let appliedRouteData = false
-			if (payload !== undefined) {
-				const selected = fromLoaderData(
-					payload as NonNullable<AppLoaderData[K]>,
-				)
-				if (selected !== null) {
-					data = selected
-					dataHref = href
-					outcome = 'ready'
-					pendingHref = null
-					appliedRouteData = true
-				}
+			const consumed = consume(handle, currentHref)
+			const appliedRouteData = consumed !== null
+			if (consumed !== null) {
+				data = consumed
+				dataKey = key
+				outcome = 'ready'
+				error = null
+				pendingKey = null
 			}
 
 			const needsStaleRefresh = consumeStaleNavigationData(currentHref)
 			const needsLoad = latch.needsLoad({
-				currentHref,
+				currentHref: key,
 				appliedRouteData,
 				needsStaleRefresh,
 			})
@@ -184,17 +237,40 @@ export function createRouteData<
 				queueFallbackLoad(handle, currentHref)
 			}
 
-			const stale = data !== null && dataHref !== href
-			if (pendingHref === href) {
-				return { kind: 'pending', data, stale }
+			const stale = data !== null && dataKey !== key
+			if (pendingKey === key) {
+				return { kind: 'pending', data, stale, error: null }
 			}
-			if (dataHref === href && outcome !== null) {
-				return { kind: outcome, data: outcome === 'ready' ? data : null, stale }
+			if (dataKey === key && outcome !== null) {
+				return {
+					kind: outcome,
+					data: outcome === 'ready' ? data : null,
+					stale,
+					error: outcome === 'error' ? error : null,
+				}
 			}
 			// Server render (or a client render before hydration) without a
 			// payload for this location: nothing is in flight yet, but the
 			// route still has nothing current to show.
-			return { kind: 'pending', data, stale }
+			return { kind: 'pending', data, stale, error: null }
+		},
+		/**
+		 * Fetch the current location again (after a mutation the route wants
+		 * to reconcile with the server). The current payload stays on screen
+		 * under `pending` until the fresh one lands. No-op while a fetch for
+		 * this location is already in flight.
+		 */
+		reload(handle: Handle, currentHref: string) {
+			if (typeof document === 'undefined') return
+			const key = toLocationKey(currentHref)
+			if (pendingKey === key) return
+			latch.needsLoad({
+				currentHref: key,
+				appliedRouteData: false,
+				needsStaleRefresh: true,
+			})
+			queueFallbackLoad(handle, currentHref)
+			void handle.update()
 		},
 	}
 }

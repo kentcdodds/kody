@@ -98,6 +98,7 @@ test('preloaded navigation data replaces the previous payload in one render and 
 		kind: 'ready',
 		data: createDoc('memory'),
 		stale: false,
+		error: null,
 	})
 	// The consume helper schedules one corrective render; run it. That render
 	// finds nothing to consume and must not queue a fetch.
@@ -115,6 +116,7 @@ test('preloaded navigation data replaces the previous payload in one render and 
 		kind: 'ready',
 		data: createDoc('secrets'),
 		stale: false,
+		error: null,
 	})
 	await flushTasks()
 	snapshot = docData.read(handle, '/docs/secrets')
@@ -158,6 +160,7 @@ test('a commit without preloaded data keeps the previous payload on screen (stal
 		kind: 'ready',
 		data: createDoc('secrets'),
 		stale: false,
+		error: null,
 	})
 })
 
@@ -175,12 +178,14 @@ test('fallback fetch outcomes: not-found, error (latched), and stale refresh', a
 		kind: 'pending',
 		data: null,
 		stale: false,
+		error: null,
 	})
 	await flushTasks()
 	expect(docData.read(handle, '/docs/missing')).toEqual({
 		kind: 'not-found',
 		data: null,
 		stale: false,
+		error: null,
 	})
 	expect(queuedTasks).toHaveLength(0)
 
@@ -192,6 +197,7 @@ test('fallback fetch outcomes: not-found, error (latched), and stale refresh', a
 		kind: 'error',
 		data: null,
 		stale: false,
+		error: new Error('boom'),
 	})
 	expect(docData.read(handle, '/docs/broken').kind).toBe('error')
 	expect(queuedTasks).toHaveLength(0)
@@ -260,6 +266,7 @@ test('late completions for a location the user already left are dropped', async 
 		kind: 'ready',
 		data: createDoc('secrets'),
 		stale: false,
+		error: null,
 	})
 })
 
