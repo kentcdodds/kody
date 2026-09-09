@@ -5,6 +5,7 @@ import {
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	listPackageWebhooks,
@@ -35,7 +36,6 @@ import {
 	getWebhookEndpointByKey,
 	listWebhookEndpointsForUser,
 	setWebhookEndpointEnabled,
-	updateWebhookEndpointSecretCiphertext,
 	upsertWebhookEndpointSecret,
 } from './repo.ts'
 import { type WebhookEndpointRecord } from './types.ts'
@@ -250,28 +250,45 @@ export async function mintWebhookUrlForUser(input: {
 
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
-	const record = await upsertWebhookEndpointSecret({
+	const existing = await getWebhookEndpointByKey({
 		db: input.env.APP_DB,
-		id: crypto.randomUUID(),
 		userId: input.userId,
 		packageId: savedPackage.id,
 		webhookName,
-		urlSecretHash,
-		enabled: true,
-		updateEnabledOnConflict: activate,
 	})
-
-	const encrypted = await encryptWebhookUrlSecret(
-		input.env,
-		urlSecret,
-		userWebhookUrlSecretContext(input.userId, record.id),
-	)
-	const stored = await updateWebhookEndpointSecretCiphertext({
-		db: input.env.APP_DB,
-		userId: input.userId,
-		endpointId: record.id,
-		urlSecretEncrypted: encrypted,
-	})
+	let endpointId = existing?.id ?? crypto.randomUUID()
+	let stored: WebhookEndpointRecord | null = null
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const encrypted = await encryptWebhookUrlSecret(
+			input.env,
+			urlSecret,
+			userWebhookUrlSecretContext(input.userId, endpointId),
+		)
+		try {
+			stored = await upsertWebhookEndpointSecret({
+				db: input.env.APP_DB,
+				id: endpointId,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+				urlSecretHash,
+				urlSecretEncrypted: encrypted,
+				enabled: true,
+				updateEnabledOnConflict: activate,
+			})
+			break
+		} catch (error) {
+			if (attempt > 0 || !getUniqueConstraintField(error)) throw error
+			const raced = await getWebhookEndpointByKey({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: savedPackage.id,
+				webhookName,
+			})
+			if (!raced) throw error
+			endpointId = raced.id
+		}
+	}
 	if (!stored) {
 		throw new Error('Unable to persist webhook URL secret.')
 	}

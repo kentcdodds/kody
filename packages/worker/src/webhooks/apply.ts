@@ -109,10 +109,17 @@ async function loadDeclaredWebhookIfPresent(input: {
 	)
 }
 
+function assertGithubRepoSlug(value: string, label: 'owner' | 'repository') {
+	if (value === '.' || value === '..' || !/^[A-Za-z0-9_.-]+$/.test(value)) {
+		throw new McpCallerError(`Must be a GitHub ${label} slug.`)
+	}
+}
+
 async function resolveHookSigningSecret(input: {
 	env: Env
 	userId: string
 	packageId: string
+	baseUrl: string
 	secretName: string
 }) {
 	const resolved = await resolveSecretForHost({
@@ -126,8 +133,27 @@ async function resolveHookSigningSecret(input: {
 		},
 		host: 'api.github.com',
 	})
-	if (!resolved.found || !resolved.value) return null
-	if (!resolved.allowedHosts.includes('api.github.com')) return null
+	if (!resolved.found || !resolved.value) {
+		throw new McpCallerError(
+			`Secret "${input.secretName}" was not found for this user.`,
+		)
+	}
+	if (!resolved.allowedHosts.includes('api.github.com')) {
+		const approvalUrl = buildSecretHostApprovalUrl({
+			baseUrl: input.baseUrl,
+			name: input.secretName,
+			scope: resolved.scope ?? 'user',
+			requestedHost: 'api.github.com',
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: input.packageId,
+			},
+		})
+		throw new McpCallerError(
+			`Secret "${input.secretName}" is not approved for host "api.github.com". Approve it at ${approvalUrl}.`,
+		)
+	}
 	return resolved.value
 }
 
@@ -429,6 +455,8 @@ async function dispatchGithubApply(input: {
 }): Promise<WebhookUrlApplyResult> {
 	const owner = input.destination.owner.trim()
 	const repo = input.destination.repo.trim()
+	assertGithubRepoSlug(owner, 'owner')
+	assertGithubRepoSlug(repo, 'repository')
 	const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/hooks`
 	const declared = await loadDeclaredWebhookIfPresent({
 		env: input.env,
@@ -446,6 +474,7 @@ async function dispatchGithubApply(input: {
 				env: input.env,
 				userId: input.userId,
 				packageId: input.packageId,
+				baseUrl: input.baseUrl,
 				secretName: hookSecretName,
 			})
 		: null

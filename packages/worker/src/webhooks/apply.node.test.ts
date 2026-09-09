@@ -16,6 +16,10 @@ const integrationMocks = vi.hoisted(() => ({
 	refreshIntegrationTokens: vi.fn(),
 }))
 
+const secretMocks = vi.hoisted(() => ({
+	resolveSecretForHost: vi.fn(),
+}))
+
 vi.mock('#worker/integrations/service.ts', () => ({
 	getJoinedIntegration: (...args: Array<unknown>) =>
 		integrationMocks.getJoinedIntegration(...args),
@@ -57,6 +61,11 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: vi.fn(async () => []),
 	getSavedPackageByKodyId: vi.fn(),
+}))
+
+vi.mock('#mcp/secrets/service.ts', () => ({
+	resolveSecretForHost: (...args: Array<unknown>) =>
+		secretMocks.resolveSecretForHost(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -282,4 +291,46 @@ test('webhookUrlApply fails when the package manifest cannot be loaded', async (
 			destination: { type: 'github', owner: 'acme', repo: 'api' },
 		}),
 	).rejects.toThrow('Could not load the package manifest')
+})
+
+test('webhookUrlApply fails when a configured hook secret cannot be resolved', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	mockGithubIntegration()
+	secretMocks.resolveSecretForHost.mockResolvedValue({
+		found: false,
+	})
+	const fetchMock = vi.fn()
+	vi.stubGlobal('fetch', fetchMock)
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: {
+				type: 'github',
+				owner: 'acme',
+				repo: 'api',
+				hookSecretName: 'githubHookSecret',
+			},
+		}),
+	).rejects.toThrow('githubHookSecret')
+	expect(fetchMock).not.toHaveBeenCalled()
+	vi.unstubAllGlobals()
+})
+
+test('webhookUrlApply rejects dot-only GitHub slugs', async () => {
+	const { userId, env, minted } = await mintOwnerWebhook()
+	mockGithubIntegration()
+
+	await expect(
+		applyWebhookUrlForUser({
+			env,
+			userId,
+			username: 'owner',
+			handle: minted.handle,
+			destination: { type: 'github', owner: '..', repo: 'api' },
+		}),
+	).rejects.toThrow('GitHub owner')
 })

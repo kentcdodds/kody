@@ -13,6 +13,10 @@ const githubSlugSchema = z
 	.string()
 	.min(1)
 	.regex(/^[A-Za-z0-9_.-]+$/, 'Must be a GitHub owner or repository slug.')
+	.refine(
+		(value) => value !== '.' && value !== '..',
+		'Must be a GitHub owner or repository slug.',
+	)
 
 export const webhookUrlApplyDestinationSchema = z.object({
 	type: z.literal('github'),
