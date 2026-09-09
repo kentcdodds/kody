@@ -4,19 +4,17 @@ export type AccountStatus = 'loading' | 'ready' | 'error'
 export type ApprovalAction = 'approve' | 'reject'
 export type ApprovalScope = 'session' | 'package' | 'user'
 
-export type RejectedApprovalHost = {
-	host: string
-	reason: 'malformed' | 'unknown_suffix'
-	message: string
-}
-
 export type ApprovalView = {
 	name: string
 	names: Array<string>
 	scope: ApprovalScope
 	requestedHost: string
 	requestedHosts: Array<string>
-	rejectedHosts: Array<RejectedApprovalHost>
+	rejectedHosts: Array<{
+		host: string
+		reason: 'malformed' | 'unknown_suffix'
+		message: string
+	}>
 	currentAllowedHosts: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
