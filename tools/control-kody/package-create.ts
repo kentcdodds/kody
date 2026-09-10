@@ -11,6 +11,8 @@ import {
 } from '../mcp-oauth-client.ts'
 
 export const kodyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const scopedPackageNamePattern =
+	/^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i
 export const headAheadFileName = 'preview-head-ahead.txt'
 
 const packageCreateExecuteCode = `import { kody } from 'kody:runtime'
@@ -33,7 +35,8 @@ export default async function main(input = {}) {
 	const listed = await kody.packageList({})
 	const match = (listed.packages ?? []).find((pkg) => {
 		const kodyId = pkg.kody_id ?? pkg.kodyId
-		return kodyId === leaf || kodyId === requested || pkg.name === requested
+		if (kodyId === requested || pkg.name === requested) return true
+		return !requested.includes('/') && kodyId === leaf
 	})
 	const packageId = remote?.package_id ?? match?.package_id ?? match?.id
 	if (!packageId) {
@@ -92,10 +95,9 @@ export type PackageCreateConnection = {
 
 export function isLowerKebabKodyId(value: string) {
 	const trimmed = value.trim()
-	const leaf = trimmed.includes('/')
-		? trimmed.slice(trimmed.lastIndexOf('/') + 1)
-		: trimmed
-	return kodyIdPattern.test(leaf)
+	if (kodyIdPattern.test(trimmed)) return true
+	const scoped = trimmed.match(scopedPackageNamePattern)
+	return Boolean(scoped && kodyIdPattern.test(scoped[2] ?? ''))
 }
 
 export function isProductionKodyOrigin(origin: string) {

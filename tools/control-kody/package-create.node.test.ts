@@ -18,6 +18,8 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 	expect(isLowerKebabKodyId('@user-me/preview-pkg')).toBe(true)
 	expect(isLowerKebabKodyId('pkg')).toBe(true)
 	expect(isLowerKebabKodyId('Not-A-Slug')).toBe(false)
+	expect(isLowerKebabKodyId('other/preview-pkg')).toBe(false)
+	expect(isLowerKebabKodyId('///preview-pkg')).toBe(false)
 	expect(isProductionKodyOrigin('https://kody.codes')).toBe(true)
 	expect(isProductionKodyOrigin('https://www.kody.codes')).toBe(true)
 	expect(isProductionKodyOrigin('https://kody.codes.')).toBe(true)
@@ -53,6 +55,9 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					expect(args.code).toContain('packageGet')
 					expect(args.code).toContain(
 						"requested.slice(requested.lastIndexOf('/') + 1)",
+					)
+					expect(args.code).toContain(
+						"!requested.includes('/') && kodyId === leaf",
 					)
 					expect(args.params).toEqual({
 						kodyId: 'preview-pkg',
@@ -153,7 +158,7 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					}
 					expect(args.params.kodyId).toBe('@user-me/preview-pkg')
 					expect(args.code).toContain(
-						"requested.slice(requested.lastIndexOf('/') + 1)",
+						"!requested.includes('/') && kodyId === leaf",
 					)
 					return {
 						isError: false,
@@ -197,6 +202,16 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 			headAhead: false,
 		}),
 	).rejects.toThrow(/refuses to run against https:\/\/kody\.codes/)
+
+	await expect(
+		createPreviewPackage({
+			origin: 'https://kody-pr-9.kody.workers.dev',
+			email: 'me@kentcdodds.com',
+			password: 'ilikecode',
+			kodyId: 'other/preview-pkg',
+			headAhead: false,
+		}),
+	).rejects.toThrow(/lower-kebab-case leaf or @scope\/leaf/)
 
 	await expect(
 		createPreviewPackage({
