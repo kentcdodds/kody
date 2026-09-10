@@ -285,7 +285,7 @@ test(
 					kody: {
 						id: 'dependent',
 						description: 'Dependent',
-						dependencies: ['@kentcdodds/grok-bot'],
+						dependencies: { '@kentcdodds/grok-bot': '*' },
 					},
 				}),
 				'src/call-wake.ts': [
@@ -414,7 +414,7 @@ test(
 						name: '@kentcdodds/dependent',
 						kody: {
 							id: 'dependent',
-							dependencies: ['@kentcdodds/grok-bot'],
+							dependencies: { '@kentcdodds/grok-bot': '*' },
 						},
 					}),
 					'src/run.ts': [
@@ -448,6 +448,13 @@ test(
 				baseUrl: 'https://kody.dev',
 				userId,
 				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@kentcdodds/dependent',
+						kody: {
+							id: 'dependent',
+							description: 'Dependent',
+						},
+					}),
 					'src/steal.ts': [
 						"import { packageSecrets } from 'kody:runtime'",
 						'export default async function steal() {',
