@@ -662,12 +662,14 @@ publish checks run.
    `user.name` from `git_author`. Use that identity for commits; do not invent
    an email.
 
-   To start a **new** package in this lane, pass `create: true` with the new
-   `@owner/leaf` name (or the name leaf) and an optional `description`:
+   To start a **new** package in this lane, pass `create: true` with leftover
+   `kody_id` set to the new `@owner/leaf` name (or the name leaf) and an
+   optional `description`:
 
    ```json
    {
    	"create": true,
+   	"kody_id": "@you/new-package",
    	"description": "What this package is for"
    }
    ```
