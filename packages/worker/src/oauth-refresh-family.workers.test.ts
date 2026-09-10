@@ -208,11 +208,19 @@ test('shared MCP OAuth client refresh reuse returns the current family token', a
 	} = await mintSharedClientTokens()
 	const rt1 = first.refresh_token
 
-	const firstRefresh = await exchangeRefreshToken(clientId, rt1, isolatedEnv)
-	expect(firstRefresh.status).toBe(200)
-	const afterRt1 = (await firstRefresh.json()) as TokenPayload
+	const [firstLeft, firstRight] = await Promise.all([
+		exchangeRefreshToken(clientId, rt1, isolatedEnv),
+		exchangeRefreshToken(clientId, rt1, isolatedEnv),
+	])
+	expect(firstLeft.status).toBe(200)
+	expect(firstRight.status).toBe(200)
+	const firstLeftTokens = (await firstLeft.json()) as TokenPayload
+	const firstRightTokens = (await firstRight.json()) as TokenPayload
+	expect(firstLeftTokens.refresh_token).toBe(firstRightTokens.refresh_token)
+	expect(firstLeftTokens.refresh_token).not.toBe(rt1)
+	expect(firstLeftTokens.access_token).toBe(firstRightTokens.access_token)
+	const afterRt1 = firstLeftTokens
 	const rt2 = afterRt1.refresh_token
-	expect(rt2).not.toBe(rt1)
 
 	const reusedRt1 = await exchangeRefreshToken(clientId, rt1, isolatedEnv)
 	expect(reusedRt1.status).toBe(200)

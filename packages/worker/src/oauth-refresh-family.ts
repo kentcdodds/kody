@@ -16,7 +16,10 @@ import {
  * current tokens without rotating, even when the stored access token is near
  * expiry. A one-hour replay of the consumed token returns that same current
  * family while the hash still matches. Tokens outside that family do not
- * mint. See `docs/contributing/architecture/authentication.md`.
+ * mint. Refresh grants for one user/grant pair run one at a time in this
+ * isolate so overlapping first-use siblings re-read the snapshot after the
+ * first rotation. See
+ * `docs/contributing/architecture/authentication.md`.
  */
 
 const mcpOAuthRefreshFamilyReplayTtlSeconds = 60 * 60
@@ -133,6 +136,39 @@ export function decideRefreshFamilyAction(input: {
 	return { kind: 'pass-through' }
 }
 
+const refreshFamilyGrantLocks = new Map<string, Promise<void>>()
+
+function refreshFamilyGrantLockKey(userId: string, grantId: string) {
+	return `${userId}:${grantId}`
+}
+
+async function withRefreshFamilyGrantLock<T>(
+	userId: string,
+	grantId: string,
+	work: () => Promise<T>,
+): Promise<T> {
+	const key = refreshFamilyGrantLockKey(userId, grantId)
+	let release = () => {}
+	const held = new Promise<void>((resolve) => {
+		release = resolve
+	})
+	const previous = refreshFamilyGrantLocks.get(key) ?? Promise.resolve()
+	const tail = previous.then(
+		() => held,
+		() => held,
+	)
+	refreshFamilyGrantLocks.set(key, tail)
+	try {
+		await previous.catch(() => undefined)
+		return await work()
+	} finally {
+		release()
+		if (refreshFamilyGrantLocks.get(key) === tail) {
+			refreshFamilyGrantLocks.delete(key)
+		}
+	}
+}
+
 export async function handleMcpOAuthTokenRequest(input: {
 	request: Request
 	env: Env
@@ -143,6 +179,27 @@ export async function handleMcpOAuthTokenRequest(input: {
 		.formData()
 		.catch(() => null)
 	const grantType = readFormString(formData?.get('grant_type'))
+	if (grantType === 'refresh_token' && formData) {
+		const presented = readFormString(formData.get('refresh_token'))
+		const parsed = presented ? parseOAuthRefreshToken(presented) : null
+		if (parsed) {
+			return withRefreshFamilyGrantLock(parsed.userId, parsed.grantId, () =>
+				completeMcpOAuthTokenRequest(input, formData, grantType),
+			)
+		}
+	}
+	return completeMcpOAuthTokenRequest(input, formData, grantType)
+}
+
+async function completeMcpOAuthTokenRequest(
+	input: {
+		request: Request
+		env: Env
+		fetchProvider: (request: Request) => Promise<Response>
+	},
+	formData: FormData | null,
+	grantType: string | null,
+) {
 	if (grantType === 'refresh_token' && formData) {
 		const reuseResponse = await tryRefreshFamilyReuse({
 			request: input.request,

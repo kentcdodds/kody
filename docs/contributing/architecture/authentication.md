@@ -712,9 +712,11 @@ intercepts `POST /oauth/token` refresh grants:
   mint. Stolen refresh tokens therefore cannot walk the family forever; they
   work only while they remain the current or previous token, or while a replay
   still matches the grant's current hash.
-- Two hosts that present the same current refresh token at the same instant can
-  still race the provider before a snapshot exists. The interceptor does not
-  serialize those current-token refreshes.
+- Refresh grants for one `userId`/`grantId` pair are serialized in the handling
+  isolate so two overlapping first-use refreshes re-read the snapshot after the
+  first rotation. That is isolate-local, not a cross-isolate Durable Object
+  lock. Two current-token refreshes that land on different isolates can still
+  race the provider before a snapshot is visible.
 - Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
   `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
   hours and one hour. Retention is the TTL, so account deletion does not sweep
