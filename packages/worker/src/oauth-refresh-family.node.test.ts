@@ -430,10 +430,27 @@ test('refresh family forget wins over an in-flight persist', async () => {
 	})
 	await currentRefreshEntered
 	const forget = forgetRefreshFamilyGrant('user-race', 'grant-race')
+	const reuseDuringLockWait = handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-race:grant-race:rt1'),
+		env,
+		fetchProvider,
+	})
+	const reuseWhileLocked = await Promise.race([
+		reuseDuringLockWait.then((result) => ({ kind: 'returned', result })),
+		new Promise<{ kind: 'waiting' }>((resolve) => {
+			setTimeout(() => resolve({ kind: 'waiting' }), 20)
+		}),
+	])
+	expect(reuseWhileLocked.kind).toBe('waiting')
 	releaseCurrentRefresh()
 	const currentRefreshResult = await currentRefresh
 	expect(currentRefreshResult.response.status).toBe(200)
 	await forget
+	const reuseAfterForget = await reuseDuringLockWait
+	expect(reuseAfterForget.response.status).toBe(400)
+	await expect(reuseAfterForget.response.json()).resolves.toEqual({
+		error: 'invalid_grant',
+	})
 
 	const afterRevoke = await handleMcpOAuthTokenRequest({
 		request: refreshTokenRequest('user-race:grant-race:rt2'),

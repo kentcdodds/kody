@@ -180,6 +180,8 @@ export async function forgetRefreshFamilyGrant(
 	grantId: string,
 ) {
 	const key = refreshFamilyGrantLockKey(userId, grantId)
+	refreshFamilyForgotten.add(key)
+	refreshFamilyMemory.delete(key)
 	await withRefreshFamilyGrantLock(userId, grantId, async () => {
 		refreshFamilyMemory.delete(key)
 		refreshFamilyForgotten.add(key)
@@ -351,10 +353,10 @@ async function tryRefreshFamilyReuse(input: { env: Env; formData: FormData }) {
 	const parsed = parseOAuthRefreshToken(presented)
 	if (!parsed) return null
 	const presentedHash = await hashOAuthToken(presented)
-	const memory =
-		refreshFamilyMemory.get(
-			refreshFamilyGrantLockKey(parsed.userId, parsed.grantId),
-		) ?? null
+	const memoryKey = refreshFamilyGrantLockKey(parsed.userId, parsed.grantId)
+	const memory = refreshFamilyForgotten.has(memoryKey)
+		? null
+		: (refreshFamilyMemory.get(memoryKey) ?? null)
 	const kvReplay = await readRefreshFamilySnapshotAtKey(
 		input.env,
 		mcpOAuthRefreshFamilyReplayKey(
