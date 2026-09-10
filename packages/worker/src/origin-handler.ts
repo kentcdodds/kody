@@ -68,6 +68,7 @@ import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 import { handleOidcLogoutRequest } from '#worker/oidc/logout.ts'
 import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
+import { handleMcpOAuthTokenRequest } from '#worker/oauth-refresh-family.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#worker/dynamic-worker-evaluation-budget.ts'
 
 // Immutable caching is only safe when asset URLs are versioned by a real
@@ -682,23 +683,19 @@ async function handleOriginAppFetch(
 			return addOAuthDiscoveryCorsHeaders(metadataResponse, request)
 		}
 	}
-	let tokenGrantType: string | null = null
-	if (url.pathname === oauthPaths.token && request.method === 'POST') {
-		const formData = await request
-			.clone()
-			.formData()
-			.catch(() => null)
-		const grantType = formData?.get('grant_type')
-		tokenGrantType = typeof grantType === 'string' ? grantType : null
-	}
 	try {
-		const response = await oauthProvider.fetch(request, env, ctx)
-		if (url.pathname === oauthPaths.token) {
+		if (url.pathname === oauthPaths.token && request.method === 'POST') {
+			const { response, grantType } = await handleMcpOAuthTokenRequest({
+				request,
+				env,
+				fetchProvider: (providerRequest) =>
+					oauthProvider.fetch(providerRequest, env, ctx),
+			})
 			return enrichOAuthTokenResponse(request, response, env, {
-				grantType: tokenGrantType,
+				grantType,
 			})
 		}
-		return response
+		return await oauthProvider.fetch(request, env, ctx)
 	} catch (error) {
 		if (!isOAuthProviderOwnedPath(url.pathname)) throw error
 		Sentry.captureException(error)

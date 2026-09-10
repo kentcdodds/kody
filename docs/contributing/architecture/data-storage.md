@@ -571,7 +571,9 @@ OAuth provider state is stored in `OAUTH_KV` through the
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
 platform-owned `platform-settings:v1:reserved-usernames` runtime
-reserved-username override.
+reserved-username override and short-lived encrypted MCP OAuth refresh-family
+snapshots (`derived-cache:v1:mcp-oauth-refresh-family:` /
+`derived-cache:v1:mcp-oauth-refresh-replay:`).
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1469,6 +1471,13 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
+- `derived-cache:v1:mcp-oauth-refresh-family:{userId}:{grantId}` and
+  `derived-cache:v1:mcp-oauth-refresh-replay:{userId}:{grantId}:{tokenHash}` —
+  encrypted MCP OAuth refresh-family snapshots used so concurrent hosts sharing
+  one client can reuse the previous refresh token without invalidating siblings
+  (`packages/worker/src/oauth-refresh-family.ts`). Written with KV
+  `expirationTtl` (two hours / one hour). Retention is the TTL, so
+  account-deletion cleanup is not required.
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.

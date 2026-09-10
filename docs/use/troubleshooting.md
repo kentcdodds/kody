@@ -22,12 +22,18 @@ Kody access tokens last one hour. A host that stores the refresh token should
 call `/oauth/token` and stay signed in. Cursor does this. Some Codex builds send
 the expired access token, get a 401, and ask for a full browser login instead.
 
+Concurrent MCP hosts that share one stored Kody OAuth client can refresh at the
+same time. Reusing the previous refresh token returns the current family tokens
+instead of minting a new one that invalidates siblings. A refresh token older
+than the current/previous pair (and outside the one-hour replay window) is
+`invalid_grant` and needs a new browser login.
+
 Try this first:
 
 1. Update Codex.
 2. Run `codex mcp logout kody`, then `codex mcp login kody`.
-3. Avoid running Codex desktop and the CLI at the same time against the same
-   login. They can race a rotating refresh token and both get kicked out.
+3. If two Codex processes still prompt together, update Kody — overlapping
+   refreshes on one shared client should stay signed in.
 
 If it still happens about every hour or every new Codex launch, that is the host
 skipping refresh. Cursor and Claude Code stay logged in. Email
