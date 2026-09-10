@@ -107,10 +107,10 @@ Inbound storage is quota-gated per user:
   Transient storage failures (for example an R2 outage while saving raw MIME) do
   not keep the daily receive charge — the attempt is refunded so delivery
   retries are not blocked by quota.
-- Plan users get their plan's limits. New accounts start on the `free` plan
-  unless an invite assigns another tier. The operator-only `max` plan uses
-  finite email caps (10,000 sends/day, 20,000 receives/day, 100,000 stored
-  messages, 768 KiB per message); it is not a public or paid tier.
+- Plan users get their plan's limits. New accounts start on the `free` plan. The
+  operator-only `max` plan uses finite email caps (10,000 sends/day, 20,000
+  receives/day, 100,000 stored messages, 768 KiB per message); it is not a
+  public or paid tier.
 - Free email caps are 10 sends/day, 10 receives/day, 100 stored messages, and
   256 KiB per message. Paid email caps are Standard: 200 sends/day, 1,000
   receives/day, 10,000 stored messages; Pro: 500 sends/day, 2,000 receives/day,

@@ -38,15 +38,7 @@ export const adminUserCreateCapability = defineDomainCapability(
 		name: 'adminUserCreate',
 		description:
 			'Create one user account by email, assign the default user role, and return a password setup link. Admin-only; does not expose user content.',
-		keywords: [
-			'admin',
-			'user',
-			'create',
-			'account',
-			'email',
-			'password setup',
-			'invite',
-		],
+		keywords: ['admin', 'user', 'create', 'account', 'email', 'password setup'],
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx) {

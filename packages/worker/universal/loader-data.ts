@@ -327,6 +327,14 @@ export type AdminUsersLoaderData = {
 	availablePlans: Array<AdminPlanName>
 }
 
+export type AdminCreatedUserSetup = {
+	stableUserId: string
+	email: string
+	username: string
+	setupLink: string
+	setupTokenExpiresAt: number
+}
+
 /**
  * POST (mutation) responses also carry the updated target user so the
  * client can patch it into an infinite-scroll list that may have scrolled
@@ -336,6 +344,7 @@ export type AdminUsersMutationData = AdminUsersLoaderData & {
 	updatedUser: AdminUserListItem | null
 	verifyUrl?: string | null
 	verifyUrlExpiresAt?: number | null
+	createdUser?: AdminCreatedUserSetup
 }
 
 type AdminRoleListItem = {
@@ -366,25 +375,6 @@ export type AdminCommunityReportsLoaderData = {
 	ok: true
 	reports: Array<AdminCommunityReportListItem>
 	statusFilter: string
-}
-
-type AdminInviteListItem = {
-	code: string
-	createdByStableUserId: string | null
-	createdByEmail: string | null
-	note: string
-	maxUses: number
-	useCount: number
-	expiresAt: string | null
-	revokedAt: string | null
-	createdAt: string
-	plan: AdminPlanName
-}
-
-export type AdminInvitesLoaderData = {
-	ok: true
-	invites: Array<AdminInviteListItem>
-	availablePlans: Array<AdminPlanName>
 }
 
 type AdminReservedUsernameConflict = {
@@ -925,14 +915,6 @@ export type AdminPlatformFeedbackLoaderData = {
 	total: number
 	statusFilter: AdminPlatformFeedbackListItem['status'] | null
 	categoryFilter: AdminPlatformFeedbackListItem['category'] | null
-}
-
-export type AdminCreatedUserSetup = {
-	stableUserId: string
-	email: string
-	username: string
-	setupLink: string
-	setupTokenExpiresAt: number
 }
 
 export type AccountFormerEmail = {
@@ -1888,7 +1870,6 @@ export type AppLoaderData = {
 	adminUsers?: AdminUsersLoaderData
 	adminRoles?: AdminRolesLoaderData
 	adminCommunityReports?: AdminCommunityReportsLoaderData
-	adminInvites?: AdminInvitesLoaderData
 	adminReservedUsernames?: AdminReservedUsernamesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
 	adminBanners?: AdminBannersLoaderData

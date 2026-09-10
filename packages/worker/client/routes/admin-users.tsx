@@ -15,6 +15,7 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import { isStalledEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
+	type AdminCreatedUserSetup,
 	type AdminPlanName,
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
@@ -38,6 +39,7 @@ import {
 	AccountManagementShell,
 	AdminPageHeader,
 } from './account-management-components.tsx'
+import { renderAdminCreateUserPanel } from './admin-users-create.tsx'
 import {
 	RecordChips,
 	RecordTable,
@@ -76,6 +78,7 @@ export function AdminUsersRoute(handle: Handle) {
 	let selectedUserFallback: AdminUserListItem | null = null
 	let message: string | null = null
 	let actionState: AdminUsersActionState = 'idle'
+	let createdUser: AdminCreatedUserSetup | null = null
 	let mintedVerifyUrl: string | null = null
 	let mintedVerifyUrlForStableUserId: string | null = null
 	const markVerifiedCheck = createDoubleCheck(handle)
@@ -523,6 +526,55 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitCreateUser(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		if (actionState !== 'idle') return
+		const form = event.currentTarget
+		const formData = new FormData(form)
+		const href = getCurrentHref()
+		actionState = 'creatingUser'
+		createdUser = null
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'create_user',
+					email: String(formData.get('email') ?? '').trim(),
+					username: String(formData.get('username') ?? '').trim(),
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersMutationData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to create user.')
+			}
+			applyMutationPayload(payload, href)
+			createdUser = payload.createdUser ?? createdUser
+			message = 'User created. Copy the setup link below.'
+			actionState = 'idle'
+			if (createdUser) form.reset()
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to create user.'
+			handle.update()
+		}
+	}
+
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	return () => {
@@ -607,6 +659,12 @@ export function AdminUsersRoute(handle: Handle) {
 						{usersSnapshot.error}
 					</AccountManagementMessage>
 				) : null}
+				{renderAdminCreateUserPanel({
+					actionState,
+					createdUser,
+					isMutating,
+					onSubmit: submitCreateUser,
+				})}
 				<RecordTable
 					mode="expand"
 					busy={pending}

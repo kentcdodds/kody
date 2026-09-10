@@ -290,7 +290,6 @@ export function AccountManagementHeader(
 const adminNavItems = [
 	{ href: '/admin/users', label: 'Users', paths: ['/admin', '/admin/users'] },
 	{ href: '/admin/insights', label: 'Insights', paths: ['/admin/insights'] },
-	{ href: '/admin/invites', label: 'Invites', paths: ['/admin/invites'] },
 	{
 		href: '/admin/reserved-usernames',
 		label: 'Reserved usernames',
@@ -537,7 +536,7 @@ export function AdminPageHeader(handle: Handle<AdminPageHeaderProps>) {
 						label: item.label,
 						// Prefix-aware like account nav so `/admin/users/42`
 						// keeps Users highlighted. `/admin` stays exact-only
-						// so sibling pages (`/admin/invites`, …) are unaffected.
+						// so sibling pages (`/admin/roles`, …) are unaffected.
 						active: item.paths.some(
 							(path) =>
 								path === currentPath ||

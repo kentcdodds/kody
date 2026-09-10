@@ -242,8 +242,6 @@ rule.
 - `adminReservedUsernameList`
 - `adminReservedUsernameAdd`
 - `adminReservedUsernameRemove`
-- `adminInviteCreate`
-- `adminInviteList`
 - `adminSystemEmailList`
 - `adminSystemEmailGet`
 - `adminSystemEmailSend`

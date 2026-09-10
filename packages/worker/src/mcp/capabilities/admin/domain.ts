@@ -5,8 +5,6 @@ import { adminCommunityActivityListCapability } from './admin-community-activity
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
 import { adminFeatureFlagSetCapability } from './admin-feature-flag-set.ts'
-import { adminInviteCreateCapability } from './admin-invite-create.ts'
-import { adminInviteListCapability } from './admin-invite-list.ts'
 import { adminPackageCodemodApplyCapability } from './admin-package-codemod-apply.ts'
 import { adminPackageCodemodDryRunCapability } from './admin-package-codemod-dry-run.ts'
 import { adminPackageCodemodRevertCapability } from './admin-package-codemod-revert.ts'
@@ -66,8 +64,6 @@ export const adminDomain = defineDomain({
 		'verify',
 		'audit',
 		'feature flags',
-		'invite',
-		'invites',
 		'system email',
 		'platform feedback',
 		'community activity',
@@ -132,8 +128,6 @@ export const adminDomain = defineDomain({
 		adminReservedUsernameListCapability,
 		adminReservedUsernameAddCapability,
 		adminReservedUsernameRemoveCapability,
-		adminInviteCreateCapability,
-		adminInviteListCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
 		adminSystemEmailSendCapability,

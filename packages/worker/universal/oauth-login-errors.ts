@@ -15,10 +15,6 @@ export const oauthLoginErrorMessages = {
 		'We could not complete sign-in with the provider. Please try again.',
 	'no-verified-email':
 		'The provider did not share a verified email for your account. Sign in another way first, then connect the provider from this screen while signed in.',
-	'invite-invalid': 'That invite code is invalid.',
-	'invite-revoked': 'That invite code has been revoked.',
-	'invite-expired': 'That invite code has expired.',
-	'invite-exhausted': 'That invite code has already been used.',
 	'connection-conflict':
 		'That provider account is already connected to a different user.',
 	'email-unverified': 'Verify your email before connecting a sign-in provider.',

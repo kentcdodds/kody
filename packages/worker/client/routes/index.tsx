@@ -183,10 +183,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		adminArea,
 		(m) => m.adminUsersRouteLoader,
 	),
-	[routePattern(routes.adminInvites)]: lazyRouteLoader(
-		adminArea,
-		(m) => m.adminInvitesRouteLoader,
-	),
 	[routePattern(routes.adminReservedUsernames)]: lazyRouteLoader(
 		adminArea,
 		(m) => m.adminReservedUsernamesRouteLoader,
@@ -472,9 +468,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.adminUserDetail)]: (
 		<LazyAdminRoute render={(m) => <m.AdminUsersRoute />} />
-	),
-	[routePattern(routes.adminInvites)]: (
-		<LazyAdminRoute render={(m) => <m.AdminInvitesRoute />} />
 	),
 	[routePattern(routes.adminReservedUsernames)]: (
 		<LazyAdminRoute render={(m) => <m.AdminReservedUsernamesRoute />} />

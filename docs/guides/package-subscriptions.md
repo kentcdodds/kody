@@ -1181,7 +1181,6 @@ type UserCreatedEvent = {
 	}
 	source: 'signup' | 'oauth' | 'admin'
 	created_at: string
-	invite_code: string | null
 	attribution: {
 		utm_source: string | null
 		utm_medium: string | null
@@ -1205,13 +1204,12 @@ type UserDeletedEvent = {
 ```
 
 `user.id` is the stable account user id. `source` is the create path that
-committed. `invite_code` is the consumed, normalized invite code when signup
-used one, otherwise `null`. `attribution` is first-touch marketing UTMs and
-landing path/referrer persisted on the account at signup (all null when absent).
-Timestamps are ISO-8601 UTC. The event omits passwords, roles, plan, secrets,
-packages, and unrelated account content. Notification copies already delivered
-outside Kody cannot be recalled after account deletion. Idempotency keys include
-the topic, user id, timestamp, and package id.
+committed. `attribution` is first-touch marketing UTMs and landing path/referrer
+persisted on the account at signup (all null when absent). Timestamps are
+ISO-8601 UTC. The event omits passwords, roles, plan, secrets, packages, and
+unrelated account content. Notification copies already delivered outside Kody
+cannot be recalled after account deletion. Idempotency keys include the topic,
+user id, timestamp, and package id.
 
 ## `user.email_verification.failed` (admins)
 

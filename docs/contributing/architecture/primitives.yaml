@@ -135,7 +135,7 @@ primitives:
   - id: app-sessions
     group: auth
     name: Browser sessions
-    summary: Cookie sessions, signup/login, invites, verification, and 2FA.
+    summary: Cookie sessions, signup/login, verification, and 2FA.
     code:
       - packages/worker/src/app/auth-session.ts
       - packages/worker/src/app/handlers/auth.ts
@@ -151,7 +151,6 @@ primitives:
       - packages/worker/src/app/handlers/webauthn.ts
       - packages/worker/src/app/handlers/account-two-factor.ts
       - packages/worker/src/app/handlers/account-passkeys.ts
-      - packages/worker/src/invites.ts
       - packages/worker/src/app/email-verification.ts
       - packages/worker/src/app/onboarding-data.ts
       - packages/worker/src/app/two-factor.ts

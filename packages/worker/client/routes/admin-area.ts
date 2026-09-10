@@ -4,7 +4,6 @@ export {
 } from './admin-community-reports.tsx'
 export { AdminInsightsRoute } from './admin-insights.tsx'
 export { adminInsightsRouteLoader } from './admin-insights-shared.ts'
-export { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
 export {
 	AdminReservedUsernamesRoute,
 	adminReservedUsernamesRouteLoader,

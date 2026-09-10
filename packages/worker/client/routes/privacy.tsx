@@ -166,10 +166,9 @@ export function PrivacyRoute(_handle: Handle) {
 					receive the same community metadata, and a metadata-only{' '}
 					<code>user.created</code> or <code>user.deleted</code> event when a
 					person account is created or self-deleted (stable user id, username,
-					email, the create source or delete timestamp, the consumed invite code
-					when <code>user.created</code> used one, and first-touch marketing
-					attribution fields when present). Those lifecycle events omit
-					passwords, roles, plan, secrets, and unrelated account content.
+					email, the create source or delete timestamp, and first-touch
+					marketing attribution fields when present). Those lifecycle events
+					omit passwords, roles, plan, secrets, and unrelated account content.
 					Admin-configured notification packages may also receive a
 					metadata-only <code>user.email_verification.failed</code> event when
 					signup/verify mail first hits a terminal delivery failure (stable user

@@ -82,11 +82,10 @@ package-app surfaces:
     former-email claim collision at password or social-login signup is a
     controlled 409 with audit reason `former_email_claimed` (copy tells the
     person to sign in with the email that account uses now, or release the
-    address from Account settings — never leaking the current email) and
-    releases a consumed invite. The owner re-verifies the former address
-    (`POST /account/email-claim-release.json` plus
-    `/verify-email-claim-release`) to drop the claim; that path is rate limited.
-    Operators inspect leftover implicit sha256 collisions with
+    address from Account settings — never leaking the current email). The owner
+    re-verifies the former address (`POST /account/email-claim-release.json`
+    plus `/verify-email-claim-release`) to drop the claim; that path is rate
+    limited. Operators inspect leftover implicit sha256 collisions with
     `adminUserStableIdConflict` (metadata only). `users.stable_user_id` is never
     recomputed for an existing account.
 12. **Unverified accounts are reclaimed on a provider-verified social match.**

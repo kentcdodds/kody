@@ -153,9 +153,6 @@ the same way).
 | `POST /admin/users.json` (roles, plan)                          | `requireUserWithPermission('update:user:any')`     |
 | `GET /admin/roles`                                              | `requireUserWithRole('admin')`                     |
 | `GET /admin/roles.json`                                         | `requireUserWithPermission('read:role:any')`       |
-| `GET /admin/invites`                                            | `requireUserWithRole('admin')`                     |
-| `GET/POST /admin/invites.json`                                  | `requireUserWithRole('admin')`                     |
-| `adminInviteCreate` / `adminInviteList` MCP                     | `requiredRole: 'admin'`                            |
 | `GET /admin/system-email`                                       | `requireUserWithRole('admin')`                     |
 | `GET /admin/system-email.json`                                  | `requireUserWithRole('admin')`                     |
 | `GET /admin/banners`                                            | `requireUserWithRole('admin')`                     |
@@ -164,7 +161,6 @@ the same way).
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
 `packages/worker/src/app/handlers/admin-roles.ts`,
-`packages/worker/src/app/handlers/admin-invites.ts`,
 `packages/worker/src/app/handlers/admin-banners.ts`.
 
 The users list accepts `q` (username/email substring), `role`, and
@@ -173,9 +169,10 @@ send is still `accepted` after 60 minutes). Stall is derived from the user row;
 it is not a stored delivery status.
 
 `POST /admin/users.json` dispatches on an `action` field: `assign_role`,
-`remove_role`, and `update_plan` (set or clear — `plan: null` — a user's
-entitlement plan; see [Entitlements](./entitlements.md)). All three mutations
-emit audit events via `logAuditEvent` with category `admin`.
+`remove_role`, `update_plan` (set or clear — `plan: null` — a user's entitlement
+plan; see [Entitlements](./entitlements.md)), and `create_user` (pre-verified
+account plus a password-setup link). Those mutations emit audit events via
+`logAuditEvent` with category `admin`.
 
 ### Last-admin guardrail
 
@@ -209,16 +206,14 @@ Client checks are cosmetic only; every mutation is re-checked server-side.
 ## Signup and seeding
 
 Every new account receives the `user` role in the signup transaction
-(`packages/worker/src/app/handlers/auth.ts` via `assignUserRole`). If an
-optional invite code was supplied, it is consumed in that same transaction. If
-role assignment fails, the user row is rolled back and any consumed invite use
-is released so signup can be retried.
+(`packages/worker/src/app/handlers/auth.ts` via `assignUserRole`). If role
+assignment fails, the user row is rolled back so signup can be retried.
 
-Admins can also create a pre-verified account by email from `/admin/invites`.
-That action is guarded by `requireUserWithRole('admin')`, uses the shared
-`adminCreateUserWithPasswordSetup` service, assigns only the default `user`
-role, and returns a password-setup link for the admin to send manually. It does
-not grant admin and does not send email automatically.
+Admins can also create a pre-verified account by email from `/admin/users`. That
+action is guarded by `requireUserWithPermission('update:user:any')`, uses the
+shared `adminCreateUserWithPasswordSetup` service, assigns only the default
+`user` role, and returns a password-setup link for the admin to send manually.
+It does not grant admin and does not send email automatically.
 
 `tools/seed-test-data.ts` seeds the default fixture account (`kody@example.com`)
 with the `admin` role and a companion regular account (`jane@example.com`) with
@@ -421,10 +416,10 @@ Queue). Staying over the same threshold does not emit again.
 social-login signup, and admin-created person accounts fan `user.created`.
 Self-service account deletion fans `user.deleted`. Fan-out selects only packages
 whose owners hold the admin role at dispatch time. The event contains the stable
-user id, username, email, create source or delete timestamp, the consumed invite
-code when `user.created` used one, and first-touch marketing attribution when
-present. It omits passwords, roles, plan, secrets, and unrelated account
-content. Delivery is best-effort (no Queue) after the account change commits.
+user id, username, email, create source or delete timestamp, and first-touch
+marketing attribution when present. It omits passwords, roles, plan, secrets,
+and unrelated account content. Delivery is best-effort (no Queue) after the
+account change commits.
 
 **Admins can subscribe to verification-mail terminal failures.** The first
 bounce, failure, rejection, or complaint on a signup/verify send fans

@@ -1,4 +1,4 @@
-export type AuthInvalidField = 'username' | 'email' | 'password' | 'inviteCode'
+export type AuthInvalidField = 'username' | 'email' | 'password'
 
 const noInvalidFields = new Set<AuthInvalidField>()
 
@@ -9,7 +9,6 @@ export function invalidFieldsForMessage(
 ): Set<AuthInvalidField> {
 	if (status !== 'error' || !message) return noInvalidFields
 	const text = message.toLowerCase()
-	if (/\binvite\b/.test(text)) return new Set(['inviteCode'])
 	if (/\busername\b/.test(text)) return new Set(['username'])
 	if (/\bemail\b/.test(text) && !/\bpassword\b/.test(text)) {
 		return new Set(['email'])

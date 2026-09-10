@@ -10,10 +10,6 @@ import {
 	createAdminCommunityReportsHandler,
 } from '#app/handlers/admin-community-reports.ts'
 import {
-	createAdminInvitesApiHandler,
-	createAdminInvitesHandler,
-} from '#app/handlers/admin-invites.ts'
-import {
 	createAdminReservedUsernamesApiHandler,
 	createAdminReservedUsernamesHandler,
 } from '#app/handlers/admin-reserved-usernames.ts'
@@ -466,9 +462,6 @@ export function createAppRouter(env: Env) {
 			adminUserDetail: createAdminUsersHandler(env),
 			adminUsersApi: createAdminUsersApiHandler(env),
 			adminUsersApiPost: createAdminUsersApiHandler(env),
-			adminInvites: createAdminInvitesHandler(env),
-			adminInvitesApi: createAdminInvitesApiHandler(env),
-			adminInvitesApiPost: createAdminInvitesApiHandler(env),
 			adminReservedUsernames: createAdminReservedUsernamesHandler(env),
 			adminReservedUsernamesApi: createAdminReservedUsernamesApiHandler(env),
 			adminReservedUsernamesApiPost:

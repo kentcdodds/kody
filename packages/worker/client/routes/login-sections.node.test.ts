@@ -16,7 +16,6 @@ test('credential errors associate the status message with email and password', a
 			status: 'error',
 			message: 'Invalid email or password.',
 			isSignup: false,
-			prefillInviteCode: '',
 			submitLabel: 'Log in',
 			submitBusyLabel: 'Logging in…',
 			onSubmit: () => {},
@@ -36,14 +35,13 @@ test('credential errors associate the status message with email and password', a
 	expect(html).not.toContain('id="auth-username"')
 })
 
-test('username and invite errors mark only those fields', async () => {
+test('username errors mark only that field', async () => {
 	const usernameHtml = await renderToString(
 		renderAuthForm({
 			...shared,
 			status: 'error',
 			message: 'Username is required.',
 			isSignup: true,
-			prefillInviteCode: '',
 			submitLabel: 'Create account',
 			submitBusyLabel: 'Creating…',
 			onSubmit: () => {},
@@ -53,21 +51,5 @@ test('username and invite errors mark only those fields', async () => {
 	expect(usernameHtml).toMatch(/id="auth-username"[^>]*aria-invalid="true"/)
 	expect(usernameHtml).toMatch(/id="auth-email"[^>]*autocomplete="email"/)
 	expect(usernameHtml).not.toMatch(/id="auth-email"[^>]*aria-invalid/)
-	expect(usernameHtml).toContain('Invite code')
-
-	const inviteHtml = await renderToString(
-		renderAuthForm({
-			...shared,
-			status: 'error',
-			message: 'Invite code is invalid.',
-			isSignup: true,
-			prefillInviteCode: '',
-			submitLabel: 'Create account',
-			submitBusyLabel: 'Creating…',
-			onSubmit: () => {},
-			onPasskeySignIn: () => {},
-		}),
-	)
-	expect(inviteHtml).toMatch(/id="auth-invite-code"[^>]*aria-invalid="true"/)
-	expect(inviteHtml).not.toMatch(/id="auth-username"[^>]*aria-invalid/)
+	expect(usernameHtml).not.toContain('Invite code')
 })

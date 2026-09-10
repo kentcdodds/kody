@@ -13,8 +13,8 @@ import {
 /**
  * Short-lived signed cookie that carries the social-login round-trip state:
  * the CSRF `state` value, the PKCE code verifier, the post-login redirect
- * target, an optional invite code that can grant a stored plan, and optional
- * first-touch UTM attribution so social sign-in does not drop the query.
+ * target, and optional first-touch UTM attribution so social sign-in does
+ * not drop the query.
  * Written when the flow starts and cleared by the callback.
  */
 const oauthLoginStateMaxAgeSeconds = 60 * 10
@@ -24,7 +24,6 @@ export type OauthLoginState = {
 	state: string
 	codeVerifier: string
 	redirectTo: string | null
-	inviteCode: string | null
 	attribution: FirstTouchAttribution | null
 }
 
@@ -70,10 +69,6 @@ function parseAttributionField(value: unknown): FirstTouchAttribution | null {
 function isOauthLoginState(value: unknown): value is OauthLoginState {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
-	const inviteCodeOk =
-		record.inviteCode === undefined ||
-		record.inviteCode === null ||
-		typeof record.inviteCode === 'string'
 	const attributionOk =
 		record.attribution === undefined ||
 		record.attribution === null ||
@@ -86,7 +81,6 @@ function isOauthLoginState(value: unknown): value is OauthLoginState {
 		typeof record.codeVerifier === 'string' &&
 		record.codeVerifier.length > 0 &&
 		(record.redirectTo === null || typeof record.redirectTo === 'string') &&
-		inviteCodeOk &&
 		attributionOk
 	)
 }
@@ -94,10 +88,6 @@ function isOauthLoginState(value: unknown): value is OauthLoginState {
 function normalizeOauthLoginState(value: OauthLoginState): OauthLoginState {
 	return {
 		...value,
-		inviteCode:
-			typeof value.inviteCode === 'string' && value.inviteCode.length > 0
-				? value.inviteCode
-				: null,
 		attribution: parseAttributionField(value.attribution),
 	}
 }

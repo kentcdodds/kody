@@ -77,20 +77,18 @@ request so cookie signing and verification are available to handlers.
 
 `POST /auth` is implemented by `packages/worker/src/app/handlers/auth.ts`.
 
-- Accepts JSON body with `email`, `password`, `mode` (`login` or `signup`), an
-  optional `inviteCode` for signups, and optional `rememberMe` for logins
+- Accepts JSON body with `email`, `password`, `mode` (`login` or `signup`), and
+  optional `rememberMe` for logins
 - Uses D1 (`users` table) for user lookups and inserts
 - Hashes passwords with `@kody-internal/shared/password-hash.ts`
 - Returns signed session cookie via `Set-Cookie` on success
 - Emits structured audit events through `packages/worker/src/audit-log.ts`
 
-### Signup posture and invites
+### Signup posture
 
-Anyone can create an account from `/signup` (password or social). An optional
-operator-minted invite code can be supplied (`?code=` / `?invite=` or the
-optional field on the form); when present it is consumed and can grant the
-invite's stored plan. Referral share links (`?ref=`) are a separate growth
-program and do not use the `invites` table.
+Anyone can create an account from `/signup` (password or social). New accounts
+start on the `free` plan. Referral share links (`?ref=`) are a separate growth
+program.
 
 Account signup Kit tagging (password and OAuth signup):
 
@@ -113,37 +111,11 @@ hourly `kit_subscriber_sync` lane. Tags:
 - `standard::kody` / `pro::kody` (cleared when the Stripe plan is no longer
   paid)
 
-The `invites` table stores operator-created invite codes:
-
-- `code` is the primary key shown to the invited user
-- `created_by` references the admin account that created it (nullable so account
-  deletion does not strand invites)
-- `note`, `max_uses`, `use_count`, `expires_at`, `revoked_at`, and `created_at`
-  describe current invite state
-- `plan` is a NOT NULL signup plan name with a DDL default of `'free'` and a
-  CHECK constraint for `free`, `standard`, `pro`, or `max` (the squashed
-  baseline plus `0002-restructure-plan-tiers.sql`). Password and social signup
-  read the consumed invite's stored plan with `parseStoredPlanName` and copy it
-  onto `users.plan` via `resolvePlanWrite`. Omitted invite plans are written as
-  `free`. Admin invite creation validates plan names with strict
-  `parsePlanName`. See [Entitlements](./entitlements.md).
-
-When a code is supplied, signup atomically consumes it with a single conditional
-`UPDATE ... WHERE use_count < max_uses AND revoked_at IS NULL ...`; concurrent
-requests cannot over-use a code. Signup without a code creates a free account.
-
-Admins manage invites at `/admin/invites`. The route uses the RBAC `admin` role
-guard, not an owner-scoped content bypass. Invite creation (including optional
-plan), use, and revocation emit audit events. Agents mint the same rows with
-`adminInviteCreate` (optional bulk `codes` with a shared `maxUses`) and
-`adminInviteList`; both are admin-only MCP capabilities that call `createInvite`
-/ `listInvites` and return invite metadata only.
-
-The same admin page can create a user directly by email for manually invited
-people. That flow calls `adminCreateUserWithPasswordSetup` in
+Admins can create a user directly by email from `/admin/users`. That flow calls
+`adminCreateUserWithPasswordSetup` in
 `packages/worker/src/identity/admin-user-creation.ts` instead of going through
-the web route logic directly, so future admin MCP capabilities can reuse the
-same service. It:
+the web route logic directly, so admin MCP capabilities can reuse the same
+service. It:
 
 - requires a unique email and either a unique explicit username or an
   auto-generated unique username derived from the email
@@ -156,8 +128,8 @@ same service. It:
   into a manual email
 
 There is no privileged "primary user" at runtime. The first admin is still
-bootstrapped through SQL; after that, admin role assignment and invite
-management happen through admin routes.
+bootstrapped through SQL; after that, admin role assignment happens through
+admin routes.
 
 ### Email verification
 
@@ -167,12 +139,11 @@ through `packages/worker/src/app/email/cloudflare-email.ts`, and store
 Verification tokens expire after 24 hours and only token hashes are stored.
 
 Signup fails hard when the verification email cannot be sent: the created user
-row is rolled back and any consumed invite use is released, so the
-email/username can be retried. An account must never exist without a way to
-verify it. The only exception is non-production runtimes (local dev, preview,
-test — see `isNonProductionRuntime`) with no Cloudflare email sender configured;
-there the send is skipped and accounts are verified through seeded tokens
-instead.
+row is rolled back so the email/username can be retried. An account must never
+exist without a way to verify it. The only exception is non-production runtimes
+(local dev, preview, test — see `isNonProductionRuntime`) with no Cloudflare
+email sender configured; there the send is skipped and accounts are verified
+through seeded tokens instead.
 
 Signed-in users with an unverified email can request a fresh link with
 `POST /account/resend-verification.json`
@@ -596,12 +567,12 @@ the operator bot) and assign or remove configured guild roles
 token. The member role is assigned on connect; Standard and Pro roles follow
 `users.stripe_plan`.
 
-- `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier + optional
-  invite code in the signed `kody_oauth_login` cookie);
-  `GET /auth/:provider/callback` completes it and issues the normal
-  `kody_session` cookie. The first-party UI fetches the start endpoint with
-  `Accept: application/json` and navigates to the returned authorize URL itself,
-  because the CSP locks `form-action` and `connect-src` to `'self'`
+- `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier in the
+  signed `kody_oauth_login` cookie); `GET /auth/:provider/callback` completes it
+  and issues the normal `kody_session` cookie. The first-party UI fetches the
+  start endpoint with `Accept: application/json` and navigates to the returned
+  authorize URL itself, because the CSP locks `form-action` and `connect-src` to
+  `'self'`
 - Existing connections sign in directly; the two-factor gate applies exactly as
   for password logins (passkey sign-in skips TOTP)
 - A signed-in user whose live `email_verified_at` is set hitting the callback
@@ -617,9 +588,8 @@ token. The member role is assigned on connect; Standard and Pro roles follow
   first (unusable password sentinel, `password_changed_at` lockout, TOTP /
   passkeys / other `oauth_connections` / reset tokens cleared) so a squatted
   password signup cannot keep access after the real owner signs in with the
-  provider; otherwise a new account is created. Signup is open; an optional
-  invite code from the OAuth state cookie or signup form is consumed when
-  present and can grant the invite's stored plan
+  provider; otherwise a new account is created. Signup is open and new accounts
+  start on the `free` plan
 - Buttons only render for providers whose client id/secret env vars are set;
   `MOCK_`-prefixed client ids activate an in-worker mock flow on non-production
   runtimes for dev and E2E tests
@@ -748,10 +718,6 @@ Token lifetimes are set on the `OAuthProvider` in
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
-- `packages/worker/src/invites.ts` and
-  `packages/worker/src/app/handlers/admin-invites.ts` for invite management
-- `packages/worker/src/mcp/capabilities/admin/admin-invite-create.ts` and
-  `admin-invite-list.ts` for the admin MCP mint/list path
 - `packages/worker/src/identity/admin-user-creation.ts` for admin-created
   account setup links
 - `packages/worker/src/app/email-verification.ts`,

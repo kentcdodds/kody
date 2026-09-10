@@ -4,7 +4,13 @@ import {
 	auditDatabaseFromEnv,
 	getRequestIp,
 	logAuditEvent,
+	redactEmailRecipient,
 } from '#worker/audit-log.ts'
+import {
+	adminCreateUserWithPasswordSetup,
+	AdminCreateUserError,
+} from '#worker/identity/admin-user-creation.ts'
+import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { loadAdminUserUsageData } from '#worker/admin/user-usage-data.ts'
 import {
 	clearAdminUserEmailOutboundPause,
@@ -178,6 +184,15 @@ export function createAdminUsersApiHandler(env: Env) {
 				}
 				if (action === 'mint_verify_url') {
 					return handleMintVerifyUrlAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
+				if (action === 'create_user') {
+					return handleCreateUserAction({
 						env,
 						request,
 						url,
@@ -620,6 +635,75 @@ async function handleMintVerifyUrlAction(input: {
 			verifyUrlExpiresAt: minted.expiresAt,
 		},
 	)
+}
+
+async function handleCreateUserAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const email = readNonEmptyTrimmedStringOrNumber(input.body, 'email') ?? ''
+	const username = readNonEmptyTrimmedStringOrNumber(input.body, 'username')
+
+	try {
+		const createdUser = await adminCreateUserWithPasswordSetup({
+			db: input.env.APP_DB,
+			env: input.env,
+			email,
+			username,
+			setupLinkOrigin: input.url,
+		})
+		scheduleUserCreatedEvent({
+			env: input.env,
+			user: {
+				id: createdUser.stableUserId,
+				username: createdUser.username,
+				email: createdUser.email,
+			},
+			source: 'admin',
+		})
+		const requestIp = getRequestIp(input.request) ?? undefined
+		void logAuditEvent({
+			db: auditDatabaseFromEnv(input.env),
+			category: 'admin',
+			action: 'create_user',
+			result: 'success',
+			email: input.actor.email,
+			ip: requestIp,
+			path: input.url.pathname,
+			reason: [
+				`actor_stable_user_id=${input.actor.mcpUser.userId}`,
+				`target_stable_user_id=${createdUser.stableUserId}`,
+				`target_email=${redactEmailRecipient(createdUser.email)}`,
+			].join(';'),
+		})
+
+		const { userId: _userId, ...boundaryUser } = createdUser
+		const payload = await loadAdminUsersData(input.env, input.request.url)
+		return jsonResponse({
+			...payload,
+			updatedUser: null,
+			createdUser: boundaryUser,
+		})
+	} catch (error) {
+		const message =
+			error instanceof Error ? error.message : 'Unable to create user.'
+		return jsonResponse(
+			{
+				ok: false,
+				error: message,
+				code: error instanceof AdminCreateUserError ? error.code : undefined,
+			},
+			error instanceof AdminCreateUserError &&
+				(error.code === 'email_exists' || error.code === 'username_exists')
+				? 409
+				: error instanceof AdminCreateUserError
+					? 400
+					: 500,
+		)
+	}
 }
 
 /**

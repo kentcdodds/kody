@@ -56,13 +56,6 @@ function seedSquattingAccount(
 	`)
 }
 
-function seedInvite(sqlite: DatabaseSync, code: string) {
-	sqlite.exec(`
-		INSERT INTO invites (code, created_by, note, max_uses, use_count)
-		VALUES (${quoteSqlString(code)}, NULL, '', 1, 0);
-	`)
-}
-
 function createHandler(db: D1Database) {
 	return createAuthHandler({
 		COOKIE_SECRET: testCookieSecret,
@@ -87,7 +80,7 @@ beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-test('signup returns 409 when sha256(email) collides with an existing stable_user_id and releases the invite', async () => {
+test('signup returns 409 when sha256(email) collides with an existing stable_user_id', async () => {
 	const victimEmail = 'victim@example.com'
 	const victimStableUserId = await createStableUserIdFromEmail(victimEmail)
 	const { sqlite, db } = createMigratedDb()
@@ -121,25 +114,5 @@ test('signup returns 409 when sha256(email) collides with an existing stable_use
 			reason: 'former_email_claimed',
 		}),
 	)
-
-	seedInvite(sqlite, 'STABLE-ID-INVITE')
-	const inviteHandler = createHandler(db)
-	const invitedResponse = await signup(inviteHandler, {
-		email: victimEmail,
-		username: 'victim-invited',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'stable-id-invite',
-	})
-	expect(invitedResponse.status).toBe(409)
-	expect(await invitedResponse.json()).toEqual({
-		error: conflictMessage,
-		code: formerEmailClaimedSignupCode,
-	})
-	expect(
-		sqlite
-			.prepare(`SELECT use_count FROM invites WHERE code = ?`)
-			.get('STABLE-ID-INVITE') as { use_count: number },
-	).toEqual({ use_count: 0 })
-	expect(auditEventSummaries()).toEqual(['signup:failure', 'signup:failure'])
+	expect(auditEventSummaries()).toEqual(['signup:failure'])
 })

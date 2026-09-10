@@ -28,5 +28,5 @@ node tools/control-kody.ts request GET /signup --origin http://localhost:3742 --
   change is the signup path itself.
 - Signup copy: "By creating an account you agree to the Terms of Service and
   acknowledge the Privacy Policy" (`/terms`, `/privacy`).
-- Signup is open. An optional invite code can grant a plan.
+- Signup is open. New accounts start on the free plan.
 - Person accounts that stay unverified for seven days are deleted.
