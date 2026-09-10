@@ -787,16 +787,28 @@ html.is-settled {
 	align-items: stretch;
 	align-self: start;
 	min-width: 0;
+	container-type: inline-size;
 }
 
 .landing-hero-title {
 	margin: 0;
-	font-size: clamp(2.4rem, 5.2vw, 4.25rem);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	/* Size from the intro column so "Switching Agents" stays on one line.
+	   Skip a rem floor: it beats 13.2cqi when the root font is enlarged, and
+	   nowrap would overflow. Keep a rem/vw fallback for browsers without cqi. */
+	font-size: clamp(2.15rem, 5.2vw, 4.05rem);
+	font-size: min(13.2cqi, 4.05rem);
 	font-weight: 760;
 	line-height: 1.02;
 	letter-spacing: -0.03em;
 	font-variation-settings: 'opsz' 96;
-	text-wrap: balance;
+	text-wrap: wrap;
+}
+
+.landing-hero-title-line {
+	white-space: nowrap;
 }
 
 .landing-hero-title em {
@@ -1030,12 +1042,6 @@ html.is-settled {
 @media (max-width: 800px) {
 	.landing-hero-top {
 		grid-template-columns: 1fr;
-	}
-
-	/* Single column: the headline owns the full width, so scale with it
-	   instead of the two-column 5.2vw that assumed a ~45% column. */
-	.landing-hero-title {
-		font-size: clamp(2.5rem, 8.5vw, 4.25rem);
 	}
 }
 
