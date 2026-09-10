@@ -15,6 +15,7 @@ import {
 
 test('package-create builds preview URLs, reports JSON shape, and can leave HEAD ahead', async () => {
 	expect(isLowerKebabKodyId('preview-pkg')).toBe(true)
+	expect(isLowerKebabKodyId('@user-me/preview-pkg')).toBe(true)
 	expect(isLowerKebabKodyId('pkg')).toBe(true)
 	expect(isLowerKebabKodyId('Not-A-Slug')).toBe(false)
 	expect(isProductionKodyOrigin('https://kody.codes')).toBe(true)
@@ -50,6 +51,9 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 					}
 					expect(args.code).toContain('packageGetGitRemote')
 					expect(args.code).toContain('packageGet')
+					expect(args.code).toContain(
+						"requested.slice(requested.lastIndexOf('/') + 1)",
+					)
 					expect(args.params).toEqual({
 						kodyId: 'preview-pkg',
 						description: 'preview fixture',
@@ -132,6 +136,46 @@ test('package-create builds preview URLs, reports JSON shape, and can leave HEAD
 	})
 	expect(recovered.packageId).toBe('pkg-1')
 	expect(recovered.headAhead).toBe(false)
+
+	const scoped = await createPreviewPackage({
+		origin: 'https://kody-pr-9.kody.workers.dev',
+		email: 'me@kentcdodds.com',
+		password: 'ilikecode',
+		kodyId: '@user-me/preview-pkg',
+		headAhead: false,
+		connect: async () => ({
+			cookieHeader: 'kody_session=abc',
+			client: {
+				async callTool(params) {
+					const args = params.arguments as {
+						code: string
+						params: { kodyId: string }
+					}
+					expect(args.params.kodyId).toBe('@user-me/preview-pkg')
+					expect(args.code).toContain(
+						"requested.slice(requested.lastIndexOf('/') + 1)",
+					)
+					return {
+						isError: false,
+						structuredContent: {
+							result: {
+								remote: null,
+								remoteError: 'account not found',
+								detail: {
+									package_id: 'pkg-1',
+									kody_id: 'preview-pkg',
+									name: '@user-me/preview-pkg',
+								},
+							},
+						},
+					}
+				},
+			},
+		}),
+	})
+	expect(scoped.packageId).toBe('pkg-1')
+	expect(scoped.kodyId).toBe('preview-pkg')
+	expect(scoped.name).toBe('@user-me/preview-pkg')
 
 	expect(formatPackageCreateReport(report)).toBe(
 		[

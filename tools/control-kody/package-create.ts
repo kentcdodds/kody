@@ -15,26 +15,31 @@ export const headAheadFileName = 'preview-head-ahead.txt'
 
 const packageCreateExecuteCode = `import { kody } from 'kody:runtime'
 export default async function main(input = {}) {
+	const requested = String(input.kodyId ?? '').trim()
+	const leaf = requested.includes('/')
+		? requested.slice(requested.lastIndexOf('/') + 1)
+		: requested
 	let remote = null
 	let remoteError = null
 	try {
 		remote = await kody.packageGetGitRemote({
 			create: true,
-			kody_id: input.kodyId,
+			kody_id: requested,
 			...(input.description ? { description: input.description } : {}),
 		})
 	} catch (error) {
 		remoteError = error instanceof Error ? error.message : String(error)
 	}
 	const listed = await kody.packageList({})
-	const match = (listed.packages ?? []).find(
-		(pkg) => pkg.kody_id === input.kodyId,
-	)
-	const packageId = remote?.package_id ?? match?.package_id
+	const match = (listed.packages ?? []).find((pkg) => {
+		const kodyId = pkg.kody_id ?? pkg.kodyId
+		return kodyId === leaf || kodyId === requested || pkg.name === requested
+	})
+	const packageId = remote?.package_id ?? match?.package_id ?? match?.id
 	if (!packageId) {
 		throw new Error(
 			remoteError ??
-				\`Saved package \${input.kodyId} was not found after create.\`,
+				\`Saved package \${requested} was not found after create.\`,
 		)
 	}
 	const detail = await kody.packageGet({ package_id: packageId })
