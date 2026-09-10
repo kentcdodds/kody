@@ -134,6 +134,21 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
+		id: 'shared',
+		question: 'What is a shared package?',
+		match: accountSection(routes.accountShared.href()),
+		paragraphs: [
+			'Shared packages are invitations from one paid Kody account to another to use a package. Guests can read source and invoke. They cannot publish, write, or create jobs, apps, webhooks, or subscriptions on the shared package.',
+			'Accept is required. Pin stays on the accepted publish until you approve a later one. Follow auto-accepts future publishes. Raw secret values stay hidden.',
+		],
+		learnMore: [
+			{
+				href: docHref('package-sharing'),
+				label: 'Package sharing',
+			},
+		],
+	},
+	{
 		id: 'waiting',
 		question: 'What is waiting?',
 		match: accountSection(routes.accountWaiting.href()),

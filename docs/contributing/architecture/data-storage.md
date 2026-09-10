@@ -392,6 +392,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   act inside a platform account's package scope (`scope_owner_user_id`,
   `grantee_user_id`, `created_by_user_id`, `created_at`; squashed baseline).
   Grants are only representable when the scope owner is a platform account.
+- `package_share_grants`: person-to-person invitations to **use** one saved
+  package (`package_id`, `owner_user_id`, invitee email/username,
+  `grantee_user_id`, `status`, `role`, `trust_level`,
+  `accepted_published_commit`). Not a platform scope grant. Owner invites; guest
+  must accept; v1 role is `use` (read source + invoke). See
+  [package sharing](../../guides/package-sharing.md) and
+  [0050](../decisions/0050-package-share-grants-are-not-scope-grants.md).
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see

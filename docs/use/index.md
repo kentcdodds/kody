@@ -60,6 +60,8 @@ MCP-level reference detail those docs link into.
   overlays and package imports
 - [Workflows](./workflows.md)
 - [Packages](./packages.md)
+- [Share a package](../guides/package-sharing.md) — invite another paid account
+  to use a package (accept required; pin or follow)
 - [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic
   Worker days by surface, and how the acting user plus a stable module graph
   reuse one isolate per UTC day

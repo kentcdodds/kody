@@ -225,7 +225,10 @@ export const packageSearchEntityPlugin = {
 		if (!input.userId) return []
 		if (
 			rows.some(
-				(row) => row.record.userId !== input.userId && !row.platformScope,
+				(row) =>
+					row.record.userId !== input.userId &&
+					!row.platformScope &&
+					!row.shareGranted,
 			)
 		) {
 			console.warn(

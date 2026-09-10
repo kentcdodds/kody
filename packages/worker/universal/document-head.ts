@@ -175,6 +175,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
+	[routePattern(routes.accountShared)]: titleOnly('Shared packages'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),
 	[routePattern(routes.accountIntegrationsApprove)]: titleOnly('Integrations'),
@@ -184,6 +185,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
+	),
+	[routePattern(routes.communityPackageApproveChanges)]: titleOnly(
+		'Approve shared package changes',
 	),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {
 		const files = loaderData?.packageFiles

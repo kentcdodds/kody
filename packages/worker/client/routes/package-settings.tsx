@@ -11,6 +11,7 @@ import {
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
+import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { routes } from '#universal/routes.ts'
 import {
@@ -27,6 +28,11 @@ import {
 	renderOwnerPackageSection,
 	renderShellStatus,
 } from './community-detail-sections.tsx'
+import {
+	loadPackageShareGrants,
+	renderPackageShareSettings,
+} from './package-share-settings.tsx'
+import { postPackageShareAction } from './package-share-client.ts'
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
 
@@ -53,6 +59,12 @@ export function PackageSettingsRoute(handle: Handle) {
 	/** Payload last applied to the closure state above. */
 	let appliedShell: PackageSettingsShell | null = null
 	const lockInFlight = new Map<string, string | null>()
+	let shareGrants: Array<PackageShareGrantLoaderView> = []
+	let shareInviteUsername = ''
+	let shareInviteEmail = ''
+	let shareBusy = false
+	let shareMessage: string | null = null
+	let shareLoadedFor = ''
 	const settingsData = createRouteData<
 		'communityDetailShell',
 		PackageSettingsShell
@@ -163,6 +175,70 @@ export function PackageSettingsRoute(handle: Handle) {
 		handle.update()
 	}
 
+	async function refreshShareGrants(nextUsername: string, nextKodyId: string) {
+		const key = `${nextUsername}/${nextKodyId}`
+		if (!nextUsername || !nextKodyId || shareLoadedFor === key) return
+		shareLoadedFor = key
+		shareGrants = await loadPackageShareGrants({
+			username: nextUsername,
+			kodyId: nextKodyId,
+		})
+		handle.update()
+	}
+
+	async function inviteShare() {
+		if (shareBusy || !username || !kodyId) return
+		shareBusy = true
+		shareMessage = null
+		handle.update()
+		const result = await postPackageShareAction({
+			intent: 'invite',
+			ownerUsername: username,
+			kodyId,
+			username: shareInviteUsername,
+			email: shareInviteEmail,
+		})
+		shareBusy = false
+		if (result.status === 'unauthorized') {
+			window.location.assign('/login')
+			return
+		}
+		if (result.status === 'error') {
+			shareMessage = result.message
+			handle.update()
+			return
+		}
+		shareInviteUsername = ''
+		shareInviteEmail = ''
+		shareLoadedFor = ''
+		await refreshShareGrants(username, kodyId)
+	}
+
+	async function revokeShare(grantId: string) {
+		if (shareBusy || !username || !kodyId) return
+		shareBusy = true
+		shareMessage = null
+		handle.update()
+		const result = await postPackageShareAction({
+			intent: 'revoke',
+			ownerUsername: username,
+			kodyId,
+			grantId,
+		})
+		shareBusy = false
+		if (result.status === 'unauthorized') {
+			window.location.assign('/login')
+			return
+		}
+		if (result.status === 'error') {
+			shareMessage = result.message
+			handle.update()
+			return
+		}
+		shareLoadedFor = ''
+		await refreshShareGrants(username, kodyId)
+	}
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const pathname = readRouterPathname(handle)
@@ -207,6 +283,15 @@ export function PackageSettingsRoute(handle: Handle) {
 		// The previous package's settings (`snapshot.stale`) stay on screen
 		// while a fallback fetch runs; the loading copy is for the cold path.
 		const showReady = snapshot.data?.kind === 'owner'
+		if (
+			showReady &&
+			username &&
+			kodyId &&
+			shareLoadedFor !== `${username}/${kodyId}` &&
+			typeof document !== 'undefined'
+		) {
+			handle.queueTask(() => refreshShareGrants(username, kodyId))
+		}
 		const showError = snapshot.kind === 'error'
 		const statusMessage = showError
 			? 'Unable to load package settings.'
@@ -251,6 +336,27 @@ export function PackageSettingsRoute(handle: Handle) {
 									handle.update()
 								}
 							},
+						})
+					: null}
+				{showReady && ownerPackage
+					? renderPackageShareSettings({
+							username,
+							kodyId,
+							grants: shareGrants,
+							inviteUsername: shareInviteUsername,
+							inviteEmail: shareInviteEmail,
+							busy: shareBusy,
+							message: shareMessage,
+							onInviteUsername: (value) => {
+								shareInviteUsername = value
+								handle.update()
+							},
+							onInviteEmail: (value) => {
+								shareInviteEmail = value
+								handle.update()
+							},
+							onInvite: () => void inviteShare(),
+							onRevoke: (grantId) => void revokeShare(grantId),
 						})
 					: null}
 			</article>

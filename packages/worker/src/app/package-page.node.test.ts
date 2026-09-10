@@ -5,6 +5,7 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	loadCommunityDetailData: vi.fn(),
 	loadAccountPackageDetail: vi.fn(),
+	loadViewerPackageShare: vi.fn(),
 	getAppBaseUrl: () => 'https://example.com',
 }))
 
@@ -32,6 +33,12 @@ vi.mock('#app/account-packages-data.ts', () => ({
 
 vi.mock('#worker/app-base-url.ts', () => ({
 	getAppBaseUrl: () => mockModule.getAppBaseUrl(),
+}))
+
+vi.mock('#worker/package-registry/share-grants.ts', () => ({
+	loadViewerPackageShare: (...args: Array<unknown>) =>
+		mockModule.loadViewerPackageShare(...args),
+	toPackageShareGrantLoaderView: (view: unknown) => view,
 }))
 
 const { loadPackagePage } = await import('./package-page.ts')
@@ -65,6 +72,7 @@ function listingDetail() {
 }
 
 test('loadPackagePage applies the owner / community / public visibility matrix', async () => {
+	mockModule.loadViewerPackageShare.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.resolvePackagePageUrl.mockResolvedValue(null)
 	await expect(
@@ -271,5 +279,65 @@ test('loadPackagePage does not send anonymous visitors to an unpublished listing
 		kind: 'redirect',
 		to: '/@owner/notes-two',
 		shared: false,
+	})
+})
+
+test('loadPackagePage lets pending and accepted share guests see a private package', async () => {
+	mockModule.loadCommunityDetailData.mockResolvedValue(null)
+	mockModule.loadAccountPackageDetail.mockResolvedValue({
+		id: 'pkg-1',
+		name: '@owner/notes',
+		kodyId: 'notes',
+		isPrivate: true,
+	})
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: 'guest@example.com',
+		mcpUser: { userId: 'guest-1' },
+	})
+	mockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'owner',
+		kodyId: 'notes',
+		userId: 'owner-1',
+		savedPackage: publicSavedPackage({ isPrivate: true }),
+		listingId: null,
+	})
+	mockModule.loadViewerPackageShare.mockResolvedValue({
+		id: 'grant-1',
+		status: 'pending',
+		packageName: '@owner/notes',
+	})
+	const pending = await loadPackagePage({
+		env,
+		request,
+		username: 'owner',
+		kodyId: 'notes',
+	})
+	expect(pending).toMatchObject({
+		kind: 'page',
+		viewerIsOwner: false,
+		loggedIn: true,
+		ownerPackage: null,
+		canReadOwnerSource: false,
+		shareGrant: { id: 'grant-1', status: 'pending' },
+	})
+
+	mockModule.loadViewerPackageShare.mockResolvedValue({
+		id: 'grant-1',
+		status: 'accepted',
+		packageName: '@owner/notes',
+	})
+	const accepted = await loadPackagePage({
+		env,
+		request,
+		username: 'owner',
+		kodyId: 'notes',
+	})
+	expect(accepted).toMatchObject({
+		kind: 'page',
+		viewerIsOwner: false,
+		ownerPackage: { id: 'pkg-1' },
+		canReadOwnerSource: true,
+		shareGrant: { id: 'grant-1', status: 'accepted' },
 	})
 })

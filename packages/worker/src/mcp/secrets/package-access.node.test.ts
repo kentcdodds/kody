@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	parsePackageAccessRequiredBatchMessage,
@@ -11,6 +11,8 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
+	isShareGrantedForeignPackage: vi.fn(),
+	findAcceptedPackageShareGrant: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -35,6 +37,13 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
+}))
+
+vi.mock('#worker/package-registry/share-grants.ts', () => ({
+	isShareGrantedForeignPackage: (...args: Array<unknown>) =>
+		mockModule.isShareGrantedForeignPackage(...args),
+	findAcceptedPackageShareGrant: (...args: Array<unknown>) =>
+		mockModule.findAcceptedPackageShareGrant(...args),
 }))
 
 const {
@@ -74,6 +83,10 @@ const userSecretResolved = {
 	allowedPackages: [] as Array<string>,
 }
 
+beforeEach(() => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
+})
+
 function accessInput(
 	overrides: Partial<
 		Parameters<typeof assertPackageCanAccessResolvedSecret>[0]
@@ -103,6 +116,7 @@ function expectAccessDenied(error: unknown, secretName = 'userToken') {
 }
 
 test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValue(false)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
@@ -600,4 +614,18 @@ test('package approval helpers parse structured messages and skip trusted packag
 		kodyId: 'discord-gateway',
 	})
 	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
+})
+
+test('shared package code cannot use the guest user secrets even when allowed_packages lists it', async () => {
+	mockModule.isShareGrantedForeignPackage.mockResolvedValueOnce(true)
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
 })

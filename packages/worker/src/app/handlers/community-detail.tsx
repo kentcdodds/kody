@@ -188,26 +188,27 @@ async function readmeForPackagePage(
 		listingReadme: string | null | undefined
 		ownerSourceId: string | null | undefined
 		viewerIsOwner: boolean
+		canReadOwnerSource?: boolean
+		ownerUserId?: string
 	},
 	serverTiming?: Array<ServerTimingEntry>,
 ) {
 	let readmeContent = input.listingReadme ?? null
 	const ownerSourceId = input.ownerSourceId
-	if (!readmeContent && input.viewerIsOwner && ownerSourceId) {
-		const user = await readAuthenticatedAppUser(input.request, input.env)
-		if (user) {
-			readmeContent = await recordServerTiming(
-				'owner-readme',
-				() =>
-					loadOwnerPackageReadme({
-						env: input.env,
-						request: input.request,
-						userId: user.mcpUser.userId,
-						sourceId: ownerSourceId,
-					}),
-				input.request,
-			)
-		}
+	const canReadOwnerSource = input.canReadOwnerSource ?? input.viewerIsOwner
+	const ownerUserId = input.ownerUserId
+	if (!readmeContent && canReadOwnerSource && ownerSourceId && ownerUserId) {
+		readmeContent = await recordServerTiming(
+			'owner-readme',
+			() =>
+				loadOwnerPackageReadme({
+					env: input.env,
+					request: input.request,
+					userId: ownerUserId,
+					sourceId: ownerSourceId,
+				}),
+			input.request,
+		)
 	}
 	return {
 		readmeContent,
@@ -293,6 +294,8 @@ export function createCommunityPackageHandler(env: Env) {
 							listingReadme: page.listing.listing.readmeContent,
 							ownerSourceId: page.ownerPackage?.sourceId,
 							viewerIsOwner: page.viewerIsOwner,
+							canReadOwnerSource: page.canReadOwnerSource,
+							ownerUserId: page.ownerUserId,
 						},
 						serverTiming,
 					),
@@ -305,6 +308,8 @@ export function createCommunityPackageHandler(env: Env) {
 								listingId: page.listing?.listing?.id,
 								ownerSourceId: page.ownerPackage?.sourceId,
 								viewerIsOwner: page.viewerIsOwner,
+								canReadOwnerSource: page.canReadOwnerSource,
+								ownerUserId: page.ownerUserId,
 							}),
 						request,
 					),
@@ -343,12 +348,13 @@ export function createCommunityPackageHandler(env: Env) {
 							viewerIsOwner: page.viewerIsOwner,
 							isPrivate: page.ownerPackage?.isPrivate ?? false,
 							invocationUrlOrigin: page.invocationUrlOrigin,
+							shareGrant: page.shareGrant,
 						},
 					},
 				})
 			}
 
-			if (!page.ownerPackage) {
+			if (!page.ownerPackage && page.shareGrant?.status !== 'pending') {
 				return renderPackageNotFoundPage({ request, env })
 			}
 
@@ -359,8 +365,10 @@ export function createCommunityPackageHandler(env: Env) {
 						env,
 						request,
 						listingReadme: null,
-						ownerSourceId: page.ownerPackage.sourceId,
+						ownerSourceId: page.ownerPackage?.sourceId,
 						viewerIsOwner: page.viewerIsOwner,
+						canReadOwnerSource: page.canReadOwnerSource,
+						ownerUserId: page.ownerUserId,
 					},
 					serverTiming,
 				),
@@ -373,6 +381,8 @@ export function createCommunityPackageHandler(env: Env) {
 							listingId: null,
 							ownerSourceId: page.ownerPackage?.sourceId,
 							viewerIsOwner: page.viewerIsOwner,
+							canReadOwnerSource: page.canReadOwnerSource,
+							ownerUserId: page.ownerUserId,
 						}),
 					request,
 				),
@@ -380,20 +390,26 @@ export function createCommunityPackageHandler(env: Env) {
 					ownerUsername: page.username,
 					kodyId: page.kodyId,
 					usedListingReadme: false,
-					publishedCommit: page.ownerPackage.publishedCommit,
+					publishedCommit: page.ownerPackage?.publishedCommit,
 				}),
 			])
 			return renderAppPage({
 				request,
 				env,
-				title: page.ownerPackage.name,
+				title:
+					page.ownerPackage?.name ??
+					page.shareGrant?.packageName ??
+					`@${page.username}/${page.kodyId}`,
 				serverTiming,
 				loaderData: {
 					communityDetailShell: {
 						ok: true,
 						listingId: null,
-						name: page.ownerPackage.name,
-						description: page.ownerPackage.description,
+						name:
+							page.ownerPackage?.name ??
+							page.shareGrant?.packageName ??
+							`@${page.username}/${page.kodyId}`,
+						description: page.ownerPackage?.description ?? '',
 						forkPrompt: '',
 						loggedIn: page.loggedIn,
 						viewerIsAdmin: false,
@@ -408,8 +424,9 @@ export function createCommunityPackageHandler(env: Env) {
 						username: page.username,
 						kodyId: page.kodyId,
 						viewerIsOwner: page.viewerIsOwner,
-						isPrivate: page.ownerPackage.isPrivate,
+						isPrivate: page.ownerPackage?.isPrivate ?? true,
 						invocationUrlOrigin: page.invocationUrlOrigin,
+						shareGrant: page.shareGrant,
 					},
 				},
 			})
@@ -517,6 +534,8 @@ export function createCommunityPackageApiHandler(env: Env) {
 						listingReadme: page.listing?.listing?.readmeContent,
 						ownerSourceId: page.ownerPackage?.sourceId,
 						viewerIsOwner: page.viewerIsOwner,
+						canReadOwnerSource: page.canReadOwnerSource,
+						ownerUserId: page.ownerUserId,
 					},
 					serverTiming,
 				),
@@ -529,6 +548,8 @@ export function createCommunityPackageApiHandler(env: Env) {
 							listingId: page.listing?.listing?.id,
 							ownerSourceId: page.ownerPackage?.sourceId,
 							viewerIsOwner: page.viewerIsOwner,
+							canReadOwnerSource: page.canReadOwnerSource,
+							ownerUserId: page.ownerUserId,
 						}),
 					request,
 				),
@@ -561,6 +582,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					kodyId: page.kodyId,
 					isPrivate: page.ownerPackage?.isPrivate ?? false,
 					invocationUrlOrigin: page.invocationUrlOrigin,
+					shareGrant: page.shareGrant,
 				},
 				200,
 				serverTiming,
@@ -626,6 +648,7 @@ export function createCommunityPackageSettingsHandler(env: Env) {
 						viewerIsOwner: true,
 						isPrivate: page.ownerPackage.isPrivate,
 						invocationUrlOrigin: page.invocationUrlOrigin,
+						shareGrant: null,
 					},
 				},
 			})

@@ -72,6 +72,9 @@ export const routes = route({
 	accountActivityApi: '/account/activity.json',
 	accountWaiting: '/account/waiting',
 	accountWaitingApi: '/account/waiting.json',
+	accountShared: '/account/shared',
+	accountSharedApi: '/account/shared.json',
+	accountSharedApiPost: post('/account/shared.json'),
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
 	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
@@ -210,12 +213,19 @@ export const routes = route({
 	communityPackageAsset: '/@:username/:kodyId/assets(/*relativePath)',
 	communityPackageSettings: '/@:username/:kodyId/settings',
 	communityPackageApprovePublish: '/@:username/:kodyId/approve-publish',
+	communityPackageApproveChanges: '/@:username/:kodyId/approve-changes',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
 	communityPackageApprovePublishApi:
 		'/profiles/:username/packages/:kodyId/approve-publish.json',
+	communityPackageApproveChangesApi:
+		'/profiles/:username/packages/:kodyId/approve-changes.json',
+	communityPackageShareApi: '/profiles/:username/packages/:kodyId/share.json',
+	communityPackageShareApiPost: post(
+		'/profiles/:username/packages/:kodyId/share.json',
+	),
 	profileApi: '/profiles/:username.json',
 	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`
 	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.

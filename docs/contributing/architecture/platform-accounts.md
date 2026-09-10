@@ -113,6 +113,11 @@ Delegation covers package-scope grants only. It does **not** include:
 - `repo_*` capability delegation — repo sessions remain personal-scope only;
   community forks and installs always land in the caller's personal account
 
+Person-to-person package sharing is a different table (`package_share_grants`).
+It is not built on `package_scope_grants`, and person accounts cannot become
+scope owners here. See
+[0050](../decisions/0050-package-share-grants-are-not-scope-grants.md).
+
 ## Future orgs
 
 The actor/owner split and `package_scope_grants` table are the deliberate seed

@@ -10,7 +10,11 @@ import {
 	type PlatformPackageForSearch,
 } from '#worker/package-registry/platform-packages.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
-import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
+import {
+	getSavedPackageWithCommunityProvenanceById,
+	listSavedPackagesWithCommunityProvenanceByUserId,
+} from '#worker/package-registry/repo.ts'
+import { listAcceptedInboundSharedPackages } from '#worker/package-registry/share-grants.ts'
 
 import { buildSavedPackageSearchRows } from './search-package-rows.ts'
 import {
@@ -116,6 +120,31 @@ export async function loadSearchRowsAndRegistry(input: {
 					userId,
 					records: ownRecords,
 				})
+				const sharedRecords = (
+					await Promise.all(
+						(
+							await listAcceptedInboundSharedPackages({
+								db: input.env.APP_DB,
+								granteeUserId: userId,
+							})
+						).map((record) =>
+							getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
+								userId: record.userId,
+								packageId: record.id,
+							}),
+						),
+					)
+				).filter((record): record is NonNullable<typeof record> =>
+					Boolean(record),
+				)
+				const ownIds = new Set(savedPackages.map((pkg) => pkg.id))
+				const sharedRows = await buildSavedPackageSearchRows({
+					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
+					userId,
+					records: sharedRecords.filter((record) => !ownIds.has(record.id)),
+					shareGranted: true,
+				})
 				// Platform (built-in) packages are discoverable for everyone;
 				// the caller's own copy of the same name or kody id wins
 				// (fork-to-customize replaces the platform row in results).
@@ -140,9 +169,10 @@ export async function loadSearchRowsAndRegistry(input: {
 				return {
 					rows: [
 						...packageRows.rows,
+						...sharedRows.rows,
 						...platformRowGroups.flatMap((group) => group.rows),
 					],
-					warnings: packageRows.warnings,
+					warnings: [...packageRows.warnings, ...sharedRows.warnings],
 				}
 			},
 			loadUserSecrets: async () => {

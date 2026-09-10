@@ -63,6 +63,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		createStubHandler('community-approve-publish'),
 	)
 	router.get(
+		routePattern(routes.communityPackageApproveChanges),
+		createStubHandler('community-approve-changes'),
+	)
+	router.get(
 		routePattern(routes.accountPackageDetail),
 		createStubHandler('package-detail'),
 	)

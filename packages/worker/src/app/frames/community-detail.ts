@@ -53,6 +53,7 @@ registerFrame(COMMUNITY_DETAIL_TARGET, {
 					viewerIsOwner: page.viewerIsOwner,
 					listing,
 				}),
+				shareGrant: page.shareGrant,
 			})
 		}
 

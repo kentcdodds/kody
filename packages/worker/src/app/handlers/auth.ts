@@ -45,6 +45,7 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import {
@@ -458,6 +459,13 @@ export function createAuthHandler(env: Env) {
 						{ status: 500 },
 					)
 				}
+
+				await attachPendingPackageShareInvitesSafely({
+					db: env.APP_DB,
+					userId: record.stableUserId,
+					email: normalizedEmail,
+					username: normalizedUsername,
+				})
 
 				try {
 					await createEmailVerification({

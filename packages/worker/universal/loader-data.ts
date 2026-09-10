@@ -49,6 +49,10 @@ import {
 	type SiteBannerView,
 	type SiteBannerViewer,
 } from '#universal/site-banners.ts'
+import {
+	type PackageShareFileChange,
+	type PackageShareGrantLoaderView,
+} from '#universal/package-share.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -223,6 +227,7 @@ type CommunityDetailShellLoaderData = {
 	viewerIsOwner: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
+	shareGrant?: PackageShareGrantLoaderView | null
 }
 
 type CommunityPackageUnauthorizedLoaderData = {
@@ -1997,6 +2002,8 @@ export type AppLoaderData = {
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
 	accountWaiting?: AccountWaitingLoaderData
+	accountShared?: AccountSharedLoaderData
+	packageShareApproveChanges?: PackageShareApproveChangesLoaderData
 	discord?: DiscordPageLoaderData
 	walkthroughHosts?: WalkthroughHostPick
 	onboardingAgentChooser?: OnboardingAgentChooserPick
@@ -2087,4 +2094,18 @@ export type AccountUsageLoaderData = {
 export type AccountWaitingLoaderData = {
 	ok: true
 	items: Array<WaitingItem>
+}
+
+export type AccountSharedLoaderData = {
+	ok: true
+	outbound: Array<PackageShareGrantLoaderView>
+	inbound: Array<PackageShareGrantLoaderView>
+}
+
+export type PackageShareApproveChangesLoaderData = {
+	ok: true
+	grant: PackageShareGrantLoaderView
+	acceptedCommit: string
+	currentCommit: string
+	files: Array<PackageShareFileChange>
 }

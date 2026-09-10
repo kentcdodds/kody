@@ -256,6 +256,21 @@ primitives:
     docs:
       - docs/contributing/architecture/data-storage.md
 
+  - id: package-share-grants
+    group: assistant
+    name: Package share grants
+    summary:
+      Person-to-person invitations to use a saved package (read source +
+      invoke) without write, publish, or the guest's other secrets.
+    code:
+      - packages/worker/src/package-registry/share-grants.ts
+      - packages/worker/src/package-registry/share-rbac.ts
+      - packages/worker/src/mcp/capabilities/packages/package-share.ts
+    docs:
+      - docs/guides/package-sharing.md
+      - docs/contributing/decisions/0050-package-share-grants-are-not-scope-grants.md
+      - docs/contributing/architecture/data-storage.md
+
   - id: package-codemods
     group: assistant
     name: Package codemods

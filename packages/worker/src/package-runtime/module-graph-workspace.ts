@@ -160,6 +160,8 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 			prefix: string
 			sourceOwnerUserId: string
 			platformScope: string | null
+			shareOwned?: boolean
+			storageOwnerUserId?: string
 		}
 	>
 	allowPlatformScopes?: boolean
@@ -199,6 +201,8 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 						row: cached.row,
 						sourceOwnerUserId: cached.sourceOwnerUserId,
 						platformScope: cached.platformScope,
+						shareOwned: cached.shareOwned,
+						storageOwnerUserId: cached.storageOwnerUserId,
 					}
 				: await resolveSavedPackageImport({
 						db: input.env.APP_DB,
@@ -246,6 +250,13 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 				// Platform-owned dependency ids never become caller-side
 				// packageStorage grants; see collectPackageStorageGrantIds.
 				...(resolution.platformScope ? { platformOwned: true } : {}),
+				...(resolution.shareOwned
+					? {
+							shareOwned: true,
+							storageOwnerUserId:
+								resolution.storageOwnerUserId ?? resolution.sourceOwnerUserId,
+						}
+					: {}),
 			}
 		}),
 	)

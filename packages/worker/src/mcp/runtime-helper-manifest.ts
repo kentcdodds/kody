@@ -39,6 +39,11 @@ export type PackageStorageToolOptions = {
 	 * SQL.
 	 */
 	writable?: boolean
+	/**
+	 * When a granted package is share-owned, StorageRunner and storage
+	 * entitlement use the owner's user id instead of the guest caller.
+	 */
+	storageOwnerByPackageId?: ReadonlyMap<string, string>
 }
 
 export type PackageSecretToolOptions = {
@@ -494,6 +499,7 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 				email: context.callerContext.user?.email,
 				grantedPackageIds: packageStorageTools.grantedPackageIds,
 				writable: packageStorageTools.writable,
+				storageOwnerByPackageId: packageStorageTools.storageOwnerByPackageId,
 			})
 		},
 	},

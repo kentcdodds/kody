@@ -22,7 +22,9 @@ import {
 	getPackageTreeHref,
 } from '#universal/package-files.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
+import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { routes } from '#universal/routes.ts'
+import { getAccentCalloutCss } from '#universal/styles/style-primitives.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { buildPackagePublishApprovalPath } from '#worker/package-registry/package-publish-lock.ts'
 
@@ -44,6 +46,7 @@ export type CommunityDetailContentProps = {
 	returnTo: string
 	treeRef?: string
 	publishCompareHref?: string | null
+	shareGrant?: PackageShareGrantLoaderView | null
 }
 
 export function CommunityDetailContent(
@@ -61,6 +64,7 @@ export function CommunityDetailContent(
 		returnTo,
 		treeRef,
 		publishCompareHref,
+		shareGrant,
 	} = handle.props
 
 	const filesHref = getPackageTreeHref({
@@ -82,6 +86,33 @@ export function CommunityDetailContent(
 				ownerProfilePublic,
 				animate: true,
 			})}
+
+			{shareGrant?.status === 'pending' ? (
+				<section
+					data-testid="package-share-accept-frame-banner"
+					mix={css(shareBannerCss)}
+				>
+					<strong>You have been invited to use this package</strong>
+					<p>
+						Accept on this page after it loads. Default trust is pin: later
+						publishes stay blocked until you approve them.
+					</p>
+				</section>
+			) : null}
+			{shareGrant?.status === 'accepted' &&
+			shareGrant.pinAhead &&
+			shareGrant.approveChangesPath ? (
+				<section
+					data-testid="package-share-pin-ahead-frame-banner"
+					mix={css(shareBannerCss)}
+				>
+					<strong>This shared package published ahead of your pin</strong>
+					<p>
+						<a href={shareGrant.approveChangesPath}>Approve changes</a> to
+						review the published diff.
+					</p>
+				</section>
+			) : null}
 
 			{listing ? (
 				<header data-rise style={{ '--rise': '2' }} mix={css(listingHeadCss)}>
@@ -216,6 +247,19 @@ export async function renderCommunityDetailContentHtml(
 	props: CommunityDetailContentProps,
 ) {
 	return renderToString(<CommunityDetailContent {...props} />)
+}
+
+const shareBannerCss = {
+	...getAccentCalloutCss({ accentColor: colors.primary }),
+	marginTop: '1rem',
+	'& p': {
+		margin: '0.35rem 0 0',
+		color: colors.textMuted,
+	},
+	'& a': {
+		color: colors.primaryText,
+		fontWeight: 550,
+	},
 }
 
 const listingHeadCss = {

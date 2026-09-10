@@ -14,6 +14,11 @@ import {
 	type AccountPackageDetail,
 	type CommunityDetailLoaderData,
 } from '#universal/loader-data.ts'
+import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
+import {
+	loadViewerPackageShare,
+	toPackageShareGrantLoaderView,
+} from '#worker/package-registry/share-grants.ts'
 
 export type PackagePageAccess =
 	| { kind: 'redirect'; to: string; shared: boolean }
@@ -28,6 +33,9 @@ export type PackagePageAccess =
 			viewerIsOwner: boolean
 			loggedIn: boolean
 			invocationUrlOrigin: string
+			shareGrant: PackageShareGrantLoaderView | null
+			canReadOwnerSource: boolean
+			ownerUserId: string
 	  }
 
 function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
@@ -147,6 +155,20 @@ async function loadPackagePageUncached(input: {
 		requestUrl: input.request.url,
 	})
 
+	const shareGrantView = target.savedPackage
+		? await loadViewerPackageShare({
+				db: input.env.APP_DB,
+				packageId: target.savedPackage.id,
+				viewer: user
+					? { userId: user.mcpUser.userId, email: user.email }
+					: null,
+			})
+		: null
+	const shareGrant = shareGrantView
+		? toPackageShareGrantLoaderView(shareGrantView)
+		: null
+	const shareCanReadSource = shareGrant?.status === 'accepted'
+
 	if (viewerIsOwner && target.savedPackage) {
 		const [listing, ownerPackage] = await Promise.all([
 			target.listingId
@@ -168,6 +190,42 @@ async function loadPackagePageUncached(input: {
 			viewerIsOwner: true,
 			loggedIn: true,
 			invocationUrlOrigin,
+			shareGrant: null,
+			canReadOwnerSource: true,
+			ownerUserId: target.userId,
+		}
+	}
+
+	if (
+		shareGrant &&
+		(shareGrant.status === 'pending' || shareGrant.status === 'accepted') &&
+		target.savedPackage
+	) {
+		const [listing, ownerPackage] = await Promise.all([
+			target.listingId
+				? loadCommunityDetailData(input.env, input.request, target.listingId)
+				: Promise.resolve(null),
+			shareCanReadSource
+				? loadAccountPackageDetail({
+						env: input.env,
+						requestUrl: input.request.url,
+						userId: target.userId,
+						packageId: target.savedPackage.id,
+					})
+				: Promise.resolve(null),
+		])
+		return {
+			kind: 'page',
+			username: target.username,
+			kodyId: target.kodyId,
+			listing,
+			ownerPackage,
+			viewerIsOwner: false,
+			loggedIn: true,
+			invocationUrlOrigin,
+			shareGrant,
+			canReadOwnerSource: shareCanReadSource,
+			ownerUserId: target.userId,
 		}
 	}
 
@@ -187,6 +245,9 @@ async function loadPackagePageUncached(input: {
 			viewerIsOwner: false,
 			loggedIn: Boolean(user),
 			invocationUrlOrigin,
+			shareGrant,
+			canReadOwnerSource: false,
+			ownerUserId: target.userId,
 		}
 	}
 

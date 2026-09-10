@@ -239,6 +239,10 @@
 		{
 			"filename": "0059-admin-insights-launch-indexes.sql",
 			"sha256": "be5d99a7d97f0d7a304ac3154f619294dc08a3b2edbda1fbafc000ff414b2bb6"
+		},
+		{
+			"filename": "0060-package-share-grants.sql",
+			"sha256": "4af9ce81f57641ac5c608c65a3abf2fcc0742fcceb310e1e2e2afaae2246d666"
 		}
 	]
 }

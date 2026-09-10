@@ -42,6 +42,7 @@ import {
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { assertPersonOwnedPackageMayNotRunPlatformDependencies } from '#worker/package-registry/platform-package-policy.ts'
+import { collectShareStorageOwners } from '#worker/package-registry/share-grants.ts'
 import {
 	createRuntimeHelperExtraProviders,
 	createRuntimeHelperKodyToolSets,
@@ -683,6 +684,23 @@ export function collectPackageStorageGrantIds(input: {
 	return grantedPackageIds
 }
 
+export function collectShareOwnedStorageOwners(input: {
+	dependencies: Array<BundleArtifactDependency>
+	dynamicDependencyPackageIds?: Array<string>
+}): Map<string, string> {
+	const owners = new Map<string, string>()
+	for (const dependency of input.dependencies) {
+		if (
+			dependency.packageId &&
+			dependency.shareOwned === true &&
+			dependency.storageOwnerUserId
+		) {
+			owners.set(dependency.packageId, dependency.storageOwnerUserId)
+		}
+	}
+	return owners
+}
+
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -879,6 +897,19 @@ export async function runBundledModuleWithRegistry(
 			dependencies: bundle.dependencies ?? [],
 			dynamicDependencyPackageIds,
 		})
+		const storageOwnerByPackageId = collectShareOwnedStorageOwners({
+			dependencies: bundle.dependencies ?? [],
+		})
+		if (callerContext.user?.userId) {
+			const shareOwners = await collectShareStorageOwners({
+				db: env.APP_DB,
+				callerUserId: callerContext.user.userId,
+				packageIds: grantedPackageStorageIds,
+			})
+			for (const [packageId, ownerUserId] of shareOwners) {
+				storageOwnerByPackageId.set(packageId, ownerUserId)
+			}
+		}
 		// Static package export calls report through a sandbox bridge with a
 		// bundler-stamped callee package id; only ids recorded as *static*
 		// bundle dependencies at build time are accepted (mismatches are
@@ -944,6 +975,7 @@ export async function runBundledModuleWithRegistry(
 			? {
 					grantedPackageIds: grantedPackageStorageIds,
 					writable: !closedWorldRetrieverRuntime,
+					storageOwnerByPackageId,
 				}
 			: undefined
 		const packageSecretTools = callerContext.user?.userId
