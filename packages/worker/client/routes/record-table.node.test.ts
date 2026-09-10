@@ -254,6 +254,7 @@ test('record table keeps container drops, row links, and expand/pane selection c
 		}),
 	)
 	expect(overflowHtml).toContain('table-layout: fixed')
+	expect(overflowHtml).toContain('overflow-x: hidden')
 	expect(overflowHtml).toContain('@container (max-width: 400px)')
 	expect(overflowHtml).toContain('overflow-x: auto')
 	expect(overflowHtml).toContain('overflow: clip')

@@ -348,6 +348,7 @@ const primaryCellCss = {
 	'@container (max-width: 620px)': {
 		whiteSpace: 'normal',
 		overflow: 'visible',
+		overflowWrap: 'anywhere',
 	},
 }
 
