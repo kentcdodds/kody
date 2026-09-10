@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -8,7 +9,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
-import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
@@ -257,10 +258,23 @@ function assertRequestBodyWithinLimit(body: string | undefined) {
 async function resolveOwnedSavedPackage(input: {
 	db: D1Database
 	userId: string
+	ownerScope: string
 	packageId?: string
 	kodyId?: string
 }) {
-	const packageIdOrKodyId = input.packageId ?? input.kodyId ?? ''
+	let requestedKodyId = input.kodyId
+	if (input.packageId === undefined && input.kodyId !== undefined) {
+		try {
+			requestedKodyId = normalizePackageNameInput({
+				value: input.kodyId,
+				ownerScope: input.ownerScope,
+				action: 'resolve',
+			})
+		} catch (error) {
+			throw new McpCallerError(getErrorMessage(error), { cause: error })
+		}
+	}
+	const packageIdOrKodyId = input.packageId ?? requestedKodyId ?? ''
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
 		packageIdOrKodyId,
@@ -273,7 +287,7 @@ async function resolveOwnedSavedPackage(input: {
 			}
 			return await getSavedPackageByKodyId(input.db, {
 				userId: input.userId,
-				kodyId: getPackageNameLeaf(input.kodyId ?? ''),
+				kodyId: requestedKodyId ?? '',
 			})
 		},
 	})
@@ -396,6 +410,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 			const savedPackage = await resolveOwnedSavedPackage({
 				db: ctx.env.APP_DB,
 				userId: owner.ownerUserId,
+				ownerScope: owner.ownerScope,
 				packageId: args.package_id,
 				kodyId: args.kody_id,
 			})

@@ -55,7 +55,8 @@ import {
 } from '#worker/server-timing.ts'
 import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
+import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
@@ -1587,6 +1588,23 @@ export type AdoptCommunityForkResult = {
 	alreadyAdopted: boolean
 }
 
+async function resolveOwnedCommunityPackageNameLeaf(input: {
+	db: D1Database
+	userId: string
+	value: string
+}) {
+	const ownerScope = await getPackageScopeByUserId(input.db, input.userId)
+	try {
+		return normalizePackageNameInput({
+			value: input.value,
+			ownerScope,
+			action: 'resolve',
+		})
+	} catch (error) {
+		throw new CommunityActionError(getErrorMessage(error))
+	}
+}
+
 export async function adoptCommunityFork(input: {
 	env: Env
 	userId: string
@@ -1618,7 +1636,11 @@ export async function adoptCommunityFork(input: {
 				})
 			: await getSavedPackageByKodyId(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: getPackageNameLeaf(input.kodyId ?? ''),
+					kodyId: await resolveOwnedCommunityPackageNameLeaf({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						value: input.kodyId ?? '',
+					}),
 				})
 	if (!savedPackage) {
 		const missingId = input.packageId ?? input.kodyId
@@ -1704,7 +1726,11 @@ export async function absorbCommunityForkUpstream(input: {
 				})
 			: await getSavedPackageByKodyId(input.env.APP_DB, {
 					userId: input.userId,
-					kodyId: getPackageNameLeaf(input.kodyId ?? ''),
+					kodyId: await resolveOwnedCommunityPackageNameLeaf({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						value: input.kodyId ?? '',
+					}),
 				})
 	if (!savedPackage) {
 		const missingId = input.packageId ?? input.kodyId

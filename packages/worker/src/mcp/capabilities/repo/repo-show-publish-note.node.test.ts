@@ -4,6 +4,7 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceByIdForUser: vi.fn(),
 	resolveOwnedPackageSource: vi.fn(),
 	readPublishGitNoteFromArtifactsRepo: vi.fn(),
+	getMcpUserPackageScope: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -14,6 +15,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#mcp/capabilities/packages/resolve-package-source.ts', () => ({
 	resolveOwnedPackageSource: (...args: Array<unknown>) =>
 		mockModule.resolveOwnedPackageSource(...args),
+}))
+
+vi.mock('#worker/package-registry/user-scope.ts', () => ({
+	getMcpUserPackageScope: (...args: Array<unknown>) =>
+		mockModule.getMcpUserPackageScope(...args),
 }))
 
 vi.mock('#worker/repo/publish-git-notes.ts', async () => {
@@ -106,6 +112,7 @@ test('repoShowPublishNote reads notes by source or package identity and rejects 
 	expect(bySource.note?.publishedBy).toBe('repo_session')
 
 	resetMocks()
+	mockModule.getMcpUserPackageScope.mockResolvedValue('kent')
 	mockModule.resolveOwnedPackageSource.mockResolvedValue({
 		packageId: 'package-1',
 		kodyId: 'demo',

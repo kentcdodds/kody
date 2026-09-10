@@ -142,6 +142,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			const { source, packageId, kodyId } = await resolveOwnedPackageSource({
 				db: ctx.env.APP_DB,
 				userId: owner.ownerUserId,
+				ownerScope: owner.ownerScope,
 				args: {
 					package_id: args.package_id,
 					kody_id: requestedKodyId,

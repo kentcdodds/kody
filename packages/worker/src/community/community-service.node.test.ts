@@ -247,6 +247,19 @@ function createEnv() {
 	} as Env
 }
 
+function createEnvWithUsername(username: string) {
+	return {
+		...createEnv(),
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({ username }),
+				}),
+			}),
+		} as unknown as D1Database,
+	} as Env
+}
+
 function sampleListing(
 	overrides: Partial<CommunityListingRecord> = {},
 ): CommunityListingRecord {
@@ -1584,6 +1597,22 @@ test('adoptCommunityFork is idempotent when already adopted and isolates by user
 		}),
 	).rejects.toThrow(/was not found/)
 	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
+})
+
+test('adoptCommunityFork rejects a foreign scoped package name before lookup', async () => {
+	await expect(
+		adoptCommunityFork({
+			env: createEnvWithUsername('jane'),
+			userId: 'user-2',
+			kodyId: '@other/discord-gateway-fork',
+			reviewSummary: 'Reviewed gateway auth and host allowlists.',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message.includes('does not match the acting owner "@jane"'),
+	)
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
 test('absorbCommunityForkUpstream records the current listing pin and is idempotent', async () => {

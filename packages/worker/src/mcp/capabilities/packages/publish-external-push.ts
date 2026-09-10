@@ -915,6 +915,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
+					ownerScope: owner.ownerScope,
 					args: {
 						package_id: args.package_id,
 						kody_id: args.kody_id,
