@@ -50,7 +50,23 @@ The same meter is tagged with the surface that minted the isolate:
 
 Saved packages, jobs, and other durable surfaces reuse a stable isolate when the
 published module graph stays the same. Ad hoc `execute` identity follows the
-module graph of that execute run.
+module graph of that execute run — put varying args in `params`, not literals in
+`code`:
+
+```ts
+import { kody } from 'kody:runtime'
+
+// Bad: each distinct literal is another isolate
+export default async function main() {
+	return await kody.emailSend({ subject: 'Hello', text: 'Hi' })
+}
+
+// Good: same graph, vary via params
+export default async function main(params) {
+	return await kody.emailSend(params)
+}
+// execute({ code, params: { subject: 'Hello', text: 'Hi' } })
+```
 
 ## Choosing a surface
 

@@ -58,8 +58,8 @@ export const executeCapability = defineDomainCapability(
 	{
 		name: 'execute',
 		description:
-			'Run one ephemeral ESM module string with a default export inside the Kody execute runtime. Use this inside package and execute runtimes when reusable code needs to call the same module execution surface as the public MCP execute tool. Dynamic Worker identity for the run follows the acting user and that module graph, so the same user and graph reuse one isolate for the UTC day.',
-		keywords: ['execute', 'kody', 'module', 'sandbox', 'runtime'],
+			'Run `execute({ code, params })`: one ephemeral ESM module whose default export receives `params`. Example: `export default async function main(params) { return await kody.emailSend(params) }`. Same user and module graph reuse one isolate for the UTC day when varying args stay in `params`. Use this inside package and execute runtimes when reusable code needs the same module execution surface as the public MCP execute tool.',
+		keywords: ['execute', 'kody', 'module', 'sandbox', 'runtime', 'params'],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -74,7 +74,7 @@ export const executeCapability = defineDomainCapability(
 				.record(z.string(), z.unknown())
 				.optional()
 				.describe(
-					'Optional JSON params passed as the first argument to the module default export at execution time.',
+					'JSON object passed as the first argument to the default export. Put varying capability args here so the same `code` graph is reused.',
 				),
 			responseLimit: z
 				.number()

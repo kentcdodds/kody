@@ -29,6 +29,8 @@ const { executeCapability } = await import('./execute.ts')
 test('execute capability description states worker identity follows the module graph', () => {
 	expect(executeCapability.description).toMatch(/module graph/)
 	expect(executeCapability.description).toMatch(/isolate/)
+	expect(executeCapability.description).toMatch(/params/)
+	expect(executeCapability.description).toMatch(/main\(params\)/)
 	expect(executeCapability.description).not.toMatch(/don't|do not|never wrap/i)
 })
 
