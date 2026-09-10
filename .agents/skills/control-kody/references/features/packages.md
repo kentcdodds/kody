@@ -5,13 +5,17 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 ## How to get there
 
 `/@username` lists your packages, including private and unpublished packages
-when you view your own profile. Each package lives at `/@username/:kodyId` (the
-URL slug is the package name leaf; README), `/@username/:kodyId/tree/:ref`
-(files), `/@username/:kodyId/assets/…` (README-relative images from the
-published or pinned commit), `/@username/:kodyId/settings` (lock, visibility,
-delete), and `/@username/:kodyId/approve-publish` (published-vs-HEAD review).
-Opening an allowlisted image or video in the tree renders a preview; the bytes
-come from `/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
+when you view your own profile. Own-profile GET filters:
+`visibility=public|private`, `listing=published|unpublished|ahead` (ahead =
+local edits not republished), and `hidden=yes|no`. Guests can use
+`listing=published|unpublished` only; owner-only params are ignored for them.
+Search stays `q=`. Each package lives at `/@username/:kodyId` (the URL slug is
+the package name leaf; README), `/@username/:kodyId/tree/:ref` (files),
+`/@username/:kodyId/assets/…` (README-relative images from the published or
+pinned commit), `/@username/:kodyId/settings` (lock, visibility, delete), and
+`/@username/:kodyId/approve-publish` (published-vs-HEAD review). Opening an
+allowlisted image or video in the tree renders a preview; the bytes come from
+`/@username/:kodyId/raw/:ref/…` (same authz as the tree). Legacy
 `/account/packages` HTML URLs only redirect to these canonical pages.
 
 ## Drive it

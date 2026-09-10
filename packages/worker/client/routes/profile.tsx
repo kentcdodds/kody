@@ -22,7 +22,7 @@ import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { on } from '#client/event-mixin.ts'
-import { readProfileSearchQueryFromHref } from '#client/routes/profile-search.ts'
+import { readProfilePackageFiltersFromHref } from '#universal/profile-search.ts'
 import { renderProfileIdentity } from '#client/routes/profile-identity.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -140,6 +140,8 @@ export function ProfileRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		if (!isProfilePathname(new URL(href, 'http://localhost').pathname)) return
 
+		handle.update()
+
 		const frame = handle.frames.get(PROFILE_TARGET)
 		if (!frame) return
 
@@ -153,7 +155,6 @@ export function ProfileRoute(handle: Handle) {
 	return () => {
 		const username = getCurrentUsername(handle)
 		const currentHref = readCurrentRouterHref(handle)
-		const searchQuery = readProfileSearchQueryFromHref(currentHref)
 
 		if (!username) {
 			return (
@@ -200,6 +201,12 @@ export function ProfileRoute(handle: Handle) {
 			shell != null && shell.ok && shellLoadedForUsername === username
 				? shell
 				: null
+		// The frame decides which filters the viewer may use; the shell only
+		// carries owner-only params forward when this is the signed-in owner.
+		const filters = readProfilePackageFiltersFromHref(currentHref, {
+			allowOwnerFilters: readyShell?.isSelf === true,
+		})
+		const searchQuery = filters.query
 
 		if (showUnavailable) {
 			return (
@@ -245,10 +252,23 @@ export function ProfileRoute(handle: Handle) {
 							data-rmx-history="push"
 							mix={css(searchFormCss)}
 						>
+							{filters.visibility !== 'all' ? (
+								<input
+									type="hidden"
+									name="visibility"
+									value={filters.visibility}
+								/>
+							) : null}
+							{filters.listing !== 'all' ? (
+								<input type="hidden" name="listing" value={filters.listing} />
+							) : null}
+							{filters.hidden !== 'all' ? (
+								<input type="hidden" name="hidden" value={filters.hidden} />
+							) : null}
 							<label mix={css(searchFieldCss)}>
 								<span mix={css(fieldLabelCss)}>Search packages</span>
 								<input
-									key={searchQuery}
+									key={`${searchQuery}:${filters.visibility}:${filters.listing}:${filters.hidden}`}
 									type="search"
 									name="q"
 									defaultValue={searchQuery}

@@ -1,5 +1,8 @@
 import {
 	type OnboardingFeaturedListing,
+	type ProfilePackageHiddenFilter,
+	type ProfilePackageListingFilter,
+	type ProfilePackageVisibilityFilter,
 	type ProfileVisibility,
 	type PublicCommunityActivityItem,
 	type PublicCommunityListing,
@@ -233,6 +236,9 @@ export type ProfileLoaderData = {
 	packages: Array<PublicProfilePackageItem>
 	activity: Array<PublicCommunityActivityItem>
 	query: string | null
+	visibility: ProfilePackageVisibilityFilter
+	listing: ProfilePackageListingFilter
+	hidden: ProfilePackageHiddenFilter
 	isSelf: boolean
 	loggedIn: boolean
 }

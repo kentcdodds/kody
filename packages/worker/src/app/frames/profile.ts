@@ -25,6 +25,9 @@ registerFrame(PROFILE_TARGET, {
 			packages: data.packages,
 			activity: data.activity,
 			query: data.query,
+			visibility: data.visibility,
+			listing: data.listing,
+			hidden: data.hidden,
 			isSelf: data.isSelf,
 		})
 	},

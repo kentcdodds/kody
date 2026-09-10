@@ -330,11 +330,16 @@ export async function listPublicProfilePackages(
 		limit: number
 		/** When true, include private and hidden packages (own-profile inventory). */
 		includePrivate?: boolean
+		/** Extra AND clauses. Origin profile filters pass these; MCP does not. */
+		additionalWhereSql?: Array<string>
 	},
 ): Promise<Array<PublicProfilePackage>> {
 	const conditions = input.includePrivate
 		? ['user_id = ?']
 		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
+	if (input.additionalWhereSql && input.additionalWhereSql.length > 0) {
+		conditions.push(...input.additionalWhereSql)
+	}
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
