@@ -795,10 +795,11 @@ html.is-settled {
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	/* Size from the intro column so "Switching Agents" stays on one line
-	   next to the video (and in the stacked hero) instead of wrapping to a
-	   third line when 5.2vw hits the old 4.25rem cap. */
-	font-size: clamp(2.15rem, 13.2cqi, 4.05rem);
+	/* Size from the intro column so "Switching Agents" stays on one line.
+	   Skip a rem floor: it beats 13.2cqi when the root font is enlarged, and
+	   nowrap would overflow. Keep a rem/vw fallback for browsers without cqi. */
+	font-size: clamp(2.15rem, 5.2vw, 4.05rem);
+	font-size: min(13.2cqi, 4.05rem);
 	font-weight: 760;
 	line-height: 1.02;
 	letter-spacing: -0.03em;
