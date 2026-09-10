@@ -100,8 +100,8 @@ endpoint:
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main(input: { appId?: string } = {}) {
-	const appId = input.appId
+export default async function main(params: { appId?: string } = {}) {
+	const appId = params.appId
 	if (!appId) {
 		throw new Error('Pass appId in execute params.')
 	}

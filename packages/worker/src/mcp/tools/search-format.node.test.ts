@@ -410,14 +410,14 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				'type RemoteHomeDefaultSetPinInput = {\n\tpin: string\n}',
 		},
 	})
-	expect(remoteDetail.markdown).toContain('kody.mcp["home"].set_pin(input)')
+	expect(remoteDetail.markdown).toContain('kody.mcp["home"].set_pin(params)')
 	expect(remoteDetail.structured).toMatchObject({
 		source: 'mcp-server',
 		mcpServer: {
 			kodyName: 'home',
 			toolName: 'set_pin',
 		},
-		executeExample: expect.stringContaining('kody.mcp["home"].set_pin(input)'),
+		executeExample: expect.stringContaining('kody.mcp["home"].set_pin(params)'),
 	})
 	const remoteExecution = await executeCapabilityExample(
 		remoteDetail.structured.executeExample,

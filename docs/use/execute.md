@@ -6,12 +6,12 @@ function Kody should invoke.
 
 ## Shape of the code
 
-Author code as one module string. Export a default function that receives the
-execute/job/package input as its first argument:
+Author code as one module string. Export a default function. On **execute**,
+name that argument **`params`** so it mirrors `execute({ code, params })`:
 
 ```ts
-export default async function main(input = {}) {
-	// Use input directly, or pass it to shared helpers.
+export default async function main(params) {
+	// Use params directly, or pass them to shared helpers.
 }
 ```
 
@@ -19,7 +19,7 @@ Import runtime APIs from **`kody:runtime`** when you need Kody helpers. These
 helpers are runtime exports:
 
 - use **`import { kody } from 'kody:runtime'`** to call builtin capabilities
-  discovered by **search** as **`await kody.capabilityId(input)`**
+  discovered by **search** as **`await kody.capabilityId(params)`**
 - use
   **`import { createAuthenticatedFetch, oauthClientCredentials } from 'kody:runtime'`**
   for OAuth helpers
@@ -60,7 +60,33 @@ the code is written. Use `import(specifier)` when the name is data.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
-should receive that input through normal function arguments.
+should receive that object through normal function arguments.
+
+Ad hoc worker identity follows the acting user plus that **`code`** module
+graph. Put varying capability args in **`params`**, not string literals inside
+`code`, so the same graph is reused for the UTC day.
+
+Bad (new isolate per distinct literal):
+
+```ts
+import { kody } from 'kody:runtime'
+export default async function main() {
+	return await kody.emailSend({
+		subject: 'Hello from Kody',
+		text: 'Notify-self mail from an execute module.',
+	})
+}
+```
+
+Good (same graph reused; vary via params):
+
+```ts
+import { kody } from 'kody:runtime'
+export default async function main(params) {
+	return await kody.emailSend(params)
+}
+// execute({ code, params: { subject: 'Hello from Kody', text: 'Notify-self mail from an execute module.' } })
+```
 
 Top-level `await` is acceptable when needed.
 

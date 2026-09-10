@@ -194,7 +194,7 @@ export const capabilitySearchEntityPlugin = {
 			...((options?.includeBoilerplate ?? true)
 				? [
 						'',
-						'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',
+						'Pass concrete arguments as execute `params` that satisfy the input type below; use `{}` when there are no required fields.',
 					]
 				: []),
 			'',

@@ -21,10 +21,10 @@ cursor instead of looping in the same run.
 ```ts
 import { workflows } from 'kody:runtime'
 
-export default async function main(input = {}) {
+export default async function main(params) {
 	return await workflows.create({
 		code: 'export default async function main(p) { return { ok: true, p } }',
-		params: { greeting: input.greeting ?? 'hello' },
+		params: { greeting: params.greeting ?? 'hello' },
 	})
 }
 ```

@@ -10,4 +10,6 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 	expect(executeToolDescription.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
+	expect(executeToolDescription).toMatch(/main\(params\)/)
+	expect(executeToolDescription).toMatch(/capability_id\(params\)/)
 })

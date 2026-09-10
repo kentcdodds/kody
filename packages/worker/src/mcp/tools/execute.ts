@@ -179,7 +179,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.record(z.string(), z.unknown())
 					.optional()
 					.describe(
-						'Optional JSON params passed as the first argument to the module default export at execution time.',
+						'JSON object passed as the first argument to the default export. Put varying capability args here so the same `code` graph is reused.',
 					),
 				responseLimit: z
 					.number()
