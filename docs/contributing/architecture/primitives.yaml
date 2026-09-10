@@ -260,8 +260,8 @@ primitives:
     group: assistant
     name: Package share grants
     summary:
-      Person-to-person invitations to use a saved package (read source +
-      invoke) without write, publish, or the guest's other secrets.
+      Person-to-person invitations to use a saved package (read source + invoke)
+      without write, publish, or the guest's other secrets.
     code:
       - packages/worker/src/package-registry/share-grants.ts
       - packages/worker/src/package-registry/share-rbac.ts

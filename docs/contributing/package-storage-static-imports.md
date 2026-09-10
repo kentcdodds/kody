@@ -36,13 +36,12 @@ the grant is the security boundary.
    honors only the stamp identity (hidden ALS / capability field) or the run
    package, and only when that id is in the grant set. Then `allowed_packages` /
    implicit read checks run as that package. The StorageRunner name is
-   `(callerUserId, package:{packageId})` for caller-owned packages, so a
-   granted id is a **per-caller** bucket. Person-to-person
+   `(callerUserId, package:{packageId})` for caller-owned packages, so a granted
+   id is a **per-caller** bucket. Person-to-person
    [package share grants](../guides/package-sharing.md) are the exception:
    accepted grants route `packageStorage()` to the **owner's** bucket
-   (`storageOwnerUserId`) so guests share one package state and the owner
-   pays storage. Shared code still cannot read the guest's other user
-   secrets.
+   (`storageOwnerUserId`) so guests share one package state and the owner pays
+   storage. Shared code still cannot read the guest's other user secrets.
 
 When the bundler would resolve `kody:@kody/…` live, it records
 `platformOwned: true` on that `BundleArtifactDependency`
