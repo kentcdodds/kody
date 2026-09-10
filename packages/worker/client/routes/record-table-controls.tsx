@@ -174,6 +174,11 @@ export function recordCellClamp(ch: number) {
 
 /** Date/duration cell: one token, aligned figures, quieter than the name. */
 export const recordStampCss = {
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '100%',
+	overflow: 'hidden',
+	textOverflow: 'ellipsis',
 	whiteSpace: 'nowrap' as const,
 	fontVariantNumeric: 'tabular-nums',
 	color: colors.textMuted,

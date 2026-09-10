@@ -243,7 +243,8 @@ test('record table keeps container drops, row links, and expand/pane selection c
 		createHtml.indexOf('</table>'),
 	)
 
-	// Wide rows stay reachable via horizontal overflow.
+	// The table stays in the pane (`table-layout: fixed`). Horizontal overflow
+	// is only for a very narrow container, not for five nowrap columns.
 	const overflowHtml = await renderToString(
 		jsx(RecordTable, {
 			mode: 'expand',
@@ -252,6 +253,9 @@ test('record table keeps container drops, row links, and expand/pane selection c
 			rows,
 		}),
 	)
+	expect(overflowHtml).toContain('table-layout: fixed')
+	expect(overflowHtml).toContain('overflow-x: hidden')
+	expect(overflowHtml).toContain('@container (max-width: 400px)')
 	expect(overflowHtml).toContain('overflow-x: auto')
 	expect(overflowHtml).toContain('overflow: clip')
 })
