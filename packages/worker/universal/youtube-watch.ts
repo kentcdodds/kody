@@ -28,8 +28,27 @@ export function youtubeThumbPath(videoId: string): string {
 	return `${youtubeThumbPathPrefix}${videoId}`
 }
 
+const youtubeThumbnailFileNames = [
+	'maxresdefault.jpg',
+	'sddefault.jpg',
+	'hqdefault.jpg',
+] as const
+
 export function youtubeThumbnailSourceUrl(videoId: string): string {
-	return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+	return youtubeThumbnailUrl(videoId, 'maxresdefault.jpg')
+}
+
+export function youtubeThumbnailSourceUrls(videoId: string): Array<string> {
+	return youtubeThumbnailFileNames.map((fileName) =>
+		youtubeThumbnailUrl(videoId, fileName),
+	)
+}
+
+function youtubeThumbnailUrl(
+	videoId: string,
+	fileName: (typeof youtubeThumbnailFileNames)[number],
+): string {
+	return `https://i.ytimg.com/vi/${videoId}/${fileName}`
 }
 
 export function youtubePlaylistFeedUrl(playlistId: string): string {
