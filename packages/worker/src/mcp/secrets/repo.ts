@@ -324,6 +324,26 @@ export async function deleteSecretEntry(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function listSecretBucketsByScope(input: {
+	db: D1Database
+	userId: string
+	scope: SecretScope
+	now?: string
+}): Promise<Array<SecretBucketRow>> {
+	const now = input.now ?? new Date().toISOString()
+	const { results } = await input.db
+		.prepare(
+			`SELECT id, user_id, scope, binding_key, expires_at, created_at, updated_at
+			FROM secret_buckets
+			WHERE user_id = ? AND scope = ?
+				AND (expires_at IS NULL OR expires_at > ?)
+			ORDER BY binding_key ASC`,
+		)
+		.bind(input.userId, input.scope, now)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapSecretBucketRow)
+}
+
 export async function listSecretMetadataForBucket(input: {
 	db: D1Database
 	bucket: SecretBucketRow

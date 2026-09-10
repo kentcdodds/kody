@@ -424,11 +424,14 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   derived at read time from `community_forks`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
-  package runtimes may use their own package secrets. User secrets are
-  auto-granted for read/use to self-authored packages (no `community_forks` row
-  for that `saved_packages.id` + `userId`) and adopted forks
-  (`community_forks.adopted_at` set via `communityForkAdopt`). Person accounts
-  do not run official platform packages
+  package runtimes may use their own package secrets. `secretList` can list
+  caller-owned package-bucket metadata (with `package_id`) from execute without
+  a package runtime binding; resolve, fetch placeholders, and mounts still
+  require package context. Search ranks user-scoped secret references only. User
+  secrets are auto-granted for read/use to self-authored packages (no
+  `community_forks` row for that `saved_packages.id` + `userId`) and adopted
+  forks (`community_forks.adopted_at` set via `communityForkAdopt`). Person
+  accounts do not run official platform packages
   ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package

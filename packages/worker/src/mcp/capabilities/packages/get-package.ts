@@ -3,19 +3,21 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { toSecretCapabilityOutput } from '#mcp/capabilities/secrets/shared.ts'
+import { listPackageSecretsByPackageIds } from '#mcp/secrets/service.ts'
+import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { getSavedPackageWithCommunityProvenanceById } from '#worker/package-registry/repo.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
-import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
@@ -23,7 +25,7 @@ export const getPackageCapability = defineDomainCapability(
 	{
 		name: 'packageGet',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, and callable export contracts.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values).',
 		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
 		readOnly: true,
 		idempotent: true,
@@ -79,6 +81,14 @@ export const getPackageCapability = defineDomainCapability(
 				loaded.manifest,
 				loaded.files,
 			)
+			const packageSecretsById = await listPackageSecretsByPackageIds({
+				env: ctx.env,
+				userId: owner.ownerUserId,
+				packageIds: [saved.id],
+			})
+			const packageSecrets = (packageSecretsById.get(saved.id) ?? []).map(
+				(secret) => toSecretCapabilityOutput(secret),
+			)
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
@@ -102,6 +112,7 @@ export const getPackageCapability = defineDomainCapability(
 				listing_ahead: saved.listingAhead,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
+				package_secrets: packageSecrets,
 				exports: (projection.exports ?? []).map((exportDetail) => ({
 					subpath: exportDetail.subpath,
 					import_specifier: buildPackageImportSpecifier(

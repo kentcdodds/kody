@@ -22,9 +22,11 @@ that uses a secret. It can never read one.
 The secrets capabilities are `secretList`, `secretSet`, `secretSetMany`,
 `secretLock`, `secretDelete`, and `secretJwtSign`. No capability returns a
 secret value. `secretList` returns metadata only: names, descriptions, approved
-hosts, expiry, and remaining time to live. `secretLock` returns grant-status
-metadata and an `approval_url` for the owner to click; it does not apply the
-grant.
+hosts, expiry, remaining time to live, and `package_id` for package-scoped
+secrets. Explicit listing includes caller-owned package-scoped metadata even
+from execute; using a package secret still requires package context. Search does
+not auto-surface those rows. `secretLock` returns grant-status metadata and an
+`approval_url` for the owner to click; it does not apply the grant.
 
 This is why you can hand an agent a job that needs your GitHub token without the
 token ever entering the prompt, the transcript, or the model provider's logs.
@@ -81,7 +83,9 @@ approve several pending secrets for one package in a click.
 
 - **User secrets** belong to the account and can be approved for any package.
 - **Package secrets** belong to one saved package and exist only while that
-  package runs — they are package config, keyed by the package id.
+  package runs — they are package config, keyed by the package id. `secretList`
+  and `packageGet` expose their metadata with `package_id`; search does not
+  auto-surface them, and use still needs package context.
 
 OAuth access and refresh tokens are different: they live on the integration,
 rotate through `createAuthenticatedFetch`, and do not appear in the secrets

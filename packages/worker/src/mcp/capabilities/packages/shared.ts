@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { secretMetadataSchema } from '#mcp/capabilities/secrets/shared.ts'
 import {
 	type SavedPackageRecord,
 	type SavedPackageWithCommunityProvenanceRecord,
@@ -248,6 +249,11 @@ export const packageInvocationTokenMetadataSchema = z.object({
 export const packageDetailSchema =
 	packageSummaryWithCommunityProvenanceSchema.extend({
 		exports: z.array(packageExportSurfaceSchema),
+		package_secrets: z
+			.array(secretMetadataSchema)
+			.describe(
+				'FYI metadata for package-scoped secrets owned by this package, including package_id. Never plaintext values. These are not execute-usable via search; using them still requires package context.',
+			),
 	})
 
 export function toPackageInvocationTokenMetadata(token: {
