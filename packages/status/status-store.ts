@@ -273,8 +273,14 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	}
 
 	private writeExecuteHealthState(state: ExecuteHealthCoordinatorState) {
-		if (state.lastSuccessAt !== null) {
-			this.setMeta(executeLastSuccessMetaKey, String(state.lastSuccessAt))
+		// getSnapshot can persist newer organic last-success while the
+		// synthetic fetch has the input gate open. Never rewind that write.
+		const lastSuccessAt = mergeExecuteLastSuccess(
+			state.lastSuccessAt,
+			this.readEpochMeta(executeLastSuccessMetaKey),
+		)
+		if (lastSuccessAt !== null) {
+			this.setMeta(executeLastSuccessMetaKey, String(lastSuccessAt))
 		}
 		if (state.lastSyntheticAttemptAt !== null) {
 			this.setMeta(
