@@ -8,9 +8,9 @@ import { type AdminUserListItem } from '#universal/loader-data.ts'
 import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
 import {
+	getListKey,
 	nextAdminUsersWindowAfterCreate,
 	nextAdminUsersWindowAfterMutation,
-	shouldReseedAdminUsersWindow,
 } from './admin-users-shared.ts'
 
 function stableUserId(id: number) {
@@ -111,29 +111,31 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 	expect(omittedFromPageOne.totalCount).toBe(21)
 	expect(omittedFromPageOne.hasMore).toBe(true)
 
+	// page * pageSize < total is still true (2 < 3) after prepending the
+	// only omitted account; hasMore must follow the window length.
+	const older = user({
+		stableUserId: stableUserId(2),
+		username: 'older',
+	})
 	const omittedLastRow = nextAdminUsersWindowAfterCreate({
-		currentItems: [existing],
+		currentItems: [existing, older],
 		currentHasMore: true,
-		currentTotal: 20,
+		currentTotal: 2,
 		payload: {
 			...basePayload,
-			users: [existing],
-			total: 2,
+			pageSize: 2,
+			users: [existing, older],
+			total: 3,
 			createdUserInFilteredList: true,
 		},
 	})
 	expect(omittedLastRow.items.map((item) => item.username)).toEqual([
 		'created',
 		'existing',
+		'older',
 	])
+	expect(omittedLastRow.totalCount).toBe(3)
 	expect(omittedLastRow.hasMore).toBe(false)
-	expect(shouldReseedAdminUsersWindow('q=&role=&verification=', '')).toBe(true)
-	expect(
-		shouldReseedAdminUsersWindow(
-			'q=&role=&verification=',
-			'q=&role=&verification=',
-		),
-	).toBe(false)
 
 	const refreshFailed = nextAdminUsersWindowAfterCreate({
 		currentItems: [existing],
@@ -255,4 +257,51 @@ test('failed create refresh keeps the current window when reset runs after the s
 	])
 	expect(snapshot.totalCount).toBe(21)
 	expect(snapshot.hasMore).toBe(true)
+})
+
+test('selection refetch keeps a created user that page one omitted', () => {
+	const oldest = user({
+		stableUserId: stableUserId(1),
+		username: 'oldest',
+	})
+	const older = user({
+		stableUserId: stableUserId(2),
+		username: 'older',
+	})
+	const created = user({
+		stableUserId: stableUserId(9),
+		username: 'created',
+	})
+	const pageOnePayload = {
+		users: [oldest, older],
+		page: 1,
+		pageSize: 2,
+		total: 3,
+	}
+	const afterCreate = nextAdminUsersWindowAfterCreate({
+		currentItems: [oldest, older],
+		currentHasMore: true,
+		currentTotal: 2,
+		payload: {
+			ok: true,
+			selectedUser: null,
+			availableRoles: [...roleNames],
+			availablePlans: [...planNames],
+			updatedUser: created,
+			createdUserInFilteredList: true,
+			...pageOnePayload,
+		},
+	})
+	expect(afterCreate.items.map((item) => item.username)).toEqual([
+		'created',
+		'oldest',
+		'older',
+	])
+	expect(afterCreate.hasMore).toBe(false)
+
+	const listKey = getListKey('/admin/users')
+	// Selection changes the pathname (and route data) but not the list
+	// filters, so applyPayload must keep the prepended created row.
+	expect(getListKey(`/admin/users/${created.stableUserId}`)).toBe(listKey)
+	expect(getListKey('/admin/users?role=admin')).not.toBe(listKey)
 })

@@ -123,6 +123,9 @@ export function nextAdminUsersWindowAfterCreate(input: {
 		: input.payload.total
 	return {
 		items,
+		// page * pageSize < total stays true after prepending the one
+		// omitted newest row, even when the window already holds every
+		// filtered account. Follow the actual window length instead.
 		hasMore:
 			input.payload.listRefreshFailed && !canInsert
 				? input.currentHasMore
