@@ -26,6 +26,7 @@ type RuntimeModule = {
 		value: unknown,
 		callback: () => Promise<T>,
 	) => Promise<T>
+	__kodyMeterStaticPackageExport: <T>(packageId: string, exportValue: T) => T
 	kody: { tool_call: (args: unknown) => Promise<unknown> } | undefined
 	codemode?: unknown
 	capabilities?: unknown
@@ -38,9 +39,17 @@ type RuntimeModule = {
 	}
 }
 
+function readSecretAuthority() {
+	const getSecretAuthority = (
+		globalThis as unknown as Record<symbol, () => string | null>
+	)[Symbol.for('kody.getSecretAuthority')]
+	return typeof getSecretAuthority === 'function' ? getSecretAuthority() : null
+}
+
 function resetRuntimeStorageSymbol() {
-	const symbolKey = Symbol.for('kody.runtimeStorage')
-	delete (globalThis as unknown as Record<symbol, unknown>)[symbolKey]
+	const globalAny = globalThis as unknown as Record<symbol, unknown>
+	delete globalAny[Symbol.for('kody.runtimeStorage')]
+	delete globalAny[Symbol.for('kody.secretAuthorityStorage')]
 }
 
 async function writeRuntimeFile(cleanupCallbacks: Array<() => Promise<void>>) {
@@ -509,5 +518,25 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 			viaHome: { ok: true, args: { thermostat: 'office' } },
 			viaTool: { ok: true, args: { thermostat: 'office' } },
 		})
+	})
+})
+
+test('secret-authority stamps stay visible across hydrated runtime.js copies', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const firstCopy = (await import(await writeRuntimeFile())) as RuntimeModule
+		const secondCopy = (await import(await writeRuntimeFile())) as RuntimeModule
+
+		const stamped = secondCopy.__kodyMeterStaticPackageExport(
+			'pkg-artifact',
+			() => readSecretAuthority(),
+		)
+		expect(stamped()).toBe('pkg-artifact')
+		expect(readSecretAuthority()).toBeNull()
+
+		const stampedOnFirst = firstCopy.__kodyMeterStaticPackageExport(
+			'pkg-root',
+			() => readSecretAuthority(),
+		)
+		expect(stampedOnFirst()).toBe('pkg-root')
 	})
 })

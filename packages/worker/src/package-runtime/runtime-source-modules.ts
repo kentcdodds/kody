@@ -33,10 +33,16 @@ export function createRuntimeModuleSource() {
 	// globalThis - the per-request runtime value is held inside the ALS, so
 	// concurrent requests do not stomp on each other's view.
 	//
-	// This module is evaluated at most once per isolate, but dynamic workers
-	// with identical code are cached and reused across executions (stable
-	// worker-loader ids). Per-run values must therefore never freeze into
-	// module scope: the \`kody\` capability proxy in particular closes over
+	// Hydration also installs another copy of this module under each
+	// published-artifact prefix, so the isolate evaluates the same source
+	// more than once. The secret-authority ALS and its getter must use that
+	// same shared instance; a per-copy store would let a stamped export
+	// write one ALS while fetch / kody.* proxies read another.
+	//
+	// This module is evaluated at most once per isolate path, but dynamic
+	// workers with identical code are cached and reused across executions
+	// (stable worker-loader ids). Per-run values must therefore never freeze
+	// into module scope: the \`kody\` capability proxy in particular closes over
 	// the RPC ToolDispatcher stubs passed to a single \`evaluate()\` call,
 	// and those stubs are implicitly disposed when that call returns. A
 	// frozen \`export const kody = runtime.kody\` would make every later run
@@ -61,19 +67,25 @@ export function createRuntimeModuleSource() {
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __kodySecretAuthorityAlsSymbol = Symbol.for('kody.secretAuthorityStorage');
 const __kodyGetSecretAuthoritySymbol = Symbol.for('kody.getSecretAuthority');
 const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
-const __kodySecretAuthorityAls = new AsyncLocalStorage();
+if (__globalAny[__kodySecretAuthorityAlsSymbol] == null) {
+	__globalAny[__kodySecretAuthorityAlsSymbol] = new AsyncLocalStorage();
+}
+function __kodyGetSharedSecretAuthorityAls() {
+	return __globalAny[__kodySecretAuthorityAlsSymbol];
+}
 function __kodyRunWithSecretAuthority(packageId, callback) {
-	return __kodySecretAuthorityAls.run(packageId, callback);
+	return __kodyGetSharedSecretAuthorityAls().run(packageId, callback);
 }
 if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
 	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
 		value: () => {
-			const current = __kodySecretAuthorityAls.getStore();
+			const current = __kodyGetSharedSecretAuthorityAls()?.getStore?.();
 			return typeof current === 'string' && current.trim()
 				? current.trim()
 				: null;

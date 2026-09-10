@@ -265,7 +265,10 @@ test(
 					"import { packageSecrets } from 'kody:runtime'",
 					'export default async function wake() {',
 					'\tconst token = await packageSecrets.get("wakeToken")',
-					'\treturn { token }',
+					'\tconst getAuthority = globalThis[Symbol.for("kody.getSecretAuthority")]',
+					'\tconst authority =',
+					'\t\ttypeof getAuthority === "function" ? getAuthority() : null',
+					'\treturn { token, authority }',
 					'}',
 				].join('\n'),
 			},
@@ -362,7 +365,10 @@ test(
 			{ skipCapabilityRegistry: true },
 		)
 		expect(executeImport.error).toBeUndefined()
-		expect(executeImport.result).toEqual({ token: 'wake-secret-value' })
+		expect(executeImport.result).toEqual({
+			token: 'wake-secret-value',
+			authority: wake.packageId,
+		})
 
 		const enterAsA = await runBundledModuleWithRegistry(
 			env,
@@ -441,7 +447,10 @@ test(
 			},
 		)
 		expect(runAsBImportA.error).toBeUndefined()
-		expect(runAsBImportA.result).toEqual({ token: 'wake-secret-value' })
+		expect(runAsBImportA.result).toEqual({
+			token: 'wake-secret-value',
+			authority: wake.packageId,
+		})
 
 		const runAsBSteal = await runBundledModuleWithRegistry(
 			env,
