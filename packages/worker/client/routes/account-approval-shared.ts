@@ -38,6 +38,11 @@ export function allowHostsButtonLabel(
 	return `Allow all ${validCount} hosts`
 }
 
+export function allowPackagesButtonLabel(secretCount: number) {
+	if (secretCount <= 1) return 'Allow access'
+	return `Allow all ${secretCount} secrets`
+}
+
 export const accountSecretsApiPath = '/account/secrets.json'
 export const accountProfileApiPath = '/account/profile.json'
 

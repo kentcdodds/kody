@@ -38,7 +38,10 @@ import {
 	recordStampCss,
 } from './record-table.tsx'
 import {
+	isPackageApprovalHref,
+	isPackageSecretApprovalAlreadyGranted,
 	renderAlreadyAddedNotice,
+	renderPackageSecretApprovalPage,
 	renderSecretApprovalCard,
 } from './account-secrets-approval.tsx'
 import { renderSecretEditor } from './account-secrets-editor.tsx'
@@ -76,6 +79,8 @@ export function AccountSecretsRoute(handle: Handle) {
 	let editorState = createEmptyEditorState([])
 	let message: string | null = null
 	let submittingApprovalAction: ApprovalAction | null = null
+	let completedPackageApproval: ApprovalAction | null = null
+	let packageApprovalHref: string | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
 	let retryTimeout: ReturnType<typeof setTimeout> | null = null
 	let showSecretValue = false
@@ -232,23 +237,21 @@ export function AccountSecretsRoute(handle: Handle) {
 			>(action, `${requestUrl.pathname}${requestUrl.search}`)
 			if (!payload) return
 
-			const isBulkPackageApproval =
-				Boolean(approval.requestedPackageId) && approval.names.length > 1
+			const isPackageApproval = Boolean(approval.requestedPackageId)
 			applyPayload(
 				payload,
 				selection,
-				action === 'approve'
-					? approval.requestedPackageId
-						? isBulkPackageApproval
-							? `Approved package access for ${approval.names.length} secrets.`
-							: 'Approved requested package.'
-						: 'Approved requested host.'
-					: approval.requestedPackageId
-						? isBulkPackageApproval
-							? 'Rejected bulk package approval request.'
-							: 'Rejected package approval request.'
+				isPackageApproval
+					? null
+					: action === 'approve'
+						? 'Approved requested host.'
 						: 'Rejected host approval request.',
 			)
+			if (isPackageApproval) {
+				completedPackageApproval = action
+				handle.update()
+				return
+			}
 			handle.update()
 
 			if (typeof window !== 'undefined' && window.location.search) {
@@ -518,6 +521,34 @@ export function AccountSecretsRoute(handle: Handle) {
 		const canCreatePackageSecrets = packageOptions.length > 0
 		const showEditor = selection.isCreating || selectedSecret != null
 		const secretValueAutofocusKey = getNewSecretValueAutofocusKey(currentHref)
+		if (packageApprovalHref !== currentHref) {
+			packageApprovalHref = currentHref
+			completedPackageApproval = null
+		}
+
+		if (isPackageApprovalHref(currentHref)) {
+			const approvalError = appliedPayload?.approvalError ?? null
+			const alreadyGranted =
+				approval != null &&
+				completedPackageApproval !== 'reject' &&
+				isPackageSecretApprovalAlreadyGranted({
+					secrets,
+					approval,
+				})
+			return renderPackageSecretApprovalPage({
+				approval,
+				approvalError: approvalError ?? (status === 'error' ? message : null),
+				packagesById,
+				completed: completedPackageApproval,
+				alreadyGranted,
+				submittingAction: submittingApprovalAction,
+				message: message && message !== approvalError ? message : null,
+				onSubmit: (action) => {
+					void submitApproval(action)
+				},
+			})
+		}
+
 		const alreadyAddedNotice = getAlreadyAddedNotice({
 			href: currentHref,
 			selectedSecret,

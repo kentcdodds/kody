@@ -1,13 +1,16 @@
+import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import {
 	type ApprovalAction,
 	type ApprovalView,
 	allowHostsButtonLabel,
+	allowPackagesButtonLabel,
 	approvalRejectedHosts,
 	approvalRequestedHosts,
 	getScopeLabel,
 } from '#client/routes/account-approval-shared.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -15,9 +18,17 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
+	cardCss,
 	getAccentCalloutCss,
 	getGhostButtonCss,
 	getPillButtonCss,
+	getPrimaryButtonCss,
+	getSecondaryButtonCss,
+	pageDescriptionCss,
+	pageEyebrowCss,
+	pageHeaderCss,
+	pageTitleCss,
+	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 import { accountDisclosureCss } from './account-management-components.tsx'
 
@@ -53,9 +64,9 @@ export function renderSecretApprovalCard(props: {
 						color: colors.text,
 					})}
 				>
-					{approvalCard.requestedHost && !approvalCard.requestedPackageId
-						? 'Allow access'
-						: 'Approve secret access'}
+					{approvalCard.requestedPackageId
+						? 'Allow package access'
+						: 'Allow access'}
 				</h2>
 				{approvalCard.requestedPackageId ? (
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -218,11 +229,9 @@ export function renderSecretApprovalCard(props: {
 							css(secretApprovalPrimaryButtonCss),
 						]}
 					>
-						{approvalCard.requestedPackageId && approvalCard.names.length > 1
-							? `Approve all (${approvalCard.names.length})`
-							: approvalCard.requestedPackageId
-								? 'Approve'
-								: allowHostsButtonLabel(hosts.length, rejectedHosts.length)}
+						{approvalCard.requestedPackageId
+							? allowPackagesButtonLabel(approvalCard.names.length)
+							: allowHostsButtonLabel(hosts.length, rejectedHosts.length)}
 					</button>
 				) : null}
 				<button
@@ -306,4 +315,216 @@ const secretApprovalAdvancedCss = {
 	...accountDisclosureCss,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.sm,
+}
+
+const packageApprovalPageCss = {
+	...stackedPageCss,
+	maxWidth: '32rem',
+	margin: '0 auto',
+}
+
+const packageApprovalHeaderCss = {
+	...pageHeaderCss,
+	justifyItems: 'center',
+	textAlign: 'center' as const,
+}
+
+const packageApprovalPrimaryButtonCss = getPrimaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+const packageApprovalSecondaryButtonCss = getSecondaryButtonCss({
+	size: 'lg',
+	weight: 'semibold',
+})
+
+export function isPackageApprovalHref(href: string) {
+	const url = new URL(href, 'http://localhost')
+	if (url.pathname === routes.accountSecretsApprove.href()) return true
+	return Boolean(url.searchParams.get('package_id')?.trim())
+}
+
+export function isPackageSecretApprovalAlreadyGranted(input: {
+	secrets: AccountSecretsLoaderData['secrets']
+	approval: ApprovalView
+}) {
+	const packageId = input.approval.requestedPackageId?.trim()
+	if (!packageId || input.approval.names.length === 0) return false
+	return input.approval.names.every((name) =>
+		input.secrets.some(
+			(item) =>
+				item.name === name &&
+				item.scope === input.approval.scope &&
+				item.allowedPackages.includes(packageId),
+		),
+	)
+}
+
+export function readPackageSecretApprovalView(input: {
+	completed: ApprovalAction | null
+	alreadyGranted: boolean
+}) {
+	const fullyAllowed = input.completed === 'approve' || input.alreadyGranted
+	return {
+		fullyAllowed,
+		showBackToSecrets: fullyAllowed || input.completed === 'reject',
+	}
+}
+
+export function renderPackageSecretApprovalPage(props: {
+	approval: ApprovalView | null
+	approvalError: string | null
+	packagesById: ReadonlyMap<string, { kodyId: string; name: string }>
+	completed: ApprovalAction | null
+	alreadyGranted: boolean
+	submittingAction: ApprovalAction | null
+	message: string | null
+	onSubmit: (action: ApprovalAction) => void
+}) {
+	const {
+		approval,
+		approvalError,
+		packagesById,
+		completed,
+		alreadyGranted,
+		submittingAction,
+		message,
+		onSubmit,
+	} = props
+	const view = readPackageSecretApprovalView({
+		completed,
+		alreadyGranted,
+	})
+	const names = approval?.names.length
+		? approval.names
+		: approval?.name
+			? [approval.name]
+			: []
+	const packageId = approval?.requestedPackageId ?? null
+	const packageLabel = packageId
+		? (packagesById.get(packageId)?.kodyId ?? packageId)
+		: null
+
+	return (
+		<section
+			mix={css(packageApprovalPageCss)}
+			data-testid="account-secrets-package-approval"
+		>
+			<header mix={css(packageApprovalHeaderCss)}>
+				<span mix={css(pageEyebrowCss)}>Allow secret packages</span>
+				<h1 mix={css(pageTitleCss)}>
+					{view.fullyAllowed
+						? 'Access allowed'
+						: completed === 'reject'
+							? 'Request rejected'
+							: 'Allow this package to use these secrets'}
+				</h1>
+				<p mix={css(pageDescriptionCss)}>
+					{view.fullyAllowed
+						? 'This package can use the saved secrets below.'
+						: completed === 'reject'
+							? 'No package grant was added. You can allow later from this same link.'
+							: approval
+								? 'Kody only grants a user secret to a package you allow. Agents cannot do this for you.'
+								: 'Open an approval link from Kody to allow a saved package to use a secret.'}
+				</p>
+			</header>
+
+			{approvalError ? (
+				<section
+					mix={css({
+						...cardCss,
+						border: `1px solid ${colors.danger}`,
+					})}
+					data-testid="account-secrets-package-approval-error"
+				>
+					<p mix={css({ margin: 0, color: colors.danger })}>{approvalError}</p>
+				</section>
+			) : null}
+
+			{message ? (
+				<p mix={css({ margin: 0, color: colors.danger })}>{message}</p>
+			) : null}
+
+			{approval && packageId ? (
+				<section
+					mix={css(cardCss)}
+					data-testid="account-secrets-package-approval-card"
+				>
+					<div mix={css({ display: 'grid', gap: spacing.sm })}>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<span mix={css({ color: colors.textMuted })}>
+								{names.length === 1 ? 'Secret' : 'Secrets'}
+							</span>
+							<ul
+								mix={css({
+									margin: 0,
+									paddingLeft: spacing.lg,
+									display: 'grid',
+									gap: spacing.xs,
+								})}
+							>
+								{names.map((name) => (
+									<li key={name}>
+										<code>{name}</code>
+									</li>
+								))}
+							</ul>
+						</div>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<span mix={css({ color: colors.textMuted })}>Package</span>
+							<strong mix={css({ color: colors.text })}>{packageLabel}</strong>
+						</div>
+					</div>
+					{view.showBackToSecrets ? (
+						<a
+							href={routes.accountSecrets.href()}
+							mix={css(packageApprovalSecondaryButtonCss)}
+						>
+							Back to secrets
+						</a>
+					) : (
+						<div
+							mix={css({
+								display: 'flex',
+								gap: spacing.sm,
+								flexWrap: 'wrap',
+							})}
+						>
+							{completed !== 'approve' ? (
+								<button
+									type="button"
+									disabled={submittingAction != null}
+									mix={[
+										on('click', () => {
+											onSubmit('approve')
+										}),
+										css(packageApprovalPrimaryButtonCss),
+									]}
+									data-testid="allow-secret-package"
+								>
+									{submittingAction === 'approve'
+										? 'Allowing access…'
+										: allowPackagesButtonLabel(names.length)}
+								</button>
+							) : null}
+							<button
+								type="button"
+								disabled={submittingAction != null}
+								mix={[
+									on('click', () => {
+										onSubmit('reject')
+									}),
+									css(packageApprovalSecondaryButtonCss),
+								]}
+							>
+								Reject
+							</button>
+						</div>
+					)}
+				</section>
+			) : null}
+		</section>
+	)
 }

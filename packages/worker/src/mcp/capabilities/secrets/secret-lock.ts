@@ -29,7 +29,7 @@ export const secretLockCapability = defineDomainCapability(
 	{
 		name: 'secretLock',
 		description:
-			'Return a website approval URL so the account owner can grant a user-scoped secret to a saved package. This capability does not change allowed_packages. Only the owner can add a grant at /account/secrets/user/:name or /account/secrets/approve. Removing a grant is also website-only. Send the approval_url to the user and wait; do not treat this call as a grant. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secretSet cannot change allowed_packages.',
+			'Return a website approval URL so the account owner can grant a user-scoped secret to a saved package (one-click Allow, same spirit as /connect/secrets host approval). This capability does not change allowed_packages. Send the approval_url to the user and wait; never treat this call as a grant. Only the owner can add a grant at /account/secrets/approve or the secret editor. Removing a grant is also website-only. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secretSet cannot change allowed_packages.',
 		keywords: [
 			'secret',
 			'lock',
