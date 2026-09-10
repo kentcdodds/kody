@@ -12,6 +12,7 @@ import {
 	youtubeNocookieEmbedUrl,
 	youtubeThumbPath,
 	youtubeThumbnailSourceUrl,
+	youtubeThumbnailSourceUrls,
 	youtubeWatchHref,
 } from './youtube-watch.ts'
 
@@ -135,8 +136,13 @@ test('banner images rewrite YouTube hosts to first-party thumb paths', () => {
 		}),
 	).toBe('/brand/launch.png')
 	expect(youtubeThumbnailSourceUrl(videoId)).toBe(
-		`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+		`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
 	)
+	expect(youtubeThumbnailSourceUrls(videoId)).toEqual([
+		`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
+		`https://i.ytimg.com/vi/${videoId}/sddefault.jpg`,
+		`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+	])
 	expect(youtubeNocookieEmbedUrl(videoId)).toBe(
 		`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`,
 	)
