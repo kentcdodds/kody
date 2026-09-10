@@ -9,6 +9,7 @@ import {
 	toPublicProfilePackageItem,
 } from '#app/community-public.ts'
 import { type ProfileLoaderData } from '#universal/loader-data.ts'
+import { readProfilePackageFiltersFromUrl } from '#universal/profile-search.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
 	getCommunityProfileByUsername,
@@ -69,7 +70,9 @@ async function loadProfileDataUncached(
 	}
 
 	const url = new URL(request.url)
-	const query = url.searchParams.get('q')?.trim() ?? ''
+	const filters = readProfilePackageFiltersFromUrl(url, {
+		allowOwnerFilters: isSelf,
+	})
 	const packageLimit = readPositiveInt(
 		url.searchParams.get('limit'),
 		defaultProfilePackageLimit,
@@ -80,9 +83,10 @@ async function loadProfileDataUncached(
 		listPublicProfilePackages({
 			env,
 			ownerStableUserId: profile.userId,
-			query: query || undefined,
+			query: filters.query || undefined,
 			limit: packageLimit,
 			includePrivate: isSelf,
+			filters,
 		}),
 		getProfileActivity({
 			env,
@@ -99,7 +103,10 @@ async function loadProfileDataUncached(
 			toPublicProfilePackageItem(pkg, { includeOwnerVisibility: isSelf }),
 		),
 		activity: activity.map(toPublicCommunityActivityItem),
-		query: query || null,
+		query: filters.query || null,
+		visibility: filters.visibility,
+		listing: filters.listing,
+		hidden: filters.hidden,
 		isSelf,
 		loggedIn: Boolean(user),
 	}

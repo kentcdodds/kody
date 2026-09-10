@@ -65,8 +65,9 @@ async function insertListing(input: {
 	packageId: string
 	name: string
 	kodyId: string
+	publishedAt?: string
 }) {
-	const now = new Date().toISOString()
+	const publishedAt = input.publishedAt ?? new Date().toISOString()
 	await runSql(
 		`INSERT INTO community_listings (
 			id, owner_user_id, package_id, source_id, kody_id, name, description,
@@ -82,9 +83,9 @@ async function insertListing(input: {
 		JSON.stringify(['catalog']),
 		'MIT',
 		'commit-1',
-		now,
-		now,
-		now,
+		publishedAt,
+		publishedAt,
+		publishedAt,
 	)
 }
 
@@ -316,6 +317,93 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 	expect(
 		ownInventory.find((pkg) => pkg.kodyId === 'secret-notes')?.isPrivate,
 	).toBe(true)
+
+	const publicNotesId = allPublic.find(
+		(pkg) => pkg.kodyId === 'public-notes',
+	)?.packageId
+	if (!publicNotesId) throw new Error('expected public-notes package id')
+	await insertListing({
+		id: `listing-${crypto.randomUUID()}`,
+		ownerUserId: owner.userId,
+		packageId: publicNotesId,
+		name: `@${owner.username}/public-notes`,
+		kodyId: 'public-notes',
+		publishedAt: '2026-06-01T00:00:00.000Z',
+	})
+
+	const published = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'all',
+			listing: 'published',
+			hidden: 'all',
+		},
+	})
+	expect(published.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
+
+	const unpublished = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'all',
+			listing: 'unpublished',
+			hidden: 'all',
+		},
+	})
+	expect(unpublished.map((pkg) => pkg.kodyId).sort()).toEqual([
+		'calendar',
+		'hidden-notes',
+		'secret-notes',
+	])
+
+	const privateOnly = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'private',
+			listing: 'all',
+			hidden: 'all',
+		},
+	})
+	expect(privateOnly.map((pkg) => pkg.kodyId)).toEqual(['secret-notes'])
+
+	const hiddenOnly = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'all',
+			listing: 'all',
+			hidden: 'yes',
+		},
+	})
+	expect(hiddenOnly.map((pkg) => pkg.kodyId)).toEqual(['hidden-notes'])
+
+	const ahead = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+		filters: {
+			query: '',
+			visibility: 'all',
+			listing: 'ahead',
+			hidden: 'all',
+		},
+	})
+	expect(ahead.map((pkg) => pkg.kodyId)).toEqual(['public-notes'])
 })
 
 test('profile activity includes own private publishes and hides them from public reads', async () => {

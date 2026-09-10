@@ -127,10 +127,43 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.activity).toHaveLength(1)
 	expect(publicBody.isSelf).toBe(false)
 	expect(publicBody.loggedIn).toBe(false)
+	expect(publicBody.visibility).toBe('all')
+	expect(publicBody.listing).toBe('all')
+	expect(publicBody.hidden).toBe('all')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: false,
+			filters: {
+				query: '',
+				visibility: 'all',
+				listing: 'all',
+				hidden: 'all',
+			},
+		}),
+	)
+
+	mockModule.listPublicProfilePackages.mockClear()
+	const guestFilterResponse = await apiHandler.handler({
+		request: new Request(
+			'https://example.com/profiles/alice.json?visibility=private&listing=published&hidden=yes',
+		),
+		params: { username: 'alice' },
+		url: new URL(
+			'https://example.com/profiles/alice.json?visibility=private&listing=published&hidden=yes',
+		),
+	} as never)
+	expect(guestFilterResponse.status).toBe(200)
+	expect((await guestFilterResponse.json()).listing).toBe('published')
+	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			includePrivate: false,
+			filters: {
+				query: '',
+				visibility: 'all',
+				listing: 'published',
+				hidden: 'all',
+			},
 		}),
 	)
 
@@ -168,19 +201,32 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	mockModule.listPublicProfilePackages.mockResolvedValue([])
 	mockModule.getProfileActivity.mockResolvedValue([])
 	const ownResponse = await apiHandler.handler({
-		request: new Request('https://example.com/profiles/alice.json'),
+		request: new Request(
+			'https://example.com/profiles/alice.json?visibility=private&listing=ahead&hidden=yes',
+		),
 		params: { username: 'alice' },
-		url: new URL('https://example.com/profiles/alice.json'),
+		url: new URL(
+			'https://example.com/profiles/alice.json?visibility=private&listing=ahead&hidden=yes',
+		),
 	} as never)
 	const ownBody = await ownResponse.json()
 	expect(ownResponse.status).toBe(200)
 	expect(ownBody.ok).toBe(true)
 	expect(ownBody.isSelf).toBe(true)
 	expect(ownBody.profile.visibility).toBe('private')
+	expect(ownBody.visibility).toBe('private')
+	expect(ownBody.listing).toBe('ahead')
+	expect(ownBody.hidden).toBe('yes')
 	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
 		expect.objectContaining({
 			ownerStableUserId: 'stable-alice',
 			includePrivate: true,
+			filters: {
+				query: '',
+				visibility: 'private',
+				listing: 'ahead',
+				hidden: 'yes',
+			},
 		}),
 	)
 

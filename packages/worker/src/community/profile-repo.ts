@@ -3,6 +3,7 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
+import { type ProfilePackageFilters } from '#universal/profile-search.ts'
 import { extractCommunityListingLikeTokens } from './repo.ts'
 import {
 	type CommunityActivityEventType,
@@ -322,6 +323,73 @@ const publicPackageSearchColumns = [
 	'tags_json',
 ] as const
 
+const activeListingExistsSql = `EXISTS (
+	SELECT 1 FROM community_listings AS cl
+	WHERE cl.owner_user_id = saved_packages.user_id
+		AND cl.status = 'active'
+		AND cl.package_id = saved_packages.id
+)`
+
+const listingAheadSql = `EXISTS (
+	SELECT 1 FROM community_listings AS cl
+	WHERE cl.owner_user_id = saved_packages.user_id
+		AND cl.status = 'active'
+		AND cl.package_id = saved_packages.id
+		AND saved_packages.updated_at > cl.published_at
+)`
+
+function applyProfilePackageFilters(
+	conditions: Array<string>,
+	filters: ProfilePackageFilters | undefined,
+) {
+	if (filters == null) return
+	switch (filters.visibility) {
+		case 'all':
+			break
+		case 'public':
+			conditions.push('is_private = 0')
+			break
+		case 'private':
+			conditions.push('is_private = 1')
+			break
+		default: {
+			const exhaustive: never = filters.visibility
+			throw new Error(`Unhandled profile visibility filter: ${exhaustive}`)
+		}
+	}
+	switch (filters.hidden) {
+		case 'all':
+			break
+		case 'yes':
+			conditions.push('hidden = 1')
+			break
+		case 'no':
+			conditions.push('hidden = 0')
+			break
+		default: {
+			const exhaustive: never = filters.hidden
+			throw new Error(`Unhandled profile hidden filter: ${exhaustive}`)
+		}
+	}
+	switch (filters.listing) {
+		case 'all':
+			break
+		case 'published':
+			conditions.push(activeListingExistsSql)
+			break
+		case 'unpublished':
+			conditions.push(`NOT ${activeListingExistsSql}`)
+			break
+		case 'ahead':
+			conditions.push(listingAheadSql)
+			break
+		default: {
+			const exhaustive: never = filters.listing
+			throw new Error(`Unhandled profile listing filter: ${exhaustive}`)
+		}
+	}
+}
+
 export async function listPublicProfilePackages(
 	db: D1Database,
 	input: {
@@ -330,11 +398,13 @@ export async function listPublicProfilePackages(
 		limit: number
 		/** When true, include private and hidden packages (own-profile inventory). */
 		includePrivate?: boolean
+		filters?: ProfilePackageFilters
 	},
 ): Promise<Array<PublicProfilePackage>> {
 	const conditions = input.includePrivate
 		? ['user_id = ?']
 		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
+	applyProfilePackageFilters(conditions, input.filters)
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {

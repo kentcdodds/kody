@@ -1,4 +1,5 @@
-export function readProfileSearchQueryFromHref(href: string) {
-	const url = new URL(href, 'http://localhost')
-	return url.searchParams.get('q') ?? ''
-}
+export {
+	readProfileSearchQueryFromHref,
+	readProfilePackageFiltersFromHref,
+	buildProfileHref,
+} from '#universal/profile-search.ts'

@@ -1,3 +1,4 @@
+import { type ProfilePackageFilters } from '#universal/profile-search.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { CommunityActionError } from './errors.ts'
@@ -174,11 +175,13 @@ export async function listPublicProfilePackages(input: {
 	query?: string
 	limit: number
 	includePrivate?: boolean
+	filters?: ProfilePackageFilters
 }): Promise<Array<PublicProfilePackage>> {
 	return await listPublicProfilePackagesFromDb(input.env.APP_DB, {
 		ownerStableUserId: input.ownerStableUserId,
 		query: input.query,
 		limit: input.limit,
 		includePrivate: input.includePrivate,
+		filters: input.filters,
 	})
 }
