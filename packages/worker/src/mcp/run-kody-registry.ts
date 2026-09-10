@@ -185,7 +185,7 @@ function createPackageSecretTools(input: {
 	runPackageId: string | null
 	grantedPackageIds: ReadonlySet<string>
 }): PackageSecretToolOptions {
-	const resolveAuthorityPackageId = (requestedPackageId?: string) => {
+	const resolveAuthorityPackageId = (requestedPackageId?: string | null) => {
 		const authorityPackageId = resolveSecretAuthorityPackageId({
 			requestedPackageId,
 			grantedPackageIds: input.grantedPackageIds,
@@ -203,21 +203,21 @@ function createPackageSecretTools(input: {
 	}
 	return {
 		runPackageId: input.runPackageId,
-		get: async (alias: string, packageId?: string) =>
+		get: async (alias: string, requestedPackageId?: string | null) =>
 			(
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: resolveAuthorityPackageId(packageId),
+					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
 			).value,
-		has: async (alias: string, packageId?: string) => {
+		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: resolveAuthorityPackageId(packageId),
+					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
 				return true
@@ -1012,7 +1012,6 @@ ${runtimeHelperPreludeSource}
     kody,
 ${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
-    secretAuthorityPackageId: ${JSON.stringify(options?.packageContext?.packageId ?? null)},
   };
   try {
     return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {

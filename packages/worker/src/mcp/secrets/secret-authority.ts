@@ -56,10 +56,12 @@ export function getSecretAuthorityScope() {
  * Pick the package id that may use a secret for this call.
  *
  * A requested (stamp / header / capability) id wins only when it is in the
- * host grant set. Forged or unrelated ids fall back to the run. When the
- * host has not installed a grant set (unit tests, MCP outside a bundled
- * run), a requested id is accepted so callers can pass authority
- * explicitly.
+ * host grant set. Forged or unrelated ids fall back to the run. An
+ * installed empty grant set is fail-closed. Trusted host callers (unit
+ * tests, MCP outside a bundled run) may omit the grant set so an explicit
+ * requested id is accepted. Untrusted sandbox headers must pass a grant
+ * set — {@link readSecretAuthorityHeader} and the fetch gateway treat an
+ * omitted set as empty.
  */
 export function resolveSecretAuthorityPackageId(input: {
 	requestedPackageId?: string | null
@@ -142,8 +144,28 @@ export function readSecretAuthorityHeader(
 ): string | null {
 	const requested = headers.get(secretAuthorityHeaderName)?.trim() || null
 	if (!requested) return null
-	if (grantedPackageIds && !grantedPackageIds.has(requested)) return null
+	if (!grantedPackageIds?.has(requested)) return null
 	return requested
+}
+
+/**
+ * Copy caller args, drop a forged reserved authority key, then attach the
+ * runtime stamp when one exists. Used by sandbox `kody.*` proxies.
+ */
+export function attachSecretAuthorityToCapabilityArgs(
+	args: unknown,
+	authorityPackageId: string | null | undefined,
+): unknown {
+	if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+		return args
+	}
+	const next = { ...(args as Record<string, unknown>) }
+	delete next[secretAuthorityArgName]
+	const authority = authorityPackageId?.trim() || ''
+	if (authority) {
+		next[secretAuthorityArgName] = authority
+	}
+	return next
 }
 
 export function grantedSecretAuthorityPackageIdSet(

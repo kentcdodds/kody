@@ -286,6 +286,9 @@ test(
 						id: 'dependent',
 						description: 'Dependent',
 						dependencies: { '@kentcdodds/grok-bot': '*' },
+						secretMounts: {
+							wakeToken: { name: 'wakeToken', scope: 'user' },
+						},
 					},
 				}),
 				'src/call-wake.ts': [
@@ -453,6 +456,9 @@ test(
 						kody: {
 							id: 'dependent',
 							description: 'Dependent',
+							secretMounts: {
+								wakeToken: { name: 'wakeToken', scope: 'user' },
+							},
 						},
 					}),
 					'src/steal.ts': [
@@ -482,7 +488,7 @@ test(
 		expect(runAsBSteal.error).toBeUndefined()
 		expect(runAsBSteal.result).toEqual(
 			expect.objectContaining({
-				error: expect.stringMatching(/does not declare secret mount/i),
+				error: expect.stringMatching(/not allowed for package/i),
 			}),
 		)
 

@@ -50,10 +50,10 @@ the ambient run (hosted URL, app paths) must run as that package: inbound
 webhooks for external clients, or a job / subscription / app surface. Authors do
 not get a `packages.invoke` composition helper (0037).
 
-#1691 is user-scope `{{secret}}` placeholders resolved at the fetch gateway for
-the calling user. The gateway authorizes those placeholders as the **stamp**
-when the call site is stamped (and the id is in the provenance set), otherwise
-as the run.
+Issue `#1691` is user-scope `{{secret}}` placeholders resolved at the fetch
+gateway for the calling user. The gateway authorizes those placeholders as the
+**stamp** when the call site is stamped (and the id is in the provenance set),
+otherwise as the run.
 
 ## Recommended model (secrets, storage, context)
 

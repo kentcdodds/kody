@@ -4,6 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertCanSetSecrets } from '#mcp/secrets/package-access.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
@@ -95,12 +96,9 @@ export const secretSetManyCapability = defineDomainCapability(
 		async handler(args, ctx: CapabilityContext) {
 			const parsed = secretSetManyInputSchema.parse(args)
 			const user = requireMcpUser(ctx.callerContext)
-			const storageContext = {
-				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-				appId: ctx.callerContext.storageContext?.appId ?? null,
-				packageId: ctx.callerContext.storageContext?.packageId ?? null,
-				storageId: ctx.callerContext.storageContext?.storageId ?? null,
-			}
+			const { storageContext } = resolveCallerSecretAuthority({
+				storageContext: ctx.callerContext.storageContext,
+			})
 			await assertCanSetSecrets({
 				env: ctx.env,
 				userId: user.userId,

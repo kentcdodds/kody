@@ -509,6 +509,21 @@ test('fetch gateway authorizes {{secret}} as the stamped package, not the import
 			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
 			return parsed?.packageName === 'importer'
 		})
+		// An omitted grant set is also fail-closed at the untrusted header
+		// boundary: a forged pkg-a header must not select that authority.
+		await expect(
+			expandSecretPlaceholders({
+				request: request('pkg-a'),
+				props: {
+					...runProps,
+					grantedSecretAuthorityPackageIds: undefined,
+				},
+				env,
+			}),
+		).rejects.toSatisfy((error: unknown) => {
+			const parsed = parsePackageAccessRequiredMessage(getErrorMessage(error))
+			return parsed?.packageName === 'importer'
+		})
 	} finally {
 		packageSpy.mockRestore()
 		forkSpy.mockRestore()

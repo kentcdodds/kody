@@ -18,6 +18,7 @@ import {
 	type PackageStaticCallMeterTools,
 } from '#worker/usage/package-static-call-usage.ts'
 import { staticCallMeterRuntimeBridgeProviderName } from '#mcp/evaluation-side-effects.ts'
+import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -41,8 +42,8 @@ export type PackageStorageToolOptions = {
 }
 
 export type PackageSecretToolOptions = {
-	get: (alias: string, packageId?: string) => Promise<string>
-	has: (alias: string, packageId?: string) => Promise<boolean>
+	get: (alias: string, packageId?: string | null) => Promise<string>
+	has: (alias: string, packageId?: string | null) => Promise<boolean>
 	/**
 	 * Run package id for the unstamped `packageSecrets` binding. Null on
 	 * ad hoc execute so unstamped entry code stays unbound while stamped
@@ -178,7 +179,10 @@ const __kodyPackageSecrets = (packageId) => ({
     if (!normalizedAlias) {
       throw new Error('packageSecrets.get requires a non-empty alias.')
     }
-    const result = await kody.packageSecretGet({ alias: normalizedAlias, packageId });
+    const result = await kody.packageSecretGet({
+      alias: normalizedAlias,
+      packageId,
+    });
     return typeof result?.value === 'string' ? result.value : '';
   },
   has: async (alias) => {
@@ -186,7 +190,10 @@ const __kodyPackageSecrets = (packageId) => ({
     if (!normalizedAlias) {
       throw new Error('packageSecrets.has requires a non-empty alias.')
     }
-    const result = await kody.packageSecretHas({ alias: normalizedAlias, packageId });
+    const result = await kody.packageSecretHas({
+      alias: normalizedAlias,
+      packageId,
+    });
     return result?.has === true;
   },
 });
@@ -319,29 +326,41 @@ function createPackageSecretKodyTools(
 ): AdditionalKodyTools {
 	return {
 		packageSecretGet: async (args: unknown) => {
+			const { args: peeled, requestedPackageId } =
+				takeSecretAuthorityFromCapabilityArgs([args])
+			const first = peeled[0]
 			const alias =
-				typeof args === 'object' && args !== null && 'alias' in args
-					? String((args as { alias: unknown }).alias ?? '')
+				typeof first === 'object' && first !== null && 'alias' in first
+					? String((first as { alias: unknown }).alias ?? '')
 					: ''
-			const packageId =
-				typeof args === 'object' && args !== null && 'packageId' in args
-					? String((args as { packageId: unknown }).packageId ?? '').trim()
+			const boundPackageId =
+				typeof first === 'object' && first !== null && 'packageId' in first
+					? String((first as { packageId: unknown }).packageId ?? '').trim()
 					: ''
 			return {
-				value: await packageSecretTools.get(alias, packageId),
+				value: await packageSecretTools.get(
+					alias,
+					requestedPackageId || boundPackageId || null,
+				),
 			}
 		},
 		packageSecretHas: async (args: unknown) => {
+			const { args: peeled, requestedPackageId } =
+				takeSecretAuthorityFromCapabilityArgs([args])
+			const first = peeled[0]
 			const alias =
-				typeof args === 'object' && args !== null && 'alias' in args
-					? String((args as { alias: unknown }).alias ?? '')
+				typeof first === 'object' && first !== null && 'alias' in first
+					? String((first as { alias: unknown }).alias ?? '')
 					: ''
-			const packageId =
-				typeof args === 'object' && args !== null && 'packageId' in args
-					? String((args as { packageId: unknown }).packageId ?? '').trim()
+			const boundPackageId =
+				typeof first === 'object' && first !== null && 'packageId' in first
+					? String((first as { packageId: unknown }).packageId ?? '').trim()
 					: ''
 			return {
-				has: await packageSecretTools.has(alias, packageId),
+				has: await packageSecretTools.has(
+					alias,
+					requestedPackageId || boundPackageId || null,
+				),
 			}
 		},
 	}

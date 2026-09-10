@@ -342,9 +342,10 @@ export async function expandSecretPlaceholders(input: {
 	if (!baseUrl) {
 		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
 	}
-	const grantedSecretAuthorityPackageIds = grantedSecretAuthorityPackageIdSet(
-		input.props.grantedSecretAuthorityPackageIds,
-	)
+	const grantedSecretAuthorityPackageIds =
+		grantedSecretAuthorityPackageIdSet(
+			input.props.grantedSecretAuthorityPackageIds,
+		) ?? new Set<string>()
 	const authorityPackageId = resolveSecretAuthorityPackageId({
 		requestedPackageId: readSecretAuthorityHeader(
 			headers,
@@ -520,6 +521,7 @@ export async function expandSecretPlaceholders(input: {
 		const normalizedHost = normalizeHost(requestedHost)
 		const missingApprovals = await collectHostApprovalEntries({
 			props: input.props,
+			storageContext,
 			requestedHost,
 			normalizedHost,
 			resolvedSecrets,
@@ -528,7 +530,7 @@ export async function expandSecretPlaceholders(input: {
 			const bulkScope = readBulkHostApprovalScope({
 				missingApprovals,
 				resolvedSecrets,
-				storageContext: input.props.storageContext,
+				storageContext,
 			})
 			const bulkApprovalUrl = bulkScope
 				? buildSecretHostBulkApprovalUrlIfNeeded({
@@ -625,6 +627,7 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 
 async function collectHostApprovalEntries(input: {
 	props: FetchGatewayProps
+	storageContext: StorageContext
 	requestedHost: string
 	normalizedHost: string
 	resolvedSecrets: Array<{
@@ -643,7 +646,7 @@ async function collectHostApprovalEntries(input: {
 				name: referenced.name,
 				scope: resolved.scope ?? referenced.scope ?? 'user',
 				requestedHost: input.requestedHost,
-				storageContext: input.props.storageContext,
+				storageContext: input.storageContext,
 			})
 			return {
 				secretName: referenced.name,

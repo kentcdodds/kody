@@ -61,10 +61,27 @@ export function createRuntimeModuleSource() {
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
+const __kodyGetSecretAuthoritySymbol = Symbol.for('kody.getSecretAuthority');
 const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
+const __kodySecretAuthorityAls = new AsyncLocalStorage();
+function __kodyRunWithSecretAuthority(packageId, callback) {
+	return __kodySecretAuthorityAls.run(packageId, callback);
+}
+if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
+	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
+		value: () => {
+			const current = __kodySecretAuthorityAls.getStore();
+			return typeof current === 'string' && current.trim()
+				? current.trim()
+				: null;
+		},
+		writable: false,
+		configurable: false,
+	});
+}
 
 export function __kodyRunInRuntime(runtime, callback) {
 	return __kodyRuntimeStorage.run(runtime, callback);
@@ -449,8 +466,14 @@ function __kodyResolvePackageSecrets(packageId) {
 // authority without being a security boundary.
 export function __kodyCreatePackageBoundSecrets(packageId) {
 	return {
-		get: async (alias) => __kodyResolvePackageSecrets(packageId).get(alias),
-		has: async (alias) => __kodyResolvePackageSecrets(packageId).has(alias),
+		get: async (alias) =>
+			__kodyRunWithSecretAuthority(packageId, () =>
+				__kodyResolvePackageSecrets(packageId).get(alias),
+			),
+		has: async (alias) =>
+			__kodyRunWithSecretAuthority(packageId, () =>
+				__kodyResolvePackageSecrets(packageId).has(alias),
+			),
 	};
 }
 
@@ -488,7 +511,6 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 	if (typeof exportValue !== 'function') return exportValue;
 	return new Proxy(exportValue, {
 		apply(target, thisArg, argumentsList) {
-			const currentRuntime = __kodyRuntimeStorage.getStore();
 			const invoke = () => {
 				const startedAtMs = Date.now();
 				let result;
@@ -516,11 +538,7 @@ export function __kodyMeterStaticPackageExport(packageId, exportValue) {
 				__kodyRecordStaticPackageCall(packageId, startedAtMs, 'success');
 				return result;
 			};
-			if (currentRuntime == null) return invoke();
-			return __kodyRuntimeStorage.run(
-				{ ...currentRuntime, secretAuthorityPackageId: packageId },
-				invoke,
-			);
+			return __kodyRunWithSecretAuthority(packageId, invoke);
 		},
 	});
 }

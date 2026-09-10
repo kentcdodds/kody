@@ -108,16 +108,13 @@ const __kodyRuntimeStorage = (() => {
 	return created;
 })();
 
-const __kodyNativeFetchSymbol = Symbol.for('kody.nativeFetch');
 const __kodyEvaluateFetchPatchedSymbol = Symbol.for('kody.evaluateFetchPatched');
 if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {
-	globalThis[__kodyNativeFetchSymbol] = globalThis.fetch.bind(globalThis);
-	const __kodyNativeFetch = globalThis[__kodyNativeFetchSymbol];
+	const __kodyNativeFetch = globalThis.fetch.bind(globalThis);
 	globalThis.fetch = (input, init) => {
-		const store = __kodyRuntimeStorage.getStore();
 		const authority =
-			typeof store?.secretAuthorityPackageId === 'string'
-				? store.secretAuthorityPackageId.trim()
+			typeof globalThis[Symbol.for('kody.getSecretAuthority')] === 'function'
+				? String(globalThis[Symbol.for('kody.getSecretAuthority')]() ?? '').trim()
 				: '';
 		const headers = new Headers(
 			init?.headers ??
@@ -237,20 +234,20 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 				await runtimeBridge.callCapability({
 					name: property,
 					args: (() => {
-						const store = globalThis[Symbol.for('kody.runtimeStorage')]?.getStore?.();
+						const getSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
 						const authority =
-							typeof store?.secretAuthorityPackageId === 'string'
-								? store.secretAuthorityPackageId.trim()
+							typeof getSecretAuthority === 'function'
+								? String(getSecretAuthority() ?? '').trim()
 								: '';
-						if (
-							authority &&
-							args != null &&
-							typeof args === 'object' &&
-							!Array.isArray(args)
-						) {
-							return { ...args, '__kodySecretAuthorityPackageId': authority };
+						if (args == null || typeof args !== 'object' || Array.isArray(args)) {
+							return args;
 						}
-						return args;
+						const next = { ...args };
+						delete next['__kodySecretAuthorityPackageId'];
+						if (authority) {
+							next['__kodySecretAuthorityPackageId'] = authority;
+						}
+						return next;
 					})(),
 				});
 		},
@@ -620,7 +617,6 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 		packages: createPackagesProxy(runtimeBridge),
 		events: createEventsProxy(runtimeBridge),
 		packageContext,
-		secretAuthorityPackageId: packageId || null,
 	};
 }
 

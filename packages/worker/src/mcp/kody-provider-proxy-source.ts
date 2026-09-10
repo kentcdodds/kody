@@ -53,17 +53,21 @@ export function createKodyProviderProxySource(input: {
 	const mcpFlatNamePrefix = kodyCapabilityNamespaceConfigs.mcp.flatNamePrefix
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyCallDispatcher = async (dispatchName, args) => {
-      const __kodyRuntimeStore = globalThis[Symbol.for('kody.runtimeStorage')]?.getStore?.();
+      const __kodyGetSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
       const __kodySecretAuthority =
-        typeof __kodyRuntimeStore?.secretAuthorityPackageId === 'string'
-          ? __kodyRuntimeStore.secretAuthorityPackageId.trim()
+        typeof __kodyGetSecretAuthority === 'function'
+          ? String(__kodyGetSecretAuthority() ?? '').trim()
           : '';
       const payload =
-        __kodySecretAuthority &&
-        args != null &&
-        typeof args === 'object' &&
-        !Array.isArray(args)
-          ? { ...args, ${JSON.stringify(secretAuthorityArgName)}: __kodySecretAuthority }
+        args != null && typeof args === 'object' && !Array.isArray(args)
+          ? (() => {
+              const next = { ...args };
+              delete next[${JSON.stringify(secretAuthorityArgName)}];
+              if (__kodySecretAuthority) {
+                next[${JSON.stringify(secretAuthorityArgName)}] = __kodySecretAuthority;
+              }
+              return next;
+            })()
           : args;
       const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(payload ?? {}));
       const data = JSON.parse(resJson);

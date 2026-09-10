@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	grantedSecretAuthorityPackageIdSet,
+	attachSecretAuthorityToCapabilityArgs,
 	readSecretAuthorityHeader,
 	resolveSecretAuthorityPackageId,
 	runWithCurrentSecretAuthority,
@@ -52,6 +53,9 @@ test('fetch header and capability args carry stamp identity and drop forgeries',
 	expect(readSecretAuthorityHeader(headers, granted)).toBe('pkg-a')
 	headers.set(secretAuthorityHeaderName, 'pkg-unrelated')
 	expect(readSecretAuthorityHeader(headers, granted)).toBeNull()
+	expect(readSecretAuthorityHeader(headers)).toBeNull()
+	expect(readSecretAuthorityHeader(headers, null)).toBeNull()
+	expect(readSecretAuthorityHeader(headers, new Set())).toBeNull()
 
 	const taken = takeSecretAuthorityFromCapabilityArgs([
 		{ name: 'token', [secretAuthorityArgName]: 'pkg-a' },
@@ -62,6 +66,18 @@ test('fetch header and capability args carry stamp identity and drop forgeries',
 		takeSecretAuthorityFromCapabilityArgs([{ name: 'token' }])
 			.requestedPackageId,
 	).toBeNull()
+	expect(
+		attachSecretAuthorityToCapabilityArgs(
+			{ name: 'token', [secretAuthorityArgName]: 'pkg-forged' },
+			null,
+		),
+	).toEqual({ name: 'token' })
+	expect(
+		attachSecretAuthorityToCapabilityArgs(
+			{ name: 'token', [secretAuthorityArgName]: 'pkg-forged' },
+			'pkg-a',
+		),
+	).toEqual({ name: 'token', [secretAuthorityArgName]: 'pkg-a' })
 })
 
 test('caller secret authority uses the host ALS current stamp when granted', () => {
