@@ -216,7 +216,10 @@ await handleEvent({ event })
 that call it ([#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors
 and agents do not get that helper. Fleet source migrates with package codemod
 `0008-packages-invoke-to-static-import`. See
-[0037](./decisions/0037-no-author-packages-invoke.md).
+[0037](./decisions/0037-no-author-packages-invoke.md). Interactive MCP
+`packageSubscriptionDispatch` is the post-publish subscription smoke test
+([0013](./decisions/0013-synthetic-package-requests.md)), not a composition
+primitive.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
 resolves that caller-owned person package. A `kody:@kody/...` target is not

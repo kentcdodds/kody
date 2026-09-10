@@ -3,21 +3,21 @@ id: package_subscriptions
 title: Package subscriptions and events
 summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
-  subscribers with packageSubscriptionsList; smoke-test handlers with
-  packageSubscriptionDispatch; follow metadata-first email, run.error.recorded
-  activity notifiers, integration.auth.failed / integration.auth.succeeded
-  reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
-  connection episodes, consent-gated admin-only platform.feedback.submitted
-  notification guidance, admin-only community.activity.recorded /
-  community.listing.published community notifications, admin-only
-  status.incident.opened / status.incident.resolved operator telemetry,
-  admin-only fleet.package_error_rate.elevated package-runtime health,
-  admin-only fleet.entitlement.crossed entitlement crossings, admin-only
-  auth.denial.burst / email.delivery.burst operator bursts, admin-only
-  user.created / user.deleted account lifecycle notifications, and admin-only
-  user.email_verification.failed / user.email_verification.stalled /
-  user.email_outbound.paused / email.system-message.sent mail-operator
-  notifications.
+  subscribers with packageSubscriptionsList; smoke-test one handler from
+  interactive MCP with packageSubscriptionDispatch; follow metadata-first email,
+  run.error.recorded activity notifiers, integration.auth.failed /
+  integration.auth.succeeded reconnect notifiers, mcp.server.disconnected /
+  mcp.server.reconnected connection episodes, consent-gated admin-only
+  platform.feedback.submitted notification guidance, admin-only
+  community.activity.recorded / community.listing.published community
+  notifications, admin-only status.incident.opened / status.incident.resolved
+  operator telemetry, admin-only fleet.package_error_rate.elevated
+  package-runtime health, admin-only fleet.entitlement.crossed entitlement
+  crossings, admin-only auth.denial.burst / email.delivery.burst operator
+  bursts, admin-only user.created / user.deleted account lifecycle
+  notifications, and admin-only user.email_verification.failed /
+  user.email_verification.stalled / user.email_outbound.paused /
+  email.system-message.sent mail-operator notifications.
 category: platform
 ---
 
@@ -80,14 +80,17 @@ fan-out, or deciding whether a package already subscribes to a topic.
 
 ## Synthetic dispatch
 
-`packageSubscriptionDispatch` invokes **one** subscription handler on **one**
-saved package over MCP. It is a platform-marked real-surface run with real side
-effects. Use it immediately after publish to verify handler wiring without
-waiting for production fan-out.
+`packageSubscriptionDispatch` is the **interactive MCP** post-publish smoke test
+for **one** declared subscription handler on **one** owner-scoped saved package.
+It is a platform-marked real-surface run with real side effects. Call it after
+publish to verify handler wiring without waiting for production fan-out.
+
+Package reuse is a static `import … from 'kody:@scope/pkg/export'` (declare
+`kody.dependencies`). See [Package reuse](../use/packages.md#package-reuse).
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@kody/email-automation",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"params": {}
@@ -98,7 +101,7 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@kody/email-automation",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"

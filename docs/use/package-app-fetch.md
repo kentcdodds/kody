@@ -97,8 +97,8 @@ marker the handler saw.
 ## Related
 
 - [Packages](./packages.md) — package apps and `hosted_app_url`
-- [Synthetic event dispatch](./synthetic-event-dispatch.md) — subscription
-  handler smoke tests
+- [Synthetic event dispatch](./synthetic-event-dispatch.md) — interactive MCP
+  post-publish smoke test for one subscription handler
 - [Package apps guide](../guides/package-apps.md) — session handoff,
   `packageAppFetch` smoke, asset URLs, lean forks
 - [Package authoring guide](../guides/package-authoring.md#verify-your-publish)

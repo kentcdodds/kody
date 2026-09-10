@@ -37,7 +37,10 @@ Composition is import plus workflows. Agents stop seeing invoke in usage docs,
 guides, and MCP copy. Fleet source migrates with package codemod
 `0008-packages-invoke-to-static-import` (literal specifiers → static import,
 including Markdown examples; computed specifiers → `import(specifier)`; keyed
-invokes stay `needsManual` for workflows).
+invokes stay `needsManual` for workflows). Interactive MCP
+`packageSubscriptionDispatch` is the post-publish subscription smoke test
+([0013](./0013-synthetic-package-requests.md)), not a replacement for
+`packages.invoke`.
 
 Revisit only if the computed `import(specifier)` facade cannot stand in for
 caller-owned name-as-data loads after the quarantined helper is deleted.
