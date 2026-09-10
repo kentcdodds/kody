@@ -1347,6 +1347,20 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	)
 	expect(searchMatch.status).toBe(200)
 	expect((await searchMatch.json()).createdUserInFilteredList).toBe(true)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const verificationFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?verification=stalled',
+	)
+	expect(verificationFiltered.status).toBe(200)
+	expect((await verificationFiltered.json()).createdUserInFilteredList).toBe(
+		false,
+	)
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
 		user: {
