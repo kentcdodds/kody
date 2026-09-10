@@ -57,6 +57,28 @@ export async function fetchFrameResolve(
 	}
 }
 
+/**
+ * Mirror Remix's default `resolveFrame` acceptance: HTML with any status
+ * below 500 renders in the frame (validation and not-found pages included);
+ * 5xx and non-HTML 3xx/4xx responses throw.
+ */
+export function assertRenderableFrameResponse(
+	response: Response,
+	src: string,
+	target?: string,
+) {
+	const isHtml = response.headers
+		.get('Content-Type')
+		?.toLowerCase()
+		.includes('text/html')
+	if (response.status >= 500 || (response.status >= 300 && !isHtml)) {
+		throw new Error(
+			`Frame resolve failed (${response.status}) for ${src}${target ? ` target=${target}` : ''}`,
+		)
+	}
+	return response
+}
+
 function isSafeFrameMethod(method: string) {
 	return safeFrameMethods.has(method.toUpperCase())
 }

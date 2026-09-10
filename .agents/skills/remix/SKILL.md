@@ -383,8 +383,9 @@ full examples.
   to an event handler or `handle.queueTask()`. Optional `run({ resolveFrame })`
   defaults to fetching the frame source as HTML and rendering `3xx`/`4xx` HTML
   responses in the frame; Kody keeps a custom resolver for the frame registry,
-  prefetch cache, and auth. `run()` falls back to document navigation when the
-  Navigation API is missing, so no `window.navigation` stub is needed.
+  prefetch cache, and retries but mirrors that status acceptance. `run()` falls
+  back to document navigation when the Navigation API is missing, so no
+  `window.navigation` stub is needed.
 - `remix/ui/server` — server rendering: `renderToStream`, `renderToString`. Use
   in the `render(...)` helper that returns HTML responses
 - `remix/ui/animation` — animation APIs: `animateEntrance`, `animateExit`,

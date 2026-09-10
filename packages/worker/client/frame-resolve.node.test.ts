@@ -1,6 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
-import { createFrameResolveInit, fetchFrameResolve } from './frame-resolve.ts'
+import {
+	assertRenderableFrameResponse,
+	createFrameResolveInit,
+	fetchFrameResolve,
+} from './frame-resolve.ts'
 
 test('frame resolve never attaches a body to GET or HEAD, including lowercase methods', () => {
 	const formData = new FormData()
@@ -89,4 +93,38 @@ test('fetchFrameResolve retries once on GET network TypeErrors only', async () =
 	} finally {
 		vi.unstubAllGlobals()
 	}
+})
+
+test('assertRenderableFrameResponse matches the Remix default resolver', () => {
+	const html = { 'Content-Type': 'Text/HTML; charset=utf-8' }
+	const src = 'https://kody.codes/account'
+
+	const notFound = new Response('<p>missing</p>', {
+		status: 404,
+		headers: html,
+	})
+	expect(assertRenderableFrameResponse(notFound, src)).toBe(notFound)
+
+	const redirect = new Response('<p>moved</p>', { status: 302, headers: html })
+	expect(assertRenderableFrameResponse(redirect, src)).toBe(redirect)
+
+	expect(() =>
+		assertRenderableFrameResponse(
+			new Response('{}', {
+				status: 404,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+			src,
+			'community-listings',
+		),
+	).toThrow(
+		'Frame resolve failed (404) for https://kody.codes/account target=community-listings',
+	)
+
+	expect(() =>
+		assertRenderableFrameResponse(
+			new Response('<p>boom</p>', { status: 500, headers: html }),
+			src,
+		),
+	).toThrow('Frame resolve failed (500) for https://kody.codes/account')
 })

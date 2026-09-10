@@ -159,7 +159,8 @@ sends form bodies for non-GET methods, and renders HTML responses with `3xx` and
 throwing on `5xx` or non-HTML failures. Only pass your own resolver when you
 need more than that — Kody's (`packages/worker/client/entry.tsx`) adds the
 `x-remix-target` header the frame registry keys on, serves prefetched frame
-HTML, and retries idempotent fetches on transient network errors.
+HTML, and retries idempotent fetches on transient network errors, then applies
+the same status acceptance as the default (`assertRenderableFrameResponse`).
 
 `run()` degrades to full document navigation in browsers without the Navigation
 API or without `NavigateEvent.sourceElement`; no stub or polyfill is required

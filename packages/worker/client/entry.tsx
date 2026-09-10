@@ -1,6 +1,7 @@
 import { run } from 'remix/ui'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {
+	assertRenderableFrameResponse,
 	fetchFrameResolve,
 	prefetchedFrameResponse,
 } from '#client/frame-resolve.ts'
@@ -96,12 +97,7 @@ async function boot() {
 				return prefetchedFrameResponse(cached)
 			}
 			const response = await fetchFrameResolve(src, options)
-			if (!response.ok) {
-				throw new Error(
-					`Frame resolve failed (${response.status}) for ${src}${target ? ` target=${target}` : ''}`,
-				)
-			}
-			return response
+			return assertRenderableFrameResponse(response, src, target)
 		},
 	})
 
