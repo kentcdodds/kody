@@ -187,9 +187,12 @@ export function HomeRoute(handle: Handle) {
 								style={{ '--rise': '0' }}
 								class="landing-hero-title"
 							>
-								{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
-								<br />
-								{landingHeroHeadlineRest}
+								<span class="landing-hero-title-line">
+									{landingHeroHeadlineLead} <em>{landingHeroHeadlineAccent}</em>
+								</span>
+								<span class="landing-hero-title-line">
+									{landingHeroHeadlineRest}
+								</span>
 							</h1>
 							{isSignedIn ? null : (
 								<div
