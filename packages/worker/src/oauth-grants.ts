@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { forgetRefreshFamilyGrant } from '#worker/oauth-refresh-family.ts'
 
 export type OAuthGrantListItem = {
 	id: string
@@ -73,6 +74,16 @@ export async function listUserOAuthGrantsForClient(
 
 const maxRevokePasses = 3
 
+export async function revokeOAuthGrant(
+	helpers: OAuthGrantHelpers,
+	grantId: string,
+	userId: string,
+) {
+	const result = await helpers.revokeGrant(grantId, userId)
+	forgetRefreshFamilyGrant(userId, grantId)
+	return result
+}
+
 /**
  * Revoke every grant for `userId`. Re-lists after each pass so a grant
  * created while the previous snapshot was being revoked cannot survive.
@@ -89,7 +100,7 @@ export async function revokeAllOAuthGrantsForUser(input: {
 		const grants = await listUserOAuthGrants(input.helpers, input.userId)
 		if (grants.length === 0) return revoked
 		for (const grant of grants) {
-			await input.helpers.revokeGrant(grant.id, input.userId)
+			await revokeOAuthGrant(input.helpers, grant.id, input.userId)
 			revoked += 1
 		}
 	}
@@ -123,7 +134,7 @@ export async function revokeAllOAuthGrantsBestEffort(input: {
 		}
 		for (const grant of page.items) {
 			try {
-				await input.helpers.revokeGrant(grant.id, input.userId)
+				await revokeOAuthGrant(input.helpers, grant.id, input.userId)
 				revoked += 1
 			} catch (error) {
 				input.warnings.push(

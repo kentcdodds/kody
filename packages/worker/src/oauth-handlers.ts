@@ -34,7 +34,10 @@ import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
-import { listUserOAuthGrantsForClient } from '#worker/oauth-grants.ts'
+import {
+	listUserOAuthGrantsForClient,
+	revokeOAuthGrant,
+} from '#worker/oauth-grants.ts'
 import { hasSecondConnectedMcpClient } from '#universal/connected-mcp-agents.ts'
 import { loadInboundMcpConnectionState } from '#worker/connected-mcp-agents.ts'
 import { maybeEvaluateSecondAgentStandardGift } from '#worker/entitlements/second-agent-standard-gift.ts'
@@ -538,7 +541,7 @@ async function handleResetClientRequest(
 		const userId = resolveUserStableId(userRecord)
 		const grants = await listUserOAuthGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
-			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
+			grants.map((grant) => revokeOAuthGrant(helpers, grant.id, userId)),
 		)
 		const ownsClient = await userOwnsMcpOauthClient(
 			env.APP_DB,

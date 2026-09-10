@@ -158,7 +158,7 @@ function rememberRefreshFamily(
 ) {
 	const key = refreshFamilyGrantLockKey(snapshot.userId, snapshot.grantId)
 	const existing = refreshFamilyMemory.get(key)
-	const replays = new Map(existing?.replays)
+	const replays = new Map<string, RefreshFamilySnapshot>()
 	if (presentedHash) {
 		replays.set(presentedHash, snapshot)
 	}
@@ -171,6 +171,10 @@ function rememberRefreshFamily(
 		},
 		replays,
 	})
+}
+
+export function forgetRefreshFamilyGrant(userId: string, grantId: string) {
+	refreshFamilyMemory.delete(refreshFamilyGrantLockKey(userId, grantId))
 }
 
 function resolveRefreshFamilyViews(input: {

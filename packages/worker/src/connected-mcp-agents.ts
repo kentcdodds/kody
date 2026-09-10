@@ -6,6 +6,7 @@ import {
 import {
 	listUserOAuthGrants,
 	listUserOAuthGrantsForClient,
+	revokeOAuthGrant,
 	type OAuthClientInfo,
 	type OAuthGrantHelpers,
 	type OAuthGrantListHelpers,
@@ -49,7 +50,7 @@ export async function revokeConnectedMcpAgent(input: {
 	)
 	if (grants.length === 0) return { error: 'not_found' }
 	for (const grant of grants) {
-		await input.helpers.revokeGrant(grant.id, input.userId)
+		await revokeOAuthGrant(input.helpers, grant.id, input.userId)
 	}
 	return { revoked: grants.length }
 }

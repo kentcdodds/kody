@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	decideRefreshFamilyAction,
+	forgetRefreshFamilyGrant,
 	handleMcpOAuthTokenRequest,
 	hashOAuthToken,
 	mcpOAuthRefreshFamilyReplayKey,
@@ -327,4 +328,45 @@ test('refresh family previous reuse does not wait for a current-token rotation',
 	const currentRefreshResult = await currentRefresh
 	expect(currentRefreshResult.response.status).toBe(200)
 	await expect(currentRefreshResult.response.json()).resolves.toEqual(rotated)
+})
+
+test('refresh family isolate memory does not survive grant revoke', async () => {
+	const env = missingKvEnv()
+	const family = mintedTokens(
+		'user-rev:grant-rev:rt2',
+		'user-rev:grant-rev:at2',
+	)
+	let providerCalls = 0
+	const fetchProvider = async () => {
+		providerCalls += 1
+		if (providerCalls === 1) {
+			return new Response(JSON.stringify(family), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		})
+	}
+
+	const seeded = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-rev:grant-rev:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(seeded.response.status).toBe(200)
+	forgetRefreshFamilyGrant('user-rev', 'grant-rev')
+
+	const afterRevoke = await handleMcpOAuthTokenRequest({
+		request: refreshTokenRequest('user-rev:grant-rev:rt1'),
+		env,
+		fetchProvider,
+	})
+	expect(afterRevoke.response.status).toBe(400)
+	await expect(afterRevoke.response.json()).resolves.toEqual({
+		error: 'invalid_grant',
+	})
+	expect(providerCalls).toBe(2)
 })
