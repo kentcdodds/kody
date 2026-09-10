@@ -36,10 +36,9 @@ export function createRuntimeModuleSource() {
 	//
 	// Hydration used to install another full copy of this module under each
 	// published-artifact prefix. Those copies now re-export this root module
-	// so the stamp ALS is created once in this closure. Putting that ALS on
-	// globalThis would let package code replace it or call \`.run\` with a
-	// granted dependency id and steal locked secrets. The getter on
-	// globalThis is read-only.
+	// so the stamp ALS is created once in this closure. The ALS instance is
+	// never published on globalThis. Later full evaluations (bundler inlining)
+	// reuse the first getter and its hidden runner instead of a raw ALS.
 	//
 	// This module is evaluated at most once per isolate path, but dynamic
 	// workers with identical code are cached and reused across executions
@@ -70,26 +69,46 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 const __kodyRuntimeStorageSymbol = Symbol.for('kody.runtimeStorage');
 const __kodyGetSecretAuthoritySymbol = Symbol.for('kody.getSecretAuthority');
+const __kodyRunSecretAuthoritySymbol = Symbol.for('kody.runWithSecretAuthority');
 const __globalAny = /** @type {any} */ (globalThis);
 const __kodyRuntimeStorage =
 	__globalAny[__kodyRuntimeStorageSymbol] ??
 	(__globalAny[__kodyRuntimeStorageSymbol] = new AsyncLocalStorage());
-const __kodySecretAuthorityAls = new AsyncLocalStorage();
-function __kodyRunWithSecretAuthority(packageId, callback) {
-	return __kodySecretAuthorityAls.run(packageId, callback);
-}
-export function __kodyGetSecretAuthority() {
-	const current = __kodySecretAuthorityAls.getStore();
-	return typeof current === 'string' && current.trim()
-		? current.trim()
-		: null;
-}
 if (typeof __globalAny[__kodyGetSecretAuthoritySymbol] !== 'function') {
+	const __kodySecretAuthorityAls = new AsyncLocalStorage();
+	const __kodyReadSecretAuthority = () => {
+		const current = __kodySecretAuthorityAls.getStore();
+		return typeof current === 'string' && current.trim()
+			? current.trim()
+			: null;
+	};
 	Object.defineProperty(__globalAny, __kodyGetSecretAuthoritySymbol, {
-		value: __kodyGetSecretAuthority,
+		value: __kodyReadSecretAuthority,
 		writable: false,
 		configurable: false,
+		enumerable: false,
 	});
+	Object.defineProperty(
+		__kodyReadSecretAuthority,
+		__kodyRunSecretAuthoritySymbol,
+		{
+			value: (packageId, callback) =>
+				__kodySecretAuthorityAls.run(packageId, callback),
+			writable: false,
+			configurable: false,
+			enumerable: false,
+		},
+	);
+}
+export function __kodyGetSecretAuthority() {
+	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
+	return typeof get === 'function' ? get() : null;
+}
+function __kodyRunWithSecretAuthority(packageId, callback) {
+	const get = __globalAny[__kodyGetSecretAuthoritySymbol];
+	const run = get?.[__kodyRunSecretAuthoritySymbol];
+	if (typeof run !== 'function') return callback();
+	return run(packageId, callback);
 }
 
 export function __kodyRunInRuntime(runtime, callback) {
