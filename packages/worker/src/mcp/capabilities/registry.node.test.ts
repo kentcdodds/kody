@@ -104,6 +104,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminMailboxMaintenance).toBeTruthy()
 	expect(
+		adminRegistry.capabilityMap.adminCommunityOrphanForksCleanup,
+	).toBeTruthy()
+	expect(
 		adminRegistry.capabilityMap.adminUserMeterStorageReconcile,
 	).toBeTruthy()
 	expect(
@@ -124,6 +127,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 		regularRegistry.capabilityMap.adminUserMeterStorageReconcile,
 	).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminMailboxMaintenance).toBeUndefined()
+	expect(
+		regularRegistry.capabilityMap.adminCommunityOrphanForksCleanup,
+	).toBeUndefined()
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)

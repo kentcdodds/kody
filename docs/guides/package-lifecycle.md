@@ -223,7 +223,8 @@ explicitly asked to delete that package.
 1. Load the package with `packageGet` or `packageList`.
 2. Show the owner the package name and that delete removes jobs, storage,
    secrets, tokens, the public listing if one exists, and Artifacts repos.
-   Existing forks keep their copies. This cannot be undone.
+   Existing forks of a listing keep their copies. A community fork record for
+   the deleted package itself is removed. This cannot be undone.
 3. Wait for the owner to type the package name.
 4. Call `packageDelete` with `package_id` and `confirm_name` matching that name
    exactly. The capability refuses and names the expected value when

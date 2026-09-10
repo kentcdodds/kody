@@ -202,6 +202,10 @@ Artifacts repo is missing, persist falls back to the older full-tree snapshot
 sync. Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
 `CommunityForkResourceLimitError` (honest UI/MCP copy; fork count does not
 increment). Records `community_forks` — **without** inserting `saved_packages`.
+Failed persist cleanup deletes the dest Artifacts repo, the inert entity source,
+any `package_kody_id_redirects` for the allocated package id, and the matching
+`community_forks` row so a leftover metadata row cannot inflate `fork_count` or
+block a retry.
 
 `communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
@@ -260,7 +264,12 @@ Capabilities:
 - `communitySetFeatured` (admin-only via `requiredRole`)
 
 The admin domain also exposes `adminCommunityActivityList`, guarded by
-`requiredRole: 'admin'`, for the narrow operator activity feed.
+`requiredRole: 'admin'`, for the narrow operator activity feed, and
+`adminCommunityOrphanForksCleanup` for leftover `community_forks` rows whose
+inert entity source and saved package are both gone. Healthy community forks
+stay inert (no `saved_packages` row) and keep an `entity_sources` row, so a
+missing package alone is not an orphan. `apply` defaults to false (preview);
+optional `fork_ids` still skip any row that still has a source or package.
 
 Register the domain in `builtinDomains` and `capabilityDomainNames` like other
 builtin domains (see [Adding capabilities](./adding-capabilities.md)). Do not
@@ -388,7 +397,9 @@ browse intentionally ranks only the newest 500 candidates. The reported
 production mismatch for `@kentcdodds/github` was therefore consistent with a
 data snapshot/cache artifact rather than a defect in the aggregate SQL; the
 worker integration test pins that a successful fork increments the surfaced
-count.
+count. Failed fork cleanup, `packageDelete` of the forked copy, and
+`adminCommunityOrphanForksCleanup` remove the matching `community_forks` row, so
+the live count drops without a separate recount.
 
 `computeCommunityBayesianScore` in `service.ts` implements the prior so a few
 5-star ratings do not beat many good ratings.

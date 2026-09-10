@@ -11,7 +11,9 @@ banner stay external and do not get rewritten to `/?youtubeId=`.
   player.
 - **Homepage hero**: `/` two-column player + video chooser
   (`landing-hero-video.tsx`). Demo ids are always allowlisted.
-- **Thumbnail proxy**: `GET /youtube-thumb/:videoId` (404 unless allowlisted)
+- **Thumbnail proxy**: `GET /youtube-thumb/:videoId` (404 unless allowlisted).
+  Fetches `maxresdefault.jpg` first (1280×720), then `sddefault.jpg`, then
+  `hqdefault.jpg` when a higher quality is missing.
 - **Admin helper**: `/admin/banners` paste a watch URL to fill `/?youtubeId=` +
   the first-party thumb path
 

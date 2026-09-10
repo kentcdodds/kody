@@ -2,7 +2,7 @@ import { type Action } from 'remix/router'
 import { type routes } from '#universal/routes.ts'
 import {
 	isYoutubeVideoId,
-	youtubeThumbnailSourceUrl,
+	youtubeThumbnailSourceUrls,
 } from '#universal/youtube-watch.ts'
 import { resolveYoutubeWatchAllowedVideoIds } from '#app/youtube-watch-allowlist.ts'
 
@@ -25,10 +25,8 @@ export function createYoutubeThumbHandler(env: Env) {
 			}
 
 			try {
-				const upstream = await fetch(youtubeThumbnailSourceUrl(videoId), {
-					signal: AbortSignal.timeout(2_500),
-				})
-				if (!upstream.ok) return notFound()
+				const upstream = await fetchFirstYoutubeThumbnail(videoId)
+				if (!upstream) return notFound()
 				const bytes = await upstream.arrayBuffer()
 				const contentType = upstream.headers.get('Content-Type') ?? 'image/jpeg'
 				return new Response(request.method === 'HEAD' ? null : bytes, {
@@ -44,6 +42,17 @@ export function createYoutubeThumbHandler(env: Env) {
 			}
 		},
 	} satisfies Action<typeof routes.youtubeThumb>
+}
+
+async function fetchFirstYoutubeThumbnail(
+	videoId: string,
+): Promise<Response | null> {
+	const signal = AbortSignal.timeout(2_500)
+	for (const url of youtubeThumbnailSourceUrls(videoId)) {
+		const upstream = await fetch(url, { signal })
+		if (upstream.ok) return upstream
+	}
+	return null
 }
 
 function notFound() {

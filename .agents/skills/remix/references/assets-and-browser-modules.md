@@ -80,22 +80,49 @@ router.get('/assets/*path', ({ request }) => {
 
 ## Rendering HTML
 
-Use `getHref()` when you need the public URL for one module, and `getPreloads()`
-when you want `<link rel="modulepreload">` tags or `Link` headers for one or
-more entrypoints and their dependencies.
+Browser scripts resolve their imports through import maps. Use
+`getScriptEntry()` to get one entry's public `href`, its `importMap`, and its
+`preloads`, then render `<ImportMap value={importMap} />` from `remix/ui/server`
+**before** the `<link rel="modulepreload">` tags and the module `<script>`.
 
-```typescript
-let entryHref = await assetServer.getHref('app/assets/entry.ts')
-let preloads = await assetServer.getPreloads(['app/assets/entry.ts'])
+```tsx
+import { ImportMap } from 'remix/ui/server'
+
+let { href, importMap, preloads } = await assetServer.getScriptEntry(
+	'app/assets/entry.ts',
+)
+
+// in the document component's <head>
+;<>
+	<ImportMap value={importMap} />
+	{preloads.map((preloadHref) => (
+		<link key={preloadHref} rel="modulepreload" href={preloadHref} />
+	))}
+	<script type="module" src={href}></script>
+</>
 ```
 
-Use this when rendering documents or layouts that boot browser behavior with a
-known client entry.
+`<ImportMap>` merges the entry map with mappings from blocking client entries so
+the initial document carries one complete import map. `getImportMap()` combines
+maps for several entries. Statically imported modules get import-map entries;
+modules behind dynamic `import()` are fetched when the import runs.
 
 When resolving hydrated client entries during server rendering, pass the source
-entry ID from `clientEntry(import.meta.url, ...)` to `getHref()` inside
-`resolveClientEntry`. Keep export-name resolution in that render helper, and
-avoid hard-coding public asset URLs in source-owned component modules.
+entry ID from `clientEntry(import.meta.url, ...)` to `getScriptEntry()` inside
+`resolveClientEntry` and return its `importMap` alongside `href`, `exportName`,
+and `preloads`. Keep export-name resolution in that render helper, and avoid
+hard-coding public asset URLs in source-owned component modules.
+
+Browsers without native support for multiple import maps (needed by client
+entries discovered after load and by HMR) use
+`remix/multiple-import-maps-polyfill`: load entries with `importModule()` in
+`run({ loadModule })`, return `[]` from `processClientEntryPreloads` after
+`preloadShim(preloads)` when `detectMultipleImportMapSupport()` is false, and
+set `hmr.moduleImporter: 'remix/multiple-import-maps-polyfill'` on the asset
+server.
+
+Inspect what the asset server would serve with
+`remix assets inspect <url-or-file>` or `assetServer.getAssetDetails()`.
 
 ## Development vs Deployment
 
@@ -109,10 +136,17 @@ In development:
 In deployment:
 
 - Set `watch: false`
-- Use `fingerprint: { buildId }` for long-lived immutable caching
-- Make sure `buildId` changes for each deploy
+- Use `fingerprint: true` for long-lived immutable caching. Fingerprints hash
+  the final emitted bytes, so there is no build id to rotate
+- If you persist `files.cache` across restarts, set `files.cacheKey` (for
+  example the deploy's commit SHA) so transformed outputs are reused for the
+  same build and never mixed between builds
 
 Fingerprinting assumes files on disk are stable and requires `watch: false`.
+
+Custom browser HMR events carry their payload under a `data` record keyed per
+tool (`{ type: 'update', data: { 'my-tool@1': { timestamp, updates } } }`). The
+standard `createBrowserHmrChannel()` integration needs no app code.
 
 ## Useful Compiler Options
 

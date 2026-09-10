@@ -201,6 +201,42 @@ test('router prefers static nested paths and package files over dynamic siblings
 	).toBe('listing-uuid-files')
 })
 
+test('method mismatches return 405 with Allow and GET routes serve HEAD', async () => {
+	const router = createRouter({
+		async defaultHandler() {
+			return new Response('not-found', { status: 404 })
+		},
+	})
+	router.post(routePattern(routes.logout), createStubHandler('logout'))
+	router.get(routePattern(routes.blogRss), {
+		middleware: [],
+		async handler() {
+			return new Response('<rss/>', {
+				headers: { 'Content-Type': 'application/rss+xml' },
+			})
+		},
+	})
+
+	const methodMismatch = await router.fetch(
+		new Request('http://localhost/logout'),
+	)
+	expect(methodMismatch.status).toBe(405)
+	expect(methodMismatch.headers.get('Allow')).toBe('POST')
+
+	const head = await router.fetch(
+		new Request('http://localhost/blog/rss.xml', { method: 'HEAD' }),
+	)
+	expect(head.status).toBe(200)
+	expect(head.headers.get('Content-Type')).toBe('application/rss+xml')
+	expect(await head.text()).toBe('')
+
+	const unmatched = await router.fetch(
+		new Request('http://localhost/definitely-not-a-route'),
+	)
+	expect(unmatched.status).toBe(404)
+	expect(await unmatched.text()).toBe('not-found')
+})
+
 test('delimiter-bounded params keep companion suffixes and encode dotted ids', async () => {
 	const router = createRouter()
 	router.get(routePattern(routes.blogPostApi), createStubHandler('blog-api'))

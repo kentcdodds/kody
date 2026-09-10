@@ -52,6 +52,9 @@ const mockModule = vi.hoisted(() => ({
 	cleanupArtifactReposForPackage: vi.fn(),
 	deleteUserScopedArtifactRepo: vi.fn(async () => false),
 	insertCommunityFork: vi.fn(),
+	deleteCommunityForksForPackage: vi.fn(async () => 0),
+	deletePackageKodyIdRedirects: vi.fn(async () => undefined),
+	invalidateCommunityPublicCache: vi.fn(),
 	deleteCommunityListing: vi.fn(),
 	deleteCommunityRatingsByListingId: vi.fn(),
 	deleteCommunitySnapshot: vi.fn(),
@@ -172,6 +175,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.getCommunityReportById(...args),
 		insertCommunityFork: (...args: Array<unknown>) =>
 			mockModule.insertCommunityFork(...args),
+		deleteCommunityForksForPackage: (...args: Array<unknown>) =>
+			mockModule.deleteCommunityForksForPackage(...args),
 		deleteCommunityListing: (...args: Array<unknown>) =>
 			mockModule.deleteCommunityListing(...args),
 		deleteCommunityRatingsByListingId: (...args: Array<unknown>) =>
@@ -182,6 +187,20 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.setCommunityListingStatus(...args),
 	}
 })
+
+vi.mock('./package-url.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./package-url.ts')>()
+	return {
+		...actual,
+		deletePackageKodyIdRedirects: (...args: Array<unknown>) =>
+			mockModule.deletePackageKodyIdRedirects(...args),
+	}
+})
+
+vi.mock('#app/data-cache.ts', () => ({
+	invalidateCommunityPublicCache: (...args: Array<unknown>) =>
+		mockModule.invalidateCommunityPublicCache(...args),
+}))
 
 vi.mock('./snapshot.ts', () => ({
 	writeCommunitySnapshot: (...args: Array<unknown>) =>
@@ -1327,7 +1346,74 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 			userId: 'user-2',
 		},
 	)
+	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			userId: 'user-2',
+			packageId: expect.any(String),
+			sourceId: 'fork-source-1',
+		},
+	)
+	expect(mockModule.deletePackageKodyIdRedirects).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: 'user-2',
+		packageId: expect.any(String),
+	})
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
+})
+
+test('forkCommunityListing removes the community_forks row when persist fails after writing it', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: validPublishSource().files,
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
+	mockModule.ensureEntitySource.mockResolvedValue({
+		id: 'fork-source-1',
+		bootstrapAccess: { token: 'bootstrap' },
+	})
+	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-fork-1')
+	mockModule.insertCommunityFork.mockResolvedValue(undefined)
+	mockModule.invalidateCommunityPublicCache.mockImplementationOnce(() => {
+		throw new Error('cache invalidate failed')
+	})
+	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
+	mockModule.deleteEntitySource.mockResolvedValue(true)
+	mockModule.deleteCommunityForksForPackage.mockResolvedValue(1)
+	mockModule.deleteUserScopedArtifactRepo.mockResolvedValueOnce(true)
+	consoleWarn.mockImplementation(() => {})
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+			kodyId: 'my-discord-gateway',
+		}),
+	).rejects.toThrow('cache invalidate failed')
+
+	expect(mockModule.insertCommunityFork).toHaveBeenCalled()
+	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			userId: 'user-2',
+			packageId: expect.any(String),
+			sourceId: 'fork-source-1',
+		},
+	)
+	expect(mockModule.deletePackageKodyIdRedirects).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: 'user-2',
+		packageId: expect.any(String),
+	})
 })
 
 test('forkCommunityListing copies at the Artifacts layer when the origin repo exists', async () => {

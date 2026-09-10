@@ -84,19 +84,19 @@ of learning a new MCP tool per capability.
 ### How an agent calls it
 
 Pass **`code`**: a single module string. Import runtime helpers from
-`kody:runtime` and call builtins as `kody.capabilityId(input)`. MCP server tools
-are `kody.mcp["name"].tool_name(input)`. Known package exports use a static
-`kody:@scope/package/export` import.
+`kody:runtime` and call builtins as `kody.capabilityId(params)`. MCP server
+tools are `kody.mcp["name"].tool_name(params)`. Known package exports use a
+static `kody:@scope/package/export` import.
 
 Optional **`params`** is a JSON object passed as the first argument to that
-default export. Capability search detail already emits the module; adapt it,
-then execute.
+default export. Name the argument `params`. Capability search detail already
+emits the module; adapt it, then execute.
 
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main(input = {}) {
-	return await kody.emailSend(input)
+export default async function main(params) {
+	return await kody.emailSend(params)
 }
 ```
 
@@ -109,8 +109,8 @@ helpers, workflows, and timeouts.
 1. **Search** for the outcome — a query, a domain list, or a known entity ref.
 2. **Read** the ranked hit or entity detail. Capability detail includes the
    execute module and input type.
-3. **Execute** with that adapted snippet (and `params` when the default export
-   should receive structured input).
+3. **Execute** with that adapted snippet. Put varying capability args in
+   `params` so the same `code` graph is reused.
 4. **Reuse `conversationId`** from the tool response on the next search or
    execute in the same conversation.
 5. **Save** the working module as a package when the behavior should live past
@@ -195,11 +195,12 @@ one-liners. Entity lookups and domain listings skip that attachment.
 
 ### execute
 
-Module plus optional params — `params` become `input` on the default export:
+Module plus optional params — `params` is the first argument on the default
+export:
 
 ```json
 {
-	"code": "import { kody } from 'kody:runtime'\n\nexport default async function main(input = {}) {\n\treturn await kody.emailSend(input)\n}",
+	"code": "import { kody } from 'kody:runtime'\n\nexport default async function main(params) {\n\treturn await kody.emailSend(params)\n}",
 	"params": {
 		"subject": "Hello from Kody",
 		"text": "Notify-self mail from an execute module."
@@ -212,8 +213,8 @@ The same module, written as source (this is the `code` string):
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main(input = {}) {
-	return await kody.emailSend(input)
+export default async function main(params) {
+	return await kody.emailSend(params)
 }
 ```
 

@@ -1,6 +1,7 @@
 import { run } from 'remix/ui'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {
+	assertRenderableFrameResponse,
 	fetchFrameResolve,
 	prefetchedFrameResponse,
 } from '#client/frame-resolve.ts'
@@ -12,13 +13,9 @@ import {
 import { AppRoot } from './app-root.tsx'
 import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
-import { ensureNavigationApi } from './ensure-navigation-api.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
-// Remix `run()` calls window.navigation.updateCurrentEntry; Safari < 26.2 and
-// iOS in-app browsers omit the Navigation API entirely.
-ensureNavigationApi()
 // Remix StyleManager uses `new CSSStyleSheet()` + adoptedStyleSheets; Safari
 // / iOS before 16.4 throw TypeError: Illegal constructor (KODY-CLOUDFLARE-63).
 ensureConstructableStylesheets()
@@ -100,12 +97,7 @@ async function boot() {
 				return prefetchedFrameResponse(cached)
 			}
 			const response = await fetchFrameResolve(src, options)
-			if (!response.ok) {
-				throw new Error(
-					`Frame resolve failed (${response.status}) for ${src}${target ? ` target=${target}` : ''}`,
-				)
-			}
-			return response
+			return assertRenderableFrameResponse(response, src, target)
 		},
 	})
 

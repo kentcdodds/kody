@@ -75,8 +75,8 @@ export function buildPackageMaintainSnippets(packageId: string) {
 export function buildCapabilityExecuteExample(spec: CapabilitySpec) {
 	return `import { kody } from 'kody:runtime'
 
-export default async function main(input = {}) {
-\treturn await ${buildKodyCapabilityAccessor(spec)}(input)
+export default async function main(params) {
+\treturn await ${buildKodyCapabilityAccessor(spec)}(params)
 }`
 }
 

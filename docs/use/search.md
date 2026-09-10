@@ -177,16 +177,16 @@ Capability detail shows the exact runtime pattern for **execute**:
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main(input = {}) {
-	return await kody.emailSend(input)
+export default async function main(params) {
+	return await kody.emailSend(params)
 }
 ```
 
 Use the call shape emitted by capability detail and pass an object matching the
-displayed input type. Built-in capabilities stay flat on `kody` as JavaScript
-identifiers such as `kody.emailSend(input)`. MCP server tools are namespaced by
-server: `kody.mcp["name"].tool_name(input)`. Use `{}` when the capability has no
-required fields.
+displayed input type as execute `params`. Built-in capabilities stay flat on
+`kody` as JavaScript identifiers such as `kody.emailSend(params)`. MCP server
+tools are namespaced by server: `kody.mcp["name"].tool_name(params)`. Use `{}`
+when the capability has no required fields.
 
 ## When results look thin
 

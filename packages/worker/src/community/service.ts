@@ -62,9 +62,14 @@ import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
 import { enqueueCommunityListingPublishedDispatch } from './listing-published-dispatch-queue-producer.ts'
 import { type CommunityListingPublishedProjection } from './listing-published-subscription-event.ts'
-import { getCommunityPackageHref } from './package-url.ts'
+import {
+	deletePackageKodyIdRedirects,
+	getCommunityPackageHref,
+} from './package-url.ts'
 import {
 	countCommunityForksByListingIds,
+	deleteCommunityForksByIds,
+	deleteCommunityForksForPackage,
 	deleteCommunityListing,
 	deleteCommunityRatingsByListingId,
 	getCommunityActivityByIdForAdmin,
@@ -85,6 +90,7 @@ import {
 	getCommunityReportById,
 	insertCommunityFork,
 	insertCommunityListing,
+	listOrphanedCommunityForks,
 	insertCommunityBan,
 	insertCommunityReport,
 	countActiveCommunityListingsByCategory,
@@ -363,6 +369,37 @@ async function cleanupFailedCommunityFork(input: {
 			}),
 		)
 	})
+	await deleteCommunityForksForPackage(input.env.APP_DB, {
+		userId: input.userId,
+		packageId: input.packageId,
+		sourceId: input.sourceId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork row cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+				error: getErrorMessage(error),
+			}),
+		)
+	})
+	await deletePackageKodyIdRedirects({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
+	}).catch((error) => {
+		console.warn(
+			JSON.stringify({
+				message: 'community fork kody id redirect cleanup failed',
+				userId: input.userId,
+				packageId: input.packageId,
+				sourceId: input.sourceId,
+				error: getErrorMessage(error),
+			}),
+		)
+	})
+	invalidateCommunityPublicCache()
 }
 
 function buildListingSearchDocument(listing: CommunityListingRecord) {
@@ -1577,6 +1614,68 @@ export async function forkCommunityListing(
 		prepareCommunityFork(input),
 	)
 	return await persistPreparedCommunityFork(prepared, { serverTiming })
+}
+
+export type OrphanedCommunityFork = {
+	forkId: string
+	listingId: string
+	listingName: string | null
+	listingKodyId: string | null
+	forkerUserId: string
+	forkedPackageId: string
+	forkedSourceId: string
+	targetKodyId: string
+	createdAt: string
+}
+
+export async function cleanupOrphanedCommunityForks(input: {
+	env: Env
+	apply: boolean
+	forkIds?: Array<string>
+}): Promise<{
+	applied: boolean
+	deletedCount: number
+	orphans: Array<OrphanedCommunityFork>
+}> {
+	const orphans = (
+		await listOrphanedCommunityForks(input.env.APP_DB, {
+			forkIds: input.forkIds,
+		})
+	).map((row) => ({
+		forkId: row.id,
+		listingId: row.listing_id,
+		listingName: row.listing_name,
+		listingKodyId: row.listing_kody_id,
+		forkerUserId: row.forker_user_id,
+		forkedPackageId: row.forked_package_id,
+		forkedSourceId: row.forked_source_id,
+		targetKodyId: row.target_kody_id,
+		createdAt: row.created_at,
+	}))
+	if (!input.apply) {
+		return {
+			applied: false,
+			deletedCount: 0,
+			orphans,
+		}
+	}
+	if (orphans.length === 0) {
+		return {
+			applied: true,
+			deletedCount: 0,
+			orphans,
+		}
+	}
+	const deletedCount = await deleteCommunityForksByIds(
+		input.env.APP_DB,
+		orphans.map((row) => row.forkId),
+	)
+	invalidateCommunityPublicCache()
+	return {
+		applied: true,
+		deletedCount,
+		orphans,
+	}
 }
 
 export type AdoptCommunityForkResult = {

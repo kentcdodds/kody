@@ -96,7 +96,7 @@ export const computeOverageResourceVisibility = {
 		whatCounts:
 			'Counts distinct Cloudflare Dynamic Worker isolates (worker id + code) that run on a given UTC day, rolled up for the month. Reusing the same warm isolate typically does not add another day.',
 		howToReduce:
-			'Keep package code stable so isolates stay warm, and consolidate one-off execute runs into saved packages or jobs.',
+			'Keep package code stable so isolates stay warm. For ad hoc execute, reuse the same module graph and vary args via params. Consolidate one-off execute runs into saved packages or jobs.',
 	},
 	durable_object_rows_read: {
 		group: 'monthly',

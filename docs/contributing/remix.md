@@ -47,8 +47,15 @@ template:
 - Static files are served through the Workers Assets binding rather than
   `remix/assets` or `remix/middleware/static`. Hydration uses
   `clientEntry(import.meta.url, …)` and Pitlane `?assets=` imports. SSR
-  `renderToStream` must pass `resolveClientEntry` so `#rmx-data` points at the
-  Vite hashed entry (`/assets/entry-*.js`), not the deleted `/client-entry.js`.
+  `renderToStream` must pass `resolveClientEntry` so the serialized entry
+  metadata (`<script id="rmx-data">`) points at the Vite hashed entry
+  (`/assets/entry-*.js`), not the deleted `/client-entry.js`. Vite resolves
+  imports itself, so no `importMap` is returned and the Remix import-map
+  polyfill is not used.
+- Remix `run()` falls back to full document navigation when the browser lacks
+  the Navigation API; do not add a `window.navigation` stub. `crypto.randomUUID`
+  and constructable stylesheets are still polyfilled in
+  `packages/worker/client/entry.tsx` for older in-app browsers.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
   `packages/worker/src/app/ssr-render.tsx`. The browser resolver is
   `(src, options)` and returns the `Response`. SSR `resolveFrame` is

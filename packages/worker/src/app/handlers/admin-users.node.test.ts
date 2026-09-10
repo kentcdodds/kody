@@ -2,12 +2,16 @@ import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	adminCreateUserWithPasswordSetup: vi.fn(),
 	scheduleUserCreatedEvent: vi.fn(),
+	loadAdminUsersData: undefined as
+		| ((...args: Array<unknown>) => Promise<unknown>)
+		| undefined,
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -31,6 +35,20 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
 		mockModule.scheduleUserCreatedEvent(...args),
 }))
+
+vi.mock('#worker/admin/users-data.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/admin/users-data.ts')>()
+	return {
+		...actual,
+		loadAdminUsersData: (
+			...args: Parameters<typeof actual.loadAdminUsersData>
+		) =>
+			mockModule.loadAdminUsersData
+				? mockModule.loadAdminUsersData(...args)
+				: actual.loadAdminUsersData(...args),
+	}
+})
 
 // The shared audit-log-spy setup file routes logAuditEvent; this test also
 // needs a deterministic request IP for its audit assertions.
@@ -234,6 +252,15 @@ function createAdminTestEnv(input: {
 								return { results: [] as Array<T>, meta: { changes: 0 } }
 							},
 							async first<T>() {
+								if (normalizedQuery.includes('select 1 as found from users')) {
+									const { rows, paramIndex } = applyListFilters(params)
+									const stableUserId = String(params[paramIndex] ?? '')
+									return (
+										rows.some((row) => row.stable_user_id === stableUserId)
+											? { found: 1 }
+											: null
+									) as T
+								}
 								if (
 									normalizedQuery.includes(
 										'select deleting_at from users where stable_user_id',
@@ -1211,7 +1238,7 @@ test('mark email verified and mint verify url actions update the account and log
 	expect(alreadyVerified.status).toBe(400)
 })
 
-test('create_user action returns setup link, logs audit, and maps duplicate email to 409', async () => {
+test('create_user action returns setup link, logs audit, maps duplicate email to 409, and keeps the setup link when list refresh fails', async () => {
 	const { AdminCreateUserError } =
 		await import('#worker/identity/admin-user-creation.ts')
 	logAuditEventSpy.mockClear()
@@ -1229,13 +1256,24 @@ test('create_user action returns setup link, logs audit, and maps duplicate emai
 	}
 	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
 	const env = createAdminTestEnv({
-		users: [],
-		userRoles: [],
+		users: [
+			{
+				id: 9,
+				username: 'new-user',
+				email: 'new-user@example.com',
+				email_verified_at: '2026-09-10T00:00:00.000Z',
+				plan: 'free',
+				created_at: '2026-09-10 00:00:00',
+				updated_at: '2026-09-10 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 9, role_name: 'user' }],
 	})
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	async function postCreateUser(body: Record<string, unknown>) {
+	async function postCreateUser(body: Record<string, unknown>, search = '') {
+		const href = `https://example.com/admin/users.json${search}`
 		return handler.handler({
-			request: new Request('https://example.com/admin/users.json', {
+			request: new Request(href, {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -1244,7 +1282,7 @@ test('create_user action returns setup link, logs audit, and maps duplicate emai
 				body: JSON.stringify(body),
 			}),
 			params: {},
-			url: new URL('https://example.com/admin/users.json'),
+			url: new URL(href),
 		} as never)
 	}
 
@@ -1262,7 +1300,67 @@ test('create_user action returns setup link, logs audit, and maps duplicate emai
 		setupLink: createdUser.setupLink,
 		setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
 	})
-	expect(createdPayload.updatedUser).toBeNull()
+	expect(createdPayload.updatedUser).toEqual(
+		expect.objectContaining({
+			stableUserId: createdUser.stableUserId,
+			username: createdUser.username,
+			email: createdUser.email,
+		}),
+	)
+	expect(createdPayload.users).toEqual([
+		expect.objectContaining({ stableUserId: createdUser.stableUserId }),
+	])
+	expect(createdPayload.createdUserInFilteredList).toBe(true)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const roleFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?role=admin',
+	)
+	expect(roleFiltered.status).toBe(200)
+	expect((await roleFiltered.json()).createdUserInFilteredList).toBe(false)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const searchFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?q=nobody-matches',
+	)
+	expect(searchFiltered.status).toBe(200)
+	expect((await searchFiltered.json()).createdUserInFilteredList).toBe(false)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const searchMatch = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?q=new-user',
+	)
+	expect(searchMatch.status).toBe(200)
+	expect((await searchMatch.json()).createdUserInFilteredList).toBe(true)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const verificationFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?verification=stalled',
+	)
+	expect(verificationFiltered.status).toBe(200)
+	expect((await verificationFiltered.json()).createdUserInFilteredList).toBe(
+		false,
+	)
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
 		user: {
@@ -1293,4 +1391,41 @@ test('create_user action returns setup link, logs audit, and maps duplicate emai
 		error: 'That email is already in use.',
 		code: 'email_exists',
 	})
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	mockModule.loadAdminUsersData = async () => {
+		throw new Error('list refresh failed')
+	}
+	consoleWarn.mockImplementation(() => {})
+	try {
+		const refreshFailed = await postCreateUser({
+			action: 'create_user',
+			email: 'refresh-fail@example.com',
+			username: 'refresh-fail',
+		})
+		expect(refreshFailed.status).toBe(200)
+		const refreshFailedPayload = await refreshFailed.json()
+		expect(refreshFailedPayload.ok).toBe(true)
+		expect(refreshFailedPayload.listRefreshFailed).toBe(true)
+		expect(refreshFailedPayload.createdUser).toEqual({
+			stableUserId: createdUser.stableUserId,
+			email: createdUser.email,
+			username: createdUser.username,
+			setupLink: createdUser.setupLink,
+			setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
+		})
+		expect(refreshFailedPayload.updatedUser).toEqual(
+			expect.objectContaining({
+				stableUserId: createdUser.stableUserId,
+				username: createdUser.username,
+			}),
+		)
+		expect(refreshFailedPayload.createdUserInFilteredList).toBe(true)
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'admin-users-create-list-refresh-failed',
+			expect.any(Error),
+		)
+	} finally {
+		mockModule.loadAdminUsersData = undefined
+	}
 })

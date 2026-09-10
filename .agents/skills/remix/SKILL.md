@@ -270,16 +270,27 @@ full examples.
 ### Routing, Server, and Responses
 
 - `remix/router` — the router itself. Use for `createRouter`, controller and
-  middleware types, and registering routes
+  middleware types, and registering routes. A URL that matches a route pattern
+  but not the request method gets `405 Method Not Allowed` with an `Allow`
+  header (it no longer reaches `defaultHandler`); register an `ANY` route for a
+  per-URL catch-all. `GET` routes also serve `HEAD` with the same status and
+  headers and an empty body — do not add explicit `HEAD` routes just for that
 - `remix/routes` — declarative route builders. Use for `route`, `get`, `post`,
   `put`, `del`, `form`, `resources` when defining `app/routes.ts`
 - `remix/node-fetch-server` — adapter from Node's `http` module to a Fetch-style
   router. Use for `createRequestListener` in `server.ts`
 - `remix/assets` — browser asset server. Use for `createAssetServer` when
-  serving compiled scripts and styles, getting public hrefs, and emitting
-  preloads. Shared compiler options such as `target`, `sourceMaps`,
-  `sourceMapSourcePaths`, and `minify` live at the top level. Kody's origin
-  website does not use this: hydration URLs come from Pitlane `?assets=`
+  serving compiled scripts and styles. Scripts resolve imports through import
+  maps: read `getScriptEntry()` and render `<ImportMap value={importMap} />`
+  (from `remix/ui/server`) before the preloads and module script; use
+  `fingerprint: true` (content hashes) plus `files.cacheKey` for persistent
+  caches, and directory `mounts` (default `{ app, npm }`). Shared compiler
+  options such as `target`, `sourceMaps`, `sourceMapSourcePaths`, and `minify`
+  live at the top level. Kody's origin website does not use this: hydration URLs
+  come from Pitlane `?assets=`
+- `remix/multiple-import-maps-polyfill` — `importModule()`,
+  `detectMultipleImportMapSupport()`, `preloadShim()` for browsers without
+  native multiple-import-map support. Only relevant with `remix/assets`
 - `remix/middleware/render` — pairs `createAssetServer` with frame rendering for
   Node apps. Do not use it on the origin Worker; Kody owns `renderToStream` plus
   Workers Assets
@@ -365,11 +376,16 @@ full examples.
   `run`, `<Frame>`, navigation helpers, and `createRoot`. Use for app UI
   behavior. Framework attributes are `data-rmx-*` (`data-rmx-target`,
   `data-rmx-document`, `data-rmx-history`, …). Listen with native
-  `target.addEventListener(type, listener, { signal })` — `addEventListeners()`
-  was removed in rc.1. Server-rendered `<script>` elements must have a single
-  string child (or stay empty with `src`); non-string children render empty and
-  error. Optional `run({ resolveFrame })` defaults to fetching the frame source
-  as HTML; Kody keeps a custom resolver for the frame registry and auth.
+  `target.addEventListener(type, listener, { signal })`; there is no
+  `addEventListeners()` helper. Server-rendered `<script>` elements must have a
+  single string child (or stay empty with `src`); non-string children render
+  empty and error. `handle.update()` during setup warns and is skipped — move it
+  to an event handler or `handle.queueTask()`. Optional `run({ resolveFrame })`
+  defaults to fetching the frame source as HTML and rendering `3xx`/`4xx` HTML
+  responses in the frame; Kody keeps a custom resolver for the frame registry,
+  prefetch cache, and retries but mirrors that status acceptance. `run()` falls
+  back to document navigation when the Navigation API is missing, so no
+  `window.navigation` stub is needed.
 - `remix/ui/server` — server rendering: `renderToStream`, `renderToString`. Use
   in the `render(...)` helper that returns HTML responses
 - `remix/ui/animation` — animation APIs: `animateEntrance`, `animateExit`,

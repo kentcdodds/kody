@@ -48,8 +48,9 @@ on that review.
 - Making a package **private** unlists it: public URLs 404; existing forks keep
   their copies. Type the package slug to confirm (`confirm_name` for agents).
 - Deleting a package (`packageDelete` or **Delete package** on the package page)
-  also unlists it. Type the package name to confirm. Existing forks keep their
-  copies.
+  also unlists it. Type the package name to confirm. Existing forks of that
+  listing keep their copies. If the deleted package was itself a community fork,
+  that fork record is removed and the listing's fork count drops.
 - Hidden and locked stay separate from visibility.
 
 ### Icon
