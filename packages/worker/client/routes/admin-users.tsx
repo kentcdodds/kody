@@ -1,4 +1,3 @@
-import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
@@ -11,13 +10,8 @@ import {
 import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, mq, spacing } from '#universal/styles/tokens.ts'
-import {
-	fieldCss,
-	fieldLabelCss,
-	getGhostButtonCss,
-	getPillButtonCss,
-} from '#universal/styles/style-primitives.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import { isStalledEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
@@ -42,12 +36,10 @@ import {
 } from './admin-users-shared.ts'
 import {
 	AccountManagementMessage,
-	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
-	accountInputCss,
-	noticeCardCss,
 } from './account-management-components.tsx'
+import { renderAdminCreateUserPanel } from './admin-users-create.tsx'
 import {
 	RecordChips,
 	RecordTable,
@@ -583,7 +575,6 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
-	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	return () => {
@@ -668,83 +659,12 @@ export function AdminUsersRoute(handle: Handle) {
 						{usersSnapshot.error}
 					</AccountManagementMessage>
 				) : null}
-				<AccountManagementPanel
-					title="Create user"
-					description="Create a verified account with no usable password, then copy the setup link into a manual email."
-					asForm
-					onSubmit={submitCreateUser}
-				>
-					<div
-						mix={css({
-							display: 'grid',
-							gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
-							gap: spacing.md,
-							alignItems: 'end',
-							[mq.mobile]: {
-								gridTemplateColumns: 'minmax(0, 1fr)',
-								alignItems: 'stretch',
-							},
-						})}
-					>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>User email</span>
-							<input
-								data-field-ring
-								name="email"
-								type="email"
-								required
-								placeholder="person@example.com"
-								disabled={isMutating}
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Username (optional)</span>
-							<input
-								data-field-ring
-								name="username"
-								type="text"
-								placeholder="Auto-generated from email"
-								disabled={isMutating}
-								mix={css(accountInputCss)}
-							/>
-						</label>
-						<button
-							type="submit"
-							disabled={isMutating}
-							mix={css(primaryButtonCss)}
-						>
-							{actionState === 'creatingUser' ? 'Creating…' : 'Create user'}
-						</button>
-					</div>
-					{createdUser ? (
-						<div mix={css(noticeCardCss)}>
-							<p mix={css({ margin: 0 })}>
-								Setup link for <strong>{createdUser.email}</strong>:
-							</p>
-							<input
-								data-field-ring
-								readOnly
-								aria-label="Password setup link"
-								value={createdUser.setupLink}
-								mix={css(accountInputCss)}
-							/>
-							<a
-								href={createdUser.setupLink}
-								mix={css({ color: colors.primary })}
-							>
-								Open setup link
-							</a>
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								Expires{' '}
-								{formatNullableTimestamp(
-									new Date(createdUser.setupTokenExpiresAt).toISOString(),
-								)}
-								.
-							</p>
-						</div>
-					) : null}
-				</AccountManagementPanel>
+				{renderAdminCreateUserPanel({
+					actionState,
+					createdUser,
+					isMutating,
+					onSubmit: submitCreateUser,
+				})}
 				<RecordTable
 					mode="expand"
 					busy={pending}
