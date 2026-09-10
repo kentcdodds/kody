@@ -521,7 +521,7 @@ test('packageSave responses steer coding agents toward the git lane', async () =
 
 	expect(result.next_steps).toContain('packageGetGitRemote')
 	expect(result.next_steps).toContain('packagePublishExternalPush')
-	expect(result.next_steps).toContain(JSON.stringify(result.kody_id))
+	expect(result.next_steps).toContain(JSON.stringify(result.package_name))
 	expect(result.pending_secret_package_approvals).toBeNull()
 })
 

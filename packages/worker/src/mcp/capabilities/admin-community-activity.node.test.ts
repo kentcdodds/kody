@@ -89,7 +89,7 @@ test('admin community activity list enforces admin role, filters, paginates, and
 				kind: 'rating',
 				listing_id: 'listing-1',
 				listing_name: '@owner/package',
-				listing_kody_id: 'package',
+				listing_package_name: 'package',
 				acting_username: 'rater',
 				occurred_at: '2026-07-20T01:00:00.000Z',
 				stars: 5,

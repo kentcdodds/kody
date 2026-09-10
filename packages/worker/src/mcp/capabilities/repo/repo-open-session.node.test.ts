@@ -153,7 +153,7 @@ test('repo target accepts camelCase aliases for its snake_case fields', () => {
 		repoOpenSessionInputSchema.parse({
 			target: { kind: 'package', kodyId: 'triage-github-pr' },
 		}).target,
-	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+	).toEqual({ kind: 'package', package_name: 'triage-github-pr' })
 	expect(
 		repoOpenSessionInputSchema.parse({
 			target: { kind: 'package', packageId: 'package-1' },
@@ -163,7 +163,7 @@ test('repo target accepts camelCase aliases for its snake_case fields', () => {
 		repoOpenSessionInputSchema.parse({
 			target: { kind: 'package', kody_id: 'triage-github-pr' },
 		}).target,
-	).toEqual({ kind: 'package', kody_id: 'triage-github-pr' })
+	).toEqual({ kind: 'package', package_name: 'triage-github-pr' })
 })
 
 test('repoOpenSession maps published HEAD mismatch to McpCallerError', async () => {

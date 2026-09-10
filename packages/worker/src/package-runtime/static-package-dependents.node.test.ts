@@ -32,7 +32,7 @@ test('buildStaticPackageDependentsSummary reports stale state, limits, and aggre
 		items: [
 			{
 				package_id: 'package-b',
-				kody_id: 'package-b',
+				package_name: 'package-b',
 				name: '@kentcdodds/package-b',
 				source_id: 'source-b',
 				published_commit: 'commit-b',

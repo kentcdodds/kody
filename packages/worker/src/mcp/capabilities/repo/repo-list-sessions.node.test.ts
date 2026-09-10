@@ -161,7 +161,7 @@ test('repoListSessions defaults to active sessions for the signed-in user', asyn
 			kind: 'package',
 			source_id: 'source-1',
 			package_id: 'package-1',
-			kody_id: 'demo',
+			package_name: 'demo',
 			name: '@user/demo',
 		},
 	})

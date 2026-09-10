@@ -186,13 +186,13 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 test('packageAppFetch rejects invalid callers, paths, and missing packages', async () => {
 	await expect(
 		packageAppFetchCapability.handler({}, createContext()),
-	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
+	).rejects.toThrow('Provide exactly one of `package_id` or `package_name`.')
 	await expect(
 		packageAppFetchCapability.handler(
 			{ package_id: 'package-1', kody_id: 'demo-app' },
 			createContext(),
 		),
-	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
+	).rejects.toThrow('Provide exactly one of `package_id` or `package_name`.')
 
 	await expect(
 		packageAppFetchCapability.handler(
