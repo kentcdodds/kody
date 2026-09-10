@@ -66,7 +66,7 @@ export const secretSearchEntityPlugin = {
 			`- Placeholder: \`${buildSecretUsage(detail.row.name)}\``,
 			'- Use placeholders only in execute-time fetch URL, header, or body fields.',
 			'- Do not place the literal placeholder token into visible content such as prompts, comments, issue bodies, logs, or returned strings.',
-			'- List secret metadata with `kody.secretList(...)` inside `execute` when needed. Explicit listing includes caller-owned package-scoped metadata with `package_id`; search does not auto-surface those. Using a package secret still requires package context.',
+			'- List secret metadata with `kody.secretList(...)` inside `execute` when needed. Explicit listing includes caller-owned package-scoped metadata with `package_id`; search does not return or rank package-scoped secret references. Using a package secret still requires package context.',
 		]
 		return {
 			markdown: lines.join('\n'),
