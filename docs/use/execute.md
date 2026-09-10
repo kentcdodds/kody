@@ -178,7 +178,7 @@ Activity is not flooded with successful one-offs.
 
 To read field shapes while coding, use **search** with
 **`entity: "{name}:capability"`** for builtin capability type definitions, or
-inspect the relevant saved package with **`entity: "{kody_id}:package"`**.
+inspect the relevant saved package with **`entity: "{package-name}:package"`**.
 Capability detail includes a complete **execute** module snippet; the runtime
 call itself is always through the imported `kody` object.
 
@@ -188,8 +188,8 @@ Saved packages, package jobs, and one-off **execute** code share the same
 module-oriented runtime model:
 
 - saved packages persist repo-backed source rooted at `package.json`
-- `package.json.name` must end with the same leaf name as `package.json#kody.id`
-  (for example `@scope/my-package` pairs with `kody.id: "my-package"`)
+- package identity is the scoped `package.json.name` (`@scope/leaf`) or the UUID
+  `package_id` when the name is not known; the leaf is the URL slug
 - package exports are defined by standard `package.json.exports`
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`

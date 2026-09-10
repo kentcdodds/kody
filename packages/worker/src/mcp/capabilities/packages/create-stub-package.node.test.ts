@@ -79,6 +79,29 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 
 	resetMocks()
+	await expect(
+		createStubSavedPackage({
+			env: { APP_DB: {} } as Env,
+			baseUrl: 'https://heykody.dev',
+			owner,
+			kodyId: '@other/my-package',
+		}),
+	).rejects.toThrow(/does not match the acting owner "@kentcdodds"/)
+	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
+
+	resetMocks()
+	const scopedResult = await createStubSavedPackage({
+		env: { APP_DB: {} } as Env,
+		baseUrl: 'https://heykody.dev',
+		owner,
+		kodyId: '@kentcdodds/mailchimp',
+	})
+	expect(scopedResult).toMatchObject({
+		kodyId: 'mailchimp',
+		name: '@kentcdodds/mailchimp',
+	})
+
+	resetMocks()
 	const result = await createStubSavedPackage({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://heykody.dev',

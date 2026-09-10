@@ -35,7 +35,7 @@ Search the `packages` domain, then call `packageAppFetch`:
 
 ```json
 {
-	"kody_id": "my-app"
+	"package_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
@@ -53,7 +53,7 @@ Example POST with JSON:
 
 ```json
 {
-	"kody_id": "my-app",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"path": "/api/items",
 	"method": "POST",
 	"headers": { "content-type": "application/json" },
@@ -61,10 +61,10 @@ Example POST with JSON:
 }
 ```
 
-Pass the bare `kody.id` (for example `my-app`), not the npm-scoped package name.
-When `test_hints.app` includes `package_scope`, preserve that exact owner scope
-so the probe cannot resolve an unrelated same-named package in the caller's
-personal scope.
+Look up the package with the scoped `@owner/leaf` name (or `package_id` when the
+name is not known). When `test_hints.app` includes `package_scope`, preserve
+that exact owner scope so the probe cannot resolve an unrelated same-named
+package in the caller's personal scope.
 
 Websocket upgrade requests (`Upgrade: websocket`, `Connection: Upgrade`, or
 equivalent) are rejected.
@@ -91,7 +91,7 @@ marker the handler saw.
 - Strips credential headers (`Cookie`, `Authorization`, and internal `X-Kody-*`
   headers) before the handler runs — same rule as public package-app ingress.
 - Populates `packageContext` (`hostedUrl`, `appBasePath`) from the serving
-  username and `kody.id`.
+  username and package name leaf.
 - Does **not** count toward package activation milestones.
 
 ## Related

@@ -19,6 +19,24 @@ function normalizePackageScopeUsername(value: unknown) {
 	return username
 }
 
+export async function getPackageScopeByUserId(db: D1Database, userId: string) {
+	const row = await db
+		.prepare(
+			`SELECT username
+			FROM users
+			WHERE stable_user_id = ?
+			LIMIT 1`,
+		)
+		.bind(userId)
+		.first<UsernameRow>()
+	if (!row) {
+		throw new Error(
+			'Cannot validate package scope because the signed-in user record was not found.',
+		)
+	}
+	return normalizePackageScopeUsername(row.username)
+}
+
 /**
  * Resolve the caller's personal package scope (username without "@").
  *
@@ -38,20 +56,5 @@ export async function getMcpUserPackageScope(
 	if (contextUsername) {
 		return normalizePackageScopeUsername(contextUsername)
 	}
-
-	const row = await db
-		.prepare(
-			`SELECT username
-			FROM users
-			WHERE stable_user_id = ?
-			LIMIT 1`,
-		)
-		.bind(user.userId)
-		.first<UsernameRow>()
-	if (!row) {
-		throw new Error(
-			'Cannot validate package scope because the signed-in user record was not found.',
-		)
-	}
-	return normalizePackageScopeUsername(row.username)
+	return getPackageScopeByUserId(db, user.userId)
 }

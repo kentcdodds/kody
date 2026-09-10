@@ -59,6 +59,22 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 	expect(
 		parsePackageSearchIdentity({
 			...common,
+			query: '@user/daily-notes',
+		}),
+	).toEqual({
+		kind: 'kody-id',
+		value: 'daily-notes',
+		authoritative: true,
+	})
+	expect(
+		parsePackageSearchIdentity({
+			...common,
+			query: '@other/daily-notes',
+		}),
+	).toEqual({ kind: 'not-package-identity' })
+	expect(
+		parsePackageSearchIdentity({
+			...common,
 			query: `/account/packages/${packageId}`,
 		}),
 	).toEqual({

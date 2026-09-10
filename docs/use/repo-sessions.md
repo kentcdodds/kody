@@ -69,16 +69,14 @@ hand-crafting hunks.
 ## Opening by package identity
 
 `repoOpenSession` can open repo-backed packages by user-facing identity instead
-of requiring the internal `source_id`.
+of requiring the internal `source_id`. Prefer the scoped `@owner/leaf` name (or
+the name leaf). Use `package_id` only when the name is not known, or for a
+stable ref.
 
-Examples:
-
-```json
-{ "target": { "kind": "package", "kody_id": "my-package" } }
-```
+Example (fallback when the scoped name is not known):
 
 ```json
-{ "target": { "kind": "package", "package_id": "pkg-123" } }
+{ "target": { "kind": "package", "package_id": "…" } }
 ```
 
 Pass `source_id` when you already have it, but most callers should prefer
@@ -153,7 +151,7 @@ It only mutates the live session overlay. Pair it with `repoCommit`,
 
 ```ts
 const session = await kody.repoOpenSession({
-	target: { kind: 'package', kody_id: 'my-package' },
+	target: { kind: 'package', package_id: '…' },
 })
 
 await kody.repoEditFiles({

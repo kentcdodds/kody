@@ -129,12 +129,12 @@ function normalizeFiles(files: Array<z.infer<typeof packageFileSchema>>) {
 }
 
 export function buildPackageSaveNextSteps(input: {
-	kodyId: string
+	packageId: string
 	pendingSecretApprovalsGuidance?: string | null
 }) {
 	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
-		`call packageGetGitRemote({ kody_id: ${JSON.stringify(input.kodyId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with packagePublishExternalPush.`,
+		`call packageGetGitRemote({ package_id: ${JSON.stringify(input.packageId)} }), run the returned setup_commands to clone into a temporary directory, edit and push normally, then publish with packagePublishExternalPush.`,
 		'Binary assets and multi-file refactors are only supported through that git lane.',
 		'Tool-only agents without local git can continue with packageSave or repo sessions.',
 	]
@@ -157,7 +157,7 @@ export function buildSavedPackageNameCollisionMessage(input: {
 	existingKodyId: string
 	existingPackageId: string
 }) {
-	return `A saved package named "${input.name}" already exists (kody_id "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call packageSave with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+	return `A saved package named "${input.name}" already exists (name leaf "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call packageSave with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
 }
 
 export function buildSavedPackageIdMismatchMessage(input: {
@@ -165,7 +165,7 @@ export function buildSavedPackageIdMismatchMessage(input: {
 	existingKodyId: string
 	existingPackageId: string
 }) {
-	return `package_id "${input.requestedPackageId}" was not found. A saved package with kody_id "${input.existingKodyId}" already exists as package_id "${input.existingPackageId}". Omit package_id or pass package_id "${input.existingPackageId}" to update it (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+	return `package_id "${input.requestedPackageId}" was not found. A saved package with name leaf "${input.existingKodyId}" already exists as package_id "${input.existingPackageId}". Omit package_id or pass package_id "${input.existingPackageId}" to update it (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
 }
 
 function isSavedPackageUniqueConstraintMessage(message: string) {
@@ -181,7 +181,7 @@ function buildSavedPackageUniqueConstraintCallerMessage(input: {
 	message: string
 }) {
 	if (/saved_packages\.kody_id/i.test(input.message)) {
-		return `A saved package with kody id "${input.kodyId}" already exists. Call packageSave with that package's package_id to update it, or change package.json#kody.id.`
+		return `A saved package with name leaf "${input.kodyId}" already exists. Call packageSave with that package's package_id to update it, or change package.json#name.`
 	}
 	return `A saved package named "${input.name}" already exists. Change package.json#name, or call packageSave with that package's package_id to update it.`
 }
@@ -491,7 +491,7 @@ export const savePackageCapability = defineDomainCapability(
 				updated_at: saved.updatedAt,
 				pending_secret_package_approvals: pendingSecretApprovals,
 				next_steps: buildPackageSaveNextSteps({
-					kodyId: saved.kodyId,
+					packageId: saved.id,
 					pendingSecretApprovalsGuidance: pendingSecretApprovals
 						? formatPendingPackageSecretApprovalsGuidance(
 								pendingSecretApprovals,

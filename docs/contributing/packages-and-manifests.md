@@ -12,13 +12,14 @@ Kody-specific metadata.
 
 Use `package.json` as the canonical source of truth for saved package metadata.
 
-- `name` — npm-valid scoped package name (`@scope/<leaf>`); the leaf segment is
-  the URL slug
+- `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
+  identity. Look up a package by that scoped name (or the name leaf). Use the
+  saved-package UUID `package_id` only when the name is not known, or for a
+  stable ref. Never pass both. The leaf after `/` is the URL slug. Create flows
+  pass the `@owner/leaf` name or the name leaf.
 - `exports` — authoritative import/export map
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private
-- `kody.id` — optional; if present must match the package name leaf. Prefer
-  omitting it and letting the leaf be the slug
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.category` — optional community browse category (`integrations`,
@@ -297,7 +298,7 @@ the host-owned `kody:runtime` module.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
-manifests and returns package id, `kody.id`, package name, topic, handler,
+manifests and returns scoped package `name`, `package_id`, topic, handler,
 description, and filters, optionally narrowed by exact topic.
 
 For user-owned inbound email, `email.message.received` dispatches after an
@@ -393,13 +394,13 @@ concurrency.
 
 Successful community fork and rating writes similarly enqueue
 `community.activity.recorded` for admin-only package-subscription delivery. The
-event contains a unique event id, public listing id/name/kody id, activity kind,
-acting username, timestamp, and rating scores when applicable. It omits stable
-user ids, email, rating notes, forked source/package identifiers, package
-source, and unrelated account content. One-click installs appear as `fork`
-because both paths share the existing `community_forks` row shape. Consumer-time
-admin role checks, lazy metadata reload, retry behavior, and terminal-handler
-isolation match platform-feedback dispatch.
+event contains a unique event id, public listing id/name/package name leaf,
+activity kind, acting username, timestamp, and rating scores when applicable. It
+omits stable user ids, email, rating notes, forked source/package identifiers,
+package source, and unrelated account content. One-click installs appear as
+`fork` because both paths share the existing `community_forks` row shape.
+Consumer-time admin role checks, lazy metadata reload, retry behavior, and
+terminal-handler isolation match platform-feedback dispatch.
 
 The first community listing publish similarly enqueues
 `community.listing.published` for admin-only package-subscription delivery.
@@ -505,8 +506,8 @@ In package runtime contexts (package jobs, subscription handlers, package apps),
 [Workflows](../use/workflows.md) for the full runtime reference, including the
 inline `code` shape.
 
-Kody stores workflow payloads as routing metadata (`userId`, package id,
-`kody.id`, source id, workflow name, export name, idempotency key, `runAt`/plan
+Kody stores workflow payloads as routing metadata (`userId`, package id, package
+name leaf, source id, workflow name, export name, idempotency key, `runAt`/plan
 date, and small non-secret params). Do not place secrets, OAuth tokens, full
 integration configuration, or full device action payloads in workflow params or
 metadata. The package export should look up current secrets/configuration from
@@ -663,11 +664,11 @@ Saved packages carry a user-scoped **`hidden`** flag in `saved_packages` (set
 via **`packageUpdate`** with `changes.hidden`). Ranked search excludes hidden
 packages by default. The public MCP **search** tool and the **meta** domain
 **search** capability both accept **`includeHiddenPackages`**. Exact package
-queries recognize user-owned UUIDs, `kody.id` values, current-origin account
+queries recognize user-owned UUIDs, package name leaves, current-origin account
 package URLs, and owner-matching hosted package URLs without mixing in semantic
 capability results. Hidden exact query matches require the opt-in; known-id
-entity lookup by UUID or `kody.id`, **`packageList`**, **`packageGet`**, and
-context-scope package retrievers are unaffected. Hiding is not deletion,
+entity lookup by UUID or package name leaf, **`packageList`**, **`packageGet`**,
+and context-scope package retrievers are unaffected. Hiding is not deletion,
 community delisting, or entitlement exclusion. Deletion is `packageDelete`
 (agents, `confirm_name` matching the package name) or **Delete package** on the
 package page (type the package name).

@@ -205,9 +205,9 @@ The `/connect/oauth` success response (and success UI) includes `nextSteps`:
 - clear guidance that the integration stores credentials, while a helpers
   package is the durable agent-facing surface
 - up to three public package suggestions that mention the connected provider in
-  their listing name, kody id, or tags, plus fork prompts / listing links.
-  Listings that only mention the provider in README or description prose are
-  omitted
+  their listing name, package name leaf, or tags, plus fork prompts / listing
+  links. Listings that only mention the provider in README or description prose
+  are omitted
 - a create-helpers CTA/prompt when no suitable listing exists (and as a fallback
   when suggestions do not fit)
 

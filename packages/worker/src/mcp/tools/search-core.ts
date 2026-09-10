@@ -181,7 +181,7 @@ export async function searchUnified(input: {
 	if (domainFilter) {
 		const availableDomains = listSearchDomainNames(input.registry)
 		if (!availableDomains.includes(domainFilter)) {
-			// Caller passed a non-domain id (often a package kody id such as
+			// Caller passed a non-domain id (often a package name leaf such as
 			// "skills"). Clear from the message alone — keep it off Sentry.
 			throw new McpCallerError(
 				`Unknown domain "${domainFilter}". Available domains: ${[...availableDomains].sort().join(', ')}.`,

@@ -24,7 +24,7 @@ Examples:
 
 - `/@alice/api/package-invocations/webhook-dispatcher/dispatch-event`
 
-The path uses the owner's username and the package `kody.id`.
+The path uses the owner's username and the package name leaf.
 
 The export name is normalized to package export form, so `dispatch-event`
 resolves as `./dispatch-event`.

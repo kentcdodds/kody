@@ -107,7 +107,7 @@ export function buildOnboardingExamplePrompt(input: {
 }): string {
 	const scopedName = `@${input.username}/${input.kodyId}`
 	return [
-		`I started a one-click install/fork of the onboarding example "${input.listingName}" (kody id: ${input.kodyId}) into my Kody account.`,
+		`I started a one-click install/fork of the onboarding example "${input.listingName}" (package name leaf: ${input.kodyId}) into my Kody account.`,
 		`Wait until that install is ready: search for my user-owned package by its scoped name "${scopedName}" once, and if it is missing, try again once after I say install finished — do not poll in a loop.`,
 		`Then call MY installed/forked package with a static import from its scoped specifier "kody:${scopedName}" (not a platform "kody:@kody/${input.kodyId}" specifier or bare @kody/* static import — those target the platform package, which cannot use my fork's packageStorage).`,
 		exampleImportHint(scopedName, input.kodyId),
@@ -121,7 +121,7 @@ export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
 	return [
 		`Help me change my Kody package "${kodyId}" or create a new package.`,
 		'First open search({ entity: ["package_authoring:guide", "package_lifecycle:guide"] }).',
-		`Then call packageGetGitRemote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
+		`Then call packageGetGitRemote({ create: true }) with the package name leaf ${JSON.stringify(kodyId)} or the matching @owner/leaf so we can work in the package repository.`,
 		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')
 }

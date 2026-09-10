@@ -1,4 +1,6 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -17,7 +19,7 @@ function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 		(input.kody_id !== undefined ? 1 : 0)
 	if (count !== 1) {
 		throw new McpCallerError(
-			'Provide exactly one of `package_id` or `kody_id`.',
+			'Provide exactly one of `package_id` or the package name leaf.',
 		)
 	}
 }
@@ -25,6 +27,7 @@ function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 export async function resolveOwnedPackageSource(input: {
 	db: D1Database
 	userId: string
+	ownerScope?: string
 	args: PackageSourceIdentity
 }): Promise<{
 	packageId: string
@@ -34,6 +37,23 @@ export async function resolveOwnedPackageSource(input: {
 	source: EntitySourceRow
 }> {
 	requireExactlyOnePackageSourceIdentity(input.args)
+	let requestedKodyId: string | undefined
+	if (input.args.kody_id !== undefined) {
+		if (input.ownerScope === undefined) {
+			throw new McpCallerError(
+				'Cannot resolve a package name leaf without the acting owner scope.',
+			)
+		}
+		try {
+			requestedKodyId = normalizePackageNameInput({
+				value: input.args.kody_id,
+				ownerScope: input.ownerScope,
+				action: 'resolve',
+			})
+		} catch (error) {
+			throw new McpCallerError(getErrorMessage(error), { cause: error })
+		}
+	}
 	const savedPackage =
 		input.args.package_id !== undefined
 			? await getSavedPackageById(input.db, {
@@ -42,7 +62,7 @@ export async function resolveOwnedPackageSource(input: {
 				})
 			: await getSavedPackageByKodyId(input.db, {
 					userId: input.userId,
-					kodyId: input.args.kody_id ?? '',
+					kodyId: requestedKodyId ?? '',
 				})
 	if (!savedPackage) {
 		const missingId = input.args.package_id ?? input.args.kody_id

@@ -208,7 +208,7 @@ export function PrivacyRoute(_handle: Handle) {
 					when package-runtime error rates rise (window bounds, per-metric
 					counts and rates, public status URL, insights URL, and — when one
 					account or a few accounts own the recent-window errors — those
-					usernames and package kody ids). That event omits user ids, package
+					usernames and package name leaves). That event omits user ids, package
 					UUIDs, emails, error strings, logs, and unrelated account content.
 					Admin-configured notification packages may also receive a
 					metadata-only <code>fleet.entitlement.crossed</code> event when a

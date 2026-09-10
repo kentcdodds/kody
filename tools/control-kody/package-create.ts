@@ -11,30 +11,34 @@ import {
 } from '../mcp-oauth-client.ts'
 
 export const kodyIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+const scopedPackageNamePattern =
+	/^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i
 export const headAheadFileName = 'preview-head-ahead.txt'
 
 const packageCreateExecuteCode = `import { kody } from 'kody:runtime'
 export default async function main(input = {}) {
+	const requested = String(input.kodyId ?? '').trim()
 	let remote = null
 	let remoteError = null
 	try {
 		remote = await kody.packageGetGitRemote({
 			create: true,
-			kody_id: input.kodyId,
+			kody_id: requested,
 			...(input.description ? { description: input.description } : {}),
 		})
 	} catch (error) {
 		remoteError = error instanceof Error ? error.message : String(error)
 	}
 	const listed = await kody.packageList({})
-	const match = (listed.packages ?? []).find(
-		(pkg) => pkg.kody_id === input.kodyId,
-	)
-	const packageId = remote?.package_id ?? match?.package_id
+	const match = (listed.packages ?? []).find((pkg) => {
+		const kodyId = pkg.kody_id ?? pkg.kodyId
+		return kodyId === requested || pkg.name === requested
+	})
+	const packageId = remote?.package_id ?? match?.package_id ?? match?.id
 	if (!packageId) {
 		throw new Error(
 			remoteError ??
-				\`Saved package \${input.kodyId} was not found after create.\`,
+				\`Saved package \${requested} was not found after create.\`,
 		)
 	}
 	const detail = await kody.packageGet({ package_id: packageId })
@@ -86,7 +90,19 @@ export type PackageCreateConnection = {
 }
 
 export function isLowerKebabKodyId(value: string) {
-	return kodyIdPattern.test(value)
+	const trimmed = value.trim()
+	if (kodyIdPattern.test(trimmed)) return true
+	const scoped = trimmed.match(scopedPackageNamePattern)
+	return Boolean(scoped && kodyIdPattern.test(scoped[2] ?? ''))
+}
+
+export function matchesCreatedPackage(input: {
+	requested: string
+	kodyId?: string
+	name?: string
+}) {
+	const requested = input.requested.trim()
+	return input.kodyId === requested || input.name === requested
 }
 
 export function isProductionKodyOrigin(origin: string) {
@@ -136,7 +152,7 @@ export async function createPreviewPackage(input: {
 	}
 	if (!isLowerKebabKodyId(input.kodyId)) {
 		throw new Error(
-			'--kody-id must be a lower-kebab-case slug (for example "preview-pkg")',
+			'--package-name must be a lower-kebab-case leaf or @scope/leaf (for example "preview-pkg")',
 		)
 	}
 

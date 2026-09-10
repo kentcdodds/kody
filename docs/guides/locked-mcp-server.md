@@ -64,8 +64,8 @@ grant is website-only at `/account/mcp-servers/:serverId`.
 2. **Name the grant.** "This package may call these tools. Execute may not."
    Write that in README `## Intent` and in the export JSDoc Purpose.
 3. **Save a thin wrapper package.** Follow `package_authoring`. Give it its own
-   `kody.id`. The export calls `kody.mcp["server-name"]` for the allowed tools
-   only. Do not re-export the whole server.
+   package name leaf. The export calls `kody.mcp["server-name"]` for the allowed
+   tools only. Do not re-export the whole server.
 4. **Publish, then lock.** After the first successful publish, call
    `mcpServerLock` with the server id or name and the saved `package_id` (or set
    Usage on `/account/mcp-servers/:serverId`). Say so in chat so the owner knows

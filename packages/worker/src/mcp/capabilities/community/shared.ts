@@ -52,7 +52,7 @@ export const communityListingStatusSchema = z.enum(['active', 'delisted'])
 export const communityPublicUrlSchema = z
 	.string()
 	.describe(
-		'Canonical shareable user URL ({base}/@{username}/{kody_id}); share this URL with humans.',
+		'Canonical shareable user URL ({base}/@{username}/{package-name-leaf}); share this URL with humans.',
 	)
 
 export const communityListingSummarySchema = z.object({

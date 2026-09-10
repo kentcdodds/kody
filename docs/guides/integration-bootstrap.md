@@ -101,8 +101,8 @@ If those conditions are not met, stop and fix the integration first.
      integration record itself.
    - If the user just finished `/connect/oauth`, read `nextSteps` from the
      connect success payload/UI first: it already includes same-provider
-     community helpers suggestions (listing name, kody id, or tags must mention
-     the connected provider) and a create-helpers prompt.
+     community helpers suggestions (listing name, package name leaf, or tags
+     must mention the connected provider) and a create-helpers prompt.
    - `search({ entity: "<provider>:integration" })` may already surface a small
      same-provider package suggestion set (user packages first, else community
      listings). Use those when present.

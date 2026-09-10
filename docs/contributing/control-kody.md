@@ -12,7 +12,7 @@ npm run control-kody -- request GET /account/waiting.json
 npm run control-kody -- map waiting
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview -- --pr 42 --check /account/waiting
-npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
 Same entry: `node tools/control-kody.ts`.
@@ -47,14 +47,15 @@ Override with `--email` / `--password`. `--cookie-file` defaults to
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview (or local
-origin) through MCP `packageGetGitRemote({ create: true, kody_id })`. It reuses
-`--origin`, `--email`, `--password`, `--cookie-file`, and `--json`. Pass
-`--kody-id <lower-kebab-slug>` (required), `--description` (optional), and
-`--head-ahead` to push one unpublished commit so the package page can show
-**HEAD ahead of published**. Do not POST a create action to
-`/account/packages.json` — that endpoint has no package-create action. Logged-in
-preview testing does not require agents to hand-roll an MCP OAuth dance — the
-CLI does it for them. The command refuses `https://kody.codes`.
+origin) through MCP `packageGetGitRemote({ create: true })`. Pass the package
+name leaf or `@owner/leaf` with `--package-name`. It reuses `--origin`,
+`--email`, `--password`, `--cookie-file`, and `--json`. Pass
+`--package-name <leaf-or-@scope/leaf>` (required; `--kody-id` is an alias),
+`--description` (optional), and `--head-ahead` to push one unpublished commit so
+the package page can show **HEAD ahead of published**. Do not POST a create
+action to `/account/packages.json` — that endpoint has no package-create action.
+Logged-in preview testing does not require agents to hand-roll an MCP OAuth
+dance — the CLI does it for them. The command refuses `https://kody.codes`.
 
 ## Daily garden
 

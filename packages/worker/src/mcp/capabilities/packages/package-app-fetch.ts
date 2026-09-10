@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -7,11 +8,16 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
+import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
+import {
+	normalizePackageNameInput,
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
-import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
@@ -256,10 +262,23 @@ function assertRequestBodyWithinLimit(body: string | undefined) {
 async function resolveOwnedSavedPackage(input: {
 	db: D1Database
 	userId: string
+	ownerScope: string
 	packageId?: string
 	kodyId?: string
 }) {
-	const packageIdOrKodyId = input.packageId ?? input.kodyId ?? ''
+	let requestedKodyId = input.kodyId
+	if (input.packageId === undefined && input.kodyId !== undefined) {
+		try {
+			requestedKodyId = normalizePackageNameInput({
+				value: input.kodyId,
+				ownerScope: input.ownerScope,
+				action: 'resolve',
+			})
+		} catch (error) {
+			throw new McpCallerError(getErrorMessage(error), { cause: error })
+		}
+	}
+	const packageIdOrKodyId = input.packageId ?? requestedKodyId ?? ''
 	return await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
 		packageIdOrKodyId,
@@ -272,7 +291,7 @@ async function resolveOwnedSavedPackage(input: {
 			}
 			return await getSavedPackageByKodyId(input.db, {
 				userId: input.userId,
-				kodyId: input.kodyId ?? '',
+				kodyId: requestedKodyId ?? '',
 			})
 		},
 	})
@@ -300,8 +319,16 @@ export const packageAppFetchCapability = defineDomainCapability(
 		destructive: true,
 		inputSchema: z
 			.object({
-				package_id: z.string().min(1).optional(),
-				kody_id: z.string().min(1).optional(),
+				package_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageIdLookupDescription),
+				kody_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageNameLookupDescription),
 				package_scope: z
 					.string()
 					.min(1)
@@ -334,7 +361,8 @@ export const packageAppFetchCapability = defineDomainCapability(
 				if (identityCount !== 1) {
 					ctx.addIssue({
 						code: 'custom',
-						message: 'Provide exactly one of `package_id` or `kody_id`.',
+						message:
+							'Provide exactly one of `package_id` or the package name leaf.',
 					})
 				}
 			}),
@@ -388,6 +416,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 			const savedPackage = await resolveOwnedSavedPackage({
 				db: ctx.env.APP_DB,
 				userId: owner.ownerUserId,
+				ownerScope: owner.ownerScope,
 				packageId: args.package_id,
 				kodyId: args.kody_id,
 			})

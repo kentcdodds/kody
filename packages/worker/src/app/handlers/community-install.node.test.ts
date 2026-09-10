@@ -197,7 +197,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 
 	mockModule.installCommunityListing.mockRejectedValue(
 		new CommunityActionError(
-			'You already have a saved package with kody id "demo". Pass a different kody_id to fork this listing.',
+			'You already have a saved package named "demo". Pass a different package name leaf to fork this listing.',
 		),
 	)
 	const userFacingError = await handler.handler(

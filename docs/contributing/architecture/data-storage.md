@@ -33,11 +33,11 @@ admins access to unrelated account data.
 Community forks and ratings remain user-owned rows for deletion and export, with
 a narrow role-gated admin metadata projection. It joins those rows only to
 public listing identity and the actor's username. Fork rows snapshot the public
-listing name and kody id so retained provenance remains intelligible after a
-listing is deleted. The projection never reads the forked Artifacts source, the
-public snapshot file tree, rating notes, or unrelated account data. Actor
-usernames resolve through the unique `users.stable_user_id` index; email and
-stable user ids remain absent from activity results and events. One-click
+listing name and package name leaf so retained provenance remains intelligible
+after a listing is deleted. The projection never reads the forked Artifacts
+source, the public snapshot file tree, rating notes, or unrelated account data.
+Actor usernames resolve through the unique `users.stable_user_id` index; email
+and stable user ids remain absent from activity results and events. One-click
 installs and ordinary forks share the same row shape and therefore appear as
 `fork`.
 

@@ -269,6 +269,19 @@ function createEnv() {
 	} as Env
 }
 
+function createEnvWithUsername(username: string) {
+	return {
+		...createEnv(),
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({ username }),
+				}),
+			}),
+		} as unknown as D1Database,
+	} as Env
+}
+
 function sampleListing(
 	overrides: Partial<CommunityListingRecord> = {},
 ): CommunityListingRecord {
@@ -1226,7 +1239,7 @@ test('forkCommunityListing rejects repeat fork without a new kody_id', async () 
 			listingId: 'listing-1',
 		}),
 	).rejects.toThrow(
-		'You already forked this listing with kody id "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repoOpenSession, or pass a different kody_id to fork again.',
+		'You already forked this listing as package name "discord-gateway". Resume the existing fork with source_id "fork-source-1" (package_id "package-fork-1") via repoOpenSession, or pass a different package name leaf to fork again.',
 	)
 
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
@@ -1672,6 +1685,22 @@ test('adoptCommunityFork is idempotent when already adopted and isolates by user
 		}),
 	).rejects.toThrow(/was not found/)
 	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
+})
+
+test('adoptCommunityFork rejects a foreign scoped package name before lookup', async () => {
+	await expect(
+		adoptCommunityFork({
+			env: createEnvWithUsername('jane'),
+			userId: 'user-2',
+			kodyId: '@other/discord-gateway-fork',
+			reviewSummary: 'Reviewed gateway auth and host allowlists.',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message.includes('does not match the acting owner "@jane"'),
+	)
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
 test('absorbCommunityForkUpstream records the current listing pin and is idempotent', async () => {

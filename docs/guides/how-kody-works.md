@@ -29,11 +29,12 @@ Agent notes — for AI agents explaining or recreating this loop:
   domain: "coding" }` to find `package_authoring:guide` and
   `package_lifecycle:guide`, then `search` with
   `entity: ["package_authoring:guide", "package_lifecycle:guide"]`. Coding agents
-  then use the git lane: `packageGetGitRemote` with `create: true` and
-  a new `kody_id`, clone via `setup_commands`, write the export, push, and
-  `packagePublishExternalPush`. Tool-only agents (no local git) create
-  with `packageSave` and update through a repo session (`repoOpenSession`,
-  `repoEditFiles`, `repoCommit`, `repoRunChecks`,
+  then use the git lane:
+  `packageGetGitRemote({ create: true, description })` with the new
+  `@owner/leaf` name (or the name leaf), clone via `setup_commands`, write
+  the export, push, and `packagePublishExternalPush`. Tool-only agents (no local
+  git) create with `packageSave` and update through a repo session
+  (`repoOpenSession`, `repoEditFiles`, `repoCommit`, `repoRunChecks`,
   `repoPublishSession`) so they patch only the files that changed.
 - Fetch https://api.github.com/users/<login>/events/public with
   `Authorization: Bearer {{secret:githubAccessToken}}`. Treat a published

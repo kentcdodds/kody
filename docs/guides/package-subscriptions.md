@@ -39,7 +39,6 @@ event topic:
 		".": "./src/index.ts"
 	},
 	"kody": {
-		"id": "email-automation",
 		"description": "Automates stored inbound email.",
 		"subscriptions": {
 			"email.message.received": {
@@ -75,7 +74,7 @@ subscriptions:
 }
 ```
 
-The result lists package id, `kody.id`, package name, topic, handler,
+The result lists scoped package `name`, `package_id`, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
 
@@ -88,7 +87,7 @@ waiting for production fan-out.
 
 ```json
 {
-	"kody_id": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"params": {}
@@ -99,7 +98,7 @@ For stored inbound mail, replay with `email_message_id` instead of `params`:
 
 ```json
 {
-	"kody_id": "email-automation",
+	"package_id": "550e8400-e29b-41d4-a716-446655440000",
 	"package_scope": "kody",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"
@@ -164,7 +163,6 @@ the emitting package's npm scope:
 {
 	"name": "@kentcdodds/discord-gateway",
 	"kody": {
-		"id": "discord-gateway",
 		"description": "Discord gateway.",
 		"emits": {
 			"@kentcdodds/discord.message.created": {
@@ -723,10 +721,10 @@ type RepoPushedEvent = {
 ```
 
 `repo_id` is the Artifacts repo name (also stored on `entity_sources.repo_id`).
-`name` is the user-facing plain-repo name or package npm name when known;
-`kody_id` is set for packages. For `entity_kind: 'package' | 'job'`, a push
-updates live HEAD but does not mean the package/job published commit advanced —
-use publish / external-push / reconcile for activation.
+`name` is the user-facing plain-repo name or package npm name when known; The
+package name leaf is set for packages. For `entity_kind: 'package' | 'job'`, a
+push updates live HEAD but does not mean the package/job published commit
+advanced — use publish / external-push / reconcile for activation.
 
 Idempotency keys include the after commit, ref, and subscriber package id, so
 Queue redelivery is safe.
@@ -897,9 +895,10 @@ type CommunityListingPublishedEvent = {
 }
 ```
 
-`public_url` is the canonical shareable URL (`{base}/@{username}/{kody_id}`),
-never `/community/{listing_id}`. The event omits stable user ids, email, package
-source, secrets, and unrelated account content.
+`public_url` is the canonical shareable URL
+(`{base}/@{username}/{package-name}`), never `/community/{listing_id}`. The
+event omits stable user ids, email, package source, secrets, and unrelated
+account content.
 
 Queue messages contain only `{ eventId, listingId }`. Dispatch reloads the
 metadata projection after admin subscriber discovery. Missing, delisted, or
@@ -1041,7 +1040,7 @@ type FleetPackageErrorRateElevatedEvent = {
 dashboard. Counts are fleet-wide and weighted by Analytics Engine
 `_sample_interval`. `concentration` is present when the elevation query
 succeeds. `owners` is populated only for `one_account` and `few_accounts` after
-D1 resolves usernames and package kody ids. The event omits user ids, package
+D1 resolves usernames and package name leaves. The event omits user ids, package
 UUIDs, emails, error strings, logs, and unrelated account content. Idempotency
 keys include the topic, event id, and subscriber package id.
 

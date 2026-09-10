@@ -26,7 +26,7 @@ same user. For a saved package, use `package-create` (not a create action on
 `POST /account/packages.json`):
 
 ```bash
-npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 ```
 
 JSON APIs still cover other account data:
@@ -91,10 +91,10 @@ Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
 the product JSON APIs (`/account/*.json` in
 `packages/worker/universal/routes.ts`) or, for a saved package,
-`npm run control-kody -- package-create --origin <preview> --kody-id <slug> [--head-ahead]`.
+`npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]`.
 Those JSON endpoints are the same ones the UI posts to. Package creation is
-MCP-only (`packageGetGitRemote({ create: true, kody_id })`); there is no create
-action on `POST /account/packages.json`.
+MCP-only (`packageGetGitRemote({ create: true })` with the package name leaf or
+`@owner/leaf`); there is no create action on `POST /account/packages.json`.
 
 `/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
 preview testing does not require agents to hand-roll an MCP OAuth dance — the

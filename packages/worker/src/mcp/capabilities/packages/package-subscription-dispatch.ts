@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { utf8ByteLength } from '@kody-internal/shared/backup-restore-safety.ts'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -25,13 +26,18 @@ import {
 } from '#worker/package-invocations/subscription-envelope.ts'
 import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+	normalizePackageNameInput,
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
 const maxSyntheticSubscriptionResultBytes = 102_400
@@ -130,8 +136,16 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 		destructive: true,
 		inputSchema: z
 			.object({
-				package_id: z.string().min(1).optional(),
-				kody_id: z.string().min(1).optional(),
+				package_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageIdLookupDescription),
+				kody_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageNameLookupDescription),
 				topic: z
 					.string()
 					.min(1)
@@ -164,7 +178,8 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				if (packageIdentityCount !== 1) {
 					ctx.addIssue({
 						code: 'custom',
-						message: 'Provide exactly one of `package_id` or `kody_id`.',
+						message:
+							'Provide exactly one of `package_id` or the package name leaf.',
 					})
 				}
 				const dispatchModeCount =
@@ -204,6 +219,18 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
+			let requestedKodyId: string | undefined
+			if (args.kody_id !== undefined) {
+				try {
+					requestedKodyId = normalizePackageNameInput({
+						value: args.kody_id,
+						ownerScope: owner.ownerScope,
+						action: 'resolve',
+					})
+				} catch (error) {
+					throw new McpCallerError(getErrorMessage(error), { cause: error })
+				}
+			}
 			const savedPackage =
 				args.package_id !== undefined
 					? await getSavedPackageById(ctx.env.APP_DB, {
@@ -212,7 +239,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: args.kody_id ?? '',
+							kodyId: requestedKodyId ?? '',
 						})
 			if (!savedPackage) {
 				const missingId = args.package_id ?? args.kody_id

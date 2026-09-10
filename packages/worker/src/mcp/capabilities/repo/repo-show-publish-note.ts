@@ -4,6 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import {
 	kodyPublishGitNoteSchema,
@@ -37,7 +38,7 @@ const inputSchema = z
 				code: z.ZodIssueCode.custom,
 				path: ['source_id'],
 				message:
-					'Provide exactly one of `source_id`, `package_id`, or `kody_id`.',
+					'Provide exactly one of `source_id`, `package_id`, or the package name leaf.',
 			})
 		}
 	})
@@ -83,6 +84,10 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 							await resolveOwnedPackageSource({
 								db: ctx.env.APP_DB,
 								userId: user.userId,
+								ownerScope:
+									args.kody_id === undefined
+										? undefined
+										: await getMcpUserPackageScope(ctx.env.APP_DB, user),
 								args: {
 									package_id: args.package_id,
 									kody_id: args.kody_id,

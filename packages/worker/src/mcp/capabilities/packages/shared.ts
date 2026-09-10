@@ -60,7 +60,7 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.string()
 			.nullable()
 			.describe(
-				'Original community listing kody.id recorded when this package was forked, or null for a self-authored package.',
+				'Original community listing package name leaf recorded when this package was forked, or null for a self-authored package.',
 			),
 		listing_name: z
 			.string()
@@ -97,7 +97,7 @@ export const packageSummaryWithCommunityProvenanceSchema =
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),
-		kody_id: z.string().describe('Package kody.id that needs approvals.'),
+		kody_id: z.string().describe('Package name leaf that needs approvals.'),
 		secrets: z
 			.array(
 				z.object({

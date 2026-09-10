@@ -1,13 +1,11 @@
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import {
-	assertKodyDescriptionLength,
-	kodyPackageIdPattern,
-} from '#worker/package-registry/types.ts'
+import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { upsertSavedPackageVector } from '#worker/package-registry/vectorize.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
@@ -78,12 +76,11 @@ export async function createStubSavedPackage(input: {
 	kodyId: string
 	description?: string
 }) {
-	const kodyId = input.kodyId.trim()
-	if (!kodyPackageIdPattern.test(kodyId)) {
-		throw new Error(
-			`Cannot create package: kody_id "${input.kodyId}" must be lower-kebab-case (for example "my-package").`,
-		)
-	}
+	const kodyId = normalizePackageNameInput({
+		value: input.kodyId,
+		ownerScope: input.owner.ownerScope,
+		action: 'create',
+	})
 	await assertWithinEntitlement({
 		db: input.env.APP_DB,
 		userId: input.owner.ownerUserId,

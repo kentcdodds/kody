@@ -12,6 +12,11 @@ import {
 	getSavedPackageWithCommunityProvenanceByKodyId,
 } from '#worker/package-registry/repo.ts'
 import {
+	getPackageNameLeaf,
+	getPackageNameScope,
+	isScopedPackageName,
+} from '#worker/package-registry/package-name.ts'
+import {
 	kodyPackageIdPattern,
 	type SavedPackageRecord,
 } from '#worker/package-registry/types.ts'
@@ -194,6 +199,25 @@ export function parsePackageSearchIdentity(input: {
 	}
 	if (kodyPackageIdPattern.test(query)) {
 		return { kind: 'kody-id', value: query, authoritative: false }
+	}
+	if (isScopedPackageName(query)) {
+		const scope = getPackageNameScope(query)
+		const leaf = getPackageNameLeaf(query)
+		if (!leaf || !kodyPackageIdPattern.test(leaf)) {
+			return { kind: 'not-package-identity' }
+		}
+		if (
+			input.username &&
+			scope &&
+			scope.toLowerCase() !== input.username.toLowerCase()
+		) {
+			return { kind: 'not-package-identity' }
+		}
+		return {
+			kind: 'kody-id',
+			value: leaf,
+			authoritative: Boolean(input.username),
+		}
 	}
 	return { kind: 'not-package-identity' }
 }

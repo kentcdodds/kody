@@ -61,7 +61,8 @@ const usageLines = [
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
 	'  --cookie-file <p>    Session Cookie header file',
-	'  --kody-id <slug>     Required for package-create (lower-kebab)',
+	'  --package-name <s>   Required for package-create (leaf or @scope/leaf)',
+	'  --kody-id <slug>     Alias for --package-name',
 	'  --description <t>    Optional package-create stub description',
 	'  --head-ahead         package-create: push one unpublished commit',
 	'  --help               Print this help',
@@ -273,6 +274,11 @@ function parseSharedFlags(
 			}
 			case '--body': {
 				options.body = requireValue(argv[index + 1], '--body')
+				index += 1
+				break
+			}
+			case '--package-name': {
+				options.kodyId = requireValue(argv[index + 1], '--package-name')
 				index += 1
 				break
 			}
@@ -754,12 +760,12 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'package-create': {
 			if (!options.kodyId) {
 				throw new ControlKodyError(
-					'package-create requires --kody-id <lower-kebab-slug>',
+					'package-create requires --package-name <leaf-or-@scope/leaf>',
 				)
 			}
 			if (!isLowerKebabKodyId(options.kodyId)) {
 				throw new ControlKodyError(
-					'--kody-id must be a lower-kebab-case slug (for example "preview-pkg")',
+					'--package-name must be a lower-kebab-case leaf or @scope/leaf (for example "preview-pkg")',
 				)
 			}
 			const origin = await resolveOrigin(options)

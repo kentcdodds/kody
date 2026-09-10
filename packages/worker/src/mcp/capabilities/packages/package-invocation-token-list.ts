@@ -34,7 +34,9 @@ export const packageInvocationTokenListCapability = defineDomainCapability(
 			package_id: z
 				.string()
 				.min(1)
-				.describe('Saved package id or kody.id whose tokens to list.'),
+				.describe(
+					'Package name (`@owner/leaf` or the name leaf), or `package_id` when the name is not known.',
+				),
 		}),
 		outputSchema: z.object({
 			tokens: z.array(packageInvocationTokenMetadataSchema),

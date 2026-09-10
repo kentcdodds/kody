@@ -28,6 +28,8 @@ style, tests, MCP capabilities, and runtime architecture.
   and the oversized-file cleanup record)
 - [Cleanup after migrations](./cleanup-after-migrations.md) (drop leftovers in
   the same change, or open a GitHub issue)
+- [Planned breaking changes](./planned-breaking-changes.md) (leftovers that
+  still work and will be removed later, including `kody_id` / `kody.id`)
 - [Friction log](./friction-log.md) (file through
   `kody:@kentcdodds/friction-log/create`; daily Cursor agent investigates)
 

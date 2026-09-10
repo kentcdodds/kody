@@ -3,6 +3,7 @@ import { forkCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {
 	communityContentWarning,
@@ -16,7 +17,7 @@ export const communityForkCapability = defineDomainCapability(
 	{
 		name: 'communityFork',
 		description:
-			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass `kody_id` when you already have a package with the same id.',
+			'Fork a community listing into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass a package name leaf (or `@owner/leaf`) when you already have a package with the same leaf.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],
 		readOnly: false,
 		idempotent: false,
@@ -28,7 +29,7 @@ export const communityForkCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional kody id override when the caller already has a package with the same id.',
+					'Optional package name leaf (or `@owner/leaf`) when the caller already has a package with the same leaf.',
 				),
 		}),
 		outputSchema: z.object({
@@ -66,13 +67,21 @@ export const communityForkCapability = defineDomainCapability(
 				message:
 					'Forking the community listing into your scope — photocopy whirring…',
 			})
+			const kodyId =
+				args.kody_id === undefined
+					? undefined
+					: normalizePackageNameInput({
+							value: args.kody_id,
+							ownerScope: expectedPackageScope,
+							action: 'create',
+						})
 			const result = await forkCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: user.userId,
 				expectedPackageScope,
 				listingId: args.listing_id,
-				kodyId: args.kody_id,
+				kodyId,
 				actor: 'agent',
 			})
 			await reportCapabilityProgress(ctx.reportProgress, {

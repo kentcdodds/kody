@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import {
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
+import {
 	entityKindValues,
 	repoSessionStatusValues,
 } from '#worker/repo/types.ts'
@@ -10,19 +14,11 @@ export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
 const repoTargetShapeSchema = z.union([
 	z.object({
 		kind: z.literal('package'),
-		package_id: z
-			.string()
-			.min(1)
-			.describe('Saved package id to open or edit by stable identifier.'),
+		package_id: z.string().min(1).describe(packageIdLookupDescription),
 	}),
 	z.object({
 		kind: z.literal('package'),
-		kody_id: z
-			.string()
-			.min(1)
-			.describe(
-				'Saved package kody id to open or edit by user-facing identity.',
-			),
+		kody_id: z.string().min(1).describe(packageNameLookupDescription),
 	}),
 	z.object({
 		kind: z.literal('repo'),

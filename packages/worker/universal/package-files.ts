@@ -7,7 +7,7 @@ import { routes } from '#universal/routes.ts'
 
 /**
  * Second-segment `/@username/…` namespaces claimed before the app router.
- * A package whose `kody.id` is one of these cannot use
+ * A package whose name leaf is one of these cannot use
  * `/@owner/:kodyId/files/…` or `/raw/…` because `/@owner/packages/files/…`
  * is a hosted package-app path. Fall back to
  * `/community/:listingId/files/…` and `/community/:listingId/raw/…`.

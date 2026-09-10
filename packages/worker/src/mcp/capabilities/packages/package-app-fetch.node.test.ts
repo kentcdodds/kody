@@ -186,13 +186,17 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 test('packageAppFetch rejects invalid callers, paths, and missing packages', async () => {
 	await expect(
 		packageAppFetchCapability.handler({}, createContext()),
-	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
+	).rejects.toThrow(
+		'Provide exactly one of `package_id` or the package name leaf.',
+	)
 	await expect(
 		packageAppFetchCapability.handler(
 			{ package_id: 'package-1', kody_id: 'demo-app' },
 			createContext(),
 		),
-	).rejects.toThrow('Provide exactly one of `package_id` or `kody_id`.')
+	).rejects.toThrow(
+		'Provide exactly one of `package_id` or the package name leaf.',
+	)
 
 	await expect(
 		packageAppFetchCapability.handler(
@@ -242,6 +246,15 @@ test('packageAppFetch rejects invalid callers, paths, and missing packages', asy
 		),
 	).rejects.toThrow('request body exceeds 102400 bytes')
 	expect(mockModule.servePackageAppRequest).not.toHaveBeenCalled()
+
+	mockModule.getSavedPackageByKodyId.mockClear()
+	await expect(
+		packageAppFetchCapability.handler(
+			{ kody_id: '@other/demo-app' },
+			createContext(),
+		),
+	).rejects.toThrow('does not match the acting owner "@kody"')
+	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
 	mockModule.findPlainRepoPromotionHint.mockResolvedValue(null)

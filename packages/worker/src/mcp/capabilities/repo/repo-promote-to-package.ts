@@ -116,7 +116,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			})
 			if (kodyIdCollision) {
 				throw new McpCallerError(
-					`A saved package with kody id "${manifest.kody.id}" already exists. Change package.json#kody.id in the repo before promoting.`,
+					`A saved package with name leaf "${manifest.kody.id}" already exists. Change package.json#name in the repo before promoting.`,
 				)
 			}
 			await assertWithinEntitlement({

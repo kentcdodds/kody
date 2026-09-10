@@ -526,7 +526,7 @@ export const packageSearchEntityPlugin = {
 		const agentsDocs = buildPackageAgentsDocs({
 			files: detail.files,
 		})
-		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
+		const maintain = buildPackageMaintainSnippets(detail.record.id)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
 		const listingAhead = detail.listingAhead === true
 		const followUp = listingAhead

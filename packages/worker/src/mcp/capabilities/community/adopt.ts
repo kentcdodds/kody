@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { adoptCommunityFork } from '#worker/community/service.ts'
+import {
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -27,16 +31,12 @@ export const communityForkAdoptCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.optional()
-				.describe(
-					'Saved package id (UUID). Provide exactly one of package_id or kody_id.',
-				),
+				.describe(packageIdLookupDescription),
 			kody_id: z
 				.string()
 				.min(1)
 				.optional()
-				.describe(
-					'Package kody id in your account. Provide exactly one of package_id or kody_id.',
-				),
+				.describe(packageNameLookupDescription),
 			review_summary: z
 				.string()
 				.min(10)

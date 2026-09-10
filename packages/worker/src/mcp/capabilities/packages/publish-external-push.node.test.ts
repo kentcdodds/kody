@@ -211,7 +211,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 			},
 			hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
 			test_hints: {
-				app: expect.stringContaining('demo-package'),
+				app: expect.stringContaining('package_id'),
 				subscriptions: [
 					expect.objectContaining({
 						topic: 'email.message.received',

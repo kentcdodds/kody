@@ -90,7 +90,7 @@ export function formatPopularPackagesInstructions(
 		const separatorCost = lines.length > 0 ? 1 : 0 // "\n"
 		if (used + separatorCost + line.length > charBudget) {
 			if (lines.length === 0) {
-				// Always include at least the first kody id, truncated if needed.
+				// Always include at least the first package name leaf, truncated if needed.
 				const available = Math.max(8, charBudget - used)
 				lines.push(
 					line.length <= available

@@ -67,12 +67,14 @@ Use `package.json` as the source of truth.
 
 Important fields:
 
-- `name` — npm-valid package name
+- `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
+  identity. Look up a package by that scoped name (or the name leaf). Use the
+  saved-package UUID `package_id` only when the name is not known, or for a
+  stable ref. Never pass both. The leaf after `/` is the URL slug. Create flows
+  pass the `@owner/leaf` name or the name leaf.
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private.
 - `exports` — authoritative import/export map
-- `kody.id` — optional; if present must match the package name leaf (the URL
-  slug). Prefer omitting it and letting the leaf be the slug.
 - `kody.description` — short public tagline for search, detail, community
   listings, and share cards (~80–120 characters ideal; max 200). Prefer outcome
   phrasing (“Send transactional email via Resend”) over feature lists; put API
@@ -101,9 +103,7 @@ Important fields:
 `package.json` is the manifest.
 
 For predictable package resolution, saved packages must use a scoped
-`package.json.name`. The leaf segment is the URL slug. `kody.id` is optional; if
-present it must match that leaf. For example, `@scope/my-package` may omit
-`kody.id` or set `"kody": { "id": "my-package" }`. The scope is the account
+`package.json.name`. The leaf segment is the URL slug. The scope is the account
 username. Changing your username on `/account` rewrites every saved package to
 the new `@{username}/…` name (including same-account `kody:@` imports and
 `kody.dependencies`), publishes an automatic update commit per package, and
@@ -301,19 +301,20 @@ When `package.json#kody.app` is present, the package is hosted under the package
 app route.
 
 Production-hosted package apps run on per-user subdomains of Kody's separate
-`kody.run` domain (`https://{username}.kody.run/packages/<kody-id>/...`), not on
-the signed-in app origin. Opening an app from Kody performs a short-lived
+`kody.run` domain (`https://{username}.kody.run/packages/<package-name>/...`),
+not on the signed-in app origin. Opening an app from Kody performs a short-lived
 session handoff to that subdomain. Package author JavaScript cannot use the
 first-party `kody_session` cookie or call authenticated Kody pages as the
 signed-in user.
 
 Package app URLs follow the mount contract: on a subdomain the public path is
-`/packages/<kody-id>/<path>` (the username lives in the hostname). Kody strips
-that mount before forwarding, so root-relative links such as `/audio/123` escape
-the app. Build in-app links, redirects, shared links, email links, and OAuth
-callbacks against `packageContext.hostedUrl` and `packageContext.appBasePath`
-(derived from the serving username and `kody.id` — `/packages/<kody-id>` on a
-subdomain, `/@username/packages/<kody-id>` when served inline in
+`/packages/<package-name>/<path>` (the username lives in the hostname; the
+segment is the package name leaf). Kody strips that mount before forwarding, so
+root-relative links such as `/audio/123` escape the app. Build in-app links,
+redirects, shared links, email links, and OAuth callbacks against
+`packageContext.hostedUrl` and `packageContext.appBasePath` (derived from the
+serving username and package name leaf — `/packages/<package-name>` on a
+subdomain, `/@username/packages/<package-name>` when served inline in
 non-production). See
 [Package app routing](../guides/package-authoring.md#package-app-routing) for
 the authoring example, and [Package apps](../guides/package-apps.md)
@@ -494,9 +495,10 @@ expands the scope.
 Use:
 
 - `packageGetGitRemote` and `packagePublishExternalPush` when you have a normal
-  git client: mint a remote (pass `create: true` with a new `kody_id` to
-  register a stub package first), clone, edit, push, and then ask Kody to
-  reconcile the pushed Artifacts HEAD
+  git client: mint a remote (pass `create: true` with the new `@scope/leaf`
+  name, or the name leaf, to register a stub package first), clone, edit, push,
+  and then ask Kody to reconcile the pushed Artifacts HEAD. Existing packages
+  use the scoped name, or `package_id` when the name is not known.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `packageGet` and `packageList` to inspect saved packages
@@ -525,14 +527,15 @@ and does not expose to deployment admins is covered in
 
 ## Hidden packages
 
-Use **`packageUpdate`** with a saved **`package_id`** and
-**`changes: { hidden: true }`** to hide a package from ordinary ranked search.
-Set **`hidden: false`** inside `changes` to show it again. The result includes
-the persisted package summary so callers can verify the new state.
+Use **`packageUpdate`** with the scoped name (or **`package_id`** when the name
+is not known) and **`changes: { hidden: true }`** to hide a package from
+ordinary ranked search. Set **`hidden: false`** inside `changes` to show it
+again. The result includes the persisted package summary so callers can verify
+the new state.
 
 `packageUpdate` only accepts mutable settings. Canonical metadata including
-name, description, tags, `kody.id`, app presence, and source projection remains
-derived from `package.json` and changes through save or publish.
+name, description, tags, app presence, and source projection remains derived
+from `package.json` and changes through save or publish.
 
 Hiding is a discovery preference, not deletion. The package stays saved,
 executable, and editable. Hiding is separate from **visibility**
@@ -545,13 +548,14 @@ Deleting a package removes it from the account. It is permanent.
 
 Use:
 
-- The **Delete package** control under `/@username/{kodyId}/settings`. A modal
-  asks you to type the package name to confirm.
-- **`packageDelete`** with a saved **`package_id`**. Show the owner the package
-  name and what will be destroyed, wait for them to type that name, then pass
-  **`confirm_name`** matching the package name exactly (`package.json` `name`,
-  for example `@you/my-package`). The capability refuses the delete and names
-  the expected value when `confirm_name` is missing or wrong.
+- The **Delete package** control under `/@username/{package-name}/settings`. A
+  modal asks you to type the package name to confirm.
+- **`packageDelete`** with the scoped name (or **`package_id`** when the name is
+  not known). Show the owner the package name and what will be destroyed, wait
+  for them to type that name, then pass **`confirm_name`** matching the package
+  name exactly (`package.json` `name`, for example `@you/my-package`). The
+  capability refuses the delete and names the expected value when `confirm_name`
+  is missing or wrong.
 
 Delete removes the package from discovery, stops its jobs, clears package
 storage and package-scoped secrets, drops invocation tokens, and unlists a
@@ -568,27 +572,28 @@ resolve hidden packages.
 
 ## Publish lock
 
-A package with a **`locked_at`** timestamp on its `/@username/{kodyId}/settings`
-page (and on `packageList` / `packageGet`) keeps serving its current published
-tree. Agents and the five-minute reconcile job cannot advance
-`published_commit`. Use **`packageUpdate`** with **`changes: { locked: true }`**
-to lock a package. Agents cannot unlock. If an agent needs the package unlocked,
-it should send the owner to `/@{username}/{kodyId}/settings` so they can click
-the lock icon. `packageUpdate` rejects **`changes.locked: false`** and returns
-that URL.
+A package with a **`locked_at`** timestamp on its
+`/@username/{package-name}/settings` page (and on `packageList` / `packageGet`)
+keeps serving its current published tree. Agents and the five-minute reconcile
+job cannot advance `published_commit`. Use **`packageUpdate`** with
+**`changes: { locked: true }`** to lock a package. Agents cannot unlock. If an
+agent needs the package unlocked, it should send the owner to
+`/@{username}/{package-name}/settings` so they can click the lock icon.
+`packageUpdate` rejects **`changes.locked: false`** and returns that URL.
 
 When an agent pushes or saves a locked package, the commit still lands on
 Artifacts HEAD. Publish tools then return **`locked`** with an
 **`approval_url`** that names that commit:
-`/@{username}/{kodyId}/approve-publish?commit=<sha>`. Opening that URL shows a
-file-by-file diff of the current published tree versus that commit. Clicking
-**Promote this commit** runs the real publish (checks, bundle artifacts,
-projections) for that SHA. Promoting one commit does not unlock the package.
+`/@{username}/{package-name}/approve-publish?commit=<sha>`. Opening that URL
+shows a file-by-file diff of the current published tree versus that commit.
+Clicking **Promote this commit** runs the real publish (checks, bundle
+artifacts, projections) for that SHA. Promoting one commit does not unlock the
+package.
 
 Unlocked packages use the same review page. When default-branch HEAD is newer
 than the last publish, the package Code tab shows a **HEAD ahead of published**
 badge. Owners click it to open
-`/@{username}/{kodyId}/approve-publish?commit=<sha>`, where `<sha>` is the
+`/@{username}/{package-name}/approve-publish?commit=<sha>`, where `<sha>` is the
 resolved default-branch HEAD, and publish that SHA with **Publish HEAD**.
 Visitors see the badge but not the link. The five-minute reconcile job still
 auto-publishes unlocked packages; this page is the explicit website path.
@@ -609,13 +614,13 @@ package instead:
 ## Community fork provenance
 
 **`packageList`** and **`packageGet`** return community-fork provenance on each
-package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
-`listing_name`, `origin_commit`, `listing_pinned_commit`,
-`listing_published_at`, `listing_ahead`). Those fields are `null` for
-self-authored packages. `listing_ahead` is true only when the listing pin is not
-an ancestor of the fork tip. When `listing_ahead` is true, the owner profile,
-the listing page, package search, and `{kodyId}:package` entity detail surface a
-**Fork outdated** / absorb next step. Full workflow:
+package summary (`source_listing_id`, `listing_current`, `listing_name`,
+`origin_commit`, `listing_pinned_commit`, `listing_published_at`,
+`listing_ahead`). Those fields are `null` for self-authored packages.
+`listing_ahead` is true only when the listing pin is not an ancestor of the fork
+tip. When `listing_ahead` is true, the owner profile, the listing page, package
+search, and `{package-name}:package` entity detail surface a **Fork outdated** /
+absorb next step. Full workflow:
 [Public packages → Forking a listing](./community-packages.md#forking-a-listing).
 
 ## Author a saved package via direct git push
@@ -647,8 +652,9 @@ publish checks run.
    }
    ```
 
-   Call `packageGetGitRemote` with either `package_id` or `kody_id`. The result
-   includes the plain remote URL, an authenticated one-line clone URL, an
+   Call `packageGetGitRemote` with the scoped `@owner/leaf` name for an existing
+   package (or `package_id` when the name is not known). The result includes the
+   plain remote URL, an authenticated one-line clone URL, an
    `Authorization: Bearer ...` extra header, `git_author` (the signed-in Kody
    account email and display name), and setup commands that use
    `git -c http.extraHeader=...` so the token does not need to be saved in shell
@@ -657,11 +663,10 @@ publish checks run.
    an email.
 
    To start a **new** package in this lane, pass `create: true` with the new
-   `kody_id` (and an optional `description`):
+   `@owner/leaf` name (or the name leaf) and an optional `description`:
 
    ```json
    {
-   	"kody_id": "my-package",
    	"create": true,
    	"description": "What this package is for"
    }
