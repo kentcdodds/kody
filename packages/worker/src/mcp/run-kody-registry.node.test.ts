@@ -13,6 +13,7 @@ import {
 } from './run-kody-registry.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
+import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import {
 	type JobRecord,
@@ -1025,6 +1026,37 @@ export default async function run() {
 		})
 		await expect(
 			providerFns?.packageSecretGet({ alias: 'token' }),
+		).resolves.toEqual({
+			value: 'bot-token',
+		})
+		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
+			env,
+			callerContext,
+			packageId: 'package-123',
+			alias: 'token',
+		})
+		resolvePackageMountedSecretSpy.mockClear()
+		await expect(
+			providerFns?.packageSecretGet({
+				alias: 'token',
+				packageId: 'pkg-a-forged',
+			}),
+		).resolves.toEqual({
+			value: 'bot-token',
+		})
+		expect(resolvePackageMountedSecretSpy).toHaveBeenCalledWith({
+			env,
+			callerContext,
+			packageId: 'package-123',
+			alias: 'token',
+		})
+		resolvePackageMountedSecretSpy.mockClear()
+		await expect(
+			providerFns?.packageSecretGet({
+				alias: 'token',
+				packageId: 'pkg-a-forged',
+				[secretAuthorityArgName]: 'package-123',
+			}),
 		).resolves.toEqual({
 			value: 'bot-token',
 		})

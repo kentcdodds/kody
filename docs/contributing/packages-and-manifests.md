@@ -156,29 +156,32 @@ A saved package is a repo with the package extension activated. Four concepts:
   implementation. Execution loaders hydrate the deployed host runtime module
   into every referenced `.__kody_virtual__/runtime.js` path, including nested
   static dependency artifacts and package-app workers.
-- `packageStorage()` identity is stamped at bundle time. Modules that originate
-  from a saved package (the root source of a package build via `rootPackageId`,
-  and statically imported package sources) get their `kody:runtime` import
-  rewritten to a per-package virtual runtime module,
+- `packageStorage()` and `packageSecrets` identity is stamped at bundle time.
+  Modules that originate from a saved package (the root source of a package
+  build via `rootPackageId`, and statically imported package sources) get their
+  `kody:runtime` import rewritten to a per-package virtual runtime module,
   `.__kody_virtual__/package-runtime/<hex(packageId)>.js`, which re-exports the
-  shared runtime and overrides `packageStorage` with a variant that closes over
-  the package's immutable id. The closure survives esbuild inlining, so
-  per-module identity holds even after the graph collapses into one module.
-  Hydration regenerates per-package runtime modules from the id encoded in the
-  path, exactly like the shared runtime module.
+  shared runtime and overrides `packageStorage` / `packageSecrets` with variants
+  that close over the package's immutable id. The closure survives esbuild
+  inlining, so per-module identity holds even after the graph collapses into one
+  module. Hydration regenerates per-package runtime modules from the id encoded
+  in the path, exactly like the shared runtime module.
 - The stamp routes identity but is not the security boundary. At execution,
-  `packageStorage()` bucket access is granted only from host-controlled
-  provenance metadata: the run's own package context, the `packageId` entries
-  recorded in the bundle's static dependency metadata, and published static
-  dependency artifacts installed during hydration. Sandbox-supplied strings
-  never extend the grant set, so hand-written source claiming an arbitrary
-  package id is rejected (`packageId` on `BundleArtifactDependency`,
-  `collectPackageStorageGrantIds` in `#mcp/run-kody-registry.ts`, and
-  `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
-  access stays structurally impossible because storage runner names are keyed by
-  the calling user's id. Platform-owned **dependencies** are excluded from that
-  grant set (`platformOwned`). Person accounts must `communityFork` an official
-  package before importing it (decision 0036).
+  `packageStorage()` bucket access and stamp-aligned secret authority are
+  granted only from host-controlled provenance metadata: the run's own package
+  context, the `packageId` entries recorded in the bundle's static dependency
+  metadata, and published static dependency artifacts installed during
+  hydration. Sandbox-supplied strings never extend the grant set, so
+  hand-written source claiming an arbitrary package id is rejected (`packageId`
+  on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
+  `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
+  `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
+  because storage runner names are keyed by the calling user's id.
+  Platform-owned **dependencies** are excluded from that grant set
+  (`platformOwned`). Person accounts must `communityFork` an official package
+  before importing it (decision 0036). User secrets locked to A are usable from
+  A's stamped module when B imports A; B's own code still cannot read them.
+  Writes stay fail-closed (`allowed_packages` required).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   has no scratch SQLite helper; another package's data goes through a static

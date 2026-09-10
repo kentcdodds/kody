@@ -62,15 +62,17 @@ Saving a secret does not by itself let anything use it.
   automatically; an ad hoc smoke test that happened to work does not widen the
   allowlist.
 - **Package approval** decides which saved packages may read and use a
-  user-scoped secret. Packages you authored and community forks you adopted
-  after reviewing the source get read/use automatically. Unadopted forks need an
-  explicit grant. Updating or deleting a user secret from package code always
-  needs the grant. Only the account owner can add a package to that grant on
-  `/account/secrets/user/:name` or `/account/secrets/approve` — a focused Allow
-  page, the same spirit as host approval on `/connect/secrets`. `secretLock`
-  returns that approval URL for the owner to click; it does not change
-  `allowed_packages`. Send the link and wait. Removing a grant is also
-  website-only.
+  user-scoped secret. Approval is checked against the stamped package — the
+  module that originated the call — so dependents statically import the owning
+  export instead of needing their own grant. Packages you authored and community
+  forks you adopted after reviewing the source get read/use automatically.
+  Unadopted forks need an explicit grant. Updating or deleting a user secret
+  from package code always needs the grant. Only the account owner can add a
+  package to that grant on `/account/secrets/user/:name` or
+  `/account/secrets/approve` — a focused Allow page, the same spirit as host
+  approval on `/connect/secrets`. `secretLock` returns that approval URL for the
+  owner to click; it does not change `allowed_packages`. Send the link and wait.
+  Removing a grant is also website-only.
 
 Bulk approval URLs (`/account/secrets/approve?package_id=…&names=a,b`) let you
 approve several pending secrets for one package in a click.

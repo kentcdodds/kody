@@ -3,6 +3,7 @@ import {
 	assertGeneratedExecutorSourceIsBundleSafe,
 	kodyRemoteProxyFactorySource,
 } from '#mcp/kody-remote-proxy-source.ts'
+import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import {
 	buildKodyFlatCapabilityUnavailableMessage,
 	kodyCapabilityNamespaceConfigs,
@@ -52,7 +53,23 @@ export function createKodyProviderProxySource(input: {
 	const mcpFlatNamePrefix = kodyCapabilityNamespaceConfigs.mcp.flatNamePrefix
 	const source = `    const __kodyCreateRemoteProxy = ${kodyRemoteProxyFactorySource};
     const __kodyCallDispatcher = async (dispatchName, args) => {
-      const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(args ?? {}));
+      const __kodyGetSecretAuthority = globalThis[Symbol.for('kody.getSecretAuthority')];
+      const __kodySecretAuthority =
+        typeof __kodyGetSecretAuthority === 'function'
+          ? String(__kodyGetSecretAuthority() ?? '').trim()
+          : '';
+      const payload =
+        args != null && typeof args === 'object' && !Array.isArray(args)
+          ? (() => {
+              const next = { ...args };
+              delete next[${JSON.stringify(secretAuthorityArgName)}];
+              if (__kodySecretAuthority) {
+                next[${JSON.stringify(secretAuthorityArgName)}] = __kodySecretAuthority;
+              }
+              return next;
+            })()
+          : args;
+      const resJson = await __dispatchers.${input.providerName}.call(dispatchName, JSON.stringify(payload ?? {}));
       const data = JSON.parse(resJson);
       if (data.error) throw new Error(data.error);
       return data.result;

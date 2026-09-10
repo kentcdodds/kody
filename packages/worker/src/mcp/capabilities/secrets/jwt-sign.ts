@@ -5,6 +5,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
@@ -69,12 +70,10 @@ export const jwtSignCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const storageContext = {
-				sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
-				appId: ctx.callerContext.storageContext?.appId ?? null,
-				packageId: ctx.callerContext.storageContext?.packageId ?? null,
-				storageId: ctx.callerContext.storageContext?.storageId ?? null,
-			}
+			const { authorityPackageId, storageContext } =
+				resolveCallerSecretAuthority({
+					storageContext: ctx.callerContext.storageContext,
+				})
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: user.userId,
@@ -99,6 +98,7 @@ export const jwtSignCapability = defineDomainCapability(
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: user.userId,
 				storageContext,
+				authorityPackageId,
 				secretName: args.private_key_secret_name,
 				resolved,
 			})

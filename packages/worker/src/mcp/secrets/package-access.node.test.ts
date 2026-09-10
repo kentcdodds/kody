@@ -194,6 +194,50 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
+test('package secret access authorizes the stamp package, not the importing run', async () => {
+	mockModule.getSavedPackageById.mockResolvedValueOnce({
+		...savedPackage,
+		id: 'pkg-2',
+		kodyId: 'importer',
+		name: '@user/importer',
+	})
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce({
+		...communityFork,
+		forkedPackageId: 'pkg-2',
+		targetKodyId: 'importer',
+	})
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				storageContext: {
+					sessionId: null,
+					packageId: 'pkg-2',
+				},
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
+	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
+
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				storageContext: {
+					sessionId: null,
+					packageId: 'pkg-2',
+				},
+				authorityPackageId: 'pkg-1',
+				resolved: {
+					...userSecretResolved,
+					allowedPackages: ['pkg-1'],
+				},
+			}),
+		),
+	).resolves.toBeUndefined()
+})
+
 test('package secret access does not resolve platform packages the caller does not own', async () => {
 	const platformPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
 	const platformAccess = accessInput({
@@ -257,7 +301,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 	expect(mockModule.resolveSecret).toHaveBeenCalled()
 })
 
-test('resolvePackageMountedSecret requires matching package runtime context and resolves approved mounts', async () => {
+test('resolvePackageMountedSecret uses the stamped package id even when the run is another package', async () => {
 	const runtimeError =
 		'Package secret access requires a matching server-side package runtime context.'
 	const baseInput = {
@@ -278,6 +322,7 @@ test('resolvePackageMountedSecret requires matching package runtime context and 
 	await expect(
 		resolvePackageMountedSecret({
 			...baseInput,
+			packageId: '',
 			callerContext: {
 				...baseInput.callerContext,
 				storageContext: {
@@ -294,14 +339,17 @@ test('resolvePackageMountedSecret requires matching package runtime context and 
 			...baseInput,
 			callerContext: {
 				...baseInput.callerContext,
+				user: undefined,
 				storageContext: {
 					sessionId: null,
-					packageId: 'pkg-2',
+					packageId: 'pkg-1',
 					storageId: 'pkg-1',
 				},
 			},
 		}),
-	).rejects.toThrow(runtimeError)
+	).rejects.toThrow(
+		'Package secret access requires an authenticated package caller context.',
+	)
 
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
@@ -369,6 +417,64 @@ test('resolvePackageMountedSecret requires matching package runtime context and 
 				packageId: 'pkg-1',
 				storageId: 'pkg-1',
 			},
+		}),
+	)
+
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
+		manifest: {
+			name: '@kentcdodds/discord-gateway',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'discord-gateway',
+				description: 'Discord gateway',
+				secretMounts: {
+					discordBotToken: {
+						name: 'discordBotTokenKentPersonalAutomation',
+						scope: 'user',
+					},
+				},
+			},
+		},
+	})
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'bot-token',
+		scope: 'user',
+		allowedPackages: ['pkg-1'],
+	})
+	await expect(
+		resolvePackageMountedSecret({
+			env: { APP_DB: {} as D1Database } as Env,
+			packageId: 'pkg-1',
+			alias: 'discordBotToken',
+			callerContext: {
+				baseUrl: 'https://example.com',
+				user: {
+					userId: 'user-1',
+					email: 'user@example.com',
+					displayName: 'User',
+				},
+				repoContext: null,
+				storageContext: {
+					sessionId: null,
+					packageId: 'pkg-2',
+					storageId: 'pkg-2',
+				},
+			},
+		}),
+	).resolves.toMatchObject({
+		alias: 'discordBotToken',
+		value: 'bot-token',
+		packageId: 'pkg-1',
+	})
+	expect(mockModule.resolveSecret).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			storageContext: expect.objectContaining({
+				packageId: 'pkg-1',
+			}),
 		}),
 	)
 })

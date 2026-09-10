@@ -1,6 +1,6 @@
-# `packageStorage()` grants and caller-owned packages
+# `packageStorage()` grants and stamp-aligned secrets
 
-How `packageStorage()` identity and grants work under
+How `packageStorage()` and user-secret authority work under
 [0036](./decisions/0036-platform-packages-fork-only.md) (person accounts fork
 `@kody/*` before running it) and
 [0037](./decisions/0037-no-author-packages-invoke.md) (authors compose with
@@ -16,14 +16,14 @@ official use), [#1741](https://github.com/kentcdodds/kody/pull/1741) (0036),
 
 ## What the code does
 
-`packageStorage()` is two layers. The stamp routes identity; the grant is the
-security boundary.
+`packageStorage()` and secret reads are two layers. The stamp routes identity;
+the grant is the security boundary.
 
 1. **Stamp (bundler).** Modules that originate from a saved package rewrite
    `kody:runtime` to `.__kody_virtual__/package-runtime/<hex(packageId)>.js`.
-   That module closes `packageStorage` over the declaring package UUID. Ad hoc
-   execute entry code is unstamped. See `createPackageRuntimeModuleSource` and
-   `rewriteKodyImports`.
+   That module closes `packageStorage` and `packageSecrets` over the declaring
+   package UUID. Ad hoc execute entry code is unstamped. See
+   `createPackageRuntimeModuleSource` and `rewriteKodyImports`.
 2. **Grant (host).** `collectPackageStorageGrantIds` in
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
@@ -31,7 +31,11 @@ security boundary.
    - each static dependency `packageId` where `platformOwned !== true`
    - dynamic-import artifact ids installed during hydration
 3. **Enforce.** `createPackageStorageKodyTools` rejects any sandbox-supplied
-   `packageId` outside that set. The StorageRunner name is
+   `packageId` outside that set. Secret mounts (`packageSecrets`) do not take an
+   author-selected package id on `kody.packageSecretGet` / `Has`. The host
+   honors only the stamp identity (hidden ALS / capability field) or the run
+   package, and only when that id is in the grant set. Then `allowed_packages` /
+   implicit read checks run as that package. The StorageRunner name is
    `(callerUserId, package:{packageId})`, so a granted id is always a
    **per-caller** bucket, never another account's data.
 
@@ -40,27 +44,29 @@ When the bundler would resolve `kody:@kody/…` live, it records
 (`module-graph-workspace.ts`). The grant collector **drops** that id. Under
 0036, person accounts do not live-resolve `@kody/*` at all — they
 `communityFork` first — so the person-account bucket is the **fork's** UUID.
-Caller-owned static imports already receive `packageStorage()` grants.
+Caller-owned static imports already receive `packageStorage()` grants and
+stamp-aligned secret authority.
 
 `packageContext` on a static import from execute stays `null`. Code that needs
-`packageContext` (hosted URL, app paths, `kody.secretMounts`) must run as that
-package: inbound webhooks for external clients, or a job / subscription / app
-surface. Authors do not get a `packages.invoke` composition helper (0037).
+the ambient run (hosted URL, app paths) must run as that package: inbound
+webhooks for external clients, or a job / subscription / app surface. Authors do
+not get a `packages.invoke` composition helper (0037).
 
-#1691 is secrets only: user-scope `{{secret}}` placeholders resolve at the fetch
-gateway for the calling user. That path never goes through
-`collectPackageStorageGrantIds`.
+Issue `#1691` is user-scope `{{secret}}` placeholders resolved at the fetch
+gateway for the calling user. The gateway authorizes those placeholders as the
+**stamp** when the call site is stamped (and the id is in the provenance set),
+otherwise as the run.
 
 ## Recommended model (secrets, storage, context)
 
 Person accounts fork `@kody/*` and then only run **their** copy. Three facts,
 one rule each:
 
-| Thing              | Identity                         | Rule                                                                                        |
-| ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------- |
-| `packageStorage()` | declaring module (bundler stamp) | A's code always hits `(callerUserId, package:{A.id})` when granted                          |
-| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                     |
-| Secrets            | the run                          | user-secret `allowed_packages` and `packageSecrets` mounts check `storageContext.packageId` |
+| Thing              | Identity                         | Rule                                                                                                     |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `packageStorage()` | declaring module (bundler stamp) | A's code always hits `(callerUserId, package:{A.id})` when granted                                       |
+| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                                  |
+| Secrets            | declaring module (bundler stamp) | user-secret `allowed_packages` and `packageSecrets` mounts check the stamp when the call site is stamped |
 
 **Composition:** static `import` when the name is known (library in this
 isolate). Computed `import(specifier)` when the name is data (caller-owned /
@@ -68,8 +74,14 @@ forks). Workflows when you need exactly-once. Do not point `packageContext` at
 “the” imported module. Computed `import()` is a library load, not
 enter-as-package.
 
-Static import of caller-owned A (including a fork). Storage follows A; the run
-stays B or execute.
+Importing A is a trust decision that **A’s stamped code** may use secrets locked
+to A (or A’s `kody.secretMounts`). A must not return secret values to callers.
+B’s own code still cannot read an A-only secret. Writes (`secretSet` /
+`secretDelete`) stay fail-closed: the stamp package still needs an
+`allowed_packages` grant.
+
+Static import of caller-owned A (including a fork). Storage and secrets follow
+A; the run stays B or execute.
 
 ```mermaid
 sequenceDiagram
@@ -85,8 +97,8 @@ sequenceDiagram
 	Note over Bucket: granted from static dep A
 	Bucket-->>Stamp: A's per-caller bucket
 	Stamp->>Gateway: fetch with user secret placeholder
-	Note over Gateway: storageContext.packageId is B or null
-	Gateway-->>Stamp: authorize as the run not as A
+	Note over Gateway: secret authority is A from the stamp
+	Gateway-->>Stamp: allowed_packages must include A
 ```
 
 Enter A as a package run (HTTP token, job, subscription, or app). New isolate.
@@ -104,38 +116,38 @@ sequenceDiagram
 	Note over Bucket: granted from packageContext
 	Bucket-->>Host: same A bucket as the import path
 	Host->>Mounts: packageSecrets.get alias
-	Note over Mounts: requires packageContext equals A
+	Note over Mounts: stamp and run are both A
 	Mounts-->>Host: A's kody.secretMounts
 	Host->>Gateway: fetch with user secret placeholder
 	Note over Gateway: storageContext.packageId is A
 	Gateway-->>Host: allowed_packages must include A
 ```
 
-A-only secret, B imports A vs B enters A as a package run. This is the isolation
-the stamp does **not** give you.
+A-only secret, B imports A vs B’s own code. The stamp is what lets A’s export
+succeed without granting the secret to B.
 
 ```mermaid
 sequenceDiagram
 	actor Caller
 	participant B as run B
 	participant Amod as A's imported module
-	participant Enter as enter as A
 	participant Gateway as fetch gateway
 	Note over Caller: user secret granted only to A
 	Caller->>B: execute or run B
 	B->>Amod: static import call A's export
 	Amod->>Gateway: use A-only user secret
-	Gateway->>Gateway: check storageContext.packageId B
-	Gateway-->>Amod: deny A-only grant does not list B
-	B->>Enter: host run A's export
-	Enter->>Gateway: use A-only user secret
-	Gateway->>Gateway: check storageContext.packageId A
-	Gateway-->>Enter: allow
+	Gateway->>Gateway: check stamp packageId A
+	Gateway-->>Amod: allow A-only grant lists A
+	B->>Gateway: B's own code uses A-only secret
+	Gateway->>Gateway: check run packageId B
+	Gateway-->>B: deny A-only grant does not list B
 ```
 
-On ad hoc execute with no `packageId`, the `allowed_packages` check is skipped
-(`assertPackageCanAccessResolvedSecret` returns). Execute can use **your** user
-secrets. It cannot use A's `packageSecrets` mounts.
+On ad hoc execute with no `packageId` and no stamp, the `allowed_packages` check
+is skipped (`assertPackageCanAccessResolvedSecret` returns). Execute entry code
+can use **your** user secrets through `{{secret}}`. It cannot use A's
+`packageSecrets` mounts. A's stamped module, imported into that execute, uses
+A's grants and mounts.
 
 ## Dynamic `import()` for caller-owned names
 
@@ -149,8 +161,8 @@ not call that helper.
 
 If the specifier is a **caller-owned** package and `import()` means “library
 load in this isolate,” storage, context, and secrets match static import: A's
-bucket, this run's `packageContext`, this run's secret authority. That is not
-enter-as-package.
+bucket, this run's `packageContext`, A's stamp for secret authority when the
+loaded module is stamped. That is not enter-as-package.
 
 ```mermaid
 sequenceDiagram
@@ -161,7 +173,7 @@ sequenceDiagram
 	participant Amod as A's module
 	Caller->>Execute: await import(runtimeSpecifier)
 	Execute->>Hydrate: resolveCurrentDynamicPackageArtifact
-	Hydrate->>Hydrate: allowPlatformScopes false
+	Execute->>Hydrate: allowPlatformScopes false
 	Hydrate->>KV: persist importable-module under caller userId
 	KV-->>Hydrate: artifact
 	Hydrate-->>Execute: install A's modules in B's isolate
@@ -169,7 +181,7 @@ sequenceDiagram
 	Note over Amod: same as static import
 	Note over Amod: packageStorage A if granted
 	Note over Amod: packageContext is B or null
-	Note over Amod: secrets authorized as the run
+	Note over Amod: secrets authorized as A's stamp
 ```
 
 0014 blocked **platform** dynamic import because that persist step writes under
@@ -178,9 +190,8 @@ if the person owned it. Under 0036 person accounts cannot resolve `@kody/*` at
 all, so that footgun does not apply to person execute.
 
 ESM `import()` has no `params`, no `idempotencyKey`, and does not start a
-package run. To get A's mounts and A's `allowed_packages` you must start a run
-whose `packageContext` is A — HTTP tokens, jobs, subscriptions, or apps. Do not
-overload `import()` to secretly enter a package run.
+package run. Ambient `packageContext` stays this run. Do not overload `import()`
+to secretly enter a package run.
 
 ```mermaid
 sequenceDiagram

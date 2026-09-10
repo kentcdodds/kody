@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
+import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
@@ -204,6 +205,10 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 		},
 	}
 
+	expect(await extractCreateKodyProxySource()).toContain(
+		`'${secretAuthorityArgName}'`,
+	)
+
 	const withoutNames = await createKodyProxyForTest(runtimeBridge)
 	await expect(
 		(
@@ -261,6 +266,25 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 		{ name: 'mcp:home:set_pin', args: { pin: '2' } },
 		{ name: 'mcp:home:set_pin', args: { pin: '3' } },
 	])
+
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-stamped',
+		configurable: true,
+		writable: true,
+	})
+	try {
+		await openGetHome.set_pin({
+			pin: '4',
+			[secretAuthorityArgName]: 'pkg-forged',
+		})
+		expect(calls.at(-1)).toEqual({
+			name: 'mcp:home:set_pin',
+			args: { pin: '4', [secretAuthorityArgName]: 'pkg-stamped' },
+		})
+	} finally {
+		delete (globalThis as unknown as Record<symbol, unknown>)[authoritySymbol]
+	}
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
@@ -1448,6 +1472,43 @@ test('package app runtime bridge redacts secrets in finish payload and merges me
 	expect(finishInput.error).toBeInstanceOf(Error)
 	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
 	expect(finishInput.error.message).not.toContain(thrownSecretValue)
+})
+
+test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
+	resetPackageAppRuntimeMocks()
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+		value: 'pkg-app-secret-value',
+	})
+	const { bridge } = createPackageAppRuntimeBridgeForTest({
+		packageStorageGrantIds: ['package-1', 'pkg-a'],
+	})
+	await expect(
+		bridge.packageSecretGet({ alias: 'api-token', packageId: 'pkg-a' }),
+	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	expect(
+		packageAppRuntimeMock.resolvePackageMountedSecret,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: 'package-1',
+			alias: 'api-token',
+		}),
+	)
+	packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
+	await expect(
+		bridge.packageSecretGet({
+			alias: 'api-token',
+			packageId: 'package-1',
+			[secretAuthorityArgName]: 'pkg-a',
+		}),
+	).resolves.toEqual({ value: 'pkg-app-secret-value' })
+	expect(
+		packageAppRuntimeMock.resolvePackageMountedSecret,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: 'pkg-a',
+			alias: 'api-token',
+		}),
+	)
 })
 
 test('package app runtime bridge enforces packageStorage grants and raw storage namespace ACLs', async () => {

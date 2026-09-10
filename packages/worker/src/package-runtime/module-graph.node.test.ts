@@ -53,6 +53,7 @@ const {
 	buildPackageRuntimeModulePath,
 	createPackageRuntimeModuleSource,
 	createPublishedPackageAppBundleCacheKey,
+	createRuntimeModuleReexportSource,
 	createRuntimeModuleSource,
 	hydrateKodyRuntimeModules,
 	parsePackageRuntimeModulePathPackageId,
@@ -618,6 +619,9 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		userId: 'user-1',
 		modules,
 	})
+	expect(hydratedModules[nestedRuntimePath]).toBe(
+		createRuntimeModuleReexportSource(nestedRuntimePath),
+	)
 	expect(hydratedModules[nestedRuntimePath]).not.toBe(staleRuntimeSource)
 	const hydratedModuleGraph = await createTemporaryModuleGraph(hydratedModules)
 	try {
@@ -746,10 +750,13 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 		| undefined
 	const nestedRuntimePath =
 		'.__kody_packages__/@kentcdodds/ai-chat/.__published_bundle__/2e/dist/.__kody_virtual__/runtime.js'
-	expect(bundlerInput?.files?.[nestedRuntimePath]).toContain(
-		'__kodyCreateRuntimeObjectProxy',
+	expect(bundlerInput?.files?.[nestedRuntimePath]).toBe(
+		createRuntimeModuleReexportSource(nestedRuntimePath),
 	)
 	expect(bundlerInput?.files?.[nestedRuntimePath]).not.toBe(staleRuntimeSource)
+	expect(bundlerInput?.files?.['.__kody_virtual__/runtime.js']).toContain(
+		'__kodyCreateRuntimeObjectProxy',
+	)
 })
 
 test('package runtime module paths round-trip stamped package ids', () => {
@@ -779,6 +786,7 @@ test('package runtime module paths round-trip stamped package ids', () => {
 	const moduleSource = createPackageRuntimeModuleSource(packageId)
 	expect(moduleSource).toContain(JSON.stringify(packageId))
 	expect(moduleSource).toContain('__kodyCreatePackageBoundStorage')
+	expect(moduleSource).toContain('__kodyCreatePackageBoundSecrets')
 	expect(moduleSource).toContain('../runtime.js')
 })
 
@@ -914,8 +922,15 @@ test('refreshKodyRuntimeModules regenerates stale per-package runtime modules an
 	)
 	// The regenerated stamped module imports its sibling shared runtime; the
 	// refresh must materialize that sibling even when nothing referenced it.
-	expect(refreshed[`${nestedPrefix}/.__kody_virtual__/runtime.js`]).toBe(
+	// Prefixed copies re-export the graph-root runtime so the stamp ALS is
+	// created once and is not published on globalThis.
+	expect(refreshed['.__kody_virtual__/runtime.js']).toBe(
 		createRuntimeModuleSource(),
+	)
+	expect(refreshed[`${nestedPrefix}/.__kody_virtual__/runtime.js`]).toBe(
+		createRuntimeModuleReexportSource(
+			`${nestedPrefix}/.__kody_virtual__/runtime.js`,
+		),
 	)
 })
 

@@ -1,6 +1,7 @@
 export {
 	buildPackageRuntimeModulePath,
 	createPackageRuntimeModuleSource,
+	createRuntimeModuleReexportSource,
 	createRuntimeModuleSource,
 	isKodyRuntimeModulePath,
 	parsePackageRuntimeModulePathPackageId,

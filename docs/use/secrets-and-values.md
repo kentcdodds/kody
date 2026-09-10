@@ -15,9 +15,12 @@ hosts, **`expires_at`**, and remaining **`ttl_ms`** — not plaintext values.
 Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch placeholders and
 **`resolve`** treat them as missing so Kody stops sending the value.
 
-Package-scoped secrets belong to one saved package and are available only while
-that package runs. Access rules for user-scoped secrets from package code are
-covered in [Package approval](#package-approval).
+Package-scoped secrets belong to one saved package. User-scoped secrets follow
+the bundler stamp: code that originates from package A authorizes as A,
+including when B statically imports A's export. B's own code still cannot read a
+secret locked only to A — including by passing A's id to `kody.packageSecretGet`
+/ `Has`. Only A's stamped `packageSecrets` binding carries that authority.
+Access rules are covered in [Package approval](#package-approval).
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
@@ -136,8 +139,11 @@ User-scoped secrets are available automatically for **reading and using**
 packages the user authored themselves and adopted community forks
 (`communityForkAdopt` after a real source review). Unadopted community-forked
 packages need explicit **package** approval (`allowed_packages`) before those
-read/use paths. Updating or deleting a user secret from package code
-(`secretSet`, `secretDelete`) always needs the grant, including for
+read/use paths. Approval is checked against the **stamped** package — the module
+that originated the call — not the importing run. Dependents statically import
+the owning export; they do not need their own grant for secrets locked to that
+owner. Updating or deleting a user secret from package code (`secretSet`,
+`secretDelete`) always needs the grant on the stamp package, including for
 self-authored and adopted packages. Only the account owner can add a package to
 that grant on `/account/secrets/user/:name` or `/account/secrets/approve`.
 **`secretLock`** returns an approval URL for the owner to click (one-click

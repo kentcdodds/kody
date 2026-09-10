@@ -54,6 +54,13 @@ import {
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
+import {
+	grantedSecretAuthorityPackageIdSet,
+	runWithCurrentSecretAuthority,
+	runWithSecretAuthorityScope,
+	secretAuthorityHeaderName,
+	takeSecretAuthorityFromCapabilityArgs,
+} from '#mcp/secrets/secret-authority.ts'
 import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import {
@@ -599,7 +606,17 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 									signal,
 									sideEffects,
 								)
-								return await entrypoint.evaluate(dispatchers)
+								const grantedSecretAuthorityPackageIds =
+									grantedSecretAuthorityPackageIdSet(
+										input.gatewayProps.grantedSecretAuthorityPackageIds,
+									)
+								const evaluate = () => entrypoint.evaluate(dispatchers)
+								return grantedSecretAuthorityPackageIds
+									? await runWithSecretAuthorityScope(
+											grantedSecretAuthorityPackageIds,
+											evaluate,
+										)
+									: await evaluate()
 							}, signal),
 						input.timeout,
 						input.signal,
@@ -758,7 +775,25 @@ function createSandboxRunFetchSource(allowOutboundFetch: boolean) {
 		'          const data = JSON.parse(resJson);',
 		'          if (data.error) throw new Error(data.error);',
 		'        }',
-		'        return globalThis[__kodyNativeFetchSymbol](input, init);',
+		'        const __kodyGetSecretAuthority = globalThis[Symbol.for("kody.getSecretAuthority")];',
+		'        const __kodySecretAuthority =',
+		'          typeof __kodyGetSecretAuthority === "function"',
+		'            ? String(__kodyGetSecretAuthority() ?? "").trim()',
+		'            : "";',
+		'        const __kodyFetchHeaders = new Headers(',
+		'          init?.headers ??',
+		'            (input && typeof input === "object" && "headers" in input',
+		'              ? input.headers',
+		'              : undefined),',
+		'        );',
+		`        __kodyFetchHeaders.delete(${JSON.stringify(secretAuthorityHeaderName)});`,
+		'        if (__kodySecretAuthority) {',
+		`          __kodyFetchHeaders.set(${JSON.stringify(secretAuthorityHeaderName)}, __kodySecretAuthority);`,
+		'        }',
+		'        return __kodyNativeFetch(input, {',
+		'          ...init,',
+		'          headers: __kodyFetchHeaders,',
+		'        });',
 		'      })();',
 		'    };',
 	]
@@ -804,13 +839,12 @@ function createExecutorModule(input: {
 		'',
 		'const __kodyEvaluateFetchStorageSymbol = Symbol.for("kody.evaluateFetchStorage");',
 		'const __kodyEvaluateFetchPatchedSymbol = Symbol.for("kody.evaluateFetchPatched");',
-		'const __kodyNativeFetchSymbol = Symbol.for("kody.nativeFetch");',
+		'const __kodyRuntimeStorageSymbol = Symbol.for("kody.runtimeStorage");',
+		'const __kodyNativeFetch = globalThis.fetch.bind(globalThis);',
 		'const __kodyEvaluateFetchStorage =',
 		'  globalThis[__kodyEvaluateFetchStorageSymbol] ??',
 		'  (globalThis[__kodyEvaluateFetchStorageSymbol] = new AsyncLocalStorage());',
 		'if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {',
-		'  globalThis[__kodyNativeFetchSymbol] = globalThis.fetch.bind(globalThis);',
-		'  const __kodyNativeFetch = globalThis[__kodyNativeFetchSymbol];',
 		'  globalThis.fetch = (input, init) => {',
 		'    const ctx = __kodyEvaluateFetchStorage.getStore();',
 		'    if (ctx) return ctx.fetch(input, init);',
@@ -915,7 +949,9 @@ export function createToolDispatchers(
 				)
 			}
 			rawNamesBySanitizedName.set(sanitizedName, name)
-			sanitizedFns[sanitizedName] = async (...args) => {
+			sanitizedFns[sanitizedName] = async (...rawArgs) => {
+				const { args, requestedPackageId } =
+					takeSecretAuthorityFromCapabilityArgs(rawArgs)
 				return await runWithCapturedDynamicWorkerEvaluationContext(
 					capturedEvaluationContext,
 					async () => {
@@ -928,9 +964,12 @@ export function createToolDispatchers(
 						) {
 							sideEffects.recordDispatcherAttempt()
 						}
-						return abortSignalToolNames.has(name)
-							? await fn(...args, signal)
-							: await fn(...args)
+						const invoke = () =>
+							abortSignalToolNames.has(name) ? fn(...args, signal) : fn(...args)
+						return await runWithCurrentSecretAuthority(
+							requestedPackageId,
+							invoke,
+						)
 					},
 				)
 			}
@@ -1471,7 +1510,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
-		"`packageSecrets` is only bound in saved-package runtime contexts; statically import the owning package's export so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
+		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `if (packageSecrets) { ... }`.",
 	email:
 		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
 }

@@ -25,6 +25,10 @@ import {
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import {
+	getSecretAuthorityScope,
+	resolveSecretAuthorityPackageId,
+} from '#mcp/secrets/secret-authority.ts'
+import {
 	createExecutionSecretRedactor,
 	type ExecutionSecretRedactor,
 } from '#mcp/secrets/execution-secret-redactor.ts'
@@ -181,24 +185,47 @@ function isPackageSecretAvailabilityError(error: unknown) {
 function createPackageSecretTools(input: {
 	env: Env
 	callerContext: McpCallerContext
-	packageId: string
+	runPackageId: string | null
+	grantedPackageIds: ReadonlySet<string>
 }): PackageSecretToolOptions {
+	const resolveAuthorityPackageId = (requestedPackageId?: string | null) => {
+		// Stamp identity only. The executor peels the hidden capability field
+		// into host ALS before this tool runs, so a second peel of args is
+		// empty. Author-visible `packageId` is ignored so a granted
+		// dependency id is not a steal primitive.
+		const scope = getSecretAuthorityScope()
+		const authorityPackageId = resolveSecretAuthorityPackageId({
+			requestedPackageId: requestedPackageId ?? scope?.currentPackageId,
+			grantedPackageIds: input.grantedPackageIds,
+			runPackageId: input.runPackageId,
+		})
+		if (
+			!authorityPackageId ||
+			!input.grantedPackageIds.has(authorityPackageId)
+		) {
+			throw new Error(
+				'Package secret access requires a matching server-side package runtime context.',
+			)
+		}
+		return authorityPackageId
+	}
 	return {
-		get: async (alias: string) =>
+		runPackageId: input.runPackageId,
+		get: async (alias: string, requestedPackageId?: string | null) =>
 			(
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: input.packageId,
+					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
 			).value,
-		has: async (alias: string) => {
+		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
 				await resolvePackageMountedSecret({
 					env: input.env,
 					callerContext: input.callerContext,
-					packageId: input.packageId,
+					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
 				return true
@@ -624,12 +651,13 @@ export async function runModuleWithRegistry(
 }
 
 /**
- * `packageStorage()` grant set for one bundled run, from bundler/host
- * controlled provenance only: the run's own package context, the saved
- * packages recorded in the bundle's static dependency metadata, and the
- * published artifacts installed for literal dynamic package imports during
- * hydration. Sandbox-supplied strings never extend this set, which is what
- * keeps a malicious module from claiming another installed package's bucket.
+ * Provenance grant set for one bundled run, from bundler/host controlled
+ * metadata only: the run's own package context, the saved packages recorded
+ * in the bundle's static dependency metadata, and the published artifacts
+ * installed for literal dynamic package imports during hydration.
+ * `packageStorage()` and stamp-aligned secret authority both use this set.
+ * Sandbox-supplied strings never extend it, which is what keeps a malicious
+ * module from claiming another installed package's bucket or secret grants.
  */
 export function collectPackageStorageGrantIds(input: {
 	packageContext: PackageContextOptions
@@ -879,6 +907,7 @@ export async function runBundledModuleWithRegistry(
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
 				storageContext: normalizedStorageContext,
+				grantedSecretAuthorityPackageIds: [...grantedPackageStorageIds],
 			},
 			modules: hydratedModules,
 			// Package-context runs are saved-package code; do not count their fetch hosts.
@@ -917,11 +946,12 @@ export async function runBundledModuleWithRegistry(
 					writable: !closedWorldRetrieverRuntime,
 				}
 			: undefined
-		const packageSecretTools = options?.packageContext
+		const packageSecretTools = callerContext.user?.userId
 			? createPackageSecretTools({
 					env,
 					callerContext,
-					packageId: options.packageContext.packageId,
+					runPackageId: options?.packageContext?.packageId ?? null,
+					grantedPackageIds: grantedPackageStorageIds,
 				})
 			: undefined
 		const provider = await buildKodyProvider(env, callerContext, {
