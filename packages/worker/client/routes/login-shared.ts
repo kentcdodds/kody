@@ -11,14 +11,6 @@ import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 export type AuthMode = 'login' | 'signup'
 export type AuthStatus = 'idle' | 'submitting' | 'success' | 'error'
 
-export function readPrefillInviteCode(searchParams: URLSearchParams) {
-	for (const key of ['code', 'invite'] as const) {
-		const value = searchParams.get(key)?.trim()
-		if (value) return value
-	}
-	return ''
-}
-
 export function buildAuthPath(mode: AuthMode, redirectTo: string | null) {
 	const path = mode === 'signup' ? '/signup' : '/login'
 	return buildAuthLink(path, redirectTo)

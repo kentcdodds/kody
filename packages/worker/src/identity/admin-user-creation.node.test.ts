@@ -146,7 +146,7 @@ test('adminCreateUserWithPasswordSetup rejects duplicate email', async () => {
 		adminCreateUserWithPasswordSetup({
 			db,
 			email: 'existing@example.com',
-			setupLinkOrigin: 'https://kody.example/admin/invites',
+			setupLinkOrigin: 'https://kody.example/admin/users',
 		}),
 	).rejects.toMatchObject({
 		code: 'email_exists',
@@ -164,7 +164,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		db,
 		email: 'Person+Launch@Example.com',
 		username: null,
-		setupLinkOrigin: 'https://kody.example/admin/invites',
+		setupLinkOrigin: 'https://kody.example/admin/users',
 		now,
 	})
 
@@ -196,7 +196,7 @@ test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and s
 			db: explicit.db,
 			email: 'person@example.com',
 			username: 'postmaster',
-			setupLinkOrigin: 'https://kody.example/admin/invites',
+			setupLinkOrigin: 'https://kody.example/admin/users',
 		}),
 	).rejects.toMatchObject({
 		code: 'invalid_username',
@@ -211,7 +211,7 @@ test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and s
 		db: generated.db,
 		email: 'support@example.com',
 		username: null,
-		setupLinkOrigin: 'https://kody.example/admin/invites',
+		setupLinkOrigin: 'https://kody.example/admin/users',
 	})
 	expect(created.username).not.toBe('support')
 	expect(created.username.includes('support')).toBe(false)

@@ -39,7 +39,6 @@ import {
 	getCurrentAuthMode,
 	getCurrentRedirectTo,
 	getSearchParams,
-	readPrefillInviteCode,
 } from './login-shared.ts'
 import {
 	formMessageCss,
@@ -69,7 +68,6 @@ export function LoginRoute(handle: Handle) {
 	let activeMode = getCurrentAuthMode(handle)
 	let routePath: string | null = null
 	let activeSignupSearch = readRouterSearch(handle)
-	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
 	let signupStartedTracked = false
 
 	function maybeTrackSignupStarted() {
@@ -109,10 +107,6 @@ export function LoginRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function applySignupSearch(searchParams: URLSearchParams) {
-		prefillInviteCode = readPrefillInviteCode(searchParams)
-	}
-
 	listenToRouterNavigation(handle, () => {
 		if (!routePath) return
 		const nextPath = getPathname(handle)
@@ -121,7 +115,6 @@ export function LoginRoute(handle: Handle) {
 		resetAuthState()
 		if (getAuthModeFromPathname(nextPath) === 'signup') {
 			signupStartedTracked = false
-			applySignupSearch(getSearchParams(handle))
 		}
 	})
 
@@ -143,7 +136,6 @@ export function LoginRoute(handle: Handle) {
 		if (config && !authProvidersReady) {
 			authProviders = config.providers
 			turnstileSiteKey = config.turnstileSiteKey
-			applySignupSearch(getSearchParams(handle))
 			authProvidersReady = true
 		}
 
@@ -166,8 +158,6 @@ export function LoginRoute(handle: Handle) {
 		const mode = getCurrentAuthMode(handle)
 		const username =
 			mode === 'signup' ? String(formData.get('username') ?? '').trim() : ''
-		const inviteCode =
-			mode === 'signup' ? String(formData.get('inviteCode') ?? '').trim() : ''
 		const rememberMe = mode === 'login' && formData.get('rememberMe') === 'on'
 		const protection = readPublicFormProtection(formData, form)
 
@@ -198,7 +188,6 @@ export function LoginRoute(handle: Handle) {
 					...(mode === 'signup'
 						? {
 								username,
-								inviteCode,
 								redirectTo: getCurrentRedirectTo(handle),
 								...serializeFirstTouchAttributionForTransport(attribution),
 							}
@@ -253,15 +242,6 @@ export function LoginRoute(handle: Handle) {
 	async function handleProviderSignIn(providerId: string) {
 		setState('submitting')
 		try {
-			// Carry the invite code from the invite signup panel so production
-			// social signup can consume it on the OAuth callback.
-			let inviteCode: string | null = null
-			if (getCurrentAuthMode(handle) === 'signup') {
-				const inviteInput = document.querySelector('input[name="inviteCode"]')
-				if (inviteInput instanceof HTMLInputElement) {
-					inviteCode = inviteInput.value.trim() || null
-				}
-			}
 			const authForm = document.querySelector<HTMLFormElement>(
 				'form[data-public-auth-form]',
 			)
@@ -271,7 +251,6 @@ export function LoginRoute(handle: Handle) {
 			const errorMessage = await startSocialSignIn(
 				providerId,
 				getCurrentRedirectTo(handle),
-				inviteCode,
 				protection,
 				getCurrentAuthMode(handle) === 'signup'
 					? readSignupFirstTouchAttribution()
@@ -371,7 +350,6 @@ export function LoginRoute(handle: Handle) {
 			if (routeData) {
 				authProviders = routeData.providers
 				turnstileSiteKey = routeData.turnstileSiteKey
-				applySignupSearch(getSearchParams(handle))
 				authProvidersReady = true
 			}
 		}
@@ -393,13 +371,11 @@ export function LoginRoute(handle: Handle) {
 			activeMode = mode
 			resetAuthState()
 			activeSignupSearch = currentSignupSearch
-			applySignupSearch(getSearchParams(handle))
 		} else if (
 			mode === 'signup' &&
 			currentSignupSearch !== activeSignupSearch
 		) {
 			activeSignupSearch = currentSignupSearch
-			applySignupSearch(getSearchParams(handle))
 			resetAuthState()
 		}
 		const redirectTo = getCurrentRedirectTo(handle)
@@ -443,7 +419,6 @@ export function LoginRoute(handle: Handle) {
 							message,
 							isSubmitting,
 							isSignup,
-							prefillInviteCode,
 							submitLabel,
 							submitBusyLabel,
 							onSubmit: handleSubmit,

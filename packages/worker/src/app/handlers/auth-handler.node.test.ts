@@ -109,19 +109,9 @@ type TestUser = {
 	last_active_at: string | null
 }
 
-type TestInvite = {
-	code: string
-	max_uses: number
-	use_count: number
-	expires_at: string | null
-	revoked_at: string | null
-	plan: string | null
-}
-
 function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 	let nextId = 1
 	const users = new Map<string, TestUser>()
-	const invites = new Map<string, TestInvite>()
 	const db = {
 		prepare(query: string) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
@@ -208,18 +198,6 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						users.set(normalizedEmail, user)
 						return user
 					}
-					const readInvite = () => {
-						const code = String(params[0] ?? '').toUpperCase()
-						const invite = invites.get(code)
-						return invite
-							? {
-									...invite,
-									created_by: 1,
-									note: '',
-									created_at: '2026-07-05T00:00:00.000Z',
-								}
-							: null
-					}
 
 					const executeAll = async () => {
 						if (
@@ -261,17 +239,6 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								meta: { changes: 1, last_row_id: 1 },
 							}
 						}
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from invites') &&
-							normalizedQuery.includes('where code =')
-						) {
-							const invite = readInvite()
-							return {
-								results: invite ? [invite] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
 
 						return {
 							results: [],
@@ -299,36 +266,6 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								normalizedQuery.includes('insert into email_verifications')
 							) {
 								return { meta: { changes: 1, last_row_id: 1 } }
-							}
-							if (
-								normalizedQuery.startsWith('update invites') &&
-								normalizedQuery.includes('set use_count = use_count + 1')
-							) {
-								const code = String(params[0] ?? '').toUpperCase()
-								const nowIso = String(params[1] ?? '')
-								const invite = invites.get(code)
-								if (
-									invite &&
-									!invite.revoked_at &&
-									(!invite.expires_at || invite.expires_at > nowIso) &&
-									invite.use_count < invite.max_uses
-								) {
-									invite.use_count += 1
-									return { meta: { changes: 1, last_row_id: 0 } }
-								}
-								return { meta: { changes: 0, last_row_id: 0 } }
-							}
-							if (
-								normalizedQuery.startsWith('update invites') &&
-								normalizedQuery.includes('set use_count = use_count - 1')
-							) {
-								const code = String(params[0] ?? '').toUpperCase()
-								const invite = invites.get(code)
-								if (invite && invite.use_count > 0) {
-									invite.use_count -= 1
-									return { meta: { changes: 1, last_row_id: 0 } }
-								}
-								return { meta: { changes: 0, last_row_id: 0 } }
 							}
 							if (
 								normalizedQuery.includes('insert or ignore into user_roles')
@@ -386,18 +323,7 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 		return user
 	}
 
-	function addInvite(code: string, plan: string | null = 'free') {
-		invites.set(code.toUpperCase(), {
-			code: code.toUpperCase(),
-			max_uses: 1,
-			use_count: 0,
-			expires_at: '2099-01-01T00:00:00.000Z',
-			revoked_at: null,
-			plan,
-		})
-	}
-
-	return { db, users, invites, addUser, addInvite }
+	return { db, users, addUser }
 }
 
 beforeAll(() => {
@@ -492,77 +418,6 @@ test('auth handler login and signup workflow', async () => {
 		mode: 'signup',
 		emailVerificationRequired: true,
 		message: 'Check your email to verify your account.',
-	})
-
-	productionContext.testDb.addInvite('PROD-INVITE')
-	// With a valid code the registered address gets the accepted body, no
-	// session, and the invite use is handed back.
-	const existingWithInviteResponse = await productionContext.request({
-		email: 'taken@example.com',
-		username: 'another-name',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'prod-invite',
-	})
-	expect(existingWithInviteResponse.status).toBe(200)
-	expect(await existingWithInviteResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
-	expect(existingWithInviteResponse.headers.get('Set-Cookie')).toBeNull()
-	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(0)
-
-	const invitedSignupResponse = await productionContext.request({
-		email: 'invited@example.com',
-		username: 'invited-jane',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'prod-invite',
-	})
-	expect(invitedSignupResponse.status).toBe(200)
-	expect(await invitedSignupResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
-	expect(productionContext.testDb.users.has('invited@example.com')).toBe(true)
-	expect(productionContext.testDb.invites.get('PROD-INVITE')?.use_count).toBe(1)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'signup',
-			result: 'success',
-			email: 'invited@example.com',
-		}),
-	)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'invite_use',
-			result: 'success',
-		}),
-	)
-	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
-		env: expect.anything(),
-		source: 'signup',
-		inviteCode: 'PROD-INVITE',
-		user: {
-			id: await createStableUserIdFromEmail('invited@example.com'),
-			username: 'invited-jane',
-			email: 'invited@example.com',
-		},
-		attribution: {
-			utmSource: null,
-			utmMedium: null,
-			utmCampaign: null,
-			utmContent: null,
-			utmTerm: null,
-			landingPath: null,
-			referrer: null,
-		},
 	})
 
 	const weakPasswordSignupResponse = await signupContext.request({
@@ -734,8 +589,7 @@ test('auth handler login and signup workflow', async () => {
 		'Secure',
 	)
 	// The full workflow audits exactly these events, in order: the unknown
-	// login, the invite-less signup, the invite-less and invited
-	// registered-email attempts, the invited signup (+ invite use), the
+	// login, the first open signup, the registered-email attempt, the
 	// weak-password rejection, the second open signup, the six username
 	// rejections, the duplicate-email rejection, and the three successful
 	// logins.
@@ -743,9 +597,6 @@ test('auth handler login and signup workflow', async () => {
 		'login:failure',
 		'signup:success',
 		'signup:failure',
-		'signup:failure',
-		'signup:success',
-		'invite_use:success',
 		'signup:failure',
 		'signup:success',
 		'signup:failure',
@@ -775,7 +626,6 @@ test('successful open signup schedules an admin user.created event', async () =>
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'signup',
-		inviteCode: null,
 		user: {
 			id: await createStableUserIdFromEmail(email),
 			username: 'newbie',
@@ -894,14 +744,12 @@ test('signup rolls back when the verification email cannot be sent', async () =>
 test('production signup fails closed when no verification email sender is configured', async () => {
 	consoleError.mockImplementation(() => {})
 	const context = createAuthTestContext({ sentryEnvironment: 'production' })
-	context.testDb.addInvite('PROD-NO-EMAIL')
 
 	const response = await context.request({
 		email: 'no-sender@example.com',
 		username: 'no-sender-jane',
 		password: 'password123',
 		mode: 'signup',
-		inviteCode: 'prod-no-email',
 	})
 	expect(response.status).toBe(500)
 	expect(await response.json()).toEqual({
@@ -909,8 +757,6 @@ test('production signup fails closed when no verification email sender is config
 			'Unable to send the verification email. Please try signing up again.',
 	})
 	expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
-	// The consumed invite use is released so the invite can be retried.
-	expect(context.testDb.invites.get('PROD-NO-EMAIL')?.use_count).toBe(0)
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.any(String),
 		expect.any(Error),
@@ -920,75 +766,6 @@ test('production signup fails closed when no verification email sender is config
 		'cloudflare-email-unconfigured',
 		expect.any(String),
 	)
-})
-
-test('signup consuming a plan invite sets users.plan', async () => {
-	const context = createAuthTestContext({ emailConfigured: true })
-	stubCloudflareEmailFetch({ ok: true })
-	context.testDb.addInvite('PLAN-PRO', 'pro')
-
-	const response = await context.request({
-		email: 'planned@example.com',
-		username: 'planned-jane',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'plan-pro',
-	})
-	expect(response.status).toBe(200)
-	expect(context.testDb.users.get('planned@example.com')?.plan).toBe('pro')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'invite_use',
-			result: 'success',
-			reason: expect.stringContaining('plan=pro'),
-		}),
-	)
-})
-
-test('signup consuming a max invite writes users.plan max', async () => {
-	const context = createAuthTestContext({ emailConfigured: true })
-	stubCloudflareEmailFetch({ ok: true })
-	context.testDb.addInvite('MAX-INVITE', 'max')
-
-	const response = await context.request({
-		email: 'max-invite@example.com',
-		username: 'max-invite-jane',
-		password: 'password123',
-		mode: 'signup',
-		inviteCode: 'max-invite',
-	})
-	expect(response.status).toBe(200)
-	expect(context.testDb.users.get('max-invite@example.com')?.plan).toBe('max')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'invite_use',
-			result: 'success',
-			reason: expect.stringContaining('plan=max'),
-		}),
-	)
-	expect(consoleWarn).not.toHaveBeenCalled()
-})
-
-test('signup stops when an invite has an invalid stored plan', async () => {
-	const context = createAuthTestContext({ emailConfigured: true })
-	stubCloudflareEmailFetch({ ok: true })
-	context.testDb.addInvite('PLAN-UNKNOWN', 'enterprise-2099')
-
-	await expect(
-		context.request({
-			email: 'unknown-plan-invite@example.com',
-			username: 'unknown-plan-invite-jane',
-			password: 'password123',
-			mode: 'signup',
-			inviteCode: 'plan-unknown',
-		}),
-	).rejects.toThrow('Stored plan is not a registered plan name.')
-	expect(context.testDb.users.has('unknown-plan-invite@example.com')).toBe(
-		false,
-	)
-	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 
 test('signup rejects KV-added reserved usernames and accepts unreserved built-ins', async () => {

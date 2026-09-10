@@ -17,12 +17,6 @@ import {
 } from '#worker/audit-log.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
-import {
-	consumeInviteCode,
-	getInviteFailureMessage,
-	normalizeInviteCode,
-	releaseInviteUse,
-} from '#worker/invites.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
@@ -33,11 +27,7 @@ import {
 } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { upgradePasswordHashIfNeeded } from '#worker/password-upgrade.ts'
-import {
-	parseStoredPlanName,
-	resolvePlanWrite,
-	type PlanName,
-} from '#universal/plans.ts'
+import { resolvePlanWrite } from '#universal/plans.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
 import {
@@ -159,10 +149,6 @@ export function createAuthHandler(env: Env) {
 					? (body as Record<string, unknown>).username
 					: undefined,
 			)
-			const inviteCode =
-				typeof body === 'object' && body !== null
-					? (body as Record<string, unknown>).inviteCode
-					: undefined
 			const signupAttribution =
 				normalizedMode === 'signup'
 					? parseFirstTouchAttribution({
@@ -267,58 +253,14 @@ export function createAuthHandler(env: Env) {
 				}
 
 				const passwordHash = await createPasswordHash(normalizedPassword)
-				let consumedInviteCode: string | null = null
-				let consumedInvitePlan: PlanName | null = null
-				async function releaseConsumedInvite() {
-					if (!consumedInviteCode) return
-					await releaseInviteUse({
-						db: env.APP_DB,
-						code: consumedInviteCode,
-					})
-					consumedInviteCode = null
-					consumedInvitePlan = null
-				}
-
-				if (normalizeInviteCode(inviteCode)) {
-					const inviteResult = await consumeInviteCode({
-						db: env.APP_DB,
-						code: inviteCode,
-					})
-					if (!inviteResult.ok) {
-						void logAuditEvent({
-							db: auditDatabaseFromEnv(env),
-							category: 'auth',
-							action: 'signup',
-							result: 'failure',
-							email: normalizedEmail,
-							ip: requestIp,
-							path: url.pathname,
-							reason: `invite_${inviteResult.reason}`,
-						})
-						return Response.json(
-							{ error: getInviteFailureMessage(inviteResult.reason) },
-							{ status: 403 },
-						)
-					}
-					consumedInviteCode = inviteResult.invite.code
-					consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
-				}
 
 				// Same body and status as a fresh signup so the endpoint does
 				// not confirm which addresses hold accounts. Nothing is created
-				// or sent; a consumed invite is handed back.
-				let existingUser: Awaited<ReturnType<typeof db.findOne>> | null
-				try {
-					existingUser = await db.findOne(usersTable, {
-						where: { email: normalizedEmail },
-					})
-				} catch (error) {
-					// A transient read must not spend a single-use invite.
-					await releaseConsumedInvite()
-					throw error
-				}
+				// or sent.
+				const existingUser = await db.findOne(usersTable, {
+					where: { email: normalizedEmail },
+				})
 				if (existingUser) {
-					await releaseConsumedInvite()
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -337,7 +279,6 @@ export function createAuthHandler(env: Env) {
 					normalizedEmail,
 				)
 				if (!allocated.ok) {
-					await releaseConsumedInvite()
 					if (allocated.reason === 'current_email') {
 						void logAuditEvent({
 							db: auditDatabaseFromEnv(env),
@@ -381,7 +322,7 @@ export function createAuthHandler(env: Env) {
 							email: normalizedEmail,
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
-							plan: resolvePlanWrite(consumedInvitePlan),
+							plan: resolvePlanWrite(null),
 							...firstTouchAttributionCreateFields(signupAttribution),
 							last_active_at: createdAt,
 						},
@@ -397,7 +338,6 @@ export function createAuthHandler(env: Env) {
 						uniqueField === 'username' ||
 						uniqueField === 'stable_user_id'
 					) {
-						await releaseConsumedInvite()
 						const conflict = signupUniqueConflict(uniqueField)
 						void logAuditEvent({
 							db: auditDatabaseFromEnv(env),
@@ -424,7 +364,6 @@ export function createAuthHandler(env: Env) {
 							{ status: 409 },
 						)
 					}
-					await releaseConsumedInvite()
 					throw error
 				}
 				if (!record) {
@@ -438,7 +377,6 @@ export function createAuthHandler(env: Env) {
 						path: url.pathname,
 						reason: 'insert_failed',
 					})
-					await releaseConsumedInvite()
 					return Response.json(
 						{ error: 'Unable to create account.' },
 						{ status: 500 },
@@ -472,7 +410,6 @@ export function createAuthHandler(env: Env) {
 							error,
 						)
 					}
-					await releaseConsumedInvite()
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -506,7 +443,6 @@ export function createAuthHandler(env: Env) {
 							deleteError,
 						)
 					}
-					await releaseConsumedInvite()
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -543,7 +479,6 @@ export function createAuthHandler(env: Env) {
 							deleteError,
 						)
 					}
-					await releaseConsumedInvite()
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -602,7 +537,6 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 					},
 					source: 'signup',
-					inviteCode: consumedInviteCode,
 					attribution: signupAttribution,
 				})
 				try {
@@ -638,18 +572,6 @@ export function createAuthHandler(env: Env) {
 					ip: requestIp,
 					path: url.pathname,
 				})
-				if (consumedInviteCode) {
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'auth',
-						action: 'invite_use',
-						result: 'success',
-						email: normalizedEmail,
-						ip: requestIp,
-						path: url.pathname,
-						reason: `invite_code=${consumedInviteCode};stable_user_id=${record.stableUserId};plan=${resolvePlanWrite(consumedInvitePlan)}`,
-					})
-				}
 				const headers = new Headers()
 				headers.append('Set-Cookie', cookie)
 				headers.append(

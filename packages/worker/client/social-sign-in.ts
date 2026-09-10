@@ -16,13 +16,10 @@ export type PublicAuthConfig = {
 export function buildProviderStartPath(
 	providerId: string,
 	redirectTo: string | null,
-	inviteCode: string | null = null,
 	attribution: FirstTouchAttribution | null = null,
 ) {
 	const params = new URLSearchParams()
 	if (redirectTo) params.set('redirectTo', redirectTo)
-	const trimmedInvite = inviteCode?.trim()
-	if (trimmedInvite) params.set('inviteCode', trimmedInvite)
 	appendAttributionQueryParams(params, attribution)
 	const query = params.toString()
 	return query ? `/auth/${providerId}?${query}` : `/auth/${providerId}`
@@ -64,19 +61,17 @@ export async function fetchPublicAuthConfig(
  * nor a fetch-followed redirect may leave the origin — a top-level JS
  * navigation may. Returns an error message, or null when navigation started.
  *
- * Pass `inviteCode` when the signup form includes an optional gift code so
- * the callback can consume it. Pass `attribution` so first-touch UTMs
- * survive the OAuth round-trip in the signed login-state cookie.
+ * Pass `attribution` so first-touch UTMs survive the OAuth round-trip in
+ * the signed login-state cookie.
  */
 export async function startSocialSignIn(
 	providerId: string,
 	redirectTo: string | null,
-	inviteCode: string | null = null,
 	protection: PublicFormProtectionFields = emptyPublicFormProtection(),
 	attribution: FirstTouchAttribution | null = null,
 ): Promise<string | null> {
 	const response = await fetch(
-		buildProviderStartPath(providerId, redirectTo, inviteCode, attribution),
+		buildProviderStartPath(providerId, redirectTo, attribution),
 		{
 			method: 'POST',
 			headers: {

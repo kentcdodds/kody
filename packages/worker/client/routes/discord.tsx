@@ -128,7 +128,6 @@ export function DiscordRoute(handle: Handle) {
 			const errorMessage = await startSocialSignIn(
 				'discord',
 				discordPath,
-				null,
 				protection,
 			)
 			if (errorMessage) {

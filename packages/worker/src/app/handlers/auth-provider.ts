@@ -16,12 +16,6 @@ import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
-import {
-	consumeInviteCode,
-	type InviteConsumeFailureReason,
-	normalizeInviteCode,
-	releaseInviteUse,
-} from '#worker/invites.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
 	oauthLoginErrorMessages,
@@ -55,11 +49,7 @@ import {
 import { createDb, oauthConnectionsTable, usersTable } from '#worker/db.ts'
 import { ensureDefaultEmailInbox } from '#worker/email/default-inbox.ts'
 import { getPlatformEmailDomain } from '#worker/email/platform-address.ts'
-import {
-	parseStoredPlanName,
-	resolvePlanWrite,
-	type PlanName,
-} from '#universal/plans.ts'
+import { resolvePlanWrite } from '#universal/plans.ts'
 import {
 	allocateSignupIdentity,
 	claimAccountEmail,
@@ -185,26 +175,6 @@ function prefersJsonResponse(request: Request) {
 	)
 }
 
-function inviteFailureToOauthError(
-	reason: InviteConsumeFailureReason,
-): OauthLoginErrorCode {
-	switch (reason) {
-		case 'missing':
-		case 'not_found':
-			return 'invite-invalid'
-		case 'revoked':
-			return 'invite-revoked'
-		case 'expired':
-			return 'invite-expired'
-		case 'exhausted':
-			return 'invite-exhausted'
-		default: {
-			const unreachable: never = reason
-			return unreachable
-		}
-	}
-}
-
 export function createAuthProvidersApiHandler(env: Env) {
 	return {
 		middleware: [],
@@ -227,7 +197,6 @@ export function createAuthProviderStartHandler(env: Env) {
 		async handler({ request, url, params }) {
 			const wantsJson = prefersJsonResponse(request)
 			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
-			const inviteCode = normalizeInviteCode(url.searchParams.get('inviteCode'))
 			const attribution = parseFirstTouchAttribution({
 				searchParams: url.searchParams,
 				body: null,
@@ -289,7 +258,6 @@ export function createAuthProviderStartHandler(env: Env) {
 					state,
 					codeVerifier,
 					redirectTo,
-					inviteCode,
 					attribution: hasFirstTouchAttribution(attribution)
 						? attribution
 						: null,
@@ -730,38 +698,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				})
 			}
 
-			// 4. New account. An optional invite code in the signed OAuth
-			// state cookie still grants the stored plan when supplied.
-			let consumedInviteCode: string | null = null
-			let consumedInvitePlan: PlanName | null = null
-			async function releaseConsumedInvite() {
-				if (!consumedInviteCode) return
-				await releaseInviteUse({
-					db: env.APP_DB,
-					code: consumedInviteCode,
-				})
-				consumedInviteCode = null
-				consumedInvitePlan = null
-			}
-
-			const inviteCodeFromState = loginState.inviteCode
-			if (normalizeInviteCode(inviteCodeFromState)) {
-				const inviteResult = await consumeInviteCode({
-					db: env.APP_DB,
-					code: inviteCodeFromState,
-				})
-				if (!inviteResult.ok) {
-					return fail(
-						inviteFailureToOauthError(inviteResult.reason),
-						`invite_${inviteResult.reason}`,
-					)
-				}
-				consumedInviteCode = inviteResult.invite.code
-				consumedInvitePlan = parseStoredPlanName(inviteResult.invite.plan)
-			}
-
-			// Username / stable-id lookup must share the create try/catch so a
-			// transient failure after consumeInviteCode still releases the invite.
+			// 4. New account.
 			let username: string
 			let stableUserId: string
 			let newUser: {
@@ -777,7 +714,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				)
 				const allocated = await allocateSignupIdentity(env.APP_DB, email)
 				if (!allocated.ok) {
-					await releaseConsumedInvite()
 					if (allocated.reason === 'former_email_claimed') {
 						return fail('email-claimed', 'former_email_claimed')
 					}
@@ -794,7 +730,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
 						email_verified_at: createdAt,
-						plan: resolvePlanWrite(consumedInvitePlan),
+						plan: resolvePlanWrite(null),
 						...firstTouchAttributionCreateFields(signupAttribution),
 						last_active_at: createdAt,
 					},
@@ -802,7 +738,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				)
 				newUser = { id: createdUser.id, stable_user_id: stableUserId, email }
 			} catch (error) {
-				await releaseConsumedInvite()
 				const uniqueField = getUniqueConstraintField(error)
 				if (uniqueField === 'stable_user_id') {
 					return fail('email-claimed', 'former_email_claimed')
@@ -821,7 +756,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to roll back OAuth-created user row:', error)
 				}
-				await releaseConsumedInvite()
 			}
 
 			let assigned = false
@@ -903,7 +837,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 				},
 				source: 'oauth',
-				inviteCode: consumedInviteCode,
 				attribution: loginState.attribution,
 			})
 			try {
@@ -930,18 +863,6 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				path: url.pathname,
 				reason: `provider=${provider}`,
 			})
-			if (consumedInviteCode) {
-				void logAuditEvent({
-					db: auditDatabaseFromEnv(env),
-					category: 'auth',
-					action: 'invite_use',
-					result: 'success',
-					email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: `invite_code=${consumedInviteCode};stable_user_id=${stableUserId};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
-				})
-			}
 			return issueLogin(newUser, defaultPostVerificationRedirect, {
 				destination: withAccountCreatedQuery(
 					redirectTo ?? defaultPostVerificationRedirect,

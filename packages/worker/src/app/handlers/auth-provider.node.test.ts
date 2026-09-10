@@ -205,7 +205,6 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'oauth',
-		inviteCode: null,
 		user: {
 			id: await createStableUserIdFromEmail('octo@example.com'),
 			username: 'octo-cat',
@@ -1189,13 +1188,6 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 	expect(user.username).toBe('mock-octo')
 })
 
-function seedInvite(sqlite: DatabaseSync, code: string, maxUses = 1) {
-	sqlite.exec(`
-		INSERT INTO invites (code, created_by, note, max_uses, use_count)
-		VALUES (${quoteSqlString(code)}, NULL, '', ${maxUses}, 0);
-	`)
-}
-
 function mockGithubProfileExchange(email = 'octo@example.com') {
 	msw.use(
 		http.post('https://github.com/login/oauth/access_token', async () =>
@@ -1215,112 +1207,30 @@ function mockGithubProfileExchange(email = 'octo@example.com') {
 	)
 }
 
-test('OAuth signup is open and still consumes an optional invite', async () => {
-	const missingInvite = createMigratedDb()
-	const missingInviteEnv = createAppEnv(missingInvite.db)
+test('OAuth signup is open and existing connections sign in', async () => {
+	const openSignup = createMigratedDb()
+	const openSignupEnv = createAppEnv(openSignup.db)
 	mockGithubProfileExchange()
-	const missingStart = await startProviderFlow(
-		missingInviteEnv,
+	const openStart = await startProviderFlow(
+		openSignupEnv,
 		'github',
 		'http://example.com/auth/github',
 	)
-	const missingCallback = await runHandler(
-		createAuthProviderCallbackHandler(missingInviteEnv),
+	const openCallback = await runHandler(
+		createAuthProviderCallbackHandler(openSignupEnv),
 		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${missingStart.state}`,
-			{ headers: { Cookie: missingStart.stateCookie } },
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${openStart.state}`,
+			{ headers: { Cookie: openStart.stateCookie } },
 		),
 		{ provider: 'github' },
 	)
-	expect(missingCallback.status).toBe(302)
-	expect(missingCallback.headers.get('Location')).toBe(
+	expect(openCallback.status).toBe(302)
+	expect(openCallback.headers.get('Location')).toBe(
 		'/onboarding?accountCreated=1',
 	)
 	expect(
-		missingInvite.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
+		openSignup.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
 	).toEqual({ count: 1 })
-
-	const invalidInvite = createMigratedDb()
-	const invalidInviteEnv = createAppEnv(invalidInvite.db)
-	mockGithubProfileExchange()
-	const invalidStart = await startProviderFlow(
-		invalidInviteEnv,
-		'github',
-		'http://example.com/auth/github?inviteCode=not-a-real-invite',
-	)
-	const invalidCallback = await runHandler(
-		createAuthProviderCallbackHandler(invalidInviteEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${invalidStart.state}`,
-			{ headers: { Cookie: invalidStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(invalidCallback.status).toBe(302)
-	expect(invalidCallback.headers.get('Location')).toBe(
-		'/login?oauthError=invite-invalid',
-	)
-	expect(
-		invalidInvite.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 0 })
-
-	const invitedSignup = createMigratedDb()
-	const invitedEnv = createAppEnv(invitedSignup.db)
-	seedInvite(invitedSignup.sqlite, 'SOCIAL-INVITE')
-	mockGithubProfileExchange('social-invited@example.com')
-	const invitedStart = await startProviderFlow(
-		invitedEnv,
-		'github',
-		'http://example.com/auth/github?inviteCode=social-invite',
-	)
-	const invitedCallback = await runHandler(
-		createAuthProviderCallbackHandler(invitedEnv),
-		new Request(
-			`http://example.com/auth/github/callback?code=github-auth-code&state=${invitedStart.state}`,
-			{ headers: { Cookie: invitedStart.stateCookie } },
-		),
-		{ provider: 'github' },
-	)
-	expect(invitedCallback.status).toBe(302)
-	expect(invitedCallback.headers.get('Location')).toBe(
-		'/onboarding?accountCreated=1',
-	)
-	const user = invitedSignup.sqlite
-		.prepare(`SELECT * FROM users WHERE email = ?`)
-		.get('social-invited@example.com') as Record<string, unknown>
-	expect(user).toBeTruthy()
-	expect(user.email_verified_at).toBeTruthy()
-	expect(
-		invitedSignup.sqlite
-			.prepare(`SELECT use_count FROM invites WHERE code = ?`)
-			.get('SOCIAL-INVITE'),
-	).toEqual({ use_count: 1 })
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'oauth_signup',
-			result: 'success',
-		}),
-	)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'invite_use',
-			result: 'success',
-			reason: expect.stringContaining('invite_code=SOCIAL-INVITE'),
-		}),
-	)
-	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
-		env: expect.anything(),
-		source: 'oauth',
-		inviteCode: 'SOCIAL-INVITE',
-		user: {
-			id: await createStableUserIdFromEmail('social-invited@example.com'),
-			username: user.username,
-			email: 'social-invited@example.com',
-		},
-		attribution: null,
-	})
 
 	const existingLogin = createMigratedDb()
 	const existingEnv = createAppEnv(existingLogin.db)
@@ -1406,7 +1316,7 @@ test('OAuth signup persists first-touch UTMs from the start URL through login st
 	)
 })
 
-test('OAuth signup returns a controlled error when stable_user_id already exists and releases the invite', async () => {
+test('OAuth signup returns a controlled error when stable_user_id already exists', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const victimEmail = 'victim-oauth@example.com'
 	await seedUser(sqlite, {
@@ -1415,14 +1325,13 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 		username: 'attacker-oauth',
 		stableUserId: await createStableUserIdFromEmail(victimEmail),
 	})
-	seedInvite(sqlite, 'OAUTH-STABLE-ID')
 	const env = createAppEnv(db)
 	mockGithubProfileExchange(victimEmail)
 
 	const start = await startProviderFlow(
 		env,
 		'github',
-		'http://example.com/auth/github?inviteCode=oauth-stable-id',
+		'http://example.com/auth/github',
 	)
 	const callback = await runHandler(
 		createAuthProviderCallbackHandler(env),
@@ -1439,11 +1348,6 @@ test('OAuth signup returns a controlled error when stable_user_id already exists
 	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
 		count: 1,
 	})
-	expect(
-		sqlite
-			.prepare(`SELECT use_count FROM invites WHERE code = ?`)
-			.get('OAUTH-STABLE-ID') as { use_count: number },
-	).toEqual({ use_count: 0 })
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',

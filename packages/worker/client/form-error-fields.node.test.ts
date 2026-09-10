@@ -18,12 +18,6 @@ test('credential errors mark email and password; named errors mark that field', 
 		]),
 	).toEqual(new Set(['username']))
 	expect(
-		invalidFieldsForMessage('error', 'Invite code is invalid.', [
-			'email',
-			'password',
-		]),
-	).toEqual(new Set(['inviteCode']))
-	expect(
 		invalidFieldsForMessage(
 			'error',
 			'Password must be at least 8 characters.',

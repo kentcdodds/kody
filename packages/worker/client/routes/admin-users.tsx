@@ -1,3 +1,4 @@
+import { formatNullableTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
@@ -10,11 +11,17 @@ import {
 import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors } from '#universal/styles/tokens.ts'
-import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
+import { colors, mq, spacing } from '#universal/styles/tokens.ts'
+import {
+	fieldCss,
+	fieldLabelCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+} from '#universal/styles/style-primitives.ts'
 import { isStalledEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type RoleName } from '#universal/permissions.ts'
 import {
+	type AdminCreatedUserSetup,
 	type AdminPlanName,
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
@@ -35,8 +42,11 @@ import {
 } from './admin-users-shared.ts'
 import {
 	AccountManagementMessage,
+	AccountManagementPanel,
 	AccountManagementShell,
 	AdminPageHeader,
+	accountInputCss,
+	noticeCardCss,
 } from './account-management-components.tsx'
 import {
 	RecordChips,
@@ -76,6 +86,7 @@ export function AdminUsersRoute(handle: Handle) {
 	let selectedUserFallback: AdminUserListItem | null = null
 	let message: string | null = null
 	let actionState: AdminUsersActionState = 'idle'
+	let createdUser: AdminCreatedUserSetup | null = null
 	let mintedVerifyUrl: string | null = null
 	let mintedVerifyUrlForStableUserId: string | null = null
 	const markVerifiedCheck = createDoubleCheck(handle)
@@ -523,6 +534,56 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitCreateUser(event: SubmitEvent) {
+		event.preventDefault()
+		if (!(event.currentTarget instanceof HTMLFormElement)) return
+		if (actionState !== 'idle') return
+		const form = event.currentTarget
+		const formData = new FormData(form)
+		const href = getCurrentHref()
+		actionState = 'creatingUser'
+		createdUser = null
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'create_user',
+					email: String(formData.get('email') ?? '').trim(),
+					username: String(formData.get('username') ?? '').trim(),
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersMutationData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to create user.')
+			}
+			applyMutationPayload(payload, href)
+			createdUser = payload.createdUser ?? createdUser
+			message = 'User created. Copy the setup link below.'
+			actionState = 'idle'
+			if (createdUser) form.reset()
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error ? error.message : 'Unable to create user.'
+			handle.update()
+		}
+	}
+
+	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 
 	return () => {
@@ -607,6 +668,83 @@ export function AdminUsersRoute(handle: Handle) {
 						{usersSnapshot.error}
 					</AccountManagementMessage>
 				) : null}
+				<AccountManagementPanel
+					title="Create user"
+					description="Create a verified account with no usable password, then copy the setup link into a manual email."
+					asForm
+					onSubmit={submitCreateUser}
+				>
+					<div
+						mix={css({
+							display: 'grid',
+							gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+							gap: spacing.md,
+							alignItems: 'end',
+							[mq.mobile]: {
+								gridTemplateColumns: 'minmax(0, 1fr)',
+								alignItems: 'stretch',
+							},
+						})}
+					>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>User email</span>
+							<input
+								data-field-ring
+								name="email"
+								type="email"
+								required
+								placeholder="person@example.com"
+								disabled={isMutating}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<label mix={css(fieldCss)}>
+							<span mix={css(fieldLabelCss)}>Username (optional)</span>
+							<input
+								data-field-ring
+								name="username"
+								type="text"
+								placeholder="Auto-generated from email"
+								disabled={isMutating}
+								mix={css(accountInputCss)}
+							/>
+						</label>
+						<button
+							type="submit"
+							disabled={isMutating}
+							mix={css(primaryButtonCss)}
+						>
+							{actionState === 'creatingUser' ? 'Creating…' : 'Create user'}
+						</button>
+					</div>
+					{createdUser ? (
+						<div mix={css(noticeCardCss)}>
+							<p mix={css({ margin: 0 })}>
+								Setup link for <strong>{createdUser.email}</strong>:
+							</p>
+							<input
+								data-field-ring
+								readOnly
+								aria-label="Password setup link"
+								value={createdUser.setupLink}
+								mix={css(accountInputCss)}
+							/>
+							<a
+								href={createdUser.setupLink}
+								mix={css({ color: colors.primary })}
+							>
+								Open setup link
+							</a>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								Expires{' '}
+								{formatNullableTimestamp(
+									new Date(createdUser.setupTokenExpiresAt).toISOString(),
+								)}
+								.
+							</p>
+						</div>
+					) : null}
+				</AccountManagementPanel>
 				<RecordTable
 					mode="expand"
 					busy={pending}

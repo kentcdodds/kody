@@ -6,11 +6,30 @@ import type * as AuditLog from '#worker/audit-log.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
+	adminCreateUserWithPasswordSetup: vi.fn(),
+	scheduleUserCreatedEvent: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#worker/identity/admin-user-creation.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#worker/identity/admin-user-creation.ts')
+		>()
+	return {
+		...actual,
+		adminCreateUserWithPasswordSetup: (...args: Array<unknown>) =>
+			mockModule.adminCreateUserWithPasswordSetup(...args),
+	}
+})
+
+vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
+	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
+		mockModule.scheduleUserCreatedEvent(...args),
 }))
 
 // The shared audit-log-spy setup file routes logAuditEvent; this test also
@@ -1190,4 +1209,88 @@ test('mark email verified and mint verify url actions update the account and log
 		stableUserId: stableUserId(2),
 	})
 	expect(alreadyVerified.status).toBe(400)
+})
+
+test('create_user action returns setup link, logs audit, and maps duplicate email to 409', async () => {
+	const { AdminCreateUserError } =
+		await import('#worker/identity/admin-user-creation.ts')
+	logAuditEventSpy.mockClear()
+	mockModule.scheduleUserCreatedEvent.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const createdUser = {
+		userId: 9,
+		stableUserId: stableUserId(9),
+		email: 'new-user@example.com',
+		username: 'new-user',
+		setupLink: 'https://example.com/reset-password?token=setup',
+		setupTokenExpiresAt: 1_800_000_000_000,
+	}
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const env = createAdminTestEnv({
+		users: [],
+		userRoles: [],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	async function postCreateUser(body: Record<string, unknown>) {
+		return handler.handler({
+			request: new Request('https://example.com/admin/users.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			}),
+			params: {},
+			url: new URL('https://example.com/admin/users.json'),
+		} as never)
+	}
+
+	const created = await postCreateUser({
+		action: 'create_user',
+		email: 'new-user@example.com',
+		username: 'new-user',
+	})
+	expect(created.status).toBe(200)
+	const createdPayload = await created.json()
+	expect(createdPayload.createdUser).toEqual({
+		stableUserId: createdUser.stableUserId,
+		email: createdUser.email,
+		username: createdUser.username,
+		setupLink: createdUser.setupLink,
+		setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
+	})
+	expect(createdPayload.updatedUser).toBeNull()
+	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env,
+		user: {
+			id: createdUser.stableUserId,
+			username: createdUser.username,
+			email: createdUser.email,
+		},
+		source: 'admin',
+	})
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'create_user',
+			result: 'success',
+		}),
+	)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockRejectedValueOnce(
+		new AdminCreateUserError('email_exists', 'That email is already in use.'),
+	)
+	const duplicate = await postCreateUser({
+		action: 'create_user',
+		email: 'new-user@example.com',
+	})
+	expect(duplicate.status).toBe(409)
+	expect(await duplicate.json()).toEqual({
+		ok: false,
+		error: 'That email is already in use.',
+		code: 'email_exists',
+	})
 })

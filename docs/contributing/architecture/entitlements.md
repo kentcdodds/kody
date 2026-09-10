@@ -48,23 +48,22 @@ tiers and no env-var backstops.
 There is deliberately no uncapped plan; the live registry stays finite `max`
 only.
 
-`users.plan` and `invites.plan` are NOT NULL TEXT columns with DDL default
-`'free'` and CHECK constraints for the registered names (squashed baseline plus
+`users.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
+constraint for the registered names (squashed baseline plus
 `0002-restructure-plan-tiers.sql`). **Live DDL defaults and writers always
 persist a known plan name (never NULL); normal creation and reset paths default
 to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
-`free`, which is the default for new accounts, invites without an explicit plan,
-admin-created accounts, platform-account provisioning, seed SQL, and admin plan
-resets. Explicit `max` remains a valid deliberate assignment.
+`free`, which is the default for new accounts, admin-created accounts,
+platform-account provisioning, seed SQL, and admin plan resets. Explicit `max`
+remains a valid deliberate assignment.
 
-**Reading stored values:** D1 constrains `users.plan` and `invites.plan` to the
-registered names. Reads use strict `parseStoredPlanName`: known names pass
-through unchanged, while a value that violates the storage contract throws
-without including the raw value or user data. Untrusted admin/API input uses
-`parsePlanName` so typos, unknown strings, and retired plan names are rejected
-as validation failures.
+**Reading stored values:** D1 constrains `users.plan` to the registered names.
+Reads use strict `parseStoredPlanName`: known names pass through unchanged,
+while a value that violates the storage contract throws without including the
+raw value or user data. Untrusted admin/API input uses `parsePlanName` so typos,
+unknown strings, and retired plan names are rejected as validation failures.
 
 Migration `0002-restructure-plan-tiers.sql` maps stored `pro` values to
 `standard`, stored `partner` values to `pro`, and rebuilds both CHECK
@@ -567,9 +566,9 @@ The pre-squash plan-column evolution (NULL rows → `'unlimited'` backfill → N
 NULL → `'unlimited'` renamed to `'max'` → DEFAULT `'free'` → CHECK constraints)
 is collapsed into the squashed baseline; the individual migration files live in
 Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
-`standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and
-`invites.plan`) and rebuilds both CHECK constraints for `free`, `standard`,
-`pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
+`standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and the
+since-dropped `invites.plan`) and rebuilds both CHECK constraints for `free`,
+`standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
 `users.entitlement_ladder` (`public` | `legacy`, default `public`) and backfills
 `legacy` for then-active Stripe Standard/Pro subscribers and manual Pro grants.
 `0044-users-stripe-price-id.sql` adds `users.stripe_price_id` for the granting
@@ -577,14 +576,11 @@ Stripe price so a later refresh can drop `legacy` on a subscription change.
 
 ## Assigning plans
 
-New accounts start with `users.plan = 'free'` unless the consumed invite carries
-another plan via `invites.plan` (NOT NULL DEFAULT `'free'`; writers and admin UI
-default to `free`). Password and social signup read the consumed invite's stored
-plan with `parseStoredPlanName` and copy it onto `users.plan`; missing or
-omitted invite plans are written as `free` via `resolvePlanWrite`. Admin-created
-accounts, platform-account provisioning, and seed SQL follow the same
-`resolvePlanWrite` default. Admins set invite plans when creating codes at
-`/admin/invites` (validated with strict `parsePlanName`).
+New accounts start with `users.plan = 'free'`. Password and social signup write
+that default via `resolvePlanWrite`. Admin-created accounts, platform-account
+provisioning, and seed SQL follow the same `resolvePlanWrite` default. Admins
+assign or reset plans on existing users from `/admin/users` (validated with
+strict `parsePlanName`).
 
 Admins also assign or reset plans on existing users through two audited,
 admin-only surfaces, both backed by `updateAdminUserPlan` in
@@ -1056,10 +1052,7 @@ wiring are documented in
 
 - `users.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
   rename). The entitlements module is the consumer of that column (manual /
-  invite / admin grant).
-- `invites.plan` — signup plan; NOT NULL DEFAULT `'free'` (writers and admin UI
-  default to `free`). Applied to `users.plan` when the invite is consumed at
-  signup via `parseStoredPlanName` and `resolvePlanWrite`.
+  admin grant).
 - `users.stripe_customer_id`, `users.stripe_plan`, `users.stripe_price_id`,
   `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
   `packages/worker/src/billing/`, read by `getUserEntitlement` via

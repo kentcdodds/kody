@@ -36,7 +36,6 @@ export function scheduleUserCreatedEvent(input: {
 	user: UserLifecycleIdentity
 	source: UserCreatedSource
 	createdAt?: string
-	inviteCode?: string | null
 	attribution?: FirstTouchAttribution | null
 }) {
 	scheduleUserLifecycleSubscriptionEvent({
@@ -45,7 +44,6 @@ export function scheduleUserCreatedEvent(input: {
 			user: input.user,
 			source: input.source,
 			createdAt: input.createdAt ?? new Date().toISOString(),
-			inviteCode: input.inviteCode,
 			attribution: input.attribution,
 		}),
 	})

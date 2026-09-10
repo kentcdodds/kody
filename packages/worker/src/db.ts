@@ -118,22 +118,6 @@ export const pendingEmailClaimReleasesTable = table({
 	primaryKey: 'id',
 })
 
-export const invitesTable = table({
-	name: 'invites',
-	columns: {
-		code: c.text(),
-		created_by: c.integer(),
-		note: c.text(),
-		max_uses: c.integer(),
-		use_count: c.integer(),
-		expires_at: c.text(),
-		revoked_at: c.text(),
-		created_at: c.text(),
-		plan: c.text(),
-	},
-	primaryKey: 'code',
-})
-
 export const oauthConnectionsTable = table({
 	name: 'oauth_connections',
 	columns: {

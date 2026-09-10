@@ -106,7 +106,7 @@ test('admin section switches keep the current page on screen (no loading flash, 
 		page,
 		'Admin sections',
 		[
-			{ link: 'Invites', heading: 'Admin invites' },
+			{ link: 'Reserved usernames', heading: 'Reserved usernames' },
 			{ link: 'Feature flags', heading: 'Admin feature flags' },
 			{ link: 'Roles', heading: 'Admin roles' },
 		],

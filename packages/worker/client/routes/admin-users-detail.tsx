@@ -53,6 +53,7 @@ export type AdminUsersActionState =
 	| 'saving-plan'
 	| 'moderating'
 	| 'verifying'
+	| 'creatingUser'
 
 export type AdminUserDetailProps = {
 	selectedUser: AdminUserListItem

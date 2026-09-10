@@ -127,7 +127,6 @@ export type LoginFormSharedProps = {
 export function renderAuthForm(
 	props: LoginFormSharedProps & {
 		isSignup: boolean
-		prefillInviteCode: string
 		submitLabel: string
 		submitBusyLabel: string
 		onSubmit: (event: SubmitEvent) => void
@@ -233,27 +232,6 @@ export function renderAuthForm(
 					mix={css(authInputCss)}
 				/>
 			</div>
-			{props.isSignup ? (
-				<div mix={css(authFieldCss)}>
-					<label
-						for={`${props.handleId}-invite-code`}
-						mix={css(authFieldLabelCss)}
-					>
-						Invite code <span mix={css(fieldAsideCss)}>(optional)</span>
-					</label>
-					<input
-						id={`${props.handleId}-invite-code`}
-						type="text"
-						name="inviteCode"
-						defaultValue={props.prefillInviteCode}
-						autoComplete="one-time-code"
-						placeholder="Gift or launch code"
-						data-field-ring
-						{...fieldErrorProps('inviteCode', invalidFields, statusId)}
-						mix={css(authInputCss)}
-					/>
-				</div>
-			) : null}
 			{props.turnstileSiteKey ? (
 				<div class={turnstileWidgetClassName}></div>
 			) : null}
