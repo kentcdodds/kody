@@ -106,6 +106,18 @@ export function createPackageSecretAccessDeniedMessage(input: {
 	return `Secret "${input.secretName}" is not allowed for package "${input.packageName}". If this package should be able to use the secret, ask the user whether to approve that package in the account secrets UI, then retry after they approve that policy change.${approvalSuffix}`
 }
 
+export function createSecretPackageGrantRequiresWebsiteMessage(input: {
+	approvalUrl: string
+}) {
+	return `Agents cannot add packages to a user secret's allowed_packages. Only the account owner can grant access on the website. Send the user this approval link and wait: ${input.approvalUrl}`
+}
+
+export function createSecretPackageGrantAlreadyPresentMessage(input: {
+	packageName: string
+}) {
+	return `Package "${input.packageName}" already has an allowed_packages grant on this secret.`
+}
+
 export function createPackageSecretAccessDeniedBatchMessage(
 	entries: Array<PackageApprovalEntry>,
 	options: { bulkApprovalUrl?: string | null } = {},

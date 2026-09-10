@@ -4,14 +4,24 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { buildSecretUsageUrl } from '#mcp/secrets/package-approval-url.ts'
-import { lockSecretToPackage } from '#mcp/secrets/service.ts'
+import {
+	createSecretPackageGrantAlreadyPresentMessage,
+	createSecretPackageGrantRequiresWebsiteMessage,
+} from '#mcp/secrets/errors.ts'
+import {
+	buildSecretPackageApprovalUrl,
+	buildSecretUsageUrl,
+} from '#mcp/secrets/package-approval-url.ts'
+import { inspectUserSecretPackageGrant } from '#mcp/secrets/service.ts'
 
 const outputSchema = z.object({
 	name: z.string(),
 	scope: z.literal('user'),
 	allowed_packages: z.array(z.string()),
 	usage_url: z.string(),
+	status: z.enum(['approval_required', 'already_granted']),
+	approval_url: z.string(),
+	message: z.string(),
 })
 
 export const secretLockCapability = defineDomainCapability(
@@ -19,7 +29,7 @@ export const secretLockCapability = defineDomainCapability(
 	{
 		name: 'secretLock',
 		description:
-			'Grant a user-scoped secret to a saved package by adding that package id to allowed_packages. Additional grants accumulate. Agents can grant; removing a grant is website-only at /account/secrets/user/:name. This capability cannot remove packages. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secretSet cannot change allowed_packages.',
+			'Return a website approval URL so the account owner can grant a user-scoped secret to a saved package. This capability does not change allowed_packages. Only the owner can add a grant at /account/secrets/user/:name or /account/secrets/approve. Removing a grant is also website-only. Send the approval_url to the user and wait; do not treat this call as a grant. User secrets still allow execute and self-authored / adopted packages to read unless the owner tightens further on the account page. secretSet cannot change allowed_packages.',
 		keywords: [
 			'secret',
 			'lock',
@@ -28,8 +38,9 @@ export const secretLockCapability = defineDomainCapability(
 			'restrict',
 			'grant',
 			'allowed_packages',
+			'approval',
 		],
-		readOnly: false,
+		readOnly: true,
 		idempotent: true,
 		destructive: false,
 		inputSchema: z.object({
@@ -46,26 +57,54 @@ export const secretLockCapability = defineDomainCapability(
 		) {
 			const user = requireMcpUser(ctx.callerContext)
 			try {
-				const updated = await lockSecretToPackage({
+				const state = await inspectUserSecretPackageGrant({
 					env: ctx.env,
 					userId: user.userId,
 					name: args.name,
 					packageId: args.package_id,
 				})
+				const approvalUrl = buildSecretPackageApprovalUrl({
+					baseUrl: ctx.callerContext.baseUrl,
+					name: state.secret.name,
+					scope: 'user',
+					packageId: state.savedPackage.id,
+					kodyId: state.savedPackage.kodyId,
+					storageContext: null,
+				})
+				const usageUrl = buildSecretUsageUrl({
+					baseUrl: ctx.callerContext.baseUrl,
+					name: state.secret.name,
+				})
+				if (state.alreadyGranted) {
+					return {
+						name: state.secret.name,
+						scope: 'user' as const,
+						allowed_packages: state.secret.allowedPackages,
+						usage_url: usageUrl,
+						status: 'already_granted' as const,
+						approval_url: approvalUrl,
+						message: createSecretPackageGrantAlreadyPresentMessage({
+							packageName: state.savedPackage.kodyId,
+						}),
+					}
+				}
 				return {
-					name: updated.name,
+					name: state.secret.name,
 					scope: 'user' as const,
-					allowed_packages: updated.allowedPackages,
-					usage_url: buildSecretUsageUrl({
-						baseUrl: ctx.callerContext.baseUrl,
-						name: updated.name,
+					allowed_packages: state.secret.allowedPackages,
+					usage_url: usageUrl,
+					status: 'approval_required' as const,
+					approval_url: approvalUrl,
+					message: createSecretPackageGrantRequiresWebsiteMessage({
+						approvalUrl,
 					}),
 				}
 			} catch (error) {
+				if (error instanceof McpCallerError) throw error
 				throw new McpCallerError(
 					error instanceof Error
 						? error.message
-						: 'Unable to lock this secret to a package.',
+						: 'Unable to inspect this secret package grant.',
 					{ cause: error },
 				)
 			}
