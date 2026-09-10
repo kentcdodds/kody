@@ -42,8 +42,11 @@ smoke does not prove MCP execute health. Authenticated MCP execute evidence is a
 timestamp-only fleet heartbeat from successful execute completion, shown on
 `status.kody.codes` with source and last-verified time. When no organic success
 landed in the previous minute, the status worker runs at most one authenticated
-`POST /__maintenance/mcp-execute-health` per hour. `GET /health` and status-page
-reads stay cheap and never trigger that execute.
+`POST /__maintenance/mcp-execute-health` per hour. Public status reads never
+trigger that execute. When the status Durable Object's last-success timestamp is
+already stale, `/` and `/status.json` refresh `executeEvidence` from origin
+`GET /health/components` and persist a newer timestamp so the next cron can skip
+the synthetic.
 
 ## Core docs
 

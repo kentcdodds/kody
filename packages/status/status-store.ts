@@ -42,9 +42,15 @@ import {
 	applyExecuteHealthTick,
 	deriveExecuteHealthView,
 	mergeExecuteLastSuccess,
+	readExecuteHealthSyntheticResult,
+	resolvePublicExecuteLastSuccess,
 	type ExecuteHealthCoordinatorState,
 } from './execute-health.ts'
-import { jobsProbeOrigin, runAllProbes } from './probes.ts'
+import {
+	fetchExecuteEvidenceLastSuccessAt,
+	jobsProbeOrigin,
+	runAllProbes,
+} from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
 	parseProviderIncidentCache,
@@ -309,14 +315,27 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				signal: AbortSignal.timeout(15_000),
 			},
 		)
-		if (!response.ok) {
-			return { ok: false, error: `HTTP ${String(response.status)}` }
+		let body: { ok?: unknown; reason?: unknown; error?: unknown } | null = null
+		try {
+			body = (await response.json()) as {
+				ok?: unknown
+				reason?: unknown
+				error?: unknown
+			}
+		} catch {
+			body = null
 		}
-		const body = (await response.json()) as { ok?: boolean }
-		if (body.ok !== true) {
-			return { ok: false, error: 'probe-failed' }
+		const result = readExecuteHealthSyntheticResult({
+			status: response.status,
+			body,
+		})
+		if (!result.ok) {
+			console.warn(
+				'execute-health-synthetic-failed',
+				result.error ?? `HTTP ${String(response.status)}`,
+			)
 		}
-		return { ok: true, error: null }
+		return result
 	}
 
 	private loadComponentState(
@@ -695,6 +714,24 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	}
 
 	async getSnapshot(): Promise<StatusSnapshot> {
+		const storedLastSuccessAt = this.readEpochMeta(executeLastSuccessMetaKey)
+		const resolvedLastSuccess = await resolvePublicExecuteLastSuccess({
+			now: Date.now(),
+			storedLastSuccessAt,
+			fetchLive: () =>
+				fetchExecuteEvidenceLastSuccessAt({
+					primaryOrigin: this.env.PRIMARY_ORIGIN,
+				}),
+		})
+		if (
+			resolvedLastSuccess.persist &&
+			resolvedLastSuccess.lastSuccessAt !== null
+		) {
+			this.setMeta(
+				executeLastSuccessMetaKey,
+				String(resolvedLastSuccess.lastSuccessAt),
+			)
+		}
 		const now = Date.now()
 		const windowStartMs = Date.parse(
 			`${toDay(now - (uptimeWindowDays - 1) * 24 * 60 * 60 * 1000)}T00:00:00.000Z`,
@@ -727,9 +764,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			jobsCommit: this.getMeta(jobsCommitMetaKey),
 			executeHealth: deriveExecuteHealthView({
 				now,
-				...this.readExecuteHealthState(
-					this.readEpochMeta(executeLastSuccessMetaKey),
-				),
+				...this.readExecuteHealthState(resolvedLastSuccess.lastSuccessAt),
 			}),
 		}
 	}

@@ -40,6 +40,53 @@ export function mergeExecuteLastSuccess(
 	return newerTimestamp(incoming, stored)
 }
 
+/**
+ * Public `/` and `/status.json` start from cron-written last-success.
+ * When that stored timestamp is already outside the organic window, refresh
+ * from origin `GET /health/components` (cheap; never runs execute). Fresh
+ * stored evidence skips the fetch so a healthy origin is not on the
+ * snapshot hot path.
+ */
+export function shouldRefreshExecuteLastSuccess(input: {
+	now: number
+	storedLastSuccessAt: number | null
+}): boolean {
+	if (input.storedLastSuccessAt === null) return true
+	return input.now - input.storedLastSuccessAt >= executeHealthOrganicFreshMs
+}
+
+export async function resolvePublicExecuteLastSuccess(input: {
+	now: number
+	storedLastSuccessAt: number | null
+	fetchLive: () => Promise<number | null>
+}): Promise<{ lastSuccessAt: number | null; persist: boolean }> {
+	if (!shouldRefreshExecuteLastSuccess(input)) {
+		return { lastSuccessAt: input.storedLastSuccessAt, persist: false }
+	}
+	const live = await input.fetchLive()
+	const merged = mergeExecuteLastSuccess(live, input.storedLastSuccessAt)
+	return {
+		lastSuccessAt: merged,
+		persist: merged !== null && merged !== input.storedLastSuccessAt,
+	}
+}
+
+export function readExecuteHealthSyntheticResult(input: {
+	status: number
+	body: { ok?: unknown; reason?: unknown; error?: unknown } | null
+}): { ok: boolean; error?: string | null } {
+	if (input.status >= 200 && input.status < 300 && input.body?.ok === true) {
+		return { ok: true, error: null }
+	}
+	const reason =
+		typeof input.body?.reason === 'string' ? input.body.reason.trim() : ''
+	const message =
+		typeof input.body?.error === 'string' ? input.body.error.trim() : ''
+	if (reason) return { ok: false, error: reason.slice(0, 200) }
+	if (message) return { ok: false, error: message.slice(0, 200) }
+	return { ok: false, error: `HTTP ${String(input.status)}` }
+}
+
 export function decideExecuteHealthProbe(input: {
 	now: number
 	lastSuccessAt: number | null
@@ -225,7 +272,7 @@ function executeHealthDetail(input: {
 	) {
 		return 'Not recently exercised. Synthetic fallback is not configured. Missing telemetry is not an outage.'
 	}
-	if (input.lastSyntheticError) {
+	if (input.lastSyntheticError && input.source === null) {
 		return `Not recently exercised. Last synthetic attempt failed; missing telemetry is not an outage. Caller-code errors are not a platform outage.`
 	}
 	return 'Not recently exercised. Missing or stale telemetry is not an outage and is not proof the path is freshly healthy.'

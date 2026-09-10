@@ -8,6 +8,9 @@ import {
 	executeHealthOrganicFreshMs,
 	executeHealthSyntheticCooldownMs,
 	mergeExecuteLastSuccess,
+	readExecuteHealthSyntheticResult,
+	resolvePublicExecuteLastSuccess,
+	shouldRefreshExecuteLastSuccess,
 } from './execute-health.ts'
 
 const hourMs = executeHealthSyntheticCooldownMs
@@ -167,6 +170,23 @@ test('caller failures are not automatically a global outage, and one organic suc
 	expect(failedSynthetic.detail).toMatch(/not an outage/i)
 	expect(failedSynthetic.detail).toMatch(/caller-code errors/i)
 
+	const staleOrganicAfterFailedSynthetic = deriveExecuteHealthView({
+		now: start + 2 * minuteMs,
+		lastSuccessAt: start,
+		lastSyntheticAttemptAt: start + minuteMs,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: 'HTTP 500',
+		syntheticConfigured: true,
+	})
+	expect(staleOrganicAfterFailedSynthetic.status).toBe('unknown')
+	expect(staleOrganicAfterFailedSynthetic.source).toBe('organic')
+	expect(staleOrganicAfterFailedSynthetic.detail).toMatch(
+		/missing or stale telemetry/i,
+	)
+	expect(staleOrganicAfterFailedSynthetic.detail).not.toMatch(
+		/last synthetic attempt failed/i,
+	)
+
 	const organic = deriveExecuteHealthView({
 		now: start + 5_000,
 		lastSuccessAt: start,
@@ -278,4 +298,98 @@ test('public reads do not run a synthetic; only a claimed tick can', async () =>
 	expect(ran.lastSyntheticAttemptAt).toBe(start + minuteMs)
 	expect(ran.lastSyntheticError).toBe('timeout')
 	expect(ran.lastSyntheticSuccessAt).toBeNull()
+})
+
+test('stale stored cron snapshot refreshes from live origin evidence and stays organic', async () => {
+	const stored = start
+	const live = start + 105_000
+	const now = start + 121_000
+	expect(
+		shouldRefreshExecuteLastSuccess({
+			now,
+			storedLastSuccessAt: stored,
+		}),
+	).toBe(true)
+
+	let fetches = 0
+	const resolved = await resolvePublicExecuteLastSuccess({
+		now,
+		storedLastSuccessAt: stored,
+		fetchLive: async () => {
+			fetches += 1
+			return live
+		},
+	})
+	expect(fetches).toBe(1)
+	expect(resolved.persist).toBe(true)
+	expect(resolved.lastSuccessAt).toBe(live)
+
+	const view = deriveExecuteHealthView({
+		now,
+		lastSuccessAt: resolved.lastSuccessAt,
+		lastSyntheticAttemptAt: stored,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: 'HTTP 500',
+		syntheticConfigured: true,
+	})
+	expect(view.status).toBe('recent')
+	expect(view.source).toBe('organic')
+	expect(view.lastVerifiedAt).toBe(new Date(live).toISOString())
+	expect(view.detail).toMatch(/organic/i)
+	expect(view.detail).not.toMatch(/last synthetic attempt failed/i)
+
+	let skippedFetches = 0
+	const freshStored = await resolvePublicExecuteLastSuccess({
+		now: start + 15_000,
+		storedLastSuccessAt: start,
+		fetchLive: async () => {
+			skippedFetches += 1
+			return start + 10_000
+		},
+	})
+	expect(skippedFetches).toBe(0)
+	expect(freshStored.persist).toBe(false)
+	expect(freshStored.lastSuccessAt).toBe(start)
+
+	const originDown = await resolvePublicExecuteLastSuccess({
+		now,
+		storedLastSuccessAt: stored,
+		fetchLive: async () => null,
+	})
+	expect(originDown.persist).toBe(false)
+	expect(originDown.lastSuccessAt).toBe(stored)
+})
+
+test('synthetic maintenance errors keep origin reason instead of collapsing to HTTP status', () => {
+	expect(
+		readExecuteHealthSyntheticResult({
+			status: 500,
+			body: {
+				ok: false,
+				reason: 'not-configured',
+				error: 'Execute health canary is not configured',
+			},
+		}),
+	).toEqual({ ok: false, error: 'not-configured' })
+	expect(
+		readExecuteHealthSyntheticResult({
+			status: 500,
+			body: {
+				ok: false,
+				error: 'Authenticated MCP execute probe initialize failed: HTTP 401',
+			},
+		}),
+	).toEqual({
+		ok: false,
+		error: 'Authenticated MCP execute probe initialize failed: HTTP 401',
+	})
+	expect(
+		readExecuteHealthSyntheticResult({
+			status: 200,
+			body: { ok: true },
+		}),
+	).toEqual({ ok: true, error: null })
+	expect(readExecuteHealthSyntheticResult({ status: 502, body: null })).toEqual(
+		{ ok: false, error: 'HTTP 502' },
+	)
 })
