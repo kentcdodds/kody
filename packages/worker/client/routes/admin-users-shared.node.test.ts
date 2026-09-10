@@ -78,6 +78,7 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 			...basePayload,
 			users: [existing, created],
 			total: 2,
+			createdUserInFilteredList: true,
 		},
 	})
 	expect(onPage.items.map((item) => item.username)).toEqual([
@@ -95,6 +96,7 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 			...basePayload,
 			users: [existing],
 			total: 21,
+			createdUserInFilteredList: true,
 		},
 	})
 	expect(omittedFromPageOne.items.map((item) => item.username)).toEqual([
@@ -113,6 +115,7 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 			users: [],
 			total: 0,
 			listRefreshFailed: true,
+			createdUserInFilteredList: true,
 		},
 	})
 	expect(refreshFailed.items.map((item) => item.username)).toEqual([
@@ -120,6 +123,22 @@ test('create reseeds from the refreshed page and prepends a user that paging omi
 		'existing',
 	])
 	expect(refreshFailed.totalCount).toBe(2)
+
+	const excludedByFilter = nextAdminUsersWindowAfterCreate({
+		currentItems: [existing],
+		currentHasMore: false,
+		currentTotal: 1,
+		payload: {
+			...basePayload,
+			users: [existing],
+			total: 1,
+			createdUserInFilteredList: false,
+		},
+	})
+	expect(excludedByFilter.items.map((item) => item.username)).toEqual([
+		'existing',
+	])
+	expect(excludedByFilter.totalCount).toBe(1)
 
 	const mutationWindow = nextAdminUsersWindowAfterMutation({
 		currentItems: [existing],

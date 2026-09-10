@@ -350,6 +350,12 @@ export type AdminUsersMutationData = AdminUsersLoaderData & {
 	 * the current list window and still show `createdUser` / the setup link.
 	 */
 	listRefreshFailed?: boolean
+	/**
+	 * The created row matches the request's active list filters. The client
+	 * only prepends `updatedUser` when this is true, so a search/role/
+	 * verification filter cannot gain a non-matching row.
+	 */
+	createdUserInFilteredList?: boolean
 }
 
 type AdminRoleListItem = {

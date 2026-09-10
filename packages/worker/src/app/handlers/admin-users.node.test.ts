@@ -252,6 +252,15 @@ function createAdminTestEnv(input: {
 								return { results: [] as Array<T>, meta: { changes: 0 } }
 							},
 							async first<T>() {
+								if (normalizedQuery.includes('select 1 as found from users')) {
+									const { rows, paramIndex } = applyListFilters(params)
+									const stableUserId = String(params[paramIndex] ?? '')
+									return (
+										rows.some((row) => row.stable_user_id === stableUserId)
+											? { found: 1 }
+											: null
+									) as T
+								}
 								if (
 									normalizedQuery.includes(
 										'select deleting_at from users where stable_user_id',
@@ -1261,9 +1270,10 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 		userRoles: [{ user_id: 9, role_name: 'user' }],
 	})
 	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	async function postCreateUser(body: Record<string, unknown>) {
+	async function postCreateUser(body: Record<string, unknown>, search = '') {
+		const href = `https://example.com/admin/users.json${search}`
 		return handler.handler({
-			request: new Request('https://example.com/admin/users.json', {
+			request: new Request(href, {
 				method: 'POST',
 				headers: {
 					Accept: 'application/json',
@@ -1272,7 +1282,7 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 				body: JSON.stringify(body),
 			}),
 			params: {},
-			url: new URL('https://example.com/admin/users.json'),
+			url: new URL(href),
 		} as never)
 	}
 
@@ -1300,6 +1310,43 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	expect(createdPayload.users).toEqual([
 		expect.objectContaining({ stableUserId: createdUser.stableUserId }),
 	])
+	expect(createdPayload.createdUserInFilteredList).toBe(true)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const roleFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?role=admin',
+	)
+	expect(roleFiltered.status).toBe(200)
+	expect((await roleFiltered.json()).createdUserInFilteredList).toBe(false)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const searchFiltered = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?q=nobody-matches',
+	)
+	expect(searchFiltered.status).toBe(200)
+	expect((await searchFiltered.json()).createdUserInFilteredList).toBe(false)
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const searchMatch = await postCreateUser(
+		{
+			action: 'create_user',
+			email: 'new-user@example.com',
+			username: 'new-user',
+		},
+		'?q=new-user',
+	)
+	expect(searchMatch.status).toBe(200)
+	expect((await searchMatch.json()).createdUserInFilteredList).toBe(true)
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
 		user: {
@@ -1359,6 +1406,7 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 				username: createdUser.username,
 			}),
 		)
+		expect(refreshFailedPayload.createdUserInFilteredList).toBe(true)
 		expect(consoleWarn).toHaveBeenCalledWith(
 			'admin-users-create-list-refresh-failed',
 			expect.any(Error),

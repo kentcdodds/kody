@@ -16,6 +16,7 @@ import {
 	clearAdminUserEmailOutboundPause,
 	loadAdminUserByTarget,
 	loadAdminUserRowByStableUserId,
+	adminUserMatchesListFilters,
 	loadAdminUsersData,
 	loadRolesByUserIds,
 	adminUserListItemFieldNames,
@@ -685,12 +686,20 @@ async function handleCreateUserAction(input: {
 		const createdListItem = await loadAdminUserByTarget(input.env.APP_DB, {
 			stableUserId: createdUser.stableUserId,
 		}).catch(() => null)
+		const createdUserInFilteredList = createdListItem
+			? await adminUserMatchesListFilters(
+					input.env,
+					input.request.url,
+					createdUser.stableUserId,
+				).catch(() => false)
+			: false
 		try {
 			const payload = await loadAdminUsersData(input.env, input.request.url)
 			return jsonResponse({
 				...payload,
 				updatedUser: createdListItem,
 				createdUser: boundaryUser,
+				createdUserInFilteredList,
 			})
 		} catch (error) {
 			// The account and one-time setup link already exist. A list refresh
@@ -707,6 +716,7 @@ async function handleCreateUserAction(input: {
 				availablePlans: [...planNames],
 				updatedUser: createdListItem,
 				createdUser: boundaryUser,
+				createdUserInFilteredList,
 				listRefreshFailed: true,
 			})
 		}

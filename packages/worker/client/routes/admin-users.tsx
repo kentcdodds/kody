@@ -282,8 +282,6 @@ export function AdminUsersRoute(handle: Handle) {
 			payload,
 			href,
 		})
-		// reset() invalidates any in-flight load-more so a page fetched before
-		// the mutation cannot merge stale rows or counts back in afterward.
 		userList.reset()
 		userList.replaceWindow(nextWindow)
 		const selectedStableUserId = getSelectedStableUserIdFromHref(href)
@@ -303,23 +301,29 @@ export function AdminUsersRoute(handle: Handle) {
 		href: string,
 	) {
 		if (payload.listRefreshFailed && !payload.updatedUser) return
-		const nextWindow = nextAdminUsersWindowAfterCreate({
-			currentItems: usersSnapshot.items,
-			currentHasMore: usersSnapshot.hasMore,
-			currentTotal: usersSnapshot.totalCount,
-			payload,
-		})
+		const selectedId = getSelectedStableUserIdFromHref(href)
+		const keepFallback =
+			payload.updatedUser?.stableUserId === selectedId
+				? payload.updatedUser
+				: selectedUserFallback
 		if (!payload.listRefreshFailed) {
 			availableRoles = payload.availableRoles
 			availablePlans = payload.availablePlans
 			loadedThroughPage = payload.page
 			lastLoadedListKey = getListKey(href)
-			selectedUserFallback = payload.selectedUser ?? payload.updatedUser
-		} else if (payload.updatedUser) {
-			selectedUserFallback = payload.updatedUser
 		}
+		selectedUserFallback = payload.listRefreshFailed
+			? keepFallback
+			: (payload.selectedUser ?? keepFallback)
 		userList.reset()
-		userList.replaceWindow(nextWindow)
+		userList.replaceWindow(
+			nextAdminUsersWindowAfterCreate({
+				currentItems: usersSnapshot.items,
+				currentHasMore: usersSnapshot.hasMore,
+				currentTotal: usersSnapshot.totalCount,
+				payload,
+			}),
+		)
 		resetPlanDraft()
 	}
 

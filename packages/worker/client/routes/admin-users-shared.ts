@@ -94,8 +94,9 @@ export function getDataKey(href: string) {
 
 /**
  * Create reseeds from the refreshed first page, then prepends the created
- * row when oldest-first paging left it off page one. A failed refresh
- * keeps the current window and still splices that row in when present.
+ * row when oldest-first paging left it off page one and the server says
+ * it still matches the active filters. A failed refresh keeps the current
+ * window and only splices that row in when those same conditions hold.
  */
 export function nextAdminUsersWindowAfterCreate(input: {
 	currentItems: Array<AdminUserListItem>
@@ -110,13 +111,16 @@ export function nextAdminUsersWindowAfterCreate(input: {
 	const alreadyListed =
 		created != null &&
 		baseItems.some((item) => item.stableUserId === created.stableUserId)
-	const items = created && !alreadyListed ? [created, ...baseItems] : baseItems
+	const canInsert =
+		created != null &&
+		!alreadyListed &&
+		input.payload.createdUserInFilteredList === true
+	const items = canInsert ? [created, ...baseItems] : baseItems
 	if (input.payload.listRefreshFailed) {
 		return {
 			items,
 			hasMore: input.currentHasMore,
-			totalCount:
-				created && !alreadyListed ? input.currentTotal + 1 : input.currentTotal,
+			totalCount: canInsert ? input.currentTotal + 1 : input.currentTotal,
 		}
 	}
 	return {
