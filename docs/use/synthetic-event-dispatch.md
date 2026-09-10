@@ -1,13 +1,21 @@
 # Synthetic event dispatch
 
-`packageSubscriptionDispatch` invokes a **single** subscription handler on a
-saved package over MCP. It is a **platform-marked real-surface** `subscription`
-run through the normal package execution path (`packageStorage()`, secrets,
-`kody:runtime`). **Side effects are real.**
+`packageSubscriptionDispatch` is the **interactive MCP** smoke test for **one**
+declared `package.json#kody.subscriptions` handler on an **owner-scoped** saved
+package. Call it after publish to verify wiring without waiting for a real
+platform event. It is a **platform-marked real-surface** `subscription` run
+(`packageStorage()`, secrets, `kody:runtime`). **Side effects are real.**
 
-Use it to verify `package.json#kody.subscriptions` wiring immediately after
-publish. It targets only the package you name; it does not fan out to other
-subscribers and does not enqueue production Queue delivery.
+It targets only the package you name. It does not fan out to other subscribers
+and does not enqueue production Queue delivery.
+
+Package reuse is a static `import … from 'kody:@scope/pkg/export'` (declare
+`kody.dependencies`). When the name is data, use computed `import(specifier)`
+for a caller-owned or forked module. Exactly-once work uses
+[workflows](./workflows.md). External clients use
+[inbound webhooks](./webhooks.md). Another package's secret mounts and
+`packageContext` apply when that package is the run — its job, subscription,
+webhook, or app.
 
 The platform sets top-level envelope fields `synthetic: true` and, for
 stored-mail replay, `replay_of`. Real event dispatch strips caller-supplied
@@ -18,16 +26,17 @@ deliberately visible irreversible-side-effect guard says otherwise.
 
 ## When to use it
 
-- After `packagePublishExternalPush` when the package declares subscriptions and
-  `test_hints` includes topic snippets
-- To debug handler logic with a minimal fixture payload
+- From an interactive MCP agent after `packagePublishExternalPush` when the
+  package declares subscriptions and `test_hints` includes topic snippets
+- To debug that same package's handler logic with a minimal fixture payload
 - To replay a stored inbound message with `email_message_id`
 - Together with [Package app fetch](./package-app-fetch.md) as part of
   post-publish verification
 
 Use `packageSubscriptionsList` first to confirm the topic and handler path. Use
 real platform events for end-to-end delivery, admin-role gates, filters, and
-multi-package fan-out.
+multi-package fan-out. Reuse another package from a job or subscription with a
+static `kody:@` import — see [Package reuse](./packages.md#package-reuse).
 
 ## Call shape
 
@@ -35,7 +44,7 @@ Search the `packages` domain, then call `packageSubscriptionDispatch`:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "email.message.received",
 	"params": {}
 }
@@ -45,7 +54,8 @@ Fields:
 
 | Field              | Required | Meaning                                                                 |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
-| `package_id`       | yes      | Saved-package UUID                                                      |
+| scoped name        | one of   | `@owner/leaf` (or the name leaf) in leftover `kody_id`                  |
+| `package_id`       | one of   | Saved-package UUID when the scoped name is not known                    |
 | `package_scope`    | no       | Owner scope for delegated packages; preserve it from publish test hints |
 | `topic`            | yes      | Exact topic key from `kody.subscriptions`                               |
 | `params`           | one of   | Handler input fixture — use `{}` only when the handler tolerates empty  |
@@ -56,8 +66,9 @@ top-level request `idempotency_key` — the platform generates it. A
 package-emitted event fixture can still include its production
 `params.idempotency_key` inside the nested event envelope.
 
-Look up the package with `package_id`. Preserve `package_scope` when it appears
-in a publish test hint so dispatch resolves the intended owner-scoped package.
+Look up the package with the scoped `@owner/leaf` name (or `package_id` when the
+name is not known). Preserve `package_scope` when it appears in a publish test
+hint so dispatch resolves the intended owner-scoped package.
 
 ### Fixture input (`params`)
 
@@ -79,7 +90,7 @@ Example minimal `run.error.recorded` fixture:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "run.error.recorded",
 	"params": {
 		"event": "run.error.recorded",
@@ -112,7 +123,7 @@ Example minimal `integration.auth.failed` fixture:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "integration.auth.failed",
 	"params": {
 		"event": "integration.auth.failed",
@@ -145,7 +156,7 @@ Example minimal `integration.auth.succeeded` fixture:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "integration.auth.succeeded",
 	"params": {
 		"event": "integration.auth.succeeded",
@@ -168,7 +179,7 @@ Example minimal `mcp.server.disconnected` fixture:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "mcp.server.disconnected",
 	"params": {
 		"event": "mcp.server.disconnected",
@@ -192,7 +203,7 @@ For email topics, pass a stored message id instead of hand-building metadata:
 
 ```json
 {
-	"package_id": "550e8400-e29b-41d4-a716-446655440000",
+	"kody_id": "@owner/email-automation",
 	"topic": "email.message.received",
 	"email_message_id": "00000000000000000000000000000001"
 }
@@ -230,7 +241,8 @@ surface) for run records; the run record includes `synthetic: true` (and
 
 ## Related
 
-- [Packages](./packages.md) — subscription manifest shape
+- [Packages](./packages.md) — subscription manifest shape and
+  [package reuse](./packages.md#package-reuse)
 - [Package app fetch](./package-app-fetch.md) — app handler smoke tests
 - [Package subscriptions guide](../guides/package-subscriptions.md) — topic
   payloads and production delivery semantics

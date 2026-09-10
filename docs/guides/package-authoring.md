@@ -348,10 +348,11 @@ irreversible-side-effect guard when a smoke test should stay safe.
    `packageStorage()` side effects. See
    [Package app fetch](../use/package-app-fetch.md) and the
    [Package apps](./package-apps.md) playbook (`package_apps:guide`).
-4. **Subscriptions** — `packageSubscriptionDispatch` with the scoped name (or
-   `package_id` when the name is not known), `topic`, and exactly one of
-   `params` (fixture) or `email_message_id` (stored-mail replay) for each
-   declared topic. See
+4. **Subscriptions** — from interactive MCP, `packageSubscriptionDispatch` with
+   the scoped name (or `package_id` when the name is not known), `topic`, and
+   exactly one of `params` (fixture) or `email_message_id` (stored-mail replay)
+   for each declared topic. This verifies the handler you just published. Reuse
+   another package with a static `kody:@scope/package/export` import. See
    [Synthetic event dispatch](../use/synthetic-event-dispatch.md) and the
    [package subscriptions guide](./package-subscriptions.md#synthetic-dispatch).
 5. Optional UI checks — open `hosted_app_url` when the publish response includes

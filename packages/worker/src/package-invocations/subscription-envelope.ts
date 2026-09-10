@@ -47,7 +47,7 @@ export function buildPackageSubscriptionNotFoundMessage(input: {
 	kodyId: string
 	topic: string
 }) {
-	return `Package "${input.kodyId}" does not declare subscription "${input.topic}" in package.json#kody.subscriptions. Inspect handlers with packageSubscriptionsList, or test dispatch with ${packageSubscriptionDispatchCapabilityName} once a handler is declared.`
+	return `Package "${input.kodyId}" does not declare subscription "${input.topic}" in package.json#kody.subscriptions. Inspect handlers with packageSubscriptionsList, or smoke-test the handler from interactive MCP with ${packageSubscriptionDispatchCapabilityName} once a handler is declared.`
 }
 
 /**

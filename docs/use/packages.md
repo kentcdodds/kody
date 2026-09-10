@@ -221,12 +221,13 @@ Person-owned packages must not import a platform scope; `communityFork` first.
 `packageStorage()` on a static import reaches the declaring package's bucket for
 **caller-owned** packages.
 
-There is no author-facing `packages.invoke`. External trusted clients that must
-call a named export over HTTP use inbound webhooks: declare one webhook per
-export, mint a handle with `webhookUrlMint`, register it with `webhookUrlApply`
-when a provider needs the URL, and POST JSON (`inputMode: "params"` and
-`Idempotency-Key` for first-party clients). See
-[Inbound webhooks](./webhooks.md).
+There is no author-facing `packages.invoke`. Interactive MCP
+`packageSubscriptionDispatch` is the post-publish subscription smoke test, not a
+composition primitive. External trusted clients that must call a named export
+over HTTP use inbound webhooks: declare one webhook per export, mint a handle
+with `webhookUrlMint`, register it with `webhookUrlApply` when a provider needs
+the URL, and POST JSON (`inputMode: "params"` and `Idempotency-Key` for
+first-party clients). See [Inbound webhooks](./webhooks.md).
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
@@ -396,7 +397,11 @@ or did not dispatch, or checking which packages subscribe to
 `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
 `auth.denial.burst`, `email.delivery.burst`, `user.created`, `user.deleted`,
 `user.email_verification.failed`, `user.email_verification.stalled`,
-`user.email_outbound.paused`, and `email.system-message.sent`.
+`user.email_outbound.paused`, and `email.system-message.sent`. After publish,
+smoke-test one declared handler from interactive MCP with
+`packageSubscriptionDispatch`
+([Synthetic event dispatch](./synthetic-event-dispatch.md)). Reuse another
+package with a static `kody:@` import ([Package reuse](#package-reuse)).
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both

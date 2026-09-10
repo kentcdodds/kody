@@ -121,9 +121,9 @@ your laptop — anything that can POST JSON can start a package this way.
 When the trigger is something Kody already knows about — a message landing in
 your inbox, a repo push, a run error, an integration losing auth — a package
 subscribes to that topic in `package.json#kody.subscriptions` and Kody invokes
-the handler with the event payload. `packageSubscriptionDispatch` sends a
-synthetic event so you can test a handler before the real one arrives. Topics,
-payloads, and package-emitted events:
+the handler with the event payload. After publish, smoke-test that handler from
+interactive MCP with `packageSubscriptionDispatch`. Reuse another package with a
+static `kody:@` import. Topics, payloads, and package-emitted events:
 [Subscriptions and events](./package-subscriptions.md).
 
 ## The inbox is a trigger too
@@ -138,8 +138,9 @@ nothing else. See [Email primitives](../use/email-primitives.md).
 
 - A schedule is optional, not the point. If the person cannot name a time they
   want something to happen, leave the trigger off and let them ask.
-- Test before you enable: invoke the wrapper from `execute`, dispatch a
-  synthetic event, or send yourself one webhook.
+- Test before you enable: import the wrapper from `execute`, smoke-test a
+  subscription from interactive MCP with `packageSubscriptionDispatch`, or send
+  yourself one webhook.
 - Keep the wrapper quiet. Notify only when there is news; an empty digest every
   morning trains people to ignore the real one.
 - Failures and recent runs for every trigger live on `/account/activity`.

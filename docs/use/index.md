@@ -79,8 +79,8 @@ MCP-level reference detail those docs link into.
   smoke, absolute asset URLs, lean forks
 - [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
   `app_fetch` smoke tests after publish
-- [Synthetic event dispatch](./synthetic-event-dispatch.md) — platform-marked
-  real-surface subscription handler smoke tests
+- [Synthetic event dispatch](./synthetic-event-dispatch.md) — interactive MCP
+  post-publish smoke test for one subscription handler
 - [Waiting](./waiting.md) — current-state items only you can clear
   (`/account/waiting` and `waitingSummary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,

@@ -43,13 +43,17 @@ Synthetic MCP calls set the markers; callers cannot forge them.
   `Kody-Synthetic: true` before the handler runs. Returns exactly
   `{ status, headers, body, truncated }`; binary response bodies are base64.
   Rejects websocket upgrade requests.
-- **`packageSubscriptionDispatch`** — invoke one declared subscription handler
-  on one saved package. Accepts exactly one of `params` or `email_message_id`
-  (not both). The platform sets top-level envelope fields `synthetic: true` and,
-  for stored-mail replay, `replay_of`. Replay rebuilds the stored inbound email
-  envelope from D1. There is **no caller `idempotency_key`** — the platform
-  generates internal idempotency keys. Targets only the named package; it does
-  not fan out platform events or enqueue production Queue delivery.
+- **`packageSubscriptionDispatch`** — interactive-MCP post-publish smoke test:
+  invoke one declared subscription handler on one owner-scoped saved package
+  without waiting for a real event. Accepts exactly one of `params` or
+  `email_message_id` (not both). The platform sets top-level envelope fields
+  `synthetic: true` and, for stored-mail replay, `replay_of`. Replay rebuilds
+  the stored inbound email envelope from D1. There is **no caller
+  `idempotency_key`** — the platform generates internal idempotency keys.
+  Targets only the named package; it does not fan out platform events or enqueue
+  production Queue delivery. Package composition stays a static `kody:@` import
+  ([0037](./0037-no-author-packages-invoke.md)); this capability is not a
+  successor to `packages.invoke`.
 
 Run records for both surfaces include the same synthetic markers the handler
 payload carries. Handlers treat synthetic invocations identically to production
@@ -67,8 +71,12 @@ agents can run before treating the publish complete.
 - Synthetic app fetches do not replace hosted-URL checks for UI, cookies, OAuth
   redirect flows, or websocket facets — they prove handler/runtime wiring only.
 - Synthetic subscription dispatch validates handler code and manifest wiring for
-  one package; it does not substitute for end-to-end tests of Queue delivery,
-  admin-role gates, or multi-subscriber fan-out.
+  one package from interactive MCP. It does not substitute for end-to-end tests
+  of Queue delivery, admin-role gates, or multi-subscriber fan-out. Package
+  jobs, subscription handlers, webhooks, and other package runtimes cannot call
+  it. Wake or reuse another package with a static `kody:@scope/pkg/export`
+  import (plus `kody.dependencies`), computed `import(specifier)` when the name
+  is data, workflows for exactly-once, or inbound webhooks for external clients.
 - `app_fetch` synthetic requests remain excluded from package activation
   milestones, matching public HTTP traffic.
 - Authors who smoke-test handlers with real side effects should use fixture

@@ -42,7 +42,7 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 
 const maxSyntheticSubscriptionResultBytes = 102_400
 
-const packageRuntimeCallerErrorMessage = `${packageSubscriptionDispatchCapabilityName} is unavailable from package runtime contexts. Call it from an interactive MCP agent instead.`
+const packageRuntimeCallerErrorMessage = `${packageSubscriptionDispatchCapabilityName} is unavailable from package runtime contexts. It is the interactive-MCP post-publish subscription smoke test. Compose another package with a static kody:@scope/pkg/export import.`
 
 function assertDirectMcpCaller(callerContext: {
 	executionOrigin?: string
@@ -112,7 +112,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 	{
 		name: packageSubscriptionDispatchCapabilityName,
 		description:
-			'Synthetically dispatch one declared package.json#kody.subscriptions handler for the signed-in user (or delegated package scope). Supply params for a custom envelope, or email_message_id to replay a stored inbound email receipt envelope. Platform code marks the invocation synthetic and strips caller-supplied synthetic/replay_of markers on real dispatch paths.',
+			'Interactive-MCP post-publish smoke test for one declared package.json#kody.subscriptions handler on an owner-scoped saved package. Real-surface run with real side effects; does not wait for a production event and is unavailable from package jobs, subscriptions, webhooks, or other package runtimes. Package composition is a static kody:@scope/pkg/export import (plus kody.dependencies), not this capability. Pass params for a fixture envelope or email_message_id to replay stored inbound mail. The platform marks the run synthetic.',
 		keywords: [
 			'package',
 			'subscription',
@@ -127,6 +127,9 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			'mcp.server.reconnected',
 			'test',
 			'smoke',
+			'post-publish',
+			'verification',
+			'interactive',
 			'simulate',
 			'probe',
 			'debug',
