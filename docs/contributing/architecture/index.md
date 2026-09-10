@@ -45,8 +45,9 @@ landed in the previous minute, the status worker runs at most one authenticated
 `POST /__maintenance/mcp-execute-health` per hour. Public status reads never
 trigger that execute. When the status Durable Object's last-success timestamp is
 already stale, `/` and `/status.json` refresh `executeEvidence` from origin
-`GET /health/components` and persist a newer timestamp so the next cron can skip
-the synthetic.
+`GET /health/components` and persist a newer timestamp (merged with whatever
+cron or another snapshot wrote during that fetch) so the next cron can skip the
+synthetic.
 
 ## Core docs
 

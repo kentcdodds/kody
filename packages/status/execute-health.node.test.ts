@@ -358,6 +358,34 @@ test('stale stored cron snapshot refreshes from live origin evidence and stays o
 	})
 	expect(originDown.persist).toBe(false)
 	expect(originDown.lastSuccessAt).toBe(stored)
+
+	let concurrentStored = stored
+	const newerDuringFetch = start + 120_000
+	const raced = await resolvePublicExecuteLastSuccess({
+		now,
+		storedLastSuccessAt: stored,
+		fetchLive: async () => {
+			concurrentStored = newerDuringFetch
+			return live
+		},
+		readStoredAfterFetch: () => concurrentStored,
+	})
+	expect(raced.lastSuccessAt).toBe(newerDuringFetch)
+	expect(raced.persist).toBe(false)
+
+	let olderConcurrentStored = stored
+	const olderDuringFetch = start + 80_000
+	const liveWinsRace = await resolvePublicExecuteLastSuccess({
+		now,
+		storedLastSuccessAt: stored,
+		fetchLive: async () => {
+			olderConcurrentStored = olderDuringFetch
+			return live
+		},
+		readStoredAfterFetch: () => olderConcurrentStored,
+	})
+	expect(liveWinsRace.lastSuccessAt).toBe(live)
+	expect(liveWinsRace.persist).toBe(true)
 })
 
 test('synthetic maintenance errors keep origin reason instead of collapsing to HTTP status', () => {

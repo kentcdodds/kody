@@ -722,6 +722,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				fetchExecuteEvidenceLastSuccessAt({
 					primaryOrigin: this.env.PRIMARY_ORIGIN,
 				}),
+			readStoredAfterFetch: () => this.readEpochMeta(executeLastSuccessMetaKey),
 		})
 		if (
 			resolvedLastSuccess.persist &&

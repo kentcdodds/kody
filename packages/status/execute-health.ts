@@ -59,15 +59,21 @@ export async function resolvePublicExecuteLastSuccess(input: {
 	now: number
 	storedLastSuccessAt: number | null
 	fetchLive: () => Promise<number | null>
+	readStoredAfterFetch?: () => number | null
 }): Promise<{ lastSuccessAt: number | null; persist: boolean }> {
 	if (!shouldRefreshExecuteLastSuccess(input)) {
 		return { lastSuccessAt: input.storedLastSuccessAt, persist: false }
 	}
 	const live = await input.fetchLive()
-	const merged = mergeExecuteLastSuccess(live, input.storedLastSuccessAt)
+	// Durable Object input gates open on this fetch, so cron or another
+	// snapshot can write a newer timestamp first. Re-read before merge so
+	// persist cannot rewind that write.
+	const storedAfter =
+		input.readStoredAfterFetch?.() ?? input.storedLastSuccessAt
+	const merged = mergeExecuteLastSuccess(live, storedAfter)
 	return {
 		lastSuccessAt: merged,
-		persist: merged !== null && merged !== input.storedLastSuccessAt,
+		persist: merged !== null && merged !== storedAfter,
 	}
 }
 
