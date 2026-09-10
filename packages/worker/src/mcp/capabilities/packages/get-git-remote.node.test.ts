@@ -328,7 +328,7 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 	)
 	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
 		expect.objectContaining({
-			kodyId: 'unleashed-wifi',
+			packageName: 'unleashed-wifi',
 			description: 'WiFi controls',
 			baseUrl: 'https://heykody.dev',
 			owner: personalOwner(),
@@ -369,7 +369,7 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
 	)
 	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
-		expect.objectContaining({ kodyId: 'unleashed-wifi' }),
+		expect.objectContaining({ packageName: 'unleashed-wifi' }),
 	)
 	expect(trimmedResult.created).toBe(true)
 	expect(trimmedResult.package_name).toBe('unleashed-wifi')
@@ -416,7 +416,7 @@ test('get_git_remote create mode registers stubs for owner and delegated scopes'
 	expect(mockModule.createStubSavedPackage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			owner: delegatedOwner,
-			kodyId: 'unleashed-wifi',
+			packageName: 'unleashed-wifi',
 		}),
 	)
 	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
