@@ -2,12 +2,16 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
 	deletePackageKodyIdRedirects,
 	releasePackageKodyIdRedirect,
 	retirePackageKodyId,
 } from '#worker/community/package-url.ts'
-import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import {
+	deleteCommunityForksForPackage,
+	getCommunityListingByOwnerAndPackage,
+} from '#worker/community/repo.ts'
 import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
@@ -624,6 +628,17 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
+			const deletedForks = await deleteCommunityForksForPackage(
+				input.env.APP_DB,
+				{
+					userId: input.userId,
+					packageId: input.packageId,
+					sourceId: savedPackage?.sourceId,
+				},
+			)
+			if (deletedForks > 0) {
+				invalidateCommunityPublicCache()
+			}
 			try {
 				await removePackageRetrieverManifestCacheEntries({
 					env: input.env,

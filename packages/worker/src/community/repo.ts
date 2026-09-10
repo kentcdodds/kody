@@ -758,6 +758,120 @@ export async function insertCommunityFork(
 		.run()
 }
 
+export async function deleteCommunityForksForPackage(
+	db: D1Database,
+	input: {
+		userId: string
+		packageId: string
+		sourceId?: string
+	},
+): Promise<number> {
+	const result = input.sourceId
+		? await db
+				.prepare(
+					`DELETE FROM community_forks
+					WHERE forker_user_id = ?
+						AND (forked_package_id = ? OR forked_source_id = ?)`,
+				)
+				.bind(input.userId, input.packageId, input.sourceId)
+				.run()
+		: await db
+				.prepare(
+					`DELETE FROM community_forks
+					WHERE forker_user_id = ?
+						AND forked_package_id = ?`,
+				)
+				.bind(input.userId, input.packageId)
+				.run()
+	return result.meta.changes ?? 0
+}
+
+export type OrphanedCommunityForkRow = {
+	id: string
+	listing_id: string
+	listing_name: string | null
+	listing_kody_id: string | null
+	forker_user_id: string
+	forked_package_id: string
+	forked_source_id: string
+	target_kody_id: string
+	created_at: string
+}
+
+/**
+ * Fork rows whose inert source and saved package are both gone. Healthy
+ * community forks stay inert (no `saved_packages` row) and keep an
+ * `entity_sources` row, so a missing package alone is not an orphan.
+ */
+export async function listOrphanedCommunityForks(
+	db: D1Database,
+	input: {
+		forkIds?: Array<string>
+	} = {},
+): Promise<Array<OrphanedCommunityForkRow>> {
+	const uniqueForkIds = [...new Set(input.forkIds ?? [])]
+	const orphans: Array<OrphanedCommunityForkRow> = []
+	const idChunks =
+		uniqueForkIds.length === 0
+			? [[] as Array<string>]
+			: chunkArray(uniqueForkIds, maxSqlBindingsPerChunk)
+	for (const idChunk of idChunks) {
+		const idFilter =
+			idChunk.length > 0
+				? `AND community_forks.id IN (${idChunk.map(() => '?').join(', ')})`
+				: ''
+		const rows = await db
+			.prepare(
+				`SELECT community_forks.id AS id,
+					community_forks.listing_id AS listing_id,
+					community_forks.listing_name AS listing_name,
+					community_forks.listing_kody_id AS listing_kody_id,
+					community_forks.forker_user_id AS forker_user_id,
+					community_forks.forked_package_id AS forked_package_id,
+					community_forks.forked_source_id AS forked_source_id,
+					community_forks.target_kody_id AS target_kody_id,
+					community_forks.created_at AS created_at
+				FROM community_forks
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM entity_sources
+					WHERE entity_sources.id = community_forks.forked_source_id
+				)
+				AND NOT EXISTS (
+					SELECT 1
+					FROM saved_packages
+					WHERE saved_packages.id = community_forks.forked_package_id
+				)
+				${idFilter}
+				ORDER BY community_forks.created_at ASC`,
+			)
+			.bind(...idChunk)
+			.all<OrphanedCommunityForkRow>()
+		orphans.push(...(rows.results ?? []))
+	}
+	return orphans
+}
+
+export async function deleteCommunityForksByIds(
+	db: D1Database,
+	forkIds: Array<string>,
+): Promise<number> {
+	const uniqueForkIds = [...new Set(forkIds)]
+	if (uniqueForkIds.length === 0) return 0
+	let deleted = 0
+	for (const idChunk of chunkArray(uniqueForkIds, maxSqlBindingsPerChunk)) {
+		const result = await db
+			.prepare(
+				`DELETE FROM community_forks
+				WHERE id IN (${idChunk.map(() => '?').join(', ')})`,
+			)
+			.bind(...idChunk)
+			.run()
+		deleted += result.meta.changes ?? 0
+	}
+	return deleted
+}
+
 export async function repointOrphanedCommunityForksToListing(
 	db: D1Database,
 	input: {

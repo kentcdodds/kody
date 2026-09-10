@@ -252,6 +252,7 @@ rule.
 - `adminPlatformFeedbackGet`
 - `adminPlatformFeedbackUpdate`
 - `adminCommunityActivityList`
+- `adminCommunityOrphanForksCleanup`
 - `adminPackageCodemodScan`
 - `adminPackageCodemodDryRun`
 - `adminPackageCodemodApply`

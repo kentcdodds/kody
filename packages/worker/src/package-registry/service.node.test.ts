@@ -40,7 +40,9 @@ const mockModule = vi.hoisted(() => ({
 	clearStorage: vi.fn(async () => ({ ok: true as const })),
 	storageRunnerRpc: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
+	deleteCommunityForksForPackage: vi.fn(),
 	unpublishCommunityListing: vi.fn(),
+	invalidateCommunityPublicCache: vi.fn(),
 }))
 
 vi.mock('./manifest.ts', () => ({
@@ -156,6 +158,13 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/community/repo.ts', () => ({
 	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
 		mockModule.getCommunityListingByOwnerAndPackage(...args),
+	deleteCommunityForksForPackage: (...args: Array<unknown>) =>
+		mockModule.deleteCommunityForksForPackage(...args),
+}))
+
+vi.mock('#app/data-cache.ts', () => ({
+	invalidateCommunityPublicCache: (...args: Array<unknown>) =>
+		mockModule.invalidateCommunityPublicCache(...args),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -235,6 +244,9 @@ function setupDefaultMocks() {
 	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
 	mockModule.unpublishCommunityListing.mockReset()
 	mockModule.unpublishCommunityListing.mockResolvedValue(undefined)
+	mockModule.deleteCommunityForksForPackage.mockReset()
+	mockModule.deleteCommunityForksForPackage.mockResolvedValue(0)
+	mockModule.invalidateCommunityPublicCache.mockReset()
 }
 
 test('refreshSavedPackageProjection defers search-index upsert and retriever cache via waitUntil', async () => {
@@ -596,6 +608,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		{ id: 'job-1', source_id: 'source-1' },
 		{ id: 'job-2', source_id: 'source-other' },
 	])
+	mockModule.deleteCommunityForksForPackage.mockResolvedValue(1)
 
 	await deleteSavedPackageProjection({
 		env,
@@ -636,6 +649,15 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		userId: 'user-1',
 		packageId: 'package-1',
 	})
+	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
+		env.APP_DB,
+		{
+			userId: 'user-1',
+			packageId: 'package-1',
+			sourceId: 'source-1',
+		},
+	)
+	expect(mockModule.invalidateCommunityPublicCache).toHaveBeenCalledTimes(1)
 	expect(
 		mockModule.removePackageRetrieverManifestCacheEntries,
 	).toHaveBeenCalledWith({
