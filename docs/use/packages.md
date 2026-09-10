@@ -68,9 +68,10 @@ Use `package.json` as the source of truth.
 Important fields:
 
 - `name` — npm-valid scoped package name (`@scope/<leaf>`). This is package
-  identity together with the saved-package UUID `package_id`. The leaf after `/`
-  is the URL slug. MCP tools take `package_id` for an existing package. Create
-  flows use the name leaf (or `@owner/leaf`).
+  identity. Look up a package by that scoped name (or the name leaf). Use the
+  saved-package UUID `package_id` only when the name is not known, or for a
+  stable ref. Never pass both. The leaf after `/` is the URL slug. Create flows
+  pass the `@owner/leaf` name or the name leaf.
 - `private` — leftover npm-style field; ignored for catalog listing. Visibility
   is a repo setting (`packageUpdate` `changes.visibility`), default private.
 - `exports` — authoritative import/export map
@@ -494,10 +495,10 @@ expands the scope.
 Use:
 
 - `packageGetGitRemote` and `packagePublishExternalPush` when you have a normal
-  git client: mint a remote (pass `create: true` with leftover `kody_id` set to
-  the new `@scope/leaf` name to register a stub package first), clone, edit,
-  push, and then ask Kody to reconcile the pushed Artifacts HEAD. Existing
-  packages use `package_id`.
+  git client: mint a remote (pass `create: true` with the new `@scope/leaf`
+  name, or the name leaf, to register a stub package first), clone, edit, push,
+  and then ask Kody to reconcile the pushed Artifacts HEAD. Existing packages
+  use the scoped name, or `package_id` when the name is not known.
 - `packageSave` to create or replace a saved package from a complete UTF-8 text
   file set when no local git client is available
 - `packageGet` and `packageList` to inspect saved packages
@@ -526,10 +527,11 @@ and does not expose to deployment admins is covered in
 
 ## Hidden packages
 
-Use **`packageUpdate`** with a saved **`package_id`** and
-**`changes: { hidden: true }`** to hide a package from ordinary ranked search.
-Set **`hidden: false`** inside `changes` to show it again. The result includes
-the persisted package summary so callers can verify the new state.
+Use **`packageUpdate`** with the scoped name (or **`package_id`** when the name
+is not known) and **`changes: { hidden: true }`** to hide a package from
+ordinary ranked search. Set **`hidden: false`** inside `changes` to show it
+again. The result includes the persisted package summary so callers can verify
+the new state.
 
 `packageUpdate` only accepts mutable settings. Canonical metadata including
 name, description, tags, app presence, and source projection remains derived
@@ -548,11 +550,12 @@ Use:
 
 - The **Delete package** control under `/@username/{package-name}/settings`. A
   modal asks you to type the package name to confirm.
-- **`packageDelete`** with a saved **`package_id`**. Show the owner the package
-  name and what will be destroyed, wait for them to type that name, then pass
-  **`confirm_name`** matching the package name exactly (`package.json` `name`,
-  for example `@you/my-package`). The capability refuses the delete and names
-  the expected value when `confirm_name` is missing or wrong.
+- **`packageDelete`** with the scoped name (or **`package_id`** when the name is
+  not known). Show the owner the package name and what will be destroyed, wait
+  for them to type that name, then pass **`confirm_name`** matching the package
+  name exactly (`package.json` `name`, for example `@you/my-package`). The
+  capability refuses the delete and names the expected value when `confirm_name`
+  is missing or wrong.
 
 Delete removes the package from discovery, stops its jobs, clears package
 storage and package-scoped secrets, drops invocation tokens, and unlists a
@@ -649,8 +652,9 @@ publish checks run.
    }
    ```
 
-   Call `packageGetGitRemote` with `package_id` for an existing package. The
-   result includes the plain remote URL, an authenticated one-line clone URL, an
+   Call `packageGetGitRemote` with the scoped `@owner/leaf` name for an existing
+   package (or `package_id` when the name is not known). The result includes the
+   plain remote URL, an authenticated one-line clone URL, an
    `Authorization: Bearer ...` extra header, `git_author` (the signed-in Kody
    account email and display name), and setup commands that use
    `git -c http.extraHeader=...` so the token does not need to be saved in shell
@@ -658,14 +662,12 @@ publish checks run.
    `user.name` from `git_author`. Use that identity for commits; do not invent
    an email.
 
-   To start a **new** package in this lane, pass `create: true` with leftover
-   `kody_id` set to the new package name leaf or `@owner/leaf` (and an optional
-   `description`):
+   To start a **new** package in this lane, pass `create: true` with the new
+   `@owner/leaf` name (or the name leaf) and an optional `description`:
 
    ```json
    {
    	"create": true,
-   	"kody_id": "my-package",
    	"description": "What this package is for"
    }
    ```

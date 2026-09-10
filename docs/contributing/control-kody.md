@@ -47,8 +47,8 @@ Override with `--email` / `--password`. `--cookie-file` defaults to
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview (or local
-origin) through MCP `packageGetGitRemote({ create: true, kody_id })`. Pass the
-package name leaf or `@owner/leaf` as leftover `kody_id`. It reuses `--origin`,
+origin) through MCP `packageGetGitRemote({ create: true })`. Pass the package
+name leaf or `@owner/leaf` with `--package-name`. It reuses `--origin`,
 `--email`, `--password`, `--cookie-file`, and `--json`. Pass
 `--package-name <leaf-or-@scope/leaf>` (required; `--kody-id` is an alias),
 `--description` (optional), and `--head-ahead` to push one unpublished commit so

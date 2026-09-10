@@ -1,18 +1,12 @@
 import { z } from 'zod'
+import {
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 
 export const webhookPackageRefSchema = {
-	packageId: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Saved package_id. Prefer this over the package name leaf.'),
-	kodyId: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Package name leaf or `@owner/leaf`. Prefer packageId when you have the UUID.',
-		),
+	packageId: z.string().min(1).optional().describe(packageIdLookupDescription),
+	kodyId: z.string().min(1).optional().describe(packageNameLookupDescription),
 }
 
 export const webhookVerificationPublicSchema = z

@@ -9,7 +9,11 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
 import { resolveSavedPackageWithFreshnessCache } from '#worker/package-invocations/invoke-contract-cache.ts'
-import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
+import {
+	normalizePackageNameInput,
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
@@ -315,14 +319,16 @@ export const packageAppFetchCapability = defineDomainCapability(
 		destructive: true,
 		inputSchema: z
 			.object({
-				package_id: z.string().min(1).optional(),
+				package_id: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(packageIdLookupDescription),
 				kody_id: z
 					.string()
 					.min(1)
 					.optional()
-					.describe(
-						'Package name leaf or `@owner/leaf`. Prefer `package_id` when you have the UUID.',
-					),
+					.describe(packageNameLookupDescription),
 				package_scope: z
 					.string()
 					.min(1)

@@ -42,7 +42,7 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 			tool.inputs.some(
 				(input) =>
 					input.value.includes('packageGetGitRemote') &&
-					input.value.includes("kody_id: '@you/kody-bot-shipped'"),
+					input.value.includes('create: true'),
 			),
 		),
 	).toBe(true)

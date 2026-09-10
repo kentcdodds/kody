@@ -2,6 +2,13 @@ import { kodyPackageIdPattern } from './types.ts'
 
 export const packageNameLeafPattern = kodyPackageIdPattern
 
+/** Agent-facing lookup copy: lead with the scoped name; `package_id` is fallback. */
+export const packageNameLookupDescription =
+	'Package name (`@owner/leaf` or the name leaf). Prefer this when you know the name.'
+
+export const packageIdLookupDescription =
+	'Saved-package UUID. Use when the scoped name is not known, or for a stable ref.'
+
 const scopedPackageNamePattern =
 	/^@([a-z0-9][a-z0-9._-]*)\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i
 

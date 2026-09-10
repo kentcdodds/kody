@@ -61,9 +61,10 @@ Example POST with JSON:
 }
 ```
 
-Look up the package with `package_id`. When `test_hints.app` includes
-`package_scope`, preserve that exact owner scope so the probe cannot resolve an
-unrelated same-named package in the caller's personal scope.
+Look up the package with the scoped `@owner/leaf` name (or `package_id` when the
+name is not known). When `test_hints.app` includes `package_scope`, preserve
+that exact owner scope so the probe cannot resolve an unrelated same-named
+package in the caller's personal scope.
 
 Websocket upgrade requests (`Upgrade: websocket`, `Connection: Upgrade`, or
 equivalent) are rejected.

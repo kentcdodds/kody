@@ -8,7 +8,11 @@ import {
 	gitAuthorSetupCommands,
 	shellQuote,
 } from '#worker/identity/git-author-identity.ts'
-import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
+import {
+	normalizePackageNameInput,
+	packageIdLookupDescription,
+	packageNameLookupDescription,
+} from '#worker/package-registry/package-name.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
@@ -27,14 +31,8 @@ import { createStubSavedPackage } from './create-stub-package.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 
 const getGitRemoteInputSchema = z.object({
-	package_id: z.string().min(1).optional(),
-	kody_id: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Package name leaf (`my-package`) or scoped `@owner/my-package`. Prefer `package_id` when you already have the UUID.',
-		),
+	package_id: z.string().min(1).optional().describe(packageIdLookupDescription),
+	kody_id: z.string().min(1).optional().describe(packageNameLookupDescription),
 	package_scope: z
 		.string()
 		.min(1)
@@ -45,7 +43,7 @@ const getGitRemoteInputSchema = z.object({
 		.optional()
 		.default(false)
 		.describe(
-			'Set true with the new package name leaf or `@scope/leaf` to register a new stub saved package (private, minimal scaffold) when none exists yet, then mint its remote in the same call. Existing packages are reused as-is. Prefer `package_id` once the saved package exists.',
+			'Set true with the new `@scope/leaf` name (or the name leaf) to register a new stub saved package (private, minimal scaffold) when none exists yet, then mint its remote in the same call. Existing packages are reused as-is. Prefer the scoped name for existing packages; use `package_id` only when the name is not known.',
 		),
 	description: z
 		.string()
@@ -82,7 +80,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 	{
 		name: 'packageGetGitRemote',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new package name leaf (or `@scope/leaf`) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer `package_id` for existing packages. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
+			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new `@scope/leaf` name (or the name leaf) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer the scoped name for existing packages; use `package_id` only when the name is not known. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
 			'package',
 			'create',
