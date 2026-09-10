@@ -129,35 +129,35 @@ package source, rating notes, email, stable user ids, private profiles, secrets,
 or unrelated account content. Admin-configured notification packages may receive
 the same community metadata, and a metadata-only `user.created` or
 `user.deleted` event when a person account is created or self-deleted (stable
-user id, username, email, the create source or delete timestamp, and first-touch
-marketing attribution fields when present). Referral rows are account data
-(export and deletion) and are not included on those lifecycle events. Those
-lifecycle events omit passwords, roles, plan, secrets, and unrelated account
-content. Admin-configured notification packages may also receive a metadata-only
-`user.email_verification.failed` event when signup/verify mail first hits a
-terminal delivery failure (stable user id, username, email, status, `class`
-(`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
-event omits SMTP transcripts, tokens, and unrelated account content.
-Admin-configured notification packages may also receive a metadata-only
-`user.email_verification.stalled` event when signup/verify mail stays `accepted`
-for an hour with no Cloudflare lifecycle event (stable user id, username, email,
-`accepted_at`, stall threshold, an admin user URL, and `occurred_at`). That
-event omits SMTP transcripts, tokens, and unrelated account content.
-Admin-configured notification packages may also receive a metadata-only
-`user.email_outbound.paused` event when outbound sending is paused after a spam
-complaint or repeated bounces (stable user id, username, email, reason, bounce
-threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
-That event omits SMTP transcripts, message bodies, and unrelated account
-content. Admin-configured notification packages may also receive
-`email.system-message.sent` when operator correspondence leaves a reserved
-system sender (`kody@`, `support@`, and the other system locals). That event
-includes the recipients, subject, and sent text/HTML because outbound system
-mail is not stored on the inbound system-email graph; it is admin-only and omits
+user id, username, email, the create source and `created_at` or delete
+timestamp, and first-touch marketing attribution fields when present). Referral
+rows are account data (export and deletion) and are not included on those
+lifecycle events. Those lifecycle events omit passwords, roles, plan, secrets,
+and unrelated account content. Admin-configured notification packages may also
+receive a metadata-only `user.email_verification.failed` event when
+signup/verify mail first hits a terminal delivery failure (stable user id,
+username, email, status, `class` (`sender_block` / `other` / `null`), an admin
+user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
 unrelated account content. Admin-configured notification packages may also
-receive metadata-only `auth.denial.burst` or `email.delivery.burst` events when
-hourly MCP auth denials or shared-domain bounce/complaint counts cross their
-thresholds (count, threshold, window, insights URL, and `observed_at`). Those
-events omit user identities, tokens, recipients, and message content.
+receive a metadata-only `user.email_verification.stalled` event when
+signup/verify mail stays `accepted` for an hour with no Cloudflare lifecycle
+event (stable user id, username, email, `accepted_at`, stall threshold, an admin
+user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
+unrelated account content. Admin-configured notification packages may also
+receive a metadata-only `user.email_outbound.paused` event when outbound sending
+is paused after a spam complaint or repeated bounces (stable user id, username,
+email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
+and `occurred_at`). That event omits SMTP transcripts, message bodies, and
+unrelated account content. Admin-configured notification packages may also
+receive `email.system-message.sent` when operator correspondence leaves a
+reserved system sender (`kody@`, `support@`, and the other system locals). That
+event includes the recipients, subject, and sent text/HTML because outbound
+system mail is not stored on the inbound system-email graph; it is admin-only
+and omits unrelated account content. Admin-configured notification packages may
+also receive metadata-only `auth.denial.burst` or `email.delivery.burst` events
+when hourly MCP auth denials or shared-domain bounce/complaint counts cross
+their thresholds (count, threshold, window, insights URL, and `observed_at`).
+Those events omit user identities, tokens, recipients, and message content.
 Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when package-runtime error rates rise
 (window bounds, per-metric counts and rates, public status URL, insights URL,

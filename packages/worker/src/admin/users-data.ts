@@ -221,6 +221,34 @@ function buildAdminUserListWhereClause(
 	}
 }
 
+/**
+ * Whether `stableUserId` belongs in the filtered admin-users result for
+ * this request URL. Uses the same WHERE clause as the page query so the
+ * client can prepend a created row without reimplementing filters.
+ */
+export async function adminUserMatchesListFilters(
+	env: Env,
+	requestUrl: string,
+	stableUserId: string,
+): Promise<boolean> {
+	if (!isStableUserId(stableUserId)) return false
+	const url = new URL(requestUrl, 'http://localhost')
+	const filters = readAdminUserListFilters(url)
+	const { whereClause, params } = buildAdminUserListWhereClause(
+		filters,
+		new Date(),
+	)
+	const membershipWhere = whereClause
+		? `${whereClause} AND stable_user_id = ?`
+		: 'WHERE stable_user_id = ?'
+	const row = await env.APP_DB.prepare(
+		`SELECT 1 AS found FROM users ${membershipWhere} LIMIT 1`,
+	)
+		.bind(...params, stableUserId)
+		.first<{ found: number }>()
+	return row != null
+}
+
 export async function loadAdminUsersData(
 	env: Env,
 	requestUrl: string,

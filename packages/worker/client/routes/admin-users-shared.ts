@@ -1,9 +1,14 @@
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatIntegerNumber } from '#client/charts/chart-theme.ts'
-import { type AdminUsersLoaderData } from '#universal/loader-data.ts'
+import {
+	type AdminUserListItem,
+	type AdminUsersLoaderData,
+	type AdminUsersMutationData,
+} from '#universal/loader-data.ts'
 import {
 	isAdminUserVerificationFilter,
+	isStalledEmailVerificationDelivery,
 	type AdminUserVerificationFilter,
 } from '#universal/email-verification-delivery.ts'
 import {
@@ -85,6 +90,91 @@ export function buildUserDetailHrefFrom(
 export function getDataKey(href: string) {
 	const pathname = new URL(href, 'http://localhost').pathname
 	return `${pathname}?${getListKey(href)}`
+}
+
+/**
+ * Create reseeds from the refreshed first page, then prepends the created
+ * row when oldest-first paging left it off page one and the server says
+ * it still matches the active filters. A failed refresh keeps the current
+ * window and only splices that row in when those same conditions hold.
+ */
+export function nextAdminUsersWindowAfterCreate(input: {
+	currentItems: Array<AdminUserListItem>
+	currentHasMore: boolean
+	currentTotal: number
+	payload: AdminUsersMutationData
+}) {
+	const created = input.payload.updatedUser
+	const baseItems = input.payload.listRefreshFailed
+		? input.currentItems
+		: input.payload.users
+	const alreadyListed =
+		created != null &&
+		baseItems.some((item) => item.stableUserId === created.stableUserId)
+	const canInsert =
+		created != null &&
+		!alreadyListed &&
+		input.payload.createdUserInFilteredList === true
+	const items = canInsert ? [created, ...baseItems] : baseItems
+	if (input.payload.listRefreshFailed) {
+		return {
+			items,
+			hasMore: input.currentHasMore,
+			totalCount: canInsert ? input.currentTotal + 1 : input.currentTotal,
+		}
+	}
+	return {
+		items,
+		hasMore: input.payload.page * input.payload.pageSize < input.payload.total,
+		totalCount: input.payload.total,
+	}
+}
+
+/**
+ * Role / plan / verification mutations patch the target in place so a
+ * scrolled list keeps its loaded window. A create cannot use this path.
+ */
+export function nextAdminUsersWindowAfterMutation(input: {
+	currentItems: Array<AdminUserListItem>
+	payload: AdminUsersMutationData
+	href: string
+}) {
+	const updatedUser = input.payload.updatedUser
+	const { role, verification } = readFilterState(input.href)
+	// The server ignores unknown role values, so only a known role counts
+	// as an active filter — otherwise every mutation would wrongly remove
+	// its target from the list.
+	const activeRoleFilter = (
+		input.payload.availableRoles as Array<string>
+	).includes(role)
+		? role
+		: ''
+	const matchesRoleFilter =
+		!updatedUser ||
+		!activeRoleFilter ||
+		(updatedUser.roles as Array<string>).includes(activeRoleFilter)
+	const matchesVerificationFilter =
+		!updatedUser ||
+		verification !== 'stalled' ||
+		isStalledEmailVerificationDelivery({
+			emailVerified: updatedUser.email_verified,
+			delivery: updatedUser.email_verification_delivery,
+		})
+	const matchesActiveFilters = matchesRoleFilter && matchesVerificationFilter
+	const nextItems = updatedUser
+		? matchesActiveFilters
+			? input.currentItems.map((item) =>
+					item.stableUserId === updatedUser.stableUserId ? updatedUser : item,
+				)
+			: input.currentItems.filter(
+					(item) => item.stableUserId !== updatedUser.stableUserId,
+				)
+		: input.currentItems
+	return {
+		items: nextItems,
+		hasMore: nextItems.length < input.payload.total,
+		totalCount: input.payload.total,
+	}
 }
 
 export function parseSelectedStableUserId(value: string | null): string | null {
