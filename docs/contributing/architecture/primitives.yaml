@@ -168,6 +168,7 @@ primitives:
     summary: Bearer tokens for /mcp via workers-oauth-provider.
     code:
       - packages/worker/src/oauth-handlers.ts
+      - packages/worker/src/oauth-refresh-family.ts
       - packages/worker/src/mcp-auth.ts
       - packages/worker/src/oidc/
     docs:

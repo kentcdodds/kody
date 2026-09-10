@@ -680,7 +680,7 @@ routed from `packages/worker/src/index.ts`.
   unverified, so no grant/token is created until verification succeeds.
 
 Token lifetimes are set on the `OAuthProvider` in
-`packages/worker/src/index.ts`:
+`packages/worker/src/oauth-provider-options.ts`:
 
 - Access tokens keep the provider default of 1 hour
 - Refresh tokens are issued with no expiry (`refreshTokenTTL: undefined`). The
@@ -691,6 +691,46 @@ Token lifetimes are set on the `OAuthProvider` in
   created through `OAuthHelpers.createClient()` are unexpiring. A DCR client
   record that already has a KV TTL still expires at that instant unless the host
   re-registers
+
+The provider still rotates refresh tokens on use and keeps only the current hash
+plus the immediately previous hash on the grant. MCP hosts on one machine often
+share one stored client and each keep their own copy of the last refresh token
+they saw, so a second host presenting the previous token must not mint a third
+token and invalidate the sibling. `packages/worker/src/oauth-refresh-family.ts`
+intercepts `POST /oauth/token` refresh grants:
+
+- Reuse of the current family's previous refresh token returns the stored
+  current access and refresh tokens. The grant does not rotate again, even when
+  that access token is near expiry — only presenting the current refresh token
+  rotates. The sibling can then refresh with the current token.
+- A one-hour replay record keyed by the consumed refresh-token hash returns that
+  same current family when the hash still matches the grant's current token,
+  even when the stored access token is near expiry. After the next rotation the
+  old replay no longer matches and the consumed token is `invalid_grant`. The
+  one-hour TTL is maximum retention, not guaranteed acceptance.
+- Tokens that are neither current, previous, nor a still-matching replay do not
+  mint. Stolen refresh tokens therefore cannot walk the family forever; they
+  work only while they remain the current or previous token, or while a replay
+  still matches the grant's current hash.
+- Previous-token reuse and matching replay skip the isolate lock so a
+  current-token rotation cannot turn a still-valid previous token into
+  `invalid_grant`. Provider rotation for one `userId`/`grantId` pair is
+  serialized in the handling isolate. After a rotation the isolate remembers the
+  new family in memory so a waiter can reuse it even when Workers KV still
+  serves the pre-rotation miss. Isolate memory keeps only the current replay
+  entry and is dropped when the handling isolate revokes that grant. Revoke
+  marks the grant forgotten immediately so lock-skipping reuse cannot serve
+  cached tokens, then waits for any in-flight persist so a later remember cannot
+  rewrite deleted-grant tokens. That is isolate-local, not a cross-isolate
+  Durable Object lock. Two current-token refreshes that land on different
+  isolates can still race the provider before a snapshot is visible. A revoke
+  that lands on another isolate can leave residual memory until that isolate
+  exits.
+- Encrypted snapshots live in `BUNDLE_ARTIFACTS_KV` under
+  `derived-cache:v1:mcp-oauth-refresh-family:` / `-replay:` with KV TTLs of two
+  hours and one hour. Retention is the TTL, so account deletion does not sweep
+  those keys. Snapshot writes are best-effort: a KV or encrypt failure does not
+  replace the provider's minted response.
 
 `/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 
@@ -715,6 +755,8 @@ Token lifetimes are set on the `OAuthProvider` in
 
 - `packages/worker/src/index.ts` for route order and integration points
 - `packages/worker/src/oauth-handlers.ts` for OAuth authorization logic
+- `packages/worker/src/oauth-refresh-family.ts` for refresh-token family reuse
+  on `/oauth/token`
 - `packages/worker/src/mcp-auth.ts` for MCP token enforcement
 - `packages/worker/src/app/auth-session.ts` for cookie format/signing
 - `packages/worker/src/app/handlers/auth.ts` for app login/signup flow
